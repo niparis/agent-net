@@ -453,6 +453,37 @@ func TestCTOOwnerFrameRequestsConversationReply(t *testing.T) {
 	}
 }
 
+// Agent-net's own prompt to the CTO is labelled and sent as agent-net, never
+// as the owner speaking.
+func TestCTOAgentFrameLabelsAgentNet(t *testing.T) {
+	raw, err := BuildCTOAgentFrame("msg1", "harness switch handover", "write the handover")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		From    string `json:"from"`
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`from-name="agent-net"`, `msg-id="msg1"`, "[agent-net: harness switch handover]", "write the handover"} {
+		if !strings.Contains(f.Message.Content, want) {
+			t.Fatalf("frame lacks %q: %s", want, f.Message.Content)
+		}
+	}
+	for _, unwanted := range []string{"owner speaking", `from-name="owner"`} {
+		if strings.Contains(f.Message.Content, unwanted) {
+			t.Fatalf("frame claims to be the owner (%q): %s", unwanted, f.Message.Content)
+		}
+	}
+	if f.From != "" {
+		t.Fatalf("frame has a peer reply address: %q", f.From)
+	}
+}
+
 // The daemon checks that a CTO delivery became a turn by finding the message
 // ID in the CTO's transcript, so the text Claude records must carry it.
 func TestCTOFrameContentNamesTheMessage(t *testing.T) {

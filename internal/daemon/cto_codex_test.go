@@ -1,7 +1,9 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/niparis/agent-net/internal/daemon/ctoskill"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 // startCodexCTONode is a node whose CTO can run on the fake Codex app server
@@ -27,6 +30,16 @@ func startCodexCTONode(t *testing.T) (*node, *logBuf) {
 		c.testNoDeliveryConfirm = false
 		c.deliveryConfirmWait = scaled(300 * time.Millisecond)
 		c.testHandoverWait = time.Millisecond
+		// The model catalog answer the fake app server cannot give on stdio.
+		c.ListModels = func(_ context.Context, name string) ([]string, error) {
+			switch name {
+			case "codex":
+				return []string{"gpt-fake"}, nil
+			case "opencode":
+				return []string{"fake/m1"}, nil
+			}
+			return nil, nil
+		}
 	}})
 	return n, logs
 }
@@ -193,6 +206,113 @@ func TestCTOCodexSwitchEachWay(t *testing.T) {
 		if rec := readCodex(t, dir, func(r fakeCodexRecord) bool { return r.Resumed > 0 }); rec.ResumeParams["threadId"] != thread ||
 			rec.ResumeParams["approvalPolicy"] != "never" || rec.ResumeParams["sandbox"] != "danger-full-access" {
 			t.Fatalf("resume %v", rec.ResumeParams)
+		}
+	})
+}
+
+// A switch to Codex with no model named takes the Codex harness's own default,
+// not the model or provider of the harness it left, and records that effective
+// entry first in cto.models (decision 0162).
+func TestCTOSwitchToCodexWithoutModelUsesTheCodexDefault(t *testing.T) {
+	n, _ := startCodexCTONode(t)
+	cli := cliClient(t, n)
+	setCTOHarness(t, cli, "opencode", "fake/m1")
+	codex := "codex"
+	empty := ""
+	var out protocol.CTOSettings
+	if err := json.Unmarshal(cli.mustCall(protocol.OpCTOSettings, protocol.CTOSettingsRequest{Harness: &codex, Model: &empty}), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Harness != "codex" || out.Model != "gpt-fake" || out.CodexModel != "gpt-fake" {
+		t.Fatalf("switch settings: %+v", out)
+	}
+	if len(out.Models) == 0 || out.Models[0].Harness != "codex" || out.Models[0].Provider != "openai" || out.Models[0].Model != "gpt-fake" {
+		t.Fatalf("switch list: %+v", out.Models)
+	}
+	if got := n.d.SettingsSnapshot().String("cto.models", settings.Where{}); !strings.Contains(got, "codex · openai · gpt-fake") {
+		t.Fatalf("cto.models setting: %q", got)
+	}
+}
+
+// When the model catalog gives no Codex default, the model the app server
+// reports on thread/start fills the record and the owner's screen, so neither
+// shows an empty model.
+func TestCTOCodexReportsItsModelWhenNoCatalogAnswer(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	t.Setenv(envFakeCodex, "1")
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) {
+		c.HarnessPaths = map[string]string{"codex": os.Args[0], "opencode": os.Args[0]}
+		c.testHandoverWait = time.Millisecond
+		c.ListModels = func(_ context.Context, name string) ([]string, error) {
+			if name == "codex" {
+				return nil, errors.New("no model catalog")
+			}
+			return []string{"fake/m1"}, nil
+		}
+	}})
+	cli := cliClient(t, n)
+	setCTOHarness(t, cli, "opencode", "fake/m1")
+	codex, empty := "codex", ""
+	if _, err := cli.call(protocol.OpCTOSettings, protocol.CTOSettingsRequest{Harness: &codex, Model: &empty}); err != nil {
+		t.Fatal(err)
+	}
+	ctoSendID(t, cli, "hello codex")
+	var out protocol.CTOSettings
+	if err := json.Unmarshal(cli.mustCall(protocol.OpCTOSettings, nil), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Model != "fake-model" || out.CodexModel != "fake-model" {
+		t.Fatalf("settings after the Codex start: %+v", out)
+	}
+	if len(out.Models) == 0 || out.Models[0].Harness != "codex" || out.Models[0].Model != "fake-model" {
+		t.Fatalf("model list after the Codex start: %+v", out.Models)
+	}
+	if got := n.d.SettingsSnapshot().String("cto.models", settings.Where{}); !strings.Contains(got, "fake-model") {
+		t.Fatalf("cto.models setting after the Codex start: %q", got)
+	}
+	var events protocol.CTOEvents
+	if err := json.Unmarshal(cli.mustCall(protocol.OpCTOEvents, map[string]int{"index": 0}), &events); err != nil {
+		t.Fatal(err)
+	}
+	if events.Model != "fake-model" {
+		t.Fatalf("timeline model = %q, want fake-model", events.Model)
+	}
+}
+
+// The Codex CTO answers a switch handover like the other harnesses. Its words
+// land in the handover note under "Model output", and the request is marked as
+// agent-net's own prompt, not as the owner speaking.
+func TestCTOCodexModelLayerHandover(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, func(t *testing.T) {
+		n, _ := startCodexCTONode(t)
+		n.d.cfg.testHandoverWait = 10 * time.Second
+		cli := cliClient(t, n)
+		setCTOHarness(t, cli, "opencode", "fake/m1")
+		ctoSendID(t, cli, "open one")
+		setCTOHarness(t, cli, "codex", "gpt-fake")
+		waitHandoverSettled(t, n.d)
+		ctoSendID(t, cli, "codex one")
+		switchCTOHarness(t, cli, "claude")
+		waitHandoverSettled(t, n.d)
+		body := handoverNotes(t, n.d)[n.d.latestHandoverNote()]
+		if !strings.Contains(body, "## Model output (not the owner's words)") {
+			t.Fatalf("the Codex layer is missing:\n%s", body)
+		}
+		rec := readCodex(t, codexCTODir(n), func(r fakeCodexRecord) bool {
+			return slices.ContainsFunc(r.Turns, func(t string) bool { return strings.Contains(t, ctoHandoverPrompt) })
+		})
+		var asked string
+		for _, turn := range rec.Turns {
+			if strings.Contains(turn, ctoHandoverPrompt) {
+				asked = turn
+			}
+		}
+		if !strings.Contains(asked, "agent-net: harness switch handover") {
+			t.Fatalf("the request is not labelled as agent-net's prompt: %q", asked)
+		}
+		if strings.Contains(asked, "This is the owner speaking") {
+			t.Fatalf("the request claims to be the owner: %q", asked)
 		}
 	})
 }

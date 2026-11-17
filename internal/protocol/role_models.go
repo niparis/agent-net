@@ -76,7 +76,8 @@ const (
 
 // RoleModelsKey is the settings key that holds one role's ordered list. The
 // CTO list is local daemon state, so its key is only the fresh-install
-// default; the daemon sends the list it holds.
+// default; the daemon sends the list it holds, and a harness switch records
+// the entry it moved to there.
 func RoleModelsKey(role string) string {
 	switch role {
 	case RoleCTO:

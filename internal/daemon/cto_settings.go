@@ -74,11 +74,22 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 		models[0].Harness = harness
 		switch {
 		case in.Model != nil:
-			models[0].Model = *in.Model
+			models[0].Model = strings.TrimSpace(*in.Model)
 		case in.Harness != nil:
 			// Switching harness without naming a model keeps the model that
 			// harness had, as the per-harness settings did.
 			models[0].Model = perHarness.of(harness)
+		}
+		if models[0].Model == "" {
+			// A switch with no model named takes the harness's own default,
+			// never the model or provider of the harness it leaves.
+			live, _ := d.readHarnessModels(ctx, harness)
+			models[0].Model = defaultRoleModel(harness, live)
+		}
+		if models[0].Model == "" {
+			models[0].Provider = ""
+		} else {
+			models[0].Provider = protocol.ProfileProvider(harness, models[0].Model)
 		}
 		perHarness.set(harness, models[0].Model)
 	}
@@ -108,6 +119,13 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 		}
 		if err := d.saveCTORoleModels(models, harness, model); err != nil {
 			return protocol.CTOSettings{}, err
+		}
+		if switched {
+			// The setting the owner reads must name the CTO that runs now
+			// (decision 0162), so the switch writes its effective entry first.
+			if err := d.writeCTOModelsSetting(ctx, models); err != nil {
+				return protocol.CTOSettings{}, fmt.Errorf("record the CTO harness switch in cto.models: %w", err)
+			}
 		}
 	}
 	if switched {

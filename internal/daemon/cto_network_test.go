@@ -188,6 +188,14 @@ func (a *recordingCTOClaude) DeliverCTO(ctx context.Context, target protocol.Ses
 	return result
 }
 
+func (a *recordingCTOClaude) DeliverCTOSystem(ctx context.Context, target protocol.SessionInfo, id, label, text string) Result {
+	result := a.fsClaudeAdapter.DeliverCTOSystem(ctx, target, id, label, text)
+	if result.Delivered {
+		a.received <- text
+	}
+	return result
+}
+
 func TestCTOReplyFollowsHarnessSwitch(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	sessions, _ := useFakeClaude(t)

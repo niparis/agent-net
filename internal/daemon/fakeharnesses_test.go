@@ -853,6 +853,13 @@ func (a *fsClaudeAdapter) DeliverCTO(ctx context.Context, target protocol.Sessio
 	return a.deliverBody(target, protocol.Message{ID: id, Body: text}, body)
 }
 
+// DeliverCTOSystem frames agent-net's own prompt with its label, as the real
+// adapter's BuildCTOAgentFrame does.
+func (a *fsClaudeAdapter) DeliverCTOSystem(ctx context.Context, target protocol.SessionInfo, id, label, text string) Result {
+	body := fmt.Sprintf("<cross-session-message from-name=\"agent-net\" from-mode=\"prompting\" msg-id=\"%s\">\n[agent-net: %s]\n\n%s\n</cross-session-message>", id, label, text)
+	return a.deliverBody(target, protocol.Message{ID: id, Body: text}, body)
+}
+
 // setFakeClaudeStatus records what the fake Claude session file says about a
 // turn, as Claude Code does: busy while the model works and idle when it ends.
 func setFakeClaudeStatus(t *testing.T, sessions string, pid int, status string) {

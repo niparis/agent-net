@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -66,6 +67,9 @@ type codexCTOHarness struct{}
 func (codexCTOHarness) name() string { return "codex" }
 func (codexCTOHarness) send(ctx context.Context, d *Daemon, text string) (any, error) {
 	return d.codexCTOSend(ctx, text)
+}
+func (codexCTOHarness) sendSystem(ctx context.Context, d *Daemon, label, text string) (any, error) {
+	return d.codexCTOSend(ctx, ctoSystemPromptText(label, text))
 }
 func (codexCTOHarness) newConversation(ctx context.Context, d *Daemon) (any, error) {
 	return d.codexCTONew(ctx)
@@ -378,8 +382,9 @@ func (d *Daemon) loadCodexCTOThread(ctx context.Context, rpc *codexRPC, model st
 	params := d.codexCTOThreadParams(ctx, model)
 	if stored != "" {
 		params["threadId"] = stored
-		_, err := rpc.call(ctx, "thread/resume", params)
+		raw, err := rpc.call(ctx, "thread/resume", params)
 		if err == nil {
+			d.recordCodexCTOModelFromAnswer(ctx, raw)
 			return stored, false, nil
 		}
 		d.Logf("cto.codex resume of %s failed, a new thread starts: %v", stored, err)
@@ -408,7 +413,101 @@ func (d *Daemon) loadCodexCTOThread(ctx context.Context, rpc *codexRPC, model st
 	if _, err = tx.Exec(`UPDATE cto_actions SET session_id=? WHERE session_id='' AND harness='codex'`, started.Thread.ID); err != nil {
 		return "", false, err
 	}
-	return started.Thread.ID, true, tx.Commit()
+	if err = tx.Commit(); err != nil {
+		return "", false, err
+	}
+	d.recordCodexCTOModelFromAnswer(ctx, raw)
+	return started.Thread.ID, true, nil
+}
+
+// codexThreadModel reads the model in a thread/start or thread/resume answer.
+// The app server names it on the thread, and some builds also at the top.
+func codexThreadModel(raw json.RawMessage) string {
+	var answer struct {
+		Model  string `json:"model"`
+		Thread struct {
+			Model string `json:"model"`
+		} `json:"thread"`
+	}
+	if json.Unmarshal(raw, &answer) != nil {
+		return ""
+	}
+	if answer.Model != "" {
+		return answer.Model
+	}
+	return answer.Thread.Model
+}
+
+// recordCodexCTOModelFromAnswer stores the model the app server reports when
+// the saved Codex model is empty, so the CTO's record and the owner's screen
+// name what the thread really runs on.
+func (d *Daemon) recordCodexCTOModelFromAnswer(ctx context.Context, raw json.RawMessage) {
+	if model := codexThreadModel(raw); model != "" {
+		if err := d.recordCodexCTOModel(ctx, model); err != nil {
+			d.Logf("cto.codex model record: %v", err)
+		}
+	}
+}
+
+// recordCodexCTOModel fills an empty Codex model with the one the app server
+// reports. A model the owner chose is never replaced. The setting is updated
+// too when the list's first entry gained the model, so the owner reads the
+// same entry the CTO runs.
+func (d *Daemon) recordCodexCTOModel(ctx context.Context, model string) error {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return nil
+	}
+	perHarness, harness, err := d.localCTOModelSettings()
+	if err != nil {
+		return err
+	}
+	if perHarness.Codex != "" {
+		return nil
+	}
+	tx, err := d.st.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec(`UPDATE cto SET codex_model=? WHERE id=1`, model); err != nil {
+		return err
+	}
+	var raw string
+	if err = tx.QueryRow(`SELECT models FROM cto WHERE id=1`).Scan(&raw); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	var models []protocol.RoleModel
+	if raw != "" {
+		models, err = protocol.ParseRoleModels(raw)
+		if err != nil {
+			return err
+		}
+		for i := range models {
+			if models[i].Harness == "codex" && models[i].Model == "" {
+				models[i].Model = model
+				models[i].Provider = protocol.ProfileProvider("codex", model)
+				if _, err = tx.Exec(`UPDATE cto SET models=? WHERE id=1`, protocol.FormatRoleModels(models)); err != nil {
+					return err
+				}
+				break
+			}
+		}
+	}
+	if harness == "codex" {
+		if _, err = tx.Exec(`UPDATE cto SET active_model=? WHERE id=1`, model); err != nil {
+			return err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	if harness == "codex" && len(models) > 0 && models[0].Harness == "codex" && models[0].Model == model {
+		if err := d.writeCTOModelsSetting(ctx, models); err != nil {
+			d.Logf("cto.codex model setting: %v", err)
+		}
+	}
+	return nil
 }
 
 // codexCTOSend queues one message in the CTO's thread and starts its delivery

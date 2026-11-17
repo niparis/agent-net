@@ -324,6 +324,16 @@ func claudeCTOErrorOutput(output []byte) string {
 }
 
 func (claudeCTOHarness) send(ctx context.Context, d *Daemon, text string) (any, error) {
+	return d.claudeCTOSend(ctx, text, "")
+}
+
+func (claudeCTOHarness) sendSystem(ctx context.Context, d *Daemon, label, text string) (any, error) {
+	return d.claudeCTOSend(ctx, text, label)
+}
+
+// claudeCTOSend delivers text to the CTO's Claude conversation. An empty label
+// is the owner's words; a label marks agent-net's own prompt.
+func (d *Daemon) claudeCTOSend(ctx context.Context, text, label string) (any, error) {
 	settings, err := d.ctoSettings(ctx, protocol.CTOSettingsRequest{})
 	if err != nil {
 		return nil, err
@@ -354,7 +364,12 @@ func (claudeCTOHarness) send(ctx context.Context, d *Daemon, text string) (any, 
 	deadline, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	for {
-		res := a.DeliverCTO(deadline, protocol.SessionInfo{Harness: "claude", NativeID: id}, msgID, text)
+		var res Result
+		if label == "" {
+			res = a.DeliverCTO(deadline, protocol.SessionInfo{Harness: "claude", NativeID: id}, msgID, text)
+		} else {
+			res = a.DeliverCTOSystem(deadline, protocol.SessionInfo{Harness: "claude", NativeID: id}, msgID, label, text)
+		}
 		if res.Delivered {
 			d.confirmClaudeCTODelivery(watch, msgID, text)
 			if err := d.touchCTOConversation("claude"); err != nil {
@@ -384,6 +399,7 @@ func (d *Daemon) saveClaudeCTOSessionLocked(oldID string) (string, error) {
 
 type claudeCTODeliverer interface {
 	DeliverCTO(context.Context, protocol.SessionInfo, string, string) Result
+	DeliverCTOSystem(context.Context, protocol.SessionInfo, string, string, string) Result
 }
 
 func (d *Daemon) claudeCTODeliverer() (claudeCTODeliverer, error) {

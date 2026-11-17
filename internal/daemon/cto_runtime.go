@@ -32,9 +32,12 @@ func (m *ctoDispatchLock) lock(ctx context.Context) error {
 func (m *ctoDispatchLock) unlock() { <-m.gate }
 
 // ctoHarness isolates the owner conversation from the harness that runs it.
+// send carries the owner's words; sendSystem carries agent-net's own prompt,
+// labelled so the conversation can tell it from the owner.
 type ctoHarness interface {
 	name() string
 	send(context.Context, *Daemon, string) (any, error)
+	sendSystem(context.Context, *Daemon, string, string) (any, error)
 	newConversation(context.Context, *Daemon) (any, error)
 	events(context.Context, *Daemon, int) (protocol.CTOEvents, error)
 }
@@ -44,6 +47,9 @@ type openCodeCTOHarness struct{}
 func (openCodeCTOHarness) name() string { return "opencode" }
 func (openCodeCTOHarness) send(ctx context.Context, d *Daemon, text string) (any, error) {
 	return d.openCodeCTOSend(ctx, text)
+}
+func (openCodeCTOHarness) sendSystem(ctx context.Context, d *Daemon, label, text string) (any, error) {
+	return d.openCodeCTOSend(ctx, ctoSystemPromptText(label, text))
 }
 func (openCodeCTOHarness) newConversation(ctx context.Context, d *Daemon) (any, error) {
 	return d.openCodeCTONew(ctx)

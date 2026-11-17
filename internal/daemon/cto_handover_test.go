@@ -238,6 +238,43 @@ func TestCTOHandoverFallsBackWhenOldHarnessDoesNotAnswer(t *testing.T) {
 	}
 }
 
+// The model-layer request reaches a Claude CTO as agent-net's own labelled
+// prompt, never as a peer message that claims to be the owner speaking.
+func TestCTOHandoverRequestIsAgentNetNotTheOwner(t *testing.T) {
+	t.Setenv(envFakeClaudeTranscribe, "1")
+	n, cli := handoverClaudeNode(t, time.Second)
+	switchCTOHarness(t, cli, "opencode")
+	waitHandoverSettled(t, n.d)
+	id, err := n.d.ctoConversation("claude")
+	if err != nil || id == "" {
+		t.Fatalf("Claude conversation: %q %v", id, err)
+	}
+	matches, err := filepath.Glob(filepath.Join(filepath.Dir(n.cfg.ClaudeSessionsDir), "projects", "*", id+".jsonl"))
+	if err != nil || len(matches) == 0 {
+		t.Fatalf("Claude transcript: %v %v", matches, err)
+	}
+	raw, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, line := range strings.Split(string(raw), "\n") {
+		if !strings.Contains(line, ctoHandoverPrompt) {
+			continue
+		}
+		found = true
+		if !strings.Contains(line, "[agent-net: "+ctoHandoverLabel+"]") || !strings.Contains(line, `from-name=\"agent-net\"`) {
+			t.Fatalf("the request is not labelled as agent-net's prompt: %s", line)
+		}
+		if strings.Contains(line, "This is the owner speaking") {
+			t.Fatalf("the request claims to be the owner: %s", line)
+		}
+	}
+	if !found {
+		t.Fatal("the handover request is not in the Claude transcript")
+	}
+}
+
 // The owner's timeline does not show the handover request or its reply, in
 // either message form. Other messages stay, in order.
 func TestHandoverExchangeIsHiddenFromTheOwnerTimeline(t *testing.T) {
@@ -246,6 +283,8 @@ func TestHandoverExchangeIsHiddenFromTheOwnerTimeline(t *testing.T) {
 		msg(`{"type":"user","text":"keep the release notes short"}`),
 		msg(`{"type":"user","text":` + strconv.Quote(ctoHandoverPrompt) + `}`),
 		msg(`{"type":"assistant","content":[{"type":"text","text":"Promise: finish the migration plan."}]}`),
+		msg(`{"type":"user","text":` + strconv.Quote(ctoSystemPromptText(ctoHandoverLabel, ctoHandoverPrompt)) + `}`),
+		msg(`{"type":"assistant","content":[{"type":"text","text":"The labelled promise."}]}`),
 		msg(`{"type":"idle","outcome":"succeeded"}`),
 		msg(`{"type":"user","text":"what next?"}`),
 		msg(`{"type":"assistant","text":"Ship it."}`),
