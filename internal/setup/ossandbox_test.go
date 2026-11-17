@@ -54,18 +54,17 @@ func TestSetupSaysWhatTheWorkerSandboxDoes(t *testing.T) {
 	}
 }
 
-// On macOS the sandbox is opt-in for now, and setup says so instead of
-// checking for a tool the default does not use.
-func TestSetupSaysTheMacSandboxIsOptIn(t *testing.T) {
+// Setup names the wrapper its check found, so a Mac prints sandbox-exec in the
+// same ok line Linux prints bubblewrap in.
+func TestSetupNamesTheWrapperInTheSandboxLine(t *testing.T) {
 	f := newFixture(t)
 	fakeClaude(t, f.home)
-	old := osSandboxDefaultOn
-	osSandboxDefaultOn = false
-	t.Cleanup(func() { osSandboxDefaultOn = old })
-	osSandboxCheck = func() (string, error) { t.Error("the check ran where the default is off"); return "", nil }
+	old := osSandboxCheck
+	osSandboxCheck = func() (string, error) { return "sandbox-exec", nil }
+	t.Cleanup(func() { osSandboxCheck = old })
 
 	out := run(t, Options{Join: f.newJoin(t)})
-	if !strings.Contains(out, "worker sandbox no OS sandbox on macOS yet: opt in with workers.os_sandbox in node.json") {
+	if !strings.Contains(out, "worker sandbox ok (sandbox-exec: Pi and OpenCode workers run in it by default)") {
 		t.Errorf("macOS line:\n%s", out)
 	}
 }

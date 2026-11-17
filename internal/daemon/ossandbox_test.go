@@ -344,6 +344,22 @@ func TestOSSandboxDefaultStartsClaudeWorker(t *testing.T) {
 	}
 }
 
+// An OS whose default is on wraps Pi and OpenCode workers, and never asks for
+// the marker an older Mac daemon wrote. macOS now takes this path, so Linux CI
+// checks it too.
+func TestOSSandboxDefaultOnWraps(t *testing.T) {
+	ready := func() error { return nil }
+	for _, harness := range []string{"pi", "opencode"} {
+		got, err := osSandboxDecideOn(true, osSandboxDefault, harness, "", ready)
+		if err != nil || got != osSandboxName {
+			t.Errorf("%s: %q, %v; want %q", harness, got, err, osSandboxName)
+		}
+	}
+	if !osSandboxRequired(true, osSandboxDefault) {
+		t.Error("a default-on OS does not require the wrapper by default")
+	}
+}
+
 // The profile that sandbox-exec runs says what the policy says: the worktree,
 // the git folders and the private state are writable, the read-only paths are
 // denied after them (the later rule wins), and only the agent-net socket is

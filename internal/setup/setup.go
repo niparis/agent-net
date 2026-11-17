@@ -557,20 +557,12 @@ func (r *runner) workersSetting() {
 // sandbox here. A test replaces it.
 var osSandboxCheck = daemon.OSSandboxCheck
 
-// osSandboxDefaultOn is whether this OS sandboxes Pi and OpenCode workers by
-// default. A test replaces it to see the macOS line.
-var osSandboxDefaultOn = daemon.OSSandboxDefaultOn
-
 // osSandboxSetting says once what the OS sandbox of workers does on this
-// machine. On Linux Pi and OpenCode workers are sandboxed by default, and one
-// that cannot be is refused, so a missing tool is told now with its fix and not at
-// the first start. A machine that turns the sandbox off for every project
-// (workers.os_sandbox_off in node.json) needs nothing.
+// machine. On Linux and macOS Pi and OpenCode workers are sandboxed by
+// default, and one that cannot be is refused, so a missing tool is told now
+// with its fix and not at the first start. A machine that turns the sandbox off
+// for every project (workers.os_sandbox_off in node.json) needs nothing.
 func (r *runner) osSandboxSetting() {
-	if !osSandboxDefaultOn {
-		r.step("worker sandbox", "no OS sandbox on macOS yet: opt in with workers.os_sandbox in node.json", nil)
-		return
-	}
 	nc, _, err := daemon.LoadNode(daemon.ConfigDir())
 	if err == nil {
 		if s, err := nc.WorkerSettings(); err == nil && daemon.OSSandboxOffEverywhere(s) {

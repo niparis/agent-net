@@ -3,6 +3,7 @@ package daemon
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -39,7 +40,7 @@ func outsideHome(t *testing.T) string {
 }
 
 // sandboxWorker makes a daemon, a repository with a linked worktree, and an
-// OpenCode worker of the given level in that worktree, wrapped by bubblewrap.
+// OpenCode worker of the given level in that worktree, in the OS wrapper.
 func sandboxWorker(t *testing.T, level string) (*Daemon, *worker, string) {
 	t.Helper()
 	state := seededStateDir(t)
@@ -106,5 +107,39 @@ echo "inside: $(try touch "$PWD/probe")"
 	}
 	if got["outside"] == "written" || fileExists(filepath.Join(outside, "probe")) {
 		t.Errorf("a write outside the worktree worked: %v", got)
+	}
+}
+
+// A DNS lookup and an HTTPS connection work inside the wrapper, so a worker can
+// reach its model. On macOS the lookup goes through the system resolver, whose
+// queries the profile allows through the mDNSResponder socket: that allowance
+// was a guess until this check.
+func TestRealSandboxNetwork(t *testing.T) {
+	requireRealSandbox(t)
+	d, w, _ := sandboxWorker(t, protocol.WorkersSandboxed)
+	// A tool that asks the resolver the harnesses use on this OS: the system
+	// resolver (mDNSResponder) on macOS, libc on Linux.
+	dns := "/usr/bin/dscacheutil -q host -a name"
+	if runtime.GOOS == "linux" {
+		dns = "getent hosts"
+	}
+	script := `
+try() { if out=$("$@" 2>&1); then echo "ok, $(echo "$out" | head -n 1)"; else echo "failed: $out"; fi; }
+{
+echo "dns: $(try ` + dns + ` github.com)"
+echo "https: $(try /usr/bin/curl -fsS --max-time 10 -o /dev/null -w '%{http_code}' https://github.com/)"
+} > "$TMPDIR/result" 2>&1
+`
+	if err := d.spawnWorker(w, "/bin/sh", []string{"-c", script}, os.Environ()); err != nil {
+		t.Fatal(err)
+	}
+	waitExit(t, w)
+	got := probeResults(t, d, w)
+	t.Logf("in the sandbox: dns %s; https %s", got["dns"], got["https"])
+	if dns := got["dns"]; !strings.HasPrefix(dns, "ok") || !strings.Contains(dns, "github.com") {
+		t.Errorf("DNS inside the sandbox: %q (log: %s)", dns, d.workerLogTail(w))
+	}
+	if https := got["https"]; !strings.HasPrefix(https, "ok") {
+		t.Errorf("HTTPS inside the sandbox: %q (log: %s)", https, d.workerLogTail(w))
 	}
 }

@@ -88,8 +88,7 @@ func (s WorkerSettings) osSandboxMode(project string) osSandboxMode {
 }
 
 // osSandboxDecide is the rule for one start: the wrapper's name, "" when the
-// worker runs without it, protocol.OSSandboxNoneMacOS when a Mac runs it
-// without by default, or the refusal. A worker that was started in the
+// worker runs without it, or the refusal. A worker that was started in the
 // wrapper before comes here as osSandboxExplicit; ready checks the tool on
 // this machine.
 func osSandboxDecide(mode osSandboxMode, harness, level string, ready func() error) (string, error) {
@@ -104,8 +103,9 @@ func osSandboxRequired(defaultOn bool, mode osSandboxMode) bool {
 }
 
 // osSandboxDecideOn is osSandboxDecide for an OS whose default is defaultOn.
-// Where the default is off (macOS), a Pi or OpenCode worker of a project that
-// is not listed runs without the wrapper, and says so.
+// Where the default is off (a Mac before 2026-11-17), a Pi or OpenCode worker
+// of a project that is not listed runs without the wrapper, and says so; the
+// marker it reports is kept for records of that time.
 func osSandboxDecideOn(defaultOn bool, mode osSandboxMode, harness, level string, ready func() error) (string, error) {
 	if mode == osSandboxOff {
 		return "", nil
