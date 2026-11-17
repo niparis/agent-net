@@ -26,6 +26,29 @@ import (
 // chiefSessionKey is the owner_settings row that names the chief session.
 const chiefSessionKey = "chief_session"
 
+// chiefClearedKey is the owner_settings row that records a deliberate clear:
+// when it happened and the chief.model line then. The clear stands while the
+// line is the same, so a start from the list does not undo it (decision 0171).
+const chiefClearedKey = "chief_cleared"
+
+type chiefCleared struct {
+	At    int64  `json:"at"`
+	Model string `json:"model"`
+}
+
+// chiefModelSetting is the stored chief.model line, or the default.
+func (s *Store) chiefModelSetting() (string, error) {
+	snap, err := s.SettingsSnapshot()
+	if err != nil {
+		return "", err
+	}
+	line := snap.String(protocol.ChiefModelKey, settings.Where{})
+	if line == "" {
+		line = protocol.DefaultChiefModel
+	}
+	return line, nil
+}
+
 // chiefMigration adds what the chief needs to inbox_items (priority and the
 // time its batch message went out) and keeps the sort history. The two
 // columns are added in the migrate loop, which checks that they are missing.
@@ -231,8 +254,24 @@ func resolveRoleModel(nodes []protocol.NodeView, m protocol.RoleModel) (protocol
 // leaves the chief as it is.
 func (s *Store) setChiefSession(q protocol.ChiefSetRequest) error {
 	if q.Clear {
-		_, err := s.db.Exec(`DELETE FROM owner_settings WHERE key IN (?,?)`, chiefSessionKey, chiefSilentKey)
-		return err
+		line, err := s.chiefModelSetting()
+		if err != nil {
+			return err
+		}
+		mark, _ := json.Marshal(chiefCleared{At: s.now().UnixNano(), Model: line})
+		tx, err := s.db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if _, err = tx.Exec(`DELETE FROM owner_settings WHERE key IN (?,?)`, chiefSessionKey, chiefSilentKey); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?)
+			ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, chiefClearedKey, string(mark), s.now().UnixNano()); err != nil {
+			return err
+		}
+		return tx.Commit()
 	}
 	if q.SessionID == "" {
 		return nil
@@ -255,8 +294,27 @@ func (s *Store) setChiefSession(q protocol.ChiefSetRequest) error {
 	}
 	defer tx.Rollback()
 	now := s.now().UnixNano()
+	var previous string
+	if err = tx.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, chiefSessionKey).Scan(&previous); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
 	if _, err = tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?)
 		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, chiefSessionKey, q.SessionID, now); err != nil {
+		return err
+	}
+	// The session the owner moves away from is replaced by the new chief, so a
+	// message still sent to its ID reaches the current chief (decision 0171). The
+	// new chief is not replaced by anything.
+	if previous != "" && previous != q.SessionID {
+		if _, err = tx.Exec(`UPDATE sessions SET replaced_by=? WHERE id=?`, q.SessionID, previous); err != nil {
+			return err
+		}
+	}
+	if _, err = tx.Exec(`UPDATE sessions SET replaced_by='' WHERE id=?`, q.SessionID); err != nil {
+		return err
+	}
+	// Naming a chief ends a clear.
+	if _, err = tx.Exec(`DELETE FROM owner_settings WHERE key=?`, chiefClearedKey); err != nil {
 		return err
 	}
 	// A new chief starts with a clean record: an earlier silence was another
@@ -298,7 +356,8 @@ func (s *Store) ChiefStatus() (protocol.ChiefStatus, error) {
 		out.Model = list[0].Display()
 	}
 	if id == "" {
-		return out, nil
+		out.ClearedAt, err = s.chiefClearedAt()
+		return out, err
 	}
 	err = s.db.QueryRow(`SELECT COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),s.title,''), s.online=1 AND s.archived_at=0
 		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, id).Scan(&out.Name, &out.Online)
@@ -1692,4 +1751,26 @@ func maskCharterDraft(d protocol.CharterDraft) protocol.CharterDraft {
 	d.Source = redact.SecretValues(d.Source)
 	d.DraftedBy = redact.SecretValues(d.DraftedBy)
 	return d
+}
+
+// chiefClearedAt is when a standing clear happened, or 0. A clear ends when the
+// chief.model line differs from the one it was made under.
+func (s *Store) chiefClearedAt() (int64, error) {
+	var raw string
+	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, chiefClearedKey).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	var c chiefCleared
+	if json.Unmarshal([]byte(raw), &c) != nil {
+		return 0, nil
+	}
+	line, err := s.chiefModelSetting()
+	if err != nil || line != c.Model {
+		return 0, err
+	}
+	return c.At, nil
 }

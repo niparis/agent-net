@@ -93,9 +93,12 @@ func OwnerWorktreeBranch(project string, n int) string {
 // asks the machine for the lowest free agent-net/<project>-<n>.
 type SessionStartRequest struct {
 	// AgentID selects the lasting Agent. Empty keeps the Repo owner default.
-	AgentID      string `json:"agent_id,omitempty"`
-	Remote       string `json:"remote,omitempty"`
-	Merger       bool   `json:"merger,omitempty"`
+	AgentID string `json:"agent_id,omitempty"`
+	Remote  string `json:"remote,omitempty"`
+	Merger  bool   `json:"merger,omitempty"`
+	// Chief says the start is the chief of staff (decision 0171): the daemon
+	// that starts it keeps no harness memory for it and pins it with chief_set.
+	Chief        bool   `json:"chief,omitempty"`
 	Project      string `json:"project"`
 	Harness      string `json:"harness,omitempty"`
 	Model        string `json:"model,omitempty"`

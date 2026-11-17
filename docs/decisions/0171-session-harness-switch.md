@@ -29,7 +29,7 @@ The daemon keeps one row per session and harness in
 `session_conversations(session_id, harness, native_id, updated_at)`. It
 replaces the CTO's `claude_session_id` and `session_id` columns, which stay in
 the table for one release and are no longer read or written. The CTO's session
-key is `cto`.
+key is its network session id (phase 2).
 
 Migration: the table is created once, and its rows are copied from the two
 columns. The copied rows get `updated_at = 0`, so they count as stale. The
@@ -109,9 +109,63 @@ After a compaction, the next turn carries the start block again. Claude keeps
 its PostCompact hook. OpenCode and Codex take the daemon's compaction event
 (noteCompacted, and the CTO's compaction).
 
+## Phase 2: role address, the chief's own start, role wake
+
+**Role address.** `chief` and `cto` are addresses. A message to one goes to the
+session pinned for the role when the gateway stores it (`chief_session`,
+`cto_session`). When the owner or the CTO pins another chief, the old chief
+session gets `replaced_by` the new one, so a message sent to the old id reaches
+the current chief. The sender's receipt says which session got the message. With
+no chief set, a message to `chief` is refused and says so. The CTO's own rule
+stays: it takes messages from the owner and replies only.
+
+**The chief starts from `chief.model`.** The daemon that holds the CTO's
+network identity checks the chief once a minute (`chief_start.go`). It starts
+one when none is set, or when the set chief is offline on a harness that
+cannot be woken. The start is the ordinary session start in the folder
+`<state>/chief`. The model is the first usable entry of the list, through the
+0162 gate with the CTO, chief and merger policy. The started session is pinned
+with `chief_set`. Only one machine runs the loop, so two machines never start
+two chiefs. A failed start waits 10 minutes. `chief_set session_id` still
+adopts a hand-started session.
+
+**A clear stands.** `chief_set` with `clear: true` stores the time and the `chief.model` line in `chief_cleared`; `chief.get` reports `cleared_at` while the line is the same. The loop starts no chief while a clear stands. Naming a chief, or changing `chief.model`, ends it.
+
+**Pi is refused for every role.** The gate drops a Pi entry from a role list
+with the reason `Pi cannot be woken by a message yet`. A list with only Pi
+entries is refused with that reason.
+
+**Role wake.** The chief and a project's merger are woken for a message and for
+a ready step whatever the autonomy and `wake_on_message` say. The step lookup
+took only Claude sessions before. It now takes every wakeable harness, and the
+wake frame carries autonomy `wake` for a role, which the machine needs to wake a
+Codex or OpenCode session.
+
+**Chief memory.** The chief's memory is gateway notes only. A Claude chief
+starts and resumes with `autoMemoryEnabled` false. Codex and OpenCode have no
+such switch to set.
+
+**The conversation key.** `session_conversations` is keyed by the CTO's network
+session id, the id every session has. Before the CTO has one, the key is `cto`.
+Registration, and opening the state, move the rows to the id with their age. A
+row already under the id is kept.
+
+**CTO fields that still duplicate the ordinary session record** (not folded,
+because each is a behaviour change and not a rename):
+
+- `cto.active_harness`, `active_model`, `models`, `opencode_model`,
+  `claude_model`, `opencode_last_model`. The ordinary record would carry the
+  real harness and model, but the CTO's gateway record has the harness `cto`,
+  which the gateway tests in many places.
+- `cto.graph_after` and `claude_graph_after`: a cursor for each conversation.
+  They fit a column of `session_conversations`.
+- `cto.session_id` and `claude_session_id`: no longer read or written.
+- `cto_actions` and `cto_history` hold the harness's native conversation id.
+- In memory, `ctoRuntime` and `claudeCTOState` keep the process, job, model and
+  conversation of the CTO. An ordinary session keeps these in its session and
+  worker records.
+
 ## What this does not cover
 
-- The generic delivery confirm and the compaction re-send (phase 1, part b).
-- The chief's start from its model list and the role address (phase 2).
 - A Codex CTO (phase 3).
 - Setup's first-use role step (phase 4).

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -758,5 +759,47 @@ func TestChiefSetReplacesTheOrderedList(t *testing.T) {
 	}
 	if st.Model != models[0].Display() {
 		t.Fatalf("status model = %q, want the first entry %q", st.Model, models[0].Display())
+	}
+}
+
+// A clear is recorded with its time and stands until a session is named chief
+// or chief.model changes (decision 0171), so nothing that starts a chief from
+// the list undoes the owner's clear.
+func TestChiefClearStandsUntilANewChiefOrAModelChange(t *testing.T) {
+	s, _, chief, _, _ := chiefRig(t)
+	status := func() protocol.ChiefStatus {
+		t.Helper()
+		st, err := s.ChiefStatus()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return st
+	}
+	if st := status(); st.ClearedAt != 0 {
+		t.Fatalf("a set chief reports a clear: %+v", st)
+	}
+	clear := func() {
+		t.Helper()
+		if err := s.SetChief(protocol.ChiefSetRequest{Clear: true}, "owner"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	clear()
+	if st := status(); st.SessionID != "" || st.ClearedAt == 0 {
+		t.Fatalf("after a clear: %+v, want no chief and a clear time", st)
+	}
+	if err := s.SetChief(protocol.ChiefSetRequest{SessionID: chief}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if st := status(); st.ClearedAt != 0 {
+		t.Fatalf("naming a chief did not end the clear: %+v", st)
+	}
+	clear()
+	line := "codex · openai · gpt-6.1-sol · high"
+	if _, err := s.WriteSettings([]SettingsChange{{Key: protocol.ChiefModelKey, Level: "network", Scope: "network", Value: json.RawMessage(strconv.Quote(line))}}, "owner", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if st := status(); st.ClearedAt != 0 {
+		t.Fatalf("a chief.model change did not end the clear: %+v", st)
 	}
 }

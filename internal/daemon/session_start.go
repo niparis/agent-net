@@ -304,6 +304,9 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	if p.Merger {
 		r.Type = "merger"
 	}
+	if p.Chief {
+		r.Type = "chief"
+	}
 	if r.AgentID != "" && r.Harness != "codex" && r.Harness != "opencode" {
 		if err := d.reserveStartAgent(ctx, r.Harness, "", r.AgentID, r.ID, r.Path, r.Project); err != nil {
 			return protocol.StartedSession{}, err
@@ -332,6 +335,9 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	settings := ""
 	if p.Merger {
 		settings = mergerClaudeSettings(d.workerGoCacheDir())
+	}
+	if p.Chief {
+		name, settings = "chief of staff", chiefClaudeSettings()
 	}
 	in := claudeStartInput{Name: name, Settings: claudeSettingsWithMCPAnswers(settings, r.Path), Model: p.Model, Skills: startSkillNode(p.AgentID, found.Name)}
 	if p.AgentID == "" {
@@ -585,6 +591,10 @@ func (d *Daemon) claudeResumeSpec(a protocol.AgentView) claudeBackground {
 	settings := ""
 	if a.Type == "merger" {
 		settings = mergerClaudeSettings(d.workerGoCacheDir())
+	}
+	// A resumed chief keeps what its start had: no harness memory.
+	if d.isChiefSession(context.Background(), a.SessionID) {
+		settings = chiefClaudeSettings()
 	}
 	return d.claudeStartSpec(context.Background(), claudeStartInput{Resume: a.NativeID, Settings: claudeSettingsWithMCPAnswers(settings, a.Cwd), Skills: skillNode{Session: a.SessionID}})
 }

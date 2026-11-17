@@ -417,6 +417,10 @@ type ChiefStatus struct {
 	// can (or when there is no chief). The Desk shows it as
 	// "chief of staff offline: <Down>".
 	Down string `json:"down,omitempty"`
+	// ClearedAt is when the owner or the CTO cleared the chief (Unix nanos),
+	// while that clear stands. It stands until a session is named chief or
+	// chief.model changes. Nothing starts a chief while it does.
+	ClearedAt int64 `json:"cleared_at,omitempty"`
 }
 
 // ChiefOfflineLine is the one line the Desk shows when the chief cannot work.
@@ -499,3 +503,9 @@ type ChiefSort struct {
 type ChiefSortsResult struct {
 	Sorts []ChiefSort `json:"sorts"`
 }
+
+// WakeHarness tells whether a message can wake an offline session of this
+// harness. Pi cannot: its rpc mode does not open an existing session. A role
+// session (the chief, a merger) runs only on a harness that can be woken
+// (decision 0171).
+func WakeHarness(h string) bool { return h == "claude" || h == "codex" || h == "opencode" }

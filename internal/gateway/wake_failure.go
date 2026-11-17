@@ -19,12 +19,13 @@ const wakeFailedKeyPrefix = "wake-failed:"
 // Claude in terminal or background mode, Codex, OpenCode; not Pi; never
 // workers) is woken by a message when wake_on_message is on (the default).
 // Autonomy wake still allows it for backward compatibility; loop ticks still
-// count; step messages keep their own rule.
+// count; step messages keep their own rule. A role session (the chief or a
+// merger) is always allowed.
 func (g *Gateway) wakeAllowed(a protocol.AgentView, autonomy bool) bool {
 	if !wakeHarness(a.Harness) || a.Worker != nil {
 		return false
 	}
-	if g.wakeOnMessage(a) {
+	if g.wakeOnMessage(a) || g.store.roleSession(a.SessionID) {
 		return true
 	}
 	return autonomy

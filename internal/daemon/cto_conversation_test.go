@@ -114,3 +114,105 @@ func TestCTOTurnRefreshesConversationAge(t *testing.T) {
 		t.Fatalf("a turn 10 hours before the switch did not keep the conversation: %q", got)
 	}
 }
+
+// openConversationState opens a daemon state for a conversation test.
+func openConversationState(t *testing.T) *state {
+	t.Helper()
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	st, err := openState(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.close() })
+	return st
+}
+
+func setCTONetworkID(t *testing.T, st *state, id string) {
+	t.Helper()
+	if _, err := st.db.Exec(`INSERT INTO cto_network(id,session_id) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET session_id=excluded.session_id`, id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The CTO's conversations are keyed by its network session ID, the key every
+// other session uses (decision 0171, phase 2), not by a name only the CTO has.
+func TestCTOConversationIsKeyedByTheNetworkSession(t *testing.T) {
+	st := openConversationState(t)
+	d := &Daemon{st: st}
+	setCTONetworkID(t, st, "s_cto_net")
+	if err := d.setCTOConversation("claude", "native-1"); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := st.db.QueryRow(`SELECT COUNT(*) FROM session_conversations WHERE session_id='s_cto_net' AND harness='claude' AND native_id='native-1'`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("rows under the network session ID: %d %v, want 1", n, err)
+	}
+	if err := st.db.QueryRow(`SELECT COUNT(*) FROM session_conversations WHERE session_id=?`, ctoConversationSession).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("rows under the old key: %d %v, want 0", n, err)
+	}
+	if got, _ := d.ctoConversation("claude"); got != "native-1" {
+		t.Fatalf("conversation = %q, want native-1", got)
+	}
+}
+
+// A conversation made before the CTO had a network ID moves to that ID when it
+// is registered, with its age, so a switch back still resumes it. A conversation
+// already under the new ID is not overwritten by the old one.
+func TestCTORegistrationMovesTheEarlierConversations(t *testing.T) {
+	st := openConversationState(t)
+	d := &Daemon{st: st}
+	if err := d.setCTOConversation("claude", "before-registration"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.setCTOConversation("opencode", "older-opencode"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.Exec(`INSERT INTO session_conversations(session_id,harness,native_id,updated_at) VALUES('s_cto_net','opencode','newer-opencode',5)`); err != nil {
+		t.Fatal(err)
+	}
+	var claudeAge int64
+	if err := st.db.QueryRow(`SELECT updated_at FROM session_conversations WHERE session_id=? AND harness='claude'`, ctoConversationSession).Scan(&claudeAge); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.rekeyCTOConversations("s_cto_net"); err != nil {
+		t.Fatal(err)
+	}
+	var native string
+	var updated int64
+	if err := st.db.QueryRow(`SELECT native_id,updated_at FROM session_conversations WHERE session_id='s_cto_net' AND harness='claude'`).Scan(&native, &updated); err != nil || native != "before-registration" || updated != claudeAge {
+		t.Fatalf("moved claude row = %q %d %v, want before-registration with its age %d", native, updated, err, claudeAge)
+	}
+	if err := st.db.QueryRow(`SELECT native_id FROM session_conversations WHERE session_id='s_cto_net' AND harness='opencode'`).Scan(&native); err != nil || native != "newer-opencode" {
+		t.Fatalf("opencode row = %q %v, want the row already under the new ID", native, err)
+	}
+	var left int
+	if err := st.db.QueryRow(`SELECT COUNT(*) FROM session_conversations WHERE session_id=?`, ctoConversationSession).Scan(&left); err != nil || left != 0 {
+		t.Fatalf("rows left under the old key: %d %v", left, err)
+	}
+}
+
+// Opening the state of an install that already has a network ID and rows under
+// the old key moves them once, with their age.
+func TestCTOStateOpenMovesRowsUnderTheOldKey(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	dir := t.TempDir()
+	st, err := openState(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setCTONetworkID(t, st, "s_cto_net")
+	if _, err := st.db.Exec(`INSERT INTO session_conversations(session_id,harness,native_id,updated_at) VALUES(?,'claude','kept',42)`, ctoConversationSession); err != nil {
+		t.Fatal(err)
+	}
+	st.close()
+	st, err = openState(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.close()
+	var native string
+	var updated int64
+	if err := st.db.QueryRow(`SELECT native_id,updated_at FROM session_conversations WHERE session_id='s_cto_net' AND harness='claude'`).Scan(&native, &updated); err != nil || native != "kept" || updated != 42 {
+		t.Fatalf("row after reopen = %q %d %v, want kept with age 42", native, updated, err)
+	}
+}

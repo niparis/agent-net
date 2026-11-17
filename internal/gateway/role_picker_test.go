@@ -27,6 +27,7 @@ func roleGateway(t *testing.T) (*Gateway, string) {
 		{Name: "claude", SignedIn: "yes", Models: []string{"claude-opus-5-5"}},
 		{Name: "codex", SignedIn: "yes", Models: []string{"gpt-6.1-sol"}},
 		{Name: "opencode", SignedIn: "yes", Models: []string{"deepseek/deepseek-v4.1-flash"}},
+		{Name: "pi", SignedIn: "yes", Models: []string{"pi-model"}},
 	}
 	if _, err := st.SetNodeHarnesses(node, harnesses); err != nil {
 		t.Fatal(err)
@@ -155,5 +156,39 @@ func TestMergerRoleListComesFromItsSetting(t *testing.T) {
 	}
 	if _, err := strconv.Atoi(strings.TrimSpace(got.Refused)); err == nil {
 		t.Fatalf("unexpected refusal %q", got.Refused)
+	}
+}
+
+// Pi cannot be woken by a message yet, so no role runs on it (decision 0171).
+// An entry for Pi is skipped with that reason, and the next entry runs.
+func TestRoleStartSkipsPiWithItsReason(t *testing.T) {
+	for _, role := range []string{protocol.RoleChief, protocol.RoleMerger} {
+		t.Run(role, func(t *testing.T) {
+			g, node := roleGateway(t)
+			setRoleList(t, g, protocol.RoleModelsKey(role),
+				protocol.RoleModel{Harness: "pi", Provider: "pi", Model: "pi-model"},
+				protocol.RoleModel{Harness: "codex", Provider: "openai", Model: "gpt-6.1-sol"})
+			got, err := g.pickRole(node, protocol.RolePickRequest{Role: role})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Harness != "codex" || !strings.Contains(got.Note, "Pi cannot be woken by a message yet") {
+				t.Fatalf("picked %+v, want codex with the Pi reason in the note", got)
+			}
+		})
+	}
+}
+
+// A role list with only Pi in it is refused with the Pi reason, in one line.
+func TestRoleStartWithOnlyPiIsRefused(t *testing.T) {
+	g, node := roleGateway(t)
+	setRoleList(t, g, protocol.RoleModelsKey(protocol.RoleChief),
+		protocol.RoleModel{Harness: "pi", Provider: "pi", Model: "pi-model"})
+	got, err := g.pickRole(node, protocol.RolePickRequest{Role: protocol.RoleChief})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Harness != "" || got.Refused != "Pi cannot be woken by a message yet" {
+		t.Fatalf("pick = %+v, want a refusal that says Pi cannot be woken by a message yet", got)
 	}
 }
