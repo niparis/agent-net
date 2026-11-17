@@ -81,6 +81,37 @@ func TestOpenCodeSessionsOnOneService(t *testing.T) {
 	}
 }
 
+// A plugin can say hello for a session that another connection already
+// serves, as when OpenCode starts the plugin again. The newer hello replaces
+// the older connection, and the older hello must still get its reply.
+func TestOpenCodeHelloReplyNotLostWhenSuperseded(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{exe: "/opt/x/node_modules/@opencode/cli/bin/opencode.exe"})
+	dir := t.TempDir()
+	const plugins = 4
+	clients := make([]*localClient, plugins)
+	for i := range clients {
+		clients[i] = dialLocal(t, n.sock)
+	}
+	// The hellos start together, so most of them replace a connection that is
+	// still registering its session with the gateway.
+	start := make(chan struct{})
+	errs := make(chan error, plugins)
+	for _, lc := range clients {
+		go func() {
+			<-start
+			_, err := lc.call("hello", map[string]any{"client": "opencode", "harness": "opencode", "native_id": "ses_busy", "cwd": dir, "status": "idle"})
+			errs <- err
+		}()
+	}
+	close(start)
+	for range clients {
+		if err := <-errs; err != nil {
+			t.Fatalf("hello: %v", err)
+		}
+	}
+}
+
 func TestOpenCodePeerCheck(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")

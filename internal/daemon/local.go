@@ -60,7 +60,7 @@ func (s *localServer) serve(ctx context.Context) {
 		if err != nil {
 			return
 		}
-		lc := &localConn{d: s.d, c: c, srv: s, acks: map[string]chan ack{}, closed: make(chan struct{})}
+		lc := &localConn{d: s.d, c: c, srv: s, acks: map[string]chan ack{}, closed: make(chan struct{}), replied: make(chan struct{})}
 		s.mu.Lock()
 		s.conns[lc] = true
 		s.mu.Unlock()
@@ -95,6 +95,9 @@ type localConn struct {
 	wmu    sync.Mutex
 	once   sync.Once
 	closed chan struct{}
+	// replied closes once the connection's first request, its hello, has its
+	// reply written. A newer hello closes this connection only after that.
+	replied chan struct{}
 
 	mu       sync.Mutex
 	client   string
@@ -117,6 +120,25 @@ func (lc *localConn) close() {
 		close(lc.closed)
 		lc.c.Close()
 	})
+}
+
+// closeAfterHello closes a connection that a newer hello for its session has
+// replaced. That connection's own hello may still be waiting for the gateway,
+// and its reply must reach the client before the socket closes.
+func (lc *localConn) closeAfterHello() {
+	select {
+	case <-lc.replied:
+		lc.close()
+		return
+	default:
+	}
+	go func() {
+		select {
+		case <-lc.replied:
+		case <-lc.closed:
+		}
+		lc.close()
+	}()
 }
 
 func (lc *localConn) writeJSON(v any) error {
@@ -219,6 +241,7 @@ func (lc *localConn) run(ctx context.Context) {
 			}
 			res, err := lc.hello(req.Params)
 			lc.respond(req.ID, res, err)
+			close(lc.replied)
 			lc.d.logMCPHello(req.Params, err)
 			if err != nil {
 				return
@@ -585,7 +608,7 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		d.sessions[k] = ls
 		d.mu.Unlock()
 		if old != nil && old.conn != nil {
-			old.conn.close()
+			old.conn.closeAfterHello()
 		}
 		lc.bind(p.Client, ls)
 		d.pushSession(ls)
