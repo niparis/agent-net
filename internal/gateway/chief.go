@@ -255,8 +255,23 @@ func (s *Store) setChiefSession(q protocol.ChiefSetRequest) error {
 	}
 	defer tx.Rollback()
 	now := s.now().UnixNano()
+	var previous string
+	if err = tx.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, chiefSessionKey).Scan(&previous); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
 	if _, err = tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?)
 		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, chiefSessionKey, q.SessionID, now); err != nil {
+		return err
+	}
+	// The session the owner moves away from is replaced by the new chief, so a
+	// message still sent to its ID reaches the current chief (decision 0171). The
+	// new chief is not replaced by anything.
+	if previous != "" && previous != q.SessionID {
+		if _, err = tx.Exec(`UPDATE sessions SET replaced_by=? WHERE id=?`, q.SessionID, previous); err != nil {
+			return err
+		}
+	}
+	if _, err = tx.Exec(`UPDATE sessions SET replaced_by='' WHERE id=?`, q.SessionID); err != nil {
 		return err
 	}
 	// A new chief starts with a clean record: an earlier silence was another
