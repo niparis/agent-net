@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/niparis/agent-net/internal/daemon/ctoskill"
 	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -23,7 +22,7 @@ func writeSourceSkill(t *testing.T, dir, body string) {
 // The archive intake asks for the skill folders the inventory scan does not
 // list: plugin skills and the CTO's own skill. Each one is then served by
 // node.skill_bundle, and nothing else is.
-func TestSkillSourcesListPluginAndCTOSkills(t *testing.T) {
+func TestSkillSourcesListPluginSkills(t *testing.T) {
 	d, home := promptTestDaemon(t)
 	plugin := filepath.Join(home, ".claude/plugins/cache/market/remotion/1.0.0/skills/remotion")
 	market := filepath.Join(home, ".claude/plugins/marketplaces/anthropic-skills/skills/docx")
@@ -41,11 +40,6 @@ func TestSkillSourcesListPluginAndCTOSkills(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(broken, "SKILL.md"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.writeCTOSkill("claude"); err != nil {
-		t.Fatal(err)
-	}
-	ctoDir, _ := ctoSkillDir(d.cfg.StateDir, "claude")
-
 	got := map[string]protocol.SkillSource{}
 	sourcesNow, _ := d.skillSources(nil)
 	for _, s := range sourcesNow {
@@ -54,7 +48,6 @@ func TestSkillSourcesListPluginAndCTOSkills(t *testing.T) {
 	for location, want := range map[string]struct{ name, origin string }{
 		plugin: {"remotion", "plugin remotion"},
 		market: {"docx", "plugin anthropic-skills"},
-		ctoDir: {ctoskill.Name, "agent-net"},
 	} {
 		s, ok := got[location]
 		if !ok || s.Name != want.name || s.Origin != want.origin || s.State != protocol.InventoryOK || s.Hash == "" {
@@ -75,6 +68,13 @@ func TestSkillSourcesListPluginAndCTOSkills(t *testing.T) {
 	if _, ok := got[offered]; ok {
 		t.Fatal("a plugin that is only offered by a marketplace was listed")
 	}
+	// The CTO's skill comes from the archive, not from a harness folder (decision
+	// 0171), so no source is an agent-net folder.
+	for _, s := range sourcesNow {
+		if s.Origin == "agent-net" {
+			t.Fatalf("a CTO harness folder is listed as a skill source: %+v", s)
+		}
+	}
 	if s := got[broken]; s.State != protocol.InventoryError || s.Reason == "" || s.Origin != "plugin typesafe" {
 		t.Fatalf("unreadable plugin skill: %+v", s)
 	}
@@ -86,7 +86,7 @@ func TestSkillSourcesListPluginAndCTOSkills(t *testing.T) {
 	}
 }
 
-func TestSkillSourcesWithoutPluginsOrCTOSkillIsEmpty(t *testing.T) {
+func TestSkillSourcesWithoutPluginsIsEmpty(t *testing.T) {
 	d, _ := promptTestDaemon(t)
 	if got, _ := d.skillSources(nil); len(got) != 0 {
 		t.Fatalf("sources: %+v", got)

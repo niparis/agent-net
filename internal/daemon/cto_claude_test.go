@@ -214,6 +214,9 @@ func testCTOHarnessConversations(t *testing.T) {
 		c.ClaudeSessionsDir = sessions
 		c.Adapters = append(c.Adapters, &fsClaudeAdapter{dir: sessions})
 		c.HarnessPaths = map[string]string{"claude": os.Args[0], "opencode": os.Args[0]}
+		// The fake Claude never answers a handover, so a switch away from it
+		// waits this long before it goes on (decision 0171).
+		c.testHandoverWait = time.Second
 	}})
 	cli := cliClient(t, n)
 	model, harness := "fake/m1", "opencode"
@@ -289,6 +292,9 @@ func testCTOEventsKeepTimelineAcrossHarnessSwitchesAndRestart(t *testing.T) {
 		c.ClaudeSessionsDir = sessions
 		c.Adapters = append(c.Adapters, &fsClaudeAdapter{dir: sessions})
 		c.HarnessPaths = map[string]string{"claude": os.Args[0], "opencode": os.Args[0]}
+		// The fake Claude never answers a handover, so a switch away from it
+		// waits this long before it goes on (decision 0171).
+		c.testHandoverWait = time.Second
 	}})
 	cli := cliClient(t, n)
 	set := func(harness, model string) {

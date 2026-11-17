@@ -126,6 +126,11 @@ func (d *Daemon) ctoStartBlock(ctx context.Context) string {
 		_, notes := d.sessionContext(ctx, sid, "")
 		block = joinCharter(block, notes)
 	}
+	// A switch of harness leaves its handover note (decision 0171). The new
+	// conversation is pointed at it first.
+	if name := d.latestHandoverNote(); name != "" {
+		block = joinCharter(block, "Latest handover note: "+name+". Read it with agent_notes_find, then its open asks, before anything else.")
+	}
 	return block
 }
 

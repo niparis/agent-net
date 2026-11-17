@@ -139,6 +139,10 @@ type Config struct {
 	testAssess func(ctx context.Context, project, task string) *protocol.WorkerAssessment
 	// testStartBudget replaces workerStartAnswerBudget.
 	testStartBudget time.Duration
+	// testHandoverWait replaces ctoHandoverModelWait. A switch from a running
+	// harness that never answers waits this long, so a test does not wait a
+	// minute for the timeout.
+	testHandoverWait time.Duration
 	// testOpenSelection lets an agent's start set selection fields without the
 	// owner's confirmation (worker_override.go). The worker tests that start
 	// as an agent with a model or harness turn it on; the override tests do not.
@@ -424,7 +428,10 @@ type Daemon struct {
 	client           *http.Client
 	// ctoNow and ctoCompactEvery are replaced in tests with a fake clock and
 	// no background loop.
-	ctoNow          func() time.Time
+	ctoNow func() time.Time
+	// ctoSkillDone is set once this daemon has ensured the CTO's skill in the
+	// archive (decision 0171).
+	ctoSkillDone    atomic.Bool
 	ctoCompactEvery time.Duration
 	ctoCtx          context.Context
 	testCleanupNow  func() time.Time

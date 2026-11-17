@@ -62,3 +62,21 @@ func TestCTOOpenCodeEffectiveTools(t *testing.T) {
 		})
 	}
 }
+
+// OpenCode asks before a read of a secrets file, and no one answers for the CTO.
+// Its own rules allow those reads, so the CTO does not stall (decision 0171).
+func TestCTOPermissionsAllowSecretFileReads(t *testing.T) {
+	allowed := map[string]bool{"*.env": false, "*.env.*": false}
+	for _, rule := range ctoPermissions() {
+		if rule.Action == "read" && rule.Effect == "allow" {
+			if _, ok := allowed[rule.Resource]; ok {
+				allowed[rule.Resource] = true
+			}
+		}
+	}
+	for resource, ok := range allowed {
+		if !ok {
+			t.Fatalf("the CTO's rules do not allow read %s", resource)
+		}
+	}
+}

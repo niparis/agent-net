@@ -86,8 +86,20 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 	}
 	switched := in.Harness != nil && previousHarness != harness
 	if switched {
+		// Only a harness that was running can answer the handover. The timeline
+		// read below starts an idle one, so the state is read first.
+		oldRunning := d.ctoHarnessRunning(previousHarness)
+		// The timeline is saved first, so the owner's view is the old one as it
+		// was. The handover comes after: its exchange with the old conversation
+		// is not part of what the owner saw (decision 0171).
 		if err := d.snapshotCTOHarness(ctx, previousHarness); err != nil {
 			return protocol.CTOSettings{}, fmt.Errorf("save CTO history before switching harness: %w", err)
+		}
+		if err := d.ctoHandover(ctx, previousHarness, harness, true, oldRunning); err != nil {
+			return protocol.CTOSettings{}, fmt.Errorf("write the CTO handover before switching harness: %w", err)
+		}
+		if err := d.ctoSwitchConversation(harness); err != nil {
+			return protocol.CTOSettings{}, err
 		}
 	}
 

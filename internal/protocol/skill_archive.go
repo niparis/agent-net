@@ -20,6 +20,19 @@ type SkillArchiveAdd struct {
 	By       string             `json:"by"`
 }
 
+// FrameSkillArchiveBundled is "skills.archive_bundled", daemon to gateway. The
+// daemon ships a skill it carries in its own binary, the CTO's agent-net-setup
+// (decision 0171). Bundle is the packed skill folder, as a machine bundle is,
+// and the gateway stores it with origin agent-net.
+const FrameSkillArchiveBundled = "skills.archive_bundled"
+
+// SkillArchiveBundled is one packed skill folder the daemon ships.
+type SkillArchiveBundled struct {
+	Name   string `json:"name"`
+	Bundle []byte `json:"bundle"`
+	By     string `json:"by"`
+}
+
 // SkillArchiveAddGit asks for one Git URL. Path limits it to a subfolder.
 type SkillArchiveAddGit struct {
 	URL  string `json:"url"`

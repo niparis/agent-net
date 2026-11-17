@@ -614,6 +614,35 @@ func (g *Gateway) skillArchiveAdd(ctx context.Context, p protocol.SkillArchiveAd
 	return g.skillArchivePut(content, skillArchiveSource{Kind: "machine", Node: p.Location.NodeID, Path: p.Location.Location}, by, false)
 }
 
+// skillArchiveBundled stores a skill folder that the daemon sent in its own
+// bundle (decision 0171). The bytes must unpack to one skill folder, which is
+// checked by its name and content hash, as an add from a machine is.
+func (g *Gateway) skillArchiveBundled(p protocol.SkillArchiveBundled, by string) (protocol.SkillArchiveAddResult, error) {
+	if !validSkillName(p.Name) || len(p.Bundle) == 0 {
+		return protocol.SkillArchiveAddResult{}, reject("bundled skill needs a name and a bundle")
+	}
+	dir, err := os.MkdirTemp("", "agent-net-archive-bundled-")
+	if err != nil {
+		return protocol.SkillArchiveAddResult{}, errors.New("cannot stage skill bundle")
+	}
+	defer os.RemoveAll(dir)
+	folder := filepath.Join(dir, p.Name)
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		return protocol.SkillArchiveAddResult{}, errors.New("cannot stage skill bundle")
+	}
+	if inventory.UnpackSkillLimit(p.Bundle, folder, inventory.ArchiveLimit) != nil {
+		return protocol.SkillArchiveAddResult{}, reject("invalid or oversized skill bundle")
+	}
+	content, err := skillContentFromDir(p.Name, folder)
+	if err != nil {
+		return protocol.SkillArchiveAddResult{}, reject("cannot read skill: %v", err)
+	}
+	if content.Hash, err = inventory.SkillHash(folder); err != nil {
+		return protocol.SkillArchiveAddResult{}, reject("cannot verify skill bundle")
+	}
+	return g.skillArchivePut(content, skillArchiveSource{Kind: "agent-net"}, by, false)
+}
+
 // fetchSkillBundle reads and checks one skill file tree from a machine. The
 // item may be empty: the location alone names it. kinds limits the identity
 // kinds, and defaults to skills.

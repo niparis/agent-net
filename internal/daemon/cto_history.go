@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,13 +33,9 @@ func (d *Daemon) snapshotCTOHarness(ctx context.Context, harness string) error {
 	if err != nil {
 		return err
 	}
-	var sessionID string
-	if harness == "claude" {
-		err = d.st.db.QueryRow(`SELECT claude_session_id FROM cto WHERE id=1`).Scan(&sessionID)
-	} else {
-		err = d.st.db.QueryRow(`SELECT session_id FROM cto WHERE id=1`).Scan(&sessionID)
-	}
-	if err != nil && err != sql.ErrNoRows {
+	events.Messages = dropHandoverExchange(events.Messages)
+	sessionID, err := d.ctoConversation(harness)
+	if err != nil {
 		return err
 	}
 	tx, err := d.st.db.Begin()

@@ -18,8 +18,18 @@ type ctoPermission struct {
 // ctoPermissions are the CTO agent's OpenCode rules. The CTO has full power
 // (decision 0157): OpenCode's own defaults decide the built-in tools, as for
 // a coding session. The rule allows its own MCP server without a prompt.
+//
+// The two read rules answer a real stall. OpenCode 2.3.0 asks before a read of
+// a secrets file (read *.env ask, by default), and nobody watches the CTO to
+// answer. A read of a file outside the folder, shell commands, edits outside the
+// folder and a repeated call did not prompt in the same check. The later rules
+// win over the defaults, so they allow the read (decision 0171).
 func ctoPermissions() []ctoPermission {
-	return []ctoPermission{{"agent-net-cto_*", "*", "allow"}}
+	return []ctoPermission{
+		{"agent-net-cto_*", "*", "allow"},
+		{"read", "*.env", "allow"},
+		{"read", "*.env.*", "allow"},
+	}
 }
 
 // checkOpenCodeCTOAgent checks that the private server runs the CTO agent.

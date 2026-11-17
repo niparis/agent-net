@@ -49,6 +49,9 @@ import (
 var fakeOCFailed atomic.Bool
 var fakeOCLocalFailed atomic.Bool
 
+// fakeOCHandoverAnswer is the model layer the fake gives a handover request.
+const fakeOCHandoverAnswer = "Promise: finish the migration plan."
+
 const fakeOCError = "AI.Error: Upstream request failed: Insufficient account funds. api_key=sk-abcdefghijklmnopqrstuvwxyz123456\nadd funds"
 
 type fakeOCRecord struct {
@@ -495,6 +498,12 @@ func runFakeOpenCode() {
 		}
 		item := map[string]any{"id": "msg_" + protocol.NewToken(), "type": "user", "text": prompt.Text, "time": map[string]any{"created": time.Now().UnixMilli()}}
 		items = append([]map[string]any{item}, items...)
+		if prompt.Text == ctoHandoverPrompt {
+			// The model layer of a handover (decision 0171) asks for words; the
+			// fake answers as a model would, in the OpenCode message form.
+			answer := map[string]any{"id": "msg_" + protocol.NewToken(), "type": "assistant", "content": []map[string]any{{"type": "text", "text": fakeOCHandoverAnswer}}, "time": map[string]any{"created": time.Now().UnixMilli()}}
+			items = append([]map[string]any{answer}, items...)
+		}
 		if prompt.Text == "FAKE:ctofail" {
 			items = append([]map[string]any{{"type": "idle", "outcome": "failed", "error": map[string]any{"message": "unknown model"}}}, items...)
 		}
