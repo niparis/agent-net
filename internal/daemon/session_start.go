@@ -522,7 +522,7 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, 
 		return protocol.StartedSession{}, fmt.Errorf("session folder is gone: %s", a.Cwd)
 	}
 	r := d.resumeRecord(a)
-	if a.Harness == "codex" {
+	if a.Harness == "codex" || a.Harness == "opencode" {
 		r.Type = d.resumedRole(ctx, a)
 	}
 	if a.Harness == "opencode" {

@@ -107,6 +107,9 @@ func (d *Daemon) startOwnerOpenCode(ctx context.Context, r protocol.StartedSessi
 	// folder, which is the home folder for the owner's shared service. The
 	// header stays for versions that read it.
 	request := map[string]any{"title": r.Project, "location": map[string]string{"directory": r.Path}}
+	if !resume && (r.Type == "chief" || r.Type == "merger") {
+		request["permissions"] = []ctoPermission{{Action: "*", Resource: "*", Effect: "allow"}}
+	}
 	if r.Model != "" {
 		provider, model, ok := strings.Cut(r.Model, "/")
 		if !ok || provider == "" || model == "" {
@@ -152,14 +155,26 @@ func (d *Daemon) startOwnerOpenCode(ctx context.Context, r protocol.StartedSessi
 	}
 	var created struct {
 		Data struct {
-			ID       string `json:"id"`
-			Location struct {
+			ID          string          `json:"id"`
+			Permissions []ctoPermission `json:"permissions"`
+			Location    struct {
 				Directory string `json:"directory"`
 			} `json:"location"`
 		} `json:"data"`
 	}
 	if json.Unmarshal(body, &created) != nil || created.Data.ID == "" {
 		return protocol.StartedSession{}, errors.New("OpenCode answered without a session ID")
+	}
+	if !resume && (r.Type == "chief" || r.Type == "merger") {
+		rules := created.Data.Permissions
+		if len(rules) != 1 || rules[0] != (ctoPermission{Action: "*", Resource: "*", Effect: "allow"}) {
+			return protocol.StartedSession{}, errors.New("OpenCode did not confirm the unattended role's permissions")
+		}
+	}
+	if resume && (r.Type == "chief" || r.Type == "merger") {
+		if err := ensureOpenCodeRolePermissions(api, routes, r.NativeID, directory, body); err != nil {
+			return protocol.StartedSession{}, err
+		}
 	}
 	// An older service may omit the location; the header and the start path
 	// still decide it. When the service reports one, it must be the folder
@@ -304,4 +319,44 @@ func (d *Daemon) startOwnerOpenCode(ctx context.Context, r protocol.StartedSessi
 		}
 	}(r)
 	return r, nil
+}
+
+// The session's last matching rule wins. A hand-adopted role may not have the
+// rule yet, so install it before the session can take another message.
+func ensureOpenCodeRolePermissions(api opencodeAPI, routes opencodeapi.Routes, id, directory string, body []byte) error {
+	var session struct {
+		Data struct {
+			Permissions []ctoPermission `json:"permissions"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(body, &session) != nil {
+		return errors.New("OpenCode answered without the role's permissions")
+	}
+	rule := ctoPermission{Action: "*", Resource: "*", Effect: "allow"}
+	rules := session.Data.Permissions
+	if len(rules) > 0 && rules[len(rules)-1] == rule {
+		return nil
+	}
+	path, err := routes.Path(opencodeapi.GetSession, id)
+	if err != nil {
+		return err
+	}
+	_, status, err := api(http.MethodPatch, path, map[string]any{"permissions": append(rules, rule)}, "x-opencode-directory", directory)
+	if err != nil || status/100 != 2 {
+		return fmt.Errorf("OpenCode could not set the unattended role's permissions (HTTP %d)", status)
+	}
+	path, err = routes.Path(opencodeapi.GetSession, id)
+	if err != nil {
+		return err
+	}
+	body, status, err = api(opencodeapi.GetSession.Method(), path, nil, "x-opencode-directory", directory)
+	session.Data.Permissions = nil
+	if err != nil || status/100 != 2 || json.Unmarshal(body, &session) != nil {
+		return errors.New("OpenCode could not confirm the unattended role's permissions")
+	}
+	rules = session.Data.Permissions
+	if len(rules) == 0 || rules[len(rules)-1] != rule {
+		return errors.New("OpenCode did not confirm the unattended role's permissions")
+	}
+	return nil
 }

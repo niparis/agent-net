@@ -196,6 +196,7 @@ func (d *Daemon) wakeOpenCode(ctx context.Context, a protocol.AgentView) error {
 	}
 	api := openCodeWorkerAPI(ctx, service.URL, service.Password)
 	directory := strings.ReplaceAll(url.QueryEscape(a.Cwd), "+", "%20")
+	role := d.resumedRole(ctx, a)
 	for _, step := range []struct {
 		op opencodeapi.Operation
 		id string
@@ -204,12 +205,17 @@ func (d *Daemon) wakeOpenCode(ctx context.Context, a protocol.AgentView) error {
 		if err != nil {
 			return err
 		}
-		_, code, err := api(step.op.Method(), path, nil, "x-opencode-directory", directory)
+		body, code, err := api(step.op.Method(), path, nil, "x-opencode-directory", directory)
 		if err != nil {
 			return errors.New("cannot reach the OpenCode service")
 		}
 		if code != http.StatusOK {
 			return fmt.Errorf("OpenCode refused to load the session (HTTP %d)", code)
+		}
+		if step.op == opencodeapi.GetSession && role != "" {
+			if err := ensureOpenCodeRolePermissions(api, routes, a.NativeID, directory, body); err != nil {
+				return err
+			}
 		}
 	}
 	return d.waitWokenSession(ctx, "opencode", a)

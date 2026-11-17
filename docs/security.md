@@ -1508,6 +1508,14 @@ errors are not copied into start errors, because they may contain credentials.
 The folder, model and first message are HTTP headers or JSON, with no shell.
 If the service is down, the start is refused; the daemon never starts it.
 
+An OpenCode chief or merger has a session permission rule that allows every
+action and resource without a prompt. It runs with the owner's permissions in
+the shared service, without a sandbox added by agent-net. The rule is stored
+with the session and stays when it is resumed. On a wake or resume, agent-net
+adds the rule if an adopted role does not have it, and checks that the service
+stored it. Other OpenCode sessions do not get the rule. A role cannot start or
+resume if the service cannot confirm the rule.
+
 Pi has no background mode with a screen, so the daemon hosts it in its own tmux
 server, with the folder and the chosen session ID as separate arguments:
 
