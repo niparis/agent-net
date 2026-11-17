@@ -54,8 +54,11 @@ writes one handover note before the old harness stops:
   when the switch began. The old conversation has 60 seconds to answer. It holds
   the model's own words about open promises and why threads matter, and it is
   marked "model output, not the owner's words". A busy turn, a harness that was
-  not running, a failed send or a timeout skips it. A Codex CTO whose stored thread was used in the last day counts as running even when its app server is idle, and a thread with no turns is skipped. A fallback never has it,
-  because the old model has just failed.
+  not running, a failed send or a timeout skips it. A Codex CTO whose stored
+  thread was used in the last day counts as running even when its app server
+  is idle, because the daemon starts the server for the request. A thread with
+  no turns is skipped. A fallback never has it, because the old model has just
+  failed.
 
 The note is named `handover-<UTC time>`, for example
 `handover-20261117-100000.123`, because note names allow only lower-case

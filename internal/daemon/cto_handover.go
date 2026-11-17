@@ -339,7 +339,6 @@ func (d *Daemon) recordCTOOwnerMessage(text string) error {
 	return err
 }
 
-// ctoHarnessRunning says whether the CTO's harness has a live process or job.
 // ctoHarnessRunning says whether the old harness can answer a handover. A Codex
 // CTO that went idle still answers when its stored conversation was used in the
 // last day: the daemon starts its app server for the request (decision 0171).

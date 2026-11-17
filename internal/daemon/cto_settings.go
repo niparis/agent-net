@@ -84,7 +84,9 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 		if models[0].Model == "" && switched {
 			// A switch with no model named takes the harness's own default,
 			// never the model or provider of the harness it leaves. An edit that
-			// keeps the harness keeps an empty model empty.
+			// keeps the harness keeps an empty model empty. A catalog that cannot
+			// be read gives no default, so the model stays empty until the harness
+			// reports one (recordCodexCTOModel).
 			live, _ := d.readHarnessModels(ctx, harness)
 			models[0].Model = defaultRoleModel(harness, live)
 		}
