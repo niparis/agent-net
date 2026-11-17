@@ -14,8 +14,16 @@ import (
 // session is held, not redelivered to.
 
 // watchOpenCodeCTODelivery starts the check of one prompt sent to the CTO's
-// conversation. sent is the time the prompt was created, in milliseconds.
-func (d *Daemon) watchOpenCodeCTODelivery(id, base, pass, version, identity string, sent int64, text, msgID string) {
+// conversation. sent is the time the prompt was created, in milliseconds, and
+// sentID is the ID of its message in the conversation.
+func (d *Daemon) watchOpenCodeCTODelivery(id, base, pass, version, identity string, sent int64, sentID, text, msgID string) {
+	// The IDs of every copy of the prompt sent. A restart checks them, so a copy
+	// that is already in the conversation is not sent again.
+	var ids []string
+	if sentID != "" {
+		ids = append(ids, sentID)
+	}
+	sentIDs := &ids
 	// current reports whether the CTO still runs the conversation on the server
 	// that took the prompt. A restart changes the server, which ends the check.
 	current := func() bool {
@@ -23,7 +31,7 @@ func (d *Daemon) watchOpenCodeCTODelivery(id, base, pass, version, identity stri
 		defer d.cto.mu.Unlock()
 		return d.cto.session == id && d.cto.base == base
 	}
-	d.confirmDelivery(deliveryWatch{
+	d.confirmDelivery("cto", deliveryWatch{
 		label: "cto",
 		msgID: msgID,
 		gone:  func() bool { return !current() },
@@ -36,9 +44,9 @@ func (d *Daemon) watchOpenCodeCTODelivery(id, base, pass, version, identity stri
 			return d.openCodeTurnSince(ctx, base, pass, version, identity, id, sent)
 		},
 		redeliver: func(ctx context.Context) bool {
-			return d.redeliverOpenCodeCTO(ctx, current, base, pass, version, identity, id, text, msgID)
+			return d.redeliverOpenCodeCTO(ctx, current, base, pass, version, identity, id, text, msgID, sentIDs)
 		},
-		restart: func(ctx context.Context) { d.restartOpenCodeCTOForDelivery(ctx, id, text, msgID) },
+		restart: func(ctx context.Context) { d.restartOpenCodeCTOForDelivery(ctx, id, text, msgID, *sentIDs) },
 	})
 }
 
@@ -79,7 +87,7 @@ func (d *Daemon) openCodeTurnSince(ctx context.Context, base, pass, version, ide
 
 // redeliverOpenCodeCTO sends the prompt once more to the server that took the
 // first one. It reports whether the check goes on.
-func (d *Daemon) redeliverOpenCodeCTO(ctx context.Context, current func() bool, base, pass, version, identity, id, text, msgID string) bool {
+func (d *Daemon) redeliverOpenCodeCTO(ctx context.Context, current func() bool, base, pass, version, identity, id, text, msgID string, sentIDs *[]string) bool {
 	if err := d.ctoDispatchMu.lock(ctx); err != nil {
 		return false
 	}
@@ -93,17 +101,72 @@ func (d *Daemon) redeliverOpenCodeCTO(ctx context.Context, current func() bool, 
 		d.Logf("cto.delivery_retry_failed msg=%s detail=%q", msgID, err.Error())
 		return false
 	}
-	if _, err := d.cto.apiTo(ctx, base, pass, opencodeapi.Prompt.Method(), path, map[string]string{"text": text, "delivery": "queue"}); err != nil {
+	raw, err := d.cto.apiTo(ctx, base, pass, opencodeapi.Prompt.Method(), path, map[string]string{"text": text, "delivery": "queue"})
+	if err != nil {
 		d.Logf("cto.delivery_retry_failed msg=%s detail=%q", msgID, err.Error())
+		return true
+	}
+	if sid := promptMessageID(raw); sid != "" {
+		*sentIDs = append(*sentIDs, sid)
 	}
 	return true
+}
+
+// promptMessageID is the ID of the message a prompt answer names, or "".
+func promptMessageID(raw []byte) string {
+	var answer struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(raw, &answer) != nil {
+		return ""
+	}
+	return answer.Data.ID
+}
+
+// openCodeMessageStored reports whether one of the prompts sent is in the
+// conversation. An error means the answer is unknown, and the caller must not
+// send the prompt on a guess.
+func (d *Daemon) openCodeMessageStored(ctx context.Context, base, pass, version, identity, id string, sentIDs []string) (bool, error) {
+	if len(sentIDs) == 0 {
+		return false, nil
+	}
+	routes, err := d.discoverOpenCodeRoutes(ctx, base, pass, version, identity)
+	if err != nil {
+		return false, err
+	}
+	path, err := routes.Path(opencodeapi.Messages, id)
+	if err != nil {
+		return false, err
+	}
+	raw, err := d.cto.apiTo(ctx, base, pass, opencodeapi.Messages.Method(), path+"?order=desc&limit=200", nil)
+	if err != nil {
+		return false, err
+	}
+	var page struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &page); err != nil {
+		return false, err
+	}
+	for _, m := range page.Data {
+		for _, want := range sentIDs {
+			if m.ID == want {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 // restartOpenCodeCTOForDelivery ends the CTO's private server, starts it again
 // and sends the prompt to the same conversation. OpenCode keeps the conversation
 // on disk, so the new server answers in it. The first copy of the prompt stays
 // in the conversation, so the owner's message can appear twice in its history.
-func (d *Daemon) restartOpenCodeCTOForDelivery(ctx context.Context, id, text, msgID string) {
+func (d *Daemon) restartOpenCodeCTOForDelivery(ctx context.Context, id, text, msgID string, sentIDs []string) {
 	if err := d.ctoDispatchMu.lock(ctx); err != nil {
 		return
 	}
@@ -122,6 +185,17 @@ func (d *Daemon) restartOpenCodeCTOForDelivery(ctx context.Context, id, text, ms
 	}
 	if _, err := d.syncOpenCodeCTOSelection(ctx, id); err != nil {
 		d.Logf("cto.delivery_unconfirmed msg=%s reason=restart_failed detail=%q", msgID, err.Error())
+		return
+	}
+	stored, err := d.openCodeMessageStored(ctx, c.base, c.password, c.version, c.identity, id, sentIDs)
+	if err != nil {
+		d.Logf("cto.delivery_unconfirmed msg=%s reason=stored_unknown detail=%q", msgID, err.Error())
+		return
+	}
+	if stored {
+		// The prompt is in the conversation already. The restart resumes it, and
+		// the prompt is not sent again.
+		d.Logf("cto.delivery_resumed msg=%s", msgID)
 		return
 	}
 	if _, err := d.ctoOp(ctx, opencodeapi.Prompt, id, "", map[string]string{"text": text, "delivery": "queue"}); err != nil {

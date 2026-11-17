@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
 	"testing"
@@ -148,4 +149,20 @@ func TestCodexSessionStartBlockAgainAfterCompaction(t *testing.T) {
 	if got := queuedText(f, third.ID); got != codexFrame(third) {
 		t.Fatalf("the start block was sent twice for one compaction: %q", got)
 	}
+}
+
+// Five messages to a busy session leave one delivery check, the one for the
+// newest message. The check ends when the session goes offline.
+func TestCodexBusySessionKeepsOneCheck(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	f := startFakeShared(t)
+	f.set(fakeThread{ID: "t-open", Cwd: "/work/api", Status: "active", Source: "cli"})
+	n, _ := codexConfirmNode(t, g, f, true)
+	for i := 1; i <= 5; i++ {
+		codexDeliver(t, n, protocol.Message{ID: fmt.Sprintf("msg-busy-%d", i), Body: "while busy", From: "agent-a", FromName: "agent-a"})
+	}
+	eventually(t, "one live check for the session", func() bool { return n.d.checkRuns.Load() == 1 })
+	f.remove("t-open")
+	f.notify("thread/closed")
+	eventually(t, "the check ends when the session goes offline", func() bool { return n.d.checkRuns.Load() == 0 })
 }

@@ -435,6 +435,11 @@ type Daemon struct {
 	// deliveryReads counts the reads of harness events made by delivery checks
 	// (decision 0171, part b). The tests measure the cost with it.
 	deliveryReads atomic.Int64
+	// checkRuns counts the delivery checks that are running now (delivery_confirm.go).
+	checkRuns atomic.Int64
+	// checks holds the one pending delivery check of each session, by key.
+	checksMu sync.Mutex
+	checks   map[string]*pendingCheck
 	// startDue holds the sessions whose next turn must carry the start block
 	// again, because their harness compacted (start_context.go).
 	startDueMu      sync.Mutex

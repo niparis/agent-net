@@ -408,13 +408,14 @@ func (d *Daemon) openCodeCTOSend(ctx context.Context, text string) (any, error) 
 		// or ends with an error, has a message created after that.
 		var prompt struct {
 			Data struct {
+				ID   string `json:"id"`
 				Time struct {
 					Created int64 `json:"created"`
 				} `json:"time"`
 			} `json:"data"`
 		}
 		if json.Unmarshal(sent, &prompt) == nil && prompt.Data.Time.Created > 0 {
-			d.watchOpenCodeCTODelivery(id, c.base, c.password, c.version, c.identity, prompt.Data.Time.Created, text, msgID)
+			d.watchOpenCodeCTODelivery(id, c.base, c.password, c.version, c.identity, prompt.Data.Time.Created, prompt.Data.ID, text, msgID)
 		}
 	}
 	if err == nil {

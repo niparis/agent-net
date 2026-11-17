@@ -50,7 +50,7 @@ func testOpenCodeCTODeliveryTakenIsNotSentAgain(t *testing.T) {
 }
 
 // A prompt the fake does not answer is sent once more, then the server is
-// restarted and the prompt goes to the same conversation as the first turn.
+// restarted and resumes the conversation, which already holds the prompt.
 func TestOpenCodeCTODeliveryRetriedThenRestarted(t *testing.T) {
 	withFakeOpenCodeRouteSets(t, testOpenCodeCTODeliveryRetriedThenRestarted)
 }
@@ -64,11 +64,15 @@ func testOpenCodeCTODeliveryRetriedThenRestarted(t *testing.T) {
 			t.Errorf("%q logged %d times, want 1:\n%s", want, got, logs.String())
 		}
 	}
-	// The restart started a new server. Its record holds the prompt as its turn.
-	eventually(t, "the restarted server holds the prompt", func() bool {
-		rec := readFake(t, filepath.Join(n.cfg.StateDir, "cto"))
-		return len(rec.Turns) == 1 && strings.Contains(rec.Turns[0], "please answer this")
-	})
+	// The first copy of the prompt is in the conversation, so the restart resumes
+	// it and the new server is not sent the prompt again.
+	eventually(t, "the restart resumed the stored prompt", func() bool { return len(logs.lines("cto.delivery_resumed")) == 1 })
+	rec := readFake(t, filepath.Join(n.cfg.StateDir, "cto"))
+	for _, turn := range rec.Turns {
+		if strings.Contains(turn, "please answer this") {
+			t.Fatalf("the restarted server got the stored prompt again: %q", rec.Turns)
+		}
+	}
 }
 
 // While the CTO is busy the message is held, not sent again. When the turn
@@ -153,5 +157,42 @@ func testOpenCodeCTODeliveryFailedTurnIsTaken(t *testing.T) {
 	eventually(t, "the delivery confirmed", func() bool { return len(logs.lines("cto.delivery_confirmed")) == 1 })
 	if lines := logs.lines("cto.delivery_retry", "cto.restart_for_delivery"); len(lines) != 0 {
 		t.Fatalf("a failed turn was sent again: %v", lines)
+	}
+}
+
+// The first copy of a prompt is in the conversation. After the restart the
+// daemon resumes the conversation and does not send the prompt again.
+func TestOpenCodeCTORestartResumesStoredPrompt(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testOpenCodeCTORestartResumesStoredPrompt)
+}
+
+func testOpenCodeCTORestartResumesStoredPrompt(t *testing.T) {
+	n, cli, logs := openCodeCTOConfirm(t, true)
+	cli.mustCall("cto_send", map[string]string{"text": "please answer this"})
+	eventually(t, "the restart", func() bool { return len(logs.lines("cto.restart_for_delivery")) == 1 })
+	eventually(t, "the restart resumed the stored prompt", func() bool { return len(logs.lines("cto.delivery_resumed")) == 1 })
+	rec := readFake(t, filepath.Join(n.cfg.StateDir, "cto"))
+	for _, turn := range rec.Turns {
+		if strings.Contains(turn, "please answer this") {
+			t.Fatalf("the restarted server got the stored prompt again: %q", rec.Turns)
+		}
+	}
+}
+
+// A prompt that was never stored is sent again after the restart.
+func TestOpenCodeCTORestartPromptsAgainWhenNotStored(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testOpenCodeCTORestartPromptsAgainWhenNotStored)
+}
+
+func testOpenCodeCTORestartPromptsAgainWhenNotStored(t *testing.T) {
+	n, cli, logs := openCodeCTOConfirm(t, true)
+	cli.mustCall("cto_send", map[string]string{"text": "FAKE:drop please answer this"})
+	eventually(t, "the restart", func() bool { return len(logs.lines("cto.restart_for_delivery")) == 1 })
+	eventually(t, "the restarted server got the prompt", func() bool {
+		rec := readFake(t, filepath.Join(n.cfg.StateDir, "cto"))
+		return len(rec.Turns) == 1 && strings.Contains(rec.Turns[0], "please answer this")
+	})
+	if got := len(logs.lines("cto.delivery_resumed")); got != 0 {
+		t.Fatalf("a prompt that was never stored was resumed: %d", got)
 	}
 }

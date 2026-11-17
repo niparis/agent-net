@@ -403,7 +403,9 @@ message once more, then restarts the session with the message as its first
 prompt. The check reads what the harness reports, once per check: the Claude
 transcript, the OpenCode conversation, or the queued-message notice Codex
 sends. A busy session is checked again 20 seconds later and is not sent to
-again. Plugin and Pi sessions have a synchronous acknowledgement and get no
+again. A session has one check at a time: a newer message replaces the older
+check, and the check ends when the message is taken, when the session goes
+offline, ends or is archived, when agent-net stops it, or when the daemon stops. Plugin and Pi sessions have a synchronous acknowledgement and get no
 check.
 
 A Codex thread gets its project's charter and the note titles as developer

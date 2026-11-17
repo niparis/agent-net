@@ -32,7 +32,7 @@ func (a *codexAdapter) watchQueuedDelivery(target protocol.SessionInfo, m protoc
 	}
 	a.queued[msgID] = false
 	a.mu.Unlock()
-	a.d.confirmDelivery(deliveryWatch{
+	a.d.confirmDelivery("codex\x00"+native, deliveryWatch{
 		label: "session",
 		msgID: msgID,
 		gone:  func() bool { return !a.isThread(native) },

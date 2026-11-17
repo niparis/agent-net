@@ -61,10 +61,48 @@ type deliveryWatch struct {
 	done func()
 }
 
-// confirmDelivery starts the check of one delivery in the background. It does
-// nothing in a test that turns the check off, or before the daemon's context exists.
-func (d *Daemon) confirmDelivery(w deliveryWatch) {
-	if d.cfg.testNoDeliveryConfirm || d.ctoCtx == nil || !d.goBackground(func() { d.runDeliveryWatch(d.ctoCtx, w) }) {
+// pendingCheck is the one delivery check a session has at a time.
+type pendingCheck struct {
+	cancel context.CancelFunc
+}
+
+// confirmDelivery starts the check of one delivered message, in the background. A
+// session has one check at a time: the newest message is the one that must be taken,
+// so its check replaces the older one. The check ends when the message is taken, when
+// the session goes offline, ends or is archived, when agent-net stops it, or when the
+// daemon stops. It does nothing in a test that turns the check off, or before the
+// daemon's context exists.
+func (d *Daemon) confirmDelivery(key string, w deliveryWatch) {
+	if d.cfg.testNoDeliveryConfirm || d.ctoCtx == nil {
+		if w.done != nil {
+			w.done()
+		}
+		return
+	}
+	ctx, cancel := context.WithCancel(d.ctoCtx)
+	p := &pendingCheck{cancel: cancel}
+	d.checksMu.Lock()
+	if d.checks == nil {
+		d.checks = map[string]*pendingCheck{}
+	}
+	if prev := d.checks[key]; prev != nil {
+		prev.cancel()
+	}
+	d.checks[key] = p
+	d.checksMu.Unlock()
+	end := func() {
+		d.checksMu.Lock()
+		if d.checks[key] == p {
+			delete(d.checks, key)
+		}
+		d.checksMu.Unlock()
+		cancel()
+	}
+	if !d.goBackground(func() {
+		defer end()
+		d.runDeliveryWatch(ctx, w)
+	}) {
+		end()
 		if w.done != nil {
 			w.done()
 		}
@@ -75,6 +113,8 @@ func (d *Daemon) confirmDelivery(w deliveryWatch) {
 // check that finds the session idle and the message untaken goes on to the next
 // step: one redelivery, then a restart.
 func (d *Daemon) runDeliveryWatch(ctx context.Context, w deliveryWatch) {
+	d.checkRuns.Add(1)
+	defer d.checkRuns.Add(-1)
 	if w.done != nil {
 		defer w.done()
 	}
@@ -200,7 +240,7 @@ func (w *ctoTranscriptWatch) seen() bool {
 // confirmClaudeCTODelivery starts the check of one delivery to the Claude CTO.
 // The caller has just written msgID to the inbox of w.session.
 func (d *Daemon) confirmClaudeCTODelivery(w *ctoTranscriptWatch, msgID, text string) {
-	d.confirmDelivery(deliveryWatch{
+	d.confirmDelivery("cto", deliveryWatch{
 		label: "cto",
 		msgID: msgID,
 		gone:  func() bool { _, ok := d.claudeCTOPID(w.session); return !ok },

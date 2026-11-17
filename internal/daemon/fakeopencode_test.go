@@ -497,7 +497,9 @@ func runFakeOpenCode() {
 			return
 		}
 		item := map[string]any{"id": "msg_" + protocol.NewToken(), "type": "user", "text": prompt.Text, "time": map[string]any{"created": time.Now().UnixMilli()}}
-		items = append([]map[string]any{item}, items...)
+		if !strings.HasPrefix(prompt.Text, "FAKE:drop") {
+			items = append([]map[string]any{item}, items...)
+		}
 		if prompt.Text == ctoHandoverPrompt || strings.HasPrefix(prompt.Text, "FAKE:answer") {
 			// The model layer of a handover (decision 0171) asks for words; the
 			// fake answers as a model would, in the OpenCode message form.
