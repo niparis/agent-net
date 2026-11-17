@@ -98,7 +98,7 @@ func (m Model) ctoView(w, h int) []string {
 			formTitle = sDim.Render(protocol.DefaultCTOTitle)
 		}
 		fields := []string{
-			clip(mark(0)+" Harness: < "+f.harness+" >", w),
+			clip(mark(0)+" Harness: "+ctoHarnessChoices(f), w),
 			clip(mark(1)+" Title:   "+formTitle, w),
 			clip(mark(2)+" Model:   "+model, w),
 		}
@@ -295,4 +295,17 @@ func (c *ctoState) renderMessage(text string, width int) []string {
 	}
 	c.renderCache[key] = lines
 	return lines
+}
+
+// ctoHarnessChoices lists the form's harnesses with the chosen one in brackets.
+func ctoHarnessChoices(f *ctoSettingsForm) string {
+	parts := make([]string, 0, len(f.harnesses))
+	for _, h := range f.harnesses {
+		if h == f.harness {
+			parts = append(parts, sTitle.Render("["+h+"]"))
+		} else {
+			parts = append(parts, h)
+		}
+	}
+	return strings.Join(parts, "  ")
 }

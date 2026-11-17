@@ -165,7 +165,47 @@ because each is a behaviour change and not a rename):
   conversation of the CTO. An ordinary session keeps these in its session and
   worker records.
 
+## Phase 3: the CTO on Codex
+
+The CTO runs on `claude`, `opencode` or `codex`. Pi is refused with the reason
+`Pi cannot be woken by a message yet`, in the settings, the command line and
+the role list.
+
+**Its own app server.** The daemon starts a private `codex app-server` for the
+CTO in `<state>/cto/codex`, on a loopback WebSocket with a capability token, as
+it does for a Codex worker. The owner's shared app server cannot host the CTO:
+the `cto-mcp` channel admits a process only by its process tree, and the MCP
+children of the shared server belong to every Codex session. The private
+server's pid is a third root of that check, next to the Claude job and the
+private OpenCode server. The server stops with the daemon and on a switch away;
+the thread stays on disk and resumes.
+
+**Tools and power.** The server gets one agent-net MCP server with `-c`:
+`agent-net-cto` (`agent-net cto-mcp`), with its tools approved, and the owner's
+own `agent-net` server off. The thread runs with approval `never` and the
+`danger-full-access` sandbox (decision 0157), set on `thread/start` and
+`thread/resume`. A request for approval that still arrives is accepted and
+logged, because nobody watches the thread. The CTO prompt and start block are
+the thread's developer instructions. `agent-net-setup` and the rest of the cto
+node's skills reach the server with `skills/extraRoots/set`.
+
+**Phase 1 behaviour.** A message goes in with `thread/queue/add` and its ID, and
+the delivery confirm watches for the user message item that carries the ID.
+Codex compacts on its own; its `contextCompaction` item marks the start block
+due for the next turn. A switch to and from Codex writes the handover and keeps
+one conversation per harness, as for the other two.
+
+**Enter** runs `codex resume <thread> --remote ws://<addr>
+--remote-auth-token-env AGENT_NET_CODEX_TOKEN`, with the token in the
+environment. The plan opens through the same view path as the Claude and
+OpenCode CTO, so decision 0046 holds as before.
+
+**The settings form** lists the harnesses this machine has, of claude,
+opencode and codex, and keeps the model typed for each.
+
+The real-protocol check is `cto_codex_real_test.go`, run with
+`AGENT_NET_TEST_REAL_CODEX`.
+
 ## What this does not cover
 
-- A Codex CTO (phase 3).
 - Setup's first-use role step (phase 4).

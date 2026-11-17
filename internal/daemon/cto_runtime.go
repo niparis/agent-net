@@ -52,6 +52,18 @@ func (openCodeCTOHarness) events(ctx context.Context, d *Daemon, index int) (pro
 	return d.openCodeCTOEvents(ctx, index)
 }
 
+// ctoHarnessFor is the runtime of one CTO harness. An unknown name is OpenCode,
+// the CTO's first harness.
+func ctoHarnessFor(name string) ctoHarness {
+	switch name {
+	case "claude":
+		return claudeCTOHarness{}
+	case "codex":
+		return codexCTOHarness{}
+	}
+	return openCodeCTOHarness{}
+}
+
 func (d *Daemon) selectedCTOHarness(ctx context.Context) (ctoHarness, error) {
 	settings, err := d.ctoSettings(ctx, protocol.CTOSettingsRequest{})
 	if err != nil {
@@ -74,8 +86,12 @@ func (d *Daemon) selectedCTOHarness(ctx context.Context) (ctoHarness, error) {
 	if err != nil {
 		return nil, err
 	}
+	codexID, err := d.ctoConversation("codex")
+	if err != nil {
+		return nil, err
+	}
 	current := protocol.RoleModel{Harness: settings.Harness, Model: settings.Model}
-	pick, err := d.ctoPick(ctx, models, current, opencodeID != "" || claudeID != "")
+	pick, err := d.ctoPick(ctx, models, current, opencodeID != "" || claudeID != "" || codexID != "")
 	if err != nil {
 		return nil, err
 	}
@@ -108,6 +124,8 @@ func (d *Daemon) selectedCTOHarness(ctx context.Context) (ctoHarness, error) {
 	switch pick.Harness {
 	case "claude":
 		settings.ClaudeModel = pick.Model
+	case "codex":
+		settings.CodexModel = pick.Model
 	default:
 		settings.OpenCodeModel = pick.Model
 	}
@@ -135,26 +153,22 @@ func (d *Daemon) prepareCTOHarness(settings protocol.CTOSettings) (ctoHarness, e
 	// the archive before the launch builds its skill folder. It runs before
 	// cto.mu is taken: it calls the gateway.
 	d.ensureCTOSkillLogged()
-	var h ctoHarness = openCodeCTOHarness{}
-	switch settings.Harness {
-	case "claude":
-		h = claudeCTOHarness{}
-	case "", "opencode":
-	default:
-		return nil, fmt.Errorf("the CTO cannot run on %s yet; its list must name opencode or claude", settings.Harness)
+	if settings.Harness != "" {
+		if err := protocol.CheckCTOHarness(settings.Harness); err != nil {
+			return nil, fmt.Errorf("the CTO cannot run on %s: %w", settings.Harness, err)
+		}
 	}
+	h := ctoHarnessFor(settings.Harness)
 	d.cto.mu.Lock()
 	defer d.cto.mu.Unlock()
 	// A harness that is still writing its handover note stays up until the note
 	// is written (ctoHandover). One the CTO moves back to is stopped now, as a
 	// switch away used to stop it.
 	d.endHandoverLocked(h.name())
-	other := "claude"
-	if h.name() == "claude" {
-		other = "opencode"
-	}
-	if !d.ctoHandoverPendingLocked(other) {
-		d.stopCTOHarnessLocked(other, "harness_switch")
+	for _, other := range protocol.CTOHarnesses {
+		if other != h.name() && !d.ctoHandoverPendingLocked(other) {
+			d.stopCTOHarnessLocked(other, "harness_switch")
+		}
 	}
 	_, err := d.st.db.Exec(`INSERT INTO cto(id,session_id,active_harness) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET active_harness=excluded.active_harness`, h.name())
 	return h, err
@@ -321,6 +335,9 @@ func (d *Daemon) ctoEnterOnce(ctx context.Context, trigger string) (protocol.Ent
 	bin, err := d.harnessBinary(h.name())
 	if err != nil {
 		return plan, err
+	}
+	if h.name() == "codex" {
+		return d.codexCTOEnterPlan(ctx, bin)
 	}
 	if h.name() == "claude" {
 		settings, e := d.ctoSettings(ctx, protocol.CTOSettingsRequest{})

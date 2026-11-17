@@ -115,7 +115,7 @@ func (g *Gateway) pickRole(nodeID string, req protocol.RolePickRequest) (protoco
 }
 
 // piRoleReason is why no role runs on Pi.
-const piRoleReason = "Pi cannot be woken by a message yet"
+const piRoleReason = protocol.PiRoleReason
 
 // dropPi removes the Pi entries of a role list. skipped says one was there.
 func dropPi(list []protocol.RoleModel) (kept []protocol.RoleModel, skipped bool) {

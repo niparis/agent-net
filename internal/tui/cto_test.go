@@ -554,7 +554,7 @@ func TestCTOModelFormSaveAndCancel(t *testing.T) {
 	if m.cto.settingsForm == nil {
 		t.Fatal("model form did not open")
 	}
-	m = send(m, tea.KeyPressMsg{Code: tea.KeyRight})
+	m = send(m, tea.KeyPressMsg{Code: tea.KeyLeft})
 	m = send(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	m = send(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	m.cto.settingsForm.input.SetValue("opus")
@@ -937,5 +937,101 @@ func TestCTOLocalCommandParsing(t *testing.T) {
 	})
 	if len(m.cto.messages) != 2 || m.cto.messages[0] != "you: /mcp" || m.cto.messages[1] != want2 {
 		t.Fatalf("cto.messages: got %v, want [%q, %q]", m.cto.messages, "you: /mcp", want2)
+	}
+}
+
+// ctoFormSnapshot is a snapshot whose own machine has the given harnesses, each
+// with its models.
+func ctoFormSnapshot(harnesses map[string][]string) Snapshot {
+	snap := fakeSnapshot()
+	for i := range snap.Nodes {
+		if snap.Nodes[i].NodeID != snap.NodeID {
+			continue
+		}
+		snap.Nodes[i].Harnesses = nil
+		for _, name := range []string{"claude", "opencode", "pi", "codex"} {
+			if models, ok := harnesses[name]; ok {
+				snap.Nodes[i].Harnesses = append(snap.Nodes[i].Harnesses, protocol.HarnessInfo{Name: name, Models: models})
+			}
+		}
+	}
+	return snap
+}
+
+// The form lists the harnesses the CTO can run on that this machine has, Pi
+// never, and keeps each harness's own model while the owner moves between them.
+func TestCTOModelFormListsUsableHarnesses(t *testing.T) {
+	snap := ctoFormSnapshot(map[string][]string{"claude": nil, "opencode": {"openai/gpt-6"}, "pi": {"x"}, "codex": {"gpt-6.1-codex"}})
+	src := &fakeCTOSource{fakeSource: &fakeSource{snap: snap}, settings: protocol.CTOSettings{
+		Model: "openai/gpt-6", Harness: "opencode", OpenCodeModel: "openai/gpt-6", ClaudeModel: "haiku", CodexModel: "gpt-6.1-codex:high",
+	}}
+	m := New(src)
+	m.snap = snap
+	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = keys(m, "C")
+	m = send(m, m.ctoPollCmd()())
+	m = keys(m, "m")
+	if got := strings.Join(m.cto.settingsForm.harnesses, ","); got != "claude,opencode,codex" {
+		t.Fatalf("harnesses %s", got)
+	}
+	m = send(m, tea.KeyPressMsg{Code: tea.KeyRight})
+	if f := m.cto.settingsForm; f.harness != "codex" || f.input.Value() != "gpt-6.1-codex:high" {
+		t.Fatalf("codex: %s %q", f.harness, f.input.Value())
+	}
+	if view := ansi.Strip(m.testView()); !strings.Contains(view, "Harness: claude  opencode  [codex]") {
+		t.Errorf("codex form:\n%s", view)
+	}
+	draft := m.cto.settingsForm.input.Value()
+	m.cto.settingsForm.input.SetValue("")
+	if view := ansi.Strip(m.testView()); !strings.Contains(view, "Suggestions: gpt-6.1-codex") {
+		t.Errorf("codex suggestions:\n%s", view)
+	}
+	m.cto.settingsForm.input.SetValue(draft)
+	m = send(m, tea.KeyPressMsg{Code: tea.KeyRight})
+	if f := m.cto.settingsForm; f.harness != "claude" || f.input.Value() != "haiku" {
+		t.Fatalf("wrap to claude: %s %q", f.harness, f.input.Value())
+	}
+	m = send(m, tea.KeyPressMsg{Code: tea.KeyLeft})
+	next, cmd := m.update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("save did not start")
+	}
+	m = next.(Model)
+	m = send(m, cmd())
+	if src.saved.Harness == nil || *src.saved.Harness != "codex" || *src.saved.Model != "gpt-6.1-codex:high" {
+		t.Fatalf("saved %+v", src.saved)
+	}
+
+	// A machine without Codex does not offer it.
+	snap = ctoFormSnapshot(map[string][]string{"claude": nil, "opencode": nil})
+	src = &fakeCTOSource{fakeSource: &fakeSource{snap: snap}, settings: protocol.CTOSettings{Harness: "opencode"}}
+	m = New(src)
+	m.snap = snap
+	m = keys(m, "C")
+	m = send(m, m.ctoPollCmd()())
+	m = keys(m, "m")
+	if got := strings.Join(m.cto.settingsForm.harnesses, ","); got != "claude,opencode" {
+		t.Fatalf("harnesses without codex %s", got)
+	}
+}
+
+// Text frames of the form on Codex, at both sizes (B13).
+func TestCTOModelFormCodexGoldens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		snap := ctoFormSnapshot(map[string][]string{"claude": nil, "opencode": {"openai/gpt-6"}, "codex": {"gpt-6.1-codex", "gpt-6.1-codex-mini"}})
+		src := &fakeCTOSource{fakeSource: &fakeSource{snap: snap}, settings: protocol.CTOSettings{
+			Model: "openai/gpt-6", Harness: "opencode", OpenCodeModel: "openai/gpt-6", CodexModel: "gpt-6.1-codex:high",
+		}}
+		m := New(src)
+		m.loc, m.now = time.UTC, func() time.Time { return t0 }
+		m = send(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		m = refresh(m, src.fakeSource)
+		m.snap = snap
+		m = quietFixtures(m)
+		m.src = src
+		m = send(m, m.ctoPollCmd()())
+		m = keys(m, "C", "m")
+		m = send(m, tea.KeyPressMsg{Code: tea.KeyRight})
+		golden(t, fmt.Sprintf("cto_model_codex_%dx%d", size[0], size[1]), m.testView())
 	}
 }

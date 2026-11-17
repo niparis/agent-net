@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/niparis/agent-net/internal/operator"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -18,18 +19,18 @@ func runCTOCommand(ctx context.Context, op graphCaller, out io.Writer, args []st
 	var req protocol.CTOSettingsRequest
 	if len(args) != 0 {
 		if len(args) != 2 {
-			return fmt.Errorf("usage: agent-net cto [harness <opencode|claude>|model <model>]")
+			return ctoUsage()
 		}
 		switch args[0] {
 		case "harness":
-			if args[1] != "opencode" && args[1] != "claude" {
-				return fmt.Errorf("harness must be opencode or claude")
+			if err := protocol.CheckCTOHarness(args[1]); err != nil {
+				return err
 			}
 			req.Harness = &args[1]
 		case "model":
 			req.Model = &args[1]
 		default:
-			return fmt.Errorf("usage: agent-net cto [harness <opencode|claude>|model <model>]")
+			return ctoUsage()
 		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, operator.Timeout)
@@ -44,4 +45,8 @@ func runCTOCommand(ctx context.Context, op graphCaller, out io.Writer, args []st
 	}
 	fmt.Fprintf(out, "harness: %s\nmodel: %s\n", settings.Harness, settings.Model)
 	return nil
+}
+
+func ctoUsage() error {
+	return fmt.Errorf("usage: agent-net cto [harness <%s>|model <model>]", strings.Join(protocol.CTOHarnesses, "|"))
 }

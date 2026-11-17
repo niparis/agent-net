@@ -28,6 +28,9 @@ type codexRPC struct {
 	c    *websocket.Conn
 	pid  int // the app server process, from the socket (0 if unknown)
 	note func(method string, params json.RawMessage)
+	// answer answers a request from the server. Nil, or a nil result, answers
+	// that agent-net does not take the request.
+	answer func(method string, params json.RawMessage) any
 
 	wmu sync.Mutex // writes
 
@@ -82,8 +85,36 @@ func dialCodexSocket(ctx context.Context, sock, version string, note func(string
 	if err != nil {
 		return nil, err
 	}
+	return startCodexRPC(ctx, c, int(pidv.Load()), version, note, nil)
+}
+
+// dialCodexWS connects to an app server the daemon started on a loopback
+// WebSocket with a capability token, and says initialize. It tries again until
+// the server listens or ctx ends; up reports false once the server is gone.
+func dialCodexWS(ctx context.Context, addr, token, version string, up func() bool, note func(string, json.RawMessage), answer func(string, json.RawMessage) any) (*codexRPC, error) {
+	for {
+		dctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		c, _, err := websocket.Dial(dctx, "ws://"+addr, &websocket.DialOptions{
+			HTTPHeader: http.Header{"Authorization": []string{"Bearer " + token}}})
+		cancel()
+		if err == nil {
+			return startCodexRPC(ctx, c, 0, version, note, answer)
+		}
+		if !up() {
+			return nil, errCodexExited
+		}
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("codex app-server did not accept a connection in time: %v", err)
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+// startCodexRPC runs the read loop of a new connection and says initialize.
+func startCodexRPC(ctx context.Context, c *websocket.Conn, pid int, version string, note func(string, json.RawMessage), answer func(string, json.RawMessage) any) (*codexRPC, error) {
 	c.SetReadLimit(32 << 20)
-	r := &codexRPC{c: c, pid: int(pidv.Load()), note: note, pending: map[int]chan codexAnswer{}, dead: make(chan struct{})}
+	r := &codexRPC{c: c, pid: pid, note: note, answer: answer, pending: map[int]chan codexAnswer{}, dead: make(chan struct{})}
 	go r.readLoop()
 	ictx, icancel := context.WithTimeout(ctx, 10*time.Second)
 	defer icancel()
@@ -139,6 +170,16 @@ func (r *codexRPC) call(ctx context.Context, method string, params any) (json.Ra
 	}
 }
 
+// isDead says the connection has ended.
+func (r *codexRPC) isDead() bool {
+	select {
+	case <-r.dead:
+		return true
+	default:
+		return false
+	}
+}
+
 func (r *codexRPC) close() {
 	r.once.Do(func() { close(r.dead) })
 	r.c.Close(websocket.StatusNormalClosure, "")
@@ -159,6 +200,14 @@ func (r *codexRPC) readLoop() {
 		case m.Method != "" && len(m.ID) > 0:
 			// A request from the server. A client that never subscribes should get
 			// none; if one comes, it is not ours to answer.
+			var result any
+			if r.answer != nil {
+				result = r.answer(m.Method, m.Params)
+			}
+			if result != nil {
+				r.write(map[string]any{"id": m.ID, "result": result})
+				continue
+			}
 			r.write(map[string]any{"id": m.ID, "error": map[string]any{"code": -32601, "message": "agent-net does not answer " + m.Method}})
 		case m.Method != "":
 			if r.note != nil {

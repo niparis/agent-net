@@ -3,6 +3,7 @@ package protocol
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 	"unicode"
@@ -65,6 +66,7 @@ type CTOSettings struct {
 	Harness       string `json:"harness"`
 	OpenCodeModel string `json:"opencode_model"`
 	ClaudeModel   string `json:"claude_model"`
+	CodexModel    string `json:"codex_model,omitempty"`
 	// Models is the CTO's ordered model list (decision 0162). The first entry
 	// that passes the gate runs the CTO; the harness changes with the entry.
 	Models []RoleModel `json:"models,omitempty"`
@@ -134,3 +136,23 @@ type CTOGraphWindow struct {
 }
 
 const OpCTOGraphWindow = "cto_graph_window"
+
+// CTOHarnesses are the harnesses the CTO runs on, in the order the settings
+// form lists them. Each can be woken by a message and resumed.
+var CTOHarnesses = []string{"claude", "opencode", "codex"}
+
+// PiRoleReason is why no role runs on Pi (decision 0171).
+const PiRoleReason = "Pi cannot be woken by a message yet"
+
+// CheckCTOHarness refuses a harness the CTO cannot run on, with the reason.
+func CheckCTOHarness(h string) error {
+	for _, ok := range CTOHarnesses {
+		if h == ok {
+			return nil
+		}
+	}
+	if h == "pi" {
+		return errors.New(PiRoleReason)
+	}
+	return fmt.Errorf("bad CTO harness %q; use %s", h, strings.Join(CTOHarnesses, ", "))
+}

@@ -100,7 +100,14 @@ The CTO has full power ([decision 0157](decisions/0157-cto-full-power-and-own-fo
 Claude has its built-in tools and loads the owner's Claude settings, hooks and
 plugins; only its MCP configuration stays strict, with `agent-net cto-mcp` as
 the one agent-net server. OpenCode's `cto` agent has no built-in deny rules and
-allows the private CTO MCP namespace. The CTO runs as the owner's operating
+allows the private CTO MCP namespace. The Codex CTO runs in its own private app
+server with approval `never` and the `danger-full-access` sandbox, and its one
+agent-net MCP server is `agent-net cto-mcp`, whose tools are approved in its
+config. A request for approval that still reaches the daemon is accepted and
+logged as `cto.codex_request`: nobody watches the thread to answer it. The
+`cto-mcp` channel admits a process only when it descends from the CTO's Claude
+job, its private OpenCode server or its private Codex app server; a Codex
+session in the owner's shared app server is not admitted. The CTO runs as the owner's operating
 system user, so it can do what that user can do; the owner's Claude Code
 permission settings decide which built-in calls ask first.
 

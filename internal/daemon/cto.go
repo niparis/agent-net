@@ -475,21 +475,7 @@ func (d *Daemon) openCodeCTONew(ctx context.Context) (any, error) {
 // that the next one starts after. The caller holds c.mu.
 func (d *Daemon) resetOpenCodeCTOLocked(graphAfter int64) error {
 	c := &d.cto
-	tx, err := d.st.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if _, err = tx.Exec(`DELETE FROM cto_actions WHERE session_id='' AND harness='opencode'`); err != nil {
-		return err
-	}
-	if _, err = tx.Exec(`INSERT INTO cto(id,session_id,graph_after) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET graph_after=excluded.graph_after`, graphAfter); err != nil {
-		return err
-	}
-	if err = setCTOConversationExec(tx, d.ctoNowTime(), "opencode", ""); err != nil {
-		return err
-	}
-	if err = tx.Commit(); err != nil {
+	if err := d.endCTOConversation("opencode", graphAfter); err != nil {
 		return err
 	}
 	c.session, c.model = "", ""
@@ -498,6 +484,45 @@ func (d *Daemon) resetOpenCodeCTOLocked(graphAfter int64) error {
 	c.compact.mu.Unlock()
 	return nil
 }
+
+// endCTOConversation ends one harness's conversation and records the graph id
+// that the next one starts after. Actions of a conversation not yet started go.
+func (d *Daemon) endCTOConversation(harness string, graphAfter int64) error {
+	tx, err := d.st.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec(`DELETE FROM cto_actions WHERE session_id='' AND harness=?`, harness); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`INSERT INTO cto(id,session_id,graph_after) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET graph_after=excluded.graph_after`, graphAfter); err != nil {
+		return err
+	}
+	if err = setCTOConversationExec(tx, d.ctoNowTime(), harness, ""); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ctoActions are the actions recorded in one conversation of a harness.
+func (d *Daemon) ctoActions(id, harness string) ([]protocol.CTOAction, error) {
+	rows, err := d.st.db.Query(`SELECT id,text,at FROM cto_actions WHERE session_id=? AND harness=? ORDER BY id`, id, harness)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []protocol.CTOAction{}
+	for rows.Next() {
+		var a protocol.CTOAction
+		if err = rows.Scan(&a.ID, &a.Text, &a.At); err != nil {
+			return out, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
 func (d *Daemon) openCodeCTOEvents(ctx context.Context, index int) (protocol.CTOEvents, error) {
 	c := &d.cto
 	c.mu.Lock()
@@ -513,22 +538,7 @@ func (d *Daemon) openCodeCTOEvents(ctx context.Context, index int) (protocol.CTO
 	if err != nil {
 		return out, err
 	}
-	rows, err := d.st.db.Query(`SELECT id,text,at FROM cto_actions WHERE session_id=? AND harness='opencode' ORDER BY id`, id)
-	if err != nil {
-		return out, err
-	}
-	out.Actions = []protocol.CTOAction{}
-	for rows.Next() {
-		var a protocol.CTOAction
-		if err = rows.Scan(&a.ID, &a.Text, &a.At); err != nil {
-			rows.Close()
-			return out, err
-		}
-		out.Actions = append(out.Actions, a)
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
+	if out.Actions, err = d.ctoActions(id, "opencode"); err != nil {
 		return out, err
 	}
 	if id == "" {
@@ -771,16 +781,21 @@ func (d *Daemon) ctoCompactOnce(ctx context.Context) error {
 	return nil
 }
 
-// isCTOPeer admits only a live descendant of the private OpenCode server.
+// isCTOPeer admits only a live descendant of the CTO's private OpenCode or
+// Codex server, or of its Claude job.
 func (d *Daemon) isCTOPeer(pid int) bool {
 	if pid <= 1 {
 		return false
 	}
 	openRoot := int(d.cto.pid.Load())
+	codexRoot := int(d.codexCTO.pid.Load())
 	claudeRoot := d.claudeCTO.root.Load()
 	for i := 0; i < 64 && pid > 1; i++ {
 		if openRoot > 1 && pid == openRoot {
 			return int(d.cto.pid.Load()) == openRoot
+		}
+		if codexRoot > 1 && pid == codexRoot {
+			return int(d.codexCTO.pid.Load()) == codexRoot
 		}
 		if claudeRoot != nil && pid == claudeRoot.pid {
 			token, alive := procToken(pid)

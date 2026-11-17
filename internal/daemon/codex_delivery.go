@@ -15,6 +15,12 @@ import (
 
 // queueAdd puts one message in the thread's queue.
 func (a *codexAdapter) queueAdd(ctx context.Context, rpc *codexRPC, thread, msgID, text string) error {
+	return codexQueueAdd(ctx, rpc, thread, msgID, text)
+}
+
+// codexQueueAdd puts one message in a thread's queue, with its ID as the
+// client ID of the user message item that takes it.
+func codexQueueAdd(ctx context.Context, rpc *codexRPC, thread, msgID, text string) error {
 	_, err := rpc.call(ctx, "thread/queue/add", map[string]any{
 		"threadId":            thread,
 		"clientUserMessageId": msgID,

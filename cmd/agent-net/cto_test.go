@@ -20,7 +20,7 @@ func TestCTOCommand(t *testing.T) {
 	if err := runCTOCommand(context.Background(), f, &out, nil); err != nil || out.String() != "harness: claude\nmodel: opus\n" {
 		t.Fatalf("output %q error %v", out.String(), err)
 	}
-	for _, args := range [][]string{{"harness", "claude"}, {"model", ""}} {
+	for _, args := range [][]string{{"harness", "claude"}, {"harness", "codex"}, {"model", ""}} {
 		if err := runCTOCommand(context.Background(), f, &out, args); err != nil {
 			t.Fatal(err)
 		}
@@ -33,5 +33,8 @@ func TestCTOCommand(t *testing.T) {
 	}
 	if runCTOCommand(context.Background(), f, &out, []string{"harness", "bad"}) == nil {
 		t.Fatal("accepted bad harness")
+	}
+	if err := runCTOCommand(context.Background(), f, &out, []string{"harness", "pi"}); err == nil || err.Error() != "Pi cannot be woken by a message yet" {
+		t.Fatalf("pi: %v", err)
 	}
 }

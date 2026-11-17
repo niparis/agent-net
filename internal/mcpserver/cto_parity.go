@@ -132,7 +132,7 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("settings_values_undo", "Undo a settings revision.", map[string]ctoField{"revision": n("Revision.")})
 	add("integrations_set", "Set integrations.", map[string]ctoField{"peer_messages": b("Messages."), "codex_tools": b("Codex."), "hint_hook": b("Hints."), "policy_hook": b("Policy."), "needs_hook": b("Needs you."), "workers_mod": b("Workers."), "quota_axi": b("Quotas.")})
 	add("notification_settings", "Set notifications.", map[string]ctoField{"disabled": b("Off if true.")})
-	add("cto_settings", "Set CTO settings.", map[string]ctoField{"title": s("Name on screens."), "harness": en("Harness.", "opencode", "claude"), "model": model})
+	add("cto_settings", "Set CTO settings.", map[string]ctoField{"title": s("Name on screens."), "harness": en("Harness.", protocol.CTOHarnesses...), "model": model})
 	add("protected_providers_set", "Set protected providers.", map[string]ctoField{"protected_providers": arr("Provider IDs."), "reason": s("Reason.")})
 	add("worker_providers_set", "Set worker providers.", map[string]ctoField{"providers": arr("IDs; omit for defaults.")})
 	add("score_set", "Set a model score.", map[string]ctoField{"model": s("Model or pattern."), "score": {typ: "number", desc: "0-100; omit to clear."}})

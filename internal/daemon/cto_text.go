@@ -179,7 +179,7 @@ func (d *Daemon) ctoEnterQuery(ctx context.Context, q protocol.EnterRequest, via
 		return false, protocol.EnterPlan{}, nil
 	}
 	plan, err := d.ctoEnter(ctx)
-	if err == nil && plan.Env["OPENCODE_SERVER_PASSWORD"] == "" {
+	if err == nil && !ctoPrivateServerPlan(plan) {
 		// A Claude CTO is a Claude session: its view is a coding session's.
 		return true, d.sessionView(q, ctoViewName, viaGateway, claudePlanEnv(plan)), nil
 	}
@@ -191,8 +191,8 @@ func (d *Daemon) ctoEnterQuery(ctx context.Context, q protocol.EnterRequest, via
 			plan.Argv = herdrSessionAttach(plan.HerdrSession, plan.HerdrPane)
 			plan.OpenedHerdr = false
 		} else if len(plan.Env) > 0 {
-			// OpenCode's private server password must stay on this machine.
-			if plan.Env["OPENCODE_SERVER_PASSWORD"] != "" {
+			// The private server's password or token must stay on this machine.
+			if ctoPrivateServerPlan(plan) {
 				return true, protocol.EnterPlan{Note: "The CTO's private server can only be entered on its own machine."}, nil
 			}
 			plan.Env = nil
@@ -200,4 +200,10 @@ func (d *Daemon) ctoEnterQuery(ctx context.Context, q protocol.EnterRequest, via
 		plan.Name = ctoViewName
 	}
 	return true, plan, err
+}
+
+// ctoPrivateServerPlan says the plan joins the CTO's private OpenCode or Codex
+// server, whose secret is in the plan's environment.
+func ctoPrivateServerPlan(plan protocol.EnterPlan) bool {
+	return plan.Env["OPENCODE_SERVER_PASSWORD"] != "" || plan.Env["AGENT_NET_CODEX_TOKEN"] != ""
 }
