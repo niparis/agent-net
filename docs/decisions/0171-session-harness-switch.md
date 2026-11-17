@@ -129,6 +129,8 @@ with `chief_set`. Only one machine runs the loop, so two machines never start
 two chiefs. A failed start waits 10 minutes. `chief_set session_id` still
 adopts a hand-started session.
 
+**A clear stands.** `chief_set` with `clear: true` stores the time and the `chief.model` line in `chief_cleared`; `chief.get` reports `cleared_at` while the line is the same. The loop starts no chief while a clear stands. Naming a chief, or changing `chief.model`, ends it.
+
 **Pi is refused for every role.** The gate drops a Pi entry from a role list
 with the reason `Pi cannot be woken by a message yet`. A list with only Pi
 entries is refused with that reason.

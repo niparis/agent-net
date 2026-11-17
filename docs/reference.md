@@ -3252,7 +3252,7 @@ list with only Pi entries is refused with that reason. The started session is
 pinned with `chief.set`, the same way a hand-started one is, and `chief.set`
 with a `session_id` stays the way to adopt a session you started yourself. An
 online chief, and an offline chief on Claude, Codex or OpenCode, are left alone:
-the wake path brings them back. A failed start is logged as `chief.start failed`
+the wake path brings them back. A `chief_set` with `clear: true` is recorded with its time, and `chief.get` reports it as `cleared_at`; no chief is started while the clear stands, until a session is named chief or `chief.model` changes. A failed start is logged as `chief.start failed`
 and tried again after 10 minutes. The chief's memory is its gateway notes. A
 Claude chief starts and resumes with Claude Code's auto memory off
 (`autoMemoryEnabled: false`).
