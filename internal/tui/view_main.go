@@ -293,10 +293,10 @@ func (m Model) mainView(w, h int) []string {
 	if len(rows) == 0 {
 		machines = append(machines, sDim.Render("  no machines yet"))
 	}
-	out = append(out, panel("Machines", machines, w, roleAccent)...)
+	out = append(out, panel(panelMachines, machines, w, roleAccent)...)
 
 	if m.expand && m.mode == modeNormal {
-		add(section("Selected session", w))
+		add(section(panelSelectedSession, w))
 		return append(out, m.detailLines(w, max(h-len(out), 0))...)
 	}
 
@@ -1945,8 +1945,8 @@ func (m Model) messagesView(w, h int) []string {
 		list = threadListFit(list, max(height-1, 0), listSel)
 		list = append(list, sDim.Render(clip(footer, listW)))
 		chat, older := m.threadWindow(chat, height, chatSelected, rowID)
-		left := panelWithRightHeader("Threads", m.messageFilterLine(), list, listW+4, roleAccent)
-		right := panelWithRightHeader("Conversation", olderMark(older), chat, chatW+4, roleAccent)
+		left := panelWithRightHeader(panelThreads, m.messageFilterLine(), list, listW+4, roleAccent)
+		right := panelWithRightHeader(panelConversation, olderMark(older), chat, chatW+4, roleAccent)
 		for i := range left {
 			out = append(out, left[i]+right[i])
 		}
@@ -1965,8 +1965,8 @@ func (m Model) messagesView(w, h int) []string {
 		list = append(list, sDim.Render(clip(footer, listW)))
 	}
 	chat, older := m.threadWindow(chat, chatHeight, chatSelected, rowID)
-	out = append(out, panelWithRightHeader("Threads", m.messageFilterLine(), list, w, roleAccent)...)
-	out = append(out, panelWithRightHeader("Conversation", olderMark(older), chat, w, roleAccent)...)
+	out = append(out, panelWithRightHeader(panelThreads, m.messageFilterLine(), list, w, roleAccent)...)
+	out = append(out, panelWithRightHeader(panelConversation, olderMark(older), chat, w, roleAccent)...)
 	return out
 }
 

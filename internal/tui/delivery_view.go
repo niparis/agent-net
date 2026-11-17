@@ -536,7 +536,7 @@ func (m Model) deliveryView(w, h int) []string {
 		default:
 			body = append(body, "No open changes.", sDim.Render("A change shows up here when a worker hands back finished work."))
 		}
-		return append(out, panel("Delivery", messageFit(body, min(len(body), room), 0), w, roleAccent)...)
+		return append(out, panel(panelDelivery, messageFit(body, min(len(body), room), 0), w, roleAccent)...)
 	}
 	cols := m.deliveryLayout(inner, visible)
 	body := append([]string{}, errLine...)
@@ -596,7 +596,7 @@ func (m Model) deliveryView(w, h int) []string {
 		shown += max(ch.Count, 1)
 	}
 	title := strconv.Itoa(shown) + " shown"
-	return append(out, panelWithRightHeader("Delivery", title, body, w, roleAccent)...)
+	return append(out, panelWithRightHeader(panelDelivery, title, body, w, roleAccent)...)
 }
 
 // deliveryRowFinding keeps the failed step's finding beside its row. On a
@@ -829,13 +829,13 @@ func (m Model) deliveryDetail(ch deliveryChange, errLine []string, w, room int) 
 			lines = append(lines, sDim.Render("  "+cell(second, max(inner-2, 1))))
 		}
 	}
-	out := panel("Change", head, w, roleAccent)
+	out := panel(panelChange, head, w, roleAccent)
 	roomForEvidence := max(room-len(head)-2, 1)
 	scroll := min(max(m.delivery.scroll, 0), max(len(lines)-roomForEvidence, 0))
 	view := messageFit(lines, roomForEvidence, min(roomForEvidence-1+scroll, max(len(lines)-1, 0)))
-	title := "Evidence"
+	title := panelEvidence
 	if len(ch.Steps) > 0 {
-		title = "Steps and evidence"
+		title = panelStepsEvidence
 	}
 	if len(lines) > roomForEvidence {
 		title += " (" + strconv.Itoa(scroll+1) + "-" + strconv.Itoa(min(scroll+roomForEvidence, len(lines))) + " of " + strconv.Itoa(len(lines)) + ")"

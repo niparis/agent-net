@@ -257,9 +257,9 @@ func (m Model) teamGraphScene(base graphview.Scene, size graphview.Size) (graphv
 	if !ok {
 		return base, false
 	}
-	title := "Graph · all teams"
+	title := panelGraphAllTeams
 	if m.teamFilter != "" {
-		title = "Graph · team " + m.teamFilterName()
+		title = panelGraphTeam + m.teamFilterName()
 		if m.mp.teamInside {
 			title += " · inside"
 		}

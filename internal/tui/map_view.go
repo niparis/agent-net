@@ -74,14 +74,14 @@ func (m Model) mapDetailLines(node protocol.Node, ok bool, width, rows int) []st
 		add("")
 	}
 	if node.Kind == "component" {
-		add(section("Locations", width))
+		add(section(panelLocations, width))
 		for _, loc := range node.Locations {
 			add(mapCharterLines(loc.Machine, loc.Path, width)...)
 		}
 		if len(node.Locations) == 0 {
 			add(sDim.Render("  no locations"))
 		}
-		add(section("Live sessions", width))
+		add(section(panelLiveSessions, width))
 		if limit := repoLimitCardText(node.AgentCount, node.MaxAgents); limit != "" {
 			if node.OverMax || node.AgentCount > node.MaxAgents {
 				add(sBad.Render("  " + limit))
@@ -99,7 +99,7 @@ func (m Model) mapDetailLines(node protocol.Node, ok bool, width, rows int) []st
 			add(sDim.Render("  no live sessions"))
 		}
 	}
-	add(section("Charter", width))
+	add(section(panelCharter, width))
 	for _, a := range []struct{ name, value string }{
 		{"purpose", node.Charter.Purpose},
 		{"maturity", node.Charter.Maturity},
@@ -112,13 +112,13 @@ func (m Model) mapDetailLines(node protocol.Node, ok bool, width, rows int) []st
 	} {
 		add(mapCharterLines(a.name, a.value, width)...)
 	}
-	add(section("Edges", width))
+	add(section(panelEdges, width))
 	edges := m.mapEdgeLines(node.Name, width)
 	if len(edges) == 0 {
 		edges = []string{sDim.Render("  no edges")}
 	}
 	add(edges...)
-	add(section("Last changes", width))
+	add(section(panelLastChanges, width))
 	changes := m.mapChangeLines(node.Name, width)
 	if len(changes) == 0 {
 		changes = []string{sDim.Render("  no changes yet")}

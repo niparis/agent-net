@@ -404,7 +404,7 @@ func mapLegendEntry(label string, labelW int, text string, style lipgloss.Style,
 // refuses, CharterBrief sends the rest to a worker, and feature_requests is
 // only in the agent view.
 func mapLegendLines(w int) []string {
-	out := []string{section("Legend", w)}
+	out := []string{section(panelLegend, w)}
 	out = append(out, sBold.Render("  Edges"))
 	for _, e := range []struct{ kind, text string }{
 		{"depends", "consumer uses provider"},
@@ -446,31 +446,31 @@ func (m Model) mapCardBody(node protocol.Node, w int) []string {
 	p := m.nodePlace(node)
 	org := m.orgCardLines(node, w)
 	if hasPlace(p) || len(org) > 0 {
-		out = append(out, section("PLACE", w))
+		out = append(out, section(panelPlace, w))
 		if hasPlace(p) {
 			out = append(out, placeLines(p, w)...)
 		}
 		out = append(out, org...)
 		out = append(out, "")
 	}
-	out = append(out, section("Charter", w))
+	out = append(out, section(panelCharter, w))
 	charter := mapCharterBlock(node.Charter, w)
 	if len(charter) == 0 {
 		charter = []string{sDim.Render("no charter set")}
 	}
 	out = append(out, charter...)
 	if len(node.Bar) > 0 {
-		out = append(out, section("Project rules", w))
+		out = append(out, section(panelProjectRules, w))
 		out = append(out, mapBarLines(node.Bar, w)...)
 	}
 	out = append(out, m.mapDraftLines(node, w)...)
 	out = append(out, m.mapLearnedLines(node.Name, w)...)
 	if node.Loop != nil {
-		out = append(out, section("Loop", w))
+		out = append(out, section(panelLoop, w))
 		out = append(out, m.mapLoopLines(node.Loop, w)...)
 	}
 	if node.Ref == nil || node.Ref.Kind == "repo" {
-		out = append(out, section("Rules", w))
+		out = append(out, section(panelRules, w))
 		out = append(out, mapRulesLines(node, w)...)
 	} else if node.Charter.WorkMode != "" {
 		mode, from := mapWorkMode(node.Charter)
@@ -529,7 +529,7 @@ func (m Model) mapTeamCardView(node protocol.Node, w, h int) []string {
 	}
 	addField("held back", strings.Join(held, "; "))
 	out = append(out, "")
-	out = append(out, section("Members", w))
+	out = append(out, section(panelMembers, w))
 	if len(g.members) == 0 {
 		out = append(out, sDim.Render("  no members"))
 	}
@@ -551,7 +551,7 @@ func (m Model) mapTeamCardView(node protocol.Node, w, h int) []string {
 		out = append(out, clip(line, w))
 	}
 	out = append(out, "")
-	out = append(out, section("Team rules", w))
+	out = append(out, section(panelTeamRules, w))
 	var rules []string
 	for _, r := range [][2]string{{"rules", node.Charter.Rules}, {"refuses", node.Charter.Refuses}, {"escalate", node.Charter.Escalate}} {
 		if strings.TrimSpace(r[1]) == "" {

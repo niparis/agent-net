@@ -258,5 +258,5 @@ func (m Model) projectCostView(w, h int) []string {
 	for len(body) < h-2 {
 		body = append(body, "")
 	}
-	return panel("Skill cost per project · tokens in every session", body, w, roleAccent)
+	return panel(panelSkillCost, body, w, roleAccent)
 }

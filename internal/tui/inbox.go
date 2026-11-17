@@ -44,7 +44,7 @@ const inboxBoxAnswer inboxBox = 0
 
 var inboxBoxOrder = []inboxBox{inboxBoxAnswer}
 
-func (b inboxBox) title() string { return "Needs you" }
+func (b inboxBox) title() string { return panelNeedsYou }
 
 func (b inboxBox) color() color.Color { return roleWarning }
 

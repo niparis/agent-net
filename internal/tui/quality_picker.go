@@ -60,7 +60,7 @@ func (m Model) qualityDetailsView(w, h int) []string {
 			body = append(body, sBad.Render(clip("Could not read the picker table: "+m.pickerErr, w-4)))
 		}
 		body = append(body, sDim.Render("It changes only on writes: R reads it again."))
-		out = append(out, panel("Quality · worker picker", body, w, roleAccent)...)
+		out = append(out, panel(panelQualityPicker, body, w, roleAccent)...)
 		for len(out) < h {
 			out = append(out, "")
 		}
@@ -70,7 +70,7 @@ func (m Model) qualityDetailsView(w, h int) []string {
 		return out
 	}
 	body := m.qualityPickerBody(w, max(h-4, 1))
-	out = append(out, panel("Quality · worker picker", body, w, roleAccent)...)
+	out = append(out, panel(panelQualityPicker, body, w, roleAccent)...)
 	for len(out) < h {
 		out = append(out, "")
 	}
@@ -145,7 +145,7 @@ func (m Model) qualityPickerBody(w, height int) []string {
 	}
 	body = append(body, pickerRampLine())
 
-	body = append(body, section("Selected cell", inner))
+	body = append(body, section(panelSelectedCell, inner))
 	body = append(body, m.pickerDetailLines(selModel, selBucket, inner)...)
 	body = append(body, sDim.Render(clip(pickerSettingsText(m.picker.Settings, inner), inner)))
 	if m.pickerErr != "" {

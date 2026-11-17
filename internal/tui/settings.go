@@ -508,7 +508,7 @@ func (m Model) settingsView(w, h int) []string {
 	case modeApps:
 		return append(out, m.appsView(w, max(h-1, 1))...)
 	}
-	names := []string{"Connected apps", "Integrations", "Machines", "Time zone", "Notifications", "Tips", "Standing orders and notes", "Working rules and guidance", "Nudges"}
+	names := []string{panelConnectedApps, panelIntegrations, panelMachines, panelTimeZone, panelNotifications, panelTips, panelStanding, panelWorkingRules, panelNudges}
 	descriptions := []string{"Control internet access and the apps connected to your network.", "Choose integrations for every machine in your network.", "The name every machine in your network shows for each machine.", "The clock every time on this screen uses, wherever you run it.", "Choose whether this machine shows desktop notifications.", "Show or restart the onboarding tips.", "Your lasting instructions to the CTO, and the notes agents keep.", "Change network values and review their history.", "Automatic nudges in the last 24 hours, by kind and agent, most fires first."}
 	items := m.settingsItems()
 	selected := min(max(m.settingsRow, 0), len(items)-1)

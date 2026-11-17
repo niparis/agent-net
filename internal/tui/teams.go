@@ -419,7 +419,7 @@ func (m Model) toggleTeamMember(team teamEntry) (Model, tea.Cmd) {
 
 func (m Model) teamsView(w, rows int) []string {
 	teams := m.activeTeams()
-	out := []string{section("Teams", w)}
+	out := []string{section(panelTeams, w)}
 	const nameW, memberW, modeW = 18, 9, 15
 	if len(teams) == 0 {
 		out = append(out, sDim.Render(clip("  No teams yet. c creates one. Team writes wait for all machines to upgrade.", w)))

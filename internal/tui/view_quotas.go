@@ -317,7 +317,7 @@ func (m Model) quotasView(w, h int) []string {
 			subscription = append(subscription, sDim.Render(line))
 		}
 	}
-	title := "Subscriptions"
+	title := panelSubscriptions
 	var copies []string
 	for _, id := range ids {
 		n := nodes[id]
@@ -374,7 +374,7 @@ func (m Model) frictionPanel(w int) []string {
 		for _, line := range wrap("Could not load friction: "+m.frictionErr, inner) {
 			body = append(body, sDim.Render(line))
 		}
-		return panel("Friction", body, w, roleAccent)
+		return panel(panelFriction, body, w, roleAccent)
 	}
 	if len(m.friction.Counts) > 0 {
 		parts := make([]string, 0, len(m.friction.Counts))
@@ -398,7 +398,7 @@ func (m Model) frictionPanel(w int) []string {
 		}
 		body = append(body, sDim.Render(fmt.Sprintf("%d more %s", more, word)))
 	}
-	return panel("Friction", body, w, roleAccent)
+	return panel(panelFriction, body, w, roleAccent)
 }
 
 // frictionAge is how long ago a report was stored, in the list's small form.
