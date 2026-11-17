@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -48,11 +47,11 @@ func (d *Daemon) setWaiting(ls *localSession, w *protocol.Waiting) {
 		}
 	}
 	if w != nil && w.Since == 0 {
-		if oldWait != nil {
+		// The same question keeps its start, whichever source reports it: a
+		// hook and an announce that give one wait are one wait. Blocking says
+		// how a wait was reported, not which wait it is.
+		if oldWait != nil && sameWaitText(oldWait, w) {
 			w.Since = oldWait.Since
-			if !sameWaiting(oldWait, w) {
-				w.Since = 0
-			}
 		}
 		// A busy turn clears the wait (decision 0016). A session that reports
 		// the same wait after that turn still waits on the same question, so
@@ -69,7 +68,9 @@ func (d *Daemon) setWaiting(ls *localSession, w *protocol.Waiting) {
 		// busy turn cleared is not one it can come back to.
 		ls.lastWait = nil
 	}
-	started := w != nil && !sameWaiting(oldWait, w)
+	// A new wait, or a new start, is activity. The same wait reported again,
+	// by either source, is not.
+	started := w != nil && (!sameWaitText(oldWait, w) || oldWait.Since != w.Since)
 	harness, native, at := ls.info.Harness, ls.info.NativeID, time.Now()
 	if started || (oldWait != nil && w == nil) {
 		ls.harnessActivity = at
@@ -143,19 +144,10 @@ func blockedAnswer(task string) bool {
 	return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 }
 
-// sameWaiting says whether a report describes the wait already stored, so a
-// re-report does not count as new activity.
-func sameWaiting(a, b *protocol.Waiting) bool {
-	if a == nil || b == nil {
-		return a == nil && b == nil
-	}
-	return a.Explicit == b.Explicit && a.Blocking == b.Blocking && a.Kind == b.Kind && a.Text == b.Text &&
-		a.Since == b.Since && a.Urgency == b.Urgency && slices.Equal(a.Options, b.Options)
-}
-
 // sameWaitText says whether two reports describe the same question, whatever
-// their start. A busy turn clears the wait and loses its start, and the report
-// after the turn must still count as the same wait.
+// their start, the source that reported them, or their options. A busy turn
+// clears the wait and loses its start, and the report after the turn must
+// still count as the same wait.
 func sameWaitText(a, b *protocol.Waiting) bool {
 	if a == nil || b == nil {
 		return false

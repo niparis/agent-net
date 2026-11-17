@@ -1323,7 +1323,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -1842,6 +1842,20 @@ const deskStateSQL = `CASE WHEN NEW.status='open' THEN CASE
  WHEN EXISTS (SELECT 1 FROM sessions x WHERE x.id=NEW.next_who AND x.harness='cto') THEN 'with_cto'
  WHEN NEW.next_who IN ('','owner') THEN 'ready' ELSE 'verifying' END
  WHEN NEW.status IN ('answered','approved','refused') THEN 'answered' ELSE 'closed' END`
+
+// joinedSettleReasonMigration replaces the trigger of deskItemShapeMigration
+// (the shipped migration is never edited). A duplicate that joined an ask is
+// closed with the ask's answer. A dismissed ask has no answer, so the
+// duplicate was closed with no reason. It now gets the status of the ask it
+// joined, for example "joined: dismissed".
+const joinedSettleReasonMigration = `
+DROP TRIGGER IF EXISTS inbox_items_joined_settle;
+CREATE TRIGGER inbox_items_joined_settle AFTER UPDATE OF status ON inbox_items WHEN OLD.status='open' AND NEW.status<>'open' BEGIN
+ UPDATE inbox_items SET status=CASE WHEN NEW.status IN ('answered','approved','refused') THEN NEW.status ELSE 'closed' END,
+  answer=CASE WHEN TRIM(NEW.answer)<>'' THEN NEW.answer ELSE 'joined: '||NEW.status END,
+  answered_at=NEW.answered_at WHERE dup_of=NEW.id AND status='joined';
+END;
+`
 
 // stmtCacheSize is how many prepared statements the connection keeps. The
 // gateway runs a few hundred different statements.

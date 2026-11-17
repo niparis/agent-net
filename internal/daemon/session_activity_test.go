@@ -99,6 +99,22 @@ func TestRepeatedWaitKeepsActivity(t *testing.T) {
 	}
 }
 
+// A harness hook that reports the wait an announce already gave, with the same
+// text, reports the same wait: it is not new activity.
+func TestOtherSourceRepeatOfWaitIsNotActivity(t *testing.T) {
+	d := &Daemon{sessions: map[string]*localSession{}}
+	ls := &localSession{info: protocol.SessionInfo{Harness: "pi", NativeID: "other-source"}}
+	old := time.Now().Add(-time.Hour).Truncate(time.Second)
+	d.setWaiting(ls, &protocol.Waiting{Kind: protocol.WaitingInput, Text: "Continue?", Since: old.Unix()})
+	d.mu.Lock()
+	ls.lastActive = old
+	d.mu.Unlock()
+	d.setWaiting(ls, &protocol.Waiting{Kind: protocol.WaitingInput, Text: "Continue?", Blocking: true})
+	if got := d.infoOf(ls); got.LastActive != old.Unix() {
+		t.Fatalf("a hook report of the same wait moved activity: %+v", got)
+	}
+}
+
 // A restart re-registers every session: the plugin says hello, then reports
 // the status it had (dormant for an OpenCode session quiet for a day). Neither
 // the first status nor a change between idle, dormant and offline is a turn.
