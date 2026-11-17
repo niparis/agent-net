@@ -209,6 +209,10 @@ func Setup(ctx context.Context, o Options) error {
 	r.recordApplied()
 	r.piExtension()
 	r.opencodePlugin()
+	// An empty completed scan must stay distinguishable from one not run yet.
+	if r.foundHarnesses == nil {
+		r.foundHarnesses = []string{}
+	}
 	r.guidance()
 	r.daemonStatus(ctx)
 	return r.failed

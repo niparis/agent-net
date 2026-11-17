@@ -515,6 +515,19 @@ func (r *runner) firstActions(summary setupSummary) []string {
 			"  Then run " + r.colors.label("agent-net setup") + " again.",
 		}
 	}
+	var actions []string
+	scanned := r.foundHarnesses != nil
+	noHarness := len(r.foundHarnesses) == 0
+	for _, node := range summary.nodes {
+		if node.NodeID == r.statusInfo.NodeID && node.Harnesses != nil {
+			scanned = true
+			noHarness = len(node.Harnesses) == 0
+			break
+		}
+	}
+	if scanned && noHarness {
+		actions = append(actions, r.colors.attention("!")+" Install a harness such as Codex, OpenCode or Claude Code, then sign in.")
+	}
 	groups := map[string]int{}
 	for _, session := range r.statusInfo.Sessions {
 		if session.ToolsOld && session.Harness != "" {
@@ -529,7 +542,7 @@ func (r *runner) firstActions(summary setupSummary) []string {
 		}
 	}
 	if len(groups) == 0 {
-		return nil
+		return actions
 	}
 	var harnesses []string
 	count := 0
@@ -544,7 +557,7 @@ func (r *runner) firstActions(summary setupSummary) []string {
 	} else {
 		action = fmt.Sprintf("Restart %d sessions (%s) so they get the agent-net tools.", count, strings.Join(harnesses, ", "))
 	}
-	return []string{r.colors.attention("!") + " " + action}
+	return append(actions, r.colors.attention("!")+" "+action)
 }
 
 func (r *runner) failedEnd() {

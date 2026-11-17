@@ -129,7 +129,7 @@ func onboardingFixture(name string) (setupDaemonFixture, bool, []string, []strin
 			protected: protocol.ProtectedProviders{Providers: []string{"anthropic"}, Configured: true}}, false, []string{"claude", "codex", "pi", "opencode"}, []string{"claude", "codex"}
 	case "empty-first-machine":
 		return setupDaemonFixture{info: localNode("n_laptop", "laptop", nil), nodes: protocol.NodesInfo{Nodes: []protocol.NodeView{makeNode("n_laptop", "laptop", nil)}},
-			projects: protocol.ProjectsResult{}, graph: protocol.GraphGot{}, protected: protocol.ProtectedProviders{}}, false, nil, []string{"codex"}
+			projects: protocol.ProjectsResult{}, graph: protocol.GraphGot{}, protected: protocol.ProtectedProviders{}}, false, nil, nil
 	case "joining-machine":
 		info := localNode("n_build", "build-vm", []string{"pi", "opencode"})
 		info.Sessions = []protocol.SessionInfo{{Harness: "pi", ToolsOld: true}, {Harness: "opencode", ToolsOld: true}}
@@ -164,6 +164,30 @@ func harnessInfos(names []string) []protocol.HarnessInfo {
 		out = append(out, protocol.HarnessInfo{Name: name})
 	}
 	return out
+}
+
+func TestSetupSuggestsInstallingAHarness(t *testing.T) {
+	fixture, joining, harnesses, _ := onboardingFixture("empty-first-machine")
+	r := &runner{Options: Options{Out: io.Discard}, joining: joining, foundHarnesses: harnesses, statusInfo: daemonInfo{NodeID: fixture.info.NodeID}}
+	actions := r.firstActions(setupSummary{nodes: fixture.nodes.Nodes, nodesKnown: true})
+	if len(actions) == 0 || !strings.Contains(actions[0], "Install") || !strings.Contains(actions[0], "Codex") {
+		t.Fatalf("setup actions = %v, want an install instruction", actions)
+	}
+}
+
+func TestSetupSuggestsInstallingAHarnessWhenDaemonIsOffline(t *testing.T) {
+	r := &runner{Options: Options{Out: io.Discard}, foundHarnesses: []string{}}
+	if actions := r.firstActions(setupSummary{}); len(actions) == 0 || !strings.Contains(actions[0], "Install") {
+		t.Fatalf("setup actions = %v, want an install instruction after the scan", actions)
+	}
+}
+
+func TestSetupUsesInventoryOverOldIntegrationFiles(t *testing.T) {
+	fixture, _, _, _ := onboardingFixture("empty-first-machine")
+	r := &runner{Options: Options{Out: io.Discard}, foundHarnesses: []string{"pi"}, statusInfo: daemonInfo{NodeID: fixture.info.NodeID}}
+	if actions := r.firstActions(setupSummary{nodes: fixture.nodes.Nodes, nodesKnown: true}); len(actions) == 0 || !strings.Contains(actions[0], "Install") {
+		t.Fatalf("setup actions = %v, want an install instruction when inventory is empty", actions)
+	}
 }
 
 func TestSetupOnboardingGolden(t *testing.T) {

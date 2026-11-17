@@ -59,6 +59,8 @@ Steps that do not apply say `skipped (reason)`. Setup:
 - writes the OpenCode plugin to `~/.config/opencode/plugins/agent-net.ts` if `~/.config/opencode` exists (a symlink to an older agent-net copy is replaced; any other symlink is left alone; see [opencode.md](opencode.md)),
 - adds the guidance text between `<!-- agent-net:begin -->` and `<!-- agent-net:end -->` in `~/.claude/CLAUDE.md`, `~/.pi/agent/AGENTS.md`, `~/.config/opencode/AGENTS.md` and `~/.codex/AGENTS.md`. Other content is never touched. An older unmarked `## agent-net: working with other agents` section is replaced by the marked block.
 
+When setup finds no harness on this machine, it says to install one and sign in.
+
 ### CTO title
 
 On the first machine only, setup asks what the CTO should be called:
