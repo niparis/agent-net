@@ -131,7 +131,6 @@ type lifeEpoch struct {
 // lifeRow is one inbox row as the checks read it.
 type lifeRow struct {
 	id, kind, session, status, answer, ref, text string
-	dupOf                                        string
 	created                                      int64
 }
 
@@ -181,7 +180,7 @@ func (r *lifeRig) info(i int, status string, w *protocol.Waiting) protocol.Sessi
 }
 
 func (r *lifeRig) rows() []lifeRow {
-	rows, err := r.s.db.Query(`SELECT id,kind,session_id,status,answer,source_ref,text,dup_of,created_at FROM inbox_items ORDER BY rowid`)
+	rows, err := r.s.db.Query(`SELECT id,kind,session_id,status,answer,source_ref,text,created_at FROM inbox_items ORDER BY rowid`)
 	if err != nil {
 		r.t.Fatal(err)
 	}
@@ -189,7 +188,7 @@ func (r *lifeRig) rows() []lifeRow {
 	var out []lifeRow
 	for rows.Next() {
 		var x lifeRow
-		if err := rows.Scan(&x.id, &x.kind, &x.session, &x.status, &x.answer, &x.ref, &x.text, &x.dupOf, &x.created); err != nil {
+		if err := rows.Scan(&x.id, &x.kind, &x.session, &x.status, &x.answer, &x.ref, &x.text, &x.created); err != nil {
 			r.t.Fatal(err)
 		}
 		out = append(out, x)
@@ -524,11 +523,8 @@ func (r *lifeRig) check(e lifeEvent) string {
 		if existed && x.kind == protocol.AskKindApproval && old.status == "open" && x.status != "open" && !approvalCloser {
 			return fmt.Sprintf("approval %s was closed (%s) by %s", x.id, x.answer, e.Op)
 		}
-		// 3. Every closed ask says why. KNOWN FINDING F1: a duplicate that
-		// joined an ask the owner dismissed is closed with no reason (the
-		// trigger inbox_items_joined_settle copies the empty answer). Reported
-		// with its replay, not fixed here; drop the dupOf test when it is.
-		if x.status == "closed" && x.dupOf == "" && strings.TrimSpace(x.answer) == "" {
+		// 3. Every closed ask says why, a duplicate that joined one included.
+		if x.status == "closed" && strings.TrimSpace(x.answer) == "" {
 			return fmt.Sprintf("ask %s (%s) is closed with no reason", x.id, x.kind)
 		}
 		if x.kind == protocol.AskKindWaiting && x.status != "joined" {
@@ -718,6 +714,15 @@ func TestAskLifecycleReplay(t *testing.T) {
 			{opChief, 0, 0, 0},
 			{opCheck, 0, 0, 0},
 			{opAnnounce, 0, 0, taskBlocked},
+		},
+		// A duplicate that joined an ask the owner dismissed was closed with
+		// no reason: the dismissal has no answer, and the join copied it (F1).
+		"a duplicate of a dismissed ask is closed with a reason": {
+			{opAsk, 0, 0, 0},
+			{opAsk, 1, 0, 0},
+			{opWait, 0, 0, 1},
+			{opAsk, 2, 1, 0},
+			{opAnswer, 0, 3, 2},
 		},
 	}
 	for name, events := range cases {

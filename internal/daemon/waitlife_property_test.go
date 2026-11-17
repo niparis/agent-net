@@ -100,14 +100,6 @@ type modelWait struct {
 func (m *waitModel) report(text string, blocking bool, now int64) {
 	switch {
 	case m.cur != nil && m.cur.text == text:
-		// KNOWN FINDING F2: the same text reported by the other source (an
-		// announce, then a hook) moves the start, because setWaiting takes a
-		// report whose Blocking flag differs for a new wait. Reported with its
-		// replay, not fixed here. The chart says the start stays; until the
-		// code does, take the start the daemon chose. Drop the adopt when fixed.
-		if m.cur.blocking != blocking {
-			m.cur.fresh = true
-		}
 		m.cur.blocking = blocking
 	case m.last != nil && m.last.text == text:
 		m.cur = &modelWait{text: text, since: m.last.since, blocking: blocking}
@@ -173,6 +165,9 @@ func runWaitLife(t *testing.T, events []waitEvent) (string, []waitEvent) {
 			}
 		}
 		text := waitTexts[e.Arg%len(waitTexts)]
+		// The daemon reads its clock while it handles the call, so the window
+		// for a new start opens before the call.
+		before := time.Now().Unix()
 		switch e.Op {
 		case wopHook:
 			pi.mustCall("waiting", map[string]any{"kind": "input", "text": text})
@@ -189,11 +184,10 @@ func runWaitLife(t *testing.T, events []waitEvent) (string, []waitEvent) {
 		case wopClear:
 			pi.mustCall("waiting", map[string]any{"clear": true})
 		}
-		before := time.Now().Unix()
 		m.apply(e, before)
 		got := waitOfSession(n, id)
-		// A new wait starts when the daemon reads its clock, a moment after
-		// the event was sent: take the start it chose if it is in that window.
+		// A new wait starts when the daemon reads its clock, during the call:
+		// take the start it chose if it is in that window.
 		if m.cur != nil && m.cur.fresh {
 			if got != nil && got.Since >= before && got.Since <= time.Now().Unix() {
 				m.cur.since = got.Since
@@ -320,6 +314,16 @@ func TestWaitLifecycleReplay(t *testing.T) {
 		"a blocked answer keeps the wait": {
 			{wopAnnounce, 0},
 			{wopBlocked, 0},
+			{wopAnnounce, 0},
+		},
+		// The same wait from the other source keeps its start (F2): the flag
+		// that says it blocks the turn is not part of the wait.
+		"a hook keeps the start of the wait an announce gave": {
+			{wopAnnounce, 0},
+			{wopHook, 0},
+		},
+		"an announce keeps the start of the wait a hook reported": {
+			{wopHook, 0},
 			{wopAnnounce, 0},
 		},
 	}

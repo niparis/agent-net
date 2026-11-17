@@ -81,8 +81,9 @@ A closed ask keeps its reason in the answer column. The reasons are
 `withdrawn`, `replaced`, `change_done`, `session_ended`, `resolved`, `expired`,
 `activity_or_end`, `owner_replied`, `moved_on`, `moved_on (cleanup)`, `answered`,
 `moved_to_log`, `flushed_by_front_door`, `grouped`, `signed_in`, `returned`,
-`slept`, `session_archived`, `done`, and the free text `<who>: <why>` of a
-chief close or a withdraw.
+`slept`, `session_archived`, `done`, `joined: <status>` (a duplicate whose ask
+closed with no answer, for example `joined: dismissed`), and the free text
+`<who>: <why>` of a chief close or a withdraw.
 
 ### Rules for an ask
 
@@ -129,7 +130,9 @@ draws them apart so the arrows read.
 
 The start of a wait does not move while its text is unchanged:
 
-* A report with the same text as the wait now held keeps its start.
+* A report with the same text as the wait now held keeps its start, whether an
+  announce or a hook made it. Blocking says how a wait was reported, not which
+  wait it is.
 * A report with the same text as the wait a busy turn cleared keeps its start.
   The turn clears the wait (decision 0016) but the session still waits on the
   same question after it.
@@ -219,32 +222,32 @@ seeds and steps. `AGENT_NET_PROPERTY_SEED` runs one seed, to replay a failure.
 * A chief that is live. The store has no chief in these tests, so no ask goes
   to a lead or a holder.
 
-### Known findings
+### Findings, fixed
 
-The tests found two current behaviours that break a rule. They are not fixed
-here. Each has its replay. The tests let them pass, with a named exemption at
-the check, so the default run stays green. Remove the exemption with the fix.
+The tests found two behaviours that broke a rule. Both are fixed. Their replays
+are regular cases now (`TestAskLifecycleReplay`, `TestWaitLifecycleReplay`), and
+the checks have no exemption left.
 
-* **F1: a duplicate of a dismissed ask is closed with no reason.** An ask that
-  joined another open ask is settled with it by the trigger
-  `inbox_items_joined_settle`. When the owner dismisses the first ask, the
-  trigger closes the joined row and copies the empty answer. Rule 3 holds for
-  every closed ask except these joined rows. The exemption is the `dupOf` test
-  in `check` (`asklife_property_test.go`). Replay (gateway test, seed 6 finds
-  it in 9 steps):
+* **F1 (fixed): a duplicate of a dismissed ask was closed with no reason.** An
+  ask that joined another open ask is settled with it by the trigger
+  `inbox_items_joined_settle`. A dismissal has no answer, so the trigger copied
+  the empty answer. The trigger now gives the joined row the status of the ask
+  it joined: `joined: dismissed`. The change is the migration
+  `joinedSettleReasonMigration`. Replay (gateway test, seed 6 finds it in 9
+  steps):
 
   ```
   {"ask", 0, 0, 0}, {"ask", 1, 0, 0}, {"wait", 0, 0, 1}, {"ask", 2, 1, 0}, {"answer", 0, 3, 2},
   ```
 
-* **F2: the same wait text reported by the other source moves the start.** A
-  session announces a wait, then a harness hook reports a wait with the same
-  text (or the other way round). `setWaiting` compares the whole report with
-  `sameWaiting`, and the two reports differ in `Blocking`, so it takes the hook
-  report for a new wait and gives it a new start. The gateway then sees a new
-  wait: if the first ask was settled, it raises a second one. Rule 7 says the
-  start stays. The exemption is the `fresh` mark in `waitModel.report`
-  (`waitlife_property_test.go`). Replay (daemon test, 2 events):
+* **F2 (fixed): the same wait text reported by the other source moved the
+  start.** A session announces a wait, then a harness hook reports a wait with
+  the same text (or the other way round). `setWaiting` compared the whole report,
+  and the two reports differ in `Blocking`, so it took the hook report for a new
+  wait and gave it a new start. The gateway then saw a new wait: if the first
+  ask was settled, it raised a second one. `setWaiting` now compares the kind
+  and the text. A same-text report keeps its start, and it is not new activity.
+  Replay (daemon test, 2 events):
 
   ```
   {"announce", 0}, {"hook", 0},
