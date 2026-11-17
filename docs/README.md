@@ -29,6 +29,7 @@
 - [design/tool-redesign.md](design/tool-redesign.md): the agent and CTO tool redesign: contracts, owner decisions and the task list.
 - [design/repo-agent-split.md](design/repo-agent-split.md): design for separating repo and agent identity, ownership and free-text roles.
 - [design/keys-audit.md](design/keys-audit.md): every TUI key, where the meanings collide, and a proposed consistent key map.
+- [design/ask-wait-lifecycle.md](design/ask-wait-lifecycle.md): the state chart of an ask and of a session wait, and the two property tests that check it.
 - [design/model-capability.md](design/model-capability.md): plan, on hold: the picker matches model capability C to task difficulty D, and review time is measured.
 - [design/owner-front-door-plan.md](design/owner-front-door-plan.md): build plan, approved and not built: the chief as the owner's front door, the Desk as his decision queue, and the CTO intake (decisions 0150 to 0152).
 
