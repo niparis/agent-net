@@ -417,6 +417,10 @@ type ChiefStatus struct {
 	// can (or when there is no chief). The Desk shows it as
 	// "chief of staff offline: <Down>".
 	Down string `json:"down,omitempty"`
+	// ClearedAt is when the owner or the CTO cleared the chief (Unix nanos),
+	// while that clear stands. It stands until a session is named chief or
+	// chief.model changes. Nothing starts a chief while it does.
+	ClearedAt int64 `json:"cleared_at,omitempty"`
 }
 
 // ChiefOfflineLine is the one line the Desk shows when the chief cannot work.

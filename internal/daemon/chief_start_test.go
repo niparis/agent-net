@@ -26,7 +26,17 @@ func chiefStartNode(t *testing.T, g *testGateway) *claudeNode {
 func setChiefModels(t *testing.T, g *testGateway, line string) {
 	t.Helper()
 	value, _ := json.Marshal(line)
-	if _, err := g.gw.Store().WriteSettings([]gateway.SettingsChange{{Key: protocol.ChiefModelKey, Level: "network", Scope: "network", Value: value}}, "owner", "test"); err != nil {
+	snap, err := g.gw.Store().SettingsSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored json.RawMessage
+	for _, v := range snap.Values {
+		if v.Key == protocol.ChiefModelKey && v.Level == "network" {
+			stored = v.Value
+		}
+	}
+	if _, err := g.gw.Store().WriteSettings([]gateway.SettingsChange{{Key: protocol.ChiefModelKey, Level: "network", Scope: "network", Value: value, Expect: stored}}, "owner", "test"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -166,5 +176,30 @@ func TestResumedChiefKeepsItsMemoryOff(t *testing.T) {
 	}
 	if spec := n.d.claudeResumeSpec(protocol.AgentView{SessionID: other, NativeID: "other-native", Cwd: "/w/other"}); strings.Contains(spec.Settings, "autoMemoryEnabled") {
 		t.Fatalf("another session's resume settings = %q, want no memory setting", spec.Settings)
+	}
+}
+
+// A chief the owner cleared on purpose is not started again by the loop. Naming
+// a chief, or changing chief.model, ends the clear.
+func TestChiefStartHonoursAClear(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := chiefStartNode(t, g)
+	setChiefModels(t, g, "claude · anthropic · claude-opus-5-5")
+	cli := cliClient(t, n.node)
+	cli.mustCall("chief_set", map[string]any{"clear": true})
+	ctx := context.Background()
+	if err := n.d.ensureChief(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := g.gw.Store().ChiefStatus(); st.SessionID != "" {
+		t.Fatalf("ensureChief started a chief after a clear: %+v", st)
+	}
+	setChiefModels(t, g, "claude · anthropic · claude-opus-5-5\ncodex · openai · gpt-6.1-sol")
+	if err := n.d.ensureChief(ctx); err != nil {
+		t.Fatal(err)
+	}
+	killRecordedClaude(t, n.d.chiefFolder())
+	if st, _ := g.gw.Store().ChiefStatus(); st.SessionID == "" {
+		t.Fatal("a chief.model change did not end the clear")
 	}
 }

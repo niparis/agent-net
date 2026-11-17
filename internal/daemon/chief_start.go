@@ -98,6 +98,11 @@ func (d *Daemon) ensureChief(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if st.SessionID == "" && st.ClearedAt != 0 {
+		// The owner or the CTO cleared the chief on purpose. Only naming a
+		// chief or changing chief.model ends that.
+		return nil
+	}
 	if st.SessionID != "" {
 		if st.Online {
 			return nil
