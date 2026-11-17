@@ -14,7 +14,9 @@ func TestWorkerPermissionsLineNamesTheWrapper(t *testing.T) {
 	for _, tc := range []struct{ level, harness, os, want string }{
 		{WorkersSandboxed, "pi", "bubblewrap", "permissions: sandboxed (writes only in its worktree, network on) (sandboxed by bubblewrap)"},
 		{WorkersReadOnly, "opencode", "bubblewrap", "permissions: read-only (no writes) (sandboxed by bubblewrap)"},
-		{WorkersSandboxed, "pi", "", "permissions: sandboxed (writes only in its worktree, network on) (enforced for claude, codex and agy only for now)"},
+		{WorkersSandboxed, "pi", "", "permissions: sandboxed (writes only in its worktree, network on) (no OS sandbox: turned off for this project in node.json)"},
+		{WorkersSandboxed, "opencode", "sandbox-exec", "permissions: sandboxed (writes only in its worktree, network on) (sandboxed by sandbox-exec)"},
+		{WorkersSandboxed, "pi", OSSandboxNoneMacOS, "permissions: sandboxed (writes only in its worktree, network on) (no OS sandbox on macOS yet: opt in with workers.os_sandbox in node.json)"},
 		{WorkersSandboxed, "claude", "", "permissions: sandboxed (writes only in its worktree, network on)"},
 		{WorkersReadOnly, "codex", "", "permissions: read-only (no writes)"},
 		{WorkersSandboxed, "agy", "", "permissions: sandboxed (writes only in its worktree, network on)"},
@@ -30,6 +32,9 @@ func TestWorkerPermissionsLineNamesTheWrapper(t *testing.T) {
 	if got := WorkerEnforcer(WorkersSandboxed, "opencode", ""); got != "" {
 		t.Errorf("enforcer of an unwrapped OpenCode worker: %q", got)
 	}
+	if got := WorkerEnforcer(WorkersSandboxed, "opencode", OSSandboxNoneMacOS); got != "" {
+		t.Errorf("enforcer of a Mac worker without the wrapper: %q", got)
+	}
 	if got := WorkerEnforcer(WorkersSandboxed, "opencode", "bubblewrap"); got != "bubblewrap" {
 		t.Errorf("enforcer of a wrapped OpenCode worker: %q", got)
 	}
@@ -42,7 +47,7 @@ func TestWorkerBriefNamesTheWrapper(t *testing.T) {
 		t.Fatalf("brief:\n%s", body)
 	}
 	plain := WorkerTaskBodyWithSettings("pi", "do it", "/wt", "agent-net/w_1", "", "", WorkersSandboxed, settings.Snapshot{})
-	if strings.Contains(plain, "bubblewrap") || !strings.Contains(plain, "(enforced for claude, codex and agy only for now)") {
+	if strings.Contains(plain, "bubblewrap") || strings.Contains(plain, "enforced for claude, codex and agy only") || !strings.Contains(plain, "(no OS sandbox: turned off for this project in node.json)") {
 		t.Fatalf("brief without the wrapper:\n%s", plain)
 	}
 	ro := WorkerTaskBodyOS("opencode", "look", "", "", "", "", WorkersReadOnly, "bubblewrap", settings.Snapshot{}, "")
@@ -57,5 +62,16 @@ func TestWorkerNoticeNamesTheWrapper(t *testing.T) {
 		Permissions: WorkersSandboxed, OSSandbox: "bubblewrap", RunTime: time.Minute}
 	if got := FormatWorkerNotice(n, ""); !strings.Contains(got, "\npermissions: sandboxed (writes only in its worktree, network on) (sandboxed by bubblewrap)\n") {
 		t.Fatalf("notice:\n%s", got)
+	}
+}
+
+// The policy screen says what enforces a level. Pi and OpenCode are in the OS
+// sandbox by default; no-network is refused for them, so it stays unlisted.
+func TestWorkerEnforcedLine(t *testing.T) {
+	if got := WorkerEnforcedLine(WorkersSandboxed); !strings.Contains(got, "Pi and OpenCode (OS sandbox)") || strings.Contains(got, "only for now") {
+		t.Errorf("sandboxed: %q", got)
+	}
+	if got := WorkerEnforcedLine(WorkersNoNetwork); got != "Enforced for claude and codex only for now." {
+		t.Errorf("no-network: %q", got)
 	}
 }

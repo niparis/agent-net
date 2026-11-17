@@ -10,6 +10,12 @@ import (
 	"time"
 )
 
+// OSSandboxDefaultOn tells whether Pi and OpenCode workers run in the OS
+// sandbox without being asked. On macOS it is off until the profile has been
+// run on a Mac (decision 0171, phase 4b): a project opts in with
+// workers.os_sandbox in node.json.
+const OSSandboxDefaultOn = true
+
 // osSandboxName is the wrapper on this OS, as the permissions line names it.
 const osSandboxName = "bubblewrap"
 
@@ -34,3 +40,21 @@ func osSandboxReady() error {
 	}
 	return nil
 }
+
+// osSandboxTool is the wrapper's program: bubblewrap.
+func osSandboxTool() (string, error) {
+	tool, err := exec.LookPath("bwrap")
+	if err != nil {
+		return "", fmt.Errorf("bubblewrap is not installed: %w", err)
+	}
+	return tool, nil
+}
+
+// osSandboxCommand is the argument list of the wrapper that runs bin under p.
+func osSandboxCommand(p osSandboxPolicy, bin string, args []string) []string {
+	return bwrapArgs(p, bin, args)
+}
+
+// osSandboxTmpEnv is TMPDIR inside the sandbox. The worker's private tmp folder
+// is mounted at /tmp, so the name is the same for every worker.
+func osSandboxTmpEnv(string) string { return "/tmp" }

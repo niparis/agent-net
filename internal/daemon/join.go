@@ -78,10 +78,14 @@ type NodeWorkers struct {
 	StartGap               string  `json:"start_gap,omitempty"`
 	CacheMaxAge            string  `json:"cache_max_age,omitempty"`
 	TmpMaxAge              string  `json:"tmp_max_age,omitempty"`
-	// OSSandbox lists the projects whose Pi and OpenCode workers run in the
-	// OS sandbox (bubblewrap on Linux); "*" means every project. Edited by
-	// hand. See docs/design/worker-os-sandbox.md.
-	OSSandbox projectList `json:"os_sandbox,omitempty"`
+	// OSSandbox lists the projects that have the OS sandbox on by name
+	// (bubblewrap on Linux, sandbox-exec on macOS); "*" means every project.
+	// Pi and OpenCode workers are in it by default, so this list only adds
+	// that a Claude worker of the project is refused. OSSandboxOff lists the
+	// projects whose Pi and OpenCode workers run without it. Both are edited
+	// by hand. See docs/design/worker-os-sandbox.md.
+	OSSandbox    projectList `json:"os_sandbox,omitempty"`
+	OSSandboxOff projectList `json:"os_sandbox_off,omitempty"`
 }
 
 // parseSize reads a size such as "2GB", "1536MB" or "1.5GiB" into bytes.
@@ -180,6 +184,12 @@ func (nc NodeConfig) WorkerSettings() (WorkerSettings, error) {
 			return s, errors.New(`node.json: workers.os_sandbox must list project names, or "*" for every project`)
 		}
 		s.OSSandbox = append(s.OSSandbox, strings.TrimSpace(p))
+	}
+	for _, p := range nc.Workers.OSSandboxOff {
+		if strings.TrimSpace(p) == "" {
+			return s, errors.New(`node.json: workers.os_sandbox_off must list project names, or "*" for every project`)
+		}
+		s.OSSandboxOff = append(s.OSSandboxOff, strings.TrimSpace(p))
 	}
 	return s, nil
 }

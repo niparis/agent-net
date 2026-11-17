@@ -212,8 +212,10 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 	if a.Worker != nil && a.Worker.Permissions != "" {
 		note := ""
 		switch {
-		case a.Worker.OSSandbox != "":
+		case protocol.OSSandboxWrapper(a.Worker.OSSandbox) != "":
 			note = " (sandboxed by " + a.Worker.OSSandbox + ")"
+		case a.Harness == "pi" || a.Harness == "opencode":
+			note = " (OS sandbox off)"
 		case protocol.WorkerEnforcer(a.Worker.Permissions, a.Harness, "") == "":
 			note = " (not enforced yet)"
 		}

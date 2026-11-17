@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -214,21 +215,23 @@ func TestPolicyKeyWithNothingSelected(t *testing.T) {
 }
 
 func TestPolicyFormGolden(t *testing.T) {
-	m, src := workerModel(120, 34)
-	var saved []protocol.SessionPolicyRequest
-	src.policyFn = resolver(&saved)
-	m = selectID(m, "s_0000000000000003")
-	m, cmd := openSessionSetting(m, 1)
-	m = runPreviews(t, m, cmd)
-	for i := 0; i < 2; i++ {
-		m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyRight})
+	for _, size := range [][2]int{{120, 34}, {80, 24}} {
+		m, src := workerModel(size[0], size[1])
+		var saved []protocol.SessionPolicyRequest
+		src.policyFn = resolver(&saved)
+		m = selectID(m, "s_0000000000000003")
+		m, cmd := openSessionSetting(m, 1)
 		m = runPreviews(t, m, cmd)
+		for i := 0; i < 2; i++ {
+			m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyRight})
+			m = runPreviews(t, m, cmd)
+		}
+		m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		m = typeText(m, "deepseek 4.1")
+		m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		m = runPreviews(t, m, cmd)
+		golden(t, fmt.Sprintf("view_%dx%d_policy_form", size[0], size[1]), m.testView())
 	}
-	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	m = typeText(m, "deepseek 4.1")
-	m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	m = runPreviews(t, m, cmd)
-	golden(t, "view_120x34_policy_form", m.testView())
 }
 
 // The Workers line has the three levels and a default. Choosing one moves the
@@ -319,7 +322,7 @@ func TestDetailShowsWorkerPermissions(t *testing.T) {
 		if !strings.Contains(s, "sandbox") || !strings.Contains(s, "read-only") {
 			t.Errorf("%s: no permissions line:\n%s", harness, s)
 		}
-		if got := strings.Contains(s, "not enforced yet"); got != (harness != "codex" && harness != "claude") {
+		if got := strings.Contains(s, "(OS sandbox off)"); got != (harness == "pi" || harness == "opencode") {
 			t.Errorf("%s: note shown = %v", harness, got)
 		}
 	}
@@ -340,7 +343,8 @@ func TestDetailShowsWorkerOSSandbox(t *testing.T) {
 	}
 	for _, tc := range []struct{ harness, os, want, not string }{
 		{"pi", "bubblewrap", "sandboxed (sandboxed by bubblewrap)", "not enforced"},
-		{"pi", "", "sandboxed (not enforced yet)", "bubblewrap"},
+		{"pi", "", "sandboxed (OS sandbox off)", "bubblewrap"},
+		{"pi", protocol.OSSandboxNoneMacOS, "sandboxed (OS sandbox off)", "sandboxed by"},
 		{"agy", "", "sandboxed", "not enforced"},
 	} {
 		for i := range src.snap.Agents {

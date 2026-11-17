@@ -20,8 +20,8 @@ folder.
 3. **The chief keeps gateway notes only**, like the CTO. Its memory is the
    notes the gateway holds, not a harness memory.
 4. **Pi is refused for every role** until it can be woken and resumed.
-5. **OpenCode and Pi workers are sandboxed by default.** Open until phase 4;
-   setup must ask once and show the choice.
+5. **OpenCode and Pi workers are sandboxed by default.** Settled in phase 4b
+   (owner, 2026-11-17): the default on Linux, opt-in on macOS until a real check. See "Phase 4b: the OS sandbox is the default" below.
 
 ## Conversation per session
 
@@ -205,6 +205,36 @@ opencode and codex, and keeps the model typed for each.
 
 The real-protocol check is `cto_codex_real_test.go`, run with
 `AGENT_NET_TEST_REAL_CODEX`.
+
+## Phase 4b: the OS sandbox is the default on Linux
+
+Pi and OpenCode workers on Linux run in the OS sandbox unless the project is
+turned off in `node.json` (`workers.os_sandbox_off`). The policy is the one
+Claude and Codex workers get: writes only in the worktree, the git folders of a
+commit and the harness's own state, network on. The wrapper is bubblewrap. A
+Claude worker is not wrapped (it keeps Claude Code's own sandbox settings), and
+Codex and Antigravity keep theirs.
+
+**macOS stays opt-in for now.** A `sandbox-exec` profile is built from the same
+policy (`internal/daemon/ossandbox_seatbelt.go`) and is unit tested, but it has
+never run on a Mac, and no Mac session with this repo can run the check. So on
+a Mac the default does not wrap: a Pi or OpenCode worker runs without an OS
+sandbox, and the start notice says `(no OS sandbox on macOS yet: opt in with
+workers.os_sandbox in node.json)`. A project listed in `workers.os_sandbox`
+does get the profile. Setup prints the same sentence on macOS. macOS default-on
+follows after `AGENT_NET_TEST_REAL_SANDBOX=1 go test ./internal/daemon -run
+TestRealSandboxWriteBoundary` has passed on a Mac. The one constant to change
+then is `OSSandboxDefaultOn` in `internal/daemon/ossandbox_darwin.go`, with its
+test.
+
+On Linux the start is refused, with the reason and the fix, when the wrapper
+cannot run (bubblewrap missing, user namespaces off), and for a `no-network` Pi
+or OpenCode worker. It never starts without the sandbox silently. For a listed
+project on macOS the same refusal applies when `sandbox-exec` is missing. Setup
+checks for the wrapper on Linux and says so once. A project that turns the
+sandbox off gets `(no OS sandbox: turned off for this project in node.json)` in
+the start notice, and the setting of an earlier worker is kept for its
+follow-ups.
 
 ## What this does not cover
 

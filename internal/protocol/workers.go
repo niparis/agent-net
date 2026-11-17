@@ -891,12 +891,29 @@ func WorkerPermissionsText(level, harness string) string {
 	return WorkerPermissionsLine(level, harness, "")
 }
 
+// OSSandboxNoneMacOS is the value of a worker's os_sandbox field for a Pi or
+// OpenCode worker that is not wrapped because its machine is a Mac, where the
+// OS sandbox is opt-in until the profile has been checked on a Mac (decision
+// 0171, phase 4b). It travels in the field so a notice formatted on another
+// machine still says why.
+const OSSandboxNoneMacOS = "none:macos"
+
+// OSSandboxWrapper is the wrapper a worker really runs in ("bubblewrap"), or
+// "" for none, including OSSandboxNoneMacOS.
+func OSSandboxWrapper(osSandbox string) string {
+	if osSandbox == OSSandboxNoneMacOS {
+		return ""
+	}
+	return osSandbox
+}
+
 // WorkerEnforcer names what enforces a worker's level: the OS sandbox the
 // worker runs in (osSandbox, such as "bubblewrap"), the harness's own sandbox
-// ("codex", or "agy" except for no-network), or "" when nothing does yet.
+// ("codex", or "agy" except for no-network), or "" when nothing does: a Pi or
+// OpenCode worker that the project's node.json took out of the OS sandbox.
 func WorkerEnforcer(level, harness, osSandbox string) string {
 	switch {
-	case osSandbox != "":
+	case OSSandboxWrapper(osSandbox) != "":
 		return osSandbox
 	case harness == "codex", harness == "claude", harness == "agy" && WorkerPermissionsOrDefault(level) != WorkersNoNetwork:
 		return harness
@@ -941,9 +958,22 @@ func WorkerEnforcedBy(level string) string {
 	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
 }
 
+// WorkerEnforcedLine is the line of the policy screen that says what enforces
+// a workers level. Pi and OpenCode workers run in the OS sandbox by default
+// on Linux, and opt in on macOS (decision 0171, phase 4b); no-network is
+// refused for them, so it is not listed.
+func WorkerEnforcedLine(level string) string {
+	text := "Enforced for " + WorkerEnforcedBy(level) + " only for now."
+	if WorkerPermissionsOrDefault(level) == WorkersNoNetwork {
+		return text
+	}
+	return "Enforced for " + WorkerEnforcedBy(level) + ", and for Pi and OpenCode (OS sandbox)."
+}
+
 // WorkerPermissionsLine describes the effective project level, and what
-// enforces it (docs/design/worker-os-sandbox.md). A harness that does not
-// enforce the level has the names of the harnesses that do.
+// enforces it (docs/design/worker-os-sandbox.md). A Pi or OpenCode worker that
+// has no OS sandbox says that node.json turned it off. A harness that does
+// not enforce the level otherwise has the names of the harnesses that do.
 func WorkerPermissionsLine(level, harness, osSandbox string) string {
 	level = WorkerPermissionsOrDefault(level)
 	detail := "writes only in its worktree, network on"
@@ -955,8 +985,12 @@ func WorkerPermissionsLine(level, harness, osSandbox string) string {
 	}
 	text := "permissions: " + level + " (" + detail + ")"
 	switch {
-	case osSandbox != "":
+	case OSSandboxWrapper(osSandbox) != "":
 		text += " (sandboxed by " + osSandbox + ")"
+	case osSandbox == OSSandboxNoneMacOS:
+		text += " (no OS sandbox on macOS yet: opt in with workers.os_sandbox in node.json)"
+	case harness == "pi" || harness == "opencode":
+		text += " (no OS sandbox: turned off for this project in node.json)"
 	case WorkerEnforcer(level, harness, "") == "":
 		text += " (enforced for " + WorkerEnforcedBy(level) + " only for now)"
 	}
@@ -1022,7 +1056,7 @@ func WorkerTaskBodyBriefBar(harness string, brief WorkerBrief, worktree, branch,
 	case WorkersNoNetwork:
 		b += ": no network: git fetch, package installs and web calls will fail"
 	default:
-		if osSandbox != "" {
+		if OSSandboxWrapper(osSandbox) != "" {
 			b += ": writes outside your worktree and /tmp fail (read-only file system)"
 		}
 	}

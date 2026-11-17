@@ -1,10 +1,10 @@
 # OS sandbox for workers (W7)
 
-Status: built for Pi and OpenCode workers on Linux ([decision 0059](../decisions/0059-worker-os-sandbox.md)). Claude workers are refused when the switch is on (see below). macOS is designed here and not built. Plan: [hardening-plan.md](hardening-plan.md) W7. Earlier research: [worker-sandbox.md](worker-sandbox.md). Levels: [decision 0020](../decisions/0020-worker-sandbox.md).
+Status: built for Pi and OpenCode workers on Linux ([decision 0059](../decisions/0059-worker-os-sandbox.md)), and on by default on Linux since 2026-11-17 ([decision 0171](../decisions/0171-session-harness-switch.md), phase 4b). A project turns it off with `workers.os_sandbox_off` in node.json. On macOS it stays opt-in (`workers.os_sandbox`) until the profile has run on a Mac. Claude workers are refused only for a project listed in `workers.os_sandbox` (see below). The macOS profile is built from the same policy (`internal/daemon/ossandbox_seatbelt.go`); it has been unit tested and not yet run on a Mac. Plan: [hardening-plan.md](hardening-plan.md) W7. Earlier research: [worker-sandbox.md](worker-sandbox.md). Levels: [decision 0020](../decisions/0020-worker-sandbox.md).
 
 ## What it is
 
-An optional wrapper around the whole harness process of a worker. Every child of the harness (shell commands, language servers, MCP servers) inherits it. The owner switches it on per project, on the machine that runs the workers. Off by default.
+A wrapper around the whole harness process of a Pi or OpenCode worker. Every child of the harness (shell commands, language servers, MCP servers) inherits it. It is on by default on Linux and opt-in on macOS. The owner turns it off per project, on the machine that runs the workers (`workers.os_sandbox_off`).
 
 It does not change how the level (`sandboxed`, `no-network`, `read-only`) is chosen or stored. The level still comes from the project policy and the settings layer. The switch only says whether the OS wrapper is used.
 
@@ -14,7 +14,7 @@ It does not change how the level (`sandboxed`, `no-network`, `read-only`) is cho
 |---|---|---|
 | Linux | bubblewrap (`bwrap`) | Used. Mount namespaces give a read-only view of the host with a few writable binds, and can hide whole folders of control sockets. A private PID namespace hides host processes. A private network namespace turns the network off. Packaged by every major distribution; Ubuntu 24.04 ships 0.9.0. |
 | Linux | Landlock | Not used now. It restricts paths but cannot hide a socket file that is readable, cannot block abstract Unix sockets before ABI 6, and ABI 4 cannot block UDP. It must be set in a single-threaded helper just before `exec`. A possible second layer later. |
-| macOS | `sandbox-exec` (Seatbelt) | Designed below, not built. Deprecated by Apple, still present. |
+| macOS | `sandbox-exec` (Seatbelt) | Built from the same policy (see "macOS"). Deprecated by Apple, still present. |
 
 ## Which harness
 
@@ -70,27 +70,27 @@ Both were checked with the real harness inside this policy, with a temporary hom
 
 ## When the tool is missing
 
-With the switch on, the daemon checks before each start of a Pi or OpenCode worker:
+Unless the project is turned off, the daemon checks before each start of a Pi or OpenCode worker:
 
-1. the OS is Linux;
+1. the OS is Linux or macOS (on macOS the checks are `/usr/bin/sandbox-exec` and a probe profile instead of the next two);
 2. `bwrap` is on the daemon's `PATH`;
 3. a probe runs: `bwrap --unshare-all --ro-bind / / --dev /dev --proc /proc -- <bwrap> --version`. This fails when user namespaces are denied (for example by an AppArmor rule or a container).
 
-If a check fails, the start is refused with the reason and the fix, for example "bubblewrap is not installed: install it (Debian and Ubuntu: `sudo apt install bubblewrap`), or remove the project from `workers.os_sandbox` in node.json". The worker never starts unsandboxed. A queued start is checked again when it leaves the queue.
+If a check fails, the start is refused with the reason and the fix, for example "bubblewrap is not installed: install it (Debian and Ubuntu: `sudo apt install bubblewrap`), or turn it off for the project with `workers.os_sandbox_off` in node.json". The worker never starts unsandboxed unless the project is turned off. `agent-net setup` runs the same check and prints one `worker sandbox` line. A queued start is checked again when it leaves the queue.
 
 ## The switch
 
-In `node.json` on the machine that runs the workers:
+The sandbox is on for Pi and OpenCode workers. In `node.json` on the machine that runs the workers, turn it off for some projects:
 
 ```json
-"workers": {"os_sandbox": ["project-a", "project-b"]}
+"workers": {"os_sandbox_off": ["project-a", "project-b"]}
 ```
 
-`"*"` (as the value or as an item) means every project. Names match the project name without regard to case. The daemon reads node.json when it starts: restart it after a change. A sandboxed worker cannot change node.json: `~/.config/agent-net` is read-only inside the sandbox.
+`"*"` (as the value or as an item) means every project. Names match the project name without regard to case. The daemon reads node.json when it starts: restart it after a change. A sandboxed worker cannot change node.json: `~/.config/agent-net` is read-only inside the sandbox. The older list `workers.os_sandbox` is still read: a project in it is sandboxed as before and its Claude workers are refused. A project in both lists is off.
 
 Why node.json and not the project policy: it is a fact about one machine (bubblewrap is installed and user namespaces work there), and it must stay apart from the level, which the settings layer owns.
 
-A worker that was started sandboxed records it in its private folder (`os-sandbox`). Its follow-ups and a start after a daemon restart stay sandboxed even if the switch is turned off later. A follow-up is also sandboxed when the switch is on now.
+A worker that was started sandboxed records it in its private folder (`os-sandbox`). Its follow-ups and a start after a daemon restart stay sandboxed even if the switch is turned off later. A follow-up is also sandboxed when the project is not turned off now.
 
 The permissions line of the start notice, the brief and the completion notice says so:
 
@@ -98,7 +98,7 @@ The permissions line of the start notice, the brief and the completion notice sa
 permissions: sandboxed (writes only in its worktree, network on) (sandboxed by bubblewrap)
 ```
 
-Without the wrapper, Pi and OpenCode workers keep "(enforced for claude, codex and agy only for now)", which names the harnesses that enforce the level by their own sandbox (`WorkerEnforcedBy` in `internal/protocol/workers.go`). Claude workers enforce the level with Claude Code's own settings, below.
+A Pi or OpenCode worker of a project in `os_sandbox_off` says `(no OS sandbox: turned off for this project in node.json)`. Claude workers enforce the level with Claude Code's own settings, below.
 
 ## Claude workers
 
@@ -106,9 +106,9 @@ A Claude worker is `claude --bg`. The session runs inside Claude Code's own back
 
 The follow-up for Claude, built for the write boundary: Claude Code has its own sandbox for its Bash tool (bubblewrap on Linux, Seatbelt on macOS). Claude Code 2.1.322 has the settings `sandbox.enabled`, `sandbox.filesystem.allowWrite`, `sandbox.network.allowedDomains`, `sandbox.allowUnsandboxedCommands` and `sandbox.failIfUnavailable`, and `permissions.blockWritesOutsideWorkingDirectories` for its file tools. The worker's `--settings` reach a `--bg` session, so the daemon sets them per worker, as it sets the level for Codex: the file-tool rule refuses writes outside the worktree in every mode, and the Bash sandbox keeps commands to the worktree, the git folders a commit writes (not hooks or config), the Go module cache, the shared Go caches and the temp folders. `read-only` denies the worktree too; `no-network` leaves the sandbox's hosts empty. When bubblewrap or socat is missing, Claude Code warns and runs the commands unsandboxed, while the file-tool rule still applies. The OS wrapper itself still refuses a Claude start. The other way, a Claude process started directly by the daemon inside bubblewrap, loses `claude attach` and needs a terminal holder that outlives the daemon, and Claude writes `~/.claude.json` and `~/.claude/settings.json`, which can define hooks and MCP servers that run unsandboxed in the owner's sessions.
 
-## macOS design (not built)
+## macOS
 
-Run `/usr/bin/sandbox-exec -p <profile> -- <harness> <args>`. The profile is generated per worker:
+The daemon runs `/usr/bin/sandbox-exec -p <profile> <harness> <args>`. `seatbeltProfile` in `internal/daemon/ossandbox_seatbelt.go` builds the profile from the same policy as the bubblewrap command, per worker. It has this shape (the later of two rules wins, so the read-only `.git` is denied after the writable paths are allowed):
 
 ```
 (version 1)
@@ -120,7 +120,13 @@ Run `/usr/bin/sandbox-exec -p <profile> -- <harness> <args>`. The profile is gen
 (allow network-outbound (remote unix-socket (path-literal "<agent-net socket>")))
 ```
 
-Paths are resolved (`/private/var`, symlinks) and quoted before they go into the profile. `no-network` is refused for the same reason as on Linux. Open points before it is built: `(allow default)` allows Mach service lookups, so a worker could ask `launchd` or another app (Terminal through Apple Events) to run a process outside the sandbox; a deny list of Mach services is needed and must be tested on each supported macOS version. Seatbelt syntax is not a stable public API. Check that `sandbox-exec` exists and a probe profile runs before each start, and refuse otherwise.
+Paths are resolved (`/private/var`, symlinks) and quoted before they go into the profile. `no-network` is refused for the same reason as on Linux. The start checks that `sandbox-exec` exists and a probe profile runs, and refuses otherwise.
+
+Known gaps on macOS, which the Linux wrapper does not have:
+
+- `(allow default)` allows Mach service lookups, so a worker could ask `launchd` or another app (Terminal through Apple Events) to run a process outside the sandbox. A deny list of Mach services needs testing on each supported macOS version, and is not built.
+- There is no private `/tmp` mount. `TMPDIR` points at the worker's private folder, but a program that writes `/tmp` directly is refused, and one that reads the host's `/tmp` can read it.
+- Seatbelt syntax is not a stable public API. The profile has been unit tested here and has not been run on a Mac: run `AGENT_NET_TEST_REAL_SANDBOX=1 go test ./internal/daemon -run TestRealSandboxWriteBoundary` on one before release.
 
 ## The threat it covers
 
@@ -142,4 +148,4 @@ A worker that is prompt-injected or careless, running as the owner's user:
 - **Kernel and bubblewrap flaws.** A namespace sandbox is as strong as the kernel.
 
 MCP servers the harness starts run in the sandbox too, so one that needs a hidden socket or a write outside it fails. Seen on the research machine: the owner's OpenCode config starts the GitHub MCP server with `docker run`, which cannot reach the hidden Docker socket. That is the intended trade: the Docker socket gives root.
-- **Claude workers** are refused, not sandboxed. Codex and Antigravity keep their own sandboxes, unchanged.
+- **Claude workers** are not wrapped; they are refused only for a project listed in `workers.os_sandbox`. Codex and Antigravity keep their own sandboxes, unchanged.

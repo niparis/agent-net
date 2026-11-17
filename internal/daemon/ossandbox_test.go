@@ -143,21 +143,26 @@ func TestOSSandboxPolicyLevels(t *testing.T) {
 	}
 }
 
-// node.json: a list of projects, "*" as the value or as an item.
+// node.json: lists of projects, "*" as the value or as an item. Nothing set
+// means the default: Pi and OpenCode workers are in the OS sandbox.
 func TestNodeWorkersOSSandbox(t *testing.T) {
 	for _, tc := range []struct {
 		raw     string
 		project string
-		on      bool
+		mode    osSandboxMode
 	}{
-		{`{"workers":{"os_sandbox":["Shop","blog"]}}`, "shop", true},
-		{`{"workers":{"os_sandbox":["Shop","blog"]}}`, "BLOG", true},
-		{`{"workers":{"os_sandbox":["Shop","blog"]}}`, "other", false},
-		{`{"workers":{"os_sandbox":"*"}}`, "anything", true},
-		{`{"workers":{"os_sandbox":["*"]}}`, "anything", true},
-		{`{"workers":{"os_sandbox":[]}}`, "shop", false},
-		{`{"workers":{"max":3}}`, "shop", false},
-		{`{}`, "shop", false},
+		{`{"workers":{"os_sandbox":["Shop","blog"]}}`, "shop", osSandboxExplicit},
+		{`{"workers":{"os_sandbox":["Shop","blog"]}}`, "BLOG", osSandboxExplicit},
+		{`{"workers":{"os_sandbox":["Shop","blog"]}}`, "other", osSandboxDefault},
+		{`{"workers":{"os_sandbox":"*"}}`, "anything", osSandboxExplicit},
+		{`{"workers":{"os_sandbox":[]}}`, "shop", osSandboxDefault},
+		{`{"workers":{"os_sandbox_off":["Shop"]}}`, "shop", osSandboxOff},
+		{`{"workers":{"os_sandbox_off":["Shop"]}}`, "blog", osSandboxDefault},
+		{`{"workers":{"os_sandbox_off":"*"}}`, "anything", osSandboxOff},
+		{`{"workers":{"os_sandbox":["*"],"os_sandbox_off":["shop"]}}`, "shop", osSandboxOff},
+		{`{"workers":{"os_sandbox":["*"],"os_sandbox_off":["shop"]}}`, "blog", osSandboxExplicit},
+		{`{"workers":{"max":3}}`, "shop", osSandboxDefault},
+		{`{}`, "shop", osSandboxDefault},
 	} {
 		var nc NodeConfig
 		if err := json.Unmarshal([]byte(tc.raw), &nc); err != nil {
@@ -167,48 +172,60 @@ func TestNodeWorkersOSSandbox(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", tc.raw, err)
 		}
-		if got := s.osSandboxOn(tc.project); got != tc.on {
-			t.Fatalf("%s: osSandboxOn(%q) = %v, want %v", tc.raw, tc.project, got, tc.on)
+		if got := s.osSandboxMode(tc.project); got != tc.mode {
+			t.Fatalf("%s: osSandboxMode(%q) = %v, want %v", tc.raw, tc.project, got, tc.mode)
 		}
 	}
 	var nc NodeConfig
 	if err := json.Unmarshal([]byte(`{"workers":{"os_sandbox":3}}`), &nc); err == nil {
 		t.Fatal("a number is accepted as os_sandbox")
 	}
-	if err := json.Unmarshal([]byte(`{"workers":{"os_sandbox":["shop",""]}}`), &nc); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := nc.WorkerSettings(); err == nil || !strings.Contains(err.Error(), "os_sandbox") {
-		t.Fatalf("an empty project name: %v", err)
+	for _, key := range []string{"os_sandbox", "os_sandbox_off"} {
+		var nc NodeConfig
+		if err := json.Unmarshal([]byte(`{"workers":{"`+key+`":["shop",""]}}`), &nc); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := nc.WorkerSettings(); err == nil || !strings.Contains(err.Error(), key) {
+			t.Fatalf("%s with an empty project name: %v", key, err)
+		}
 	}
 }
 
 // Which starts run in the wrapper, and which are refused. Never a silent
-// start without the sandbox.
+// start without the sandbox, except where node.json turned it off.
 func TestOSSandboxDecide(t *testing.T) {
 	ready := func() error { return nil }
 	missing := func() error { return errors.New("bubblewrap (bwrap) is not installed") }
 	for _, tc := range []struct {
 		name    string
-		on      bool
+		mode    osSandboxMode
 		harness string
 		level   string
 		ready   func() error
 		want    string
 		refuse  string
 	}{
-		{"switch off", false, "pi", "", missing, "", ""},
-		{"pi", true, "pi", "", ready, osSandboxName, ""},
-		{"opencode read-only", true, "opencode", protocol.WorkersReadOnly, ready, osSandboxName, ""},
-		{"codex keeps its own", true, "codex", protocol.WorkersNoNetwork, missing, "", ""},
-		{"agy keeps its own", true, "agy", "", missing, "", ""},
-		{"claude refused", true, "claude", "", ready, "", "Claude Code's own background service"},
-		{"no-network refused", true, "opencode", protocol.WorkersNoNetwork, ready, "", "cut its connection to its model"},
-		{"tool missing refused", true, "pi", "", missing, "", "not installed"},
-		{"unknown harness refused", true, "other", "", ready, "", "cannot wrap"},
+		{"turned off", osSandboxOff, "pi", "", missing, "", ""},
+		{"turned off, no-network", osSandboxOff, "opencode", protocol.WorkersNoNetwork, missing, "", ""},
+		{"default pi", osSandboxDefault, "pi", "", ready, osSandboxName, ""},
+		{"default opencode", osSandboxDefault, "opencode", protocol.WorkersSandboxed, ready, osSandboxName, ""},
+		{"default read-only", osSandboxDefault, "opencode", protocol.WorkersReadOnly, ready, osSandboxName, ""},
+		{"default claude runs on its own sandbox", osSandboxDefault, "claude", "", missing, "", ""},
+		{"default codex", osSandboxDefault, "codex", "", missing, "", ""},
+		{"default agy", osSandboxDefault, "agy", "", missing, "", ""},
+		{"default unknown harness", osSandboxDefault, "other", "", missing, "", ""},
+		{"default tool missing", osSandboxDefault, "pi", "", missing, "", "not installed"},
+		{"default no-network", osSandboxDefault, "opencode", protocol.WorkersNoNetwork, ready, "", "cut its connection to its model"},
+		{"listed pi", osSandboxExplicit, "pi", "", ready, osSandboxName, ""},
+		{"listed codex keeps its own", osSandboxExplicit, "codex", protocol.WorkersNoNetwork, missing, "", ""},
+		{"listed agy keeps its own", osSandboxExplicit, "agy", "", missing, "", ""},
+		{"listed claude refused", osSandboxExplicit, "claude", "", ready, "", "Claude Code's own background service"},
+		{"listed no-network refused", osSandboxExplicit, "opencode", protocol.WorkersNoNetwork, ready, "", "cut its connection to its model"},
+		{"listed tool missing refused", osSandboxExplicit, "pi", "", missing, "", "not installed"},
+		{"listed unknown harness refused", osSandboxExplicit, "other", "", ready, "", "cannot wrap"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := osSandboxDecide(tc.on, tc.harness, tc.level, tc.ready)
+			got, err := osSandboxDecide(tc.mode, tc.harness, tc.level, tc.ready)
 			if tc.refuse != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.refuse) {
 					t.Fatalf("error %v, want one with %q", err, tc.refuse)
@@ -225,16 +242,30 @@ func TestOSSandboxDecide(t *testing.T) {
 	}
 }
 
-// With the switch on and the tool missing, the start is refused with the
-// reason, and no worker runs without the sandbox.
+// A missing tool is refused with the fix, and the way out names node.json.
+func TestOSSandboxDefaultRefusalNamesTheFix(t *testing.T) {
+	_, err := osSandboxDecide(osSandboxDefault, "pi", "", func() error {
+		return errors.New("bubblewrap (bwrap) is not installed: install it (Debian and Ubuntu: `sudo apt install bubblewrap`)")
+	})
+	if err == nil {
+		t.Fatal("a Pi worker would start without the sandbox")
+	}
+	for _, want := range []string{"on by default", "sudo apt install bubblewrap", `"os_sandbox_off"`, "was not started without it"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal lacks %q: %v", want, err)
+		}
+	}
+}
+
+// With the sandbox on (by default) and the tool missing, the start is refused
+// with the reason, and no worker runs without the sandbox.
 func TestOSSandboxRefusesStartWithoutTheTool(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	dir := t.TempDir()
 	t.Setenv(envFakePi, "1")
 	t.Setenv("PI_CODING_AGENT_SESSION_DIR", dir)
-	set := shortSet
-	set.OSSandbox = []string{"shop"}
-	w := startWorkerNode(t, g, set, func(c *Config) {
+	w := startWorkerNode(t, g, shortSet, func(c *Config) {
+		c.Workers.OSSandboxOff = nil // the default: on
 		c.HarnessPaths = map[string]string{"pi": os.Args[0]}
 		c.PiSessionsDir = dir
 		c.testOSSandboxReady = func() error { return errors.New("bubblewrap (bwrap) is not installed: install it") }
@@ -266,5 +297,130 @@ func TestOSSandboxRefusesClaudeWorker(t *testing.T) {
 	}
 	if len(c.stops()) != 0 {
 		t.Fatal("claude was started")
+	}
+}
+
+// The daemon applies the node.json lists. A worker that already ran in the
+// wrapper stays in it, even when the project was turned off since.
+func TestOSSandboxChoiceUsesNodeSettings(t *testing.T) {
+	missing := func() error { return errors.New("bubblewrap (bwrap) is not installed") }
+	ok := func() error { return nil }
+	for _, tc := range []struct {
+		name     string
+		set      WorkerSettings
+		ready    func() error
+		recorded bool
+		want     string
+		refuse   bool
+	}{
+		{"nothing set", WorkerSettings{}, ok, false, osSandboxName, false},
+		{"nothing set, tool missing", WorkerSettings{}, missing, false, "", true},
+		{"project off", WorkerSettings{OSSandboxOff: []string{"shop"}}, missing, false, "", false},
+		{"other project off", WorkerSettings{OSSandboxOff: []string{"blog"}}, ok, false, osSandboxName, false},
+		{"recorded stays in", WorkerSettings{OSSandboxOff: []string{"*"}}, ok, true, osSandboxName, false},
+		{"recorded, tool missing", WorkerSettings{OSSandboxOff: []string{"*"}}, missing, true, "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := &Daemon{cfg: Config{Workers: tc.set, testOSSandboxReady: tc.ready}}
+			got, err := d.osSandboxChoice("shop", "pi", "", tc.recorded)
+			if (err != nil) != tc.refuse || got != tc.want {
+				t.Fatalf("got %q, %v; want %q (refuse %v)", got, err, tc.want, tc.refuse)
+			}
+		})
+	}
+}
+
+// A Claude worker starts with the sandbox on by default: Claude Code's own
+// sandbox settings apply, and the wrapper is not asked for.
+func TestOSSandboxDefaultStartsClaudeWorker(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	c := startClaudeNodeWith(t, g, shortSet, func(c *Config) {
+		c.Workers.OSSandboxOff = nil
+		c.testOSSandboxReady = func() error { return errors.New("bubblewrap (bwrap) is not installed") }
+	})
+	c.register(t, newRepo(t, "shop"))
+	if _, err := c.start(protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Model: "haiku", Task: "say ok"}); err != nil {
+		t.Fatalf("a Claude worker was refused by the default sandbox: %v", err)
+	}
+}
+
+// The profile that sandbox-exec runs says what the policy says: the worktree,
+// the git folders and the private state are writable, the read-only paths are
+// denied after them (the later rule wins), and only the agent-net socket is
+// reachable.
+func TestSeatbeltProfile(t *testing.T) {
+	p := buildOSSandboxPolicy(osSandboxInput{
+		Level: protocol.WorkersSandboxed, WorkerDir: "/state/workers/w_1", Path: "/work/wt",
+		DotGit: "/work/wt/.git", GitCommon: "/repo/.git", GitRoots: []string{"/repo/.git/objects", "/repo/.git/refs"},
+		State: []string{"/state/workers/w_1/data"}, Socket: "/state/agent-net.sock",
+	})
+	got := seatbeltProfile(p)
+	for _, want := range []string{
+		"(version 1)\n(allow default)\n(deny file-write*)\n",
+		`(allow file-write* (subpath "/work/wt") (subpath "/repo/.git/objects") (subpath "/repo/.git/refs") (subpath "/state/workers/w_1/data") (subpath "/state/workers/w_1/tmp"))`,
+		`(deny file-write* (subpath "/work/wt/.git"))`,
+		`(allow network-outbound (remote unix-socket (path-literal "/state/agent-net.sock")))`,
+		`(deny network-outbound (remote unix-socket))`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("profile lacks %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "(deny network*)") {
+		t.Errorf("the network is cut at the sandboxed level:\n%s", got)
+	}
+	if strings.Index(got, `(allow file-write* (subpath "/work/wt")`) > strings.Index(got, `(deny file-write* (subpath "/work/wt/.git"))`) {
+		t.Error("the read-only .git is denied before the worktree is allowed, so the allow wins")
+	}
+
+	// read-only: the worktree is not writable, the private state still is.
+	ro := seatbeltProfile(buildOSSandboxPolicy(osSandboxInput{Level: protocol.WorkersReadOnly, WorkerDir: "/state/workers/w_1", Path: "/work/wt", State: []string{"/state/workers/w_1/data"}}))
+	if strings.Contains(ro, `(subpath "/work/wt")`) || !strings.Contains(ro, `(subpath "/state/workers/w_1/data")`) {
+		t.Errorf("read-only profile:\n%s", ro)
+	}
+	// a quote in a path cannot end the string early
+	q := seatbeltProfile(osSandboxPolicy{Network: true, Writable: []string{`/a"b) (allow default`}})
+	if !strings.Contains(q, `(subpath "/a\"b) (allow default")`) {
+		t.Errorf("path not quoted:\n%s", q)
+	}
+	args := seatbeltArgs(p, "/bin/pi", []string{"--mode", "rpc"})
+	if len(args) != 5 || args[0] != "-p" || args[2] != "/bin/pi" || args[4] != "rpc" {
+		t.Errorf("sandbox-exec args %q", args)
+	}
+}
+
+// Where the default is off (macOS), a Pi or OpenCode worker of a project that
+// is not listed runs without the wrapper and the notice says why; a listed
+// project still gets the wrapper, and a project that is turned off says
+// nothing about macOS.
+func TestOSSandboxDefaultOffWhereTheOSHasNoDefault(t *testing.T) {
+	never := func() error { t.Error("the tool was probed where the default is off"); return nil }
+	ok := func() error { return nil }
+	for _, tc := range []struct {
+		name    string
+		mode    osSandboxMode
+		harness string
+		level   string
+		ready   func() error
+		want    string
+		refuse  bool
+	}{
+		{"default pi", osSandboxDefault, "pi", "", never, protocol.OSSandboxNoneMacOS, false},
+		{"default opencode no-network", osSandboxDefault, "opencode", protocol.WorkersNoNetwork, never, protocol.OSSandboxNoneMacOS, false},
+		{"default claude", osSandboxDefault, "claude", "", never, "", false},
+		{"default codex", osSandboxDefault, "codex", "", never, "", false},
+		{"listed pi wraps", osSandboxExplicit, "pi", "", ok, osSandboxName, false},
+		{"listed claude refused", osSandboxExplicit, "claude", "", ok, "", true},
+		{"turned off", osSandboxOff, "pi", "", never, "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := osSandboxDecideOn(false, tc.mode, tc.harness, tc.level, tc.ready)
+			if (err != nil) != tc.refuse || got != tc.want {
+				t.Fatalf("got %q, %v; want %q (refuse %v)", got, err, tc.want, tc.refuse)
+			}
+		})
+	}
+	if osSandboxRequired(false, osSandboxDefault) || !osSandboxRequired(false, osSandboxExplicit) || !osSandboxRequired(true, osSandboxDefault) || osSandboxRequired(true, osSandboxOff) {
+		t.Error("osSandboxRequired does not follow the default of the OS")
 	}
 }

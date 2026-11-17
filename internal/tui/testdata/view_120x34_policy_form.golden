@@ -13,7 +13,7 @@ Delegation policy: web (Mac), opencode ─────────────�
   Scope     session
 
   Workers: sandboxed: writes only in its worktree, network on, no approval prompts
-  Enforced for claude, codex and agy only for now.
+  Enforced for claude, codex and agy, and for Pi and OpenCode (OS sandbox).
   left/right changes a choice. Enter on Scope saves. The policy is added to the session's context on every turn.
 
 
