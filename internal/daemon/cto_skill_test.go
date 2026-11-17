@@ -26,26 +26,35 @@ type ctoSkillGateway struct {
 }
 
 func (g *ctoSkillGateway) call(ctx context.Context, typ string, params any) (json.RawMessage, bool, error) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
 	switch typ {
 	case protocol.FrameSkillArchiveBundled:
 		p := params.(protocol.SkillArchiveBundled)
-		if g.failShip {
+		g.mu.Lock()
+		failShip := g.failShip
+		if !failShip {
+			g.shipped = append(g.shipped, p)
+		}
+		g.mu.Unlock()
+		if failShip {
 			return nil, true, errors.New("gateway is down")
 		}
-		g.shipped = append(g.shipped, p)
 		_, hash, err := packCTOSkillOnce()
 		if err != nil {
 			return nil, true, err
 		}
+		g.skills.mu.Lock()
 		g.skills.bundles = map[string][]byte{skillVersionKey(p.Name, 1): p.Bundle}
 		g.skills.folder = protocol.SkillFolder{Level: "agent", Scope: "cto", Skills: []protocol.EffectiveSkill{{Name: p.Name, Version: 1, Hash: hash}}}
+		g.skills.mu.Unlock()
 		return json.RawMessage(`{}`), true, nil
 	case protocol.FrameSkillsSet:
+		g.mu.Lock()
+		defer g.mu.Unlock()
 		g.adds = append(g.adds, params.(protocol.SkillSetRequest))
 		return json.RawMessage(`{}`), true, nil
 	case protocol.FrameSkillsFolder, protocol.FrameSkillsVersion:
+		// The skill folder fake has its own lock. This handler holds none
+		// across the call, so the two locks never nest.
 		return g.skills.call(ctx, typ, params)
 	}
 	return json.RawMessage(`null`), true, nil
