@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"slices"
 
 	"github.com/niparis/agent-net/internal/daemon/opencodeapi"
 )
@@ -125,41 +126,70 @@ func promptMessageID(raw []byte) string {
 	return answer.Data.ID
 }
 
-// openCodeMessageStored reports whether one of the prompts sent is in the
-// conversation. An error means the answer is unknown, and the caller must not
-// send the prompt on a guess.
-func (d *Daemon) openCodeMessageStored(ctx context.Context, base, pass, version, identity, id string, sentIDs []string) (bool, error) {
+// openCodeNudgeText is the turn a restart sends for a stored prompt that has no
+// reply. It points at the message, so the full text is not sent again.
+const openCodeNudgeText = "Answer the message above that has no reply yet."
+
+// openCodePromptState says what the conversation holds for a sent prompt.
+type openCodePromptState int
+
+const (
+	// promptNotStored: no copy of the prompt is in the conversation.
+	promptNotStored openCodePromptState = iota
+	// promptUnanswered: a copy is stored and no assistant message came after it.
+	promptUnanswered
+	// promptAnswered: a copy is stored and an assistant message came after it.
+	promptAnswered
+)
+
+// openCodePromptState reads the newest messages once. An error means the state is
+// unknown, and the caller must not send anything on a guess.
+func (d *Daemon) openCodePromptState(ctx context.Context, base, pass, version, identity, id string, sentIDs []string) (openCodePromptState, error) {
 	if len(sentIDs) == 0 {
-		return false, nil
+		return promptNotStored, nil
 	}
 	routes, err := d.discoverOpenCodeRoutes(ctx, base, pass, version, identity)
 	if err != nil {
-		return false, err
+		return promptNotStored, err
 	}
 	path, err := routes.Path(opencodeapi.Messages, id)
 	if err != nil {
-		return false, err
+		return promptNotStored, err
 	}
 	raw, err := d.cto.apiTo(ctx, base, pass, opencodeapi.Messages.Method(), path+"?order=desc&limit=200", nil)
 	if err != nil {
-		return false, err
+		return promptNotStored, err
 	}
 	var page struct {
 		Data []struct {
-			ID string `json:"id"`
+			ID   string `json:"id"`
+			Type string `json:"type"`
+			Time struct {
+				Created int64 `json:"created"`
+			} `json:"time"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &page); err != nil {
-		return false, err
+		return promptNotStored, err
 	}
-	for _, m := range page.Data {
-		for _, want := range sentIDs {
-			if m.ID == want {
-				return true, nil
-			}
+	// The list is newest first. The newest stored copy of the prompt is the one to judge.
+	at := -1
+	for i, m := range page.Data {
+		if slices.Contains(sentIDs, m.ID) {
+			at = i
+			break
 		}
 	}
-	return false, nil
+	if at < 0 {
+		return promptNotStored, nil
+	}
+	since := page.Data[at].Time.Created
+	for _, m := range page.Data[:at] {
+		if m.Type == "assistant" && m.Time.Created >= since {
+			return promptAnswered, nil
+		}
+	}
+	return promptUnanswered, nil
 }
 
 // restartOpenCodeCTOForDelivery ends the CTO's private server, starts it again
@@ -187,15 +217,24 @@ func (d *Daemon) restartOpenCodeCTOForDelivery(ctx context.Context, id, text, ms
 		d.Logf("cto.delivery_unconfirmed msg=%s reason=restart_failed detail=%q", msgID, err.Error())
 		return
 	}
-	stored, err := d.openCodeMessageStored(ctx, c.base, c.password, c.version, c.identity, id, sentIDs)
+	state, err := d.openCodePromptState(ctx, c.base, c.password, c.version, c.identity, id, sentIDs)
 	if err != nil {
 		d.Logf("cto.delivery_unconfirmed msg=%s reason=stored_unknown detail=%q", msgID, err.Error())
 		return
 	}
-	if stored {
-		// The prompt is in the conversation already. The restart resumes it, and
-		// the prompt is not sent again.
+	switch state {
+	case promptAnswered:
+		// The conversation answered the prompt already. The restart does nothing more.
 		d.Logf("cto.delivery_resumed msg=%s", msgID)
+		return
+	case promptUnanswered:
+		// The prompt is stored with no reply. Nudge the conversation to answer it,
+		// rather than sending the full text again.
+		if _, err := d.ctoOp(ctx, opencodeapi.Prompt, id, "", map[string]string{"text": openCodeNudgeText, "delivery": "queue"}); err != nil {
+			d.Logf("cto.delivery_unconfirmed msg=%s reason=restart_failed detail=%q", msgID, err.Error())
+			return
+		}
+		d.Logf("cto.delivery_nudged msg=%s", msgID)
 		return
 	}
 	if _, err := d.ctoOp(ctx, opencodeapi.Prompt, id, "", map[string]string{"text": text, "delivery": "queue"}); err != nil {

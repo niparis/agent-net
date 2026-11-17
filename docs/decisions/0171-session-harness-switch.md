@@ -92,8 +92,11 @@ idle, untaken message is sent once more, then the session restarts with the
 message as its first prompt. A session has one check at a time: a newer message
 replaces the older check, and the check ends when the message is taken, when the
 session goes offline, ends or is archived, when agent-net stops it, or when the
-daemon stops. On OpenCode, a restart resumes the conversation when a copy of the
-prompt is already in it, and sends the prompt again only when none is stored.
+daemon stops. On OpenCode, a restart reads the conversation first. When a copy of
+the prompt is stored with an assistant reply after it, the restart does nothing.
+When a copy is stored with no reply, the restart sends a short nudge that points
+at it, not the full text again. When no copy is stored, the restart sends the
+prompt once.
 
 The sources are the Claude transcript (the message ID in the bytes added since
 the send), the OpenCode conversation (a message the owner did not write, created

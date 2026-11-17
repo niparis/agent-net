@@ -2,12 +2,15 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/niparis/agent-net/internal/daemon/opencodeapi"
 )
 
 // openCodeCTOConfirm is a node whose CTO runs on the fake OpenCode, with the
@@ -64,15 +67,14 @@ func testOpenCodeCTODeliveryRetriedThenRestarted(t *testing.T) {
 			t.Errorf("%q logged %d times, want 1:\n%s", want, got, logs.String())
 		}
 	}
-	// The first copy of the prompt is in the conversation, so the restart resumes
-	// it and the new server is not sent the prompt again.
-	eventually(t, "the restart resumed the stored prompt", func() bool { return len(logs.lines("cto.delivery_resumed")) == 1 })
-	rec := readFake(t, filepath.Join(n.cfg.StateDir, "cto"))
-	for _, turn := range rec.Turns {
-		if strings.Contains(turn, "please answer this") {
-			t.Fatalf("the restarted server got the stored prompt again: %q", rec.Turns)
-		}
-	}
+	// The first copy of the prompt is in the conversation with no reply after it.
+	// The restart does not send the full text again: it nudges the conversation
+	// to answer the stored message.
+	eventually(t, "the restart nudged the stored prompt", func() bool { return len(logs.lines("cto.delivery_nudged")) == 1 })
+	eventually(t, "the restarted server got the nudge", func() bool {
+		rec := readFake(t, filepath.Join(n.cfg.StateDir, "cto"))
+		return len(rec.Turns) == 1 && rec.Turns[0] == "Answer the message above that has no reply yet."
+	})
 }
 
 // While the CTO is busy the message is held, not sent again. When the turn
@@ -160,23 +162,21 @@ func testOpenCodeCTODeliveryFailedTurnIsTaken(t *testing.T) {
 	}
 }
 
-// The first copy of a prompt is in the conversation. After the restart the
-// daemon resumes the conversation and does not send the prompt again.
-func TestOpenCodeCTORestartResumesStoredPrompt(t *testing.T) {
-	withFakeOpenCodeRouteSets(t, testOpenCodeCTORestartResumesStoredPrompt)
+// A stored prompt with no reply after it gets a nudge turn after the restart.
+// The nudge names the stored message, so the full text is not sent again.
+func TestOpenCodeCTORestartNudgesStoredUnansweredPrompt(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testOpenCodeCTORestartNudgesStoredUnansweredPrompt)
 }
 
-func testOpenCodeCTORestartResumesStoredPrompt(t *testing.T) {
+func testOpenCodeCTORestartNudgesStoredUnansweredPrompt(t *testing.T) {
 	n, cli, logs := openCodeCTOConfirm(t, true)
 	cli.mustCall("cto_send", map[string]string{"text": "please answer this"})
 	eventually(t, "the restart", func() bool { return len(logs.lines("cto.restart_for_delivery")) == 1 })
-	eventually(t, "the restart resumed the stored prompt", func() bool { return len(logs.lines("cto.delivery_resumed")) == 1 })
-	rec := readFake(t, filepath.Join(n.cfg.StateDir, "cto"))
-	for _, turn := range rec.Turns {
-		if strings.Contains(turn, "please answer this") {
-			t.Fatalf("the restarted server got the stored prompt again: %q", rec.Turns)
-		}
-	}
+	eventually(t, "the restart nudged the stored prompt", func() bool { return len(logs.lines("cto.delivery_nudged")) == 1 })
+	eventually(t, "the restarted server got only the nudge", func() bool {
+		rec := readFake(t, filepath.Join(n.cfg.StateDir, "cto"))
+		return len(rec.Turns) == 1 && rec.Turns[0] == "Answer the message above that has no reply yet."
+	})
 }
 
 // A prompt that was never stored is sent again after the restart.
@@ -194,5 +194,66 @@ func testOpenCodeCTORestartPromptsAgainWhenNotStored(t *testing.T) {
 	})
 	if got := len(logs.lines("cto.delivery_resumed")); got != 0 {
 		t.Fatalf("a prompt that was never stored was resumed: %d", got)
+	}
+}
+
+// The restart tells a stored prompt with an assistant reply after it from one
+// with no reply, and from a prompt that is not stored at all.
+func TestOpenCodePromptStateReadsReplies(t *testing.T) {
+	withFakeOpenCodeRouteSets(t, testOpenCodePromptStateReadsReplies)
+}
+
+func testOpenCodePromptStateReadsReplies(t *testing.T) {
+	n, cli, _ := openCodeCTOConfirm(t, false)
+	ctx := context.Background()
+	cli.mustCall("cto_send", map[string]string{"text": "FAKE:answer with a reply"})
+	cli.mustCall("cto_send", map[string]string{"text": "please answer this"})
+	c := &n.d.cto
+	c.mu.Lock()
+	base, pass, version, identity, session := c.base, c.password, c.version, c.identity, c.session
+	c.mu.Unlock()
+	path, err := n.d.openCodePath(ctx, base, pass, version, identity, opencodeapi.Messages, session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := c.apiTo(ctx, base, pass, opencodeapi.Messages.Method(), path+"?order=desc&limit=50", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var page struct {
+		Data []struct {
+			ID   string `json:"id"`
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &page); err != nil {
+		t.Fatal(err)
+	}
+	idOf := func(text string) string {
+		for _, m := range page.Data {
+			if m.Type == "user" && m.Text == text {
+				return m.ID
+			}
+		}
+		t.Fatalf("no stored message %q", text)
+		return ""
+	}
+	state := func(ids ...string) openCodePromptState {
+		t.Helper()
+		got, err := n.d.openCodePromptState(ctx, base, pass, version, identity, session, ids)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	if got := state(idOf("FAKE:answer with a reply")); got != promptAnswered {
+		t.Fatalf("a prompt with a reply after it: state %v, want promptAnswered", got)
+	}
+	if got := state(idOf("please answer this")); got != promptUnanswered {
+		t.Fatalf("a stored prompt with no reply: state %v, want promptUnanswered", got)
+	}
+	if got := state("msg_not_stored"); got != promptNotStored {
+		t.Fatalf("a prompt that is not stored: state %v, want promptNotStored", got)
 	}
 }
