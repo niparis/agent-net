@@ -22,14 +22,20 @@ import (
 )
 
 type setupDaemonFixture struct {
-	info      protocol.OperatorInfo
-	nodes     protocol.NodesInfo
-	agents    protocol.AgentsResult
-	projects  protocol.ProjectsResult
-	graph     protocol.GraphGot
-	protected protocol.ProtectedProviders
-	workers   protocol.WorkersResult
-	listAfter int
+	info         protocol.OperatorInfo
+	nodes        protocol.NodesInfo
+	agents       protocol.AgentsResult
+	projects     protocol.ProjectsResult
+	graph        protocol.GraphGot
+	protected    protocol.ProtectedProviders
+	workers      protocol.WorkersResult
+	listAfter    int
+	roleModels   []protocol.RoleModel
+	roleKept     []string
+	roleFailures []string
+	// roleExisting replaces the three fields above with an existing network's answer.
+	roleExisting *protocol.RoleSetupResult
+	roleCalls    *int
 }
 
 func fakeSetupDaemon(t *testing.T, fixture setupDaemonFixture) {
@@ -88,6 +94,14 @@ func fakeSetupDaemon(t *testing.T, fixture setupDaemonFixture) {
 						result = fixture.workers
 					case protocol.OpToolsDifferences:
 						result = map[string]any{"differences": []any{}, "to_look_at": 0}
+					case "role_setup":
+						if fixture.roleCalls != nil {
+							*fixture.roleCalls++
+						}
+						result = map[string]any{"models": fixture.roleModels, "kept": fixture.roleKept, "failures": fixture.roleFailures}
+						if fixture.roleExisting != nil {
+							result = fixture.roleExisting
+						}
 					default:
 						fmt.Fprintf(conn, "{\"id\":%q,\"error\":%q}\n", request.ID, "unknown method")
 						continue
@@ -98,6 +112,78 @@ func fakeSetupDaemon(t *testing.T, fixture setupDaemonFixture) {
 			}(conn)
 		}
 	}()
+}
+
+func TestSetupPrintsRoleChoicesAndFailures(t *testing.T) {
+	tempSetupDirs(t)
+	fixture, _, _, _ := onboardingFixture("empty-first-machine")
+	fixture.roleModels = []protocol.RoleModel{{Harness: "codex", Provider: "openai", Model: "fake-model"}}
+	fixture.roleKept = []string{"chief"}
+	fixture.roleFailures = []string{"opencode: quota exhausted"}
+	fakeSetupDaemon(t, fixture)
+	var out strings.Builder
+	r := &runner{Options: Options{Out: &out}, interactive: true}
+	r.daemonStatus(context.Background())
+	defer r.statusClient.Close()
+	r.setupRoles(context.Background())
+	for _, want := range []string{"cto", "chief", "merger", "codex", "kept", "quota exhausted"} {
+		if !strings.Contains(strings.ToLower(out.String()), want) {
+			t.Fatalf("setup output lacks %q:\n%s", want, out.String())
+		}
+	}
+}
+
+func roleSetupOutput(t *testing.T, fixture setupDaemonFixture, r *runner) (string, *strings.Builder) {
+	t.Helper()
+	tempSetupDirs(t)
+	fakeSetupDaemon(t, fixture)
+	var out strings.Builder
+	r.Out = &out
+	r.daemonStatus(context.Background())
+	defer r.statusClient.Close()
+	out.Reset()
+	r.setupRoles(context.Background())
+	return out.String(), &out
+}
+
+// On a network that already has a CTO, setup shows what each role uses now
+// and writes nothing.
+func TestSetupPrintsRolesOfAnExistingNetwork(t *testing.T) {
+	fixture, _, _, _ := onboardingFixture("empty-first-machine")
+	fixture.roleExisting = &protocol.RoleSetupResult{Existing: true, Kept: []string{"chief"}, Unset: []string{"cto", "merger"},
+		Defaults: map[string]string{"merger": "claude · anthropic · claude-opus-5-5"}, Missing: []string{"merger"}}
+	got, _ := roleSetupOutput(t, fixture, &runner{interactive: true})
+	for _, want := range []string{
+		"cto model             not set on this network, uses its default",
+		"chief model           kept existing model list",
+		"merger model          not set on this network, uses claude · anthropic · claude-opus-5-5",
+		"no merger is running on this network",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("setup output lacks %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "using ") || strings.Contains(got, "install or sign in") {
+		t.Fatalf("setup acted on an existing network:\n%s", got)
+	}
+}
+
+// Upgrade runs setup with no person to answer. It must not choose role models.
+func TestSetupDoesNotTouchRolesUnlessInteractive(t *testing.T) {
+	for name, r := range map[string]*runner{
+		"no terminal": {interactive: false},
+		"--no-roles":  {interactive: true, Options: Options{NoRoles: true}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			calls := 0
+			fixture, _, _, _ := onboardingFixture("empty-first-machine")
+			fixture.roleCalls = &calls
+			got, _ := roleSetupOutput(t, fixture, r)
+			if calls != 0 || !strings.Contains(got, "skipped") {
+				t.Fatalf("role_setup calls = %d, output:\n%s", calls, got)
+			}
+		})
+	}
 }
 
 func onboardingFixture(name string) (setupDaemonFixture, bool, []string, []string) {
@@ -124,12 +210,12 @@ func onboardingFixture(name string) (setupDaemonFixture, bool, []string, []strin
 			projects[i] = protocol.ProjectView{Name: fmt.Sprintf("project-%d", i+1), NodeID: "n_laptop", Hostname: "laptop"}
 			graphNodes[i] = protocol.Node{Name: projects[i].Name, Kind: "project"}
 		}
-		return setupDaemonFixture{info: info, nodes: protocol.NodesInfo{Nodes: []protocol.NodeView{makeNode("n_laptop", "laptop", []string{"claude", "codex", "pi", "opencode"})}},
+		return setupDaemonFixture{info: info, nodes: protocol.NodesInfo{Nodes: []protocol.NodeView{makeNode("n_laptop", "laptop", []string{"claude", "codex", "pi", "opencode"})}}, roleKept: []string{"cto", "chief", "merger"},
 			agents: protocol.AgentsResult{Agents: agents}, projects: protocol.ProjectsResult{Projects: projects}, graph: protocol.GraphGot{Graph: protocol.Graph{Nodes: graphNodes}},
 			protected: protocol.ProtectedProviders{Providers: []string{"anthropic"}, Configured: true}}, false, []string{"claude", "codex", "pi", "opencode"}, []string{"claude", "codex"}
 	case "empty-first-machine":
 		return setupDaemonFixture{info: localNode("n_laptop", "laptop", nil), nodes: protocol.NodesInfo{Nodes: []protocol.NodeView{makeNode("n_laptop", "laptop", nil)}},
-			projects: protocol.ProjectsResult{}, graph: protocol.GraphGot{}, protected: protocol.ProtectedProviders{}}, false, nil, []string{"codex"}
+			projects: protocol.ProjectsResult{}, graph: protocol.GraphGot{}, protected: protocol.ProtectedProviders{}}, false, nil, nil
 	case "joining-machine":
 		info := localNode("n_build", "build-vm", []string{"pi", "opencode"})
 		info.Sessions = []protocol.SessionInfo{{Harness: "pi", ToolsOld: true}, {Harness: "opencode", ToolsOld: true}}
@@ -138,7 +224,7 @@ func onboardingFixture(name string) (setupDaemonFixture, bool, []string, []strin
 			{SessionID: "s_oc", NodeID: "n_build", Hostname: "build-vm", Harness: "opencode", Status: "idle", Online: true},
 			{SessionID: "s_laptop", NodeID: "n_laptop", Hostname: "laptop", Harness: "claude", Status: "busy", Online: true},
 		}
-		return setupDaemonFixture{info: info, nodes: protocol.NodesInfo{Nodes: []protocol.NodeView{makeNode("n_laptop", "laptop", []string{"claude", "codex"}), makeNode("n_build", "build-vm", []string{"pi", "opencode"})}},
+		return setupDaemonFixture{info: info, nodes: protocol.NodesInfo{Nodes: []protocol.NodeView{makeNode("n_laptop", "laptop", []string{"claude", "codex"}), makeNode("n_build", "build-vm", []string{"pi", "opencode"})}}, roleKept: []string{"cto", "chief", "merger"},
 			agents: protocol.AgentsResult{Agents: agents}, projects: protocol.ProjectsResult{}, graph: protocol.GraphGot{}, protected: protocol.ProtectedProviders{}}, true, []string{"pi", "opencode"}, nil
 	default:
 		panic("unknown onboarding fixture " + name)
@@ -164,6 +250,30 @@ func harnessInfos(names []string) []protocol.HarnessInfo {
 		out = append(out, protocol.HarnessInfo{Name: name})
 	}
 	return out
+}
+
+func TestSetupSuggestsInstallingAHarness(t *testing.T) {
+	fixture, joining, harnesses, _ := onboardingFixture("empty-first-machine")
+	r := &runner{Options: Options{Out: io.Discard}, joining: joining, foundHarnesses: harnesses, statusInfo: daemonInfo{NodeID: fixture.info.NodeID}}
+	actions := r.firstActions(setupSummary{nodes: fixture.nodes.Nodes, nodesKnown: true})
+	if len(actions) == 0 || !strings.Contains(actions[0], "Install") || !strings.Contains(actions[0], "Codex") {
+		t.Fatalf("setup actions = %v, want an install instruction", actions)
+	}
+}
+
+func TestSetupSuggestsInstallingAHarnessWhenDaemonIsOffline(t *testing.T) {
+	r := &runner{Options: Options{Out: io.Discard}, foundHarnesses: []string{}}
+	if actions := r.firstActions(setupSummary{}); len(actions) == 0 || !strings.Contains(actions[0], "Install") {
+		t.Fatalf("setup actions = %v, want an install instruction after the scan", actions)
+	}
+}
+
+func TestSetupUsesInventoryOverOldIntegrationFiles(t *testing.T) {
+	fixture, _, _, _ := onboardingFixture("empty-first-machine")
+	r := &runner{Options: Options{Out: io.Discard}, foundHarnesses: []string{"pi"}, statusInfo: daemonInfo{NodeID: fixture.info.NodeID}}
+	if actions := r.firstActions(setupSummary{nodes: fixture.nodes.Nodes, nodesKnown: true}); len(actions) == 0 || !strings.Contains(actions[0], "Install") {
+		t.Fatalf("setup actions = %v, want an install instruction when inventory is empty", actions)
+	}
 }
 
 func TestSetupOnboardingGolden(t *testing.T) {
@@ -205,6 +315,7 @@ func TestSetupOnboardingGolden(t *testing.T) {
 					r.step("daemon service", "", errors.New("systemctl --user start: exit 1"))
 				} else {
 					r.daemonStatus(ctx)
+					r.setupRoles(ctx)
 				}
 				r.finish(ctx)
 				got := out.String()
@@ -461,5 +572,13 @@ func TestMapPointWithoutTheGraphGivesNoFolderCount(t *testing.T) {
 	point := (&runner{}).mapPoint(summary)
 	if strings.ContainsAny(point.first, "0123456789") {
 		t.Fatalf("Map line %q counts folders without the graph", point.first)
+	}
+}
+
+func TestSetupReadsTheNoRolesEnvironment(t *testing.T) {
+	t.Setenv(NoRolesEnv, "1")
+	r, err := newRunner(Options{Out: io.Discard})
+	if err != nil || !r.NoRoles {
+		t.Fatalf("runner NoRoles = %v, %v", r != nil && r.NoRoles, err)
 	}
 }

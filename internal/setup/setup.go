@@ -63,9 +63,13 @@ type Options struct {
 	NeedsHook            string        // "" leave; NeedsHookYes or NeedsHookNo is a local answer
 	WorkersMod           string        // "" leave; WorkersModYes or WorkersModNo is a local answer
 	QuotaOnly            bool          // run only the quota setup step
+	NoRoles              bool          // leave the role model lists and the role sessions alone (upgrade sets NoRolesEnv)
 	QuotaAXI             string        // "" leave; QuotaAXIYes or QuotaAXINo is a local answer
 	Out                  io.Writer
 }
+
+// NoRolesEnv is set by upgrade for the setup it runs.
+const NoRolesEnv = "AGENT_NET_SETUP_NO_ROLES"
 
 // DefaultDist is where the gateway serves binaries from.
 func DefaultDist() string {
@@ -116,6 +120,9 @@ func newRunner(o Options) (*runner, error) {
 	}
 	if os.Getenv("AGENT_NET_NO_SERVICE") == "1" {
 		o.NoService = true
+	}
+	if os.Getenv(NoRolesEnv) == "1" {
+		o.NoRoles = true
 	}
 	return &runner{Options: o, colors: defaultSetupColor(), interactive: interactive}, nil
 }
@@ -210,9 +217,63 @@ func Setup(ctx context.Context, o Options) error {
 	r.recordApplied()
 	r.piExtension()
 	r.opencodePlugin()
+	// An empty completed scan must stay distinguishable from one not run yet.
+	if r.foundHarnesses == nil {
+		r.foundHarnesses = []string{}
+	}
 	r.guidance()
 	r.daemonStatus(ctx)
+	r.setupRoles(ctx)
 	return r.failed
+}
+
+// setupRoles runs only in a setup a person started. An upgrade runs setup too,
+// and must never pick role models or start a CTO on its own.
+func (r *runner) setupRoles(ctx context.Context) {
+	var result protocol.RoleSetupResult
+	if !r.interactive || r.NoRoles {
+		r.step("role models", "skipped (only an interactive setup chooses them)", nil)
+		return
+	}
+	if r.statusClient == nil {
+		for _, role := range []string{protocol.RoleCTO, protocol.RoleChief, protocol.RoleMerger} {
+			r.step(role+" model", "not checked (daemon is not connected)", nil)
+		}
+		return
+	}
+	raw, err := r.statusClient.Call(ctx, protocol.OpRoleSetup, protocol.RoleSetupRequest{Start: true})
+	if err == nil {
+		err = json.Unmarshal(raw, &result)
+	}
+	if err != nil {
+		r.step("role models", "", err)
+		return
+	}
+	for _, failure := range result.Failures {
+		r.hint("%s", strings.Join(strings.Fields(failure), " "))
+	}
+	kept := map[string]bool{}
+	for _, role := range result.Kept {
+		kept[role] = true
+	}
+	for _, role := range []string{protocol.RoleCTO, protocol.RoleChief, protocol.RoleMerger} {
+		text := "install or sign in: Codex, OpenCode or Claude Code"
+		switch {
+		case kept[role]:
+			text = "kept existing model list"
+		case result.Existing:
+			text = "not set on this network, uses its default"
+			if def := result.Defaults[role]; def != "" {
+				text = "not set on this network, uses " + def
+			}
+		case len(result.Models) > 0:
+			text = "using " + result.Models[0].Display()
+		}
+		r.step(role+" model", text, nil)
+	}
+	for _, role := range result.Missing {
+		r.hint("no %s is running on this network. Ask the owner's machine to start it; setup does not start one here.", role)
+	}
 }
 
 // ---- gateway ----

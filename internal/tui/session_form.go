@@ -271,6 +271,32 @@ func (m Model) sessionProjectValue(project, nodeID, host string) string {
 	return project
 }
 
+// usableSessionHarness keeps the wanted harness when the machine has it and is
+// not signed out of it. Otherwise it is the first harness the machine has and
+// is signed in to, then the first it has. A machine that never reported a list
+// keeps the wanted one, and the default is Claude.
+func (m Model) usableSessionHarness(want, nodeID string) string {
+	node := m.nodeByIDOrHost(firstNonEmpty(nodeID, m.snap.NodeID))
+	if node == nil || node.Harnesses == nil {
+		return firstNonEmpty(want, "claude")
+	}
+	have := map[string]protocol.HarnessInfo{}
+	for _, hi := range node.Harnesses {
+		have[hi.Name] = hi
+	}
+	if hi, ok := have[want]; ok && hi.SignedIn != "no" {
+		return want
+	}
+	for _, signedIn := range []bool{true, false} {
+		for _, h := range sessionHarnessOrder {
+			if hi, ok := have[h]; ok && (!signedIn || hi.SignedIn != "no") {
+				return h
+			}
+		}
+	}
+	return want
+}
+
 // sessionDefaultsFor picks the most-used harness and model on the project's
 // machine. Ties go to the most recently seen session.
 func (m Model) sessionDefaultsFor(project, nodeID string) (string, string) {
@@ -302,6 +328,9 @@ func (m Model) sessionDefaultsFor(project, nodeID string) (string, string) {
 	}
 	harness := choose(harnesses)
 	if harness != "" {
+		if usable := m.usableSessionHarness(harness, nodeID); usable != harness {
+			return usable, ""
+		}
 		models := map[string]count{}
 		for _, a := range m.snap.Agents {
 			if a.Harness != harness || a.Model == "" || !strings.EqualFold(firstNonEmpty(a.Repo.Project, a.Profile.Project), project) || (nodeID != "" && a.NodeID != nodeID) {
@@ -316,19 +345,7 @@ func (m Model) sessionDefaultsFor(project, nodeID string) (string, string) {
 		}
 		return harness, choose(models)
 	}
-	for _, n := range m.snap.Nodes {
-		if nodeID != "" && n.NodeID != nodeID {
-			continue
-		}
-		for _, want := range []string{"claude", "codex", "opencode", "pi"} {
-			for _, hi := range n.Harnesses {
-				if hi.Name == want {
-					return want, ""
-				}
-			}
-		}
-	}
-	return "claude", ""
+	return m.usableSessionHarness("", nodeID), ""
 }
 
 // startSessionForm opens the form filled from the selected row.
@@ -349,11 +366,7 @@ func (m Model) startSessionForm() (Model, tea.Cmd) {
 	m.sform.path = firstNonEmpty(a.Repo.Root, a.Cwd)
 	m.sform.in[sProject].SetValue(m.sessionProjectValue(project, a.NodeID, host))
 	m.sform.initialProject = m.sform.value(sProject)
-	harness := a.Harness
-	if harness == "" {
-		harness = "claude"
-	}
-	m.sform.in[sHarness].SetValue(harness)
+	m.sform.in[sHarness].SetValue(m.usableSessionHarness(a.Harness, a.NodeID))
 	m.resetSessionFolder()
 	m.mode = modeSessionForm
 	m.notice = notice{}

@@ -206,6 +206,70 @@ opencode and codex, and keeps the model typed for each.
 The real-protocol check is `cto_codex_real_test.go`, run with
 `AGENT_NET_TEST_REAL_CODEX`.
 
+## Phase 4a: first use without Claude Code
+
+**The setup role step.** After the harness scan, setup asks the daemon
+(`role_setup`, owner only) to set the role lists that are not set yet. For each
+installed harness, in the order Codex, OpenCode, Claude Code, the daemon runs
+one hello probe on its default model. For OpenCode it also probes the first
+model of each other provider. The probe is a one-shot run that must return a
+final answer. A clean exit with no answer, a login whose limit is used up (429),
+a timeout and a missing model all count as not usable. Pi is not probed, because
+it cannot be a role yet. The usable entries, in that order, become `cto.models`,
+`chief.model` and `merger.models`. A list the owner already set is kept. A CTO
+that already has a local harness or conversation is kept too, even when its
+network list is unset. Setup prints one line per role: `using <model>`, `kept
+existing model list`, or what to install or sign in to. A failed probe adds a
+line with its reason, so the owner sees why a harness was skipped.
+
+**A new network only.** Setup writes lists and starts roles only on a new
+network: the gateway has no registered CTO session, no pinned chief and no
+project merger (`role.network`). The gateway decides it, not this machine's
+local CTO state, because another machine may already run the CTO. On an
+existing network setup writes nothing and starts nothing. It prints, for each
+unset list, that it is not set and what it uses now, and a hint when a role has
+no session. It never registers a second CTO. The role step runs only in an
+interactive setup. An upgrade runs setup too, and sets
+`AGENT_NET_SETUP_NO_ROLES=1` for it, an environment variable and not a flag
+because a rolled-back binary runs that setup. A setup with no terminal skips the
+step as well.
+
+**The first start.** When setup added the CTO list, the daemon registers the CTO
+and sends it a first message. When it added the chief list, the daemon starts
+the chief through the ordinary start (`ensureChief`) and waits for it to
+register. Both run on their first usable entry. Later starts and the 0162 gate
+follow the lists as before.
+
+**Unattended roles.** A chief or merger started on the shared Codex server uses
+approval `never` and the workspace-write sandbox with network access. A merger
+also receives the shared Go build cache as `GOCACHE`, with permission to write
+that folder and the Git folders its linked worktree needs. The same settings
+apply when the session is resumed or woken. Ordinary owner sessions keep their
+own settings.
+
+OpenCode stores an allow rule on each chief or merger session. It follows the
+session through a wake. For an adopted session, a wake or resume adds the rule
+if needed and checks that the service stored it. The shared OpenCode service
+runs with the owner's permissions and its own environment, and agent-net adds no
+sandbox to a role there. So an OpenCode merger needs no cache override: it uses
+the owner's Go cache.
+
+**The TUI.** The New session form picks the harness for a machine from its
+inventory. It keeps the harness of the selected session, or the most used one of
+the project, only while the machine still has it and is not signed out of it.
+Otherwise it takes the first harness the machine has and is signed in to, in the
+form's order. So a machine with no Claude Code never starts on Claude.
+
+**Checks.** `role_setup_e2e_test.go` sets up a machine with no `claude` on PATH
+in a temp home, once with a fake Codex and once with a fake OpenCode. In each,
+the CTO, the chief and one worker take a message and run a turn, and the CTO
+has the `agent-net-setup` skill. The Codex CTO thread has approval `never` and
+the `danger-full-access` sandbox, and the OpenCode chief has the allow rule. The
+fakes cannot run a shell command. The real checks are opt-in tests:
+`AGENT_NET_TEST_REAL_CODEX` for `TestCodexMergerRealServerRunsWithoutApproval`,
+and `AGENT_NET_TEST_REAL_OPENCODE=1` for `TestRoleSetupProbeRealOpenCode` and
+`TestOpenCodeRolePermissionsRealServer`.
+
 ## Phase 4b: the OS sandbox is the default on Linux
 
 Pi and OpenCode workers on Linux run in the OS sandbox unless the project is
@@ -238,4 +302,5 @@ follow-ups.
 
 ## What this does not cover
 
-- Setup's first-use role step (phase 4).
+- One real run on a machine with no Claude binary, before phase 4 is called done.
+- The sandbox default for OpenCode and Pi workers (decision 5).

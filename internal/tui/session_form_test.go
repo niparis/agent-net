@@ -405,6 +405,11 @@ func TestNewSessionFromGraphNodeAndCard(t *testing.T) {
 			b, c := a, a
 			b.LastSeen, c.LastSeen, c.Harness, c.Model = 2, 3, "claude", "model-b"
 			m.snap.Agents = []protocol.AgentView{a, b, c}
+			for i := range m.snap.Nodes {
+				if m.snap.Nodes[i].NodeID == a.NodeID {
+					m.snap.Nodes[i].Harnesses = append(m.snap.Nodes[i].Harnesses, protocol.HarnessInfo{Name: "codex", SignedIn: "yes"})
+				}
+			}
 			m, _ = press(m, sessionKey())
 			if m.mode != modeSessionForm {
 				t.Fatalf("n did not open form: %v", m.mode)
@@ -461,5 +466,47 @@ func TestNewSessionHerdrNoticeWithFirstMessage(t *testing.T) {
 	m, _ = press2(m, cmd())
 	if m.notice.text != "opened tenebrae in herdr" || len(src.enters) != 0 {
 		t.Fatalf("notice %q, enters %+v", m.notice.text, src.enters)
+	}
+}
+
+// A machine with no Claude Code offers the first harness it has and is signed
+// in to. The old session's harness does not decide it when the machine lost
+// that harness.
+func noClaudeSessionModel(t *testing.T, w, h int, harnesses []protocol.HarnessInfo) Model {
+	t.Helper()
+	m, _ := workerModel(w, h)
+	m.snap.Nodes[0].Harnesses = harnesses
+	m = selectID(m, "s_0000000000000002") // strategies, claude
+	m, _ = press(m, sessionKey())
+	if m.mode != modeSessionForm {
+		t.Fatalf("n opened mode %v, want the New session form", m.mode)
+	}
+	return m
+}
+
+func TestNewSessionWithoutClaudeUsesTheFirstUsableHarness(t *testing.T) {
+	cases := []struct {
+		name      string
+		harnesses []protocol.HarnessInfo
+		want      string
+	}{
+		{"codex", []protocol.HarnessInfo{{Name: "opencode", SignedIn: "yes"}, {Name: "codex", SignedIn: "yes"}}, "codex"},
+		{"signed-out-codex", []protocol.HarnessInfo{{Name: "codex", SignedIn: "no"}, {Name: "opencode", SignedIn: "yes"}}, "opencode"},
+		{"claude-signed-out", []protocol.HarnessInfo{{Name: "claude", SignedIn: "no"}, {Name: "opencode"}}, "opencode"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := noClaudeSessionModel(t, 120, 34, tc.harnesses)
+			if got := m.sform.value(sHarness); got != tc.want {
+				t.Fatalf("harness %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNewSessionWithoutClaudeGoldens(t *testing.T) {
+	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
+		m := noClaudeSessionModel(t, size.w, size.h, []protocol.HarnessInfo{{Name: "codex", SignedIn: "yes", Models: []string{"gpt-6"}}, {Name: "opencode", SignedIn: "yes"}})
+		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_no_claude", m.testView())
 	}
 }

@@ -549,7 +549,9 @@ The extension turns the message into a follow-up message in the running session,
 
 ## Delivery into a Codex thread, and what the daemon can do to Codex
 
-The daemon is a client of the shared Codex app server's control socket (mode 0600 in a 0700 folder, so only your user and root reach it; there is no token). It follows the symlink at `$CODEX_HOME/app-server-control/app-server-control.sock` to its target and requires a socket owned by your user. It only reads thread lists and thread metadata and adds messages to a thread's queue. It never starts, resumes or interrupts an interactive thread, so it is never a subscriber: it receives no approval requests and keeps no thread loaded. A queued message appears in the window as a message from the user; the text says in plain words that it is from another agent and carries no approval. Codex's own approval policy and sandbox still decide what the agent does next. Messages from a worker add the "model output, not your user's words" line.
+The daemon is a client of the shared Codex app server's control socket (mode 0600 in a 0700 folder, so only your user and root reach it; there is no token). It follows the symlink at `$CODEX_HOME/app-server-control/app-server-control.sock` to its target and requires a socket owned by your user. It reads thread lists and thread metadata and adds messages to a thread's queue. A queued message appears in the window as a message from the user; the text says in plain words that it is from another agent and carries no approval. Messages from a worker add the "model output, not your user's words" line.
+
+The daemon can also start and resume threads. A chief or merger it starts on Codex has approval policy `never` and the workspace-write sandbox with network access, including on a resume or wake. The merger can also write the shared Go build cache and the Git folders needed to commit in its worktree. It receives that cache as `GOCACHE`. Other owner sessions keep their own Codex permission settings. The CTO runs in its own app server with full access, as described in decision 0171.
 
 Setup can set `default_tools_approval_mode = "approve"` for the `agent-net` MCP server only. That lets a Codex thread call the agent-net tools (list, send, reply, start workers) with no prompt, including under approval policy `never`, where Codex would otherwise refuse them. Setup follows the answer to the one integrations question, or `--accept-codex-tools` (a local answer for that machine).
 
@@ -1507,6 +1509,14 @@ logged, placed in argv or included in a notice. API response bodies and transpor
 errors are not copied into start errors, because they may contain credentials.
 The folder, model and first message are HTTP headers or JSON, with no shell.
 If the service is down, the start is refused; the daemon never starts it.
+
+An OpenCode chief or merger has a session permission rule that allows every
+action and resource without a prompt. It runs with the owner's permissions in
+the shared service, without a sandbox added by agent-net. The rule is stored
+with the session and stays when it is resumed. On a wake or resume, agent-net
+adds the rule if an adopted role does not have it, and checks that the service
+stored it. Other OpenCode sessions do not get the rule. A role cannot start or
+resume if the service cannot confirm the rule.
 
 Pi has no background mode with a screen, so the daemon hosts it in its own tmux
 server, with the folder and the chosen session ID as separate arguments:

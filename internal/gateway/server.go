@@ -3495,6 +3495,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "chief.get":
 		return st.ChiefStatus()
 
+	case protocol.OpRoleNetwork:
+		return st.RoleNetwork()
+
 	case "brief.put":
 		p, err := decode[protocol.OwnerBriefRequest](raw)
 		if err != nil {

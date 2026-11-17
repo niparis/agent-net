@@ -34,6 +34,7 @@ import (
 
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
+	protocol.OpRoleSetup:  true,
 	"worker_floors_reset": true, "operator_undo": true, "merger_get": true, "merger_restore": true, "apps.public.restore": true, "sessions_archive": true, "sessions_archived": true, "session_pin": true,
 	protocol.OpWorkerLog: true,
 	"apps.public.status": true, "apps.public.on": true, "apps.public.off": true, "apps.public.url": true,
@@ -227,6 +228,16 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.RawMessage) (res any, ok bool, err error) {
 	d := lc.d
 	switch method {
+	case protocol.OpRoleSetup:
+		var request protocol.RoleSetupRequest
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &request) != nil {
+			return nil, true, errors.New("bad role setup request")
+		}
+		result, err := d.setupRoleModels(ctx)
+		if err == nil && request.Start {
+			err = d.startSetupRoles(ctx, result.Added)
+		}
+		return result, true, err
 	case "bar_edit":
 		// The CTO's cto_op form of agent_bar_edit. It acts as the owner session,
 		// which the gateway accepts for any project the call names.

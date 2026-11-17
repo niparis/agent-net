@@ -223,3 +223,20 @@ func TestCTOLegacyWindowStartsOnGatewayUpgrade(t *testing.T) {
 		t.Fatalf("upgrade timestamp: %d %v", started, err)
 	}
 }
+
+// A network is new only while no CTO, chief or merger exists. Setup reads it
+// to decide whether it may write role lists and start roles.
+func TestRoleNetworkIsNewUntilARoleExists(t *testing.T) {
+	s, _ := newTestStore(t)
+	agent, _ := twoSessions(t, s)
+	got, err := s.RoleNetwork()
+	if err != nil || !got.New() {
+		t.Fatalf("empty network = %+v, %v", got, err)
+	}
+	if _, err := s.RegisterCTOSession(mustNode(t, s, agent)); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = s.RoleNetwork(); err != nil || got.New() || got.CTOSession == "" {
+		t.Fatalf("network with a CTO = %+v, %v", got, err)
+	}
+}

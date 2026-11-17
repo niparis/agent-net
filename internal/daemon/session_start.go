@@ -522,6 +522,9 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, 
 		return protocol.StartedSession{}, fmt.Errorf("session folder is gone: %s", a.Cwd)
 	}
 	r := d.resumeRecord(a)
+	if a.Harness == "codex" || a.Harness == "opencode" {
+		r.Type = d.resumedRole(ctx, a)
+	}
 	if a.Harness == "opencode" {
 		return d.resumeOwnerOpenCode(ctx, r, socket, pane)
 	}
@@ -540,6 +543,17 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, 
 
 func (d *Daemon) resumeRecord(a protocol.AgentView) protocol.StartedSession {
 	return protocol.StartedSession{Resumes: a.SessionID, ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: a.Harness, Project: firstNonEmpty(a.Profile.Name, a.Title, a.NativeID), Path: a.Cwd, NativeID: a.NativeID, StartedAt: time.Now().Unix()}
+}
+
+// The merger is recorded on the session; the chief is the pinned session.
+func (d *Daemon) resumedRole(ctx context.Context, a protocol.AgentView) string {
+	if a.Type == "merger" {
+		return "merger"
+	}
+	if d.isChiefSession(ctx, a.SessionID) {
+		return "chief"
+	}
+	return ""
 }
 
 // moveToBackground ends the terminal client of a Claude session the owner
