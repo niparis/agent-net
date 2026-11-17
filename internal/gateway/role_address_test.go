@@ -95,3 +95,55 @@ func TestRoleAddressTellsTheSender(t *testing.T) {
 		}
 	}
 }
+
+// The name lookup resolves a role address before any session or agent name, so
+// a session or agent called "chief" or "cto" does not shadow the pinned
+// session. agent_message_send resolves its address through this lookup.
+func TestRoleAddressNameLookupPrefersTheRole(t *testing.T) {
+	s, _, chief, _, node := chiefRig(t)
+	if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "decoy", Name: "chief"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET online=1, archived_at=0 WHERE name='chief'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "decoy-agent", Name: "not the chief"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET agent_id='chief' WHERE name='not the chief'`); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.ResolveLeadAddress("chief"); err != nil || got != chief {
+		t.Fatalf("lookup of chief = %s, %v; want the pinned chief %s", got, err, chief)
+	}
+
+	cto, err := s.RegisterCTOSession(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "cto-decoy", Name: "cto"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET online=1, archived_at=0 WHERE name='cto'`); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.ResolveLeadAddress("cto"); err != nil || got != cto {
+		t.Fatalf("lookup of cto = %s, %v; want the CTO session %s", got, err, cto)
+	}
+}
+
+// With no chief pinned, the lookup gives the role address reason, not the
+// ordinary unknown-name reason that sent senders to agent_sessions_find.
+func TestRoleAddressNameLookupWithNoChief(t *testing.T) {
+	s, _, _, _, _ := chiefRig(t)
+	if err := s.SetChief(protocol.ChiefSetRequest{Clear: true}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.ResolveLeadAddress("chief")
+	if err == nil || !strings.Contains(err.Error(), "no chief of staff is set") {
+		t.Fatalf("lookup of chief with no chief pinned: %v, want the reason from role_address.go", err)
+	}
+	if strings.Contains(err.Error(), "no session is named") {
+		t.Fatalf("lookup of chief with no chief pinned says the name is unknown: %v", err)
+	}
+}

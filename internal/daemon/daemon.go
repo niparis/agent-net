@@ -1573,10 +1573,11 @@ func (d *Daemon) keepOutbox(ctx context.Context, stalled bool) {
 	}
 }
 
-// resolveTo turns a session ID, a unique agent name, or a repo:<name> or
-// team:<name> address into a session ID. The gateway returns a live session
-// first and otherwise the newest session of the lead or agent, which waits in
-// the queue and is woken by the message like any session-ID send.
+// resolveTo turns a session ID, a unique agent name, a role address, or a
+// repo:<name> or team:<name> address into a session ID. The gateway returns a
+// live session first and otherwise the newest session of the lead or agent,
+// which waits in the queue and is woken by the message like any session-ID
+// send.
 func (d *Daemon) resolveTo(ctx context.Context, to string) (string, error) {
 	to = strings.TrimSpace(to)
 	if to == "" {
