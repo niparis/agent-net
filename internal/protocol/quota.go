@@ -348,6 +348,21 @@ func QuotaRefusal(quotas *Quotas, harness, model string) string {
 	return quotaExhaustedText(qp, w)
 }
 
+// QuotaOutUntil is the QuotaRefusal test as a yes or no: it says whether a
+// start on harness and model has no quota left, and when the window that is
+// out resets (0 when unknown).
+func QuotaOutUntil(quotas *Quotas, harness, model string) (resetsAt int64, out bool) {
+	qp := QuotaProviderForStart(harness, model)
+	if qp == "" {
+		return 0, false
+	}
+	w, ok := quotas.ExhaustedWindowFor(qp, model)
+	if !ok {
+		return 0, false
+	}
+	return w.ResetsAt, true
+}
+
 // QuotaHarnessRefusal is the reason a harness with no model named cannot start
 // anything: a window of its provider that limits every model is exhausted. A
 // window of one model family leaves the other models, so it never refuses.

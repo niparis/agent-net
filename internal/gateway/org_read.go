@@ -167,15 +167,25 @@ type leadPick struct {
 	// noLead is true when the lead Agent has no pinned session. Nothing leads,
 	// so the request is delivered as addressed.
 	noLead bool
+	// noQuota is true when the pinned session's model has no quota left. The
+	// request is delivered as addressed, and resetsAt says when quota returns.
+	noQuota  bool
+	resetsAt int64
 }
+
+// leadQuotaReader says whether a lead session has no quota left, and when its
+// window resets (leadQuotaOut in lead_quota.go).
+type leadQuotaReader func(session string) (resetsAt int64, out bool)
 
 // redirectLeadSessionQ picks the session a redirected request goes to. A
 // pinned lead session takes it even when offline, queued for its wake. A
 // pinned session that waits for its user is skipped for another live session
-// of the lead. ready is false when the pin waits and no other live session can
-// take the request, or when the lead has no pinned session at all; the returned
-// pick marks which.
-func redirectLeadSessionQ(q leadDB, agent, repo string, now time.Time) (pick leadPick, ready bool, err error) {
+// of the lead. A pinned session whose model has no quota left never takes it,
+// and no other session of the lead stands in: the request goes to the member
+// as addressed. ready is false when the pin waits and no other live session can
+// take the request, when the pin has no quota, or when the lead has no pinned
+// session at all; the returned pick marks which.
+func redirectLeadSessionQ(q leadDB, agent, repo string, now time.Time, quota leadQuotaReader) (pick leadPick, ready bool, err error) {
 	pin, err := agentLeadSessionQ(q, agent)
 	if err != nil {
 		return pick, false, err
@@ -189,6 +199,9 @@ func redirectLeadSessionQ(q leadDB, agent, repo string, now time.Time) (pick lea
 	}
 	if !exists {
 		return leadPick{noLead: true}, false, nil
+	}
+	if resetsAt, out := quota(pin); out {
+		return leadPick{noQuota: true, resetsAt: resetsAt}, false, nil
 	}
 	if !online || (!waiting && !limited) {
 		name, err := agentNameQ(q, agent)
