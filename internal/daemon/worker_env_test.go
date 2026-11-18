@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -217,49 +218,79 @@ func TestWorkerPortRangeSkipsABusyPort(t *testing.T) {
 	}
 }
 
-// The commit in a worker's worktree must not run git gc: gc takes gc.pid.lock
-// and packs refs in the shared .git, which the worker's sandbox keeps
-// read-only. The repository asks for a gc after every commit here; with the
-// worker's environment no pack is made.
+// The worker's environment must stop git from running gc or maintenance on its
+// own: they take gc.pid.lock and pack refs in the shared .git, which the
+// worker's sandbox keeps read-only. The triggers are run by name (git gc --auto
+// and git maintenance run --auto, which is what git commit calls), so the test
+// does not depend on how one git version decides to start a gc after a commit.
+// The repository asks for a gc whenever there are loose objects: git counts the
+// objects in objects/17, and two are over the limit in every version.
 func TestWorkerCommitRunsNoAutoGc(t *testing.T) {
 	d := commitTestDaemon(t)
 	w, dir := commitTestWorker(t, d)
 	main := w.mainPath
+	version := gitWithEnv(t, dir, nil, "--version")
 	gitIn(t, main, "config", "gc.auto", "1")
-	gitIn(t, main, "config", "gc.autoDetach", "false")
 	gitIn(t, main, "config", "gc.autoPackLimit", "1")
-	// git estimates the loose objects from the folder objects/17: two files
-	// there are over a limit of 1.
-	loose := filepath.Join(main, ".git", "objects", "17")
-	if err := os.MkdirAll(loose, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{strings.Repeat("0", 38), strings.Repeat("1", 38)} {
-		if err := os.WriteFile(filepath.Join(loose, name), nil, 0o644); err != nil {
-			t.Fatal(err)
+	// gc must finish before the test looks at the result.
+	gitIn(t, main, "config", "gc.autoDetach", "false")
+	gitIn(t, main, "config", "maintenance.autoDetach", "false")
+	plantLooseObjectsIn17(t, main, 2)
+	// A gc leaves a pack or packed refs in the shared .git.
+	gcTraces := func() []string {
+		var found []string
+		packs, _ := filepath.Glob(filepath.Join(main, ".git", "objects", "pack", "*.pack"))
+		found = append(found, packs...)
+		for _, f := range []string{"packed-refs", "gc.pid", "gc.log"} {
+			if _, err := os.Stat(filepath.Join(main, ".git", f)); err == nil {
+				found = append(found, f)
+			}
 		}
+		return found
 	}
-	commit := func(env map[string]string, name string) {
+	if before := gcTraces(); len(before) != 0 {
+		t.Fatalf("the repository starts with gc traces %v", before)
+	}
+	// The same triggers in both arms: a commit, then both auto commands.
+	trigger := func(env map[string]string, name string) {
 		t.Helper()
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		fakeHarnessCommit(t, dir, env, "add "+name)
+		gitWithEnv(t, dir, env, "gc", "--auto")
+		gitWithEnv(t, dir, env, "maintenance", "run", "--auto")
 	}
-	packs := func() int {
-		m, _ := filepath.Glob(filepath.Join(main, ".git", "objects", "pack", "*.pack"))
-		return len(m)
+	trigger(d.workerCommitEnv(w), "a.txt")
+	if traces := gcTraces(); len(traces) != 0 {
+		t.Fatalf("%s ran gc or maintenance in the worker's environment: %v", version, traces)
 	}
-	commit(d.workerCommitEnv(w), "a.txt")
-	commit(d.workerCommitEnv(w), "b.txt")
-	if n := packs(); n != 0 {
-		t.Fatalf("git gc ran in the worker's commit: %d packs", n)
+	// Control: the same repository and the same commands without the worker's
+	// environment do gc.
+	trigger(nil, "b.txt")
+	if len(gcTraces()) == 0 {
+		t.Fatalf("%s: the control arm did not run gc, so the test proves nothing", version)
 	}
-	// Control: the same repository without the worker's environment does gc.
-	commit(nil, "c.txt")
-	commit(nil, "d.txt")
-	if n := packs(); n == 0 {
-		t.Fatal("the control commit did not run gc, so the test proves nothing")
+}
+
+// plantLooseObjectsIn17 writes n real blobs whose id starts with 17. git
+// estimates the loose objects of a repository from that one folder.
+func plantLooseObjectsIn17(t *testing.T, repo string, n int) {
+	t.Helper()
+	for i, planted := 0, 0; planted < n; i++ {
+		content := fmt.Sprintf("loose object %d", i)
+		sum := sha1.Sum([]byte(fmt.Sprintf("blob %d\x00%s", len(content), content)))
+		if sum[0] != 0x17 {
+			continue
+		}
+		cmd := exec.Command("git", "hash-object", "-w", "--stdin")
+		cmd.Dir = repo
+		cmd.Env = gitTestEnv(nil)
+		cmd.Stdin = strings.NewReader(content)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git hash-object: %v\n%s", err, out)
+		}
+		planted++
 	}
 }
 
