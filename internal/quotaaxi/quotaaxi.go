@@ -909,11 +909,11 @@ func ensurePrivateLocked(ctx context.Context, logf func(format string, args ...a
 	if runErr != nil {
 		os.RemoveAll(Prefix())
 		recordFailure(time.Now())
-		reason := firstLine(out, runErr)
+		reason := npmFailure(out, runErr)
 		if logf != nil {
 			logf("quota-axi: install failed: %s", reason)
 		}
-		return fmt.Errorf("install quota-axi: %w", runErr)
+		return fmt.Errorf("install quota-axi: %s (%w)", reason, runErr)
 	}
 	if !usable(Binary()) {
 		os.RemoveAll(Prefix())
@@ -985,6 +985,25 @@ func recordFailure(now time.Time) {
 	}
 	b, _ := json.Marshal(installRecord{FailedDay: now.Format("2006-01-02")})
 	_ = os.WriteFile(RecordPath(), append(b, '\n'), 0o600)
+}
+
+// npmFailure returns the npm line that says why the install failed, such as
+// "npm error code E403" behind a proxy. Without one it returns the first line.
+func npmFailure(out []byte, err error) string {
+	first := ""
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "npm error") || strings.HasPrefix(line, "npm ERR!") {
+			return line
+		}
+		if first == "" {
+			first = line
+		}
+	}
+	if first != "" {
+		return first
+	}
+	return firstLine(out, err)
 }
 
 // firstLine returns the first non-empty output line, or the error.

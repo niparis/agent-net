@@ -216,14 +216,19 @@ main() {
   BIN_TMP=""
   echo "installed $BIN_DIR/agent-net ($got_version)"
 
-  case ":${PATH:-}:" in
-    *":$BIN_DIR:"*) ;;
-    *)
-      echo
-      echo "$BIN_DIR is not on your PATH. Add it:"
-      echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.profile"
-      ;;
-  esac
+  # A setup run prints this line itself, for the shell it finds (agent-net setup).
+  if [ "$MODE" = binary ]; then
+    case ":${PATH:-}:" in
+      *":$BIN_DIR:"*) ;;
+      *)
+        rc="$HOME/.profile"
+        case "${SHELL:-}" in */zsh) rc="$HOME/.zshrc" ;; esac
+        echo
+        echo "$BIN_DIR is not on your PATH. Add this line to $rc, then open a new terminal:"
+        echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> $rc"
+        ;;
+    esac
+  fi
 
   if [ "$MODE" != binary ]; then
     echo
