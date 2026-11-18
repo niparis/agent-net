@@ -247,6 +247,9 @@ func (d *Daemon) createWorktree(ctx context.Context, w *worker, requestedBase ..
 		}
 		return fmt.Errorf("cannot make a worktree: %w", err)
 	}
+	if err := setWorktreeUpstream(ctx, main, branch); err != nil {
+		d.Logf("worker %s: branch upstream: %v", w.id, err) // the worker can still push with an explicit branch
+	}
 	if err := d.copyWorktreeSkills(ctx, main, dir); err != nil {
 		_, _ = gitOut(ctx, main, "worktree", "remove", "--force", dir)
 		return err

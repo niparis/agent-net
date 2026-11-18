@@ -83,6 +83,9 @@ type Config struct {
 	// count attempts and make one fail.
 	testMCPRestart func(ctx context.Context, sessionID string) error
 	testFreePort   func() (int, error) // deterministic collision tests
+	// testLoginShell replaces the user's login shell, which the daemon asks once
+	// for its PATH.
+	testLoginShell string
 	// testDeliveryRecordTimeout replaces deliveryRecordTimeout, how long a
 	// hand-back waits for the gateway to record its change.
 	testDeliveryRecordTimeout time.Duration
@@ -359,6 +362,7 @@ type activityUpdate struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
+	workerEnvState      workerEnvState // login PATH and system CA bundle, found once
 	ownerPrompts        ownerPrompts
 	turnEnds            turnEndAsks
 	ownerPromptClock    func() time.Time // test hook

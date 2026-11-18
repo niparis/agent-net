@@ -123,7 +123,15 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 	// settings of the user and the project and replace nothing in them. The
 	// commit trailer settings are also in the process environment; the settings
 	// copy makes sure the worker's own shell commands see them too.
+	// The commit settings and the tool environment (login PATH, caches, trust
+	// store, ports) go in the process and in the settings the worker's shell reads.
 	commitEnv := d.workerCommitEnv(w)
+	if commitEnv == nil {
+		commitEnv = map[string]string{}
+	}
+	for k, v := range d.workerToolEnv(w) {
+		commitEnv[k] = v
+	}
 	settingsEnv := map[string]string{
 		"AGENT_NET_SOCKET": d.cfg.SocketPath,
 		"AGENT_NET_WORKER": w.id,
@@ -234,7 +242,7 @@ func (d *Daemon) claudeWorkerSettings(w *worker, env map[string]string) map[stri
 		"crossSessionInbound": "accept",
 		"env":                 env,
 		"permissions":         claudeWorkerPermissions(level, dir),
-		"sandbox":             claudeWorkerSandbox(level, dir, d.claudeWorkerWrites(dir)),
+		"sandbox":             claudeWorkerSandbox(level, dir, append(d.claudeWorkerWrites(dir), d.workerCacheRoot(w))),
 	}
 }
 

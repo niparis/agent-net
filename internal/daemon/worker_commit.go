@@ -169,10 +169,17 @@ func (d *Daemon) workerCommitEnv(w *worker) map[string]string {
 		"AGENT_NET_TRAILER_NAME_DIFFICULTY": snap.String("delivery.trailer_difficulty", settings.Where{}),
 		"AGENT_NET_TRAILER_NAME_CALLER":     snap.String("delivery.trailer_caller", settings.Where{}),
 	}
+	// Besides the hooks folder: no automatic gc or maintenance. They take
+	// gc.pid.lock and write packed-refs in the shared .git, which a worker's
+	// sandbox keeps read-only (the daemon cleans up on its own).
 	env := map[string]string{
-		"GIT_CONFIG_COUNT":   "1",
+		"GIT_CONFIG_COUNT":   "3",
 		"GIT_CONFIG_KEY_0":   "core.hooksPath",
 		"GIT_CONFIG_VALUE_0": hooks,
+		"GIT_CONFIG_KEY_1":   "gc.auto",
+		"GIT_CONFIG_VALUE_1": "0",
+		"GIT_CONFIG_KEY_2":   "maintenance.auto",
+		"GIT_CONFIG_VALUE_2": "false",
 	}
 	for key, value := range trailerNames {
 		env[key] = value

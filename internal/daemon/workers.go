@@ -282,6 +282,12 @@ type worker struct {
 	// osSandbox is the OS wrapper the worker runs in ("bubblewrap"), or ""
 	// (docs/design/worker-os-sandbox.md). Kept in its folder (osSandboxMarker).
 	osSandbox string
+	// portBase is the first port of the range this worker owns (WORKER_PORT_BASE),
+	// 0 until the first process of the worker starts. Guarded by Daemon.wmu.
+	portBase int
+	// bootstrap is the line for the start notice when the project's bootstrap
+	// command failed or was skipped. Guarded by Daemon.wmu.
+	bootstrap string
 	// toolchainDirs are the extra writable folders passed to agy.
 	toolchainDirs []string
 	// apiBase and apiPass reach the harness's own server, for its statistics.
@@ -859,7 +865,7 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 				d.notStarted(d.ctoCtx, e, "the worker started, but its task could not be sent: "+err.Error())
 				return
 			}
-			body := protocol.WorkerStartedText(out.SessionID, l.Harness, l.Model, l.Project, d.hostName(), time.Since(w.startedAt), l.Why) + protocol.WorkerPermissionsLine(l.Permissions, l.Harness, out.OSSandbox) + "\n"
+			body := protocol.WorkerStartedText(out.SessionID, l.Harness, l.Model, l.Project, d.hostName(), time.Since(w.startedAt), l.Why) + protocol.WorkerPermissionsLine(l.Permissions, l.Harness, out.OSSandbox) + "\n" + d.workerBootstrapLine(w)
 			if _, err := d.send(d.ctoCtx, protocol.MsgSend{Sender: out.SessionID, Recipient: l.Owner, Type: protocol.TypeNotification, Body: body}); err != nil {
 				d.Logf("worker %s: started notice: %v", w.id, err)
 			}
@@ -880,6 +886,9 @@ func (d *Daemon) finishWorkerStart(ctx context.Context, l protocol.WorkerLaunch,
 	var err2 error
 	if l.Isolation == protocol.IsolationWorktree {
 		err2 = d.createWorktree(cctx, w, l.Base)
+	}
+	if err2 == nil && l.Isolation == protocol.IsolationWorktree {
+		d.runWorkerBootstrap(cctx, w)
 	}
 	if err2 == nil {
 		err2 = ln.start(cctx, d, w)
@@ -941,6 +950,9 @@ func (d *Daemon) spawnWorkerIO(w *worker, bin string, args []string, env []strin
 		logf.Close()
 		return errors.New("the OS sandbox is on for this project, but this start did not apply it")
 	}
+	// Login PATH, per-worker caches, system trust store and port range. Under
+	// the wrapper the cache folders move into its private /tmp below.
+	env = workerEnv(env, d.workerToolEnv(w))
 	if protocol.OSSandboxWrapper(sandbox) != "" {
 		var werr error
 		if bin, args, env, werr = d.osSandboxWrap(w, bin, args, env); werr != nil {
