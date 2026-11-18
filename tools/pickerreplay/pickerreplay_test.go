@@ -118,9 +118,9 @@ CREATE TABLE pick_candidates (run_id TEXT, pos INTEGER, name TEXT, harness TEXT,
 		session, model, outcome string
 		ended                   int64
 	}{
-		{"s_d1", "deepseek-v4.1-flash", "complete", 1793000000},
-		{"s_d2", "deepseek-v4.1-flash", "complete", 1793000001},
-		{"s_d3", "deepseek-v4.1-flash", "failed", 1793000002},
+		{"s_d1", "opencode-go/deepseek-v4.1-flash", "complete", 1793000000},
+		{"s_d2", "opencode-go/deepseek-v4.1-flash", "complete", 1793000001},
+		{"s_d3", "opencode-go/deepseek-v4.1-flash", "failed", 1793000002},
 		{"s_b1", "big-model", "complete", 1793000003},
 		{"s_b2", "big-model", "complete", 1793000004},
 		{"s_b3", "big-model", "complete", 1793000005},
@@ -144,7 +144,7 @@ CREATE TABLE pick_candidates (run_id TEXT, pos INTEGER, name TEXT, harness TEXT,
 		name, model string
 		chosen      int
 	}{
-		{"deepseek", "deepseek-v4.1-flash", 1},
+		{"deepseek", "opencode-go/deepseek-v4.1-flash", 1},
 		{"big", "big-model", 0},
 	}
 	for pos, c := range two {
@@ -178,7 +178,7 @@ func TestReplayReadsSnapshotAndMatchesTheRecordedPick(t *testing.T) {
 	if r.Today.Models["deepseek"] != 1 {
 		t.Fatalf("today's replay picked %v, want deepseek", r.Today.Models)
 	}
-	if r.OptionsA[0].Models["deepseek"] != 1 {
+	if r.V2.Models["deepseek"] != 1 || r.OptionsA[0].Models["deepseek"] != 1 {
 		t.Fatalf("option A at alpha 0 picked %v, want deepseek", r.OptionsA[0].Models)
 	}
 	selected, err := parseFloorSets("B")
@@ -279,9 +279,47 @@ func TestEveryRowPricesThePickTheSameWay(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := RunReplay(s, []float64{0}, nil)
-	today, v2 := r.Today.averages(), r.OptionsA[0].averages()
+	today, v2 := r.Today.averages(), r.V2.averages()
 	near(t, "run cost, today against V2", today.Run, v2.Run)
 	near(t, "clean p, today against V2", today.P, v2.P)
 	near(t, "cost per accepted, today against V2", today.PerAcc, v2.PerAcc)
 	near(t, "cost per accepted is run cost over clean p", today.PerAcc, today.Run/today.P)
+}
+
+// An exhausted provider does not compete in any method, though the replay
+// check still reproduces the pick the gateway recorded.
+func TestReplayLeavesOutAnExhaustedProvider(t *testing.T) {
+	s, err := OpenSnapshot(fixture(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Exhausted = map[string]bool{"opencode-go": true}
+	r := RunReplay(s, nil, nil)
+	if r.Check.Match != 1 {
+		t.Fatalf("the check must read the recorded roster: %d/%d", r.Check.Match, r.Check.Picks)
+	}
+	for _, m := range []*summary{r.Today, r.V2, r.V2Ceiling} {
+		if m.Models["deepseek"] != 0 || m.Models["big"] != 1 {
+			t.Errorf("%s picked %v, want big only", m.Name, m.Models)
+		}
+	}
+	gated, left := s.gate(s.Picks[0])
+	if len(gated.Rows) != 1 || len(left) != 1 || left[0] != "deepseek" {
+		t.Fatalf("gate kept %d rows, left out %v", len(gated.Rows), left)
+	}
+}
+
+// With no proven candidate allowed, a pick is counted by level and uses
+// today's pick for its cost.
+func TestReplayCountsPicksWithNoCandidateLeft(t *testing.T) {
+	s, err := OpenSnapshot(fixture(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Exhausted = map[string]bool{"opencode-go": true}
+	s.Picks[0].Rows = s.Picks[0].Rows[:1] // only the exhausted candidate is left in the roster
+	r := RunReplay(s, nil, nil)
+	if r.V2.PicksByLevel["simple"] != 1 || r.V2.NoQualified["simple"] != 1 || r.V2.NoneAllowed["simple"] != 1 {
+		t.Fatalf("V2 counts: %+v %+v %+v", r.V2.PicksByLevel, r.V2.NoQualified, r.V2.NoneAllowed)
+	}
 }

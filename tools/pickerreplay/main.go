@@ -16,8 +16,9 @@ import (
 
 func main() {
 	db := flag.String("db", "", "path to a read-only copy of the gateway store (required)")
-	alphas := flag.String("alphas", "0,2,4,6,8,10", "comma separated alpha values for option A")
-	floors := flag.String("floors", "A,B,C", "comma separated floor sets A, B and C; empty disables them")
+	alphas := flag.String("alphas", "", "comma separated alpha values for option A; empty disables them")
+	floors := flag.String("floors", "", "comma separated floor sets A, B and C; empty disables them")
+	exhausted := flag.String("exhausted", "opencode-go", "comma separated quota providers that are exhausted; they do not compete in any method (empty keeps every recorded candidate)")
 	flag.Parse()
 	if *db == "" {
 		fmt.Fprintln(os.Stderr, "pickerreplay: -db is required; pass a copy of the gateway store, never the live one")
@@ -25,6 +26,9 @@ func main() {
 	}
 	var list []float64
 	for _, part := range strings.Split(*alphas, ",") {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
 		v, err := strconv.ParseFloat(strings.TrimSpace(part), 64)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "pickerreplay: bad alpha %q\n", part)
@@ -41,6 +45,12 @@ func main() {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "pickerreplay:", err)
 		os.Exit(1)
+	}
+	s.Exhausted = map[string]bool{}
+	for _, name := range strings.Split(*exhausted, ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			s.Exhausted[name] = true
+		}
 	}
 	report := RunReplay(s, list, selected)
 	printReport(report)
@@ -88,13 +98,41 @@ func printReport(r *Report) {
 	fmt.Printf("Every row prices its winner from the V2 table: run cost, clean p, and cost per accepted result (run cost / clean p). The last two columns are the row's own rule and its mean cost under that rule.\n\n")
 	fmt.Printf("| method | picks | no pick | mean quality (today's score) | mean clean p | mean run cost | mean cost per accepted | mean adjusted cost per accepted | fallbacks | own rule | mean own-rule cost |\n")
 	fmt.Printf("|---|---|---|---|---|---|---|---|---|---|---|\n")
-	all := []*summary{r.Today}
+	all := []*summary{r.Today, r.V2, r.V2Ceiling}
 	all = append(all, r.OptionsA...)
 	all = append(all, r.Floors...)
 	for _, m := range all {
 		a := m.averages()
 		fmt.Printf("| %s | %d | %d | %.2f | %.2f | $%.2f | $%.2f | $%.2f | %d | %s | $%.2f |\n",
 			m.Name, m.Picks, m.NoPick, a.Qual, a.P, a.Run, a.PerAcc, a.Adj, m.Fallback, m.Rule, a.Own)
+	}
+	fmt.Printf("\n## Picks with no proven candidate left\n\n")
+	if len(s.Exhausted) > 0 {
+		var names []string
+		for name := range s.Exhausted {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		fmt.Printf("Exhausted providers, left out of every method for every pick (the snapshot keeps no quota reading from the time of a pick): %s.\n\n", strings.Join(names, ", "))
+	}
+	fmt.Printf("A pick with no qualified candidate falls back: the row then uses today's pick for its cost. None allowed means no candidate was allowed at all, so the live picker uses the level rule.\n\n")
+	fmt.Printf("| level | picks | V2 no qualified | V2 none allowed | V2 + ceiling no qualified | V2 + ceiling none allowed |\n")
+	fmt.Printf("|---|---|---|---|---|---|\n")
+	for _, level := range []string{"trivial", "simple", "normal", "hard", "very_complex"} {
+		if r.V2.PicksByLevel[level] == 0 {
+			continue
+		}
+		fmt.Printf("| %s | %d | %d | %d | %d | %d |\n", level, r.V2.PicksByLevel[level],
+			r.V2.NoQualified[level], r.V2.NoneAllowed[level], r.V2Ceiling.NoQualified[level], r.V2Ceiling.NoneAllowed[level])
+	}
+	fmt.Printf("\nWhat the ceiling rule changed: it cut a candidate V2 allowed in %d of %d picks, and changed the winner in %d.\n", r.CeilingPicksCut, r.V2.Picks, r.CeilingMoved)
+	var cuts []string
+	for name, n := range r.CeilingCuts {
+		cuts = append(cuts, fmt.Sprintf("%s %d", name, n))
+	}
+	sort.Strings(cuts)
+	if len(cuts) > 0 {
+		fmt.Printf("\nCandidates cut (picks): %s.\n", strings.Join(cuts, ", "))
 	}
 	fmt.Printf("\nModels picked by difficulty level:\n\n")
 	for _, m := range all {
@@ -123,6 +161,9 @@ func printReport(r *Report) {
 			if row.Chosen {
 				fmt.Printf("%s\n", row.Name)
 			}
+		}
+		if len(cs.Exhausted) > 0 {
+			fmt.Printf("Left out as exhausted: %s.\n", strings.Join(cs.Exhausted, ", "))
 		}
 		fmt.Printf("\n| method | winner | quality | clean p | run cost | cost per accepted | adjusted per accepted | own-rule cost | rank |\n")
 		fmt.Printf("|---|---|---|---|---|---|---|---|---|\n")

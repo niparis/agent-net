@@ -284,10 +284,34 @@ type summary struct {
 	NoPick   int
 	Fallback int
 	ByLevel  map[string]map[string]int
+	// PicksByLevel counts every pick of a level. NoQualified counts the picks
+	// with no proven, allowed candidate left, and NoneAllowed those with no
+	// allowed candidate at all, where the live picker uses the level rule.
+	PicksByLevel map[string]int
+	NoQualified  map[string]int
+	NoneAllowed  map[string]int
 }
 
 func newSummary(name, rule string) *summary {
-	return &summary{Name: name, Rule: rule, Models: map[string]int{}, ByLevel: map[string]map[string]int{}}
+	return &summary{Name: name, Rule: rule, Models: map[string]int{}, ByLevel: map[string]map[string]int{},
+		PicksByLevel: map[string]int{}, NoQualified: map[string]int{}, NoneAllowed: map[string]int{}}
+}
+
+// noteFallback records that a pick of this level had no proven candidate left.
+// None allowed is the stricter case: the live picker has no thin cell to rotate
+// either and uses the level rule.
+func (s *summary) noteFallback(level string, es []*candEval) {
+	s.PicksByLevel[level]++
+	if pickV2(es, 0) != nil {
+		return
+	}
+	s.NoQualified[level]++
+	for _, e := range es {
+		if e.allowed {
+			return
+		}
+	}
+	s.NoneAllowed[level]++
 }
 
 func (s *summary) add(winner *candEval, view costView, quality float64, level string) {
@@ -370,10 +394,12 @@ func (c *replayCheck) matchRate() float64 {
 
 // RunReplay performs every measurement the decision draft reports.
 func RunReplay(s *Snapshot, alphas []float64, floors []floorSet) *Report {
-	r := &Report{Snapshot: s, Alphas: alphas}
+	r := &Report{Snapshot: s, Alphas: alphas, CeilingCuts: map[string]int{}}
 	picks := append([]Pick(nil), s.Picks...)
 	sort.Slice(picks, func(i, j int) bool { return picks[i].At < picks[j].At })
 	r.Today = newSummary("today", "today: run cost + (1 - p) x rescue")
+	r.V2 = newSummary("V2", "V2: run cost / p")
+	r.V2Ceiling = newSummary("V2 + ceiling rule", "V2: run cost / p; ceiling rule")
 	r.Check = &replayCheck{}
 	for _, a := range alphas {
 		r.OptionsA = append(r.OptionsA, newSummary(fmt.Sprintf("V2 alpha %.0f", a), "V2: run cost / p"))
@@ -387,10 +413,32 @@ func RunReplay(s *Snapshot, alphas []float64, floors []floorSet) *Report {
 		v2set := protocol.DefaultPickerSettings()
 		v2set.QualityV2 = true
 		tableA := protocol.BuildPickerTable(pickerTasks(tasks, math.MaxInt64, OptionAScore), v2set)
-		esToday, _ := replayCandidates(p, tableToday, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{})
+		ceilingSet := v2set
+		ceilingSet.CeilingRule = true
+		tableC := protocol.BuildPickerTable(pickerTasks(tasks, math.MaxInt64, OptionAScore), ceilingSet)
+		// The check compares today's rule with the recorded roster as it was.
+		esCheck, _ := replayCandidates(p, tableToday, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{})
+		winnerCheck := pickToday(esCheck)
+		// Every method competes on the roster without the exhausted providers.
+		gp, _ := s.gate(p)
+		esToday, _ := replayCandidates(gp, tableToday, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{})
 		winnerToday := pickToday(esToday)
 		// Every row is priced from the V2 candidates of this pick.
-		v2es, _ := replayCandidates(p, tableA, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true})
+		v2es, _ := replayCandidates(gp, tableA, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true})
+		level := levelForD(p.D)
+		w2 := pickV2(v2es, 0)
+		r.V2.noteFallback(level, v2es)
+		if w2 == nil {
+			w2 = winnerToday
+		}
+		cs := protocol.PickerCostOptions{QualityV2: true}
+		esC, _ := replayCandidates(gp, tableC, s.Prices, s.Scores, s.Minimums, s, cs)
+		wc := pickV2(esC, 0)
+		r.V2Ceiling.noteFallback(level, esC)
+		r.noteCeiling(level, v2es, esC, w2, wc)
+		if wc == nil {
+			wc = winnerToday
+		}
 		// Quality is reported on today's score for every method, so the rows
 		// compare. Option A ranks on its own reweighted score, shown in the case.
 		commonQ := func(w *candEval) float64 {
@@ -399,7 +447,9 @@ func RunReplay(s *Snapshot, alphas []float64, floors []floorSet) *Report {
 			}
 			return tableToday.Cell(w.key, tableToday.Bucket(p.D)).Score
 		}
-		r.Today.add(winnerToday, viewOf(v2es, winnerToday), commonQ(winnerToday), levelForD(p.D))
+		r.Today.add(winnerToday, viewOf(v2es, winnerToday), commonQ(winnerToday), level)
+		r.V2.add(w2, viewOf(v2es, w2), commonQ(w2), level)
+		r.V2Ceiling.add(wc, viewOf(v2es, wc), commonQ(wc), level)
 
 		recorded := ""
 		for _, row := range p.Rows {
@@ -407,14 +457,14 @@ func RunReplay(s *Snapshot, alphas []float64, floors []floorSet) *Report {
 				recorded = row.Name
 			}
 		}
-		if winnerToday != nil {
+		if winnerCheck != nil {
 			r.Check.Picks++
-			if winnerToday.row.Name == recorded {
+			if winnerCheck.row.Name == recorded {
 				r.Check.Match++
 			} else {
 				r.Check.Mismatches = append(r.Check.Mismatches, mismatch{
-					Pick: p.Session, D: p.D, Recorded: recorded, Ours: winnerToday.row.Name,
-					Reason: mismatchReason(esToday, recorded, winnerToday),
+					Pick: p.Session, D: p.D, Recorded: recorded, Ours: winnerCheck.row.Name,
+					Reason: mismatchReason(esCheck, recorded, winnerCheck),
 				})
 			}
 		}
@@ -434,20 +484,19 @@ func RunReplay(s *Snapshot, alphas []float64, floors []floorSet) *Report {
 			}
 			if row.HasCost {
 				r.Check.CostRows++
-				if e := findKey(esToday, row.Key()); e != nil && math.Abs(e.cost-row.CostPerRun) < 0.01 {
+				if e := findKey(esCheck, row.Key()); e != nil && math.Abs(e.cost-row.CostPerRun) < 0.01 {
 					r.Check.CostMatch++
 				}
 			}
 		}
 
-		level := levelForD(p.D)
 		for i, a := range alphas {
-			es, _ := replayCandidates(p, tableA, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true, Alpha: a})
+			es, _ := replayCandidates(gp, tableA, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true, Alpha: a})
 			w := pickV2(es, 0)
 			r.OptionsA[i].add(w, viewOf(v2es, w), commonQ(w), level)
 		}
 		for i, f := range floors {
-			es, _ := replayCandidates(p, tableA, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true, CleanFloor: f.floor(level)})
+			es, _ := replayCandidates(gp, tableA, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true, CleanFloor: f.floor(level)})
 			w, fallback := pickWithFloor(es, winnerToday, f.floor(level))
 			if fallback {
 				r.Floors[i].Fallback++
@@ -456,11 +505,29 @@ func RunReplay(s *Snapshot, alphas []float64, floors []floorSet) *Report {
 		}
 		if r.Case == nil {
 			if c := casePick(p); c != nil {
-				r.Case = r.caseReport(*c, tableToday, tableA, alphas, floors)
+				r.Case = r.caseReport(*c, tableToday, tableA, tableC, alphas, floors)
 			}
 		}
 	}
 	return r
+}
+
+// noteCeiling records what the ceiling rule changed in one pick: the
+// candidates V2 allowed and the rule left out, and whether the winner moved.
+func (r *Report) noteCeiling(level string, v2, ceiling []*candEval, w2, wc *candEval) {
+	cut := false
+	for _, e := range ceiling {
+		if v := findKey(v2, e.key); v != nil && v.allowed && !e.allowed {
+			cut = true
+			r.CeilingCuts[e.row.Name+" ("+level+")"]++
+		}
+	}
+	if cut {
+		r.CeilingPicksCut++
+	}
+	if w2 != nil && wc != nil && w2.row.Name != wc.row.Name {
+		r.CeilingMoved++
+	}
 }
 
 // casePick is the D 3.20 pick the owner named: it chose the cheap DeepSeek
@@ -479,9 +546,12 @@ func casePick(p Pick) *Pick {
 
 // CaseReport is the owner's example under every method.
 type CaseReport struct {
-	Pick     Pick
-	Roster   []CaseRoster
-	Variants []CaseChoice
+	Pick Pick
+	// Exhausted names the candidates left out because their provider is
+	// exhausted.
+	Exhausted []string
+	Roster    []CaseRoster
+	Variants  []CaseChoice
 }
 
 // CaseRoster is one candidate of the case's pick as today's table scores it,
@@ -528,9 +598,10 @@ func named(es []*candEval, name string) *candEval {
 	return nil
 }
 
-func (r *Report) caseReport(p Pick, tableToday, tableA *protocol.PickerTable, alphas []float64, floors []floorSet) *CaseReport {
+func (r *Report) caseReport(p Pick, tableToday, tableA, tableC *protocol.PickerTable, alphas []float64, floors []floorSet) *CaseReport {
 	s := r.Snapshot
 	c := &CaseReport{Pick: p}
+	p, c.Exhausted = s.gate(p)
 	esToday, _ := replayCandidates(p, tableToday, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{})
 	v2es, _ := replayCandidates(p, tableA, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true})
 	for _, e := range esToday {
@@ -561,6 +632,19 @@ func (r *Report) caseReport(p Pick, tableToday, tableA *protocol.PickerTable, al
 		c.Variants = append(c.Variants, ch)
 	}
 	add("today", pickToday(esToday), 0, esToday)
+	for _, v := range []struct {
+		name  string
+		table *protocol.PickerTable
+	}{{"V2", tableA}, {"V2 + ceiling rule", tableC}} {
+		es, _ := replayCandidates(p, v.table, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true})
+		w, rank := pickV2(es, 0), 0.0
+		if w == nil {
+			add(v.name+" (fallback)", pickToday(esToday), 0, esToday)
+			continue
+		}
+		rank = w.rank
+		add(v.name, w, rank, es)
+	}
 	for _, a := range alphas {
 		esA, _ := replayCandidates(p, tableA, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true, Alpha: a})
 		w := pickV2(esA, 0)
@@ -612,11 +696,19 @@ func mismatchReason(es []*candEval, recorded string, winner *candEval) string {
 
 // Report is everything the draft needs.
 type Report struct {
-	Snapshot *Snapshot
-	Alphas   []float64
-	Check    *replayCheck
-	Today    *summary
-	OptionsA []*summary
-	Floors   []*summary
-	Case     *CaseReport
+	Snapshot  *Snapshot
+	Alphas    []float64
+	Check     *replayCheck
+	Today     *summary
+	V2        *summary
+	V2Ceiling *summary
+	// CeilingCuts counts, by candidate and level, how often the ceiling rule
+	// left out a candidate that V2 allowed. CeilingPicksCut is the picks where
+	// it cut any, and CeilingMoved the picks where it changed the winner.
+	CeilingCuts     map[string]int
+	CeilingPicksCut int
+	CeilingMoved    int
+	OptionsA        []*summary
+	Floors          []*summary
+	Case            *CaseReport
 }

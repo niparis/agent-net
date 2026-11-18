@@ -2,8 +2,8 @@
 
 An offline replay of the worker picker against a read-only copy of the gateway
 store. It exists for decision [0173](../../docs/decisions/0173-picker-quality.md):
-it runs today's rule and the opt-in rule at several alpha values and clean-rate
-floors, and prints the tables
+it runs today's rule, V2 (`picker.quality_v2`) and V2 with the ceiling rule
+(`picker.ceiling_rule`), and optionally alpha values and clean-rate floors, and prints the tables
 that decision reports.
 
 It is not wired into the daemon or the gateway, and it adds nothing to the
@@ -17,8 +17,9 @@ Flags:
 
 - `-db` (required): path to a copy of the gateway store. Never point it at the
   live store.
-- `-alphas` (default `0,2,4,6,8,10`): opt-in alpha values.
-- `-floors` (default `A,B,C`): floor sets to replay. Pass an empty value to omit them.
+- `-alphas` (default empty): extra alpha values to replay. The owner decided against alpha, so the default prints only today, V2 and V2 with the ceiling rule.
+- `-floors` (default empty): floor sets `A,B,C` to replay.
+- `-exhausted` (default `opencode-go`): quota providers that are used up. They do not compete in any method, as in the live picker. The snapshot keeps no quota reading from the time of a pick, so one set applies to every pick. Pass an empty value to keep every recorded candidate. The replay check always reads the recorded roster.
 
 ## What it reads
 
@@ -47,7 +48,7 @@ rule cost is in the last column, labelled with that rule.
 ## Tests
 
     go -C tools/pickerreplay vet ./...
-    go -C tools/pickerreplay test -run '^(TestOptionAScoreCountsEachFailureOnce|TestPickTodayTakesTheLowestExpectedCost|TestPickOptionAWeighsQualityAgainstCost|TestReplayReadsSnapshotAndMatchesTheRecordedPick|TestTasksAtLeavesOutWhatDidNotExistYet|TestYardstickIsRunCostOverCleanShare|TestEveryRowPricesThePickTheSameWay)$'
+    go -C tools/pickerreplay test -run '^(TestOptionAScoreCountsEachFailureOnce|TestPickTodayTakesTheLowestExpectedCost|TestPickOptionAWeighsQualityAgainstCost|TestReplayReadsSnapshotAndMatchesTheRecordedPick|TestTasksAtLeavesOutWhatDidNotExistYet|TestYardstickIsRunCostOverCleanShare|TestEveryRowPricesThePickTheSameWay|TestReplayLeavesOutAnExhaustedProvider|TestReplayCountsPicksWithNoCandidateLeft)$'
 
 The tests build a throwaway store copy in a temporary directory. They never
 touch the real setup.

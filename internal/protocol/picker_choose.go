@@ -53,7 +53,10 @@ func pickerBucket(d float64, s PickerSettings) int {
 // record is allowed unless the top of its interval is below AllowedFraction x
 // best, and a thin candidate is allowed by its benchmark ceiling. A strong
 // model is never left out for being far above the work: the weaker bias and the
-// qualifying rule in pickOrderByCells steer the work instead.
+// qualifying rule in pickOrderByCells steer the work instead. With
+// s.CeilingRule on, the one exception is a model whose benchmark ceiling is
+// below the bucket: it is allowed only when its Lo is at least the Lo of the
+// best candidate.
 func PickerBucketVerdicts(facts []PickerCandidateFacts, bucketLo, bucketMean float64, bucket int, s PickerSettings) ([]PickerVerdict, int) {
 	s = s.Normalized()
 	out := make([]PickerVerdict, len(facts))
@@ -70,6 +73,11 @@ func PickerBucketVerdicts(facts []PickerCandidateFacts, bucketLo, bucketMean flo
 			out[i].Allowed = f.Cell.Hi >= s.AllowedFraction*best
 			if !out[i].Allowed {
 				out[i].Reason = fmt.Sprintf("below %g×best", s.AllowedFraction)
+			} else if s.CeilingRule && f.Scored && bucketLo >= f.Ceiling && f.Cell.Lo < facts[bestIdx].Cell.Lo {
+				// Above its benchmark ceiling, the record has to carry the
+				// model: its low end must reach the best model's low end.
+				out[i].Allowed = false
+				out[i].Reason = "above its benchmark, record not as good as best"
 			}
 		case f.Scored && bucketLo < f.Ceiling:
 			out[i].Allowed, out[i].Prior = true, true
@@ -103,6 +111,9 @@ type pickerEntry struct {
 	measured  bool
 	allowed   bool
 	prior     bool
+	// blocked is true when a window of the provider that limits the model is
+	// used up (or over the gate's 90 percent line): a start would be refused.
+	blocked   bool
 	reason    string
 	weight    float64
 	qualified bool
@@ -231,8 +242,10 @@ func expectedCosts(entries []*pickerEntry, table *PickerTable, bucket int, price
 // the rest follow in the order the gate should try them.
 //
 // A candidate whose provider has no room stays in the order, at the end where
-// the gate refuses it with the reason of its own check: the ranking never
-// decides that a candidate may not run.
+// the gate refuses it with the reason of its own check. It does not compete: it
+// has no pace and no part in the best cell, the cost rule or the rotation, so
+// an exhausted provider is never ranked first or cheaper for the room left in
+// another of its windows.
 //
 // The second return value is empty when the cell rule picked. Otherwise it is
 // the reason the level rule makes the pick, for the note.
@@ -251,14 +264,14 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 		if provider == "" {
 			provider = QuotaProviderForStart(c.Harness, c.Model)
 		}
-		// The gate owns the quota check. The ranker only needs a pace for its
-		// order, so a used-up window is left out of that reading.
-		room, note, measured := WorkerQuotaPace(quotas, provider, c.Model)
+		// The gate owns the refusal. The ranker only keeps a blocked candidate
+		// out of the contest; the pace of the others is the tightest window.
+		room, note, measured, blocked := QuotaRoomForProvider(quotas, provider, c.Model)
 		if measured {
 			room -= 5 * float64(running[provider])
 		}
 		key := PickerModelKey(c.Harness, c.Model)
-		e := &pickerEntry{c: c, key: key, cell: table.Cell(key, bucket), quotaNote: note, room: room, measured: measured}
+		e := &pickerEntry{c: c, key: key, cell: table.Cell(key, bucket), quotaNote: note, room: room, measured: measured, blocked: blocked}
 		e.name = c.Name
 		if e.name == "" {
 			e.name = PickerModelDisplay(key)
@@ -273,17 +286,28 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 
 	// 1-3. The same decision the Quality subtab shows, one verdict per entry.
 	// The best cell, the interval test, the benchmark prior and the
-	// over-qualification test all live in PickerBucketVerdicts.
-	facts := make([]PickerCandidateFacts, len(entries))
-	for i, e := range entries {
-		facts[i] = PickerCandidateFacts{Key: e.key, Cell: e.cell, Scored: e.scored, Benchmark: e.bench, Ceiling: e.ceiling}
+	// over-qualification test all live in PickerBucketVerdicts. A blocked
+	// candidate is not in it: it cannot run, so it must not be the best that
+	// the others are measured against.
+	var live []*pickerEntry
+	var facts []PickerCandidateFacts
+	for _, e := range entries {
+		if e.blocked {
+			e.reason = e.quotaNote
+			continue
+		}
+		live = append(live, e)
+		facts = append(facts, PickerCandidateFacts{Key: e.key, Cell: e.cell, Scored: e.scored, Benchmark: e.bench, Ceiling: e.ceiling})
+	}
+	if len(live) == 0 {
+		return nil, "fallback to the level rule (every candidate is out of quota)"
 	}
 	verdicts, bestIdx := PickerBucketVerdicts(facts, bucketLo, table.BucketMean(bucket), bucket, set)
 	var bestEntry *pickerEntry
 	if bestIdx >= 0 {
-		bestEntry = entries[bestIdx]
+		bestEntry = live[bestIdx]
 	}
-	for i, e := range entries {
+	for i, e := range live {
 		e.allowed = verdicts[i].Allowed
 		e.prior = verdicts[i].Prior
 		e.reason = verdicts[i].Reason
@@ -514,6 +538,12 @@ func pickOrder(level string, picked WorkerModelChoice, chosen *pickerEntry, entr
 	byWeight(rest)
 	for _, e := range rest {
 		add(e)
+	}
+	// A blocked candidate goes last, for the gate to refuse with its own reason.
+	for _, e := range entries {
+		if e.blocked {
+			add(e)
+		}
 	}
 	return order
 }

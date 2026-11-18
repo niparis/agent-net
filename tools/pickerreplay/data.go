@@ -64,6 +64,32 @@ type Snapshot struct {
 	Scores     []protocol.ModelScore
 	Minimums   map[string]float64
 	PriceCount int
+
+	// Exhausted is the quota providers a start would be refused on. The store
+	// keeps no quota reading from the time of a pick, so the replay applies the
+	// set to every pick: such a candidate does not compete, as in the live
+	// picker.
+	Exhausted map[string]bool
+}
+
+// gate returns the pick without the candidates whose provider is exhausted.
+// The gateway records the whole roster, a blocked candidate included, and the
+// pace it recorded for one can come from the windows that still have room.
+func (s *Snapshot) gate(p Pick) (Pick, []string) {
+	if len(s.Exhausted) == 0 {
+		return p, nil
+	}
+	out := p
+	out.Rows = nil
+	var left []string
+	for _, r := range p.Rows {
+		if s.Exhausted[protocol.QuotaProviderForStart(r.Harness, r.Model)] {
+			left = append(left, r.Name)
+			continue
+		}
+		out.Rows = append(out.Rows, r)
+	}
+	return out, left
 }
 
 type runRec struct {

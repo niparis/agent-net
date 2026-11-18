@@ -1128,3 +1128,102 @@ func TestPickerCostReplayOptions(t *testing.T) {
 		t.Fatalf("options: %+v", cost)
 	}
 }
+
+// A provider with an exhausted window is not cheaper for having room in its
+// other windows: it is out, as a start on it would be refused. The pick must
+// not rank it first, and its pace must not be read from the windows left.
+func TestPickExhaustedProviderIsNotFirstOrCheaper(t *testing.T) {
+	tasks := append(costTasks("a", 2.5, 1, repeat(5, 1)...), costTasks("b", 2.5, 1, repeat(5, 1)...)...)
+	scores := pickScores(map[string]float64{"a": 50, "b": 50})
+	c := pickCandidates("a", "b")
+	c[0].Provider, c[1].Provider = "pa", "pb"
+	const week = 7 * 24 * 3600
+	q := &Quotas{GeneratedAt: 1000, Providers: []QuotaProvider{
+		// pa's monthly window is used up; its weekly window is empty and early,
+		// which alone reads as a lot of room.
+		{Provider: "pa", Windows: []QuotaWindow{
+			{Kind: "monthly", PercentUsed: 100, Exhausted: true, ResetsAt: 1000 + 4*week},
+			{Kind: "weekly", PercentUsed: 0, ResetsAt: 1000 + week/2},
+		}},
+		{Provider: "pb", Windows: []QuotaWindow{{Kind: "weekly", PercentUsed: 50, ResetsAt: 1000 + week/2}}},
+	}}
+	in := &PickerInput{D: 2.5, Table: BuildPickerTable(tasks, DefaultPickerSettings())}
+	order, _, err := WorkerPickOrder(c, "normal", scores, nil, q, nil, &WorkerRotation{}, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if order[0].Name != "b" {
+		t.Fatalf("first choice = %s, want b: %v", order[0].Name, order[0].PickNote)
+	}
+	for _, row := range order[0].PickRows {
+		if row.Name == "a" && row.PaceFactor > 1 {
+			t.Errorf("exhausted provider got pace factor %.2f", row.PaceFactor)
+		}
+	}
+}
+
+// With picker.ceiling_rule on, a model above its benchmark ceiling needs a
+// record whose Lo reaches the best model's Lo. With it off, nothing changes.
+func TestPickerCeilingRuleVerdicts(t *testing.T) {
+	set := DefaultPickerSettings()
+	bucketLo, mean := 3.0, .5
+	best := PickerCell{Score: .9, Lo: .8, Hi: .98, N: 10}
+	facts := []PickerCandidateFacts{
+		{Key: "best", Cell: best, Scored: true, Benchmark: 60, Ceiling: 5},
+		// Ceiling 2.25 is below the bucket at 3.0. Lo .85 is not below best Lo.
+		{Key: "clear", Cell: PickerCell{Score: .92, Lo: .85, Hi: .99, N: 8}, Scored: true, Benchmark: 30, Ceiling: 2.25},
+		// Allowed today (Hi is above .9 x best) but Lo .6 is under the best Lo.
+		{Key: "unclear", Cell: PickerCell{Score: .85, Lo: .6, Hi: .95, N: 4}, Scored: true, Benchmark: 30, Ceiling: 2.25},
+		// Above its ceiling with a thin cell: out in both modes.
+		{Key: "thin", Cell: PickerCell{Score: mean, Lo: mean, Hi: mean}, Scored: true, Benchmark: 30, Ceiling: 2.25},
+		// No benchmark, so no ceiling to be above.
+		{Key: "unscored", Cell: PickerCell{Score: .8, Lo: .65, Hi: .95, N: 5}},
+	}
+	off, _ := PickerBucketVerdicts(facts, bucketLo, mean, 6, set)
+	if !off[1].Allowed || !off[2].Allowed || off[3].Allowed || !off[4].Allowed {
+		t.Fatalf("rule off changed verdicts: %+v", off)
+	}
+	set.CeilingRule = true
+	on, _ := PickerBucketVerdicts(facts, bucketLo, mean, 6, set)
+	if !on[0].Allowed || !on[1].Allowed {
+		t.Errorf("best and a clearly as good record must be allowed: %+v %+v", on[0], on[1])
+	}
+	if on[2].Allowed || on[2].Reason != "above its benchmark, record not as good as best" {
+		t.Errorf("unclear = %+v, want left out with the ceiling reason", on[2])
+	}
+	if on[3].Allowed || on[3].Reason != "above its benchmark" {
+		t.Errorf("thin = %+v, want left out above its benchmark", on[3])
+	}
+	if !on[4].Allowed {
+		t.Errorf("unscored = %+v, want allowed: no ceiling", on[4])
+	}
+	// Below its ceiling a model is not affected by the rule.
+	facts[2].Ceiling = 3.5
+	on, _ = PickerBucketVerdicts(facts, bucketLo, mean, 6, set)
+	if !on[2].Allowed {
+		t.Errorf("below its ceiling = %+v, want allowed", on[2])
+	}
+}
+
+// The setting reaches the pick: a cheaper model above its ceiling is the pick
+// with the rule off and is left out, with its reason in the note, with it on.
+func TestPickerCeilingRuleReachesThePick(t *testing.T) {
+	tasks := append(costTasks("strong", 3.0, 1, repeat(10, 1)...), costTasks("cheap", 3.0, .1, repeat(4, 1, 1, 1, 0)...)...)
+	scores := pickScores(map[string]float64{"strong": 60, "cheap": 20})
+	for _, on := range []bool{false, true} {
+		set := DefaultPickerSettings()
+		set.CeilingRule = on
+		in := &PickerInput{D: 3.0, Table: BuildPickerTable(tasks, set)}
+		order, _, err := WorkerPickOrder(pickCandidates("strong", "cheap"), "normal", scores, nil, nil, nil, &WorkerRotation{}, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := order[0].Name
+		if on && (got != "strong" || !strings.Contains(order[0].PickNote, "cheap")) {
+			t.Errorf("rule on: pick %s, note %q", got, order[0].PickNote)
+		}
+		if !on && got != "cheap" {
+			t.Errorf("rule off: pick %s, want cheap", got)
+		}
+	}
+}

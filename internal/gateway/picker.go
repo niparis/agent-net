@@ -50,6 +50,7 @@ func (s *Store) pickerSettings() (protocol.PickerSettings, error) {
 	w := settings.Where{}
 	return protocol.PickerSettings{
 		QualityV2:       snap.Bool("picker.quality_v2", w),
+		CeilingRule:     snap.Bool("picker.ceiling_rule", w),
 		BucketWidth:     snap.Float("picker.bucket_width", w),
 		K:               snap.Float("picker.k", w),
 		AllowedFraction: snap.Float("picker.allowed_fraction", w),

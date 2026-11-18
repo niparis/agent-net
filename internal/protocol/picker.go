@@ -36,7 +36,11 @@ const (
 // PickerSettings are the owner and CTO settings of the picker (picker.* in the
 // settings recipe). A zero field takes its default.
 type PickerSettings struct {
-	QualityV2    bool    `json:"quality_v2"`
+	QualityV2 bool `json:"quality_v2"`
+	// CeilingRule makes the benchmark ceiling a limit: a model whose ceiling
+	// is below the bucket takes work there only when its own record is clearly
+	// as good as the best proven model's (its Lo is at least the best Lo).
+	CeilingRule  bool    `json:"ceiling_rule"`
 	WeakerBias   float64 `json:"weaker_bias"`
 	ExploreShare float64 `json:"explore_share"`
 	// BucketWidth is the width of a D bucket, starting at 1.0.
