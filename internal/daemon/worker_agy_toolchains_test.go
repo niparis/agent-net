@@ -80,7 +80,18 @@ func TestAgyWorkerToolchainDirs(t *testing.T) {
 			if gitDir == "" {
 				gitDir = repo
 			}
+			// The per-worker package cache comes last, in every case, also when
+			// there is no Go toolchain.
+			// The worker may be gone by now, so the cache dir is checked by its
+			// shape and then compared as the last entry.
 			want = append(append([]string(nil), toolchains...), workerGitRoots(context.Background(), gitDir)...)
+			if len(got) > 0 {
+				last := got[len(got)-1]
+				if filepath.Base(last) != "cache" || filepath.Dir(filepath.Dir(last)) != filepath.Join(w.d.cfg.StateDir, "workers") {
+					t.Fatalf("last --add-dir is not the worker cache dir: %v", got)
+				}
+				want = append(want, last)
+			}
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("--add-dir: got %v, want %v; args: %v", got, want, r.Args)
 			}
