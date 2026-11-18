@@ -8,6 +8,13 @@ settings:
     levels: [repo]
     default: 0
     live: true
+  - key: workers.bootstrap_command
+    description: Shell command that runs in each new worker worktree before the worker starts, in the same OS sandbox. A failure shows in the start notice and does not stop the worker. Empty means none.
+    kind: rule
+    type: string
+    levels: [repo]
+    default: ""
+    live: true
   - key: workers.early_quit_threshold
     rows: [145]
     description: Incomplete worker runs shorter than this with no changes or fewer than 20 uncommitted changed lines count as early quits.

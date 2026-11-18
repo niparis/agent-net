@@ -331,38 +331,23 @@ func resolved(p string) string {
 // worker's folder.
 func (d *Daemon) osSandboxWrap(w *worker, bin string, args, env []string) (string, []string, []string, error) {
 	d.wmu.Lock()
-	harness, level, path, dir, name := w.harness, w.permissions, w.path, w.dir, w.osSandbox
+	harness, name := w.harness, w.osSandbox
 	d.wmu.Unlock()
-	if dir == "" {
-		dir = filepath.Join(d.cfg.StateDir, "workers", w.id)
-	}
 	tool, err := osSandboxTool()
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("the OS sandbox is on for this worker, but %w", err)
 	}
-	if err := os.MkdirAll(filepath.Join(dir, "tmp"), 0o700); err != nil {
+	in, dir, err := d.osSandboxInputFor(w, bin)
+	if err != nil {
 		return "", nil, nil, err
 	}
-	in := osSandboxInput{Level: level, WorkerDir: resolved(dir), Path: resolved(path),
-		RuntimeDir: runtimeDirToHide(), Masks: hostSocketMasks()}
-	if fileExists(d.cfg.SocketPath) {
-		in.Socket = resolved(d.cfg.SocketPath)
+	tmp := osSandboxTmpEnv(filepath.Join(in.WorkerDir, "tmp"))
+	set := map[string]string{"TMPDIR": tmp}
+	// The caches live in the private tmp, which the wrapper makes writable and
+	// the daemon removes with the worker.
+	for k, v := range workerCacheVars(filepath.Join(tmp, "cache")) {
+		set[k] = v
 	}
-	if lp, err := exec.LookPath(bin); err == nil {
-		in.Bin = resolved(lp)
-	}
-	if dg := filepath.Join(in.Path, ".git"); fileExists(dg) {
-		in.DotGit = dg
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if common, err := gitOut(ctx, path, "rev-parse", "--path-format=absolute", "--git-common-dir"); err == nil && common != "" {
-		in.GitCommon = resolved(common)
-		for _, r := range workerGitRoots(ctx, path) {
-			in.GitRoots = append(in.GitRoots, resolved(r))
-		}
-	}
-	set := map[string]string{"TMPDIR": osSandboxTmpEnv(filepath.Join(in.WorkerDir, "tmp"))}
 	switch harness {
 	case "pi":
 		if err := d.piPrivateAgent(&in, set); err != nil {
@@ -384,6 +369,41 @@ func (d *Daemon) osSandboxWrap(w *worker, bin string, args, env []string) (strin
 	}
 	argv := osSandboxCommand(buildOSSandboxPolicy(in), bin, args)
 	return tool, argv, workerEnv(env, set), nil
+}
+
+// osSandboxInputFor collects the facts the wrapper's policy needs for a worker:
+// its private folder (made, with its tmp), its worktree and the git folders a
+// commit writes to. It also returns the private folder's path.
+func (d *Daemon) osSandboxInputFor(w *worker, bin string) (osSandboxInput, string, error) {
+	d.wmu.Lock()
+	level, path, dir := w.permissions, w.path, w.dir
+	d.wmu.Unlock()
+	if dir == "" {
+		dir = filepath.Join(d.cfg.StateDir, "workers", w.id)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "tmp"), 0o700); err != nil {
+		return osSandboxInput{}, "", err
+	}
+	in := osSandboxInput{Level: level, WorkerDir: resolved(dir), Path: resolved(path),
+		RuntimeDir: runtimeDirToHide(), Masks: hostSocketMasks()}
+	if fileExists(d.cfg.SocketPath) {
+		in.Socket = resolved(d.cfg.SocketPath)
+	}
+	if lp, err := exec.LookPath(bin); err == nil {
+		in.Bin = resolved(lp)
+	}
+	if dg := filepath.Join(in.Path, ".git"); fileExists(dg) {
+		in.DotGit = dg
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if common, err := gitOut(ctx, path, "rev-parse", "--path-format=absolute", "--git-common-dir"); err == nil && common != "" {
+		in.GitCommon = resolved(common)
+		for _, r := range workerGitRoots(ctx, path) {
+			in.GitRoots = append(in.GitRoots, resolved(r))
+		}
+	}
+	return in, dir, nil
 }
 
 // piPrivateAgent gives a Pi worker its own agent folder. Pi takes its locks by

@@ -55,6 +55,14 @@ func codexWritableRoots(ctx context.Context, w *worker) []string {
 	return workerGitRoots(ctx, w.path)
 }
 
+// codexRootsFor adds the worker's package caches (UV_CACHE_DIR and the others)
+// to the git folders.
+func (d *Daemon) codexRootsFor(ctx context.Context, w *worker) []string {
+	cache := d.workerCacheRoot(w)
+	_ = os.MkdirAll(cache, 0o700) // a root that does not exist yet is not writable
+	return append(codexWritableRoots(ctx, w), cache)
+}
+
 // codexSandbox is what the worker's level means for Codex.
 type codexSandbox struct {
 	mode    string         // thread/start "sandbox"
@@ -98,7 +106,7 @@ func (d *Daemon) codexSandboxFor(ctx context.Context, w *worker) codexSandbox {
 	d.wmu.Lock()
 	level := w.permissions
 	d.wmu.Unlock()
-	return newCodexSandbox(level, codexWritableRoots(ctx, w))
+	return newCodexSandbox(level, d.codexRootsFor(ctx, w))
 }
 
 // codexConfigDefinesAgentNet tells whether the user's Codex config.toml

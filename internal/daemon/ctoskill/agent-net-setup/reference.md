@@ -396,6 +396,7 @@ Every key in standard.yaml, grouped by the part before its first dot. Each row i
 
 | key | levels | default | values or range | tier | description |
 |---|---|---|---|---|---|
+| `workers.bootstrap_command` | repo | empty | - | 3 | Shell command that runs in each new worker worktree before the worker starts, in the same OS sandbox. A failure shows in the start notice and does not stop the worker. Empty means none. |
 | `workers.early_quit_threshold` | network, repo | 120s | min 0s | 3 | Incomplete worker runs shorter than this with no changes or fewer than 20 uncommitted changed lines count as early quits. |
 | `workers.sandbox_level` | network, repo | sandboxed | sandboxed, no-network, read-only | 1 | How far a worker's permissions are limited. |
 | `workers.max_age` | network, repo | 4h | min 1ns | 3 | Maximum worker run age. |

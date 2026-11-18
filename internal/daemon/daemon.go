@@ -359,6 +359,7 @@ type activityUpdate struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
+	workerEnvState      workerEnvState // login PATH and system CA bundle, found once
 	ownerPrompts        ownerPrompts
 	turnEnds            turnEndAsks
 	ownerPromptClock    func() time.Time // test hook
