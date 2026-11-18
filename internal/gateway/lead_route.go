@@ -11,7 +11,7 @@ import (
 
 // routeLead runs in the message transaction after the original reply has been
 // authorized. The normal request gate then checks the actual recipient.
-func routeLead(tx *sql.Tx, m *protocol.Message, now time.Time) (string, error) {
+func routeLead(tx *sql.Tx, m *protocol.Message, now time.Time, quota leadQuotaReader) (string, error) {
 	var senderRepo, senderAgent, harness, worker, cto string
 	err := tx.QueryRow(`SELECT COALESCE(repo_id,''),COALESCE(agent_id,''),harness,worker,COALESCE((SELECT value FROM owner_settings WHERE key='cto_session'),'') FROM sessions WHERE id=?`, m.From).Scan(&senderRepo, &senderAgent, &harness, &worker, &cto)
 	if err != nil {
@@ -82,11 +82,14 @@ func routeLead(tx *sql.Tx, m *protocol.Message, now time.Time) (string, error) {
 		} else if same {
 			return "", false, nil
 		}
-		pick, ready, err := redirectLeadSessionQ(tx, lead, inRepo, now)
+		pick, ready, err := redirectLeadSessionQ(tx, lead, inRepo, now, quota)
 		if err != nil {
 			return "", false, err
 		}
 		if !ready {
+			if pick.noQuota {
+				return leadNoQuotaNote(pick.resetsAt), true, nil
+			}
 			if pick.fallback {
 				return "Lead is waiting for its user; delivered as addressed.", true, nil
 			}

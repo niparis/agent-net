@@ -53,7 +53,9 @@ type Store struct {
 	qualityStrong  map[string]int
 	reminderMu     sync.Mutex
 	// chiefQuota is the quota verdict on the chief session (chief_health.go).
-	chiefQuota      atomic.Pointer[chiefQuotaReading]
+	chiefQuota atomic.Pointer[chiefQuotaReading]
+	// leadQuota holds the pinned lead sessions that are out of quota (lead_quota.go).
+	leadQuota       atomic.Pointer[leadQuotaVerdicts]
 	reminderOffline map[string]bool
 	checkMu         sync.Mutex
 	pendingMu       sync.Mutex
@@ -4986,7 +4988,7 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		}
 	}
 	if route != nil && p.LeadAddress == "" {
-		*route, err = routeLead(tx, &m, s.now())
+		*route, err = routeLead(tx, &m, s.now(), s.leadQuotaOut)
 		if err != nil {
 			return msg, false, err
 		}

@@ -576,6 +576,8 @@ func (g *Gateway) flushChief(ctx context.Context) {
 	now := g.store.now()
 	// A chief that cannot work loses its asks here, in seconds (chief_health.go).
 	g.refreshChiefQuota()
+	// Lead routing reads the same quota tick (lead_quota.go).
+	g.refreshLeadQuota()
 	if err := g.store.releaseChiefAsks(now); err != nil {
 		g.logLine("error", "where", "chief release", "err", err)
 	}
