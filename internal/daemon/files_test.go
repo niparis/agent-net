@@ -255,7 +255,6 @@ func TestPrepareFilesSymlinkedWorkerRootInState(t *testing.T) {
 
 func TestPrepareFilesLimits(t *testing.T) {
 	e := newFileTestEnv(t)
-	small := writeTestFile(t, filepath.Join(e.project, "a.txt"), []byte("a"))
 
 	big := filepath.Join(e.project, "big.bin")
 	f, err := os.Create(big)
@@ -282,10 +281,6 @@ func TestPrepareFilesLimits(t *testing.T) {
 		t.Fatal("no files was accepted")
 	}
 
-	twin := writeTestFile(t, filepath.Join(e.project, "sub", "a.txt"), []byte("b"))
-	if _, err := PrepareFiles([]string{small, twin}, e.rules(), e.snapshots); err == nil || !strings.Contains(err.Error(), "a.txt") {
-		t.Fatalf("two files with one name: err=%v", err)
-	}
 	if _, err := PrepareFiles([]string{"a.txt"}, e.rules(), e.snapshots); err == nil {
 		t.Fatal("a relative path was accepted")
 	}
@@ -452,5 +447,97 @@ func TestCleanFileFolders(t *testing.T) {
 		if _, err := os.Stat(p); err != nil {
 			t.Errorf("%s was removed: %v", p, err)
 		}
+	}
+}
+
+// Two files of one message may share a name when they come from different
+// folders. Each one travels under a name with its folder in front, so the
+// receiver gets both and can tell them apart.
+func TestPrepareFilesSameBasename(t *testing.T) {
+	e := newFileTestEnv(t)
+	first := writeTestFile(t, filepath.Join(e.project, "internal", "a", "README.md"), []byte("first"))
+	second := writeTestFile(t, filepath.Join(e.project, "internal", "b", "README.md"), []byte("second"))
+	out, err := PrepareFiles([]string{first, second}, e.rules(), e.snapshots)
+	if err != nil {
+		t.Fatalf("two README.md files from different folders: %v", err)
+	}
+	defer out.Remove()
+	wantNames := []string{"a__README.md", "b__README.md"}
+	wantSources := []string{first, second}
+	wantBytes := []string{"first", "second"}
+	for i, f := range out.Files {
+		if f.Entry.Name != wantNames[i] || f.Source != wantSources[i] {
+			t.Fatalf("file %d: name %q from %q, want %q from %q", i, f.Entry.Name, f.Source, wantNames[i], wantSources[i])
+		}
+		if got := string(mustReadFile(t, f.Copy)); got != wantBytes[i] {
+			t.Fatalf("file %d: snapshot holds %q, want %q", i, got, wantBytes[i])
+		}
+	}
+}
+
+// manifestNames keeps a name that occurs once. A repeated name gets its folder
+// in front, or the file ID when that name is taken too, so no two files of a
+// message share a name.
+func TestManifestNames(t *testing.T) {
+	cases := []struct {
+		name    string
+		sources []string
+		want    []string
+	}{
+		{"unique names are kept", []string{"/p/a.txt", "/p/sub/b.txt"}, []string{"a.txt", "b.txt"}},
+		{"same name in two folders", []string{"/p/a/README.md", "/p/b/README.md"}, []string{"a__README.md", "b__README.md"}},
+		{"same folder name too", []string{"/p/x/a/README.md", "/p/y/a/README.md"}, []string{"a__README.md", "f2__README.md"}},
+		{"a unique file already has the folder name", []string{"/p/a/README.md", "/p/b/README.md", "/p/a__README.md"}, []string{"f1__README.md", "b__README.md", "a__README.md"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := manifestNames(c.sources)
+			if strings.Join(got, "|") != strings.Join(c.want, "|") {
+				t.Fatalf("names = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// The note in a hand-back names each renamed file with the path it came from.
+// A message without renamed files adds no note.
+func TestRenamedFilesNote(t *testing.T) {
+	if got := renamedFilesNote(&OutgoingFiles{Files: []OutgoingFile{
+		{Entry: protocol.FileEntry{Name: "notes.md"}, Source: "/p/notes.md"},
+	}}); got != "" {
+		t.Fatalf("no rename: note = %q, want none", got)
+	}
+	got := renamedFilesNote(&OutgoingFiles{Files: []OutgoingFile{
+		{Entry: protocol.FileEntry{Name: "a__README.md"}, Source: "/p/internal/a/README.md"},
+		{Entry: protocol.FileEntry{Name: "b__README.md"}, Source: "/p/internal/b/README.md"},
+		{Entry: protocol.FileEntry{Name: "notes.md"}, Source: "/p/notes.md"},
+	}})
+	want := "files renamed because two files in the message had the same name:\n" +
+		"  a__README.md from /p/internal/a/README.md\n" +
+		"  b__README.md from /p/internal/b/README.md\n"
+	if got != want {
+		t.Fatalf("note = %q, want %q", got, want)
+	}
+}
+
+// A file sent with agent_file_send names its original path in the result
+// only when the name changed, so unique names give the same result as before.
+func TestFileSendDestinations(t *testing.T) {
+	msg := protocol.Message{ID: "m_1", To: "s_b", Files: []protocol.FileEntry{
+		{ID: "f1", Name: "a__README.md"}, {ID: "f2", Name: "notes.md"},
+	}}
+	sent := []FileSent{
+		{Entry: protocol.FileEntry{ID: "f1", Name: "a__README.md"}, Source: "/p/internal/a/README.md"},
+		{Entry: protocol.FileEntry{ID: "f2", Name: "notes.md"}},
+	}
+	got := fileSendDestinations(msg, sent)
+	if len(got) != 2 {
+		t.Fatalf("destinations = %+v, want two", got)
+	}
+	if got[0].Name != "a__README.md" || got[0].Source != "/p/internal/a/README.md" || got[0].Path != "inbox/s_b/m_1/a__README.md" {
+		t.Fatalf("renamed file: %+v", got[0])
+	}
+	if got[1].Name != "notes.md" || got[1].Source != "" {
+		t.Fatalf("unique file: %+v", got[1])
 	}
 }

@@ -44,6 +44,9 @@ type FileSent struct {
 	Entry protocol.FileEntry
 	Path  string
 	Note  string
+	// Source is the file's path on the sending machine, set only when the
+	// file was renamed (see manifestNames).
+	Source string
 }
 
 // FileSendResult is the stored message and what happened to each file.
@@ -129,6 +132,9 @@ func (d *Daemon) sendPreparedFiles(ctx context.Context, req FileSend, out *Outgo
 	var errs []error
 	for _, f := range out.Files {
 		sent, err := d.pushFile(ctx, stored.Message.ID, f, path, ip, receiver, note)
+		if f.renamed() {
+			sent.Source = f.Source
+		}
 		res.Files = append(res.Files, sent)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", f.Entry.Name, err))

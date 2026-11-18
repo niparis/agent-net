@@ -142,6 +142,10 @@ type FileSendRequest struct {
 type FileSendDestination struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
+	// Source is the path the file had on the sending machine. It is set only
+	// when the file was renamed because another file of the message had the
+	// same name.
+	Source string `json:"source,omitempty"`
 }
 
 // FileSendResult identifies the message and its planned destinations. Error
