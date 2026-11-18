@@ -557,7 +557,7 @@ func SetSystemNodeDirsForTesting(dirs []string) func() {
 // are found. HOME and USER are filled in when the service environment lacks
 // them, because quota-axi uses both in its cache key.
 func NodeExecEnv(path string) ([]string, error) {
-	env := os.Environ()
+	env := quietUpdateNotifier(os.Environ())
 	loginPath := loginpath.Path()
 	dirs := append([]string{filepath.Dir(path)}, nvmBins()...)
 	dirs = append(dirs, systemNodeDirs...)
@@ -572,6 +572,20 @@ func NodeExecEnv(path string) ([]string, error) {
 		}
 	}
 	return nil, ErrNeedNode
+}
+
+// updateNotifierEnv is the standard variable that turns off a CLI's update
+// notice. bl prints that notice as a second JSON document after its usage
+// output, and quota-axi cannot decode two documents.
+const updateNotifierEnv = "NO_UPDATE_NOTIFIER"
+
+// quietUpdateNotifier sets NO_UPDATE_NOTIFIER=1 unless the owner set a value.
+// An empty value counts as unset, because bl then prints the notice anyway.
+func quietUpdateNotifier(env []string) []string {
+	if envHas(env, updateNotifierEnv) {
+		return env
+	}
+	return setEnv(env, updateNotifierEnv, "1")
 }
 
 // envHome is the owner's home folder, from the process environment when it is
