@@ -197,9 +197,7 @@ func TestClaudeWorkerLifecycle(t *testing.T) {
 func TestClaudeWorkerResumeWithNewSessionID(t *testing.T) {
 	t.Setenv("FAKE_CLAUDE_NEW_RESUME_ID", "1")
 	g := startGateway(t, t.TempDir(), "")
-	set := shortSet
-	set.StartTimeout = scaled(2 * time.Second)
-	c := startClaudeNode(t, g, set)
+	c := startClaudeNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	c.register(t, repo)
 	res := c.mustStart(t, protocol.WorkerStartRequest{Model: "sonnet", Project: "shop", Harness: "claude", Task: "FAKE:handback first"})
