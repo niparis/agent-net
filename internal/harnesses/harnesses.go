@@ -401,6 +401,10 @@ const marker = "__AGENT_NET_PATH__"
 // one in $SHELL (on macOS /bin/zsh when that is not set), started as the user
 // with no terminal and no input, and stopped after ShellTimeout. It reads the
 // login startup files (not the interactive ones), as a terminal window does.
+// LoginShellPATH is the PATH of the user's login shell, or "" when it cannot
+// be read. The daemon adds it to a worker's PATH.
+func LoginShellPATH(ctx context.Context) string { return loginShellPATH(ctx) }
+
 func loginShellPATH(ctx context.Context) string {
 	sh := os.Getenv("SHELL")
 	if sh == "" && runtime.GOOS == "darwin" {

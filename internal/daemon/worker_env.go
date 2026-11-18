@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/niparis/agent-net/internal/harnesses"
 )
 
 // The environment a worker's tools need to work (friction reports of
@@ -38,72 +40,23 @@ type workerEnvState struct {
 	caBundle  string
 }
 
-// loginShellPathTimeout bounds the one probe of the login shell.
-const loginShellPathTimeout = 5 * time.Second
-
 // loginPATH is the PATH of the owner's login shell, found once per daemon
-// start. A service manager starts the daemon with a short PATH that lacks
-// /opt/homebrew/bin, ~/.local/go/bin and the folders a shell profile adds.
-// It is "" when the shell cannot tell.
+// start (the lookup of harnesses.Executable, which a test replaces through
+// Config.HarnessSearch). A service manager starts the daemon with a short PATH
+// that lacks /opt/homebrew/bin, ~/.local/go/bin and the folders a shell
+// profile adds. It is "" when the shell cannot tell.
 func (d *Daemon) loginPATH() string {
 	d.workerEnvState.loginOnce.Do(func() {
+		lookup := harnesses.LoginShellPATH
+		if d.cfg.HarnessSearch != nil && d.cfg.HarnessSearch.LoginShellPATH != nil {
+			lookup = d.cfg.HarnessSearch.LoginShellPATH
+		}
 		begin := time.Now()
-		path := probeLoginPATH(d.loginShell())
+		path := lookup(context.Background())
 		d.workerEnvState.loginPath = path
-		d.Logf("worker env: login PATH of %s probed in %s (%d entries)", d.loginShell(), time.Since(begin).Round(time.Millisecond), len(filepath.SplitList(path)))
+		d.Logf("worker env: login shell PATH read in %s (%d entries)", time.Since(begin).Round(time.Millisecond), len(filepath.SplitList(path)))
 	})
 	return d.workerEnvState.loginPath
-}
-
-func (d *Daemon) loginShell() string {
-	if d.cfg.testLoginShell != "" {
-		return d.cfg.testLoginShell
-	}
-	if sh := os.Getenv("SHELL"); sh != "" {
-		return sh
-	}
-	if runtime.GOOS == "darwin" {
-		return "/bin/zsh"
-	}
-	return "/bin/sh"
-}
-
-const (
-	pathBegin = "__AGENT_NET_PATH_BEGIN__"
-	pathEnd   = "__AGENT_NET_PATH_END__"
-)
-
-// probeLoginPATH runs shell as a login shell and reads its $PATH. Profile
-// files may print text, so the value sits between two markers.
-func probeLoginPATH(shell string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), loginShellPathTimeout)
-	defer cancel()
-	var cmd *exec.Cmd
-	if filepath.Base(shell) == "fish" {
-		cmd = exec.CommandContext(ctx, shell, "-l", "-c", `printf '%s%s%s' `+pathBegin+` (string join : $PATH) `+pathEnd)
-	} else {
-		// -i too: zsh and bash read their PATH exports from .zshrc and .bashrc
-		// as often as from the login files.
-		cmd = exec.CommandContext(ctx, shell, "-l", "-i", "-c", `printf '%s%s%s' `+pathBegin+` "$PATH" `+pathEnd)
-	}
-	cmd.Stdin = nil
-	cmd.WaitDelay = 250 * time.Millisecond
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil && out.Len() == 0 {
-		return ""
-	}
-	s := out.String()
-	i := strings.LastIndex(s, pathBegin)
-	if i < 0 {
-		return ""
-	}
-	s = s[i+len(pathBegin):]
-	j := strings.Index(s, pathEnd)
-	if j < 0 {
-		return ""
-	}
-	return strings.TrimSpace(s[:j])
 }
 
 // mergePATH is current with the entries of extra that it lacks, in order. The

@@ -12,21 +12,24 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/niparis/agent-net/internal/harnesses"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/settings"
 )
 
-// fakeLoginShell is a login shell that prints noise as a profile would, counts
-// its runs, and answers the PATH probe with a PATH of its own.
+// fakeLoginShell is a login shell (named sh, as the lookup requires a known
+// shell) that prints noise as a profile would, counts its runs, and answers the
+// PATH probe with a PATH of its own. It sets $SHELL to it.
 func fakeLoginShell(t *testing.T, path string) (shell, counter string) {
 	t.Helper()
 	dir := t.TempDir()
 	counter = filepath.Join(dir, "runs")
-	shell = filepath.Join(dir, "fake-shell")
-	script := fmt.Sprintf("#!/bin/sh\necho run >> %s\necho 'profile noise'\nPATH=%s exec /bin/sh -c \"$4\"\n", testShellQuote(counter), testShellQuote(path))
+	shell = filepath.Join(dir, "sh")
+	script := fmt.Sprintf("#!/bin/sh\necho run >> %s\necho 'profile noise'\nPATH=%s exec /bin/sh -c \"$3\"\n", testShellQuote(counter), testShellQuote(path))
 	if err := os.WriteFile(shell, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("SHELL", shell)
 	return shell, counter
 }
 
@@ -36,10 +39,9 @@ func envWorker(t *testing.T, d *Daemon) *worker {
 }
 
 func TestWorkerPATHHasTheLoginShellPATH(t *testing.T) {
-	shell, counter := fakeLoginShell(t, "/opt/fake-homebrew/bin:/opt/fake-go/bin:/usr/bin")
+	_, counter := fakeLoginShell(t, "/opt/fake-homebrew/bin:/opt/fake-go/bin:/usr/bin")
 	t.Setenv("PATH", "/usr/bin:/bin")
 	d := commitTestDaemon(t)
-	d.cfg.testLoginShell = shell
 	w := envWorker(t, d)
 	got := d.workerToolEnv(w)["PATH"]
 	if want := "/usr/bin:/bin:/opt/fake-homebrew/bin:/opt/fake-go/bin"; got != want {
@@ -55,8 +57,8 @@ func TestWorkerPATHHasTheLoginShellPATH(t *testing.T) {
 
 func TestWorkerPATHKeepsTheDaemonPATHWhenTheLoginShellFails(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("SHELL", "/nonexistent/sh")
 	d := commitTestDaemon(t)
-	d.cfg.testLoginShell = "/nonexistent/shell"
 	if got := d.workerToolEnv(envWorker(t, d))["PATH"]; got != "/usr/bin:/bin" {
 		t.Fatalf("PATH = %q", got)
 	}
@@ -64,7 +66,7 @@ func TestWorkerPATHKeepsTheDaemonPATHWhenTheLoginShellFails(t *testing.T) {
 
 func TestWorkerCachesAreInTheWorkersOwnFolder(t *testing.T) {
 	d := commitTestDaemon(t)
-	d.cfg.testLoginShell = "/nonexistent/shell"
+	d.cfg.HarnessSearch = &harnesses.Options{LoginShellPATH: func(context.Context) string { return "" }}
 	w := envWorker(t, d)
 	env := d.workerToolEnv(w)
 	root := filepath.Join(d.cfg.StateDir, "workers", w.id, "cache")
@@ -129,7 +131,7 @@ func TestWorkerUsesTheSystemTrustStore(t *testing.T) {
 	t.Setenv("PIP_CERT", "")
 	t.Setenv("SSL_CERT_FILE", "")
 	d := commitTestDaemon(t)
-	d.cfg.testLoginShell = "/nonexistent/shell"
+	d.cfg.HarnessSearch = &harnesses.Options{LoginShellPATH: func(context.Context) string { return "" }}
 	env := d.workerToolEnv(envWorker(t, d))
 	if env["UV_NATIVE_TLS"] != "1" {
 		t.Errorf("UV_NATIVE_TLS = %q", env["UV_NATIVE_TLS"])
@@ -152,7 +154,7 @@ func TestWorkerKeepsTheOwnersCertificateChoice(t *testing.T) {
 	t.Setenv("PIP_CERT", "/owner/pip.pem")
 	t.Setenv("SSL_CERT_FILE", "/owner/ssl.pem")
 	d := commitTestDaemon(t)
-	d.cfg.testLoginShell = "/nonexistent/shell"
+	d.cfg.HarnessSearch = &harnesses.Options{LoginShellPATH: func(context.Context) string { return "" }}
 	env := d.workerToolEnv(envWorker(t, d))
 	if _, ok := env["PIP_CERT"]; ok {
 		t.Errorf("PIP_CERT was replaced: %q", env["PIP_CERT"])
@@ -340,7 +342,7 @@ func bootstrapWorker(t *testing.T, d *Daemon) *worker {
 func TestBootstrapRunsInTheWorktreeBeforeTheWorker(t *testing.T) {
 	d := commitTestDaemon(t)
 	d.cfg.Workers.OSSandboxOff = []string{"*"}
-	d.cfg.testLoginShell = "/nonexistent/shell"
+	d.cfg.HarnessSearch = &harnesses.Options{LoginShellPATH: func(context.Context) string { return "" }}
 	bootstrapSnapshot(d, "pwd > bootstrap.txt && echo $UV_CACHE_DIR >> bootstrap.txt")
 	w := bootstrapWorker(t, d)
 	d.runWorkerBootstrap(context.Background(), w)
@@ -363,7 +365,7 @@ func TestBootstrapRunsInTheWorktreeBeforeTheWorker(t *testing.T) {
 func TestBootstrapFailureShowsInTheStartNotice(t *testing.T) {
 	d := commitTestDaemon(t)
 	d.cfg.Workers.OSSandboxOff = []string{"*"}
-	d.cfg.testLoginShell = "/nonexistent/shell"
+	d.cfg.HarnessSearch = &harnesses.Options{LoginShellPATH: func(context.Context) string { return "" }}
 	bootstrapSnapshot(d, "echo installing; echo 'npm ERR! boom' >&2; exit 3")
 	w := bootstrapWorker(t, d)
 	d.runWorkerBootstrap(context.Background(), w)
@@ -435,5 +437,31 @@ func TestRealSandboxBootstrap(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(outside, "probe")); err == nil {
 		t.Fatal("the command wrote outside the sandbox")
+	}
+}
+
+// A Claude worker's shell reads its environment from the launch settings, so
+// the tool environment must be there, and its sandbox must be able to write the
+// caches that the environment names.
+func TestClaudeWorkerGetsTheToolEnvironmentAndCacheWrite(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	c := startClaudeNode(t, g, shortSet)
+	repo := newRepo(t, "shop")
+	c.register(t, repo)
+	res := c.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Model: "fake/m1",
+		Task: "FAKE:ignore hold the turn", Isolation: protocol.IsolationWorktree})
+	rec := readClaude(t, res.Worktree)
+	env, ok := rec.Settings["env"].(map[string]any)
+	if !ok {
+		t.Fatalf("no env in the launch settings: %v", rec.Settings)
+	}
+	cache, _ := env["UV_CACHE_DIR"].(string)
+	if cache == "" || env["WORKER_PORT_BASE"] == nil || env["PATH"] == nil {
+		t.Fatalf("tool environment missing from the launch settings: %v", env)
+	}
+	files := rec.Settings["sandbox"].(map[string]any)["filesystem"].(map[string]any)
+	writes := stringList(t, files["allowWrite"], "sandbox.filesystem.allowWrite")
+	if !hasString(writes, filepath.Dir(cache)) {
+		t.Errorf("the sandbox cannot write the cache folder %s: %v", filepath.Dir(cache), writes)
 	}
 }
