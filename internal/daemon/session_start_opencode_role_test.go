@@ -125,6 +125,10 @@ func openCodeRoleResumeFixture(t *testing.T, n *workerNode, state, dir string) (
 	_, sid := helloOpenCode(t, n.node, "ses_wake", dir)
 	return sid, func() {
 		t.Helper()
+		// The daemon's reconcile loop may load the location too, and that
+		// fake plugin hello can outlive the wake. Close waits for it; test
+		// cleanup would otherwise close its socket before the reply.
+		server.Close()
 		mu.Lock()
 		defer mu.Unlock()
 		if gets != 2 || patches != 1 || len(permissions) != 1 || permissions[0] != (ctoPermission{Action: "*", Resource: "*", Effect: "allow"}) {

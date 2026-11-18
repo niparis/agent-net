@@ -80,7 +80,9 @@ func TestSignInFakeBL(t *testing.T) {
 	})}
 	go server.Serve(listener)
 	<-done
-	server.Close()
+	// Close would drop the callback connection before its response is
+	// flushed, and the test would see EOF. Shutdown waits for it.
+	_ = server.Shutdown(context.Background())
 }
 
 func fakeSignInSetup(t *testing.T) (string, string) {
