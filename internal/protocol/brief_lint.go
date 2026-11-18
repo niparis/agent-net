@@ -20,6 +20,9 @@ const (
 	BriefCheckContradiction = "contradiction"
 	BriefCheckSandbox       = "sandbox"
 	BriefCheckStacked       = "stacked"
+	// BriefCheckBrowser flags a start whose Done needs a browser and whose
+	// harness cannot run one on its machine (see HarnessRunsBrowser).
+	BriefCheckBrowser = "browser"
 )
 
 // MaxBriefCommitIDs caps the commit IDs one start asks its machine to resolve.
@@ -58,7 +61,10 @@ var (
 	lintCommitWordRE = regexp.MustCompile(`(?i)\b(?:commit|sha|hash|revision|rev|head)\b`)
 	lintCommitIDRE   = regexp.MustCompile(`\b[0-9a-f]{7,40}\b`)
 	// Done checks that need a browser, a screenshot or Docker.
-	lintSandboxRE = regexp.MustCompile(`(?i)\b(?:screenshots?|screen captures?|browser|chromium|chrome|firefox|webkit|safari|playwright|selenium|headless|docker|podman)\b`)
+	// The words that mean a browser are shared with the harness routing
+	// (BriefNeedsBrowser); Docker is a CI matter and stays out of that one.
+	lintBrowserWords = `screenshots?|screen captures?|browser|chromium|chrome|firefox|webkit|safari|playwright|selenium|headless`
+	lintSandboxRE    = regexp.MustCompile(`(?i)\b(?:` + lintBrowserWords + `|docker|podman)\b`)
 	// Clauses end at a full stop followed by a space, or at a semicolon. A dot
 	// inside a file name such as scripts/test.sh does not end one.
 	lintClauseEndRE = regexp.MustCompile(`\.\s|;`)
