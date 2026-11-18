@@ -52,6 +52,13 @@ package fake
 // Value is the value.
 func Value() int { return 1 }
 EOF
+mkdir -p internal/gateway internal/guidance internal/toolcatalog internal/daemon/ctoskill internal/featuremap
+printf 'package gateway\n\nfunc Unrelated() int { return 1 }\n' >internal/gateway/unrelated.go
+printf 'package gateway\n\nfunc Migration() int { return 1 }\n' >internal/gateway/project_identity_migration.go
+printf 'package guidance\n\nfunc Text() int { return 1 }\n' >internal/guidance/guidance.go
+printf 'package toolcatalog\n\nfunc Tool() int { return 1 }\n' >internal/toolcatalog/tool.go
+printf 'package ctoskill\n\nfunc Reference() int { return 1 }\n' >internal/daemon/ctoskill/reference.go
+printf 'package featuremap\n\nfunc Map() int { return 1 }\n' >internal/featuremap/featuremap.go
 cat >internal/fake/fake_test.go <<'EOF'
 package fake
 
@@ -301,5 +308,135 @@ run_check
 if grep -q 'vet .*tools/pickerreplay' "$work/go.log" || grep -q 'rulecheck args:.*tools/pickerreplay' "$work/out"; then
   fail "nested replay module was passed to a root-module check"
 fi
+
+# run_line prints the go test line that ran the named -run pattern, if any.
+run_line() {
+  grep -F -- "-run $1 " "$work/go.log" | head -n 1
+}
+
+# Each run prints a line when it starts and a PASS or FAIL line when it ends, so
+# a long run shows what it is doing.
+reset_tree
+change_production
+run_check
+start_line=$(grep -n '^running ' "$work/out" | head -n 1 | cut -d: -f1)
+done_line=$(grep -n '^PASS ' "$work/out" | head -n 1 | cut -d: -f1)
+[ -n "$start_line" ] && [ -n "$done_line" ] && [ "$start_line" -lt "$done_line" ] ||
+  fail "no progress line before the run's PASS line: $(cat "$work/out")"
+
+# A file that is not a migration file runs no race migration set, even when it
+# sits in the gateway package. The migration set is slow, so a wrong match costs
+# minutes.
+reset_tree
+printf 'package gateway\n\nfunc Unrelated() int { return 2 }\n' >internal/gateway/unrelated.go
+run_check
+[ "$status" = 0 ] || fail "an unrelated gateway change exited $status: $(cat "$work/out")"
+if grep -q -- '-race' "$work/go.log"; then
+  fail "an unrelated gateway file ran the race migration set: $(cat "$work/go.log")"
+fi
+
+# A gateway file that holds migrations runs the migration set with -race.
+reset_tree
+printf 'package gateway\n\nfunc Migration() int { return 2 }\n' >internal/gateway/project_identity_migration.go
+run_check
+[ "$status" = 0 ] || fail "a migration change exited $status: $(cat "$work/out")"
+grep -Fq -- '-race -run Migrat|Replay|Upgrade|Cutover' "$work/go.log" ||
+  fail "a migration file did not run the migration set: $(cat "$work/go.log")"
+
+# An untracked new test file is part of the diff, so its tests run.
+reset_tree
+cat >internal/fake/extra_test.go <<'EOF'
+package fake
+
+import "testing"
+
+func TestNew(t *testing.T) {
+	if Value() != 1 {
+		t.Fatal("new")
+	}
+}
+EOF
+run_check
+grep -Fq -- '-run ^(TestNew)$' "$work/go.log" ||
+  fail "an untracked new test file did not run its tests: $(cat "$work/go.log")"
+
+# A change to tool, guidance or catalog text also runs the two generated-doc
+# checks, so a stale reference.md or feature map fails here and not in CI.
+reset_tree
+printf 'package toolcatalog\n\nfunc Tool() int { return 2 }\n' >internal/toolcatalog/tool.go
+run_check
+line=$(run_line '^(TestReferenceMatchesCode)$')
+case $line in
+  *' ./internal/daemon/ctoskill') ;;
+  *) fail "a tool text change did not run TestReferenceMatchesCode: $(cat "$work/go.log")" ;;
+esac
+line=$(run_line '^(TestFeatureMapMatchesCode)$')
+case $line in
+  *' ./internal/featuremap') ;;
+  *) fail "a tool text change did not run TestFeatureMapMatchesCode: $(cat "$work/go.log")" ;;
+esac
+
+# A change that is not an input of the generated docs runs neither check.
+reset_tree
+change_production
+run_check
+if grep -q 'TestReferenceMatchesCode\|TestFeatureMapMatchesCode' "$work/go.log"; then
+  fail "a change outside the generated-doc inputs ran a generated-doc check: $(cat "$work/go.log")"
+fi
+
+# When a generated-doc check fails, the output names the command that fixes it.
+reset_tree
+printf 'package toolcatalog\n\nfunc Tool() int { return 3 }\n' >internal/toolcatalog/tool.go
+FAKE_GO_PANIC=1 run_check
+[ "$status" = 1 ] || fail "a failing generated-doc check exited $status, want 1"
+grep -Fq 'go generate ./internal/daemon/ctoskill ./internal/featuremap' "$work/out" ||
+  fail "a failing generated-doc check does not name the fix: $(cat "$work/out")"
+
+# When go is not on PATH, the script uses the usual install directory, and says
+# so. The fake go and gofmt sit there, so the run finds them.
+reset_tree
+change_production
+home=$work/home-fallback
+: >"$work/go.log"
+mkdir -p "$home/.local/go/bin" "$work/nogo"
+cp "$work/bin/go" "$work/bin/gofmt" "$home/.local/go/bin/"
+status=0
+env -i HOME="$home" PATH="$work/nogo:/usr/bin:/bin" FAKE_GO_LOG="$work/go.log" \
+  FAKE_GOFMT_LOG="$work/gofmt.log" TEST_CHANGED_GO="$real_go" \
+  sh "$script" HEAD >"$work/out" 2>&1 || status=$?
+[ "$status" = 0 ] || fail "a run without go on PATH exited $status: $(cat "$work/out")"
+grep -Fq 'go is not on PATH' "$work/out" ||
+  fail "the script did not say it found go in the install directory: $(cat "$work/out")"
+grep -Fq 'test -count=1 -run ^(TestAlpha|TestBeta)$ -timeout ' "$work/go.log" ||
+  fail "the fallback go did not run the package tests: $(cat "$work/go.log")"
+
+# With no go in PATH or in the install directories, the script fails at once
+# with a clear line.
+reset_tree
+change_production
+mkdir -p "$work/empty-home"
+status=0
+env -i HOME="$work/empty-home" PATH="$work/nogo:/usr/bin:/bin" TEST_CHANGED_GO="$real_go" \
+  sh "$script" HEAD >"$work/out" 2>&1 || status=$?
+[ "$status" = 2 ] || fail "a run with no go exited $status, want 2: $(cat "$work/out")"
+grep -Fq 'go is not on PATH' "$work/out" ||
+  fail "a run with no go does not say so: $(cat "$work/out")"
+
+# Two runs at once each use their own temporary directory and remove it, so
+# they share no files and leave nothing behind.
+reset_tree
+change_production
+mkdir -p "$work/tmp"
+for n in 1 2; do
+  (TMPDIR="$work/tmp" PATH="$work/bin:/usr/bin:/bin" FAKE_GO_LOG="$work/go.log" \
+    FAKE_GOFMT_LOG="$work/gofmt.log" TEST_CHANGED_GO="$real_go" \
+    sh "$script" HEAD >"$work/par-$n" 2>&1; echo $? >"$work/par-$n.status") &
+done
+wait
+for n in 1 2; do
+  [ "$(cat "$work/par-$n.status")" = 0 ] || fail "parallel run $n failed: $(cat "$work/par-$n")"
+done
+leftover=$(ls -A "$work/tmp")
+[ -z "$leftover" ] || fail "runs left temporary directories behind: $leftover"
 
 echo "test-changed-test: ok"
