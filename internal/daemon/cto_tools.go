@@ -793,7 +793,12 @@ func (d *Daemon) ctoAttributedCall(ctx context.Context, typ string, params any) 
 	}
 	b, err := l.call(ctx, "cto.capabilities", nil)
 	if err != nil {
-		return nil, errors.New("gateway cannot verify CTO attribution; upgrade the gateway")
+		// Only a gateway that does not know the frame is too old. A timeout or a
+		// dropped link says nothing about its version, so the error keeps the cause.
+		if strings.Contains(err.Error(), "unknown frame type") {
+			return nil, errors.New("gateway cannot verify CTO attribution; upgrade the gateway")
+		}
+		return nil, fmt.Errorf("cannot check CTO attribution: the cto.capabilities call failed: %w", err)
 	}
 	var caps struct {
 		Attribution    bool `json:"attribution"`
