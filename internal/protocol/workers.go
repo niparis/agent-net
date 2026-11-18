@@ -773,8 +773,25 @@ func workerPreambleBar(harness string, snap settings.Snapshot, repo string, bar 
 	// brief (WorkerPreamble) and only adds to it.
 	if harness == "claude" {
 		b += "\n- " + line("workers.brief_claude")
+		if ClaudeBrowserSandboxOn(snap, repo) {
+			b += "\n- " + WorkerBrowserProof
+		}
 	}
 	return b
+}
+
+// WorkerBrowserProof is the extra brief line of a Claude worker whose project
+// turned on workers.claude_browser_sandbox. The line is fixed text, not a
+// setting: it states what the sandbox allows and what proof the owner expects.
+const WorkerBrowserProof = "This project lets your Bash serve on 127.0.0.1 and run a headless browser (Playwright). For a change that alters anything a user sees in a browser, run it, and attach with agent_handback files (as visual_proof): screenshots at two widths (390 and 1280 pixels) and the browser test report. Writes outside your worktree are still denied."
+
+// ClaudeBrowserSandboxOn tells whether a Claude worker in repo gets the browser
+// profile of its Bash sandbox: the owner turned it on for the repo, and the
+// repo's worker level is the default one (the profile never widens no-network
+// or read-only).
+func ClaudeBrowserSandboxOn(snap settings.Snapshot, repo string) bool {
+	where := settings.Where{Repo: repo}
+	return snap.Bool("workers.claude_browser_sandbox", where) && snap.String("workers.sandbox_level", where) == WorkersSandboxed
 }
 
 // testStepElsewhere tells whether the project's test step belongs to someone

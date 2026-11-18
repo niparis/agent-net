@@ -99,6 +99,14 @@ settings:
     default: sandboxed
     by_maturity: {critical: no-network}
     live: true
+  - key: workers.claude_browser_sandbox
+    rows: [52]
+    description: Whether a sandboxed Claude worker in this repo may listen on 127.0.0.1 and run a headless browser. Off unless the owner turns it on.
+    kind: rule
+    type: bool
+    levels: [repo]
+    default: false
+    live: true
   - key: delivery.merge_authority
     rows: [128]
     description: Who may approve a merge.
@@ -1242,7 +1250,7 @@ ledger:
   - {row: 49, keys: [charter.neighbor_summary_limits]}
   - {row: 50, keys: [relationships.edge_semantics]}
   - {row: 51, keys: [workers.isolation_minimum], step: 7}
-  - {row: 52, keys: [workers.sandbox_level], step: 7}
+  - {row: 52, keys: [workers.sandbox_level, workers.claude_browser_sandbox], step: 7}
   - {row: 53, keys: [workers.max_age, workers.cache_max_age, workers.cache_max_bytes, workers.cache_low_bytes, workers.tmp_max_age], step: 7}
   - {row: 54, keys: [workers.idle_timeout], step: 7}
   - {row: 55, keys: [workers.caller_gone_grace], step: 7}

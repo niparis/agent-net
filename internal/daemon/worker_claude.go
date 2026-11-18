@@ -19,6 +19,7 @@ import (
 	"github.com/niparis/agent-net/internal/claudetrust"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/providererr"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 // The Claude Code worker (decision 0002 W16, decision 0008).
@@ -234,8 +235,15 @@ func (d *Daemon) claudeWorkerSettings(w *worker, env map[string]string) map[stri
 		"crossSessionInbound": "accept",
 		"env":                 env,
 		"permissions":         claudeWorkerPermissions(level, dir),
-		"sandbox":             claudeWorkerSandbox(level, dir, d.claudeWorkerWrites(dir)),
+		"sandbox":             claudeWorkerSandbox(level, dir, d.claudeWorkerWrites(dir), d.claudeBrowserSandbox(w.project)),
 	}
+}
+
+// claudeBrowserSandbox tells whether the owner turned the browser profile on
+// for this project (workers.claude_browser_sandbox). It is off by default and
+// only the owner, or the CTO with the owner's words, can write it.
+func (d *Daemon) claudeBrowserSandbox(project string) bool {
+	return d.SettingsSnapshot().Bool("workers.claude_browser_sandbox", settings.Where{Repo: project})
 }
 
 // claudeWorkerPermissions is the file-tool part of a worker's level.
@@ -317,18 +325,38 @@ func (d *Daemon) prepareClaudeWorkerWrites(w *worker) {
 // make Claude Code warn and run the commands unsandboxed, so a machine without
 // them still gets a worker with the file-tool boundary; a worker never starts
 // with the file-tool boundary missing.
-func claudeWorkerSandbox(level, dir string, writes []string) map[string]any {
+func claudeWorkerSandbox(level, dir string, writes []string, browser bool) map[string]any {
 	files := map[string]any{}
 	if level == protocol.WorkersReadOnly {
 		files["denyWrite"] = []string{dir}
 	} else {
 		files["allowWrite"] = writes
 	}
-	return map[string]any{
+	sandbox := map[string]any{
 		"enabled":                  true,
 		"allowUnsandboxedCommands": false,
 		"filesystem":               files,
 	}
+	// The browser profile only widens the default level. The no-network and
+	// read-only levels keep their meaning for a project that opted in.
+	if browser && level == protocol.WorkersSandboxed {
+		sandbox["network"] = map[string]any{
+			"allowLocalBinding": true,
+			"allowMachLookup":   append([]string(nil), claudeBrowserMachServices...),
+		}
+	}
+	return sandbox
+}
+
+// claudeBrowserMachServices are the Mach services a headless Chromium looks up
+// on macOS and Claude Code's sandbox does not allow by default. Each one lets
+// a sandboxed command reach a service outside the sandbox (see docs/security.md),
+// so the list holds only what scripts/claude-browser-sandbox/ladder.sh found
+// denied for a Playwright launch.
+var claudeBrowserMachServices = []string{
+	"com.apple.cfprefsd.agent",
+	"com.apple.cfprefsd.daemon",
+	"com.apple.SystemConfiguration.configd",
 }
 
 // claudeMCPReady tells whether the MCP server of the worker's session has said

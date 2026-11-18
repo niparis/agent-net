@@ -396,6 +396,7 @@ Every key in standard.yaml, grouped by the part before its first dot. Each row i
 |---|---|---|---|---|---|
 | `workers.early_quit_threshold` | network, repo | 120s | min 0s | 3 | Incomplete worker runs shorter than this with no changes or fewer than 20 uncommitted changed lines count as early quits. |
 | `workers.sandbox_level` | network, repo | sandboxed | sandboxed, no-network, read-only | 1 | How far a worker's permissions are limited. |
+| `workers.claude_browser_sandbox` | repo | false | - | 1 | Whether a sandboxed Claude worker in this repo may listen on 127.0.0.1 and run a headless browser. Off unless the owner turns it on. |
 | `workers.max_age` | network, repo | 4h | min 1ns | 3 | Maximum worker run age. |
 | `workers.cache_max_age` | network, repo | 24h | min 0s | 3 | Maximum age of entries kept in the worker Go build cache. |
 | `workers.cache_max_bytes` | network, repo | 16106127360 | min 1 | 3 | Size cap in bytes for the worker and owner Go build caches together. |

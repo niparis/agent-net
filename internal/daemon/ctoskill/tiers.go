@@ -27,8 +27,9 @@ var tierKeys = map[string]int{
 	"delivery.handback_check":          TierApplicable,
 	"delivery.handback_check_timeout":  TierDefault,
 
-	"workers.sandbox_level":     TierOwner,
-	"workers.isolation_minimum": TierApplicable,
+	"workers.sandbox_level":          TierOwner,
+	"workers.claude_browser_sandbox": TierOwner,
+	"workers.isolation_minimum":      TierApplicable,
 }
 
 // tierPrefixes gives the tier of every key under a prefix. The longest match

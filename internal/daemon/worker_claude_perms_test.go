@@ -95,7 +95,7 @@ func TestClaudeWorkerPermissionLevels(t *testing.T) {
 	dir := "/state/worktrees/w_1"
 	writes := []string{dir, "/tmp/agent-net-gocache", "/tmp/agent-net-gotmp"}
 
-	sandboxed := claudeWorkerSandbox(protocol.WorkersSandboxed, dir, writes)
+	sandboxed := claudeWorkerSandbox(protocol.WorkersSandboxed, dir, writes, false)
 	fs := sandboxed["filesystem"].(map[string]any)
 	if got := stringList(t, fs["allowWrite"], "allowWrite"); len(got) != len(writes) {
 		t.Errorf("sandboxed allowWrite = %v, want %v", got, writes)
@@ -108,7 +108,7 @@ func TestClaudeWorkerPermissionLevels(t *testing.T) {
 	if offline["allow"] != nil {
 		t.Errorf("a no-network worker's hosts are pre-allowed: %v", offline["allow"])
 	}
-	if fs := claudeWorkerSandbox(protocol.WorkersNoNetwork, dir, writes)["filesystem"].(map[string]any); fs["allowWrite"] == nil {
+	if fs := claudeWorkerSandbox(protocol.WorkersNoNetwork, dir, writes, false)["filesystem"].(map[string]any); fs["allowWrite"] == nil {
 		t.Error("a no-network worker lost its worktree writes")
 	}
 
@@ -119,7 +119,7 @@ func TestClaudeWorkerPermissionLevels(t *testing.T) {
 	if readOnly["allow"] == nil {
 		t.Errorf("a read-only worker's network is on but its hosts are not pre-allowed: %v", readOnly["allow"])
 	}
-	fs = claudeWorkerSandbox(protocol.WorkersReadOnly, dir, writes)["filesystem"].(map[string]any)
+	fs = claudeWorkerSandbox(protocol.WorkersReadOnly, dir, writes, false)["filesystem"].(map[string]any)
 	if fs["allowWrite"] != nil {
 		t.Errorf("a read-only worker may write: %v", fs["allowWrite"])
 	}
