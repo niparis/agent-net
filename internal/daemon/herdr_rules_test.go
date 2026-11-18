@@ -1,7 +1,6 @@
 package daemon
 
 import (
-	"context"
 	"encoding/json"
 	"reflect"
 	"strings"
@@ -132,26 +131,5 @@ func TestSignInPrepareHostsInAgentNetHerdr(t *testing.T) {
 	requireHerdrRules(t, log)
 	if !hasOwnHerdrCall(t, log, "pane run w1:p1") {
 		t.Fatalf("the sign-in is not in agent-net's herdr: %v", herdrCalls(t, log))
-	}
-}
-
-// The machine that asks for a sign-in on another machine opens it with
-// herdr --remote and the session the other machine named.
-func TestSignInOpenRemoteNamesHerdrSession(t *testing.T) {
-	bin, _ := fakeOpenHerdr(t)
-	d := &Daemon{cfg: Config{NodeID: "local", testGatewayCall: func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
-		switch typ {
-		case "query.sign_in":
-			b, _ := json.Marshal(protocol.SignInTarget{Provider: "alibaba", NodeID: "remote", Hostname: "remote-host"})
-			return b, true, nil
-		case "query.sign_in_prepare":
-			b, _ := json.Marshal(protocol.SignInPrepareResult{Opened: true, Host: "remote-host", Pane: "w1:p7", Session: "agent-net"})
-			return b, true, nil
-		}
-		return nil, false, nil
-	}}}
-	p, err := d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "ask"})
-	if want := []string{bin, "--remote", "remote-host", "--session", "agent-net"}; err != nil || !reflect.DeepEqual(p.Argv, want) {
-		t.Fatalf("plan %+v, error %v, want argv %v", p, err, want)
 	}
 }

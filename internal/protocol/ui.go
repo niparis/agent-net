@@ -4,6 +4,7 @@ package protocol
 type UIRequest struct {
 	// Opening is delegated to one owner TUI so its herdr and terminal context wins.
 	EnterSession string `json:"enter_session,omitempty"`
+	SignInAskID  string `json:"sign_in_ask_id,omitempty"`
 	EnterCTO     bool   `json:"enter_cto,omitempty"`
 	Tab          string `json:"tab,omitempty"`
 	Select       string `json:"select,omitempty"`

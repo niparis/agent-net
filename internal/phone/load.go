@@ -467,11 +467,10 @@ func askCard(a protocol.Ask, now time.Time, names map[string]string) askView {
 		v.Form, v.Dismiss, v.CanMark = "inbox", true, false
 		v.Detail = a.Detail
 	case protocol.AskKindSignIn:
-		// The one action opens the CLI's login in a herdr pane on the machine
-		// the ask names. A phone cannot show that pane; it says so plainly.
+		// The owner TUI is where the local browser callback can be received.
 		v.Kind, v.Form, v.TargetID = "sign in", "signin", a.ID
 		v.Detail = a.Detail
-		v.Hint = "Opens the login in a herdr pane on the machine that needs it."
+		v.Hint = "Opens sign-in in an owner TUI. Open the link in Firefox, not Safari."
 	default:
 		v.Form, v.Hint = "tui", "Answer from the TUI."
 		v.Detail = a.Detail

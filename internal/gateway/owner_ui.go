@@ -14,11 +14,16 @@ func (g *Gateway) requestOwnerUI(ctx context.Context, nc *nodeConn, raw []byte) 
 	if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
 		return nil, reject("owner authority required")
 	}
-	if p.Request.EnterSession == "" {
-		return nil, reject("session_id required")
+	if (p.Request.EnterSession == "") == (p.Request.SignInAskID == "") {
+		return nil, reject("one session or sign-in ask is required")
+	}
+	if p.Request.SignInAskID != "" {
+		if _, _, err := g.store.SignInAsk(p.Request.SignInAskID); err != nil {
+			return nil, err
+		}
 	}
 	// Only an identifier and action cross this relay, never a terminal command.
-	request := protocol.UIRequest{EnterSession: p.Request.EnterSession, EnterCTO: p.Request.EnterCTO}
+	request := protocol.UIRequest{EnterSession: p.Request.EnterSession, EnterCTO: p.Request.EnterCTO, SignInAskID: p.Request.SignInAskID}
 	type candidate struct {
 		id   string
 		node *nodeConn

@@ -17,16 +17,19 @@ type SignInProviderInfo struct {
 	Reason string
 	// Argv is the exact command the pane runs. It is never built from input.
 	Argv []string
+	// ImportArgv is the fixed command that reads a console token from stdin.
+	ImportArgv []string
 }
 
 // SignInProviders is the fixed allowlist. Add a provider here only with its
 // exact login command; there is no other way to choose a command.
 var SignInProviders = map[string]SignInProviderInfo{
 	"alibaba": {
-		Provider: "alibaba",
-		Label:    "Alibaba Bailian CLI",
-		Reason:   "the Alibaba token-plan quota needs your console login",
-		Argv:     []string{"bl", "auth", "login", "--console"},
+		Provider:   "alibaba",
+		Label:      "Alibaba Bailian CLI",
+		Reason:     "the Alibaba token-plan quota needs your console login",
+		Argv:       []string{"bl", "auth", "login", "--console", "--no-browser", "--console-site", "international"},
+		ImportArgv: []string{"bl", "auth", "login", "--console", "--token-stdin", "--console-region", "ap-southeast-1", "--console-site", "international"},
 	},
 }
 
@@ -130,6 +133,23 @@ type SignInClose struct {
 // command and no provider: the daemon reads both from the stored ask.
 type SignInOpenRequest struct {
 	AskID       string `json:"ask_id"`
+	Cancel      bool   `json:"cancel,omitempty"`
 	HerdrSocket string `json:"herdr_socket,omitempty"`
 	HerdrPaneID string `json:"herdr_pane_id,omitempty"`
+}
+
+// SignInTransfer carries a console token only in the encrypted node relay.
+// The gateway resolves the target and provider from the open ask.
+type SignInTransfer struct {
+	AskID string `json:"ask_id"`
+	Owner string `json:"owner"`
+	Token string `json:"token"`
+}
+
+const FrameSignInImport = "node.sign_in_import"
+
+// SignInImport is sent by the gateway to the machine named by the ask.
+type SignInImport struct {
+	Provider string `json:"provider"`
+	Token    string `json:"token"`
 }

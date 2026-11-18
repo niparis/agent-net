@@ -24,11 +24,11 @@ func (d *Daemon) requestOwnerEnter(ctx context.Context, method, id, node string)
 }
 
 func (d *Daemon) showLocalOwnerEnter(q protocol.UIRequest) bool {
-	if q.EnterSession == "" || d.ln == nil {
+	if (q.EnterSession == "" && q.SignInAskID == "") || d.ln == nil {
 		return false
 	}
 	// Gateway input cannot carry a command or a caller's herdr socket.
-	request := protocol.UIRequest{EnterSession: q.EnterSession, EnterCTO: q.EnterCTO}
+	request := protocol.UIRequest{EnterSession: q.EnterSession, EnterCTO: q.EnterCTO, SignInAskID: q.SignInAskID}
 	d.ln.mu.Lock()
 	var candidates []*localConn
 	for c := range d.ln.conns {

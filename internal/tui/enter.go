@@ -30,14 +30,15 @@ type enterMsg struct {
 
 // enterDoneMsg is the end of the entered command.
 type enterDoneMsg struct {
-	id        string
-	name      string
-	host      string // the machine the session runs on, from the plan
-	err       error
-	fallback  string // the manual way, when the plan uses ssh
-	target    string // the ssh target of the plan, or ""
-	output    string // the last lines the command printed, when it failed
-	ctoNotice string
+	id          string
+	name        string
+	host        string // the machine the session runs on, from the plan
+	err         error
+	fallback    string // the manual way, when the plan uses ssh
+	target      string // the ssh target of the plan, or ""
+	output      string // the last lines the command printed, when it failed
+	ctoNotice   string
+	signInAskID string
 }
 
 // startEnter asks how to enter the selected session.
@@ -212,8 +213,8 @@ func (m Model) onEnter(r enterMsg) (Model, tea.Cmd) {
 		ctoNotice = r.plan.Note
 	}
 	return m, run(proxy, func(err error) tea.Msg {
-		done := enterDoneMsg{id: r.id, name: name, host: host, err: err, fallback: fallback, target: target, ctoNotice: ctoNotice}
-		if err != nil {
+		done := enterDoneMsg{id: r.id, name: name, host: host, err: err, fallback: fallback, target: target, ctoNotice: ctoNotice, signInAskID: r.plan.SignInAskID}
+		if err != nil && done.signInAskID == "" {
 			done.output = proxy.LastLines(2)
 		}
 		return done
@@ -231,7 +232,7 @@ func enterFailure(name string, err error) string {
 
 // onEnterDone is the return from the session.
 func (m Model) onEnterDone(r enterDoneMsg) (Model, tea.Cmd) {
-	if r.err != nil {
+	if r.err != nil && r.signInAskID == "" {
 		m.reportEnterFailure(r)
 	}
 	switch {
@@ -259,12 +260,28 @@ func (m Model) onEnterDone(r enterDoneMsg) (Model, tea.Cmd) {
 		// away, so repeat them here.
 		m.showFail("Left " + r.name + ": " + exitReason(r.err, r.output) + noteSuffix(m.enterNote))
 	}
+	var finish tea.Cmd
+	if r.signInAskID != "" {
+		if c, ok := m.src.(inboxCaller); ok {
+			finish = func() tea.Msg {
+				ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+				defer cancel()
+				_, err := c.Call(ctx, protocol.OpSignInComplete, protocol.SignInOpenRequest{AskID: r.signInAskID, Cancel: r.err != nil})
+				return signInCompleteMsg{err: err}
+			}
+		}
+	}
 	if !m.fetching {
 		m.fetching = true
-		return m, m.fetchCmd()
+		if finish == nil {
+			return m, m.fetchCmd()
+		}
+		return m, tea.Batch(m.fetchCmd(), finish)
 	}
-	return m, nil
+	return m, finish
 }
+
+type signInCompleteMsg struct{ err error }
 
 // enterFailureReporter is implemented by the daemon client. The command ran in
 // the owner's terminal, so the daemon has no other way to learn why it failed.

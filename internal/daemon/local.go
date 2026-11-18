@@ -270,6 +270,10 @@ func (lc *localConn) run(ctx context.Context) {
 			if req.Method == "file_send" {
 				timeout = 90*time.Second + protocol.MaxFilesPerMessage*fileTaildropTimeout
 			}
+			if req.Method == protocol.OpSignInComplete {
+				// Both CLI imports validate the token over the network.
+				timeout = 4 * time.Minute
+			}
 			if req.Method == protocol.OpWorkerStart {
 				timeout = lc.d.workerSettings("").StartTimeout + 60*time.Second // the machine starts a harness
 			}

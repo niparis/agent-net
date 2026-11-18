@@ -232,22 +232,20 @@ it only after the owner's answer, with an HTTPS-only browser opener. Approval
 in the browser remains the owner's action. The gateway retries the requested
 public switch and closes the ask on success; switching off withdraws it.
 
-**Sign-in asks.** A `sign_in` ask names a machine, a provider key and the reason
-a CLI needs the owner's interactive login. The command never travels with the
-ask: `protocol.SignInProviders` in `internal/protocol/signin.go` is the fixed
-allowlist, and only its exact argv runs. For now the table has one entry,
-`alibaba` -> `bl auth login --console` for the Alibaba Bailian CLI. The daemon
-raises the ask from a quota error whose remedy is a known login, one per
-machine and provider, and closes it with `signed_in` when that error clears.
-The CTO may call `sign_in_raise` with a provider key and a machine; a command
-field is refused. It may list sign-in asks with `sign_in_list`. Raising grants
-nothing. Only the owner's click (`sign_in_open`) opens a pane, and the CTO
-cannot call that owner-only method. The login runs on the machine the ask names:
-in the TUI's own terminal or pane, or in a pane of the target machine's own
-`agent-net` herdr shown here with `herdr --remote --session agent-net`. There is no ssh fallback, and a machine without herdr answers
-with a note instead. The gateway relay carries only the ask ID and provider
-key, so a compromised machine cannot make another machine run a command of its
-choosing.
+**Sign-in asks.** The owner opens a sign-in from the Desk; the CTO can raise
+or list asks but cannot open or complete one. The provider selects a fixed
+allowlisted command. The listener and browser run on the owner's TUI machine.
+A web Desk click delegates to one connected owner TUI using only the ask ID.
+
+For a remote target, the local CLI writes the fresh console token in a private
+temporary directory. The directory is removed after the attempt. The daemon
+imports it locally, then sends it in an encrypted gateway relay to the daemon
+of the machine named by the open ask. The gateway checks the owner and resolves
+the target and provider from the ask. It does not store or log the token. The
+target passes it on stdin to the fixed `bl auth login --console --token-stdin`
+command with the international site and Singapore region. It is not in argv,
+Desk items, normal messages, or command output. The relay protects the token
+in transit, but the gateway and both daemons can read it in memory.
 
 **Owner UI and invites.** Session/CTO entry relays an identifier-only request
 to one connected owner TUI, which retains its own herdr context and existing

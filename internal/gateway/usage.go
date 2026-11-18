@@ -341,7 +341,7 @@ func (s *Store) SessionCounts(recent time.Duration) (protocol.SessionCounts, err
 
 // isRelay tells whether a frame is a request that waits for another node.
 func isRelay(typ string) bool {
-	return typ == "query.machine_log" || typ == "query.owner_message" || typ == "query.usage_top" || typ == "query.session_text" || typ == "query.session_enter" || typ == "query.sign_in_prepare" || typ == "query.proposal_list" || typ == "query.proposal_answer"
+	return typ == "query.machine_log" || typ == "query.owner_message" || typ == "query.usage_top" || typ == "query.session_text" || typ == "query.session_enter" || typ == "query.sign_in_prepare" || typ == "query.sign_in_transfer" || typ == "query.proposal_list" || typ == "query.proposal_answer"
 }
 
 // serveRelay answers a relayed request. It runs in its own goroutine because
@@ -357,6 +357,8 @@ func (g *Gateway) serveRelay(ctx context.Context, nc *nodeConn, h protocol.Heade
 		data, err = g.relayMessageBody(ctx, raw)
 	} else if h.Type == "query.sign_in_prepare" {
 		data, err = g.signInPrepare(ctx, nc, raw)
+	} else if h.Type == "query.sign_in_transfer" {
+		data, err = g.signInTransfer(ctx, nc, raw)
 	} else if h.Type == "query.proposal_list" || h.Type == "query.proposal_answer" {
 		var q protocol.CTOProposalAnswer
 		if json.Unmarshal(raw, &q) != nil || q.NodeID == "" {

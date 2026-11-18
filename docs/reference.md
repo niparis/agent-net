@@ -3133,30 +3133,26 @@ An answer can carry a scope: `inbox_answer {id, answer, scope: {area, action, ca
 ### Sign-in asks (decision 0132)
 
 A `sign_in` ask says that a CLI agent-net depends on needs the owner's
-interactive login. It names the machine, a provider key and the reason. The
-command is never part of the ask or of any frame. `protocol.SignInProviders` in
-`internal/protocol/signin.go` is the fixed allowlist; for now `alibaba` runs
-`bl auth login --console` for the Alibaba Bailian CLI. Adding another CLI means
-adding an entry there, not accepting a command from a caller.
+interactive login. It names the target machine, provider and reason. Commands
+are fixed in `internal/protocol/signin.go`; no caller supplies a command. For
+Alibaba, the TUI runs `bl auth login --console --no-browser --console-site
+international` on the machine where the owner opens the TUI. Open the printed
+link in Firefox, not Safari. Keep the terminal open until login finishes.
 
-The daemon raises the ask from a quota reading whose provider error has a
-known login remedy (`No console access token found` or `bl auth login
---console`). It raises one ask per machine and provider. Repeats refresh that
-one ask, and a dismissed ask is not raised again until the provider error
-clears. The CTO may raise an ask for a known provider and machine with
-`sign_in_raise` and list them with `sign_in_list`; a command field is refused.
+When the ask names another machine, the login starts in a private temporary
+configuration on the TUI machine. After it finishes, agent-net imports the
+console token into the local CLI and sends it to the target daemon. The target
+imports it with `bl auth login --console --token-stdin --console-region
+ap-southeast-1 --console-site international`. The temporary configuration is
+removed after completion or cancellation. A web Desk click delegates the login
+to an open owner TUI; an unavailable TUI is reported. Both daemons use the
+same CLI path and configuration environment as their quota readers. quota-axi
+reads the console login by running `bl usage token-plan --output json`.
 
-The owner's action is `i`, Open sign-in (`sign_in_open`, owner only). It runs
-the allowlisted command through the same view path as Enter, on the machine
-the ask names. On this machine the TUI hands its terminal or herdr pane to
-it. On another machine the target daemon hosts it in a tab titled
-`sign in: <label>` in its own `agent-net` herdr, and this machine shows it
-with `herdr --remote <target> --session agent-net` (decision 0046); there is
-no ssh fallback. A machine without herdr answers with a note in the result.
-After that tab closes, that machine runs the provider's quota check once; a
-sign-in on this machine is checked on the next quota reading. When the login error is gone the ask closes
-itself with `signed in`; a persisting error keeps it open. The web console
-shows the same ask with an Open sign-in button when it lists the Desk.
+The daemon raises one ask per machine and provider for a known quota login
+error. The CTO may raise or list sign-in asks, but cannot open one. After a
+successful import, each machine rechecks quota; the ask closes with `signed in`
+when the target's login error clears. A persisting error keeps it open.
 
 ## Automatic routes and the CTO intake queue
 

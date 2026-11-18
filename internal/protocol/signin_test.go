@@ -15,7 +15,7 @@ func TestSignInProviderAllowlist(t *testing.T) {
 		}
 	}
 	info, ok := SignInProvider("alibaba")
-	if !ok || !reflect.DeepEqual(info.Argv, []string{"bl", "auth", "login", "--console"}) || info.Label != "Alibaba Bailian CLI" {
+	if !ok || !reflect.DeepEqual(info.Argv, []string{"bl", "auth", "login", "--console", "--no-browser", "--console-site", "international"}) || info.Label != "Alibaba Bailian CLI" {
 		t.Fatalf("alibaba allowlist: %+v %v", info, ok)
 	}
 	for _, bad := range []string{"", "sh", "bl auth login --console", "alibaba; rm -rf /"} {
@@ -28,5 +28,15 @@ func TestSignInProviderAllowlist(t *testing.T) {
 		SignInNeeded("alibaba", "rate limited") ||
 		SignInNeeded("claude", "No console access token found.") {
 		t.Fatal("sign-in remedy detection is wrong")
+	}
+}
+
+func TestAlibabaSignInUsesLocalFirefoxFlow(t *testing.T) {
+	info, ok := SignInProvider("alibaba")
+	if !ok || !reflect.DeepEqual(info.Argv, []string{"bl", "auth", "login", "--console", "--no-browser", "--console-site", "international"}) {
+		t.Fatalf("unexpected Alibaba login command: %v", info.Argv)
+	}
+	if !reflect.DeepEqual(info.ImportArgv, []string{"bl", "auth", "login", "--console", "--token-stdin", "--console-region", "ap-southeast-1", "--console-site", "international"}) {
+		t.Fatal("unexpected Alibaba import command")
 	}
 }
