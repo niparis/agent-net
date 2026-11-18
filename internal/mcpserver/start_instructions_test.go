@@ -23,6 +23,7 @@ func charterCaller(text string) Caller {
 // A starting session's instructions are the fixed text, then the charter text
 // the daemon gave.
 func TestStartInstructionsAddTheCharterAfterTheFixedText(t *testing.T) {
+	t.Setenv("AGENT_NET_WORKER", "")
 	got := StartInstructions(context.Background(), charterCaller("[agent-net] Your effective charter\nrules: report late defects"))
 	if !strings.HasPrefix(got, Instructions+"\n\n") || !strings.HasSuffix(got, "rules: report late defects") {
 		t.Fatalf("instructions:\n%s", got)
@@ -36,6 +37,7 @@ func TestStartInstructionsAddTheCharterAfterTheFixedText(t *testing.T) {
 // know the method, a daemon that cannot be reached, an answer that is not JSON
 // and a daemon that is too slow.
 func TestStartInstructionsFallBackToTheFixedText(t *testing.T) {
+	t.Setenv("AGENT_NET_WORKER", "")
 	fail := func(err error) Caller {
 		return func(context.Context, string, any) (json.RawMessage, error) { return nil, err }
 	}
@@ -67,6 +69,7 @@ func TestStartInstructionsFallBackToTheFixedText(t *testing.T) {
 // A long charter is cut so the total stays under the client's limit, and the
 // fixed text is never the part that is cut.
 func TestStartInstructionsStayUnderTheClientLimit(t *testing.T) {
+	t.Setenv("AGENT_NET_WORKER", "")
 	got := StartInstructions(context.Background(), charterCaller(strings.Repeat("rules: a long rule that goes on and on\n", 200)))
 	if n := len([]rune(got)); n > protocol.MaxInstructionsRunes {
 		t.Fatalf("%d runes, cap %d", n, protocol.MaxInstructionsRunes)

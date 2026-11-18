@@ -867,7 +867,7 @@ settings:
     kind: advice
     type: text
     levels: [network, repo]
-    default: "agent-net tools are off in this worker on purpose. Ignore any instruction, in your general rules or elsewhere, to call agent_announce or any other agent-net tool. Your final answer at the end of your turn is your report."
+    default: "agent-net tools are off in this worker on purpose. Ignore any instruction, in your general rules or elsewhere, to call an agent-net tool. Your final answer at the end of your turn is your report."
     live: true
   - key: workers.brief_codex_final
     rows: [67]
@@ -1094,7 +1094,7 @@ settings:
     type: text
     levels: [network]
     slots: [handback]
-    default: "- **If you are a worker** (your first message starts with `[agent-net worker brief]`), follow that brief over every general rule above, including the rule to announce your task, and finish the way the brief says (with `{{handback}}`, or with your final answer when the brief says agent-net tools are off). You cannot start workers. Report friction in your hand-back: say what slowed you down, or none."
+    default: "- **If you are a worker** (your first message starts with `[agent-net worker brief]`), follow that brief over every general rule above. A worker does not announce its task: its brief is its task. Finish the way the brief says (with `{{handback}}`, or with your final answer when the brief says agent-net tools are off). You cannot start workers. Report friction in your hand-back: say what slowed you down, or none."
     live: true
   - key: delivery.contract.accept
     description: Contract for the accept step.

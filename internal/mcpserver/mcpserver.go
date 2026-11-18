@@ -39,6 +39,18 @@ const AnnounceRule = "At the start of every session, before other work, call age
 // (StartInstructions).
 const Instructions = "agent-net connects this session with agent sessions on the user's other machines. " + AnnounceRule
 
+// WorkerInstructions are the instructions of a worker's server. A worker has
+// no announce tool and no owner questions: its brief is its task.
+const WorkerInstructions = "agent-net connects this worker with the agent that started it. Your brief is your task: follow it, and hand back with agent_handback."
+
+// startInstructions is the fixed text for this server's role.
+func startInstructions() string {
+	if callerRole() == toolcatalog.RoleWorker {
+		return WorkerInstructions
+	}
+	return Instructions
+}
+
 // charterTextBudget is how long a starting MCP server waits for the daemon's
 // charter text. The session waits for the server to start, so this is short;
 // without the text the fixed instructions are used.
@@ -51,17 +63,18 @@ var charterTextBudget = 1500 * time.Millisecond
 // a rule the owner set once reaches harnesses with no per-turn hook. Any
 // failure gives the fixed text.
 func StartInstructions(ctx context.Context, call Caller) string {
+	base := startInstructions()
 	cctx, cancel := context.WithTimeout(ctx, charterTextBudget)
 	defer cancel()
 	raw, err := call(cctx, protocol.MethodCharterText, struct{}{})
 	if err != nil {
-		return Instructions
+		return base
 	}
 	var res protocol.CharterTextResult
 	if json.Unmarshal(raw, &res) != nil {
-		return Instructions
+		return base
 	}
-	return protocol.InstructionsWith(res.Text, Instructions)
+	return protocol.InstructionsWith(res.Text, base)
 }
 
 // AnnounceReminder ends the result of every agent-net tool until the session
@@ -96,7 +109,7 @@ type announceIn struct {
 // New builds the server. Each tool forwards to the daemon.
 // version is the agent-net version reported to the MCP client ("dev" when empty).
 func New(call Caller, version string, note ...func(ctx context.Context) string) *mcp.Server {
-	return NewWithInstructions(call, version, Instructions, note...)
+	return NewWithInstructions(call, version, startInstructions(), note...)
 }
 
 // NewWithInstructions is New with the instructions the client reads at session
@@ -189,6 +202,10 @@ func staleToolsNote(take func(ctx context.Context) string) mcp.Middleware {
 // (named <server>__<tool>) are not touched.
 func announceReminder() mcp.Middleware {
 	var announced atomic.Bool
+	// A worker has no announce tool, so the reminder would never go away.
+	if callerRole() == toolcatalog.RoleWorker {
+		return func(next mcp.MethodHandler) mcp.MethodHandler { return next }
+	}
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 			res, err := next(ctx, method, req)

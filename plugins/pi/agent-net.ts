@@ -37,6 +37,12 @@ const POLICY_WAIT_MS = 1_500;
 // Output that may be a failed network or service call. The daemon decides; this only keeps most output from being sent.
 const FAILURE_PREFILTER = /\b[45]\d\d\b|refused|reset|time[ds]? ?out|unreachable|ECONN|ETIMEDOUT|ENOTFOUND|resolve host|bad gateway|unavailable|curl: \(/i;
 const ANNOUNCE_REMINDER = "Reminder: call agent_announce with your current task.";
+// A worker has no announce tool: its brief is its task, so neither the rule nor
+// the reminder applies to it. Read at each call, not at load, because a test or
+// a harness may set the variable after this module loads.
+function isWorker(): boolean {
+  return Boolean(process.env.AGENT_NET_WORKER);
+}
 
 function socketPath(): string {
   if (process.env.AGENT_NET_SOCKET) return process.env.AGENT_NET_SOCKET;
@@ -361,6 +367,7 @@ function mapCatalogParams(name: string, params: any): any {
   switch (name) {
     case "agent_message_send": return { ...params, type: params.type || "request", receipt: true, idempotency_key: randomUUID() };
     case "agent_message_reply": return { ...params, message_id: params.message, receipt: true, idempotency_key: randomUUID() };
+    case "agent_message_get": return { message_id: params.message };
     case "agent_mcp_test": return { name: params.server };
     case "agent_worker_stop": return { session: params.worker };
     case "agent_owner_ask":
@@ -988,7 +995,7 @@ export default function (pi: ExtensionAPI) {
   }
   pi.on("before_agent_start", async (event) => {
     let systemPrompt = event.systemPrompt;
-    if (!systemPrompt.includes(ANNOUNCE_RULE)) systemPrompt = `${systemPrompt}\n\nagent-net: ${ANNOUNCE_RULE}`;
+    if (!isWorker() && !systemPrompt.includes(ANNOUNCE_RULE)) systemPrompt = `${systemPrompt}\n\nagent-net: ${ANNOUNCE_RULE}`;
     const pol = await fetchPolicy();
     if (pol?.text && !systemPrompt.includes(pol.text)) systemPrompt = `${systemPrompt}\n\n${pol.text}`;
     if (pol?.charter && !systemPrompt.includes(pol.charter)) systemPrompt = `${systemPrompt}\n\n${pol.charter}`;
@@ -1023,13 +1030,13 @@ export default function (pi: ExtensionAPI) {
           const callArgs = mapped?.__params ?? (method === "list" ? { online_only: true, ...(mapped ?? {}) } : mapped);
           const result = await request(callMethod, callArgs);
           if (callMethod === "announce") announced = true;
-          const text = format(result ?? {}) + (announced ? "" : `\n${ANNOUNCE_REMINDER}`);
+          const text = format(result ?? {}) + (announced || isWorker() ? "" : `\n${ANNOUNCE_REMINDER}`);
           return {
             content: [{ type: "text" as const, text }],
             details: (result ?? {}) as Record<string, unknown>,
           };
         } catch (error) {
-          const text = (error instanceof Error ? error.message : String(error)) + (announced ? "" : `\n${ANNOUNCE_REMINDER}`);
+          const text = (error instanceof Error ? error.message : String(error)) + (announced || isWorker() ? "" : `\n${ANNOUNCE_REMINDER}`);
           return { content: [{ type: "text" as const, text }], details: {} };
         }
       },
@@ -1306,7 +1313,7 @@ export default function (pi: ExtensionAPI) {
 
 
 
-  const workerRole = Boolean(process.env.AGENT_NET_WORKER);
+  const workerRole = isWorker();
   for (const tool of TOOL_CATALOG) {
     if (workerRole ? !(tool.roles as readonly string[]).includes("worker") : !(tool.roles as readonly string[]).includes("agent")) continue;
     const schema = tool.inputSchema as any;
