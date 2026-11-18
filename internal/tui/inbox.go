@@ -727,8 +727,12 @@ func (m Model) inboxRowLine(row inboxRow, nameW, w int, selected bool) string {
 	age := sDim.Render(cellR(needsAge(m.now(), row.since), ageW))
 	room := max(w-ansi.StringWidth(marker)-nameW-1-ageW-1, 4)
 	text := cutWords(sanitize(row.text), room)
-	if row.kind == "approval" || row.kind == "question" {
-		tag := "[" + row.kind + "] "
+	if row.kind == "approval" || row.kind == "question" || row.kind == "signin" {
+		kind := row.kind
+		if kind == "signin" {
+			kind = "sign-in"
+		}
+		tag := "[" + kind + "] "
 		text = tag + cutWords(sanitize(row.text), max(room-ansi.StringWidth(tag), 0))
 	}
 	line := marker + name + " " + padStyled(text, room) + " " + age

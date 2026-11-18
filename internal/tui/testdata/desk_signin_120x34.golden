@@ -1,0 +1,34 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk (8) │ 8 sessions, 6 online · 1 busy · 8 needs you
+Desk · chief of staff agent-net 2 on · sorted 4 asks today
+While you were away (3 h)  closed 22 · sent on 4 · answered 2 · 3 for you                                         x hide
+╭─Needs you · 8───────────────────────────────────────────────────────╮ ╭─agent-net────────────────────────────────────╮
+│ ▸ agent-net    [sign-in] Sign in to Alibaba Bailian CLI on…      5d │ │ Sign in to Alibaba Bailian CLI on research   │
+│     why you: Only you can complete this login.                      │ │                                              │
+│   strategies   [question] Newer ask number 0                     1m │ │ 5 days ago                                   │
+│   ingest-forge [question] Merge PR #3? CI green.                 2h │ │                                              │
+│   strategies   [approval] Newer ask number 1                     2m │ │ i Open sign-in                               │
+│   strategies   [approval] Release v1.2.3 to the machines        30m │ │                                              │
+│   ingest-forge [approval] Pay for the new model?                40m │ │                                              │
+│     priority 1 · why you: the ingest-forge charter has no rule for… │ │                                              │
+│   ci-runner    Newer ask number 2                                3m │ │                                              │
+│   Notice       Newer ask number 3                                4m │ │                                              │
+╰─────────────────────────────────────────────────────────────────────╯ │                                              │
+╭─In flight · 5───────────────────────────────────────────────────────╮ │                                              │
+│   TITLE                     STEP     STATUS             AGE    DONE │ │                                              │
+│ … 5 more                                                            │ │                                              │
+╰─────────────────────────────────────────────────────────────────────╯ │                                              │
+╭─Handled for you · 4─────────────────────────────────────────────────╮ │                                              │
+│   closed   CTO applied graph edge…  CTO notice, moved to the log    │ │                                              │
+│ … 3 more                                                            │ │                                              │
+╰─────────────────────────────────────────────────────────────────────╯ │                                              │
+╭─Log · 3─────────────────────────────────────────────────────────────╮ │                                              │
+│   cto      CTO applied graph edge set app -> ops                 5m │ │                                              │
+│ … 2 more                                                            │ │                                              │
+╰─────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ c: open the CTO                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+i Open sign-in  n didn't need me  ↑↓ select  l open the log  ? help
