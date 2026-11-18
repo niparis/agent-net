@@ -199,6 +199,9 @@ type StartedSession struct {
 	JobAlive bool `json:"job_alive,omitempty"`
 	// MCPServers lists the servers a failed start waits for approval of.
 	MCPServers []MCPServerInfo `json:"mcp_servers,omitempty"`
+	// TrustMCPServers names the servers of the folder's own .mcp.json that a
+	// needs_trust answer's trust click also approves.
+	TrustMCPServers []string `json:"trust_mcp_servers,omitempty"`
 	// MCPChoice is the choice recorded before this start, when one was asked for.
 	MCPChoice *MCPChoiceResult `json:"mcp_choice,omitempty"`
 	// Requester is the session that asked for the start and is told when it

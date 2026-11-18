@@ -74,6 +74,9 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 			if err := d.ctoTrustBeforeStart(ctx, fields); err != nil {
 				return nil, err
 			}
+			// Carry the owner's yes into the start so it also approves the
+			// folder's own .mcp.json servers, as a trust click does.
+			fields["trust_claude"] = json.RawMessage("true")
 		}
 	}
 	args, err = json.Marshal(fields)

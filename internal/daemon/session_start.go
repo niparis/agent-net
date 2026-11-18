@@ -253,6 +253,7 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	}
 	// Claude Code refuses an untrusted folder in `claude --bg`, so the answer is
 	// asked here for a project name and a typed path alike.
+	trustMCP := false
 	if p.Harness == "claude" {
 		// A merger's own folder holds the project's code, so the owner's trust
 		// is asked for the project folder, as when the merger ran there.
@@ -264,14 +265,19 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 		if err != nil {
 			return protocol.StartedSession{}, err
 		}
+		// The owner's yes to the folder is also the yes to the servers the
+		// folder's own .mcp.json declares, so one approval starts the session.
+		// An explicit mcp_servers choice still wins over it.
+		trustMCP = p.TrustClaude && !created && p.MCPServers == ""
 		if needTrust {
+			trustServers := mcpServerNames(claudeMCPServersIn(trustPath))
 			// The gateway raises the owner's one-click trust ask, even when the
 			// start runs on this machine and never crosses the gateway relay.
-			go d.reportTrustNeed(context.Background(), trustPath, found.Name, d.ownerSessionID())
+			go d.reportTrustNeed(context.Background(), trustPath, found.Name, d.ownerSessionID(), trustServers)
 			return protocol.StartedSession{ID: protocol.NewID("start"), Status: "needs_trust",
 				NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness,
 				Project: found.Name, Path: trustPath, Branch: branch, Model: p.Model,
-				StartedAt: time.Now().Unix()}, nil
+				TrustMCPServers: trustServers, StartedAt: time.Now().Unix()}, nil
 		}
 		if p.Merger {
 			if err := claudetrust.Set(sessionPath); err != nil {
@@ -292,6 +298,15 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 		var err error
 		if mcpChoice, err = d.prepareClaudeMCP(main, sessionPath, p.MCPServers); err != nil {
 			return protocol.StartedSession{}, err
+		}
+		if trustMCP {
+			own, err := claudeMCPApproveOwn(sessionPath, nil)
+			if err != nil {
+				return protocol.StartedSession{}, fmt.Errorf("cannot approve the folder's MCP servers: %w", err)
+			}
+			if len(own.Added) > 0 || len(own.Restored) > 0 {
+				mcpChoice = &own
+			}
 		}
 	}
 	requester, _ := ctx.Value(startRequesterKey{}).(string)

@@ -2344,7 +2344,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if json.Unmarshal(raw, &p) != nil || p.Path == "" {
 			return nil, reject("bad permission.trust_ask")
 		}
-		g.raiseTrustAsk(p.Session, nc.id, st.hostname(nc.id), p.Path, p.Project, p.Owner)
+		g.raiseTrustAsk(p.Session, nc.id, st.hostname(nc.id), p.Path, p.Project, p.Owner, p.MCPServers)
 		return map[string]bool{"raised": true}, nil
 
 	case protocol.FrameNudgeUndo:

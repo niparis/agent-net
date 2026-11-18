@@ -36,6 +36,9 @@ type PermissionTrustAsk struct {
 	Owner   string `json:"owner,omitempty"`
 	Path    string `json:"path"`
 	Project string `json:"project,omitempty"`
+	// MCPServers names the servers of the folder's own .mcp.json that the
+	// trust click also approves.
+	MCPServers []string `json:"mcp_servers,omitempty"`
 }
 
 // PermissionProposeRequest is agent_permission_propose: exact Claude Code
@@ -46,6 +49,12 @@ type PermissionProposeRequest struct {
 	Targets []string `json:"targets"`
 	Machine string   `json:"machine,omitempty"`
 	Reason  string   `json:"reason"`
+	// MCPServersByPath names the servers of each trust folder's own .mcp.json,
+	// keyed by the folder path as the caller gave it and by its expanded path.
+	// The daemon on the machine that holds the folders fills it, so the ask can
+	// say which servers the click approves. The gateway ignores paths it does
+	// not know.
+	MCPServersByPath map[string][]string `json:"mcp_servers_by_path,omitempty"`
 }
 
 // PermissionProposeFrame is the daemon frame "permission.propose". The daemon
@@ -62,6 +71,10 @@ type PermissionTarget struct {
 	NodeID   string `json:"node_id"`
 	Hostname string `json:"hostname,omitempty"`
 	Path     string `json:"path"`
+	// MCPServers names the servers of the folder's own .mcp.json that a trust
+	// approval also approves. Empty means the machine approves the servers it
+	// finds in that file.
+	MCPServers []string `json:"mcp_servers,omitempty"`
 }
 
 // PermissionProposeResult answers agent_permission_propose.
@@ -103,12 +116,17 @@ type PermissionApplyFrame struct {
 }
 
 // PermissionRevokeFrame asks one daemon to remove exactly the rules, or the
-// trust, an earlier approval added.
+// trust, an earlier approval added. A trust approval may also have approved the
+// folder's own .mcp.json servers; TrustAdded says whether this approval created
+// the trust, and MCPAdded and MCPRestored are the server names it changed.
 type PermissionRevokeFrame struct {
-	ProposalID string   `json:"proposal_id"`
-	Kind       string   `json:"kind"`
-	Path       string   `json:"path"`
-	Rules      []string `json:"rules,omitempty"`
+	ProposalID  string   `json:"proposal_id"`
+	Kind        string   `json:"kind"`
+	Path        string   `json:"path"`
+	Rules       []string `json:"rules,omitempty"`
+	TrustAdded  bool     `json:"trust_added,omitempty"`
+	MCPAdded    []string `json:"mcp_added,omitempty"`
+	MCPRestored []string `json:"mcp_restored,omitempty"`
 }
 
 // PermissionApplyResult is the outcome for one target. Status is applied,
@@ -121,6 +139,10 @@ type PermissionApplyResult struct {
 	Added      []string         `json:"added,omitempty"`
 	Removed    []string         `json:"removed,omitempty"`
 	TrustAdded bool             `json:"trust_added,omitempty"`
+	// MCPAdded and MCPRestored are the servers of a trust approval's folder
+	// .mcp.json that the click approved or took out of disabledMcpjsonServers.
+	MCPAdded    []string `json:"mcp_added,omitempty"`
+	MCPRestored []string `json:"mcp_restored,omitempty"`
 	// File is the settings file a rules apply wrote or read.
 	File  string `json:"file,omitempty"`
 	Error string `json:"error,omitempty"`

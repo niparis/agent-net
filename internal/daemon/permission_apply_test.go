@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -222,6 +223,7 @@ func TestTrustProposalOwnerClickAppliesThroughExistingWriterAndUndoes(t *testing
 	home := folderTrustEnv(t)
 	n := startWorkerNode(t, g, shortSet, nil)
 	fresh := newHomeRepo(t, home, "code/fresh")
+	commitMCPJSON(t, fresh, map[string]any{"tenebrae-library": map[string]any{"command": "just", "args": []string{"library-mcp"}}})
 	already := newHomeRepo(t, home, "code/already")
 	if err := claudetrust.Set(already); err != nil {
 		t.Fatal(err)
@@ -241,6 +243,11 @@ func TestTrustProposalOwnerClickAppliesThroughExistingWriterAndUndoes(t *testing
 	if proposal.ID == "" || len(proposal.Targets) != 2 {
 		t.Fatalf("trust proposal: %+v", proposal)
 	}
+	// The proposing machine read the folder's own .mcp.json, so the ask names
+	// the server the click will approve.
+	if got := proposal.Targets[0].MCPServers; !reflect.DeepEqual(got, []string{"tenebrae-library"}) {
+		t.Fatalf("trust proposal servers: %v", got)
+	}
 	var inbox struct {
 		Items []protocol.InboxItem `json:"items"`
 	}
@@ -254,7 +261,8 @@ func TestTrustProposalOwnerClickAppliesThroughExistingWriterAndUndoes(t *testing
 		}
 	}
 	if ask.ID == "" || !strings.Contains(ask.Text, already) || !strings.Contains(ask.Text, n.cfg.Hostname) ||
-		!strings.Contains(ask.Text, "Claude Code cannot start in these folders") {
+		!strings.Contains(ask.Text, "Claude Code cannot start in these folders") ||
+		!strings.Contains(ask.Text, "also approves MCP servers: tenebrae-library") {
 		t.Fatalf("trust ask: %+v", ask)
 	}
 
@@ -291,6 +299,20 @@ func TestTrustProposalOwnerClickAppliesThroughExistingWriterAndUndoes(t *testing
 	if trusted, err := claudetrust.Trusted(already); err != nil || !trusted {
 		t.Fatalf("already trusted folder lost: %v %v", trusted, err)
 	}
+	// The same click approved the folder's own .mcp.json servers, and only the
+	// folder's own: the already trusted folder has none.
+	var freshResult protocol.PermissionApplyResult
+	for _, r := range answered.PermissionResults {
+		if r.Target.Path == fresh {
+			freshResult = r
+		}
+	}
+	if !reflect.DeepEqual(freshResult.MCPAdded, []string{"tenebrae-library"}) {
+		t.Fatalf("the trust click approved %v, want tenebrae-library", freshResult.MCPAdded)
+	}
+	if got := readLocalSettings(t, fresh); !reflect.DeepEqual(got["enabledMcpjsonServers"], []any{"tenebrae-library"}) {
+		t.Fatalf("folder settings after the click: %v", got)
+	}
 
 	var log protocol.DeskLogResult
 	if err := json.Unmarshal(n.cli.mustCall(protocol.OpDeskLog, protocol.DeskLogQuery{Limit: 20}), &log); err != nil {
@@ -313,6 +335,9 @@ func TestTrustProposalOwnerClickAppliesThroughExistingWriterAndUndoes(t *testing
 	}
 	if trusted, _ := claudetrust.Trusted(already); !trusted {
 		t.Fatal("undo removed a trust that was there before")
+	}
+	if got := readLocalSettings(t, fresh); got["enabledMcpjsonServers"] != nil {
+		t.Fatalf("undo kept the MCP approval the click added: %v", got)
 	}
 }
 
@@ -457,5 +482,127 @@ func TestPermissionProposalFromAScopeHolderAppliesWithoutAnAsk(t *testing.T) {
 	// A rule on the never list still waits for the owner.
 	if res := propose("Bash(git push --force:*)"); res.Status != "pending" {
 		t.Fatalf("a never-list rule: %+v", res)
+	}
+}
+
+// trustAskFor waits for the one trust ask the gateway raised for path.
+func trustAskFor(t *testing.T, cli *localClient, path string) protocol.Ask {
+	t.Helper()
+	var ask protocol.Ask
+	eventually(t, "a trust ask for "+path, func() bool {
+		var list protocol.AsksResult
+		if err := json.Unmarshal(cli.mustCall(protocol.OpAsksList, nil), &list); err != nil {
+			t.Fatal(err)
+		}
+		for _, a := range list.Asks {
+			if a.Kind == protocol.AskKindPermission && strings.Contains(a.Question, path) {
+				ask = a
+				return true
+			}
+		}
+		return false
+	})
+	return ask
+}
+
+// mcpFolder makes home/rel an untrusted git folder whose own .mcp.json declares
+// tenebrae-library, the tenebrae-strats case.
+func mcpFolder(t *testing.T, home, rel string) string {
+	t.Helper()
+	repo := newHomeRepo(t, home, rel)
+	commitMCPJSON(t, repo, map[string]any{"tenebrae-library": map[string]any{
+		"command": "just", "args": []string{"library-mcp"},
+	}})
+	return repo
+}
+
+// The tenebrae-strats case: the folder is untrusted and its own .mcp.json
+// declares a server. One owner click on the trust ask trusts the folder and
+// approves those servers, and the retry reaches running without a second
+// mcp_approval_needed gate.
+func TestTrustAskApprovesFolderMCPServersInOneClick(t *testing.T) {
+	t.Setenv(envFakeMCPBlocked, "1")
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	c := startClaudeNode(t, g, shortSet)
+	repo := mcpFolder(t, home, "code/tenebrae-strats")
+
+	r := sessionStartPathCall(t, c.workerNode, protocol.SessionStartRequest{Path: repo, Harness: "claude"})
+	if r.Status != "needs_trust" || r.Path != repo {
+		t.Fatalf("untrusted start: %+v", r)
+	}
+	ask := trustAskFor(t, c.cli, repo)
+	if !strings.Contains(ask.Question, "tenebrae-library") {
+		t.Fatalf("the trust ask does not name the server it approves:\n%s", ask.Question)
+	}
+	var answered struct {
+		PermissionResults []protocol.PermissionApplyResult `json:"permission_results"`
+		PermissionError   string                           `json:"permission_error"`
+	}
+	if err := json.Unmarshal(c.cli.mustCall("inbox_answer", map[string]string{"id": ask.ID, "answer": "approve"}), &answered); err != nil {
+		t.Fatal(err)
+	}
+	if answered.PermissionError != "" || len(answered.PermissionResults) != 1 {
+		t.Fatalf("trust apply: %+v %s", answered.PermissionResults, answered.PermissionError)
+	}
+	if got := answered.PermissionResults[0].MCPAdded; !reflect.DeepEqual(got, []string{"tenebrae-library"}) {
+		t.Fatalf("the trust click approved %v, want tenebrae-library", got)
+	}
+	if got := readLocalSettings(t, repo); !reflect.DeepEqual(got["enabledMcpjsonServers"], []any{"tenebrae-library"}) {
+		t.Fatalf("folder settings after the click: %v", got)
+	}
+
+	// The same intent, retried, must reach running: no second approval.
+	again := sessionStartPathCall(t, c.workerNode, protocol.SessionStartRequest{Path: repo, Harness: "claude"})
+	again = waitSessionStartPath(t, c.workerNode, again)
+	t.Cleanup(func() { killFakeClaude(t, repo) })
+	if again.Status != "started" || again.ErrorCode != "" {
+		t.Fatalf("retry after one click: %+v", again)
+	}
+}
+
+// trust true on the start is the owner's yes to the folder; it approves the
+// folder's own .mcp.json servers in the same start.
+func TestSessionStartTrustApprovesFolderMCPServers(t *testing.T) {
+	t.Setenv(envFakeMCPBlocked, "1")
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	c := startClaudeNode(t, g, shortSet)
+	repo := mcpFolder(t, home, "code/tenebrae")
+
+	r := sessionStartPathCall(t, c.workerNode, protocol.SessionStartRequest{Path: repo, Harness: "claude", TrustClaude: true})
+	r = waitSessionStartPath(t, c.workerNode, r)
+	t.Cleanup(func() { killFakeClaude(t, repo) })
+	if r.Status != "started" || r.ErrorCode != "" {
+		t.Fatalf("trusted start: %+v", r)
+	}
+	if got := readLocalSettings(t, repo); !reflect.DeepEqual(got["enabledMcpjsonServers"], []any{"tenebrae-library"}) {
+		t.Fatalf("folder settings after the trusted start: %v", got)
+	}
+}
+
+// An explicit mcp_servers disable given with the start still wins over the
+// trust click's approval of the folder's own servers.
+func TestSessionStartTrustKeepsExplicitMCPDisable(t *testing.T) {
+	t.Setenv(envFakeMCPBlocked, "1")
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	c := startClaudeNode(t, g, shortSet)
+	repo := mcpFolder(t, home, "code/tenebrae")
+
+	r := sessionStartPathCall(t, c.workerNode, protocol.SessionStartRequest{
+		Path: repo, Harness: "claude", TrustClaude: true, MCPServers: protocol.MCPDisable,
+	})
+	r = waitSessionStartPath(t, c.workerNode, r)
+	t.Cleanup(func() { killFakeClaude(t, repo) })
+	if r.Status != "started" {
+		t.Fatalf("start with disable: %+v", r)
+	}
+	got := readLocalSettings(t, repo)
+	if !reflect.DeepEqual(got["disabledMcpjsonServers"], []any{"tenebrae-library"}) {
+		t.Fatalf("disable did not win: %v", got)
+	}
+	if v, ok := got["enabledMcpjsonServers"]; ok && len(v.([]any)) != 0 {
+		t.Fatalf("an explicit disable was overridden by the trust click: %v", got)
 	}
 }

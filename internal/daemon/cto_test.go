@@ -17,6 +17,19 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// A trust in a start already covers the folder's own .mcp.json servers, so the
+// brief no longer sends the CTO to a separate mcp_servers step for one start.
+func TestCTOBriefBatchesTrustAndMCPApproval(t *testing.T) {
+	for _, want := range []string{"trusts the folder and approves the .mcp.json servers", "do not file a separate mcp_servers change"} {
+		if !strings.Contains(ctoBrief, want) {
+			t.Errorf("ctoBrief lacks %q", want)
+		}
+	}
+	if strings.Contains(ctoBrief, "When a start fails with mcp_approval_needed") {
+		t.Error("ctoBrief still sends the CTO to a separate mcp_servers step for a start")
+	}
+}
+
 func TestCTOBriefTeachesGraphUse(t *testing.T) {
 	for _, want := range []string{"with view guide", "rule auto", "depends", "diff", "undo", "Act at once", "node_remove", "agent_tombstone", "repo_archive", "machine_remove", "machine_rotate", "`proposal_ask`", "Only the owner starts conversations", "workers", "settings", "Write charters as short rules", "1200 characters"} {
 		if !strings.Contains(ctoBrief, want) {

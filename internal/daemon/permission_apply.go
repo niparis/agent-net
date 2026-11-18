@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/claudetrust"
@@ -123,7 +124,7 @@ func claudePermissionRemove(dir string, rules []string) ([]string, error) {
 
 // reportTrustNeed tells the gateway that a local start answered needs_trust,
 // so the gateway raises the owner's one-click trust ask. It writes nothing.
-func (d *Daemon) reportTrustNeed(ctx context.Context, path, project, session string) {
+func (d *Daemon) reportTrustNeed(ctx context.Context, path, project, session string, mcpServers []string) {
 	if !filepath.IsAbs(path) {
 		return
 	}
@@ -133,7 +134,7 @@ func (d *Daemon) reportTrustNeed(ctx context.Context, path, project, session str
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if _, err := d.call(cctx, protocol.FramePermissionTrustAsk, protocol.PermissionTrustAsk{
-		Session: session, Owner: d.ownerSessionID(), Path: path, Project: project,
+		Session: session, Owner: d.ownerSessionID(), Path: path, Project: project, MCPServers: mcpServers,
 	}); err != nil {
 		d.Logf("permission.trust_ask.report path=%s error=%v", path, err)
 	}
@@ -142,6 +143,7 @@ func (d *Daemon) reportTrustNeed(ctx context.Context, path, project, session str
 // proposePermission sends one proposal to the gateway. It writes nothing.
 func (d *Daemon) proposePermission(ctx context.Context, session string, req protocol.PermissionProposeRequest) (protocol.PermissionProposeResult, error) {
 	var out protocol.PermissionProposeResult
+	req = d.trustMCPNames(req)
 	data, err := d.call(ctx, "permission.propose", protocol.PermissionProposeFrame{PermissionProposeRequest: req, SessionID: session})
 	if err != nil {
 		return out, tooOldGateway(err)
@@ -150,6 +152,46 @@ func (d *Daemon) proposePermission(ctx context.Context, session string, req prot
 		return out, err
 	}
 	return out, nil
+}
+
+// trustMCPNames fills the servers of each trust folder's own .mcp.json when this
+// machine holds them, so the owner's ask can name what the click approves. A
+// folder on another machine is left alone.
+func (d *Daemon) trustMCPNames(p protocol.PermissionProposeRequest) protocol.PermissionProposeRequest {
+	if p.Kind != protocol.PermissionKindTrust || !d.isThisMachine(p.Machine) {
+		return p
+	}
+	names := map[string][]string{}
+	for _, raw := range p.Targets {
+		path, err := cleanOwnerPath(raw)
+		if err != nil {
+			continue
+		}
+		found := mcpServerNames(claudeMCPServersIn(path))
+		if len(found) == 0 {
+			continue
+		}
+		names[filepath.Clean(strings.TrimSpace(raw))] = found
+		names[filepath.Clean(path)] = found
+	}
+	if len(names) > 0 {
+		p.MCPServersByPath = names
+	}
+	return p
+}
+
+// isThisMachine tells whether a machine name or node ID names this machine.
+func (d *Daemon) isThisMachine(machine string) bool {
+	machine = strings.TrimSpace(machine)
+	if machine == "" {
+		return false
+	}
+	for _, name := range []string{d.cfg.NodeID, d.cfg.Hostname, d.hostName()} {
+		if name != "" && strings.EqualFold(machine, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // permissionApply writes one proposal's rules into one repository, or trusts
@@ -167,8 +209,18 @@ func (d *Daemon) permissionApply(ctx context.Context, p protocol.PermissionApply
 			return res
 		}
 		res.TrustAdded = out.Added
+		// The trust click is also the owner's yes to the servers the folder's
+		// own .mcp.json declares, so the start that asked does not stop on a
+		// second approval prompt. An explicit choice on a start still wins; this
+		// path runs only for a trust proposal.
+		mcp, merr := claudeMCPApproveOwn(out.Path, p.Target.MCPServers)
+		res.MCPAdded, res.MCPRestored, res.File = mcp.Added, mcp.Restored, mcp.File
+		if merr != nil {
+			res.Error = "trusted the folder, but could not approve its MCP servers: " + merr.Error()
+			return res
+		}
 		switch {
-		case out.Added:
+		case out.Added || len(mcp.Added) > 0 || len(mcp.Restored) > 0:
 			res.Status = "applied"
 		case out.Trusted:
 			res.Status = "already_present"
@@ -176,7 +228,7 @@ func (d *Daemon) permissionApply(ctx context.Context, p protocol.PermissionApply
 			res.Error = "the folder was not trusted"
 			return res
 		}
-		d.Logf("permission.apply proposal=%s folder=%s trusted=%t added=%t", p.ProposalID, p.Target.Path, out.Trusted, out.Added)
+		d.Logf("permission.apply proposal=%s folder=%s trusted=%t added=%t mcp_added=%v", p.ProposalID, p.Target.Path, out.Trusted, out.Added, mcp.Added)
 		return res
 	}
 	info, err := os.Stat(p.Target.Path)
@@ -213,21 +265,34 @@ func (d *Daemon) permissionRevoke(ctx context.Context, p protocol.PermissionRevo
 		return res
 	}
 	if p.Kind == protocol.PermissionKindTrust {
-		was, err := claudetrust.Trusted(p.Path)
-		if err != nil {
-			res.Error = err.Error()
-			return res
+		mcpChange := len(p.MCPAdded) > 0 || len(p.MCPRestored) > 0
+		if mcpChange {
+			if err := claudeMCPUndo(p.Path, protocol.MCPUndo{Choice: protocol.MCPApprove, Added: p.MCPAdded, Restored: p.MCPRestored}); err != nil {
+				res.Error = err.Error()
+				return res
+			}
+			res.Removed = append(res.Removed, p.MCPAdded...)
 		}
-		if !was {
-			res.Status = "absent"
-			return res
-		}
-		if _, err := d.folderTrustLocal(ctx, protocol.FolderTrustRequest{Path: p.Path, Remove: true}); err != nil {
-			res.Error = err.Error()
-			return res
+		// An older gateway sends only the path and expects the trust removed.
+		removeTrust := p.TrustAdded || !mcpChange
+		if removeTrust {
+			was, err := claudetrust.Trusted(p.Path)
+			if err != nil {
+				res.Error = err.Error()
+				return res
+			}
+			if was {
+				if _, err := d.folderTrustLocal(ctx, protocol.FolderTrustRequest{Path: p.Path, Remove: true}); err != nil {
+					res.Error = err.Error()
+					return res
+				}
+			} else if !mcpChange {
+				res.Status = "absent"
+				return res
+			}
 		}
 		res.Status = "removed"
-		d.Logf("permission.revoke proposal=%s folder=%s removed=true", p.ProposalID, p.Path)
+		d.Logf("permission.revoke proposal=%s folder=%s removed_trust=%t mcp_removed=%v", p.ProposalID, p.Path, removeTrust, p.MCPAdded)
 		return res
 	}
 	removed, err := claudePermissionRemove(p.Path, p.Rules)
