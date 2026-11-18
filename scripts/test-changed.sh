@@ -46,6 +46,10 @@
 # (B12). It also checks the Markdown under docs/ when a file there changed. A
 # repository without tools/rulecheck has no rule checks. Its own tests run in CI,
 # with go -C tools/rulecheck test, so a change there is not run here.
+#
+# The picker replay (tools/pickerreplay) is also its own Go module. Its tests run
+# in CI with go -C tools/pickerreplay test, so a change there is not run here
+# either.
 
 set -u
 
@@ -165,6 +169,8 @@ rule_of() {
   case $1 in
     tools/rulecheck/*)
       echo tool ;;
+    tools/pickerreplay/*)
+      echo replaytool ;;
     internal/gateway/store.go|internal/gateway/migrations*.go|internal/gateway/testdata/migrations.lock)
       echo migration ;;
     *_test.go)
@@ -293,6 +299,9 @@ printf '%s\n' "$changed" | while IFS= read -r path; do
       ;;
     tool)
       printf '%s\trule checker module, its tests run in CI (go -C tools/rulecheck test)\n' "$path" >>"$work/skips"
+      ;;
+    replaytool)
+      printf '%s\tpicker replay module, its tests run in CI (go -C tools/pickerreplay test)\n' "$path" >>"$work/skips"
       ;;
     text)
       # Text that goldens quote: run its own package, then the tui goldens.

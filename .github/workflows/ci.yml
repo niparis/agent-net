@@ -59,6 +59,8 @@ jobs:
       # strings or docs (B9), and no lock held across a gateway call (B12).
       - name: rule checker vet and tests
         run: go -C tools/rulecheck vet ./... && go -C tools/rulecheck test -count=1 ./...
+      - name: picker replay vet and tests
+        run: go -C tools/pickerreplay vet ./... && go -C tools/pickerreplay test -count=1 ./...
       - name: rule checks
         run: |
           go -C tools/rulecheck build -o "$RUNNER_TEMP/rulecheck" .
