@@ -134,10 +134,14 @@ git rev-parse --verify --quiet "$base^{commit}" >/dev/null || fail "unknown base
 
 # A non-login shell may not have go on PATH. Use the usual install directories,
 # appended so a go already on PATH (and a test's fake go) still wins.
+# TEST_CHANGED_GO_DIRS replaces that list, so the test can run the no-go case on
+# a machine that has Go in /usr/local/go.
 if ! command -v go >/dev/null 2>&1; then
   home=${HOME:-}
+  go_dirs="$home/.local/go/bin /usr/local/go/bin $home/sdk/go*/bin"
+  [ -z "${TEST_CHANGED_GO_DIRS:-}" ] || go_dirs=$TEST_CHANGED_GO_DIRS
   found=
-  for dir in "$home/.local/go/bin" /usr/local/go/bin "$home"/sdk/go*/bin; do
+  for dir in $go_dirs; do
     if [ -x "$dir/go" ]; then
       found=$dir
       break

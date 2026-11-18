@@ -17,6 +17,19 @@ fail() {
 }
 
 real_go=$(command -v go) || fail "go is not on PATH"
+gocache=$("$real_go" env GOCACHE) || fail "go env GOCACHE failed"
+
+# no_go_dir holds links to the tools the script calls, and no go. A CI runner
+# keeps go in /usr/bin, which a PATH that lists /usr/bin would find, so the
+# no-go cases below run with this PATH and never with /usr/bin or /bin.
+no_go_dir=$work/nogo
+mkdir "$no_go_dir"
+for tool in sh env git sed sort awk mktemp date cat rm dirname wc tr grep ls paste head cut mv mkdir; do
+  tool_path=$(command -v "$tool") || fail "cannot link $tool into the no-go directory"
+  ln -s "$tool_path" "$no_go_dir/$tool"
+done
+[ -e "$no_go_dir/go" ] && fail "the no-go directory holds go"
+
 mkdir "$work/bin"
 cat >"$work/bin/go" <<'GO'
 #!/bin/sh
@@ -398,10 +411,10 @@ reset_tree
 change_production
 home=$work/home-fallback
 : >"$work/go.log"
-mkdir -p "$home/.local/go/bin" "$work/nogo"
+mkdir -p "$home/.local/go/bin"
 cp "$work/bin/go" "$work/bin/gofmt" "$home/.local/go/bin/"
 status=0
-env -i HOME="$home" PATH="$work/nogo:/usr/bin:/bin" FAKE_GO_LOG="$work/go.log" \
+env -i HOME="$home" GOCACHE="$gocache" PATH="$no_go_dir" FAKE_GO_LOG="$work/go.log" \
   FAKE_GOFMT_LOG="$work/gofmt.log" TEST_CHANGED_GO="$real_go" \
   sh "$script" HEAD >"$work/out" 2>&1 || status=$?
 [ "$status" = 0 ] || fail "a run without go on PATH exited $status: $(cat "$work/out")"
@@ -411,12 +424,14 @@ grep -Fq 'test -count=1 -run ^(TestAlpha|TestBeta)$ -timeout ' "$work/go.log" ||
   fail "the fallback go did not run the package tests: $(cat "$work/go.log")"
 
 # With no go in PATH or in the install directories, the script fails at once
-# with a clear line.
+# with a clear line. The install directories are replaced by a path that does
+# not exist, so a host with Go in /usr/local/go still gets this result.
 reset_tree
 change_production
 mkdir -p "$work/empty-home"
 status=0
-env -i HOME="$work/empty-home" PATH="$work/nogo:/usr/bin:/bin" TEST_CHANGED_GO="$real_go" \
+env -i HOME="$work/empty-home" PATH="$no_go_dir" TEST_CHANGED_GO="$real_go" \
+  TEST_CHANGED_GO_DIRS="$work/no-install-dir" \
   sh "$script" HEAD >"$work/out" 2>&1 || status=$?
 [ "$status" = 2 ] || fail "a run with no go exited $status, want 2: $(cat "$work/out")"
 grep -Fq 'go is not on PATH' "$work/out" ||
