@@ -224,6 +224,7 @@ func Setup(ctx context.Context, o Options) error {
 	r.guidance()
 	r.daemonStatus(ctx)
 	r.setupRoles(ctx)
+	r.pathStep()
 	return r.failed
 }
 

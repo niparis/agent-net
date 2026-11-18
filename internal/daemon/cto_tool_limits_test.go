@@ -4,12 +4,41 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
+
+// OpenCode lists a folder's agents only after it has loaded the folder's
+// config, which can be a second or more after the server first answers. The
+// start must wait for the cto agent rather than fail on the first listing.
+func TestCTOOpenCodeAgentLoadsAfterFirstAnswer(t *testing.T) {
+	var lists atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/agent" {
+			http.NotFound(w, r)
+			return
+		}
+		name := "build"
+		if lists.Add(1) > 3 {
+			name = "cto"
+		}
+		json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"name": name}}})
+	}))
+	defer srv.Close()
+	d := &Daemon{log: log.New(io.Discard, "", 0)}
+	d.cto.base = srv.URL
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := d.checkOpenCodeCTOAgent(ctx, []byte(`{"version":"2.3.0"}`)); err != nil {
+		t.Fatalf("the cto agent was listed on call 4, but the start failed: %v (calls %d)", err, lists.Load())
+	}
+}
 
 // The CTO has full power (decision 0157): built-in tools and subagents do not
 // stop the start. Only a missing cto agent does.
@@ -48,7 +77,9 @@ func TestCTOOpenCodeEffectiveTools(t *testing.T) {
 			d := &Daemon{log: log.New(&logs, "", 0)}
 			d.cto.base = srv.URL
 			info, _ := json.Marshal(map[string]string{"version": tc.version})
-			err := d.checkOpenCodeCTOAgent(context.Background(), info)
+			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+			defer cancel()
+			err := d.checkOpenCodeCTOAgent(ctx, info)
 			if !strings.Contains(logs.String(), tc.version) {
 				t.Fatalf("version was not logged: %q", logs.String())
 			}

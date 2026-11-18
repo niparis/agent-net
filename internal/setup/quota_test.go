@@ -322,3 +322,42 @@ func TestQuotaOnlyDoesNotRequireJoin(t *testing.T) {
 		t.Fatalf("output: %s", out.String())
 	}
 }
+
+// A corporate npm registry can refuse the quota-axi install. quota-axi is
+// optional: setup warns with the npm reason and how to leave it out, and then
+// finishes the other steps.
+func TestSetupQuotaAXIInstallFailureWarnsAndContinues(t *testing.T) {
+	f := newFixture(t)
+	ensureQuotaAXI = quotaaxi.Ensure
+	bin := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", "")
+	fakeNode(t, bin, "22.19.0")
+	npm := "#!/bin/sh\nif [ \"$1\" = \"prefix\" ]; then exit 0; fi\necho 'npm error code E403' >&2\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "npm"), []byte(npm), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	shell := filepath.Join(t.TempDir(), "shell")
+	if err := os.WriteFile(shell, []byte("#!/bin/sh\nprintf '%s\\0' '"+bin+"' '' '' '' '' '' '' '' ''\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SHELL", shell)
+	var out bytes.Buffer
+	err := Setup(context.Background(), Options{Join: f.newJoin(t), All: AllYes, QuotaAXI: QuotaAXIYes, Out: &out, Exe: "/opt/test/agent-net"})
+	text := norm(out.String())
+	if err != nil {
+		t.Fatalf("a quota-axi install failure ended setup: %v\n%s", err, text)
+	}
+	for _, want := range []string{
+		"quota-axi warning: install quota-axi: npm error code E403",
+		"--no-quota-axi",
+		"agent guidance",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("output lacks %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "Setup did not finish") {
+		t.Errorf("setup reported a failure:\n%s", text)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/niparis/agent-net/internal/daemon/opencodeapi"
 )
@@ -32,7 +33,11 @@ func ctoPermissions() []ctoPermission {
 	}
 }
 
-// checkOpenCodeCTOAgent checks that the private server runs the CTO agent.
+// checkOpenCodeCTOAgent waits until the private server lists the cto agent. The
+// server answers its first request before it has loaded the folder's config, so
+// the first listing can lack the agent. On OpenCode 2.3.0 with a fresh home it
+// appeared 1 to 3 s after the server started. The caller's context bounds the
+// wait; the start uses its startup deadline.
 func (d *Daemon) checkOpenCodeCTOAgent(ctx context.Context, info []byte) error {
 	var version struct {
 		Version string `json:"version"`
@@ -46,9 +51,30 @@ func (d *Daemon) checkOpenCodeCTOAgent(ctx context.Context, info []byte) error {
 	if d.log != nil {
 		d.log.Printf("CTO OpenCode version: %s", version.Version)
 	}
+	var lastErr error
+	for {
+		listed, err := d.ctoAgentListed(ctx)
+		if err == nil && listed {
+			return nil
+		}
+		lastErr = err
+		select {
+		case <-ctx.Done():
+			if lastErr != nil {
+				return lastErr
+			}
+			return errors.New("CTO OpenCode: the cto agent is missing")
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+// ctoAgentListed reports whether one listing of the private server has an
+// enabled cto agent.
+func (d *Daemon) ctoAgentListed(ctx context.Context) (bool, error) {
 	raw, err := d.ctoOp(ctx, opencodeapi.Agents, "", "", nil)
 	if err != nil {
-		return fmt.Errorf("CTO OpenCode: read agents: %w", err)
+		return false, fmt.Errorf("CTO OpenCode: read agents: %w", err)
 	}
 	var response struct {
 		Data []struct {
@@ -57,12 +83,12 @@ func (d *Daemon) checkOpenCodeCTOAgent(ctx context.Context, info []byte) error {
 		} `json:"data"`
 	}
 	if json.Unmarshal(raw, &response) != nil {
-		return errors.New("CTO OpenCode: cannot read its agents")
+		return false, errors.New("CTO OpenCode: cannot read its agents")
 	}
 	for _, agent := range response.Data {
 		if agent.Name == "cto" && !agent.Disable {
-			return nil
+			return true, nil
 		}
 	}
-	return errors.New("CTO OpenCode: the cto agent is missing")
+	return false, nil
 }

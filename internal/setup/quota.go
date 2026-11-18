@@ -43,7 +43,7 @@ func (r *runner) quotaAXI(ctx context.Context) {
 		removed, err := removeQuotaAXI()
 		switch {
 		case err != nil:
-			r.step(quotaStepName, "", err)
+			r.quotaWarning(err)
 		case removed:
 			r.step(quotaStepName, "off (removed the private copy)", nil)
 		default:
@@ -55,7 +55,7 @@ func (r *runner) quotaAXI(ctx context.Context) {
 	r.offerQuotaUpgrade(ctx, quotaaxi.Discover(nc.QuotaAXI))
 	choice, err := quotaaxi.DiscoverChoice(daemon.ConfigDir(), nc.QuotaAXI)
 	if err != nil {
-		r.step(quotaStepName, "", err)
+		r.quotaWarning(err)
 		return
 	}
 	if choice.Path != "" {
@@ -68,12 +68,12 @@ func (r *runner) quotaAXI(ctx context.Context) {
 			r.step(quotaStepName, quotaaxi.NeedNodeMessage, nil)
 			return
 		}
-		r.step(quotaStepName, "", err)
+		r.quotaWarning(err)
 		return
 	}
 	choice, err = quotaaxi.DiscoverChoice(daemon.ConfigDir(), nc.QuotaAXI)
 	if err != nil {
-		r.step(quotaStepName, "", err)
+		r.quotaWarning(err)
 		return
 	}
 	if choice.Path == "" {
@@ -102,6 +102,14 @@ func (r *runner) quotaStep(version string) {
 		}
 	}
 	fmt.Fprintf(r.Out, "%-10s %s\n", quotaStepName, result)
+}
+
+// quotaWarning reports a quota-axi problem and setup carries on: quota-axi is
+// optional, so one failed install must not stop the other steps. The hint names
+// the usual causes (npm registry, proxy) and the flag that leaves quota-axi out.
+func (r *runner) quotaWarning(err error) {
+	fmt.Fprintf(r.Out, "%-10s %s\n", quotaStepName, r.colors.attention("warning: "+err.Error()))
+	r.hint("quota-axi is optional and setup went on. If npm could not install it, fix the npm registry or proxy settings and run setup again. --no-quota-axi skips it.")
 }
 
 // quotaUpgradeCommand chooses the installer from the executable or its target.

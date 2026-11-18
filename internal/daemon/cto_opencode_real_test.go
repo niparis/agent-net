@@ -1,9 +1,11 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -287,5 +289,76 @@ func probeCallEvents(name, args string) []probeEvent {
 		{"response.function_call_arguments.done", map[string]any{"type": "response.function_call_arguments.done", "item_id": "fc_probe", "output_index": 0, "arguments": args}},
 		{"response.output_item.done", map[string]any{"type": "response.output_item.done", "output_index": 0, "item": item}},
 		{"response.completed", map[string]any{"type": "response.completed", "response": map[string]any{"id": "resp_probe", "object": "response", "status": "completed", "model": "probe-model", "output": []any{item}, "usage": map[string]any{"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}}},
+	}
+}
+
+// The start of the CTO's private server, against the real opencode on PATH. The
+// daemon writes the CTO's config and waits for the server to answer, the same
+// way it does in production. The start must then find the cto agent, which
+// OpenCode lists a moment after its first answer. Run it with
+// AGENT_NET_TEST_REAL_OPENCODE=1.
+func TestCTOOpenCodeRealServerStartFindsCTOAgent(t *testing.T) {
+	if os.Getenv("AGENT_NET_TEST_REAL_OPENCODE") != "1" {
+		t.Skip("set AGENT_NET_TEST_REAL_OPENCODE=1")
+	}
+	bin, err := exec.LookPath("opencode")
+	if err != nil {
+		t.Skip("opencode is not on PATH")
+	}
+	root := shortDir(t)
+	for _, k := range []string{"HOME", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"} {
+		dir := filepath.Join(root, k)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv(k, dir)
+	}
+	t.Setenv("OPENCODE_CONFIG", "")
+	t.Setenv("OPENCODE_CONFIG_CONTENT", "")
+	cwd := filepath.Join(root, "cto")
+	if err := os.MkdirAll(cwd, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{log: log.New(io.Discard, "", 0)}
+	config, err := d.ctoConfigData(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cwd, "opencode.json"), config, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	port, err := freePort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const password = "start-pass"
+	logFile, err := os.Create(filepath.Join(root, "opencode.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer logFile.Close()
+	serve := exec.Command(bin, "serve", "--hostname", "127.0.0.1", "--port", strconv.Itoa(port))
+	serve.Dir = cwd
+	serve.Env = append(os.Environ(), "OPENCODE_SERVER_PASSWORD="+password)
+	serve.Stdout, serve.Stderr = logFile, logFile
+	if err := serve.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = serve.Process.Kill()
+		_, _ = serve.Process.Wait()
+	})
+	base := fmt.Sprintf("http://127.0.0.1:%d", port)
+	var info []byte
+	eventually(t, "the opencode server answers its info", func() bool {
+		raw, status, err := probeAPI(base, password, http.MethodGet, "/api/info", nil)
+		info = raw
+		return err == nil && status == http.StatusOK
+	})
+	d.cto.base, d.cto.password = base, password
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := d.checkOpenCodeCTOAgent(ctx, info); err != nil {
+		t.Fatalf("the start did not find the cto agent: %v", err)
 	}
 }
