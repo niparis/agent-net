@@ -19,6 +19,7 @@ Flags:
   live store.
 - `-alphas` (default empty): extra alpha values to replay. The owner decided against alpha, so the default prints only today, V2 and V2 with the ceiling rule.
 - `-floors` (default empty): floor sets `A,B,C` to replay.
+- `-protected` (default `alibaba-token-plan`): protected providers, matched like the gateway does (`protocol.ProfileProvider` of the harness and model). The live picker never starts on one, so no method competes with them. Pass an empty value to keep every recorded candidate.
 - `-exhausted` (default `opencode-go`): quota providers that are used up. They do not compete in any method, as in the live picker. The snapshot keeps no quota reading from the time of a pick, so one set applies to every pick. Pass an empty value to keep every recorded candidate. The replay check always reads the recorded roster.
 
 ## What it reads
@@ -48,7 +49,7 @@ rule cost is in the last column, labelled with that rule.
 ## Tests
 
     go -C tools/pickerreplay vet ./...
-    go -C tools/pickerreplay test -run '^(TestOptionAScoreCountsEachFailureOnce|TestPickTodayTakesTheLowestExpectedCost|TestPickOptionAWeighsQualityAgainstCost|TestReplayReadsSnapshotAndMatchesTheRecordedPick|TestTasksAtLeavesOutWhatDidNotExistYet|TestYardstickIsRunCostOverCleanShare|TestEveryRowPricesThePickTheSameWay|TestReplayLeavesOutAnExhaustedProvider|TestReplayCountsPicksWithNoCandidateLeft)$'
+    go -C tools/pickerreplay test -run '^(TestOptionAScoreCountsEachFailureOnce|TestPickTodayTakesTheLowestExpectedCost|TestPickOptionAWeighsQualityAgainstCost|TestReplayReadsSnapshotAndMatchesTheRecordedPick|TestTasksAtLeavesOutWhatDidNotExistYet|TestYardstickIsRunCostOverCleanShare|TestEveryRowPricesThePickTheSameWay|TestReplayLeavesOutAnExhaustedProvider|TestReplayCountsPicksWithNoCandidateLeft|TestReplayLeavesOutAProtectedProvider)$'
 
 The tests build a throwaway store copy in a temporary directory. They never
 touch the real setup.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	_ "modernc.org/sqlite"
@@ -70,20 +71,25 @@ type Snapshot struct {
 	// set to every pick: such a candidate does not compete, as in the live
 	// picker.
 	Exhausted map[string]bool
+	// Protected is the protected providers (profile provider ids, as
+	// protocol.ProfileProvider names them). The live picker never starts on
+	// one, so no method competes with them.
+	Protected map[string]bool
 }
 
-// gate returns the pick without the candidates whose provider is exhausted.
+// gate returns the pick without the candidates whose provider is exhausted or
+// protected.
 // The gateway records the whole roster, a blocked candidate included, and the
 // pace it recorded for one can come from the windows that still have room.
 func (s *Snapshot) gate(p Pick) (Pick, []string) {
-	if len(s.Exhausted) == 0 {
+	if len(s.Exhausted) == 0 && len(s.Protected) == 0 {
 		return p, nil
 	}
 	out := p
 	out.Rows = nil
 	var left []string
 	for _, r := range p.Rows {
-		if s.Exhausted[protocol.QuotaProviderForStart(r.Harness, r.Model)] {
+		if s.Exhausted[protocol.QuotaProviderForStart(r.Harness, r.Model)] || s.Protected[strings.ToLower(protocol.ProfileProvider(r.Harness, r.Model))] {
 			left = append(left, r.Name)
 			continue
 		}

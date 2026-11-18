@@ -1227,3 +1227,38 @@ func TestPickerCeilingRuleReachesThePick(t *testing.T) {
 		}
 	}
 }
+
+// The bucket width is one third to ten digits, so the bucket that starts at
+// D 3.0 starts at 2.9999999998. A model whose ceiling is 3.0 is above that
+// bucket and must be left out, as at D 3.20 where a normal-level model with
+// Lo 0.49 faced best models at Lo 0.65 and 0.58.
+func TestPickerCeilingRuleAtABucketEdge(t *testing.T) {
+	set := DefaultPickerSettings()
+	set.CeilingRule = true
+	table := BuildPickerTable(nil, set)
+	bucket := table.Bucket(3.2)
+	bucketLo, _ := table.BucketRange(bucket)
+	facts := []PickerCandidateFacts{
+		{Key: "sol", Cell: PickerCell{Score: .77, Lo: .65, Hi: .9, N: 17}, Scored: true, Benchmark: 46, Ceiling: 3.75},
+		{Key: "terra", Cell: PickerCell{Score: .69, Lo: .58, Hi: .8, N: 36}, Scored: true, Benchmark: 42, Ceiling: 3.75},
+		{Key: "deepseek", Cell: PickerCell{Score: .61, Lo: .49, Hi: .73, N: 27}, Scored: true, Benchmark: 32.5, Ceiling: 3.0},
+		// A thin cell with the same ceiling is above its benchmark too.
+		{Key: "thin", Cell: PickerCell{Score: .5, Lo: .5, Hi: .5}, Scored: true, Benchmark: 32.5, Ceiling: 3.0},
+	}
+	got, _ := PickerBucketVerdicts(facts, bucketLo, .5, bucket, set)
+	if !got[0].Allowed || !got[1].Allowed {
+		t.Errorf("sol and terra = %+v %+v, want allowed", got[0], got[1])
+	}
+	if got[2].Allowed || got[2].Reason != "above its benchmark, record not as good as best" {
+		t.Errorf("deepseek at bucket start %.10f = %+v, want left out", bucketLo, got[2])
+	}
+	if got[3].Allowed {
+		t.Errorf("thin = %+v, want left out", got[3])
+	}
+	// With the rule off the edge keeps its old reading.
+	set.CeilingRule = false
+	got, _ = PickerBucketVerdicts(facts, bucketLo, .5, bucket, set)
+	if !got[2].Allowed {
+		t.Errorf("rule off: deepseek = %+v, want unchanged (allowed)", got[2])
+	}
+}

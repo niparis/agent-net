@@ -19,6 +19,7 @@ func main() {
 	alphas := flag.String("alphas", "", "comma separated alpha values for option A; empty disables them")
 	floors := flag.String("floors", "", "comma separated floor sets A, B and C; empty disables them")
 	exhausted := flag.String("exhausted", "opencode-go", "comma separated quota providers that are exhausted; they do not compete in any method (empty keeps every recorded candidate)")
+	protected := flag.String("protected", "alibaba-token-plan", "comma separated protected providers; the live picker never starts on them, so no method competes with them (empty keeps every recorded candidate)")
 	flag.Parse()
 	if *db == "" {
 		fmt.Fprintln(os.Stderr, "pickerreplay: -db is required; pass a copy of the gateway store, never the live one")
@@ -50,6 +51,12 @@ func main() {
 	for _, name := range strings.Split(*exhausted, ",") {
 		if name = strings.TrimSpace(name); name != "" {
 			s.Exhausted[name] = true
+		}
+	}
+	s.Protected = map[string]bool{}
+	for _, name := range strings.Split(*protected, ",") {
+		if name = strings.ToLower(strings.TrimSpace(name)); name != "" {
+			s.Protected[name] = true
 		}
 	}
 	report := RunReplay(s, list, selected)
@@ -107,6 +114,14 @@ func printReport(r *Report) {
 			m.Name, m.Picks, m.NoPick, a.Qual, a.P, a.Run, a.PerAcc, a.Adj, m.Fallback, m.Rule, a.Own)
 	}
 	fmt.Printf("\n## Picks with no proven candidate left\n\n")
+	if len(s.Protected) > 0 {
+		var names []string
+		for name := range s.Protected {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		fmt.Printf("Protected providers, left out of every method for every pick (the live picker never starts on them): %s.\n\n", strings.Join(names, ", "))
+	}
 	if len(s.Exhausted) > 0 {
 		var names []string
 		for name := range s.Exhausted {
@@ -163,7 +178,7 @@ func printReport(r *Report) {
 			}
 		}
 		if len(cs.Exhausted) > 0 {
-			fmt.Printf("Left out as exhausted: %s.\n", strings.Join(cs.Exhausted, ", "))
+			fmt.Printf("Left out as exhausted or protected: %s.\n", strings.Join(cs.Exhausted, ", "))
 		}
 		fmt.Printf("\n| method | winner | quality | clean p | run cost | cost per accepted | adjusted per accepted | own-rule cost | rank |\n")
 		fmt.Printf("|---|---|---|---|---|---|---|---|---|\n")

@@ -323,3 +323,21 @@ func TestReplayCountsPicksWithNoCandidateLeft(t *testing.T) {
 		t.Fatalf("V2 counts: %+v %+v %+v", r.V2.PicksByLevel, r.V2.NoQualified, r.V2.NoneAllowed)
 	}
 }
+
+// The live picker never starts on a protected provider, so the replay drops
+// its candidates from every method, matching them as the gateway does.
+func TestReplayLeavesOutAProtectedProvider(t *testing.T) {
+	s, err := OpenSnapshot(fixture(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Protected = map[string]bool{"opencode-go": true}
+	gated, left := s.gate(s.Picks[0])
+	if len(gated.Rows) != 1 || len(left) != 1 || left[0] != "deepseek" {
+		t.Fatalf("gate kept %d rows, left out %v", len(gated.Rows), left)
+	}
+	r := RunReplay(s, nil, nil)
+	if r.V2.Models["deepseek"] != 0 || r.V2.Models["big"] != 1 {
+		t.Fatalf("V2 picked %v, want big only", r.V2.Models)
+	}
+}

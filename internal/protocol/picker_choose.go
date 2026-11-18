@@ -68,18 +68,26 @@ func PickerBucketVerdicts(facts []PickerCandidateFacts, bucketLo, bucketMean flo
 		}
 	}
 	for i, f := range facts {
+		// The bucket width is one third to ten digits, so a bucket that starts
+		// at a ceiling such as 3.0 starts a hair below it. With the ceiling
+		// rule on, that bucket counts as above the ceiling (the bucket index
+		// has the same tolerance); with it off the old comparison stands.
+		overCeiling := f.Scored && bucketLo >= f.Ceiling
+		if s.CeilingRule {
+			overCeiling = f.Scored && bucketLo >= f.Ceiling-pickerEdgeTolerance
+		}
 		switch {
 		case f.Cell.N >= PickerMinCellTasks:
 			out[i].Allowed = f.Cell.Hi >= s.AllowedFraction*best
 			if !out[i].Allowed {
 				out[i].Reason = fmt.Sprintf("below %g×best", s.AllowedFraction)
-			} else if s.CeilingRule && f.Scored && bucketLo >= f.Ceiling && f.Cell.Lo < facts[bestIdx].Cell.Lo {
+			} else if s.CeilingRule && overCeiling && f.Cell.Lo < facts[bestIdx].Cell.Lo {
 				// Above its benchmark ceiling, the record has to carry the
 				// model: its low end must reach the best model's low end.
 				out[i].Allowed = false
 				out[i].Reason = "above its benchmark, record not as good as best"
 			}
-		case f.Scored && bucketLo < f.Ceiling:
+		case f.Scored && !overCeiling:
 			out[i].Allowed, out[i].Prior = true, true
 		case f.Scored:
 			out[i].Reason = "above its benchmark"
