@@ -999,3 +999,18 @@ func TestPickerCleanCellIsShrunkLikeTheScore(t *testing.T) {
 		t.Fatalf("a %+v b %+v", a, b)
 	}
 }
+
+func TestPickerTaskScoreV2(t *testing.T) {
+	f := PickerTaskFacts{Complete: true, FixRounds: 2, FailedTest: 1, FailedAccept: 1, FailedReview: 1, DefectSeverity: 1}
+	if got := PickerTaskScoreV2(f); math.Abs(got-.05) > 1e-9 {
+		t.Fatalf("score = %v, want 0.05", got)
+	}
+	f.Complete = false
+	if got := PickerTaskScoreV2(f); got != 0 {
+		t.Fatalf("unfinished = %v", got)
+	}
+	f.Merged = true
+	if got := PickerTaskScoreV2(f); math.Abs(got-.05) > 1e-9 {
+		t.Fatalf("merged = %v", got)
+	}
+}

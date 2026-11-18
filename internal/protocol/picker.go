@@ -88,11 +88,21 @@ func (s PickerSettings) Normalized() PickerSettings {
 // PickerTaskFacts is what the score of one task reads.
 type PickerTaskFacts struct {
 	// Complete is true when the task ended complete.
-	Complete       bool
-	FixRounds      int
-	FailedSteps    int
-	Defects        int
-	DefectSeverity int
+	Complete                               bool
+	FixRounds                              int
+	FailedSteps                            int
+	Defects                                int
+	DefectSeverity                         int
+	FailedTest, FailedAccept, FailedReview int
+	Merged                                 bool
+}
+
+// PickerTaskScoreV2 weights each recorded failure once.
+func PickerTaskScoreV2(f PickerTaskFacts) float64 {
+	if !f.Complete && !f.Merged {
+		return 0
+	}
+	return math.Max(0, 1-.2*float64(f.FailedTest+f.FailedAccept)-.3*float64(f.FailedReview)-.25*float64(f.DefectSeverity))
 }
 
 // PickerTaskScore is 0 for a task that did not end complete. Otherwise it is
