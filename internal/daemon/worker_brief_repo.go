@@ -35,5 +35,20 @@ func (d *Daemon) workerBriefRepo(ctx context.Context, p protocol.WorkerBriefRepo
 		return repo, err
 	}
 	repo.Files = strings.Split(strings.TrimSuffix(files, "\x00"), "\x00")
+	// The brief lint asks which commits a brief names exist here. Only hex
+	// IDs reach git, so an ID can never be read as an option.
+	for i, id := range p.Commits {
+		if i == protocol.MaxBriefCommitIDs {
+			break
+		}
+		if !protocol.ValidBriefCommitID(id) {
+			continue
+		}
+		if repo.Commits == nil {
+			repo.Commits = map[string]bool{}
+		}
+		_, err := gitOut(ctx, repo.Root, "cat-file", "-e", id+"^{commit}")
+		repo.Commits[id] = err == nil
+	}
 	return repo, nil
 }

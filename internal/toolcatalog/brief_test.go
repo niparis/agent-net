@@ -49,3 +49,33 @@ func TestWorkerStartDescriptionNamesTheOverlapRefusalOnly(t *testing.T) {
 		t.Fatalf("mode enum = %v", mode["enum"])
 	}
 }
+
+// The start result declares its brief flags, so the caller sees them, and the
+// description says they never block a start.
+func TestWorkerStartDeclaresBriefFlagsAsAdvisory(t *testing.T) {
+	var found *Tool
+	for i := range Tools {
+		if Tools[i].Name == "agent_worker_start" {
+			found = &Tools[i]
+		}
+	}
+	if found == nil {
+		t.Fatal("agent_worker_start missing")
+	}
+	if !strings.Contains(found.Description, "brief_flags never block") {
+		t.Errorf("description does not say the brief flags never block: %s", found.Description)
+	}
+	output := decodeObject(t, found.Name, found.OutputSchema)
+	props, _ := output["properties"].(map[string]any)
+	flags, ok := props["brief_flags"].(map[string]any)
+	if !ok {
+		t.Fatal("output has no brief_flags")
+	}
+	items, _ := flags["items"].(map[string]any)
+	itemProps, _ := items["properties"].(map[string]any)
+	for _, field := range []string{"check", "line", "reason"} {
+		if itemProps[field] == nil {
+			t.Errorf("brief_flags has no %s field", field)
+		}
+	}
+}

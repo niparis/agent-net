@@ -77,6 +77,10 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 			return nil, err
 		}
 		out := map[string]any{}
+		// The brief lint's flags reach the caller on every answer.
+		if flags, ok := m["brief_flags"]; ok && flags != nil {
+			out["brief_flags"] = flags
+		}
 		// The model note says which model was chosen and why; keep it.
 		if note, ok := m["model_note"].(string); ok && note != "" {
 			out["model_note"] = note

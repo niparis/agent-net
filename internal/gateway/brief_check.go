@@ -220,6 +220,19 @@ func (s *Store) recordBriefDefectFromBrief(caller string, failures []string) err
 	return err
 }
 
+// osSandboxOf names the OS sandbox a machine's daemon runs its workers in, by
+// the machine's OS (internal/daemon/ossandbox_*.go). It is "" for an OS with
+// none, so the brief lint has no sandbox fact there.
+func osSandboxOf(goos string) string {
+	switch goos {
+	case "linux":
+		return "bubblewrap"
+	case "darwin":
+		return "sandbox-exec"
+	}
+	return ""
+}
+
 func visualWarningLines(task string) []string {
 	if warning := protocol.VisualBriefWarning(task); warning != "" {
 		return []string{warning}

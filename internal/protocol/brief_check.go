@@ -233,12 +233,18 @@ func BriefPathsShare(a, b string) bool {
 type WorkerBriefRepoRequest struct {
 	Path string `json:"path"`
 	Base string `json:"base,omitempty"`
+	// Commits are the commit IDs the brief names, for the brief lint. An older
+	// machine ignores them.
+	Commits []string `json:"commits,omitempty"`
 }
 
 // WorkerBriefRepo holds tracked files at the base commit, never untracked files.
 type WorkerBriefRepo struct {
 	Root  string   `json:"root"`
 	Files []string `json:"files"`
+	// Commits maps each requested commit ID to whether it resolves in the
+	// project repository. A machine that does not answer leaves it empty.
+	Commits map[string]bool `json:"commits,omitempty"`
 }
 
 // Paths returns the base-tree files named by text, expanding named directories.

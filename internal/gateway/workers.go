@@ -760,6 +760,8 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	// them: they start no caller worker and count no rejection. A check mode
 	// returns the list and starts nothing.
 	briefNote := protocol.VisualBriefWarning(p.Task)
+	// The brief lint's flags go back with the answer. They never refuse or hold.
+	var briefFlags []protocol.BriefFlag
 	if !(len(validate) > 0 && validate[0]) && !g.opts.TestNoBriefChecks && !p.RequireReadOnly {
 		var repo protocol.WorkerBriefRepo
 		g.mu.Lock()
@@ -767,19 +769,22 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		g.mu.Unlock()
 		if briefTarget != nil {
 			briefCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-			raw, readErr := briefTarget.call(briefCtx, "worker.brief_repo", protocol.WorkerBriefRepoRequest{Path: pick.Path, Base: p.Base})
+			raw, readErr := briefTarget.call(briefCtx, "worker.brief_repo", protocol.WorkerBriefRepoRequest{Path: pick.Path, Base: p.Base, Commits: protocol.BriefCommitIDs(p.BriefText())})
 			cancel()
 			if readErr == nil {
 				repo, _ = decode[protocol.WorkerBriefRepo](raw)
 			}
 		}
+		briefFlags = protocol.LintBrief(p.WorkerStartRequest, protocol.BriefLintFacts{Commits: repo.Commits, Sandbox: osSandboxOf(node.OS)})
+		// One line per start for the friction digest: the checks that flagged it.
+		g.logLine("worker.brief_lint", "project", pick.Name, "flags", len(briefFlags), "checks", protocol.BriefCheckNames(briefFlags))
 		failures, warnings, err := g.store.checkWorkerBrief(p, pick.Name, repo)
 		briefNote = strings.Join(warnings, "; ")
 		if err != nil {
 			return none, err
 		}
 		if p.Mode == protocol.WorkerStartModeCheck {
-			return protocol.WorkerStartAnswer{Checked: true, BriefFailures: append(failures, visualWarningLines(p.Task)...), ModelNote: briefNote, NodeID: pick.NodeID, Hostname: pick.Hostname,
+			return protocol.WorkerStartAnswer{Checked: true, BriefFailures: append(failures, visualWarningLines(p.Task)...), BriefFlags: briefFlags, ModelNote: briefNote, NodeID: pick.NodeID, Hostname: pick.Hostname,
 				Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model}, nil
 		}
 		if len(failures) > 0 {
@@ -858,6 +863,13 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			if err != nil {
 				return none, g.refuseWithAlternative(ctx, nc, p, notStartedReason(difficulty, roster))
 			}
+			// A Done that needs a browser keeps a harness that cannot run
+			// one on this machine out of the pick. The caller who named a
+			// harness is not overridden: the flag below tells them instead.
+			var browserNote string
+			if _, needs := protocol.BriefNeedsBrowser(p.WorkerStartRequest); needs && p.Harness == "" {
+				candidates, browserNote = filterBrowserCandidates(candidates, node.OS, roster)
+			}
 			var protectionNote string
 			var chooseErr error
 			chosen, chooseErr = g.Choose(ChooseRequest{
@@ -904,6 +916,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			if familyNote != "" {
 				automaticNote += "; " + familyNote
 			}
+			if browserNote != "" {
+				automaticNote += "; " + browserNote
+			}
 			if protectionNote != "" {
 				automaticNote += "; " + protectionNote
 			}
@@ -926,6 +941,12 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			}
 		}
 		harnessNote = fmt.Sprintf("selected %s on %s (%s)", p.Harness, node.Hostname, state)
+	}
+	// The pick may still be a harness that cannot run a browser: the owner or
+	// the caller named it, or no candidate could. The start goes on and the
+	// flag says the browser checks must run after the hand-back (no refusal).
+	if line, needs := protocol.BriefNeedsBrowser(p.WorkerStartRequest); needs && !p.RequireReadOnly && !protocol.HarnessRunsBrowser(p.Harness, node.OS) {
+		briefFlags = append(briefFlags, protocol.BrowserFlag(line, p.Harness, node.OS))
 	}
 	var hi *protocol.HarnessInfo
 	for i := range node.Harnesses {
@@ -1074,7 +1095,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	}
 	if len(validate) > 0 && validate[0] {
 		return protocol.WorkerStartAnswer{NodeID: pick.NodeID, Hostname: pick.Hostname, Project: pick.Name, Path: pick.Path,
-			Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Why: choice.Why}, nil
+			Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Why: choice.Why, BriefFlags: briefFlags}, nil
 	}
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
@@ -1169,7 +1190,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		return protocol.WorkerStartAnswer{NodeID: pick.NodeID, Hostname: pick.Hostname, Project: pick.Name, Path: pick.Path,
 			Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Why: choice.Why, Title: p.Title, Queued: true, QueueID: launched.QueueID,
 			Position: launched.Position, Reason: launched.Reason, MachineNote: machineNote, Permissions: perms, Base: p.Base,
-			Track: track, Playbooks: books, Hint: hint, Phases: phases}, nil
+			Track: track, Playbooks: books, Hint: hint, Phases: phases, BriefFlags: briefFlags}, nil
 	}
 	if err != nil || launched.SessionID == "" {
 		return none, reject("machine %s answered without a session", pick.Hostname)
@@ -1194,7 +1215,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	return protocol.WorkerStartAnswer{StartRef: startRef, Starting: launched.Starting, SessionID: launched.SessionID, NodeID: pick.NodeID, Hostname: pick.Hostname,
 		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Why: choice.Why, Title: p.Title,
 		Worktree: launched.Worktree, Branch: launched.Branch, Base: p.Base, ProjectRules: launched.ProjectRules, MachineNote: machineNote, Permissions: perms,
-		OSSandbox: launched.OSSandbox, Track: track, Playbooks: books, Hint: hint, Phases: phases}, nil
+		OSSandbox: launched.OSSandbox, Track: track, Playbooks: books, Hint: hint, Phases: phases, BriefFlags: briefFlags}, nil
 }
 
 // refuseWithAlternative refuses a start for want of a provider's allowance or
@@ -2527,6 +2548,34 @@ func filterWorkerFamilies(candidates []protocol.WorkerModelCandidate, excluded [
 		return kept, "", nil
 	}
 	return kept, "skipped for family rule: " + strings.Join(skipped, ", "), nil
+}
+
+// filterBrowserCandidates removes the candidates whose harness cannot run a
+// browser on a machine of this OS, for a start whose Done needs one. When no
+// candidate can, it keeps all of them: the start goes on with today's choice
+// and the caller's flag says the browser checks wait. A non-nil roster records
+// each removed candidate. The note names them for the pick notice.
+func filterBrowserCandidates(candidates []protocol.WorkerModelCandidate, goos string, roster *notStartedRoster) ([]protocol.WorkerModelCandidate, string) {
+	var kept []protocol.WorkerModelCandidate
+	var skipped []string
+	for _, c := range candidates {
+		if protocol.HarnessRunsBrowser(c.Harness, goos) {
+			kept = append(kept, c)
+			continue
+		}
+		skipped = append(skipped, c.Harness+" "+c.Model)
+	}
+	if len(kept) == 0 || len(skipped) == 0 {
+		return candidates, ""
+	}
+	if roster != nil {
+		for _, c := range candidates {
+			if !protocol.HarnessRunsBrowser(c.Harness, goos) {
+				roster.add(rosterName(c.Name, c.Harness, c.Model), "cannot run a browser here", rosterFamily)
+			}
+		}
+	}
+	return kept, "left out, cannot run a browser here: " + strings.Join(skipped, ", ")
 }
 
 // Roster ranks order the lines from closest to qualifying to furthest away. The
