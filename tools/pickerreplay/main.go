@@ -12,8 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func main() {
@@ -87,14 +85,16 @@ func printReport(r *Report) {
 	}
 
 	fmt.Printf("\n## What each method picks\n\n")
-	fmt.Printf("| method | picks | no pick | mean quality (today's score) | mean clean p | mean expected cost | mean adjusted cost | fallbacks |\n")
-	fmt.Printf("|---|---|---|---|---|---|---|---|\n")
+	fmt.Printf("Every row prices its winner from the V2 table: run cost, clean p, and cost per accepted result (run cost / clean p). The last two columns are the row's own rule and its mean cost under that rule.\n\n")
+	fmt.Printf("| method | picks | no pick | mean quality (today's score) | mean clean p | mean run cost | mean cost per accepted | mean adjusted cost per accepted | fallbacks | own rule | mean own-rule cost |\n")
+	fmt.Printf("|---|---|---|---|---|---|---|---|---|---|---|\n")
 	all := []*summary{r.Today}
 	all = append(all, r.OptionsA...)
 	all = append(all, r.Floors...)
 	for _, m := range all {
-		p, cost, adj, qual := m.averages()
-		fmt.Printf("| %s | %d | %d | %.2f | %.2f | $%.2f | $%.2f | %d |\n", m.Name, m.Picks, m.NoPick, qual, p, cost, adj, m.Fallback)
+		a := m.averages()
+		fmt.Printf("| %s | %d | %d | %.2f | %.2f | $%.2f | $%.2f | $%.2f | %d | %s | $%.2f |\n",
+			m.Name, m.Picks, m.NoPick, a.Qual, a.P, a.Run, a.PerAcc, a.Adj, m.Fallback, m.Rule, a.Own)
 	}
 	fmt.Printf("\nModels picked by difficulty level:\n\n")
 	for _, m := range all {
@@ -124,28 +124,29 @@ func printReport(r *Report) {
 				fmt.Printf("%s\n", row.Name)
 			}
 		}
-		fmt.Printf("\n| method | winner | quality | clean p | run cost | expected cost | adjusted | rank |\n")
-		fmt.Printf("|---|---|---|---|---|---|---|---|\n")
+		fmt.Printf("\n| method | winner | quality | clean p | run cost | cost per accepted | adjusted per accepted | own-rule cost | rank |\n")
+		fmt.Printf("|---|---|---|---|---|---|---|---|---|\n")
 		for _, v := range cs.Variants {
-			fmt.Printf("| %s | %s | %.2f | %.2f | $%.2f | $%.2f | $%.2f | %.2f |\n", v.Variant, v.Winner, v.Quality, v.P, v.Cost, v.Expected, v.Adjusted, v.Rank)
+			fmt.Printf("| %s | %s | %.2f | %.2f | $%.2f | $%.2f | $%.2f | $%.2f | %.2f |\n",
+				v.Variant, v.Winner, v.Quality, v.View.Clean, v.View.Run, v.View.PerAccepted, v.View.Adjusted, v.Own, v.Rank)
 		}
-		fmt.Printf("\nThe two profiles the owner compared, under each method:\n\n")
-		fmt.Printf("| method | profile | quality | clean p | run cost | expected cost | adjusted | rank |\n")
-		fmt.Printf("|---|---|---|---|---|---|---|---|\n")
+		fmt.Printf("\nThe profiles the owner compared, and the winner, under each method:\n\n")
+		fmt.Printf("| method | profile | quality | clean p | run cost | cost per accepted | adjusted per accepted |\n")
+		fmt.Printf("|---|---|---|---|---|---|---|\n")
 		for _, v := range cs.Variants {
 			for _, e := range v.Cands {
-				fmt.Printf("| %s | %s | %.2f | %.2f | $%.2f | $%.2f | $%.2f | %.2f |\n",
-					v.Variant, e.Name, e.Quality, e.P, e.Cost, e.Expected, e.Adjusted, e.Rank)
+				fmt.Printf("| %s | %s | %.2f | %.2f | $%.2f | $%.2f | $%.2f |\n",
+					v.Variant, e.Name, e.Quality, e.View.Clean, e.View.Run, e.View.PerAccepted, e.View.Adjusted)
 			}
 		}
-		fmt.Printf("\nCandidates in the rebuilt table:\n\n")
-		fmt.Printf("| name | model | quality | n | allowed | clean p | run cost | rescue | expected | adjusted |\n")
+		fmt.Printf("\nCandidates in the rebuilt table, sorted by adjusted cost per accepted (quality and n from today's table):\n\n")
+		fmt.Printf("| name | model | quality | n | allowed | clean p | run cost | cost per accepted | pace | adjusted per accepted |\n")
 		fmt.Printf("|---|---|---|---|---|---|---|---|---|---|\n")
-		rows := append([]*candEval(nil), cs.Today...)
-		sort.Slice(rows, func(i, j int) bool { return rows[i].adjusted < rows[j].adjusted })
+		rows := append([]CaseRoster(nil), cs.Roster...)
+		sort.Slice(rows, func(i, j int) bool { return rows[i].View.Adjusted < rows[j].View.Adjusted })
 		for _, e := range rows {
-			fmt.Printf("| %s | %s | %.2f | %d | %t | %.2f | $%.2f | $%.2f | $%.2f | $%.2f |\n",
-				e.row.Name, protocol.PickerModelDisplay(e.key), e.cell.Score, e.cell.N, e.allowed, e.pass, e.cost, e.rescue, e.expected, e.adjusted)
+			fmt.Printf("| %s | %s | %.2f | %d | %t | %.2f | $%.2f | $%.2f | %.2f | $%.2f |\n",
+				e.Name, e.Model, e.Quality, e.N, e.Allowed, e.View.Clean, e.View.Run, e.View.PerAccepted, e.Pace, e.View.Adjusted)
 		}
 	}
 }

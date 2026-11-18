@@ -233,25 +233,64 @@ type modelCount struct {
 	Count int
 }
 
-// summary is one method's result over the replayed picks.
+// costView prices one pick's chosen model with the V2 table, whichever rule
+// chose it, so every row reports cost per accepted result the same way.
+type costView struct {
+	Run, Clean, PerAccepted, Adjusted float64
+}
+
+// yardstick is the run cost over the clean share: the cost of one accepted
+// result when failed runs are retried. The pace factor then divides it, as the
+// live ranking divides its expected cost.
+func yardstick(e *candEval, pace float64) costView {
+	v := costView{Run: e.cost, Clean: e.pass, PerAccepted: math.Inf(1)}
+	if e.pass > 0 {
+		v.PerAccepted = e.cost / e.pass
+	}
+	v.Adjusted = v.PerAccepted / pace
+	return v
+}
+
+// paceOf is the quota pace factor of a roster row; a row without one counts as on pace.
+func paceOf(r CandRow) float64 {
+	if r.PaceFactor <= 0 {
+		return 1
+	}
+	return r.PaceFactor
+}
+
+// viewOf prices the winner of a pick from the V2 candidates of that pick. A
+// pick with no winner has no view.
+func viewOf(v2 []*candEval, winner *candEval) costView {
+	if winner == nil {
+		return costView{}
+	}
+	return yardstick(findKey(v2, winner.key), paceOf(winner.row))
+}
+
+// summary is one method's result over the replayed picks. Rule says how the
+// own-rule cost is priced; the yardstick columns are the same for every method.
 type summary struct {
 	Name     string
+	Rule     string
 	Picks    int
 	Models   map[string]int
-	MeanP    float64
-	MeanCost float64
-	MeanAdj  float64
-	MeanQual float64
+	sumP     float64
+	sumRun   float64
+	sumPer   float64
+	sumAdj   float64
+	sumOwn   float64
+	sumQual  float64
 	NoPick   int
 	Fallback int
 	ByLevel  map[string]map[string]int
 }
 
-func newSummary(name string) *summary {
-	return &summary{Name: name, Models: map[string]int{}, ByLevel: map[string]map[string]int{}}
+func newSummary(name, rule string) *summary {
+	return &summary{Name: name, Rule: rule, Models: map[string]int{}, ByLevel: map[string]map[string]int{}}
 }
 
-func (s *summary) add(winner *candEval, quality float64, level string) {
+func (s *summary) add(winner *candEval, view costView, quality float64, level string) {
 	s.Picks++
 	if winner == nil {
 		s.NoPick++
@@ -262,10 +301,12 @@ func (s *summary) add(winner *candEval, quality float64, level string) {
 		s.ByLevel[level] = map[string]int{}
 	}
 	s.ByLevel[level][winner.row.Name]++
-	s.MeanP += winner.pass
-	s.MeanCost += winner.expected
-	s.MeanAdj += winner.adjusted
-	s.MeanQual += quality
+	s.sumP += view.Clean
+	s.sumRun += view.Run
+	s.sumPer += view.PerAccepted
+	s.sumAdj += view.Adjusted
+	s.sumOwn += winner.expected
+	s.sumQual += quality
 }
 
 func (s *summary) modelCounts() []modelCount {
@@ -282,9 +323,21 @@ func (s *summary) modelCounts() []modelCount {
 	return out
 }
 
-func (s *summary) averages() (p, cost, adj, qual float64) {
+// averageView is a summary's mean per pick over the picks that had a winner.
+type averageView struct {
+	P, Run, PerAcc, Adj, Own, Qual float64
+}
+
+func (s *summary) averages() averageView {
 	n := float64(max(1, s.Picks-s.NoPick))
-	return s.MeanP / n, s.MeanCost / n, s.MeanAdj / n, s.MeanQual / n
+	return averageView{
+		P:      s.sumP / n,
+		Run:    s.sumRun / n,
+		PerAcc: s.sumPer / n,
+		Adj:    s.sumAdj / n,
+		Own:    s.sumOwn / n,
+		Qual:   s.sumQual / n,
+	}
 }
 
 // replayCheck compares today's rule, rebuilt from the snapshot, with the pick
@@ -320,14 +373,13 @@ func RunReplay(s *Snapshot, alphas []float64, floors []floorSet) *Report {
 	r := &Report{Snapshot: s, Alphas: alphas}
 	picks := append([]Pick(nil), s.Picks...)
 	sort.Slice(picks, func(i, j int) bool { return picks[i].At < picks[j].At })
-	r.Today = newSummary("today")
-	r.Recorded = newSummary("recorded")
+	r.Today = newSummary("today", "today: run cost + (1 - p) x rescue")
 	r.Check = &replayCheck{}
 	for _, a := range alphas {
-		r.OptionsA = append(r.OptionsA, newSummary(fmt.Sprintf("V2 alpha %.0f", a)))
+		r.OptionsA = append(r.OptionsA, newSummary(fmt.Sprintf("V2 alpha %.0f", a), "V2: run cost / p"))
 	}
 	for _, f := range floors {
-		r.Floors = append(r.Floors, newSummary(f.name))
+		r.Floors = append(r.Floors, newSummary(f.name, "V2: run cost / p; fallbacks: today's rule"))
 	}
 	for _, p := range picks {
 		tasks := s.TasksAt(p.At)
@@ -337,6 +389,8 @@ func RunReplay(s *Snapshot, alphas []float64, floors []floorSet) *Report {
 		tableA := protocol.BuildPickerTable(pickerTasks(tasks, math.MaxInt64, OptionAScore), v2set)
 		esToday, _ := replayCandidates(p, tableToday, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{})
 		winnerToday := pickToday(esToday)
+		// Every row is priced from the V2 candidates of this pick.
+		v2es, _ := replayCandidates(p, tableA, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true})
 		// Quality is reported on today's score for every method, so the rows
 		// compare. Option A ranks on its own reweighted score, shown in the case.
 		commonQ := func(w *candEval) float64 {
@@ -345,19 +399,7 @@ func RunReplay(s *Snapshot, alphas []float64, floors []floorSet) *Report {
 			}
 			return tableToday.Cell(w.key, tableToday.Bucket(p.D)).Score
 		}
-		r.Today.add(winnerToday, commonQ(winnerToday), levelForD(p.D))
-
-		for _, row := range p.Rows {
-			if !row.Chosen {
-				continue
-			}
-			r.Recorded.Picks++
-			r.Recorded.Models[row.Name]++
-			r.Recorded.MeanP += row.PClean
-			r.Recorded.MeanCost += row.Expected
-			r.Recorded.MeanAdj += row.Adjusted
-			r.Recorded.MeanQual += tableToday.Cell(row.Key(), tableToday.Bucket(p.D)).Score
-		}
+		r.Today.add(winnerToday, viewOf(v2es, winnerToday), commonQ(winnerToday), levelForD(p.D))
 
 		recorded := ""
 		for _, row := range p.Rows {
@@ -402,7 +444,7 @@ func RunReplay(s *Snapshot, alphas []float64, floors []floorSet) *Report {
 		for i, a := range alphas {
 			es, _ := replayCandidates(p, tableA, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true, Alpha: a})
 			w := pickV2(es, 0)
-			r.OptionsA[i].add(w, commonQ(w), level)
+			r.OptionsA[i].add(w, viewOf(v2es, w), commonQ(w), level)
 		}
 		for i, f := range floors {
 			es, _ := replayCandidates(p, tableA, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true, CleanFloor: f.floor(level)})
@@ -410,7 +452,7 @@ func RunReplay(s *Snapshot, alphas []float64, floors []floorSet) *Report {
 			if fallback {
 				r.Floors[i].Fallback++
 			}
-			r.Floors[i].add(w, commonQ(w), level)
+			r.Floors[i].add(w, viewOf(v2es, w), commonQ(w), level)
 		}
 		if r.Case == nil {
 			if c := casePick(p); c != nil {
@@ -438,42 +480,44 @@ func casePick(p Pick) *Pick {
 // CaseReport is the owner's example under every method.
 type CaseReport struct {
 	Pick     Pick
+	Roster   []CaseRoster
 	Variants []CaseChoice
-	Today    []*candEval
 }
 
-// CaseChoice is one method's winner for the case, with the two profiles the
-// owner compared.
+// CaseRoster is one candidate of the case's pick as today's table scores it,
+// with its V2 cost yardstick.
+type CaseRoster struct {
+	Name    string
+	Model   string
+	Quality float64
+	N       int
+	Allowed bool
+	Pace    float64
+	View    costView
+}
+
+// CaseChoice is one method's winner for the case, with the profiles the owner
+// compared under the same method.
 type CaseChoice struct {
-	Variant  string
-	Winner   string
-	Quality  float64
-	P        float64
-	Cost     float64
-	Expected float64
-	Adjusted float64
-	Rank     float64
-	Cands    []CaseCand
+	Variant string
+	Winner  string
+	Quality float64
+	View    costView
+	Own     float64
+	Rank    float64
+	Cands   []CaseCand
 }
 
-// CaseCand is one profile's numbers under one method, copied so a later method
-// does not overwrite them.
+// CaseCand is one profile's numbers under one method.
 type CaseCand struct {
-	Name     string
-	Quality  float64
-	P        float64
-	Cost     float64
-	Expected float64
-	Adjusted float64
-	Rank     float64
+	Name    string
+	Quality float64
+	View    costView
 }
 
-func snapshotCand(e *candEval) *CaseCand {
-	if e == nil {
-		return nil
-	}
-	return &CaseCand{Name: e.row.Name, Quality: e.cell.Score, P: e.pass, Cost: e.cost, Expected: e.expected, Adjusted: e.adjusted, Rank: e.rank}
-}
+// caseProfiles are the two profiles the owner compared, and the winner is
+// always listed too.
+var caseProfiles = []string{"deepseek alibaba high", "sol codex"}
 
 func named(es []*candEval, name string) *candEval {
 	for _, e := range es {
@@ -485,25 +529,40 @@ func named(es []*candEval, name string) *candEval {
 }
 
 func (r *Report) caseReport(p Pick, tableToday, tableA *protocol.PickerTable, alphas []float64, floors []floorSet) *CaseReport {
+	s := r.Snapshot
 	c := &CaseReport{Pick: p}
-	esToday, _ := replayCandidates(p, tableToday, r.Snapshot.Prices, r.Snapshot.Scores, r.Snapshot.Minimums, r.Snapshot, protocol.PickerCostOptions{})
-	c.Today = esToday
+	esToday, _ := replayCandidates(p, tableToday, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{})
+	v2es, _ := replayCandidates(p, tableA, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true})
+	for _, e := range esToday {
+		c.Roster = append(c.Roster, CaseRoster{
+			Name: e.row.Name, Model: protocol.PickerModelDisplay(e.key), Quality: e.cell.Score,
+			N: e.cell.N, Allowed: e.allowed, Pace: paceOf(e.row), View: viewOf(v2es, e),
+		})
+	}
 	add := func(variant string, w *candEval, rank float64, es []*candEval) {
-		ch := CaseChoice{Variant: variant}
-		for _, name := range []string{"deepseek alibaba high", "sol codex"} {
-			if c := snapshotCand(named(es, name)); c != nil {
-				ch.Cands = append(ch.Cands, *c)
-			}
-		}
+		ch := CaseChoice{Variant: variant, Rank: rank}
 		if w != nil {
 			ch.Winner = w.row.Name
-			ch.Quality, ch.P, ch.Cost, ch.Expected, ch.Adjusted, ch.Rank = w.cell.Score, w.pass, w.cost, w.expected, w.adjusted, rank
+			ch.Quality = w.cell.Score
+			ch.View = viewOf(v2es, w)
+			ch.Own = w.expected
+		}
+		names := caseProfiles
+		if w != nil && w.row.Name != caseProfiles[0] && w.row.Name != caseProfiles[1] {
+			names = append(append([]string(nil), caseProfiles...), w.row.Name)
+		}
+		for _, name := range names {
+			e := named(es, name)
+			if e == nil {
+				continue
+			}
+			ch.Cands = append(ch.Cands, CaseCand{Name: name, Quality: e.cell.Score, View: viewOf(v2es, e)})
 		}
 		c.Variants = append(c.Variants, ch)
 	}
 	add("today", pickToday(esToday), 0, esToday)
 	for _, a := range alphas {
-		esA, _ := replayCandidates(p, tableA, r.Snapshot.Prices, r.Snapshot.Scores, r.Snapshot.Minimums, r.Snapshot, protocol.PickerCostOptions{QualityV2: true, Alpha: a})
+		esA, _ := replayCandidates(p, tableA, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true, Alpha: a})
 		w := pickV2(esA, 0)
 		rank := 0.0
 		if w != nil {
@@ -512,7 +571,7 @@ func (r *Report) caseReport(p Pick, tableToday, tableA *protocol.PickerTable, al
 		add(fmt.Sprintf("V2 alpha %.0f", a), w, rank, esA)
 	}
 	for _, f := range floors {
-		es, _ := replayCandidates(p, tableA, r.Snapshot.Prices, r.Snapshot.Scores, r.Snapshot.Minimums, r.Snapshot, protocol.PickerCostOptions{QualityV2: true, CleanFloor: f.floor(levelForD(p.D))})
+		es, _ := replayCandidates(p, tableA, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true, CleanFloor: f.floor(levelForD(p.D))})
 		w, fallback := pickWithFloor(es, pickToday(esToday), f.floor(levelForD(p.D)))
 		if fallback {
 			add(f.name+" (fallback)", w, 0, esToday)
@@ -557,7 +616,6 @@ type Report struct {
 	Alphas   []float64
 	Check    *replayCheck
 	Today    *summary
-	Recorded *summary
 	OptionsA []*summary
 	Floors   []*summary
 	Case     *CaseReport

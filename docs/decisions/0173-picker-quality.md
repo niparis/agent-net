@@ -254,29 +254,36 @@ listed for a level are zero. Candidates below the floor are excluded from the
 qualifying set. If none qualifies and meets the floor, the replay uses today's
 choice and counts a fallback. Thus fallback picks can be below the floor.
 
-Mean quality uses today's score and table for every row. Clean p is the
-selected cell's estimated clean share, not an observed outcome of the replay.
-Expected cost is the selected candidate's predicted cost: V2 uses cost per
-accepted result; today and floor fallbacks use today's rescue rule. Averages
-for the floor rows therefore mix these rules. Adjusted cost also includes the
-recorded quota pace factor. Case quality is the selected rule's cell score;
-the summary's quality uses today's score. Where a V2-only child has no record
-in today's table, its comparison quality is today's bucket prior.
+Every row prices the winner it picks from the V2 table, whichever rule chose
+it. Cost per accepted result is the run cost divided by clean p, the shrunk
+estimate of the clean share in that table; it is a predicted rate, not an
+observed outcome of the replay. Adjusted cost per accepted also divides by the
+recorded quota pace factor, as the live ranking does. The last two columns of
+the method table are each row's own rule and its mean cost under that rule. Today
+uses run cost + (1 - p) x rescue. V2 rows use run cost / p, so their own cost
+equals cost per accepted. Floor rows mix the two: V2 for picks that meet the
+floor, and today's rule for the fallbacks (6, 9 and 5 picks). Mean quality uses
+today's score and table for every row. Case quality is the score of the table
+that the row's method ranks with, so it differs between rows. Where a V2-only
+child has no record in today's table, its comparison quality is today's bucket
+prior.
 
 ### What each method picks
 
-| method | picks | no pick | mean quality (today's score) | mean clean p | mean expected cost | mean adjusted cost | fallbacks |
-|---|---|---|---|---|---|---|---|
-| today | 51 | 0 | 0.75 | 0.71 | $1.14 | $1.08 | 0 |
-| V2 alpha 0 | 51 | 0 | 0.76 | 0.74 | $0.72 | $0.47 | 0 |
-| V2 alpha 2 | 51 | 0 | 0.76 | 0.75 | $0.89 | $0.48 | 0 |
-| V2 alpha 4 | 51 | 0 | 0.76 | 0.75 | $0.98 | $0.51 | 0 |
-| V2 alpha 6 | 51 | 0 | 0.76 | 0.75 | $0.98 | $0.51 | 0 |
-| V2 alpha 8 | 51 | 0 | 0.76 | 0.76 | $0.99 | $0.51 | 0 |
-| V2 alpha 10 | 51 | 0 | 0.76 | 0.77 | $0.99 | $0.51 | 0 |
-| floor A | 51 | 0 | 0.76 | 0.75 | $1.22 | $1.08 | 6 |
-| floor B | 51 | 0 | 0.75 | 0.76 | $1.22 | $1.06 | 9 |
-| floor C | 51 | 0 | 0.76 | 0.75 | $1.22 | $1.02 | 5 |
+Every row prices its winner from the V2 table: run cost, clean p, and cost per accepted result (run cost / clean p). The last two columns are the row's own rule and its mean cost under that rule.
+
+| method | picks | no pick | mean quality (today's score) | mean clean p | mean run cost | mean cost per accepted | mean adjusted cost per accepted | fallbacks | own rule | mean own-rule cost |
+|---|---|---|---|---|---|---|---|---|---|---|
+| today | 51 | 0 | 0.75 | 0.71 | $0.59 | $0.97 | $0.62 | 0 | today: run cost + (1 - p) x rescue | $1.14 |
+| V2 alpha 0 | 51 | 0 | 0.76 | 0.74 | $0.46 | $0.72 | $0.47 | 0 | V2: run cost / p | $0.72 |
+| V2 alpha 2 | 51 | 0 | 0.76 | 0.75 | $0.57 | $0.89 | $0.48 | 0 | V2: run cost / p | $0.89 |
+| V2 alpha 4 | 51 | 0 | 0.76 | 0.75 | $0.63 | $0.98 | $0.51 | 0 | V2: run cost / p | $0.98 |
+| V2 alpha 6 | 51 | 0 | 0.76 | 0.75 | $0.63 | $0.98 | $0.51 | 0 | V2: run cost / p | $0.98 |
+| V2 alpha 8 | 51 | 0 | 0.76 | 0.76 | $0.64 | $0.99 | $0.51 | 0 | V2: run cost / p | $0.99 |
+| V2 alpha 10 | 51 | 0 | 0.76 | 0.77 | $0.64 | $0.99 | $0.51 | 0 | V2: run cost / p | $0.99 |
+| floor A | 51 | 0 | 0.76 | 0.75 | $0.64 | $1.00 | $0.57 | 6 | V2: run cost / p; fallbacks: today's rule | $1.22 |
+| floor B | 51 | 0 | 0.75 | 0.76 | $0.65 | $1.03 | $0.58 | 9 | V2: run cost / p; fallbacks: today's rule | $1.22 |
+| floor C | 51 | 0 | 0.76 | 0.75 | $0.62 | $0.97 | $0.51 | 5 | V2: run cost / p; fallbacks: today's rule | $1.22 |
 
 Models picked by difficulty level:
 
@@ -333,22 +340,83 @@ Models picked by difficulty level:
 
 ### Case D 3.20
 
-Session s_c1ce54688a069800, bucket 3.00-3.33, recorded pick: deepseek alibaba high.
-A rank of 0 means not applicable for today or a fallback.
+Session s_c1ce54688a069800, bucket 3.00-3.33, recorded pick: deepseek alibaba high
 
-| method | winner | quality | clean p | run cost | expected cost | adjusted | rank |
-|---|---|---|---|---|---|---|---|
-| today | deepseek alibaba high | 0.61 | 0.41 | $0.47 | $0.65 | $0.65 | 0.00 |
-| V2 alpha 0 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 | 0.15 |
-| V2 alpha 2 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 | 0.17 |
-| V2 alpha 4 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 | 0.19 |
-| V2 alpha 6 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 | 0.22 |
-| V2 alpha 8 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 | 0.26 |
-| V2 alpha 10 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 | 0.29 |
-| floor A | terra codex | 0.79 | 0.71 | $0.69 | $0.98 | $1.57 | 1.57 |
-| floor B (fallback) | deepseek alibaba high | 0.61 | 0.41 | $0.47 | $0.65 | $0.65 | 0.00 |
-| floor C | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 | 0.15 |
+On the same yardstick, deepseek opencode has the lowest cost per accepted result
+under every V2 setting: $0.58, against $1.14 for deepseek alibaba high (the recorded
+pick) and $1.42 for Sol codex. Its quota pace factor is 4.00, so its adjusted cost is
+lower still. Sol codex has the higher quality score, but no alpha up to 10 makes it win.
 
+| method | winner | quality | clean p | run cost | cost per accepted | adjusted per accepted | own-rule cost | rank |
+|---|---|---|---|---|---|---|---|---|
+| today | deepseek alibaba high | 0.61 | 0.41 | $0.47 | $1.14 | $1.14 | $0.65 | 0.00 |
+| V2 alpha 0 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 | $0.58 | 0.15 |
+| V2 alpha 2 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 | $0.58 | 0.17 |
+| V2 alpha 4 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 | $0.58 | 0.19 |
+| V2 alpha 6 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 | $0.58 | 0.22 |
+| V2 alpha 8 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 | $0.58 | 0.26 |
+| V2 alpha 10 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 | $0.58 | 0.29 |
+| floor A | terra codex | 0.79 | 0.71 | $0.69 | $0.98 | $1.57 | $0.98 | 1.57 |
+| floor B (fallback) | deepseek alibaba high | 0.61 | 0.41 | $0.47 | $1.14 | $1.14 | $0.65 | 0.00 |
+| floor C | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 | $0.58 | 0.15 |
+
+The profiles the owner compared, and the winner, under each method:
+
+| method | profile | quality | clean p | run cost | cost per accepted | adjusted per accepted |
+|---|---|---|---|---|---|---|
+| today | deepseek alibaba high | 0.61 | 0.41 | $0.47 | $1.14 | $1.14 |
+| today | sol codex | 0.77 | 0.73 | $1.04 | $1.42 | $2.28 |
+| V2 alpha 0 | deepseek alibaba high | 0.74 | 0.41 | $0.47 | $1.14 | $1.14 |
+| V2 alpha 0 | sol codex | 0.86 | 0.73 | $1.04 | $1.42 | $2.28 |
+| V2 alpha 0 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 |
+| V2 alpha 2 | deepseek alibaba high | 0.74 | 0.41 | $0.47 | $1.14 | $1.14 |
+| V2 alpha 2 | sol codex | 0.86 | 0.73 | $1.04 | $1.42 | $2.28 |
+| V2 alpha 2 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 |
+| V2 alpha 4 | deepseek alibaba high | 0.74 | 0.41 | $0.47 | $1.14 | $1.14 |
+| V2 alpha 4 | sol codex | 0.86 | 0.73 | $1.04 | $1.42 | $2.28 |
+| V2 alpha 4 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 |
+| V2 alpha 6 | deepseek alibaba high | 0.74 | 0.41 | $0.47 | $1.14 | $1.14 |
+| V2 alpha 6 | sol codex | 0.86 | 0.73 | $1.04 | $1.42 | $2.28 |
+| V2 alpha 6 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 |
+| V2 alpha 8 | deepseek alibaba high | 0.74 | 0.41 | $0.47 | $1.14 | $1.14 |
+| V2 alpha 8 | sol codex | 0.86 | 0.73 | $1.04 | $1.42 | $2.28 |
+| V2 alpha 8 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 |
+| V2 alpha 10 | deepseek alibaba high | 0.74 | 0.41 | $0.47 | $1.14 | $1.14 |
+| V2 alpha 10 | sol codex | 0.86 | 0.73 | $1.04 | $1.42 | $2.28 |
+| V2 alpha 10 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 |
+| floor A | deepseek alibaba high | 0.74 | 0.41 | $0.47 | $1.14 | $1.14 |
+| floor A | sol codex | 0.86 | 0.73 | $1.04 | $1.42 | $2.28 |
+| floor A | terra codex | 0.79 | 0.71 | $0.69 | $0.98 | $1.57 |
+| floor B (fallback) | deepseek alibaba high | 0.61 | 0.41 | $0.47 | $1.14 | $1.14 |
+| floor B (fallback) | sol codex | 0.77 | 0.73 | $1.04 | $1.42 | $2.28 |
+| floor C | deepseek alibaba high | 0.74 | 0.41 | $0.47 | $1.14 | $1.14 |
+| floor C | sol codex | 0.86 | 0.73 | $1.04 | $1.42 | $2.28 |
+| floor C | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 |
+
+Candidates in the rebuilt table, sorted by adjusted cost per accepted (quality and n from today's table):
+
+| name | model | quality | n | allowed | clean p | run cost | cost per accepted | pace | adjusted per accepted |
+|---|---|---|---|---|---|---|---|---|---|
+| deepseek opencode | deepseek-v4.1-flash | 0.65 | 23 | true | 0.68 | $0.40 | $0.58 | 4.00 | $0.15 |
+| opus agy | claude-opus-5-5-high | 0.56 | 1 | true | 0.23 | $0.06 | $0.27 | 1.00 | $0.27 |
+| deepseek alibaba high | deepseek-v4.1-flash-1017:high | 0.61 | 27 | true | 0.41 | $0.47 | $1.14 | 1.00 | $1.14 |
+| haiku high claude | claude-haiku-5-5:high | 0.67 | 0 | false | 0.27 | $0.31 | $1.16 | 1.01 | $1.15 |
+| haiku xhigh claude | claude-haiku-5-5:xhigh | 0.51 | 8 | false | 0.47 | $0.73 | $1.55 | 1.01 | $1.54 |
+| terra codex | gpt-6.1-terra:high | 0.69 | 36 | true | 0.71 | $0.69 | $0.98 | 0.62 | $1.57 |
+| luna codex | gpt-6-luna:xhigh | 0.67 | 0 | false | 0.27 | $0.31 | $1.16 | 0.62 | $1.86 |
+| terra max codex | gpt-6.1-terra:max | 0.72 | 9 | true | 0.65 | $0.81 | $1.25 | 0.62 | $2.01 |
+| sol codex | gpt-6.1-sol:medium | 0.77 | 17 | true | 0.73 | $1.04 | $1.42 | 0.62 | $2.28 |
+| sol high codex | gpt-6.1-sol:high | 0.73 | 1 | true | 0.39 | $0.73 | $1.86 | 0.62 | $2.99 |
+| sonnet claude | claude-sonnet-5-5:high | 0.69 | 41 | true | 0.63 | $2.58 | $4.08 | 1.01 | $4.04 |
+| sol low codex | gpt-6.1-sol:low | 0.73 | 1 | true | 0.39 | $1.23 | $3.12 | 0.62 | $5.01 |
+| argon agy | gemini-4-argon-high | 0.80 | 3 | true | 0.54 | $4.68 | $8.59 | 1.00 | $8.59 |
+| sonnet xhigh claude | claude-sonnet-5-5:xhigh | 0.60 | 6 | true | 0.56 | $4.94 | $8.85 | 1.01 | $8.76 |
+| opus high claude | claude-opus-5-5:high | 0.74 | 14 | true | 0.69 | $7.03 | $10.16 | 1.01 | $10.06 |
+| terra-low | gpt-6.1-terra:low | 0.67 | 0 | false | 0.27 | $2.03 | $7.46 | 0.62 | $11.98 |
+| terra medium codex | gpt-6.1-terra:medium | 0.67 | 0 | true | 0.27 | $2.03 | $7.46 | 0.62 | $11.98 |
+| sonnet agy | claude-sonnet-5-5-medium | 0.67 | 0 | true | 0.27 | $4.05 | $14.91 | 1.00 | $14.91 |
+| opus medium claude | claude-opus-5-5:medium | 0.70 | 2 | true | 0.29 | $6.51 | $22.64 | 1.01 | $22.41 |
+| flash agy | gemini-3.8-flash-medium | 0.60 | 4 | true | 0.30 | $27.96 | $92.68 | 1.00 | $92.68 |
 
 The [picker-ml study](https://github.com/niparis/agent-net/blob/e994482e67171659fd42815fd7a55be3cac6e68d/research/picker-ml/RESULTS.md)
 found that per-model quality gaps did not hold up on later tasks: D alone

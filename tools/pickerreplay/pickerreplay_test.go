@@ -263,3 +263,25 @@ func TestFloorFlagSelectsSets(t *testing.T) {
 		t.Fatalf("empty sets: %+v, %v", sets, err)
 	}
 }
+
+func TestYardstickIsRunCostOverCleanShare(t *testing.T) {
+	e := ev("sol", .77, 1.70, 1.04, .73, 1.06)
+	got := yardstick(e, 2)
+	near(t, "run cost", got.Run, 1.04)
+	near(t, "clean p", got.Clean, .73)
+	near(t, "cost per accepted result", got.PerAccepted, 1.04/.73)
+	near(t, "pace-adjusted", got.Adjusted, 1.04/.73/2)
+}
+
+func TestEveryRowPricesThePickTheSameWay(t *testing.T) {
+	s, err := OpenSnapshot(fixture(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := RunReplay(s, []float64{0}, nil)
+	today, v2 := r.Today.averages(), r.OptionsA[0].averages()
+	near(t, "run cost, today against V2", today.Run, v2.Run)
+	near(t, "clean p, today against V2", today.P, v2.P)
+	near(t, "cost per accepted, today against V2", today.PerAcc, v2.PerAcc)
+	near(t, "cost per accepted is run cost over clean p", today.PerAcc, today.Run/today.P)
+}

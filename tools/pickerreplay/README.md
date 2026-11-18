@@ -39,13 +39,15 @@ where it can: `protocol.PickerTaskScore`, `protocol.PickerTaskScoreV2`, `protoco
 rule is shared with the live picker through `protocol.PickerExpectedCosts`.
 
 The output starts with the replay check (how many recorded picks the rule
-reproduces and why the rest differ), then the model counts and mean clean p and
-expected cost per method, then the D 3.20 case.
+reproduces and why the rest differ), then the model counts per method with the
+mean clean p, run cost and cost per accepted result (run cost / clean p) of the
+chosen model, all priced from the V2 table, then the D 3.20 case. Each row's own
+rule cost is in the last column, labelled with that rule.
 
 ## Tests
 
     go -C tools/pickerreplay vet ./...
-    go -C tools/pickerreplay test -run '^(TestOptionAScoreCountsEachFailureOnce|TestPickTodayTakesTheLowestExpectedCost|TestPickOptionAWeighsQualityAgainstCost|TestReplayReadsSnapshotAndMatchesTheRecordedPick|TestTasksAtLeavesOutWhatDidNotExistYet)$'
+    go -C tools/pickerreplay test -run '^(TestOptionAScoreCountsEachFailureOnce|TestPickTodayTakesTheLowestExpectedCost|TestPickOptionAWeighsQualityAgainstCost|TestReplayReadsSnapshotAndMatchesTheRecordedPick|TestTasksAtLeavesOutWhatDidNotExistYet|TestYardstickIsRunCostOverCleanShare|TestEveryRowPricesThePickTheSameWay)$'
 
 The tests build a throwaway store copy in a temporary directory. They never
 touch the real setup.
