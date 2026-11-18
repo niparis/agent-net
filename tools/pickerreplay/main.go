@@ -19,6 +19,7 @@ import (
 func main() {
 	db := flag.String("db", "", "path to a read-only copy of the gateway store (required)")
 	alphas := flag.String("alphas", "0,2,4,6,8,10", "comma separated alpha values for option A")
+	floors := flag.String("floors", "A,B,C", "comma separated floor sets A, B and C; empty disables them")
 	flag.Parse()
 	if *db == "" {
 		fmt.Fprintln(os.Stderr, "pickerreplay: -db is required; pass a copy of the gateway store, never the live one")
@@ -33,12 +34,17 @@ func main() {
 		}
 		list = append(list, v)
 	}
+	selected, err := parseFloorSets(*floors)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "pickerreplay:", err)
+		os.Exit(2)
+	}
 	s, err := OpenSnapshot(*db)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "pickerreplay:", err)
 		os.Exit(1)
 	}
-	report := RunReplay(s, list)
+	report := RunReplay(s, list, selected)
 	printReport(report)
 }
 

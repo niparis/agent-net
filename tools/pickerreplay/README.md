@@ -17,7 +17,8 @@ Flags:
 
 - `-db` (required): path to a copy of the gateway store. Never point it at the
   live store.
-- `-alphas` (default `0,2,4,6,8,10`): opt-in alpha values. The three floor sets are also run.
+- `-alphas` (default `0,2,4,6,8,10`): opt-in alpha values.
+- `-floors` (default `A,B,C`): floor sets to replay. Pass an empty value to omit them.
 
 ## What it reads
 

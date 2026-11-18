@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/niparis/agent-net/internal/difficulty"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -185,6 +186,28 @@ func floorSets() []floorSet {
 	}
 }
 
+func parseFloorSets(value string) ([]floorSet, error) {
+	if strings.TrimSpace(value) == "" {
+		return nil, nil
+	}
+	var selected []floorSet
+	for _, part := range strings.Split(value, ",") {
+		name := strings.ToUpper(strings.TrimSpace(part))
+		found := false
+		for _, f := range floorSets() {
+			if f.name == "floor "+name {
+				selected = append(selected, f)
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("unknown floor set %q", part)
+		}
+	}
+	return selected, nil
+}
+
 func pickV2(es []*candEval, floor float64) *candEval {
 	var winner *candEval
 	for _, e := range es {
@@ -293,7 +316,7 @@ func (c *replayCheck) matchRate() float64 {
 }
 
 // RunReplay performs every measurement the decision draft reports.
-func RunReplay(s *Snapshot, alphas []float64) *Report {
+func RunReplay(s *Snapshot, alphas []float64, floors []floorSet) *Report {
 	r := &Report{Snapshot: s, Alphas: alphas}
 	picks := append([]Pick(nil), s.Picks...)
 	sort.Slice(picks, func(i, j int) bool { return picks[i].At < picks[j].At })
@@ -303,7 +326,7 @@ func RunReplay(s *Snapshot, alphas []float64) *Report {
 	for _, a := range alphas {
 		r.OptionsA = append(r.OptionsA, newSummary(fmt.Sprintf("V2 alpha %.0f", a)))
 	}
-	for _, f := range floorSets() {
+	for _, f := range floors {
 		r.Floors = append(r.Floors, newSummary(f.name))
 	}
 	for _, p := range picks {
@@ -381,7 +404,7 @@ func RunReplay(s *Snapshot, alphas []float64) *Report {
 			w := pickV2(es, 0)
 			r.OptionsA[i].add(w, commonQ(w), level)
 		}
-		for i, f := range floorSets() {
+		for i, f := range floors {
 			es, _ := replayCandidates(p, tableA, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true, CleanFloor: f.floor(level)})
 			w, fallback := pickWithFloor(es, winnerToday, f.floor(level))
 			if fallback {
@@ -391,7 +414,7 @@ func RunReplay(s *Snapshot, alphas []float64) *Report {
 		}
 		if r.Case == nil {
 			if c := casePick(p); c != nil {
-				r.Case = r.caseReport(*c, tableToday, tableA, alphas)
+				r.Case = r.caseReport(*c, tableToday, tableA, alphas, floors)
 			}
 		}
 	}
@@ -461,7 +484,7 @@ func named(es []*candEval, name string) *candEval {
 	return nil
 }
 
-func (r *Report) caseReport(p Pick, tableToday, tableA *protocol.PickerTable, alphas []float64) *CaseReport {
+func (r *Report) caseReport(p Pick, tableToday, tableA *protocol.PickerTable, alphas []float64, floors []floorSet) *CaseReport {
 	c := &CaseReport{Pick: p}
 	esToday, _ := replayCandidates(p, tableToday, r.Snapshot.Prices, r.Snapshot.Scores, r.Snapshot.Minimums, r.Snapshot, protocol.PickerCostOptions{})
 	c.Today = esToday
@@ -488,7 +511,7 @@ func (r *Report) caseReport(p Pick, tableToday, tableA *protocol.PickerTable, al
 		}
 		add(fmt.Sprintf("V2 alpha %.0f", a), w, rank, esA)
 	}
-	for _, f := range floorSets() {
+	for _, f := range floors {
 		es, _ := replayCandidates(p, tableA, r.Snapshot.Prices, r.Snapshot.Scores, r.Snapshot.Minimums, r.Snapshot, protocol.PickerCostOptions{QualityV2: true, CleanFloor: f.floor(levelForD(p.D))})
 		w, fallback := pickWithFloor(es, pickToday(esToday), f.floor(levelForD(p.D)))
 		if fallback {

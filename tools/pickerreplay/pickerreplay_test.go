@@ -171,7 +171,7 @@ func TestReplayReadsSnapshotAndMatchesTheRecordedPick(t *testing.T) {
 	if len(s.Picks) != 1 {
 		t.Fatalf("picks: got %d, want 1", len(s.Picks))
 	}
-	r := RunReplay(s, []float64{0, 3})
+	r := RunReplay(s, []float64{0, 3}, floorSets())
 	if r.Check.Picks != 1 || r.Check.Match != 1 {
 		t.Fatalf("replay check: %d/%d, want 1/1", r.Check.Match, r.Check.Picks)
 	}
@@ -181,6 +181,15 @@ func TestReplayReadsSnapshotAndMatchesTheRecordedPick(t *testing.T) {
 	if r.OptionsA[0].Models["deepseek"] != 1 {
 		t.Fatalf("option A at alpha 0 picked %v, want deepseek", r.OptionsA[0].Models)
 	}
+	selected, err := parseFloorSets("B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	filtered := RunReplay(s, []float64{0}, selected)
+	if len(filtered.Floors) != 1 || filtered.Floors[0].Name != "floor B" {
+		t.Fatalf("selected floors: %+v", filtered.Floors)
+	}
+
 	after, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -239,5 +248,18 @@ func TestFloorFallbackUsesToday(t *testing.T) {
 	got, fallback = pickWithFloor([]*candEval{v2}, today, .5)
 	if got != v2 || fallback {
 		t.Fatalf("got %v, fallback %t", got, fallback)
+	}
+}
+
+func TestFloorFlagSelectsSets(t *testing.T) {
+	selected, err := parseFloorSets("C,A")
+	if err != nil || len(selected) != 2 || selected[0].name != "floor C" || selected[1].name != "floor A" {
+		t.Fatalf("sets: %+v, %v", selected, err)
+	}
+	if _, err := parseFloorSets("D"); err == nil {
+		t.Fatal("unknown floor set accepted")
+	}
+	if sets, err := parseFloorSets(""); err != nil || len(sets) != 0 {
+		t.Fatalf("empty sets: %+v, %v", sets, err)
 	}
 }
