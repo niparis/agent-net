@@ -584,6 +584,7 @@ Tools are listed by the roles that may call them. Actions are the values of the 
 | `agent_changes_find` | agent, worker | Find delivery changes: their revision, the step each is in, who owns it and the evidence so far. Give change to read one change in full with its revisions and evidence. | - |
 | `agent_charter_draft` | agent | Propose one charter value drafted from AGENTS.md, only when agent-net asked you to. The owner accepts or rejects it; nothing changes before that. | - |
 | `agent_file_send` | agent, worker | Send files from this session to one peer with a note. Paths must be absolute and within the session project, worktree or /tmp. Workers send files with agent_handback. | - |
+| `agent_friction_mark` | agent | Lead sessions only: set the read status of friction reports (new, read, triaged, fixed, wontfix or infra) by ids, by group, or by a filter with project, area and text. Give link (a change id or a web address) and note when the mark has them. dry_run counts the matches first. Other sessions are refused. | - |
 | `agent_graph_read` | agent, worker, cto, bot | Read the graph: nodes with charters and rules, and their edges. Give node for one node and its edges; a shared name returns every node. | - |
 | `agent_handback` | worker | Workers only: end your task with your report and status. This is how the caller gets your result. | - |
 | `agent_learn` | agent, worker, cto | Record a finding about a model, harness, project or machine, with evidence. Findings feed the playbook; they change nothing directly. | - |
