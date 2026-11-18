@@ -863,13 +863,6 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			if err != nil {
 				return none, g.refuseWithAlternative(ctx, nc, p, notStartedReason(difficulty, roster))
 			}
-			// A Done that needs a browser keeps a harness that cannot run
-			// one on this machine out of the pick. The caller who named a
-			// harness is not overridden: the flag below tells them instead.
-			var browserNote string
-			if _, needs := protocol.BriefNeedsBrowser(p.WorkerStartRequest); needs && p.Harness == "" {
-				candidates, browserNote = filterBrowserCandidates(candidates, node.OS, roster)
-			}
 			var protectionNote string
 			var chooseErr error
 			chosen, chooseErr = g.Choose(ChooseRequest{
@@ -916,9 +909,6 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			if familyNote != "" {
 				automaticNote += "; " + familyNote
 			}
-			if browserNote != "" {
-				automaticNote += "; " + browserNote
-			}
 			if protectionNote != "" {
 				automaticNote += "; " + protectionNote
 			}
@@ -941,12 +931,6 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			}
 		}
 		harnessNote = fmt.Sprintf("selected %s on %s (%s)", p.Harness, node.Hostname, state)
-	}
-	// The pick may still be a harness that cannot run a browser: the owner or
-	// the caller named it, or no candidate could. The start goes on and the
-	// flag says the browser checks must run after the hand-back (no refusal).
-	if line, needs := protocol.BriefNeedsBrowser(p.WorkerStartRequest); needs && !p.RequireReadOnly && !protocol.HarnessRunsBrowser(p.Harness, node.OS) {
-		briefFlags = append(briefFlags, protocol.BrowserFlag(line, p.Harness, node.OS))
 	}
 	var hi *protocol.HarnessInfo
 	for i := range node.Harnesses {
@@ -1095,7 +1079,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	}
 	if len(validate) > 0 && validate[0] {
 		return protocol.WorkerStartAnswer{NodeID: pick.NodeID, Hostname: pick.Hostname, Project: pick.Name, Path: pick.Path,
-			Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Why: choice.Why, BriefFlags: briefFlags}, nil
+			Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Why: choice.Why}, nil
 	}
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
@@ -2548,34 +2532,6 @@ func filterWorkerFamilies(candidates []protocol.WorkerModelCandidate, excluded [
 		return kept, "", nil
 	}
 	return kept, "skipped for family rule: " + strings.Join(skipped, ", "), nil
-}
-
-// filterBrowserCandidates removes the candidates whose harness cannot run a
-// browser on a machine of this OS, for a start whose Done needs one. When no
-// candidate can, it keeps all of them: the start goes on with today's choice
-// and the caller's flag says the browser checks wait. A non-nil roster records
-// each removed candidate. The note names them for the pick notice.
-func filterBrowserCandidates(candidates []protocol.WorkerModelCandidate, goos string, roster *notStartedRoster) ([]protocol.WorkerModelCandidate, string) {
-	var kept []protocol.WorkerModelCandidate
-	var skipped []string
-	for _, c := range candidates {
-		if protocol.HarnessRunsBrowser(c.Harness, goos) {
-			kept = append(kept, c)
-			continue
-		}
-		skipped = append(skipped, c.Harness+" "+c.Model)
-	}
-	if len(kept) == 0 || len(skipped) == 0 {
-		return candidates, ""
-	}
-	if roster != nil {
-		for _, c := range candidates {
-			if !protocol.HarnessRunsBrowser(c.Harness, goos) {
-				roster.add(rosterName(c.Name, c.Harness, c.Model), "cannot run a browser here", rosterFamily)
-			}
-		}
-	}
-	return kept, "left out, cannot run a browser here: " + strings.Join(skipped, ", ")
 }
 
 // Roster ranks order the lines from closest to qualifying to furthest away. The
