@@ -53,7 +53,10 @@ func pickerBucket(d float64, s PickerSettings) int {
 // record is allowed unless the top of its interval is below AllowedFraction x
 // best, and a thin candidate is allowed by its benchmark ceiling. A strong
 // model is never left out for being far above the work: the weaker bias and the
-// qualifying rule in pickOrderByCells steer the work instead.
+// qualifying rule in pickOrderByCells steer the work instead. With
+// s.CeilingRule on, the one exception is a model whose benchmark ceiling is
+// below the bucket: it is allowed only when its Lo is at least the Lo of the
+// best candidate.
 func PickerBucketVerdicts(facts []PickerCandidateFacts, bucketLo, bucketMean float64, bucket int, s PickerSettings) ([]PickerVerdict, int) {
 	s = s.Normalized()
 	out := make([]PickerVerdict, len(facts))
@@ -65,13 +68,26 @@ func PickerBucketVerdicts(facts []PickerCandidateFacts, bucketLo, bucketMean flo
 		}
 	}
 	for i, f := range facts {
+		// The bucket width is one third to ten digits, so a bucket that starts
+		// at a ceiling such as 3.0 starts a hair below it. With the ceiling
+		// rule on, that bucket counts as above the ceiling (the bucket index
+		// has the same tolerance); with it off the old comparison stands.
+		overCeiling := f.Scored && bucketLo >= f.Ceiling
+		if s.CeilingRule {
+			overCeiling = f.Scored && bucketLo >= f.Ceiling-pickerEdgeTolerance
+		}
 		switch {
 		case f.Cell.N >= PickerMinCellTasks:
 			out[i].Allowed = f.Cell.Hi >= s.AllowedFraction*best
 			if !out[i].Allowed {
 				out[i].Reason = fmt.Sprintf("below %g×best", s.AllowedFraction)
+			} else if s.CeilingRule && overCeiling && f.Cell.Lo < facts[bestIdx].Cell.Lo {
+				// Above its benchmark ceiling, the record has to carry the
+				// model: its low end must reach the best model's low end.
+				out[i].Allowed = false
+				out[i].Reason = "above its benchmark, record not as good as best"
 			}
-		case f.Scored && bucketLo < f.Ceiling:
+		case f.Scored && !overCeiling:
 			out[i].Allowed, out[i].Prior = true, true
 		case f.Scored:
 			out[i].Reason = "above its benchmark"
@@ -103,6 +119,9 @@ type pickerEntry struct {
 	measured  bool
 	allowed   bool
 	prior     bool
+	// blocked is true when a window of the provider that limits the model is
+	// used up (or over the gate's 90 percent line): a start would be refused.
+	blocked   bool
 	reason    string
 	weight    float64
 	qualified bool
@@ -133,19 +152,34 @@ func (e *pickerEntry) adjusted() float64 {
 // the bucket, the ladder being ordered by price per token; the dearest model's
 // rescue is itself. An entry with no cost data takes the mean of the others, or
 // 1 when none has any, so the ranking then follows p.
-func expectedCosts(entries []*pickerEntry, table *PickerTable, bucket int, prices *PriceBook, set PickerSettings) {
+// PickerCost is one candidate's inputs and computed cost terms.
+type PickerCost struct {
+	Key, Name                                     string
+	Quality                                       float64
+	Cost, Pass, Rescue, Expected, Rank            float64
+	CostKnown, Recorded, PriceUnknown, MeetsFloor bool
+}
+
+// PickerCostOptions select the experimental cost and optional replay policy.
+type PickerCostOptions struct {
+	QualityV2                      bool
+	Alpha, BestQuality, CleanFloor float64
+}
+
+// PickerExpectedCosts calculates the live picker cost terms in roster order.
+func PickerExpectedCosts(entries []*PickerCost, table *PickerTable, bucket int, prices *PriceBook, set PickerSettings, options PickerCostOptions) {
 	var sum float64
 	var known int
-	rank := make(map[*pickerEntry]float64, len(entries))
+	rank := make(map[*PickerCost]float64, len(entries))
 	for _, e := range entries {
 		var listed bool
-		e.cost, e.recorded, listed, e.costKnown = table.ExpectedCost(e.key, bucket, prices)
-		e.priceUnknown = e.costKnown && !e.recorded && !listed
-		if e.costKnown {
-			sum += e.cost
+		e.Cost, e.Recorded, listed, e.CostKnown = table.ExpectedCost(e.Key, bucket, prices)
+		e.PriceUnknown = e.CostKnown && !e.Recorded && !listed
+		if e.CostKnown {
+			sum += e.Cost
 			known++
 		}
-		if p, _, ok := prices.PriceOf(e.key); ok {
+		if p, _, ok := prices.PriceOf(e.Key); ok {
 			rank[e] = p.Prompt + p.Completion
 		}
 	}
@@ -155,35 +189,59 @@ func expectedCosts(entries []*pickerEntry, table *PickerTable, bucket int, price
 	}
 	noPrices := len(rank) == 0
 	for _, e := range entries {
-		if !e.costKnown {
-			e.cost = fallback
+		if !e.CostKnown {
+			e.Cost = fallback
 		}
 		if noPrices {
 			// No price list: the run cost stands in for the price per token.
-			rank[e] = e.cost
+			rank[e] = e.Cost
 		}
 	}
-	ladder := append([]*pickerEntry(nil), entries...)
+	ladder := append([]*PickerCost(nil), entries...)
 	sort.SliceStable(ladder, func(i, j int) bool {
 		if rank[ladder[i]] != rank[ladder[j]] {
 			return rank[ladder[i]] < rank[ladder[j]]
 		}
-		return ladder[i].name < ladder[j].name
+		return ladder[i].Name < ladder[j].Name
 	})
 	for _, e := range entries {
-		e.rescue = e.cost
+		e.Rescue = e.Cost
 		for _, up := range ladder {
 			if rank[up] > rank[e] {
-				e.rescue = up.cost
+				e.Rescue = up.Cost
 				break
 			}
 		}
-		c := table.CleanCell(e.key, bucket)
-		e.pass = c.Score
+		c := table.CleanCell(e.Key, bucket)
+		e.Pass = c.Score
 		if c.N < set.UncertainN {
-			e.pass = c.Lo
+			e.Pass = c.Lo
 		}
-		e.expected = e.cost + (1-e.pass)*e.rescue
+		if options.QualityV2 {
+			// Independent retries have a geometric mean of 1/p runs per acceptance.
+			if e.Pass == 0 {
+				e.Expected = math.Inf(1)
+			} else {
+				e.Expected = e.Cost / e.Pass
+			}
+		} else {
+			e.Expected = e.Cost + (1-e.Pass)*e.Rescue
+		}
+		e.Rank = e.Expected * math.Exp(options.Alpha*(options.BestQuality-e.Quality))
+		e.MeetsFloor = e.Pass >= options.CleanFloor
+	}
+}
+
+func expectedCosts(entries []*pickerEntry, table *PickerTable, bucket int, prices *PriceBook, set PickerSettings) {
+	costs := make([]*PickerCost, len(entries))
+	for i, e := range entries {
+		costs[i] = &PickerCost{Key: e.key, Name: e.name, Quality: e.cell.Score}
+	}
+	PickerExpectedCosts(costs, table, bucket, prices, set, PickerCostOptions{QualityV2: set.QualityV2})
+	for i, e := range entries {
+		c := costs[i]
+		e.cost, e.pass, e.rescue, e.expected = c.Cost, c.Pass, c.Rescue, c.Expected
+		e.costKnown, e.recorded, e.priceUnknown = c.CostKnown, c.Recorded, c.PriceUnknown
 	}
 }
 
@@ -192,8 +250,10 @@ func expectedCosts(entries []*pickerEntry, table *PickerTable, bucket int, price
 // the rest follow in the order the gate should try them.
 //
 // A candidate whose provider has no room stays in the order, at the end where
-// the gate refuses it with the reason of its own check: the ranking never
-// decides that a candidate may not run.
+// the gate refuses it with the reason of its own check. It does not compete: it
+// has no pace and no part in the best cell, the cost rule or the rotation, so
+// an exhausted provider is never ranked first or cheaper for the room left in
+// another of its windows.
 //
 // The second return value is empty when the cell rule picked. Otherwise it is
 // the reason the level rule makes the pick, for the note.
@@ -212,14 +272,14 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 		if provider == "" {
 			provider = QuotaProviderForStart(c.Harness, c.Model)
 		}
-		// The gate owns the quota check. The ranker only needs a pace for its
-		// order, so a used-up window is left out of that reading.
-		room, note, measured := WorkerQuotaPace(quotas, provider, c.Model)
+		// The gate owns the refusal. The ranker only keeps a blocked candidate
+		// out of the contest; the pace of the others is the tightest window.
+		room, note, measured, blocked := QuotaRoomForProvider(quotas, provider, c.Model)
 		if measured {
 			room -= 5 * float64(running[provider])
 		}
 		key := PickerModelKey(c.Harness, c.Model)
-		e := &pickerEntry{c: c, key: key, cell: table.Cell(key, bucket), quotaNote: note, room: room, measured: measured}
+		e := &pickerEntry{c: c, key: key, cell: table.Cell(key, bucket), quotaNote: note, room: room, measured: measured, blocked: blocked}
 		e.name = c.Name
 		if e.name == "" {
 			e.name = PickerModelDisplay(key)
@@ -234,17 +294,28 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 
 	// 1-3. The same decision the Quality subtab shows, one verdict per entry.
 	// The best cell, the interval test, the benchmark prior and the
-	// over-qualification test all live in PickerBucketVerdicts.
-	facts := make([]PickerCandidateFacts, len(entries))
-	for i, e := range entries {
-		facts[i] = PickerCandidateFacts{Key: e.key, Cell: e.cell, Scored: e.scored, Benchmark: e.bench, Ceiling: e.ceiling}
+	// over-qualification test all live in PickerBucketVerdicts. A blocked
+	// candidate is not in it: it cannot run, so it must not be the best that
+	// the others are measured against.
+	var live []*pickerEntry
+	var facts []PickerCandidateFacts
+	for _, e := range entries {
+		if e.blocked {
+			e.reason = e.quotaNote
+			continue
+		}
+		live = append(live, e)
+		facts = append(facts, PickerCandidateFacts{Key: e.key, Cell: e.cell, Scored: e.scored, Benchmark: e.bench, Ceiling: e.ceiling})
+	}
+	if len(live) == 0 {
+		return nil, "fallback to the level rule (every candidate is out of quota)"
 	}
 	verdicts, bestIdx := PickerBucketVerdicts(facts, bucketLo, table.BucketMean(bucket), bucket, set)
 	var bestEntry *pickerEntry
 	if bestIdx >= 0 {
-		bestEntry = entries[bestIdx]
+		bestEntry = live[bestIdx]
 	}
-	for i, e := range entries {
+	for i, e := range live {
 		e.allowed = verdicts[i].Allowed
 		e.prior = verdicts[i].Prior
 		e.reason = verdicts[i].Reason
@@ -476,6 +547,12 @@ func pickOrder(level string, picked WorkerModelChoice, chosen *pickerEntry, entr
 	for _, e := range rest {
 		add(e)
 	}
+	// A blocked candidate goes last, for the gate to refuse with its own reason.
+	for _, e := range entries {
+		if e.blocked {
+			add(e)
+		}
+	}
 	return order
 }
 
@@ -598,6 +675,11 @@ func cellPickRows(entries []*pickerEntry, p cellPick) []PickCandidate {
 			PaceFactor: quotaPaceFactor(e.room, e.measured), AdjustedCost: e.adjusted(),
 			Weight: p.weight[e], Probability: p.share[e],
 			Explore: p.exploring, ExploreCreditBefore: p.creditBefore, ExploreCreditAfter: p.creditAfter}
+		if math.IsInf(e.expected, 1) {
+			r.CostUnbounded = true
+			r.ExpectedCost = 0
+			r.AdjustedCost = 0
+		}
 		if e.measured {
 			room := e.room
 			r.PaceRoom = &room
@@ -613,7 +695,7 @@ func cellPickRows(entries []*pickerEntry, p cellPick) []PickCandidate {
 				runnerUp = e
 			}
 		}
-		if runnerUp != nil {
+		if runnerUp != nil && !math.IsInf(runnerUp.adjusted(), 0) && !math.IsInf(p.winner.adjusted(), 0) {
 			margin := runnerUp.adjusted() / p.winner.adjusted()
 			for i, e := range entries {
 				if e == p.winner {
@@ -633,6 +715,7 @@ type PickerCostRow struct {
 	Expected               float64
 	Recorded, PriceUnknown bool
 	CostKnown              bool
+	CostUnbounded          bool `json:"cost_unbounded,omitempty"`
 }
 
 // PickerCostRows gives the cost terms the pick compares for each candidate at
@@ -656,6 +739,10 @@ func PickerCostRows(candidates []WorkerModelCandidate, in *PickerInput) []Picker
 	for i, e := range entries {
 		out[i] = PickerCostRow{Name: e.name, Key: e.key, N: e.cell.N, Cost: e.cost, Pass: e.pass, Rescue: e.rescue, Expected: e.expected,
 			Recorded: e.recorded, PriceUnknown: e.priceUnknown, CostKnown: e.costKnown}
+		if math.IsInf(e.expected, 1) {
+			out[i].Expected = 0
+			out[i].CostUnbounded = true
+		}
 	}
 	return out
 }

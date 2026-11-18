@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"encoding/json"
 	"math"
 	"strings"
 	"testing"
@@ -997,5 +998,267 @@ func TestPickerCleanCellIsShrunkLikeTheScore(t *testing.T) {
 	near(t, "a score", a.Score, (3+5*13.0/23)/8)
 	if a.N != 3 || a.Lo >= a.Score || b.N != 20 || b.Score >= a.Score {
 		t.Fatalf("a %+v b %+v", a, b)
+	}
+}
+
+func TestPickerTaskScoreV2(t *testing.T) {
+	f := PickerTaskFacts{Complete: true, FixRounds: 2, FailedTest: 1, FailedAccept: 1, FailedReview: 1, DefectSeverity: 1}
+	if got := PickerTaskScoreV2(f); math.Abs(got-.05) > 1e-9 {
+		t.Fatalf("score = %v, want 0.05", got)
+	}
+	f.Complete = false
+	if got := PickerTaskScoreV2(f); got != 0 {
+		t.Fatalf("unfinished = %v", got)
+	}
+	f.Merged = true
+	if got := PickerTaskScoreV2(f); math.Abs(got-.05) > 1e-9 {
+		t.Fatalf("merged = %v", got)
+	}
+}
+
+func TestPickerQualityV2Parent(t *testing.T) {
+	tasks := pickTasks("gpt-6.1-sol:high", 2.5, repeat(8, .8, .4)...)
+	tasks = append(tasks, pickTasks("gpt-6.1-astra:high", 2.5, repeat(8, .8)...)...)
+	s := DefaultPickerSettings()
+	s.QualityV2 = true
+	table := BuildPickerTable(tasks, s)
+	b := table.Bucket(2.5)
+	parent := table.Cell("gpt-6.1-sol:high", b)
+	want := (parent.Score + table.BucketMean(b)) / 2
+	if c := table.Cell("gpt-6.2-sol:high", b); c.N != 5 || math.Abs(c.Score-want) > 1e-9 {
+		t.Fatalf("inherited cell: %+v, want score %v", c, want)
+	}
+	facts := []PickerCandidateFacts{{Key: "gpt-6.2-sol:high", Cell: table.Cell("gpt-6.2-sol:high", b)}}
+	verdicts, _ := PickerBucketVerdicts(facts, 2.33, table.BucketMean(b), b, s)
+	if !verdicts[0].Allowed {
+		t.Fatalf("inherited model is not a candidate: %+v", verdicts[0])
+	}
+	astra := table.Cell("gpt-6.2-astra:high", b)
+	if astra.N != 0 {
+		t.Fatalf("new class has parent: %+v", astra)
+	}
+	verdicts, _ = PickerBucketVerdicts([]PickerCandidateFacts{{Key: "gpt-6.2-astra:high", Cell: astra, Scored: true, Ceiling: 3}}, 2.33, table.BucketMean(b), b, s)
+	if !verdicts[0].Allowed || !verdicts[0].Prior {
+		t.Fatalf("new class benchmark prior: %+v", verdicts[0])
+	}
+}
+
+func TestPickerQualityV2Cost(t *testing.T) {
+	tasks := append(costTasks("terra", 2.5, .69, repeat(20, 1)...), costTasks("rescue", 2.5, 3.923, repeat(20, 1)...)...)
+	tasks = append(tasks, costTasks("sol", 2.5, 1.04, repeat(20, 1)...)...)
+	for i := 0; i < 8; i++ {
+		tasks[i].Dirty = true
+	}
+	set := DefaultPickerSettings()
+	table := BuildPickerTable(tasks, set)
+	b := table.Bucket(2.5)
+	prices := priceLadder("terra", "rescue", "sol")
+	legacy := []*PickerCost{{Key: "terra", Name: "terra"}, {Key: "rescue", Name: "rescue"}, {Key: "sol", Name: "sol"}}
+	PickerExpectedCosts(legacy, table, b, prices, set, PickerCostOptions{})
+	if math.Abs(legacy[0].Expected-2.05) > .01 || math.Abs(legacy[2].Expected-1.06) > .02 {
+		t.Fatalf("legacy jump: %+v %+v", legacy[0], legacy[2])
+	}
+	costs := []*PickerCost{{Key: "terra", Name: "terra"}, {Key: "rescue", Name: "rescue"}, {Key: "sol", Name: "sol"}}
+	PickerExpectedCosts(costs, table, b, prices, set, PickerCostOptions{QualityV2: true})
+	for _, c := range costs {
+		if math.Abs(c.Expected-c.Cost/c.Pass) > 1e-9 {
+			t.Fatalf("cost: %+v", c)
+		}
+	}
+	if costs[0].Expected >= costs[2].Expected {
+		t.Fatalf("terra retains ladder jump: %+v %+v", costs[0], costs[2])
+	}
+}
+
+func TestPickerQualityV2OffUnchanged(t *testing.T) {
+	tasks := append(costTasks("terra", 2.5, .69, repeat(10, 1)...), costTasks("sol", 2.5, 1.04, repeat(10, 1)...)...)
+	for i := 0; i < 3; i++ {
+		tasks[i].Dirty = true
+	}
+	set := DefaultPickerSettings()
+	table := BuildPickerTable(tasks, set)
+	b := table.Bucket(2.5)
+	entries := []*PickerCost{{Key: "terra", Name: "terra"}, {Key: "sol", Name: "sol"}}
+	PickerExpectedCosts(entries, table, b, priceLadder("terra", "sol"), set, PickerCostOptions{})
+	for _, e := range entries {
+		if math.Abs(e.Expected-(e.Cost+(1-e.Pass)*e.Rescue)) > 1e-9 {
+			t.Fatalf("legacy cost: %+v", e)
+		}
+	}
+	c := pickWith(t, tasks, priceLadder("terra", "sol"), "terra", "sol")
+	// This fixture was captured from the picker before quality_v2 was added.
+	got, err := json.Marshal(struct {
+		Name  string
+		Note  string
+		Costs []float64
+	}{c.Name, c.PickNote, []float64{c.PickRows[0].ExpectedCost, c.PickRows[1].ExpectedCost}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = `{"Name":"terra","Note":"bucket 2.33-2.67: terra 1.00 [1.00-1.00] n10, best; qualifying: terra 1.00 [1.00-1.00] n10 $0.69/run, p 0.75, $0.95 expected, sol 1.00 [1.00-1.00] n10 $1.04/run, p 0.95, $1.09 expected","Costs":[0.9499999999999997,1.0919999999999999]}`
+	if string(got) != want {
+		t.Fatalf("legacy pick changed: %s", got)
+	}
+}
+
+func TestPickerQualityV2ZeroCleanCostIsSerializable(t *testing.T) {
+	tasks := costTasks("bad", 2.5, .69, repeat(8, 0)...)
+	for i := range tasks {
+		tasks[i].Dirty = true
+	}
+	set := DefaultPickerSettings()
+	set.QualityV2 = true
+	table := BuildPickerTable(tasks, set)
+	rows := PickerCostRows(pickCandidates("bad"), &PickerInput{D: 2.5, Table: table, Prices: priceLadder("bad")})
+	if _, err := json.Marshal(rows); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPickerCostReplayOptions(t *testing.T) {
+	tasks := costTasks("m", 2.5, 1, repeat(10, 1)...)
+	for i := range tasks[:4] {
+		tasks[i].Dirty = true
+	}
+	set := DefaultPickerSettings()
+	table := BuildPickerTable(tasks, set)
+	cost := &PickerCost{Key: "m", Name: "m", Quality: .6}
+	PickerExpectedCosts([]*PickerCost{cost}, table, table.Bucket(2.5), priceLadder("m"), set, PickerCostOptions{QualityV2: true, Alpha: 2, BestQuality: .8, CleanFloor: .8})
+	if cost.MeetsFloor || math.Abs(cost.Rank-cost.Expected*math.Exp(.4)) > 1e-9 {
+		t.Fatalf("options: %+v", cost)
+	}
+}
+
+// A provider with an exhausted window is not cheaper for having room in its
+// other windows: it is out, as a start on it would be refused. The pick must
+// not rank it first, and its pace must not be read from the windows left.
+func TestPickExhaustedProviderIsNotFirstOrCheaper(t *testing.T) {
+	tasks := append(costTasks("a", 2.5, 1, repeat(5, 1)...), costTasks("b", 2.5, 1, repeat(5, 1)...)...)
+	scores := pickScores(map[string]float64{"a": 50, "b": 50})
+	c := pickCandidates("a", "b")
+	c[0].Provider, c[1].Provider = "pa", "pb"
+	const week = 7 * 24 * 3600
+	q := &Quotas{GeneratedAt: 1000, Providers: []QuotaProvider{
+		// pa's monthly window is used up; its weekly window is empty and early,
+		// which alone reads as a lot of room.
+		{Provider: "pa", Windows: []QuotaWindow{
+			{Kind: "monthly", PercentUsed: 100, Exhausted: true, ResetsAt: 1000 + 4*week},
+			{Kind: "weekly", PercentUsed: 0, ResetsAt: 1000 + week/2},
+		}},
+		{Provider: "pb", Windows: []QuotaWindow{{Kind: "weekly", PercentUsed: 50, ResetsAt: 1000 + week/2}}},
+	}}
+	in := &PickerInput{D: 2.5, Table: BuildPickerTable(tasks, DefaultPickerSettings())}
+	order, _, err := WorkerPickOrder(c, "normal", scores, nil, q, nil, &WorkerRotation{}, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if order[0].Name != "b" {
+		t.Fatalf("first choice = %s, want b: %v", order[0].Name, order[0].PickNote)
+	}
+	for _, row := range order[0].PickRows {
+		if row.Name == "a" && row.PaceFactor > 1 {
+			t.Errorf("exhausted provider got pace factor %.2f", row.PaceFactor)
+		}
+	}
+}
+
+// With picker.ceiling_rule on, a model above its benchmark ceiling needs a
+// record whose Lo reaches the best model's Lo. With it off, nothing changes.
+func TestPickerCeilingRuleVerdicts(t *testing.T) {
+	set := DefaultPickerSettings()
+	bucketLo, mean := 3.0, .5
+	best := PickerCell{Score: .9, Lo: .8, Hi: .98, N: 10}
+	facts := []PickerCandidateFacts{
+		{Key: "best", Cell: best, Scored: true, Benchmark: 60, Ceiling: 5},
+		// Ceiling 2.25 is below the bucket at 3.0. Lo .85 is not below best Lo.
+		{Key: "clear", Cell: PickerCell{Score: .92, Lo: .85, Hi: .99, N: 8}, Scored: true, Benchmark: 30, Ceiling: 2.25},
+		// Allowed today (Hi is above .9 x best) but Lo .6 is under the best Lo.
+		{Key: "unclear", Cell: PickerCell{Score: .85, Lo: .6, Hi: .95, N: 4}, Scored: true, Benchmark: 30, Ceiling: 2.25},
+		// Above its ceiling with a thin cell: out in both modes.
+		{Key: "thin", Cell: PickerCell{Score: mean, Lo: mean, Hi: mean}, Scored: true, Benchmark: 30, Ceiling: 2.25},
+		// No benchmark, so no ceiling to be above.
+		{Key: "unscored", Cell: PickerCell{Score: .8, Lo: .65, Hi: .95, N: 5}},
+	}
+	off, _ := PickerBucketVerdicts(facts, bucketLo, mean, 6, set)
+	if !off[1].Allowed || !off[2].Allowed || off[3].Allowed || !off[4].Allowed {
+		t.Fatalf("rule off changed verdicts: %+v", off)
+	}
+	set.CeilingRule = true
+	on, _ := PickerBucketVerdicts(facts, bucketLo, mean, 6, set)
+	if !on[0].Allowed || !on[1].Allowed {
+		t.Errorf("best and a clearly as good record must be allowed: %+v %+v", on[0], on[1])
+	}
+	if on[2].Allowed || on[2].Reason != "above its benchmark, record not as good as best" {
+		t.Errorf("unclear = %+v, want left out with the ceiling reason", on[2])
+	}
+	if on[3].Allowed || on[3].Reason != "above its benchmark" {
+		t.Errorf("thin = %+v, want left out above its benchmark", on[3])
+	}
+	if !on[4].Allowed {
+		t.Errorf("unscored = %+v, want allowed: no ceiling", on[4])
+	}
+	// Below its ceiling a model is not affected by the rule.
+	facts[2].Ceiling = 3.5
+	on, _ = PickerBucketVerdicts(facts, bucketLo, mean, 6, set)
+	if !on[2].Allowed {
+		t.Errorf("below its ceiling = %+v, want allowed", on[2])
+	}
+}
+
+// The setting reaches the pick: a cheaper model above its ceiling is the pick
+// with the rule off and is left out, with its reason in the note, with it on.
+func TestPickerCeilingRuleReachesThePick(t *testing.T) {
+	tasks := append(costTasks("strong", 3.0, 1, repeat(10, 1)...), costTasks("cheap", 3.0, .1, repeat(4, 1, 1, 1, 0)...)...)
+	scores := pickScores(map[string]float64{"strong": 60, "cheap": 20})
+	for _, on := range []bool{false, true} {
+		set := DefaultPickerSettings()
+		set.CeilingRule = on
+		in := &PickerInput{D: 3.0, Table: BuildPickerTable(tasks, set)}
+		order, _, err := WorkerPickOrder(pickCandidates("strong", "cheap"), "normal", scores, nil, nil, nil, &WorkerRotation{}, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := order[0].Name
+		if on && (got != "strong" || !strings.Contains(order[0].PickNote, "cheap")) {
+			t.Errorf("rule on: pick %s, note %q", got, order[0].PickNote)
+		}
+		if !on && got != "cheap" {
+			t.Errorf("rule off: pick %s, want cheap", got)
+		}
+	}
+}
+
+// The bucket width is one third to ten digits, so the bucket that starts at
+// D 3.0 starts at 2.9999999998. A model whose ceiling is 3.0 is above that
+// bucket and must be left out, as at D 3.20 where a normal-level model with
+// Lo 0.49 faced best models at Lo 0.65 and 0.58.
+func TestPickerCeilingRuleAtABucketEdge(t *testing.T) {
+	set := DefaultPickerSettings()
+	set.CeilingRule = true
+	table := BuildPickerTable(nil, set)
+	bucket := table.Bucket(3.2)
+	bucketLo, _ := table.BucketRange(bucket)
+	facts := []PickerCandidateFacts{
+		{Key: "sol", Cell: PickerCell{Score: .77, Lo: .65, Hi: .9, N: 17}, Scored: true, Benchmark: 46, Ceiling: 3.75},
+		{Key: "terra", Cell: PickerCell{Score: .69, Lo: .58, Hi: .8, N: 36}, Scored: true, Benchmark: 42, Ceiling: 3.75},
+		{Key: "deepseek", Cell: PickerCell{Score: .61, Lo: .49, Hi: .73, N: 27}, Scored: true, Benchmark: 32.5, Ceiling: 3.0},
+		// A thin cell with the same ceiling is above its benchmark too.
+		{Key: "thin", Cell: PickerCell{Score: .5, Lo: .5, Hi: .5}, Scored: true, Benchmark: 32.5, Ceiling: 3.0},
+	}
+	got, _ := PickerBucketVerdicts(facts, bucketLo, .5, bucket, set)
+	if !got[0].Allowed || !got[1].Allowed {
+		t.Errorf("sol and terra = %+v %+v, want allowed", got[0], got[1])
+	}
+	if got[2].Allowed || got[2].Reason != "above its benchmark, record not as good as best" {
+		t.Errorf("deepseek at bucket start %.10f = %+v, want left out", bucketLo, got[2])
+	}
+	if got[3].Allowed {
+		t.Errorf("thin = %+v, want left out", got[3])
+	}
+	// With the rule off the edge keeps its old reading.
+	set.CeilingRule = false
+	got, _ = PickerBucketVerdicts(facts, bucketLo, .5, bucket, set)
+	if !got[2].Allowed {
+		t.Errorf("rule off: deepseek = %+v, want unchanged (allowed)", got[2])
 	}
 }

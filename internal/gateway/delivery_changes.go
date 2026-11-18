@@ -862,7 +862,7 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	}
 	// A failed accept, review or test step lowers the score of the worker's
 	// task, and so does a defect agent-net recorded by itself.
-	if defectAdded || pickerStepCounts(e.Step, e.Result) {
+	if defectAdded || pickerStepCounts(e.Step, e.Result) || (e.Step == protocol.StepMerge && e.Result == protocol.StepResultPass && s.pickerTable().Settings().QualityV2) {
 		s.refreshPickerLogged()
 	}
 	for _, notice := range notices {

@@ -1,0 +1,6 @@
+# Copies of the snapshot are never committed.
+*.db
+*.db-shm
+*.db-wal
+# The built binary.
+/pickerreplay

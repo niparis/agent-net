@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -93,12 +94,17 @@ func insertPickRows(tx *sql.Tx, runID string, rows []protocol.PickCandidate) err
 			}
 			return v
 		}
+		expected, adjusted := r.ExpectedCost, r.AdjustedCost
+		// SQLite stores infinity as a real, preserving an unbounded result without a schema change.
+		if r.CostUnbounded {
+			expected, adjusted = math.Inf(1), math.Inf(1)
+		}
 		if _, err := stmt.Exec(runID, pos, r.Name, r.Harness, r.Provider, r.Model, r.Effort, r.Rule, r.BucketLo, r.BucketHi, r.Fallback,
 			nullIf(r.Cell.Score), nullIf(r.Cell.Lo), nullIf(r.Cell.Hi), nullIf(r.Cell.N),
 			boolInt(r.Allowed), boolInt(r.Qualified), boolInt(r.Prior), boolInt(r.Best), boolInt(r.Chosen), boolInt(r.Winner), r.LeftOutReason,
 			nullIf(boolInt(r.CostKnown)), nullIf(boolInt(r.CostRecorded)), nullIf(boolInt(r.PriceUnknown)),
-			nullIf(r.CostPerRun), nullIf(r.PClean), nullIf(r.RescueCost), nullIf(r.ExpectedCost),
-			optionalFloat(r.PaceRoom), r.PaceFactor, nullIf(r.AdjustedCost), r.Weight, r.Probability, r.SkippedReason, boolInt(r.Explore),
+			nullIf(r.CostPerRun), nullIf(r.PClean), nullIf(r.RescueCost), nullIf(expected),
+			optionalFloat(r.PaceRoom), r.PaceFactor, nullIf(adjusted), r.Weight, r.Probability, r.SkippedReason, boolInt(r.Explore),
 			optionalFloat(r.ExploreCreditBefore), optionalFloat(r.ExploreCreditAfter), optionalFloat(r.Margin)); err != nil {
 			return err
 		}

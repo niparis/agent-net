@@ -57,10 +57,11 @@ type PickCandidate struct {
 	// CostPerRun is the cost of one run. PClean is p, the clean share of the
 	// candidate's tasks. RescueCost is the run cost of the next dearer model.
 	// ExpectedCost is CostPerRun + (1 - PClean) x RescueCost.
-	CostPerRun   float64 `json:"cost_per_run"`
-	PClean       float64 `json:"p_clean"`
-	RescueCost   float64 `json:"rescue_cost"`
-	ExpectedCost float64 `json:"expected_cost"`
+	CostPerRun    float64 `json:"cost_per_run"`
+	PClean        float64 `json:"p_clean"`
+	RescueCost    float64 `json:"rescue_cost"`
+	ExpectedCost  float64 `json:"expected_cost"`
+	CostUnbounded bool    `json:"cost_unbounded,omitempty"`
 	// PaceRoom is the quota room in percentage points, nil when no window has a
 	// reading. PaceFactor is the factor the room gave (1 without a reading).
 	PaceRoom   *float64 `json:"pace_room,omitempty"`
@@ -237,6 +238,9 @@ func pickCostText(r PickCandidate) string {
 		return ""
 	}
 	text := fmt.Sprintf(" $%.2f/run, p %.2f, $%.2f expected", r.CostPerRun, r.PClean, r.ExpectedCost)
+	if r.CostUnbounded {
+		text = fmt.Sprintf(" $%.2f/run, p %.2f, unbounded expected cost", r.CostPerRun, r.PClean)
+	}
 	if !r.CostRecorded {
 		text = " est" + text
 	}

@@ -46,6 +46,10 @@
 # (B12). It also checks the Markdown under docs/ when a file there changed. A
 # repository without tools/rulecheck has no rule checks. Its own tests run in CI,
 # with go -C tools/rulecheck test, so a change there is not run here.
+#
+# The picker replay (tools/pickerreplay) is also its own Go module. Its tests run
+# in CI with go -C tools/pickerreplay test, so a change there is not run here
+# either.
 
 set -u
 
@@ -165,6 +169,8 @@ rule_of() {
   case $1 in
     tools/rulecheck/*)
       echo tool ;;
+    tools/pickerreplay/*)
+      echo replaytool ;;
     internal/gateway/store.go|internal/gateway/migrations*.go|internal/gateway/testdata/migrations.lock)
       echo migration ;;
     *_test.go)
@@ -294,6 +300,9 @@ printf '%s\n' "$changed" | while IFS= read -r path; do
     tool)
       printf '%s\trule checker module, its tests run in CI (go -C tools/rulecheck test)\n' "$path" >>"$work/skips"
       ;;
+    replaytool)
+      printf '%s\tpicker replay module, its tests run in CI (go -C tools/pickerreplay test)\n' "$path" >>"$work/skips"
+      ;;
     text)
       # Text that goldens quote: run its own package, then the tui goldens.
       [ -n "$pkg" ] || continue
@@ -375,7 +384,7 @@ awk -F "$(printf '\t')" '$1 ~ /\.go$/ { print $1 }' "$work/files" |
   while IFS= read -r file; do
     [ -f "$file" ] && printf '%s\n' "$file"
   done >"$work/gofmt-files"
-changed_packages=$(awk -F "$(printf '\t')" '$1 ~ /\.go$/ && $3 !~ /^tools\/rulecheck/ { print $3 }' "$work/files" | sed '/^$/d' | sort -u)
+changed_packages=$(awk -F "$(printf '\t')" '$1 ~ /\.go$/ && $3 !~ /^tools\/(rulecheck|pickerreplay)(\/|$)/ { print $3 }' "$work/files" | sed '/^$/d' | sort -u)
 if [ -s "$work/gofmt-files" ]; then
   printf 'gofmt -l on %s changed Go file(s)\n' "$(wc -l <"$work/gofmt-files" | tr -d ' ')"
   if [ "$plan" = 1 ]; then
@@ -413,7 +422,7 @@ fi
 # file under docs/ changed. Comment-only Go changes cannot break those rules, so
 # they are not in the list. The checker is built with the real Go, then run from
 # the repository root, where its patterns and the lock baseline are relative.
-rule_list=$(awk -F "$(printf '\t')" '$1 ~ /\.go$/ && $2 != "comment" && $3 != "" && $3 !~ /^tools\/rulecheck/ { print "./" $3 }' "$work/files" | sort -u | paste -sd ' ' -)
+rule_list=$(awk -F "$(printf '\t')" '$1 ~ /\.go$/ && $2 != "comment" && $3 != "" && $3 !~ /^tools\/(rulecheck|pickerreplay)(\/|$)/ { print "./" $3 }' "$work/files" | sort -u | paste -sd ' ' -)
 rule_docs=
 if awk -F "$(printf '\t')" '$1 ~ /^docs\/.*\.md$/ { found = 1 } END { exit !found }' "$work/files"; then
   rule_docs=docs
