@@ -173,12 +173,21 @@ func permissionAskText(p protocol.PermissionProposal) string {
 			fmt.Fprintf(&b, "Machine: %s (%s)\n", host, p.Targets[0].NodeID)
 		}
 		b.WriteString("Folders:\n")
+		servers := false
 		for _, t := range p.Targets {
 			fmt.Fprintf(&b, "  - %s\n", t.Path)
+			if len(t.MCPServers) > 0 {
+				fmt.Fprintf(&b, "    also approves MCP servers: %s\n", strings.Join(t.MCPServers, ", "))
+				servers = true
+			}
 		}
 		fmt.Fprintf(&b, "Reason: %s\n", p.Reason)
 		fmt.Fprintf(&b, "Proposed by: %s (%s)\n", p.ProposedName, p.ProposedBy)
-		b.WriteString("After approval, the machine trusts the folder for Claude Code. A session already running there may need a restart, or /hooks opened once.")
+		if servers {
+			b.WriteString("After approval, the machine trusts the folder for Claude Code and approves those servers from the folder's own .mcp.json. A session already running there may need a restart, or /hooks opened once.")
+		} else {
+			b.WriteString("After approval, the machine trusts the folder for Claude Code. A session already running there may need a restart, or /hooks opened once.")
+		}
 		return b.String()
 	}
 	fmt.Fprintf(&b, "Allow %d Claude Code permission rule(s) in %d repo(s)?\n", len(p.Rules), len(p.Targets))
@@ -238,7 +247,7 @@ func (s *Store) insertPermissionProposal(tx *sql.Tx, p protocol.PermissionPropos
 // permissionRulesAndTargets checks the rules and resolves the targets of one
 // proposal kind. A proposal and the CTO's apply on the owner's words resolve
 // them the same way.
-func (s *Store) permissionRulesAndTargets(kind string, rawRules, rawTargets []string, machine string) ([]string, []protocol.PermissionTarget, error) {
+func (s *Store) permissionRulesAndTargets(kind string, rawRules, rawTargets []string, machine string, mcpByPath map[string][]string) ([]string, []protocol.PermissionTarget, error) {
 	switch kind {
 	case protocol.PermissionKindRules:
 		if strings.TrimSpace(machine) != "" {
@@ -270,7 +279,13 @@ func (s *Store) permissionRulesAndTargets(kind string, rawRules, rawTargets []st
 		if err != nil {
 			return nil, nil, err
 		}
-		return nil, trustTargets(nodeID, hostname, paths), nil
+		targets := trustTargets(nodeID, hostname, paths)
+		for i := range targets {
+			if names := mcpByPath[targets[i].Path]; len(names) > 0 {
+				targets[i].MCPServers = names
+			}
+		}
+		return nil, targets, nil
 	}
 	return nil, nil, reject("kind must be permissions or trust")
 }
@@ -294,7 +309,7 @@ func (s *Store) ProposePermission(frame protocol.PermissionProposeFrame) (protoc
 	if len(reason) > protocol.MaxBodyBytes {
 		return res, reject("the reason is too long")
 	}
-	rules, targets, err := s.permissionRulesAndTargets(kind, frame.Rules, frame.Targets, frame.Machine)
+	rules, targets, err := s.permissionRulesAndTargets(kind, frame.Rules, frame.Targets, frame.Machine, frame.MCPServersByPath)
 	if err != nil {
 		return res, err
 	}
@@ -385,9 +400,10 @@ func (s *Store) permissionScopeHolder(session string, p protocol.PermissionPropo
 }
 
 // RaiseTrustAsk opens the gateway's own trust ask after a session start,
-// resume or wake answered needs_trust. It is deduped by machine and folder
-// while an ask is open. It writes nothing.
-func (s *Store) RaiseTrustAsk(session, nodeID, hostname, path, project, reason string) (bool, error) {
+// resume or wake answered needs_trust. servers names the folder's own .mcp.json
+// servers the click also approves. It is deduped by machine and folder while an
+// ask is open. It writes nothing.
+func (s *Store) RaiseTrustAsk(session, nodeID, hostname, path, project, reason string, servers []string) (bool, error) {
 	path = strings.TrimSpace(path)
 	nodeID = strings.TrimSpace(nodeID)
 	if path == "" || !filepath.IsAbs(path) {
@@ -419,10 +435,14 @@ func (s *Store) RaiseTrustAsk(session, nodeID, hostname, path, project, reason s
 	if strings.TrimSpace(reason) == "" {
 		reason = fmt.Sprintf("%s needs Claude Code folder trust for %s on %s", name, path, hostname)
 	}
+	targets := trustTargets(nodeID, hostname, []string{path})
+	if len(servers) > 0 {
+		targets[0].MCPServers = servers
+	}
 	p := protocol.PermissionProposal{
 		ID:           protocol.NewID("pp"),
 		Kind:         protocol.PermissionKindTrust,
-		Targets:      trustTargets(nodeID, hostname, []string{path}),
+		Targets:      targets,
 		Reason:       strings.TrimSpace(reason),
 		ProposedBy:   who,
 		ProposedName: name,
@@ -610,7 +630,7 @@ func (s *Store) ApprovePermissionOnOwnerWords(frame protocol.PermissionOwnerAppl
 	if kind == "" {
 		return "", reject("kind must be permissions or trust")
 	}
-	rules, targets, err := s.permissionRulesAndTargets(kind, req.Rules, req.Targets, req.Machine)
+	rules, targets, err := s.permissionRulesAndTargets(kind, req.Rules, req.Targets, req.Machine, nil)
 	if err != nil {
 		return "", err
 	}
@@ -646,19 +666,25 @@ func permissionResultLine(r protocol.PermissionApplyResult) string {
 	}
 	if r.Kind == protocol.PermissionKindTrust {
 		head := fmt.Sprintf("%s on %s: ", r.Target.Path, host)
+		status := ""
 		switch r.Status {
 		case "applied":
-			return head + "trusted"
+			status = "trusted"
 		case "already_present":
-			return head + "was already trusted"
+			status = "was already trusted"
 		case "removed":
-			return head + "trust removed"
+			status = "trust removed"
 		case "absent":
-			return head + "no trust to remove"
+			status = "no trust to remove"
 		case "failed":
 			return head + "failed: " + r.Error
+		default:
+			return head + r.Status
 		}
-		return head + r.Status
+		if len(r.MCPAdded) > 0 {
+			status += ", approved its MCP servers: " + strings.Join(r.MCPAdded, ", ")
+		}
+		return head + status
 	}
 	head := fmt.Sprintf("%s on %s (%s): ", r.Target.Name, host, r.Target.Path)
 	switch r.Status {
@@ -688,7 +714,7 @@ func (s *Store) RecordPermissionResult(id string, results []protocol.PermissionA
 			status = "failed"
 		}
 		if r.Kind == protocol.PermissionKindTrust {
-			if r.TrustAdded {
+			if r.TrustAdded || len(r.MCPAdded) > 0 {
 				undoable = true
 			}
 		} else if len(r.Added) > 0 {
@@ -873,7 +899,7 @@ func (g *Gateway) undoPermissionProposal(ctx context.Context, id string) (protoc
 	var results []protocol.PermissionApplyResult
 	for _, prior := range p.Results {
 		if prior.Kind == protocol.PermissionKindTrust {
-			if !prior.TrustAdded {
+			if !prior.TrustAdded && len(prior.MCPAdded) == 0 {
 				continue
 			}
 		} else if len(prior.Added) == 0 {
@@ -889,6 +915,10 @@ func (g *Gateway) undoPermissionProposal(ctx context.Context, id string) (protoc
 		frame := protocol.PermissionRevokeFrame{ProposalID: id, Kind: prior.Kind, Path: prior.Target.Path}
 		if prior.Kind != protocol.PermissionKindTrust {
 			frame.Rules = prior.Added
+		} else {
+			frame.TrustAdded = prior.TrustAdded
+			frame.MCPAdded = prior.MCPAdded
+			frame.MCPRestored = prior.MCPRestored
 		}
 		cctx, cancel := context.WithTimeout(ctx, PermissionApplyTimeout)
 		raw, err := nc.call(cctx, protocol.FramePermissionRevoke, frame)
@@ -918,7 +948,7 @@ func (g *Gateway) undoPermissionProposal(ctx context.Context, id string) (protoc
 
 // raiseTrustAsk is the gateway's own ask after a start, resume or wake answered
 // needs_trust. The reason names the session, the folder and the machine.
-func (g *Gateway) raiseTrustAsk(session, nodeID, hostname, path, project, requester string) {
+func (g *Gateway) raiseTrustAsk(session, nodeID, hostname, path, project, requester string, servers []string) {
 	who := strings.TrimSpace(session)
 	if who == "" {
 		who = strings.TrimSpace(requester)
@@ -937,7 +967,7 @@ func (g *Gateway) raiseTrustAsk(session, nodeID, hostname, path, project, reques
 	if strings.TrimSpace(project) != "" {
 		reason += " (project " + project + ")"
 	}
-	created, err := g.store.RaiseTrustAsk(who, nodeID, hostname, path, project, reason)
+	created, err := g.store.RaiseTrustAsk(who, nodeID, hostname, path, project, reason, servers)
 	if err != nil {
 		g.logLine("permission.trust_ask.failed", "node", nodeID, "path", path, "error", err.Error())
 		return

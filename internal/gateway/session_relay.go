@@ -155,7 +155,7 @@ func (g *Gateway) handleSessionRelay(ctx context.Context, nc *nodeConn, typ stri
 		if res.Status == "needs_trust" && res.Path != "" {
 			// The owner gets one ask, deduped by machine and folder, instead of
 			// an agent granting trust for itself.
-			g.raiseTrustAsk(relay.SessionID, nodeID, res.Hostname, res.Path, res.Project, relay.Owner)
+			g.raiseTrustAsk(relay.SessionID, nodeID, res.Hostname, res.Path, res.Project, relay.Owner, res.TrustMCPServers)
 		}
 		if res.Status == "failed" {
 			return res, nil

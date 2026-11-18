@@ -137,11 +137,18 @@ func TestPermissionTrustProposalAndDedupedAsk(t *testing.T) {
 			t.Errorf("trust ask does not name %q:\n%s", want, text)
 		}
 	}
-	created, err := s.RaiseTrustAsk(session, node, "box", "/tmp/three", "proj", "session needs trust")
+	created, err := s.RaiseTrustAsk(session, node, "box", "/tmp/three", "proj", "session needs trust", []string{"tenebrae-library"})
 	if err != nil || !created {
 		t.Fatalf("first automatic ask: created=%v err=%v", created, err)
 	}
-	created, err = s.RaiseTrustAsk(session, node, "box", "/tmp/three", "proj", "session needs trust again")
+	var automatic string
+	if err := s.db.QueryRow(`SELECT text FROM inbox_items WHERE source_ref IN (SELECT '`+permissionAskPrefix+`'||id FROM permission_proposals WHERE dedupe_key=?)`, node+"\x00/tmp/three").Scan(&automatic); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(automatic, "also approves MCP servers: tenebrae-library") {
+		t.Fatalf("automatic trust ask does not name the server it approves:\n%s", automatic)
+	}
+	created, err = s.RaiseTrustAsk(session, node, "box", "/tmp/three", "proj", "session needs trust again", nil)
 	if err != nil || created {
 		t.Fatalf("duplicate automatic ask: created=%v err=%v", created, err)
 	}

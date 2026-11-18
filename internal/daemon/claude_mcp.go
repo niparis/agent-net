@@ -30,42 +30,57 @@ func claudeMCPServers(dir string) []protocol.MCPServerInfo {
 	var out []protocol.MCPServerInfo
 	seen := map[string]bool{}
 	for cur := filepath.Clean(dir); ; {
-		file := filepath.Join(cur, ".mcp.json")
-		if raw, err := os.ReadFile(file); err == nil {
-			var doc struct {
-				Servers map[string]struct {
-					Type    string   `json:"type"`
-					Command string   `json:"command"`
-					Args    []string `json:"args"`
-					URL     string   `json:"url"`
-				} `json:"mcpServers"`
-			}
-			if json.Unmarshal(raw, &doc) == nil {
-				names := make([]string, 0, len(doc.Servers))
-				for name := range doc.Servers {
-					names = append(names, name)
-				}
-				sort.Strings(names)
-				for _, name := range names {
-					if seen[name] {
-						continue
-					}
-					seen[name] = true
-					s := doc.Servers[name]
-					command := strings.TrimSpace(strings.Join(append([]string{s.Command}, s.Args...), " "))
-					if s.Command == "" {
-						command = firstNonEmpty(s.URL, s.Type)
-					}
-					out = append(out, protocol.MCPServerInfo{Name: name, Command: cleanLine(command), File: file})
-				}
-			}
-		}
+		out = append(out, readClaudeMCPServers(filepath.Join(cur, ".mcp.json"), seen)...)
 		parent := filepath.Dir(cur)
 		if parent == cur {
 			return out
 		}
 		cur = parent
 	}
+}
+
+// claudeMCPServersIn lists only the servers of dir's own .mcp.json file.
+func claudeMCPServersIn(dir string) []protocol.MCPServerInfo {
+	return readClaudeMCPServers(filepath.Join(filepath.Clean(dir), ".mcp.json"), map[string]bool{})
+}
+
+// readClaudeMCPServers appends the servers a file defines, skipping names in
+// seen, and records them in seen.
+func readClaudeMCPServers(file string, seen map[string]bool) []protocol.MCPServerInfo {
+	var out []protocol.MCPServerInfo
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		return nil
+	}
+	var doc struct {
+		Servers map[string]struct {
+			Type    string   `json:"type"`
+			Command string   `json:"command"`
+			Args    []string `json:"args"`
+			URL     string   `json:"url"`
+		} `json:"mcpServers"`
+	}
+	if json.Unmarshal(raw, &doc) != nil {
+		return nil
+	}
+	names := make([]string, 0, len(doc.Servers))
+	for name := range doc.Servers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		s := doc.Servers[name]
+		command := strings.TrimSpace(strings.Join(append([]string{s.Command}, s.Args...), " "))
+		if s.Command == "" {
+			command = firstNonEmpty(s.URL, s.Type)
+		}
+		out = append(out, protocol.MCPServerInfo{Name: name, Command: cleanLine(command), File: file})
+	}
+	return out
 }
 
 func claudeLocalSettingsFile(dir string) string {
@@ -152,6 +167,16 @@ func containsName(list []string, name string) bool {
 	return false
 }
 
+// mcpServerNames returns the names of servers, sorted.
+func mcpServerNames(servers []protocol.MCPServerInfo) []string {
+	names := make([]string, 0, len(servers))
+	for _, s := range servers {
+		names = append(names, s.Name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 func withoutNames(list, drop []string) []string {
 	var out []string
 	for _, n := range list {
@@ -174,6 +199,29 @@ func claudeMCPChoose(dir, choice string) (protocol.MCPChoiceResult, error) {
 	if len(res.Servers) == 0 {
 		return res, fmt.Errorf("no servers in a .mcp.json file at or above %s", dir)
 	}
+	return writeClaudeMCPChoice(res)
+}
+
+// claudeMCPApproveOwn approves the servers of the folder's own .mcp.json, and
+// only those. names narrows the approval to the servers a trust proposal listed;
+// empty approves every server that file defines. A folder with no .mcp.json, or
+// with none of the named servers, is left as it is.
+func claudeMCPApproveOwn(dir string, names []string) (protocol.MCPChoiceResult, error) {
+	res := protocol.MCPChoiceResult{Choice: protocol.MCPApprove, Path: dir, File: claudeLocalSettingsFile(dir)}
+	for _, s := range claudeMCPServersIn(dir) {
+		if len(names) == 0 || containsName(names, s.Name) {
+			res.Servers = append(res.Servers, s)
+		}
+	}
+	if len(res.Servers) == 0 {
+		return res, nil
+	}
+	return writeClaudeMCPChoice(res)
+}
+
+// writeClaudeMCPChoice records res.Choice for res.Servers in res.File.
+func writeClaudeMCPChoice(res protocol.MCPChoiceResult) (protocol.MCPChoiceResult, error) {
+	choice := res.Choice
 	doc, err := readClaudeLocalSettings(res.File)
 	if err != nil {
 		return res, err
