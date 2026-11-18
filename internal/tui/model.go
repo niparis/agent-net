@@ -1200,6 +1200,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.onEnter(enterMsg{name: msg.name, plan: msg.plan})
+	case signInCompleteMsg:
+		if msg.err != nil {
+			m.fail("Sign-in could not finish: " + sanitize(msg.err.Error()))
+		} else {
+			m.say("Sign-in finished. Checking quota.")
+		}
+		return m, nil
 	case onboardingMsg:
 		if msg.revision != m.onboardingRevision {
 			return m, nil
@@ -3069,6 +3076,9 @@ func (m *Model) fixScroll() {
 
 // applyCTOUI applies a CTO request or a daemon notice from the local channel.
 func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
+	if q.SignInAskID != "" {
+		return m, m.inboxSignIn(inboxRow{ask: protocol.Ask{ID: q.SignInAskID}})
+	}
 	if q.EnterSession != "" {
 		if q.EnterCTO {
 			return m.openCTO(q.EnterSession)

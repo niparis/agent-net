@@ -237,9 +237,10 @@ type EnterRequest struct {
 // the session. Otherwise a front end runs Argv in Dir with Env added and comes
 // back when it ends. When Argv is empty, Note explains the result.
 type EnterPlan struct {
-	Argv []string `json:"argv,omitempty"`
-	Dir  string   `json:"dir,omitempty"`
-	Name string   `json:"name,omitempty"`
+	SignInAskID string   `json:"sign_in_ask_id,omitempty"`
+	Argv        []string `json:"argv,omitempty"`
+	Dir         string   `json:"dir,omitempty"`
+	Name        string   `json:"name,omitempty"`
 	// Env is added to the environment of the command. It holds secrets of a
 	// private worker server, so it only comes for a session on the asking
 	// machine and never crosses the gateway.

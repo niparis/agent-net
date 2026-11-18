@@ -175,8 +175,7 @@ func (m Model) askRow(a protocol.Ask) (inboxRow, bool) {
 		row.group, row.key, row.kind = inboxNotice, "brief:"+a.ID, "brief"
 		row.name, row.text = firstNonEmpty(a.From, "Daily brief"), inboxFirstLine(a.Question)
 	case protocol.AskKindSignIn:
-		// The one action opens the CLI's own login in a herdr pane on the
-		// machine the ask names. The row never shows a command to type.
+		// The row never shows a command to type.
 		row.group, row.key, row.kind = inboxApproval, "signin:"+a.ID, "signin"
 		row.name, row.text = firstNonEmpty(a.From, "agent-net"), inboxFirstLine(a.Question)
 	default:
@@ -1107,7 +1106,7 @@ func (m Model) inboxDetailLines(row inboxRow) []string {
 		if row.ask.Detail != "" {
 			out = append(out, "", sanitizeBody(row.ask.Detail))
 		}
-		out = append(out, "", "Press i to open the sign-in pane on the machine.")
+		out = append(out, "", "Press i to open sign-in here.", "Open the link in Firefox, not Safari.")
 	case "waiting":
 		out = append(out, "Session: "+sanitize(m.inboxSessionName(row.session)), sanitize(row.text))
 	}
@@ -1145,7 +1144,7 @@ func (m Model) inboxSignIn(row inboxRow) tea.Cmd {
 		if err := json.Unmarshal(raw, &plan); err != nil {
 			return inboxSignInMsg{err: fmt.Errorf("bad sign-in answer")}
 		}
-		return inboxSignInMsg{name: "sign in", plan: plan}
+		return inboxSignInMsg{name: "sign in: Firefox, not Safari", plan: plan}
 	}
 }
 

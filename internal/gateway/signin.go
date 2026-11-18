@@ -180,3 +180,28 @@ func (g *Gateway) signInClose(nc *nodeConn, raw []byte) error {
 	}
 	return g.store.CloseSignIn(nc.id, p.Provider, p.Reason)
 }
+
+// signInTransfer relays credentials only to the node named by the open ask.
+// Neither the token nor the other node's output is written to the store or log.
+func (g *Gateway) signInTransfer(ctx context.Context, nc *nodeConn, raw []byte) (json.RawMessage, error) {
+	var p protocol.SignInTransfer
+	if json.Unmarshal(raw, &p) != nil || p.AskID == "" || p.Token == "" {
+		return nil, reject("bad sign-in transfer")
+	}
+	if !g.validToolOwner(nc, p.Owner) {
+		return nil, reject("owner authority required")
+	}
+	a, provider, err := g.store.SignInAsk(p.AskID)
+	if err != nil {
+		return nil, err
+	}
+	target := g.conn(a.Node)
+	if target == nil {
+		return nil, reject("the machine for this sign-in is offline")
+	}
+	_, err = target.request(ctx, protocol.FrameSignInImport, protocol.SignInImport{Provider: provider, Token: p.Token}, defaultRelayWait)
+	if err != nil {
+		return nil, reject("the target could not complete sign-in")
+	}
+	return json.Marshal(map[string]bool{"ok": true})
+}

@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/quotaaxi"
 )
 
 // Sign-in asks (decision 0132). When quota-axi reports that a CLI needs the
@@ -31,7 +35,13 @@ type signInState struct {
 	// raised maps a provider key to the open ask ID. It stays until the
 	// provider's quota error clears, so a dismissed ask is not raised again
 	// on every quota run.
-	raised map[string]string
+	raised  map[string]string
+	pending map[string]*signInPending
+}
+
+type signInPending struct {
+	provider, tempDir string
+	timer             *time.Timer
 }
 
 func (s *signInState) ids() map[string]string {
@@ -131,60 +141,197 @@ func (d *Daemon) syncSignInAsks(ctx context.Context, q *protocol.Quotas) {
 	}
 }
 
-// signInOpen returns the allowlisted login command for the asking terminal,
-// or opens it in a tab when that terminal is in herdr. Remote logins run on
-// the target machine and are viewed through herdr.
+// signInOpen runs the listener on the machine where the owner opened the TUI.
 func (d *Daemon) signInOpen(ctx context.Context, q protocol.SignInOpenRequest) (protocol.EnterPlan, error) {
 	if strings.TrimSpace(q.AskID) == "" {
 		return protocol.EnterPlan{}, errors.New("sign_in_open needs an ask")
+	}
+	if viaFrom(ctx) == protocol.ViaPhone {
+		request := protocol.UIRequest{SignInAskID: q.AskID}
+		if !d.showLocalOwnerEnter(request) {
+			_, err := d.call(ctx, "owner.ui.request", protocol.OwnerUIRelay{Owner: d.ownerSessionID(), Request: request})
+			if err != nil {
+				return protocol.EnterPlan{}, err
+			}
+		}
+		return protocol.EnterPlan{OpenedHerdr: true, Note: "Sign-in opened in the owner's TUI."}, nil
 	}
 	raw, err := d.call(ctx, "query.sign_in", protocol.SignInQuery{AskID: q.AskID})
 	if err != nil {
 		return protocol.EnterPlan{}, err
 	}
 	var target protocol.SignInTarget
-	if err := json.Unmarshal(raw, &target); err != nil {
+	if json.Unmarshal(raw, &target) != nil {
 		return protocol.EnterPlan{}, errors.New("bad sign-in answer")
 	}
 	info, ok := protocol.SignInProvider(target.Provider)
 	if !ok {
 		return protocol.EnterPlan{}, errors.New("unknown sign-in provider")
 	}
-	if target.NodeID == "" || target.NodeID == d.NodeID() {
-		plan := protocol.EnterPlan{Argv: append([]string(nil), info.Argv...), Host: d.hostName()}
-		return d.viewPlan("signin:"+info.Provider, "sign in: "+info.Label, false, plan), nil
+
+	pending := &signInPending{provider: info.Provider}
+	plan := protocol.EnterPlan{Argv: append([]string(nil), info.Argv...), Host: d.hostName(), SignInAskID: q.AskID}
+	env := d.signInEnv()
+	plan.Env = map[string]string{"HOME": envValue(env, "HOME"), "BAILIAN_CONFIG_DIR": envValue(env, "BAILIAN_CONFIG_DIR"), "PATH": envValue(env, "PATH")}
+	// The TUI resolves an executable before it applies Env. Pick the same bl
+	// that quota-axi finds in its PATH when the reader is configured.
+	if d.quota.pathText() != "" {
+		bin, err := signInBinary(env)
+		if err != nil {
+			return protocol.EnterPlan{}, err
+		}
+		plan.Argv[0] = bin
 	}
-	raw, err = d.call(ctx, "query.sign_in_prepare", protocol.SignInQuery{AskID: q.AskID, Owner: d.ownerSessionID()})
+	if target.NodeID != "" && target.NodeID != d.NodeID() {
+		pending.tempDir, err = os.MkdirTemp("", "agent-net-signin-*")
+		if err != nil {
+			return protocol.EnterPlan{}, errors.New("could not prepare sign-in")
+		}
+		// bl requests creation of a model API key when its config has none.
+		// This flow needs only a console token, so the private config marks
+		// an unused API key as present and is removed after the attempt.
+		if err := os.WriteFile(filepath.Join(pending.tempDir, "config.json"), []byte(`{"api_key":"unused"}`), 0600); err != nil {
+			_ = os.RemoveAll(pending.tempDir)
+			return protocol.EnterPlan{}, errors.New("could not prepare sign-in")
+		}
+		plan.Env["BAILIAN_CONFIG_DIR"] = pending.tempDir
+	}
+	d.signIn.put(q.AskID, pending)
+	return d.viewPlan("signin:"+info.Provider, "sign in: "+info.Label+" - Firefox, not Safari", false, plan), nil
+}
+
+// Only a completed, owner-opened attempt may read the freshly written token.
+func (s *signInState) put(id string, p *signInPending) {
+	s.mu.Lock()
+	if s.pending == nil {
+		s.pending = map[string]*signInPending{}
+	}
+	old := s.pending[id]
+	s.pending[id] = p
+	p.timer = time.AfterFunc(signInWatchFor, func() {
+		s.mu.Lock()
+		if s.pending[id] != p {
+			s.mu.Unlock()
+			return
+		}
+		delete(s.pending, id)
+		s.mu.Unlock()
+		if p.tempDir != "" {
+			_ = os.RemoveAll(p.tempDir)
+		}
+	})
+	s.mu.Unlock()
+	if old != nil {
+		old.timer.Stop()
+		if old.tempDir != "" {
+			_ = os.RemoveAll(old.tempDir)
+		}
+	}
+}
+
+func (s *signInState) take(id string) *signInPending {
+	s.mu.Lock()
+	p := s.pending[id]
+	delete(s.pending, id)
+	s.mu.Unlock()
+	if p != nil {
+		p.timer.Stop()
+	}
+	return p
+}
+
+func (d *Daemon) signInComplete(ctx context.Context, askID string, cancel bool) error {
+	p := d.signIn.take(askID)
+	if p == nil {
+		return errors.New("sign-in is no longer pending")
+	}
+	if cancel {
+		if p.tempDir != "" {
+			_ = os.RemoveAll(p.tempDir)
+		}
+		return nil
+	}
+	if p.tempDir == "" {
+		d.goBackground(func() { d.recheckSignIn(context.Background(), p.provider) })
+		return nil
+	}
+	defer os.RemoveAll(p.tempDir)
+	data, err := os.ReadFile(filepath.Join(p.tempDir, "config.json"))
 	if err != nil {
-		return protocol.EnterPlan{}, err
+		return errors.New("sign-in did not finish; open the ask to try again")
 	}
-	var res protocol.SignInPrepareResult
-	if err := json.Unmarshal(raw, &res); err != nil {
-		return protocol.EnterPlan{}, errors.New("bad sign-in prepare answer")
+	var credential struct {
+		Token  string `json:"access_token"`
+		Site   string `json:"console_site"`
+		Region string `json:"console_region"`
 	}
-	host := firstNonEmpty(cleanLine(res.Host), cleanLine(target.Hostname))
-	if !res.Opened {
-		return protocol.EnterPlan{Host: host, Note: firstNonEmpty(cleanLine(res.Note), "Could not open the sign-in pane.")}, nil
+	if json.Unmarshal(data, &credential) != nil || credential.Token == "" ||
+		(credential.Site != "" && credential.Site != "international") ||
+		(credential.Region != "" && credential.Region != "ap-southeast-1") {
+		return errors.New("sign-in did not return an international console token")
 	}
-	if host == "" {
-		return protocol.EnterPlan{Note: "The sign-in pane opened, but the machine did not say how to reach it."}, nil
+	if err := d.importSignIn(ctx, credential.Token); err != nil {
+		return err
 	}
-	bin := d.herdrBinary("")
-	if bin == "" {
-		return protocol.EnterPlan{Host: host, Note: fmt.Sprintf("The sign-in pane is open on %s in pane %s, but herdr is not installed here. Install it from https://herdr.dev/tui/docs/install/ to see it.", host, cleanLine(res.Pane))}, nil
+	_, err = d.call(ctx, "query.sign_in_transfer", protocol.SignInTransfer{AskID: askID, Owner: d.ownerSessionID(), Token: credential.Token})
+	if err != nil {
+		return errors.New("could not complete sign-in on the target machine")
 	}
-	targetHost := host
-	if t := d.cfg.EnterSSHHosts[host]; t != "" {
-		targetHost = t
+	d.goBackground(func() { d.recheckSignIn(context.Background(), p.provider) })
+	return nil
+}
+
+// signInEnv uses the same HOME, config directory and executable search path as
+// quota-axi. The browser login and token import must update the file it reads.
+func (d *Daemon) signInEnv() []string {
+	if path := d.quota.pathText(); path != "" {
+		if env, err := quotaaxi.NodeExecEnv(path); err == nil {
+			return env
+		}
 	}
-	if !sshTargetOK(targetHost) {
-		return protocol.EnterPlan{Host: host, Note: fmt.Sprintf("The sign-in pane is open on %s in pane %s, but enter_ssh_hosts gives a target herdr --remote cannot use.", host, cleanLine(res.Pane))}, nil
+	return os.Environ()
+}
+
+func envValue(env []string, name string) string {
+	for _, item := range env {
+		if value, ok := strings.CutPrefix(item, name+"="); ok {
+			return value
+		}
 	}
-	plan := protocol.EnterPlan{
-		Argv: herdrRemoteArgv(bin, targetHost, res.Session), Host: host,
-		Note: fmt.Sprintf("Opens herdr on %s; the sign-in is pane %s. Detach with ctrl+b then q (herdr's prefix + q) to come back here.", host, cleanLine(res.Pane)),
+	return ""
+}
+
+func signInBinary(env []string) (string, error) {
+	for _, dir := range filepath.SplitList(envValue(env, "PATH")) {
+		if dir == "" {
+			continue
+		}
+		path := filepath.Join(dir, "bl")
+		if st, err := os.Stat(path); err == nil && !st.IsDir() && st.Mode()&0111 != 0 {
+			return path, nil
+		}
 	}
-	return d.viewPlan("signin-remote:"+q.AskID, "sign in: "+info.Label, false, plan), nil
+	return "", errors.New("bl was not found in the quota reader's PATH")
+}
+
+func (d *Daemon) importSignIn(ctx context.Context, token string) error {
+	return importSignInWithEnv(ctx, token, d.signInEnv())
+}
+
+func importSignInWithEnv(ctx context.Context, token string, env []string) error {
+	bin, err := signInBinary(env)
+	if err != nil {
+		return err
+	}
+	info, _ := protocol.SignInProvider("alibaba")
+	cmd := exec.CommandContext(ctx, bin, info.ImportArgv[1:]...)
+	cmd.Env = env
+	cmd.Stdin = strings.NewReader(token)
+	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
+	if cmd.Run() != nil {
+		return errors.New("bl could not import the console login")
+	}
+	return nil
 }
 
 // signInPrepare opens the login pane on this machine for the gateway. The
@@ -199,7 +346,7 @@ func (d *Daemon) signInPrepare(raw []byte) (protocol.SignInPrepareResult, error)
 		return protocol.SignInPrepareResult{}, errors.New("unknown sign-in provider")
 	}
 	base := protocol.EnterPlan{Argv: append([]string(nil), info.Argv...), Host: d.hostName()}
-	plan := d.viewPlan("signin:"+info.Provider, "sign in: "+info.Label, true, base)
+	plan := d.viewPlan("signin:"+info.Provider, "sign in: "+info.Label+" - Firefox, not Safari", true, base)
 	if plan.OpenedHerdr {
 		d.watchSignIn(info.Provider, plan.HerdrPane)
 	}

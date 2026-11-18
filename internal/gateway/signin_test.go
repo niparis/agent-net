@@ -1,11 +1,17 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/coder/websocket"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -147,5 +153,95 @@ func TestSignInPrepareNeedsOwnerBeforeTargetFrame(t *testing.T) {
 	targetConn.pmu.Unlock()
 	if sent != 1 {
 		t.Fatalf("the owner's prepare did not reach the target: %d frame(s)", sent)
+	}
+}
+
+func TestSignInTransferNeedsOwnerAndDoesNotPersistToken(t *testing.T) {
+	const token = "throwaway-console-token-for-test"
+	s, _ := newTestStore(t)
+	source, _, _ := s.CreateNode("browser", "linux")
+	target, _, _ := s.CreateNode("remote", "linux")
+	ask, err := s.RaiseSignIn(target, "alibaba", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerID, err := s.UpsertSession(source, owner("browser"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conns := make(chan *websocket.Conn, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err == nil {
+			conns <- conn
+		}
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	client, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.CloseNow()
+	peer := <-conns
+	defer peer.CloseNow()
+	nc := &nodeConn{id: target, ws: client, cancel: func() {}}
+	got := make(chan protocol.SignInImport, 1)
+	go func() {
+		_, raw, e := peer.Read(ctx)
+		if e != nil {
+			return
+		}
+		var h protocol.Header
+		var p protocol.SignInImport
+		if json.Unmarshal(raw, &h) != nil || json.Unmarshal(raw, &p) != nil || h.Type != protocol.FrameSignInImport {
+			return
+		}
+		got <- p
+		response, _ := protocol.EncodeResult(h.ID, map[string]bool{"ok": true}, nil)
+		_ = peer.Write(ctx, websocket.MessageText, response)
+	}()
+	go func() {
+		_, raw, e := client.Read(ctx)
+		if e == nil {
+			var h protocol.Header
+			if json.Unmarshal(raw, &h) == nil {
+				nc.answer(h)
+			}
+		}
+	}()
+	var logs bytes.Buffer
+	g := &Gateway{store: s, conns: map[string]*nodeConn{target: nc}, logger: log.New(&logs, "", 0)}
+	payload := protocol.SignInTransfer{AskID: ask.ID, Token: token}
+	raw, _ := json.Marshal(payload)
+	if _, err := g.signInTransfer(ctx, &nodeConn{id: source}, raw); err == nil || !strings.Contains(err.Error(), "owner authority") {
+		t.Fatalf("unauthorized transfer: %v", err)
+	}
+	payload.Owner = ownerID
+	raw, _ = json.Marshal(payload)
+	answer, err := g.signInTransfer(ctx, &nodeConn{id: source}, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := <-got
+	if p.Provider != "alibaba" || p.Token != token {
+		t.Fatal("wrong transfer")
+	}
+	if strings.Contains(string(answer), token) || strings.Contains(logs.String(), token) {
+		t.Fatal("token in answer or log")
+	}
+	var dbPath string
+	if err := s.db.QueryRow(`SELECT file FROM pragma_database_list WHERE name='main'`).Scan(&dbPath); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{dbPath, dbPath + "-wal"} {
+		b, err := os.ReadFile(path)
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		if bytes.Contains(b, []byte(token)) {
+			t.Fatal("token in gateway store")
+		}
 	}
 }
