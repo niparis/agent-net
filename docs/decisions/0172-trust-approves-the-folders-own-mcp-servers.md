@@ -33,7 +33,9 @@ for the folder's own `.mcp.json` server `tenebrae-library`, then a
 
 The daemon approves the names in the folder's `.claude/settings.local.json`
 before Claude Code starts, so the background job does not stop on the approval
-prompt. An older gateway does not send the new server fields, and the daemon
-then falls back to the servers it finds in the folder's own file; the undo of an
-older trust approval still removes the trust alone. The CTO brief no longer
-sends the CTO to a separate `mcp_servers` step after a trust.
+prompt. An older gateway does not send the new server fields, so the daemon
+falls back to the servers it finds in the folder's own file. An undo from that
+older gateway removes the trust alone and leaves those approvals, because it
+does not know which names the click added; upgrade the gateway with the daemons.
+The CTO brief no longer sends the CTO to a separate `mcp_servers` step after a
+trust.
