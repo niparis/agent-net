@@ -30,10 +30,13 @@ The reports in `friction` do not change. An old database reads its reports as
 ## Who sets a state
 
 The owner's command line and TUI, and the CTO, set a state with `friction_mark`.
-That is the operator tier, so an agent session is refused, workers included.
+That is the operator tier.
 
-Leads are not in this first version. The daemon has no lead-only gate that a
-lead's tool list could use, so a lead gate needs its own design first.
+The pinned lead session of an agent sets a state with `agent_friction_mark`. The
+gateway checks the pin, the same rule the lead routing uses: the session must be
+the lead session its agent names. Workers are refused, even when a pin names
+their session. Any other agent session is refused too, and the refusal names
+the rule.
 
 ## Groups
 

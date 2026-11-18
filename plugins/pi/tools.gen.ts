@@ -507,6 +507,79 @@ export const TOOL_CATALOG = [
     "method": "file_send"
   },
   {
+    "name": "agent_friction_mark",
+    "description": "Lead sessions only: set the read status of friction reports (new, read, triaged, fixed, wontfix or infra) by ids, by group, or by a filter with project, area and text. Give link (a change id or a web address) and note when the mark has them. dry_run counts the matches first. Other sessions are refused.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "description": "Report ids to mark. Give one way to pick reports: ids, group, or a filter."
+        },
+        "group": {
+          "type": "string",
+          "description": "A group id from friction_find. Marks every report in the group."
+        },
+        "project": {
+          "type": "string",
+          "description": "Project name for a filter. Use with area or text."
+        },
+        "area": {
+          "type": "string",
+          "enum": [
+            "tooling",
+            "permissions",
+            "brief",
+            "review",
+            "ci",
+            "environment",
+            "skill"
+          ],
+          "description": "Area for a filter."
+        },
+        "text": {
+          "type": "string",
+          "description": "Text the reports must contain, without regard to case."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "new",
+            "read",
+            "triaged",
+            "fixed",
+            "wontfix",
+            "infra"
+          ],
+          "description": "The read status to set."
+        },
+        "link": {
+          "type": "string",
+          "description": "A change id such as ch_1234, or a web address. A mark without a link clears the old one."
+        },
+        "note": {
+          "type": "string",
+          "description": "One line of at most 200 characters. A mark without a note clears the old one."
+        },
+        "dry_run": {
+          "type": "boolean",
+          "description": "Count the matches and write nothing."
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent"
+    ],
+    "method": "friction_mark_lead"
+  },
+  {
     "name": "agent_graph_read",
     "description": "Read the graph: nodes with charters and rules, and their edges. Give node for one node and its edges; a shared name returns every node.",
     "inputSchema": {

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"database/sql"
+	"errors"
 	"sort"
 	"strconv"
 	"strings"
@@ -359,6 +360,42 @@ func (s *Store) MarkFriction(actor string, q protocol.FrictionMarkRequest) (prot
 	}
 	out.Marked = len(ids)
 	return out, nil
+}
+
+// MarkFrictionAsLead is the agent path of MarkFriction. Only the pinned lead
+// session of an Agent may set the status (decision 0175): any other session is
+// refused before anything is written.
+func (s *Store) MarkFrictionAsLead(session string, q protocol.FrictionMarkRequest) (protocol.FrictionMarkResult, error) {
+	lead, err := s.frictionLeadSession(session)
+	if err != nil {
+		return protocol.FrictionMarkResult{}, err
+	}
+	if !lead {
+		return protocol.FrictionMarkResult{}, reject("only a lead session can set the status of friction reports")
+	}
+	return s.MarkFriction(session, q)
+}
+
+// frictionLeadSession says whether a session is the pinned lead session of its
+// Agent. This is the same rule the lead routing uses (isLeadSessionQ).
+func (s *Store) frictionLeadSession(session string) (bool, error) {
+	var agent, worker string
+	err := s.db.QueryRow(`SELECT COALESCE(agent_id,''),COALESCE(worker,'') FROM sessions WHERE id=?`, session).Scan(&agent, &worker)
+	// A worker never leads, even when a pin names its session.
+	if errors.Is(err, sql.ErrNoRows) || agent == "" || worker != "" {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var pin string
+	if err := s.db.QueryRow(`SELECT COALESCE(lead_session,'') FROM agents WHERE id=?`, agent).Scan(&pin); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return pin != "" && pin == session, nil
 }
 
 // frictionMarkIDs returns the ids a mark picks, oldest first. Ids that name no

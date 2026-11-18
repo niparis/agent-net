@@ -265,6 +265,9 @@ func validFrictionArea(area string) bool {
 // request and the owner or CTO who made it.
 type FrictionMarkCall struct {
 	Actor string `json:"actor"`
+	// SessionID is set only for an agent's mark (friction_mark_lead). The gateway
+	// then checks that the session is a lead before it writes.
+	SessionID string `json:"session_id,omitempty"`
 	FrictionMarkRequest
 }
 
@@ -285,6 +288,11 @@ const OpFrictionMark = "friction_mark"
 
 // FrameFrictionMark sets the status of reports at the gateway.
 const FrameFrictionMark = "friction.mark"
+
+// OpFrictionMarkLead is the agent's mark, for the lead session of an Agent. The
+// daemon sends it as a FrameFrictionMark with the session id, and the gateway
+// refuses any session that is not a lead.
+const OpFrictionMarkLead = "friction_mark_lead"
 
 var (
 	frictionPathToken = regexp.MustCompile(`\S*/\S*`)

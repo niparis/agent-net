@@ -87,7 +87,12 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 		if derr != nil {
 			return nil, true, reject("bad %s", typ)
 		}
-		data, err = g.store.MarkFriction(q.Actor, q.FrictionMarkRequest)
+		if q.SessionID != "" {
+			// An agent's mark: the gateway checks that the session is a lead.
+			data, err = g.store.MarkFrictionAsLead(q.SessionID, q.FrictionMarkRequest)
+		} else {
+			data, err = g.store.MarkFriction(q.Actor, q.FrictionMarkRequest)
+		}
 	case protocol.FrameNudgePause:
 		q, derr := decode[protocol.NudgePauseRequest](raw)
 		if derr != nil {
