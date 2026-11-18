@@ -10,6 +10,26 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// fileSendDestinations names where each file of a sent message lands on the
+// receiving machine, with the original path of each renamed file.
+func fileSendDestinations(msg protocol.Message, sent []FileSent) []protocol.FileSendDestination {
+	sources := map[string]string{}
+	for _, f := range sent {
+		if f.Source != "" {
+			sources[f.Entry.ID] = f.Source
+		}
+	}
+	out := make([]protocol.FileSendDestination, 0, len(msg.Files))
+	for _, f := range msg.Files {
+		out = append(out, protocol.FileSendDestination{
+			Name:   f.Name,
+			Path:   filepath.ToSlash(filepath.Join(fileInboxFolder, msg.To, msg.ID, f.Name)),
+			Source: sources[f.ID],
+		})
+	}
+	return out
+}
+
 // localFileSend binds the sender to the caller, never to an argument.
 func (d *Daemon) localFileSend(ctx context.Context, lc *localConn, raw json.RawMessage) (any, error) {
 	sid, err := lc.boundID()
@@ -38,10 +58,7 @@ func (d *Daemon) localFileSend(ctx context.Context, lc *localConn, raw json.RawM
 	if sent.Message.ID == "" {
 		return nil, err
 	}
-	result := protocol.FileSendResult{MessageID: sent.Message.ID, Files: make([]protocol.FileSendDestination, 0, len(sent.Message.Files))}
-	for _, f := range sent.Message.Files {
-		result.Files = append(result.Files, protocol.FileSendDestination{Name: f.Name, Path: filepath.ToSlash(filepath.Join(fileInboxFolder, sent.Message.To, sent.Message.ID, f.Name))})
-	}
+	result := protocol.FileSendResult{MessageID: sent.Message.ID, Files: fileSendDestinations(sent.Message, sent.Files)}
 	if err != nil {
 		result.Error = err.Error()
 	}

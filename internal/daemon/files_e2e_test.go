@@ -585,3 +585,34 @@ func TestWorkerNoticeFilesWhenTaildropCannotBeCollected(t *testing.T) {
 		t.Fatalf("file = %q", got)
 	}
 }
+
+// Two files with one name from different folders both arrive, each under its
+// own name in the receiver's inbox, and the result names both original paths.
+func TestFilesSameBasenameSameMachine(t *testing.T) {
+	n := startFilesNet(t, filesNetOpts{layout: "darwin", tailnet: true})
+	n.fa.setSessions(
+		protocol.SessionInfo{Harness: "fake", NativeID: "na", PID: 1, Cwd: n.project, Name: "alice", Status: "idle"},
+		protocol.SessionInfo{Harness: "fake", NativeID: "nc", PID: 1, Cwd: t.TempDir(), Name: "carol", Status: "idle"},
+	)
+	eventually(t, "carol has an id", func() bool { return n.fa.host.SessionID("fake", "nc") != "" })
+	carol := n.fa.host.SessionID("fake", "nc")
+	first := writeTestFile(t, filepath.Join(n.project, "internal", "a", "README.md"), []byte("first readme"))
+	second := writeTestFile(t, filepath.Join(n.project, "internal", "b", "README.md"), []byte("second readme"))
+	ctx, cancel := context.WithTimeout(context.Background(), scaled(20*time.Second))
+	defer cancel()
+	res, err := n.a.d.SendFiles(ctx, FileSend{From: n.alice, To: carol, Body: "two readmes", Paths: []string{first, second}})
+	if err != nil {
+		t.Fatalf("SendFiles: %v", err)
+	}
+	n.waitDelivered(res.Message.ID)
+	inbox := filepath.Join(n.a.cfg.StateDir, "inbox", carol, res.Message.ID)
+	if got := string(mustReadFile(t, filepath.Join(inbox, "a__README.md"))); got != "first readme" {
+		t.Fatalf("a__README.md holds %q", got)
+	}
+	if got := string(mustReadFile(t, filepath.Join(inbox, "b__README.md"))); got != "second readme" {
+		t.Fatalf("b__README.md holds %q", got)
+	}
+	if len(res.Files) != 2 || res.Files[0].Source != first || res.Files[1].Source != second {
+		t.Fatalf("result does not name the original paths: %+v", res.Files)
+	}
+}

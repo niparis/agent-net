@@ -972,7 +972,7 @@ func (d *Daemon) sendNoticeToKeyWithFiles(ctx context.Context, w *worker, n prot
 	if len(report) > 48*1024 {
 		report = strings.ToValidUTF8(report[:48*1024], "") + "\n[report cut at 48 KB]"
 	}
-	body := d.workerToolchainPermissions(w, protocol.FormatWorkerNoticeWithSettings(n, report, d.SettingsSnapshot()))
+	body := d.workerToolchainPermissions(w, protocol.FormatWorkerNoticeWithSettings(n, report, d.SettingsSnapshot())) + renamedFilesNote(files)
 	if strings.Contains(n.DeliveryError, handbackUncommittedPushProblem) {
 		body = strings.Replace(body, "\nstatus: "+n.Status+"\n", "\nstatus: "+n.Status+", NOT PUSHED: uncommitted changes in the worktree\n", 1)
 	}

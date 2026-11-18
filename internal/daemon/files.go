@@ -185,22 +185,18 @@ func prepareFiles(paths []string, rules FileRules, snapshots string, afterCheck 
 		return nil, fmt.Errorf("%d files: at most %d files per message", len(paths), protocol.MaxFilesPerMessage)
 	}
 	type checked struct {
-		source, real, name string
-		info               os.FileInfo
+		source, real string
+		info         os.FileInfo
 	}
 	var list []checked
-	names := map[string]string{}
 	for _, p := range paths {
-		real, name, info, err := checkSendPath(p, rules)
+		real, info, err := checkSendPath(p, rules)
 		if err != nil {
 			return nil, err
 		}
-		if first, ok := names[name]; ok {
-			return nil, fmt.Errorf("%s and %s are both named %q; one message cannot hold two files with one name", first, p, name)
-		}
-		names[name] = p
-		list = append(list, checked{source: p, real: real, name: name, info: info})
+		list = append(list, checked{source: p, real: real, info: info})
 	}
+	names := manifestNames(paths)
 	if afterCheck != nil {
 		afterCheck()
 	}
@@ -213,11 +209,11 @@ func prepareFiles(paths []string, rules FileRules, snapshots string, afterCheck 
 	}
 	out := &OutgoingFiles{Dir: dir}
 	for i, c := range list {
-		entry := protocol.FileEntry{ID: fmt.Sprintf("f%d", i+1), Name: c.name}
+		entry := protocol.FileEntry{ID: fmt.Sprintf("f%d", i+1), Name: names[i]}
 		copyPath := filepath.Join(dir, entry.ID)
 		size, sum, text, err := snapshotFile(c.real, copyPath, c.info, rules.ConfineSymlinks)
 		if err == nil && text && !rules.AllowSecrets {
-			err = scanForSecrets(copyPath, c.name)
+			err = scanForSecrets(copyPath, entry.Name)
 		}
 		if err != nil {
 			out.Remove()
@@ -233,34 +229,99 @@ func prepareFiles(paths []string, rules FileRules, snapshots string, afterCheck 
 	return out, nil
 }
 
+// manifestNames gives each file its name in the message, in the order of the
+// paths. A name that occurs once is the file's own name. Files that share a
+// name get their folder's name in front ("a__README.md"), or their file ID
+// when that name is taken too ("f2__README.md"), so no two files of a message
+// share a name.
+func manifestNames(paths []string) []string {
+	count := map[string]int{}
+	for _, p := range paths {
+		count[filepath.Base(p)]++
+	}
+	names := make([]string, len(paths))
+	taken := map[string]bool{}
+	for i, p := range paths {
+		if base := filepath.Base(p); count[base] == 1 {
+			names[i] = base
+			taken[base] = true
+		}
+	}
+	for i, p := range paths {
+		base := filepath.Base(p)
+		if count[base] == 1 {
+			continue
+		}
+		candidates := []string{
+			filepath.Base(filepath.Dir(p)) + "__" + base,
+			fmt.Sprintf("f%d__%s", i+1, base),
+		}
+		for _, c := range candidates {
+			if !taken[c] && protocol.CheckFileName(c) == nil {
+				names[i] = c
+				break
+			}
+		}
+		if names[i] == "" {
+			names[i] = candidates[len(candidates)-1]
+		}
+		taken[names[i]] = true
+	}
+	return names
+}
+
+// renamed tells whether the message carries the file under a name other than
+// its own, because another file of the message has the same name.
+func (f OutgoingFile) renamed() bool {
+	return f.Entry.Name != filepath.Base(f.Source)
+}
+
+// renamedFilesNote lists the renamed files of a hand-back with the path each
+// came from. It is empty when no file was renamed.
+func renamedFilesNote(files *OutgoingFiles) string {
+	if files == nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, f := range files.Files {
+		if !f.renamed() {
+			continue
+		}
+		if b.Len() == 0 {
+			b.WriteString("files renamed because two files in the message had the same name:\n")
+		}
+		b.WriteString("  " + f.Entry.Name + " from " + f.Source + "\n")
+	}
+	return b.String()
+}
+
 // checkSendPath applies the path rules to one file. It returns the resolved
-// path, the name the receiver sees, and the identity of the checked file.
-func checkSendPath(p string, rules FileRules) (real, name string, info os.FileInfo, err error) {
+// path and the identity of the checked file.
+func checkSendPath(p string, rules FileRules) (real string, info os.FileInfo, err error) {
 	if !filepath.IsAbs(p) {
-		return "", "", nil, fmt.Errorf("%s: give the full path of the file", p)
+		return "", nil, fmt.Errorf("%s: give the full path of the file", p)
 	}
 	clean := filepath.Clean(p)
-	name = filepath.Base(clean)
-	if err := protocol.CheckFileName(name); err != nil {
-		return "", "", nil, fmt.Errorf("%s: %v", p, err)
+	if err := protocol.CheckFileName(filepath.Base(clean)); err != nil {
+		return "", nil, fmt.Errorf("%s: %v", p, err)
 	}
 	real, err = filepath.EvalSymlinks(clean)
 	if err != nil {
-		return "", "", nil, fmt.Errorf("cannot read %s: %w", p, err)
+		return "", nil, fmt.Errorf("cannot read %s: %w", p, err)
 	}
 	info, err = os.Lstat(real)
 	if err != nil {
-		return "", "", nil, fmt.Errorf("%s: cannot read it: %v", p, err)
+		return "", nil, fmt.Errorf("%s: cannot read it: %v", p, err)
 	}
 	if !info.Mode().IsRegular() {
-		return "", "", nil, fmt.Errorf("%s is not a regular file", p)
+		return "", nil, fmt.Errorf("%s is not a regular file", p)
 	}
 	if info.Size() > protocol.MaxFileBytes {
-		return "", "", nil, fmt.Errorf("%s is %d MB; the limit is %d MB per file", p, info.Size()>>20, protocol.MaxFileBytes>>20)
+		return "", nil, fmt.Errorf("%s is %d MB; the limit is %d MB per file", p, info.Size()>>20, protocol.MaxFileBytes>>20)
 	}
 	if rules.ConfineSymlinks {
 		if err := checkFileRoot(clean, real, rules); err != nil {
-			return "", "", nil, err
+			return "", nil, err
 		}
 	}
 	roots := resolvedRoots(rules.Roots)
@@ -277,7 +338,7 @@ func checkSendPath(p string, rules FileRules) (real, name string, info os.FileIn
 	}
 	for _, candidate := range []string{clean, real} {
 		if why := forbiddenPath(candidate, rules, privateRoots); why != "" {
-			return "", "", nil, fmt.Errorf("%s: agent-net never sends files from %s", p, why)
+			return "", nil, fmt.Errorf("%s: agent-net never sends files from %s", p, why)
 		}
 	}
 	allowed := false
@@ -292,9 +353,9 @@ func checkSendPath(p string, rules FileRules) (real, name string, info os.FileIn
 		}
 	}
 	if !allowed {
-		return "", "", nil, fmt.Errorf("%s is outside the session's project and /tmp; agent-net sends only files from there", p)
+		return "", nil, fmt.Errorf("%s is outside the session's project and /tmp; agent-net sends only files from there", p)
 	}
-	return real, name, info, nil
+	return real, info, nil
 }
 
 // checkFileRoot uses the most specific allowed root that contains the named
