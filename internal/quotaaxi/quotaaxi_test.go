@@ -467,6 +467,77 @@ func TestExecEnvKeepsAnExistingHome(t *testing.T) {
 	}
 }
 
+// fakeBLUpdateWarning writes a bl that prints its usage JSON and then, as bl
+// 2.8.5 does, an update warning JSON, unless NO_UPDATE_NOTIFIER is set.
+func fakeBLUpdateWarning(t *testing.T, dir string) {
+	t.Helper()
+	body := "#!/bin/sh\n" +
+		"printf '{\"hasQuotaData\":true}\\n'\n" +
+		"if [ -z \"$NO_UPDATE_NOTIFIER\" ]; then printf '{\"warning\":{\"code\":\"UPDATE_AVAILABLE\"}}\\n'; fi\n"
+	if err := os.WriteFile(filepath.Join(dir, "bl"), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// fakeQuotaRunsBL writes a quota-axi that runs bl and prints its output as is.
+func fakeQuotaRunsBL(t *testing.T, dir string) string {
+	t.Helper()
+	path := filepath.Join(dir, "quota-axi")
+	body := "#!/bin/sh\nbl usage token-plan --output json\n"
+	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestExecEnvStopsBLUpdateWarningFromSecondJSONDocument(t *testing.T) {
+	t.Setenv("NO_UPDATE_NOTIFIER", "")
+	os.Unsetenv("NO_UPDATE_NOTIFIER")
+	t.Setenv("PATH", t.TempDir())
+	fakeLoginPath(t, "/usr/bin:/bin")
+	saved := systemNodeDirs
+	systemNodeDirs = nil
+	t.Cleanup(func() { systemNodeDirs = saved })
+
+	dir := t.TempDir()
+	fakeNode(t, dir, "22.19.0")
+	fakeBLUpdateWarning(t, dir)
+	path := fakeQuotaRunsBL(t, dir)
+
+	cmd := exec.Command(path)
+	cmd.Env = ExecEnv(path)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("quota-axi output is not one JSON document: %v\n%s", err, out)
+	}
+}
+
+func TestExecEnvKeepsOwnersUpdateNotifierSetting(t *testing.T) {
+	t.Setenv("NO_UPDATE_NOTIFIER", "0")
+	t.Setenv("PATH", t.TempDir())
+	fakeLoginPath(t, "/usr/bin:/bin")
+	saved := systemNodeDirs
+	systemNodeDirs = nil
+	t.Cleanup(func() { systemNodeDirs = saved })
+
+	dir := t.TempDir()
+	fakeNode(t, dir, "22.19.0")
+	path := fakeQuotaEnv(t, dir)
+	var got []string
+	for _, kv := range ExecEnv(path) {
+		if strings.HasPrefix(kv, "NO_UPDATE_NOTIFIER=") {
+			got = append(got, kv)
+		}
+	}
+	if len(got) != 1 || got[0] != "NO_UPDATE_NOTIFIER=0" {
+		t.Fatalf("NO_UPDATE_NOTIFIER entries %q, want the owner's 0 only", got)
+	}
+}
+
 func TestVersionReportsMissingNode(t *testing.T) {
 	saved := systemNodeDirs
 	systemNodeDirs = nil
