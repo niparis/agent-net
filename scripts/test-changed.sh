@@ -13,7 +13,8 @@
 # Rule table. Keep it short: one line per rule. Add a line when a new
 # cross-package dependency shows up in a failed hand-back.
 #
-#   migration  internal/gateway/store.go, migrations*.go, testdata/migrations.lock
+#   migration  internal/gateway/store.go, migrations*.go, *_migration.go,
+#              testdata/migrations.lock
 #              -> gateway migration, replay, upgrade and cutover tests, with -race
 #   test file  any *_test.go -> only the tests whose bodies changed or were added
 #   tui        internal/tui/* -> tui and graphview golden, title, help and schema tests
@@ -25,6 +26,8 @@
 #              -> decode, strict, frame and wire tests of the wire packages
 #   comment    a Go file that changes only comments or blank lines -> no test run
 #   docs       any other non-Go file -> no test run
+#   generated  an input of reference.md (ctoskill) or docs/feature-map.md, on top of
+#              the rule above -> TestReferenceMatchesCode, TestFeatureMapMatchesCode
 #   (no rule)  -> the tests in the _test.go file of the same base name, plus
 #                 the names from --run; no test run when neither exists
 #
@@ -129,6 +132,27 @@ if [ -z "$base" ]; then
 fi
 git rev-parse --verify --quiet "$base^{commit}" >/dev/null || fail "unknown base ref: $base"
 
+# A non-login shell may not have go on PATH. Use the usual install directories,
+# appended so a go already on PATH (and a test's fake go) still wins.
+# TEST_CHANGED_GO_DIRS replaces that list, so the test can run the no-go case on
+# a machine that has Go in /usr/local/go.
+if ! command -v go >/dev/null 2>&1; then
+  home=${HOME:-}
+  go_dirs="$home/.local/go/bin /usr/local/go/bin $home/sdk/go*/bin"
+  [ -z "${TEST_CHANGED_GO_DIRS:-}" ] || go_dirs=$TEST_CHANGED_GO_DIRS
+  found=
+  for dir in $go_dirs; do
+    if [ -x "$dir/go" ]; then
+      found=$dir
+      break
+    fi
+  done
+  [ -n "$found" ] || fail "go is not on PATH, and there is no go in \$HOME/.local/go/bin, /usr/local/go/bin or \$HOME/sdk/go*/bin"
+  PATH="$PATH:$found"
+  export PATH
+  printf 'test-changed: go is not on PATH; using %s/go\n' "$found"
+fi
+
 # The optional `agent-net test-run` wrapper runs every command under the
 # delivery test step when this machine has it.
 have_runner=0
@@ -144,6 +168,7 @@ trap 'rm -rf "$work"' EXIT HUP INT TERM
 # is only for the go test calls, so that test names the real Go in
 # TEST_CHANGED_GO.
 helper_go=${TEST_CHANGED_GO:-go}
+printf 'build: scripts/testchanged\n'
 ( cd "$script_dir/.." && "$helper_go" build -o "$work/testchanged" ./scripts/testchanged ) ||
   fail "could not build scripts/testchanged with $helper_go"
 helper=$work/testchanged
@@ -154,6 +179,16 @@ base_go_file() {
   rm -f "$work/base.go"
   git cat-file -e "$base:$1" 2>/dev/null || return 1
   git show "$base:$1" >"$work/base.go" 2>/dev/null
+}
+
+# generated_input succeeds for a path that the generated docs are built from:
+# the CTO setup reference and the feature map read these packages.
+generated_input() {
+  case $1 in
+    internal/toolcatalog/*|internal/guidance/*|internal/mcpserver/*|internal/tui/*|internal/featuremap/*|internal/daemon/ctoskill/*|internal/settings/*|internal/authority/*|internal/protocol/*)
+      return 0 ;;
+  esac
+  return 1
 }
 
 # contract_runs prints the small set every diff runs, whatever it touches.
@@ -171,7 +206,7 @@ rule_of() {
       echo tool ;;
     tools/pickerreplay/*)
       echo replaytool ;;
-    internal/gateway/store.go|internal/gateway/migrations*.go|internal/gateway/testdata/migrations.lock)
+    internal/gateway/store.go|internal/gateway/migrations*.go|internal/gateway/*_migration.go|internal/gateway/testdata/migrations.lock)
       echo migration ;;
     *_test.go)
       echo test ;;
@@ -254,6 +289,11 @@ printf '%s\n' "$changed" | while IFS= read -r path; do
       fi
       ;;
   esac
+
+  if generated_input "$path"; then
+    printf 'plain %s %s generated\n' "$module/internal/daemon/ctoskill" '^(TestReferenceMatchesCode)$' >>"$work/runs"
+    printf 'plain %s %s generated\n' "$module/internal/featuremap" '^(TestFeatureMapMatchesCode)$' >>"$work/runs"
+  fi
 
   case $rule in
     package)
@@ -390,15 +430,16 @@ if [ -s "$work/gofmt-files" ]; then
   if [ "$plan" = 1 ]; then
     printf '  [gofmt] gofmt -l <changed Go files>\n'
   else
+    t0=$(date +%s)
     if bad=$(gofmt -l $(cat "$work/gofmt-files")); then
       if [ -n "$bad" ]; then
         printf 'gofmt: FAIL, these files need formatting:\n%s\n' "$bad"
         checks_failed=1
       else
-        printf 'gofmt: PASS\n'
+        printf 'gofmt: PASS (%ss)\n' "$(($(date +%s) - t0))"
       fi
     else
-      printf 'gofmt: FAIL\n'
+      printf 'gofmt: FAIL (%ss)\n' "$(($(date +%s) - t0))"
       checks_failed=1
     fi
   fi
@@ -409,10 +450,11 @@ if [ -n "$changed_packages" ]; then
   if [ "$plan" = 1 ]; then
     printf '  [vet] go vet %s\n' "$(printf '%s ' $vet_packages)"
   else
+    t0=$(date +%s)
     if go vet $vet_packages >"$work/vet.log" 2>&1; then
-      printf 'vet: PASS\n'
+      printf 'vet: PASS (%ss)\n' "$(($(date +%s) - t0))"
     else
-      printf 'vet: FAIL\n'
+      printf 'vet: FAIL (%ss)\n' "$(($(date +%s) - t0))"
       cat "$work/vet.log"
       checks_failed=1
     fi
@@ -437,10 +479,15 @@ if [ -f "$root/tools/rulecheck/go.mod" ] && { [ -n "$rule_list" ] || [ -n "$rule
       fail "could not build tools/rulecheck with $helper_go"
     fi
     printf 'rule checks: rulecheck%s%s\n' "${rule_docs:+ -docs $rule_docs}" "${rule_list:+ $rule_list}"
-    if ! (cd "$root" && if [ -n "$rule_docs" ]; then "$rule_bin" -docs "$rule_docs" $rule_list; else "$rule_bin" $rule_list; fi) >"$work/rules.log" 2>&1; then
+    t0=$(date +%s)
+    if (cd "$root" && if [ -n "$rule_docs" ]; then "$rule_bin" -docs "$rule_docs" $rule_list; else "$rule_bin" $rule_list; fi) >"$work/rules.log" 2>&1; then
+      rules_status=PASS
+    else
+      rules_status=FAIL
       checks_failed=1
     fi
     cat "$work/rules.log"
+    printf 'rule checks: %s (%ss)\n' "$rules_status" "$(($(date +%s) - t0))"
   fi
 fi
 checks_failed=${checks_failed:-0}
@@ -471,6 +518,7 @@ go_test() {
 
 failed=0
 index=0
+total=$(grep -c . "$work/runs")
 : >"$work/failed"
 while read -r mode pkg pattern rule; do
   [ -n "${pkg:-}" ] || continue
@@ -483,6 +531,7 @@ while read -r mode pkg pattern rule; do
   [ -z "$extra" ] || set -- "$@" $extra
   pkg_arg="./${pkg#"$module/"}"
   set -- "$@" "$pkg_arg"
+  printf 'running %s/%s [%s] %s\n' "$index" "$total" "$rule" "$(describe_run "$mode" "$pkg" "$pattern")"
   start=$(date +%s)
   if go_test "$@" >"$work/output-$index" 2>&1; then
     status=0
@@ -520,6 +569,10 @@ if [ -s "$work/failed" ]; then
   while IFS="$(printf '\t')" read -r pkg_display rule reason; do
     printf '  FAIL [%s] %s: %s\n' "$rule" "$pkg_display" "$reason"
   done <"$work/failed"
+  # A generated doc that is out of date fails its test; the fix is to regenerate.
+  if awk -F "$(printf '\t')" '$2 == "generated" { found = 1 } END { exit !found }' "$work/failed"; then
+    printf 'test-changed: a generated doc is out of date; run: go generate ./internal/daemon/ctoskill ./internal/featuremap\n'
+  fi
 fi
 
 exit "$((failed + checks_failed))"
