@@ -28,7 +28,7 @@ const CTOOperatorChanges = `operator_undo sessions_archive cto_enter cto_send se
 mcp_coverage_plan mcp_coverage_apply mcp_coverage_undo tools_accept tools_import tools_export gateway_backup
 session_stop session_resume session_replace session_agent_set learned_answer hidden_set onboarding_set quality_set timezone_set
 worker_floors_set worker_floors_reset difficulty_set team_write delivery_owner_set merger_set merger_restore chief_set ask_undo ask_mark changes_owner_report worker_defect sign_in_raise bar_edit
-permission_apply permission_undo`
+permission_apply permission_undo friction_mark`
 
 // CTOOperatorMethods is an explicit allowlist, shared by schema generation and
 // daemon dispatch. It never accepts arbitrary daemon methods or consent approval.

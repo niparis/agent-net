@@ -6,8 +6,8 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Friction─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ By project: demo 3 · agent-net 1                                                                                     │
-│ demo · ci · opencode · 12 min ago  "the suite flaked twice"                                                          │
-│ agent-net · tooling · claude · 2h ago  "the tool schema was missing"                                                 │
+│ demo · ci · opencode · triaged · 12 min ago  "the suite flaked twice"                                                │
+│ agent-net · tooling · claude · new · 2h ago  "the tool schema was missing"                                           │
 │ 2 more reports                                                                                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 0 registered · 0 running · scores: Artificial Analysis─────────────────────────────────────────────────────╮

@@ -387,8 +387,9 @@ func (m Model) frictionPanel(w int) []string {
 		body = append(body, sDim.Render("No friction reports yet. A worker adds them to its hand-back or a step report."))
 	}
 	for _, e := range m.friction.Entries {
-		line := fmt.Sprintf("%s · %s · %s · %s  %s", firstNonEmpty(sanitize(e.Project), "(no project)"),
-			sanitize(e.Area), firstNonEmpty(sanitize(e.Harness), "?"), m.frictionAge(e.CreatedAt), sanitize(e.Text))
+		line := fmt.Sprintf("%s · %s · %s · %s · %s  %s", firstNonEmpty(sanitize(e.Project), "(no project)"),
+			sanitize(e.Area), firstNonEmpty(sanitize(e.Harness), "?"), firstNonEmpty(sanitize(e.Status), protocol.FrictionNew),
+			m.frictionAge(e.CreatedAt), sanitize(e.Text))
 		body = append(body, clip(line, inner))
 	}
 	if more := m.friction.Total - len(m.friction.Entries); more > 0 {

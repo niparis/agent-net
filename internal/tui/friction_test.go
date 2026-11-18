@@ -37,9 +37,9 @@ func TestFrictionPanelGoldens(t *testing.T) {
 		base.usage, base.counts, base.tops = fakeUsage(), fakeCounts(), fakeTops()
 		src := &frictionSource{fakeSource: base, result: protocol.FrictionFindResult{
 			Entries: []protocol.FrictionView{
-				{ID: 1, Project: "demo", Session: "s_1", Harness: "opencode", Area: protocol.FrictionCI,
+				{ID: 1, Project: "demo", Session: "s_1", Harness: "opencode", Area: protocol.FrictionCI, Status: protocol.FrictionTriaged,
 					Text: `"the suite flaked twice"`, CreatedAt: t0.Add(-12 * time.Minute).Unix()},
-				{ID: 2, Project: "agent-net", Session: "s_2", Harness: "claude", Area: protocol.FrictionTooling,
+				{ID: 2, Project: "agent-net", Session: "s_2", Harness: "claude", Area: protocol.FrictionTooling, Status: protocol.FrictionNew,
 					Text: `"the tool schema was missing"`, CreatedAt: t0.Add(-2 * time.Hour).Unix()},
 			},
 			Counts: []protocol.FrictionProjectCount{{Project: "demo", Count: 3}, {Project: "agent-net", Count: 1}},
@@ -56,7 +56,7 @@ func TestFrictionPanelGoldens(t *testing.T) {
 		}
 		view := m.testView()
 		plain := ansi.Strip(view)
-		for _, want := range []string{"Friction", "By project: demo 3 · agent-net 1", "demo · ci · opencode · 12 min ago", `"the suite flaked twice"`, "2 more reports"} {
+		for _, want := range []string{"Friction", "By project: demo 3 · agent-net 1", "demo · ci · opencode · triaged · 12 min ago", `"the suite flaked twice"`, "2 more reports"} {
 			if !strings.Contains(plain, want) {
 				t.Fatalf("%dx%d lacks %q:\n%s", size[0], size[1], want, plain)
 			}

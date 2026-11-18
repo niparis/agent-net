@@ -63,7 +63,7 @@ func TestFrictionFindFiltersAndCounts(t *testing.T) {
 	if !strings.HasPrefix(got.Entries[0].Text, `"the hook was missing"`) {
 		t.Fatalf("text is not quoted data: %q", got.Entries[0].Text)
 	}
-	if !reflect.DeepEqual(got.Counts, []protocol.FrictionProjectCount{{Project: "demo", Count: 2}}) {
+	if !reflect.DeepEqual(got.Counts, []protocol.FrictionProjectCount{{Project: "demo", Count: 2, Unread: 2}}) {
 		t.Fatalf("counts: %+v", got.Counts)
 	}
 	ci, err := s.FrictionFind(protocol.FrictionQuery{Area: protocol.FrictionCI})

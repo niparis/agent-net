@@ -27,6 +27,7 @@ var pluginMethods = map[string]string{
 	"agent_nudge_resume":      protocol.OpNudgeResume,
 	"agent_nudge_pauses_find": protocol.OpNudgePausesFind,
 	"agent_nudge_stats":       protocol.OpNudgeStats,
+	"agent_friction_mark":     protocol.OpFrictionMarkLead,
 	"agent_sessions_find":     "sessions_find", "agent_session_get": "session_get",
 	"agent_machines_find": "machines_find", "agent_machine_get": "machine_get", "agent_machine_log": "machine_log",
 	"agent_projects_find": "projects_find", "agent_workers_find": "list",
