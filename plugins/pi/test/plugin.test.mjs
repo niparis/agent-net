@@ -377,6 +377,39 @@ await test("agent_owner_ask passes replaces for an approval", async () => {
   await p.fire("session_shutdown", {});
 });
 
+await test("agent_message_get sends the message ID the daemon reads", async () => {
+  const p = makePi();
+  extension(p.api);
+  const n = hellos.length;
+  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+  await until("hello", () => hellos.length === n + 1);
+  replies.message_status = { message: { id: "m_1", conversation_id: "c_1", from: "s_a", to: "s_b", type: "request", state: "delivered", body: "hello" } };
+  const before = requests.length;
+  await p.tools.get("agent_message_get").execute("id", { message: "m_1" });
+  const sent = requests.slice(before).find((r) => r.method === "message_status");
+  if (!sent || sent.params.message_id !== "m_1") throw new Error("message_status request: " + JSON.stringify(sent));
+  delete replies.message_status;
+  await p.fire("session_shutdown", {});
+});
+
+await test("a worker gets no announce rule and no reminder", async () => {
+  process.env.AGENT_NET_WORKER = "1";
+  try {
+    const p = makePi();
+    extension(p.api);
+    const prompt = await p.fire("before_agent_start", { type: "before_agent_start", prompt: "hi", systemPrompt: "You are Pi." });
+    if (prompt !== undefined) throw new Error("a worker's system prompt changed: " + JSON.stringify(prompt));
+    const n = hellos.length;
+    await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+    await until("hello", () => hellos.length === n + 1);
+    const text = (await p.tools.get("agent_machines_find").execute("id", {})).content[0].text;
+    if (text.includes("Reminder")) throw new Error("a worker's tool result has the reminder: " + text);
+    await p.fire("session_shutdown", {});
+  } finally {
+    delete process.env.AGENT_NET_WORKER;
+  }
+});
+
 await test("agent_announce asks for a task and says so; no name or function is required", async () => {
   const p = makePi();
   extension(p.api);

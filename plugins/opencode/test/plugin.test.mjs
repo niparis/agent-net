@@ -1273,6 +1273,58 @@ await test("agent_announce asks for a task, and tool results end with the remind
   stop();
 });
 
+await test("agent_message_get sends the message ID the daemon reads", async () => {
+  freshHub();
+  const sessions = new Map([["ses_m", session("ses_m", "/work/m")]]);
+  let tools;
+  const c = makeContext("/work/m", sessions, {
+    onTransform(fn) {
+      tools = [];
+      fn({ add: (t) => tools.push(t) });
+    },
+  });
+  const stop = await plugin.setup(c.ctx);
+  await until("hello for ses_m", () => registered("ses_m"));
+  await settle();
+  const before = calls.length;
+  await tools.find((t) => t.name === "agent_message_get").execute({ message: "m_1" }, { sessionID: "ses_m" });
+  const sent = calls.slice(before).find(([m]) => m === "message_status");
+  if (!sent || sent[1].message_id !== "m_1") throw new Error("message_status call: " + JSON.stringify(sent));
+  stop();
+});
+
+await test("a worker gets no announce rule and no reminder", async () => {
+  process.env.AGENT_NET_WORKER = "1";
+  const workerSessionFile = join(dir, "worker-session-quiet.txt");
+  writeFileSync(workerSessionFile, "ses_q");
+  process.env.AGENT_NET_WORKER_SESSION_FILE = workerSessionFile;
+  try {
+    freshHub();
+    const sessions = new Map([["ses_q", session("ses_q", "/work/q")]]);
+    let tools;
+    const hooked = [];
+    const c = makeContext("/work/q", sessions, {
+      onHook: (name, fn) => hooked.push([name, fn]),
+      onTransform(fn) {
+        tools = [];
+        fn({ add: (t) => tools.push(t) });
+      },
+    });
+    const stop = await plugin.setup(c.ctx);
+    await until("hello for ses_q", () => registered("ses_q"));
+    const ctxHook = hooked.find(([name]) => name === "context");
+    const input = { system: [{ type: "text", text: "You are OpenCode." }] };
+    ctxHook[1](input);
+    if (input.system.length !== 1) throw new Error("a worker's system prompt changed: " + JSON.stringify(input.system));
+    const text = (await tools.find((t) => t.name === "agent_machines_find").execute({}, { sessionID: "ses_q" })).content;
+    if (text.includes("Reminder")) throw new Error("a worker's tool result has the reminder: " + text);
+    stop();
+  } finally {
+    delete process.env.AGENT_NET_WORKER;
+    delete process.env.AGENT_NET_WORKER_SESSION_FILE;
+  }
+});
+
 // ---- peer trust framing ----
 
 const TRUST = "The owner has allowed requests from this sender within this node's settings, as if the owner had asked.";
