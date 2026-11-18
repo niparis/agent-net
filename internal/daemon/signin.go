@@ -106,9 +106,34 @@ func signInNeeded(q *protocol.Quotas) []string {
 	return out
 }
 
-// syncSignInAsks raises one ask per provider that needs a login, and closes
-// the ask when the error is gone. A repeated quota reading is cheap: it makes
-// no gateway call for a provider already raised.
+// signInProviderRow is the reading of one sign-in provider in a quota result.
+func signInProviderRow(q *protocol.Quotas, provider string) (protocol.QuotaProvider, bool) {
+	for _, p := range q.Providers {
+		if key, ok := protocol.SignInProviderKey(p.Provider); ok && key == provider {
+			return p, true
+		}
+	}
+	return protocol.QuotaProvider{}, false
+}
+
+// signInDetail is the detail of a sign-in ask: the provider's fixed reason,
+// then the error of the last reading when there is one. The reason itself never
+// changes.
+func signInDetail(reason, readErr string) string {
+	if readErr == "" {
+		return reason
+	}
+	if r := []rune(readErr); len(r) > 300 {
+		readErr = string(r[:300]) + "..."
+	}
+	return reason + "\nLast reading: " + readErr
+}
+
+// syncSignInAsks raises one ask per provider that needs a login. It closes the
+// ask only when the provider reads with windows and no error: a missing row or
+// another error leaves it open, and a changed error updates its detail. A
+// repeated quota reading is cheap: it makes no gateway call for a provider
+// already raised with the same error.
 func (d *Daemon) syncSignInAsks(ctx context.Context, q *protocol.Quotas) {
 	needed := signInNeeded(q)
 	if q == nil {
@@ -123,54 +148,39 @@ func (d *Daemon) syncSignInAsks(ctx context.Context, q *protocol.Quotas) {
 		if !ok {
 			continue
 		}
-		var currentErr string
-		for _, p := range q.Providers {
-			if k, ok := protocol.SignInProviderKey(p.Provider); ok && k == provider {
-				currentErr = p.Error
-				break
-			}
-		}
-		var data json.RawMessage
-		var err error
-		data, err = d.call(ctx, "sign_in.raise", protocol.SignInRaise{Provider: info.Provider, Reason: info.Reason})
+		row, _ := signInProviderRow(q, provider)
+		data, err := d.call(ctx, "sign_in.raise", protocol.SignInRaise{Provider: info.Provider, Reason: info.Reason})
 		if err != nil {
 			continue
 		}
 		var res struct {
 			Ask protocol.Ask `json:"ask"`
 		}
-		if json.Unmarshal(data, &res) != nil || res.Ask.ID == "" {
-			// The ask was opened (the ref dedupes it); remember the provider so
-			// the next reading does not ask again. Without an ID it cannot be
-			// closed from here, which is the safe direction.
-			d.signIn.add(provider, "")
-			d.signIn.setLastError(provider, currentErr)
-			continue
+		// The ask was opened (the ref dedupes it); remember the provider so
+		// the next reading does not ask again. Without an ID it cannot be
+		// closed from here, which is the safe direction.
+		d.signIn.add(provider, "")
+		if json.Unmarshal(data, &res) == nil && res.Ask.ID != "" {
+			d.signIn.add(provider, res.Ask.ID)
 		}
-		d.signIn.add(provider, res.Ask.ID)
-		d.signIn.setLastError(provider, currentErr)
+		d.signIn.setLastError(provider, row.Error)
 	}
 	for provider := range have {
-		var found *protocol.QuotaProvider
-		for i := range q.Providers {
-			if k, ok := protocol.SignInProviderKey(q.Providers[i].Provider); ok && k == provider {
-				found = &q.Providers[i]
-				break
-			}
-		}
-		if found == nil {
-			// Provider was not reported in this reading; keep open.
+		row, ok := signInProviderRow(q, provider)
+		if !ok {
 			continue
 		}
-		if found.Error != "" {
-			last := d.signIn.lastError(provider)
-			if last == "" {
-				d.signIn.setLastError(provider, found.Error)
-			} else if last != found.Error {
-				if _, err := d.call(ctx, "sign_in.raise", protocol.SignInRaise{Provider: provider, Reason: found.Error}); err == nil {
-					d.signIn.setLastError(provider, found.Error)
-				}
+		if row.Error != "" {
+			if row.Error == d.signIn.lastError(provider) {
+				continue
 			}
+			info, _ := protocol.SignInProvider(provider)
+			if _, err := d.call(ctx, "sign_in.raise", protocol.SignInRaise{Provider: info.Provider, Reason: signInDetail(info.Reason, row.Error)}); err == nil {
+				d.signIn.setLastError(provider, row.Error)
+			}
+			continue
+		}
+		if len(row.Windows) == 0 {
 			continue
 		}
 		if _, err := d.call(ctx, "sign_in.close", protocol.SignInClose{Provider: provider, Reason: protocol.AskReasonSignedIn}); err == nil {
