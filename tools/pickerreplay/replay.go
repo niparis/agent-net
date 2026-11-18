@@ -196,29 +196,6 @@ func pickOptionA(es []*candEval, alpha float64) *candEval {
 	return winner
 }
 
-// pickWithPass is today's gate and cost rule with a different clean share for
-// each candidate, which is how option B enters the pick.
-func pickWithPass(es []*candEval, pass func(e *candEval) float64) *candEval {
-	var winner *candEval
-	for _, e := range es {
-		if !e.qualified {
-			continue
-		}
-		e.pass = pass(e)
-		e.expected = e.cost + (1-e.pass)*e.rescue
-		pace := e.row.PaceFactor
-		if pace <= 0 {
-			pace = 1
-		}
-		e.adjusted = e.expected / pace
-		if winner == nil || e.adjusted < winner.adjusted ||
-			e.adjusted == winner.adjusted && (e.cell.Score > winner.cell.Score || e.cell.Score == winner.cell.Score && e.row.Name < winner.row.Name) {
-			winner = e
-		}
-	}
-	return winner
-}
-
 type modelCount struct {
 	Name  string
 	Count int
@@ -309,13 +286,6 @@ func RunReplay(s *Snapshot, alphas []float64) *Report {
 	for _, a := range alphas {
 		r.OptionsA = append(r.OptionsA, newSummary(fmt.Sprintf("A alpha %.1f", a)))
 	}
-	r.OptionB = newSummary("B")
-	if len(picks) > 0 {
-		// Option B is trained on the older 75 percent of tasks, so every
-		// replayed pick (all on the last day) is a held-out case.
-		r.B, r.reg = TrainOptionB(s, taskQuartile(s.Tasks, .75))
-	}
-
 	for _, p := range picks {
 		tasks := s.TasksAt(p.At)
 		tableToday := protocol.BuildPickerTable(pickerTasks(tasks, math.MaxInt64, func(t Task) float64 { return t.ScoreToday }), protocol.DefaultPickerSettings())
@@ -387,14 +357,6 @@ func RunReplay(s *Snapshot, alphas []float64) *Report {
 		for i, a := range alphas {
 			w := pickOptionA(esA, a)
 			r.OptionsA[i].add(w, commonQ(w))
-		}
-		if r.reg != nil {
-			esB, _ := replayCandidates(p, tableToday, s.Prices, s.Scores, s.Minimums, s)
-			winnerB := pickWithPass(esB, func(e *candEval) float64 {
-				return r.reg.predict(r.reg.spec.vector(regInput{D: p.D, Scores: p.Scores, Project: p.Project,
-					Key: e.key, Harness: e.row.Harness, Family: modelFamily(e.key), Prov: providerOf(e.key)}))
-			})
-			r.OptionB.add(winnerB, commonQ(winnerB))
 		}
 		if r.Case == nil {
 			if c := casePick(p); c != nil {
@@ -495,14 +457,6 @@ func (r *Report) caseReport(p Pick, tableToday, tableA *protocol.PickerTable, al
 		}
 		add(fmt.Sprintf("A alpha %.1f", a), w, rank, esA)
 	}
-	if r.reg != nil {
-		esB, _ := replayCandidates(p, tableToday, r.Snapshot.Prices, r.Snapshot.Scores, r.Snapshot.Minimums, r.Snapshot)
-		w := pickWithPass(esB, func(e *candEval) float64 {
-			return r.reg.predict(r.reg.spec.vector(regInput{D: p.D, Scores: p.Scores, Project: p.Project,
-				Key: e.key, Harness: e.row.Harness, Family: modelFamily(e.key), Prov: providerOf(e.key)}))
-		})
-		add("B", w, 0, esB)
-	}
 	return c
 }
 
@@ -534,59 +488,13 @@ func mismatchReason(es []*candEval, recorded string, winner *candEval) string {
 	return "recorded pick is not in the rebuilt roster"
 }
 
-// taskQuartile is the end time at the given fraction of tasks, so option B can
-// train on the older part and test on the recent one.
-func taskQuartile(tasks []Task, frac float64) int64 {
-	if len(tasks) == 0 {
-		return 0
-	}
-	ends := make([]int64, len(tasks))
-	for i, t := range tasks {
-		ends[i] = t.End
-	}
-	sort.Slice(ends, func(i, j int) bool { return ends[i] < ends[j] })
-	i := int(frac * float64(len(ends)))
-	if i >= len(ends) {
-		i = len(ends) - 1
-	}
-	return ends[i]
-}
-
 // Report is everything the draft needs.
 type Report struct {
 	Snapshot *Snapshot
 	Alphas   []float64
-	reg      *logistic
 	Check    *replayCheck
 	Today    *summary
 	Recorded *summary
 	OptionsA []*summary
-	OptionB  *summary
-	B        *BinResult
 	Case     *CaseReport
-}
-
-// BinResult is option B's time split.
-type BinResult struct {
-	Train, Test    int
-	Split          int64
-	TrainFirst     int64
-	TrainLast      int64
-	TestFirst      int64
-	TestLast       int64
-	LogLossB       float64
-	LogLossBin     float64
-	BrierB         float64
-	BrierBin       float64
-	CalibrationB   []CalibrationBin
-	CalibrationBin []CalibrationBin
-	BaseRate       float64
-}
-
-// CalibrationBin is one row of a reliability table.
-type CalibrationBin struct {
-	Lo, Hi    float64
-	N         int
-	Predicted float64
-	Observed  float64
 }

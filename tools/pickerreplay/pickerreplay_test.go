@@ -75,19 +75,6 @@ func TestPickOptionAWeighsQualityAgainstCost(t *testing.T) {
 	}
 }
 
-func TestLogLossAndCalibration(t *testing.T) {
-	ps := []float64{.9, .1}
-	ys := []float64{1, 0}
-	near(t, "log loss", logLoss(ps, ys), -math.Log(.9))
-	near(t, "brier", brier(ps, ys), .01)
-	bins := calibration(ps, ys)
-	if bins[9].N != 1 || bins[1].N != 1 {
-		t.Fatalf("expected one prediction in the top and the .1-.2 bin, got %d and %d", bins[9].N, bins[1].N)
-	}
-	near(t, "top bin predicted", bins[9].Predicted, .9)
-	near(t, "top bin observed", bins[9].Observed, 1)
-}
-
 // fixture writes a small but complete store copy and returns its path.
 func fixture(t *testing.T) string {
 	t.Helper()

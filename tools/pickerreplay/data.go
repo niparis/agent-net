@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	_ "modernc.org/sqlite"
@@ -22,11 +21,8 @@ type Task struct {
 	Root    string
 	Key     string
 	Harness string
-	Project string
 
 	D float64
-	// Scores are the judge's six sub-scores in fixed order, see SubScoreNames.
-	Scores [6]float64
 
 	Complete       bool
 	FixRounds      int
@@ -48,23 +44,18 @@ type Task struct {
 	Dirty      bool
 }
 
-// SubScoreNames are the six judge sub-scores, in the order Task.Scores holds
-// them. K is the risk score.
-var SubScoreNames = [6]string{"reasoning", "scope", "coupling", "uncertainty", "verification", "risk"}
-
 // Snapshot is the read-only contents of one gateway store copy. The raw rows
 // are kept so a task can be rebuilt as it stood at any past moment: a pick can
 // then be replayed against the table the picker had then, not against today's.
 type Snapshot struct {
-	Runs     []runRec
-	Judged   map[string][]judgedRec
-	Defects  map[string][]defectRec
-	Failed   map[string][]stepRec
-	Merged   map[string]int64
-	Usage    map[string]protocol.RunTokens
-	Projects map[string]string
+	Runs    []runRec
+	Judged  map[string][]judgedRec
+	Defects map[string][]defectRec
+	Failed  map[string][]stepRec
+	Merged  map[string]int64
+	Usage   map[string]protocol.RunTokens
 
-	// Tasks is the whole history, used by option B's training and test split.
+	// Tasks is the whole history, used by the replay's checks.
 	Tasks []Task
 
 	Picks      []Pick
@@ -82,11 +73,8 @@ type runRec struct {
 }
 
 type judgedRec struct {
-	d          float64
-	label      string
-	confidence string
-	scores     [6]float64
-	assessed   int64
+	d        float64
+	assessed int64
 }
 
 type defectRec struct {
@@ -107,8 +95,7 @@ func OpenSnapshot(path string) (*Snapshot, error) {
 	}
 	defer db.Close()
 	s := &Snapshot{Judged: map[string][]judgedRec{}, Defects: map[string][]defectRec{},
-		Failed: map[string][]stepRec{}, Merged: map[string]int64{}, Usage: map[string]protocol.RunTokens{},
-		Projects: map[string]string{}}
+		Failed: map[string][]stepRec{}, Merged: map[string]int64{}, Usage: map[string]protocol.RunTokens{}}
 	// The price book and the scores are needed while the tasks are priced.
 	if err := s.readPrices(db); err != nil {
 		return nil, fmt.Errorf("prices: %w", err)
@@ -124,9 +111,6 @@ func OpenSnapshot(path string) (*Snapshot, error) {
 	}
 	if err := s.readUsage(db); err != nil {
 		return nil, fmt.Errorf("usage: %w", err)
-	}
-	if err := s.readProjects(db); err != nil {
-		return nil, fmt.Errorf("projects: %w", err)
 	}
 	s.Tasks = s.TasksAt(math.MaxInt64)
 	if err := s.readPicks(db); err != nil {
@@ -196,11 +180,8 @@ func (s *Snapshot) TasksAt(cut int64) []Task {
 		if !ok || j.d <= 0 {
 			continue
 		}
-		c.task.D, c.task.Scores = j.d, j.scores
+		c.task.D = j.d
 		for _, session := range c.sessions {
-			if c.task.Project == "" {
-				c.task.Project = s.Projects[session]
-			}
 			for _, st := range s.Failed[session] {
 				if st.at > cut {
 					continue
@@ -270,7 +251,7 @@ func (s *Snapshot) readRuns(db *sql.DB) error {
 // changes with the time each one landed, so TasksAt can leave out the ones that
 // did not exist at a past pick.
 func (s *Snapshot) readEvidence(db *sql.DB) error {
-	rows, err := db.Query(`SELECT session_id,d,label,confidence,reasoning,scope,coupling,uncertainty,verification,risk,assessed_at
+	rows, err := db.Query(`SELECT session_id,d,assessed_at
 		FROM worker_assessments WHERE d > 0 ORDER BY started_at,assessed_at`)
 	if err != nil {
 		return err
@@ -278,7 +259,7 @@ func (s *Snapshot) readEvidence(db *sql.DB) error {
 	for rows.Next() {
 		var session string
 		var j judgedRec
-		if err := rows.Scan(&session, &j.d, &j.label, &j.confidence, &j.scores[0], &j.scores[1], &j.scores[2], &j.scores[3], &j.scores[4], &j.scores[5], &j.assessed); err != nil {
+		if err := rows.Scan(&session, &j.d, &j.assessed); err != nil {
 			rows.Close()
 			return err
 		}
@@ -373,45 +354,6 @@ func (s *Snapshot) readUsage(db *sql.DB) error {
 	return rows.Err()
 }
 
-func (s *Snapshot) readProjects(db *sql.DB) error {
-	rows, err := db.Query(`SELECT session_id,project FROM worker_starts WHERE session_id <> ''`)
-	if err != nil {
-		return err
-	}
-	for rows.Next() {
-		var session, project string
-		if err := rows.Scan(&session, &project); err != nil {
-			rows.Close()
-			return err
-		}
-		if s.Projects[session] == "" && project != "" {
-			s.Projects[session] = project
-		}
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return err
-	}
-	rows.Close()
-	// A change names its project, which covers a session with no start row.
-	rows, err = db.Query(`SELECT json_extract(origin,'$.session_id'),project FROM delivery_changes WHERE project <> ''`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var session *string
-		var project string
-		if err := rows.Scan(&session, &project); err != nil {
-			return err
-		}
-		if session != nil && s.Projects[*session] == "" {
-			s.Projects[*session] = project
-		}
-	}
-	return rows.Err()
-}
-
 func (s *Snapshot) readPrices(db *sql.DB) error {
 	rows, err := db.Query(`SELECT id,prompt,completion,cache_read,cache_write FROM model_prices`)
 	if err != nil {
@@ -471,12 +413,9 @@ func (s *Snapshot) readSettings(db *sql.DB) error {
 
 // Pick is one recorded pick: the rows the gateway stored and when it happened.
 type Pick struct {
-	RunID   string
 	Session string
 	At      int64 // unix seconds
 	D       float64
-	Scores  [6]float64
-	Project string
 	Rows    []CandRow
 }
 
@@ -544,7 +483,7 @@ func (s *Snapshot) readPicks(db *sql.DB) error {
 		r.HasCost = cost.Valid
 		pick := byRun[runID]
 		if pick == nil {
-			pick = &Pick{RunID: runID}
+			pick = &Pick{}
 			byRun[runID] = pick
 			order = append(order, pick)
 		}
@@ -556,8 +495,7 @@ func (s *Snapshot) readPicks(db *sql.DB) error {
 	}
 	rows.Close()
 
-	meta, err := db.Query(`SELECT p.run_id,a.session_id,a.started_at,a.d,
-		a.reasoning,a.scope,a.coupling,a.uncertainty,a.verification,a.risk
+	meta, err := db.Query(`SELECT p.run_id,a.session_id,a.started_at,a.d
 		FROM (SELECT DISTINCT run_id FROM pick_candidates) p
 		JOIN worker_assessments a ON a.run_id = p.run_id`)
 	if err != nil {
@@ -568,14 +506,11 @@ func (s *Snapshot) readPicks(db *sql.DB) error {
 		var runID, session string
 		var started int64
 		var d float64
-		var scores [6]float64
-		if err := meta.Scan(&runID, &session, &started, &d,
-			&scores[0], &scores[1], &scores[2], &scores[3], &scores[4], &scores[5]); err != nil {
+		if err := meta.Scan(&runID, &session, &started, &d); err != nil {
 			return err
 		}
 		if pick := byRun[runID]; pick != nil {
 			pick.Session, pick.At, pick.D = session, started/1e9, d
-			pick.Scores, pick.Project = scores, s.Projects[session]
 		}
 	}
 	if err := meta.Err(); err != nil {
@@ -587,40 +522,4 @@ func (s *Snapshot) readPicks(db *sql.DB) error {
 		s.Picks[i] = *p
 	}
 	return nil
-}
-
-// modelFamily is the coarse family of a model key, used for partial pooling.
-// Versions and effort words are dropped: claude-sonnet-5-5 and
-// claude-sonnet-5-5:high share "claude-sonnet".
-func modelFamily(key string) string {
-	base := protocol.PickerModelDisplay(key)
-	base, _ = protocol.SplitModelLevel(base)
-	var keep []string
-	for _, part := range strings.Split(strings.ToLower(base), "-") {
-		if part == "" {
-			continue
-		}
-		if part[0] >= '0' && part[0] <= '9' {
-			continue
-		}
-		if part == "max" || part == "high" || part == "medium" || part == "low" || part == "xhigh" || part == "ultra" {
-			continue
-		}
-		keep = append(keep, part)
-	}
-	if len(keep) == 0 {
-		return "other"
-	}
-	if len(keep) > 2 {
-		keep = keep[:2]
-	}
-	return strings.Join(keep, "-")
-}
-
-// providerOf is the provider prefix of a model key, or "local".
-func providerOf(key string) string {
-	if i := strings.IndexByte(key, '/'); i > 0 {
-		return key[:i]
-	}
-	return "local"
 }

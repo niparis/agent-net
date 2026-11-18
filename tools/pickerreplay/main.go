@@ -19,13 +19,11 @@ import (
 func main() {
 	db := flag.String("db", "", "path to a read-only copy of the gateway store (required)")
 	alphas := flag.String("alphas", "0,1,2,3,4,5,6,8,10,12", "comma separated alpha values for option A")
-	modelRidge := flag.Float64("model-ridge", 40, "option B ridge weight of a model's own effect")
 	flag.Parse()
 	if *db == "" {
 		fmt.Fprintln(os.Stderr, "pickerreplay: -db is required; pass a copy of the gateway store, never the live one")
 		os.Exit(2)
 	}
-	modelPenalty = *modelRidge
 	var list []float64
 	for _, part := range strings.Split(*alphas, ",") {
 		v, err := strconv.ParseFloat(strings.TrimSpace(part), 64)
@@ -87,7 +85,6 @@ func printReport(r *Report) {
 	fmt.Printf("|---|---|---|---|---|---|---|\n")
 	all := []*summary{r.Recorded, r.Today}
 	all = append(all, r.OptionsA...)
-	all = append(all, r.OptionB)
 	for _, m := range all {
 		p, cost, adj, qual := m.averages()
 		fmt.Printf("| %s | %d | %d | %.2f | %.2f | $%.2f | $%.2f |\n", m.Name, m.Picks, m.NoPick, qual, p, cost, adj)
@@ -102,22 +99,6 @@ func printReport(r *Report) {
 			parts = append(parts, fmt.Sprintf("%s %d", mc.Name, mc.Count))
 		}
 		fmt.Printf("- %s: %s\n", m.Name, strings.Join(parts, ", "))
-	}
-
-	if b := r.B; b != nil && b.Train > 0 {
-		fmt.Printf("\n## Option B: time split\n\n")
-		fmt.Printf("Train: %d tasks (%s to %s). Test: %d tasks (%s to %s). Base clean rate in test: %.2f.\n",
-			b.Train, day(b.TrainFirst), day(b.TrainLast), b.Test, day(b.TestFirst), day(b.TestLast), b.BaseRate)
-		fmt.Printf("\n| model | log loss | Brier |\n|---|---|---|\n")
-		fmt.Printf("| binned table (today) | %.4f | %.4f |\n", b.LogLossBin, b.BrierBin)
-		fmt.Printf("| B regression | %.4f | %.4f |\n", b.LogLossB, b.BrierB)
-		fmt.Printf("\nReliability, predicted vs observed clean share:\n\n")
-		fmt.Printf("| bin | n B | predicted B | observed B | n table | predicted table | observed table |\n")
-		fmt.Printf("|---|---|---|---|---|---|---|\n")
-		for i := range b.CalibrationB {
-			bb, bt := b.CalibrationB[i], b.CalibrationBin[i]
-			fmt.Printf("| %.1f-%.1f | %d | %.2f | %.2f | %d | %.2f | %.2f |\n", bb.Lo, bb.Hi, bb.N, bb.Predicted, bb.Observed, bt.N, bt.Predicted, bt.Observed)
-		}
 	}
 
 	if cs := r.Case; cs != nil {

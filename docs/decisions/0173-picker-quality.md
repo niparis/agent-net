@@ -80,25 +80,9 @@ The replay applies Part 1 and Part 2 together, at alpha 0, 1, 2, 3, 4, 5, 6, 8,
 10 and 12. It keeps today's quota pace factor and ignores the exploration share
 (so every pick is the deterministic proven pick).
 
-## Option B: a regression for the clean probability
+## Option B
 
-The regression predicts whether a task ends clean from:
-
-- the six judge sub-scores: reasoning, scope, coupling, uncertainty,
-  verification, risk
-- D
-- the project, the harness and the provider
-- the model key, with its effect shrunk toward its model family (partial
-  pooling)
-
-It is a ridge logistic regression fitted by IRLS. The model-effect ridge weight
-is 40 by default. A sweep from 5 to 300 changed the test log loss by less than
-0.005 and none of the settings beat the binned table.
-
-The replay compares B with today's binned clean table on a time split: the older
-75 percent of tasks train, the recent 25 percent test. All 51 picks were made
-after the split, so every replayed pick is held out. For the pick itself, B
-replaces `p` inside today's expected cost and keeps today's allowed set.
+see research/picker-ml/RESULTS.md (separate study)
 
 ## Replay check first
 
@@ -146,7 +130,6 @@ and expected cost are the chosen model's values at that pick.
 | A alpha 8 | 51 | 0.76 | 0.76 | $1.36 | $1.13 |
 | A alpha 10 | 51 | 0.76 | 0.76 | $1.41 | $1.13 |
 | A alpha 12 | 51 | 0.76 | 0.76 | $1.44 | $1.14 |
-| B | 51 | 0.75 | 0.75 | $1.36 | $1.38 |
 
 "Recorded" is what the live picker actually did. "Today" is the same rule on
 the rebuilt table. It is cheaper than the recorded picks because the rebuild
@@ -178,7 +161,6 @@ Models picked, count per model:
 - A alpha 8: deepseek alibaba high 11, deepseek opencode 11, haiku high claude 10, haiku xhigh claude 9, sonnet claude 6, sol codex 2, terra max codex 2
 - A alpha 10: deepseek opencode 14, haiku high claude 10, haiku xhigh claude 9, deepseek alibaba high 8, sonnet claude 6, sol codex 2, terra max codex 2
 - A alpha 12: deepseek opencode 16, haiku high claude 10, haiku xhigh claude 9, deepseek alibaba high 6, sonnet claude 6, sol codex 2, terra max codex 2
-- B: haiku high claude 13, deepseek alibaba high 12, deepseek opencode 10, haiku xhigh claude 9, sonnet claude 4, terra max codex 2, terra codex 1
 
 ## The D 3.20 case under each option
 
@@ -188,7 +170,6 @@ Models picked, count per model:
 | A alpha 3 | deepseek alibaba high | 0.74 | 0.41 | $0.65 | $0.65 | 0.98 |
 | A alpha 6 | deepseek alibaba high | 0.74 | 0.41 | $0.65 | $0.65 | 1.46 |
 | A alpha 8 | sol codex | 0.86 | 0.73 | $1.06 | $1.70 | 1.81 |
-| B | deepseek alibaba high | 0.61 | 0.32 | $0.68 | $0.68 | - |
 
 The two profiles under today and under A at alpha 3 and 8:
 
@@ -200,42 +181,10 @@ The two profiles under today and under A at alpha 3 and 8:
 | A alpha 3 | sol codex | 0.86 | 0.73 | $1.04 | $1.06 | $1.70 | 1.74 |
 | A alpha 8 | deepseek alibaba high | 0.74 | 0.41 | $0.47 | $0.65 | $0.65 | 1.91 |
 | A alpha 8 | sol codex | 0.86 | 0.73 | $1.04 | $1.06 | $1.70 | 1.81 |
-| B | deepseek alibaba high | 0.61 | 0.32 | $0.47 | $0.68 | $0.68 | - |
-| B | sol codex | 0.77 | 0.54 | $1.04 | $1.07 | $1.72 | - |
 
 At alpha 3 the CTO's expectation holds on the unadjusted numbers, about $1.05
 against $1.06, but not after the pace factor: Sol is ahead of its quota pace,
-so it counts as $1.70. Alpha 8 is the first setting that flips this case. B
-lowers Sol's predicted p to 0.54 and keeps DeepSeek.
-
-## Option B's time split
-
-Train: 882 tasks from 2026-11-02 to 2026-11-11. Test: 294 tasks from 2026-11-11
-to 2026-11-18. Base clean rate in the test: 0.73.
-
-| model | log loss | Brier |
-|---|---|---|
-| binned table (today) | 0.6516 | 0.2272 |
-| B regression | 0.6535 | 0.2261 |
-
-Reliability, predicted against observed clean share:
-
-| bin | n B | predicted B | observed B | n table | predicted table | observed table |
-|---|---|---|---|---|---|---|
-| 0.2-0.3 | 23 | 0.26 | 0.35 | 0 | - | - |
-| 0.3-0.4 | 32 | 0.35 | 0.53 | 0 | - | - |
-| 0.4-0.5 | 30 | 0.45 | 0.70 | 24 | 0.44 | 0.42 |
-| 0.5-0.6 | 52 | 0.56 | 0.50 | 10 | 0.56 | 0.40 |
-| 0.6-0.7 | 60 | 0.65 | 0.67 | 76 | 0.64 | 0.61 |
-| 0.7-0.8 | 39 | 0.74 | 0.77 | 76 | 0.75 | 0.55 |
-| 0.8-0.9 | 38 | 0.86 | 0.87 | 90 | 0.86 | 0.81 |
-| 0.9-1.0 | 20 | 0.92 | 0.65 | 18 | 0.92 | 0.72 |
-
-B does not clearly win. It is 0.002 worse on log loss, 0.001 better on Brier,
-and badly underconfident below 0.5 and overconfident at 0.9 and above. The test
-set has 294 tasks and 51 picks; a difference that small is noise. The binned
-table is also miscalibrated, so this is not a vote for it. It is a vote against
-adopting B on this data.
+so it counts as $1.70. Alpha 8 is the first setting that flips this case.
 
 ## Limits of this replay
 
@@ -245,30 +194,25 @@ adopting B on this data.
   usage total rather than the notice the picker read then.
 - The replay applies the recorded quota pace factor. It does not replay the
   exploration share; each pick is the deterministic proven pick.
-- Option B is trained on tasks that actually ran, so the model mix confounds its
-  coefficients. The time split removes the worst of that, not all of it.
 - The 1,176 tasks here are chains with a D. The CTO counted 1,171 recorded
   tasks; the difference is chains the replay groups slightly differently.
 
 ## Recommendation
 
-1. **Do not adopt option B now.** It does not clearly beat the binned table on
-   a held-out time split. Keep it as a later option when there are more tasks
-   and more than one day of picks.
-2. **Do not adopt option A at alpha 3.** On this data it lowers mean quality and
+1. **Do not adopt option A at alpha 3.** On this data it lowers mean quality and
    makes the owner's case worse, not better, because the new score compresses
    the gap and the pace factor keeps Sol at $1.70.
-3. **Fix cause 2 first, on its own.** Order the rescue ladder by expected cost
+2. **Fix cause 2 first, on its own.** Order the rescue ladder by expected cost
    per accepted result, or cap the rescue jump, instead of using the next rung's
-   run cost on a price-per-token ladder. Cause 2 distorts today's picker, every
-   alpha of option A, and B alike. It is the smallest change with the widest
+   run cost on a price-per-token ladder. Cause 2 distorts today's picker and
+   every alpha of option A. It is the smallest change with the widest
    effect, and it can be replayed alone.
-4. **Then decide on quality.** Option A's Part 1 (the reweighted score) is worth
+3. **Then decide on quality.** Option A's Part 1 (the reweighted score) is worth
    keeping: it removes the double counting the owner called arbitrary. If the
    owner then wants a quality term, the replay points to alpha 6 to 8, not 3,
    and the draft should be re-run after the rescue fix. The honest trade is
    about 5 points of clean p for 19 percent more expected cost at alpha 8.
-5. If the owner prefers no quality term at all, dropping the 0.9 gate alone
+4. If the owner prefers no quality term at all, dropping the 0.9 gate alone
    (alpha 0) is defensible on cost but lowers quality. The data does not support
    that as an improvement.
 
@@ -281,7 +225,7 @@ The tool is its own Go module, so it adds nothing to the agent-net binary:
 
     go -C tools/pickerreplay run . -db /path/to/gateway-snapshot.db
 
-Optional flags: `-alphas 0,3,6,8`, `-model-ridge 40`. The snapshot must be a
-copy. The tool opens it read only and never calls a gateway store, because a
+Optional flags: `-alphas 0,3,6,8`. The snapshot must be a copy. The tool opens
+it read only and never calls a gateway store, because a
 store open migrates the file. It is not wired into the daemon or the gateway.
 The tool's tests are run by CI with `go -C tools/pickerreplay test`.
