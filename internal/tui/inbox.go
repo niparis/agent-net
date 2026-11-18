@@ -371,6 +371,11 @@ func (m Model) inboxRows() []inboxRow {
 // proposes a change, then what only informs.
 func inboxKindRank(row inboxRow) int {
 	switch row.kind {
+	case "signin":
+		// Only the owner can finish a login, and it blocks the quota reads.
+		// Without a rank it fell to the default and sat last, behind the
+		// notices, where a short Needs you box hides it behind "... N more".
+		return -1
 	case "question":
 		return 0
 	case "approval":

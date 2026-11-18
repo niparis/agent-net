@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -55,7 +56,7 @@ func TestQuotaRaisesOneSignInAskPerProvider(t *testing.T) {
 	if len(calls.closes) != 0 {
 		t.Fatalf("closed while the error remained: %+v", calls.closes)
 	}
-	good := &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "alibaba-bl"}}}
+	good := &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "alibaba-bl", Windows: []protocol.QuotaWindow{{Label: "5-hour"}}}}}
 	d.syncSignInAsks(context.Background(), good)
 	if len(calls.closes) != 1 || calls.closes[0].Provider != "alibaba" || calls.closes[0].Reason != protocol.AskReasonSignedIn {
 		t.Fatalf("close after a good reading: %+v", calls.closes)
@@ -76,7 +77,7 @@ func TestSignInRecheckClosesAskAfterGoodReading(t *testing.T) {
 	body := `{
   "generatedAt": "2026-11-11T12:00:00.000Z",
   "schemaVersion": 5,
-  "providers": [{"provider":"alibaba","windows":[],"state":{"status":"fresh","stale":false}}]
+  "providers": [{"provider":"alibaba","windows":[{"id":"five_hour","label":"5-hour","kind":"session","percentRemaining":90}],"state":{"status":"fresh","stale":false}}]
 }`
 	path := fakeQuotaAXI(t, dir, body, filepath.Join(dir, "args"))
 	d.quota.setPath(path)
@@ -84,5 +85,45 @@ func TestSignInRecheckClosesAskAfterGoodReading(t *testing.T) {
 	d.recheckSignIn(context.Background(), "alibaba")
 	if len(calls.closes) != 1 || calls.closes[0].Provider != "alibaba" || calls.closes[0].Reason != protocol.AskReasonSignedIn {
 		t.Fatalf("recheck closes: %+v", calls.closes)
+	}
+}
+
+// An ask closes only when the provider reads with windows and no error. A
+// missing row or an empty reading leaves it open, and another error keeps it
+// open and updates its detail, never its fixed reason.
+func TestSignInAskStaysOpenUntilGoodReading(t *testing.T) {
+	const first = "No console access token found. Run `bl auth login --console`"
+	const second = "Request failed: 403 Forbidden"
+	info, _ := protocol.SignInProvider("alibaba")
+	calls := &signInGatewayCalls{}
+	d := signInTestDaemon(calls)
+	reading := func(errText string, windows ...protocol.QuotaWindow) *protocol.Quotas {
+		return &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "alibaba-bl", Error: errText, Windows: windows}}}
+	}
+	sync := func(q *protocol.Quotas) { d.syncSignInAsks(context.Background(), q) }
+
+	sync(reading(first))
+	if len(calls.raises) != 1 || calls.raises[0].Reason != info.Reason {
+		t.Fatalf("initial raise: %+v", calls.raises)
+	}
+
+	sync(reading(second))
+	if len(calls.raises) != 2 || calls.raises[1].Reason != signInDetail(info.Reason, second) || !strings.HasPrefix(calls.raises[1].Reason, info.Reason) {
+		t.Fatalf("a changed error must update the detail and keep the reason first: %+v", calls.raises)
+	}
+	sync(reading(second))
+	if len(calls.raises) != 2 {
+		t.Fatalf("the same error raised again: %+v", calls.raises)
+	}
+
+	sync(&protocol.Quotas{})
+	sync(reading(""))
+	if len(calls.closes) != 0 {
+		t.Fatalf("closed without a reading that has windows: %+v", calls.closes)
+	}
+
+	sync(reading("", protocol.QuotaWindow{Label: "5-hour"}))
+	if len(calls.closes) != 1 || calls.closes[0].Provider != "alibaba" || calls.closes[0].Reason != protocol.AskReasonSignedIn {
+		t.Fatalf("a good reading did not close with signed_in: %+v", calls.closes)
 	}
 }

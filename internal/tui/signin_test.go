@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -136,5 +137,37 @@ func TestDeskSignInRequestFromWebOpensLocalLogin(t *testing.T) {
 	}
 	if call := src.method(protocol.OpSignInOpen); call == nil || call.params.(protocol.SignInOpenRequest).AskID != "i_signin" {
 		t.Fatal("did not ask local daemon")
+	}
+}
+
+// The research Alibaba sign-in ask (open, waits for the owner, 5 days old)
+// must be on the first screen of the Desk, with the cursor on it, even when
+// newer questions, approvals and notices wait too. Its kind used to have no
+// place in the Needs you order, so it came last, behind "... N more" in the
+// box, and the owner never saw it.
+func TestDeskShowsSignInAskFirstAmongNewerAsks(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := deskChiefModel(t, size[0], size[1])
+		m.asks = append(m.asks, protocol.Ask{
+			ID: "i_58e1174b8496860a", Kind: protocol.AskKindSignIn, State: protocol.AskStateOpen,
+			Next: protocol.AskNextOwner, Owner: protocol.DeskOwnerChief, DeskState: protocol.DeskReady,
+			Category: protocol.CategorySecurity, WhyYou: "Only you can complete this login.",
+			Ref: "sign_in:n_research:alibaba", Question: "Sign in to Alibaba Bailian CLI on research",
+			Detail: "the Alibaba token-plan quota needs your console login", CreatedAt: t0.Add(-5 * 24 * time.Hour),
+		})
+		for i, kind := range []string{protocol.AskKindQuestion, protocol.AskKindApproval, protocol.AskKindStall, protocol.AskKindMachine} {
+			m.asks = append(m.asks, protocol.Ask{
+				ID: fmt.Sprintf("i_new%d", i), Kind: kind, State: protocol.AskStateOpen, Next: protocol.AskNextOwner,
+				FromKind: protocol.AskFromSession, FromSession: "s_0000000000000004", From: "strategies",
+				Question: fmt.Sprintf("Newer ask number %d", i), CreatedAt: t0.Add(-time.Duration(i+1) * time.Minute),
+			})
+		}
+		view := ansi.Strip(m.testView())
+		t.Logf("SIZE %dx%d:\n%s", size[0], size[1], view)
+		for _, want := range []string{"Sign in to Alibaba Bailian CLI on research", "i Open sign-in"} {
+			if !strings.Contains(view, want) {
+				t.Errorf("%dx%d: missing %q on the Desk", size[0], size[1], want)
+			}
+		}
 	}
 }
