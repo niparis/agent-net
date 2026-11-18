@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"image/color"
 
@@ -280,6 +281,7 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 
 	d := m.delivery
 	flight := deskSection{title: fmt.Sprintf("In flight · %d", len(changes)), color: roleAccent, sel: -1}
+	flightRowLines := make([]int, 0, len(changes))
 	if d.err != "" {
 		for _, l := range wrap("Could not load changes: "+sanitize(d.err), innerW) {
 			flight.body = append(flight.body, sBad.Render(l))
@@ -292,6 +294,7 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 		cols := m.deliveryLayout(innerW, changes)
 		flight.body = append(flight.body, cols.header())
 		for i, ch := range changes {
+			flightRowLines = append(flightRowLines, len(flight.body))
 			if sec == deskSecChange && i == at {
 				flight.sel = len(flight.body)
 			}
@@ -433,6 +436,20 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 			scTop = top
 		} else {
 			body, scTop = fitBody(sc.body, sc.sel, limits[i])
+			lastLine := ""
+			if len(body) > 0 {
+				lastLine = ansi.Strip(body[len(body)-1])
+			}
+			if i == 1 && len(sc.body) > limits[i] && strings.Contains(lastLine, "… ") && strings.Contains(lastLine, "more") {
+				contentLines := max(len(body)-1, 0)
+				shown := 0
+				for _, line := range flightRowLines {
+					if line >= scTop && line < scTop+contentLines {
+						shown++
+					}
+				}
+				body[len(body)-1] = sDim.Render(fmt.Sprintf("… %d more", max(len(changes)-shown, 0)))
+			}
 		}
 		if sc.sel >= 0 {
 			selected = len(out) + 1 + sc.sel - scTop

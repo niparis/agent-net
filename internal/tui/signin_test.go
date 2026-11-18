@@ -162,12 +162,56 @@ func TestDeskShowsSignInAskFirstAmongNewerAsks(t *testing.T) {
 				Question: fmt.Sprintf("Newer ask number %d", i), CreatedAt: t0.Add(-time.Duration(i+1) * time.Minute),
 			})
 		}
-		view := ansi.Strip(m.testView())
+		frame := m.testView()
+		view := ansi.Strip(frame)
 		t.Logf("SIZE %dx%d:\n%s", size[0], size[1], view)
-		for _, want := range []string{"Sign in to Alibaba Bailian CLI on research", "i Open sign-in"} {
+		for _, want := range []string{"Sign in to Alibaba Bailian CLI on research", "i Open sign-in", "[sign-in]"} {
 			if !strings.Contains(view, want) {
 				t.Errorf("%dx%d: missing %q on the Desk", size[0], size[1], want)
 			}
 		}
+		flightCount := len(m.deliveryVisible())
+		shown := 0
+		for _, change := range m.deliveryVisible() {
+			if title := deliveryTitle(change); strings.Contains(view, title) {
+				shown++
+			}
+		}
+		var overflowFound bool
+		inFlight := false
+		for _, line := range strings.Split(view, "\n") {
+			if strings.Contains(line, "In flight") {
+				inFlight = true
+				if !strings.Contains(line, fmt.Sprintf("In flight · %d", flightCount)) {
+					t.Errorf("%dx%d: wrong flight header: %s", size[0], size[1], line)
+				}
+			}
+			if inFlight {
+				if strings.Contains(line, "╰") {
+					inFlight = false
+					continue
+				}
+				if at := strings.Index(line, "… "); at >= 0 && strings.Contains(line, "more") {
+					var overflow int
+					if _, err := fmt.Sscanf(line[at:], "… %d more", &overflow); err == nil {
+						overflowFound = true
+						if overflow != flightCount-shown {
+							t.Errorf("%dx%d: overflow says %d more, but %d of %d changes are shown", size[0], size[1], overflow, shown, flightCount)
+						}
+					}
+				}
+			}
+		}
+		if !overflowFound {
+			t.Errorf("%dx%d: expected an In flight overflow row", size[0], size[1])
+		}
+		step := "desk-open-80"
+		action := "open Desk in an 80x24 terminal"
+		if size[0] == 120 {
+			step = "desk-open-120"
+			action = "open Desk in a 120x34 terminal"
+		}
+		writeHerdrProof(t, size[0], size[1], step, action, "sign-in has a [sign-in] tag and the In flight overflow matches its header count", view)
+		golden(t, fmt.Sprintf("desk_signin_%dx%d", size[0], size[1]), frame)
 	}
 }
