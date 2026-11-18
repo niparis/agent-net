@@ -175,9 +175,15 @@ func (d *Daemon) holdStart(ctx context.Context, caller string, p protocol.Worker
 	d.heldStarts[id] = &heldStart{id: id, caller: caller, req: p, callerProject: callerProject, callerPath: callerPath}
 	d.heldMu.Unlock()
 	d.Logf("worker.held start=%s project=%s fields=%q", id, p.Project, strings.Join(fieldNames(p.SelectionFields()), ","))
+	// A held start never reaches the gateway, so only the text checks run.
+	flags := protocol.LintBrief(p, protocol.BriefLintFacts{})
+	d.logBriefFlags(p.Project, flags)
+	note := "the start is held: " + strings.Join(fieldNames(p.SelectionFields()), ", ") + " need someone else to agree. The ask goes to the chief of staff (or the CTO, or your owner): confirm starts the worker with those fields, picker starts it with the picker's own choice. A worker notice arrives in your inbox when it starts or does not start. Do not start it again."
+	if flagNote := protocol.BriefFlagsNote(flags); flagNote != "" {
+		note += "\n" + flagNote
+	}
 	return &protocol.WorkerStartResult{Status: "accepted", StartID: id, Project: p.Project, Harness: p.Harness, Model: p.Model,
-		SelectionPath: protocol.SelectionHeld,
-		Note:          "the start is held: " + strings.Join(fieldNames(p.SelectionFields()), ", ") + " need someone else to agree. The ask goes to the chief of staff (or the CTO, or your owner): confirm starts the worker with those fields, picker starts it with the picker's own choice. A worker notice arrives in your inbox when it starts or does not start. Do not start it again."}, nil
+		SelectionPath: protocol.SelectionHeld, BriefFlags: flags, Note: note}, nil
 }
 
 // reviewWords mark a task that reviews work. Only the title and the done

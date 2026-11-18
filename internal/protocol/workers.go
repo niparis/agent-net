@@ -453,6 +453,9 @@ type (
 		// BriefFailures lists the overlaps that refuse a brief, one per line
 		// when it is shown. Empty means the brief passed.
 		BriefFailures []string `json:"brief_failures,omitempty"`
+		// BriefFlags are the advisory notes of the brief lint. They never refuse
+		// a start.
+		BriefFlags []BriefFlag `json:"brief_flags,omitempty"`
 	}
 	// WorkerLaunch is "worker.launch", gateway to the machine.
 	WorkerLaunch struct {

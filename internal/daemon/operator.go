@@ -570,7 +570,7 @@ func (d *Daemon) runWorkerStartCall(ctx context.Context, caller string, p protoc
 			note = strings.Join(ans.BriefFailures, "\n")
 		}
 		return &protocol.WorkerStartResult{Status: "checked", NodeID: ans.NodeID, Hostname: ans.Hostname, Project: ans.Project,
-			Path: ans.Path, Harness: ans.Harness, Model: ans.Model, ModelNote: ans.ModelNote, BriefFailures: ans.BriefFailures, Note: note}, nil
+			Path: ans.Path, Harness: ans.Harness, Model: ans.Model, ModelNote: ans.ModelNote, BriefFailures: ans.BriefFailures, BriefFlags: ans.BriefFlags, Note: note}, nil
 	}
 	selected := protocol.ParseModelSelection(ans.Harness, ans.Provider, ans.Model, ans.Effort)
 	ans.Provider, ans.Effort = selected.Provider, selected.Effort
@@ -584,12 +584,12 @@ func (d *Daemon) runWorkerStartCall(ctx context.Context, caller string, p protoc
 			NodeID: ans.NodeID, Hostname: ans.Hostname, Project: ans.Project, Path: ans.Path, Harness: ans.Harness,
 			Model: ans.Model, Provider: ans.Provider, Effort: ans.Effort, ModelNote: ans.ModelNote, Title: ans.Title, MachineNote: ans.MachineNote,
 			Permissions: ans.Permissions, Track: ans.Track, Playbooks: ans.Playbooks, OwnerLine: protocol.WorkerOwnerLine(frame.Assessment, protocol.ParseModelSelection(ans.Harness, "", ans.Model, "").Display()),
-			Hint: ans.Hint}, nil
+			Hint: ans.Hint, BriefFlags: ans.BriefFlags}, nil
 	}
 	out := &protocol.WorkerStartResult{Status: "started", MachineNote: ans.MachineNote, SessionID: ans.SessionID, NodeID: ans.NodeID, Hostname: ans.Hostname,
 		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, Provider: ans.Provider, Effort: ans.Effort, ModelNote: ans.ModelNote, Why: ans.Why, Title: ans.Title, Worktree: ans.Worktree, Branch: ans.Branch,
 		Permissions: ans.Permissions, OSSandbox: ans.OSSandbox, Track: ans.Track, Playbooks: ans.Playbooks, OwnerLine: protocol.WorkerOwnerLine(frame.Assessment, protocol.ParseModelSelection(ans.Harness, "", ans.Model, "").Display()),
-		Hint: ans.Hint}
+		Hint: ans.Hint, BriefFlags: ans.BriefFlags}
 	if ans.Starting {
 		out.Status = "starting"
 		return out, nil

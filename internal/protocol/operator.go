@@ -533,6 +533,9 @@ type WorkerStartResult struct {
 	// BriefFailures lists the overlaps that refuse the brief in a
 	// mode "check" request.
 	BriefFailures []string `json:"brief_failures,omitempty"`
+	// BriefFlags are the advisory notes of the brief lint. They never refuse
+	// a start.
+	BriefFlags []BriefFlag `json:"brief_flags,omitempty"`
 	// Status is "starting", "started", "queued" or "checked". A starting worker has a
 	// session ID and receives its task after checkout and launch. A queued
 	// start has no SessionID yet:

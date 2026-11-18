@@ -760,6 +760,8 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	// them: they start no caller worker and count no rejection. A check mode
 	// returns the list and starts nothing.
 	briefNote := protocol.VisualBriefWarning(p.Task)
+	// The brief lint's flags go back with the answer. They never refuse or hold.
+	var briefFlags []protocol.BriefFlag
 	if !(len(validate) > 0 && validate[0]) && !g.opts.TestNoBriefChecks && !p.RequireReadOnly {
 		var repo protocol.WorkerBriefRepo
 		g.mu.Lock()
@@ -767,19 +769,22 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		g.mu.Unlock()
 		if briefTarget != nil {
 			briefCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-			raw, readErr := briefTarget.call(briefCtx, "worker.brief_repo", protocol.WorkerBriefRepoRequest{Path: pick.Path, Base: p.Base})
+			raw, readErr := briefTarget.call(briefCtx, "worker.brief_repo", protocol.WorkerBriefRepoRequest{Path: pick.Path, Base: p.Base, Commits: protocol.BriefCommitIDs(p.BriefText())})
 			cancel()
 			if readErr == nil {
 				repo, _ = decode[protocol.WorkerBriefRepo](raw)
 			}
 		}
+		briefFlags = protocol.LintBrief(p.WorkerStartRequest, protocol.BriefLintFacts{Commits: repo.Commits, Sandbox: osSandboxOf(node.OS)})
+		// One line per start for the friction digest: the checks that flagged it.
+		g.logLine("worker.brief_lint", "project", pick.Name, "flags", len(briefFlags), "checks", protocol.BriefCheckNames(briefFlags))
 		failures, warnings, err := g.store.checkWorkerBrief(p, pick.Name, repo)
 		briefNote = strings.Join(warnings, "; ")
 		if err != nil {
 			return none, err
 		}
 		if p.Mode == protocol.WorkerStartModeCheck {
-			return protocol.WorkerStartAnswer{Checked: true, BriefFailures: append(failures, visualWarningLines(p.Task)...), ModelNote: briefNote, NodeID: pick.NodeID, Hostname: pick.Hostname,
+			return protocol.WorkerStartAnswer{Checked: true, BriefFailures: append(failures, visualWarningLines(p.Task)...), BriefFlags: briefFlags, ModelNote: briefNote, NodeID: pick.NodeID, Hostname: pick.Hostname,
 				Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model}, nil
 		}
 		if len(failures) > 0 {
@@ -1169,7 +1174,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		return protocol.WorkerStartAnswer{NodeID: pick.NodeID, Hostname: pick.Hostname, Project: pick.Name, Path: pick.Path,
 			Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Why: choice.Why, Title: p.Title, Queued: true, QueueID: launched.QueueID,
 			Position: launched.Position, Reason: launched.Reason, MachineNote: machineNote, Permissions: perms, Base: p.Base,
-			Track: track, Playbooks: books, Hint: hint, Phases: phases}, nil
+			Track: track, Playbooks: books, Hint: hint, Phases: phases, BriefFlags: briefFlags}, nil
 	}
 	if err != nil || launched.SessionID == "" {
 		return none, reject("machine %s answered without a session", pick.Hostname)
@@ -1194,7 +1199,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	return protocol.WorkerStartAnswer{StartRef: startRef, Starting: launched.Starting, SessionID: launched.SessionID, NodeID: pick.NodeID, Hostname: pick.Hostname,
 		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Why: choice.Why, Title: p.Title,
 		Worktree: launched.Worktree, Branch: launched.Branch, Base: p.Base, ProjectRules: launched.ProjectRules, MachineNote: machineNote, Permissions: perms,
-		OSSandbox: launched.OSSandbox, Track: track, Playbooks: books, Hint: hint, Phases: phases}, nil
+		OSSandbox: launched.OSSandbox, Track: track, Playbooks: books, Hint: hint, Phases: phases, BriefFlags: briefFlags}, nil
 }
 
 // refuseWithAlternative refuses a start for want of a provider's allowance or
