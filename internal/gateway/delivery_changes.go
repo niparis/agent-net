@@ -82,6 +82,12 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 			return nil, true, reject("bad %s", typ)
 		}
 		data, err = g.store.FrictionFind(q)
+	case protocol.FrameFrictionMark:
+		q, derr := decode[protocol.FrictionMarkCall](raw)
+		if derr != nil {
+			return nil, true, reject("bad %s", typ)
+		}
+		data, err = g.store.MarkFriction(q.Actor, q.FrictionMarkRequest)
 	case protocol.FrameNudgePause:
 		q, derr := decode[protocol.NudgePauseRequest](raw)
 		if derr != nil {
