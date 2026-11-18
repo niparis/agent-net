@@ -41,7 +41,7 @@ func TestDeskSignInRowOpensPaneFromOneAction(t *testing.T) {
 	m.asks = []protocol.Ask{{
 		ID: "i_signin", Kind: protocol.AskKindSignIn, State: protocol.AskStateOpen,
 		FromKind: protocol.AskFromGateway, From: "agent-net", Node: "n_mac",
-		Question: "Sign in to Alibaba Bailian CLI on Nicolas-MBP",
+		Question: "Sign in to Alibaba Bailian CLI on work-box",
 		Detail:   "the Alibaba token-plan quota needs your console login",
 		Next:     protocol.AskNextOwner, CreatedAt: t0,
 	}}
@@ -204,6 +204,31 @@ func TestDeskShowsSignInAskFirstAmongNewerAsks(t *testing.T) {
 		}
 		if !overflowFound {
 			t.Errorf("%dx%d: expected an In flight overflow row", size[0], size[1])
+		}
+		needsCount := len(m.inboxRows())
+		needsHeader := fmt.Sprintf("Needs you · %d", needsCount)
+		if !strings.Contains(view, needsHeader) {
+			t.Errorf("%dx%d: missing Needs you header %q", size[0], size[1], needsHeader)
+		}
+		needsShown := 0
+		for _, row := range m.inboxRows() {
+			if strings.Contains(view, row.text) {
+				needsShown++
+			}
+		}
+		if needsShown < needsCount {
+			needsOverflow := false
+			for _, line := range strings.Split(view, "\n") {
+				if strings.Contains(line, "Needs you ·") && !strings.Contains(line, fmt.Sprintf("Needs you · %d", needsCount)) {
+					t.Errorf("%dx%d: wrong Needs you header: %s", size[0], size[1], line)
+				}
+				if strings.Contains(line, fmt.Sprintf("… %d more", needsCount-needsShown)) {
+					needsOverflow = true
+				}
+			}
+			if !needsOverflow {
+				t.Errorf("%dx%d: expected Needs you overflow to say %d more, but %d of %d asks are shown", size[0], size[1], needsCount-needsShown, needsShown, needsCount)
+			}
 		}
 		step := "desk-open-80"
 		action := "open Desk in an 80x24 terminal"

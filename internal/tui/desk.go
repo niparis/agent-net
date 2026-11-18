@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"image/color"
 
@@ -116,10 +115,12 @@ func (m Model) deskLogLine(e protocol.DeskLogEntry, nameW, w int, selected bool)
 // deskSection is one box of the Desk before it is fitted to the screen. sel is
 // the body line of the cursor, or -1 when the cursor is elsewhere.
 type deskSection struct {
-	title string
-	color color.Color
-	body  []string
-	sel   int
+	title      string
+	color      color.Color
+	body       []string
+	sel        int
+	itemStarts []int
+	itemCount  int
 }
 
 // fitBody keeps at most room lines of a body. It windows around the cursor and
@@ -147,30 +148,24 @@ func fitBody(body []string, sel, room int) ([]string, int) {
 	return append(out, sDim.Render(fmt.Sprintf("… %d more", len(body)-keep))), top
 }
 
-// fitBodyWindow returns the slice range [top, top+keep) of body lines to display
-// for a section with total lines, sel cursor line (-1 if unselected), and room.
-// more is non-empty if a "… %d more" line should be appended.
-func fitBodyWindow(total, sel, room int) (top, keep int, more string, room1More bool) {
-	if room < 1 {
-		room = 1
+// fitDeskBody keeps item counts independent of the extra lines used to render
+// an item, such as a table heading or its explanation.
+func fitDeskBody(sc deskSection, room int) ([]string, int) {
+	body, top := fitBody(sc.body, sc.sel, room)
+	if len(sc.body) <= room || (room <= 1 && sc.sel >= 0) {
+		return body, top
 	}
-	if total <= room {
-		return 0, total, "", false
-	}
-	if room == 1 {
-		if sel >= 0 {
-			return sel, 1, "", false
+	contentLines := len(body) - 1
+	shown := 0
+	for _, start := range sc.itemStarts {
+		if start >= top && start < top+contentLines {
+			shown++
 		}
-		return 0, 0, sDim.Render(fmt.Sprintf("… %d more", total)), true
 	}
-	keep = room - 1
-	top = 0
-	if sel >= keep {
-		top = sel - keep + 1
+	if len(body) > 0 {
+		body[len(body)-1] = sDim.Render(fmt.Sprintf("… %d more", max(sc.itemCount-shown, 0)))
 	}
-	top = min(max(top, 0), total-keep)
-	more = sDim.Render(fmt.Sprintf("… %d more", total-keep))
-	return top, keep, more, false
+	return body, top
 }
 
 func (m Model) deskRowLineCached(row inboxRow, nameW, innerW int, selected bool) string {
@@ -261,27 +256,28 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 		nameW = min(nameW, 20)
 	}
 
-	needsTotal := 0
 	needsSel := -1
+	needs := deskSection{title: fmt.Sprintf("Needs you · %d", len(rows)), color: roleWarning, sel: -1, itemCount: len(rows)}
 	if len(rows) == 0 {
-		needsTotal = 1
+		needs.body = []string{sDim.Render("Nothing is waiting for you.")}
 	} else {
 		for i, row := range rows {
+			needs.itemStarts = append(needs.itemStarts, len(needs.body))
 			if sec == deskSecAsk && i == at {
-				needsSel = needsTotal
+				needsSel = len(needs.body)
+				needs.sel = needsSel
 			}
-			needsTotal++
+			needs.body = append(needs.body, "")
 			if row.ask.WhyYou != "" {
-				needsTotal++
+				needs.body = append(needs.body, "")
 			}
 		}
 	}
-	needs := deskSection{title: fmt.Sprintf("Needs you · %d", len(rows)), color: roleWarning, sel: needsSel}
 	sections = append(sections, needs)
 
 	d := m.delivery
 	flight := deskSection{title: fmt.Sprintf("In flight · %d", len(changes)), color: roleAccent, sel: -1}
-	flightRowLines := make([]int, 0, len(changes))
+	flight.itemCount = len(changes)
 	if d.err != "" {
 		for _, l := range wrap("Could not load changes: "+sanitize(d.err), innerW) {
 			flight.body = append(flight.body, sBad.Render(l))
@@ -294,7 +290,7 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 		cols := m.deliveryLayout(innerW, changes)
 		flight.body = append(flight.body, cols.header())
 		for i, ch := range changes {
-			flightRowLines = append(flightRowLines, len(flight.body))
+			flight.itemStarts = append(flight.itemStarts, len(flight.body))
 			if sec == deskSecChange && i == at {
 				flight.sel = len(flight.body)
 			}
@@ -321,11 +317,13 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 	sections = append(sections, flight)
 
 	handled := deskSection{title: fmt.Sprintf("Handled for you · %d", len(m.handled)), color: roleAccent, sel: -1}
+	handled.itemCount = len(m.handled)
 	if len(m.handled) == 0 {
 		handled.body = []string{sDim.Render("The chief of staff sorted nothing in the last day.")}
 	}
 	for i, h := range m.handled {
 		selected := sec == deskSecHandled && i == at
+		handled.itemStarts = append(handled.itemStarts, len(handled.body))
 		if selected {
 			handled.sel = len(handled.body)
 		}
@@ -340,7 +338,9 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 		}
 		logName = min(logName, 12)
 		logSec := deskSection{title: fmt.Sprintf("Log · %d", len(logRows)), color: roleAccent, sel: -1}
+		logSec.itemCount = len(logRows)
 		for i, e := range logRows {
+			logSec.itemStarts = append(logSec.itemStarts, len(logSec.body))
 			if sec == deskSecLog && i == at {
 				logSec.sel = len(logSec.body)
 			}
@@ -355,7 +355,7 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 	// Fit the sections to the room. The section with the cursor is cut last:
 	// the others first shrink to a few lines, then to one.
 	limits := make([]int, len(sections))
-	limits[0] = needsTotal
+	limits[0] = len(needs.body)
 	total := limits[0] + 2
 	for i := 1; i < len(sections); i++ {
 		limits[i] = len(sections[i].body)
@@ -393,63 +393,31 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 		}
 	}
 
-	top, keep, more, room1More := fitBodyWindow(needsTotal, needsSel, limits[0])
-	var needsBody []string
-	if len(rows) == 0 {
-		needsBody = []string{sDim.Render("Nothing is waiting for you.")}
-	} else if room1More {
-		needsBody = []string{more}
-	} else {
-		curLine := 0
-		for i, row := range rows {
-			line1 := curLine
-			line2 := -1
-			curLine++
-			if row.ask.WhyYou != "" {
-				line2 = curLine
-				curLine++
-			}
-			if line1 >= top+keep {
-				break
-			}
-			if line1 >= top && line1 < top+keep {
-				selected := sec == deskSecAsk && i == at
-				needsBody = append(needsBody, m.deskRowLineCached(row, nameW, innerW, selected))
-			}
-			if line2 >= top && line2 < top+keep {
-				needsBody = append(needsBody, m.deskWhyLineCached(row, innerW))
-			}
-		}
-		if more != "" {
-			needsBody = append(needsBody, more)
-		}
-	}
-	sections[0].body = needsBody
-
 	var out []string
 	selected := 0
 	for i, sc := range sections {
 		var body []string
 		scTop := 0
 		if i == 0 {
-			body = sc.body
-			scTop = top
-		} else {
-			body, scTop = fitBody(sc.body, sc.sel, limits[i])
-			lastLine := ""
-			if len(body) > 0 {
-				lastLine = ansi.Strip(body[len(body)-1])
-			}
-			if i == 1 && len(sc.body) > limits[i] && strings.Contains(lastLine, "… ") && strings.Contains(lastLine, "more") {
-				contentLines := max(len(body)-1, 0)
-				shown := 0
-				for _, line := range flightRowLines {
+			body, scTop = fitDeskBody(sc, limits[i])
+			if len(rows) > 0 {
+				contentLines := len(body)
+				if len(sc.body) > limits[i] && !(limits[i] <= 1 && sc.sel >= 0) {
+					contentLines--
+				}
+				for rowIndex, row := range rows {
+					line := sc.itemStarts[rowIndex]
 					if line >= scTop && line < scTop+contentLines {
-						shown++
+						body[line-scTop] = m.deskRowLineCached(row, nameW, innerW, sec == deskSecAsk && rowIndex == at)
+					}
+					whyLine := line + 1
+					if row.ask.WhyYou != "" && whyLine >= scTop && whyLine < scTop+contentLines {
+						body[whyLine-scTop] = m.deskWhyLineCached(row, innerW)
 					}
 				}
-				body[len(body)-1] = sDim.Render(fmt.Sprintf("… %d more", max(len(changes)-shown, 0)))
 			}
+		} else {
+			body, scTop = fitDeskBody(sc, limits[i])
 		}
 		if sc.sel >= 0 {
 			selected = len(out) + 1 + sc.sel - scTop
