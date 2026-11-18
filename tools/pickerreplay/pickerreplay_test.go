@@ -203,3 +203,41 @@ func TestTasksAtLeavesOutWhatDidNotExistYet(t *testing.T) {
 		t.Fatalf("at the pick: got %d tasks, want 6", got)
 	}
 }
+
+func TestQualityV2FloorsAndFallback(t *testing.T) {
+	cheap := ev("cheap", .6, .5, .5, .4, .5)
+	strong := ev("strong", .8, 1, 1, .8, 1)
+	cheap.rank, strong.rank = .5, 1
+	if got := pickV2([]*candEval{cheap, strong}, .7); got != strong {
+		t.Fatalf("floor picked %+v", got)
+	}
+	if got := pickV2([]*candEval{cheap, strong}, .9); got != nil {
+		t.Fatalf("expected fallback, got %+v", got)
+	}
+	if got := pickV2([]*candEval{cheap, strong}, 0); got != cheap {
+		t.Fatalf("no floor picked %+v", got)
+	}
+}
+
+func TestDifficultyFloorSets(t *testing.T) {
+	if levelForD(1.49) != "trivial" || levelForD(1.5) != "simple" || levelForD(2.25) != "normal" || levelForD(3) != "hard" || levelForD(3.75) != "very_complex" {
+		t.Fatal("wrong difficulty boundaries")
+	}
+	if floorSets()[0].floor("hard") != .7 || floorSets()[1].floor("simple") != .55 || floorSets()[2].floor("normal") != .5 {
+		t.Fatal("wrong floor set")
+	}
+}
+
+func TestFloorFallbackUsesToday(t *testing.T) {
+	today := ev("today", .5, 2, 2, .2, 2)
+	v2 := ev("v2", .8, 1, 1, .6, 1)
+	v2.rank = 1
+	got, fallback := pickWithFloor([]*candEval{v2}, today, .7)
+	if got != today || !fallback {
+		t.Fatalf("got %v, fallback %t", got, fallback)
+	}
+	got, fallback = pickWithFloor([]*candEval{v2}, today, .5)
+	if got != v2 || fallback {
+		t.Fatalf("got %v, fallback %t", got, fallback)
+	}
+}

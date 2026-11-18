@@ -2,7 +2,8 @@
 
 An offline replay of the worker picker against a read-only copy of the gateway
 store. It exists for decision [0173](../../docs/decisions/0173-picker-quality.md):
-it runs today's rule and option A at several alpha values, and prints the tables
+it runs today's rule and the opt-in rule at several alpha values and clean-rate
+floors, and prints the tables
 that decision reports.
 
 It is not wired into the daemon or the gateway, and it adds nothing to the
@@ -16,7 +17,7 @@ Flags:
 
 - `-db` (required): path to a copy of the gateway store. Never point it at the
   live store.
-- `-alphas` (default `0,1,2,3,4,5,6,8,10,12`): option A alpha values.
+- `-alphas` (default `0,2,4,6,8,10`): opt-in alpha values. The three floor sets are also run.
 
 ## What it reads
 
@@ -32,7 +33,7 @@ a replay to pin this.
 For each recorded pick it rebuilds the picker table as it stood at that moment:
 only runs that had ended, judge results that had arrived, and defects, failed
 steps and merges that had been recorded by then. It reuses the live scoring code
-where it can: `protocol.PickerTaskScore`, `protocol.BuildPickerTable`,
+where it can: `protocol.PickerTaskScore`, `protocol.PickerTaskScoreV2`, `protocol.BuildPickerTable`,
 `protocol.PickerBucketVerdicts` and `protocol.WorkerBenchmarkCeiling`. The cost
 rule is shared with the live picker through `protocol.PickerExpectedCosts`.
 
@@ -47,3 +48,7 @@ expected cost per method, then the D 3.20 case.
 
 The tests build a throwaway store copy in a temporary directory. They never
 touch the real setup.
+The replay uses each recorded candidate roster and quota pace factor. It does
+not simulate exploration. A floor applies to the judge level selected by D;
+when no qualifying candidate meets it, the replay uses today's pick and counts
+the fallback. A fallback's expected cost uses today's cost rule.

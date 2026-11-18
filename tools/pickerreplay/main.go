@@ -1,6 +1,6 @@
 // Command pickerreplay replays the worker picker against a read-only snapshot
-// of the gateway store. It runs today's method, option A at several alpha
-// values and option B, and prints the tables decision 0173 reports. It is not
+// of the gateway store. It runs today's method and the opt-in rule at several
+// alpha values and clean-rate floors, and prints the tables decision 0173 reports. It is not
 // wired into the daemon or the gateway.
 package main
 
@@ -18,7 +18,7 @@ import (
 
 func main() {
 	db := flag.String("db", "", "path to a read-only copy of the gateway store (required)")
-	alphas := flag.String("alphas", "0,1,2,3,4,5,6,8,10,12", "comma separated alpha values for option A")
+	alphas := flag.String("alphas", "0,2,4,6,8,10", "comma separated alpha values for option A")
 	flag.Parse()
 	if *db == "" {
 		fmt.Fprintln(os.Stderr, "pickerreplay: -db is required; pass a copy of the gateway store, never the live one")
@@ -81,24 +81,33 @@ func printReport(r *Report) {
 	}
 
 	fmt.Printf("\n## What each method picks\n\n")
-	fmt.Printf("| method | picks | no pick | mean quality (today's score) | mean clean p | mean expected cost | mean adjusted cost |\n")
-	fmt.Printf("|---|---|---|---|---|---|---|\n")
-	all := []*summary{r.Recorded, r.Today}
+	fmt.Printf("| method | picks | no pick | mean quality (today's score) | mean clean p | mean expected cost | mean adjusted cost | fallbacks |\n")
+	fmt.Printf("|---|---|---|---|---|---|---|---|\n")
+	all := []*summary{r.Today}
 	all = append(all, r.OptionsA...)
+	all = append(all, r.Floors...)
 	for _, m := range all {
 		p, cost, adj, qual := m.averages()
-		fmt.Printf("| %s | %d | %d | %.2f | %.2f | $%.2f | $%.2f |\n", m.Name, m.Picks, m.NoPick, qual, p, cost, adj)
+		fmt.Printf("| %s | %d | %d | %.2f | %.2f | $%.2f | $%.2f | %d |\n", m.Name, m.Picks, m.NoPick, qual, p, cost, adj, m.Fallback)
 	}
-	fmt.Printf("\nModels picked, count per model:\n\n")
+	fmt.Printf("\nModels picked by difficulty level:\n\n")
 	for _, m := range all {
-		if m.Picks == 0 {
-			continue
+		for _, level := range []string{"trivial", "simple", "normal", "hard", "very_complex"} {
+			counts := m.ByLevel[level]
+			if len(counts) == 0 {
+				continue
+			}
+			var names []string
+			for name := range counts {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			var parts []string
+			for _, name := range names {
+				parts = append(parts, fmt.Sprintf("%s %d", name, counts[name]))
+			}
+			fmt.Printf("- %s / %s: %s\n", m.Name, level, strings.Join(parts, ", "))
 		}
-		var parts []string
-		for _, mc := range m.modelCounts() {
-			parts = append(parts, fmt.Sprintf("%s %d", mc.Name, mc.Count))
-		}
-		fmt.Printf("- %s: %s\n", m.Name, strings.Join(parts, ", "))
 	}
 
 	if cs := r.Case; cs != nil {

@@ -229,3 +229,129 @@ Optional flags: `-alphas 0,3,6,8`. The snapshot must be a copy. The tool opens
 it read only and never calls a gateway store, because a
 store open migrates the file. It is not wired into the daemon or the gateway.
 The tool's tests are run by CI with `go -C tools/pickerreplay test`.
+## Replay of the opt-in rule
+
+This replay uses build 4168d838a0 and the read-only snapshot named in the
+request. The setting remains off by default. The earlier tables in this decision
+are the original draft replay; this section uses the accepted opt-in build.
+There are 51 picks. The current rule matches 44 recorded picks; the limitations
+and seven mismatches described above still apply.
+
+The deterministic replay keeps the recorded candidate roster and quota pace
+factor. It uses the live V2 score, inherited parent cells, interval gate and
+cost per accepted result. It does not simulate exploration. The recorded roster
+limits which new profiles can appear: a profile absent from a pick's roster
+cannot be selected for that pick. Alpha multiplies pace-adjusted cost by
+`exp(alpha x (best quality - quality))`. Floor sets use alpha zero:
+
+- A: hard 0.70, normal 0.60; no simple floor.
+- B: hard 0.75, normal 0.65, simple 0.55.
+- C: hard 0.60, normal 0.50; no simple floor.
+
+The judge's D levels are trivial [1.00, 1.50), simple [1.50, 2.25), normal
+[2.25, 3.00), hard [3.00, 3.75), and very_complex [3.75, 5.00]. Floors not
+listed for a level are zero. Candidates below the floor are excluded from the
+qualifying set. If none qualifies and meets the floor, the replay uses today's
+choice and counts a fallback. Thus fallback picks can be below the floor.
+
+Mean quality uses today's score and table for every row. Clean p is the
+selected cell's estimated clean share, not an observed outcome of the replay.
+Expected cost is the selected candidate's predicted cost: V2 uses cost per
+accepted result; today and floor fallbacks use today's rescue rule. Averages
+for the floor rows therefore mix these rules. Adjusted cost also includes the
+recorded quota pace factor. Case quality is the selected rule's cell score;
+the summary's quality uses today's score. Where a V2-only child has no record
+in today's table, its comparison quality is today's bucket prior.
+
+### What each method picks
+
+| method | picks | no pick | mean quality (today's score) | mean clean p | mean expected cost | mean adjusted cost | fallbacks |
+|---|---|---|---|---|---|---|---|
+| today | 51 | 0 | 0.75 | 0.71 | $1.14 | $1.08 | 0 |
+| V2 alpha 0 | 51 | 0 | 0.76 | 0.74 | $0.72 | $0.47 | 0 |
+| V2 alpha 2 | 51 | 0 | 0.76 | 0.75 | $0.89 | $0.48 | 0 |
+| V2 alpha 4 | 51 | 0 | 0.76 | 0.75 | $0.98 | $0.51 | 0 |
+| V2 alpha 6 | 51 | 0 | 0.76 | 0.75 | $0.98 | $0.51 | 0 |
+| V2 alpha 8 | 51 | 0 | 0.76 | 0.76 | $0.99 | $0.51 | 0 |
+| V2 alpha 10 | 51 | 0 | 0.76 | 0.77 | $0.99 | $0.51 | 0 |
+| floor A | 51 | 0 | 0.76 | 0.75 | $1.22 | $1.08 | 6 |
+| floor B | 51 | 0 | 0.75 | 0.76 | $1.22 | $1.06 | 9 |
+| floor C | 51 | 0 | 0.76 | 0.75 | $1.22 | $1.02 | 5 |
+
+Models picked by difficulty level:
+
+- today / trivial: deepseek alibaba high 2
+- today / simple: deepseek alibaba high 3, haiku high claude 11
+- today / normal: deepseek alibaba high 14, haiku high claude 2, haiku xhigh claude 9
+- today / hard: deepseek alibaba high 3, sonnet claude 5, terra max codex 1
+- today / very_complex: terra max codex 1
+- V2 alpha 0 / trivial: deepseek alibaba high 2
+- V2 alpha 0 / simple: deepseek alibaba high 1, deepseek opencode 5, haiku high claude 8
+- V2 alpha 0 / normal: deepseek opencode 22, haiku high claude 1, haiku xhigh claude 2
+- V2 alpha 0 / hard: deepseek opencode 3, sonnet claude 2, terra codex 3, terra max codex 1
+- V2 alpha 0 / very_complex: terra max codex 1
+- V2 alpha 2 / trivial: deepseek alibaba high 1, deepseek opencode 1
+- V2 alpha 2 / simple: deepseek alibaba high 1, deepseek opencode 5, haiku high claude 8
+- V2 alpha 2 / normal: deepseek opencode 22, haiku high claude 1, haiku xhigh claude 2
+- V2 alpha 2 / hard: deepseek opencode 3, sonnet claude 4, terra codex 1, terra max codex 1
+- V2 alpha 2 / very_complex: terra max codex 1
+- V2 alpha 4 / trivial: deepseek alibaba high 1, deepseek opencode 1
+- V2 alpha 4 / simple: deepseek alibaba high 1, deepseek opencode 7, haiku high claude 6
+- V2 alpha 4 / normal: deepseek opencode 21, haiku high claude 1, haiku xhigh claude 3
+- V2 alpha 4 / hard: deepseek opencode 3, sonnet claude 5, terra max codex 1
+- V2 alpha 4 / very_complex: terra max codex 1
+- V2 alpha 6 / trivial: deepseek alibaba high 1, deepseek opencode 1
+- V2 alpha 6 / simple: deepseek alibaba high 1, deepseek opencode 7, haiku high claude 6
+- V2 alpha 6 / normal: deepseek opencode 21, haiku high claude 1, haiku xhigh claude 3
+- V2 alpha 6 / hard: deepseek opencode 3, sonnet claude 5, terra max codex 1
+- V2 alpha 6 / very_complex: terra max codex 1
+- V2 alpha 8 / trivial: deepseek alibaba high 1, deepseek opencode 1
+- V2 alpha 8 / simple: deepseek alibaba high 1, deepseek opencode 8, haiku high claude 5
+- V2 alpha 8 / normal: deepseek opencode 19, haiku high claude 1, haiku xhigh claude 5
+- V2 alpha 8 / hard: deepseek opencode 3, sonnet claude 5, terra max codex 1
+- V2 alpha 8 / very_complex: terra max codex 1
+- V2 alpha 10 / trivial: deepseek alibaba high 1, deepseek opencode 1
+- V2 alpha 10 / simple: deepseek alibaba high 1, deepseek opencode 9, haiku high claude 4
+- V2 alpha 10 / normal: deepseek opencode 18, haiku high claude 1, haiku xhigh claude 6
+- V2 alpha 10 / hard: deepseek opencode 3, sonnet claude 5, terra max codex 1
+- V2 alpha 10 / very_complex: terra max codex 1
+- floor A / trivial: deepseek alibaba high 2
+- floor A / simple: deepseek alibaba high 1, deepseek opencode 5, haiku high claude 8
+- floor A / normal: deepseek opencode 22, haiku high claude 1, haiku xhigh claude 2
+- floor A / hard: sonnet claude 5, terra codex 3, terra max codex 1
+- floor A / very_complex: terra max codex 1
+- floor B / trivial: deepseek alibaba high 2
+- floor B / simple: deepseek alibaba high 1, deepseek opencode 5, haiku high claude 8
+- floor B / normal: deepseek opencode 14, haiku high claude 1, haiku xhigh claude 10
+- floor B / hard: deepseek alibaba high 3, sonnet claude 5, terra max codex 1
+- floor B / very_complex: terra max codex 1
+- floor C / trivial: deepseek alibaba high 2
+- floor C / simple: deepseek alibaba high 1, deepseek opencode 5, haiku high claude 8
+- floor C / normal: deepseek opencode 22, haiku high claude 1, haiku xhigh claude 2
+- floor C / hard: deepseek opencode 3, sonnet claude 5, terra max codex 1
+- floor C / very_complex: terra max codex 1
+
+### Case D 3.20
+
+Session s_c1ce54688a069800, bucket 3.00-3.33, recorded pick: deepseek alibaba high.
+A rank of 0 means not applicable for today or a fallback.
+
+| method | winner | quality | clean p | run cost | expected cost | adjusted | rank |
+|---|---|---|---|---|---|---|---|
+| today | deepseek alibaba high | 0.61 | 0.41 | $0.47 | $0.65 | $0.65 | 0.00 |
+| V2 alpha 0 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 | 0.15 |
+| V2 alpha 2 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 | 0.17 |
+| V2 alpha 4 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 | 0.19 |
+| V2 alpha 6 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 | 0.22 |
+| V2 alpha 8 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 | 0.26 |
+| V2 alpha 10 | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 | 0.29 |
+| floor A | terra codex | 0.79 | 0.71 | $0.69 | $0.98 | $1.57 | 1.57 |
+| floor B (fallback) | deepseek alibaba high | 0.61 | 0.41 | $0.47 | $0.65 | $0.65 | 0.00 |
+| floor C | deepseek opencode | 0.80 | 0.68 | $0.40 | $0.58 | $0.15 | 0.15 |
+
+
+The [picker-ml study](https://github.com/niparis/agent-net/blob/e994482e67171659fd42815fd7a55be3cac6e68d/research/picker-ml/RESULTS.md)
+found that per-model quality gaps did not hold up on later tasks: D alone
+predicted as well as the model-specific table. Alpha and floors therefore act
+on noisy estimated gaps. The linked historical copy is used because the study
+is not present on this branch.
