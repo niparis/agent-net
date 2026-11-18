@@ -191,6 +191,26 @@ func (s *Store) ListAsks() ([]protocol.Ask, error) {
 	return asks, nil
 }
 
+// closeSettlesDecision reports whether reason represents an outcome where the
+// underlying question or action was answered or settled. When the holder of
+// merged asks is closed with a settling reason, the merged asks stay closed
+// with it because they represent the same decision. When closed without
+// settling (such as a session ending), the merged asks are reopened.
+func closeSettlesDecision(reason string) bool {
+	switch reason {
+	case protocol.AskReasonAnswered,
+		protocol.AskReasonChangeDone,
+		protocol.AskReasonReturned,
+		protocol.AskReasonSlept,
+		protocol.AskReasonSignedIn,
+		protocol.AskReasonResolved,
+		protocol.AskReasonOwnerReplied:
+		return true
+	default:
+		return false
+	}
+}
+
 // closeAsks closes every open ask that matches cond, keeps the reason in the
 // answer, and writes one log line for each. cond is a SQL condition on
 // inbox_items that this package writes; it never holds user text.
@@ -219,8 +239,10 @@ func (s *Store) closeAsks(q askDB, cond string, args []any, reason string) (int,
 		if _, err := q.Exec(`UPDATE inbox_items SET status='closed',answer=?,answered_at=? WHERE id=? AND status='open'`, reason, now, c.id); err != nil {
 			return 0, err
 		}
-		if err := s.reopenOrMoveMergedAsks(q, c.id, "", "gateway", time.Unix(0, now)); err != nil {
-			return 0, err
+		if !closeSettlesDecision(reason) {
+			if err := s.reopenOrMoveMergedAsks(q, c.id, "", "gateway", time.Unix(0, now)); err != nil {
+				return 0, err
+			}
 		}
 		// A source that was decided by a person is not automation: only the
 		// closes that the gateway does by itself go to the log.

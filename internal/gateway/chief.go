@@ -947,6 +947,11 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 		if _, err := tx.Exec(`UPDATE inbox_items SET status='closed', answer=?, answered_at=? WHERE id=?`, sorterName+": "+reason, now.UnixNano(), q.Ask); err != nil {
 			return out, none, err
 		}
+		// When the chief closes an ask that holds merged asks, the chief's
+		// judgment settles the decision for the entire group, so merged asks stay
+		// closed with it. When a delegate holder session closes its routed ask,
+		// that session is only stepping away from its own item; it does not settle
+		// the merged asks, so they are reopened.
 		if holder {
 			if err := s.reopenOrMoveMergedAsks(tx, q.Ask, "", sorter, now); err != nil {
 				return out, none, err
@@ -1351,6 +1356,9 @@ func (s *Store) undoAsk(tx *sql.Tx, id, actor string, chiefOnly bool, now time.T
 func removeMergedNote(q askDB, into, ask string) error {
 	var detail string
 	if err := q.QueryRow(`SELECT detail FROM inbox_items WHERE id=?`, into).Scan(&detail); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
 		return err
 	}
 	var keep []string
@@ -1364,10 +1372,10 @@ func removeMergedNote(q askDB, into, ask string) error {
 }
 
 // reopenOrMoveMergedAsks handles asks that were merged into askID when askID is
-// withdrawn or resolved. If replacementID is open and not part of the merged set,
-// the merged asks are moved to replacementID; otherwise they are reopened so no
-// owner-facing ask closes without an answer, a withdraw by its own asker, or the
-// chief closing it.
+// withdrawn or closed without settling the decision. If replacementID is open
+// and not part of the merged set, the merged asks are moved to replacementID;
+// otherwise they are reopened with their previous next_who so the chief or
+// owner sorts them again.
 func (s *Store) reopenOrMoveMergedAsks(q askDB, askID, replacementID, sorter string, now time.Time) error {
 	rows, err := q.Query(`SELECT s1.ask_id, s1.prev_next, s1.prev_status, s1.prev_answer, i.text, i.about_kind, i.about_id
 		FROM ask_sorts s1
@@ -1405,12 +1413,22 @@ func (s *Store) reopenOrMoveMergedAsks(q askDB, askID, replacementID, sorter str
 
 	var replStatus string
 	if replacementID != "" {
-		_ = q.QueryRow(`SELECT status FROM inbox_items WHERE id=?`, replacementID).Scan(&replStatus)
+		if err := q.QueryRow(`SELECT status FROM inbox_items WHERE id=?`, replacementID).Scan(&replStatus); err != nil {
+			return err
+		}
+		if replStatus != "open" {
+			return fmt.Errorf("replacement ask %s is not open", replacementID)
+		}
 	}
 
 	for _, m := range merged {
-		_ = removeMergedNote(q, askID, m.id)
-		if replacementID != "" && replStatus == "open" && replacementID != m.id && replacementID != askID {
+		if err := removeMergedNote(q, askID, m.id); err != nil {
+			return err
+		}
+		if replacementID != "" {
+			if replacementID == m.id || replacementID == askID {
+				return fmt.Errorf("cannot move merged ask %s into %s", m.id, replacementID)
+			}
 			note := "merged: " + m.id
 			if _, err := q.Exec(`UPDATE inbox_items SET detail=CASE WHEN detail='' THEN ? ELSE detail||char(10)||? END WHERE id=?`, note, note, replacementID); err != nil {
 				return err
@@ -1423,9 +1441,6 @@ func (s *Store) reopenOrMoveMergedAsks(q askDB, askID, replacementID, sorter str
 			_ = s.deskLog(q, "desk", m.aboutKind, m.aboutID, fmt.Sprintf("Moved merged ask %s into %s (was in %s): %s", m.id, replacementID, askID, askFirstLine(m.text, 120)), "", nil)
 		} else {
 			restored := m.prevNext
-			if restored == "" || restored == protocol.AskNextChief {
-				restored = protocol.AskNextOwner
-			}
 			if _, err := q.Exec(`UPDATE inbox_items SET status='open', next_who=?, answer='', answered_at=0, priority=0, why_you='' WHERE id=?`, restored, m.id); err != nil {
 				return err
 			}

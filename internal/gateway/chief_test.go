@@ -839,10 +839,13 @@ func TestWithdrawMergedAskReopensItOnDesk(t *testing.T) {
 		t.Fatalf("withdraw failed: %v", err)
 	}
 
-	// After withdraw of B, A must be reopened on the Desk.
+	// After withdraw of B, A must be reopened with its previous next_who restored.
 	statusA, _, _ = askRow(t, s, `id=?`, askA)
 	if statusA != "open" {
-		t.Fatalf("askA status = %q, want open on Desk after B is withdrawn", statusA)
+		t.Fatalf("askA status = %q, want open after B is withdrawn", statusA)
+	}
+	if next := askNext(t, s, askA); next != protocol.AskNextChief {
+		t.Fatalf("askA next_who = %q, want %q so chief sorts it again", next, protocol.AskNextChief)
 	}
 	asks, err := s.ListAsks()
 	if err != nil {
@@ -923,5 +926,68 @@ func TestWithdrawWithReplacementMovesMergedAsksToReplacement(t *testing.T) {
 	statusA, _, _ := askRow(t, s, `id=?`, askA)
 	if statusA != "closed" {
 		t.Fatalf("askA status = %q, want closed (merged into C)", statusA)
+	}
+}
+
+// Answering the holder keeps its merged asks closed because they are the same decision.
+func TestAnsweringHolderKeepsMergedAsksClosed(t *testing.T) {
+	s, c, chief, askerA, node := chiefRig(t)
+	askerB, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "lead", Name: "lead"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET online=1, archived_at=0 WHERE id=?`, askerB); err != nil {
+		t.Fatal(err)
+	}
+	askA := chiefAskFrom(t, s, askerA, "approval", "Approve merge #948 (truenas-stacks)", protocol.AskFromSession)
+	c.advance(time.Minute)
+	askB := deskAsk(t, s, askerB, "question", "Review and merge truenas-stacks PR #948")
+
+	// Chief merges A into B.
+	if _, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{
+		Ask: askA, Result: protocol.AskSortMerge, Into: askB, Reason: "same PR",
+	}}); err != nil {
+		t.Fatalf("merge failed: %v", err)
+	}
+
+	statusA, _, _ := askRow(t, s, `id=?`, askA)
+	if statusA != "closed" {
+		t.Fatalf("askA status = %q, want closed after merge", statusA)
+	}
+
+	// Owner answers holder ask B.
+	if _, err := s.AnswerInbox(askB, "yes"); err != nil {
+		t.Fatalf("answering askB failed: %v", err)
+	}
+
+	statusB, _, _ := askRow(t, s, `id=?`, askB)
+	if statusB != "answered" {
+		t.Fatalf("askB status = %q, want answered", statusB)
+	}
+
+	// Merged ask A must stay closed.
+	statusA, _, _ = askRow(t, s, `id=?`, askA)
+	if statusA != "closed" {
+		t.Fatalf("askA status = %q, want closed after holder is answered", statusA)
+	}
+
+	// Auto-closes with settling reasons (e.g. AskReasonAnswered) must also keep merged asks closed.
+	if _, err := s.closeAsks(s.db, `id=?`, []any{askB}, protocol.AskReasonAnswered); err != nil {
+		t.Fatal(err)
+	}
+	statusA, _, _ = askRow(t, s, `id=?`, askA)
+	if statusA != "closed" {
+		t.Fatalf("askA status = %q, want closed after auto-close with AskReasonAnswered", statusA)
+	}
+
+	// Merged ask A must not appear on Desk.
+	asks, err := s.ListAsks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range asks {
+		if a.ID == askA {
+			t.Fatalf("askA must not be on Desk: %+v", a)
+		}
 	}
 }
