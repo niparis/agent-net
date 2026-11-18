@@ -351,8 +351,10 @@ func claudeWorkerSandbox(level, dir string, writes []string, browser bool) map[s
 // claudeBrowserMachServices are the Mach services a headless Chromium looks up
 // on macOS and Claude Code's sandbox does not allow by default. Each one lets
 // a sandboxed command reach a service outside the sandbox (see docs/security.md),
-// so the list holds only what scripts/claude-browser-sandbox/ladder.sh found
-// denied for a Playwright launch.
+// so the list must hold only what scripts/claude-browser-sandbox/ladder.sh
+// finds denied for a Playwright launch. It is a starting list: nobody has run
+// the ladder or the real test on a Mac yet (worker sandboxes cannot nest
+// sandbox-exec), so replace it with the ladder's result.
 var claudeBrowserMachServices = []string{
 	"com.apple.cfprefsd.agent",
 	"com.apple.cfprefsd.daemon",
