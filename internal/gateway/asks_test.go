@@ -960,3 +960,77 @@ func TestLearnedAskWording(t *testing.T) {
 		}
 	}
 }
+
+// Case 2: a waiting ask escalated to the owner whose session wait ends stays
+// open with a note that the asker stopped waiting.
+func TestWaitingAskEscalatedToOwnerStaysOpenWhenWaitEnds(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, _ := s.CreateNode("box", "linux")
+	chief, _ := twoSessions(t, s)
+	var chiefNode string
+	if err := s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, chief).Scan(&chiefNode); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET online=1, archived_at=0 WHERE id=?`, chief); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetChief(protocol.ChiefSetRequest{SessionID: chief}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	info := protocol.SessionInfo{Harness: "claude", NativeID: "waiter", Name: "waiter", Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: "Approve migration?"}}
+	id, err := s.UpsertSession(node, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(waitingAskDebounce)
+	if err := s.reconcileAsks(); err != nil {
+		t.Fatal(err)
+	}
+
+	var askID string
+	if err := s.db.QueryRow(`SELECT id FROM inbox_items WHERE source_ref=? AND status='open'`, "waiting:"+id).Scan(&askID); err != nil {
+		t.Fatalf("waiting ask was not created: %v", err)
+	}
+
+	// Chief escalates the waiting ask to the owner.
+	if _, _, err := s.SortAsk(chiefNode, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{
+		Ask: askID, Result: protocol.AskSortOwner, Priority: 1, Options: []string{"approve", "reject"}, WhyYou: "only owner can approve migration", Reason: "needs owner decision",
+	}}); err != nil {
+		t.Fatalf("sort to owner failed: %v", err)
+	}
+
+	// The session's wait ends.
+	info.Waiting = nil
+	if _, err := s.UpsertSession(node, info); err != nil {
+		t.Fatal(err)
+	}
+
+	// The ask must stay open on the Desk with note "asker no longer waiting".
+	var status, detail string
+	if err := s.db.QueryRow(`SELECT status, detail FROM inbox_items WHERE id=?`, askID).Scan(&status, &detail); err != nil {
+		t.Fatal(err)
+	}
+	if status != "open" {
+		t.Fatalf("ask status = %q, want open after wait ended", status)
+	}
+	if !strings.Contains(detail, "asker no longer waiting") {
+		t.Fatalf("detail = %q, want it to contain 'asker no longer waiting'", detail)
+	}
+	asks, err := s.ListAsks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, a := range asks {
+		if a.ID == askID {
+			found = true
+			if !strings.Contains(a.Detail, "asker no longer waiting") {
+				t.Fatalf("ask detail on Desk = %q, want 'asker no longer waiting'", a.Detail)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("ask %s is not open on the owner's Desk: %+v", askID, asks)
+	}
+}

@@ -3,6 +3,7 @@ package gateway
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -218,6 +219,9 @@ func (s *Store) closeAsks(q askDB, cond string, args []any, reason string) (int,
 		if _, err := q.Exec(`UPDATE inbox_items SET status='closed',answer=?,answered_at=? WHERE id=? AND status='open'`, reason, now, c.id); err != nil {
 			return 0, err
 		}
+		if err := s.reopenOrMoveMergedAsks(q, c.id, "", "gateway", time.Unix(0, now)); err != nil {
+			return 0, err
+		}
 		// A source that was decided by a person is not automation: only the
 		// closes that the gateway does by itself go to the log.
 		if reason == protocol.AskReasonResolved {
@@ -404,17 +408,52 @@ func (s *Store) closeHeldAsk(q askDB, id, reason string) error {
 	return s.closeAskRef(q, "held:"+id, reason)
 }
 
+// closeWaitingAsk closes or updates the ask of a session whose wait ended.
+// An ask that is on the owner's Desk (escalated to the owner, not yet answered)
+// stays open with a note that the asker stopped waiting. Asks not on the owner's
+// Desk keep today's auto-close.
+func (s *Store) closeWaitingAsk(q askDB, ref string) error {
+	var id, nextWho, owner, detail, whyYou string
+	var priority, sortedToOwner int
+	err := q.QueryRow(`SELECT id,next_who,owner,detail,priority,why_you,
+		EXISTS (SELECT 1 FROM ask_sorts WHERE ask_id=inbox_items.id AND result='owner')
+		FROM inbox_items WHERE source_ref=? AND status='open'`, ref).
+		Scan(&id, &nextWho, &owner, &detail, &priority, &whyYou, &sortedToOwner)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	onOwnerDesk := (nextWho == protocol.AskNextOwner || nextWho == "owner" || nextWho == "") && owner != protocol.DeskOwnerCTO &&
+		(sortedToOwner == 1 || priority > 0 || whyYou != "")
+	if onOwnerDesk {
+		const note = "asker no longer waiting"
+		if !strings.Contains(detail, note) {
+			newDetail := note
+			if detail != "" {
+				newDetail = detail + "\n" + note
+			}
+			if _, err := q.Exec(`UPDATE inbox_items SET detail=?, back_note=? WHERE id=?`, newDetail, note, id); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return s.closeAskRef(q, ref, protocol.AskReasonResolved)
+}
+
 // syncWaitingAsk keeps the ask of a session that waits for its user. waiting
 // is the stored JSON of the session's wait; empty means it does not wait.
 func (s *Store) syncWaitingAsk(q askDB, session, waiting string) error {
 	ref := "waiting:" + session
 	if waiting == "" {
-		return s.closeAskRef(q, ref, protocol.AskReasonResolved)
+		return s.closeWaitingAsk(q, ref)
 	}
 	var w protocol.Waiting
 	// An explicit wait comes from agent_owner_ask, which has its own ask.
 	if json.Unmarshal([]byte(waiting), &w) != nil || strings.TrimSpace(w.Text) == "" || w.Explicit {
-		return s.closeAskRef(q, ref, protocol.AskReasonResolved)
+		return s.closeWaitingAsk(q, ref)
 	}
 	var harness, worker string
 	if err := q.QueryRow(`SELECT harness,worker FROM sessions WHERE id=?`, session).Scan(&harness, &worker); err != nil {
@@ -454,7 +493,7 @@ func (s *Store) syncWaitingAsk(q askDB, session, waiting string) error {
 		if _, named, err := s.waitNamesLead(q, session, w.Text); err != nil {
 			return err
 		} else if named {
-			return s.closeAskRef(q, ref, protocol.AskReasonResolved)
+			return s.closeWaitingAsk(q, ref)
 		}
 	}
 	if settled, err := waitAlreadySettled(q, ref, w); err != nil || settled {

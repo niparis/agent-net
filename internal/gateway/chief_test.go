@@ -803,3 +803,125 @@ func TestChiefClearStandsUntilANewChiefOrAModelChange(t *testing.T) {
 		t.Fatalf("a chief.model change did not end the clear: %+v", st)
 	}
 }
+
+// Case 1: the chief merged an approval into a lead's Desk ask; the lead then
+// withdrew its ask in favour of the approval. The merged approval must reopen
+// and stay on the Desk.
+func TestWithdrawMergedAskReopensItOnDesk(t *testing.T) {
+	s, c, chief, askerA, node := chiefRig(t)
+	askerB, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "lead", Name: "lead"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET online=1, archived_at=0 WHERE id=?`, askerB); err != nil {
+		t.Fatal(err)
+	}
+	askA := chiefAskFrom(t, s, askerA, "approval", "Approve merge #948 (truenas-stacks)", protocol.AskFromSession)
+	c.advance(time.Minute)
+	askB := deskAsk(t, s, askerB, "question", "Review and merge truenas-stacks PR #948")
+
+	// Chief merges A into B.
+	if _, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{
+		Ask: askA, Result: protocol.AskSortMerge, Into: askB, Reason: "same PR",
+	}}); err != nil {
+		t.Fatalf("merge failed: %v", err)
+	}
+
+	statusA, _, _ := askRow(t, s, `id=?`, askA)
+	if statusA != "closed" {
+		t.Fatalf("askA status = %q, want closed after merge", statusA)
+	}
+
+	// Lead withdraws B in favour of A.
+	if _, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: askerB, AskSortArgs: protocol.AskSortArgs{
+		Ask: askB, Result: protocol.AskSortWithdraw, Reason: "in favour of " + askA,
+	}}); err != nil {
+		t.Fatalf("withdraw failed: %v", err)
+	}
+
+	// After withdraw of B, A must be reopened on the Desk.
+	statusA, _, _ = askRow(t, s, `id=?`, askA)
+	if statusA != "open" {
+		t.Fatalf("askA status = %q, want open on Desk after B is withdrawn", statusA)
+	}
+	asks, err := s.ListAsks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var foundA bool
+	for _, a := range asks {
+		if a.ID == askA {
+			foundA = true
+			break
+		}
+	}
+	if !foundA {
+		t.Fatalf("askA is not on the owner's Desk: %+v", asks)
+	}
+}
+
+func TestReplacementMergedIntoAskRefusedAsCycle(t *testing.T) {
+	s, c, chief, asker, node := chiefRig(t)
+	askA := chiefAskFrom(t, s, asker, "approval", "Approve merge #948 at head 1", protocol.AskFromSession)
+	c.advance(time.Minute)
+	askB := deskAsk(t, s, asker, "approval", "Approve merge #948 at head 2")
+
+	// Chief merges A into B.
+	if _, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{
+		Ask: askA, Result: protocol.AskSortMerge, Into: askB, Reason: "same PR",
+	}}); err != nil {
+		t.Fatalf("merge failed: %v", err)
+	}
+
+	// Chief tries to withdraw B naming A (which was merged into B) as replacement.
+	_, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{
+		Ask: askB, Result: protocol.AskSortWithdraw, ReplacedBy: askA, Reason: "cycle attempt",
+	}})
+	if err == nil || !strings.Contains(err.Error(), "cycle") {
+		t.Fatalf("expected cycle error, got: %v", err)
+	}
+}
+
+func TestWithdrawWithReplacementMovesMergedAsksToReplacement(t *testing.T) {
+	s, c, chief, askerA, node := chiefRig(t)
+	askerB, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "lead", Name: "lead"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET online=1, archived_at=0 WHERE id=?`, askerB); err != nil {
+		t.Fatal(err)
+	}
+	askA := chiefAskFrom(t, s, askerA, "approval", "Approve merge #948 (truenas-stacks)", protocol.AskFromSession)
+	c.advance(time.Minute)
+	askB := deskAsk(t, s, askerB, "question", "Review and merge truenas-stacks PR #948")
+	c.advance(time.Minute)
+	askC := deskAsk(t, s, askerB, "question", "truenas-stacks replacement ask")
+
+	// Chief merges A into B.
+	if _, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{
+		Ask: askA, Result: protocol.AskSortMerge, Into: askB, Reason: "same PR",
+	}}); err != nil {
+		t.Fatalf("merge failed: %v", err)
+	}
+
+	// Chief withdraws B with replacement C.
+	if _, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{
+		Ask: askB, Result: protocol.AskSortWithdraw, ReplacedBy: askC, Reason: "replaced by C",
+	}}); err != nil {
+		t.Fatalf("withdraw with replacement failed: %v", err)
+	}
+
+	// Ask A should now be merged into C.
+	var detailC string
+	if err := s.db.QueryRow(`SELECT detail FROM inbox_items WHERE id=?`, askC).Scan(&detailC); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(detailC, "merged: "+askA) {
+		t.Fatalf("askC detail = %q, want 'merged: %s'", detailC, askA)
+	}
+	// Ask A stays closed because it is now merged into C.
+	statusA, _, _ := askRow(t, s, `id=?`, askA)
+	if statusA != "closed" {
+		t.Fatalf("askA status = %q, want closed (merged into C)", statusA)
+	}
+}
