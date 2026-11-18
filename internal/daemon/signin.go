@@ -36,6 +36,7 @@ type signInState struct {
 	// provider's quota error clears, so a dismissed ask is not raised again
 	// on every quota run.
 	raised  map[string]string
+	errors  map[string]string
 	pending map[string]*signInPending
 }
 
@@ -63,10 +64,26 @@ func (s *signInState) add(provider, ask string) {
 	s.raised[provider] = ask
 }
 
+func (s *signInState) lastError(provider string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.errors[provider]
+}
+
+func (s *signInState) setLastError(provider, errText string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.errors == nil {
+		s.errors = map[string]string{}
+	}
+	s.errors[provider] = errText
+}
+
 func (s *signInState) drop(provider string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.raised, provider)
+	delete(s.errors, provider)
 }
 
 // signInNeeded lists the allowlisted providers whose last quota reading asks
@@ -106,6 +123,13 @@ func (d *Daemon) syncSignInAsks(ctx context.Context, q *protocol.Quotas) {
 		if !ok {
 			continue
 		}
+		var currentErr string
+		for _, p := range q.Providers {
+			if k, ok := protocol.SignInProviderKey(p.Provider); ok && k == provider {
+				currentErr = p.Error
+				break
+			}
+		}
 		var data json.RawMessage
 		var err error
 		data, err = d.call(ctx, "sign_in.raise", protocol.SignInRaise{Provider: info.Provider, Reason: info.Reason})
@@ -120,19 +144,33 @@ func (d *Daemon) syncSignInAsks(ctx context.Context, q *protocol.Quotas) {
 			// the next reading does not ask again. Without an ID it cannot be
 			// closed from here, which is the safe direction.
 			d.signIn.add(provider, "")
+			d.signIn.setLastError(provider, currentErr)
 			continue
 		}
 		d.signIn.add(provider, res.Ask.ID)
+		d.signIn.setLastError(provider, currentErr)
 	}
 	for provider := range have {
-		still := false
-		for _, p := range needed {
-			if p == provider {
-				still = true
+		var found *protocol.QuotaProvider
+		for i := range q.Providers {
+			if k, ok := protocol.SignInProviderKey(q.Providers[i].Provider); ok && k == provider {
+				found = &q.Providers[i]
 				break
 			}
 		}
-		if still {
+		if found == nil {
+			// Provider was not reported in this reading; keep open.
+			continue
+		}
+		if found.Error != "" {
+			last := d.signIn.lastError(provider)
+			if last == "" {
+				d.signIn.setLastError(provider, found.Error)
+			} else if last != found.Error {
+				if _, err := d.call(ctx, "sign_in.raise", protocol.SignInRaise{Provider: provider, Reason: found.Error}); err == nil {
+					d.signIn.setLastError(provider, found.Error)
+				}
+			}
 			continue
 		}
 		if _, err := d.call(ctx, "sign_in.close", protocol.SignInClose{Provider: provider, Reason: protocol.AskReasonSignedIn}); err == nil {

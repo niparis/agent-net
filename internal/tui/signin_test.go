@@ -138,3 +138,45 @@ func TestDeskSignInRequestFromWebOpensLocalLogin(t *testing.T) {
 		t.Fatal("did not ask local daemon")
 	}
 }
+
+func TestResearchSignInAsk(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := deskChiefModel(t, size[0], size[1])
+		ask := protocol.Ask{
+			ID:        "i_58e1174b8496860a",
+			Kind:      protocol.AskKindSignIn,
+			State:     protocol.AskStateOpen,
+			Next:      protocol.AskNextOwner,
+			Owner:     protocol.DeskOwnerChief,
+			DeskState: protocol.DeskReady,
+			Category:  protocol.CategorySecurity,
+			WhyYou:    "Only you can complete this login.",
+			Ref:       "sign_in:n_research:alibaba",
+			Question:  "Sign in to Alibaba Bailian CLI on research",
+			Detail:    "the Alibaba token-plan quota needs your console login",
+			CreatedAt: t0.Add(-5 * 24 * time.Hour),
+		}
+		m.asks = append(m.asks, ask)
+		// Select the sign-in row.
+		rows := m.inboxRows()
+		signinIdx := -1
+		for i, r := range rows {
+			if r.kind == "signin" {
+				signinIdx = i
+				break
+			}
+		}
+		if signinIdx < 0 {
+			t.Fatalf("%dx%d: sign-in ask is not in inbox rows", size[0], size[1])
+		}
+		m.inboxIndex = signinIdx
+		view := ansi.Strip(m.testView())
+		if !strings.Contains(view, "Sign in to Alibaba Bailian CLI on research") {
+			t.Fatalf("%dx%d: missing sign-in ask in Desk view:\n%s", size[0], size[1], view)
+		}
+		if !strings.Contains(view, "i Open sign-in") {
+			t.Fatalf("%dx%d: missing sign-in action hint in Desk view:\n%s", size[0], size[1], view)
+		}
+		t.Logf("SIZE %dx%d SELECTED VIEW:\n%s", size[0], size[1], view)
+	}
+}

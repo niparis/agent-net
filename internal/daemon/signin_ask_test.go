@@ -86,3 +86,56 @@ func TestSignInRecheckClosesAskAfterGoodReading(t *testing.T) {
 		t.Fatalf("recheck closes: %+v", calls.closes)
 	}
 }
+
+// When provider error changes from 'no console access token' to another error,
+// the ask stays open and its detail is updated. It closes only when the provider
+// reports windows with no error.
+func TestSignInAskStaysOpenOnOtherErrorUntilGoodReading(t *testing.T) {
+	calls := &signInGatewayCalls{}
+	d := signInTestDaemon(calls)
+	broken := &protocol.Quotas{Providers: []protocol.QuotaProvider{{
+		Provider: "alibaba-bl", Error: "No console access token found. Run `bl auth login --console`",
+	}}}
+	d.syncSignInAsks(context.Background(), broken)
+	if len(calls.raises) != 1 || calls.raises[0].Provider != "alibaba" {
+		t.Fatalf("initial raise: %+v", calls.raises)
+	}
+	if len(calls.closes) != 0 {
+		t.Fatalf("closed prematurely: %+v", calls.closes)
+	}
+
+	// Provider error changes to another error (e.g. network/auth error).
+	otherErr := &protocol.Quotas{Providers: []protocol.QuotaProvider{{
+		Provider: "alibaba-bl", Error: "Request failed: 403 Forbidden (API key invalid)",
+	}}}
+	d.syncSignInAsks(context.Background(), otherErr)
+	if len(calls.closes) != 0 {
+		t.Fatalf("closed on another error: %+v", calls.closes)
+	}
+	if len(calls.raises) != 2 || calls.raises[1].Reason != "Request failed: 403 Forbidden (API key invalid)" {
+		t.Fatalf("detail not updated on error change: %+v", calls.raises)
+	}
+
+	// Repeated reading with the same error makes no extra call.
+	d.syncSignInAsks(context.Background(), otherErr)
+	if len(calls.raises) != 2 || len(calls.closes) != 0 {
+		t.Fatalf("extra calls on same error: raises=%+v closes=%+v", calls.raises, calls.closes)
+	}
+
+	// Missing provider row (e.g. quota axi failure without alibaba row): ask stays open.
+	missing := &protocol.Quotas{Providers: []protocol.QuotaProvider{}}
+	d.syncSignInAsks(context.Background(), missing)
+	if len(calls.closes) != 0 {
+		t.Fatalf("closed on missing provider row: %+v", calls.closes)
+	}
+
+	// Provider reports windows with no error: ask closes with signed_in.
+	good := &protocol.Quotas{Providers: []protocol.QuotaProvider{{
+		Provider: "alibaba-bl",
+		Windows:  []protocol.QuotaWindow{{Label: "5-hour"}},
+	}}}
+	d.syncSignInAsks(context.Background(), good)
+	if len(calls.closes) != 1 || calls.closes[0].Provider != "alibaba" || calls.closes[0].Reason != protocol.AskReasonSignedIn {
+		t.Fatalf("did not close with signed_in on good reading: %+v", calls.closes)
+	}
+}

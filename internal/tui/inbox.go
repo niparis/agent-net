@@ -371,6 +371,8 @@ func (m Model) inboxRows() []inboxRow {
 // proposes a change, then what only informs.
 func inboxKindRank(row inboxRow) int {
 	switch row.kind {
+	case "signin":
+		return 0
 	case "question":
 		return 0
 	case "approval":
