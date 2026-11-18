@@ -133,19 +133,34 @@ func (e *pickerEntry) adjusted() float64 {
 // the bucket, the ladder being ordered by price per token; the dearest model's
 // rescue is itself. An entry with no cost data takes the mean of the others, or
 // 1 when none has any, so the ranking then follows p.
-func expectedCosts(entries []*pickerEntry, table *PickerTable, bucket int, prices *PriceBook, set PickerSettings) {
+// PickerCost is one candidate's inputs and computed cost terms.
+type PickerCost struct {
+	Key, Name                                     string
+	Quality                                       float64
+	Cost, Pass, Rescue, Expected, Rank            float64
+	CostKnown, Recorded, PriceUnknown, MeetsFloor bool
+}
+
+// PickerCostOptions select the experimental cost and optional replay policy.
+type PickerCostOptions struct {
+	QualityV2                      bool
+	Alpha, BestQuality, CleanFloor float64
+}
+
+// PickerExpectedCosts calculates the live picker cost terms in roster order.
+func PickerExpectedCosts(entries []*PickerCost, table *PickerTable, bucket int, prices *PriceBook, set PickerSettings, options PickerCostOptions) {
 	var sum float64
 	var known int
-	rank := make(map[*pickerEntry]float64, len(entries))
+	rank := make(map[*PickerCost]float64, len(entries))
 	for _, e := range entries {
 		var listed bool
-		e.cost, e.recorded, listed, e.costKnown = table.ExpectedCost(e.key, bucket, prices)
-		e.priceUnknown = e.costKnown && !e.recorded && !listed
-		if e.costKnown {
-			sum += e.cost
+		e.Cost, e.Recorded, listed, e.CostKnown = table.ExpectedCost(e.Key, bucket, prices)
+		e.PriceUnknown = e.CostKnown && !e.Recorded && !listed
+		if e.CostKnown {
+			sum += e.Cost
 			known++
 		}
-		if p, _, ok := prices.PriceOf(e.key); ok {
+		if p, _, ok := prices.PriceOf(e.Key); ok {
 			rank[e] = p.Prompt + p.Completion
 		}
 	}
@@ -155,35 +170,59 @@ func expectedCosts(entries []*pickerEntry, table *PickerTable, bucket int, price
 	}
 	noPrices := len(rank) == 0
 	for _, e := range entries {
-		if !e.costKnown {
-			e.cost = fallback
+		if !e.CostKnown {
+			e.Cost = fallback
 		}
 		if noPrices {
 			// No price list: the run cost stands in for the price per token.
-			rank[e] = e.cost
+			rank[e] = e.Cost
 		}
 	}
-	ladder := append([]*pickerEntry(nil), entries...)
+	ladder := append([]*PickerCost(nil), entries...)
 	sort.SliceStable(ladder, func(i, j int) bool {
 		if rank[ladder[i]] != rank[ladder[j]] {
 			return rank[ladder[i]] < rank[ladder[j]]
 		}
-		return ladder[i].name < ladder[j].name
+		return ladder[i].Name < ladder[j].Name
 	})
 	for _, e := range entries {
-		e.rescue = e.cost
+		e.Rescue = e.Cost
 		for _, up := range ladder {
 			if rank[up] > rank[e] {
-				e.rescue = up.cost
+				e.Rescue = up.Cost
 				break
 			}
 		}
-		c := table.CleanCell(e.key, bucket)
-		e.pass = c.Score
+		c := table.CleanCell(e.Key, bucket)
+		e.Pass = c.Score
 		if c.N < set.UncertainN {
-			e.pass = c.Lo
+			e.Pass = c.Lo
 		}
-		e.expected = e.cost + (1-e.pass)*e.rescue
+		if options.QualityV2 {
+			// Independent retries have a geometric mean of 1/p runs per acceptance.
+			if e.Pass == 0 {
+				e.Expected = math.Inf(1)
+			} else {
+				e.Expected = e.Cost / e.Pass
+			}
+		} else {
+			e.Expected = e.Cost + (1-e.Pass)*e.Rescue
+		}
+		e.Rank = e.Expected * math.Exp(options.Alpha*(options.BestQuality-e.Quality))
+		e.MeetsFloor = e.Pass >= options.CleanFloor
+	}
+}
+
+func expectedCosts(entries []*pickerEntry, table *PickerTable, bucket int, prices *PriceBook, set PickerSettings) {
+	costs := make([]*PickerCost, len(entries))
+	for i, e := range entries {
+		costs[i] = &PickerCost{Key: e.key, Name: e.name, Quality: e.cell.Score}
+	}
+	PickerExpectedCosts(costs, table, bucket, prices, set, PickerCostOptions{QualityV2: set.QualityV2})
+	for i, e := range entries {
+		c := costs[i]
+		e.cost, e.pass, e.rescue, e.expected = c.Cost, c.Pass, c.Rescue, c.Expected
+		e.costKnown, e.recorded, e.priceUnknown = c.CostKnown, c.Recorded, c.PriceUnknown
 	}
 }
 
@@ -598,6 +637,11 @@ func cellPickRows(entries []*pickerEntry, p cellPick) []PickCandidate {
 			PaceFactor: quotaPaceFactor(e.room, e.measured), AdjustedCost: e.adjusted(),
 			Weight: p.weight[e], Probability: p.share[e],
 			Explore: p.exploring, ExploreCreditBefore: p.creditBefore, ExploreCreditAfter: p.creditAfter}
+		if math.IsInf(e.expected, 1) {
+			r.CostUnbounded = true
+			r.ExpectedCost = 0
+			r.AdjustedCost = 0
+		}
 		if e.measured {
 			room := e.room
 			r.PaceRoom = &room
@@ -613,7 +657,7 @@ func cellPickRows(entries []*pickerEntry, p cellPick) []PickCandidate {
 				runnerUp = e
 			}
 		}
-		if runnerUp != nil {
+		if runnerUp != nil && !math.IsInf(runnerUp.adjusted(), 0) && !math.IsInf(p.winner.adjusted(), 0) {
 			margin := runnerUp.adjusted() / p.winner.adjusted()
 			for i, e := range entries {
 				if e == p.winner {
@@ -633,6 +677,7 @@ type PickerCostRow struct {
 	Expected               float64
 	Recorded, PriceUnknown bool
 	CostKnown              bool
+	CostUnbounded          bool `json:"cost_unbounded,omitempty"`
 }
 
 // PickerCostRows gives the cost terms the pick compares for each candidate at
@@ -656,6 +701,10 @@ func PickerCostRows(candidates []WorkerModelCandidate, in *PickerInput) []Picker
 	for i, e := range entries {
 		out[i] = PickerCostRow{Name: e.name, Key: e.key, N: e.cell.N, Cost: e.cost, Pass: e.pass, Rescue: e.rescue, Expected: e.expected,
 			Recorded: e.recorded, PriceUnknown: e.priceUnknown, CostKnown: e.costKnown}
+		if math.IsInf(e.expected, 1) {
+			out[i].Expected = 0
+			out[i].CostUnbounded = true
+		}
 	}
 	return out
 }

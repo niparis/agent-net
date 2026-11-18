@@ -552,3 +552,36 @@ func chooseModelTest(candidates []protocol.WorkerModelCandidate, level string, s
 	}
 	return order[0], nil
 }
+
+func TestPickerTasksQualityV2(t *testing.T) {
+	records := []pickerTaskRecord{{key: "test:high", d: 2.5, facts: protocol.PickerTaskFacts{Complete: true, FixRounds: 1, FailedReview: 1}}}
+	legacy := pickerTasksFrom(records, nil, false)
+	v2 := pickerTasksFrom(records, nil, true)
+	if legacy[0].Score != .75 || math.Abs(v2[0].Score-.7) > 1e-9 {
+		t.Fatalf("legacy %v v2 %v", legacy[0].Score, v2[0].Score)
+	}
+}
+
+func TestPickerQualityV2MergedRefresh(t *testing.T) {
+	r := newDeliveryRig(t)
+	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "picker.quality_v2", Level: "network", Scope: "network", Value: json.RawMessage(`true`)}}, "owner", "test"); err != nil {
+		t.Fatal(err)
+	}
+	pickerRun(t, r.s, r.a, r.worker, "claude", "claude-opus-5-5:high", protocol.OutcomePartial, 0, 1000)
+	pickerAssessment(t, r.s, r.worker, 2.5)
+	id := r.submit(r.a, r.workerSubmit("agent-net/w_1", commitA)).Change.Change.ID
+	pass := func(ref protocol.StepRef, fields map[string]string) {
+		r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: ref, Result: protocol.StepResultPass, Commit: commitA, Fields: fields})
+	}
+	pass(stepAccept, nil)
+	pass(protocol.StepRef{Step: protocol.StepTest}, map[string]string{protocol.FieldSuite: protocol.SuiteChanged})
+	before := r.s.pickerTable().Revision
+	pass(protocol.StepRef{Step: protocol.StepMerge}, map[string]string{protocol.FieldMergedCommit: commitMerged})
+	if r.s.pickerTable().Revision <= before {
+		t.Fatal("merge did not refresh picker")
+	}
+	b := r.s.pickerTable().Bucket(2.5)
+	if c := r.s.pickerTable().Cell("claude-opus-5-5:high", b); c.Score != 1 {
+		t.Fatalf("merged score: %+v", c)
+	}
+}

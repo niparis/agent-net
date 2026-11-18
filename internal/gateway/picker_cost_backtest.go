@@ -82,11 +82,11 @@ func (s *Store) PickerCostBacktest(limit int, o PickerCostBacktestOptions) (Pick
 	for session, t := range recorded {
 		usage[session] = t
 	}
-	records, err := s.pickerTaskRecordsUsing(usage)
+	records, err := s.pickerTaskRecordsUsing(usage, false)
 	if err != nil {
 		return res, err
 	}
-	tasks := pickerTasksFrom(records, prices)
+	tasks := pickerTasksFrom(records, prices, false)
 	set, err := s.pickerSettings()
 	if err != nil {
 		return res, err

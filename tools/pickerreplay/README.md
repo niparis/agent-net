@@ -34,8 +34,7 @@ only runs that had ended, judge results that had arrived, and defects, failed
 steps and merges that had been recorded by then. It reuses the live scoring code
 where it can: `protocol.PickerTaskScore`, `protocol.BuildPickerTable`,
 `protocol.PickerBucketVerdicts` and `protocol.WorkerBenchmarkCeiling`. The cost
-rule of decision 0161 is unexported in `protocol`, so `expectedCosts` here
-repeats it; keep the two in step.
+rule is shared with the live picker through `protocol.PickerExpectedCosts`.
 
 The output starts with the replay check (how many recorded picks the rule
 reproduces and why the rest differ), then the model counts and mean clean p and

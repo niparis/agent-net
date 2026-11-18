@@ -293,4 +293,13 @@ run_check --run 'TestExtra,TestMore'
 grep -Fq 'test -count=1 -run ^(TestAlpha|TestBeta|TestExtra|TestMore)$ -timeout ' "$work/go.log" ||
   fail "--run did not add the named tests: $(cat "$work/go.log")"
 
+# A nested replay module must not be passed to root-module checks.
+reset_tree
+mkdir -p tools/pickerreplay
+printf 'package main\n' >tools/pickerreplay/main.go
+run_check
+if grep -q 'vet .*tools/pickerreplay' "$work/go.log" || grep -q 'rulecheck args:.*tools/pickerreplay' "$work/out"; then
+  fail "nested replay module was passed to a root-module check"
+fi
+
 echo "test-changed-test: ok"

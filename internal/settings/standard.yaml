@@ -721,6 +721,13 @@ settings:
     levels: [network]
     default: 1.0
     live: true
+  - key: picker.quality_v2
+    description: Enable the experimental picker quality rule.
+    kind: rule
+    type: bool
+    levels: [network]
+    default: false
+    live: true
   - key: picker.explore_share
     rows: [78]
     description: Share of picks that go to an allowed thin cell (fewer than 3 tasks in the bucket) while proven models qualify. Counted from the rotation, not random. 0.1 is about one pick in ten.

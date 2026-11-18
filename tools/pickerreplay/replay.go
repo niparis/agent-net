@@ -74,7 +74,22 @@ func replayCandidates(p Pick, table *protocol.PickerTable, prices *protocol.Pric
 		e.allowed, e.prior, e.reason = verdicts[i].Allowed, verdicts[i].Prior, verdicts[i].Reason
 		e.qualified = e.allowed && e.cell.N >= protocol.PickerMinCellTasks
 	}
-	expectedCosts(es, table, bucket, prices, set)
+	costs := make([]*protocol.PickerCost, len(es))
+	for i, e := range es {
+		costs[i] = &protocol.PickerCost{Key: e.key, Name: e.row.Name, Quality: e.cell.Score}
+	}
+	protocol.PickerExpectedCosts(costs, table, bucket, prices, set, protocol.PickerCostOptions{})
+	for i, e := range es {
+		c := costs[i]
+		e.cost, e.pass, e.rescue, e.expected = c.Cost, c.Pass, c.Rescue, c.Expected
+		e.costKnown, e.recorded, e.priceUnknown = c.CostKnown, c.Recorded, c.PriceUnknown
+		e.clean = table.CleanCell(e.key, bucket)
+		pace := e.row.PaceFactor
+		if pace <= 0 {
+			pace = 1
+		}
+		e.adjusted = e.expected / pace
+	}
 	return es, bucket
 }
 
@@ -87,67 +102,6 @@ func defaultEffort(model, harness string, profiles []protocol.WorkerProfile) str
 		}
 	}
 	return ""
-}
-
-// expectedCosts is the cost rule of decision 0161. It repeats
-// protocol.expectedCosts, which is unexported, so the replay can run the rule
-// outside the gateway. Keep the two in step.
-func expectedCosts(es []*candEval, table *protocol.PickerTable, bucket int, prices *protocol.PriceBook, set protocol.PickerSettings) {
-	var sum float64
-	var known int
-	rank := make(map[*candEval]float64, len(es))
-	for _, e := range es {
-		var listed bool
-		e.cost, e.recorded, listed, e.costKnown = table.ExpectedCost(e.key, bucket, prices)
-		e.priceUnknown = e.costKnown && !e.recorded && !listed
-		if e.costKnown {
-			sum += e.cost
-			known++
-		}
-		if p, _, ok := prices.PriceOf(e.key); ok {
-			rank[e] = p.Prompt + p.Completion
-		}
-	}
-	fallback := 1.0
-	if known > 0 {
-		fallback = sum / float64(known)
-	}
-	noPrices := len(rank) == 0
-	for _, e := range es {
-		if !e.costKnown {
-			e.cost = fallback
-		}
-		if noPrices {
-			rank[e] = e.cost
-		}
-	}
-	ladder := append([]*candEval(nil), es...)
-	sort.SliceStable(ladder, func(i, j int) bool {
-		if rank[ladder[i]] != rank[ladder[j]] {
-			return rank[ladder[i]] < rank[ladder[j]]
-		}
-		return ladder[i].row.Name < ladder[j].row.Name
-	})
-	for _, e := range es {
-		e.rescue = e.cost
-		for _, up := range ladder {
-			if rank[up] > rank[e] {
-				e.rescue = up.cost
-				break
-			}
-		}
-		e.clean = table.CleanCell(e.key, bucket)
-		e.pass = e.clean.Score
-		if e.clean.N < set.UncertainN {
-			e.pass = e.clean.Lo
-		}
-		e.expected = e.cost + (1-e.pass)*e.rescue
-		pace := e.row.PaceFactor
-		if pace <= 0 {
-			pace = 1
-		}
-		e.adjusted = e.expected / pace
-	}
 }
 
 // pickToday is the cell rule's winner: the proven, allowed candidate with the

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"database/sql"
+	"math"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/model"
@@ -135,5 +136,24 @@ func TestChooseHandsTheRowsOfThePick(t *testing.T) {
 	}
 	if want := protocol.PickNote(got.Pick, protocol.DefaultPickerSettings().ExploreShare); got.Choice.PickNote != want {
 		t.Fatalf("note %q, the rows give %q", got.Choice.PickNote, want)
+	}
+}
+
+func TestPickCandidatesStoreUnboundedCost(t *testing.T) {
+	s, _ := newTestStore(t)
+	row := pickRowsForTest()[0]
+	row.CostUnbounded = true
+	row.ExpectedCost = 0
+	row.AdjustedCost = 0
+	a := protocol.WorkerAssessment{RunID: "unbounded", SessionID: "s", StartedAt: 1, AssessedAt: 2, D: 2.5, PickRows: []protocol.PickCandidate{row}}
+	if err := s.RecordWorkerAssessment(a); err != nil {
+		t.Fatal(err)
+	}
+	var expected, adjusted float64
+	if err := s.db.QueryRow(`SELECT expected_cost, adjusted_cost FROM pick_candidates WHERE run_id=?`, a.RunID).Scan(&expected, &adjusted); err != nil {
+		t.Fatal(err)
+	}
+	if !math.IsInf(expected, 1) || !math.IsInf(adjusted, 1) {
+		t.Fatalf("cost %v adjusted %v", expected, adjusted)
 	}
 }
