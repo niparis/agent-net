@@ -276,38 +276,24 @@ func (d *Daemon) changeSubmit(ctx context.Context, sid string, info protocol.Ses
 			if a.Project != "" && a.Project != view.Change.Project {
 				return out, fmt.Errorf("change %s is for project %s, not %s", a.Change, view.Change.Project, a.Project)
 			}
-			var projects protocol.ProjectsResult
-			raw, err := d.call(ctx, "query.projects", protocol.QueryProjects{})
-			if err != nil {
+			if folder, err = d.projectFolderHere(ctx, view.Change.Project); err != nil {
 				return out, err
 			}
-			if err := json.Unmarshal(raw, &projects); err != nil {
+			project = view.Change.Project
+		}
+	} else if a.Project != "" && a.Project != project {
+		// The first change of a branch that a worker this session started made in
+		// another project on this machine. The session may submit it because the
+		// worker is its own; the branch names the work.
+		started, err := d.startedWorkerBranch(ctx, sid, a.Project, a.Branch)
+		if err != nil {
+			return out, err
+		}
+		if started {
+			if folder, err = d.projectFolderHere(ctx, a.Project); err != nil {
 				return out, err
 			}
-			var machines []string
-			var local string
-			for _, p := range projects.Projects {
-				if p.Name != view.Change.Project || (p.Source != protocol.SourceRegistered && p.Source != protocol.SourceBoth) {
-					continue
-				}
-				if p.NodeID == d.cfg.NodeID {
-					if local != "" && local != p.Path {
-						return out, fmt.Errorf("project %q has multiple registered folders on this machine", p.Name)
-					}
-					local = p.Path
-				} else if p.Hostname != "" {
-					machines = append(machines, p.Hostname)
-				} else {
-					machines = append(machines, p.NodeID)
-				}
-			}
-			if local == "" {
-				return out, fmt.Errorf("project %q is not registered on this machine; registered machines: %s", view.Change.Project, strings.Join(machines, ", "))
-			}
-			folder, project = local, view.Change.Project
-			if !isGitRepo(ctx, folder) {
-				return out, fmt.Errorf("registered project folder %s is not a git repository with a commit", folder)
-			}
+			project = a.Project
 		}
 	}
 	if a.Project != "" && a.Project != project {
@@ -392,6 +378,67 @@ func (d *Daemon) changeSubmit(ctx context.Context, sid string, info protocol.Ses
 	}
 	out.Change = fillChangeView(out.Change)
 	return out, nil
+}
+
+// projectFolderHere is the folder this machine registered for project. It must
+// be a git repository with a commit. A project registered only on other
+// machines names them in the error.
+func (d *Daemon) projectFolderHere(ctx context.Context, project string) (string, error) {
+	var projects protocol.ProjectsResult
+	raw, err := d.call(ctx, "query.projects", protocol.QueryProjects{})
+	if err != nil {
+		return "", err
+	}
+	if err := json.Unmarshal(raw, &projects); err != nil {
+		return "", err
+	}
+	var machines []string
+	var local string
+	for _, p := range projects.Projects {
+		if p.Name != project || (p.Source != protocol.SourceRegistered && p.Source != protocol.SourceBoth) {
+			continue
+		}
+		if p.NodeID == d.cfg.NodeID {
+			if local != "" && local != p.Path {
+				return "", fmt.Errorf("project %q has multiple registered folders on this machine", p.Name)
+			}
+			local = p.Path
+		} else if p.Hostname != "" {
+			machines = append(machines, p.Hostname)
+		} else {
+			machines = append(machines, p.NodeID)
+		}
+	}
+	if local == "" {
+		return "", fmt.Errorf("project %q is not registered on this machine; registered machines: %s", project, strings.Join(machines, ", "))
+	}
+	if !isGitRepo(ctx, local) {
+		return "", fmt.Errorf("registered project folder %s is not a git repository with a commit", local)
+	}
+	return local, nil
+}
+
+// startedWorkerBranch reports whether branch is a branch of a worker that
+// session started in project: the branch the worker began on, or the branch its
+// worktree moved to with commits beyond its base, which is the branch its
+// hand-back delivers.
+func (d *Daemon) startedWorkerBranch(ctx context.Context, session, project, branch string) (bool, error) {
+	if branch == "" {
+		return false, nil
+	}
+	workers, err := d.st.workerBranchesOf(session, project)
+	if err != nil {
+		return false, err
+	}
+	for _, w := range workers {
+		if w.Branch == branch {
+			return true, nil
+		}
+		if w.Worktree != "" && protocol.ValidCommit(w.Base) && handbackBranch(ctx, w.Worktree, w.Branch, w.Base) == branch {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // gitBranchHead is the full hash of the head of a local branch.
@@ -748,6 +795,27 @@ func (d *Daemon) openChangeAtBase(ctx context.Context, project, base, owner stri
 	return ""
 }
 
+// keptChangeFollows reports whether a hand-back on branch, at head, continues
+// the change the worker kept. It does when that change is on the same branch,
+// or when the branch holds the change's head: the work moved to a new branch
+// and the change follows it. Any other branch holds other work, and the kept
+// change keeps its branch, head and evidence. A change that is not open is left
+// to the submit, which refuses it. A change that cannot be read keeps the old
+// behaviour.
+func (d *Daemon) keptChangeFollows(ctx context.Context, dir, kept, project, branch, head string) bool {
+	var view protocol.ChangeView
+	if err := d.deliveryCall(ctx, protocol.FrameChangeGet, protocol.ChangeGetRequest{ChangeID: kept}, &view); err != nil {
+		return true
+	}
+	c := view.Change
+	if c.Project != project || c.State != protocol.ChangeOpen || c.Branch == branch {
+		return true
+	}
+	// A head that git cannot find in this repository is not held by the branch.
+	_, err := gitOut(ctx, dir, "merge-base", "--is-ancestor", c.HeadCommit, head)
+	return err == nil
+}
+
 // handbackDiffBase is the commit a change is measured from: the merge-base of
 // its head with the project's default branch. A worker that rebased onto a
 // newer default branch would otherwise count other people's commits in its
@@ -856,9 +924,12 @@ func (d *Daemon) submitHandbackChange(ctx context.Context, w *worker, check *pro
 	}
 	// A worker started on the branch of an open change continues that change:
 	// its hand-back is its next revision, not a second change. Only a change of
-	// the same caller can take the work.
+	// the same caller can take the work. A kept change that this branch does not
+	// build on stays where it is: the work is another change.
 	if kept == "" {
 		kept = d.openChangeAtBase(ctx, project, base, owner)
+	} else if !d.keptChangeFollows(ctx, dir, kept, project, branch, head) {
+		kept = ""
 	}
 	diffBase := handbackDiffBase(ctx, dir, base, head)
 	q := protocol.ChangeSubmitRequest{SessionID: owner, ChangeID: kept, Project: project, Branch: branch, BaseCommit: diffBase,

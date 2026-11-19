@@ -203,6 +203,26 @@ func (s *state) workers() ([]workerRow, error) {
 	return out, rows.Err()
 }
 
+// workerBranchesOf returns the branch, worktree and base of each worker that
+// owner started in project. Only those columns are read: a branch check needs
+// no more.
+func (s *state) workerBranchesOf(owner, project string) ([]workerRow, error) {
+	rows, err := s.db.Query(`SELECT branch, worktree, base FROM workers WHERE owner = ? AND project = ?`, owner, project)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []workerRow
+	for rows.Next() {
+		var w workerRow
+		if err := rows.Scan(&w.Branch, &w.Worktree, &w.Base); err != nil {
+			return nil, err
+		}
+		out = append(out, w)
+	}
+	return out, rows.Err()
+}
+
 // workerBySession returns the worker row of a session, if there is one.
 func (s *state) workerBySession(sessionID string) (workerRow, bool, error) {
 	var w workerRow

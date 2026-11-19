@@ -704,6 +704,11 @@ func fakeAgentAct(send func(string, any), body, cwd string) {
 	if strings.Contains(body, "FAKE:ignore") {
 		return
 	}
+	if strings.Contains(body, "FAKE:newbranch") {
+		// Work on a new branch made from main, which does not hold the
+		// worktree's own commits, as a worker does when it starts another task.
+		exec.Command("git", "-C", cwd, "checkout", "-q", "-b", "chore/pin", "main").Run()
+	}
 	if strings.Contains(body, "FAKE:edit") {
 		fakeEdit(cwd)
 	}
