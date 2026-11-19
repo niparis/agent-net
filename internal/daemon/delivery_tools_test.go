@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -900,6 +901,53 @@ func TestChangeSubmitCrossProjectCaller(t *testing.T) {
 	_, err = lc.call(protocol.OpChangeSubmit, protocol.ChangeSubmitArgs{Change: "ch_cross", Project: "demo", Branch: "feat/x"})
 	if err == nil {
 		t.Fatal("non-caller accepted")
+	}
+}
+
+// A session may submit the first change of a branch that a worker it started
+// made in another project on this machine. The change is for that project. A
+// branch of a worker that another session started is refused.
+func TestChangeSubmitNewChangeForAStartedWorkersBranch(t *testing.T) {
+	n, f := startDeliveryNode(t)
+	repo, wt := deliveryWorktree(t)
+	other := newRepo(t, "other")
+	lc, sid := helloDelivery(t, n, "cross-worker-caller", other, "model")
+	base := gitHead(t, repo, "main")
+	gitIn(t, repo, "branch", "-q", "feat/y", base)
+	mine := workerRow{ID: "w_mine", Harness: "pi", Project: "demo", Path: repo, Owner: sid, SessionID: "s_mine",
+		StartToken: "t", StartedAt: time.Now(), LastActive: time.Now(), EndedReason: "finished",
+		MainPath: repo, Worktree: wt, Branch: "feat/x", Base: base}
+	theirs := workerRow{ID: "w_theirs", Harness: "pi", Project: "demo", Path: repo, Owner: "s_someone_else", SessionID: "s_theirs",
+		StartToken: "t", StartedAt: time.Now(), LastActive: time.Now(), EndedReason: "finished",
+		MainPath: repo, Branch: "feat/y", Base: base}
+	for _, w := range []workerRow{mine, theirs} {
+		if err := n.d.st.saveWorker(w); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.answer("query.projects", func(json.RawMessage) (any, error) {
+		return protocol.ProjectsResult{Projects: []protocol.ProjectView{{Name: "demo", Path: repo, NodeID: n.d.NodeID(), Source: protocol.SourceRegistered}}}, nil
+	})
+	head := gitHead(t, wt, "feat/x")
+	res, err := lc.call(protocol.OpChangeSubmit, protocol.ChangeSubmitArgs{Project: "demo", Branch: "feat/x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got protocol.ChangeSubmitResult
+	if err := json.Unmarshal(res, &got); err != nil || got.Change.Change.Project != "demo" {
+		t.Fatalf("result: %+v %v", got, err)
+	}
+	frames := f.frames(protocol.FrameChangeSubmit)
+	var q protocol.ChangeSubmitRequest
+	if len(frames) != 1 || json.Unmarshal(frames[0], &q) != nil {
+		t.Fatalf("change.submit frames: %s", frames)
+	}
+	if q.SessionID != sid || q.Project != "demo" || q.Branch != "feat/x" || q.HeadCommit != head || q.ChangeID != "" {
+		t.Fatalf("submit: %s", deliveryJSON(q))
+	}
+	_, err = lc.call(protocol.OpChangeSubmit, protocol.ChangeSubmitArgs{Project: "demo", Branch: "feat/y"})
+	if err == nil || !strings.Contains(err.Error(), "not your session's project") {
+		t.Fatalf("a branch of a worker another session started: %v", err)
 	}
 }
 
