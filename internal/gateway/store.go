@@ -1325,7 +1325,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -1857,6 +1857,20 @@ CREATE TRIGGER inbox_items_joined_settle AFTER UPDATE OF status ON inbox_items W
   answer=CASE WHEN TRIM(NEW.answer)<>'' THEN NEW.answer ELSE 'joined: '||NEW.status END,
   answered_at=NEW.answered_at WHERE dup_of=NEW.id AND status='joined';
 END;
+`
+
+// nestedBatchRepairMigration closes originals that an older release left
+// 'dispatched' under a delivered batch carried inside another batch. A held
+// batch is batched again, and delivery marked only the direct members. The
+// stall check counted those rows as pending deliveries.
+const nestedBatchRepairMigration = `
+/* Nested batch members left dispatched */
+WITH RECURSIVE inner_members(id) AS (
+ SELECT m.id FROM messages m JOIN messages b ON b.id=m.batch_id WHERE b.state='delivered'
+ UNION
+ SELECT m.id FROM messages m JOIN inner_members i ON m.batch_id=i.id
+)
+UPDATE messages SET state='delivered' WHERE state='dispatched' AND id IN (SELECT id FROM inner_members);
 `
 
 // stmtCacheSize is how many prepared statements the connection keeps. The
@@ -5434,7 +5448,11 @@ func (s *Store) ApplyDeliveryReport(id, state, detail string) (notice protocol.M
 		// A batch message reports for every original message it carries. A
 		// withdrawn original keeps its state.
 		if state == protocol.StateDelivered || state == protocol.StateFailed {
-			if _, err := tx.Exec(`UPDATE messages SET state=? WHERE batch_id=? AND state IN ('stored','dispatched','failed')`, state, id); err != nil {
+			if _, err := tx.Exec(`WITH RECURSIVE carried(id) AS (
+				SELECT id FROM messages WHERE batch_id=?
+				UNION
+				SELECT m.id FROM messages m JOIN carried c ON m.batch_id=c.id
+			) UPDATE messages SET state=? WHERE id IN (SELECT id FROM carried) AND state IN ('stored','dispatched','failed')`, id, state); err != nil {
 				return notice, false, err
 			}
 		}
