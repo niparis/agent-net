@@ -84,6 +84,11 @@ type Options struct {
 	// TestNoBriefChecks turns off the worker brief checks. Only tests that
 	// exercise other worker behavior set it; production never does.
 	TestNoBriefChecks bool
+	// ResumeAnswerWait is how long a send to an ended worker waits for the
+	// worker's machine to start it again before it answers. Zero uses 3 s: an
+	// agent's tool call gives up after about 10 s, and a resend would send the
+	// message twice.
+	ResumeAnswerWait time.Duration
 }
 
 type Gateway struct {
@@ -3681,8 +3686,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		var queueNote string
+		var resuming <-chan resumeResult
 		if !workerTask && !p.Ack && p.Type != protocol.TypeAck {
-			queueNote, err = g.resumeEndedWorker(ctx, nc, p)
+			queueNote, resuming, err = g.resumeEndedWorker(ctx, nc, p)
 		}
 		if err != nil {
 			g.notifyResumeRefusal(ctx, p, err)
@@ -3703,6 +3709,14 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 					"reason", err.Error())
 			}
 			return nil, err
+		}
+		if resuming != nil {
+			// The machine is still starting the worker. The message is stored
+			// and goes out when the worker is up; a failed start takes it back.
+			queueNote = "the worker is starting again; the message is delivered when it is up"
+			// Copies only: the handler keeps writing m and p after this.
+			msgID, sendCopy := m.ID, p
+			g.goBackground(func(bctx context.Context) { g.settleResume(bctx, sendCopy, msgID, resuming) })
 		}
 		if queueNote != "" {
 			if route == "" {

@@ -186,6 +186,11 @@ func ContinueIntroWithSettings(reason, where string, snap settings.Snapshot, rep
 const (
 	StartReportNotStarted = "not started"
 	StartReportQueued     = "queued"
+	// StartReportStarted and StartReportStarting say the start became a worker.
+	// The worker's session may not be known to the gateway yet, so the notice
+	// comes from agent-net, as the others do, and not from the worker.
+	StartReportStarted  = "started"
+	StartReportStarting = "starting"
 )
 
 // WorkerStartReportText is the notice for a start that was accepted without
@@ -381,10 +386,14 @@ type (
 		Owner   string `json:"owner_session"`
 		Project string `json:"project"`
 		Harness string `json:"harness"`
-		// Status is StartReportNotStarted or StartReportQueued.
+		// Status is StartReportNotStarted, StartReportQueued, StartReportStarted
+		// or StartReportStarting.
 		Status string `json:"status"`
 		// Note is the reason, or the queue facts, as one short line.
 		Note string `json:"note"`
+		// Body is the whole notice text of a start that began (StartReportStarted
+		// and StartReportStarting), which the machine writes from the worker's facts.
+		Body string `json:"body,omitempty"`
 		// ID is the start id the caller was given; it makes the notice unique.
 		ID string `json:"start_id"`
 	}

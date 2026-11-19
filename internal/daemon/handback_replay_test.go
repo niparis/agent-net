@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/niparis/agent-net/internal/gateway"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -135,7 +136,8 @@ func TestResumeAfterRestartOfWorkerWhoseEndNeverRan(t *testing.T) {
 // gateway's launch wait, and lets go of the resume lock. It never waits on the
 // link's context, and the link stays up.
 func TestSlowResumeAnswersBeforeTheGatewayGivesUp(t *testing.T) {
-	g := startGateway(t, t.TempDir(), "")
+	// The send waits for the resume here, to see the daemon's own answer.
+	g := startGatewayWith(t, t.TempDir(), "", 0, func(o *gateway.Options) { o.ResumeAnswerWait = scaled(30 * time.Second) })
 	w := startWorkerNode(t, g, shortSet, func(c *Config) { c.testResumeWait = scaled(time.Second) })
 	repo := newRepo(t, "shop")
 	w.register(t, repo)

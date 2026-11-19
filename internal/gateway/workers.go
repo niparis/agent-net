@@ -1313,8 +1313,12 @@ func launchWorker(cctx context.Context, target *nodeConn, granted model.Granted,
 // machine; the notice comes from agent-net, as the not-started notice does,
 // and is not made for the owner's own session or a bot.
 func (g *Gateway) workerStartReport(ctx context.Context, nc *nodeConn, p protocol.WorkerStartReport) error {
-	if p.Status != protocol.StartReportNotStarted && p.Status != protocol.StartReportQueued {
+	began := p.Status == protocol.StartReportStarted || p.Status == protocol.StartReportStarting
+	if !began && p.Status != protocol.StartReportNotStarted && p.Status != protocol.StartReportQueued {
 		return reject("unknown start report status %q", p.Status)
+	}
+	if began && (p.Body == "" || len(p.Body) > protocol.MaxBodyBytes) {
+		return reject("a %s start report needs its notice text, at most %d bytes", p.Status, protocol.MaxBodyBytes)
 	}
 	owner, ok, err := g.store.Agent(p.Owner)
 	if err != nil {
@@ -1328,8 +1332,12 @@ func (g *Gateway) workerStartReport(ctx context.Context, nc *nodeConn, p protoco
 	if owner.Harness == "bot" || protocol.IsOwner(owner.Harness) {
 		return nil
 	}
-	n, ok, err := g.store.startReportNotice(p.Owner, p.ID, protocol.WorkerStartReportText(p.Status,
-		oneLine(p.Project, 100), oneLine(p.Harness, 40), oneLine(p.ID, 40), notStartedReasonText(p.Note)))
+	text := p.Body
+	if !began {
+		text = protocol.WorkerStartReportText(p.Status,
+			oneLine(p.Project, 100), oneLine(p.Harness, 40), oneLine(p.ID, 40), notStartedReasonText(p.Note))
+	}
+	n, ok, err := g.store.startReportNotice(p.Owner, p.ID, text)
 	if err != nil {
 		return protocol.RetryableError{Err: err}
 	}
@@ -2060,39 +2068,92 @@ func (g *Gateway) cancelQueuedStart(ctx context.Context, req protocol.AgentView,
 // an offline session. The machine decides whether its harness can resume.
 // When the machine is at its worker cap, the restart is queued and returns
 // the queue reason with no error.
-func (g *Gateway) resumeEndedWorker(ctx context.Context, nc *nodeConn, p protocol.MsgSend) (string, error) {
+//
+// The machine can take long to start a harness. The send waits for it only
+// for the answer grace (Options.ResumeAnswerWait). When the start is still
+// running by then, the third result is a channel with its outcome and the
+// caller stores the message and settles the outcome later (settleResume).
+func (g *Gateway) resumeEndedWorker(ctx context.Context, nc *nodeConn, p protocol.MsgSend) (string, <-chan resumeResult, error) {
 	if p.Ack || p.Type == protocol.TypeAck {
-		return "", nil
+		return "", nil, nil
 	}
 	a, ok, err := g.store.workerForContinue(p.Recipient, p.Sender)
 	if err != nil || !ok || a.Worker == nil || a.SessionID != p.Recipient {
-		return "", err
+		return "", nil, err
 	}
 	if a.Online && a.Worker.Owner != p.Sender {
-		return "", nil
+		return "", nil, nil
 	}
 	if a.Worker.Owner != p.Sender {
-		return "", reject("worker %s has ended, and only the session that started it can start it again", p.Recipient)
+		return "", nil, reject("worker %s has ended, and only the session that started it can start it again", p.Recipient)
 	}
 	// A resumed worker keeps its model, so the same-model row of the one gate
 	// decides whether it can run now (decision 0162).
 	if why := g.resumeRefusal(a); why != "" {
 		g.logLine("worker.resume_refused_quota", "node", a.NodeID, "host", a.Hostname, "session", p.Recipient, "reason", why)
-		return "", reject("worker %s was not started again: %s. Start a new worker on the same branch with agent_worker_start and base set to that branch, so the picker chooses another model", p.Recipient, why)
+		return "", nil, reject("worker %s was not started again: %s. Start a new worker on the same branch with agent_worker_start and base set to that branch, so the picker chooses another model", p.Recipient, why)
 	}
 	g.mu.Lock()
 	target := g.conns[a.NodeID]
 	g.mu.Unlock()
 	if target == nil {
-		return "", reject("machine %s is offline, so worker %s cannot be started again", a.Hostname, p.Recipient)
+		return "", nil, reject("machine %s is offline, so worker %s cannot be started again", a.Hostname, p.Recipient)
 	}
-	cctx, cancel := context.WithTimeout(ctx, launchWait)
-	defer cancel()
 	// Keep the activation for older daemons, which cannot announce a run.
 	// New daemons fence the old run before registering the resumed harness.
 	if err := g.store.SetWorkerRunActive(a.NodeID, p.Recipient); err != nil {
-		return "", err
+		return "", nil, err
 	}
+	done := make(chan resumeResult, 1)
+	// The start goes on after this send has answered, so it has its own wait.
+	if !g.goBackground(func(bctx context.Context) {
+		note, err := g.callWorkerResume(bctx, target, a, p)
+		done <- resumeResult{note, err}
+	}) {
+		return "", nil, reject("the gateway is stopping, so worker %s cannot be started again", p.Recipient)
+	}
+	timer := time.NewTimer(g.resumeAnswerWait())
+	defer timer.Stop()
+	select {
+	case r := <-done:
+		return r.note, nil, r.err
+	case <-timer.C:
+		return "", done, nil
+	}
+}
+
+// resumeResult is how a worker's start ended.
+type resumeResult struct {
+	note string
+	err  error
+}
+
+func (g *Gateway) resumeAnswerWait() time.Duration {
+	if g.opts.ResumeAnswerWait > 0 {
+		return g.opts.ResumeAnswerWait
+	}
+	return 3 * time.Second
+}
+
+// settleResume ends a send that answered before its worker was up. A start that
+// failed takes the stored message back and tells the sender, as a refused send
+// would have done.
+func (g *Gateway) settleResume(ctx context.Context, p protocol.MsgSend, messageID string, done <-chan resumeResult) {
+	r := <-done
+	if r.err == nil {
+		return
+	}
+	if _, err := g.store.Withdraw(messageID, p.Sender); err != nil {
+		g.logLine("worker.resume_withdraw_failed", "session", p.Recipient, "message", messageID, "reason", err)
+	}
+	g.notifyResumeRefusal(ctx, p, r.err)
+}
+
+// callWorkerResume asks the worker's machine to start it again and records how
+// that went.
+func (g *Gateway) callWorkerResume(ctx context.Context, target *nodeConn, a protocol.AgentView, p protocol.MsgSend) (string, error) {
+	cctx, cancel := context.WithTimeout(ctx, launchWait)
+	defer cancel()
 	raw, err := target.call(cctx, "worker.resume", protocol.WorkerResume{Session: p.Recipient, Requester: p.Sender})
 	if err != nil {
 		g.store.SetWorkerSessionEnded(a.NodeID, p.Recipient, a.Worker.RunGeneration)

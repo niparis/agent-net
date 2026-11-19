@@ -521,7 +521,7 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		return d.runWorkerStartCall(ctx, caller, p, frame, callerPath, cto, ph)
 	}
 	var res *protocol.WorkerStartResult
-	if !agent || cto || p.Continue != "" || p.Mode == protocol.WorkerStartModeCheck {
+	if !agent || cto || p.Mode == protocol.WorkerStartModeCheck {
 		res, err = run(ctx)
 	} else {
 		res, err = d.startWithinBudget(ctx, caller, p, ph, run)
