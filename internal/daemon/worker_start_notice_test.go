@@ -41,15 +41,24 @@ func TestWorkerContinueAcceptedWhileTheGatewayIsSlow(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	pi, owner := helloPi(t, w.node, "caller", repo, true)
-	first := startFrom(t, pi, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "FAKE:handback first"})
+	// Under -race this first start can take longer than the test budget, and
+	// then the answer is "accepted" with no session id yet. This is the only
+	// worker, so find its session in the daemon's own records.
+	startFrom(t, pi, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "FAKE:handback first"})
+	var firstSession string
 	eventually(t, "the worker ended", func() bool {
-		row, ok, err := w.d.st.workerBySession(first.SessionID)
-		return w.d.workerCount() == 0 && err == nil && ok && row.EndedReason != "" && row.Reported
+		rows, err := w.d.st.workers()
+		if err != nil || len(rows) != 1 {
+			return false
+		}
+		row := rows[0]
+		firstSession = row.SessionID
+		return w.d.workerCount() == 0 && row.SessionID != "" && row.EndedReason != "" && row.Reported
 	})
 
 	began := time.Now()
 	var res protocol.WorkerStartResult
-	mustJSON(t, pi.mustCall("worker_start", protocol.WorkerStartRequest{Continue: first.SessionID, Task: "do more"}), &res)
+	mustJSON(t, pi.mustCall("worker_start", protocol.WorkerStartRequest{Continue: firstSession, Task: "do more"}), &res)
 	if took := time.Since(began); took > 3*time.Second {
 		t.Fatalf("the answer took %s with the gateway blocked", took)
 	}

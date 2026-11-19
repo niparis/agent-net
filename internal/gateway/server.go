@@ -3714,7 +3714,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			// The machine is still starting the worker. The message is stored
 			// and goes out when the worker is up; a failed start takes it back.
 			queueNote = "the worker is starting again; the message is delivered when it is up"
-			g.goBackground(func(bctx context.Context) { g.settleResume(bctx, p, m.ID, resuming) })
+			// Copies only: the handler keeps writing m and p after this.
+			msgID, sendCopy := m.ID, p
+			g.goBackground(func(bctx context.Context) { g.settleResume(bctx, sendCopy, msgID, resuming) })
 		}
 		if queueNote != "" {
 			if route == "" {
