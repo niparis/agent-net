@@ -84,10 +84,10 @@ func TestWorktreeBaseStartsAtUpstreamTip(t *testing.T) {
 	}
 }
 
+// The owner's commits on the default branch that origin lacks reach the worker,
+// because the checkout is that branch and strictly ahead of origin.
 func TestWorktreeBaseUnpushedCommitKeepsLocalHead(t *testing.T) {
-	repo, _, other := baseTestRepo(t)
-	baseTestCommit(t, other, "remote.txt")
-	gitIn(t, other, "push", "-q", "origin", "main")
+	repo, _, _ := baseTestRepo(t)
 	local := baseTestCommit(t, repo, "unpushed.txt")
 
 	d, w, logs := baseTestWorker(t, repo)
@@ -175,5 +175,64 @@ func TestWorktreeBaseStartsAtOriginDefaultBranch(t *testing.T) {
 	}
 	if w.base != tip {
 		t.Fatalf("worker base %s, want %s", w.base, tip)
+	}
+}
+
+// A checkout on a side branch with its own commit must not hold the worker
+// back: the worker starts from origin's default branch.
+func TestWorktreeBaseSideBranchStartsAtOriginDefault(t *testing.T) {
+	repo, _, other := baseTestRepo(t)
+	gitIn(t, repo, "checkout", "-q", "-b", "side")
+	baseTestCommit(t, repo, "side-work.txt")
+	tip := baseTestCommit(t, other, "landed-by-pr.txt")
+	gitIn(t, other, "push", "-q", "origin", "main")
+
+	d, w, logs := baseTestWorker(t, repo)
+	if err := d.createWorktree(context.Background(), w); err != nil {
+		t.Fatal(err)
+	}
+	if got := baseTestHead(t, w.worktree); got != tip || w.base != tip {
+		t.Fatalf("worktree starts at %s, base %s, want origin/main tip %s", got, w.base, tip)
+	}
+	if !strings.Contains(logs.String(), "on branch side") {
+		t.Fatalf("the log does not say why the local head was left out: %q", logs.String())
+	}
+}
+
+// A local main with a commit origin lacks, while origin has moved on, is
+// diverged. The worker starts from origin's default branch.
+func TestWorktreeBaseDivergedMainStartsAtOriginDefault(t *testing.T) {
+	repo, _, other := baseTestRepo(t)
+	baseTestCommit(t, repo, "unpushed.txt")
+	tip := baseTestCommit(t, other, "landed-by-pr.txt")
+	gitIn(t, other, "push", "-q", "origin", "main")
+
+	d, w, logs := baseTestWorker(t, repo)
+	if err := d.createWorktree(context.Background(), w); err != nil {
+		t.Fatal(err)
+	}
+	if got := baseTestHead(t, w.worktree); got != tip || w.base != tip {
+		t.Fatalf("worktree starts at %s, base %s, want origin/main tip %s", got, w.base, tip)
+	}
+	if !strings.Contains(logs.String(), "diverged") {
+		t.Fatalf("the log does not say why the local head was left out: %q", logs.String())
+	}
+}
+
+// A detached checkout is not the default branch, so it does not keep its
+// unpushed commit as the base either.
+func TestWorktreeBaseDetachedHeadStartsAtOriginDefault(t *testing.T) {
+	repo, _, other := baseTestRepo(t)
+	gitIn(t, repo, "checkout", "-q", "--detach")
+	baseTestCommit(t, repo, "detached-work.txt")
+	tip := baseTestCommit(t, other, "landed-by-pr.txt")
+	gitIn(t, other, "push", "-q", "origin", "main")
+
+	d, w, _ := baseTestWorker(t, repo)
+	if err := d.createWorktree(context.Background(), w); err != nil {
+		t.Fatal(err)
+	}
+	if got := baseTestHead(t, w.worktree); got != tip || w.base != tip {
+		t.Fatalf("worktree starts at %s, base %s, want origin/main tip %s", got, w.base, tip)
 	}
 }

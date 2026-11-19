@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -132,11 +133,15 @@ const worktreeFetchTimeout = 10 * time.Second
 // freshUpstreamBase returns the commit a new worktree should start from when
 // the owner asked for no base. Work often lands on the remote default branch (a
 // merged pull request or a merge queue) while a local branch stays behind. So
-// it fetches origin's default branch and, when local HEAD is an ancestor of
-// the fetched tip, returns that tip. In every other case (detached HEAD, no
-// origin, unpushed or diverged commits, a failed fetch) it returns localHead
-// and logs why. It never moves the owner's checkout or any local branch: a
-// fetch only updates refs/remotes.
+// it fetches origin's default branch and returns that tip, except for one case:
+// the checkout is the default branch and holds every commit of origin's tip
+// plus its own. Those unpushed commits are the owner's own work on the default
+// branch, so the worker starts from local HEAD and gets them. A checkout on
+// another branch, a detached HEAD or a diverged default branch starts from the
+// tip, because its commits would otherwise come with the worker's work and
+// show up as unrelated files. A missing origin or a failed fetch starts from
+// local HEAD. It never moves the owner's checkout or any local branch: a fetch
+// only updates refs/remotes.
 func (d *Daemon) freshUpstreamBase(ctx context.Context, main, localHead string) string {
 	keep := func(why string) string {
 		if d.log != nil {
@@ -161,13 +166,47 @@ func (d *Daemon) freshUpstreamBase(ctx context.Context, main, localHead string) 
 	if err != nil {
 		return keep("cannot read " + remoteRef + ": " + err.Error())
 	}
-	if _, err := gitOut(ctx, main, "merge-base", "--is-ancestor", localHead, tip); err != nil {
-		return keep("local HEAD has commits that origin/" + target + " does not")
+	if _, err := gitOut(ctx, main, "merge-base", "--is-ancestor", localHead, tip); err == nil {
+		if tip != localHead && d.log != nil {
+			d.log.Printf("worktree base: starting from origin/%s %s (local %s is behind) in %s", target, shortCommit(tip), shortCommit(localHead), main)
+		}
+		return tip
 	}
-	if tip != localHead && d.log != nil {
-		d.log.Printf("worktree base: starting from origin/%s %s (local %s is behind) in %s", target, shortCommit(tip), shortCommit(localHead), main)
+	branch, _ := gitOut(ctx, main, "symbolic-ref", "--quiet", "--short", "HEAD")
+	if branch == target {
+		if _, err := gitOut(ctx, main, "merge-base", "--is-ancestor", tip, localHead); err == nil {
+			if d.log != nil {
+				d.log.Printf("worktree base: starting from local %s %s, %d commits not yet pushed in %s", target, shortCommit(localHead), commitCount(ctx, main, tip+".."+localHead), main)
+			}
+			return localHead
+		}
+	}
+	why := "local HEAD is detached"
+	switch {
+	case branch == "":
+	case branch != target:
+		why = "local HEAD is on branch " + branch + ", not " + target
+	default:
+		why = "local " + target + " and origin/" + target + " have diverged"
+	}
+	if d.log != nil {
+		d.log.Printf("worktree base: starting from origin/%s %s (%s) in %s", target, shortCommit(tip), why, main)
 	}
 	return tip
+}
+
+// commitCount counts the commits in a rev range. It returns 0 when git cannot
+// count them, which only shortens the log line.
+func commitCount(ctx context.Context, dir, rng string) int {
+	out, err := gitOut(ctx, dir, "rev-list", "--count", rng)
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 func shortCommit(c string) string {
