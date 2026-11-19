@@ -479,3 +479,88 @@ func releaseOne(t *testing.T, s *Store, id string, force bool) (protocol.Message
 	}
 	return carriers[0], n, err
 }
+
+// A held batch is batched again when the session turns busy just as it is
+// released. Delivering the outer batch must close every original, at any
+// depth, or the stall check counts them as pending forever.
+func TestNestedBatchDeliveryClosesEveryOriginal(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+	busyStatus(t, s, b, "busy")
+	var ids []string
+	hold := func(key string) string {
+		t.Helper()
+		c.t = c.t.Add(time.Minute)
+		m, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Type: protocol.TypeRequest, Body: "body-" + key, IdempotencyKey: key})
+		if err != nil || !s.HoldForBusy(m) {
+			t.Fatalf("hold %s: %v", key, err)
+		}
+		ids = append(ids, m.ID)
+		return m.ID
+	}
+	hold("one")
+	hold("two")
+	busyStatus(t, s, b, "idle")
+	inner, n, err := releaseOne(t, s, b, false)
+	if err != nil || n != 2 || len(inner.Batch) != 2 {
+		t.Fatalf("first release: n=%d err=%v batch=%d", n, err, len(inner.Batch))
+	}
+	// The turn starts again before the batch is pushed: it is held again.
+	busyStatus(t, s, b, "busy")
+	if !s.HoldForBusy(inner) {
+		t.Fatal("the dispatched batch was not held again")
+	}
+	hold("three")
+	busyStatus(t, s, b, "idle")
+	outer, n, err := releaseOne(t, s, b, false)
+	if err != nil || n != 2 || len(outer.Batch) != 2 {
+		t.Fatalf("second release: n=%d err=%v batch=%d", n, err, len(outer.Batch))
+	}
+	if err := s.ApplyDelivery(outer.ID, protocol.StateDelivered, ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range append(ids, inner.ID) {
+		if m, _, _ := s.Message(id); m.State != protocol.StateDelivered {
+			t.Fatalf("message %s is %q, want delivered", id, m.State)
+		}
+	}
+	// The recipient gets each body once: only the outer batch is pending work.
+	pending, err := s.Pending(mustNode(t, s, b), false)
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("pending after delivery = %+v, %v", pending, err)
+	}
+}
+
+// Rows an older release left 'dispatched' under a delivered batch, two levels
+// down, are closed by the repair migration.
+func TestNestedBatchRepairMigration(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+	mk := func(key string) string {
+		m, _, err := send(s, a, b, key, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m.ID
+	}
+	leaf, mid, top := mk("leaf"), mk("mid"), mk("top")
+	for _, q := range [][]any{
+		{`UPDATE messages SET state='dispatched', batch_id=? WHERE id=?`, mid, leaf},
+		{`UPDATE messages SET state='delivered', batch_id=? WHERE id=?`, top, mid},
+		{`UPDATE messages SET state='delivered' WHERE id=?`, top},
+	} {
+		if _, err := s.db.Exec(q[0].(string), q[1:]...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	version := migrationVersion(t, "Nested batch members left dispatched")
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, version); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.migrate(); err != nil {
+		t.Fatal(err)
+	}
+	if m, _, _ := s.Message(leaf); m.State != protocol.StateDelivered {
+		t.Fatalf("stuck member is %q, want delivered", m.State)
+	}
+}

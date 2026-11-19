@@ -699,3 +699,45 @@ func TestSessionStallDismissedLongAgoDoesNotBlockANewStall(t *testing.T) {
 		t.Fatalf("no new ask for a new stall after an old dismissal: %+v", got)
 	}
 }
+
+// Messages carried in a delivered nested batch are not pending deliveries.
+func TestSessionStallIgnoresNestedBatchMembers(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+	busyStatus(t, s, b, "busy")
+	for _, key := range []string{"one", "two"} {
+		m, _, err := send(s, a, b, key, "")
+		if err != nil || !s.HoldForBusy(m) {
+			t.Fatalf("hold %s: %v", key, err)
+		}
+	}
+	busyStatus(t, s, b, "idle")
+	inner, _, err := releaseOne(t, s, b, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	busyStatus(t, s, b, "busy")
+	if !s.HoldForBusy(inner) {
+		t.Fatal("batch not held again")
+	}
+	third, _, err := send(s, a, b, "three", "")
+	if err != nil || !s.HoldForBusy(third) {
+		t.Fatalf("hold three: %v", err)
+	}
+	busyStatus(t, s, b, "idle")
+	outer, _, err := releaseOne(t, s, b, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ApplyDelivery(outer.ID, protocol.StateDelivered, ""); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(6 * time.Hour)
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	items, err := s.ListInbox()
+	if err != nil || len(items) != 0 {
+		t.Fatalf("stall items for an idle session: %+v %v", items, err)
+	}
+}
