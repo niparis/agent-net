@@ -12,7 +12,7 @@ A change is one unit of delivery. It has a project, the machine that holds its b
 
 A change starts in one of two ways. A worker's complete hand-back submits it. A session can also submit work it did itself with `agent_change_submit`. Git holds the code. agent-net holds the steps and the proof.
 
-Three rules keep this simple:
+Four rules keep this simple:
 
 - A branch holds at most one open change. A submit for a branch that has an open change adds to that change.
 - A submit with a new head commit is a new revision of the same change.
@@ -100,7 +100,7 @@ Nothing here counts as a pass. A step with no report stays ready, waiting or stu
 
 ## Close and supersede
 
-A `close` result stops the change without a merge. The caller, or the owner, may close at any step, with a note. Closing ends the change's open asks and step tasks, and it notifies the sessions that held a task.
+A `close` result sets the change to `stopped`. The caller, or the owner, may close at any step, with a note, and that includes a step after the merge. Closing ends the change's open asks and step tasks, and it notifies the sessions that held a task.
 
 A change that replaces another is a convention, not a link. The old change is closed with `close`, and the new change is submitted. The code does not record that one replaced the other.
 
@@ -182,15 +182,34 @@ Change `ch_01128b1ba413e8aa` made the skill suggester ignore common words. It wa
 | 02:15 | merge | pass, merged commit `bb209ecb` | merger | CI run 44657251599 was green on the train tip. The change became merged. |
 | 02:15 | test after merge | pass on `bb209ecb`, full suite | merger | The same CI run. |
 | 02:25 | release | pass, tag `v0.5.108` | merger | Release workflow succeeded. The gateway had no migration to apply. |
-| 02:25 | verify | **fail**, severity 2, on `bb209ecb` | agent-net lead (caller) | Live on v0.5.108, the suggester still returned eight skills on generic words. The cause was the context text, which included the inherited charter and the bar rules. |
+| 02:25 | verify | **fail**, severity 2, on `bb209ecb` | agent-net lead (caller) | Live on v0.5.108, the suggester still returned eight skills on generic words. The note blamed the context text, which included the inherited charter and the bar rules. That cause was wrong, as the fix change below shows. |
 
 Three things happened next, all from the record.
 
 - The failed verify was filed as a defect on the worker, at severity 2. The gateway read severity from the report's `severity` field. The Desk log got a line for it.
 - The change stayed in state `merged`, not `done`. Verify is the last step, and it failed.
-- The fix is a new change. A submit with `fixes=ch_01128b1ba413e8aa` adds one more defect of kind fix, once for that change. This page's record read does not show that fix change, so it is not described here.
+- The fix is a new change, `ch_afd4fb1773bb1d9c`, submitted with `fixes=ch_01128b1ba413e8aa`. The fix rule above counts it once against the old change.
 
-**Where:** read with `agent_changes_find` (change `ch_01128b1ba413e8aa`); the defect rules are in `internal/gateway/defect_auto.go`.
+The fix change has its own record. Its first revision failed accept, and its second passed. Its verify was closed, not passed.
+
+| Time (UTC) | Step | Result and commit | Who | What the record says |
+|---|---|---|---|---|
+| 2026-11-20 02:29 | revision 1 | head `a36b0cfe` | worker | The worker's hand-back created the change. |
+| 02:31 | accept | **fail** on `a36b0cfe` | agent-net lead (caller) | The lead ran the new suggester on a copy of the real gateway database, read-only. Voicemechs still got eight bad picks. The noise came from the repo's own charter process fields (owner, deploys, freeze, never, test), not from the inherited text. A failed accept is normal iteration, so it records no defect. |
+| 02:34 | revision 2 | head `6fb13443` | worker | The second hand-back. The suggester now matches on the repo's purpose and description only. |
+| 02:35 | accept | pass on `6fb13443` | agent-net lead (caller) | On the same copy of the database, voicemechs got 4 picks, down from 8. The note says picks on one word are still loose, which is the limit of word matching. |
+| 02:35 | review | skipped | agent-net lead (caller) | Left out: the difficulty was simple, so review was not required. |
+| 02:37 | test before merge | pass on `6fb13443`, tested commit `0600cc30` | merger | Train `merge-train-0678` on main `bb209ecb`. Format, vet, the rule check and the gateway skill tests with race passed. |
+| 03:10 | merge | pass, merged commit `0600cc30` | merger | CI run 44662132659 was green after one rerun of a daemon shard that had flaked. The change became merged. |
+| 03:10 | test after merge | pass on `0600cc30`, full suite | merger | The same CI run, on the commit that landed. |
+| 03:19 | release | pass, tag `v0.5.109` | merger | The release workflow succeeded. The gateway, Mac and research nodes were on v0.5.109. The schema had no migration. |
+| 03:19 | verify | **closed** on `0600cc30` | agent-net lead (caller) | Not a pass. The owner decided, through the CTO, to remove the skills suggest action altogether, so there was nothing left to check live. The change state became `stopped`, not `done`. |
+
+The close is the record's answer for a verify that will not run. It is not a pass. The `v0.5.109` code kept the suggest action until the removal change ships.
+
+The lesson: evidence on the real setup caught two wrong conclusions that passing tests had not. The first was that the change worked, because its tests passed. Verify on the real setup showed it did not. The second was the cause, the inherited text. The accept of the first revision, run on a copy of the real database, showed the noise came from the repo's own charter fields.
+
+**Where:** read with `agent_changes_find` (changes `ch_01128b1ba413e8aa` and `ch_afd4fb1773bb1d9c`); the defect rules are in `internal/gateway/defect_auto.go`; the close rule is in `ReportStep` in `internal/gateway/delivery_changes.go`.
 
 ## Limits
 
