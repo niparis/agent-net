@@ -299,6 +299,9 @@ line is:
 
 Claude uses the same fill threshold and cache-window idle trigger as every other
 persistent session. `sessions.idle_compaction` turns only the idle trigger off.
+A background Claude session with a running background task (status `shell`,
+the main thread idle while the task runs) is compacted between turns, as an
+idle session is. Only `busy`, a turn in progress, is skipped.
 
 The daemon asks OpenCode 2.2.0 to compact with
 `POST /api/session/{id}/compact` and `{"delivery":"steer"}`, which runs at the

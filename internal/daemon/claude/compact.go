@@ -137,11 +137,21 @@ func (a *Adapter) compactSkip(id, reason string) {
 	}
 }
 
+// betweenTurns says no turn is running. Claude Code writes "shell" when the
+// main thread is idle and a background task is alive, so a background session
+// with a task (such as a dev server) is between turns too. Only "busy" is a turn.
+func betweenTurns(status string) bool {
+	return status == "idle" || status == "shell"
+}
+
 // Called on every discovery, so even a short busy turn resets the idle stretch.
 // Our own /compact turn must not reset the attempt that is still in flight.
 func (a *Adapter) observeCompactStateLocked(info protocol.SessionInfo) {
 	s := a.compactStates[info.NativeID]
-	if info.Status == "idle" && !s.running && s.awaitingIdle {
+	// Our /compact turn ends in "shell" when a background task is alive. Only
+	// the between-turns state clears awaitingIdle, so this must accept shell too,
+	// or the busy reset below never runs and the session is never compacted again.
+	if betweenTurns(info.Status) && !s.running && s.awaitingIdle {
 		s.awaitingIdle = false
 		a.compactStates[info.NativeID] = s
 	}
@@ -188,7 +198,7 @@ func (a *Adapter) compactOnce(ctx context.Context) {
 	var candidates []found
 	for _, f := range a.byNative {
 		s := a.compactStates[f.info.NativeID]
-		if f.kind != "bg" || f.job == "" || f.info.Status != "idle" || s.attempted || f.info.LastActive <= 0 {
+		if f.kind != "bg" || f.job == "" || !betweenTurns(f.info.Status) || s.attempted || f.info.LastActive <= 0 {
 			continue
 		}
 		if f.info.Worker != nil || (workers != nil && workers.IsWorkerSession("claude", f.info.NativeID)) {
@@ -253,7 +263,7 @@ func (a *Adapter) compactOnce(ctx context.Context) {
 		a.mu.Lock()
 		current, ok := a.byNative[f.info.NativeID]
 		s := a.compactStates[f.info.NativeID]
-		if !ok || current.info.Status != "idle" || current.info.LastActive != f.info.LastActive || s.attempted {
+		if !ok || !betweenTurns(current.info.Status) || current.info.LastActive != f.info.LastActive || s.attempted {
 			a.mu.Unlock()
 			continue
 		}
@@ -536,7 +546,7 @@ func (a *Adapter) compactSession(ctx context.Context, f found, path string) (res
 	}
 	raw, err := os.ReadFile(filepath.Join(a.cfg.SessionsDir, fmt.Sprintf("%d.json", f.pid)))
 	var sf sessionFile
-	if err != nil || json.Unmarshal(raw, &sf) != nil || sf.Status != "idle" || sf.SessionID != f.info.NativeID || sf.JobID != f.job {
+	if err != nil || json.Unmarshal(raw, &sf) != nil || !betweenTurns(sf.Status) || sf.SessionID != f.info.NativeID || sf.JobID != f.job {
 		return fmt.Errorf("session changed before compact")
 	}
 	// Bracketed paste wraps the typed command so Claude Code's terminal paste
