@@ -1,0 +1,319 @@
+{
+ "schema_version": 1,
+ "diagram_type": "architecture",
+ "meta": {
+  "title": "Gateway network: two owners, one link",
+  "output": "docs/design/gateway-network/network.html",
+  "quality_profile": "showcase",
+  "locale": "en",
+  "legend": {
+   "entries": {
+    "frontend": {
+     "label": "Front desk"
+    },
+    "backend": {
+     "label": "Gateway and machines"
+    },
+    "cloud": {
+     "label": "Shared service"
+    },
+    "security": {
+     "label": "Outside-facing listener"
+    },
+    "external": {
+     "label": "People and issuer"
+    }
+   }
+  }
+ },
+ "components": [
+  {
+   "id": "you",
+   "type": "external",
+   "icon": "person",
+   "label": "You",
+   "sublabel": "owner of this gateway",
+   "pos": [
+    40,
+    40
+   ],
+   "size": [
+    160,
+    64
+   ]
+  },
+  {
+   "id": "deskA",
+   "type": "frontend",
+   "label": "Front desk",
+   "sublabel": "chief of staff + Desk",
+   "pos": [
+    40,
+    190
+   ],
+   "size": [
+    160,
+    64
+   ]
+  },
+  {
+   "id": "gwA",
+   "type": "backend",
+   "label": "Your gateway",
+   "sublabel": "messages, charters, repos",
+   "pos": [
+    40,
+    340
+   ],
+   "size": [
+    160,
+    64
+   ]
+  },
+  {
+   "id": "machA",
+   "type": "backend",
+   "label": "Your machines",
+   "sublabel": "daemons, agent sessions",
+   "pos": [
+    40,
+    490
+   ],
+   "size": [
+    160,
+    64
+   ]
+  },
+  {
+   "id": "fedA",
+   "type": "security",
+   "label": "Federation listener",
+   "sublabel": "own port, own key",
+   "pos": [
+    330,
+    340
+   ],
+   "size": [
+    160,
+    64
+   ],
+   "tag": "off by default"
+  },
+  {
+   "id": "idp",
+   "type": "external",
+   "label": "Identity issuer",
+   "sublabel": "OIDC sign-in, optional",
+   "pos": [
+    545,
+    190
+   ],
+   "size": [
+    160,
+    64
+   ]
+  },
+  {
+   "id": "dir",
+   "type": "cloud",
+   "label": "Public directory",
+   "sublabel": "public repos only",
+   "pos": [
+    545,
+    490
+   ],
+   "size": [
+    160,
+    64
+   ],
+   "tag": "later stage"
+  },
+  {
+   "id": "fedB",
+   "type": "security",
+   "label": "Federation listener",
+   "sublabel": "own port, own key",
+   "pos": [
+    760,
+    340
+   ],
+   "size": [
+    160,
+    64
+   ]
+  },
+  {
+   "id": "gwB",
+   "type": "backend",
+   "label": "Their gateway",
+   "sublabel": "same software",
+   "pos": [
+    1050,
+    340
+   ],
+   "size": [
+    160,
+    64
+   ]
+  },
+  {
+   "id": "other",
+   "type": "external",
+   "icon": "person",
+   "label": "Another owner",
+   "sublabel": "a named person",
+   "pos": [
+    1050,
+    190
+   ],
+   "size": [
+    160,
+    64
+   ]
+  },
+  {
+   "id": "machB",
+   "type": "backend",
+   "label": "Their machines",
+   "sublabel": "daemons, agent sessions",
+   "pos": [
+    1050,
+    490
+   ],
+   "size": [
+    160,
+    64
+   ]
+  }
+ ],
+ "boundaries": [
+  {
+   "kind": "region",
+   "label": "Your side: full trust stays here",
+   "wraps": [
+    "deskA",
+    "gwA",
+    "machA",
+    "fedA"
+   ]
+  },
+  {
+   "kind": "region",
+   "label": "Their side",
+   "wraps": [
+    "fedB",
+    "gwB",
+    "machB"
+   ]
+  }
+ ],
+ "connections": [
+  {
+   "id": "b-sends",
+   "from": "machB",
+   "to": "gwB",
+   "label": "request"
+  },
+  {
+   "id": "b-out",
+   "from": "gwB",
+   "to": "fedB",
+   "label": "to outside"
+  },
+  {
+   "id": "link",
+   "from": "fedB",
+   "to": "fedA",
+   "label": "signed message",
+   "variant": "emphasis"
+  },
+  {
+   "id": "tagged",
+   "from": "fedA",
+   "to": "gwA",
+   "label": "tagged outside",
+   "variant": "emphasis"
+  },
+  {
+   "id": "sort",
+   "from": "gwA",
+   "to": "deskA",
+   "label": "to sort"
+  },
+  {
+   "id": "needs-you",
+   "from": "deskA",
+   "to": "you",
+   "label": "needs you"
+  },
+  {
+   "id": "to-lead",
+   "from": "gwA",
+   "to": "machA",
+   "label": "to a repo lead"
+  },
+  {
+   "id": "idp-a",
+   "from": "idp",
+   "to": "fedA",
+   "label": "proves who",
+   "variant": "security"
+  },
+  {
+   "id": "idp-b",
+   "from": "idp",
+   "to": "fedB",
+   "label": "proves who",
+   "variant": "security"
+  },
+  {
+   "id": "dir-a",
+   "from": "fedA",
+   "to": "dir",
+   "label": "lists public repos",
+   "variant": "dashed"
+  },
+  {
+   "id": "dir-b",
+   "from": "fedB",
+   "to": "dir",
+   "label": "finds repos",
+   "variant": "dashed"
+  },
+  {
+   "id": "owns-b",
+   "from": "other",
+   "to": "gwB",
+   "label": "owns"
+  }
+ ],
+ "cards": [
+  {
+   "dot": "emerald",
+   "title": "What crosses the link",
+   "items": [
+    "Messages to a repo or to its owner",
+    "A copy of a repo you may see, with its settings",
+    "Signed worker-quality counts, if the owner opts in"
+   ]
+  },
+  {
+   "dot": "rose",
+   "title": "What never crosses",
+   "items": [
+    "Starting or waking a session, starting a worker",
+    "Owner approval notes and peer trust",
+    "Machine tokens, quotas, secrets"
+   ]
+  },
+  {
+   "dot": "amber",
+   "title": "Repo setting",
+   "items": [
+    "Private: only you (the default)",
+    "Shared: named people",
+    "Public: listed in the directory"
+   ]
+  }
+ ]
+}

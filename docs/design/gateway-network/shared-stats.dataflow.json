@@ -1,0 +1,181 @@
+{
+ "schema_version": 1,
+ "diagram_type": "dataflow",
+ "meta": {
+  "title": "Shared worker-quality counts",
+  "output": "docs/design/gateway-network/shared-stats.html",
+  "viewBox": [
+   1080,
+   580
+  ],
+  "quality_profile": "showcase",
+  "locale": "en",
+  "legend": {
+   "entries": {
+    "emphasis": {
+     "label": "main data"
+    },
+    "security": {
+     "label": "signed, crosses the link"
+    },
+    "dashed": {
+     "label": "weak signal"
+    },
+    "default": {
+     "label": "local data"
+    }
+   }
+  }
+ },
+ "stages": [
+  {
+   "label": "Your data"
+  },
+  {
+   "label": "Cells"
+  },
+  {
+   "label": "Filter and sign"
+  },
+  {
+   "label": "Their gateway"
+  },
+  {
+   "label": "Their picker"
+  }
+ ],
+ "nodes": [
+  {
+   "id": "runs",
+   "type": "database",
+   "label": "Worker runs",
+   "sublabel": "accepted, closed",
+   "stage": 0,
+   "row": 0
+  },
+  {
+   "id": "defects",
+   "type": "database",
+   "label": "Defects",
+   "sublabel": "severity 1 to 4",
+   "stage": 0,
+   "row": 2
+  },
+  {
+   "id": "cells",
+   "type": "backend",
+   "label": "Picker cells",
+   "sublabel": "model, effort, level",
+   "stage": 1,
+   "row": 1
+  },
+  {
+   "id": "filter",
+   "type": "security",
+   "label": "Share filter",
+   "sublabel": "counts only",
+   "stage": 2,
+   "row": 1,
+   "tag": "opt-in"
+  },
+  {
+   "id": "inbox",
+   "type": "cloud",
+   "label": "Received counts",
+   "sublabel": "kept per source",
+   "stage": 3,
+   "row": 1
+  },
+  {
+   "id": "picker",
+   "type": "backend",
+   "label": "Picker",
+   "sublabel": "own data first",
+   "stage": 4,
+   "row": 2
+  },
+  {
+   "id": "own",
+   "type": "database",
+   "label": "Their own runs",
+   "sublabel": "local results",
+   "stage": 4,
+   "row": 0
+  }
+ ],
+ "flows": [
+  {
+   "id": "f-runs",
+   "from": "runs",
+   "to": "cells",
+   "label": "outcomes",
+   "classification": "local"
+  },
+  {
+   "id": "f-defects",
+   "from": "defects",
+   "to": "cells",
+   "label": "rework points",
+   "classification": "local"
+  },
+  {
+   "id": "f-cells",
+   "from": "cells",
+   "to": "filter",
+   "label": "raw counts",
+   "classification": "no names",
+   "variant": "emphasis"
+  },
+  {
+   "id": "f-signed",
+   "from": "filter",
+   "to": "inbox",
+   "label": "signed aggregate",
+   "classification": "gateway key",
+   "variant": "security"
+  },
+  {
+   "id": "f-prior",
+   "from": "inbox",
+   "to": "picker",
+   "label": "prior",
+   "classification": "low weight",
+   "variant": "dashed"
+  },
+  {
+   "id": "f-own",
+   "from": "own",
+   "to": "picker",
+   "label": "own results",
+   "classification": "wins",
+   "variant": "emphasis",
+   "labelDy": 40
+  }
+ ],
+ "cards": [
+  {
+   "dot": "emerald",
+   "title": "Shared",
+   "items": [
+    "Per cell: runs, accepted, closed, rework points, time window",
+    "Cost per accepted result at public list prices"
+   ]
+  },
+  {
+   "dot": "rose",
+   "title": "Never shared",
+   "items": [
+    "Brief text, repo names, session ids",
+    "Machine timings, quota levels, real spend"
+   ]
+  },
+  {
+   "dot": "amber",
+   "title": "How it is used",
+   "items": [
+    "As a starting guess for cells with little local data",
+    "Local results replace it as they arrive"
+   ]
+  }
+ ]
+}
