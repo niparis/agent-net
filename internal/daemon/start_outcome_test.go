@@ -135,6 +135,41 @@ func TestStrandedClaudeSessionInAWorkerWorktreeIsStoppedNotRegistered(t *testing
 	}
 }
 
+// The owner may open an interactive session in a worker folder to look at its
+// work. It has no worker record, but it is not a job a launch left behind: it
+// is listed and never stopped.
+func TestInteractiveClaudeSessionInAWorkerWorktreeIsListedNotStopped(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	c := startClaudeNode(t, g, shortSet)
+	repo := newRepo(t, "shop")
+	c.register(t, repo)
+
+	dir := filepath.Join(c.d.worktreesDir(), "w_0123456789abcdef")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sleeper := exec.Command("sleep", "300")
+	if err := sleeper.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { sleeper.Process.Kill(); sleeper.Wait() })
+	pid := sleeper.Process.Pid
+	raw, _ := json.Marshal(claudeSessionFile{Status: "idle", PID: pid, SessionID: "native-look-0001", Kind: "interactive", Cwd: dir})
+	if err := os.WriteFile(filepath.Join(c.sessions, strconv.Itoa(pid)+".json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	eventually(t, "the interactive session was listed", func() bool {
+		c.d.mu.Lock()
+		defer c.d.mu.Unlock()
+		_, ok := c.d.sessions[key("claude", "native-look-0001")]
+		return ok
+	})
+	if got := c.stops(); len(got) != 0 {
+		t.Errorf("an interactive session was stopped: %v", got)
+	}
+}
+
 // A daemon that is killed outright cannot report the start it was launching.
 // The report was held before the launch, so the next daemon sends it.
 func TestStartHeldWhenTheDaemonDiedIsReportedAfterRestart(t *testing.T) {
