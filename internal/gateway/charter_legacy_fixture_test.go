@@ -17,7 +17,7 @@ func (s *Store) seedLegacyCharter(node, attr, value, actor string) error {
 	}
 	defer tx.Rollback()
 	var old string
-	err = tx.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, node, attr).Scan(&old)
+	err = tx.QueryRow(`SELECT value FROM charter_values WHERE level='repo' AND scope=? AND attr=?`, node, attr).Scan(&old)
 	if err != nil && err != sql.ErrNoRows {
 		return err
 	}
@@ -28,7 +28,7 @@ func (s *Store) seedLegacyCharter(node, attr, value, actor string) error {
 	if _, err = tx.Exec(`INSERT OR IGNORE INTO graph_nodes VALUES(?,'component',?)`, node, now); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(`INSERT INTO graph_charter VALUES(?,?,?,?,?) ON CONFLICT(node,attr) DO UPDATE SET value=excluded.value`, node, attr, value, now, actor); err != nil {
+	if _, err = tx.Exec(`INSERT INTO charter_values VALUES('repo',?,?,?,?,?) ON CONFLICT(level,scope,attr) DO UPDATE SET value=excluded.value`, node, attr, value, now, actor); err != nil {
 		return err
 	}
 	if err = graphRecord(tx, "charter", node, attr, old, value, actor, now); err != nil {

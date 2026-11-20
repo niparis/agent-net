@@ -48,7 +48,7 @@ func TestPolicyGetCarriesScopesAndDelegatedText(t *testing.T) {
 	if err := r.s.loadGraphRefs(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.s.db.Exec(`INSERT INTO agent_charter VALUES('demo','purpose','Agent goal',1,'owner')`); err != nil {
+	if _, err := r.s.db.Exec(`INSERT INTO charter_values VALUES('agent','demo','purpose','Agent goal',1,'owner')`); err != nil {
 		t.Fatal(err)
 	}
 	policy := func() protocol.PolicyGot {

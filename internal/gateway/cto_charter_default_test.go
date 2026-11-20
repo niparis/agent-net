@@ -9,7 +9,7 @@ import (
 // ctoCharter reads the agent-level charter of the cto agent node.
 func ctoCharter(t *testing.T, s *Store) map[string]string {
 	t.Helper()
-	rows, err := s.db.Query(`SELECT attr,value FROM agent_charter WHERE agent_id='cto'`)
+	rows, err := s.db.Query(`SELECT attr,value FROM charter_values WHERE level='agent' AND scope='cto'`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestCTODefaultCharterOnNewInstall(t *testing.T) {
 // value the owner or the CTO set stays.
 func TestCTODefaultCharterKeepsOwnValues(t *testing.T) {
 	s, _ := newTestStore(t)
-	if _, err := s.db.Exec(`DELETE FROM agent_charter WHERE agent_id='cto'`); err != nil {
+	if _, err := s.db.Exec(`DELETE FROM charter_values WHERE level='agent' AND scope='cto'`); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SetAgentCharter("cto", "accepts", "Owner's own accepts", "owner"); err != nil {
@@ -84,7 +84,7 @@ func TestCTODefaultCharterKeepsOwnValues(t *testing.T) {
 	}
 	wantCTODefaults(t, got, "accepts")
 	var actor string
-	if err := s.db.QueryRow(`SELECT updated_by FROM agent_charter WHERE agent_id='cto' AND attr='rules'`).Scan(&actor); err != nil || actor != ctoDefaultCharterActor {
+	if err := s.db.QueryRow(`SELECT updated_by FROM charter_values WHERE level='agent' AND scope='cto' AND attr='rules'`).Scan(&actor); err != nil || actor != ctoDefaultCharterActor {
 		t.Fatalf("rules updated_by = %q, %v; want %q", actor, err, ctoDefaultCharterActor)
 	}
 }
@@ -98,7 +98,7 @@ func TestCTODefaultCharterRunsOnce(t *testing.T) {
 	}
 	rerunCTOCharterSeed(t, s, false)
 	var rules string
-	if err := s.db.QueryRow(`SELECT value FROM agent_charter WHERE agent_id='cto' AND attr='rules'`).Scan(&rules); !errors.Is(err, sql.ErrNoRows) {
+	if err := s.db.QueryRow(`SELECT value FROM charter_values WHERE level='agent' AND scope='cto' AND attr='rules'`).Scan(&rules); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("cleared rules came back as %q (%v)", rules, err)
 	}
 }

@@ -61,7 +61,7 @@ func (s *Store) CTOGraphClass(tool string, raw json.RawMessage) (string, error) 
 			}
 			defer tx.Rollback()
 			var old string
-			if err = tx.QueryRow(`SELECT value FROM agent_charter WHERE agent_id=? AND attr=?`, target.Ref.ID, q.Attr).Scan(&old); err != nil && err != sql.ErrNoRows {
+			if err = tx.QueryRow(`SELECT value FROM charter_values WHERE level='agent' AND scope=? AND attr=?`, target.Ref.ID, q.Attr).Scan(&old); err != nil && err != sql.ErrNoRows {
 				return "", err
 			}
 			return ctoGraphClassTx(tx, "agent_charter", target.Ref.ID, q.Attr, old, q.Value)
@@ -108,7 +108,7 @@ func (s *Store) CTOGraphClass(tool string, raw json.RawMessage) (string, error) 
 	switch tool {
 	case "charter_set":
 		typ = "charter"
-		err = tx.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, node, attr).Scan(&old)
+		err = tx.QueryRow(`SELECT value FROM charter_values WHERE level='repo' AND scope=? AND attr=?`, node, attr).Scan(&old)
 		if err != nil && err != sql.ErrNoRows {
 			return "", err
 		}
@@ -190,7 +190,7 @@ func ctoGraphClassTx(tx *sql.Tx, typ, node, attr, old, value string) (string, er
 	}
 	critical := func(name string) (bool, error) {
 		var maturity string
-		err := tx.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr='maturity'`, name).Scan(&maturity)
+		err := tx.QueryRow(`SELECT value FROM charter_values WHERE level='repo' AND scope=? AND attr='maturity'`, name).Scan(&maturity)
 		if err != nil && err != sql.ErrNoRows {
 			return false, err
 		}

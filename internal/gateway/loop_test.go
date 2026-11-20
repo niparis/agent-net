@@ -17,7 +17,7 @@ const loopEvery = 4 * time.Hour
 func loopNode(t *testing.T, s *Store, c *clock, session string) {
 	t.Helper()
 	setAutonomy(t, s, session, protocol.AutonomyOff)
-	if _, err := s.db.Exec(`INSERT INTO graph_charter VALUES('proj','purpose','Ship the parser',?, 'owner')`, s.now().UnixNano()); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO charter_values VALUES('repo','proj','purpose','Ship the parser',?, 'owner')`, s.now().UnixNano()); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SetNodeSetting("proj", protocol.SettingLoopEvery, "4h", "owner"); err != nil {

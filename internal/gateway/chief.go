@@ -1736,7 +1736,7 @@ func (s *Store) askFullLearned(ref string) (*protocol.LearnedSuggestion, error) 
 	}
 	if v.Status == "pending" && v.Field != "edge" {
 		var old string
-		if err := s.db.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, v.Node, v.Field).Scan(&old); err == nil {
+		if err := s.db.QueryRow(`SELECT value FROM charter_values WHERE level='repo' AND scope=? AND attr=?`, v.Node, v.Field).Scan(&old); err == nil {
 			v.OldValue = old
 		}
 		v.NewValue = learnedValue(v.OldValue, v.Phrase, v.Kind)

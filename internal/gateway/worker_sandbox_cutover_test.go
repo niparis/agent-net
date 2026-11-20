@@ -30,6 +30,7 @@ func TestWorkerSandboxCutover(t *testing.T) {
 	if _, err := s.WriteSettings([]SettingsChange{{Key: "workers.sandbox_level", Level: "repo", Scope: "Keep", Value: json.RawMessage(`"no-network"`)}}, "owner", "existing"); err != nil {
 		t.Fatal(err)
 	}
+	restoreOldCharterTables(t, s)
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
@@ -65,6 +66,7 @@ func TestWorkerSandboxCutover(t *testing.T) {
 	if !strings.Contains(notices, "Shop") || !strings.Contains(notices, "twins") {
 		t.Errorf("missing notices: %s", notices)
 	}
+	restoreOldCharterTables(t, s)
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
@@ -177,6 +179,7 @@ func TestWorkerSandboxCutoverPreservesMachineFallback(t *testing.T) {
 			if _, err := s.db.Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, a, string(raw)); err != nil {
 				t.Fatal(err)
 			}
+			restoreOldCharterTables(t, s)
 			if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 				t.Fatal(err)
 			}
@@ -215,6 +218,7 @@ func TestWorkerSandboxCutoverTightensUnsafeExistingValue(t *testing.T) {
 	if _, err := s.WriteSettings([]SettingsChange{{Key: workerSandboxKey, Level: "repo", Scope: "shop", Value: json.RawMessage(`"sandboxed"`)}}, "owner", "existing"); err != nil {
 		t.Fatal(err)
 	}
+	restoreOldCharterTables(t, s)
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
@@ -233,6 +237,7 @@ func TestWorkerSandboxCutoverTightensUnsafeExistingValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	restoreOldCharterTables(t, s)
 	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
@@ -270,6 +275,7 @@ func TestWorkerSandboxCutoverNoticesMachineWithoutPolicy(t *testing.T) {
 	if _, err := s.db.Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, a, string(raw)); err != nil {
 		t.Fatal(err)
 	}
+	restoreOldCharterTables(t, s)
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
@@ -307,6 +313,7 @@ func TestWorkerSandboxCutoverPreservesExistingWhenNetworkEnforcesFloor(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
+	restoreOldCharterTables(t, s)
 	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
@@ -335,6 +342,8 @@ func TestWorkerSandboxLegacyFallbackWithoutMaturity(t *testing.T) {
 	if _, err := s.db.Exec(`INSERT INTO graph_node_settings VALUES('shop','worker_sandbox','read-only',1,'owner')`); err != nil {
 		t.Fatal(err)
 	}
+	// The helper belongs to a migration step that ran before the tables merged.
+	restoreOldCharterTables(t, s)
 	tx, err := s.db.Begin()
 	if err != nil {
 		t.Fatal(err)
@@ -367,13 +376,14 @@ func TestWorkerSandboxCutoverPreservesExactMachineProjectFallback(t *testing.T) 
 	}
 	// The old lookup uses the exact machine project name for the graph
 	// fallback, even if that graph record is no longer a displayed node.
-	if _, err = s.db.Exec(`INSERT INTO graph_charter VALUES('SHOP','maturity','critical',1,'owner')`); err != nil {
+	if _, err = s.db.Exec(`INSERT INTO charter_values VALUES('repo','SHOP','maturity','critical',1,'owner')`); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := json.Marshal(protocol.DelegationPolicy{Workers: protocol.WorkersSandboxed})
 	if _, err = s.db.Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, a, string(raw)); err != nil {
 		t.Fatal(err)
 	}
+	restoreOldCharterTables(t, s)
 	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
@@ -399,9 +409,10 @@ func TestWorkerSandboxCutoverPreservesMultipleOldNamesOnMachine(t *testing.T) {
 	if _, err = s.AddProjects(id, protocol.ProjectAdd{Projects: entries}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec(`INSERT INTO graph_charter VALUES('SHOP','maturity','critical',1,'owner')`); err != nil {
+	if _, err = s.db.Exec(`INSERT INTO charter_values VALUES('repo','SHOP','maturity','critical',1,'owner')`); err != nil {
 		t.Fatal(err)
 	}
+	restoreOldCharterTables(t, s)
 	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
@@ -448,6 +459,7 @@ func TestWorkerSandboxCutoverNoticeListsAllAffectedMachines(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	restoreOldCharterTables(t, s)
 	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
@@ -482,6 +494,7 @@ func TestWorkerSandboxCutoverNoticeUsesActualProjectCase(t *testing.T) {
 	if _, err = s.db.Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, id, string(raw)); err != nil {
 		t.Fatal(err)
 	}
+	restoreOldCharterTables(t, s)
 	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
@@ -524,6 +537,7 @@ func TestWorkerSandboxCutoverNoticesSessionInferredProject(t *testing.T) {
 	if _, err = s.db.Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, a, string(raw)); err != nil {
 		t.Fatal(err)
 	}
+	restoreOldCharterTables(t, s)
 	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}
@@ -569,6 +583,7 @@ func TestWorkerSandboxCutoverNoticesSeenProjectWithDifferentRegistrationName(t *
 	if _, err = s.db.Exec(`INSERT INTO project_policies VALUES(?,'other',?,1)`, a, string(raw)); err != nil {
 		t.Fatal(err)
 	}
+	restoreOldCharterTables(t, s)
 	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
 	}

@@ -31,14 +31,12 @@ func draftOwnValue(q draftQuerier, level, scope, attr string) (string, error) {
 	var value string
 	var err error
 	switch {
-	case level == "repo":
-		err = q.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, scope, attr).Scan(&value)
-	case level == "agent":
-		err = q.QueryRow(`SELECT value FROM agent_charter WHERE agent_id=? AND attr=?`, scope, attr).Scan(&value)
+	case level == "repo" || level == "agent":
+		value, err = charterValueTx(q, level, scope, attr)
 	case level == "team" && attr == "purpose":
 		err = q.QueryRow(`SELECT purpose FROM teams WHERE id=? AND active=1`, scope).Scan(&value)
 	case level == "team":
-		err = q.QueryRow(`SELECT value FROM charter_values WHERE level='team' AND scope=? AND attr=?`, scope, attr).Scan(&value)
+		value, err = charterValueTx(q, level, scope, attr)
 	default:
 		return "", reject("invalid charter level")
 	}

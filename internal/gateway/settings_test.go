@@ -327,7 +327,7 @@ func TestSettingsSnapshotConsistentTransaction(t *testing.T) {
 			if i%2 != 0 {
 				maturity, value = "critical", "false"
 			}
-			_, err = tx.Exec(`INSERT INTO graph_charter(node,attr,value,updated_at,updated_by) VALUES('alpha','maturity',?,0,'owner') ON CONFLICT(node,attr) DO UPDATE SET value=excluded.value`, maturity)
+			_, err = tx.Exec(`INSERT INTO charter_values(level,scope,attr,value,updated_at,updated_by) VALUES('repo','alpha','maturity',?,0,'owner') ON CONFLICT(level,scope,attr) DO UPDATE SET value=excluded.value`, maturity)
 			if err == nil {
 				_, err = tx.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES('workers.auto_continue','network','network','',?,?) ON CONFLICT(key,level,scope,item) DO UPDATE SET value=excluded.value,revision=excluded.revision`, value, i)
 			}

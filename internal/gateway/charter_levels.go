@@ -7,8 +7,8 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// Global and Team charters share a table. Repo and Agent values retain their
-// existing tables, keys and history. Empty values mean inherit.
+// All four charter levels share charter_values. Repo and Agent history keeps
+// its own types (charter, agent_charter). Empty values mean inherit.
 func (s *Store) SetLevelCharter(q protocol.CharterSetRequest, actor string, validate bool) error {
 	err := s.setLevelCharter(q, actor, validate)
 	if validate {

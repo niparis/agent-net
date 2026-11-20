@@ -13,7 +13,7 @@ func TestAgentCharterMigrationReopen(t *testing.T) {
 			t.Fatal(err)
 		}
 		var count int
-		if err := s.db.QueryRow(`SELECT count(*) FROM agent_charter`).Scan(&count); err != nil {
+		if err := s.db.QueryRow(`SELECT count(*) FROM charter_values WHERE level='agent'`).Scan(&count); err != nil {
 			t.Fatal(err)
 		}
 		// Only the CTO's default charter is there, seeded once (decision 0159).
@@ -43,7 +43,7 @@ func TestAgentCharterHistory(t *testing.T) {
 	if err := r.s.db.QueryRow(`SELECT count(*) FROM agent_charter_history WHERE agent_id='demo'`).Scan(&count); err != nil || count != 3 {
 		t.Fatalf("history %d: %v", count, err)
 	}
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM agent_charter WHERE agent_id='demo'`).Scan(&count); err != nil || count != 0 {
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM charter_values WHERE level='agent' AND scope='demo'`).Scan(&count); err != nil || count != 0 {
 		t.Fatalf("current %d: %v", count, err)
 	}
 }

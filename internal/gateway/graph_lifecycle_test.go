@@ -315,7 +315,7 @@ func TestGraphLifecycleRepoNamesakeOfLegacyArchitect(t *testing.T) {
 	if err := s.SetCharter("advisor", "purpose", "actor only", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO agent_charter SELECT node,attr,value,updated_at,updated_by FROM graph_charter WHERE node='advisor'; UPDATE graph_ref_gate SET enabled=1`); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO charter_values SELECT 'agent',scope,attr,value,updated_at,updated_by FROM charter_values WHERE level='repo' AND scope='advisor'; UPDATE graph_ref_gate SET enabled=1`); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.loadGraphRefs(); err != nil {

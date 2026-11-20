@@ -11,7 +11,7 @@ func TestSessionAgentOwnerAssignmentAndHistory(t *testing.T) {
 	if err := r.s.AddArchitect("advisor", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.s.db.Exec(`INSERT INTO agent_charter VALUES('advisor','purpose','Advisor goal',1,'owner')`); err != nil {
+	if _, err := r.s.db.Exec(`INSERT INTO charter_values VALUES('agent','advisor','purpose','Advisor goal',1,'owner')`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES('workers.auto_continue','agent','advisor','','false',1)`); err != nil {

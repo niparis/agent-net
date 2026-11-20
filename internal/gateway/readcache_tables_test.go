@@ -350,8 +350,6 @@ var writeRowSQL = map[string]string{
 	"teams":                `INSERT INTO teams(id,name,created_at,updated_at) VALUES('t_probe','probe',1,1)`,
 	"team_members":         `INSERT INTO team_members(member_kind,member_id,team_id) VALUES('repo','probe','t_probe')`,
 	"worker_brief_defects": `INSERT INTO worker_brief_defects(severity,at) VALUES(1,1)`,
-	// A charter must belong to a node, or the graph does not load.
-	"graph_charter": `INSERT INTO graph_charter(node,attr,value,updated_at,updated_by) VALUES('cogforge','probe','x',1,'t')`,
 }
 
 func writeTo(t *testing.T, s *Store, table string, n int) {

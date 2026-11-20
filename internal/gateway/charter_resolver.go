@@ -43,7 +43,7 @@ type charterResolver struct {
 // charterTables are the tables the resolver reads: the charter values of each
 // level, the teams a node belongs to, and the repo and agent charters. Keep it
 // equal to the queries in this file (see readThrough).
-var charterTables = []string{"charter_values", "teams", "team_members", "graph_charter", "agent_charter"}
+var charterTables = []string{"charter_values", "teams", "team_members"}
 
 func (s *Store) newCharterResolver() *charterResolver {
 	return &charterResolver{
@@ -149,7 +149,7 @@ func (r *charterResolver) repoCharter(repo string) ([]charterValue, error) {
 	if r.repoValuesReady {
 		return nil, nil
 	}
-	values, err := r.scanValues(`SELECT attr,value FROM graph_charter WHERE node=? ORDER BY attr`, repo)
+	values, err := r.scanValues(`SELECT attr,value FROM charter_values WHERE level='repo' AND scope=? ORDER BY attr`, repo)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +164,7 @@ func (r *charterResolver) agentCharter(agent string) ([]charterValue, error) {
 	if r.agentValuesReady {
 		return nil, nil
 	}
-	values, err := r.scanValues(`SELECT attr,value FROM agent_charter WHERE agent_id=? ORDER BY attr`, agent)
+	values, err := r.scanValues(`SELECT attr,value FROM charter_values WHERE level='agent' AND scope=? ORDER BY attr`, agent)
 	if err != nil {
 		return nil, err
 	}
@@ -239,7 +239,7 @@ func (r *charterResolver) preloadTeams() error {
 // preloadRepos reads the given Repos' charters in one query.
 func (r *charterResolver) preloadRepos(repos []string) error {
 	repos = uniqueNonEmpty(repos)
-	rows, err := queryIn(r.store.db, `SELECT node,attr,value FROM graph_charter WHERE node IN (%s) ORDER BY node,attr`, repos)
+	rows, err := queryIn(r.store.db, `SELECT scope,attr,value FROM charter_values WHERE level='repo' AND scope IN (%s) ORDER BY scope,attr`, repos)
 	if err != nil {
 		return err
 	}
@@ -262,7 +262,7 @@ func (r *charterResolver) preloadRepos(repos []string) error {
 // preloadAgents reads the given Agents' charters in one query.
 func (r *charterResolver) preloadAgents(agents []string) error {
 	agents = uniqueNonEmpty(agents)
-	rows, err := queryIn(r.store.db, `SELECT agent_id,attr,value FROM agent_charter WHERE agent_id IN (%s) ORDER BY agent_id,attr`, agents)
+	rows, err := queryIn(r.store.db, `SELECT scope,attr,value FROM charter_values WHERE level='agent' AND scope IN (%s) ORDER BY scope,attr`, agents)
 	if err != nil {
 		return err
 	}

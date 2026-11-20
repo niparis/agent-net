@@ -13,7 +13,7 @@ func TestResolverAgentCharterAndWorker(t *testing.T) {
 	if err := r.s.SetCharter("demo", "purpose", "Repo purpose", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.s.db.Exec(`INSERT INTO agent_charter VALUES('demo','purpose','Agent goal',1,'owner')`); err != nil {
+	if _, err := r.s.db.Exec(`INSERT INTO charter_values VALUES('agent','demo','purpose','Agent goal',1,'owner')`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.s.AddProjects(r.a, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "other", Path: "/code/other"}}}); err != nil {
@@ -135,7 +135,7 @@ func TestResolverPolicyDeliveryCompatibility(t *testing.T) {
 	if string(before) != string(after) {
 		t.Fatalf("pipeline changed: %s != %s", before, after)
 	}
-	if _, err := r.s.db.Exec(`INSERT INTO agent_charter VALUES('demo','purpose','Agent goal',1,'owner')`); err != nil {
+	if _, err := r.s.db.Exec(`INSERT INTO charter_values VALUES('agent','demo','purpose','Agent goal',1,'owner')`); err != nil {
 		t.Fatal(err)
 	}
 	got, err = deliveryCall[protocol.PolicyGot](r, r.a, "policy.get", protocol.PolicyGet{SessionID: r.caller})
@@ -146,7 +146,7 @@ func TestResolverPolicyDeliveryCompatibility(t *testing.T) {
 
 func TestResolverWorkerRun(t *testing.T) {
 	r := newDeliveryRig(t)
-	if _, err := r.s.db.Exec(`INSERT INTO agent_charter VALUES('demo','purpose','caller goal',1,'owner')`); err != nil {
+	if _, err := r.s.db.Exec(`INSERT INTO charter_values VALUES('agent','demo','purpose','caller goal',1,'owner')`); err != nil {
 		t.Fatal(err)
 	}
 	res, err := r.s.db.Exec(`INSERT INTO worker_runs(node_id,session_id,harness,outcome,ended_at,caller_session_id,caller_agent_id) VALUES(?,?,'claude','complete',1,?,'demo')`, r.a, r.worker, r.caller)

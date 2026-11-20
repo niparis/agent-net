@@ -244,7 +244,7 @@ func (s *Store) graphForRefRecords(ref *protocol.GraphRef, places bool) (protoco
 	for i := range g.Nodes {
 		byRef[*g.Nodes[i].Ref] = &g.Nodes[i]
 	}
-	rows, err := s.db.Query(`SELECT node,attr,value FROM graph_charter`)
+	rows, err := s.db.Query(`SELECT scope,attr,value FROM charter_values WHERE level='repo'`)
 	if err != nil {
 		return g, err
 	}
@@ -267,7 +267,7 @@ func (s *Store) graphForRefRecords(ref *protocol.GraphRef, places bool) (protoco
 	if err != nil {
 		return g, err
 	}
-	rows, err = s.db.Query(`SELECT agent_id,attr,value FROM agent_charter`)
+	rows, err = s.db.Query(`SELECT scope,attr,value FROM charter_values WHERE level='agent'`)
 	if err != nil {
 		return g, err
 	}

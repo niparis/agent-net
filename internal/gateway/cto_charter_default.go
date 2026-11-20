@@ -30,7 +30,9 @@ const ctoDefaultCharterKey = "cto_default_charter_v1"
 const ctoDefaultCharterActor = "agent-net default"
 
 // seedCTOCharterOnceTx fills the empty fields of the cto agent's charter with
-// ctoDefaultCharter, once. A field that has a value keeps it.
+// ctoDefaultCharter, once. A field that has a value keeps it. It runs inside a
+// shipped migration step, before the charter tables merged, so it uses the
+// agent_charter table layout.
 func (s *Store) seedCTOCharterOnceTx(tx *sql.Tx) error {
 	var done string
 	err := tx.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, ctoDefaultCharterKey).Scan(&done)
@@ -57,7 +59,7 @@ func (s *Store) seedCTOCharterOnceTx(tx *sql.Tx) error {
 		if has {
 			continue
 		}
-		if err = setAgentCharterTx(tx, "cto", f.attr, f.value, ctoDefaultCharterActor, now); err != nil {
+		if err = setAgentCharterIn(tx, agentCharterTableLayout, "cto", f.attr, f.value, ctoDefaultCharterActor, now); err != nil {
 			return err
 		}
 		seeded = append(seeded, f.attr)

@@ -147,7 +147,7 @@ func (s *Store) RemoveArchitect(name, actor string, validate ...bool) error {
 		return reject("node has edges")
 	}
 	// Record each removed attribute before deleting it.
-	rows, err := tx.Query(`SELECT attr,value FROM graph_charter WHERE node=?`, name)
+	rows, err := tx.Query(`SELECT attr,value FROM charter_values WHERE level='repo' AND scope=?`, name)
 	if err != nil {
 		return err
 	}
@@ -170,7 +170,7 @@ func (s *Store) RemoveArchitect(name, actor string, validate ...bool) error {
 			return err
 		}
 	}
-	if _, err = tx.Exec(`DELETE FROM graph_charter WHERE node=?`, name); err != nil {
+	if _, err = tx.Exec(`DELETE FROM charter_values WHERE level='repo' AND scope=?`, name); err != nil {
 		return err
 	}
 	// Legacy node settings are kept as a downgrade backup.
@@ -296,8 +296,7 @@ func setCharterKindTx(tx *sql.Tx, node, attr, value, actor string, now int64, re
 	if repo {
 		kind = "component"
 	}
-	var old string
-	err = tx.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, node, attr).Scan(&old)
+	old, err := charterValueTx(tx, "repo", node, attr)
 	if err != nil && err != sql.ErrNoRows {
 		return err
 	}
@@ -307,12 +306,7 @@ func setCharterKindTx(tx *sql.Tx, node, attr, value, actor string, now int64, re
 	if _, err = tx.Exec(`INSERT OR IGNORE INTO graph_nodes VALUES(?,?,?)`, node, kind, now); err != nil {
 		return err
 	}
-	if value == "" {
-		_, err = tx.Exec(`DELETE FROM graph_charter WHERE node=? AND attr=?`, node, attr)
-	} else {
-		_, err = tx.Exec(`INSERT INTO graph_charter VALUES(?,?,?,?,?) ON CONFLICT(node,attr) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at,updated_by=excluded.updated_by`, node, attr, value, now, actor)
-	}
-	if err != nil {
+	if err = putCharterValueTx(tx, "repo", node, attr, value, actor, now); err != nil {
 		return err
 	}
 	if err := graphRecord(tx, "charter", node, attr, old, value, actor, now); err != nil {
@@ -885,7 +879,7 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 		return tx.Commit()
 	case "agent_charter":
 		var current string
-		err = tx.QueryRow(`SELECT value FROM agent_charter WHERE agent_id=? AND attr=?`, node, attr).Scan(&current)
+		current, err = charterValueTx(tx, "agent", node, attr)
 		if err != nil && err != sql.ErrNoRows {
 			return err
 		}
@@ -904,7 +898,7 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 			return err
 		}
 		var current string
-		err = tx.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, node, attr).Scan(&current)
+		current, err = charterValueTx(tx, "repo", node, attr)
 		if err != nil && err != sql.ErrNoRows {
 			return err
 		}
@@ -914,11 +908,7 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 		if _, err = graphKind(tx, node); err != nil {
 			return err
 		}
-		if old == "" {
-			_, err = tx.Exec(`DELETE FROM graph_charter WHERE node=? AND attr=?`, node, attr)
-		} else {
-			_, err = tx.Exec(`INSERT INTO graph_charter VALUES(?,?,?,?,?) ON CONFLICT(node,attr) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at,updated_by=excluded.updated_by`, node, attr, old, now, actor)
-		}
+		err = putCharterValueTx(tx, "repo", node, attr, old, actor, now)
 	case "setting":
 		if _, moved := deliveryNodeKeys[attr]; moved {
 			return reject("%s moved to settings; use settings history to undo", attr)
@@ -1019,7 +1009,7 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 		}
 		if old == "" {
 			var n int
-			if err = tx.QueryRow(`SELECT (SELECT COUNT(*) FROM graph_edges WHERE (source=? OR target=?) AND kind<>'reports_to') + (SELECT COUNT(*) FROM graph_charter WHERE node=?) + (SELECT COUNT(*) FROM setting_values WHERE level='repo' AND scope=?)`, node, node, node, node).Scan(&n); err != nil {
+			if err = tx.QueryRow(`SELECT (SELECT COUNT(*) FROM graph_edges WHERE (source=? OR target=?) AND kind<>'reports_to') + (SELECT COUNT(*) FROM charter_values WHERE level='repo' AND scope=?) + (SELECT COUNT(*) FROM setting_values WHERE level='repo' AND scope=?)`, node, node, node, node).Scan(&n); err != nil {
 				return err
 			}
 			if n != 0 {
@@ -1409,7 +1399,7 @@ var graphNodesTables = []string{"graph_nodes", "projects", "sessions.repo_projec
 // snapshot, the loops (loopTables), the delegation policies and the edges.
 // Keep it equal to those queries (see readThrough).
 var graphTables = tableUnion(graphNodesTables, charterTables, settingsTables, loopTables,
-	[]string{"graph_charter", "agent_charter", "project_policies", "graph_edges", "project_bar_rules"})
+	[]string{"project_policies", "graph_edges", "project_bar_rules"})
 
 // Graph returns explicit and implicit nodes and all edges.
 //
@@ -1479,11 +1469,11 @@ func (s *Store) graphWith(snapshot *settings.Snapshot) (protocol.Graph, error) {
 		return g, err
 	}
 	g.Nodes = nodes
-	charterQuery := `SELECT node,attr,value FROM graph_charter`
+	charterQuery := `SELECT scope,attr,value FROM charter_values WHERE level='repo'`
 	if on, err := s.graphRefsEnabled(); err != nil {
 		return g, err
 	} else if on {
-		charterQuery = `SELECT node,attr,value FROM graph_charter WHERE node NOT IN (SELECT name FROM graph_nodes WHERE kind='architect') UNION ALL SELECT a.agent_id,a.attr,a.value FROM agent_charter a JOIN graph_nodes n ON n.name=a.agent_id AND n.kind='architect'`
+		charterQuery = `SELECT scope,attr,value FROM charter_values WHERE level='repo' AND scope NOT IN (SELECT name FROM graph_nodes WHERE kind='architect') UNION ALL SELECT a.scope,a.attr,a.value FROM charter_values a JOIN graph_nodes n ON n.name=a.scope AND n.kind='architect' WHERE a.level='agent'`
 	}
 	rows, err := s.db.Query(charterQuery)
 	if err != nil {
