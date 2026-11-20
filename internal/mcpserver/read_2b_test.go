@@ -37,6 +37,15 @@ func (f *roFakeDaemon) call(_ context.Context, method string, params any) (json.
 	raw, _ := json.Marshal(params)
 	f.methods = append(f.methods, method)
 	switch method {
+	case protocol.MethodMessagesFind, protocol.MethodMessageGet, protocol.MethodWorkersFind, protocol.MethodMCPServersFind:
+		// The daemon runs these four reads. The fixture runs the same code
+		// over its in-memory answers, as the session the fixture names.
+		who := ReadCaller{SessionID: f.caller, Name: "me", Project: "proj", Sessions: []protocol.SessionInfo{{SessionID: f.caller, NativeID: f.callerNative, Name: "me"}}}
+		out, err := ServeRead(context.Background(), method, raw, who, f.call)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(out)
 	case "info":
 		return json.Marshal(protocol.OperatorInfo{Sessions: []protocol.SessionInfo{{
 			SessionID: f.caller, Harness: "claude", NativeID: f.callerNative, Name: "me",

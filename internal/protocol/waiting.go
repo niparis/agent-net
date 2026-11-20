@@ -33,6 +33,11 @@ const MaxWaitingTextLen = 200
 // owner-only method: like a hint, a hook may call it for its own session.
 const MethodWaiting = "waiting"
 
+// MethodOwnerAsk is the local method behind the agent_owner_ask tool. Its
+// params are the tool's input. The daemon picks the ask kind (question,
+// approval or idea), so every harness asks the owner the same way.
+const MethodOwnerAsk = "owner_ask"
+
 // FrameWaitClear is the gateway telling a node that the owner closed a
 // session's question or approval without a message (a dismissal): the
 // session's explicit wait ends. Its params are WaitClear.
@@ -163,3 +168,13 @@ func (w *Waiting) UnmarshalJSON(b []byte) error {
 	*w = Waiting(p)
 	return nil
 }
+
+// The daemon methods behind the four read tools that filter, page or fetch.
+// Their params are the tool input and their answer is the tool output, so
+// every harness gets the same answer.
+const (
+	MethodMessagesFind   = "messages_find"
+	MethodMessageGet     = "message_get"
+	MethodWorkersFind    = "workers_find"
+	MethodMCPServersFind = "servers_find"
+)

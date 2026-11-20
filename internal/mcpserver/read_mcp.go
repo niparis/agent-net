@@ -64,7 +64,7 @@ type roProfileFindOut struct {
 
 func addMCPReadTools(s *mcp.Server, call Caller) {
 	roAdd(s, "agent_mcp_servers_find", func(ctx context.Context, _ *mcp.CallToolRequest, in roMCPFindIn) (*mcp.CallToolResult, roMCPFindOut, error) {
-		out, err := roFindMCPServers(ctx, call, in)
+		out, err := roForward[roMCPFindOut](ctx, call, protocol.MethodMCPServersFind, in)
 		return nil, out, err
 	})
 	roAdd(s, "agent_worker_profiles_find", func(ctx context.Context, _ *mcp.CallToolRequest, in roProfileFindIn) (*mcp.CallToolResult, roProfileFindOut, error) {
@@ -85,7 +85,7 @@ func roFindMCPServers(ctx context.Context, call Caller, in roMCPFindIn) (roMCPFi
 	if err != nil {
 		return roMCPFindOut{}, err
 	}
-	caller, err := roWhoAmI(ctx, call)
+	caller, err := roWhoAmI(ctx)
 	if err != nil {
 		return roMCPFindOut{}, err
 	}

@@ -355,14 +355,14 @@ await test("agent_learn records a finding", async () => {
   await p.fire("session_shutdown", {});
 });
 
-await test("agent_owner_ask sends a waiting question", async () => {
+await test("agent_owner_ask sends the owner_ask method the MCP server sends", async () => {
   const p = makePi(); extension(p.api);
   const n = hellos.length;
   await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
   await until("hello", () => hellos.length === n + 1);
   await p.tools.get("agent_owner_ask").execute("id", { kind: "question", text: "Merge?", recommendation: "yes", options: ["Yes"], urgency: "high" });
-  const sent = requests.filter((r) => r.method === "waiting").pop();
-  if (sent.params.kind !== "question" || !sent.params.explicit || sent.params.text !== "Merge?" || sent.params.options[0] !== "Yes") throw new Error(JSON.stringify(sent));
+  const sent = requests.filter((r) => r.method === "owner_ask").pop();
+  if (!sent || sent.params.kind !== "question" || sent.params.explicit || sent.params.text !== "Merge?" || sent.params.options[0] !== "Yes") throw new Error(JSON.stringify(sent));
   await p.fire("session_shutdown", {});
 });
 
@@ -372,23 +372,31 @@ await test("agent_owner_ask passes replaces for an approval", async () => {
   await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
   await until("hello", () => hellos.length === n + 1);
   await p.tools.get("agent_owner_ask").execute("id", { kind: "approval", text: "Delete?", recommendation: "no", replaces: "i_old" });
-  const sent = requests.filter((r) => r.method === "request_approval").pop();
-  if (!sent || sent.params.replaces !== "i_old" || sent.params.action !== "Delete?") throw new Error(JSON.stringify(sent));
+  const sent = requests.filter((r) => r.method === "owner_ask").pop();
+  if (!sent || sent.params.kind !== "approval" || sent.params.replaces !== "i_old" || sent.params.text !== "Delete?") throw new Error(JSON.stringify(sent));
   await p.fire("session_shutdown", {});
 });
 
-await test("agent_message_get sends the message ID the daemon reads", async () => {
+await test("the four read tools send the tool input to their own daemon method", async () => {
   const p = makePi();
   extension(p.api);
   const n = hellos.length;
   await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
   await until("hello", () => hellos.length === n + 1);
-  replies.message_status = { message: { id: "m_1", conversation_id: "c_1", from: "s_a", to: "s_b", type: "request", state: "delivered", body: "hello" } };
-  const before = requests.length;
-  await p.tools.get("agent_message_get").execute("id", { message: "m_1" });
-  const sent = requests.slice(before).find((r) => r.method === "message_status");
-  if (!sent || sent.params.message_id !== "m_1") throw new Error("message_status request: " + JSON.stringify(sent));
-  delete replies.message_status;
+  // The daemon filters, pages and fetches; the plugin adds nothing of its own
+  // (no online_only, no renamed fields).
+  const cases = [
+    ["agent_messages_find", "messages_find", { conversation: "c_1", with: "bob", direction: "in", since: "2026-01-01T00:00:00Z", limit: 5, cursor: "cur" }],
+    ["agent_message_get", "message_get", { message: "m_1", max_bytes: 256, body_cursor: "b", file: "a.md", file_cursor: "f" }],
+    ["agent_workers_find", "workers_find", { started_by: "anyone", state: "any", project: "alpha", machine: "mac", limit: 3 }],
+    ["agent_mcp_servers_find", "servers_find", { usable_only: false, limit: 2 }],
+  ];
+  for (const [tool, method, input] of cases) {
+    const before = requests.length;
+    await p.tools.get(tool).execute("id", input);
+    const sent = requests.slice(before).find((r) => r.method === method);
+    if (!sent || JSON.stringify(sent.params) !== JSON.stringify(input)) throw new Error(tool + " sent " + JSON.stringify(sent));
+  }
   await p.fire("session_shutdown", {});
 });
 

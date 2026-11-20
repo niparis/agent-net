@@ -35,9 +35,7 @@ const daemonFieldsInfo = `{"connected":true,"sessions":[{"type":"claude","sessio
 
 // pluginOtherMethod lists the tools whose native plugin calls another daemon
 // method than the MCP server does. Their fields are not compared.
-var pluginOtherMethod = map[string]string{
-	"agent_owner_ask": "the plugins send a question as an explicit wait (waiting); MCP sends ask_question",
-}
+var pluginOtherMethod = map[string]string{}
 
 // TestDaemonFieldsMatchTheMCPServer sends every agent catalog tool through the
 // MCP server with marker values. It checks where each marker reaches the daemon

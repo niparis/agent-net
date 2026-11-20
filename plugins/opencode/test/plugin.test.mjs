@@ -1249,11 +1249,11 @@ await test("agent_announce asks for a task, and tool results end with the remind
   const stop = await plugin.setup(c.ctx);
   await until("hello for ses_a", () => registered("ses_a"));
   await tools.find((t) => t.name === "agent_owner_ask").execute({ kind: "question", text: "Merge?", recommendation: "yes", options: ["Yes"], urgency: "high" }, { sessionID: "ses_a" });
-  const ask = calls.filter(([m]) => m === "waiting").pop();
-  if (ask[1].kind !== "question" || !ask[1].explicit || ask[1].text !== "Merge?" || ask[1].options[0] !== "Yes") throw new Error(JSON.stringify(ask));
+  const ask = calls.filter(([m]) => m === "owner_ask").pop();
+  if (!ask || ask[1].kind !== "question" || ask[1].explicit || ask[1].text !== "Merge?" || ask[1].options[0] !== "Yes") throw new Error(JSON.stringify(ask));
   await tools.find((t) => t.name === "agent_owner_ask").execute({ kind: "approval", text: "Delete?", recommendation: "no", replaces: "i_old" }, { sessionID: "ses_a" });
-  const approval = calls.filter(([m]) => m === "request_approval").pop();
-  if (!approval || approval[1].replaces !== "i_old" || approval[1].action !== "Delete?") throw new Error("approval: " + JSON.stringify(approval));
+  const approval = calls.filter(([m]) => m === "owner_ask").pop();
+  if (!approval || approval[1].kind !== "approval" || approval[1].replaces !== "i_old" || approval[1].text !== "Delete?") throw new Error("approval: " + JSON.stringify(approval));
   const announce = tools.find((t) => t.name === "agent_announce");
   if (JSON.stringify(announce.input.required) !== '["task"]') throw new Error("required: " + JSON.stringify(announce.input.required));
   // Only the owner renames a session (decision 0032).
@@ -1276,7 +1276,7 @@ await test("agent_announce asks for a task, and tool results end with the remind
   stop();
 });
 
-await test("agent_message_get sends the message ID the daemon reads", async () => {
+await test("the four read tools send the tool input to their own daemon method", async () => {
   freshHub();
   const sessions = new Map([["ses_m", session("ses_m", "/work/m")]]);
   let tools;
@@ -1289,10 +1289,20 @@ await test("agent_message_get sends the message ID the daemon reads", async () =
   const stop = await plugin.setup(c.ctx);
   await until("hello for ses_m", () => registered("ses_m"));
   await settle();
-  const before = calls.length;
-  await tools.find((t) => t.name === "agent_message_get").execute({ message: "m_1" }, { sessionID: "ses_m" });
-  const sent = calls.slice(before).find(([m]) => m === "message_status");
-  if (!sent || sent[1].message_id !== "m_1") throw new Error("message_status call: " + JSON.stringify(sent));
+  // The daemon filters, pages and fetches; the plugin adds nothing of its own
+  // (no online_only, no renamed fields).
+  const cases = [
+    ["agent_messages_find", "messages_find", { conversation: "c_1", with: "bob", direction: "in", since: "2026-01-01T00:00:00Z", limit: 5, cursor: "cur" }],
+    ["agent_message_get", "message_get", { message: "m_1", max_bytes: 256, body_cursor: "b", file: "a.md", file_cursor: "f" }],
+    ["agent_workers_find", "workers_find", { started_by: "anyone", state: "any", project: "alpha", machine: "mac", limit: 3 }],
+    ["agent_mcp_servers_find", "servers_find", { usable_only: false, limit: 2 }],
+  ];
+  for (const [tool, method, input] of cases) {
+    const before = calls.length;
+    await tools.find((t) => t.name === tool).execute(input, { sessionID: "ses_m" });
+    const sent = calls.slice(before).find(([m]) => m === method);
+    if (!sent || JSON.stringify(sent[1]) !== JSON.stringify(input)) throw new Error(tool + " sent " + JSON.stringify(sent));
+  }
   stop();
 });
 

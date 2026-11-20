@@ -1106,10 +1106,6 @@ function mapCatalogParams(tool: CatalogTool, params: any): any {
   switch (tool.name) {
     case "agent_message_send": return { ...sent, type: sent.type || "request", receipt: true, idempotency_key: randomUUID() };
     case "agent_message_reply": return { ...sent, receipt: true, idempotency_key: randomUUID() };
-    case "agent_owner_ask":
-      if (params.kind === "approval") return { __method: "request_approval", __params: { action: params.text, recommendation: params.recommendation, replaces: params.replaces } };
-      if (params.kind === "idea") return { __method: "propose_idea", __params: { text: params.text, recommendation: params.recommendation, replaces: params.replaces } };
-      return { ...params, explicit: true };
     case "agent_worker_profiles_find": return {};
     default: return sent;
   }
@@ -1722,10 +1718,8 @@ export default {
               link.touch();
               link.progress();
               const mapped = def.mapParams ? def.mapParams(input ?? {}) : (input ?? {});
-              const method = mapped?.__method ?? def.method;
-              const params = mapped?.__params ?? (def.method === "list" ? { online_only: true, ...(mapped ?? {}) } : mapped);
-              const result = await link.request(method, params);
-              if (method === "announce") announced.add(sid);
+              const result = await link.request(def.method, mapped);
+              if (def.method === "announce") announced.add(sid);
               return text((def.format ?? ((r) => JSON.stringify(r ?? {}, null, 2)))(result ?? {}));
             } catch (error) {
               return text(error instanceof Error ? error.message : String(error));

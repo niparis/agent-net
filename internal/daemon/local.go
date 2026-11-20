@@ -848,6 +848,12 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			d.touchToolWork(id)
 		}
 	}
+	if method == protocol.MethodOwnerAsk {
+		var err error
+		if method, raw, err = ownerAskRoute(raw); err != nil {
+			return nil, err
+		}
+	}
 	if res, ok, err := lc.dispatchOperator(ctx, method, raw); ok {
 		return res, err
 	}
@@ -1346,6 +1352,9 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		return res, err
 	}
 	if res, ok, err := lc.dispatchToolRead(ctx, client, method, raw); ok {
+		return res, err
+	}
+	if res, ok, err := lc.dispatchCatalogRead(ctx, method, raw); ok {
 		return res, err
 	}
 	if res, ok, err := lc.dispatchDelivery(ctx, client, method, raw); ok {

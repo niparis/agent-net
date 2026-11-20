@@ -265,7 +265,7 @@ func TestAskOwnerPassesQuestion(t *testing.T) {
 		Options                    []string
 	}
 	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
-		if method == "ask_question" {
+		if method == "owner_ask" {
 			b, _ := json.Marshal(params)
 			_ = json.Unmarshal(b, &got)
 		}
@@ -282,7 +282,7 @@ func TestAskOwnerReplacesAndCloses(t *testing.T) {
 		Kind, Text, Recommendation, Replaces string
 	}
 	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
-		if method == "ask_question" {
+		if method == "owner_ask" {
 			b, _ := json.Marshal(params)
 			_ = json.Unmarshal(b, &got)
 		}
