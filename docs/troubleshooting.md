@@ -113,7 +113,7 @@ sudo loginctl enable-linger $USER
 
 ## A peer message arrived but the agent did not act on it
 
-This is expected in some cases. Claude Code and Pi check with you before work that is outside the current task or risky, and a message from another agent is never your approval, unless you turned on peer trust for that session (press `t` on it in `agent-net tui`). Answer the agent in its own session, or turn trust on. See [security.md](security.md).
+This is expected in some cases. Claude Code and Pi check with you before work that is outside the current task or risky, and a message from another agent is never your approval, unless you turned on peer trust for that session (select the TRUST cell in Sessions and press space). Answer the agent in its own session, or turn trust on. See [security.md](security.md).
 
 ## A worker does not start
 
@@ -130,6 +130,10 @@ This is expected in some cases. Claude Code and Pi check with you before work th
 - `is not available from inside an agent session ... If you do not have agent_worker_start`: the agent tried the command in a shell because its own agent-net tools are older than the machine (no `agent_worker_start`). See the next entry.
 
 A worker that never answers may be waiting for a permission that nobody can give. It ends at the idle time with a `timed out` notice.
+
+If a worker worktree fails because `git-lfs` is not found, install git-lfs in a
+directory on the login shell PATH, then run `agent-net setup` to refresh the
+daemon service environment. Restart the daemon to use the updated PATH.
 
 ## An agent has no agent_worker_start, or other tools are missing (old tools)
 
@@ -189,11 +193,6 @@ Hold Shift while dragging to select text when an app captures the mouse.
 
 Open an issue on [github.com/niparis/agent-net](https://github.com/niparis/agent-net/issues) with the output of `agent-net version`, `agent-net status`, the relevant log lines and your OS.
 
-If a worker worktree fails because `git-lfs` is not found, install git-lfs in a
-directory on the login shell PATH, then run `agent-net setup` to refresh the
-daemon service environment. Restart the daemon to use the updated PATH.
-
-
 ## A quota provider needs attention
 
 If a provider rejects its login, or the Quotas tab says it needs you once, run `agent-net setup --quota` on the machine that reads that provider's quota. Setup shows which providers have a local credential source and which need attention. A found source can still be rejected by the provider. Check that you can sign in through that provider's own app or CLI if it remains rejected.
@@ -244,7 +243,7 @@ Opening the CTO can take several seconds while the daemon starts its Claude conv
 This warning means live Claude session files exist, but none provides an inbox
 socket that agent-net can connect to. Claude delivery fails immediately while
 this warning is active. Find the affected machine and version with
-`agent-net nodes -wide` or its Graph machine card.
+`agent-net nodes --wide` or its Graph machine card.
 
 Open a new Claude session. Check whether a Claude Code update changed or removed
 `messagingSocketPath`. If needed, return to a compatible Claude Code version.

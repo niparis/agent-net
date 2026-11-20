@@ -21,7 +21,7 @@ Ask an agent to "do this with a worker". It calls `agent_worker_start` with a br
 
 1. **Scores the brief.** A cheap judge rates six things (reasoning, scope, coupling, uncertainty, verification, risk) from 1 to 5. A fixed formula turns them into a level, from `trivial` to `very_complex`. The agent tells you the result in one line, and the Claude workers panel shows it next to the worker.
 2. **Picks a model.** Among the worker profiles you registered, it keeps the ones good enough for that level, prefers providers that are behind their quota pace, keeps the protected ones (your orchestrator's subscription) for last, and rotates so no model takes every task.
-3. **Starts the worker** in its own git worktree by default. Codex workers and Antigravity workers are sandboxed by their own sandboxes. On Linux, Pi and OpenCode workers run in bubblewrap when the project has the OS sandbox on (`workers.os_sandbox` in `node.json`). Otherwise Claude, Pi and OpenCode workers run with the owner's permissions. See the roadmap.
+3. **Starts the worker** in its own git worktree by default. Pi and OpenCode workers run inside an OS sandbox by default: bubblewrap on Linux, sandbox-exec on macOS. Turn it off for one project with workers.os_sandbox_off in node.json. Codex and Antigravity use their own sandboxes. Claude workers are not wrapped, because claude --bg runs outside any wrapper.
 4. **Sends a notice** when the worker ends: status, run time, tokens, the branch and the diff stat, with the worker's report. The calling agent reviews the diff and runs the tests before it tells you the work is done.
 
 Each task's outcome is recorded: nudges, fixes, and bugs found later. Those outcomes become a score for each model at each difficulty level. The Quality sub-tab (tab 3, then Tab twice) shows the picker exactly as it decides: one row per registered worker profile, one column per difficulty level that has tasks, and for the selected cell its score, its range, the number of tasks and the verdict (allowed or not).
@@ -30,13 +30,13 @@ Each task's outcome is recorded: nudges, fixes, and bugs found later. Those outc
   <img alt="Quality sub-tab: the worker picker grid, one row per model with its benchmark score, one column per difficulty level from 1.00 to 4.67, cells coloured by score, and the selected cell's score, range and verdict below" src="img/tui/quality.svg" width="900">
 </p>
 
-Quotas (tab 3) also shows each subscription's usage and pace. Details: [workers](reference.md#workers), [subscription quotas](reference.md#subscription-quotas).
+Quotas (tab 3) also shows each subscription's usage and pace, and the Friction panel lists what slowed workers down. Details: [workers](reference.md#workers), [subscription quotas](reference.md#subscription-quotas).
 
 ## The graph and the CTO
 
 The Graph (tab 2) is the map of your agents: each project node has a charter (what it does, what it accepts and refuses), and edges set the rules between them. A `depends` edge says who may ask whom, and whether requests run without asking (`auto`), wait for you (`ask`) or are refused (`never`). A `deploys` edge lets one agent ship another's project.
 
-The CTO is an agent that runs the network for you. Press `c` and ask it in plain words: add a machine, draft a charter, set an edge, start a worker. Changes apply at once and leave an Inbox notice with an undo key where one is possible. Only removing a node, repo or machine, and rotating a machine token, wait for you as proposals. Your own login and OAuth consent stay with you: the CTO sends a one-click prompt.
+The CTO is an agent that runs the network for you. Press `c` and ask it in plain words: add a machine, draft a charter, set an edge, start a worker. Changes apply at once and leave an Inbox notice with an undo key where one is possible. Only removing a node, repo or machine, and rotating a machine token, wait for you as a Desk proposal, unless you ask for it in the CTO chat. Then the CTO quotes your words, the daemon checks them, and it runs at once. Your own login and OAuth consent stay with you: the CTO sends a one-click prompt.
 
 ## Desk
 
@@ -44,7 +44,7 @@ The CTO is an agent that runs the network for you. Press `c` and ask it in plain
   <img alt="The Desk: items that wait for the owner, grouped by urgency, and changes in flight" src="img/tui/desk.svg" width="900">
 </p>
 
-Everything that waits for you, and every change in flight, is on one screen, the Desk (tab 7): CTO proposals, sessions that ask you a question or stopped with work left, and written approvals. The tab shows the count. Select an item and approve or refuse it there. See [owner inbox](reference.md#owner-inbox-and-written-approvals).
+Everything that waits for you, and every change in flight, is on one screen, the Desk (tab 7): CTO proposals, sessions that ask you a question or stopped with work left, and written approvals. The tab shows the count. Select an item and approve or refuse it there. Press `n` on an item that reached you to mark "didn't need me". Press `m` on a handled item to mark "should have asked me". See [owner inbox](reference.md#owner-inbox-and-written-approvals).
 
 ## Connected apps
 
@@ -58,7 +58,7 @@ See [connected apps](reference.md#connected-apps).
 
 ## Skills and MCP servers
 
-Tools (tab 5) lists every skill and MCP server found on every machine, including the ones agent-net did not install. Turn one on for every project, for some projects, or for one machine; compare two copies of a skill and keep one; remove or restore. Filter with `node:`, `project:` or `machine:`, or press `t` on a node in the Graph to see what that agent gets. Every change is a plan you can undo. Details: [decision 0027](decisions/0027-skills-and-mcp-management.md).
+Tools (tab 5) lists every skill and MCP server found on every machine, including the ones agent-net did not install. Turn one on for every project, for some projects, or for one machine; compare two copies of a skill and keep one; remove or restore. Filter with `node:`, `project:` or `machine:`. Open a node's charter card with Enter, then press t to open Tools filtered to that node. Every change is a plan you can undo. Details: [decision 0027](decisions/0027-skills-and-mcp-management.md).
 
 Add an MCP server once, and sessions on every machine can use its tools. Tokens stay on the machine that hosts it.
 

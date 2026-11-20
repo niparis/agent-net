@@ -32,7 +32,7 @@
 - [design/keys-audit.md](design/keys-audit.md): every TUI key, where the meanings collide, and a proposed consistent key map.
 - [design/ask-wait-lifecycle.md](design/ask-wait-lifecycle.md): the state chart of an ask and of a session wait, and the two property tests that check it.
 - [design/model-capability.md](design/model-capability.md): plan, on hold: the picker matches model capability C to task difficulty D, and review time is measured.
-- [design/owner-front-door-plan.md](design/owner-front-door-plan.md): build plan, approved and not built: the chief as the owner's front door, the Desk as his decision queue, and the CTO intake (decisions 0150 to 0152).
+- [design/owner-front-door-plan.md](design/owner-front-door-plan.md): design approved 2026-11-12; the chief of staff and ask intake are built: the chief as the owner's front door, the Desk as his decision queue, and the CTO intake (decisions 0150 to 0152).
 
 ## Design history
 
@@ -41,13 +41,21 @@ These files record how the project was planned and built. They are kept for cont
 - [brief.md](brief.md): the original brief.
 - [review.md](review.md): review of the brief and the build order.
 - [decisions/](decisions/): decisions taken, one file each. [0003](decisions/0003-gateway-record-and-inventory.md) covers the gateway log, repo info, harness inventory and retention. [0005](decisions/0005-registered-projects.md) covers registered projects. [0004](decisions/0004-tui-and-event-feed.md) covers the TUI, session mode and model, and the event feed.
-- [0164](decisions/0164-merge-queue-is-the-single-test-gate.md): the merge queue's CI is the single test gate; the daemon hand-back check is removed, workers run changed tests plus a small contract set, worktrees start from origin's default branch, and the tested train tip records its own post-merge test.
-- [0171](decisions/0171-session-harness-switch.md): a switch of harness keeps the CTO's context: a handover note with the open work and the owner's last messages, a conversation that resumes only within 24 hours, and the CTO's skill delivered from the archive, not from a harness folder.
 - [0175](decisions/0175-friction-status.md): each friction report has a read state (new, read, triaged, fixed, wontfix, infra) with a history; the owner and the CTO set it with `friction_mark`, groups of duplicate reports close together, and `friction_find` pages with a cursor.
+- [0174](decisions/0174-sign-in-on-the-browser-machine.md): sign in on the browser machine.
+- [0173](decisions/0173-picker-quality.md): picker quality, proposed, settings off.
+- [0172](decisions/0172-trust-approves-the-folders-own-mcp-servers.md): trust approves a folder's own MCP servers.
+- [0171](decisions/0171-session-harness-switch.md): a switch of harness keeps the CTO's context: a handover note with the open work and the owner's last messages, a conversation that resumes only within 24 hours, and the CTO's skill delivered from the archive, not from a harness folder.
 - [0170](decisions/0170-friction-reports.md): agents report what slowed them down with the hand-back or a step report; the gateway stores the lines after masking secrets, the CTO reads them with `friction_find`, and the Work tab shows the newest ones. The digest is T2.
+- [0169](decisions/0169-skill-archive.md): skill archive, shipped.
+- [0168](decisions/0168-every-tui-error-is-logged.md): every TUI error logged.
+- [0167](decisions/0167-enter-takes-over-a-stale-herdr-attach.md): Enter takes over a stale herdr attach.
+- [0166](decisions/0166-delegated-authority-table.md): the owner delegates authority by scope; one never list, one scope table, a `tool_decide` method that answers allow or no decision, and a Claude hook and charter text built from it.
 - [0165](decisions/0165-cto-owner-words-are-approval.md): what the owner asks the CTO for is already approved; the CTO quotes his words in `owner_words`, the daemon checks them against what he typed, and the change runs at once with no Desk item.
+- [0164](decisions/0164-merge-queue-is-the-single-test-gate.md): the merge queue's CI is the single test gate; the daemon hand-back check is removed, workers run changed tests plus a small contract set, worktrees start from origin's default branch, and the tested train tip records its own post-merge test.
 - [0163](decisions/0163-split-decisions-are-defects.md): proposed: find and fix decisions made in two places, with instructions to leads, workers and reviewers and one investigation a week per project; no register, no CI check.
 - [0162](decisions/0162-one-model-choice-path.md): one path chooses every model: rankers, modifiers and a gate with locked and optional checks; a policy table per caller; only the gate can grant a launch.
+- [0161](decisions/0161-pick-by-cost-per-accepted-result.md): pick by cost per accepted result, approved.
 - [0160](decisions/0160-org-tree-and-scopes.md): the org tree is stored in the graph records: a `reports_to` edge kind, `agents.lead_session`, `sessions.started_by`, and a merger Agent per project (part T1).
 - [0158](decisions/0158-gateway-notes-v1.md): gateway notes version 1: named notes in the owner judgment store, with scope, kind and rules that keep the start text short.
 - [0159](decisions/0159-cto-default-charter.md): the CTO ships with a default agent-level charter, seeded once into empty fields only.
@@ -73,7 +81,7 @@ These files record how the project was planned and built. They are kept for cont
 - [0035](decisions/0035-cto-is-a-standard-agent.md): the CTO becomes a standard agent with a session; every owner-only change is a proposal the owner approves, and it reads only public data. Design: [design/cto-as-agent.md](design/cto-as-agent.md).
 - [0025](decisions/0025-install-quota-axi.md): agent-net installs a pinned quota-axi in its own data folder; an owner-installed copy always wins.
 - [0042](decisions/0042-graph-pixel-renderer.md): the Graph tab draws a kitty pixel image when the terminal supports it, with Braille as the fallback; `AGENT_NET_GRAPH` selects `auto`, `pixel` or `braille`. Pixel mode adds message comets, a busy pulse, an eased camera and zoom-in charter cards, inside a frame budget.
-- [0027](decisions/0027-skills-and-mcp-management.md): skills and MCP servers across machines: inventory, a private skill store, owner-gated assignments with undo, scoped MCP federation, and guarded removal of native MCP entries. Steps 1 to 7 and 9 are built; the Tools tab (step 8) is pending. Current behavior: [reference](reference.md#tools-inventory), [security](security.md#skills-and-mcp-management), [troubleshooting](troubleshooting.md#skills-and-mcp-management).
+- [0027](decisions/0027-skills-and-mcp-management.md): skills and MCP servers across machines: inventory, a private skill store, owner-gated assignments with undo, scoped MCP federation, and guarded removal of native MCP entries. The Tools tab is built (tab 5); the decision text is history. Current behavior: [reference](reference.md#tools-inventory), [security](security.md#skills-and-mcp-management), [troubleshooting](troubleshooting.md#skills-and-mcp-management).
 - [0028](decisions/0028-tui-hidden-items.md): shared hide preferences for TUI sessions and project nodes, stored in the gateway's owner settings.
 - [0015](decisions/0015-machine-display-name.md): machine display name (the owner names a machine once, from the TUI; every machine shows it).
 - [0018](decisions/0018-admit-workers-by-machine-load.md): workers start by recent CPU and memory load, with a queue and a choice of machine by headroom.

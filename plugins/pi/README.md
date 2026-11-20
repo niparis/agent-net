@@ -6,15 +6,12 @@ Connects a Pi session to the local agent-net daemon. Pi can then list other agen
 - Reconnects with backoff (1 s, doubling to 30 s) if the daemon is down. Pi works normally without it, and the tools answer "agent-net daemon not reachable".
 - Sends `status` `busy` on `agent_start` and `idle` on `agent_settled`.
 - Injects a pushed message with `pi.sendMessage` (follow-up, triggers a turn), then confirms with `delivered`. The text says it is from another agent, not the user, and to answer with `agent_message_reply`.
-- Tools: `agent_sessions_find`, `agent_machines_find`, `agent_session_get`, `agent_announce`, `agent_message_send`, `agent_message_reply`, `agent_messages_find`, `agent_message_get`, and the MCP registry tools `agent_mcp_add`, `agent_mcp_servers_find`, `agent_mcp_test`, `agent_mcp_remove`, and the project registry tools `agent_project_add` and `agent_projects_find`.
+- The extension registers the agent_* tools in plugins/pi/tools.gen.ts, which is generated from the code. Examples: agent_sessions_find, agent_message_send, agent_worker_start, agent_handback.
 - Registered MCP servers: their tools are registered at run time as `<server>__<tool>`, on connect, on the daemon's `mcp_changed` push and every 15 s. Pi cannot unregister a tool, so a removed one is registered again as `hidden`.
 
 ## Install
 
-```sh
-mkdir -p ~/.pi/agent/extensions
-ln -s "$PWD/plugins/pi/agent-net.ts" ~/.pi/agent/extensions/agent-net.ts
-```
+On a machine where setup ran, the extension is already installed at ~/.pi/agent/extensions/agent-net/index.ts. For a checkout, use the pi -e line below. Do not also link a second copy, or the tools load twice.
 
 ## Try it without installing
 

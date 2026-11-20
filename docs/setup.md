@@ -92,7 +92,7 @@ Turn all on? [Y/n/c]
 
 Enter or `y` turns all seven on. `n` turns all seven off. `c` asks one line per item, `<item>? [Y/n]`. `--all` and `--none` answer without a question. The per-item flags below override one item and are a local answer for this machine.
 
-The first machine that answers stores the answers on the gateway as your network settings. Setup on any other machine applies them without asking and prints `integrations: 7 of 7 on (your network settings)`. A new or upgraded machine gets them with no step: its daemon applies them at start. A change made in the TUI reaches every machine at its next daemon start, or within a minute. `I` in the TUI opens "Integrations (all machines)": space toggles an item, Enter saves for every machine, Esc cancels.
+The first machine that answers stores the answers on the gateway as your network settings. Setup on any other machine applies them without asking and prints `integrations: 7 of 7 on (your network settings)`. A new or upgraded machine gets them with no step: its daemon applies them at start. A change made in the TUI reaches every machine at its next daemon start, or within a minute. In Settings (tab 6), Enter on the integrations row opens "Integrations (all machines)": space toggles an item, Enter saves for every machine, Esc cancels.
 
 Each item, what it changes, and how to turn it off:
 
@@ -137,7 +137,7 @@ From source: `scripts/dist.sh`, then `agent-net setup --gateway`. The install li
 
 Start a Pi session on one machine and a Claude Code session on another. Ask one to use `agent_sessions_find`, then message the other. On either machine, `agent-net messages` should show the request as `replied` and the answer as `delivered`.
 
-In the TUI, press `2`, `M` or `G` for Graph. Find an agent with `/`, then
+In the TUI, press `2` for Graph. Find an agent with `/`, then
 press Enter for its charter card. Esc returns to the Graph with the same node
 selected. The tabs are 1 Sessions, 2 Graph, 3 Quotas, 4 Messages, 5 Tools, 6 Settings and 7 Desk.
 
@@ -145,9 +145,9 @@ selected. The tabs are 1 Sessions, 2 Graph, 3 Quotas, 4 Messages, 5 Tools, 6 Set
 
 Run the gateway and its joined daemon under the same user on the gateway host.
 Expose the connected apps listener over HTTPS and set its public URL. Open that
-URL on the phone, then enter its code under `S` > Connected apps > Add in the
-TUI. Approve the owner app and its name. In Safari, use Share, then Add to Home
-Screen. The page is the web console: Desk and Sessions, with the keys `1` to
+URL on the phone, then enter its code under Settings (tab 6) > Connected apps > a
+in the TUI. Approve the owner app and its name. In Safari, use Share, then Add to
+Home Screen. The page is the web console: Desk and Sessions, with the keys `1` to
 `6` on a desk. To sign out a phone, revoke it under Connected apps. See the
 [phone app reference](reference.md#phone-app).
 
@@ -173,4 +173,4 @@ The binary and the gateway data are kept. So are skills the owner assigned to a 
 ## Known limits
 
 - Problems with a changed gateway address, a failed `curl | sh`, or macOS "no route to host" are covered in [troubleshooting.md](troubleshooting.md).
-- The macOS path (launchd agent, `curl --pinnedpubkey` with the system curl) is newer and less tested than Linux. Linux is tested end to end, including a clean Debian container.
+- The macOS path (launchd agent, `curl --pinnedpubkey` with the system curl) is newer and less tested than Linux. Linux is tested end to end.
