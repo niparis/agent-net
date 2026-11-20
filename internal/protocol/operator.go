@@ -60,6 +60,12 @@ const (
 	OpSessionPolicy    = "session_policy" // takes SessionPolicyRequest, answers SessionPolicyResult
 	OpSessionAgentSet  = "session_agent_set"
 	OpSessionAgentList = "session_agent_list"
+	// OpNotesCopy copies the agent-scope notes of one agent node to another.
+	// It adds notes and deletes none. OpNotesUncopy takes back such a copy by
+	// note id; it is the undo of OpNotesCopy. Owner only (the CTO uses them as
+	// cto_op ops).
+	OpNotesCopy   = "notes_copy"
+	OpNotesUncopy = "notes_uncopy"
 
 	// OpSessionRename gives a session a name the owner chose, or with an empty
 	// name returns it to the automatic project name (decision 0033). Owner
@@ -197,7 +203,7 @@ const (
 
 // OperatorMethods lists every operator method, for tests and docs.
 var OperatorMethods = []string{OpWorkerFloorsReset, OpOperatorUndo, OpMergerGet, OpMergerRestore, OpAppsPublicRestore, OpWorkerLog, OpProposalList, OpProposalAnswer, OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpConversations, OpConversationMessages, OpMessage, OpWorkers, OpToolsDifferences,
-	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpFolderTrust, OpFolderMCP, OpProcessStop, OpStandingOrders, OpSessionPolicy, OpSessionAgentSet, OpSessionAgentList, OpSessionRename, OpNodeRename, OpMachineRemove, OpMachineRotate, OpProjectDisplayGet, OpProjectDisplaySet, OpFrictionFind, OpFrictionMark,
+	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpFolderTrust, OpFolderMCP, OpProcessStop, OpStandingOrders, OpSessionPolicy, OpSessionAgentSet, OpSessionAgentList, OpNotesCopy, OpNotesUncopy, OpSessionRename, OpNodeRename, OpMachineRemove, OpMachineRotate, OpProjectDisplayGet, OpProjectDisplaySet, OpFrictionFind, OpFrictionMark,
 	OpHeldList, OpAsksList, OpChiefGet, OpChiefSet, OpAskHistory, OpChiefSorts, OpAskUndo, OpAskMark, OpAskDiscuss, OpDeskLog, OpDeskSettle, OpNudgeStats, OpHeldAnswer, OpLeadSet, OpTeamWrite, OpTeamHistory, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpDeliveryOwnerSet, OpMergerSet, OpGraphUndo, OpRepoCreate, OpRepoArchive, OpAgentCreate, OpAgentTombstone, OpScopeSet, OpScopeRemove,
 	OpNodeSettingsGet, OpNodeSettingsSet, OpSkillArchiveUndo, OpSkillsUndo, OpQualityGet, OpQualitySet, OpTimeZoneGet, OpTimeZoneSet,
 	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, "onboarding_get", "onboarding_set", "onboarding_restart", OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove, OpWorkerDefect, OpDifficultyJudgePick, OpJudgmentAdd, OpPermissionUndo, OpPermissionApply, OpSignInOpen, OpSignInComplete}
@@ -918,7 +924,42 @@ type SessionAgentOption struct {
 type SessionAgentSetRequest struct {
 	SessionID string `json:"session_id"`
 	Agent     string `json:"agent"`
+	// CopyNotes also copies the agent-scope notes of the session's old agent to
+	// the new agent. A note whose name the new agent already has is kept as it
+	// is. The old agent keeps all its notes.
+	CopyNotes bool   `json:"copy_notes,omitempty"`
 	Owner     string `json:"owner_session,omitempty"`
+}
+
+// SessionAgentSetResult answers OpSessionAgentSet. The copied note ids are what
+// the undo removes again.
+type SessionAgentSetResult struct {
+	OK          bool     `json:"ok"`
+	CopiedNotes []string `json:"copied_notes,omitempty"`
+	KeptNotes   []string `json:"kept_notes,omitempty"`
+}
+
+// NotesCopyRequest copies the agent-scope notes of FromAgent to ToAgent. A note
+// whose name ToAgent already has is kept as it is, so the copy never
+// overwrites. FromAgent keeps all its notes.
+type NotesCopyRequest struct {
+	FromAgent string `json:"from_agent"`
+	ToAgent   string `json:"to_agent"`
+	Owner     string `json:"owner_session,omitempty"`
+}
+
+// NotesCopyResult names what a copy did: the ids of the new notes, and the
+// names it kept because ToAgent already had them.
+type NotesCopyResult struct {
+	CopiedNotes []string `json:"copied_notes"`
+	KeptNotes   []string `json:"kept_notes"`
+}
+
+// NotesUncopyRequest removes copied notes by id. It only removes agent-scope
+// notes, and only the ids it is given.
+type NotesUncopyRequest struct {
+	IDs   []string `json:"ids"`
+	Owner string   `json:"owner_session,omitempty"`
 }
 
 type SessionAgentOptions struct {

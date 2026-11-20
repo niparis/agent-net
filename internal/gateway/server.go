@@ -2132,7 +2132,21 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
-		if err = st.setSessionAgent(nc.id, p); err != nil {
+		return st.setSessionAgent(nc.id, p)
+
+	case "notes.copy":
+		p, err := decodeOperator[protocol.NotesCopyRequest](raw)
+		if err != nil {
+			return nil, err
+		}
+		return st.CopyAgentNotes(nc.id, p)
+
+	case "notes.uncopy":
+		p, err := decodeOperator[protocol.NotesUncopyRequest](raw)
+		if err != nil {
+			return nil, err
+		}
+		if err = st.UncopyNotes(nc.id, p); err != nil {
 			return nil, err
 		}
 		return map[string]bool{"ok": true}, nil

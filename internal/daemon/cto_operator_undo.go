@@ -27,7 +27,7 @@ func (lc *localConn) operatorUndo(ctx context.Context, raw json.RawMessage) (any
 	if json.Unmarshal(raw, &p) != nil || len(p.Operations) == 0 {
 		return nil, fmt.Errorf("operator_undo needs operations")
 	}
-	allowed := map[string]bool{"onboarding_restart": true, "onboarding_set": true, "graph_undo": true, "settings_undo": true, "session_rename": true, "merger_set": true, "merger_restore": true, "sessions_archive": true, "apps.public.restore": true, "session_resume": true, "session_stop": true, "session_agent_set": true, "tools_undo": true, "mcp_coverage_undo": true, "hidden_set": true, "timezone_set": true, "quality_set": true, "difficulty_set": true, "worker_floors_set": true, "worker_floors_reset": true, "session_pin": true, "tools_accept": true}
+	allowed := map[string]bool{"onboarding_restart": true, "onboarding_set": true, "graph_undo": true, "settings_undo": true, "session_rename": true, "merger_set": true, "merger_restore": true, "sessions_archive": true, "apps.public.restore": true, "session_resume": true, "session_stop": true, "session_agent_set": true, "notes_uncopy": true, "tools_undo": true, "mcp_coverage_undo": true, "hidden_set": true, "timezone_set": true, "quality_set": true, "difficulty_set": true, "worker_floors_set": true, "worker_floors_reset": true, "session_pin": true, "tools_accept": true}
 	// Validate the whole plan before applying its first operation.
 	for _, op := range p.Operations {
 		if !allowed[op.Method] {

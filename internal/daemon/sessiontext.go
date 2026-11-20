@@ -49,7 +49,7 @@ var operatorMethods = map[string]bool{
 	protocol.OpConversations:        true,
 	protocol.OpConversationMessages: true,
 	protocol.OpProjectDisplayGet:    true, protocol.OpProjectDisplaySet: true,
-	protocol.OpGraphView: true, protocol.OpGraphTalk: true, protocol.OpSessionTrust: true, protocol.OpFolderTrust: true, protocol.OpFolderMCP: true, protocol.OpProcessStop: true, protocol.OpStandingOrders: true, protocol.OpJudgmentAdd: true, protocol.OpSessionPolicy: true, protocol.OpSessionAgentSet: true, protocol.OpSessionAgentList: true, protocol.OpSessionRename: true, protocol.OpSessionReplace: true, protocol.OpNodeRename: true, protocol.OpMachineRemove: true, protocol.OpMachineRotate: true,
+	protocol.OpGraphView: true, protocol.OpGraphTalk: true, protocol.OpSessionTrust: true, protocol.OpFolderTrust: true, protocol.OpFolderMCP: true, protocol.OpProcessStop: true, protocol.OpStandingOrders: true, protocol.OpJudgmentAdd: true, protocol.OpSessionPolicy: true, protocol.OpSessionAgentSet: true, protocol.OpSessionAgentList: true, protocol.OpNotesCopy: true, protocol.OpNotesUncopy: true, protocol.OpSessionRename: true, protocol.OpSessionReplace: true, protocol.OpNodeRename: true, protocol.OpMachineRemove: true, protocol.OpMachineRotate: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
 	protocol.OpHiddenGet: true, protocol.OpHiddenSet: true, "onboarding_get": true, "onboarding_set": true, "onboarding_restart": true,
 	protocol.OpQualityGet: true, protocol.OpQualitySet: true, protocol.OpTimeZoneGet: true, protocol.OpTimeZoneSet: true, protocol.OpProtectedProvidersGet: true, protocol.OpProtectedProvidersSet: true, protocol.OpWorkerFloorsGet: true, protocol.OpWorkerFloorsSet: true, protocol.OpWorkerProvidersGet: true, protocol.OpWorkerProvidersSet: true, "difficulty_get": true, "difficulty_set": true, protocol.OpDifficultyJudgePick: true, protocol.OpScoresGet: true, protocol.OpScoresSet: true, protocol.OpScoresWeekly: true, protocol.OpWorkerRotationGet: true, protocol.OpPickerGet: true, protocol.OpCTOSettings: true, protocol.OpCTOEnter: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true, protocol.OpCTOGraphHistory: true,
@@ -895,6 +895,20 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if res, err = d.call(ctx, "session.agent.set", q); err == nil {
 			d.policy.forget(q.SessionID)
 		}
+	case protocol.OpNotesCopy:
+		var q protocol.NotesCopyRequest
+		if json.Unmarshal(raw, &q) != nil || q.FromAgent == "" || q.ToAgent == "" {
+			return nil, true, errors.New("notes_copy needs from_agent and to_agent")
+		}
+		q.Owner = d.ownerSessionID()
+		res, err = d.call(ctx, "notes.copy", q)
+	case protocol.OpNotesUncopy:
+		var q protocol.NotesUncopyRequest
+		if json.Unmarshal(raw, &q) != nil || len(q.IDs) == 0 {
+			return nil, true, errors.New("notes_uncopy needs ids")
+		}
+		q.Owner = d.ownerSessionID()
+		res, err = d.call(ctx, "notes.uncopy", q)
 	case "session_pin":
 		var q struct {
 			SessionID string `json:"session_id"`
