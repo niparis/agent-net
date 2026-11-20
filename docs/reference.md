@@ -3792,7 +3792,7 @@ An interim update is sent with `progress: true`. A progress reply is delivered t
 
 ### Owed replies
 
-An open request or order with no final reply, whose recipient has been idle for `messages.owed_reply_nudge_after` (default 15m) since its last activity, receives one automatic reminder nudge from agent-net: `You still owe <sender name> a final reply to <message id> (<first line>). Reply with the result, or hand back.` A recipient that is busy, waiting on the owner (an explicit wait or an open ask), or waiting on others (a running worker it started, or a claimed delivery step) is skipped. Withdrawn and expired requests are skipped.
+An open request or order with no final reply, whose recipient has been idle for `messages.owed_reply_nudge_after` (default 15m) since its last activity, receives one automatic reminder nudge from agent-net (decision [0177](decisions/0177-owed-replies.md)): `You still owe <sender name> a final reply to <message id> (<first line>). Reply with the result, or hand back.` A recipient that is busy, waiting on the owner (an explicit wait or an open ask), or waiting on others (a running worker it started, or a claimed delivery step) is skipped. Withdrawn and expired requests are skipped.
 
 If there is still no final reply `messages.owed_reply_ask_after` (default 10m) after the nudge, agent-net raises one ask routed to the chief of staff (`next_who chief`). The ask names the chain: who waits on whom, since when, the message id and its first line, the nudge time, and the sender's lead if any. Exactly one nudge and one ask are raised per request. A final reply before the nudge or ask stops the chain.
 

@@ -1981,6 +1981,10 @@ func openStoreWith(path string, o storeOpen) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("external merge repair: %w", err)
 	}
+	if err := s.initOwedRepliesLiveSince(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("owed replies live since: %w", err)
+	}
 	if err := s.backfillDeliveryTasks(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("delivery task backfill: %w", err)
@@ -5247,7 +5251,7 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 			return msg, false, err
 		}
 	}
-	if threaded && m.Type == protocol.TypeReply {
+	if threaded && (m.Type == protocol.TypeReply || m.Type == "" || m.Type == "message") && !p.Progress {
 		// A reply to a handed-off request also goes to the lead as a copy.
 		var handed string
 		err := tx.QueryRow(`SELECT id FROM messages WHERE conversation_id=? AND sender=? AND recipient=? AND type=? AND handed_off_by<>'' ORDER BY rowid DESC LIMIT 1`,
@@ -5262,13 +5266,20 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		}
 		// A reply to the conversation answers every open request there from
 		// its recipient, as the reminder check already counts it.
-		if _, err := tx.Exec(`UPDATE messages SET state = ? WHERE conversation_id = ? AND sender = ? AND recipient = ? AND type = ? AND state IN (?,?,?)`,
+		if _, err := tx.Exec(`UPDATE messages SET state = ? WHERE conversation_id = ? AND sender = ? AND recipient = ? AND (type = ? OR is_order = 1) AND state IN (?,?,?)`,
 			protocol.StateReplied, m.ConversationID, m.To, m.From, protocol.TypeRequest,
 			protocol.StateStored, protocol.StateDispatched, protocol.StateDelivered); err != nil {
 			return msg, false, err
 		}
-		if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id IN (SELECT id FROM messages WHERE conversation_id = ? AND sender = ? AND recipient = ? AND type = ? AND state = ?)`,
+		if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id IN (SELECT id FROM messages WHERE conversation_id = ? AND sender = ? AND recipient = ? AND (type = ? OR is_order = 1) AND state = ?)`,
 			m.ConversationID, m.To, m.From, protocol.TypeRequest, protocol.StateReplied); err != nil {
+			return msg, false, err
+		}
+		if _, err := tx.Exec(`UPDATE inbox_items SET status='closed', answer='replied', answered_at=?
+			WHERE status='open' AND source_ref IN (
+				SELECT 'owed-ask:'||id FROM messages
+				WHERE conversation_id=? AND sender=? AND recipient=? AND (type=? OR is_order=1)
+			)`, now.UnixNano(), m.ConversationID, m.To, m.From, protocol.TypeRequest); err != nil {
 			return msg, false, err
 		}
 	}

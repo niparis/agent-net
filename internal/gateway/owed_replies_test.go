@@ -1,7 +1,10 @@
 package gateway
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"strings"
 	"testing"
 	"time"
@@ -25,7 +28,7 @@ func TestOwedReplyNudgeAndAskLifecycle(t *testing.T) {
 
 	// Advance 15 minutes: idle duration reached.
 	c.t = start.Add(15 * time.Minute)
-	if err := s.checkOwedReplies(); err != nil {
+	if _, err := s.checkOwedReplies(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -59,7 +62,7 @@ func TestOwedReplyNudgeAndAskLifecycle(t *testing.T) {
 	}
 
 	// Immediate repeat tick does not send another nudge.
-	if err := s.checkOwedReplies(); err != nil {
+	if _, err := s.checkOwedReplies(); err != nil {
 		t.Fatal(err)
 	}
 	var nudgeCount int
@@ -69,7 +72,7 @@ func TestOwedReplyNudgeAndAskLifecycle(t *testing.T) {
 
 	// 10 minutes later (25 minutes total): raise one ask routed to the chief.
 	c.t = start.Add(25 * time.Minute)
-	if err := s.checkOwedReplies(); err != nil {
+	if _, err := s.checkOwedReplies(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -103,7 +106,7 @@ func TestOwedReplyNudgeAndAskLifecycle(t *testing.T) {
 
 	// A later tick adds nothing more.
 	c.t = start.Add(35 * time.Minute)
-	if err := s.checkOwedReplies(); err != nil {
+	if _, err := s.checkOwedReplies(); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE parent_id=? AND sender='agent-net'`, req.ID).Scan(&nudgeCount); err != nil || nudgeCount != 1 {
@@ -164,6 +167,23 @@ func TestOwedReplySkips(t *testing.T) {
 			name: "busy",
 			setup: func(t *testing.T, s *Store, c *clock, a, b, reqID string) {
 				if _, err := s.db.Exec("UPDATE sessions SET status='busy' WHERE id=?", b); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "offline_recipient",
+			setup: func(t *testing.T, s *Store, c *clock, a, b, reqID string) {
+				if _, err := s.db.Exec("UPDATE sessions SET online=0 WHERE id=?", b); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "worker_recipient",
+			setup: func(t *testing.T, s *Store, c *clock, a, b, reqID string) {
+				workerJSON := `{"id":"w_test","owner":"` + a + `","project":"proj"}`
+				if _, err := s.db.Exec("UPDATE sessions SET worker=? WHERE id=?", workerJSON, b); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -241,7 +261,7 @@ func TestOwedReplySkips(t *testing.T) {
 
 			// Advance 15 min
 			c.t = start.Add(15 * time.Minute)
-			if err := s.checkOwedReplies(); err != nil {
+			if _, err := s.checkOwedReplies(); err != nil {
 				t.Fatal(err)
 			}
 
@@ -272,7 +292,7 @@ func TestOwedReplyFinalReplyAfterNudgeStopsAsk(t *testing.T) {
 
 	// 15 min: nudge fires.
 	c.t = start.Add(15 * time.Minute)
-	if err := s.checkOwedReplies(); err != nil {
+	if _, err := s.checkOwedReplies(); err != nil {
 		t.Fatal(err)
 	}
 	var nudges int
@@ -288,7 +308,7 @@ func TestOwedReplyFinalReplyAfterNudgeStopsAsk(t *testing.T) {
 
 	// Advance to 25 minutes (10 min after nudge).
 	c.t = start.Add(25 * time.Minute)
-	if err := s.checkOwedReplies(); err != nil {
+	if _, err := s.checkOwedReplies(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -299,5 +319,210 @@ func TestOwedReplyFinalReplyAfterNudgeStopsAsk(t *testing.T) {
 	}
 	if asks != 0 {
 		t.Fatalf("got %d asks after final reply, want 0", asks)
+	}
+}
+
+func TestOwedReplyRequestCreatedBeforeLiveSinceNeverNudged(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+
+	// Old request created at start
+	start := c.t
+	oldReq, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "Old request before live since", Type: protocol.TypeRequest})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Record start time 1 hour after old request
+	liveSince := start.Add(time.Hour)
+	if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('owed_replies_live_since',?,?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
+		fmt.Sprintf("%d", liveSince.UnixNano()), liveSince.UnixNano()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Recipient is idle
+	if _, err := s.db.Exec("UPDATE sessions SET status='idle', last_active=? WHERE id=?", start.UnixNano(), b); err != nil {
+		t.Fatal(err)
+	}
+
+	// Advance clock 20m (past 15m idle threshold for oldReq)
+	c.t = start.Add(20 * time.Minute)
+	nudges, err := s.checkOwedReplies()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nudges) != 0 {
+		t.Fatalf("got %d nudges for old request, want 0", len(nudges))
+	}
+	var nudgeCount int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE parent_id=? AND sender='agent-net'`, oldReq.ID).Scan(&nudgeCount); err != nil || nudgeCount != 0 {
+		t.Fatalf("old request nudge count in db = %d, want 0", nudgeCount)
+	}
+
+	// Advance clock past liveSince and create new request
+	c.t = liveSince.Add(time.Minute)
+	newReq, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "New request after live since", Type: protocol.TypeRequest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec("UPDATE sessions SET status='idle', last_active=? WHERE id=?", c.t.UnixNano(), b); err != nil {
+		t.Fatal(err)
+	}
+
+	// Advance clock 15 min after new request
+	c.t = c.t.Add(15 * time.Minute)
+	nudges, err = s.checkOwedReplies()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nudges) != 1 {
+		t.Fatalf("got %d nudges for new request, want 1", len(nudges))
+	}
+	if nudges[0].ParentID != newReq.ID {
+		t.Fatalf("nudge parent = %q, want %q", nudges[0].ParentID, newReq.ID)
+	}
+}
+
+func TestOwedReplyReplyInSameConversationNoParentCountsAsFinal(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+
+	req, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "Initial task", Type: protocol.TypeRequest})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	start := c.t
+	if _, err := s.db.Exec("UPDATE sessions SET status='idle', last_active=? WHERE id=?", start.UnixNano(), b); err != nil {
+		t.Fatal(err)
+	}
+
+	// Recipient b replies in the same conversation with no parent_id (e.g. Claude session SendMessage)
+	c.t = start.Add(5 * time.Minute)
+	if _, _, err := s.StoreMessage(protocol.MsgSend{
+		Sender:         b,
+		Recipient:      a,
+		ConversationID: req.ConversationID,
+		Type:           protocol.TypeReply,
+		Body:           "Final answer without parent id",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Advance to 15 min
+	c.t = start.Add(15 * time.Minute)
+	nudges, err := s.checkOwedReplies()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nudges) != 0 {
+		t.Fatalf("got %d nudges after reply with no parent_id, want 0", len(nudges))
+	}
+
+	// Also check that if an ask was open, sending a message in the same conversation closes it.
+	c.t = start.Add(20 * time.Minute)
+	req2, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "Second task", Type: protocol.TypeRequest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec("UPDATE sessions SET status='idle', last_active=? WHERE id=?", c.t.UnixNano(), b); err != nil {
+		t.Fatal(err)
+	}
+
+	// Advance to nudge time (15m later)
+	c.t = c.t.Add(15 * time.Minute)
+	if _, err := s.checkOwedReplies(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Advance to ask time (10m later)
+	c.t = c.t.Add(10 * time.Minute)
+	if _, err := s.checkOwedReplies(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify ask exists and is open
+	var askStatus string
+	if err := s.db.QueryRow(`SELECT status FROM inbox_items WHERE source_ref=?`, "owed-ask:"+req2.ID).Scan(&askStatus); err != nil || askStatus != "open" {
+		t.Fatalf("ask status = %q (err %v), want open", askStatus, err)
+	}
+
+	// Now recipient b sends non-progress reply in same conversation with no parent_id
+	c.t = c.t.Add(time.Minute)
+	if _, _, err := s.StoreMessage(protocol.MsgSend{
+		Sender:         b,
+		Recipient:      a,
+		ConversationID: req2.ConversationID,
+		Type:           protocol.TypeReply,
+		Body:           "Late answer closing the ask",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify ask was closed
+	if err := s.db.QueryRow(`SELECT status FROM inbox_items WHERE source_ref=?`, "owed-ask:"+req2.ID).Scan(&askStatus); err != nil || askStatus != "closed" {
+		t.Fatalf("ask status after reply = %q (err %v), want closed", askStatus, err)
+	}
+}
+
+func TestOwedReplyNudgeDispatchedOnSameTick(t *testing.T) {
+	s, c := newTestStore(t)
+	g := &Gateway{store: s, logger: log.New(io.Discard, "", 0), conns: map[string]*nodeConn{}}
+	nodeB, _, _ := s.CreateNode("nb", "linux")
+	a, _ := s.UpsertSession(nodeB, protocol.SessionInfo{Harness: "claude", NativeID: "na", Name: "alice"})
+	b, _ := s.UpsertSession(nodeB, protocol.SessionInfo{Harness: "pi", NativeID: "nb", Name: "bob"})
+
+	delivered := make(chan protocol.Message, 1)
+	fakeOwnerNode(t, g, nodeB, func(h protocol.Header, raw []byte) error {
+		if h.Type == "msg.deliver" {
+			var p protocol.MsgDeliver
+			if err := json.Unmarshal(raw, &p); err == nil && p.Message.To == b {
+				delivered <- p.Message
+			}
+		}
+		return nil
+	})
+
+	req, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "Do work", Type: protocol.TypeRequest})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	start := c.t
+	if _, err := s.db.Exec("UPDATE sessions SET status='idle', last_active=? WHERE id=?", start.UnixNano(), b); err != nil {
+		t.Fatal(err)
+	}
+
+	c.t = start.Add(15 * time.Minute)
+	nudges, err := s.checkOwedReplies()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nudges) != 1 {
+		t.Fatalf("got %d nudges, want 1", len(nudges))
+	}
+
+	// Dispatch each nudge on the same tick, as RunExpiry does.
+	for _, m := range nudges {
+		g.dispatch(t.Context(), m)
+	}
+
+	select {
+	case m := <-delivered:
+		if m.ParentID != req.ID {
+			t.Fatalf("delivered message parent = %q, want %q", m.ParentID, req.ID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("nudge message was not delivered to node")
+	}
+
+	// Message state in DB is dispatched or delivered, not left stored.
+	var state string
+	if err := s.db.QueryRow(`SELECT state FROM messages WHERE parent_id=? AND sender='agent-net'`, req.ID).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != protocol.StateDispatched && state != protocol.StateDelivered {
+		t.Fatalf("nudge state = %q, want dispatched or delivered", state)
 	}
 }

@@ -1,12 +1,32 @@
 package gateway
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/settings"
 )
+
+const owedRepliesLiveSinceKey = "owed_replies_live_since"
+
+func (s *Store) initOwedRepliesLiveSince() error {
+	var val string
+	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, owedRepliesLiveSinceKey).Scan(&val)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	now := s.now().UnixNano()
+	_, err = s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?)`,
+		owedRepliesLiveSinceKey, strconv.FormatInt(now, 10), now)
+	return err
+}
 
 const dstWaitsForOthersSQL = `(EXISTS(SELECT 1 FROM sessions w WHERE w.online=1 AND w.worker<>'' AND json_extract(w.worker,'$.owner')=dst.id)
  OR EXISTS(SELECT 1 FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
@@ -59,18 +79,51 @@ func (s *Store) sessionSenderLead(senderID string) string {
 // checkOwedReplies checks open requests and orders with no final reply.
 // An idle recipient gets one nudge after messages.owed_reply_nudge_after.
 // If still unanswered messages.owed_reply_ask_after later, an ask is routed to the chief.
-func (s *Store) checkOwedReplies() error {
+func (s *Store) checkOwedReplies() ([]protocol.Message, error) {
 	snap, err := s.SettingsSnapshot()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	now := s.now()
 
 	tx, err := s.db.Begin()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer tx.Rollback()
+
+	var liveSinceNanos int64
+	var rawLiveSince string
+	err = tx.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, owedRepliesLiveSinceKey).Scan(&rawLiveSince)
+	if err == nil {
+		liveSinceNanos, _ = strconv.ParseInt(rawLiveSince, 10, 64)
+	} else if errors.Is(err, sql.ErrNoRows) {
+		liveSinceNanos = now.UnixNano()
+		if _, err := tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?)`,
+			owedRepliesLiveSinceKey, strconv.FormatInt(liveSinceNanos, 10), liveSinceNanos); err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, err
+	}
+
+	// Close any open owed-ask where the recipient has since replied in the conversation.
+	if _, err := tx.Exec(`UPDATE inbox_items SET status='closed', answer='replied', answered_at=?
+		WHERE status='open' AND source_ref LIKE 'owed-ask:%'
+		  AND EXISTS (
+			SELECT 1 FROM messages q
+			WHERE 'owed-ask:'||q.id = inbox_items.source_ref
+			  AND (q.state='replied' OR EXISTS (
+				SELECT 1 FROM messages rep
+				WHERE rep.conversation_id = q.conversation_id
+				  AND rep.sender = q.recipient
+				  AND rep.recipient = q.sender
+				  AND rep.created_at > q.created_at
+				  AND rep.parent_id <> q.id
+			  ))
+		  )`, now.UnixNano()); err != nil {
+		return nil, err
+	}
 
 	rows, err := tx.Query(`SELECT q.id, q.conversation_id, q.sender, q.recipient, q.body, q.created_at,
 		dst.status, dst.harness_activity, dst.last_active, dst.created_at, dst.waiting,
@@ -93,9 +146,20 @@ func (s *Store) checkOwedReplies() error {
 	WHERE (q.type='request' OR q.is_order=1)
 		AND q.state IN ('stored','dispatched','delivered')
 		AND q.expires_at > ?
-		AND dst.harness NOT IN ('owner','cto')`, now.UnixNano())
+		AND q.created_at >= ?
+		AND dst.harness NOT IN ('owner','cto')
+		AND dst.online = 1
+		AND (dst.worker = '' OR dst.worker IS NULL)
+		AND NOT EXISTS (
+			SELECT 1 FROM messages rep
+			WHERE rep.conversation_id = q.conversation_id
+			  AND rep.sender = q.recipient
+			  AND rep.recipient = q.sender
+			  AND rep.created_at > q.created_at
+			  AND rep.parent_id <> q.id
+		)`, now.UnixNano(), liveSinceNanos)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var candidates []owedCandidate
@@ -110,16 +174,17 @@ func (s *Store) checkOwedReplies() error {
 			&c.nudgeAt, &c.askRaised,
 		); err != nil {
 			rows.Close()
-			return err
+			return nil, err
 		}
 		candidates = append(candidates, c)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
-		return err
+		return nil, err
 	}
 	rows.Close()
 
+	var nudges []protocol.Message
 	for _, c := range candidates {
 		where := settings.Where{Repo: c.dstRepo, Team: c.dstTeam}
 		nudgeAfter := snap.Duration("messages.owed_reply_nudge_after", where)
@@ -150,7 +215,7 @@ func (s *Store) checkOwedReplies() error {
 			}
 
 			if paused, err := s.nudgePaused(tx, "owed_reply", c.recipient); err != nil {
-				return err
+				return nil, err
 			} else if paused {
 				continue
 			}
@@ -177,13 +242,14 @@ func (s *Store) checkOwedReplies() error {
 				n.ID, n.ConversationID, n.ParentID, n.From, n.To, n.Type, n.Body,
 				n.IdempotencyKey, n.CreatedAt.UnixNano(), n.ExpiresAt.UnixNano(), n.State,
 			); err != nil {
-				return err
+				return nil, err
 			}
 
 			if err := recordNudgeFire(tx, "owed_reply", n.To, n.ID, n.CreatedAt); err != nil {
-				return err
+				return nil, err
 			}
 			s.event(tx, "msg.stored", "", n.From, n.ID, "type=notification by=agent-net owed_reply="+c.reqID)
+			nudges = append(nudges, n)
 			continue
 		}
 
@@ -224,10 +290,13 @@ func (s *Store) checkOwedReplies() error {
 			}
 
 			if _, err := s.createInboxItem(tx, item); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return nudges, nil
 }
