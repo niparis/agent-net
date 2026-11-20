@@ -60,7 +60,7 @@ type roWorkersFindOut struct {
 
 func addWorkerReadTools(s *mcp.Server, call Caller) {
 	roAdd(s, "agent_workers_find", func(ctx context.Context, _ *mcp.CallToolRequest, in roWorkersFindIn) (*mcp.CallToolResult, roWorkersFindOut, error) {
-		out, err := roFindWorkers(ctx, call, in)
+		out, err := roForward[roWorkersFindOut](ctx, call, protocol.MethodWorkersFind, in)
 		return nil, out, err
 	})
 }
@@ -92,7 +92,7 @@ func roFindWorkers(ctx context.Context, call Caller, in roWorkersFindIn) (roWork
 	if err != nil {
 		return roWorkersFindOut{}, err
 	}
-	caller, err := roWhoAmI(ctx, call)
+	caller, err := roWhoAmI(ctx)
 	if err != nil {
 		return roWorkersFindOut{}, err
 	}
@@ -223,7 +223,7 @@ func workerRowMap(row roWorkerRow) map[string]any {
 // callerRef names the session that is calling, for a worker result whose
 // record is not in the gateway list yet.
 func callerRef(ctx context.Context, call Caller) (roSessionRefType, bool) {
-	caller, err := roWhoAmI(ctx, call)
+	caller, err := roWhoAmIFromInfo(ctx, call)
 	if err != nil {
 		return roSessionRefType{}, false
 	}

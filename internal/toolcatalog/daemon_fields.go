@@ -7,10 +7,8 @@ package toolcatalog
 // The MCP test in internal/mcpserver fails when the MCP server and this table
 // disagree.
 var daemonFields = map[string]map[string]string{
-	"agent_message_get":      {"message": "message_id"},
 	"agent_message_reply":    {"message": "message_id"},
 	"agent_message_withdraw": {"message": "message_id"},
-	"agent_messages_find":    {"conversation": "conversation_id"},
 	"agent_mcp_test":         {"server": "name"},
 	"agent_worker_stop":      {"worker": "session"},
 }

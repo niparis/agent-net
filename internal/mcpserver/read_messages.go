@@ -14,7 +14,6 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/niparis/agent-net/internal/protocol"
-	"github.com/niparis/agent-net/internal/toolcatalog"
 )
 
 type roMessagesFindIn struct {
@@ -105,13 +104,14 @@ type roFileChunk struct {
 	NextFileCursor string `json:"next_file_cursor,omitempty"`
 }
 
+// The daemon filters, pages and fetches (ServeRead); the handlers forward.
 func addMessageReadTools(s *mcp.Server, call Caller) {
 	roAdd(s, "agent_messages_find", func(ctx context.Context, _ *mcp.CallToolRequest, in roMessagesFindIn) (*mcp.CallToolResult, roMessagesFindOut, error) {
-		out, err := roFindMessages(ctx, call, in)
+		out, err := roForward[roMessagesFindOut](ctx, call, protocol.MethodMessagesFind, in)
 		return nil, out, err
 	})
 	roAdd(s, "agent_message_get", func(ctx context.Context, _ *mcp.CallToolRequest, in roMessageGetIn) (*mcp.CallToolResult, roMessageGetOut, error) {
-		out, err := roGetMessage(ctx, call, in)
+		out, err := roForward[roMessageGetOut](ctx, call, protocol.MethodMessageGet, in)
 		return nil, out, err
 	})
 }
@@ -140,7 +140,7 @@ func roFindMessages(ctx context.Context, call Caller, in roMessagesFindIn) (roMe
 			return roMessagesFindOut{}, fmt.Errorf("since must be an RFC 3339 time, not %q. Example: {\"since\":\"2026-01-01T12:00:00Z\"}", in.Since)
 		}
 	}
-	caller, err := roWhoAmI(ctx, call)
+	caller, err := roWhoAmI(ctx)
 	if err != nil {
 		return roMessagesFindOut{}, err
 	}
@@ -199,7 +199,7 @@ func roMessageKey(row roMessageRow) string { return row.key }
 // roLoadMessage is the one message read. agent_message_get and the
 // agent_message_get go through it.
 func roLoadMessage(ctx context.Context, call Caller, id string) (protocol.MessageResult, error) {
-	raw, err := call(ctx, "message_status", map[string]any{toolcatalog.DaemonField("agent_message_get", "message"): id})
+	raw, err := call(ctx, "message_status", map[string]any{"message_id": id})
 	if err != nil {
 		return protocol.MessageResult{}, err
 	}
@@ -229,7 +229,7 @@ func roAllMessages(ctx context.Context, call Caller, conversation string) ([]pro
 	seen := map[string]bool{}
 	offset := 0
 	for page := 0; page < 200; page++ {
-		raw, err := call(ctx, "messages", map[string]any{toolcatalog.DaemonField("agent_messages_find", "conversation"): conversation, "limit": 200, "offset": offset})
+		raw, err := call(ctx, "messages", map[string]any{"conversation_id": conversation, "limit": 200, "offset": offset})
 		if err != nil {
 			return nil, err
 		}
@@ -271,7 +271,7 @@ func roGetMessage(ctx context.Context, call Caller, in roMessageGetIn) (roMessag
 	if maxBytes < 256 || maxBytes > 16384 {
 		return roMessageGetOut{}, fmt.Errorf("max_bytes must be between 256 and 16384. Example: {\"max_bytes\":8192}")
 	}
-	caller, err := roWhoAmI(ctx, call)
+	caller, err := roWhoAmI(ctx)
 	if err != nil {
 		return roMessageGetOut{}, err
 	}

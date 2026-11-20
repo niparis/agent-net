@@ -218,15 +218,6 @@ func roPageNote(what string) string {
 	return "More " + what + " match. Call again with next_cursor for the next page, or narrow the filters."
 }
 
-// roCallerInfo is the session this MCP server speaks for.
-type roCallerInfo struct {
-	SessionID string
-	NativeID  string
-	Name      string
-	Project   string
-	Sessions  []protocol.SessionInfo
-}
-
 // roNativeID is the harness's ID of this session: the Codex thread of the
 // call, or the Claude Code session of this process.
 func roNativeID(ctx context.Context) string {
@@ -236,32 +227,54 @@ func roNativeID(ctx context.Context) string {
 	return os.Getenv("CLAUDE_CODE_SESSION_ID")
 }
 
-// roWhoAmI asks the daemon which local session is calling. The daemon binds
-// the connection to that session, so the answer already carries its identity.
-func roWhoAmI(ctx context.Context, call Caller) (roCallerInfo, error) {
+// ReadCaller is the session a shared read runs for. The daemon binds each
+// connection to one session, so it knows the caller without asking.
+type ReadCaller struct {
+	SessionID string
+	Name      string
+	Project   string
+	Sessions  []protocol.SessionInfo
+}
+
+type readCallerKey struct{}
+
+// roWhoAmI is the session that is calling. The daemon puts it in the context
+// before it runs a shared read; it is never taken from the environment.
+func roWhoAmI(ctx context.Context) (ReadCaller, error) {
+	who, ok := ctx.Value(readCallerKey{}).(ReadCaller)
+	if !ok || who.SessionID == "" {
+		return ReadCaller{}, errors.New("cannot tell which agent session is calling")
+	}
+	return ReadCaller{SessionID: who.SessionID, Name: who.Name, Project: who.Project, Sessions: who.Sessions}, nil
+}
+
+// roWhoAmIFromInfo asks the daemon which local session this MCP server speaks
+// for. Only the worker results use it: the shared reads run in the daemon,
+// which knows its caller.
+func roWhoAmIFromInfo(ctx context.Context, call Caller) (ReadCaller, error) {
 	raw, err := call(ctx, "info", nil)
 	if err != nil {
-		return roCallerInfo{}, err
+		return ReadCaller{}, err
 	}
 	var info protocol.OperatorInfo
 	if err := json.Unmarshal(raw, &info); err != nil {
-		return roCallerInfo{}, err
+		return ReadCaller{}, err
 	}
 	native := roNativeID(ctx)
 	if native == "" {
-		return roCallerInfo{}, errors.New("cannot tell which agent session is calling: CLAUDE_CODE_SESSION_ID is not set")
+		return ReadCaller{}, errors.New("cannot tell which agent session is calling: CLAUDE_CODE_SESSION_ID is not set")
 	}
 	for _, session := range info.Sessions {
 		if session.NativeID != native {
 			continue
 		}
 		if session.SessionID == "" {
-			return roCallerInfo{}, errors.New("this session has no gateway ID yet (is the gateway reachable?)")
+			return ReadCaller{}, errors.New("this session has no gateway ID yet (is the gateway reachable?)")
 		}
-		return roCallerInfo{SessionID: session.SessionID, NativeID: native, Name: session.Name,
+		return ReadCaller{SessionID: session.SessionID, Name: session.Name,
 			Project: session.Repo.Project, Sessions: info.Sessions}, nil
 	}
-	return roCallerInfo{}, errors.New("cannot tell which agent session is calling: the daemon does not know this session yet (is it discovered and connected?)")
+	return ReadCaller{}, errors.New("cannot tell which agent session is calling: the daemon does not know this session yet (is it discovered and connected?)")
 }
 
 // roAgentList reads every agent, online and offline, for names and worker rows.

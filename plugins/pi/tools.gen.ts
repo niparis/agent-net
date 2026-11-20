@@ -1044,7 +1044,7 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "mcp_list",
+    "method": "servers_find",
     "daemon_fields": {}
   },
   {
@@ -1110,10 +1110,8 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "message_status",
-    "daemon_fields": {
-      "message": "message_id"
-    }
+    "method": "message_get",
+    "daemon_fields": {}
   },
   {
     "name": "agent_message_handoff",
@@ -1380,10 +1378,8 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "messages",
-    "daemon_fields": {
-      "conversation": "conversation_id"
-    }
+    "method": "messages_find",
+    "daemon_fields": {}
   },
   {
     "name": "agent_note_write",
@@ -1662,7 +1658,7 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "waiting",
+    "method": "owner_ask",
     "daemon_fields": {}
   },
   {
@@ -2761,7 +2757,7 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "list",
+    "method": "workers_find",
     "daemon_fields": {}
   }
 ] as const;

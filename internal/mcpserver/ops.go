@@ -8,7 +8,6 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
-	"errors"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/toolcatalog"
@@ -67,26 +66,16 @@ func ownerBriefCall(ctx context.Context, run func(context.Context, string, any) 
 	return opResult(run(ctx, protocol.OpOwnerBrief, in))
 }
 
-// ownerAskCall is the one owner request operation. Kind picks the daemon
-// method: question asks the owner, approval asks for one action, idea sends a
+// ownerAskCall is the one owner request operation. The daemon picks the ask
+// kind: question asks the owner, approval asks for one action, idea sends a
 // feature idea.
 func ownerAskCall(ctx context.Context, run func(context.Context, string, any) (any, error), kind, text, recommendation string, options []string, urgency string, replaces ...string) (map[string]any, error) {
 	repl := ""
 	if len(replaces) > 0 {
 		repl = replaces[0]
 	}
-	if kind == "" && repl != "" {
-		kind = "question"
-	}
-	switch kind {
-	case "question":
-		return opResult(run(ctx, "ask_question", map[string]any{"kind": "question", "text": text, "recommendation": recommendation, "options": options, "replaces": repl}))
-	case "approval":
-		return opResult(run(ctx, "request_approval", map[string]any{"action": text, "recommendation": recommendation, "options": options, "replaces": repl}))
-	case "idea":
-		return opResult(run(ctx, "propose_idea", map[string]any{"text": text, "recommendation": recommendation, "replaces": repl}))
-	}
-	return nil, errors.New("kind must be question, approval or idea")
+	// The daemon picks the ask kind, the same for every harness.
+	return opResult(run(ctx, protocol.MethodOwnerAsk, map[string]any{"kind": kind, "text": text, "recommendation": recommendation, "options": options, "replaces": repl}))
 }
 
 // sendCall sends one message. receipt asks the daemon for a receipt, which is

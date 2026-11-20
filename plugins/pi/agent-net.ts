@@ -379,10 +379,6 @@ function mapCatalogParams(tool: CatalogTool, params: any): any {
   switch (tool.name) {
     case "agent_message_send": return { ...sent, type: sent.type || "request", receipt: true, idempotency_key: randomUUID() };
     case "agent_message_reply": return { ...sent, receipt: true, idempotency_key: randomUUID() };
-    case "agent_owner_ask":
-      if (params.kind === "approval") return { __method: "request_approval", __params: { action: params.text, recommendation: params.recommendation, replaces: params.replaces } };
-      if (params.kind === "idea") return { __method: "propose_idea", __params: { text: params.text, recommendation: params.recommendation, replaces: params.replaces } };
-      return { ...params, explicit: true };
     case "agent_worker_profiles_find": return {};
     default: return sent;
   }
@@ -1033,12 +1029,8 @@ export default function (pi: ExtensionAPI) {
       parameters,
       async execute(_toolCallId: string, params: any) {
         try {
-          // The daemon does not default online_only; the tool says it does.
-          const mapped = mapParams(params);
-          const callMethod = mapped?.__method ?? method;
-          const callArgs = mapped?.__params ?? (method === "list" ? { online_only: true, ...(mapped ?? {}) } : mapped);
-          const result = await request(callMethod, callArgs);
-          if (callMethod === "announce") announced = true;
+          const result = await request(method, mapParams(params));
+          if (method === "announce") announced = true;
           const text = format(result ?? {}) + (announced || isWorker() ? "" : `\n${ANNOUNCE_REMINDER}`);
           return {
             content: [{ type: "text" as const, text }],
