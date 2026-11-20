@@ -30,6 +30,7 @@
   <a href="docs/tour.md">Tour</a> ·
   <a href="docs/principles.md">Principles</a> ·
   <a href="docs/security.md">Security</a> ·
+  <a href="docs/evidence.md">Evidence</a> ·
   <a href="docs/README.md">Docs</a>
 </p>
 
