@@ -507,6 +507,7 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.keepOutbox(rctx, stalled) }()
 	d.flushWorkerAssessments(rctx)
+	d.flushStartOutcomes(rctx)
 	d.reportWorkerEnds(rctx)
 	d.replayHandbacks()
 	d.cleanupWorkers(rctx)

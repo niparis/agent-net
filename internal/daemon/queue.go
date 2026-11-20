@@ -123,6 +123,11 @@ func (d *Daemon) queueLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+			if d.Connected() {
+				// On its own, so a slow gateway does not hold up the queue.
+				d.wg.Add(1)
+				go func() { defer d.wg.Done(); d.flushStartOutcomes(ctx) }()
+			}
 			d.processQueue(ctx)
 		}
 	}
@@ -232,6 +237,8 @@ func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
 		d.startQueuedResume(ctx, e)
 		return
 	}
+	// If the daemon stops during the launch, the caller still hears of it.
+	d.holdQueuedStart(e)
 	if e.Automatic {
 		// The reading that chose this model may be old. The start asks the
 		// gate again before it leaves the queue (decision 0162).
@@ -256,6 +263,8 @@ func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
 		d.notStarted(ctx, e, "the machine had room, but the start failed: "+err.Error())
 		return
 	}
+	// The worker exists now: its own end tells the caller from here on.
+	d.st.dropStartOutcome(notStartedOutcomeKey(e.ID))
 	waited := time.Since(e.QueuedAt)
 	d.Logf("worker.dequeued queue=%s session=%s project=%s harness=%s owner=%s waited=%s", e.ID, out.SessionID, e.Project, e.Harness, e.Owner, waited.Round(time.Second))
 	// Sending the task may wait for a slow gateway for a long time. It runs on
@@ -454,36 +463,13 @@ func (d *Daemon) sendQueuedStart(ctx context.Context, w *worker, p protocol.Work
 // the reserved agent-net sender. This machine never sends it: a notice sent as
 // this machine's owner session would carry the owner's label and authority.
 //
-// The report is tried a few times with a growing pause while the gateway does
-// not answer or the link is down, and stops when the gateway accepts or
-// refuses it.
+// The report is kept in daemon.db and tried a few times with a growing pause
+// while the gateway does not answer or the link is down. It stops when the
+// gateway accepts or refuses it. A report that was not taken is sent after the
+// next connect, also after a restart (start_outcome.go).
 func (d *Daemon) notStarted(ctx context.Context, e queuedStart, why string) {
 	p := protocol.WorkerNotStarted{Ref: e.ID, Owner: e.Owner, Project: e.Project, Harness: e.Harness, Reason: why, Permissions: e.Permissions}
-	pause := d.cfg.BackoffMin
-	for attempt := 1; attempt <= notStartedTries; attempt++ {
-		rctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		_, err := d.call(rctx, "worker.not_started", p)
-		cancel()
-		var refused RemoteError
-		// A refusal is final. A fault of the gateway's own, marked by the
-		// gateway, and a call that did not get through are tried again.
-		if err == nil || (errors.As(err, &refused) && !errors.Is(err, errGatewayRetry)) {
-			if err != nil {
-				d.Logf("queue %s: not-started report refused: %v", e.ID, err)
-			}
-			return
-		}
-		d.Logf("queue %s: not-started report: %v (attempt %d of %d)", e.ID, err, attempt, notStartedTries)
-		if attempt == notStartedTries {
-			return
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(pause):
-		}
-		pause *= 2
-	}
+	d.reportStartOutcome(ctx, notStartedOutcomeKey(e.ID), outcomeNotStarted, p)
 }
 
 // notStartedTries is how many times a not-started report is made.

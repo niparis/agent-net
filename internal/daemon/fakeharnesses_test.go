@@ -272,6 +272,11 @@ type fakeClaudeInit struct {
 // approval prompt, as Claude Code 2.1.319 does.
 const envFakeMCPBlocked = "FAKE_CLAUDE_MCP_BLOCKED"
 
+// envFakeHangAfterBackground makes the fake `claude --bg` print that the job
+// is backgrounded and then wait, as a client does when the daemon is cut off.
+// Its value is a file that the fake creates once it has printed.
+const envFakeHangAfterBackground = "FAKE_CLAUDE_HANG_AFTER_BG"
+
 // fakeClaudeCLI is `claude --bg ...` and `claude stop <id>`.
 func fakeClaudeCLI() {
 	dir := os.Getenv(envFakeClaudeSessions)
@@ -389,6 +394,13 @@ func fakeClaudeCLI() {
 
 			fmt.Printf("backgrounded · %s · %s (idle - send a prompt to start)\n  claude attach %s    open in this terminal\n  claude stop %s      stop this session\n",
 				job, argValue(os.Args, "--name"), job, job)
+			if marker := os.Getenv(envFakeHangAfterBackground); marker != "" {
+				// The job is up, but the client does not return, so a
+				// shutdown kills the client and leaves the job behind. The
+				// marker file says the output was written.
+				os.WriteFile(marker, nil, 0o600)
+				<-time.After(time.Hour)
+			}
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
