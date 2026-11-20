@@ -218,24 +218,15 @@ func (s *Store) writeTeamTx(q protocol.TeamWrite, actor string, dryRun bool) err
 	if oldValue == newValue {
 		return nil
 	}
-	kind, id := "", ""
-	if q.Member != nil && q.Action == "membership" {
-		kind, id = q.Member.Kind, q.Member.ID
-	}
 	if dryRun {
 		return nil
 	}
-	if _, err = tx.Exec(`INSERT INTO team_history(action,team_id,old_team_id,member_kind,member_id,old_value,new_value,at,actor) VALUES(?,?,?,?,?,?,?,?,?)`, q.Action, q.ID, oldTeam, kind, id, oldValue, newValue, now, actor); err != nil {
-		return err
+	attr := q.Action
+	if q.Member != nil && q.Action == "membership" {
+		attr += ":" + q.Member.Kind + ":" + q.Member.ID
 	}
-	if actor == "cto" {
-		attr := q.Action
-		if q.Member != nil && q.Action == "membership" {
-			attr += ":" + q.Member.Kind + ":" + q.Member.ID
-		}
-		if err = graphRecord(tx, "team", q.ID, attr, oldValue, newValue, actor, now); err != nil {
-			return err
-		}
+	if err = graphRecord(tx, "team", q.ID, attr, oldValue, newValue, actor, now); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -344,7 +335,14 @@ func (s *Store) TeamHistory(id string, limit int) ([]protocol.TeamChange, error)
 	if limit <= 0 || limit > 1000 {
 		limit = 1000
 	}
-	rows, err := s.db.Query(`SELECT id,action,team_id,old_team_id,member_kind,member_id,old_value,new_value,at,actor FROM team_history WHERE team_id=? OR old_team_id=? ORDER BY id DESC LIMIT ?`, id, id, limit)
+	// A membership row names its two Teams in its values: new_value is the Team
+	// it joined ("" when it left) and old_value the Team it left ("" when it
+	// joined). Every other Team row belongs to the Team in node, and so does a
+	// lead row of a Team.
+	rows, err := s.db.Query(`SELECT id,type,node,attr,old_value,new_value,at,actor FROM graph_history
+		WHERE (type IN ('team','team_undo') AND ((attr GLOB 'membership:*' AND (new_value=? OR old_value=?)) OR (attr NOT GLOB 'membership:*' AND node=?)))
+		OR (type='lead' AND attr='lead' AND target_kind='team' AND node=?)
+		ORDER BY at DESC, id DESC LIMIT ?`, id, id, id, id, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -352,12 +350,19 @@ func (s *Store) TeamHistory(id string, limit int) ([]protocol.TeamChange, error)
 	out := []protocol.TeamChange{}
 	for rows.Next() {
 		var h protocol.TeamChange
-		var ref protocol.GraphRef
-		if err = rows.Scan(&h.ID, &h.Action, &h.TeamID, &h.OldTeamID, &ref.Kind, &ref.ID, &h.OldValue, &h.NewValue, &h.At, &h.By); err != nil {
+		var typ, node, attr string
+		if err = rows.Scan(&h.ID, &typ, &node, &attr, &h.OldValue, &h.NewValue, &h.At, &h.By); err != nil {
 			return nil, err
 		}
-		if ref.Kind != "" {
-			h.Member = &ref
+		h.Action, h.TeamID = attr, node
+		if strings.HasPrefix(attr, "membership:") {
+			h.Action, h.TeamID, h.OldTeamID = "membership", h.NewValue, h.OldValue
+			if parts := strings.SplitN(attr, ":", 3); len(parts) == 3 {
+				h.Member = &protocol.GraphRef{Kind: parts[1], ID: parts[2]}
+			}
+		}
+		if typ == "team_undo" {
+			h.Action = "undo"
 		}
 		out = append(out, h)
 	}

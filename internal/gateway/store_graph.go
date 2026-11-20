@@ -747,11 +747,6 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 		if _, err = tx.Exec(`INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor,target_kind) VALUES('lead',?,'lead',?,?,?,?,?)`, node, value, old, now, actor, targetKind); err != nil {
 			return err
 		}
-		if targetKind == "team" {
-			if _, err = tx.Exec(`INSERT INTO team_history(action,team_id,old_team_id,member_kind,member_id,old_value,new_value,at,actor) VALUES('lead',?,'','','',?,?,?,?)`, node, value, old, now, actor); err != nil {
-				return err
-			}
-		}
 		// The undo is a lead write too: the tree follows it.
 		switch targetKind {
 		case "repo":
@@ -772,16 +767,14 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 			return nil
 		}
 		return tx.Commit()
-	case "team":
+	case "team", "team_undo":
 		nextValue := old
-		teamID, oldTeam, memberKind, memberID := node, "", "", ""
 		if strings.HasPrefix(attr, "membership:") {
 			parts := strings.SplitN(attr, ":", 3)
 			if len(parts) != 3 {
 				return reject("bad Team history")
 			}
 			ref := protocol.GraphRef{Kind: parts[1], ID: parts[2]}
-			teamID, oldTeam, memberKind, memberID = old, value, parts[1], parts[2]
 			if _, err = writeTeamMember(tx, protocol.TeamWrite{Action: "membership", ID: old, Member: &ref, ExpectTeam: value}); err != nil {
 				return err
 			}
@@ -836,10 +829,7 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 			}
 			nextValue = string(b)
 		}
-		if err = graphRecord(tx, "team", node, attr, value, nextValue, actor, now); err != nil {
-			return err
-		}
-		if _, err = tx.Exec(`INSERT INTO team_history(action,team_id,old_team_id,member_kind,member_id,old_value,new_value,at,actor) VALUES('undo',?,?,?,?,?,?,?,?)`, teamID, oldTeam, memberKind, memberID, value, nextValue, now, actor); err != nil {
+		if err = graphRecord(tx, "team_undo", node, attr, value, nextValue, actor, now); err != nil {
 			return err
 		}
 		if len(validate) > 0 && validate[0] {
