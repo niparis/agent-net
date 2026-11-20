@@ -60,7 +60,10 @@ func TestIdleCompact(t *testing.T) {
 		{name: "repo threshold allows fill", status: "idle", kind: "bg", tokens: 750000, model: "claude-sonnet-5", age: 4 * time.Minute, repo: "shop", repoThreshold: 70, want: 1, wantLog: "event=idle_compact session=test result=ok"},
 		{name: "worker is never compacted", status: "idle", kind: "bg", tokens: 850000, model: "claude-sonnet-5", age: 4 * time.Minute, worker: true},
 		{name: "busy", status: "busy", kind: "bg", tokens: 300000, age: time.Hour},
-		{name: "shell", status: "shell", kind: "bg", tokens: 300000, age: time.Hour},
+		{name: "busy fill", status: "busy", kind: "bg", tokens: 850000, model: "claude-sonnet-5", age: 4 * time.Minute},
+		// Shell means the main thread is between turns while a background task runs.
+		{name: "shell idle past the anthropic window", status: "shell", kind: "bg", tokens: 300000, age: time.Hour, want: 1, wantLog: "event=idle_compact session=test result=ok"},
+		{name: "shell fill before idle", status: "shell", kind: "bg", tokens: 850000, model: "claude-sonnet-5", age: 4 * time.Minute, want: 1, wantLog: "event=idle_compact session=test result=ok"},
 		{name: "interactive", status: "idle", kind: "interactive", tokens: 300000, age: time.Hour},
 		{name: "attached is still skipped without the CTO", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, attached: true, wantLog: "event=idle_compact session=test result=skipped:viewing"},
 		{name: "CTO compacts while the owner has the pane open", status: "idle", kind: "bg", tokens: 300000, age: time.Hour, attached: true, cto: true, want: 1, wantLog: "event=idle_compact session=test result=ok"},
@@ -243,7 +246,7 @@ func TestIdleCompact(t *testing.T) {
 					f.info.Status = "busy"
 					a.byNative["test"] = f
 					a.observeCompactStateLocked(f.info)
-					f.info.Status = "idle"
+					f.info.Status = tc.status
 					f.info.LastActive = old.Unix()
 					a.byNative["test"] = f
 					a.mu.Unlock()
