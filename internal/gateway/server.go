@@ -3815,6 +3815,35 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return nil, nil
 
+	case "delivery.not_delivered":
+		// A message reached the session's harness, but no turn ran for it.
+		p, err := decode[protocol.DeliveryUpdate](raw)
+		if err != nil {
+			return nil, reject("bad delivery.not_delivered")
+		}
+		m, ok, err := st.Message(p.MessageID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, reject("unknown message %q", p.MessageID)
+		}
+		owner, err := st.SessionNode(m.To)
+		if err != nil {
+			return nil, err
+		}
+		if owner != nc.id {
+			return nil, reject("message %q is not addressed to this node", p.MessageID)
+		}
+		notice, noticed, err := st.NotDelivered(p.MessageID, p.Detail)
+		if err != nil {
+			return nil, err
+		}
+		if noticed {
+			g.dispatch(ctx, notice)
+		}
+		return nil, nil
+
 	case "outcome.resolve":
 		p, err := decode[protocol.OutcomeResolution](raw)
 		if err != nil {

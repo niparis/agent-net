@@ -337,6 +337,16 @@ type localSession struct {
 	limitUntil  int64
 	limitReason string
 	turnErrored bool
+	// turnError is the cause of the last failed turn, with its time, until a
+	// turn succeeds. turnStarts counts the turns the plugin reported busy.
+	// owedBeforeTurn and owedInTurn are the messages delivered to a plugin
+	// session that have no turn yet, and those whose turn runs now. All are
+	// protected by d.mu (limits.go).
+	turnError      string
+	turnErrorAt    int64
+	turnStarts     int64
+	owedBeforeTurn []string
+	owedInTurn     []string
 	// contextTokens and contextLimit are what the Pi extension last reported.
 	contextTokens, contextLimit int64
 	// owned is set for a session the daemon registered itself (a Codex worker
@@ -1216,6 +1226,7 @@ func (d *Daemon) infoLocked(ls *localSession) protocol.SessionInfo {
 	if ls.limitUntil != 0 {
 		info.LimitedUntil, info.LimitedReason = ls.limitUntil, ls.limitReason
 	}
+	info.TurnError, info.TurnErrorAt = ls.turnError, ls.turnErrorAt
 	if !ls.harnessActivity.IsZero() {
 		info.HarnessActivity = ls.harnessActivity.Unix()
 	}
@@ -1813,6 +1824,9 @@ func (d *Daemon) deliverTo(ctx context.Context, ls *localSession, m protocol.Mes
 		result := conn.push(ctx, m, d.cfg.PluginAckTimeout)
 		if result.Delivered && m.FromHarness == protocol.OwnerHarness {
 			d.setWaiting(ls, nil)
+		}
+		if result.Delivered && pluginDeliveryNeedsCheck(info.Harness) {
+			d.notePluginDelivered(ls, m)
 		}
 		return result
 	}

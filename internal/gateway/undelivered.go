@@ -146,3 +146,33 @@ func ttlText(d time.Duration) string {
 	}
 	return d.Round(time.Second).String()
 }
+
+// NotDelivered is a report that a message reached its session's harness but no
+// turn ran for it: the turn failed, or none started. The message keeps its
+// state; the sender gets the notice once. It reports the notice to dispatch.
+func (s *Store) NotDelivered(id, reason string) (notice protocol.Message, noticed bool, err error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return notice, false, err
+	}
+	defer tx.Rollback()
+	m, ok, err := s.message(tx, "m.id=?", id)
+	if err != nil || !ok {
+		return notice, false, err
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "the session ran no turn for it"
+	}
+	if notice, noticed, err = s.undeliveredNotice(tx, m, reason, false); err != nil {
+		return protocol.Message{}, false, err
+	}
+	if err = tx.Commit(); err != nil {
+		return protocol.Message{}, false, err
+	}
+	s.Event("msg.not_delivered", "", m.To, id, reason)
+	if noticed {
+		s.logMessage(notice)
+	}
+	return notice, noticed, nil
+}

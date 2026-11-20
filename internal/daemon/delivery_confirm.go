@@ -57,6 +57,9 @@ type deliveryWatch struct {
 	// restart starts the session with the message as its first prompt. Nil when
 	// the harness has no restart.
 	restart func(ctx context.Context)
+	// unconfirmed runs when a harness with no restart still shows no turn after
+	// the redelivery. Nil when nothing is done then.
+	unconfirmed func(ctx context.Context)
 	// done runs when the check ends, however it ends. Nil when nothing is kept.
 	done func()
 }
@@ -145,6 +148,9 @@ func (d *Daemon) runDeliveryWatch(ctx context.Context, w deliveryWatch) {
 		}
 		if w.restart == nil {
 			d.Logf("%s.delivery_unconfirmed msg=%s reason=no_restart", w.label, w.msgID)
+			if w.unconfirmed != nil {
+				w.unconfirmed(ctx)
+			}
 			return
 		}
 		d.Logf("%s.restart_for_delivery msg=%s", w.label, w.msgID)
