@@ -28,6 +28,8 @@
   <a href="#smart-defaults-and-you-can-change-almost-anything">Customise</a> ·
   <a href="#why-not-just-">Why not just …</a> ·
   <a href="docs/tour.md">Tour</a> ·
+  <a href="docs/model-choice.md">Model choice</a> ·
+  <a href="docs/evidence.md">Evidence</a> ·
   <a href="docs/principles.md">Principles</a> ·
   <a href="docs/security.md">Security</a> ·
   <a href="docs/evidence.md">Evidence</a> ·
@@ -52,9 +54,24 @@ agent-net turns the Claude Code, Codex, OpenCode, Pi and Antigravity sessions on
 
 It pays off when you run agents on many repositories, in more than one harness or on more than one machine. With one or two repositories and one agent, you do not need it.
 
+### What makes agent-net different
+
+Ranked by how much they set it apart:
+
+1. **One network and one tool set for five harnesses.** Claude Code, Codex, OpenCode, Pi and Antigravity all get the same `agent_*` tools.
+2. **It joins the sessions you already run, on every machine.** Codex threads go through the app server, OpenCode through a plugin inside its service, and an offline Claude Code session is woken with `claude --bg`.
+3. **A session cannot pose as another.** The daemon checks which local process is calling.
+4. **Models are chosen by expected cost per accepted result,** with quota pace, protected subscriptions and a track record per difficulty level. Quota reads never refresh a login. See [how it chooses](docs/model-choice.md).
+5. **Your words to the CTO are checked, then run at once.** The daemon compares the quote with what you typed in the chat. No second approval.
+6. **One Desk, a chief of staff and a memory of your answers.** Asks are sorted before they reach you, and a question you already answered is not asked again.
+7. **Every change has delivery steps, each with an owner,** a merger session, and CI as the single test gate. Each change leaves evidence. See [how changes leave evidence](docs/evidence.md).
+8. **Pi and OpenCode workers run in an OS sandbox by default** on Linux and macOS. If the sandbox cannot run, the worker is refused, not run bare.
+9. **Self-hosted, one binary, SQLite built in.** Releases are signed, and a machine that was offline catches up on its own.
+10. **The CTO and the chief keep their context when you switch their harness,** so the roles also run without Claude Code.
+
 ### Your two supervisors
 
-- **The CTO** runs the swarm on your instructions. Ask it in plain words to add a machine, write a charter, set a rule between two projects or start a worker. Every change it makes leaves an undo.
+- **The CTO** runs the swarm on your instructions. Ask it in plain words to add a machine, write a charter, set a rule between two projects or start a worker. Every change it makes is logged, and most can be undone.
 - **The chief of staff** reads every ask meant for you first. It closes what it can, sends the rest to the agent that should answer, and leaves only real decisions on your Desk.
 
 <p align="center">
@@ -92,15 +109,17 @@ Example. The session that owns `shared-auth`, a library two of your apps use, re
 A session hands a single task to a **worker**: a new session in its own git worktree, which hands back a report with the diff, the run time and the cost. You do not choose its model. The swarm does, and it learns from every job.
 
 - **It sizes the job.** A small judge model reads the brief and rates it on six points (reasoning, scope, coupling, uncertainty, verification, risk). The result is a level, from trivial to very complex.
-- **It picks a model and a harness.** From the worker profiles you registered, it keeps the models whose track record at that level is good enough. It prefers subscriptions that are behind their quota pace, keeps the ones you protect for last, and rotates so no model takes every job. Easy work goes to cheaper models.
-- **It learns from the results.** Every worker's outcome is recorded: done or not, how much rework its caller needed, and defects found later. A model that does well at a level gets more of that work, and one that does badly gets less. About one pick in ten tries a model one level above its proven record, so the swarm finds out when a cheaper model has grown good enough.
+- **It picks a model and a harness.** From the worker profiles you registered, it keeps the models whose track record at that level is good enough. It prefers subscriptions that are behind their quota pace, keeps the ones you protect for last, and ranks what is left by expected cost per accepted result. Easy work goes to cheaper models. The same proven model wins a bucket until its numbers change. Rotation only runs when no candidate has a track record yet.
+- **It learns from the results.** Every worker's outcome is recorded: done or not, how much rework its caller needed, and defects found later. A model that does well at a level gets more of that work, and one that does badly gets less. About one pick in ten goes up a level for a model with a thin record, so the swarm finds out when a cheaper model has grown good enough.
+- **It checks the brief first.** Before a worker starts, the gateway refuses a brief that names a file another running worker or open change already owns, and flags vague pointers and contradictions.
+- **It runs the worker in a sandbox.** Pi and OpenCode workers run inside an OS sandbox by default: bubblewrap on Linux, `sandbox-exec` on macOS. A worker is refused, not run bare, when the wrapper cannot run. Turn it off for one project with `workers.os_sandbox_off` in `node.json`. Codex and Antigravity use their own sandboxes. Claude workers are not wrapped, because `claude --bg` runs outside any wrapper.
 - **It reads your playbook.** You can write a note for a model, such as *"Codex terra: give it the test command, it forgets to run it"*. The note travels with every brief for that model. agent-net also writes notes itself when the same lesson comes up in several sessions, and it never changes a note you pinned.
 
 Example. A brief to fix a flaky test is judged normal. Three models qualify; the picker gives it to Gemini Flash because the Claude subscription is ahead of pace this week. The worker finishes in nine minutes and its caller rates it 3 of 5 for a sloppy report. Next week that model's normal-level score is a little lower, and a similar job may go elsewhere.
 
 Another. Your Mac's daemon hangs after an upgrade. The agent that owns agent-net writes a brief, and a worker on a cheaper model reproduces the hang and fixes it. Review, tests and the release run as steps. The next upgrade comes back by itself in 16 seconds.
 
-The Quality sub-tab (TUI tab 3, then Tab twice) shows the picker as it decides: each registered model's score at each difficulty level that has tasks, the number of tasks behind each score, and whether the selected model is allowed at that level.
+The Quality sub-tab (TUI tab 3, then Tab twice) shows the picker as it decides: each registered model's score at each difficulty level that has tasks, the number of tasks behind each score, and whether the selected model is allowed at that level. The full story, with the note that comes with every choice: [docs/model-choice.md](docs/model-choice.md). The picker can also weigh result quality more finely ([decision 0173](docs/decisions/0173-picker-quality.md)). That setting is off until you turn it on.
 
 For the full model-selection deep dive, read [how agent-net chooses a model](docs/model-choice.md).
 
@@ -111,8 +130,8 @@ More agents need structure, not more prompting.
 - A **charter** is a few lines per project: what it does, what it accepts, what it refuses, and when it must ask you. *"homelab-agent refuses to touch the encryption key."*
 - A **team** groups projects that belong together, with one session as its **lead**. Members ask the lead first, not you. *"The forge team's lead may merge its members' work."*
 - **Rules between projects** say who may ask whom, and whether a request runs, waits for you or is refused.
-- **Shared skills and MCP servers.** With many repositories, skills end up copied everywhere, duplicated and out of date. The Tools tab lists the skills and MCP servers it finds on every machine, and marks the sources it cannot manage, such as packages, plugins and extensions, for you to check by hand. Import a skill and the gateway keeps numbered versions of it; switch it on per project and agent-net makes and tracks the copies. A shared MCP server runs on one machine, and its tools reach the projects it is assigned to, or every session when it is global, in the harnesses that read the shared tool list.
-- **Steps** carry every change through accept, test, merge, release and verify, with a review for riskier changes. Each step has an owner, and the evidence is recorded. Start a merger session and it owns tests and merges for the project; until then the caller owns them.
+- **Shared skills and MCP servers.** With many repositories, skills end up copied everywhere, duplicated and out of date. The Tools tab lists the skills and MCP servers it finds on every machine, and marks the sources it cannot manage, such as packages, plugins and extensions, for you to check by hand. Skills go into a versioned archive in the gateway, from a folder on any machine, from a Git URL or from a session that wrote one. Each add and remove is logged and can be undone. Ask the CTO to set which skills each project gets, and a session gets its project's skills when it starts. A shared MCP server runs on one machine, and its tools reach the projects it is assigned to, or every session when it is global, in the harnesses that read the shared tool list.
+- **Steps** carry every change through accept, test, merge, release and verify, with a review for riskier changes. Each step has an owner, and the evidence is recorded. Start a merger session and it owns tests and merges for the project; until then the caller owns them. CI on the merge queue is the single test gate. How each change leaves evidence: [docs/evidence.md](docs/evidence.md).
 
 Example. The forge lead approves a deploy. A member asks the operator agent to deploy and quotes the approval. agent-net shows the operator the original message, so it deploys without asking again. You see one line in the log.
 
@@ -123,7 +142,10 @@ Now the agents work on their own, and you respond instead of prompting.
 - **The Desk** is the one place where things wait for you: irreversible actions, money, secrets, and choices only you can make. Everything else is handled and logged. *"Buy 2 TB of backup space? Recommended: yes."* Most asks bring a recommendation, so most answers are one key.
 - **The chief of staff**, once you set one, sorts every ask before it reaches the Desk: it closes stale and duplicate asks, sends the rest to the agent that should decide, and keeps only what truly needs you.
 - **Your memory** keeps what you decide, so the swarm asks you less next time. Standing orders such as *"never deploy on Fridays"*, each answer you give on the Desk, and your corrections: press `n` ("didn't need me") or `m` ("should have asked me") on what the chief of staff did. Before an agent asks you, it searches this memory (`agent_owner_judgments_find`); if you already answered the same kind of question, it acts on that answer and names it.
-- **Agents can do what you can do.** Almost every control in the TUI has a matching tool for the CTO, so you can run the whole network by asking. The decisions that stay yours, it prepares but does not make.
+- **Agents can do what you can do.** Almost every control in the TUI has a matching tool for the CTO, so you can run the whole network by asking. Quote your own words and the change runs at once, with the words checked against what you typed ([decision 0165](docs/decisions/0165-cto-owner-words-are-approval.md)). The decisions that stay yours, it prepares but does not make.
+- **Stalls reach you once.** A busy session with no progress, or an idle one with a message stuck in delivery, raises one Desk item, not a stream of alerts. Every harness confirms a delivery when the message lands in the session.
+- **Agents say what slowed them.** A worker adds friction notes to its hand-back: tooling, permissions, brief, review, CI, environment or skill. You see them on the Quotas tab.
+- **Sign-in asks.** For providers that quota-axi cannot read, the Desk asks you to sign in on the machine that has a browser, and the quota check picks up from there.
 
 Example. On Monday you approve homelab-agent's merge of an image-pin update and add *"approve image-pin merges in truenas-stacks"*. On Wednesday the same kind of merge comes up. homelab-agent finds Monday's answer, merges, and the Desk log shows one line citing it. Nothing reaches you.
 
@@ -134,6 +156,8 @@ The memory lives in your gateway's database, on your machine. Standing orders ar
 Sessions can run without a terminal, on any machine, and keep working while you are away.
 
 - **Start one anywhere.** Ask the CTO, or press a key in the TUI, to start a session in any project on any machine, with the harness, model, branch and first message you choose. Claude Code sessions run as background jobs of Claude's own service.
+- **Long sessions stay small.** The daemon compacts a long-running session before its context fills, including a session that has a background task running.
+- **Switch the harness, keep the context.** Move the CTO or the chief between Claude Code, Codex and OpenCode. The new session starts with a handover note and the old conversation when it is less than a day old ([decision 0171](docs/decisions/0171-session-harness-switch.md)).
 - **It wakes when it is needed.** A message to a session that went offline asks its machine to resume the same conversation, then delivers the message. Claude Code, Codex and OpenCode sessions wake this way; no new session is started.
 - **It keeps working on its own clock.** Give a project a standing loop, for example every 4 hours, and its session is nudged with what changed since the last tick: new messages, finished workers, open asks. It does the next step and reports. Two ticks with no progress pause the loop and leave one question on your Desk.
 - **You look in only when you want to.** Press Enter on any session to open it live, in herdr or your terminal, or follow it from the web console on your phone or tablet. Stop, resume or restart it from the TUI or by asking the CTO.
@@ -229,10 +253,10 @@ The common criticism of multi-agent systems is right about one shape: many agent
 
 | Agent | How it connects | Tested with |
 |---|---|---|
-| Claude Code | A stdio MCP server per session (`agent-net mcp`), and the session's own inbox socket for delivery. Setup also offers a plugin that shows the session's workers above the prompt. | 2.1.316 |
-| Codex | A stdio MCP server per thread (`agent-net mcp --codex`); messages go through the shared Codex app server ([decision 0012](docs/decisions/0012-codex-peers.md)) | 0.166.0 |
+| Claude Code | A stdio MCP server per session (`agent-net mcp`), and the session's own inbox socket for delivery. Setup also offers a plugin that shows the session's workers above the prompt. | 2.1.326 |
+| Codex | A stdio MCP server per thread (`agent-net mcp --codex`); messages go through the shared Codex app server ([decision 0012](docs/decisions/0012-codex-peers.md)) | 0.167.0 |
 | Pi | An extension that talks to the local daemon socket | 1.4.0 |
-| OpenCode | A plugin inside its v2 background service | 2.2.0 |
+| OpenCode | A plugin inside its v2 background service | 2.3.2 |
 | Antigravity (`agy`) | Plugin hooks and MCP for sessions, stream-json workers, and native skills | 1.4.12 |
 
 Platforms: Linux (systemd user services) and macOS (launchd), on amd64 and arm64.
@@ -244,7 +268,7 @@ The short version. The full model, including what is not protected, is in [docs/
 - Built for machines you own, on a LAN or a Tailscale network. Do not expose the gateway port (7420) to the internet.
 - A machine joins with a one-time code (10 minutes, one use) and the SHA-256 of the gateway's CA. Traffic is TLS with the gateway's own CA, and each machine has its own token.
 - The daemon checks which local process is calling, from the kernel's view of the caller's process.
-- A message from another agent is never your approval. Owner-only changes need your action in the TUI.
+- A message from another agent is never your approval. Changes you ask for in the CTO chat run at once, with your words checked. Changes the CTO wants without your words wait for you on the Desk.
 - The CTO's messages are not reviewed by Claude Code's auto-mode check; each receiving agent's charter and permission checks still apply.
 - Connected apps: off by default. Each app is approved by you in the TUI with a one-time code, gets only its own tools, and is rate limited. Revoke it with `x`.
 - The guidance agent-net adds to your instruction files is advice to the model, not enforcement.
@@ -266,12 +290,10 @@ To remove agent-net from a machine: `agent-net uninstall` (add `--purge` to dele
 
 - **Load notices.** The gateway already counts every call by origin and method. When one origin's load rises far above its usual level, tell the agent that can fix it, with the top method, instead of waiting for someone to read the counters.
 - **Typed decision models for bounded choices.** Several of agent-net's decisions pick from a fixed set: which worker model takes a brief, how hard a brief is, what the chief of staff does with an ask, whether an idle session should be compacted. Decision models such as Jev (TypeSafe AI) return such a choice with a calibrated probability, in one pass and without generated text. The plan is to run one beside the current picker first, in shadow, and compare its picks with real outcomes before it decides anything. Notes: [docs/design/decision-models.md](docs/design/decision-models.md).
-- **Skills, prompts and agents from one source.** Manage slash-command prompts and subagent definitions the way skills are managed today, and when someone improves a deployed copy, save it as the next version and offer it to every other copy instead of letting it drift.
+- **Prompts and agents from one source.** Manage slash-command prompts and subagent definitions the way skills are managed today, and when someone improves a deployed copy, save it as the next version and offer it to every other copy instead of letting it drift.
 - **Tool summaries.** A cheap model turns a worker's tool calls into a few plain sentences as it works, shown in the workers panel and the web console, with the raw calls one step away.
 - **The web console, next steps.** The Desk, sessions, changes, messages, graph, workers and the CTO panel are live in a browser and on the phone. Next: load only what each screen shows, and push changes instead of refreshing.
-- **Worker skill injection.** Give each worker the skills and MCP servers its job needs when it starts, chosen from its brief and its project, instead of every worker getting everything installed on the machine.
-- **Model choice from capability.** Match each model's measured capability to the task's raw difficulty score, corrected by how much review time its past work cost. Plan: [docs/design/model-capability.md](docs/design/model-capability.md).
-- **An optional sandbox for every worker.** Linux is done for Pi and OpenCode workers: bubblewrap, switched on per project with `workers.os_sandbox` in `node.json`. Claude workers enforce the level with Claude Code's own permission settings and Bash sandbox; the OS wrapper still refuses them, because `claude --bg` runs outside any wrapper. Still to do: macOS (sandbox-exec, designed). Codex and Antigravity keep their own sandboxes. Design: [docs/design/worker-os-sandbox.md](docs/design/worker-os-sandbox.md); plan: [docs/design/hardening-plan.md](docs/design/hardening-plan.md) W7.
+- **Skills chosen per worker.** Sessions already get their node's skills at start ([decision 0169](docs/decisions/0169-skill-archive.md)). Next: choose each worker's skills and MCP servers from its brief and its project, instead of giving every worker the same set.
 - **A modular agent-net:** agent-net keeps the mechanisms, and a way of working (who does what, how work is tested and merged, what agents are told) becomes data at network, team, repo or agent level, which the CTO can propose to change. Plan: [docs/design/modularity.md](docs/design/modularity.md).
 - **Its own Tailscale name for agent-net as the default.** It is built and off by default: `agent-net setup --gateway --apps-tailscale-name agent-net` gives connected apps their own Tailscale node, so they do not share a host name with other services ([decision 0058](docs/decisions/0058-own-tailscale-name.md)). Next: make it the default once it is tested.
 - **OAuth logins for registry MCP servers.** Resources and prompts already pass through; a server that needs an OAuth login cannot be added yet. What it needs: [docs/mcp-registry.md](docs/mcp-registry.md#oauth-logins-not-built).
