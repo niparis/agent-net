@@ -11,6 +11,7 @@ import (
 	"errors"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/toolcatalog"
 )
 
 // opResult turns one daemon answer into an object. An empty answer is an empty
@@ -59,7 +60,7 @@ func projectAddCall(ctx context.Context, run func(context.Context, string, any) 
 }
 
 func mcpTestCall(ctx context.Context, run func(context.Context, string, any) (any, error), server string) (map[string]any, error) {
-	return opResult(run(ctx, "mcp_test", map[string]any{"name": server}))
+	return opResult(run(ctx, "mcp_test", map[string]any{toolcatalog.DaemonField("agent_mcp_test", "server"): server}))
 }
 
 func ownerBriefCall(ctx context.Context, run func(context.Context, string, any) (any, error), in protocol.OwnerBriefArgs) (map[string]any, error) {
@@ -112,7 +113,7 @@ func sendCall(ctx context.Context, run func(context.Context, string, any) (any, 
 // uses.
 func replyCall(ctx context.Context, run func(context.Context, string, any) (any, error), in messageReplyIn, outcome protocol.ReplyOutcome, receipt bool) (map[string]any, error) {
 	params := map[string]any{
-		"message_id":      in.Message,
+		toolcatalog.DaemonField("agent_message_reply", "message"): in.Message,
 		"body":            in.Body,
 		"ack":             in.Ack,
 		"outcome":         outcome.Outcome,

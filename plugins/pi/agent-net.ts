@@ -363,19 +363,28 @@ function formatCatalogResult(name: string, result: any): string {
   return JSON.stringify(result ?? {}, null, 2);
 }
 
-function mapCatalogParams(name: string, params: any): any {
-  switch (name) {
-    case "agent_message_send": return { ...params, type: params.type || "request", receipt: true, idempotency_key: randomUUID() };
-    case "agent_message_reply": return { ...params, message_id: params.message, receipt: true, idempotency_key: randomUUID() };
-    case "agent_message_get": return { message_id: params.message };
-    case "agent_mcp_test": return { name: params.server };
-    case "agent_worker_stop": return { session: params.worker };
+// A catalog tool can send an input field under another name. The names come
+// from the generated catalog (daemon_fields), the table the MCP server reads
+// too, so every path sends a renamed field the same way.
+type CatalogTool = { name: string; daemon_fields: Record<string, string> };
+
+function toDaemonNames(tool: CatalogTool, params: any): any {
+  const out: Record<string, unknown> = {};
+  for (const [field, value] of Object.entries(params ?? {})) out[tool.daemon_fields[field] ?? field] = value;
+  return out;
+}
+
+function mapCatalogParams(tool: CatalogTool, params: any): any {
+  const sent = toDaemonNames(tool, params);
+  switch (tool.name) {
+    case "agent_message_send": return { ...sent, type: sent.type || "request", receipt: true, idempotency_key: randomUUID() };
+    case "agent_message_reply": return { ...sent, receipt: true, idempotency_key: randomUUID() };
     case "agent_owner_ask":
       if (params.kind === "approval") return { __method: "request_approval", __params: { action: params.text, recommendation: params.recommendation, replaces: params.replaces } };
       if (params.kind === "idea") return { __method: "propose_idea", __params: { text: params.text, recommendation: params.recommendation, replaces: params.replaces } };
       return { ...params, explicit: true };
     case "agent_worker_profiles_find": return {};
-    default: return params;
+    default: return sent;
   }
 }
 
@@ -1324,7 +1333,7 @@ export default function (pi: ExtensionAPI) {
       Type.Unsafe(schema),
       tool.method,
       (result) => tool.name === "agent_project_add" ? formatProjectAdd(result) : formatCatalogResult(tool.name, result ?? {}),
-      (params) => mapCatalogParams(tool.name, params ?? {}),
+      (params) => mapCatalogParams(tool, params ?? {}),
       true,
     );
   }

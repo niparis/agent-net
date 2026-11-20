@@ -39,7 +39,8 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "announce"
+    "method": "announce",
+    "daemon_fields": {}
   },
   {
     "name": "agent_ask_intake",
@@ -96,7 +97,8 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "ask_intake"
+    "method": "ask_intake",
+    "daemon_fields": {}
   },
   {
     "name": "agent_ask_sort",
@@ -250,7 +252,8 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "ask_sort"
+    "method": "ask_sort",
+    "daemon_fields": {}
   },
   {
     "name": "agent_bar_edit",
@@ -304,7 +307,8 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "agent_bar_edit"
+    "method": "agent_bar_edit",
+    "daemon_fields": {}
   },
   {
     "name": "agent_change_submit",
@@ -357,7 +361,8 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "change_submit"
+    "method": "change_submit",
+    "daemon_fields": {}
   },
   {
     "name": "agent_changes_find",
@@ -414,7 +419,8 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "changes_find"
+    "method": "changes_find",
+    "daemon_fields": {}
   },
   {
     "name": "agent_charter_draft",
@@ -464,7 +470,8 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "agent_charter_draft"
+    "method": "agent_charter_draft",
+    "daemon_fields": {}
   },
   {
     "name": "agent_file_send",
@@ -504,7 +511,8 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "file_send"
+    "method": "file_send",
+    "daemon_fields": {}
   },
   {
     "name": "agent_friction_mark",
@@ -577,7 +585,8 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "friction_mark_lead"
+    "method": "friction_mark_lead",
+    "daemon_fields": {}
   },
   {
     "name": "agent_graph_read",
@@ -639,7 +648,8 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "agent_graph"
+    "method": "agent_graph",
+    "daemon_fields": {}
   },
   {
     "name": "agent_handback",
@@ -774,7 +784,8 @@ export const TOOL_CATALOG = [
     "roles": [
       "worker"
     ],
-    "method": "worker_handback"
+    "method": "worker_handback",
+    "daemon_fields": {}
   },
   {
     "name": "agent_learn",
@@ -823,7 +834,8 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "agent_learn"
+    "method": "agent_learn",
+    "daemon_fields": {}
   },
   {
     "name": "agent_machine_get",
@@ -894,7 +906,8 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "machine_get"
+    "method": "machine_get",
+    "daemon_fields": {}
   },
   {
     "name": "agent_machine_log",
@@ -942,7 +955,8 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "machine_log"
+    "method": "machine_log",
+    "daemon_fields": {}
   },
   {
     "name": "agent_machines_find",
@@ -988,7 +1002,8 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "machines_find"
+    "method": "machines_find",
+    "daemon_fields": {}
   },
   {
     "name": "agent_mcp_servers_find",
@@ -1029,7 +1044,8 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "mcp_list"
+    "method": "mcp_list",
+    "daemon_fields": {}
   },
   {
     "name": "agent_mcp_test",
@@ -1050,7 +1066,10 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "mcp_test"
+    "method": "mcp_test",
+    "daemon_fields": {
+      "server": "name"
+    }
   },
   {
     "name": "agent_message_get",
@@ -1091,7 +1110,10 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "message_status"
+    "method": "message_status",
+    "daemon_fields": {
+      "message": "message_id"
+    }
   },
   {
     "name": "agent_message_handoff",
@@ -1123,7 +1145,8 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "handoff"
+    "method": "handoff",
+    "daemon_fields": {}
   },
   {
     "name": "agent_message_reply",
@@ -1175,7 +1198,10 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "reply"
+    "method": "reply",
+    "daemon_fields": {
+      "message": "message_id"
+    }
   },
   {
     "name": "agent_message_send",
@@ -1267,7 +1293,8 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "send"
+    "method": "send",
+    "daemon_fields": {}
   },
   {
     "name": "agent_message_withdraw",
@@ -1291,7 +1318,10 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "withdraw"
+    "method": "withdraw",
+    "daemon_fields": {
+      "message": "message_id"
+    }
   },
   {
     "name": "agent_messages_find",
@@ -1350,7 +1380,10 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "messages"
+    "method": "messages",
+    "daemon_fields": {
+      "conversation": "conversation_id"
+    }
   },
   {
     "name": "agent_note_write",
@@ -1402,7 +1435,8 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "note_write"
+    "method": "note_write",
+    "daemon_fields": {}
   },
   {
     "name": "agent_notes_find",
@@ -1435,7 +1469,8 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "notes_find"
+    "method": "notes_find",
+    "daemon_fields": {}
   },
   {
     "name": "agent_nudge_pause",
@@ -1491,7 +1526,8 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "nudge_pause"
+    "method": "nudge_pause",
+    "daemon_fields": {}
   },
   {
     "name": "agent_nudge_pauses_find",
@@ -1505,7 +1541,8 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "nudge_pauses_find"
+    "method": "nudge_pauses_find",
+    "daemon_fields": {}
   },
   {
     "name": "agent_nudge_resume",
@@ -1525,7 +1562,8 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "nudge_resume"
+    "method": "nudge_resume",
+    "daemon_fields": {}
   },
   {
     "name": "agent_nudge_stats",
@@ -1569,7 +1607,8 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "nudge_stats"
+    "method": "nudge_stats",
+    "daemon_fields": {}
   },
   {
     "name": "agent_owner_ask",
@@ -1623,7 +1662,8 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "waiting"
+    "method": "waiting",
+    "daemon_fields": {}
   },
   {
     "name": "agent_owner_brief",
@@ -1646,7 +1686,8 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "owner_brief"
+    "method": "owner_brief",
+    "daemon_fields": {}
   },
   {
     "name": "agent_owner_judgment_record",
@@ -1687,7 +1728,8 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "judgment_record"
+    "method": "judgment_record",
+    "daemon_fields": {}
   },
   {
     "name": "agent_owner_judgments_find",
@@ -1745,7 +1787,8 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "judgments_find"
+    "method": "judgments_find",
+    "daemon_fields": {}
   },
   {
     "name": "agent_permission_propose",
@@ -1795,7 +1838,8 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "agent_permission_propose"
+    "method": "agent_permission_propose",
+    "daemon_fields": {}
   },
   {
     "name": "agent_project_add",
@@ -1835,7 +1879,8 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "project_add"
+    "method": "project_add",
+    "daemon_fields": {}
   },
   {
     "name": "agent_projects_find",
@@ -1883,7 +1928,8 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "projects_find"
+    "method": "projects_find",
+    "daemon_fields": {}
   },
   {
     "name": "agent_session_get",
@@ -1905,7 +1951,8 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "session_get"
+    "method": "session_get",
+    "daemon_fields": {}
   },
   {
     "name": "agent_sessions_find",
@@ -2022,7 +2069,8 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "sessions_find"
+    "method": "sessions_find",
+    "daemon_fields": {}
   },
   {
     "name": "agent_settings_read",
@@ -2067,7 +2115,8 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "settings_read"
+    "method": "settings_read",
+    "daemon_fields": {}
   },
   {
     "name": "agent_step_claim",
@@ -2124,7 +2173,8 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "step_claim"
+    "method": "step_claim",
+    "daemon_fields": {}
   },
   {
     "name": "agent_step_report",
@@ -2364,7 +2414,8 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "step_report"
+    "method": "step_report",
+    "daemon_fields": {}
   },
   {
     "name": "agent_worker_profiles_find",
@@ -2399,7 +2450,8 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "worker_profiles"
+    "method": "worker_profiles",
+    "daemon_fields": {}
   },
   {
     "name": "agent_worker_rate",
@@ -2451,7 +2503,8 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "agent_rate"
+    "method": "agent_rate",
+    "daemon_fields": {}
   },
   {
     "name": "agent_worker_start",
@@ -2620,7 +2673,8 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "worker_start"
+    "method": "worker_start",
+    "daemon_fields": {}
   },
   {
     "name": "agent_worker_stop",
@@ -2641,7 +2695,10 @@ export const TOOL_CATALOG = [
     "roles": [
       "agent"
     ],
-    "method": "worker_stop"
+    "method": "worker_stop",
+    "daemon_fields": {
+      "worker": "session"
+    }
   },
   {
     "name": "agent_workers_find",
@@ -2704,6 +2761,7 @@ export const TOOL_CATALOG = [
       "agent",
       "worker"
     ],
-    "method": "list"
+    "method": "list",
+    "daemon_fields": {}
   }
 ] as const;
