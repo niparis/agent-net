@@ -102,7 +102,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_ask_sort",
-    "description": "Chief of staff: sort waiting asks (close, merge, send, owner), withdraw an ask the asker took back or a newer ask replaces, undo its own newest sort, list asks and sort counts, or read an ask with detail full. Result hide (preview, apply, undo) hides sort history reversibly. Never answer for the owner.",
+    "description": "Chief of staff: sort waiting asks (close, merge, send, owner), withdraw an ask the asker took back or a newer ask replaces, undo its own newest sort, list asks and sort counts, or read an ask with detail full. Result hide (preview, apply, undo) hides sort history reversibly. When a close or send rests on something that has not happened yet, set follow_up_at: you have no timer. Never answer for the owner.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -244,6 +244,14 @@ export const TOOL_CATALOG = [
         "action": {
           "type": "string",
           "description": "With rule: the action the ask is about. The rule applies only when its area and action match exactly."
+        },
+        "follow_up_at": {
+          "type": "string",
+          "description": "For send and close, when the work rests on an event that has not happened yet: an RFC 3339 time or a duration such as 45m. If the event has not happened by then, agent-net raises one ask to you that names what was expected and since when. The event is a move of the change named in change (or the change the ask is about), else any later message in the ask's conversation."
+        },
+        "change": {
+          "type": "string",
+          "description": "With follow_up_at: the delivery change whose step you wait for, such as ch_1a2b."
         }
       },
       "required": [],
@@ -1284,6 +1292,10 @@ export const TOOL_CATALOG = [
         "urgent": {
           "type": "boolean",
           "description": "Deliver ahead of older waiting messages. It still counts toward the limit."
+        },
+        "follow_up_at": {
+          "type": "string",
+          "description": "RFC 3339 time or duration (45m). No reply by then: agent-net asks the chief. Not with a group send."
         }
       },
       "required": [

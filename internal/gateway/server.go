@@ -557,6 +557,9 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 						g.dispatch(ctx, m)
 					}
 				}
+				if err := g.store.checkFollowUps(); err != nil {
+					g.logLine("error", "where", "follow-ups", "err", err)
+				}
 				// The chief of staff's daily brief wakes it once per owner-local
 				// date (decision 0114).
 				if m, sent, err := g.store.checkDailyBrief(g.store.now()); err != nil {

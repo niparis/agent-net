@@ -34,6 +34,8 @@ type messageSendIn struct {
 	AsOwner bool          `json:"as_owner,omitempty"`
 	Order   bool          `json:"order,omitempty"`
 	Urgent  bool          `json:"urgent,omitempty"`
+	// FollowUpAt is an RFC 3339 time or a duration such as 45m.
+	FollowUpAt string `json:"follow_up_at,omitempty"`
 }
 
 type messageReplyIn struct {
@@ -98,7 +100,7 @@ func addMessageWriteTools(s *mcp.Server, run func(context.Context, string, any) 
 			}
 			set["online_only"] = online
 		}
-		out, err := sendCall(ctx, run, in.To, set, in.Body, in.Type, in.AsOwner, in.Order, in.Urgent, true)
+		out, err := sendCall(ctx, run, in.To, set, in.Body, in.Type, in.AsOwner, in.Order, in.Urgent, in.FollowUpAt, true)
 		if err != nil {
 			return toolError(err)
 		}

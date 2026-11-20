@@ -651,10 +651,14 @@ type (
 		// Progress marks an interim update to an open request or order. The
 		// reply is delivered and counts as activity, but leaves the parent
 		// request or order open.
-		Progress bool   `json:"progress,omitempty"`
-		Type     string `json:"message_type"`
-		Body     string `json:"body"`
-		ParentID string `json:"parent_message_id,omitempty"`
+		Progress bool `json:"progress,omitempty"`
+		// FollowUpAt makes agent-net check at that time (an RFC 3339 time or a
+		// duration such as 45m) that the recipient has replied in the thread,
+		// and raise one ask to the chief of staff if it has not.
+		FollowUpAt string `json:"follow_up_at,omitempty"`
+		Type       string `json:"message_type"`
+		Body       string `json:"body"`
+		ParentID   string `json:"parent_message_id,omitempty"`
 		// ConversationID, without ParentID, threads the message into an
 		// existing conversation without naming a message it answers. The
 		// recipient must have written to the sender in that conversation. A

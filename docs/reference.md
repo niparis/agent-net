@@ -538,7 +538,7 @@ action tool per area:
 
 | CTO change tool | Actions or area |
 |---|---|
-| `agent_message_send` | one message, or a group with `to_set`; `as_owner: true` sends on the owner's instructions; `urgent: true` goes ahead of older waiting messages |
+| `agent_message_send` | one message, or a group with `to_set`; `as_owner: true` sends on the owner's instructions; `urgent: true` goes ahead of older waiting messages; `follow_up_at` (an RFC 3339 time or a duration such as `45m`, one recipient only) sets a follow-up, see [Follow-ups](#follow-ups) |
 | `agent_message_reply` | a reply with an outcome, or `ack: true` to close a request that needs no answer; `as_owner: true` replies on the owner's instructions |
 | `agent_message_withdraw` | one undelivered message, or with `older_than: true` every undelivered message to that recipient that is this old or older; the owner and the CTO may withdraw another session's message |
 | `agent_owner_ask` | a question, approval or idea with a recommendation and up to four answers, into the Inbox |
@@ -3369,7 +3369,7 @@ behavior: its asks may be adopted when it returns. The chief may still sort only
 asks that wait for it. `chief_get` returns the reason in `down` (empty when the
 chief can work). No setting and no approval gate comes with this.
 
-**`agent_ask_sort {ask, result, reason, into, to, replaced_by, priority, why_you, sorter, since, until, from_id, to_id}`**
+**`agent_ask_sort {ask, result, reason, into, to, replaced_by, priority, why_you, follow_up_at, change, sorter, since, until, from_id, to_id}`**
 (any agent session; only the live chief may sort, others are refused, except
 that the session that holds a routed ask may `close` it, and the asker or a
 session that relayed it may `withdraw` it).
@@ -3390,6 +3390,8 @@ characters. `result` is one of:
   back to them makes a loop. Close it, send it to someone else, or send it to
   the owner.`, because the ask is about that session and would return to it.
   Every other send keeps the path it had.
+  `close` and `send` take an optional `follow_up_at` and `change`, see
+  [Follow-ups](#follow-ups).
 - `owner`: the ask goes to the owner. `priority` (1 to 3) and `why_you` are
   required.
 - `list`: reads only. It returns the open asks that wait for the chief, oldest
@@ -3818,6 +3820,20 @@ An open request or order with no final reply, whose recipient has been idle for 
 If there is still no final reply `messages.owed_reply_ask_after` (default 10m) after the nudge, agent-net raises one ask routed to the chief of staff (`next_who chief`). The ask names the chain: who waits on whom, since when, the message id and its first line, the nudge time, and the sender's lead if any. Exactly one nudge and one ask are raised per request. A final reply before the nudge or ask stops the chain.
 
 The settings `messages.owed_reply_nudge_after` (default `15m`) and `messages.owed_reply_ask_after` (default `10m`) are available at the network, team and repo levels.
+
+### Follow-ups
+
+The chief of staff has no timer: it acts only when a message arrives. `agent_message_send` and `agent_ask_sort` (results `send` and `close`) therefore take an optional `follow_up_at`, an RFC 3339 time (`2026-11-20T07:30:00Z`) or a positive duration counted from now (`45m`). A bad value is refused. Without `follow_up_at` nothing changes (decision [0177](decisions/0177-owed-replies.md), addition of 2026-11-20).
+
+The gateway stores the follow-up in the `follow_ups` table with the message or the sort. On its minute tick it looks at each follow-up once, when it falls due. If the expected event has not happened since the follow-up was set, it raises one ask routed to the chief (`next_who chief`, source `follow-up:<id>`). The ask names who set the follow-up, what was expected, when it was set and when it was due. If the event happened, nothing is raised. Detection reads the database only and uses no model tokens.
+
+The expected event is:
+
+- For a send: a message in the same conversation from the recipient, a progress reply included, or the message moving to `replied` or `acknowledged`. `follow_up_at` with `to_set` is refused.
+- For a sort that names a change (`change`, or the change the ask is about): a move of that change, meaning new evidence for any of its steps or a new revision, state change or other update to the change after the follow-up was set. An unknown `change` is refused.
+- For a close or send with neither: any later message in the ask's conversation that is not from agent-net. When the ask has no conversation, any later message from or to the asker.
+
+`change` needs `follow_up_at`, and `follow_up_at` is refused on merge, owner and the other results.
 
 A rejection or escalation of another agent's request appears as a separate Inbox entry until the owner resolves it. The entry shows the request's first line, outcome, reason and recommendation. Press `s` to let the decision stand or `O` to overrule it. Letting it stand sends the receiving session a notice that its decision stands. Overrule sends the original request again from the owner with the agent-net note `the owner overrules: do it.` The operator method is `outcome_overrule` with `reply_id` and `action` (`let_stand` or `overrule`).
 

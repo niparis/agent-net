@@ -479,7 +479,7 @@ func (s *Store) chiefBatchDue(now time.Time) (*chiefBatch, error) {
 		return nil, nil
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Chief of staff: %d ask(s) to sort. Sort each one with agent_ask_sort: close, merge into another open ask, send to a session, or owner (with priority and why_you). Sort only. Never answer for the owner.\n", len(list))
+	fmt.Fprintf(&b, "Chief of staff: %d ask(s) to sort. Sort each one with agent_ask_sort: close, merge into another open ask, send to a session, or owner (with priority and why_you). When a close or send rests on something that has not happened yet (a review, a reply, a change moving), set follow_up_at on the sort: you have no timer, and agent-net asks you again if it did not happen. Sort only. Never answer for the owner.\n", len(list))
 	batch := &chiefBatch{chief: chief}
 	for _, p := range list {
 		batch.ids = append(batch.ids, p.id)
@@ -1027,6 +1027,11 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 		}
 		out.Next, out.State = q.To, protocol.AskWithSomeone
 		logText = fmt.Sprintf("Chief sent ask to %s: %s", sessionLabel(tx, q.To), text)
+		if q.FollowUpAt != "" {
+			if err := s.recordSortFollowUp(tx, q, a, sorter, now); err != nil {
+				return out, none, err
+			}
+		}
 		if err := s.commitSort(tx, rec, now, logText, a, "chief"); err != nil {
 			return out, none, err
 		}
@@ -1056,6 +1061,11 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 			return out, none, err
 		}
 		logText = fmt.Sprintf("Chief sent ask to you (priority %d): %s", q.Priority, text)
+	}
+	if q.FollowUpAt != "" {
+		if err := s.recordSortFollowUp(tx, q, a, sorter, now); err != nil {
+			return out, none, err
+		}
 	}
 	if err := s.commitSort(tx, rec, now, logText, a, source); err != nil {
 		return out, none, err
