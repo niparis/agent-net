@@ -1,10 +1,8 @@
 package gateway
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/inventory"
@@ -131,42 +129,6 @@ func TestSkillListSetPinsMatureRepo(t *testing.T) {
 	}
 }
 
-func TestSkillListSetBySuggestion(t *testing.T) {
-	g := archiveGateway(t)
-	s := g.store
-	seedRepo(t, s, "alpha", "growing")
-	seedArchiveSkill(t, s, "grill-me", 1, 12, "Ask hard questions about a design and its tradeoffs.", "q")
-	seedArchiveSkill(t, s, "bailian", 1, 90, "Run Alibaba cloud models.", "b")
-	if _, err := s.db.Exec(`INSERT INTO sessions(id,node_id,harness,native_id,repo_project,repo_description,last_seen,online)
-		VALUES('s_x','n','claude','x','alpha','A design review tool for architecture tradeoffs',0,1)`); err != nil {
-		t.Fatal(err)
-	}
-	suggestion, err := g.skillSuggest(protocol.SkillSuggestRequest{Level: "repo", Scope: "alpha", By: "cto"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if suggestion.ID == "" || len(suggestion.Skills) != 1 || suggestion.Skills[0].Name != "grill-me" || suggestion.Skills[0].Reason == "" {
-		t.Fatalf("suggestion: %+v", suggestion)
-	}
-	// The suggestion shows both figures and totals the one a session loads.
-	grillContext := skillContextTokens("grill-me", "Ask hard questions about a design and its tradeoffs.")
-	if got := suggestion.Skills[0]; got.SizeTokens != 12 || got.ContextTokens != grillContext || suggestion.ContextTokens != grillContext {
-		t.Fatalf("suggestion tokens: %+v", suggestion)
-	}
-	res, err := s.SkillListSet(protocol.SkillSetRequest{Level: "repo", Scope: "alpha", Suggestion: suggestion.ID, By: "cto"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.Change == "" || len(res.Added) != 1 || res.Added[0] != "grill-me" || res.AfterTokens != grillContext {
-		t.Fatalf("set by suggestion: %+v", res)
-	}
-	// The suggestion belongs to its node: another repo is refused.
-	seedRepo(t, s, "beta", "growing")
-	if _, err = s.SkillListSet(protocol.SkillSetRequest{Level: "repo", Scope: "beta", Suggestion: suggestion.ID, By: "cto"}); err == nil {
-		t.Fatal("a suggestion was applied to another repo")
-	}
-}
-
 func TestSkillListUndoRestoresPreviousList(t *testing.T) {
 	s, _ := newTestStore(t)
 	seedRepo(t, s, "alpha", "growing")
@@ -241,39 +203,9 @@ func TestSkillListRestartOfferListsNodeSessions(t *testing.T) {
 	}
 }
 
-func TestSkillSuggestFlagsMissingMCP(t *testing.T) {
-	g := archiveGateway(t)
-	s := g.store
-	seedRepo(t, s, "alpha", "growing")
-	seedArchiveSkill(t, s, "jira-helper", 1, 12, "Work with Jira issues.", "Call mcp__jira__create_issue for a new issue.")
-	if _, err := s.db.Exec(`INSERT INTO sessions(id,node_id,harness,native_id,repo_project,repo_description,last_seen,online)
-		VALUES('s_x','n','claude','x','alpha','Track Jira issues for the team',0,1)`); err != nil {
-		t.Fatal(err)
-	}
-	got, err := g.skillSuggest(protocol.SkillSuggestRequest{Level: "repo", Scope: "alpha", By: "cto"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got.Skills) != 1 || len(got.Skills[0].MissingMcp) != 1 || got.Skills[0].MissingMcp[0] != "jira" {
-		t.Fatalf("missing MCP: %+v", got.Skills)
-	}
-	node, _, err := s.CreateNode("h1", "linux")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = s.AddMCPServer(protocol.MCPServer{Name: "jira", NodeID: node, Transport: "stdio", Command: "jira", Enabled: true}); err != nil {
-		t.Fatal(err)
-	}
-	got, err = g.skillSuggest(protocol.SkillSuggestRequest{Level: "repo", Scope: "alpha", By: "cto"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got.Skills) != 1 || len(got.Skills[0].MissingMcp) != 0 {
-		t.Fatalf("present MCP still flagged: %+v", got.Skills)
-	}
-}
-
-func TestNewProjectSendsOneSkillNoticeToCTO(t *testing.T) {
+// Skill selection is the owner's call through the CTO. Registering a repo must
+// not open any skills item, even when a CTO session is set.
+func TestNewProjectCreatesNoSkillItem(t *testing.T) {
 	s, _ := newTestStore(t)
 	if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_session','s_cto',0)`); err != nil {
 		t.Fatal(err)
@@ -281,231 +213,11 @@ func TestNewProjectSendsOneSkillNoticeToCTO(t *testing.T) {
 	if _, err := s.AddProjects("n1", protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Path: "/repo/x", Name: "x"}}}); err != nil {
 		t.Fatal(err)
 	}
-	var text, next string
 	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref='skills:new-project:x' AND status='open'`).Scan(&n); err != nil {
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref LIKE 'skills:%' OR text LIKE '%skills suggest%'`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
-		t.Fatalf("notices: %d", n)
-	}
-	if err := s.db.QueryRow(`SELECT text, next_who FROM inbox_items WHERE source_ref='skills:new-project:x'`).Scan(&text, &next); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(text, "run skills suggest and set") || next != "s_cto" {
-		t.Fatalf("notice: %q next %q", text, next)
-	}
-	if err := s.newProjectSkillNotice("x"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref='skills:new-project:x'`).Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	if n != 1 {
-		t.Fatalf("a second notice was added: %d", n)
-	}
-}
-
-// seedCharterAttr sets one charter attribute on a node, as the owner's charter
-// edits do.
-func seedCharterAttr(t *testing.T, s *Store, node, attr, value string) {
-	t.Helper()
-	if _, err := s.db.Exec(`INSERT INTO graph_charter(node,attr,value,updated_at,updated_by) VALUES(?,?,?,0,'owner')`, node, attr, value); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// seedFillerArchive adds skills whose text is filler or generic agent-net
-// words. A real archive has many of these, and none of them is about a project.
-func seedFillerArchive(t *testing.T, s *Store) {
-	t.Helper()
-	seedArchiveSkill(t, s, "query-patterns", 1, 30, "Pick query patterns for data, json fields and none values.", "q")
-	seedArchiveSkill(t, s, "slos-and-triggers", 1, 30, "Set SLOs and alert triggers. Freeze deploys when the request budget is spent.", "s")
-	seedArchiveSkill(t, s, "typesafe-ai", 1, 30, "Typed model calls. Use live state and what the model still needs to hand back.", "t")
-	seedArchiveSkill(t, s, "reason-network", 1, 30, "Ask another agent through the network. Claude hands the work back.", "r")
-	seedArchiveSkill(t, s, "archify", 1, 2600, "Draw architecture diagrams of data, request and state flows.", "a")
-}
-
-func TestSkillSuggestIgnoresFillerAndGenericWords(t *testing.T) {
-	g := archiveGateway(t)
-	s := g.store
-	seedRepo(t, s, "voicemechs", "growing")
-	seedCharterAttr(t, s, "voicemechs", "purpose", "Voice-driven mech combat game: combat rules, mech units and campaign missions.")
-	seedFillerArchive(t, s)
-	seedArchiveSkill(t, s, "combat-balance", 1, 40, "Tune combat rules, mech units and campaign missions.", "c")
-	seedArchiveSkill(t, s, "honeycomb-traces", 1, 40, "Query Honeycomb traces for latency.", "h")
-	seedArchiveSkill(t, s, "ai-library", 1, 40, "Build LLM agents with the typed model library and tool calls.", "l")
-	seedArchiveSkill(t, s, "diagrams", 1, 40, "Draw system diagrams and sequence charts.", "d")
-	seedArchiveSkill(t, s, "deploy-freeze", 1, 40, "Run a deploy freeze when the release train is blocked.", "f")
-	if _, err := s.db.Exec(`INSERT INTO sessions(id,node_id,harness,native_id,repo_project,repo_description,last_seen,online)
-		VALUES('s_x','n','claude','x','voicemechs','Game for voice commanded mechs. Data, state, request and agent work here.',0,1)`); err != nil {
-		t.Fatal(err)
-	}
-	got, err := g.skillSuggest(protocol.SkillSuggestRequest{Level: "repo", Scope: "voicemechs", By: "cto"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got.Skills) != 1 || got.Skills[0].Name != "combat-balance" {
-		t.Fatalf("game repo suggested %+v, want only combat-balance", got.Skills)
-	}
-}
-
-func TestSkillSuggestSkipsWordsSharedByManySkills(t *testing.T) {
-	g := archiveGateway(t)
-	s := g.store
-	seedRepo(t, s, "alpha", "growing")
-	seedCharterAttr(t, s, "alpha", "purpose", "Combat rules with a tradeoffs section.")
-	for i := 1; i <= 5; i++ {
-		seedArchiveSkill(t, s, fmt.Sprintf("generic-%d", i), 1, 10, "Weigh the tradeoffs of a choice.", "g")
-	}
-	seedArchiveSkill(t, s, "combat-rules", 1, 10, "Write combat rules for a turn.", "c")
-	for i := 1; i <= 6; i++ {
-		seedArchiveSkill(t, s, fmt.Sprintf("other-%d", i), 1, 10, "Unrelated work on documents.", "o")
-	}
-	got, err := g.skillSuggest(protocol.SkillSuggestRequest{Level: "repo", Scope: "alpha", By: "cto"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got.Skills) != 1 || got.Skills[0].Name != "combat-rules" {
-		t.Fatalf("suggested %+v, want only combat-rules", got.Skills)
-	}
-}
-
-func TestSkillSuggestKeepsSkillWithDistinctiveWord(t *testing.T) {
-	g := archiveGateway(t)
-	s := g.store
-	seedRepo(t, s, "alpha", "growing")
-	seedCharterAttr(t, s, "alpha", "purpose", "Telemetry for the team runs in Honeycomb.")
-	seedArchiveSkill(t, s, "honeycomb-slos", 1, 40, "Set Honeycomb SLOs and triggers.", "h")
-	for i := 1; i <= 10; i++ {
-		seedArchiveSkill(t, s, fmt.Sprintf("other-%d", i), 1, 10, "Unrelated work on documents.", "o")
-	}
-	got, err := g.skillSuggest(protocol.SkillSuggestRequest{Level: "repo", Scope: "alpha", By: "cto"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got.Skills) != 1 || got.Skills[0].Name != "honeycomb-slos" || !strings.Contains(got.Skills[0].Reason, "honeycomb") {
-		t.Fatalf("suggested %+v, want honeycomb-slos for its one distinctive word", got.Skills)
-	}
-}
-
-func TestSkillSuggestReasonNamesOnlyRealWords(t *testing.T) {
-	g := archiveGateway(t)
-	s := g.store
-	seedRepo(t, s, "alpha", "growing")
-	seedCharterAttr(t, s, "alpha", "purpose", "Combat balance. Data, state, request, none, still, whether, needs, hand, live, agent, json.")
-	seedArchiveSkill(t, s, "combat-rules", 1, 10, "Write combat rules. Data, none, still and whether the hand needs json.", "c")
-	got, err := g.skillSuggest(protocol.SkillSuggestRequest{Level: "repo", Scope: "alpha", By: "cto"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got.Skills) != 1 {
-		t.Fatalf("suggested %+v", got.Skills)
-	}
-	if reason, want := got.Skills[0].Reason, "matches combat. Write combat rules"; reason != want {
-		t.Fatalf("reason %q, want %q", reason, want)
-	}
-}
-
-func TestSkillSuggestEmptyNoteIsOneLine(t *testing.T) {
-	g := archiveGateway(t)
-	s := g.store
-	seedRepo(t, s, "alpha", "growing")
-	seedCharterAttr(t, s, "alpha", "purpose", "Data, state and requests.")
-	seedFillerArchive(t, s)
-	got, err := g.skillSuggest(protocol.SkillSuggestRequest{Level: "repo", Scope: "alpha", By: "cto"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got.Skills) != 0 || got.Note == "" || strings.Contains(got.Note, "\n") {
-		t.Fatalf("empty suggestion: %+v", got)
-	}
-}
-
-// TestSkillSuggestMatchesOwnTextNotInheritedBoilerplate holds the agent-net
-// boilerplate that every node inherits (the global charter and the project bar)
-// in words that other skills use. Only the repo's own description may choose a
-// skill.
-func TestSkillSuggestMatchesOwnTextNotInheritedBoilerplate(t *testing.T) {
-	g := archiveGateway(t)
-	s := g.store
-	seedRepo(t, s, "voicemechs", "")
-	if _, err := s.db.Exec(`INSERT INTO charter_values(level,scope,attr,value,updated_at,updated_by)
-		VALUES('global','','purpose','Owner workers, deploys, never rules, test questions, idea notes and reports.',0,'owner')`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.db.Exec(`INSERT INTO project_bar_rules(project,n,text,source,created_at)
-		VALUES('voicemechs',1,'Never deploy without owner test. Send ideas and questions to the owner.','owner',0)`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.db.Exec(`INSERT INTO sessions(id,node_id,harness,native_id,repo_project,repo_description,last_seen,online)
-		VALUES('s_x','n','claude','x','voicemechs','Three.js browser game: vanilla TypeScript, Vite and imperative Three.js',0,1)`); err != nil {
-		t.Fatal(err)
-	}
-	seedFillerArchive(t, s)
-	seedArchiveSkill(t, s, "threejs-browser-games", 1, 40, "Build browser game scenes with Three.js, TypeScript and Vite.", "t")
-	seedArchiveSkill(t, s, "honeycomb-traces", 1, 40, "Query Honeycomb traces for latency.", "h")
-	seedArchiveSkill(t, s, "ai-library", 1, 40, "Build LLM agents with the typed model library and tool calls.", "l")
-	seedArchiveSkill(t, s, "diagrams", 1, 40, "Draw system diagrams and sequence charts.", "d")
-	seedArchiveSkill(t, s, "trading-research", 1, 40, "Research trading ideas and market state for the owner.", "r")
-	seedArchiveSkill(t, s, "owner-workers", 1, 40, "Route questions, notes and reports between owner and workers.", "o")
-	seedArchiveSkill(t, s, "deploy-freeze", 1, 40, "Freeze deploys when the release train never passes its test.", "f")
-	got, err := g.skillSuggest(protocol.SkillSuggestRequest{Level: "repo", Scope: "voicemechs", By: "cto"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got.Skills) != 1 || got.Skills[0].Name != "threejs-browser-games" {
-		t.Fatalf("voicemechs suggested %+v, want only threejs-browser-games", got.Skills)
-	}
-}
-
-// TestSkillSuggestIgnoresProcessWordsInOwnCharter gives the repo its own
-// process attributes (rules, refuses, escalate, maturity_note) in the words
-// every agent-net node carries. Only the purpose and the description say what
-// the repo is, so only those may pick a skill.
-func TestSkillSuggestIgnoresProcessWordsInOwnCharter(t *testing.T) {
-	g := archiveGateway(t)
-	s := g.store
-	seedRepo(t, s, "voicemechs", "")
-	seedCharterAttr(t, s, "voicemechs", "purpose", "Three.js browser game: vanilla TypeScript, Vite and imperative Three.js.")
-	seedCharterAttr(t, s, "voicemechs", "rules", "Never deploy without owner test. Send ideas and questions to the owner.")
-	seedCharterAttr(t, s, "voicemechs", "refuses", "Deploys during a freeze. Owner notes without a test.")
-	seedCharterAttr(t, s, "voicemechs", "escalate", "Owner idea requests and deploy questions.")
-	seedCharterAttr(t, s, "voicemechs", "maturity_note", "Never shipped: the owner has not tested it yet.")
-	if _, err := s.db.Exec(`INSERT INTO sessions(id,node_id,harness,native_id,repo_project,repo_description,last_seen,online)
-		VALUES('s_x','n','claude','x','voicemechs','Three.js browser game: vanilla TypeScript, Vite and imperative Three.js',0,1)`); err != nil {
-		t.Fatal(err)
-	}
-	seedFillerArchive(t, s)
-	seedArchiveSkill(t, s, "threejs-browser-games", 1, 40, "Build browser game scenes with Three.js, TypeScript and Vite.", "t")
-	seedArchiveSkill(t, s, "honeycomb-traces", 1, 40, "Query Honeycomb traces for latency.", "h")
-	seedArchiveSkill(t, s, "trading-research", 1, 40, "Research trading ideas and market state for the owner.", "r")
-	seedArchiveSkill(t, s, "owner-workers", 1, 40, "Route questions, notes and reports between owner and workers.", "o")
-	seedArchiveSkill(t, s, "deploy-freeze", 1, 40, "Freeze deploys when the release train never passes its test.", "f")
-	got, err := g.skillSuggest(protocol.SkillSuggestRequest{Level: "repo", Scope: "voicemechs", By: "cto"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got.Skills) != 1 || got.Skills[0].Name != "threejs-browser-games" {
-		t.Fatalf("voicemechs suggested %+v, want only threejs-browser-games", got.Skills)
-	}
-}
-
-// TestSkillSuggestMatchesDistinctiveWordInPurpose checks that a word from the
-// repo's purpose still picks a skill when that word is rare in the archive.
-func TestSkillSuggestMatchesDistinctiveWordInPurpose(t *testing.T) {
-	g := archiveGateway(t)
-	s := g.store
-	seedRepo(t, s, "ingest-forge", "")
-	seedCharterAttr(t, s, "ingest-forge", "purpose", "Ingest web pages and posts into the knowledge store.")
-	seedFillerArchive(t, s)
-	seedArchiveSkill(t, s, "process-inbox", 1, 40, "Process inbox items and ingest each one.", "p")
-	seedArchiveSkill(t, s, "honeycomb-traces", 1, 40, "Query Honeycomb traces for latency.", "h")
-	got, err := g.skillSuggest(protocol.SkillSuggestRequest{Level: "repo", Scope: "ingest-forge", By: "cto"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got.Skills) != 1 || got.Skills[0].Name != "process-inbox" {
-		t.Fatalf("ingest-forge suggested %+v, want only process-inbox", got.Skills)
+	if n != 0 {
+		t.Fatalf("skill items after adding a repo: %d", n)
 	}
 }

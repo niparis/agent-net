@@ -944,7 +944,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			nc.answer(h)
 			continue
 		}
-		if h.Type == "owner.ui.request" || h.Type == "machine.rotate" || h.Type == "machine.remove" || h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "tools.new_projects" || h.Type == "tools.toggle" || h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "tools.save_changed" || h.Type == "tools.update_plan" || h.Type == "tools.update_copies" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" || h.Type == "tools.summary" || h.Type == protocol.FrameSkillArchiveAdd || h.Type == protocol.FrameSkillArchiveBundled || h.Type == protocol.FrameSkillArchiveAddGit || h.Type == protocol.FrameSkillArchiveRemove || h.Type == protocol.FrameSkillArchiveList || h.Type == protocol.FrameSkillArchiveRead || h.Type == protocol.FrameSkillArchiveUndo || h.Type == protocol.FrameSkillArchiveIntake || h.Type == protocol.FrameSkillsSuggest || h.Type == protocol.FrameSkillsSet || h.Type == protocol.FrameSkillsEffective || h.Type == protocol.FrameSkillsUndo || h.Type == protocol.FrameSkillsFolder || h.Type == protocol.FrameSkillsVersion {
+		if h.Type == "owner.ui.request" || h.Type == "machine.rotate" || h.Type == "machine.remove" || h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "tools.new_projects" || h.Type == "tools.toggle" || h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "tools.save_changed" || h.Type == "tools.update_plan" || h.Type == "tools.update_copies" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" || h.Type == "tools.summary" || h.Type == protocol.FrameSkillArchiveAdd || h.Type == protocol.FrameSkillArchiveBundled || h.Type == protocol.FrameSkillArchiveAddGit || h.Type == protocol.FrameSkillArchiveRemove || h.Type == protocol.FrameSkillArchiveList || h.Type == protocol.FrameSkillArchiveRead || h.Type == protocol.FrameSkillArchiveUndo || h.Type == protocol.FrameSkillArchiveIntake || h.Type == protocol.FrameSkillsSet || h.Type == protocol.FrameSkillsEffective || h.Type == protocol.FrameSkillsUndo || h.Type == protocol.FrameSkillsFolder || h.Type == protocol.FrameSkillsVersion {
 			go g.answer(ctx, nc, h, raw)
 			continue
 		}
@@ -1758,15 +1758,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return g.skillArchiveIntakeMachines(ctx, p.By)
 
-	case protocol.FrameSkillsSuggest:
-		p, err := decodeOperator[protocol.SkillSuggestRequest](raw)
-		if err != nil {
-			return nil, err
-		}
-		if !validChangeActor(p.By) {
-			return nil, reject("owner authority required")
-		}
-		return g.skillSuggest(p)
 	case protocol.FrameSkillsSet:
 		p, err := decodeOperator[protocol.SkillSetRequest](raw)
 		if err != nil {

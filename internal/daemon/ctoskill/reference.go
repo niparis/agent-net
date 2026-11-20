@@ -124,7 +124,7 @@ func Reference() string {
 	w("## Per-project tools and skills\n\n")
 	w("`tools_change` actions: plan, apply, undo, toggle, native_remove, new_projects, import.\n\n")
 	w("Kinds: %s. Scope is `global` or one or more projects. A project skill tracked by the repository is part of the repo; an untracked project skill is a local copy. `mcp_change` covers shared MCP servers; `tools_change` covers a project's own tools and skills.\n\n", codeList(toolKinds()))
-	w("`skills` actions: suggest, set, effective, undo. It stores inherited skill lists on global, team, repo and agent nodes and makes no model call; nothing is delivered to sessions yet.\n\n")
+	w("`skills` actions: set, effective, undo. It stores inherited skill lists on global, team, repo and agent nodes; nothing is delivered to sessions yet. The CTO sets skills when the owner asks.\n\n")
 
 	w("## Notes\n\n")
 	w("Scopes: %s. Kinds an agent writes: %s. The owner rule kind is written only by the owner. Limits: %d notes per find, %d titles per scope in a session's start text, %d similar notes on a write, and a note is stale after %d days. Nothing is deleted by age. Write with `agent_note_write` and read with `agent_notes_find`.\n\n", codeList([]string{protocol.NoteScopeAgent, protocol.NoteScopeProject, protocol.NoteScopeOwner}), codeList([]string{protocol.StandingKindFeedback, protocol.StandingKindFact, protocol.StandingKindReference}), protocol.NotesFindMax, protocol.NotesIndexPerScope, protocol.NotesSimilarMax, protocol.NotesStaleDays)
