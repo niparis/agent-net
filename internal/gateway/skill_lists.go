@@ -808,63 +808,61 @@ func (s *Store) skillRestartOffer(level, scope string) protocol.SkillRestartOffe
 
 // --- suggest ---
 
-// skillContext is the text a suggestion matches skills against. It is read from
-// what the gateway already holds: the node's charter, the project bar drafted
-// from AGENTS.md, the session's own repo description, and an Agent's profile.
-func (s *Store) skillNodeContext(level, scope, repoCtx string) string {
+// skillNodeContext is the text a suggestion matches skills against. It holds
+// only what the node says it is: the purpose, a repo's description and name,
+// and an Agent's function and expertise. Process attributes (rules, refuses,
+// escalate, maturity and the like) are the same agent-net vocabulary on every
+// node, and inherited levels and the project's bar repeat it, so none of them
+// picks a skill.
+func (s *Store) skillNodeContext(level, scope, repoCtx string) (string, error) {
 	var parts []string
-	if c, err := s.EffectiveCharter(repoCtx, scopeOrEmpty(level, scope, "agent"), scopeOrEmpty(level, scope, "team")); err == nil {
-		parts = append(parts, c.Purpose, c.Maturity, c.MaturityNote, c.Accepts, c.Refuses, c.Rules, c.Escalate)
+	add := func(query string, args ...any) error {
+		rows, err := s.db.Query(query, args...)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var text string
+			if err := rows.Scan(&text); err != nil {
+				return err
+			}
+			parts = append(parts, text)
+		}
+		return rows.Err()
 	}
-	if level == "team" {
-		var purpose string
-		if err := s.db.QueryRow(`SELECT purpose FROM teams WHERE id=?`, scope).Scan(&purpose); err == nil {
-			parts = append(parts, purpose)
+	switch level {
+	case "global":
+		if err := add(`SELECT value FROM charter_values WHERE level='global' AND scope='' AND attr='purpose'`); err != nil {
+			return "", err
+		}
+	case "team":
+		if err := add(`SELECT value FROM charter_values WHERE level='team' AND scope=? AND attr='purpose'`, scope); err != nil {
+			return "", err
+		}
+		if err := add(`SELECT purpose FROM teams WHERE id=?`, scope); err != nil {
+			return "", err
+		}
+	case "agent":
+		if err := add(`SELECT value FROM agent_charter WHERE agent_id=? AND attr='purpose'`, scope); err != nil {
+			return "", err
+		}
+		if err := add(`SELECT COALESCE(p.function,'')||' '||COALESCE(p.expertise,'')
+			FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
+			WHERE s.agent_id=? ORDER BY s.last_seen DESC LIMIT 1`, scope); err != nil {
+			return "", err
 		}
 	}
 	if repoCtx != "" {
+		if err := add(`SELECT value FROM graph_charter WHERE node=? AND attr='purpose'`, repoCtx); err != nil {
+			return "", err
+		}
 		parts = append(parts, repoCtx)
-		var description string
-		if err := s.db.QueryRow(`SELECT repo_description FROM sessions WHERE repo_project=? AND repo_description<>'' ORDER BY last_seen DESC LIMIT 1`, repoCtx).Scan(&description); err == nil {
-			parts = append(parts, description)
-		}
-		if rules, err := s.BarRules(repoCtx); err == nil {
-			for _, rule := range rules {
-				parts = append(parts, rule.Text)
-			}
-		}
-		var remote, branch string
-		if err := s.db.QueryRow(`SELECT remote, default_branch FROM projects WHERE name=? LIMIT 1`, repoCtx).Scan(&remote, &branch); err == nil {
-			parts = append(parts, remote, branch)
-		}
-		rows, err := s.db.Query(`SELECT DISTINCT harness FROM sessions WHERE repo_project=? AND harness NOT IN ('owner','cto','bot')`, repoCtx)
-		if err == nil {
-			for rows.Next() {
-				var harness string
-				if rows.Scan(&harness) == nil {
-					parts = append(parts, harness)
-				}
-			}
-			rows.Close()
+		if err := add(`SELECT repo_description FROM sessions WHERE repo_project=? AND repo_description<>'' ORDER BY last_seen DESC LIMIT 1`, repoCtx); err != nil {
+			return "", err
 		}
 	}
-	if level == "agent" {
-		var name, function, task, expertise string
-		err := s.db.QueryRow(`SELECT COALESCE(p.name,''), COALESCE(p.function,''), COALESCE(p.task,''), COALESCE(p.expertise,'')
-			FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
-			WHERE s.agent_id=? ORDER BY s.last_seen DESC LIMIT 1`, scope).Scan(&name, &function, &task, &expertise)
-		if err == nil {
-			parts = append(parts, name, function, task, expertise)
-		}
-	}
-	return strings.Join(parts, "\n")
-}
-
-func scopeOrEmpty(level, scope, want string) string {
-	if level == want {
-		return scope
-	}
-	return ""
+	return strings.Join(parts, "\n"), nil
 }
 
 var skillWordSplit = regexp.MustCompile(`[^a-z0-9]+`)
@@ -873,7 +871,7 @@ var skillStopwords = func() map[string]bool {
 	out := map[string]bool{}
 	// The filler words are the ones a repo's own text uses without saying what
 	// it is. The last group is agent-net's own vocabulary, which every node's
-	// charter and sessions carry.
+	// purpose and sessions carry.
 	for _, word := range strings.Fields("this that with from your when then will have been does what into over under about they them their there here which where while should could would must only also just make made more most some such than the and for not are was were you our its his her has had how why who all any can may use used using none still whether needs need needed hand live data json request requests state like keep each other same very much well first last next before after between through during within without across every file files uses work works main agent agents node nodes session sessions claude codex harness charter maturity skill skills repo repos project projects") {
 		out[word] = true
 	}
@@ -944,7 +942,11 @@ func (g *Gateway) skillSuggest(req protocol.SkillSuggestRequest) (protocol.Skill
 			already[entry.Name] = true
 		}
 	}
-	contextWords := skillWords(g.store.skillNodeContext(level, scope, repoCtx))
+	nodeText, err := g.store.skillNodeContext(level, scope, repoCtx)
+	if err != nil {
+		return protocol.SkillSuggestion{}, err
+	}
+	contextWords := skillWords(nodeText)
 	// A word that many archive skills share says nothing about which one fits
 	// this node, so it never selects a skill. Each word that is left weighs more
 	// the fewer skills use it.
