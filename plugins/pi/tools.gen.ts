@@ -1295,7 +1295,7 @@ export const TOOL_CATALOG = [
         },
         "follow_up_at": {
           "type": "string",
-          "description": "RFC 3339 time or duration (45m). No reply by then: agent-net asks the chief. Not with to_set."
+          "description": "RFC 3339 time or duration (45m). No reply by then: agent-net asks the chief. Not with a group send."
         }
       },
       "required": [
