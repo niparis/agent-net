@@ -200,3 +200,70 @@ func TestRoutedAskClosedByChiefOrHolder(t *testing.T) {
 		}
 	})
 }
+
+// The chief may close or merge an open ask that a session holds, whoever routed
+// it there. A pipeline route leaves no chief send row, and the chief could not
+// settle such an ask, so it stayed open until the owner dismissed it. An ask the
+// owner holds stays the owner's.
+func TestChiefClosesAskHeldBySessionItDidNotRoute(t *testing.T) {
+	s, _, chief, asker, node := chiefRig(t)
+	holder, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "codex", NativeID: "nh", Name: "lead"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	routeToHolder := func(text string) string {
+		t.Helper()
+		id := chiefAskKind(t, s, asker, "approval", text)
+		if _, err := s.db.Exec(`UPDATE inbox_items SET next_who=? WHERE id=?`, holder, id); err != nil {
+			t.Fatal(err)
+		}
+		var sends int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM ask_sorts WHERE ask_id=? AND result=?`, id, protocol.AskSortSend).Scan(&sends); err != nil {
+			t.Fatal(err)
+		}
+		if sends != 0 || askNext(t, s, id) != holder {
+			t.Fatalf("setup: ask %s has %d send rows and next %q", id, sends, askNext(t, s, id))
+		}
+		return id
+	}
+
+	closeID := routeToHolder("Install the homelab build?")
+	if _, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{
+		Ask: closeID, Result: protocol.AskSortClose, Reason: "the lead decided it"}}); err != nil {
+		t.Fatalf("the chief closing a session-held ask it did not route: %v", err)
+	}
+	if status, answer, _ := askRow(t, s, `id=?`, closeID); status != "closed" || answer != "chief: the lead decided it" {
+		t.Fatalf("close: status %q answer %q", status, answer)
+	}
+
+	mergeID := routeToHolder("Install the homelab build too?")
+	mergeInto := chiefAskKind(t, s, asker, "approval", "Install the homelab builds?")
+	if _, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{
+		Ask: mergeID, Result: protocol.AskSortMerge, Into: mergeInto, Reason: "same install"}}); err != nil {
+		t.Fatalf("the chief merging a session-held ask it did not route: %v", err)
+	}
+	if status, _, _ := askRow(t, s, `id=?`, mergeID); status != "closed" {
+		t.Fatalf("merge: source status %q, want closed", status)
+	}
+
+	// The refusal tells the holder how to settle the ask.
+	stillOpen := routeToHolder("Approve the install?")
+	_, _, err = s.SortAsk(node, protocol.AskSortRequest{SessionID: asker, AskSortArgs: protocol.AskSortArgs{
+		Ask: stillOpen, Result: protocol.AskSortClose, Reason: "mine"}})
+	const settle = "To settle it, answer it, or ask the chief of staff to close it."
+	if err == nil || !strings.Contains(err.Error(), settle) {
+		t.Fatalf("a session that does not hold the ask closed it, or the refusal does not say how to settle it: %v", err)
+	}
+
+	owner := chiefAskKind(t, s, asker, "approval", "Pay for the install?")
+	if _, err := s.db.Exec(`UPDATE inbox_items SET next_who='owner' WHERE id=?`, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{
+		Ask: owner, Result: protocol.AskSortClose, Reason: "x"}}); err == nil {
+		t.Fatal("the chief closed an ask the owner holds")
+	}
+	if status, _, _ := askRow(t, s, `id=?`, owner); status != "open" {
+		t.Fatalf("the refused close changed the owner's ask to %q", status)
+	}
+}
