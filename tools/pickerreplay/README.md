@@ -24,8 +24,7 @@ Flags:
 
 ## What it reads
 
-The snapshot must hold `worker_runs`, `worker_assessments`, `worker_defects`,
-`worker_defect_auto`, `delivery_changes`, `delivery_evidence`, `worker_usage`,
+The snapshot must hold `worker_runs`, `worker_assessments`, `worker_defects` (with its `auto_kind` column), `delivery_changes`, `delivery_evidence`, `worker_usage`,
 `owner_settings`, `model_prices` and `pick_candidates`. The tool opens the file
 with `mode=ro` and `query_only`, and never calls a gateway `Store` method,
 because a store open migrates the file. A test hashes the file before and after

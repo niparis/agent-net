@@ -646,8 +646,8 @@ func (s *Store) RecordModelSuccess(nodeID, harness, model string) error {
 	if model == "" {
 		return nil
 	}
-	_, err := s.db.Exec(`INSERT INTO model_successes (node_id, harness, model, at) VALUES (?, ?, ?, ?)
-		ON CONFLICT (node_id, harness, model) DO UPDATE SET at = excluded.at`,
+	_, err := s.db.Exec(`INSERT INTO model_failures (node_id, harness, model, at, success_at) VALUES (?, ?, ?, 0, ?)
+		ON CONFLICT (node_id, harness, model) DO UPDATE SET success_at = excluded.success_at`,
 		nodeID, harness, model, s.now().UnixNano())
 	return err
 }
@@ -656,7 +656,7 @@ func (s *Store) RecordModelSuccess(nodeID, harness, model string) error {
 // worker successfully within protocol.ModelSuccessDays, and when each last
 // did.
 func (s *Store) SucceededModels(nodeID, harness string) (map[string]time.Time, error) {
-	rows, err := s.db.Query(`SELECT model, at FROM model_successes WHERE node_id = ? AND harness = ? AND at >= ?`,
+	rows, err := s.db.Query(`SELECT model, success_at FROM model_failures WHERE node_id = ? AND harness = ? AND success_at > 0 AND success_at >= ?`,
 		nodeID, harness, s.now().Add(-protocol.ModelSuccessDays*24*time.Hour).UnixNano())
 	if err != nil {
 		return nil, err
@@ -703,26 +703,23 @@ type authIndex struct {
 
 func (s *Store) modelAuthIndex(nodeID, harness string) (authIndex, error) {
 	idx := authIndex{harness: harness, failed: map[string]int64{}, succeeded: map[string]int64{}}
-	rows, err := s.db.Query(`SELECT model, auth_at, 0 FROM model_failures WHERE node_id=? AND harness=? AND auth_at>0
- UNION ALL SELECT model, at, 1 FROM model_successes WHERE node_id=? AND harness=?`, nodeID, harness, nodeID, harness)
+	rows, err := s.db.Query(`SELECT model, auth_at, success_at FROM model_failures WHERE node_id=? AND harness=? AND (auth_at>0 OR success_at>0)`, nodeID, harness)
 	if err != nil {
 		return idx, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var m string
-		var at int64
-		var success int
-		if err := rows.Scan(&m, &at, &success); err != nil {
+		var failedAt, succeededAt int64
+		if err := rows.Scan(&m, &failedAt, &succeededAt); err != nil {
 			return idx, err
 		}
 		provider := protocol.ProfileProvider(harness, m)
-		if success == 1 {
-			if at > idx.succeeded[provider] {
-				idx.succeeded[provider] = at
-			}
-		} else if at > idx.failed[provider] {
-			idx.failed[provider] = at
+		if succeededAt > idx.succeeded[provider] {
+			idx.succeeded[provider] = succeededAt
+		}
+		if failedAt > idx.failed[provider] {
+			idx.failed[provider] = failedAt
 		}
 	}
 	return idx, rows.Err()

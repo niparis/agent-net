@@ -8,11 +8,11 @@ import (
 )
 
 // learnedListTables are the tables OwnerLearned reads: the suggestions and their
-// details, phrase state and views, the history of a change (graph_history), the
+// views, the history of a change (graph_history), the
 // graph charter and the drafts. The drafts' own-value check (draftOwnValue) reads
 // the agent and team charters, and the drafts' names (draftName) read the agents
 // and the teams. Keep it equal to those queries (see readThrough).
-var learnedListTables = []string{"learned_suggestions", "learned_suggestion_details", "learned_phrase_state",
+var learnedListTables = []string{"learned_suggestions",
 	"learned_views", "graph_history", "graph_charter", "charter_drafts", "agent_charter", "charter_values", "teams", "agents"}
 
 // ownerLearnedRows is what the owner's list reads from the database: every
@@ -110,7 +110,7 @@ func (s *Store) MarkLearnedViewed(node string, id int64) error {
 		return reject("node and learned change required")
 	}
 	var historyID int64
-	if err := s.db.QueryRow(`SELECT d.history_id FROM learned_suggestions l JOIN learned_suggestion_details d ON d.suggestion_id=l.id JOIN graph_history h ON h.id=d.history_id WHERE l.id=? AND l.node=? AND l.status='applied' AND h.actor='learned'`, id, node).Scan(&historyID); err == sql.ErrNoRows {
+	if err := s.db.QueryRow(`SELECT l.history_id FROM learned_suggestions l JOIN graph_history h ON h.id=l.history_id WHERE l.id=? AND l.node=? AND l.status='applied' AND h.actor='learned'`, id, node).Scan(&historyID); err == sql.ErrNoRows {
 		return reject("unknown learned change")
 	} else if err != nil {
 		return err
@@ -195,10 +195,7 @@ func (s *Store) decideLearned(id int64, action, actor string) error {
 	if after == before {
 		after = 0
 	}
-	if _, err = tx.Exec(`INSERT INTO learned_suggestion_details(suggestion_id,history_id) VALUES(?,?) ON CONFLICT(suggestion_id) DO UPDATE SET history_id=excluded.history_id`, id, after); err != nil {
-		return err
-	}
-	if _, err = tx.Exec(`UPDATE learned_suggestions SET status='applied',decided_at=? WHERE id=?`, now, id); err != nil {
+	if _, err = tx.Exec(`UPDATE learned_suggestions SET status='applied',decided_at=?,history_id=? WHERE id=?`, now, after, id); err != nil {
 		return err
 	}
 	var settingsRevisionAfter int64

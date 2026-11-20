@@ -302,7 +302,7 @@ func (s *Snapshot) readEvidence(db *sql.DB) error {
 	// The defect agent-net records for a failed merger test step is skipped:
 	// the failed step is already counted, and one failure costs once.
 	rows, err = db.Query(`SELECT session_id,severity,at FROM worker_defects
-		WHERE moved_at = 0 AND id NOT IN (SELECT defect_id FROM worker_defect_auto WHERE kind = 'test')`)
+		WHERE moved_at = 0 AND auto_kind IS NOT 'test'`)
 	if err != nil {
 		return err
 	}

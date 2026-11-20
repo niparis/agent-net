@@ -1043,7 +1043,7 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 	if err = graphRecord(tx, typ, node, attr, value, old, actor, now); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(`UPDATE learned_suggestions SET status='undone',decided_at=? WHERE status='applied' AND id IN (SELECT suggestion_id FROM learned_suggestion_details WHERE history_id=?)`, now, id); err != nil {
+	if _, err = tx.Exec(`UPDATE learned_suggestions SET status='undone',decided_at=? WHERE status='applied' AND history_id=?`, now, id); err != nil {
 		return err
 	}
 	maturityChanged := typ == "charter" && attr == "maturity" && old != value

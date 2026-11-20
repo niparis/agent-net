@@ -17,7 +17,7 @@ type LearnedSuggestion = protocol.LearnedSuggestion
 // LearnedSuggestions returns pending and decided candidates, optionally limited
 // to pending candidates whose node has been quiet for two minutes.
 func (s *Store) LearnedSuggestions(readyOnly bool) ([]LearnedSuggestion, error) {
-	query := `SELECT id,node,field,edge_kind,kind,phrase,evidence,status,severity,created_at,ready_at,decided_at,COALESCE((SELECT origin FROM learned_suggestion_details d WHERE d.suggestion_id=learned_suggestions.id),''),COALESCE((SELECT history_id FROM learned_suggestion_details d WHERE d.suggestion_id=learned_suggestions.id),0),COALESCE((SELECT raw_phrase FROM learned_phrase_state p WHERE p.suggestion_id=learned_suggestions.id),'') FROM learned_suggestions`
+	query := `SELECT id,node,field,edge_kind,kind,phrase,evidence,status,severity,created_at,ready_at,decided_at,origin,history_id,COALESCE(raw_phrase,'') FROM learned_suggestions`
 	args := []any{}
 	query += ` WHERE 1=1`
 	if readyOnly {
@@ -25,7 +25,7 @@ func (s *Store) LearnedSuggestions(readyOnly bool) ([]LearnedSuggestion, error) 
 		args = append(args, s.now().UnixNano())
 	}
 	if s.phraseCleaner != nil {
-		query += ` AND NOT (status='pending' AND field IN ('accepts','rules') AND EXISTS(SELECT 1 FROM learned_suggestion_details d WHERE d.suggestion_id=learned_suggestions.id AND d.origin='owner') AND NOT EXISTS(SELECT 1 FROM learned_phrase_state p WHERE p.suggestion_id=learned_suggestions.id))`
+		query += ` AND NOT (status='pending' AND field IN ('accepts','rules') AND origin='owner' AND raw_phrase IS NULL)`
 	}
 	query += ` ORDER BY id`
 	rows, err := s.db.Query(query, args...)
@@ -105,7 +105,7 @@ func learnedAdd(tx *sql.Tx, at int64, node, field, edgeKind, phrase, severity, o
 		}
 	}
 	var rejected int
-	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM learned_suggestions l LEFT JOIN learned_phrase_state p ON p.suggestion_id=l.id WHERE l.node=? AND l.field=? AND (l.phrase=? COLLATE NOCASE OR p.raw_phrase=? COLLATE NOCASE) AND l.status='rejected')`, node, field, phrase, phrase).Scan(&rejected); err != nil {
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM learned_suggestions l WHERE l.node=? AND l.field=? AND (l.phrase=? COLLATE NOCASE OR l.raw_phrase=? COLLATE NOCASE) AND l.status='rejected')`, node, field, phrase, phrase).Scan(&rejected); err != nil {
 		return err
 	}
 	if rejected != 0 {
@@ -116,7 +116,7 @@ func learnedAdd(tx *sql.Tx, at int64, node, field, edgeKind, phrase, severity, o
 	// signal can propose it again.
 	if field != "edge" {
 		var previous, current string
-		err := tx.QueryRow(`SELECT l.phrase FROM learned_suggestions l LEFT JOIN learned_phrase_state p ON p.suggestion_id=l.id WHERE l.node=? AND l.field=? AND l.status='applied' AND (l.phrase=? COLLATE NOCASE OR p.raw_phrase=? COLLATE NOCASE) ORDER BY l.id DESC LIMIT 1`, node, field, phrase, phrase).Scan(&previous)
+		err := tx.QueryRow(`SELECT l.phrase FROM learned_suggestions l WHERE l.node=? AND l.field=? AND l.status='applied' AND (l.phrase=? COLLATE NOCASE OR l.raw_phrase=? COLLATE NOCASE) ORDER BY l.id DESC LIMIT 1`, node, field, phrase, phrase).Scan(&previous)
 		if err != nil && err != sql.ErrNoRows {
 			return err
 		}
@@ -134,7 +134,7 @@ func learnedAdd(tx *sql.Tx, at int64, node, field, edgeKind, phrase, severity, o
 	}
 	var existing string
 	var id int64
-	err := tx.QueryRow(`SELECT l.id,l.evidence FROM learned_suggestions l LEFT JOIN learned_phrase_state p ON p.suggestion_id=l.id WHERE l.node=? AND l.field=? AND l.edge_kind=? AND l.kind='add' AND (l.phrase=? COLLATE NOCASE OR p.raw_phrase=? COLLATE NOCASE) AND l.status='pending' ORDER BY l.id LIMIT 1`, node, field, edgeKind, phrase, phrase).Scan(&id, &existing)
+	err := tx.QueryRow(`SELECT l.id,l.evidence FROM learned_suggestions l WHERE l.node=? AND l.field=? AND l.edge_kind=? AND l.kind='add' AND (l.phrase=? COLLATE NOCASE OR l.raw_phrase=? COLLATE NOCASE) AND l.status='pending' ORDER BY l.id LIMIT 1`, node, field, edgeKind, phrase, phrase).Scan(&id, &existing)
 	if err != nil && err != sql.ErrNoRows {
 		return err
 	}
@@ -172,15 +172,7 @@ func learnedAdd(tx *sql.Tx, at int64, node, field, edgeKind, phrase, severity, o
 	if maturity == "critical" || strings.HasPrefix(maturity, "critical - ") {
 		severity = "major"
 	}
-	res, err := tx.Exec(`INSERT INTO learned_suggestions(node,field,edge_kind,kind,phrase,evidence,status,severity,created_at,ready_at) VALUES(?,?,?,'add',?,?,'pending',?,?,?)`, node, field, edgeKind, phrase, string(data), severity, at, at+int64(2*time.Minute))
-	if err != nil {
-		return err
-	}
-	id, err = res.LastInsertId()
-	if err != nil {
-		return err
-	}
-	_, err = tx.Exec(`INSERT INTO learned_suggestion_details(suggestion_id,origin) VALUES(?,?)`, id, origin)
+	_, err = tx.Exec(`INSERT INTO learned_suggestions(node,field,edge_kind,kind,phrase,evidence,status,severity,created_at,ready_at,origin) VALUES(?,?,?,'add',?,?,'pending',?,?,?,?)`, node, field, edgeKind, phrase, string(data), severity, at, at+int64(2*time.Minute), origin)
 	return err
 }
 

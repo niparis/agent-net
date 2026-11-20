@@ -1720,9 +1720,7 @@ func (s *Store) askFullLearned(ref string) (*protocol.LearnedSuggestion, error) 
 	var v protocol.LearnedSuggestion
 	var evidence string
 	err = s.db.QueryRow(`SELECT id,node,field,edge_kind,kind,phrase,evidence,status,severity,created_at,ready_at,decided_at,
-		COALESCE((SELECT origin FROM learned_suggestion_details d WHERE d.suggestion_id=learned_suggestions.id),''),
-		COALESCE((SELECT history_id FROM learned_suggestion_details d WHERE d.suggestion_id=learned_suggestions.id),0),
-		COALESCE((SELECT raw_phrase FROM learned_phrase_state p WHERE p.suggestion_id=learned_suggestions.id),'')
+		origin,history_id,COALESCE(raw_phrase,'')
 		FROM learned_suggestions WHERE id=?`, id).
 		Scan(&v.ID, &v.Node, &v.Field, &v.EdgeKind, &v.Kind, &v.Phrase, &evidence, &v.Status, &v.Severity, &v.CreatedAt, &v.ReadyAt, &v.DecidedAt, &v.Origin, &v.HistoryID, &v.RawPhrase)
 	if errors.Is(err, sql.ErrNoRows) {

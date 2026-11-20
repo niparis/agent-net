@@ -168,7 +168,7 @@ func TestTUILearnedLiteCutsBytes(t *testing.T) {
 			t.Fatal(err)
 		}
 		id, _ := res.LastInsertId()
-		if _, err := r.s.db.Exec(`INSERT INTO learned_suggestion_details(suggestion_id,origin,history_id) VALUES(?,?,?)`, id, origin, history); err != nil {
+		if _, err := r.s.db.Exec(`UPDATE learned_suggestions SET origin=?, history_id=? WHERE id=?`, origin, history, id); err != nil {
 			t.Fatal(err)
 		}
 	}

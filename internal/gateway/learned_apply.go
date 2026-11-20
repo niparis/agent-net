@@ -76,9 +76,9 @@ func (s *Store) ProcessLearnedContext(ctx context.Context) error {
 	}
 
 	now := s.now().UnixNano()
-	query := `SELECT l.id,l.node,l.field,l.edge_kind,l.kind,l.phrase,l.severity,COALESCE(d.origin,''),COALESCE(p.raw_phrase,l.phrase) FROM learned_suggestions l LEFT JOIN learned_suggestion_details d ON d.suggestion_id=l.id LEFT JOIN learned_phrase_state p ON p.suggestion_id=l.id WHERE l.status='pending' AND l.ready_at<=?`
+	query := `SELECT l.id,l.node,l.field,l.edge_kind,l.kind,l.phrase,l.severity,l.origin,COALESCE(l.raw_phrase,l.phrase) FROM learned_suggestions l WHERE l.status='pending' AND l.ready_at<=?`
 	if s.phraseCleaner != nil {
-		query += ` AND NOT (COALESCE(d.origin,'')='owner' AND l.field IN ('accepts','rules') AND p.suggestion_id IS NULL)`
+		query += ` AND NOT (l.origin='owner' AND l.field IN ('accepts','rules') AND l.raw_phrase IS NULL)`
 	}
 	rows, err := tx.Query(query+` ORDER BY l.id`, now)
 	if err != nil {
@@ -203,10 +203,7 @@ func (s *Store) ProcessLearnedContext(ctx context.Context) error {
 		if before == after {
 			after = 0
 		}
-		if _, err = tx.Exec(`INSERT INTO learned_suggestion_details(suggestion_id,history_id) VALUES(?,?) ON CONFLICT(suggestion_id) DO UPDATE SET history_id=excluded.history_id`, v.ID, after); err != nil {
-			return err
-		}
-		if _, err = tx.Exec(`UPDATE learned_suggestions SET status='applied',severity='minor',decided_at=? WHERE id=?`, now, v.ID); err != nil {
+		if _, err = tx.Exec(`UPDATE learned_suggestions SET status='applied',severity='minor',decided_at=?,history_id=? WHERE id=?`, now, after, v.ID); err != nil {
 			return err
 		}
 	}

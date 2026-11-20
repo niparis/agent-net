@@ -97,7 +97,7 @@ func richReadStore(t *testing.T) *Store {
 	if err := s.db.QueryRow(`SELECT COALESCE(MAX(id),0) FROM graph_history`).Scan(&hist); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`UPDATE learned_suggestion_details SET history_id=? WHERE suggestion_id=?`, hist, id); err != nil {
+	if _, err := s.db.Exec(`UPDATE learned_suggestions SET history_id=? WHERE id=?`, hist, id); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.db.Exec(`INSERT INTO learned_views(node,last_seen_id) VALUES('cogforge',?)`, id); err != nil {

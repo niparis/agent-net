@@ -181,8 +181,8 @@ func TestMoveDefectRefusesAutomaticDefect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO worker_defect_auto (defect_id, change_id, kind, revision, at) VALUES (?,?,?,?,?)`,
-		id, "ch_auto", "test", 1, s.now().Unix()); err != nil {
+	if _, err := s.db.Exec(`UPDATE worker_defects SET auto_change_id=?, auto_kind=?, auto_revision=? WHERE id=?`,
+		"ch_auto", "test", 1, id); err != nil {
 		t.Fatal(err)
 	}
 

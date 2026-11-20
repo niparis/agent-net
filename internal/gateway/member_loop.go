@@ -117,12 +117,22 @@ func memberBlockedSince(a protocol.AgentView) (since int64, text string, waiting
 // recordMemberTold remembers which waits a sent tick listed.
 func (s *Store) recordMemberTold(q askDB, told []memberTold) error {
 	for _, t := range told {
-		if _, err := q.Exec(`INSERT INTO member_blocked_ticks(session_id,text_hash) VALUES(?,?)
-			ON CONFLICT(session_id) DO UPDATE SET text_hash=excluded.text_hash`, t.session, t.key); err != nil {
+		if _, err := q.Exec(`INSERT INTO member_blocked_notices(session_id,text_hash,at,tick_hash) VALUES(?,'',0,?)
+			ON CONFLICT(session_id) DO UPDATE SET tick_hash=excluded.tick_hash`, t.session, t.key); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// clearMemberTick forgets the wait the last tick listed. The row stays while
+// the blocked-member notice still names a text, and goes when it does not.
+func clearMemberTick(q askDB, session string) error {
+	if _, err := q.Exec(`UPDATE member_blocked_notices SET tick_hash='' WHERE session_id=? AND tick_hash<>''`, session); err != nil {
+		return err
+	}
+	_, err := q.Exec(`DELETE FROM member_blocked_notices WHERE session_id=? AND text_hash='' AND tick_hash=''`, session)
+	return err
 }
 
 // loopMembers builds the Members part for one lead's tick: the members that
@@ -153,7 +163,7 @@ func (s *Store) loopMembers(lead protocol.AgentView, agents []protocol.AgentView
 		}
 		since, text, waiting, ok := memberBlockedSince(a)
 		if !ok {
-			if _, err := s.db.Exec(`DELETE FROM member_blocked_ticks WHERE session_id=?`, a.SessionID); err != nil {
+			if err := clearMemberTick(s.db, a.SessionID); err != nil {
 				return r, err
 			}
 			continue
@@ -162,7 +172,7 @@ func (s *Store) loopMembers(lead protocol.AgentView, agents []protocol.AgentView
 		// (decision 0126). A changed text is new.
 		key := blockedKey(text, waiting)
 		var listed string
-		if err := s.db.QueryRow(`SELECT text_hash FROM member_blocked_ticks WHERE session_id=?`, a.SessionID).Scan(&listed); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		if err := s.db.QueryRow(`SELECT tick_hash FROM member_blocked_notices WHERE session_id=?`, a.SessionID).Scan(&listed); err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return r, err
 		}
 		if listed == key {

@@ -204,9 +204,7 @@ func (s *Store) blockedMemberNotice(p protocol.ProfileAnnounce) (*protocol.Messa
 	}
 	text, blocked := blockedReading(task, p.Waiting)
 	if !blocked {
-		if _, err := s.db.Exec(`DELETE FROM member_blocked_ticks WHERE session_id=?`, p.SessionID); err != nil {
-			return nil, err
-		}
+		// One row holds the notice and the tick, so this forgets both.
 		_, err := s.db.Exec(`DELETE FROM member_blocked_notices WHERE session_id=?`, p.SessionID)
 		return nil, err
 	}
