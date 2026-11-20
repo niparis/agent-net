@@ -88,7 +88,29 @@ func newParityRig(t *testing.T) *parityRig {
 	if _, err := r.md.Call(ctx, "send", map[string]any{"to": r.peerID, "body": "from me", "type": "request", "idempotency_key": "k_me"}); err != nil {
 		t.Fatal(err)
 	}
+	r.waitSettled(t)
 	return r
+}
+
+// waitSettled waits until delivery has finished for every seeded message. The
+// fake "me" plugin never confirms a push, so those messages go dispatched and
+// then failed after the ack timeout. A read taken before that would compare
+// two moments of the same message, not two paths.
+func (r *parityRig) waitSettled(t *testing.T) {
+	t.Helper()
+	eventually(t, "every seeded message is settled", func() bool {
+		items, _ := r.mcpPath(t, "agent_messages_find", map[string]any{"limit": 100})["items"].([]any)
+		if len(items) != 5 {
+			return false
+		}
+		for _, it := range items {
+			switch it.(map[string]any)["state"] {
+			case protocol.StateStored, protocol.StateDispatched:
+				return false
+			}
+		}
+		return true
+	})
 }
 
 func (r *parityRig) send(t *testing.T, from *localClient, to, body string) {
