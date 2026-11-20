@@ -354,7 +354,7 @@ func TestDeliveryCutoverIsIdempotentAndKeepsExistingValues(t *testing.T) {
 func TestDeliveryProfileProjectMatchesChartedMergeRule(t *testing.T) {
 	s, _ := newTestStore(t)
 	ids, _ := graphSessions(t, s, "repo")
-	if _, err := s.db.Exec(`INSERT INTO graph_nodes(name,kind,created_at) VALUES('repo','component',1); UPDATE sessions SET repo_project='',repo_root='' WHERE id=?; INSERT INTO profiles(session_id,project,updated_at) VALUES(?,'repo',1)`, ids["repo"], ids["repo"]); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO charter_values(level,scope,attr,value,updated_at,updated_by) VALUES('repo','repo','purpose','a node kept by its charter',1,'owner'); UPDATE sessions SET repo_project='',repo_root='' WHERE id=?; INSERT INTO profiles(session_id,project,updated_at) VALUES(?,'repo',1)`, ids["repo"], ids["repo"]); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SetNodeSetting("repo", protocol.SettingMergeAuthority, protocol.MergeAsk, "owner"); err != nil {

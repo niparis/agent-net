@@ -22,7 +22,7 @@ func setAutonomy(t *testing.T, s *Store, session, value string) {
 		t.Fatal(err)
 	}
 	// A turn may clear the session's repo fields; keep the test's node charted.
-	if _, err := s.db.Exec(`INSERT OR IGNORE INTO graph_nodes(name,kind,created_at) VALUES('proj','component',?)`, s.now().UnixNano()); err != nil {
+	if _, err := s.db.Exec(`INSERT OR IGNORE INTO charter_values(level,scope,attr,value,updated_at,updated_by) VALUES('repo','proj','purpose','a node kept by its charter',?,'owner')`, s.now().UnixNano()); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SetNodeSetting("proj", protocol.SettingAutonomy, value, "owner"); err != nil {

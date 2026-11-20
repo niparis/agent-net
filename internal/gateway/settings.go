@@ -626,7 +626,7 @@ func (s *Store) writeSettingsTx(tx *sql.Tx, changes []SettingsChange, actor, rea
 		for repo := range before.Maturity {
 			repos[repo] = true
 		}
-		rows, e := tx.Query(`SELECT name FROM graph_nodes WHERE kind='component'
+		rows, e := tx.Query(`SELECT scope FROM charter_values WHERE level='repo' AND scope NOT IN (SELECT id FROM agents WHERE role='architect' AND tombstone=0)
  UNION SELECT name FROM projects WHERE graph_excluded<>1 AND name<>''
  UNION SELECT repo_project FROM sessions WHERE archived_at=0 AND graph_excluded<>1 AND repo_project<>''`)
 		if e != nil {

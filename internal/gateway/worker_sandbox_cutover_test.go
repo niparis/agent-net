@@ -378,6 +378,9 @@ func TestWorkerSandboxCutoverPreservesExactMachineProjectFallback(t *testing.T) 
 	if err = migrateOldFixture(t, s); err != nil {
 		t.Fatal(err)
 	}
+	// The charter existed for the old lookup only. A repo with a charter is a
+	// node now, and a node named SHOP would make the name ambiguous.
+	mustExec(t, s, `DELETE FROM charter_values WHERE level='repo' AND scope='SHOP'`)
 	got, err := s.WorkerPermissions(b, "SHOP")
 	if err != nil || got != protocol.WorkersNoNetwork {
 		t.Fatalf("machine with exact-name fallback became %q: %v", got, err)
@@ -407,6 +410,7 @@ func TestWorkerSandboxCutoverPreservesMultipleOldNamesOnMachine(t *testing.T) {
 	if err = migrateOldFixture(t, s); err != nil {
 		t.Fatal(err)
 	}
+	mustExec(t, s, `DELETE FROM charter_values WHERE level='repo' AND scope='SHOP'`)
 	for _, project := range []string{"shop", "SHOP"} {
 		got, err := s.WorkerPermissions(id, project)
 		if err != nil || got != protocol.WorkersNoNetwork {

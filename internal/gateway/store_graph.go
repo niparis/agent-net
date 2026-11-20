@@ -30,16 +30,19 @@ func graphKind(tx *sql.Tx, name string) (string, error) {
 	if name == protocol.CTONodeName {
 		return "cto", nil
 	}
-	var kind string
-	err := tx.QueryRow(`SELECT kind FROM graph_nodes WHERE name=?`, name).Scan(&kind)
-	if err == nil {
-		return kind, nil
-	}
-	if err != sql.ErrNoRows {
+	architect, err := isArchitect(tx, name)
+	if err != nil {
 		return "", err
 	}
+	if architect {
+		return "architect", nil
+	}
+	// A repo with a charter value or an edge is a node even with no folder or
+	// session (it was an explicit row of graph_nodes).
 	var exists int
-	err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM projects WHERE name=? UNION ALL SELECT 1 FROM sessions WHERE repo_project=?)`, name, name).Scan(&exists)
+	err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM projects WHERE name=? UNION ALL SELECT 1 FROM sessions WHERE repo_project=?
+ UNION ALL SELECT 1 FROM charter_values WHERE level='repo' AND scope=?
+ UNION ALL SELECT 1 FROM graph_edges WHERE (source=? OR target=?) AND kind<>'reports_to')`, name, name, name, name, name).Scan(&exists)
 	if err != nil {
 		return "", err
 	}
@@ -72,8 +75,8 @@ func graphRecord(tx *sql.Tx, typ, node, attr, old, value, actor string, at int64
 		targetKind = "agent"
 	} else if typ == "charter" {
 		targetKind = "repo"
-		var architect bool
-		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM graph_nodes WHERE name=? AND kind='architect')`, node).Scan(&architect); err != nil {
+		architect, err := isArchitect(tx, node)
+		if err != nil {
 			return err
 		}
 		typed, err := graphRefGateOn(tx)
@@ -107,7 +110,7 @@ func (s *Store) AddArchitect(name, actor string, validate ...bool) error {
 		return err
 	}
 	now := s.now().UnixNano()
-	if _, err = tx.Exec(`INSERT INTO graph_nodes VALUES(?,?,?)`, name, "architect", now); err != nil {
+	if err = putArchitectTx(tx, name, now); err != nil {
 		return err
 	}
 	if err = graphRecord(tx, "node", name, "", "", "architect", actor, now); err != nil {
@@ -178,7 +181,7 @@ func (s *Store) RemoveArchitect(name, actor string, validate ...bool) error {
 	if err != nil {
 		return err
 	}
-	// The delete trigger clears this Agent's Repo ownership. Keep the Repos it
+	// Dropping the architect clears this Agent's Repo ownership. Keep the Repos it
 	// owned, so their Agents follow the new owner rule.
 	repoRows, err := tx.Query(`SELECT id FROM repos WHERE owner_agent_id=? ORDER BY id`, name)
 	if err != nil {
@@ -198,7 +201,7 @@ func (s *Store) RemoveArchitect(name, actor string, validate ...bool) error {
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec(`DELETE FROM graph_nodes WHERE name=?`, name); err != nil {
+	if err = dropArchitectTx(tx, name, s.now().UnixNano()); err != nil {
 		return err
 	}
 	for _, repo := range ownedRepos {
@@ -242,8 +245,8 @@ func (s *Store) setCharter(node, attr, value, actor string) error {
 	if on, err := s.graphRefsEnabled(); err != nil {
 		return err
 	} else if on {
-		var architect bool
-		if err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM graph_nodes WHERE name=? AND kind='architect')`, node).Scan(&architect); err != nil {
+		architect, err := isArchitect(s.db, node)
+		if err != nil {
 			return err
 		}
 		if architect {
@@ -281,20 +284,16 @@ func (s *Store) setCharter(node, attr, value, actor string) error {
 }
 
 func setCharterTx(tx *sql.Tx, node, attr, value, actor string, now int64) error {
-	return setCharterKindTx(tx, node, attr, value, actor, now, false)
+	return setCharterKindTx(tx, node, attr, value, actor, now)
 }
 
-func setCharterKindTx(tx *sql.Tx, node, attr, value, actor string, now int64, repo bool) error {
+func setCharterKindTx(tx *sql.Tx, node, attr, value, actor string, now int64) error {
 	value, err := protocol.CleanCharterValue(attr, value)
 	if err != nil {
 		return reject("%v", err)
 	}
-	kind, err := graphKind(tx, node)
-	if err != nil {
+	if _, err = graphKind(tx, node); err != nil {
 		return err
-	}
-	if repo {
-		kind = "component"
 	}
 	old, err := charterValueTx(tx, "repo", node, attr)
 	if err != nil && err != sql.ErrNoRows {
@@ -302,9 +301,6 @@ func setCharterKindTx(tx *sql.Tx, node, attr, value, actor string, now int64, re
 	}
 	if old == value {
 		return nil
-	}
-	if _, err = tx.Exec(`INSERT OR IGNORE INTO graph_nodes VALUES(?,?,?)`, node, kind, now); err != nil {
-		return err
 	}
 	if err = putCharterValueTx(tx, "repo", node, attr, value, actor, now); err != nil {
 		return err
@@ -455,8 +451,8 @@ func (s *Store) CharterHistory(node string, limit int) ([]protocol.CharterChange
 	if on, err := s.graphRefsEnabled(); err != nil {
 		return nil, err
 	} else if on {
-		var architect bool
-		if err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM graph_nodes WHERE name=? AND kind='architect')`, node).Scan(&architect); err != nil {
+		architect, err := isArchitect(s.db, node)
+		if err != nil {
 			return nil, err
 		}
 		if architect {
@@ -972,10 +968,13 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 			_, err = tx.Exec(`INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES(?,?,?,?,?) ON CONFLICT(source,target,kind) DO UPDATE SET mode=excluded.mode,rule=excluded.rule`, e.From, e.To, e.Kind, e.Mode, e.Rule)
 		}
 	case "node":
-		var kind string
-		err = tx.QueryRow(`SELECT kind FROM graph_nodes WHERE name=?`, node).Scan(&kind)
-		if err != nil && err != sql.ErrNoRows {
-			return err
+		architect, e := isArchitect(tx, node)
+		if e != nil {
+			return e
+		}
+		kind := ""
+		if architect {
+			kind = "architect"
 		}
 		if kind != value {
 			return reject("node changed since that history entry")
@@ -988,14 +987,17 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 			if n != 0 {
 				return reject("node has edges or charter")
 			}
-			_, err = tx.Exec(`DELETE FROM graph_nodes WHERE name=?`, node)
+			err = dropArchitectTx(tx, node, now)
 		} else {
 			if _, e := graphKind(tx, node); e == nil {
 				return reject("node already exists")
 			} else if _, ok := e.(Rejection); !ok {
 				return e
 			}
-			_, err = tx.Exec(`INSERT INTO graph_nodes VALUES(?,?,?)`, node, old, now)
+			if old != "architect" {
+				return reject("unknown node kind %q", old)
+			}
+			err = putArchitectTx(tx, node, now)
 		}
 	default:
 		return reject("unknown history type %s", typ)
@@ -1359,8 +1361,8 @@ func (s *Store) RemoveEdge(e protocol.Edge, actor string, validate ...bool) erro
 // four columns of sessions, and no other: an upsert of a session rewrites its
 // status and last_seen, which the graph does not show, so only a change of these
 // four moves the graph. Keep it equal to the query there (see readThrough).
-var graphNodesTables = []string{"graph_nodes", "projects", "sessions.repo_project", "sessions.repo_root",
-	"sessions.archived_at", "sessions.graph_excluded", "graph_edges"}
+var graphNodesTables = []string{"agents.id", "agents.role", "agents.tombstone", "agents.created_at", "repos.created_at", "charter_values",
+	"projects", "sessions.repo_project", "sessions.repo_root", "sessions.archived_at", "sessions.graph_excluded", "graph_edges"}
 
 // graphTables are the tables graphWith reads, through every function it calls:
 // the nodes, the charters and their levels (charterTables), the settings
@@ -1393,11 +1395,15 @@ func (s *Store) Graph() (protocol.Graph, error) {
 // graphNodes lists the explicit and implicit nodes, ordered by name, without
 // their charters and edges.
 func (s *Store) graphNodes() ([]protocol.Node, error) {
-	rows, err := s.db.Query(`SELECT name,kind,created_at,1,'',2 FROM graph_nodes
- UNION ALL SELECT name,'component',0,0,path,graph_excluded FROM projects WHERE graph_excluded<>1 AND name NOT IN (SELECT name FROM graph_nodes)
- UNION ALL SELECT repo_project,'component',0,0,repo_root,graph_excluded FROM sessions WHERE archived_at=0 AND graph_excluded<>1 AND repo_project<>'' AND repo_project NOT IN (SELECT name FROM graph_nodes)
- UNION ALL SELECT source,'component',0,1,'',2 FROM graph_edges WHERE kind<>'reports_to' AND source<>'*' AND source NOT LIKE '/delivery/%' AND source NOT IN (SELECT name FROM graph_nodes)
- UNION ALL SELECT target,'component',0,1,'',2 FROM graph_edges WHERE kind<>'reports_to' AND target NOT IN (SELECT name FROM graph_nodes) ORDER BY 1`)
+	// A name can come from several branches. The loop keeps the first row of a
+	// name, and the last column puts the explicit rows first. Sessions are the
+	// long branch, so it leaves out the repos with a charter in SQL. The small
+	// branches (projects, edges) send their rows and the loop drops the repeats.
+	rows, err := s.db.Query(`SELECT name,kind,created_at,1,'',2,rank FROM (` + explicitNodesSQL + `)
+ UNION ALL SELECT name,'component',0,0,path,graph_excluded,2 FROM projects WHERE graph_excluded<>1
+ UNION ALL SELECT DISTINCT repo_project,'component',0,0,repo_root,graph_excluded,2 FROM sessions WHERE archived_at=0 AND graph_excluded<>1 AND repo_project<>'' AND repo_project NOT IN (` + chartedSQL + `)
+ UNION ALL SELECT source,'component',0,1,'',2,2 FROM graph_edges WHERE kind<>'reports_to' AND source<>'*' AND source NOT LIKE '/delivery/%'
+ UNION ALL SELECT target,'component',0,1,'',2,2 FROM graph_edges WHERE kind<>'reports_to' ORDER BY 1,7`)
 	if err != nil {
 		return nil, err
 	}
@@ -1406,8 +1412,8 @@ func (s *Store) graphNodes() ([]protocol.Node, error) {
 	for rows.Next() {
 		var n protocol.Node
 		var root string
-		var explicit, checked int
-		if err = rows.Scan(&n.Name, &n.Kind, &n.CreatedAt, &explicit, &root, &checked); err != nil {
+		var explicit, checked, rank int
+		if err = rows.Scan(&n.Name, &n.Kind, &n.CreatedAt, &explicit, &root, &checked, &rank); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -1441,7 +1447,7 @@ func (s *Store) graphWith(snapshot *settings.Snapshot) (protocol.Graph, error) {
 	if on, err := s.graphRefsEnabled(); err != nil {
 		return g, err
 	} else if on {
-		charterQuery = `SELECT scope,attr,value FROM charter_values WHERE level='repo' AND scope NOT IN (SELECT name FROM graph_nodes WHERE kind='architect') UNION ALL SELECT a.scope,a.attr,a.value FROM charter_values a JOIN graph_nodes n ON n.name=a.scope AND n.kind='architect' WHERE a.level='agent'`
+		charterQuery = `SELECT scope,attr,value FROM charter_values WHERE level='repo' AND scope NOT IN (SELECT id FROM agents WHERE role='architect' AND tombstone=0) UNION ALL SELECT a.scope,a.attr,a.value FROM charter_values a JOIN agents n ON n.id=a.scope AND n.role='architect' AND n.tombstone=0 WHERE a.level='agent'`
 	}
 	rows, err := s.db.Query(charterQuery)
 	if err != nil {
