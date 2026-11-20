@@ -97,7 +97,7 @@ In the same change: the readers above, `graphNodesTables`, and the tests.
 
 ## Risks
 
-**Shipped steps call live helpers on old stores.** `workerProjectNamesTx` runs inside `cutoverWorkerSandboxTx` (`store_policy.go:53`, `:141`), and seed steps reach `graphKind` through `setCharterTx`. On a store that is upgrading from an old version, these run before the fold, when `graph_nodes` holds the real data and `charter_values` has no repo level yet.
+**Shipped steps call live helpers on old stores.** `workerProjectNamesTx` is called from `store_policy.go:53` and `:141` and from `worker_sandbox_settings.go:88`, on the path of the worker sandbox cutover step that `migrate` runs. It is the one confirmed case. `project_identity_migration.go` also reads the table, but it is a migration itself. The CTO charter seed step does not touch `graph_nodes`. Before building, trace the other helpers that `migrate` calls (`seedNodeScopesTx`, the four `cutover...Tx` steps, `flushOwnerAsksOnceTx`, `buildOrgTreeOnceTx`, `repairOrgTreeTx`, `dropLeadSessionCopiesTx`) for a call to `graphKind`. On a store that is upgrading from an old version, such a helper runs before the fold, when `graph_nodes` holds the real data and `charter_values` has no repo level yet.
 
 Part 3 answers this with a schema probe (`repoSchemaOf`, `org_read.go:38`): helpers ask which layout the store has. Part 4 answers a different half with `ensureOldCharterTablesTx`: before a replay, the old tables are made again so old SQL text still runs.
 
