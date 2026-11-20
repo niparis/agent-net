@@ -335,7 +335,7 @@ func TestBotNodeCannotBeChosenAsASessionAgent(t *testing.T) {
 		}
 	}
 	session, _ := graphSessions(t, s, "other")
-	err = s.setSessionAgent(node, protocol.SessionAgentSetRequest{Owner: owner, SessionID: session["other"], Agent: app.ID})
+	_, err = s.setSessionAgent(node, protocol.SessionAgentSetRequest{Owner: owner, SessionID: session["other"], Agent: app.ID})
 	if err == nil {
 		t.Fatal("a session was linked to a bot node")
 	}

@@ -55,55 +55,61 @@ func (s *Store) sessionAgentOptions(node, owner string) (protocol.SessionAgentOp
 	return out, rows.Err()
 }
 
-func (s *Store) setSessionAgent(node string, p protocol.SessionAgentSetRequest) error {
+func (s *Store) setSessionAgent(node string, p protocol.SessionAgentSetRequest) (protocol.SessionAgentSetResult, error) {
+	res := protocol.SessionAgentSetResult{OK: true}
 	p.Agent = strings.TrimSpace(p.Agent)
 	if p.SessionID == "" || p.Agent == "" {
-		return reject("session and agent are required")
+		return res, reject("session and agent are required")
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
-		return err
+		return res, err
 	}
 	defer tx.Rollback()
 	if err := sessionAgentOwner(tx, node, p.Owner); err != nil {
-		return err
+		return res, err
 	}
 	var harness, worker, old string
 	var online bool
 	err = tx.QueryRow(`SELECT harness,worker,COALESCE(agent_id,''),online FROM sessions WHERE id=?`, p.SessionID).Scan(&harness, &worker, &old, &online)
 	if errors.Is(err, sql.ErrNoRows) {
-		return reject("unknown session %q", p.SessionID)
+		return res, reject("unknown session %q", p.SessionID)
 	}
 	if err != nil {
-		return err
+		return res, err
 	}
 	if protocol.IsOwner(harness) || harness == "cto" || harness == "bot" || worker != "" {
-		return reject("only a lasting agent session can change its agent")
+		return res, reject("only a lasting agent session can change its agent")
 	}
 	if !online {
-		return reject("session is offline")
+		return res, reject("session is offline")
 	}
 	var exists bool
 	if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM agents WHERE id=? AND tombstone=0 AND role NOT IN ('cto','bot'))`, p.Agent).Scan(&exists); err != nil {
-		return err
+		return res, err
 	}
 	if !exists {
-		return reject("unknown or unavailable agent")
+		return res, reject("unknown or unavailable agent")
 	}
 	if old == p.Agent {
-		return tx.Commit()
+		return res, tx.Commit()
 	}
 	if _, err = tx.Exec(`UPDATE sessions SET agent_id=? WHERE id=?`, p.Agent, p.SessionID); err != nil {
-		return err
+		return res, err
 	}
 	if err = s.pinFirstLeadSessionQ(tx, p.SessionID); err != nil {
-		return err
+		return res, err
 	}
 	if err = checkActiveSessionIdentity(tx, p.SessionID); err != nil {
-		return err
+		return res, err
 	}
 	if _, err = tx.Exec(`INSERT INTO session_agent_history(session_id,old_agent_id,new_agent_id,actor,at) VALUES(?,?,?,?,?)`, p.SessionID, old, p.Agent, p.Owner, s.now().UnixNano()); err != nil {
-		return err
+		return res, err
 	}
-	return tx.Commit()
+	if p.CopyNotes {
+		if res.CopiedNotes, res.KeptNotes, err = copyAgentNotesQ(tx, old, p.Agent, s.now()); err != nil {
+			return res, err
+		}
+	}
+	return res, tx.Commit()
 }

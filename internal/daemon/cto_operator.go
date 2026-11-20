@@ -148,6 +148,18 @@ func (d *Daemon) executeCTOOperator(ctx context.Context, raw json.RawMessage) (a
 			return nil, e
 		}
 		switch p.Method {
+		case "notes_copy", "session_agent_set":
+			// Undo removes only the notes this call added. The result names
+			// them; a name the target already had is not in the list.
+			var copied struct {
+				CopiedNotes []string `json:"copied_notes"`
+			}
+			if e := json.Unmarshal(data, &copied); e != nil {
+				return nil, e
+			}
+			if len(copied.CopiedNotes) > 0 {
+				plan = append(plan, undoCall("notes_uncopy", protocol.NotesUncopyRequest{IDs: copied.CopiedNotes}))
+			}
 		case "sessions_archive":
 			var saved protocol.SessionsArchiveResult
 			if e := json.Unmarshal(data, &saved); e != nil {
