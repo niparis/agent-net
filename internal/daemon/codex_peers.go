@@ -461,7 +461,9 @@ func (a *codexAdapter) Deliver(ctx context.Context, target protocol.SessionInfo,
 	if a.d.takeStartContextDue(target.SessionID) {
 		text = prependStartBlock(a.d.codexStartBlock(ctx, target.SessionID, target.Repo.Project), text)
 	}
+	a.expectQueuedNotice(m.ID)
 	if err := a.queueAdd(ctx, rpc, target.NativeID, m.ID, text); err != nil {
+		a.forgetQueuedNotice(m.ID)
 		return Result{Detail: "codex refused the message: " + err.Error()}
 	}
 	a.watchQueuedDelivery(target, m, text)

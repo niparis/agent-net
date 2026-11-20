@@ -29,15 +29,31 @@ func codexQueueAdd(ctx context.Context, rpc *codexRPC, thread, msgID, text strin
 	return err
 }
 
-// watchQueuedDelivery starts the check of one queued message of a Codex session.
-func (a *codexAdapter) watchQueuedDelivery(target protocol.SessionInfo, m protocol.Message, text string) {
-	native, msgID := target.NativeID, m.ID
+// expectQueuedNotice makes the adapter record the notice for msgID. Deliver
+// calls it before the queue call: Codex starts the turn of an idle thread at
+// once, so the notice can be read before the call returns, and a notice for a
+// message nobody expects is dropped. The check would then see no turn and send
+// the message a second time.
+func (a *codexAdapter) expectQueuedNotice(msgID string) {
 	a.mu.Lock()
+	defer a.mu.Unlock()
 	if a.queued == nil {
 		a.queued = map[string]bool{}
 	}
 	a.queued[msgID] = false
+}
+
+// forgetQueuedNotice undoes expectQueuedNotice for a message that was not queued.
+func (a *codexAdapter) forgetQueuedNotice(msgID string) {
+	a.mu.Lock()
+	delete(a.queued, msgID)
 	a.mu.Unlock()
+}
+
+// watchQueuedDelivery starts the check of one queued message of a Codex session.
+// The caller has called expectQueuedNotice before it queued the message.
+func (a *codexAdapter) watchQueuedDelivery(target protocol.SessionInfo, m protocol.Message, text string) {
+	native, msgID := target.NativeID, m.ID
 	a.d.confirmDelivery("codex\x00"+native, deliveryWatch{
 		label: "session",
 		msgID: msgID,

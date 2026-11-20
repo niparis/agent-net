@@ -66,6 +66,10 @@ type fakeShared struct {
 	conns    []*websocket.Conn
 	reads    int
 	autoTurn bool
+	// noticeBeforeReply makes a queue call send the item/started notice for its
+	// message on the same connection before it answers, so the daemon reads the
+	// notice before the call returns.
+	noticeBeforeReply bool
 	// extraRoots counts skills/extraRoots/set calls. The real method is
 	// server-wide, so any owner-session call would change every thread there.
 	extraRoots int
@@ -279,7 +283,15 @@ func (f *fakeShared) handle(w http.ResponseWriter, r *http.Request) {
 			if autoTurn {
 				f.turns = append(f.turns, text)
 			}
+			noticeFirst := f.noticeBeforeReply
 			f.mu.Unlock()
+			if noticeFirst {
+				b, _ := json.Marshal(map[string]any{"method": "item/started", "params": map[string]any{
+					"threadId": p.ThreadID,
+					"item":     map[string]any{"type": "userMessage", "clientId": p.ClientUserMessageID, "content": []any{}},
+				}})
+				c.Write(context.Background(), websocket.MessageText, b)
+			}
 			reply(map[string]any{"queuedSubmission": map[string]any{"id": "q1"}}, "")
 			if autoTurn {
 				f.notifyWith("item/started", map[string]any{"threadId": p.ThreadID, "item": map[string]any{"type": "userMessage", "clientId": p.ClientUserMessageID}})
