@@ -35,8 +35,9 @@ CREATE INDEX IF NOT EXISTS friction_area ON friction(area, created_at DESC);
 `
 
 // frictionStatusMigration keeps the read state of each report (decision 0175).
-// friction_status holds the current mark; a report with no row is new. The
-// history keeps every mark, oldest first, so an owner can see what changed.
+// friction_status_history keeps every mark, oldest first, and the current mark
+// of a report is its latest row. A report with no row is new. The table
+// friction_status that held the current mark was dropped, as a copy of it.
 const frictionStatusMigration = `
 -- Friction read status (decision 0175): the current mark of a report.
 CREATE TABLE IF NOT EXISTS friction_status (
@@ -70,9 +71,9 @@ const frictionDefaultLimit = 20
 // frictionSampleLimit bounds the ids a mark reply names. The count is exact.
 const frictionSampleLimit = 20
 
-// frictionFrom joins each report to its current mark. A report with no mark
-// reads as new.
-const frictionFrom = " FROM friction f LEFT JOIN friction_status st ON st.friction_id=f.id"
+// frictionFrom joins each report to its current mark: its latest history row.
+// A report with no mark reads as new.
+const frictionFrom = " FROM friction f LEFT JOIN friction_status_history st ON st.id=(SELECT MAX(id) FROM friction_status_history WHERE friction_id=f.id)"
 
 // frictionCols are the columns a read returns, in the order it scans them.
 const frictionCols = "f.id,f.project,f.session,f.change_id,f.harness,f.model,f.area,f.text,f.created_at," +
@@ -345,11 +346,6 @@ func (s *Store) MarkFriction(actor string, q protocol.FrictionMarkRequest) (prot
 	}
 	defer tx.Rollback()
 	for _, id := range ids {
-		if _, err := tx.Exec(`INSERT INTO friction_status(friction_id,status,changed_by,changed_at,link,note) VALUES(?,?,?,?,?,?)
- ON CONFLICT(friction_id) DO UPDATE SET status=excluded.status,changed_by=excluded.changed_by,changed_at=excluded.changed_at,link=excluded.link,note=excluded.note`,
-			id, q.Status, actor, at, link, note); err != nil {
-			return out, err
-		}
 		if _, err := tx.Exec(`INSERT INTO friction_status_history(friction_id,status,changed_by,changed_at,link,note) VALUES(?,?,?,?,?,?)`,
 			id, q.Status, actor, at, link, note); err != nil {
 			return out, err

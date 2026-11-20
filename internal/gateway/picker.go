@@ -124,7 +124,7 @@ func (s *Store) pickerTaskRecordsUsing(usage map[string]protocol.RunTokens, qual
 	// the failed step is already counted, and one failure costs once (decision
 	// 0161).
 	rows, err = s.db.Query(`SELECT session_id, COUNT(*), COALESCE(SUM(severity), 0) FROM worker_defects
-		WHERE moved_at = 0 AND id NOT IN (SELECT defect_id FROM worker_defect_auto WHERE kind = 'test') GROUP BY session_id`)
+		WHERE moved_at = 0 AND auto_kind IS NOT 'test' GROUP BY session_id`)
 	if err != nil {
 		return nil, err
 	}

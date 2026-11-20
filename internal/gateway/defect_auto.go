@@ -69,16 +69,16 @@ func (s *Store) addAutoDefect(tx *sql.Tx, d autoDefect) (bool, error) {
 	var n int
 	var err error
 	if d.kind == autoDefectFix {
-		err = tx.QueryRow(`SELECT COUNT(*) FROM worker_defect_auto WHERE change_id=?`, d.changeID).Scan(&n)
+		err = tx.QueryRow(`SELECT COUNT(*) FROM worker_defects WHERE auto_change_id=?`, d.changeID).Scan(&n)
 	} else {
-		err = tx.QueryRow(`SELECT COUNT(*) FROM worker_defect_auto WHERE change_id=? AND kind=? AND revision=?`, d.changeID, d.kind, d.revision).Scan(&n)
+		err = tx.QueryRow(`SELECT COUNT(*) FROM worker_defects WHERE auto_change_id=? AND auto_kind=? AND auto_revision=?`, d.changeID, d.kind, d.revision).Scan(&n)
 	}
 	if err != nil || n > 0 {
 		return false, err
 	}
 	now := s.now()
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM worker_defects WHERE session_id=? AND at>=? AND moved_at=0
-		AND id NOT IN (SELECT defect_id FROM worker_defect_auto)`, worker, now.Add(-autoDefectManualWindow).Unix()).Scan(&n); err != nil || n > 0 {
+		AND auto_change_id IS NULL`, worker, now.Add(-autoDefectManualWindow).Unix()).Scan(&n); err != nil || n > 0 {
 		return false, err
 	}
 	facts, ok, err := workerRatingFactsOn(tx, worker)
@@ -89,20 +89,13 @@ func (s *Store) addAutoDefect(tx *sql.Tx, d autoDefect) (bool, error) {
 	if note == "" {
 		note = autoDefectWhy[d.kind]
 	}
-	res, err := tx.Exec(`INSERT INTO worker_defects
-		(run_id, session_id, caller, rater_model, harness, model, effort, difficulty, severity, note, at, cause, escape_phase)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, facts.runID, worker, facts.caller, "", facts.harness,
+	_, err = tx.Exec(`INSERT INTO worker_defects
+		(run_id, session_id, caller, rater_model, harness, model, effort, difficulty, severity, note, at, cause, escape_phase,
+		 auto_change_id, auto_kind, auto_revision)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, facts.runID, worker, facts.caller, "", facts.harness,
 		facts.model, facts.effort, facts.difficulty, d.severity, note, now.Unix(),
-		causeOrUnknown(d.cause), protocol.DefectPhase(d.step, d.severity))
+		causeOrUnknown(d.cause), protocol.DefectPhase(d.step, d.severity), d.changeID, d.kind, d.revision)
 	if err != nil {
-		return false, err
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return false, err
-	}
-	if _, err := tx.Exec(`INSERT INTO worker_defect_auto(defect_id, change_id, kind, revision, at) VALUES(?,?,?,?,?)`,
-		id, d.changeID, d.kind, d.revision, now.Unix()); err != nil {
 		return false, err
 	}
 	text := fmt.Sprintf("defect recorded: %s sev %d on %s (%s)", worker, d.severity, d.changeID, autoDefectWhy[d.kind])

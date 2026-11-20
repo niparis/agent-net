@@ -90,3 +90,16 @@ After the double-write fix has merged:
 - 37 fewer tables and 116 fewer columns.
 - The repo lead, the team lead history and the charter values each live in one place.
 - Marker rows leave `owner_settings`, so a one-time marker no longer refreshes the Nodes, Workers and Inbox screens.
+
+## Part 6 result
+
+One migration (`foldSideTablesTx`, `internal/gateway/side_fold.go`) folds all seven side tables, so none stays as it was. Every one has its parent key as primary key, so a parent holds at most one row of each. The live counts that looked one-to-many (8 wake failures for 4 wakes, 44 model successes for 4 failures, 37 retired wakes for 4 wakes) are keys with no parent row yet, not many rows for one key. Such a key gets a parent row with default values.
+
+| Side table | Now |
+|---|---|
+| `learned_suggestion_details`, `learned_phrase_state` | columns `origin`, `history_id`, `raw_phrase` of `learned_suggestions` (`raw_phrase` is NULL when the cleaner did not change the phrase) |
+| `session_wake_failures`, `retired_session_wakes` | columns `wake_failed_at`, `wake_failed_reason`, `wake_attempted_at` of `session_wakes`; the back-off is still the `WHERE` of the upsert |
+| `worker_defect_auto` | columns `auto_change_id`, `auto_kind`, `auto_revision` of `worker_defects`, NULL for a defect filed by hand, with a unique index |
+| `model_successes` | column `success_at` of `model_failures` |
+| `member_blocked_ticks` | column `tick_hash` of `member_blocked_notices` |
+| `friction_status` | dropped; the current mark is the latest row of `friction_status_history` |

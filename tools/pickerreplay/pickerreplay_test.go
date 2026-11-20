@@ -89,8 +89,7 @@ CREATE TABLE worker_runs (id INTEGER PRIMARY KEY, session_id TEXT, task_id TEXT,
   outcome TEXT, ended_at INTEGER, fix_count INTEGER);
 CREATE TABLE worker_assessments (session_id TEXT, run_id TEXT, started_at INTEGER, assessed_at INTEGER, d REAL,
   label TEXT, confidence TEXT, reasoning REAL, scope REAL, coupling REAL, uncertainty REAL, verification REAL, risk REAL);
-CREATE TABLE worker_defects (id INTEGER PRIMARY KEY, session_id TEXT, severity INTEGER, at INTEGER, moved_at INTEGER);
-CREATE TABLE worker_defect_auto (defect_id INTEGER PRIMARY KEY, kind TEXT);
+CREATE TABLE worker_defects (id INTEGER PRIMARY KEY, session_id TEXT, severity INTEGER, at INTEGER, moved_at INTEGER, auto_kind TEXT);
 CREATE TABLE delivery_changes (id TEXT, origin TEXT, state TEXT, project TEXT, updated_at INTEGER);
 CREATE TABLE delivery_evidence (change_id TEXT, step TEXT, result TEXT, at INTEGER);
 CREATE TABLE worker_usage (session_id TEXT PRIMARY KEY, usage TEXT, updated_at INTEGER);

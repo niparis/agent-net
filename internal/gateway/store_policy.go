@@ -193,7 +193,7 @@ func (s *Store) projectPolicies() (map[string]protocol.DelegationPolicy, error) 
 // ones are read only for a session with a policy. Keep it equal to those
 // queries (see readThrough).
 var delegationTables = tableUnion(settingsTables, graphNodesTables, nodesTables,
-	[]string{"project_policies", "sessions", "model_failures", "model_successes"})
+	[]string{"project_policies", "sessions", "model_failures"})
 
 // applyDelegation fills Delegation of each agent: its own policy, else its
 // project's default, with the models resolved against its machine. It also

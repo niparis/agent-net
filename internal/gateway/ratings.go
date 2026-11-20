@@ -411,7 +411,7 @@ func (s *Store) moveToBriefDefect(f protocol.RateFrame) (protocol.RateResult, er
 		return out, nil
 	}
 	var auto bool
-	if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM worker_defect_auto WHERE defect_id = ?)`, defectID).Scan(&auto); err != nil {
+	if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM worker_defects WHERE id = ? AND auto_change_id IS NOT NULL)`, defectID).Scan(&auto); err != nil {
 		return out, err
 	}
 	if auto {
@@ -493,7 +493,7 @@ type defectToMove struct {
 func (s *Store) defectsToMove(worker, rater string) ([]defectToMove, error) {
 	rows, err := s.db.Query(`SELECT id, severity, note, at FROM worker_defects
 		WHERE session_id = ? AND caller = ? AND moved_at = 0
-		  AND id NOT IN (SELECT defect_id FROM worker_defect_auto)
+		  AND auto_change_id IS NULL
 		ORDER BY at, id`, worker, rater)
 	if err != nil {
 		return nil, err

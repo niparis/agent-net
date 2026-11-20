@@ -83,8 +83,8 @@ func (s *Store) failWake(session, attempt, reason string) ([]protocol.Message, e
 	}
 	defer tx.Rollback()
 	now := s.now()
-	if _, err := tx.Exec(`INSERT INTO session_wake_failures(session_id,failed_at,reason) VALUES(?,?,?)
- ON CONFLICT(session_id) DO UPDATE SET failed_at=excluded.failed_at, reason=excluded.reason`, session, now.UnixNano(), reason); err != nil {
+	if _, err := tx.Exec(`INSERT INTO session_wakes(session_id,wake_failed_at,wake_failed_reason) VALUES(?,?,?)
+ ON CONFLICT(session_id) DO UPDATE SET wake_failed_at=excluded.wake_failed_at, wake_failed_reason=excluded.wake_failed_reason`, session, now.UnixNano(), reason); err != nil {
 		return nil, err
 	}
 	rows, err := tx.Query(`SELECT DISTINCT sender FROM messages WHERE recipient=? AND state='stored' AND expires_at>?`, session, now.UnixNano())
@@ -187,7 +187,7 @@ func wakeNoticeName(q interface {
 // not been cleared by a wake that worked.
 func (s *Store) wakeFailure(session string) (string, bool) {
 	var reason string
-	if err := s.db.QueryRow(`SELECT reason FROM session_wake_failures WHERE session_id=?`, session).Scan(&reason); err != nil {
+	if err := s.db.QueryRow(`SELECT wake_failed_reason FROM session_wakes WHERE session_id=? AND wake_failed_at>0`, session).Scan(&reason); err != nil {
 		return "", false
 	}
 	return reason, true
@@ -195,6 +195,6 @@ func (s *Store) wakeFailure(session string) (string, bool) {
 
 // clearWakeFailure forgets a session's failed wake after a wake worked.
 func (s *Store) clearWakeFailure(session string) error {
-	_, err := s.db.Exec(`DELETE FROM session_wake_failures WHERE session_id=?`, session)
+	_, err := s.db.Exec(`UPDATE session_wakes SET wake_failed_at=0,wake_failed_reason='' WHERE session_id=? AND wake_failed_at>0`, session)
 	return err
 }

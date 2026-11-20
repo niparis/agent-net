@@ -52,7 +52,7 @@ func (s *Store) phraseReady(ctx context.Context) error {
 	if inWindow != 0 {
 		return nil
 	}
-	rows, err := s.db.Query(`SELECT l.id,l.field,l.phrase FROM learned_suggestions l JOIN learned_suggestion_details d ON d.suggestion_id=l.id LEFT JOIN learned_phrase_state p ON p.suggestion_id=l.id WHERE l.status='pending' AND l.ready_at<=? AND d.origin='owner' AND l.field IN ('accepts','rules') AND p.suggestion_id IS NULL ORDER BY l.id`, s.now().UnixNano())
+	rows, err := s.db.Query(`SELECT l.id,l.field,l.phrase FROM learned_suggestions l WHERE l.status='pending' AND l.ready_at<=? AND l.origin='owner' AND l.field IN ('accepts','rules') AND l.raw_phrase IS NULL ORDER BY l.id`, s.now().UnixNano())
 	if err != nil {
 		return err
 	}
@@ -94,7 +94,7 @@ func (s *Store) phraseReady(ctx context.Context) error {
 			}
 		}
 		var rejected, duplicate int
-		if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM learned_suggestions l LEFT JOIN learned_phrase_state p ON p.suggestion_id=l.id WHERE l.node=(SELECT node FROM learned_suggestions WHERE id=?) AND l.field=? AND l.status='rejected' AND (l.phrase=? COLLATE NOCASE OR p.raw_phrase=? COLLATE NOCASE))`, p.id, p.field, value, p.raw).Scan(&rejected); err != nil {
+		if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM learned_suggestions l WHERE l.node=(SELECT node FROM learned_suggestions WHERE id=?) AND l.field=? AND l.status='rejected' AND (l.phrase=? COLLATE NOCASE OR l.raw_phrase=? COLLATE NOCASE))`, p.id, p.field, value, p.raw).Scan(&rejected); err != nil {
 			return err
 		}
 		if rejected != 0 {
@@ -109,18 +109,8 @@ func (s *Store) phraseReady(ctx context.Context) error {
 		if duplicate != 0 {
 			value = p.raw
 		}
-		result, e := tx.Exec(`UPDATE learned_suggestions SET phrase=? WHERE id=? AND status='pending' AND phrase=?`, value, p.id, p.raw)
-		if e != nil {
-			return e
-		}
-		n, e := result.RowsAffected()
-		if e != nil {
-			return e
-		}
-		if n == 0 {
-			continue
-		}
-		if _, err = tx.Exec(`INSERT OR IGNORE INTO learned_phrase_state(suggestion_id,raw_phrase) VALUES(?,?)`, p.id, p.raw); err != nil {
+		// The raw phrase is kept once: a second cleaning must not replace it.
+		if _, err = tx.Exec(`UPDATE learned_suggestions SET phrase=?, raw_phrase=COALESCE(raw_phrase,?) WHERE id=? AND status='pending' AND phrase=?`, value, p.raw, p.id, p.raw); err != nil {
 			return err
 		}
 	}

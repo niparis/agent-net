@@ -170,7 +170,7 @@ def load(path: str) -> tuple[list[Task], dict]:
     # step is skipped: the failed step already counts (decision 0161).
     defects: dict[str, list[Event]] = {}
     for r in q("""SELECT session_id, severity, at FROM worker_defects
-                  WHERE moved_at = 0 AND id NOT IN (SELECT defect_id FROM worker_defect_auto WHERE kind = 'test')"""):
+                  WHERE moved_at = 0 AND auto_kind IS NOT 'test'"""):
         defects.setdefault(r["session_id"], []).append(Event(r["at"], "defect", r["severity"]))
 
     # Failed accept, review or test steps count against the session that opened

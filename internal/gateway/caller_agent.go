@@ -211,7 +211,7 @@ func (g *Gateway) wakeCallerAgent(ctx context.Context, key string, tasks []waiti
 	var target string
 	err := g.store.db.QueryRow(`SELECT s.id FROM sessions s JOIN delivery_changes c ON c.id=?
 		WHERE s.online=0 AND s.worker='' AND s.harness IN ('claude','codex','opencode') AND s.archived_at=0 AND s.replaced_by=''
-		AND NOT EXISTS(SELECT 1 FROM session_wake_failures f WHERE f.session_id=s.id)
+		AND NOT EXISTS(SELECT 1 FROM session_wakes f WHERE f.session_id=s.id AND f.wake_failed_at>0)
 		AND (s.id=? OR (s.agent_id=? AND NOT `+ownsOtherStepSQL("s")+`))
 		ORDER BY CASE WHEN s.id=? THEN 0 ELSE 1 END,s.last_seen DESC,s.id LIMIT 1`,
 		tasks[0].changeID, tasks[0].caller, key, tasks[0].caller).Scan(&target)

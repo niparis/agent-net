@@ -39,7 +39,7 @@ func insertLearned(t *testing.T, s *Store, node, field, edge, kind, phrase, orig
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec(`INSERT INTO learned_suggestion_details(suggestion_id,origin) VALUES(?,?)`, id, origin); err != nil {
+	if _, err = s.db.Exec(`UPDATE learned_suggestions SET origin=? WHERE id=?`, origin, id); err != nil {
 		t.Fatal(err)
 	}
 	return id

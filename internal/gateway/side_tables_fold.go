@@ -17,7 +17,7 @@ import (
 // task row (the owner is a person, not a node), so an inbox row does not
 // always have a task row to fold into.
 //
-// The work is in Go (foldSideTablesTx), so the SQL only carries the marker.
+// The work is in Go (foldDeliverySideTablesTx), so the SQL only carries the marker.
 const sideTablesFoldMarker = "Side tables folded into delivery_revisions and messages"
 
 const sideTablesFoldMigration = `
@@ -25,11 +25,11 @@ const sideTablesFoldMigration = `
 SELECT 1;
 `
 
-// foldSideTablesTx adds the columns, copies every row and drops the side
+// foldDeliverySideTablesTx adds the columns, copies every row and drops the side
 // tables, in the caller's transaction. A replay is safe: a column that exists
 // is left alone, a table that is gone is skipped, and a replayed earlier
 // migration that made an empty side table again is folded and dropped again.
-func foldSideTablesTx(tx *sql.Tx) error {
+func foldDeliverySideTablesTx(tx *sql.Tx) error {
 	for _, col := range []struct{ table, name, decl string }{
 		{"delivery_revisions", "diff_stat", "TEXT NOT NULL DEFAULT ''"},
 		{"delivery_revisions", "signals", "TEXT NOT NULL DEFAULT '[]'"},

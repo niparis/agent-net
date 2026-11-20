@@ -124,7 +124,7 @@ func TestCallerStepOfferedToLiveSessionOfCallerAgent(t *testing.T) {
 		t.Fatalf("offline caller session got %d task messages", n)
 	}
 	var wakes int
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM retired_session_wakes WHERE session_id=?`, r.caller).Scan(&wakes); err != nil || wakes != 0 {
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM session_wakes WHERE session_id=? AND wake_attempted_at>0`, r.caller).Scan(&wakes); err != nil || wakes != 0 {
 		t.Fatalf("offline caller was woken although its agent has a live session: %d, %v", wakes, err)
 	}
 }
@@ -214,7 +214,7 @@ func TestNonWakeableCallerAgentStepsGoToRepoLead(t *testing.T) {
 	caller := r.onlyOfflineSession("pi")
 	// The machine refused to resume the agent's other sessions.
 	for _, id := range []string{r.caller, r.second} {
-		if _, err := r.s.db.Exec(`INSERT INTO session_wake_failures(session_id,failed_at,reason) VALUES(?,?,'test')`, id, r.clk.t.UnixNano()); err != nil {
+		if _, err := r.s.db.Exec(`INSERT INTO session_wakes(session_id,wake_failed_at,wake_failed_reason) VALUES(?,?,'test')`, id, r.clk.t.UnixNano()); err != nil {
 			t.Fatal(err)
 		}
 	}
