@@ -61,15 +61,6 @@ func queuedText(f *fakeShared, msgID string) string {
 	return text
 }
 
-// notifyItem sends the notice Codex sends when a turn starts with a queued
-// message: a user message item that carries the message ID as its clientId.
-func (f *fakeShared) notifyItem(thread, clientID string) {
-	f.notifyWith("item/started", map[string]any{
-		"threadId": thread,
-		"item":     map[string]any{"type": "userMessage", "clientId": clientID, "content": []any{}},
-	})
-}
-
 // turnTexts is the prompt of each turn/start the fake got, in order.
 func (f *fakeShared) turnTexts() []string {
 	f.mu.Lock()
@@ -78,15 +69,21 @@ func (f *fakeShared) turnTexts() []string {
 }
 
 // A queued message whose turn Codex starts is confirmed from the notice, with
-// no read of the thread, and is queued once.
+// no read of the thread, and is queued once. Codex starts the turn of an idle
+// thread at once, so the notice can reach the daemon before the queue call
+// returns. The fake sends it there: the test has no timing of its own, and the
+// check has the notice in hand when its timer fires. Both the confirm log and
+// the calls are read once, after the check has ended.
 func TestCodexQueuedMessageTakenIsNotSentAgain(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	f := startFakeShared(t)
 	f.set(fakeThread{ID: "t-open", Cwd: "/work/api", Status: "idle", Source: "cli"})
+	f.mu.Lock()
+	f.noticeBeforeReply = true
+	f.mu.Unlock()
 	n, logs := codexConfirmNode(t, g, f, true)
 	m := protocol.Message{ID: "msg-codex-taken", Body: "check the build", From: "agent-a", FromName: "agent-a"}
 	codexDeliver(t, n, m)
-	f.notifyItem("t-open", m.ID)
 	eventually(t, "the delivery confirmed", func() bool { return len(logs.lines("session.delivery_confirmed msg="+m.ID)) == 1 })
 	if got := queuedCopies(f, m.ID); got != 1 {
 		t.Fatalf("queue calls for a taken message: %d, want 1", got)
