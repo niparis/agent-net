@@ -23,6 +23,7 @@ The design was discussed with the agent-net lead. Its answers are folded in belo
 ## Decision in short
 
 - **Federation, not peer-to-peer.** Each owner keeps one gateway, as today. Gateways link to each other. Machines never talk to machines of another owner.
+- **One identity, one master node.** In the owner's words, each identity has a master node and some child nodes. The master node is the gateway. The child nodes are that owner's machines, each running a daemon. Only master nodes talk to each other.
 - **A foreign gateway is a new kind of peer.** It is closest to a connected app (0097): its own listener, its own credential, its own trust label. It is never a machine and never holds a machine token.
 - **Messages only cross the link.** The federation listener has no operation that starts or wakes a session, or starts a worker. This is a property of the listener, not a setting.
 - **One front desk.** Outside messages for the owner enter the front door of 0150, as one more source. There is no second desk.
