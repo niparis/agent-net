@@ -158,7 +158,7 @@ func (g *Gateway) planMCPImport(ctx context.Context, key, actor string) (out pro
 	if validatingProposal(ctx) {
 		return out, nil
 	}
-	if _, err = g.store.db.Exec(`INSERT INTO mcp_import_plans(id,snapshot,plan) VALUES(?,?,?)`, out.ID, snap, string(raw)); err != nil {
+	if _, err = g.store.db.Exec(`INSERT INTO plans(kind,id,snapshot,plan) VALUES('mcp_import',?,?,?)`, out.ID, snap, string(raw)); err != nil {
 		return out, err
 	}
 	state := "pending"
@@ -232,7 +232,7 @@ func (g *Gateway) applyMCPImport(ctx context.Context, id, actor, session string)
 	defer g.importMu.Unlock()
 	var snapshot, raw string
 	var applied int
-	if err := g.store.db.QueryRow(`SELECT snapshot,plan,applied FROM mcp_import_plans WHERE id=?`, id).Scan(&snapshot, &raw, &applied); err != nil {
+	if err := g.store.db.QueryRow(`SELECT snapshot,plan,applied FROM plans WHERE kind='mcp_import' AND id=?`, id).Scan(&snapshot, &raw, &applied); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return out, reject("plan not found")
 		}
@@ -277,7 +277,7 @@ func (g *Gateway) applyMCPImport(ctx context.Context, id, actor, session string)
 		return out, nil
 	}
 	// A plan applies once, whatever happens next.
-	if _, err = g.store.db.Exec(`UPDATE mcp_import_plans SET applied=1 WHERE id=?`, id); err != nil {
+	if _, err = g.store.db.Exec(`UPDATE plans SET applied=1 WHERE kind='mcp_import' AND id=?`, id); err != nil {
 		return out, err
 	}
 

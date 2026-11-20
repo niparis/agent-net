@@ -69,7 +69,7 @@ func TestToolToggleVersionsAcrossMachines(t *testing.T) {
 		if err = g.store.db.QueryRow(`SELECT MAX(revision) FROM tool_revisions WHERE item=?`, id).Scan(&revision); err != nil || revision != 1 {
 			t.Fatalf("revision %s: %d %v", id, revision, err)
 		}
-		_, err = g.store.db.Exec(`INSERT INTO tool_results(item,revision,target_index,node_id,state,reason) SELECT ?,1,CAST(t.key AS INTEGER),json_extract(t.value,'$.node_id'),'applied','' FROM tool_plans p,json_each(p.plan,'$.targets') t WHERE p.item=? AND p.applied=1 AND json_extract(p.plan,'$.operation')!='skill_group'`, id, id)
+		_, err = g.store.db.Exec(`INSERT INTO tool_results(item,revision,target_index,node_id,state,reason) SELECT ?,1,CAST(t.key AS INTEGER),json_extract(t.value,'$.node_id'),'applied','' FROM plans p,json_each(p.plan,'$.targets') t WHERE p.kind='tool' AND p.item=? AND p.applied=1 AND json_extract(p.plan,'$.operation')!='skill_group'`, id, id)
 		if err != nil {
 			t.Fatal(err)
 		}

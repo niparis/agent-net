@@ -154,7 +154,7 @@ func (g *Gateway) planMCPNativeRemove(ctx context.Context, key, actor string) (o
 	if validatingProposal(ctx) {
 		return out, nil
 	}
-	if _, err = g.store.db.Exec(`INSERT INTO mcp_native_plans(id,snapshot,plan) VALUES(?,?,?)`, out.ID, snap, string(raw)); err != nil {
+	if _, err = g.store.db.Exec(`INSERT INTO plans(kind,id,snapshot,plan,state) VALUES('mcp_native',?,?,?,'pending')`, out.ID, snap, string(raw)); err != nil {
 		return out, err
 	}
 	state := "pending"
@@ -166,7 +166,7 @@ func (g *Gateway) planMCPNativeRemove(ctx context.Context, key, actor string) (o
 
 func (g *Gateway) loadNativePlan(id string) (p protocol.MCPNativeRemovePlan, snapshot string, err error) {
 	var raw string
-	if err = g.store.db.QueryRow(`SELECT snapshot,plan,state FROM mcp_native_plans WHERE id=?`, id).Scan(&snapshot, &raw, &p.State); err != nil {
+	if err = g.store.db.QueryRow(`SELECT snapshot,plan,state FROM plans WHERE kind='mcp_native' AND id=?`, id).Scan(&snapshot, &raw, &p.State); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return p, "", reject("plan not found")
 		}
@@ -185,7 +185,7 @@ func (g *Gateway) saveNativePlan(p protocol.MCPNativeRemovePlan) error {
 	if err != nil {
 		return err
 	}
-	_, err = g.store.db.Exec(`UPDATE mcp_native_plans SET plan=?,state=? WHERE id=?`, string(raw), p.State, p.ID)
+	_, err = g.store.db.Exec(`UPDATE plans SET plan=?,state=? WHERE kind='mcp_native' AND id=?`, string(raw), p.State, p.ID)
 	return err
 }
 

@@ -11,7 +11,7 @@ import (
 
 // ToolTargets returns only the newest applied plan's targets for this node.
 func (s *Store) ToolTargets(node string) ([]protocol.ToolTarget, error) {
-	rows, err := s.db.Query(`SELECT r.item,r.revision,r.assignment,r.version,r.actor,r.source,r.at,i.name,p.plan,COALESCE((SELECT group_concat(target_index,',') FROM tool_results WHERE item=r.item AND revision=r.revision AND state='applied'),'') FROM tool_revisions r JOIN tool_identities i ON i.id=r.item JOIN tool_plans p ON r.source='plan:' || p.id AND p.applied=1 WHERE r.revision=(SELECT MAX(x.revision) FROM tool_revisions x WHERE x.item=r.item) ORDER BY r.item`)
+	rows, err := s.db.Query(`SELECT r.item,r.revision,r.assignment,r.version,r.actor,r.source,r.at,i.name,p.plan,COALESCE((SELECT group_concat(target_index,',') FROM tool_results WHERE item=r.item AND revision=r.revision AND state='applied'),'') FROM tool_revisions r JOIN tool_identities i ON i.id=r.item JOIN plans p ON r.source='plan:' || p.id AND p.kind='tool' AND p.applied=1 WHERE r.revision=(SELECT MAX(x.revision) FROM tool_revisions x WHERE x.item=r.item) ORDER BY r.item`)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func (s *Store) ReportToolResult(node string, r protocol.ToolResult) error {
 	}
 	defer tx.Rollback()
 	var raw string
-	err = tx.QueryRow(`SELECT p.plan FROM tool_revisions r JOIN tool_plans p ON r.source='plan:' || p.id AND p.applied=1 WHERE r.item=? AND r.revision=? AND r.revision=(SELECT MAX(x.revision) FROM tool_revisions x WHERE x.item=r.item)`, r.Item, r.Revision).Scan(&raw)
+	err = tx.QueryRow(`SELECT p.plan FROM tool_revisions r JOIN plans p ON r.source='plan:' || p.id AND p.kind='tool' AND p.applied=1 WHERE r.item=? AND r.revision=? AND r.revision=(SELECT MAX(x.revision) FROM tool_revisions x WHERE x.item=r.item)`, r.Item, r.Revision).Scan(&raw)
 	if err != nil {
 		return errors.New("tool revision unavailable")
 	}
