@@ -83,8 +83,8 @@ func insertOpenChangeIn(t *testing.T, s *Store, project, id, branch, path string
 		id, project, branch, strings.Repeat("a", 40)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO delivery_revision_stats(change_id,revision,diff_stat) VALUES(?,1,?)`,
-		id, " "+path+" | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)"); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO delivery_revisions(change_id,number,branch,commit_hash,uncommitted,at,diff_stat) VALUES(?,1,?,?,0,1,?)`,
+		id, branch, strings.Repeat("a", 40), " "+path+" | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)"); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -1325,7 +1325,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, sideTablesFoldMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -3138,7 +3138,11 @@ func (s *Store) migrate() error {
 		// upgrade without losing the rows they hold.
 		if strings.Contains(migrations[i], "change quality signals column") {
 			var has int
-			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('delivery_revision_stats') WHERE name='signals'`).Scan(&has); err != nil {
+			// A later migration folds this table into delivery_revisions. A
+			// rewind that replays this step after that has no table to alter,
+			// so a missing table counts as the column being there.
+			if err := tx.QueryRow(`SELECT CASE WHEN EXISTS (SELECT 1 FROM sqlite_master WHERE type='table' AND name='delivery_revision_stats')
+				THEN (SELECT COUNT(*) FROM pragma_table_info('delivery_revision_stats') WHERE name='signals') ELSE 1 END`).Scan(&has); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
@@ -3153,7 +3157,11 @@ func (s *Store) migrate() error {
 		// column only when absent, so old databases upgrade in place.
 		if strings.Contains(migrations[i], "change handback check column") {
 			var has int
-			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('delivery_revision_stats') WHERE name='handback_check'`).Scan(&has); err != nil {
+			// A later migration folds this table into delivery_revisions. A
+			// rewind that replays this step after that has no table to alter,
+			// so a missing table counts as the column being there.
+			if err := tx.QueryRow(`SELECT CASE WHEN EXISTS (SELECT 1 FROM sqlite_master WHERE type='table' AND name='delivery_revision_stats')
+				THEN (SELECT COUNT(*) FROM pragma_table_info('delivery_revision_stats') WHERE name='handback_check') ELSE 1 END`).Scan(&has); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
@@ -3304,6 +3312,12 @@ func (s *Store) migrate() error {
 		}
 		if strings.Contains(migrations[i], orgTreeRepairMarker) {
 			if err := repairOrgTreeTx(tx); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+		}
+		if strings.Contains(migrations[i], sideTablesFoldMarker) {
+			if err := foldSideTablesTx(tx); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
@@ -4681,7 +4695,7 @@ func (s *Store) agentsBaseOwned(selectSQL string, f protocol.QueryAgents, owners
 const msgSelect = `SELECT m.id, m.conversation_id, m.parent_id, m.sender, m.recipient, m.type, m.body, m.hop,
 	m.idem_key, m.created_at, m.expires_at, m.state, COALESCE((SELECT d.detail FROM deliveries d WHERE d.message_id=m.id AND d.state=m.state ORDER BY d.rowid DESC LIMIT 1),'') || COALESCE((SELECT ' (retry ' || attempts || ' scheduled)' FROM delivery_retries WHERE message_id=m.id AND m.state='failed'),''),
 	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto, m.owner_approved, EXISTS(SELECT 1 FROM outcome_overrules oo WHERE oo.message_id=m.id), m.approval_note, COALESCE((SELECT substr(cs.prompt,1,200) FROM charter_signals cs WHERE cs.message_id=m.id),''),
-	COALESCE((SELECT mf.files FROM message_files mf WHERE mf.message_id=m.id),''), m.worker_task, m.is_order,
+	m.files, m.worker_task, m.is_order,
 	m.urgent, m.held_for_busy, m.batch_json, m.batch_id
 	FROM messages m LEFT JOIN sessions s ON s.id = m.sender LEFT JOIN profiles p ON p.session_id = m.sender`
 
@@ -5150,10 +5164,19 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 			*route += note
 		}
 	}
+	// The manifest is stored on the message row; most messages have none.
+	filesJSON := ""
+	if len(p.Files) > 0 {
+		raw, err := json.Marshal(p.Files)
+		if err != nil {
+			return msg, false, err
+		}
+		filesJSON = string(raw)
+	}
 	_, err = tx.Exec(`INSERT INTO messages (id, conversation_id, parent_id, sender, recipient, type, body, hop,
-		idem_key, created_at, expires_at, state, sender_cto, owner_approved, worker_task, is_order, urgent, hold_kind, hold_until) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		idem_key, created_at, expires_at, state, sender_cto, owner_approved, worker_task, is_order, urgent, hold_kind, hold_until, files) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		m.ID, m.ConversationID, m.ParentID, m.From, m.To, m.Type, m.Body, m.Hop,
-		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State, m.FromCTO, m.OwnerApproved, workerTask, m.IsOrder, m.Urgent, holdKind, holdUntil)
+		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State, m.FromCTO, m.OwnerApproved, workerTask, m.IsOrder, m.Urgent, holdKind, holdUntil, filesJSON)
 	if err != nil {
 		return msg, false, err
 	}
@@ -5164,13 +5187,6 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 	}
 
 	if len(p.Files) > 0 {
-		raw, err := json.Marshal(p.Files)
-		if err != nil {
-			return msg, false, err
-		}
-		if _, err := tx.Exec(`INSERT INTO message_files (message_id, files) VALUES (?,?)`, m.ID, string(raw)); err != nil {
-			return msg, false, err
-		}
 		m.Files = p.Files
 	}
 	if m.ParentID == "" && !threaded && !m.FromCTO {

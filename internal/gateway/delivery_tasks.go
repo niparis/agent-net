@@ -1537,7 +1537,7 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 					return protocol.Message{}, err
 				}
 				var stat string
-				err = s.db.QueryRow(`SELECT diff_stat FROM delivery_revision_stats WHERE change_id=? AND revision=?`, c.ID, t.revision).Scan(&stat)
+				err = s.db.QueryRow(`SELECT diff_stat FROM delivery_revisions WHERE change_id=? AND number=?`, c.ID, t.revision).Scan(&stat)
 				if err != nil && !errors.Is(err, sql.ErrNoRows) {
 					return protocol.Message{}, err
 				}
@@ -1603,7 +1603,7 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 			return protocol.Message{}, err
 		}
 		var stat string
-		err = s.db.QueryRow(`SELECT diff_stat FROM delivery_revision_stats WHERE change_id=? AND revision=?`, c.ID, t.revision).Scan(&stat)
+		err = s.db.QueryRow(`SELECT diff_stat FROM delivery_revisions WHERE change_id=? AND number=?`, c.ID, t.revision).Scan(&stat)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return protocol.Message{}, err
 		}
