@@ -328,6 +328,7 @@ func TestMessagesThreadMigrationUpgradesV0525Database(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	restoreRepoSideTablesAt(t, path)
 	s, err = OpenStore(path)
 	if err != nil {
 		t.Fatalf("upgrading a v0.5.25 gateway: %v", err)
@@ -402,6 +403,7 @@ func TestMessagesPairGIDMigrationUpgradesPopulatedDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	restoreRepoSideTablesAt(t, path)
 	s, err = OpenStore(path)
 	if err != nil {
 		t.Fatalf("upgrading a populated gateway: %v", err)

@@ -57,7 +57,7 @@ func prepareOldSessionIdentity(t *testing.T, s *Store) {
 func migrateOldFixture(t *testing.T, s *Store) error {
 	t.Helper()
 	prepareOldSessionIdentity(t, s)
-	return s.migrate()
+	return replayMigrations(t, s)
 }
 
 func TestMigrationInboxAndSessionIdentityReplay(t *testing.T) {

@@ -230,7 +230,7 @@ func TestChiefCorrectionsMigrateToJudgments(t *testing.T) {
 		if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>?`, rewind); err != nil {
 			t.Fatal(err)
 		}
-		if err := s.migrate(); err != nil {
+		if err := replayMigrations(t, s); err != nil {
 			t.Fatal(err)
 		}
 		found, err := s.FindJudgments(protocol.JudgmentsFindRequest{Kind: protocol.StandingKindCorrection, Area: "chief"})

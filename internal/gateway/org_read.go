@@ -15,16 +15,79 @@ type leadDB interface {
 	Query(string, ...any) (*sql.Rows, error)
 }
 
-// repoTopAgentOfSQL is the top Agent of the Repo named by a SQL expression.
+// repoTopAgentOfSQL is the lead of the Repo named by a SQL expression. A NULL
+// lead_agent_id follows the owner; an empty string is a cleared lead; any other
+// value is the lead. Every reader of a Repo's lead uses this, so none of them
+// repeats the rule. The alias is not repos: inside the subquery "repos.id" must
+// name the outer Repo, not the inner one.
 func repoTopAgentOfSQL(repo string) string {
-	return `COALESCE((SELECT CASE WHEN rl.repo_id IS NULL THEN r.owner_agent_id ELSE rl.agent_id END
-		FROM repos r LEFT JOIN repo_leads rl ON rl.repo_id=r.id WHERE r.id=` + repo + `),'')`
+	return `COALESCE((SELECT CASE WHEN lr.lead_agent_id IS NULL THEN lr.owner_agent_id ELSE NULLIF(lr.lead_agent_id,'') END FROM repos lr WHERE lr.id=` + repo + `),'')`
 }
 
 var (
 	repoTopAgentExpr = repoTopAgentOfSQL("repos.id")
 	repoTopAgentSQL  = `SELECT ` + repoTopAgentExpr + ` FROM repos WHERE id=?`
 )
+
+// repoSchema is the Repo layout of one store. A store from before the repo fold
+// keeps a Repo's lead in repo_leads and its archive flag in archived_repos. The
+// shipped migration steps that place Agents or check scopes run on such a store,
+// so they ask this which columns exist. Runtime readers use the columns directly.
+type repoSchema struct{ folded bool }
+
+func repoSchemaOf(q leadDB) (repoSchema, error) {
+	var n int
+	err := q.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('repos') WHERE name='lead_agent_id'`).Scan(&n)
+	return repoSchema{folded: n > 0}, err
+}
+
+// repoTopAgentTx is the lead of one Repo in the layout of this store. It
+// returns sql.ErrNoRows when there is no such Repo.
+func repoTopAgentTx(tx *sql.Tx, repo string) (string, error) {
+	rs, err := repoSchemaOf(tx)
+	if err != nil {
+		return "", err
+	}
+	var top string
+	err = tx.QueryRow(`SELECT `+rs.lead("repos.id")+` FROM repos WHERE id=?`, repo).Scan(&top)
+	return top, err
+}
+
+// lead is repoTopAgentOfSQL for this store's layout.
+func (r repoSchema) lead(repo string) string {
+	if r.folded {
+		return repoTopAgentOfSQL(repo)
+	}
+	return `COALESCE((SELECT CASE WHEN rl.repo_id IS NULL THEN ro.owner_agent_id ELSE rl.agent_id END
+		FROM repos ro LEFT JOIN repo_leads rl ON rl.repo_id=ro.id WHERE ro.id=` + repo + `),'')`
+}
+
+// repoLayout is the Repo layout of this store. Once migrate has run, the repo
+// columns exist, so a reader that runs later does not ask the schema.
+func (s *Store) repoLayout() (repoSchema, error) {
+	if s.repoFolded.Load() {
+		return repoSchema{folded: true}, nil
+	}
+	return repoSchemaOf(s.db)
+}
+
+// explicitLeads selects the Repos whose lead an owner set to one Agent. The
+// Repos that follow their owner are not in it.
+func (r repoSchema) explicitLeads() string {
+	if r.folded {
+		return `SELECT id FROM repos WHERE lead_agent_id=?`
+	}
+	return `SELECT repo_id FROM repo_leads WHERE agent_id=?`
+}
+
+// live is the predicate for a Repo that is not archived, on the repos row in
+// the query it is used in.
+func (r repoSchema) live() string {
+	if r.folded {
+		return `archived=0`
+	}
+	return `NOT EXISTS(SELECT 1 FROM archived_repos ar WHERE ar.repo_id=repos.id)`
+}
 
 // mergerAgentSQL is true when the session alias runs as a merger Agent.
 func mergerAgentSQL(alias string) string {
@@ -267,7 +330,7 @@ func resolveLeadSession(q leadDB, agent, repo string, now time.Time) (string, er
 type repoRef struct{ id, name string }
 
 func ledReposQ(q leadDB, agent string) ([]repoRef, error) {
-	rows, err := q.Query(`SELECT id,display_name FROM repos WHERE NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id) AND `+repoTopAgentExpr+`=? ORDER BY id`, agent)
+	rows, err := q.Query(`SELECT id,display_name FROM repos WHERE archived=0 AND `+repoTopAgentExpr+`=? ORDER BY id`, agent)
 	if err != nil {
 		return nil, err
 	}
@@ -284,7 +347,7 @@ func ledReposQ(q leadDB, agent string) ([]repoRef, error) {
 }
 
 func sessionLeadsNamedRepoQ(q leadDB, name, agent, session string) (bool, error) {
-	repos, err := orgPairs(q, `SELECT id,id FROM repos WHERE (id=? OR display_name=? COLLATE NOCASE) AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id)`, name, name)
+	repos, err := orgPairs(q, `SELECT id,id FROM repos WHERE (id=? OR display_name=? COLLATE NOCASE) AND archived=0`, name, name)
 	if err != nil {
 		return false, err
 	}
@@ -305,7 +368,7 @@ func sessionLeadsNamedRepoQ(q leadDB, name, agent, session string) (bool, error)
 
 // leadAddressSessionQ resolves a Repo or Team address to its session.
 func leadAddressSessionQ(q leadDB, kind, name string, now time.Time) (string, error) {
-	query := `SELECT id,` + repoTopAgentExpr + ` FROM repos WHERE (id=? OR display_name=? COLLATE NOCASE) AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id)`
+	query := `SELECT id,` + repoTopAgentExpr + ` FROM repos WHERE (id=? OR display_name=? COLLATE NOCASE) AND archived=0`
 	if kind == "team" {
 		query = `SELECT id,COALESCE(owner_agent_id,'') FROM teams WHERE (id=? OR name=? COLLATE NOCASE) AND active=1`
 	}
@@ -345,4 +408,11 @@ func leadAddressSessionQ(q leadDB, kind, name string, now time.Time) (string, er
 		return "", reject("%s %s lead has no session", kind, name)
 	}
 	return session, err
+}
+
+// storedLead is the lead_agent_id value of a lead write. A cleared lead (nil)
+// is an empty string, which is not NULL: NULL means the lead follows the owner.
+func storedLead(lead any) string {
+	s, _ := lead.(string)
+	return s
 }

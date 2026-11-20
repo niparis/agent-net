@@ -102,6 +102,10 @@ type Store struct {
 	phraseCleaner *phrasing.Cleaner
 	// hiddenMu serializes reads that prune expired session entries with writes.
 	hiddenMu sync.Mutex
+
+	// repoFolded is set once migrate has run, so the repo columns exist.
+	// Readers that run later use the columns without asking the schema.
+	repoFolded atomic.Bool
 }
 
 type bucket struct {
@@ -1325,7 +1329,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -2793,6 +2797,18 @@ func (s *Store) migrate() error {
 					result, err = tx.Exec(`SELECT 1`)
 				}
 			}
+		} else if strings.Contains(migrations[i], repoLeadFoldMarker) {
+			// A replay after a rewind finds the copy done. Only the trigger
+			// rewrite and the drops run again, so no lead set later is reset.
+			var has int
+			err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('repos') WHERE name='lead_agent_id'`).Scan(&has)
+			if err == nil {
+				if has == 0 {
+					result, err = tx.Exec(stmt)
+				} else {
+					result, err = tx.Exec(repoLeadFoldRewrite)
+				}
+			}
 		} else {
 			result, err = tx.Exec(stmt)
 		}
@@ -3342,6 +3358,7 @@ func (s *Store) migrate() error {
 			s.graphJunkMigrated = true
 		}
 	}
+	s.repoFolded.Store(true)
 	return nil
 }
 
@@ -4346,7 +4363,7 @@ var agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.
  COALESCE(s.repo_id,''), COALESCE(s.agent_id,''), COALESCE((SELECT display_name FROM agents WHERE id=s.agent_id),''),
   ` + agentParentOfSQL("s.agent_id") + `,
  COALESCE((SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id)=s.id AND s.agent_id=(` + repoTopAgentOfSQL("s.repo_id") + `) AND NOT ` + mergerAgentSQL("s") + `,0),
-	EXISTS(SELECT 1 FROM repo_leads rl WHERE rl.repo_id=s.repo_id AND rl.agent_id=s.agent_id AND (SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id)=s.id),
+	EXISTS(SELECT 1 FROM repos rp WHERE rp.id=s.repo_id AND rp.lead_agent_id=s.agent_id AND (SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id)=s.id),
  EXISTS(SELECT 1 FROM teams t JOIN team_members tm ON tm.team_id=t.id WHERE t.active=1 AND t.owner_agent_id=s.agent_id AND (SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id)=s.id AND ((tm.member_kind='repo' AND tm.member_id=s.repo_id) OR (tm.member_kind='agent' AND tm.member_id=s.agent_id))),
  @MAX@
  @COUNT@
@@ -4360,7 +4377,7 @@ var agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.
 // agentListTables are the tables agentListSelect and its joins read, with the
 // piChildSQL filter. Keep it equal to those queries (see readThrough).
 var agentListTables = []string{"sessions", "nodes.id", "nodes.hostname", "profiles", "apps", "project_display_names", "project_mergers",
-	"worker_assessments", "agents", "graph_edges", "repo_leads", "repos", "teams", "team_members", "setting_values", "inbox_items",
+	"worker_assessments", "agents", "graph_edges", "repos", "teams", "team_members", "setting_values", "inbox_items",
 	"owner_settings", "messages"}
 
 const (

@@ -41,7 +41,7 @@ func rerunCTOCharterSeed(t *testing.T, s *Store, fresh bool) {
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "CTO default charter seed")); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.migrate(); err != nil {
+	if err := replayMigrations(t, s); err != nil {
 		t.Fatal(err)
 	}
 }

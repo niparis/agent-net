@@ -442,7 +442,7 @@ func leadDemoWith(t *testing.T, r *deliveryRig, agent string) {
 	if err := r.s.AddArchitect(agent, "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.s.db.Exec(`INSERT INTO repo_leads(repo_id,agent_id) VALUES('demo',?)`, agent); err != nil {
+	if _, err := r.s.db.Exec(`UPDATE repos SET lead_agent_id=? WHERE id='demo'`, agent); err != nil {
 		t.Fatal(err)
 	}
 }

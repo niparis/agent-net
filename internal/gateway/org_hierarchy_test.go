@@ -7,7 +7,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// A Repo whose repo_leads row names no lead has no Repo lead in the tree, so
+// A Repo whose lead is cleared has no Repo lead in the tree, so
 // routing and the graph agree on that instead of the graph naming the owner.
 func TestClearedRepoLeadIsNotTheRepoOwner(t *testing.T) {
 	s := teamStore(t)
@@ -123,8 +123,8 @@ func TestAuthorityStaysWithTheDirectLead(t *testing.T) {
 	}
 }
 
-// One Repo lead rule: an explicit repo_leads row wins over the Repo owner, and
-// routing, place text and the graph all name the repo_leads Agent.
+// One Repo lead rule: an explicit lead wins over the Repo owner, and
+// routing, place text and the graph all name the explicit lead Agent.
 func TestOneRepoLeadRuleNamesTheRepoLeadsAgent(t *testing.T) {
 	s := teamStore(t)
 	var node string
@@ -155,7 +155,7 @@ func TestOneRepoLeadRuleNamesTheRepoLeadsAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	if m.To != lead || !strings.Contains(route, "lead of demo") {
-		t.Fatalf("request went to %s (%q), want the repo_leads session %s", m.To, route, lead)
+		t.Fatalf("request went to %s (%q), want the explicit lead session %s", m.To, route, lead)
 	}
 	text, err := s.placeText(lead)
 	if err != nil || !strings.Contains(text, "You lead repo demo") {

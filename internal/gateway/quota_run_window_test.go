@@ -161,6 +161,7 @@ INSERT INTO quota_blocks (node_id, provider, resets_at, detail, at) VALUES ('nod
 		t.Fatal(err)
 	}
 	setSchemaVersion(t, path, migrationVersion(t, "Quota blocks per window")-1)
+	restoreRepoSideTablesAt(t, path)
 	s, err = OpenStore(path)
 	if err != nil {
 		t.Fatal(err)

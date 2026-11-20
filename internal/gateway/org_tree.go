@@ -80,6 +80,11 @@ func agentParentTx(tx *sql.Tx, agent string) (string, error) {
 		}
 		return "", err
 	}
+	rs, err := repoSchemaOf(tx)
+	if err != nil {
+		return "", err
+	}
+	lead := rs.lead("repos.id")
 	if role == "merger" {
 		var repo string
 		err := tx.QueryRow(`SELECT pm.project FROM project_mergers pm JOIN sessions s ON s.id=pm.session_id WHERE s.agent_id=? ORDER BY pm.project LIMIT 1`, agent).Scan(&repo)
@@ -90,7 +95,7 @@ func agentParentTx(tx *sql.Tx, agent string) (string, error) {
 			return "", err
 		}
 		var top string
-		err = tx.QueryRow(repoTopAgentSQL, repo).Scan(&top)
+		err = tx.QueryRow("SELECT "+lead+" FROM repos WHERE id=?", repo).Scan(&top)
 		if err == sql.ErrNoRows {
 			return "", nil
 		}
@@ -107,7 +112,7 @@ func agentParentTx(tx *sql.Tx, agent string) (string, error) {
 		return protocol.OrgRoot, nil
 	}
 	var parent string
-	err := tx.QueryRow(`SELECT t.owner_agent_id FROM team_members tm JOIN teams t ON t.id=tm.team_id
+	err = tx.QueryRow(`SELECT t.owner_agent_id FROM team_members tm JOIN teams t ON t.id=tm.team_id
 		WHERE tm.member_kind='agent' AND tm.member_id=? AND t.active=1 AND COALESCE(t.owner_agent_id,'')<>'' AND t.owner_agent_id<>?
 		ORDER BY t.id LIMIT 1`, agent, agent).Scan(&parent)
 	if err == nil {
@@ -118,7 +123,7 @@ func agentParentTx(tx *sql.Tx, agent string) (string, error) {
 	}
 	err = tx.QueryRow(`SELECT t.owner_agent_id FROM repos JOIN team_members tm ON tm.member_kind='repo' AND tm.member_id=repos.id
 		JOIN teams t ON t.id=tm.team_id
-		WHERE t.active=1 AND COALESCE(t.owner_agent_id,'')<>'' AND t.owner_agent_id<>? AND `+repoTopAgentExpr+`=?
+		WHERE t.active=1 AND COALESCE(t.owner_agent_id,'')<>'' AND t.owner_agent_id<>? AND `+lead+`=?
 		ORDER BY t.id, repos.id LIMIT 1`, agent, agent).Scan(&parent)
 	if err == nil {
 		return parent, nil
@@ -133,10 +138,10 @@ func agentParentTx(tx *sql.Tx, agent string) (string, error) {
 	if leads {
 		return "cto", nil
 	}
-	err = tx.QueryRow(`SELECT `+repoTopAgentExpr+` FROM sessions s JOIN repos ON repos.id=s.repo_id
+	err = tx.QueryRow(`SELECT `+lead+` FROM sessions s JOIN repos ON repos.id=s.repo_id
 		WHERE s.agent_id=? AND s.worker='' AND NOT EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=s.id)
-		AND `+repoTopAgentExpr+`<>'' AND `+repoTopAgentExpr+`<>s.agent_id
-		ORDER BY `+repoTopAgentExpr+` LIMIT 1`, agent).Scan(&parent)
+		AND `+lead+`<>'' AND `+lead+`<>s.agent_id
+		ORDER BY `+lead+` LIMIT 1`, agent).Scan(&parent)
 	if err == nil {
 		return parent, nil
 	}
@@ -202,8 +207,8 @@ func placeAgentTx(tx *sql.Tx, agent string) error {
 // placeRepoAgentsTx moves the tree for one Repo after its lead or owner
 // changed: its top Agent and every Agent that works in it.
 func placeRepoAgentsTx(tx *sql.Tx, repo string) error {
-	var top string
-	if err := tx.QueryRow(repoTopAgentSQL, repo).Scan(&top); err != nil {
+	top, err := repoTopAgentTx(tx, repo)
+	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil
 		}
@@ -261,8 +266,7 @@ func placeTeamMembersTx(tx *sql.Tx, team string) error {
 			agents = append(agents, id)
 			continue
 		}
-		var top string
-		err = tx.QueryRow(repoTopAgentSQL, id).Scan(&top)
+		top, err := repoTopAgentTx(tx, id)
 		if err != nil && err != sql.ErrNoRows {
 			rows.Close()
 			return err
@@ -360,7 +364,7 @@ func clearLostLeadSessionTx(tx *sql.Tx, agent string) error {
 		return nil
 	}
 	_, err := tx.Exec(`UPDATE agents SET lead_session=NULL WHERE id=? AND lead_session IS NOT NULL
-		AND NOT EXISTS(SELECT 1 FROM repo_leads WHERE agent_id=?)
+		AND NOT EXISTS(SELECT 1 FROM repos WHERE lead_agent_id=?)
 		AND NOT EXISTS(SELECT 1 FROM teams WHERE active=1 AND owner_agent_id=?)`, agent, agent, agent)
 	return err
 }

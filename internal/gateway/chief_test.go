@@ -209,7 +209,7 @@ func TestChiefMigrationPreservesOwnerRoutedAsk(t *testing.T) {
 		regularID, asker, s.now().UnixNano()); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.migrate(); err != nil {
+	if err := replayMigrations(t, s); err != nil {
 		t.Fatal(err)
 	}
 	for id, wantRouteFixed := range map[string]int{noticeID: 1, leadAskID: 1, regularID: 0} {

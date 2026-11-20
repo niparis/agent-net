@@ -52,7 +52,7 @@ func TestSessionStallMigrationReplay(t *testing.T) {
 				if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, version); err != nil {
 					t.Fatal(err)
 				}
-				if err := s.migrate(); err != nil {
+				if err := replayMigrations(t, s); err != nil {
 					t.Fatal(err)
 				}
 			}

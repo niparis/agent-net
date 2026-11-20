@@ -621,7 +621,7 @@ func TestAsksMigrationKeepsOpenItems(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 0; i < 2; i++ { // a replay must be safe
-		if err := s.migrate(); err != nil {
+		if err := replayMigrations(t, s); err != nil {
 			t.Fatal(err)
 		}
 	}

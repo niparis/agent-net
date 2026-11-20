@@ -30,7 +30,7 @@ func migrateOnly(t *testing.T, path string, steps int) *Store {
 	full := migrations
 	migrations = full[:steps]
 	defer func() { migrations = full }()
-	if err := s.migrate(); err != nil {
+	if err := replayMigrations(t, s); err != nil {
 		s.Close()
 		t.Fatal(err)
 	}

@@ -43,7 +43,7 @@ func rerunFrontDoorFlush(t *testing.T, s *Store, fresh bool) {
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "Front door flush of open owner items")); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.migrate(); err != nil {
+	if err := replayMigrations(t, s); err != nil {
 		t.Fatal(err)
 	}
 }

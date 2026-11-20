@@ -70,7 +70,7 @@ func TestMemberWaitingOnItsRepoLeadMakesNoOwnerAsk(t *testing.T) {
 	if err := s.db.QueryRow(`SELECT id,agent_id FROM sessions WHERE repo_id='other'`).Scan(&lead, &leadAgent); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO repo_leads(repo_id,agent_id) VALUES('demo',?)`, leadAgent); err != nil {
+	if _, err := s.db.Exec(`UPDATE repos SET lead_agent_id=? WHERE id='demo'`, leadAgent); err != nil {
 		t.Fatal(err)
 	}
 	const text = "other confirming the plan"

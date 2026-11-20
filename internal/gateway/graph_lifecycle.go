@@ -122,7 +122,7 @@ func setLifecycleTx(tx *sql.Tx, kind, id, expected, next, actor string, now int6
 	var err error
 	switch kind {
 	case "repo":
-		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id) FROM repos WHERE id=?`, id).Scan(&inactive)
+		err = tx.QueryRow(`SELECT archived<>0 FROM repos WHERE id=?`, id).Scan(&inactive)
 	case "agent":
 		err = tx.QueryRow(`SELECT tombstone FROM agents WHERE id=?`, id).Scan(&inactive)
 	default:
@@ -161,9 +161,9 @@ func setLifecycleTx(tx *sql.Tx, kind, id, expected, next, actor string, now int6
 	}
 	if kind == "repo" {
 		if next == "inactive" {
-			_, err = tx.Exec(`INSERT INTO archived_repos(repo_id) VALUES(?)`, id)
+			_, err = tx.Exec(`UPDATE repos SET archived=1 WHERE id=?`, id)
 		} else {
-			_, err = tx.Exec(`DELETE FROM archived_repos WHERE repo_id=?`, id)
+			_, err = tx.Exec(`UPDATE repos SET archived=0 WHERE id=?`, id)
 		}
 	} else {
 		_, err = tx.Exec(`UPDATE agents SET tombstone=?,updated_at=? WHERE id=?`, next == "inactive", now, id)
@@ -198,7 +198,7 @@ func lifecycleReferences(tx *sql.Tx, kind, id string) ([]string, error) {
 		}
 		queries = append(queries,
 			query{"repo owner", `SELECT id FROM repos WHERE owner_agent_id=? ORDER BY id`, []any{id}},
-			query{"repo lead", `SELECT repo_id FROM repo_leads WHERE agent_id=? ORDER BY repo_id`, []any{id}},
+			query{"repo lead", `SELECT id FROM repos WHERE lead_agent_id=? ORDER BY id`, []any{id}},
 			query{"session", `SELECT id FROM sessions WHERE agent_id=? AND online=1 ORDER BY id`, []any{id}},
 			query{"delivery task", `SELECT change_id||':'||step FROM delivery_step_tasks WHERE owner_node=? AND completed=0 ORDER BY change_id,step`, []any{id}},
 			query{"worker start", `SELECT ref FROM worker_starts WHERE caller_agent_id=? AND state='open' ORDER BY ref`, []any{id}},
@@ -237,7 +237,7 @@ func liveEdgeEndpoints(tx *sql.Tx, e protocol.Edge) error {
 		if r.kind == "agent" && r.id == protocol.CTONodeName {
 			r.id = "cto"
 		}
-		table, live := "repos", " AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id)"
+		table, live := "repos", " AND archived=0"
 		if r.kind == "agent" {
 			table, live = "agents", " AND tombstone=0"
 		}

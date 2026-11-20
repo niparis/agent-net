@@ -55,8 +55,8 @@ func leadSessionCandidatesQ(q leadDB, agent string) ([]leadSessionRef, error) {
 func agentLeadsAnythingQ(q leadDB, agent string) (bool, error) {
 	var leads bool
 	err := q.QueryRow(`SELECT EXISTS(
-		SELECT 1 FROM repos r WHERE NOT EXISTS(SELECT 1 FROM archived_repos ar WHERE ar.repo_id=r.id)
-			AND COALESCE((SELECT rl.agent_id FROM repo_leads rl WHERE rl.repo_id=r.id),r.owner_agent_id)=?
+		SELECT 1 FROM repos r WHERE r.archived=0
+			AND `+repoTopAgentOfSQL("r.id")+`=?
 		UNION ALL SELECT 1 FROM teams t WHERE t.active=1 AND t.owner_agent_id=?
 		UNION ALL SELECT 1 FROM agents a WHERE a.id=? AND a.lead_level<>0 AND a.role<>'merger')`, agent, agent, agent).Scan(&leads)
 	return leads, err

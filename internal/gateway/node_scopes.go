@@ -105,7 +105,11 @@ func validateScopeTx(tx *sql.Tx, node, kind, over string) error {
 	case "team":
 		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM teams WHERE id=? AND active=1)`, id).Scan(&ok)
 	case "repo":
-		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id))`, id).Scan(&ok)
+		var rs repoSchema
+		if rs, err = repoSchemaOf(tx); err != nil {
+			return err
+		}
+		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND `+rs.live()+`)`, id).Scan(&ok)
 	case "agent":
 		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM agents WHERE id=? AND tombstone=0)`, id).Scan(&ok)
 	}
@@ -234,7 +238,13 @@ func (s *Store) ScopesWithRepos(node string) ([]protocol.Scope, map[string][]str
 			query = `SELECT member_id FROM team_members WHERE team_id=? AND member_kind='repo'
  UNION SELECT r.id FROM repos r JOIN team_members m ON m.member_kind='agent' AND m.member_id=r.owner_agent_id WHERE m.team_id=?`
 		case "agent":
-			query = `SELECT id FROM repos WHERE owner_agent_id=? UNION SELECT repo_id FROM repo_leads WHERE agent_id=?`
+			// The cutover step that reads scopes runs on a store from before the
+			// repo fold, so the explicit leads come from that store's layout.
+			rs, err := s.repoLayout()
+			if err != nil {
+				return nil, nil, err
+			}
+			query = `SELECT id FROM repos WHERE owner_agent_id=? UNION ` + rs.explicitLeads()
 		default:
 			continue
 		}
@@ -367,7 +377,11 @@ func seedNodeScopesTx(tx *sql.Tx, now int64) error {
 		case source == "/delivery/merger":
 			return mergerAgents[project], nil
 		case source == "/delivery/caller":
-			return column(`SELECT COALESCE((SELECT agent_id FROM repo_leads WHERE repo_id=repos.id), owner_agent_id, '') FROM repos WHERE id=?`, project)
+			rs, err := repoSchemaOf(tx)
+			if err != nil {
+				return nil, err
+			}
+			return column(`SELECT `+rs.lead("repos.id")+` FROM repos WHERE id=?`, project)
 		case strings.HasPrefix(source, "/"):
 			return nil, nil
 		}
