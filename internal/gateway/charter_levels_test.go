@@ -21,7 +21,7 @@ func TestCharterLevelsMigrationReplay(t *testing.T) {
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>?`, rewind); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.migrate(); err != nil {
+	if err := replayMigrations(t, s); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 2; i++ {
@@ -45,7 +45,7 @@ func TestCharterLevelsMigrationReplay(t *testing.T) {
 		if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>?`, rewind); err != nil {
 			t.Fatal(err)
 		}
-		if err := s.migrate(); err != nil {
+		if err := replayMigrations(t, s); err != nil {
 			t.Fatal(err)
 		}
 	}

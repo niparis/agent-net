@@ -187,7 +187,7 @@ func (s *Store) graphForRefRecords(ref *protocol.GraphRef, places bool) (protoco
 	for _, n := range legacy.Nodes {
 		byLegacy[n.Name] = n
 	}
-	tops, err := orgPairs(s.db, `SELECT r.id,COALESCE(CASE WHEN rl.repo_id IS NULL THEN r.owner_agent_id ELSE rl.agent_id END,'') FROM repos r LEFT JOIN repo_leads rl ON rl.repo_id=r.id`)
+	tops, err := orgPairs(s.db, `SELECT r.id,`+repoTopAgentOfSQL("r.id")+` FROM repos r`)
 	if err != nil {
 		return g, err
 	}
@@ -440,7 +440,7 @@ func (s *Store) setRefCharter(ref protocol.GraphRef, attr, value, actor string, 
 	}
 	if ref.Kind == "repo" {
 		var exists bool
-		if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND NOT EXISTS (SELECT 1 FROM archived_repos WHERE repo_id=repos.id))`, ref.ID).Scan(&exists); err != nil {
+		if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND archived=0)`, ref.ID).Scan(&exists); err != nil {
 			return err
 		}
 		if !exists {

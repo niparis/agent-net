@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"database/sql"
 	"strings"
 	"testing"
 
@@ -239,15 +238,11 @@ func TestOrderFromRepoLead(t *testing.T) {
 
 func TestMigrationAddsAuthorityColumnsOnce(t *testing.T) {
 	s := teamStore(t)
-	for _, c := range []struct{ table, col string }{{"teams", "authority_mode"}, {"teams", "held_back"}, {"messages", "is_order"}} {
+	for _, c := range []struct{ table, col string }{{"teams", "authority_mode"}, {"teams", "held_back"}, {"messages", "is_order"}, {"repos", "held_back"}} {
 		var n int
 		if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?`, c.table, c.col).Scan(&n); err != nil || n != 1 {
 			t.Fatalf("%s.%s: %d %v", c.table, c.col, n, err)
 		}
-	}
-	var n sql.NullInt64
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name='repo_held_back'`).Scan(&n); err != nil || n.Int64 != 1 {
-		t.Fatalf("repo_held_back: %v %v", n, err)
 	}
 }
 

@@ -45,7 +45,7 @@ func graphKind(tx *sql.Tx, name string) (string, error) {
 	}
 	if exists == 0 {
 		var repo bool
-		if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND (SELECT enabled FROM graph_ref_gate WHERE id=1)=1 AND NOT EXISTS (SELECT 1 FROM archived_repos WHERE repo_id=repos.id))`, name).Scan(&repo); err != nil {
+		if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND (SELECT enabled FROM graph_ref_gate WHERE id=1)=1 AND archived=0)`, name).Scan(&repo); err != nil {
 			return "", err
 		}
 		if !repo {
@@ -708,7 +708,7 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 		}
 		switch targetKind {
 		case "repo":
-			err = tx.QueryRow(`SELECT `+repoTopAgentExpr+` FROM repos WHERE id=? AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id)`, node).Scan(&current)
+			err = tx.QueryRow(`SELECT `+repoTopAgentExpr+` FROM repos WHERE id=? AND archived=0`, node).Scan(&current)
 			if err != nil {
 				return err
 			}
@@ -725,9 +725,9 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 				}
 			}
 			if attr == "lead/default" {
-				_, err = tx.Exec(`DELETE FROM repo_leads WHERE repo_id=?`, node)
+				_, err = tx.Exec(`UPDATE repos SET lead_agent_id=NULL WHERE id=?`, node)
 			} else {
-				_, err = tx.Exec(`INSERT INTO repo_leads(repo_id,agent_id) VALUES(?,?) ON CONFLICT(repo_id) DO UPDATE SET agent_id=excluded.agent_id`, node, lead)
+				_, err = tx.Exec(`UPDATE repos SET lead_agent_id=? WHERE id=?`, storedLead(lead), node)
 			}
 		case "team":
 			err = tx.QueryRow(`SELECT owner_agent_id FROM teams WHERE id=? AND active=1`, node).Scan(&current)
@@ -857,11 +857,7 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 		if current != value {
 			return reject("held back text changed since that history entry")
 		}
-		if old == "" {
-			_, err = tx.Exec(`DELETE FROM repo_held_back WHERE repo_id=?`, node)
-		} else {
-			_, err = tx.Exec(`INSERT INTO repo_held_back(repo_id,held_back) VALUES(?,?) ON CONFLICT(repo_id) DO UPDATE SET held_back=excluded.held_back`, node, old)
-		}
+		_, err = tx.Exec(`UPDATE repos SET held_back=? WHERE id=?`, old, node)
 		if err != nil {
 			return err
 		}
@@ -1223,7 +1219,7 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 				table = "agents"
 			}
 			var exists bool
-			live := " AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id)"
+			live := " AND archived=0"
 			if ref.Kind == "agent" {
 				live = " AND tombstone=0"
 			}

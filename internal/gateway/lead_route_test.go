@@ -478,7 +478,7 @@ func TestPinnedOfflineLeadSessionIsChosenFirst(t *testing.T) {
 	if err := p.s.db.QueryRow(`SELECT agent_id FROM sessions WHERE id=?`, older).Scan(&agent); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.s.db.Exec(`INSERT INTO repo_leads(repo_id,agent_id) VALUES('demo',?) ON CONFLICT(repo_id) DO UPDATE SET agent_id=excluded.agent_id`, agent); err != nil {
+	if _, err := p.s.db.Exec(`UPDATE repos SET lead_agent_id=? WHERE id='demo'`, agent); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := p.s.db.Exec(`UPDATE agents SET lead_session=? WHERE id=?`, older, agent); err != nil {

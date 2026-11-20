@@ -57,7 +57,7 @@ func repoTeam(q leadDB, repo string) (id, name, mode, held string, owner sql.Nul
 
 func repoHeldBack(q leadDB, repo string) (string, error) {
 	var held string
-	err := q.QueryRow(`SELECT held_back FROM repo_held_back WHERE repo_id=?`, repo).Scan(&held)
+	err := q.QueryRow(`SELECT held_back FROM repos WHERE id=?`, repo).Scan(&held)
 	if err == sql.ErrNoRows {
 		return "", nil
 	}
@@ -200,7 +200,7 @@ func validHeldBack(text string) bool {
 // writeRepoHeldBack sets the held back text of a repo.
 func writeRepoHeldBack(tx *sql.Tx, q protocol.TeamWrite, actor string, now int64) (oldValue, newValue string, err error) {
 	var live bool
-	if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id))`, q.ID).Scan(&live); err != nil {
+	if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND archived=0)`, q.ID).Scan(&live); err != nil {
 		return
 	}
 	if !live {
@@ -217,11 +217,7 @@ func writeRepoHeldBack(tx *sql.Tx, q protocol.TeamWrite, actor string, now int64
 	if oldValue == newValue {
 		return
 	}
-	if newValue == "" {
-		_, err = tx.Exec(`DELETE FROM repo_held_back WHERE repo_id=?`, q.ID)
-	} else {
-		_, err = tx.Exec(`INSERT INTO repo_held_back(repo_id,held_back) VALUES(?,?) ON CONFLICT(repo_id) DO UPDATE SET held_back=excluded.held_back`, q.ID, newValue)
-	}
+	_, err = tx.Exec(`UPDATE repos SET held_back=? WHERE id=?`, newValue, q.ID)
 	if err == nil && actor == "cto" {
 		err = graphRecord(tx, "repo_held_back", q.ID, "held_back", oldValue, newValue, actor, now)
 	}

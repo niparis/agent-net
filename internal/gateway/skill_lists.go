@@ -233,7 +233,7 @@ func (s *Store) skillRepoID(scope string) (string, error) {
 	}
 	var id string
 	err := s.db.QueryRow(`SELECT id FROM repos WHERE (id=? OR display_name=? COLLATE NOCASE)
-		AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id) LIMIT 1`, scope, scope).Scan(&id)
+		AND archived=0 LIMIT 1`, scope, scope).Scan(&id)
 	if err == nil {
 		return id, nil
 	}
@@ -252,7 +252,7 @@ func (s *Store) skillRepoID(scope string) (string, error) {
 func (s *Store) skillAgentRepo(agent string) (string, error) {
 	var owned string
 	if err := s.db.QueryRow(`SELECT CASE WHEN count(*)=1 THEN min(id) ELSE '' END FROM repos WHERE owner_agent_id=?
-		AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id)`, agent).Scan(&owned); err != nil {
+		AND archived=0`, agent).Scan(&owned); err != nil {
 		return "", err
 	}
 	if owned != "" {
@@ -309,7 +309,7 @@ func (s *Store) SkillListsEffective(level, scope string) ([]protocol.EffectiveSk
 		}
 		teamRows.Close()
 		repoRows, err := s.db.Query(`SELECT id FROM repos
-			WHERE NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id) ORDER BY id`)
+			WHERE archived=0 ORDER BY id`)
 		if err != nil {
 			return nil, err
 		}

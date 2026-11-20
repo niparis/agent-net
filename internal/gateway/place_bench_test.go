@@ -25,11 +25,11 @@ func benchPlaceStore(b *testing.B) *Store {
 		if _, err := s.db.Exec(`INSERT INTO repos(id,display_name,created_at,updated_at,owner_agent_id) VALUES(?,?,?,?,?)`, repo, repo, now, now, agent); err != nil {
 			b.Fatal(err)
 		}
-		if _, err := s.db.Exec(`INSERT INTO repo_leads(repo_id,agent_id) VALUES(?,?)`, repo, agent); err != nil {
+		if _, err := s.db.Exec(`UPDATE repos SET lead_agent_id=? WHERE id=?`, agent, repo); err != nil {
 			b.Fatal(err)
 		}
 		if i%2 == 0 {
-			if _, err := s.db.Exec(`INSERT INTO repo_held_back(repo_id,held_back) VALUES(?,?)`, repo, "force pushes"); err != nil {
+			if _, err := s.db.Exec(`UPDATE repos SET held_back=? WHERE id=?`, "force pushes", repo); err != nil {
 				b.Fatal(err)
 			}
 			if _, err := s.db.Exec(`INSERT INTO sessions(id,node_id,harness,native_id,name,last_seen,online,agent_id,repo_id,archived_at,worker) VALUES(?,?,?,?,?,?,?,?,?,0,'')`,

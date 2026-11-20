@@ -99,7 +99,7 @@ func TestStandingOrdersOldMigration(t *testing.T) {
 	if _, err = s.db.Exec("UPDATE schema_version SET version=?", at); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.migrate(); err != nil {
+	if err = replayMigrations(t, s); err != nil {
 		t.Fatal(err)
 	}
 	hits, err := s.SearchStandingOrders(protocol.StandingOrdersRequest{Query: "legacy"})

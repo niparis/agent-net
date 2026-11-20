@@ -91,14 +91,15 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 	historyAttr := "lead"
 	switch q.Ref.Kind {
 	case "repo":
+		// A lead that was set or cleared is explicit. NULL follows the owner.
 		var explicit bool
-		if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repo_leads WHERE repo_id=?)`, q.Ref.ID).Scan(&explicit); err != nil {
+		if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND lead_agent_id IS NOT NULL)`, q.Ref.ID).Scan(&explicit); err != nil {
 			return err
 		}
 		if !explicit {
 			historyAttr = "lead/default"
 		}
-		err = tx.QueryRow(`SELECT `+repoTopAgentExpr+` FROM repos WHERE id=? AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=repos.id)`, q.Ref.ID).Scan(&old)
+		err = tx.QueryRow(`SELECT `+repoTopAgentExpr+` FROM repos WHERE id=? AND archived=0`, q.Ref.ID).Scan(&old)
 		if err == sql.ErrNoRows {
 			return reject("unknown or archived Repo")
 		}
@@ -115,7 +116,7 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 				return reject("lead Agent has no session in this Repo")
 			}
 		}
-		_, err = tx.Exec(`INSERT INTO repo_leads(repo_id,agent_id) VALUES(?,?) ON CONFLICT(repo_id) DO UPDATE SET agent_id=excluded.agent_id`, q.Ref.ID, lead)
+		_, err = tx.Exec(`UPDATE repos SET lead_agent_id=? WHERE id=?`, storedLead(lead), q.Ref.ID)
 	case "team":
 		err = tx.QueryRow(`SELECT owner_agent_id FROM teams WHERE id=? AND active=1`, q.Ref.ID).Scan(&old)
 		if err == sql.ErrNoRows {

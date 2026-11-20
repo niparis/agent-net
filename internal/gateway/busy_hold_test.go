@@ -557,7 +557,7 @@ func TestNestedBatchRepairMigration(t *testing.T) {
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, version); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.migrate(); err != nil {
+	if err := replayMigrations(t, s); err != nil {
 		t.Fatal(err)
 	}
 	if m, _, _ := s.Message(leaf); m.State != protocol.StateDelivered {

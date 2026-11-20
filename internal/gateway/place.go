@@ -228,7 +228,7 @@ func (s *Store) placeText(session string) (string, error) {
 // the leader's own.
 func (s *Store) teamMemberNames(team, ownRepo, ownAgent string) ([]string, error) {
 	rows, err := s.db.Query(`SELECT r.display_name FROM team_members tm JOIN repos r ON r.id=tm.member_id
-		WHERE tm.team_id=? AND tm.member_kind='repo' AND tm.member_id<>? AND NOT EXISTS(SELECT 1 FROM archived_repos WHERE repo_id=r.id)
+		WHERE tm.team_id=? AND tm.member_kind='repo' AND tm.member_id<>? AND r.archived=0
 		UNION SELECT a.display_name FROM team_members tm JOIN agents a ON a.id=tm.member_id
 		WHERE tm.team_id=? AND tm.member_kind='agent' AND tm.member_id<>?`, team, ownRepo, team, ownAgent)
 	if err != nil {

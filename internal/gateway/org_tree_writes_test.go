@@ -192,12 +192,12 @@ func TestMergerRestoreRebindsItsAgent(t *testing.T) {
 	}
 }
 
-// The build and the per-write update share one rule: an explicit repo_leads
-// row wins over repos.owner_agent_id.
+// The build and the per-write update share one rule: an explicit repo lead
+// wins over repos.owner_agent_id.
 func TestOrgTreeBuildPrefersRepoLead(t *testing.T) {
 	s := teamStore(t)
 	agentSession(t, s, "demo", "visitor")
-	if _, err := s.db.Exec(`INSERT INTO repo_leads(repo_id,agent_id) VALUES('demo','other')`); err != nil {
+	if _, err := s.db.Exec(`UPDATE repos SET lead_agent_id='other' WHERE id='demo'`); err != nil {
 		t.Fatal(err)
 	}
 	rewindOrgTree(t, s)
@@ -215,7 +215,7 @@ func liveLeadFixture(t *testing.T) (*Store, string) {
 	lead := agentSession(t, s, "demo", "lead2")
 	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "alpha", Name: "Alpha", Owner: &protocol.GraphRef{Kind: "agent", ID: "lead2"}})
 	teamWrite(t, s, protocol.TeamWrite{Action: "membership", ID: "alpha", Member: &protocol.GraphRef{Kind: "repo", ID: "demo"}})
-	if _, err := s.db.Exec(`INSERT INTO repo_leads(repo_id,agent_id) VALUES('demo','lead2') ON CONFLICT(repo_id) DO UPDATE SET agent_id='lead2'`); err != nil {
+	if _, err := s.db.Exec(`UPDATE repos SET lead_agent_id='lead2' WHERE id='demo'`); err != nil {
 		t.Fatal(err)
 	}
 	for _, q := range []string{
@@ -247,7 +247,7 @@ func TestOrgTreeRepairMovesAStaleRepoOwnerAgent(t *testing.T) {
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, orgTreeRepairMarker)); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.migrate(); err != nil {
+	if err := replayMigrations(t, s); err != nil {
 		t.Fatal(err)
 	}
 	if got := reportsTo(t, s, "demo"); got != "lead2" {

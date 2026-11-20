@@ -151,9 +151,9 @@ func TestCTORepoLeadUndoRestoresDefault(t *testing.T) {
 	if err = s.GraphUndo(history[0].ID, "owner"); err != nil {
 		t.Fatal(err)
 	}
-	var count int
-	if err = s.db.QueryRow(`SELECT COUNT(*) FROM repo_leads WHERE repo_id='demo'`).Scan(&count); err != nil || count != 0 {
-		t.Fatalf("default lead override remains: %d %v", count, err)
+	var explicit bool
+	if err = s.db.QueryRow(`SELECT lead_agent_id IS NOT NULL FROM repos WHERE id='demo'`).Scan(&explicit); err != nil || explicit {
+		t.Fatalf("default lead is still an explicit lead: %v %v", explicit, err)
 	}
 }
 

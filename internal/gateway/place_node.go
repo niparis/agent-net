@@ -75,7 +75,7 @@ func (s *Store) buildPlaceIndex(repos []RepoRecord, agents []AgentRecord, now ti
 		}
 	}
 	var err error
-	if idx.repoLeadAgent, err = orgPairs(s.db, `SELECT r.id,COALESCE(CASE WHEN rl.repo_id IS NULL THEN r.owner_agent_id ELSE rl.agent_id END,'') FROM repos r LEFT JOIN repo_leads rl ON rl.repo_id=r.id`); err != nil {
+	if idx.repoLeadAgent, err = orgPairs(s.db, `SELECT r.id,`+repoTopAgentOfSQL("r.id")+` FROM repos r`); err != nil {
 		return nil, err
 	}
 	if idx.agentLead, err = orgPairs(s.db, `SELECT id,COALESCE(lead_session,'') FROM agents`); err != nil {
@@ -141,7 +141,7 @@ func (s *Store) buildPlaceIndex(repos []RepoRecord, agents []AgentRecord, now ti
 	}
 	rows.Close()
 
-	rows, err = s.db.Query(`SELECT repo_id,held_back FROM repo_held_back`)
+	rows, err = s.db.Query(`SELECT id,held_back FROM repos WHERE held_back<>''`)
 	if err != nil {
 		return nil, err
 	}

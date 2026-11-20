@@ -239,7 +239,7 @@ func TestAppMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.migrate(); err != nil {
+	if err := replayMigrations(t, s); err != nil {
 		t.Fatal(err)
 	}
 	if got, ok, err := s.NodeByToken(token); err != nil || !ok || got != node {
@@ -253,7 +253,7 @@ func TestAppMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.migrate(); err != nil {
+	if err := replayMigrations(t, s); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := s.AppForToken(raw, "access", c.t); err != nil || got.ID != app.ID {

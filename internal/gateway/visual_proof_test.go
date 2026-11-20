@@ -82,6 +82,7 @@ func TestVisualProofMigrationUpgrade(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
+	restoreRepoSideTablesAt(t, path)
 	s, err = OpenStore(path)
 	if err != nil {
 		t.Fatal(err)

@@ -143,7 +143,7 @@ func TestGraphLifecycleMigrationDuplicates(t *testing.T) {
  DROP TRIGGER IF EXISTS agents_unique_name_insert; DROP TRIGGER IF EXISTS agents_unique_name_update;
  DROP TRIGGER repo_live_owner_insert; DROP TRIGGER repo_live_owner_update; DROP TRIGGER agent_owned_tombstone;
  DROP TRIGGER IF EXISTS session_lifecycle_insert; DROP TRIGGER IF EXISTS session_lifecycle_update;
- DROP TABLE archived_repos; DELETE FROM schema_version WHERE version>=121;
+ DROP TABLE IF EXISTS archived_repos; DELETE FROM schema_version WHERE version>=121;
  INSERT INTO agents(id,display_name,created_at,updated_at) VALUES('a1','Duplicate',0,0),('a2','duplicate',0,0);
  INSERT INTO repos(id,display_name,created_at,updated_at) VALUES('r1','Shared',0,0),('r2','shared',0,0)`)
 	if err != nil {
