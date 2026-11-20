@@ -1150,7 +1150,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_message_reply",
-    "description": "Reply to a message you received, with an outcome on requests: accept, reject (reason), redirect (reason, redirect_to), escalate (recommendation). ack: true closes a request with no answer.",
+    "description": "Reply to a message you received, with an outcome on requests: accept, reject (reason), redirect (reason, redirect_to), escalate (recommendation). ack: true closes a request with no answer; progress: true leaves it open.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1165,6 +1165,10 @@ export const TOOL_CATALOG = [
         "ack": {
           "type": "boolean",
           "description": "Close a request that needs no answer: empty body allowed, nothing is sent back. Cannot be combined with outcome."
+        },
+        "progress": {
+          "type": "boolean",
+          "description": "Interim update: delivers the reply and keeps the request open. A reply without progress is final."
         },
         "outcome": {
           "type": "string",

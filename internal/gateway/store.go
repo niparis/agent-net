@@ -5200,7 +5200,7 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 			}
 		}
 	}
-	if m.Type == protocol.TypeReply {
+	if m.Type == protocol.TypeReply && !p.Progress {
 		// A team lead's answer to a question of its member closes the ask.
 		if err := s.closeLeadAsk(tx, m); err != nil {
 			return msg, false, err
@@ -5217,7 +5217,7 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 				m.ParentID, m.ParentID, protocol.StateAcknowledged); err != nil {
 				return msg, false, err
 			}
-		} else {
+		} else if !p.Progress {
 			if err := s.storeHandoffCopy(tx, m.ParentID, m); err != nil {
 				return msg, false, err
 			}
@@ -5228,9 +5228,16 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 			if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id=? AND EXISTS (SELECT 1 FROM messages WHERE id=? AND state='replied')`, m.ParentID, m.ParentID); err != nil {
 				return msg, false, err
 			}
+			if _, err := tx.Exec(`UPDATE inbox_items SET status='closed', answer='replied', answered_at=? WHERE source_ref=? AND status='open'`, now.UnixNano(), "owed-ask:"+m.ParentID); err != nil {
+				return msg, false, err
+			}
+		} else {
+			if err := s.storeHandoffCopy(tx, m.ParentID, m); err != nil {
+				return msg, false, err
+			}
 		}
 	}
-	if m.ParentID != "" {
+	if m.ParentID != "" && !p.Progress {
 		state := protocol.StateReplied
 		if m.Type == protocol.TypeAck {
 			state = protocol.StateAcknowledged
@@ -5274,6 +5281,11 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 	// stuck delivery to it is still reported.
 	if _, err := tx.Exec(`UPDATE sessions SET harness_activity=MAX(harness_activity,?) WHERE id=? AND status='busy'`, now.UnixNano(), m.From); err != nil {
 		return msg, false, err
+	}
+	if p.Progress {
+		if _, err := tx.Exec(`UPDATE sessions SET harness_activity=MAX(harness_activity,?), last_active=MAX(last_active,?) WHERE id=?`, now.UnixNano(), now.UnixNano(), m.From); err != nil {
+			return msg, false, err
+		}
 	}
 	detail := strings.TrimPrefix(pairs("type", m.Type, "to", m.To, "bytes", len(m.Body)), " ")
 	if m.FromCTO {

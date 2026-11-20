@@ -1,0 +1,303 @@
+package gateway
+
+import (
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/niparis/agent-net/internal/protocol"
+)
+
+func TestOwedReplyNudgeAndAskLifecycle(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+
+	req, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "Fix the gateway stall bug", Type: protocol.TypeRequest})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	start := c.t
+	if _, err := s.db.Exec("UPDATE sessions SET status='idle', last_active=? WHERE id=?", start.UnixNano(), b); err != nil {
+		t.Fatal(err)
+	}
+
+	// Advance 15 minutes: idle duration reached.
+	c.t = start.Add(15 * time.Minute)
+	if err := s.checkOwedReplies(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Exactly one nudge message to recipient b.
+	var nudges []protocol.Message
+	rows, err := s.db.Query(`SELECT id, parent_id, recipient, body, created_at FROM messages WHERE parent_id=? AND sender='agent-net'`, req.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var m protocol.Message
+		var at int64
+		if err := rows.Scan(&m.ID, &m.ParentID, &m.To, &m.Body, &at); err != nil {
+			t.Fatal(err)
+		}
+		m.CreatedAt = time.Unix(0, at).UTC()
+		nudges = append(nudges, m)
+	}
+	rows.Close()
+
+	if len(nudges) != 1 {
+		t.Fatalf("got %d nudges, want 1", len(nudges))
+	}
+	nudge := nudges[0]
+	if nudge.To != b {
+		t.Errorf("nudge recipient = %q, want %q", nudge.To, b)
+	}
+	wantBody := fmt.Sprintf("You still owe alice a final reply to %s (Fix the gateway stall bug). Reply with the result, or hand back.", req.ID)
+	if nudge.Body != wantBody {
+		t.Errorf("nudge body = %q, want %q", nudge.Body, wantBody)
+	}
+
+	// Immediate repeat tick does not send another nudge.
+	if err := s.checkOwedReplies(); err != nil {
+		t.Fatal(err)
+	}
+	var nudgeCount int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE parent_id=? AND sender='agent-net'`, req.ID).Scan(&nudgeCount); err != nil || nudgeCount != 1 {
+		t.Fatalf("nudgeCount after recheck = %d, want 1", nudgeCount)
+	}
+
+	// 10 minutes later (25 minutes total): raise one ask routed to the chief.
+	c.t = start.Add(25 * time.Minute)
+	if err := s.checkOwedReplies(); err != nil {
+		t.Fatal(err)
+	}
+
+	var asks []protocol.InboxItem
+	rows, err = s.db.Query(`SELECT id, next_who, text, detail FROM inbox_items WHERE source_ref=?`, "owed-ask:"+req.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var item protocol.InboxItem
+		if err := rows.Scan(&item.ID, &item.NextWho, &item.Text, &item.Detail); err != nil {
+			t.Fatal(err)
+		}
+		asks = append(asks, item)
+	}
+	rows.Close()
+
+	if len(asks) != 1 {
+		t.Fatalf("got %d asks, want 1", len(asks))
+	}
+	ask := asks[0]
+	if ask.NextWho != protocol.AskNextChief {
+		t.Errorf("ask next_who = %q, want %q", ask.NextWho, protocol.AskNextChief)
+	}
+	// Check that the ask names sender, recipient, message id, since-time and nudge time.
+	for _, want := range []string{a, b, req.ID, start.UTC().Format(time.RFC3339), nudge.CreatedAt.Format(time.RFC3339)} {
+		if !strings.Contains(ask.Text, want) {
+			t.Errorf("ask text %q missing %q", ask.Text, want)
+		}
+	}
+
+	// A later tick adds nothing more.
+	c.t = start.Add(35 * time.Minute)
+	if err := s.checkOwedReplies(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE parent_id=? AND sender='agent-net'`, req.ID).Scan(&nudgeCount); err != nil || nudgeCount != 1 {
+		t.Fatalf("nudgeCount after later tick = %d, want 1", nudgeCount)
+	}
+	var askCount int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref=?`, "owed-ask:"+req.ID).Scan(&askCount); err != nil || askCount != 1 {
+		t.Fatalf("askCount after later tick = %d, want 1", askCount)
+	}
+}
+
+func TestOwedReplyProgressReplyKeepsRequestOpen(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+
+	req, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "Do task", Type: protocol.TypeRequest})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Progress reply leaves parent open.
+	progReply, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: req.ID, Body: "Progress: 50% done", Progress: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if progReply.ParentID != req.ID {
+		t.Errorf("progress reply parent = %q, want %q", progReply.ParentID, req.ID)
+	}
+
+	var state string
+	if err := s.db.QueryRow(`SELECT state FROM messages WHERE id=?`, req.ID).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state == protocol.StateReplied {
+		t.Fatalf("request state after progress reply is %q, want open state", state)
+	}
+
+	// Final reply closes the parent request.
+	_, _, err = s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: req.ID, Body: "Done: all finished", Progress: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.db.QueryRow(`SELECT state FROM messages WHERE id=?`, req.ID).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != protocol.StateReplied {
+		t.Fatalf("request state after final reply is %q, want %q", state, protocol.StateReplied)
+	}
+}
+
+func TestOwedReplySkips(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(t *testing.T, s *Store, c *clock, a, b, reqID string)
+	}{
+		{
+			name: "busy",
+			setup: func(t *testing.T, s *Store, c *clock, a, b, reqID string) {
+				if _, err := s.db.Exec("UPDATE sessions SET status='busy' WHERE id=?", b); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "waiting_owner_explicit",
+			setup: func(t *testing.T, s *Store, c *clock, a, b, reqID string) {
+				waitJSON := `{"kind":"permission","since":` + fmt.Sprintf("%d", c.t.Unix()) + `,"text":"allow tool"}`
+				if _, err := s.db.Exec("UPDATE sessions SET status='idle', waiting=? WHERE id=?", waitJSON, b); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "waiting_owner_open_ask",
+			setup: func(t *testing.T, s *Store, c *clock, a, b, reqID string) {
+				if _, err := s.createInboxItem(s.db, protocol.InboxItem{
+					Kind:      protocol.AskKindQuestion,
+					SessionID: b,
+					Text:      "what database to use?",
+				}); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "waiting_running_worker",
+			setup: func(t *testing.T, s *Store, c *clock, a, b, reqID string) {
+				node, _, _ := s.CreateNode("host-w", "linux")
+				_, err := s.UpsertSession(node, protocol.SessionInfo{
+					Harness:  "claude",
+					NativeID: "worker1",
+					Status:   "busy",
+					Worker:   &protocol.WorkerInfo{ID: "w_run", Owner: b, Project: "demo"},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "final_reply_before_nudge",
+			setup: func(t *testing.T, s *Store, c *clock, a, b, reqID string) {
+				if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: reqID, Body: "quick final reply"}); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "withdrawn",
+			setup: func(t *testing.T, s *Store, c *clock, a, b, reqID string) {
+				if _, err := s.Withdraw(reqID, a); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, c := newTestStore(t)
+			a, b := twoSessions(t, s)
+
+			req, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "Task for skip test", Type: protocol.TypeRequest})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			start := c.t
+			if _, err := s.db.Exec("UPDATE sessions SET status='idle', last_active=? WHERE id=?", start.UnixNano(), b); err != nil {
+				t.Fatal(err)
+			}
+
+			tc.setup(t, s, c, a, b, req.ID)
+
+			// Advance 15 min
+			c.t = start.Add(15 * time.Minute)
+			if err := s.checkOwedReplies(); err != nil {
+				t.Fatal(err)
+			}
+
+			var nudges int
+			if err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE parent_id=? AND sender='agent-net'`, req.ID).Scan(&nudges); err != nil {
+				t.Fatal(err)
+			}
+			if nudges != 0 {
+				t.Fatalf("case %s: got %d nudges, want 0", tc.name, nudges)
+			}
+		})
+	}
+}
+
+func TestOwedReplyFinalReplyAfterNudgeStopsAsk(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+
+	req, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "Task awaiting reply", Type: protocol.TypeRequest})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	start := c.t
+	if _, err := s.db.Exec("UPDATE sessions SET status='idle', last_active=? WHERE id=?", start.UnixNano(), b); err != nil {
+		t.Fatal(err)
+	}
+
+	// 15 min: nudge fires.
+	c.t = start.Add(15 * time.Minute)
+	if err := s.checkOwedReplies(); err != nil {
+		t.Fatal(err)
+	}
+	var nudges int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE parent_id=? AND sender='agent-net'`, req.ID).Scan(&nudges); err != nil || nudges != 1 {
+		t.Fatalf("want 1 nudge, got %d (err: %v)", nudges, err)
+	}
+
+	// Recipient sends final reply at 18 minutes.
+	c.t = start.Add(18 * time.Minute)
+	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: req.ID, Body: "Here is the final answer"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Advance to 25 minutes (10 min after nudge).
+	c.t = start.Add(25 * time.Minute)
+	if err := s.checkOwedReplies(); err != nil {
+		t.Fatal(err)
+	}
+
+	// No ask should have been created because final reply stopped the chain.
+	var asks int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref=?`, "owed-ask:"+req.ID).Scan(&asks); err != nil {
+		t.Fatal(err)
+	}
+	if asks != 0 {
+		t.Fatalf("got %d asks after final reply, want 0", asks)
+	}
+}

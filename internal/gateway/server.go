@@ -550,6 +550,9 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 				if err := g.store.checkSessionStalls(); err != nil {
 					g.logLine("error", "where", "session stalls", "err", err)
 				}
+				if err := g.store.checkOwedReplies(); err != nil {
+					g.logLine("error", "where", "owed replies", "err", err)
+				}
 				// The chief of staff's daily brief wakes it once per owner-local
 				// date (decision 0114).
 				if m, sent, err := g.store.checkDailyBrief(g.store.now()); err != nil {
