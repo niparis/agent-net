@@ -92,8 +92,9 @@ yet.
   each skill whose text names an `mcp__server__tool` that the node's shared
   MCP servers do not have. A short list is returned (8 by default) and its id
   can be given to set later.
-- A new repo gets one notice to the CTO: "new project X: run skills suggest
+- A new repo got one notice to the CTO: "new project X: run skills suggest
   and set, then tell the owner". There is no hold and no approval step.
+  Removed 2026-11-20: see the note at the end of this file.
 - There is no token cap; the numbers are shown.
 
 ## Task 4: the skills folder of a session
@@ -248,3 +249,10 @@ The first live intake (v0.5.77) showed four problems. These are the rules.
   and `after_tokens` of a set) count the context figure, because the bundle
   loads only when the skill is used. The migration adds `context_tokens` to
   `skill_archive` and fills it for existing rows.
+
+## Note 2026-11-20: the owner sets skills
+
+The owner chose that skill selection is something he starts. He sets skills
+with the CTO when he makes a new project, or asks the CTO to review them on a
+mature one. agent-net no longer opens a "new project" skills item when a repo
+is registered. The `skills` tool and `skill_archive` are unchanged.

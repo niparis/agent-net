@@ -273,7 +273,9 @@ func TestSkillSuggestFlagsMissingMCP(t *testing.T) {
 	}
 }
 
-func TestNewProjectSendsOneSkillNoticeToCTO(t *testing.T) {
+// Skill selection is the owner's call through the CTO. Registering a repo must
+// not open any skills item, even when a CTO session is set.
+func TestNewProjectCreatesNoSkillItem(t *testing.T) {
 	s, _ := newTestStore(t)
 	if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_session','s_cto',0)`); err != nil {
 		t.Fatal(err)
@@ -281,28 +283,12 @@ func TestNewProjectSendsOneSkillNoticeToCTO(t *testing.T) {
 	if _, err := s.AddProjects("n1", protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Path: "/repo/x", Name: "x"}}}); err != nil {
 		t.Fatal(err)
 	}
-	var text, next string
 	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref='skills:new-project:x' AND status='open'`).Scan(&n); err != nil {
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref LIKE 'skills:%' OR text LIKE '%skills suggest%'`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
-		t.Fatalf("notices: %d", n)
-	}
-	if err := s.db.QueryRow(`SELECT text, next_who FROM inbox_items WHERE source_ref='skills:new-project:x'`).Scan(&text, &next); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(text, "run skills suggest and set") || next != "s_cto" {
-		t.Fatalf("notice: %q next %q", text, next)
-	}
-	if err := s.newProjectSkillNotice("x"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref='skills:new-project:x'`).Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	if n != 1 {
-		t.Fatalf("a second notice was added: %d", n)
+	if n != 0 {
+		t.Fatalf("skill items after adding a repo: %d", n)
 	}
 }
 

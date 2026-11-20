@@ -1118,29 +1118,3 @@ func (s *Store) skillMCPNames(repoCtx string) (map[string]bool, error) {
 	}
 	return out, nil
 }
-
-// newProjectSkillNotice tells the CTO, once per open notice, that a new repo
-// was registered. The owner chose: suggest, set, then tell him, with undo.
-func (s *Store) newProjectSkillNotice(repo string) error {
-	var cto string
-	if err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key='cto_session'`).Scan(&cto); err != nil || cto == "" {
-		return nil
-	}
-	ref := "skills:new-project:" + repo
-	var open int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref=? AND status='open'`, ref).Scan(&open); err != nil {
-		return err
-	}
-	if open > 0 {
-		return nil
-	}
-	_, err := s.db.Exec(`INSERT INTO inbox_items (id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,options,asker_name,change_title,
-		from_kind,source_ref,about_kind,about_id,next_who,why_you,detail,route_fixed,category)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		protocol.NewID("i"), protocol.AskKindCheck, cto, repo,
-		"new project "+repo+": run skills suggest and set, then tell the owner",
-		"The owner chose: apply the suggestion and tell him. The set is undoable in the Desk.",
-		"", "", s.now().UnixNano(), "open", "[]", "agent-net", "",
-		protocol.AskFromGateway, ref, "repo", repo, cto, "", "", 1, protocol.CategoryNormal)
-	return err
-}
