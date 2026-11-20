@@ -177,6 +177,16 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 			out = append(out, sBusy.Render(l))
 		}
 	}
+	if a.TurnError != "" && a.Online {
+		// The whole cause, wrapped: the row of the list shows only its start.
+		line := "  turn failed"
+		if a.TurnErrorAt > 0 {
+			line += " " + m.displayTime(a.TurnErrorAt).Format("15:04")
+		}
+		for _, l := range wrap(line+": "+a.TurnError, w) {
+			out = append(out, sBusy.Render(l))
+		}
+	}
 	if f := functionText(a); f != "" {
 		if f == noAgentsMD {
 			f = "none: add a `# Project: <one line>` line to AGENTS.md"

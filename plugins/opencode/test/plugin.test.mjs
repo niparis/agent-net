@@ -579,6 +579,33 @@ await test("a failed run reports its error text as turn_error", async () => {
   stop();
 });
 
+await test("a provider refusal in the OpenCode 2.3.2 event shape reaches the daemon as turn_error", async () => {
+  freshHub();
+  const errorsBefore = calls.filter(([m]) => m === "turn_error").length;
+  const sessions = new Map([["ses_refused", session("ses_refused", "/work/r")]]);
+  const f = makeContext("/work/r", sessions);
+  const stop = await plugin.setup(f.ctx);
+  await until("hello for ses_refused", () => registered("ses_refused"));
+  // Captured from OpenCode 2.3.2 against a provider that answers 400: the drain
+  // fails ("Failed to drain Session" in its log) and the run ends with
+  // session.execution.failed carrying a structured error. The event has no
+  // "message" field of its own and the error body is JSON text.
+  const message = "This request was blocked by our safety systems. Reason: Potentially unintended activity.";
+  const error = {
+    type: "provider.invalid-request",
+    message,
+    status: 400,
+    response: { body: JSON.stringify({ error: { message, type: "misalignment_policy_violation" } }) },
+  };
+  f.emit({ type: "session.execution.started", data: { sessionID: "ses_refused" } });
+  f.emit({ type: "session.step.failed", data: { sessionID: "ses_refused", assistantMessageID: "msg_1", error } });
+  f.emit({ type: "session.execution.failed", data: { sessionID: "ses_refused", error } });
+  await until("turn_error with the cause", () => calls.some(([m, p]) => m === "turn_error" && p.text === message));
+  await until("idle after the refusal", () => lastStatus("ses_refused") === "idle");
+  if (calls.filter(([m]) => m === "turn_error").length !== errorsBefore + 1) throw new Error("the refusal was not reported exactly once");
+  stop();
+});
+
 await test("a permission request and a form show as waiting until they are settled", async () => {
   freshHub();
   const sessions = new Map([["ses_wait", session("ses_wait", "/work/n")]]);

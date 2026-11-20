@@ -1325,7 +1325,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -2476,6 +2476,21 @@ func (s *Store) migrate() error {
 				}
 			}
 		}
+		if strings.Contains(migrations[i], "session turn error columns") {
+			for _, col := range []struct{ name, def string }{{"turn_error", "TEXT NOT NULL DEFAULT ''"}, {"turn_error_at", "INTEGER NOT NULL DEFAULT 0"}} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name=?`, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN ` + col.name + ` ` + col.def); err != nil {
+						tx.Rollback()
+						return err
+					}
+				}
+			}
+		}
 		if strings.Contains(migrations[i], "session worker retained column") {
 			var has int
 			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='worker_retained'`).Scan(&has); err != nil {
@@ -3609,8 +3624,8 @@ func (s *Store) upsertSession(q interface {
 	}
 	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, title, cwd, pid, status, delivery, last_seen, last_active, online,
 		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker, worker_title, repo_description, worker_started,
-tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harness_activity, idle_compacted_at, last_compacted_reason, limited_until, limited_reason)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harness_activity, idle_compacted_at, last_compacted_reason, limited_until, limited_reason, turn_error, turn_error_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (node_id, harness, native_id) DO UPDATE SET
 		name=excluded.name, title=excluded.title, cwd=excluded.cwd, pid=excluded.pid,
 		-- A worker whose run is over stays ended. A late session sync from its
@@ -3636,6 +3651,7 @@ tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harne
 		no_project=excluded.no_project, idle_compacted_at=excluded.idle_compacted_at,
 		last_compacted_reason=excluded.last_compacted_reason,
 		limited_until=excluded.limited_until, limited_reason=excluded.limited_reason,
+		turn_error=excluded.turn_error, turn_error_at=excluded.turn_error_at,
 		worker_run_active=CASE WHEN sessions.worker<>'' AND sessions.worker_run_active=0 AND sessions.status='ended'
 			THEN 0 WHEN sessions.online=0 AND excluded.online=1 THEN 1 ELSE sessions.worker_run_active END`,
 		newID, nodeID, in.Harness, in.NativeID, name, title, in.Cwd, in.PID, in.Status, in.Delivery, now, lastActive, online,
@@ -3643,7 +3659,8 @@ tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harne
 		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now, waiting,
 		graphExclusion(in.GraphExcluded, in.GraphChecked), boolInt(in.NoProject),
 		max(in.HarnessActivity*int64(time.Second), busyInitialActivity(in.Status, now)),
-		in.LastCompactedAt, in.LastCompactedReason, in.LimitedUntil, protocol.CleanModel(in.LimitedReason), in.HarnessActivity*int64(time.Second))
+		in.LastCompactedAt, in.LastCompactedReason, in.LimitedUntil, protocol.CleanModel(in.LimitedReason),
+		protocol.CleanWaitingText(in.TurnError), in.TurnErrorAt, in.HarnessActivity*int64(time.Second))
 	if err != nil {
 		return "", false, err
 	}
@@ -4327,7 +4344,7 @@ var agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.
  @STALL@
  @HELD@
  @INSESSION@
- s.limited_until, s.limited_reason, s.replaced_by
+ s.limited_until, s.limited_reason, s.turn_error, s.turn_error_at, s.replaced_by
 	FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id@JOINS@`
 
 // agentListTables are the tables agentListSelect and its joins read, with the
@@ -4379,7 +4396,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
 		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName,
-		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.ReportsTo, &a.RepoLead, &a.RepoLeadExplicit, &a.TeamLead, &a.RepoMaxAgents, &a.RepoAgentCount, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.LastCompactedAt, &a.LastCompactedReason, &a.StalledSince, &a.GatewayHeld, &a.InSession, &a.LimitedUntil, &a.LimitedReason, &a.ReplacedBy)
+		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.ReportsTo, &a.RepoLead, &a.RepoLeadExplicit, &a.TeamLead, &a.RepoMaxAgents, &a.RepoAgentCount, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.LastCompactedAt, &a.LastCompactedReason, &a.StalledSince, &a.GatewayHeld, &a.InSession, &a.LimitedUntil, &a.LimitedReason, &a.TurnError, &a.TurnErrorAt, &a.ReplacedBy)
 	if err != nil {
 		return a, err
 	}
@@ -6376,3 +6393,8 @@ func (s *Store) SetSessionClosed(nodeID, sessionID string, closed bool) error {
 	_, err := s.db.Exec(`UPDATE sessions SET closed_at=?, online=0, status='ended', harness_lost=0 WHERE id=? AND node_id=? AND harness='opencode' AND worker=''`, s.now().UnixMilli(), sessionID, nodeID)
 	return err
 }
+
+// sessionTurnErrorMigration marks the turn_error and turn_error_at columns of
+// sessions: the cause of a session's last failed turn and its time. The
+// migration loop adds the columns when they are missing.
+const sessionTurnErrorMigration = `SELECT 1 /* session turn error columns */;`

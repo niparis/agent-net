@@ -388,8 +388,29 @@ transcript, the OpenCode conversation, or the queued-message notice Codex
 sends. A busy session is checked again 20 seconds later and is not sent to
 again. A session has one check at a time: a newer message replaces the older
 check, and the check ends when the message is taken, when the session goes
-offline, ends or is archived, when agent-net stops it, or when the daemon stops. Plugin and Pi sessions have a synchronous acknowledgement and get no
-check.
+offline, ends or is archived, when agent-net stops it, or when the daemon stops. Pi sessions confirm the turn they start and get no check.
+
+An ordinary OpenCode session gets the check too. Its plugin only confirms that
+the message is queued, not that a turn runs for it, so on 2026-11-20 a session
+took messages for 80 minutes and ran none. The plugin reports each turn start as
+a busy status, so this check reads nothing from OpenCode. It has no restart:
+when no turn started after the second delivery, the daemon tells the sender
+`message to <name> was not delivered: the session started no turn for it`,
+once. A turn that starts and then fails is the next paragraph.
+
+A turn that fails is reported, not lost. OpenCode ends a refused or failed run
+with `session.execution.failed` (v2) and logs `Failed to drain Session`. The
+plugin sends its error text as `turn_error`. The daemon keeps the cause on the
+session (`turn_error` and `turn_error_at` in the session row, secrets masked and
+cut to 200 characters), until a turn succeeds. The Sessions list shows
+`turn failed: <cause>` in TASK, and the detail pane shows the whole cause. A
+provider refusal or error is not a usage limit and sets no `limited_until`; a
+real usage limit still takes the limit path in
+[Provider usage limits](#provider-usage-limits). The sender of each message that
+was delivered and had no finished turn gets one notice from `agent-net`:
+`message to <name> was not delivered: the session's turn failed: <cause>`.
+The daemon asks the gateway for it with `delivery.not_delivered`; the message
+keeps its state, and the gateway stores one notice per message.
 
 A Codex thread gets its project's charter and the note titles as developer
 instructions when it starts. After a compaction, the next turn of a session

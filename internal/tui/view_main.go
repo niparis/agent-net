@@ -2151,6 +2151,11 @@ func sliceFrom(lines []string, height, start int) []string {
 
 // sessionTaskText shows the last compaction or the claimant for a running step.
 func (m Model) sessionTaskText(a protocol.AgentView) string {
+	// The last turn failed and none has succeeded since: the provider refused
+	// it or it could not run. The cause stays until a turn succeeds.
+	if a.TurnError != "" && a.Online {
+		return "turn failed: " + a.TurnError
+	}
 	if a.LastCompactedAt > 0 {
 		reason := a.LastCompactedReason
 		if reason == "" {

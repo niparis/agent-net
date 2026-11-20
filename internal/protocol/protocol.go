@@ -217,6 +217,13 @@ type SessionInfo struct {
 	// when the session completes a turn. Empty from an older daemon.
 	LimitedUntil  int64  `json:"limited_until,omitempty"`
 	LimitedReason string `json:"limited_reason,omitempty"`
+	// TurnError is the cause of the session's last failed turn (a provider
+	// refusal or error), and TurnErrorAt is when it failed, in Unix seconds.
+	// Both are empty until a turn fails. The daemon clears them when the
+	// session completes a turn. A failed turn is not a usage limit: it sets no
+	// LimitedUntil.
+	TurnError   string `json:"turn_error,omitempty"`
+	TurnErrorAt int64  `json:"turn_error_at,omitempty"`
 }
 
 // StatusDormant is the status of a session that is reachable but has had no
@@ -405,6 +412,9 @@ type AgentView struct {
 	// limit is over. Empty from an older gateway.
 	LimitedUntil  int64  `json:"limited_until,omitempty"`
 	LimitedReason string `json:"limited_reason,omitempty"`
+	// TurnError and TurnErrorAt: see SessionInfo. Empty from an older gateway.
+	TurnError   string `json:"turn_error,omitempty"`
+	TurnErrorAt int64  `json:"turn_error_at,omitempty"`
 	// StalledSince is the time of the last observed harness activity during a stall.
 	StalledSince int64 `json:"stalled_since,omitempty"`
 	// ReplacedBy is the session that took over this conversation when a
