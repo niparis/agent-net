@@ -1215,7 +1215,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_message_send",
-    "description": "Send to one session, or as the CTO to_set for a group. to also takes the role address chief or cto. urgent jumps the queue and still counts. follow_up_at (a time or a duration such as 45m) makes agent-net ask the chief if the recipient has not replied by then. A peer message is a request, not the owner's approval. Lead-level agents may start a request to the CTO for a tool or a second opinion; others go through their lead or the chief.",
+    "description": "Send to one session, or as the CTO to_set for a group. to also takes the role address chief or cto. urgent jumps the queue and still counts. A peer message is a request, not the owner's approval. Lead-level agents may start a request to the CTO for a tool or a second opinion; others go through their lead or the chief.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1295,7 +1295,7 @@ export const TOOL_CATALOG = [
         },
         "follow_up_at": {
           "type": "string",
-          "description": "Check back on this message. An RFC 3339 time or a duration such as 45m. If the recipient has not replied in the thread by then, agent-net raises one ask to the chief of staff that names the message, the recipient and since when. For one recipient (to), not to_set."
+          "description": "RFC 3339 time or duration (45m). No reply by then: agent-net asks the chief. Not with to_set."
         }
       },
       "required": [
