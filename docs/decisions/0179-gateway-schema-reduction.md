@@ -90,3 +90,18 @@ After the double-write fix has merged:
 - 37 fewer tables and 116 fewer columns.
 - The repo lead, the team lead history and the charter values each live in one place.
 - Marker rows leave `owner_settings`, so a one-time marker no longer refreshes the Nodes, Workers and Inbox screens.
+
+## Addition, 2026-11-20: `inventory_reports` stays a table
+
+Part 2 does not fold `inventory_reports` into `nodes`. It folds the other five side tables: `node_health`, `node_tailscale`, `node_time_zones`, `node_silence` and `node_graph_refs`.
+
+Why: the part 2 worker measured it. With the inventory report as a column of `nodes`, every hello from a machine took about 497 microseconds, against about 50 before. A hello updates the `nodes` row, and SQLite rewrites the whole row, which then holds a report of about 630 KB. Performance comes first.
+
+What changes in this decision:
+
+- The target is 119 tables and 1043 columns, not 118 and 1042.
+- Part 2 removes 5 tables, not 6. `nodes` gains 11 columns, not 12.
+- In rule 4, the sentence about `inventory_reports` as the last column no longer applies. The rule about column keys for `nodes` still applies.
+- `inventory_reports` joins the list of tables that stay on purpose.
+
+The general lesson for the other parts: before a large value becomes a column, check how often the rest of that row is written.
