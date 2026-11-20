@@ -5,17 +5,21 @@ import (
 	"fmt"
 )
 
-// nodeSideMigration folds six tables that hold at most one row per node into
-// the nodes row: node_health, node_tailscale, node_time_zones, node_silence,
-// node_graph_refs and inventory_reports. The new columns are added, and the rows
-// copied and the tables dropped, by foldNodeSideTables, which the migrate loop
-// runs for this marker in the same transaction. Appended at the end of the
-// migration list and never edited once it ships.
+// nodeSideMigration folds five tables that hold at most one row per node into
+// the nodes row: node_health, node_tailscale, node_time_zones, node_silence and
+// node_graph_refs. The new columns are added, and the rows copied and the tables
+// dropped, by foldNodeSideTables, which the migrate loop runs for this marker in
+// the same transaction. Appended at the end of the migration list and never
+// edited once it ships.
+//
+// inventory_reports is not folded. Its report is about 630 KB on a machine with a
+// large inventory, and SQLite rewrites the whole row on every update of it. On
+// the nodes row that made each hello and each inventory write 10 to 12 times
+// slower (BenchmarkNodeRowWrites), so it keeps its own table.
 const nodeSideMigration = `SELECT 1 /* node side tables folded into nodes */;`
 
 // nodeSideColumns are the columns the fold adds to nodes. An empty value (or 0)
-// means the old table had no row for the node. inventory_report is last on
-// purpose: a read of the other columns then never reaches its overflow pages.
+// means the old table had no row for the node.
 var nodeSideColumns = []struct{ name, spec string }{
 	{"health_report", `TEXT NOT NULL DEFAULT ''`},
 	{"health_reported_at", `INTEGER NOT NULL DEFAULT 0`},
@@ -28,7 +32,6 @@ var nodeSideColumns = []struct{ name, spec string }{
 	{"silence_asleep_to", `INTEGER NOT NULL DEFAULT 0`},
 	{"silence_silent_at", `INTEGER NOT NULL DEFAULT 0`},
 	{"graph_refs_supported", `INTEGER NOT NULL DEFAULT 0`},
-	{"inventory_report", `TEXT NOT NULL DEFAULT ''`},
 }
 
 // nodeSideCopies copy one side table into the nodes row, then drop it. The
@@ -48,8 +51,6 @@ var nodeSideCopies = []struct{ table, copy string }{
 	{"node_graph_refs", `UPDATE nodes SET graph_refs_supported = (SELECT CASE WHEN g.version = nodes.version AND trim(g.version) NOT IN ('','unknown')
 		THEN g.supported ELSE 0 END FROM node_graph_refs g WHERE g.node_id = nodes.id)
 		WHERE id IN (SELECT node_id FROM node_graph_refs)`},
-	{"inventory_reports", `UPDATE nodes SET inventory_report = (SELECT report FROM inventory_reports x WHERE x.node_id = nodes.id)
-		WHERE id IN (SELECT node_id FROM inventory_reports)`},
 }
 
 // foldNodeSideTables runs one step of the migration inside its transaction. The

@@ -74,7 +74,6 @@ func TestToolsItemsExposeVersionNumbers(t *testing.T) {
 		}
 	}
 	// A copy somewhere with a hash that was never imported.
-	enrollMachines(t, s, "n_a")
 	if err = s.SetInventory("n_a", protocol.InventoryReport{State: protocol.InventoryOK, Items: []protocol.InventoryItem{
 		{Harness: "claude", Kind: "skill", Scope: "user", Location: "/h/alpha", Name: "alpha", Hash: "sha:2", State: "ok"},
 		{Harness: "claude", Kind: "skill", Scope: "user", Location: "/h/alpha2", Name: "alpha", Hash: "sha:edited", State: "ok"},

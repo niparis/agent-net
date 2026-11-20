@@ -24,8 +24,10 @@ func benchInventory(n int) protocol.InventoryReport {
 
 // BenchmarkNodeRowWrites measures the writes a machine's hello makes and the
 // read the machine list makes, for a machine that holds a 300-item inventory.
-// The fold of the node side tables moves these writes onto the nodes row, so
-// the numbers before and after the fold are the check of that move.
+// The fold of the node side tables moves the hello writes onto the nodes row, so
+// the numbers before and after the fold are the check of that move. The inventory
+// write stays in its own table: folding that table onto the nodes row made each
+// write 12 times slower, because the row holds the whole report.
 func BenchmarkNodeRowWrites(b *testing.B) {
 	s, _ := newTestStore(b)
 	node, _, err := s.CreateNode("bench-host", "linux")

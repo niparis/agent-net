@@ -13,7 +13,6 @@ func TestToolTargetsOnlyAppliedForNode(t *testing.T) {
 	}
 	defer s.Close()
 	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok"}
-	enrollMachines(t, s, "one")
 	if err = s.SetInventory("one", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +42,6 @@ func TestToolResultsOnlyCurrentOwnedTarget(t *testing.T) {
 	}
 	defer s.Close()
 	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok"}
-	enrollMachines(t, s, "one")
 	if err = s.SetInventory("one", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +78,6 @@ func TestRemovalWaitsForAllCopies(t *testing.T) {
 	}
 	defer s.Close()
 	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok", Scope: "user", Location: "/source"}
-	enrollMachines(t, s, "one")
 	if err = s.SetInventory("one", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +118,6 @@ func TestUndoToolIsNewRevisionForAppliedTargetsOnly(t *testing.T) {
 	}
 	defer s.Close()
 	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok"}
-	enrollMachines(t, s, "one")
 	if err = s.SetInventory("one", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
 		t.Fatal(err)
 	}

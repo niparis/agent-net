@@ -52,7 +52,6 @@ func TestToolAssignmentRevisions(t *testing.T) {
 	}
 	defer s.Close()
 	item := protocol.InventoryItem{Kind: "skill", Name: "sample", Hash: "abc", State: "ok"}
-	enrollMachines(t, s, "machine")
 	if err = s.SetInventory("machine", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{item}}); err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +83,6 @@ func TestToolAssignmentRevisions(t *testing.T) {
 func TestToolAssignmentAcceptsSeenProject(t *testing.T) {
 	s, _ := newTestStore(t)
 	item := protocol.InventoryItem{Kind: "skill", Name: "sample", Hash: "abc", State: "ok"}
-	enrollMachines(t, s, "machine")
 	if err := s.SetInventory("machine", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{item}}); err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +151,6 @@ func TestToolPlanRejectsChangedObservation(t *testing.T) {
 	}
 	defer s.Close()
 	item := protocol.InventoryItem{Kind: "skill", Name: "sample", Hash: "abc", State: "ok", Location: "/fixture"}
-	enrollMachines(t, s, "machine")
 	if err = s.SetInventory("machine", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{item}}); err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +182,6 @@ func TestToolSnapshotTreatsNoItemsTheSame(t *testing.T) {
 	}
 	defer s.Close()
 	item := protocol.InventoryItem{Kind: "skill", Name: "sample", Hash: "abc", State: "ok", Location: "/fixture"}
-	enrollMachines(t, s, "machine", "other")
 	if err = s.SetInventory("machine", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{item}}); err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +217,6 @@ func TestToolItemsShowDesiredAndPending(t *testing.T) {
 	}
 	defer s.Close()
 	item := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok"}
-	enrollMachines(t, s, "node")
 	if err = s.SetInventory("node", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{item}}); err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +236,6 @@ func TestToolPlanAndApplyAudit(t *testing.T) {
 	}
 	defer s.Close()
 	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok"}
-	enrollMachines(t, s, "node")
 	if err = s.SetInventory("node", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +280,6 @@ func TestApplyReportsStaleWhenItemDisappears(t *testing.T) {
 	}
 	defer g.Close()
 	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok"}
-	enrollMachines(t, g.store, "node")
 	if err = g.store.SetInventory("node", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +318,6 @@ func TestRejectedToolPlanIsAudited(t *testing.T) {
 	}
 	defer g.Close()
 	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok"}
-	enrollMachines(t, g.store, "node")
 	if err = g.store.SetInventory("node", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
 		t.Fatal(err)
 	}
@@ -346,7 +338,6 @@ func TestToolPlanReportsIncompleteScan(t *testing.T) {
 	}
 	defer g.Close()
 	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok"}
-	enrollMachines(t, g.store, "node")
 	if err = g.store.SetInventory("node", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
 		t.Fatal(err)
 	}
@@ -370,7 +361,6 @@ func TestPlanAuditRecordsBaseRevision(t *testing.T) {
 	}
 	defer s.Close()
 	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok"}
-	enrollMachines(t, s, "node")
 	if err = s.SetInventory("node", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
 		t.Fatal(err)
 	}
@@ -395,7 +385,6 @@ func TestManagedToolRemainsListedWithoutLocations(t *testing.T) {
 	}
 	defer s.Close()
 	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok"}
-	enrollMachines(t, s, "node")
 	if err = s.SetInventory("node", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
 		t.Fatal(err)
 	}
@@ -490,7 +479,6 @@ func TestUninstallPlanShowsOfflineMachinesWithoutObservedCopies(t *testing.T) {
 		t.Fatal(err)
 	}
 	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok"}
-	enrollMachines(t, g.store, "other")
 	if err = g.store.SetInventory("other", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
 		t.Fatal(err)
 	}
@@ -526,7 +514,6 @@ func TestToolApplyRejectsCorruptStoredVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: hash, State: "ok"}
-	enrollMachines(t, g.store, "node")
 	if err = g.store.SetInventory("node", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
 		t.Fatal(err)
 	}
@@ -576,7 +563,6 @@ func TestApplyRemovalRequiresImportedSkill(t *testing.T) {
 			}
 			defer s.Close()
 			obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok", Scope: "user", Location: "/one"}
-			enrollMachines(t, s, "node", "other")
 			if err = s.SetInventory("node", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
 				t.Fatal(err)
 			}
@@ -640,7 +626,6 @@ func TestToolSnapshotIgnoresOtherSkills(t *testing.T) {
 	defer s.Close()
 	a := protocol.InventoryItem{Kind: "skill", Name: "a", Hash: "aaa", State: "ok"}
 	b := protocol.InventoryItem{Kind: "skill", Name: "b", Hash: "bbb", State: "ok"}
-	enrollMachines(t, s, "machine")
 	if err := s.SetInventory("machine", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{a, b}}); err != nil {
 		t.Fatal(err)
 	}
@@ -667,13 +652,12 @@ func TestToolSnapshotIgnoresEmptyOrUnrelatedInventory(t *testing.T) {
 	}
 	defer s.Close()
 	a := protocol.InventoryItem{Kind: "skill", Name: "a", Hash: "aaa", State: "ok"}
-	enrollMachines(t, s, "node1", "node2")
 	if err := s.SetInventory("node1", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{a}}); err != nil {
 		t.Fatal(err)
 	}
 	item := `["skill","a","aaa"]`
 	// A second machine has an inventory report with items: null.
-	if _, err := s.db.Exec(`UPDATE nodes SET inventory_report='{"machine":"node2","state":"ok","items":null}' WHERE id='node2'`); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO inventory_reports(node_id,report) VALUES('node2','{"machine":"node2","state":"ok","items":null}')`); err != nil {
 		t.Fatal(err)
 	}
 	snapNull, err := s.ToolSnapshot(item)

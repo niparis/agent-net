@@ -8,10 +8,11 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// A health report and an inventory report are written to the nodes row. The
-// Projects and Usage topics read only the node columns they show, so neither
-// report refreshes them. The nodes topic shows health, so a health report
-// refreshes it.
+// A health report is a column of the nodes row, and an inventory report is its
+// own table. The Projects and Usage topics read only the node columns they show,
+// so neither report refreshes them. The nodes topic shows health, so a health
+// report refreshes it. An inventory write must not move the nodes table, or every
+// topic that lists nodes would refresh on each scan.
 func TestNodeHealthAndInventoryMoveOnlyTheTopicsThatShowThem(t *testing.T) {
 	s, _ := newTestStore(t)
 	node, _, err := s.CreateNode("topic-host", "linux")
@@ -37,8 +38,12 @@ func TestNodeHealthAndInventoryMoveOnlyTheTopicsThatShowThem(t *testing.T) {
 	report := protocol.InventoryReport{State: protocol.InventoryOK, Items: []protocol.InventoryItem{{
 		Kind: protocol.InventorySkill, Name: "demo", Hash: "abc", Harness: "claude", Scope: protocol.InventoryUser,
 		Source: "user", Location: "/home/u/.claude/skills/demo", State: protocol.InventoryOK}}}
+	nodesTable := s.readStamp([]string{"nodes"})
 	if err := s.SetInventory(node, report); err != nil {
 		t.Fatal(err)
+	}
+	if s.readStamp([]string{"nodes"}) != nodesTable {
+		t.Fatal("an inventory report moved the nodes table")
 	}
 	afterInventory := g.topicVersions()
 	for _, topic := range []string{protocol.TopicProjects, protocol.TopicUsage} {

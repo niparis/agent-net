@@ -10,11 +10,11 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// An older release keeps the node side data in six tables with at most one row
-// per node: node_health, node_tailscale, node_time_zones, node_silence,
-// node_graph_refs and inventory_reports. The upgrade folds them into the nodes
-// row. These tests seed an older file, upgrade it, and check that the gateway
-// reads the same values it read from the tables.
+// An older release keeps the node side data in five tables with at most one row
+// per node: node_health, node_tailscale, node_time_zones, node_silence and
+// node_graph_refs. The upgrade folds them into the nodes row. inventory_reports
+// is not folded and keeps its rows. These tests seed an older file, upgrade it,
+// and check that the gateway reads the same values it read from the tables.
 
 var nodeSideBase = time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
 
@@ -63,20 +63,6 @@ func seedNodeSideTables(t *testing.T, s *Store) (alpha, beta, gamma string) {
 	return alpha, beta, gamma
 }
 
-// enrollMachines gives each ID a machine row, as a daemon that has said hello
-// has. Reports and the other data of a machine are kept on that row, so a test
-// that stores them for a machine needs the row first. A machine with no name
-// reads the same as the ID in every list, as a machine with no row did.
-func enrollMachines(t testing.TB, s *Store, ids ...string) {
-	t.Helper()
-	for _, id := range ids {
-		if _, err := s.db.Exec(`INSERT OR IGNORE INTO nodes (id, hostname, reported_hostname, os, token_hash, created_at) VALUES (?,'','','linux',?,0)`,
-			id, "hash-"+id); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
 // upgradeSeeded opens an older file, seeds it, and runs the migrations the
 // older file did not have. It returns the store, the three machine IDs and the
 // migration's version.
@@ -94,18 +80,17 @@ func upgradeSeeded(t *testing.T) (*Store, string, string, string, int) {
 
 // nodeSideRow is what the nodes row holds for the folded data.
 type nodeSideRow struct {
-	Health          string
-	HealthAt        int64
-	TailscaleIP     string
-	TailscaleAt     int64
-	TimeZone        string
-	TimeZoneAt      int64
-	SilenceDropped  int64
-	SilenceFrom     int64
-	SilenceTo       int64
-	SilenceSilent   int64
-	GraphRefsOn     int
-	InventoryReport string
+	Health         string
+	HealthAt       int64
+	TailscaleIP    string
+	TailscaleAt    int64
+	TimeZone       string
+	TimeZoneAt     int64
+	SilenceDropped int64
+	SilenceFrom    int64
+	SilenceTo      int64
+	SilenceSilent  int64
+	GraphRefsOn    int
 }
 
 func readNodeSideColumns(t *testing.T, s *Store, node string) nodeSideRow {
@@ -113,9 +98,9 @@ func readNodeSideColumns(t *testing.T, s *Store, node string) nodeSideRow {
 	var c nodeSideRow
 	err := s.db.QueryRow(`SELECT health_report, health_reported_at, tailscale_ip, tailscale_updated_at,
 		time_zone, time_zone_updated_at, silence_dropped_at, silence_asleep_from, silence_asleep_to, silence_silent_at,
-		graph_refs_supported, inventory_report FROM nodes WHERE id=?`, node).Scan(
+		graph_refs_supported FROM nodes WHERE id=?`, node).Scan(
 		&c.Health, &c.HealthAt, &c.TailscaleIP, &c.TailscaleAt, &c.TimeZone, &c.TimeZoneAt,
-		&c.SilenceDropped, &c.SilenceFrom, &c.SilenceTo, &c.SilenceSilent, &c.GraphRefsOn, &c.InventoryReport)
+		&c.SilenceDropped, &c.SilenceFrom, &c.SilenceTo, &c.SilenceSilent, &c.GraphRefsOn)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,11 +165,19 @@ func TestNodeSideTablesFoldIntoTheNodesRowOnUpgrade(t *testing.T) {
 
 	var left int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table'
-		AND name IN ('node_health','node_tailscale','node_time_zones','node_silence','node_graph_refs','inventory_reports')`).Scan(&left); err != nil {
+		AND name IN ('node_health','node_tailscale','node_time_zones','node_silence','node_graph_refs')`).Scan(&left); err != nil {
 		t.Fatal(err)
 	}
 	if left != 0 {
-		t.Fatalf("%d of the six side tables are still there", left)
+		t.Fatalf("%d of the five side tables are still there", left)
+	}
+	// The inventory is read from inventory_reports, checked in assertNodeSideValues.
+	var inventoryColumn int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('nodes') WHERE name='inventory_report'`).Scan(&inventoryColumn); err != nil {
+		t.Fatal(err)
+	}
+	if inventoryColumn != 0 {
+		t.Fatal("nodes has an inventory column; the inventory report must stay in its own table")
 	}
 
 	// Every value of the old rows is on the nodes row, and a node without a
@@ -194,8 +187,7 @@ func TestNodeSideTablesFoldIntoTheNodesRowOnUpgrade(t *testing.T) {
 		TailscaleIP: "100.64.0.7", TailscaleAt: 11,
 		TimeZone: "Europe/Paris", TimeZoneAt: 12,
 		SilenceDropped: nodeSideBase.Add(-30 * time.Minute).UnixNano(), SilenceSilent: nodeSideBase.Add(-10 * time.Minute).UnixNano(),
-		GraphRefsOn:     1,
-		InventoryReport: `{"state":"ok","items":[{"kind":"skill","name":"demo","hash":"abc","harness":"claude","scope":"user","location":"/home/u/.claude/skills/demo","source":"user","state":"ok"}]}`,
+		GraphRefsOn: 1,
 	}
 	if got := readNodeSideColumns(t, s, alpha); !reflect.DeepEqual(got, wantAlpha) {
 		t.Fatalf("alpha nodes row = %+v\nwant %+v", got, wantAlpha)
@@ -249,11 +241,5 @@ func TestNodeSideWritesAfterTheUpgradeClearTheirValues(t *testing.T) {
 		if n.NodeID == alpha && n.TailscaleIP != "" {
 			t.Fatalf("tailscale address after a bad one: %q", n.TailscaleIP)
 		}
-	}
-	if err := s.SetInventory(alpha, protocol.InventoryReport{State: protocol.InventoryOK, Items: []protocol.InventoryItem{}}); err != nil {
-		t.Fatal(err)
-	}
-	if reports, err := s.Inventories(); err != nil || len(reports) != 1 || len(reports[0].Items) != 0 {
-		t.Fatalf("inventory after a new scan: %+v %v", reports, err)
 	}
 }

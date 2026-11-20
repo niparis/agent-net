@@ -97,7 +97,7 @@ func TestToolPlanScanFailureAndMissingReport(t *testing.T) {
 			}
 		})
 	}
-	if _, err := g.store.db.Exec(`UPDATE nodes SET inventory_report='' WHERE id=?`, node); err != nil {
+	if _, err := g.store.db.Exec(`DELETE FROM inventory_reports WHERE node_id=?`, node); err != nil {
 		t.Fatal(err)
 	}
 	targets, err := g.toolTargets(t.Context(), id, protocol.ToolAssignment{Scope: "uninstalled"}, nil)

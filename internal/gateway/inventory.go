@@ -25,11 +25,11 @@ func (s *Store) SetInventory(nodeID string, r protocol.InventoryReport) error {
 	defer tx.Rollback()
 	if r.State != protocol.InventoryOK {
 		var old string
-		err = tx.QueryRow(`SELECT inventory_report FROM nodes WHERE id=?`, nodeID).Scan(&old)
+		err = tx.QueryRow(`SELECT report FROM inventory_reports WHERE node_id=?`, nodeID).Scan(&old)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		if err == nil && old != "" {
+		if err == nil {
 			var previous protocol.InventoryReport
 			if err = json.Unmarshal([]byte(old), &previous); err != nil {
 				return err
@@ -45,7 +45,7 @@ func (s *Store) SetInventory(nodeID string, r protocol.InventoryReport) error {
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec(`UPDATE nodes SET inventory_report=? WHERE id=?`, string(b), nodeID); err != nil {
+	if _, err = tx.Exec(`INSERT INTO inventory_reports(node_id,report) VALUES(?,?) ON CONFLICT(node_id) DO UPDATE SET report=excluded.report`, nodeID, string(b)); err != nil {
 		return err
 	}
 	if _, err = tx.Exec(`DELETE FROM tool_locations WHERE node_id=?`, nodeID); err != nil {
@@ -79,12 +79,11 @@ func (s *Store) SetInventoryItemManifest(nodeID, location string, manifest *prot
 	}
 	defer tx.Rollback()
 	var raw string
-	err = tx.QueryRow(`SELECT inventory_report FROM nodes WHERE id=?`, nodeID).Scan(&raw)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if err = tx.QueryRow(`SELECT report FROM inventory_reports WHERE node_id=?`, nodeID).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("machine has no inventory")
+		}
 		return err
-	}
-	if raw == "" {
-		return errors.New("machine has no inventory")
 	}
 	var report protocol.InventoryReport
 	if err = json.Unmarshal([]byte(raw), &report); err != nil {
@@ -116,14 +115,14 @@ func (s *Store) SetInventoryItemManifest(nodeID, location string, manifest *prot
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec(`UPDATE nodes SET inventory_report=? WHERE id=?`, string(b), nodeID); err != nil {
+	if _, err = tx.Exec(`UPDATE inventory_reports SET report=? WHERE node_id=?`, string(b), nodeID); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
 func (s *Store) Inventories() ([]protocol.InventoryReport, error) {
-	rows, err := s.db.Query(`SELECT n.id,n.inventory_report,n.hostname FROM nodes n WHERE n.inventory_report<>'' ORDER BY n.id`)
+	rows, err := s.db.Query(`SELECT i.node_id,i.report,COALESCE(n.hostname,'') FROM inventory_reports i LEFT JOIN nodes n ON n.id=i.node_id ORDER BY i.node_id`)
 	if err != nil {
 		return nil, err
 	}
