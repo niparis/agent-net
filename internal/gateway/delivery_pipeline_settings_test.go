@@ -186,10 +186,6 @@ func TestDeliveryPipelineMigratesLegacyShorthand(t *testing.T) {
 	if err := r.s.db.QueryRow(`SELECT value FROM setting_values WHERE key='delivery.pipeline.merge.requires' AND level='repo' AND scope='demo'`).Scan(&value); err != nil || value != `["accept","review","test:suite","test:tests_added"]` {
 		t.Fatalf("migrated pipeline = %q, %v", value, err)
 	}
-	var count int
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_settings_legacy WHERE key='delivery.tests_before_merge' AND scope='demo'`).Scan(&count); err != nil || count != 1 {
-		t.Fatalf("legacy backup = %d, %v", count, err)
-	}
 }
 
 func TestDeliverySettingsSameApproverKeepsEdge(t *testing.T) {

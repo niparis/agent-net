@@ -12,7 +12,7 @@ import (
 // reads used by the screen. Column keys keep session activity from moving graph.
 var topicTables = map[string][]string{
 	protocol.TopicAgents:   agentsTables,
-	protocol.TopicNodes:    tableUnion(nodesTables, calibrationTables, []string{"quota_blocks", "node_health", "playbook", "playbook_notes", "owner_settings", "setting_values"}),
+	protocol.TopicNodes:    tableUnion(nodesTables, calibrationTables, []string{"quota_blocks", "node_health", "playbook", "owner_settings", "setting_values"}),
 	protocol.TopicWorkers:  tableUnion(workerLogTables, calibrationTables, []string{"worker_starts", "quota_blocks", "owner_settings", "setting_values"}),
 	protocol.TopicGraph:    graphTables,
 	protocol.TopicInbox:    tableUnion(inboxTables, []string{"messages", "ask_sorts", "desk_log", "charter_draft_asks", "owner_settings"}),

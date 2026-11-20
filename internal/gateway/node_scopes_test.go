@@ -71,14 +71,9 @@ func TestScopeSetAndRemoveReturnRows(t *testing.T) {
 		t.Fatalf("after remove: %+v %v", left, err)
 	}
 	// Each change is one graph_history row, the history the product reads.
-	// The old per-node table gets no copy.
 	var history int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM graph_history WHERE type='scope' AND node='demo'`).Scan(&history); err != nil || history != 2 {
 		t.Fatalf("graph history rows: %d %v", history, err)
-	}
-	var old int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM node_scopes_history WHERE node='demo'`).Scan(&old); err != nil || old != 0 {
-		t.Fatalf("old history table got %d rows: %v", old, err)
 	}
 }
 

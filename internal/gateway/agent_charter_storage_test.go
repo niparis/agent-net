@@ -47,13 +47,9 @@ func TestAgentCharterHistory(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Each change is one graph_history row. The old per-agent table gets no copy.
+	// Each change is one graph_history row.
 	if got := historyRows() - before; got != 3 {
 		t.Fatalf("graph history rows for 3 changes: %d", got)
-	}
-	var old int
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM agent_charter_history WHERE agent_id='demo'`).Scan(&old); err != nil || old != 0 {
-		t.Fatalf("old history table got %d rows: %v", old, err)
 	}
 	var count int
 	if err := r.s.db.QueryRow(`SELECT count(*) FROM agent_charter WHERE agent_id='demo'`).Scan(&count); err != nil || count != 0 {

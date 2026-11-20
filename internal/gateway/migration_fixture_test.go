@@ -17,8 +17,13 @@ func prepareOldSessionIdentity(t *testing.T, s *Store) {
 	if err := s.db.QueryRow(`SELECT COALESCE(MAX(version),0) FROM schema_version`).Scan(&current); err != nil {
 		t.Fatal(err)
 	}
+	// A database older than the drop still has the dead tables, and the replay
+	// reads them.
+	if current < migrationVersion(t, "Schema reduction part 1: drop the tables") {
+		recreateDeadTables(t, s)
+	}
 	if current < migrationVersion(t, "Explicit session and run identity") {
-		if _, err := s.db.Exec(`DROP TRIGGER IF EXISTS session_lifecycle_insert; DROP TRIGGER IF EXISTS session_lifecycle_update; DROP TRIGGER IF EXISTS session_identity_repo_update; DROP TABLE IF EXISTS session_agent_history; DROP INDEX IF EXISTS nudge_sessions_limited; DROP INDEX IF EXISTS nudge_repo_sessions_limited`); err != nil {
+		if _, err := s.db.Exec(`DROP TRIGGER IF EXISTS session_lifecycle_insert; DROP TRIGGER IF EXISTS session_lifecycle_update; DROP TRIGGER IF EXISTS session_identity_repo_update; DROP INDEX IF EXISTS nudge_sessions_limited; DROP INDEX IF EXISTS nudge_repo_sessions_limited`); err != nil {
 			t.Fatal(err)
 		}
 		for _, col := range []struct{ table, name string }{{"sessions", "agent_id"}, {"sessions", "repo_id"}, {"worker_runs", "caller_agent_id"}, {"worker_starts", "caller_agent_id"}} {

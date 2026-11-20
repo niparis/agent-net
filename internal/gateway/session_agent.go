@@ -102,8 +102,5 @@ func (s *Store) setSessionAgent(node string, p protocol.SessionAgentSetRequest) 
 	if err = checkActiveSessionIdentity(tx, p.SessionID); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(`INSERT INTO session_agent_history(session_id,old_agent_id,new_agent_id,actor,at) VALUES(?,?,?,?,?)`, p.SessionID, old, p.Agent, p.Owner, s.now().UnixNano()); err != nil {
-		return err
-	}
 	return tx.Commit()
 }
