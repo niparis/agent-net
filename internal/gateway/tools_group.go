@@ -142,7 +142,7 @@ func (g *Gateway) toggleSkillGroup(ctx context.Context, p protocol.ToolToggleReq
 		member.Previous = &previous
 		if !validatingProposal(ctx) {
 			raw, _ := json.Marshal(member)
-			if _, e = g.store.db.Exec(`UPDATE tool_plans SET plan=? WHERE id=?`, string(raw), member.ID); e != nil {
+			if _, e = g.store.db.Exec(`UPDATE plans SET plan=? WHERE kind='tool' AND id=?`, string(raw), member.ID); e != nil {
 				return group, true, e
 			}
 		}
@@ -170,14 +170,14 @@ func (g *Gateway) toggleSkillGroup(ctx context.Context, p protocol.ToolToggleReq
 		if len(raw) > 1<<20 {
 			return group, true, errors.New("plan exceeds limit")
 		}
-		_, err = g.store.db.Exec(`INSERT INTO tool_plans(id,item,snapshot,plan) VALUES(?,?,?,?)`, group.ID, group.Item, "", string(raw))
+		_, err = g.store.db.Exec(`INSERT INTO plans(kind,id,item,snapshot,plan) VALUES('tool',?,?,?,?)`, group.ID, group.Item, "", string(raw))
 	}
 	return group, true, err
 }
 
 func (g *Gateway) skillGroup(id string) (protocol.ToolPlan, bool, error) {
 	var raw string
-	err := g.store.db.QueryRow(`SELECT plan FROM tool_plans WHERE id=?`, id).Scan(&raw)
+	err := g.store.db.QueryRow(`SELECT plan FROM plans WHERE kind='tool' AND id=?`, id).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return protocol.ToolPlan{}, false, nil
 	}
@@ -252,7 +252,7 @@ func (g *Gateway) applySkillGroup(ctx context.Context, id, actor string) (protoc
 		}
 		revisions = append(revisions, r)
 	}
-	_, err = tx.Exec(`UPDATE tool_plans SET applied=1 WHERE id=?`, p.ID)
+	_, err = tx.Exec(`UPDATE plans SET applied=1 WHERE kind='tool' AND id=?`, p.ID)
 	if err != nil {
 		return out, true, err
 	}
@@ -275,7 +275,7 @@ func (g *Gateway) undoSkillGroup(ctx context.Context, id, actor string) (protoco
 	}
 	if !ok {
 		var raw string
-		e := g.store.db.QueryRow(`SELECT plan FROM tool_plans WHERE item=? AND applied=1 AND json_extract(plan,'$.operation')='skill_group' ORDER BY rowid DESC LIMIT 1`, id).Scan(&raw)
+		e := g.store.db.QueryRow(`SELECT plan FROM plans WHERE kind='tool' AND item=? AND applied=1 AND json_extract(plan,'$.operation')='skill_group' ORDER BY rowid DESC LIMIT 1`, id).Scan(&raw)
 		if errors.Is(e, sql.ErrNoRows) {
 			return protocol.ToolApplyResult{}, false, nil
 		}

@@ -243,7 +243,7 @@ func forgetMCPItemTx(tx *sql.Tx, name string) error {
 		return err
 	}
 	for _, q := range []string{
-		`DELETE FROM tool_results WHERE item=?`, `DELETE FROM tool_plans WHERE item=?`,
+		`DELETE FROM tool_results WHERE item=?`, `DELETE FROM plans WHERE kind='tool' AND item=?`,
 		`DELETE FROM tool_revisions WHERE item=?`, `DELETE FROM tool_identities WHERE id=?`,
 	} {
 		if _, err = tx.Exec(q, id); err != nil {

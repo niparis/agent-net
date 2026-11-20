@@ -24,7 +24,7 @@ func TestToolApplyLogsFailedTargets(t *testing.T) {
 	_, err = g.store.db.Exec(`CREATE TRIGGER fail_tool_targets AFTER INSERT ON tool_revisions BEGIN
  INSERT INTO tool_results(item,revision,target_index,node_id,state,reason)
  SELECT NEW.item,NEW.revision,CAST(t.key AS INTEGER),json_extract(t.value,'$.node_id'),'failed','cannot lock Git index'
- FROM tool_plans p, json_each(p.plan,'$.targets') t WHERE NEW.source='plan:' || p.id;
+ FROM plans p, json_each(p.plan,'$.targets') t WHERE p.kind='tool' AND NEW.source='plan:' || p.id;
  END`)
 	if err != nil {
 		t.Fatal(err)

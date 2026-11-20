@@ -372,7 +372,7 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 
 	// Compare reported outcomes with all targets in the applied plan. Missing
 	// reports remain pending, including those belonging to offline machines.
-	resultRows, err := s.db.Query(`SELECT r.item,r.revision,p.plan FROM tool_revisions r JOIN tool_plans p ON r.source='plan:' || p.id AND p.applied=1 WHERE r.revision=(SELECT MAX(x.revision) FROM tool_revisions x WHERE x.item=r.item)`)
+	resultRows, err := s.db.Query(`SELECT r.item,r.revision,p.plan FROM tool_revisions r JOIN plans p ON r.source='plan:' || p.id AND p.kind='tool' AND p.applied=1 WHERE r.revision=(SELECT MAX(x.revision) FROM tool_revisions x WHERE x.item=r.item)`)
 	if err != nil {
 		return nil, err
 	}

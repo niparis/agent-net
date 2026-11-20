@@ -148,7 +148,7 @@ func TestStandingChoiceOnlyCopiesNewProjects(t *testing.T) {
 		t.Fatal(err)
 	}
 	var raw string
-	if err = g.store.db.QueryRow(`SELECT plan FROM tool_plans WHERE item=? AND applied=1 ORDER BY rowid DESC LIMIT 1`, id).Scan(&raw); err != nil {
+	if err = g.store.db.QueryRow(`SELECT plan FROM plans WHERE kind='tool' AND item=? AND applied=1 ORDER BY rowid DESC LIMIT 1`, id).Scan(&raw); err != nil {
 		t.Fatal(err)
 	}
 	var plan protocol.ToolPlan

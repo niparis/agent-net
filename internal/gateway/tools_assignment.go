@@ -349,7 +349,7 @@ func (s *Store) saveToolPlan(item string, a protocol.ToolAssignment, targets []p
 	if len(raw) > 1<<20 {
 		return p, errors.New("plan exceeds limit")
 	}
-	if _, err = tx.Exec(`INSERT INTO tool_plans(id,item,snapshot,plan) VALUES(?,?,?,?)`, p.ID, item, snapshot, string(raw)); err != nil {
+	if _, err = tx.Exec(`INSERT INTO plans(kind,id,item,snapshot,plan) VALUES('tool',?,?,?,?)`, p.ID, item, snapshot, string(raw)); err != nil {
 		return p, err
 	}
 	if err = auditToolTx(tx, p.Item, p.ID, "plan", actor, p.BaseRevision, p.Targets, "proposed", p.At, &p.Assignment); err != nil {
@@ -385,7 +385,7 @@ func (s *Store) applyToolPlanTx(tx *sql.Tx, id, actor string) (protocol.ToolRevi
 	var err error
 	var snapshot, raw string
 	var applied int
-	if err = tx.QueryRow(`SELECT snapshot,plan,applied FROM tool_plans WHERE id=?`, id).Scan(&snapshot, &raw, &applied); err != nil {
+	if err = tx.QueryRow(`SELECT snapshot,plan,applied FROM plans WHERE kind='tool' AND id=?`, id).Scan(&snapshot, &raw, &applied); err != nil {
 		return r, errors.New("plan not found")
 	}
 	if applied != 0 {
@@ -465,7 +465,7 @@ func (s *Store) applyToolPlanTx(tx *sql.Tx, id, actor string) (protocol.ToolRevi
 	if err != nil {
 		return r, err
 	}
-	if _, err = tx.Exec(`UPDATE tool_plans SET applied=1 WHERE id=?`, id); err != nil {
+	if _, err = tx.Exec(`UPDATE plans SET applied=1 WHERE kind='tool' AND id=?`, id); err != nil {
 		return r, err
 	}
 	if err = auditToolTx(tx, p.Item, id, "apply", actor, r.Revision, p.Targets, "pending", r.At, &p.Assignment); err != nil {
@@ -528,7 +528,7 @@ func (s *Store) recordRefusedToolApply(id, actor string) error {
 	if !validToolChangeActor(actor) {
 		return errors.New("owner authority required")
 	}
-	_, err := s.db.Exec(`INSERT INTO tool_audit(item,plan_id,action,actor,revision,targets,result,at,assignment) SELECT item,id,'apply',?,COALESCE(json_extract(plan,'$.base_revision'),0),json_extract(plan,'$.targets'),'refused',?,COALESCE(json_extract(plan,'$.assignment'),'') FROM tool_plans WHERE id=?`, actor, s.now().UnixNano(), id)
+	_, err := s.db.Exec(`INSERT INTO tool_audit(item,plan_id,action,actor,revision,targets,result,at,assignment) SELECT item,id,'apply',?,COALESCE(json_extract(plan,'$.base_revision'),0),json_extract(plan,'$.targets'),'refused',?,COALESCE(json_extract(plan,'$.assignment'),'') FROM plans WHERE kind='tool' AND id=?`, actor, s.now().UnixNano(), id)
 	return err
 }
 func (s *Store) ApplyToolPlan(id, actor string) (protocol.ToolRevision, error) {
@@ -579,7 +579,7 @@ func (s *Store) UndoTool(item, actor string, validate ...bool) (protocol.ToolRev
 	defer tx.Rollback()
 	var revision int64
 	var source, planRaw string
-	if err = tx.QueryRow(`SELECT r.revision,r.source,COALESCE(p.plan,'') FROM tool_revisions r LEFT JOIN tool_plans p ON r.source='plan:' || p.id AND p.applied=1 WHERE r.item=? AND r.revision=(SELECT MAX(revision) FROM tool_revisions WHERE item=?)`, item, item).Scan(&revision, &source, &planRaw); err != nil {
+	if err = tx.QueryRow(`SELECT r.revision,r.source,COALESCE(p.plan,'') FROM tool_revisions r LEFT JOIN plans p ON r.source='plan:' || p.id AND p.kind='tool' AND p.applied=1 WHERE r.item=? AND r.revision=(SELECT MAX(revision) FROM tool_revisions WHERE item=?)`, item, item).Scan(&revision, &source, &planRaw); err != nil {
 		return r, p, errors.New("nothing to undo")
 	}
 	if planRaw == "" {
@@ -638,7 +638,7 @@ func (s *Store) UndoTool(item, actor string, validate ...bool) (protocol.ToolRev
 	if err != nil {
 		return r, p, err
 	}
-	if _, err = tx.Exec(`INSERT INTO tool_plans(id,item,snapshot,plan,applied) VALUES(?,?,?,?,1)`, p.ID, item, snapshot, string(raw)); err != nil {
+	if _, err = tx.Exec(`INSERT INTO plans(kind,id,item,snapshot,plan,applied) VALUES('tool',?,?,?,?,1)`, p.ID, item, snapshot, string(raw)); err != nil {
 		return r, p, err
 	}
 	r, err = s.assignToolTx(tx, item, previous, actor, "plan:"+p.ID, now)

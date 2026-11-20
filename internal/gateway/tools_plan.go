@@ -610,7 +610,7 @@ func (g *Gateway) applyTool(ctx context.Context, id, actor string) (out protocol
 		}
 	}()
 	var raw, snapshot string
-	if err = g.store.db.QueryRow(`SELECT plan,snapshot FROM tool_plans WHERE id=?`, id).Scan(&raw, &snapshot); err != nil {
+	if err = g.store.db.QueryRow(`SELECT plan,snapshot FROM plans WHERE kind='tool' AND id=?`, id).Scan(&raw, &snapshot); err != nil {
 		return out, errors.New("plan not found")
 	}
 	failed, e := g.refreshToolObservations(ctx)

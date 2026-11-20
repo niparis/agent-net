@@ -98,7 +98,7 @@ func (s *Store) registerOAuthClient(c oauthClient, now time.Time, source string)
 		return c, err
 	}
 	var count int
-	if err = tx.QueryRow(`SELECT count(*) FROM oauth_registration_attempts WHERE source=? AND created_at>?`, source, now.Add(-time.Hour).UnixNano()).Scan(&count); err != nil {
+	if err = tx.QueryRow(`SELECT count(*) FROM oauth_attempts WHERE kind='registration' AND source=? AND at>?`, source, now.Add(-time.Hour).UnixNano()).Scan(&count); err != nil {
 		return c, err
 	}
 	if count >= 5 {
@@ -119,10 +119,10 @@ func (s *Store) registerOAuthClient(c oauthClient, now time.Time, source string)
 	if err != nil {
 		return c, err
 	}
-	if _, err = tx.Exec(`DELETE FROM oauth_registration_attempts WHERE created_at<=?`, now.Add(-time.Hour).UnixNano()); err != nil {
+	if _, err = tx.Exec(`DELETE FROM oauth_attempts WHERE kind='registration' AND at<=?`, now.Add(-time.Hour).UnixNano()); err != nil {
 		return c, err
 	}
-	if _, err = tx.Exec(`INSERT INTO oauth_registration_attempts (source,created_at) VALUES (?,?)`, source, now.UnixNano()); err != nil {
+	if _, err = tx.Exec(`INSERT INTO oauth_attempts (kind,source,at) VALUES ('registration',?,?)`, source, now.UnixNano()); err != nil {
 		return c, err
 	}
 	return c, tx.Commit()
@@ -235,11 +235,11 @@ func (s *Store) PendingByUserCode(code, source string, now time.Time) (OAuthPend
 	}
 	defer tx.Rollback()
 	cutoff := now.Add(-10 * time.Minute).UnixNano()
-	if _, err = tx.Exec("DELETE FROM oauth_code_misses WHERE attempted_at <= ?", cutoff); err != nil {
+	if _, err = tx.Exec("DELETE FROM oauth_attempts WHERE kind='code_miss' AND at <= ?", cutoff); err != nil {
 		return p, err
 	}
 	var count int
-	if err = tx.QueryRow("SELECT count(*) FROM oauth_code_misses WHERE source=? AND attempted_at>?", source, cutoff).Scan(&count); err != nil {
+	if err = tx.QueryRow("SELECT count(*) FROM oauth_attempts WHERE kind='code_miss' AND source=? AND at>?", source, cutoff).Scan(&count); err != nil {
 		return p, err
 	}
 	if count >= 5 {
@@ -249,7 +249,7 @@ func (s *Store) PendingByUserCode(code, source string, now time.Time) (OAuthPend
 	var created, expires int64
 	err = tx.QueryRow(`SELECT p.id,p.user_code,p.client_id,CASE WHEN p.client_id='phone' THEN p.state ELSE c.client_name END,p.redirect_uri,p.resource,p.created_at,p.expires_at FROM oauth_pending p JOIN oauth_clients c ON c.client_id=p.client_id WHERE p.user_code=? AND p.status='pending' AND p.expires_at>?`, normalized, now.UnixNano()).Scan(&p.ID, &p.UserCode, &p.ClientID, &p.ClientName, &p.RedirectURI, &p.Resource, &created, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
-		if _, err = tx.Exec("INSERT INTO oauth_code_misses (source,attempted_at) VALUES (?,?)", source, now.UnixNano()); err != nil {
+		if _, err = tx.Exec("INSERT INTO oauth_attempts (kind,source,at) VALUES ('code_miss',?,?)", source, now.UnixNano()); err != nil {
 			return p, err
 		}
 		if err = tx.Commit(); err != nil {
@@ -536,7 +536,7 @@ func (s *Store) CleanupOAuth(now time.Time) error {
 	}
 	for _, q := range []string{
 		`DELETE FROM oauth_pending WHERE expires_at<=?`,
-		`DELETE FROM oauth_registration_attempts WHERE created_at<=?`,
+		`DELETE FROM oauth_attempts WHERE kind='registration' AND at<=?`,
 		`DELETE FROM oauth_codes WHERE (used_at IS NULL AND expires_at<=? AND NOT EXISTS (SELECT 1 FROM oauth_pending WHERE oauth_pending.id=oauth_codes.pending_id)) OR (used_at IS NOT NULL AND used_at<=?)`,
 		`DELETE FROM oauth_clients WHERE created_at<=? AND NOT EXISTS (SELECT 1 FROM apps WHERE apps.client_id=oauth_clients.client_id)`,
 	} {
@@ -544,7 +544,7 @@ func (s *Store) CleanupOAuth(now time.Time) error {
 		switch {
 		case strings.Contains(q, "oauth_codes"):
 			args = []any{now.UnixNano(), now.Add(-90 * 24 * time.Hour).UnixNano()}
-		case strings.Contains(q, "oauth_clients"), strings.Contains(q, "oauth_registration_attempts"):
+		case strings.Contains(q, "oauth_clients"), strings.Contains(q, "oauth_attempts"):
 			args = []any{now.Add(-time.Hour).UnixNano()}
 		default:
 			args = []any{now.UnixNano()}
