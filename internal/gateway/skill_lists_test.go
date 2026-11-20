@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -302,5 +303,121 @@ func TestNewProjectSendsOneSkillNoticeToCTO(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatalf("a second notice was added: %d", n)
+	}
+}
+
+// seedCharterAttr sets one charter attribute on a node, as the owner's charter
+// edits do.
+func seedCharterAttr(t *testing.T, s *Store, node, attr, value string) {
+	t.Helper()
+	if _, err := s.db.Exec(`INSERT INTO graph_charter(node,attr,value,updated_at,updated_by) VALUES(?,?,?,0,'owner')`, node, attr, value); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// seedFillerArchive adds skills whose text is filler or generic agent-net
+// words. A real archive has many of these, and none of them is about a project.
+func seedFillerArchive(t *testing.T, s *Store) {
+	t.Helper()
+	seedArchiveSkill(t, s, "query-patterns", 1, 30, "Pick query patterns for data, json fields and none values.", "q")
+	seedArchiveSkill(t, s, "slos-and-triggers", 1, 30, "Set SLOs and alert triggers. Freeze deploys when the request budget is spent.", "s")
+	seedArchiveSkill(t, s, "typesafe-ai", 1, 30, "Typed model calls. Use live state and what the model still needs to hand back.", "t")
+	seedArchiveSkill(t, s, "reason-network", 1, 30, "Ask another agent through the network. Claude hands the work back.", "r")
+	seedArchiveSkill(t, s, "archify", 1, 2600, "Draw architecture diagrams of data, request and state flows.", "a")
+}
+
+func TestSkillSuggestIgnoresFillerAndGenericWords(t *testing.T) {
+	g := archiveGateway(t)
+	s := g.store
+	seedRepo(t, s, "voicemechs", "growing")
+	seedCharterAttr(t, s, "voicemechs", "purpose", "Voice-driven mech combat game: combat rules, mech units and campaign missions.")
+	seedFillerArchive(t, s)
+	seedArchiveSkill(t, s, "combat-balance", 1, 40, "Tune combat rules, mech units and campaign missions.", "c")
+	seedArchiveSkill(t, s, "honeycomb-traces", 1, 40, "Query Honeycomb traces for latency.", "h")
+	seedArchiveSkill(t, s, "ai-library", 1, 40, "Build LLM agents with the typed model library and tool calls.", "l")
+	seedArchiveSkill(t, s, "diagrams", 1, 40, "Draw system diagrams and sequence charts.", "d")
+	seedArchiveSkill(t, s, "deploy-freeze", 1, 40, "Run a deploy freeze when the release train is blocked.", "f")
+	if _, err := s.db.Exec(`INSERT INTO sessions(id,node_id,harness,native_id,repo_project,repo_description,last_seen,online)
+		VALUES('s_x','n','claude','x','voicemechs','Game for voice commanded mechs. Data, state, request and agent work here.',0,1)`); err != nil {
+		t.Fatal(err)
+	}
+	got, err := g.skillSuggest(protocol.SkillSuggestRequest{Level: "repo", Scope: "voicemechs", By: "cto"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Skills) != 1 || got.Skills[0].Name != "combat-balance" {
+		t.Fatalf("game repo suggested %+v, want only combat-balance", got.Skills)
+	}
+}
+
+func TestSkillSuggestSkipsWordsSharedByManySkills(t *testing.T) {
+	g := archiveGateway(t)
+	s := g.store
+	seedRepo(t, s, "alpha", "growing")
+	seedCharterAttr(t, s, "alpha", "purpose", "Combat rules with a tradeoffs section.")
+	for i := 1; i <= 5; i++ {
+		seedArchiveSkill(t, s, fmt.Sprintf("generic-%d", i), 1, 10, "Weigh the tradeoffs of a choice.", "g")
+	}
+	seedArchiveSkill(t, s, "combat-rules", 1, 10, "Write combat rules for a turn.", "c")
+	for i := 1; i <= 6; i++ {
+		seedArchiveSkill(t, s, fmt.Sprintf("other-%d", i), 1, 10, "Unrelated work on documents.", "o")
+	}
+	got, err := g.skillSuggest(protocol.SkillSuggestRequest{Level: "repo", Scope: "alpha", By: "cto"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Skills) != 1 || got.Skills[0].Name != "combat-rules" {
+		t.Fatalf("suggested %+v, want only combat-rules", got.Skills)
+	}
+}
+
+func TestSkillSuggestKeepsSkillWithDistinctiveWord(t *testing.T) {
+	g := archiveGateway(t)
+	s := g.store
+	seedRepo(t, s, "alpha", "growing")
+	seedCharterAttr(t, s, "alpha", "purpose", "Telemetry for the team runs in Honeycomb.")
+	seedArchiveSkill(t, s, "honeycomb-slos", 1, 40, "Set Honeycomb SLOs and triggers.", "h")
+	for i := 1; i <= 10; i++ {
+		seedArchiveSkill(t, s, fmt.Sprintf("other-%d", i), 1, 10, "Unrelated work on documents.", "o")
+	}
+	got, err := g.skillSuggest(protocol.SkillSuggestRequest{Level: "repo", Scope: "alpha", By: "cto"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Skills) != 1 || got.Skills[0].Name != "honeycomb-slos" || !strings.Contains(got.Skills[0].Reason, "honeycomb") {
+		t.Fatalf("suggested %+v, want honeycomb-slos for its one distinctive word", got.Skills)
+	}
+}
+
+func TestSkillSuggestReasonNamesOnlyRealWords(t *testing.T) {
+	g := archiveGateway(t)
+	s := g.store
+	seedRepo(t, s, "alpha", "growing")
+	seedCharterAttr(t, s, "alpha", "purpose", "Combat balance. Data, state, request, none, still, whether, needs, hand, live, agent, json.")
+	seedArchiveSkill(t, s, "combat-rules", 1, 10, "Write combat rules. Data, none, still and whether the hand needs json.", "c")
+	got, err := g.skillSuggest(protocol.SkillSuggestRequest{Level: "repo", Scope: "alpha", By: "cto"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Skills) != 1 {
+		t.Fatalf("suggested %+v", got.Skills)
+	}
+	if reason, want := got.Skills[0].Reason, "matches combat. Write combat rules"; reason != want {
+		t.Fatalf("reason %q, want %q", reason, want)
+	}
+}
+
+func TestSkillSuggestEmptyNoteIsOneLine(t *testing.T) {
+	g := archiveGateway(t)
+	s := g.store
+	seedRepo(t, s, "alpha", "growing")
+	seedCharterAttr(t, s, "alpha", "purpose", "Data, state and requests.")
+	seedFillerArchive(t, s)
+	got, err := g.skillSuggest(protocol.SkillSuggestRequest{Level: "repo", Scope: "alpha", By: "cto"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Skills) != 0 || got.Note == "" || strings.Contains(got.Note, "\n") {
+		t.Fatalf("empty suggestion: %+v", got)
 	}
 }
