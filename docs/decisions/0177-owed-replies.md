@@ -44,3 +44,27 @@ The chief of staff chases the lead and escalates to the owner only if chasing fa
 - Exactly one nudge and one ask are raised per request.
 - A final reply before the nudge or ask stops the chain.
 - No model tokens are used for detection.
+
+## Addition 2026-11-20: follow_up_at
+
+### Context
+
+On 2026-11-20 the chief of staff relayed "the lead reviews, then it flips; nothing comes to you" and set no follow-up. The chief has no timer: it acts only when a message arrives. The work stalled for 80 minutes. The owner asked for the lead's and the chief's views, with the final call to the lead.
+
+### Design
+
+`agent_ask_sort` (results `send` and `close`) and `agent_message_send` take an optional `follow_up_at`: an RFC 3339 time or a positive duration such as `45m`. The gateway stores it in the `follow_ups` table. On its minute tick it looks at each follow-up once, when it falls due. If the expected event has not happened by then, it raises one ask routed to the chief (`next_who chief`, source `follow-up:<id>`) that names what was expected and since when.
+
+The expected event is:
+
+- For a send: a message from the recipient in the same conversation. A progress reply counts, because the follow-up asks whether the recipient is alive on this thread, and part 1 already chases a missing final reply.
+- For a sort that names a change (`change`, or the change the ask is about): a move of that change. New evidence on any step, or a change update after the follow-up was set, is a move.
+- For a close or send with neither: any later message in the ask's conversation that is not from agent-net. If the ask has no conversation, any later message from or to the asker.
+
+### Invariants
+
+- No `follow_up_at` means today's behaviour exactly.
+- Exactly one ask is raised per follow-up. A follow-up that is met is never raised.
+- Part 1's owed-reply rules (nudge, ask, skips) do not change.
+- No model tokens are used for detection.
+- Follow-ups are never limits or approval gates: they only raise an ask the chief can close.

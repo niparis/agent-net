@@ -157,6 +157,13 @@ type AskSortArgs struct {
 	// action must match the ask exactly, and the close cites the rule id.
 	Rule   string `json:"rule,omitempty"`
 	Action string `json:"action,omitempty"`
+	// FollowUpAt, on send and close, makes agent-net check at that time (an
+	// RFC 3339 time or a duration such as 45m) that the expected event has
+	// happened, and raise one ask to the chief if it has not. Change names the
+	// delivery change whose step is the expected event; an ask about a change
+	// already names it.
+	FollowUpAt string `json:"follow_up_at,omitempty"`
+	Change     string `json:"change,omitempty"`
 }
 
 // Validate checks a sort before the gateway looks at the ask. A full read is
@@ -227,6 +234,17 @@ func (a AskSortArgs) Validate() error {
 	}
 	if a.Rule != "" && a.Result != AskSortClose {
 		return errors.New("rule applies only to close")
+	}
+	if a.FollowUpAt != "" {
+		if a.Result != AskSortSend && a.Result != AskSortClose {
+			return errors.New("follow_up_at applies only to send and close")
+		}
+		if _, err := ParseFollowUp(a.FollowUpAt, time.Now()); err != nil {
+			return err
+		}
+	}
+	if a.Change != "" && a.FollowUpAt == "" {
+		return errors.New("change goes with follow_up_at: it names the change whose step you wait for")
 	}
 	switch a.Result {
 	case AskSortClose, AskSortConfirm, AskSortPicker, AskSortDone, AskSortWithdraw:

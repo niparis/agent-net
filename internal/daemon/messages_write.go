@@ -56,6 +56,7 @@ func (d *Daemon) localSend(ctx context.Context, lc *localConn, raw json.RawMessa
 		AsOwner        bool        `json:"as_owner"`
 		Order          bool        `json:"order"`
 		Urgent         bool        `json:"urgent"`
+		FollowUpAt     string      `json:"follow_up_at"`
 		IdempotencyKey string      `json:"idempotency_key"`
 		Receipt        bool        `json:"receipt"`
 	}
@@ -74,6 +75,9 @@ func (d *Daemon) localSend(ctx context.Context, lc *localConn, raw json.RawMessa
 	}
 	if p.To == "" && p.ToSet == nil {
 		return nil, errors.New(`choose exactly one of to and to_set; example: {"to":"s01","body":"Please review."}`)
+	}
+	if p.FollowUpAt != "" && p.ToSet != nil {
+		return nil, errors.New("follow_up_at is for one recipient: send to to, not to_set")
 	}
 	if p.AsOwner {
 		if sid != d.ctoSessionID() {
@@ -96,7 +100,7 @@ func (d *Daemon) localSend(ctx context.Context, lc *localConn, raw json.RawMessa
 		address = p.To
 	}
 	data, err := d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: to, Type: kind, LeadAddress: address,
-		Body: p.Body, IdempotencyKey: p.IdempotencyKey, FromCTO: p.AsOwner, OwnerApproved: p.AsOwner, Order: p.Order, Urgent: p.Urgent})
+		Body: p.Body, IdempotencyKey: p.IdempotencyKey, FromCTO: p.AsOwner, OwnerApproved: p.AsOwner, Order: p.Order, Urgent: p.Urgent, FollowUpAt: p.FollowUpAt})
 	if err == nil && sid == d.ctoSessionID() {
 		err = d.recordCTOSent(ctx, to, p.AsOwner)
 	}
