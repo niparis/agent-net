@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -20,6 +21,10 @@ type readCache struct {
 }
 
 type cachedRead struct {
+	// tables is the key set the stamp was read for. A stamp is a sum of
+	// counters, and the stamps of two key sets can be the same number while one
+	// set has moved, so an entry must not answer for another set.
+	tables []string
 	stamp  uint64
 	second int64
 	value  any
@@ -79,7 +84,7 @@ func (s *Store) readThrough(key string, tables []string, timed bool, load func()
 	s.rc.mu.Lock()
 	e, ok := s.rc.m[key]
 	s.rc.mu.Unlock()
-	if ok && e.stamp == stamp && e.second == second {
+	if ok && e.stamp == stamp && e.second == second && slices.Equal(e.tables, tables) {
 		return e.value, nil
 	}
 	v, err := load()
@@ -91,7 +96,7 @@ func (s *Store) readThrough(key string, tables []string, timed bool, load func()
 		if s.rc.m == nil {
 			s.rc.m = map[string]cachedRead{}
 		}
-		s.rc.m[key] = cachedRead{stamp: stamp, second: second, value: v}
+		s.rc.m[key] = cachedRead{tables: tables, stamp: stamp, second: second, value: v}
 		s.rc.mu.Unlock()
 	}
 	return v, nil
