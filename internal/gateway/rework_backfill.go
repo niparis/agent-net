@@ -1,8 +1,6 @@
 package gateway
 
 import (
-	"database/sql"
-	"errors"
 	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -11,18 +9,15 @@ import (
 // backfillRework recovers old counters from the messages still retained. The
 // marker and counts commit together, so an interrupted start can safely retry.
 // Bodies are read only for classification and are never written anywhere.
+const reworkBackfillKey = "rework_backfill_done"
+
 func (s *Store) backfillRework() error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	var marker string
-	err = tx.QueryRow(`SELECT value FROM owner_settings WHERE key='rework_backfill_done'`).Scan(&marker)
-	if err == nil {
-		return nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
+	if _, done, err := stateGet(tx, reworkBackfillKey); err != nil || done {
 		return err
 	}
 	type session struct {
@@ -139,7 +134,7 @@ func (s *Store) backfillRework() error {
 			}
 		}
 	}
-	if _, err := tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES ('rework_backfill_done','1',?)`, s.now().UnixNano()); err != nil {
+	if err := stateSet(tx, reworkBackfillKey, "1", s.now().UnixNano()); err != nil {
 		return err
 	}
 	return tx.Commit()

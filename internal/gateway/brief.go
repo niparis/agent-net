@@ -74,17 +74,11 @@ func (s *Store) briefSchedule() (briefSchedule, error) {
 	return out, nil
 }
 
-func ownerSetting(q askDB, key string) (string, error) {
-	var value string
-	err := q.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, key).Scan(&value)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
-	}
-	return value, err
-}
-
-func (s *Store) ownerSetting(key string) (string, error) {
-	return ownerSetting(s.db, key)
+// briefState reads a brief receipt from gateway_state. They are marks of the
+// timer, not owner settings, so a write does not refresh the owner's screens.
+func briefState(q askDB, key string) (string, error) {
+	v, _, err := stateGet(q, key)
+	return v, err
 }
 
 // briefLastWake is the owner-local date of the last wake. Before the wake had
@@ -92,11 +86,11 @@ func (s *Store) ownerSetting(key string) (string, error) {
 // as the wake date when the new key is empty, so an upgrade does not wake the
 // chief twice on the same day.
 func briefLastWake(q askDB) (string, error) {
-	wake, err := ownerSetting(q, protocol.BriefLastWakeKey)
+	wake, err := briefState(q, protocol.BriefLastWakeKey)
 	if err != nil || wake != "" {
 		return wake, err
 	}
-	return ownerSetting(q, protocol.BriefLastSentKey)
+	return briefState(q, protocol.BriefLastSentKey)
 }
 
 func (s *Store) setOwnerSetting(q askDB, key, value string, now time.Time) error {
@@ -171,7 +165,7 @@ func (s *Store) checkDailyBrief(now time.Time) (protocol.Message, bool, error) {
 	if err != nil {
 		return protocol.Message{}, false, err
 	}
-	if err = s.setOwnerSetting(tx, protocol.BriefLastWakeKey, date, now); err != nil {
+	if err = stateSet(tx, protocol.BriefLastWakeKey, date, now.UnixNano()); err != nil {
 		return protocol.Message{}, false, err
 	}
 	return m, true, tx.Commit()
@@ -184,13 +178,13 @@ func (s *Store) dailyBriefStatus(now time.Time) (protocol.OwnerBriefResult, erro
 		return protocol.OwnerBriefResult{}, err
 	}
 	out := protocol.OwnerBriefResult{BriefTime: sch.timeText, TimeZone: sch.zoneName}
-	if out.LastDateSent, err = s.ownerSetting(protocol.BriefLastSentKey); err != nil {
+	if out.LastDateSent, err = briefState(s.db, protocol.BriefLastSentKey); err != nil {
 		return out, err
 	}
 	if out.LastWakeDate, err = briefLastWake(s.db); err != nil {
 		return out, err
 	}
-	if out.LastItemID, err = s.ownerSetting(protocol.BriefLastItemKey); err != nil {
+	if out.LastItemID, err = briefState(s.db, protocol.BriefLastItemKey); err != nil {
 		return out, err
 	}
 	// An older gateway wrote the wake date to BriefLastSentKey. A delivered
@@ -289,10 +283,10 @@ func (s *Store) putOwnerBrief(session string, a protocol.OwnerBriefArgs, now tim
 	default:
 		return protocol.OwnerBriefResult{}, err
 	}
-	if err = s.setOwnerSetting(tx, protocol.BriefLastItemKey, id, now); err != nil {
+	if err = stateSet(tx, protocol.BriefLastItemKey, id, now.UnixNano()); err != nil {
 		return protocol.OwnerBriefResult{}, err
 	}
-	if err = s.setOwnerSetting(tx, protocol.BriefLastSentKey, date, now); err != nil {
+	if err = stateSet(tx, protocol.BriefLastSentKey, date, now.UnixNano()); err != nil {
 		return protocol.OwnerBriefResult{}, err
 	}
 	if err = tx.Commit(); err != nil {

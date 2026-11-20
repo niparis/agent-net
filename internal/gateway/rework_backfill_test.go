@@ -42,7 +42,7 @@ func TestReworkBackfill(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, _ := newTestStore(t)
-			if _, err := s.db.Exec(`DELETE FROM owner_settings WHERE key='rework_backfill_done'`); err != nil {
+			if _, err := s.db.Exec(`DELETE FROM gateway_state WHERE key='rework_backfill_done'`); err != nil {
 				t.Fatal(err)
 			}
 			legacyReworkRun(t, s, "worker", "caller")
@@ -106,7 +106,7 @@ func TestReworkBackfillAtOpenAndInferredCaller(t *testing.T) {
 	reworkMessage(t, s, "caller", "worker", protocol.TypeRequest, "task", 1)
 	reworkMessage(t, s, "worker", "caller", protocol.TypeReply, protocol.FormatWorkerNotice(protocol.WorkerNotice{Status: "done", Session: "worker"}, ""), 2)
 	reworkMessage(t, s, "caller", "worker", protocol.TypeRequest, "fix the failing test", 3)
-	if _, err := s.db.Exec(`DELETE FROM owner_settings WHERE key='rework_backfill_done'`); err != nil {
+	if _, err := s.db.Exec(`DELETE FROM gateway_state WHERE key='rework_backfill_done'`); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
@@ -129,7 +129,7 @@ func TestReworkBackfillAtOpenAndInferredCaller(t *testing.T) {
 
 func TestReworkBackfillTenThousandMessages(t *testing.T) {
 	s, _ := newTestStore(t)
-	if _, err := s.db.Exec(`DELETE FROM owner_settings WHERE key='rework_backfill_done'`); err != nil {
+	if _, err := s.db.Exec(`DELETE FROM gateway_state WHERE key='rework_backfill_done'`); err != nil {
 		t.Fatal(err)
 	}
 	tx, err := s.db.Begin()
@@ -192,7 +192,7 @@ func TestReworkBackfillTenThousandMessages(t *testing.T) {
 // follow-up. Establish the caller before replaying those remaining messages.
 func TestReworkBackfillInfersCallerBeforeReplay(t *testing.T) {
 	s, _ := newTestStore(t)
-	if _, err := s.db.Exec(`DELETE FROM owner_settings WHERE key='rework_backfill_done'`); err != nil {
+	if _, err := s.db.Exec(`DELETE FROM gateway_state WHERE key='rework_backfill_done'`); err != nil {
 		t.Fatal(err)
 	}
 	legacyReworkRun(t, s, "worker", "")
@@ -209,7 +209,7 @@ func TestReworkBackfillInfersCallerBeforeReplay(t *testing.T) {
 
 func TestReworkBackfillPreservesKnownSessionsAndStoredCaller(t *testing.T) {
 	s, _ := newTestStore(t)
-	if _, err := s.db.Exec(`DELETE FROM owner_settings WHERE key='rework_backfill_done'`); err != nil {
+	if _, err := s.db.Exec(`DELETE FROM gateway_state WHERE key='rework_backfill_done'`); err != nil {
 		t.Fatal(err)
 	}
 	legacyReworkRun(t, s, "worker", "caller")
@@ -233,7 +233,7 @@ func TestReworkBackfillPreservesKnownSessionsAndStoredCaller(t *testing.T) {
 
 func TestReworkBackfillStoredCallerMessageMakesCountersKnown(t *testing.T) {
 	s, _ := newTestStore(t)
-	if _, err := s.db.Exec(`DELETE FROM owner_settings WHERE key='rework_backfill_done'`); err != nil {
+	if _, err := s.db.Exec(`DELETE FROM gateway_state WHERE key='rework_backfill_done'`); err != nil {
 		t.Fatal(err)
 	}
 	legacyReworkRun(t, s, "worker", "caller")
@@ -249,7 +249,7 @@ func TestReworkBackfillStoredCallerMessageMakesCountersKnown(t *testing.T) {
 
 func TestReworkBackfillReplacesMixedLiveCounters(t *testing.T) {
 	s, _ := newTestStore(t)
-	if _, err := s.db.Exec(`DELETE FROM owner_settings WHERE key='rework_backfill_done'`); err != nil {
+	if _, err := s.db.Exec(`DELETE FROM gateway_state WHERE key='rework_backfill_done'`); err != nil {
 		t.Fatal(err)
 	}
 	legacyReworkRun(t, s, "worker", "caller")

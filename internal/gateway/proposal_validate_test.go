@@ -189,7 +189,7 @@ func TestCTOProposalValidationLeavesDatabaseUnchanged(t *testing.T) {
 func TestCTOProposalValidationTeams(t *testing.T) {
 	g, node := scopeGateway(t)
 	st := g.store
-	if _, err := st.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
+	if _, err := st.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)
 	}
 	st.graphRefsOn.Store(true)

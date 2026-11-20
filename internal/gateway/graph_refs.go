@@ -17,8 +17,8 @@ import (
 func (s *Store) graphRefsEnabled() (bool, error) { return s.graphRefsOn.Load(), nil }
 
 func (s *Store) loadGraphRefs() error {
-	var on bool
-	if err := s.db.QueryRow(`SELECT enabled FROM graph_ref_gate WHERE id=1`).Scan(&on); err != nil {
+	on, err := graphRefGateOn(s.db)
+	if err != nil {
 		return err
 	}
 	s.graphRefsOn.Store(on)

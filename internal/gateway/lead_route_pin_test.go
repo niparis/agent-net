@@ -23,7 +23,7 @@ type leadRig struct {
 func newLeadRig(t *testing.T) *leadRig {
 	t.Helper()
 	s, clk := newTestStore(t)
-	s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`)
+	s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`)
 	if err := s.loadGraphRefs(); err != nil {
 		t.Fatal(err)
 	}

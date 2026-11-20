@@ -300,7 +300,7 @@ func sessionOwnerAskCond(session string, before int64, kinds []string) (string, 
 	return cond, args
 }
 
-// movedOnCleanupKey marks the one-time cleanup in owner_settings.
+// movedOnCleanupKey marks the one-time cleanup in gateway_state.
 const movedOnCleanupKey = "asks_moved_on_cleanup_v1"
 
 // movedOnGap is how long after an ask the session's task must have started
@@ -320,14 +320,9 @@ const movedOnCond = `from_kind IN ('','session') AND kind IN ('approval','check'
 
 // reconcileMovedOnOnce closes the asks that sessions left behind before the
 // close-on-activity rules existed, once. It closes and never deletes. The
-// marker in owner_settings keeps it from running again.
+// marker in gateway_state keeps it from running again.
 func (s *Store) reconcileMovedOnOnce() (int, error) {
-	var done string
-	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, movedOnCleanupKey).Scan(&done)
-	if err == nil {
-		return 0, nil
-	}
-	if err != sql.ErrNoRows {
+	if _, done, err := stateGet(s.db, movedOnCleanupKey); err != nil || done {
 		return 0, err
 	}
 	tx, err := s.db.Begin()
@@ -339,7 +334,7 @@ func (s *Store) reconcileMovedOnOnce() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if _, err := tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?)`, movedOnCleanupKey, strconv.Itoa(n), s.now().UnixNano()); err != nil {
+	if err := stateSet(tx, movedOnCleanupKey, strconv.Itoa(n), s.now().UnixNano()); err != nil {
 		return 0, err
 	}
 	return n, tx.Commit()

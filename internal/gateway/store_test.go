@@ -42,7 +42,7 @@ func newTestStore(t testing.TB) (*Store, *clock) {
 	t.Cleanup(func() { s.Close() })
 	c := &clock{t: time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)}
 	s.now = c.now
-	_, _ = s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('owed_replies_live_since',?,?)
+	_, _ = s.db.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES('owed_replies_live_since',?,?)
 		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
 		strconv.FormatInt(c.t.UnixNano(), 10), c.t.UnixNano())
 	// Test sessions live in the test's own temporary folders. A test that

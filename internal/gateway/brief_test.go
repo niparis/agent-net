@@ -445,7 +445,7 @@ func TestDailyBriefUpgradeReadsOldSentKeyAsWake(t *testing.T) {
 	setBriefTime(t, s, "09:00")
 
 	day := time.Date(2026, 11, 10, 8, 0, 0, 0, time.UTC) // 09:00 in Paris
-	if err := s.setOwnerSetting(s.db, protocol.BriefLastSentKey, "2026-11-10", day); err != nil {
+	if err := stateSet(s.db, protocol.BriefLastSentKey, "2026-11-10", day.UnixNano()); err != nil {
 		t.Fatal(err)
 	}
 	if _, sent, err := s.checkDailyBrief(day); err != nil || sent {

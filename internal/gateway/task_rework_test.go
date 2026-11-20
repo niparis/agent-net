@@ -37,7 +37,7 @@ func TestTaskReworkBackfillLinksChainAndCountsMidrun(t *testing.T) {
 	reworkMessage(t, s, "caller", "alone", protocol.TypeRequest, brief("another task"), 8)
 	reworkMessage(t, s, "stranger", "alone", protocol.TypeRequest, "not the caller", 9)
 	reworkMessage(t, s, "caller", "alone", protocol.TypeNotification, "not a request", 10)
-	if _, err := s.db.Exec(`DELETE FROM owner_settings WHERE key='task_rework_backfill_done'`); err != nil {
+	if _, err := s.db.Exec(`DELETE FROM gateway_state WHERE key='task_rework_backfill_done'`); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
@@ -154,7 +154,7 @@ func TestTaskReworkBackfillContinuationOutcomes(t *testing.T) {
 		reworkMessage(t, s, caller, root, protocol.TypeRequest, "[agent-net worker brief]\nTask:\n"+task, 10*i+1)
 		reworkMessage(t, s, caller, next, protocol.TypeRequest, "[agent-net worker brief]\nTask:\nYou continue the work of an earlier worker that ended (done).\n\n"+task, 10*i+2)
 	}
-	if _, err := s.db.Exec(`DELETE FROM owner_settings WHERE key='task_rework_backfill_done'`); err != nil {
+	if _, err := s.db.Exec(`DELETE FROM gateway_state WHERE key='task_rework_backfill_done'`); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
@@ -197,7 +197,7 @@ func TestTaskReworkBackfillUsesOutcomeAtContinuation(t *testing.T) {
 	}
 	reworkMessage(t, s, "caller", "root", protocol.TypeRequest, "[agent-net worker brief]\nTask:\nwork", 500000000)
 	reworkMessage(t, s, "caller", "next", protocol.TypeRequest, "[agent-net worker brief]\nTask:\nYou continue the work of an earlier worker that ended (handback).\n\nwork", 2000000000)
-	if _, err := s.db.Exec(`DELETE FROM owner_settings WHERE key='task_rework_backfill_done'`); err != nil {
+	if _, err := s.db.Exec(`DELETE FROM gateway_state WHERE key='task_rework_backfill_done'`); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {

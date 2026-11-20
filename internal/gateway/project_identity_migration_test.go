@@ -57,9 +57,7 @@ func identityFixture(t *testing.T, s *Store, folder, charter string) {
 	if _, err = s.db.Exec(`INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES(?, 'other', 'depends', '', 'normal')`, folder); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec(`INSERT INTO graph_node_settings VALUES(?, 'sandbox', 'workspace', 1, 'owner')`, folder); err != nil {
-		t.Fatal(err)
-	}
+	legacyNodeSetting(t, s, folder, "sandbox", "workspace")
 	if _, err = s.db.Exec(`INSERT INTO project_policies VALUES(?, ?, 'ask', 1)`, n, folder); err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +91,7 @@ func TestProjectIdentityMigration(t *testing.T) {
 			`SELECT count(*) FROM projects WHERE name='agent-net'`,
 			`SELECT count(*) FROM sessions WHERE repo_project='agent-net'`,
 			`SELECT count(*) FROM graph_edges WHERE source='agent-net' AND target='other'`,
-			`SELECT count(*) FROM graph_node_settings WHERE node='agent-net' AND value='workspace'`,
+			`SELECT count(*) FROM setting_values WHERE key='node_setting.sandbox' AND scope='agent-net' AND value='"workspace"'`,
 			`SELECT count(*) FROM project_policies WHERE project='agent-net' AND policy='ask'`,
 			`SELECT count(*) FROM learned_suggestions WHERE node='agent-net'`,
 			`SELECT count(*) FROM graph_history WHERE node='agent-net' AND actor='learned'`,
@@ -159,9 +157,7 @@ func TestProjectIdentityMigrationConflictDoesNotBlockOtherProjects(t *testing.T)
 	if _, err = s.db.Exec(`UPDATE projects SET remote='https://example.com/clean-repo.git' WHERE name='clean-folder'`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec(`INSERT INTO graph_node_settings VALUES('agent-net','sandbox','different',1,'owner')`); err != nil {
-		t.Fatal(err)
-	}
+	legacyNodeSetting(t, s, "agent-net", "sandbox", "different")
 	resetIdentityMigration(t, s)
 	if err = s.Close(); err != nil {
 		t.Fatal(err)
@@ -174,7 +170,7 @@ func TestProjectIdentityMigrationConflictDoesNotBlockOtherProjects(t *testing.T)
 	defer g.Close()
 	for _, q := range []string{
 		`SELECT count(*) FROM charter_values WHERE level='repo' AND scope='a2a-ocs' AND value='conflicting charter'`,
-		`SELECT count(*) FROM graph_node_settings WHERE node='agent-net' AND value='different'`,
+		`SELECT count(*) FROM setting_values WHERE key='node_setting.sandbox' AND scope='agent-net' AND value='"different"'`,
 		`SELECT count(*) FROM charter_values WHERE level='repo' AND scope='clean-repo' AND value='clean charter'`,
 		`SELECT count(*) FROM projects WHERE name='clean-repo'`,
 	} {

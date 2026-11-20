@@ -21,7 +21,7 @@ var ctoDefaultCharter = []struct{ attr, value string }{
 // ctoDefaultCharterMigration is only a marker: the work is seedCTOCharterOnceTx.
 const ctoDefaultCharterMigration = `SELECT 1 /* CTO default charter seed (decision 0159) */;`
 
-// ctoDefaultCharterKey marks the seed in owner_settings, with the fields it
+// ctoDefaultCharterKey marks the seed in gateway_state, with the fields it
 // filled. A store that has it never seeds again, so a field the owner clears
 // later stays empty.
 const ctoDefaultCharterKey = "cto_default_charter_v1"
@@ -34,14 +34,10 @@ const ctoDefaultCharterActor = "agent-net default"
 // shipped migration step, before the charter tables merged, so it uses the
 // agent_charter table layout.
 func (s *Store) seedCTOCharterOnceTx(tx *sql.Tx) error {
-	var done string
-	err := tx.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, ctoDefaultCharterKey).Scan(&done)
-	if err == nil {
-		return nil
-	}
-	if err != sql.ErrNoRows {
+	if _, done, err := markerGetTx(tx, ctoDefaultCharterKey); err != nil || done {
 		return err
 	}
+	var err error
 	now := s.now().UnixNano()
 	var live bool
 	if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM agents WHERE id='cto' AND tombstone=0)`).Scan(&live); err != nil {
@@ -64,6 +60,5 @@ func (s *Store) seedCTOCharterOnceTx(tx *sql.Tx) error {
 		}
 		seeded = append(seeded, f.attr)
 	}
-	_, err = tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?)`, ctoDefaultCharterKey, strings.Join(seeded, ","), now)
-	return err
+	return markerSetTx(tx, ctoDefaultCharterKey, strings.Join(seeded, ","), now)
 }

@@ -1,8 +1,6 @@
 package gateway
 
 import (
-	"database/sql"
-	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -14,18 +12,11 @@ import (
 const owedRepliesLiveSinceKey = "owed_replies_live_since"
 
 func (s *Store) initOwedRepliesLiveSince() error {
-	var val string
-	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, owedRepliesLiveSinceKey).Scan(&val)
-	if err == nil {
-		return nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
+	if _, set, err := stateGet(s.db, owedRepliesLiveSinceKey); err != nil || set {
 		return err
 	}
 	now := s.now().UnixNano()
-	_, err = s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?)`,
-		owedRepliesLiveSinceKey, strconv.FormatInt(now, 10), now)
-	return err
+	return stateSet(s.db, owedRepliesLiveSinceKey, strconv.FormatInt(now, 10), now)
 }
 
 const dstWaitsForOthersSQL = `(EXISTS(SELECT 1 FROM sessions w WHERE w.online=1 AND w.worker<>'' AND json_extract(w.worker,'$.owner')=dst.id)
@@ -93,18 +84,17 @@ func (s *Store) checkOwedReplies() ([]protocol.Message, error) {
 	defer tx.Rollback()
 
 	var liveSinceNanos int64
-	var rawLiveSince string
-	err = tx.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, owedRepliesLiveSinceKey).Scan(&rawLiveSince)
-	if err == nil {
+	rawLiveSince, set, err := stateGet(tx, owedRepliesLiveSinceKey)
+	if err != nil {
+		return nil, err
+	}
+	if set {
 		liveSinceNanos, _ = strconv.ParseInt(rawLiveSince, 10, 64)
-	} else if errors.Is(err, sql.ErrNoRows) {
+	} else {
 		liveSinceNanos = now.UnixNano()
-		if _, err := tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?)`,
-			owedRepliesLiveSinceKey, strconv.FormatInt(liveSinceNanos, 10), liveSinceNanos); err != nil {
+		if err := stateSet(tx, owedRepliesLiveSinceKey, strconv.FormatInt(liveSinceNanos, 10), liveSinceNanos); err != nil {
 			return nil, err
 		}
-	} else {
-		return nil, err
 	}
 
 	// Close any open owed-ask where the recipient has since replied in the conversation.

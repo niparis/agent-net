@@ -58,8 +58,8 @@ func TestAgentGetNeverReturnsUnknownSettings(t *testing.T) {
 	if err := s.SetCharter("p", "maturity", "mature", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO graph_node_settings(node,setting,value,updated_at,updated_by) VALUES(?,?,?,?,?)`,
-		"p", "unknown_setting", "OWNER_ONLY_NODE_SETTING_CANARY", s.now().UnixNano(), "owner"); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES(?,'repo',?,'',?,0)`,
+		"node_setting.unknown_setting", "p", `"OWNER_ONLY_NODE_SETTING_CANARY"`); err != nil {
 		t.Fatal(err)
 	}
 	a := agentOf(t, s, id)

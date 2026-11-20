@@ -22,7 +22,7 @@ import (
 // current meaning.
 //
 // nodeScopesMigration creates the tables and is replayable. The migration loop
-// runs seedNodeScopesTx after it; the owner_settings marker keeps that seed to
+// runs seedNodeScopesTx after it; the gateway_state marker keeps that seed to
 // one run, so a scope the owner removed is never put back.
 const nodeScopesMigration = `
 -- Node scopes: delegated authority stored on role nodes (stored, not used yet).
@@ -295,8 +295,7 @@ const wbgpocMergeRule = "so_f960d5fd38dcd366"
 // seedNodeScopesTx turns today's grants into scopes, once. A grant whose node
 // or target does not exist is skipped; a scope already stored is kept.
 func seedNodeScopesTx(tx *sql.Tx, now int64) error {
-	var done bool
-	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM owner_settings WHERE key=?)`, nodeScopesSeededKey).Scan(&done); err != nil || done {
+	if _, done, err := markerGetTx(tx, nodeScopesSeededKey); err != nil || done {
 		return err
 	}
 	var seeds []protocol.Scope
@@ -447,6 +446,5 @@ func seedNodeScopesTx(tx *sql.Tx, now int64) error {
 			return err
 		}
 	}
-	_, err = tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,'1',?)`, nodeScopesSeededKey, now)
-	return err
+	return markerSetTx(tx, nodeScopesSeededKey, "1", now)
 }

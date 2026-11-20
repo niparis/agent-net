@@ -20,7 +20,7 @@ backup, logs the error and raises one Inbox item, then retries at the next
 machine hello or gateway start. It never retries on the minute timer, so a
 persistent failure cannot become a tight loop.
 
-The gateway records the first start of each version in `graph_cutover_state`.
+The gateway records the first start of each version in `gateway_state` (before schema reduction part 8, in the table `graph_cutover_state`).
 If blockers remain more than 24 hours after that start, the owner gets one
 Inbox item naming the machines that must upgrade. The item is closed when the
 blockers resolve. Teams and the Graph Team filter keep waiting for the

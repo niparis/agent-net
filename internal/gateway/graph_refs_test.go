@@ -39,7 +39,7 @@ func TestGraphRefsGateAndLegacyCompatibility(t *testing.T) {
 	if _, err := s.db.Exec(`UPDATE nodes SET removed=1 WHERE id=?`, offline); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
+	if _, err := s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.loadGraphRefs(); err != nil {
@@ -64,7 +64,7 @@ func TestGraphRefsReadAndCTOWrite(t *testing.T) {
 	if err := s.SetNodeGraphRefs(node, "v0.4.145", true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
+	if _, err := s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.loadGraphRefs(); err != nil {
@@ -108,7 +108,7 @@ func TestGraphRefsReadAndCTOWrite(t *testing.T) {
 func TestGraphRefsAgentHistoryAndUndo(t *testing.T) {
 	s, _ := newTestStore(t)
 	graphSessions(t, s, "demo")
-	if _, err := s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
+	if _, err := s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.loadGraphRefs(); err != nil {
@@ -201,7 +201,7 @@ func TestGraphRefsTypedEdgesKeepRoutingKeys(t *testing.T) {
 	if err := s.SetEdge(e, "owner"); err == nil {
 		t.Fatal("typed write passed before cutover")
 	}
-	if _, err := s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
+	if _, err := s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.loadGraphRefs(); err != nil {
@@ -222,7 +222,7 @@ func TestGraphRefsTypedEdgesKeepRoutingKeys(t *testing.T) {
 
 func TestGraphRefsCachedGate(t *testing.T) {
 	s, _ := newTestStore(t)
-	if _, err := s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
+	if _, err := s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)
 	}
 	reopened, err := OpenStore(s.path)

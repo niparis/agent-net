@@ -45,7 +45,7 @@ func graphKind(tx *sql.Tx, name string) (string, error) {
 	}
 	if exists == 0 {
 		var repo bool
-		if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND (SELECT enabled FROM graph_ref_gate WHERE id=1)=1 AND archived=0)`, name).Scan(&repo); err != nil {
+		if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND `+graphRefGateSQL+`='1' AND archived=0)`, name).Scan(&repo); err != nil {
 			return "", err
 		}
 		if !repo {
@@ -76,8 +76,8 @@ func graphRecord(tx *sql.Tx, typ, node, attr, old, value, actor string, at int64
 		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM graph_nodes WHERE name=? AND kind='architect')`, node).Scan(&architect); err != nil {
 			return err
 		}
-		var typed bool
-		if err := tx.QueryRow(`SELECT enabled FROM graph_ref_gate WHERE id=1`).Scan(&typed); err != nil {
+		typed, err := graphRefGateOn(tx)
+		if err != nil {
 			return err
 		}
 		if architect && !typed {
@@ -402,30 +402,9 @@ func (s *Store) SetNodeSetting(node, setting, value, actor string, validate ...b
 		}
 		return nil
 	}
-	var old string
-	err = tx.QueryRow(`SELECT value FROM graph_node_settings WHERE node=? AND setting=?`, node, setting).Scan(&old)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-	if old == value {
-		return nil
-	}
-	now := s.now().UnixNano()
-	if value == "" {
-		_, err = tx.Exec(`DELETE FROM graph_node_settings WHERE node=? AND setting=?`, node, setting)
-	} else {
-		_, err = tx.Exec(`INSERT INTO graph_node_settings VALUES(?,?,?,?,?) ON CONFLICT(node,setting) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at,updated_by=excluded.updated_by`, node, setting, value, now, actor)
-	}
-	if err != nil {
-		return err
-	}
-	if err = graphRecord(tx, "setting", node, setting, old, value, actor, now); err != nil {
-		return err
-	}
-	if len(validate) > 0 && validate[0] {
-		return nil
-	}
-	return tx.Commit()
+	// ValidateNodeSetting accepts only the settings in deliveryNodeKeys, so the
+	// branch above handled this one. A name that gets here is not a node setting.
+	return reject("unknown node setting %q", setting)
 }
 
 // NodeSettings returns a node's overrides, its maturity defaults and the
@@ -899,10 +878,17 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 		if _, moved := deliveryNodeKeys[attr]; moved {
 			return reject("%s moved to settings; use settings history to undo", attr)
 		}
-		var current string
-		err = tx.QueryRow(`SELECT value FROM graph_node_settings WHERE node=? AND setting=?`, node, attr).Scan(&current)
+		// A setting of an older version, kept in setting_values under
+		// node_setting.<name> (see gatewayStateMigration).
+		var raw, current string
+		err = tx.QueryRow(`SELECT value FROM setting_values WHERE key=? AND level='repo' AND scope=? AND item=''`, legacyNodeSettingKey(attr), node).Scan(&raw)
 		if err != nil && err != sql.ErrNoRows {
 			return err
+		}
+		if err == nil {
+			if err = json.Unmarshal([]byte(raw), &current); err != nil {
+				return err
+			}
 		}
 		if current != value {
 			return reject("value changed since that history entry")
@@ -911,9 +897,10 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 			return err
 		}
 		if old == "" {
-			_, err = tx.Exec(`DELETE FROM graph_node_settings WHERE node=? AND setting=?`, node, attr)
+			_, err = tx.Exec(`DELETE FROM setting_values WHERE key=? AND level='repo' AND scope=? AND item=''`, legacyNodeSettingKey(attr), node)
 		} else {
-			_, err = tx.Exec(`INSERT INTO graph_node_settings VALUES(?,?,?,?,?) ON CONFLICT(node,setting) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at,updated_by=excluded.updated_by`, node, attr, old, now, actor)
+			b, _ := json.Marshal(old)
+			_, err = tx.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES(?,'repo',?,'',?,0) ON CONFLICT(key,level,scope,item) DO UPDATE SET value=excluded.value`, legacyNodeSettingKey(attr), node, string(b))
 		}
 	case "edge":
 		var e protocol.Edge
@@ -1173,8 +1160,8 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 		return err
 	}
 	typed := e.FromRef != nil
-	var enabled bool
-	if err := tx.QueryRow(`SELECT enabled FROM graph_ref_gate WHERE id=1`).Scan(&enabled); err != nil {
+	enabled, err := graphRefGateOn(tx)
+	if err != nil {
 		return err
 	}
 	if enabled {
@@ -1183,10 +1170,6 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 		}
 	}
 	if typed {
-		var enabled bool
-		if err := tx.QueryRow(`SELECT enabled FROM graph_ref_gate WHERE id=1`).Scan(&enabled); err != nil {
-			return err
-		}
 		if !enabled {
 			return reject("typed Graph cutover is waiting for all machines to upgrade")
 		}
@@ -1242,7 +1225,6 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 	if e.Mode != "" {
 		return reject("an edge has no mode")
 	}
-	var err error
 	from := "component"
 	special := protocol.DeliveryOwnerFromSource(e.From)
 	if special.Kind != protocol.OwnerNode {

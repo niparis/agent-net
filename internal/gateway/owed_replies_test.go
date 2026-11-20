@@ -335,7 +335,7 @@ func TestOwedReplyRequestCreatedBeforeLiveSinceNeverNudged(t *testing.T) {
 
 	// Record start time 1 hour after old request
 	liveSince := start.Add(time.Hour)
-	if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('owed_replies_live_since',?,?)
+	if _, err := s.db.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES('owed_replies_live_since',?,?)
 		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
 		fmt.Sprintf("%d", liveSince.UnixNano()), liveSince.UnixNano()); err != nil {
 		t.Fatal(err)

@@ -461,7 +461,7 @@ func rewindOrgTreeErr(t *testing.T, s *Store) error {
 		`DELETE FROM graph_edges WHERE kind='reports_to'`,
 		`ALTER TABLE agents DROP COLUMN lead_session`,
 		`ALTER TABLE sessions DROP COLUMN started_by`,
-		`DELETE FROM owner_settings WHERE key='` + orgTreeBuiltKey + `'`,
+		`DELETE FROM gateway_state WHERE key='` + orgTreeBuiltKey + `'`,
 	} {
 		if _, err := s.db.Exec(q); err != nil {
 			t.Fatalf("%s: %v", q, err)

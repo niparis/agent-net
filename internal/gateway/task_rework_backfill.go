@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"database/sql"
-	"errors"
 	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -11,18 +10,15 @@ import (
 // backfillTaskRework links retained continuation briefs and replays only the
 // new mid-run counter. Existing continue and fix counts are left intact. The
 // marker and all changes share a transaction so startup can safely retry.
+const taskReworkBackfillKey = "task_rework_backfill_done"
+
 func (s *Store) backfillTaskRework() error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	var marker string
-	err = tx.QueryRow(`SELECT value FROM owner_settings WHERE key='task_rework_backfill_done'`).Scan(&marker)
-	if err == nil {
-		return nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
+	if _, done, err := stateGet(tx, taskReworkBackfillKey); err != nil || done {
 		return err
 	}
 	type run struct {
@@ -186,7 +182,7 @@ func (s *Store) backfillTaskRework() error {
 			return err
 		}
 	}
-	if _, err := tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('task_rework_backfill_done','1',?)`, s.now().UnixNano()); err != nil {
+	if err := stateSet(tx, taskReworkBackfillKey, "1", s.now().UnixNano()); err != nil {
 		return err
 	}
 	return tx.Commit()

@@ -36,7 +36,7 @@ func seedLegacyAsks(t *testing.T, s *Store, asks ...legacyAsk) {
 func rerunFrontDoorFlush(t *testing.T, s *Store, fresh bool) {
 	t.Helper()
 	if fresh {
-		if _, err := s.db.Exec(`DELETE FROM owner_settings WHERE key=?`, frontDoorFlushKey); err != nil {
+		if _, err := s.db.Exec(`DELETE FROM gateway_state WHERE key=?`, frontDoorFlushKey); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -105,7 +105,7 @@ func TestFrontDoorFlushClosesOwnerItemsAndKeepsTheRows(t *testing.T) {
 		t.Fatalf("items before %d, after %d (%v): the flush keeps every row", before, after, err)
 	}
 	var count string
-	if err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, frontDoorFlushKey).Scan(&count); err != nil || count != "3" {
+	if err := s.db.QueryRow(`SELECT value FROM gateway_state WHERE key=?`, frontDoorFlushKey).Scan(&count); err != nil || count != "3" {
 		t.Fatalf("flush marker = %q, %v; want the 3 closed items on the record", count, err)
 	}
 	log, err := s.DeskLog(5)
