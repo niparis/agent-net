@@ -946,14 +946,9 @@ agent nodes. Only the owner and the CTO reach it, through the `skills` tool or
 the owner's undo in the Desk; the gateway records the actor on every set and
 undo.
 
-- A suggestion reads only what the gateway already holds: charters, the
-  project bar drafted from AGENTS.md, the session's repo description and
-  profile facts, and archive descriptions. It makes no model call and reads
-  no file on a machine.
-- The MCP check unpacks the suggested skill versions in a temporary folder on
-  the gateway to read their text. It does not call the servers.
-- A new registered repo adds one CTO notice. It is a notice, not a hold: it
-  grants nothing and waits for no answer.
+- agent-net never starts skill selection. The CTO sets skills when the owner
+  asks, from the archive list. There is no suggest action, no matching of
+  skills to a repo by text, and no notice when a repo is registered.
 - A set can pin an archive version and lists the live sessions that still run
   the old list. It does not restart, deliver or write into a repo.
 

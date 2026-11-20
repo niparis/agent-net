@@ -7,7 +7,6 @@ var SkillLevels = []string{"global", "team", "repo", "agent"}
 // The node skill list frames. The daemon checks the caller and the gateway
 // records the actor, like the skill archive frames.
 const (
-	FrameSkillsSuggest   = "skills.suggest"
 	FrameSkillsSet       = "skills.set"
 	FrameSkillsEffective = "skills.effective"
 	FrameSkillsUndo      = "skills.undo"
@@ -58,17 +57,15 @@ type SkillVersion struct {
 	Size    int64  `json:"size,omitempty"`
 }
 
-// SkillSetRequest replaces one node's own add and remove lists. A suggestion id
-// supplies the add list; add and remove are the explicit form. Pins name a
+// SkillSetRequest replaces one node's own add and remove lists. Pins name a
 // version per skill; without one a skill follows its latest live version.
 type SkillSetRequest struct {
-	Level      string         `json:"level"`
-	Scope      string         `json:"scope"`
-	Suggestion string         `json:"suggestion,omitempty"`
-	Add        []string       `json:"add,omitempty"`
-	Remove     []string       `json:"remove,omitempty"`
-	Pins       map[string]int `json:"pins,omitempty"`
-	By         string         `json:"by"`
+	Level  string         `json:"level"`
+	Scope  string         `json:"scope"`
+	Add    []string       `json:"add,omitempty"`
+	Remove []string       `json:"remove,omitempty"`
+	Pins   map[string]int `json:"pins,omitempty"`
+	By     string         `json:"by"`
 }
 
 // SkillEffectiveRequest reads one node, or every node that has a list when
@@ -76,14 +73,6 @@ type SkillSetRequest struct {
 type SkillEffectiveRequest struct {
 	Level string `json:"level"`
 	Scope string `json:"scope"`
-	By    string `json:"by"`
-}
-
-// SkillSuggestRequest asks for a short list for one node.
-type SkillSuggestRequest struct {
-	Level string `json:"level"`
-	Scope string `json:"scope"`
-	Limit int    `json:"limit,omitempty"`
 	By    string `json:"by"`
 }
 
@@ -150,30 +139,4 @@ type SkillSetResult struct {
 	// PinnedByMaturity says the adds were pinned because the repo is mature
 	// or critical (decision 0169).
 	PinnedByMaturity bool `json:"pinned_by_maturity,omitempty"`
-}
-
-// SuggestedSkill is one suggestion row.
-type SuggestedSkill struct {
-	Name    string `json:"name"`
-	Version int    `json:"version"`
-	Reason  string `json:"reason"`
-	// ContextTokens is the name and description a session loads at start;
-	// SizeTokens is the whole bundle.
-	ContextTokens int `json:"context_tokens,omitempty"`
-	SizeTokens    int `json:"size_tokens,omitempty"`
-	// MissingMcp names MCP servers the skill text uses and this node lacks.
-	MissingMcp []string `json:"missing_mcp,omitempty"`
-}
-
-// SkillSuggestion is the read-only result of suggest. Its id can be given to
-// set later.
-type SkillSuggestion struct {
-	ID     string           `json:"id"`
-	Level  string           `json:"level"`
-	Scope  string           `json:"scope"`
-	Skills []SuggestedSkill `json:"skills"`
-	// ContextTokens totals the context figure of the suggested skills.
-	ContextTokens int      `json:"context_tokens"`
-	Already       []string `json:"already,omitempty"`
-	Note          string   `json:"note,omitempty"`
 }

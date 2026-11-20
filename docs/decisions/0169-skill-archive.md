@@ -255,4 +255,13 @@ The first live intake (v0.5.77) showed four problems. These are the rules.
 The owner chose that skill selection is something he starts. He sets skills
 with the CTO when he makes a new project, or asks the CTO to review them on a
 mature one. agent-net no longer opens a "new project" skills item when a repo
-is registered. The `skills` tool and `skill_archive` are unchanged.
+is registered.
+
+The owner then asked for only the tools the CTO needs. The `suggest` action of
+the `skills` tool is removed, with its word matching, the stored suggestions
+and the `suggestion` input of `set`. The CTO picks skills from the
+`skill_archive` list and sets them with an explicit add, remove and pin list.
+The `skills` tool keeps `set`, `effective` and `undo`. The `skill_suggestions`
+table stays in the database, unused. The text above that describes suggest is
+history. The per-project tool toggle and its standing choice for new projects
+(`tools_new_projects`) is a different feature and is unchanged.

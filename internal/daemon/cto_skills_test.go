@@ -26,7 +26,7 @@ func callCTO[T any](t *testing.T, d *Daemon, ctx context.Context, tool, args str
 	return out
 }
 
-func TestCTOSkillsSuggestSetEffectiveAndUndo(t *testing.T) {
+func TestCTOSkillsSetEffectiveAndUndo(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	ctx := context.Background()
@@ -39,11 +39,7 @@ func TestCTOSkillsSuggestSetEffectiveAndUndo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	suggestion := callCTO[protocol.SkillSuggestion](t, n.d, ctx, "skills", `{"action":"suggest","level":"repo","scope":"grill-me"}`)
-	if suggestion.ID == "" || len(suggestion.Skills) != 1 || suggestion.Skills[0].Name != "grill-me" || suggestion.Skills[0].Reason == "" {
-		t.Fatalf("suggestion: %+v", suggestion)
-	}
-	set := callCTO[protocol.SkillSetResult](t, n.d, ctx, "skills", `{"action":"set","suggestion":"`+suggestion.ID+`"}`)
+	set := callCTO[protocol.SkillSetResult](t, n.d, ctx, "skills", `{"action":"set","level":"repo","scope":"grill-me","add":["grill-me"]}`)
 	if set.Change == "" || len(set.Added) != 1 || set.Added[0] != "grill-me" || len(set.Effective) != 1 || set.Effective[0].Level != "repo" {
 		t.Fatalf("set: %+v", set)
 	}
@@ -91,5 +87,20 @@ func TestCTOSkillsSetRefusesSameNameAddAndRemove(t *testing.T) {
 	}
 	if _, err := n.d.runCTOTool(ctx, "skills", json.RawMessage(`{"action":"set","level":"repo","scope":"x","add":["grill-me"],"remove":["grill-me"]}`)); err == nil {
 		t.Fatal("the same name on both lists was accepted")
+	}
+}
+
+// The suggest action is gone: the CTO picks skills from the archive list and
+// sets them by name.
+func TestCTOSkillsRefusesSuggestAction(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	ctx := context.Background()
+	if err := n.d.registerCTOSession(ctx); err != nil {
+		t.Fatal(err)
+	}
+	_, err := n.d.runCTOTool(ctx, "skills", json.RawMessage(`{"action":"suggest","level":"repo","scope":"x"}`))
+	if err == nil || !strings.Contains(err.Error(), "suggest") {
+		t.Fatalf("suggest action: %v", err)
 	}
 }

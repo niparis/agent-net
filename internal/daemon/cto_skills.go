@@ -19,18 +19,6 @@ func (d *Daemon) ctoSkills(ctx context.Context, name string, raw json.RawMessage
 		actor = "cto"
 	}
 	switch name {
-	case "skills_suggest":
-		var p struct {
-			Level string `json:"level"`
-			Scope string `json:"scope"`
-			Limit int    `json:"limit"`
-		}
-		if json.Unmarshal(raw, &p) != nil || p.Level == "" {
-			return nil, errors.New("skills suggest needs a level")
-		}
-		return d.call(ctx, protocol.FrameSkillsSuggest, protocol.SkillSuggestRequest{
-			Level: p.Level, Scope: p.Scope, Limit: p.Limit, By: actor,
-		})
 	case "skills_effective":
 		var p protocol.SkillEffectiveRequest
 		if json.Unmarshal(raw, &p) != nil {
@@ -40,18 +28,17 @@ func (d *Daemon) ctoSkills(ctx context.Context, name string, raw json.RawMessage
 		return d.call(ctx, protocol.FrameSkillsEffective, p)
 	case "skills_set":
 		var p struct {
-			Level      string   `json:"level"`
-			Scope      string   `json:"scope"`
-			Suggestion string   `json:"suggestion"`
-			Add        []string `json:"add"`
-			Remove     []string `json:"remove"`
-			Pins       []struct {
+			Level  string   `json:"level"`
+			Scope  string   `json:"scope"`
+			Add    []string `json:"add"`
+			Remove []string `json:"remove"`
+			Pins   []struct {
 				Name    string `json:"name"`
 				Version int    `json:"version"`
 			} `json:"pins"`
 		}
-		if json.Unmarshal(raw, &p) != nil || (p.Level == "" && p.Suggestion == "") {
-			return nil, errors.New("skills set needs a level or a suggestion")
+		if json.Unmarshal(raw, &p) != nil || p.Level == "" {
+			return nil, errors.New("skills set needs a level")
 		}
 		pins := map[string]int{}
 		for _, pin := range p.Pins {
@@ -60,7 +47,7 @@ func (d *Daemon) ctoSkills(ctx context.Context, name string, raw json.RawMessage
 			}
 		}
 		return d.call(ctx, protocol.FrameSkillsSet, protocol.SkillSetRequest{
-			Level: p.Level, Scope: p.Scope, Suggestion: p.Suggestion,
+			Level: p.Level, Scope: p.Scope,
 			Add: p.Add, Remove: p.Remove, Pins: pins, By: actor,
 		})
 	case "skills_undo":

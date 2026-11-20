@@ -112,7 +112,7 @@ Desktop notifications are one owner preference per machine: `notification_settin
 
 Kinds: `skill`, `mcp`, `user`, `project`, `native`, `plugin`, `package`, `system`, `agent-net federation`. Scope is `global` or one or more projects. A project skill tracked by the repository is part of the repo; an untracked project skill is a local copy. `mcp_change` covers shared MCP servers; `tools_change` covers a project's own tools and skills.
 
-`skills` actions: suggest, set, effective, undo. It stores inherited skill lists on global, team, repo and agent nodes and makes no model call; nothing is delivered to sessions yet.
+`skills` actions: set, effective, undo. It stores inherited skill lists on global, team, repo and agent nodes; nothing is delivered to sessions yet. The CTO sets skills when the owner asks.
 
 ## Notes
 
