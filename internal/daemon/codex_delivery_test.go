@@ -112,6 +112,9 @@ func TestCodexQueuedMessageRetriedThenRestarted(t *testing.T) {
 	if got := queuedCopies(f, m.ID); got != 2 {
 		t.Fatalf("queue calls: %d, want 2 (the message and its one retry)", got)
 	}
+	// The daemon logs the restart before it sends turn/start, so the fake may not
+	// have the turn yet. Wait for it, then check exactly one turn holds the message.
+	eventually(t, "the restart starts a turn", func() bool { return len(f.turnTexts()) >= 1 })
 	turns := f.turnTexts()
 	if len(turns) != 1 || !strings.Contains(turns[0], "please restart this") {
 		t.Fatalf("the restart did not start a turn with the message: %q", turns)
