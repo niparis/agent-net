@@ -34,8 +34,9 @@ ends. It reads the local conversation summaries database for a title and to
 exclude conversations with a parent. Worker conversations are not main
 sessions. A session started before the plugin was enabled must be restarted to
 be discovered. The daemon keeps start hooks in memory, so an existing session
-needs a new SessionStart hook after a daemon restart. If the summaries database or its parent column is unavailable,
-agy does not provide enough information to identify sub-conversations from it.
+needs a new SessionStart hook after a daemon restart. If the summaries database
+or its parent column is unavailable, agy does not provide enough information to
+identify sub-conversations from it.
 
 The agent-net MCP tools bind a conversation only when its ID is discovered and
 the MCP process descends from the matching agy process. The session can then

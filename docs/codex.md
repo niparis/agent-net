@@ -14,7 +14,7 @@ To keep per-launch overrides and require the shared server, start it first and a
 
 ```sh
 codex app-server daemon start
-exec codex --remote unix:// -m gpt-6.1-sol -c model_reasoning_effort=medium -s workspace-write -c sandbox_workspace_write.network_access=true "$PROMPT"
+exec codex --remote unix:// -m <model> -c model_reasoning_effort=medium -s workspace-write -c sandbox_workspace_write.network_access=true "$PROMPT"
 ```
 
 `--remote unix://` requires the shared server to be running and fails instead of falling back to an embedded server. The server and the terminal must use the same `CODEX_HOME` as agent-net. The explicit attachment forwards the model, reasoning effort, sandbox mode and network override to the new thread. agent-net-started terminal sessions pin the shared server when its adapter is connected; if it is not yet connected, Codex uses its normal automatic startup.
