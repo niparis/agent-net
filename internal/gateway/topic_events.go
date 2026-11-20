@@ -16,7 +16,7 @@ var topicTables = map[string][]string{
 	protocol.TopicWorkers:  tableUnion(workerLogTables, calibrationTables, []string{"worker_starts", "quota_blocks", "owner_settings", "setting_values"}),
 	protocol.TopicGraph:    graphTables,
 	protocol.TopicInbox:    tableUnion(inboxTables, []string{"messages", "ask_sorts", "desk_log", "charter_draft_asks", "owner_settings"}),
-	protocol.TopicChanges:  []string{"delivery_changes", "delivery_revisions", "delivery_evidence", "delivery_step_tasks", "delivery_step_messages", "delivery_revision_stats", "delivery_step_inbox", "delivery_step_delegates", "events", "messages"},
+	protocol.TopicChanges:  []string{"delivery_changes", "delivery_revisions", "delivery_evidence", "delivery_step_tasks", "delivery_step_messages", "delivery_step_inbox", "delivery_step_delegates", "events", "messages"},
 	protocol.TopicProjects: tableUnion([]string{"projects", "repos", "project_display_names", "project_mergers", "sessions", "nodes.id", "nodes.hostname"}, graphTables),
 	protocol.TopicLearned:  learnedListTables,
 	protocol.TopicUsage:    tableUnion(nodesTables, []string{"sessions", "quota_blocks"}),

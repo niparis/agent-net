@@ -69,9 +69,7 @@ func TestDeliveryTaskShowsQualitySignals(t *testing.T) {
 func TestChangeQualitySignalsMigrationUpgrade(t *testing.T) {
 	r := newDeliveryRig(t)
 	id := r.submit(r.a, r.workerSubmit("feat/old", commitA)).Change.Change.ID
-	if _, err := r.s.db.Exec(`ALTER TABLE delivery_revision_stats DROP COLUMN signals`); err != nil {
-		t.Fatal(err)
-	}
+	unfoldSideTables(t, r.s)
 	if _, err := r.s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "change quality signals column")); err != nil {
 		t.Fatal(err)
 	}

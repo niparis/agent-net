@@ -32,9 +32,7 @@ func TestChangeHandbackCheckStaysWithTheRevision(t *testing.T) {
 func TestChangeHandbackCheckMigrationUpgrade(t *testing.T) {
 	r := newDeliveryRig(t)
 	id := r.submit(r.a, r.workerSubmit("feat/old-check", commitA)).Change.Change.ID
-	if _, err := r.s.db.Exec(`ALTER TABLE delivery_revision_stats DROP COLUMN handback_check`); err != nil {
-		t.Fatal(err)
-	}
+	unfoldSideTables(t, r.s)
 	if _, err := r.s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "change handback check column")); err != nil {
 		t.Fatal(err)
 	}

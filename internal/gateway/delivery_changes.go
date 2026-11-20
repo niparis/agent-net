@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"strconv"
@@ -522,8 +523,7 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 		c = next
 	}
 	if q.DiffStat != "" {
-		if _, err := tx.Exec(`INSERT INTO delivery_revision_stats(change_id,revision,diff_stat) VALUES(?,?,?)
-			ON CONFLICT(change_id,revision) DO UPDATE SET diff_stat=excluded.diff_stat`, c.ID, c.Revision, q.DiffStat); err != nil {
+		if err := setRevisionColumn(tx, c, "diff_stat", q.DiffStat); err != nil {
 			return protocol.ChangeSubmitResult{}, err
 		}
 	}
@@ -532,8 +532,7 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 		if err != nil {
 			return protocol.ChangeSubmitResult{}, err
 		}
-		if _, err := tx.Exec(`INSERT INTO delivery_revision_stats(change_id,revision,diff_stat,signals) VALUES(?,?,'',?)
-			ON CONFLICT(change_id,revision) DO UPDATE SET signals=excluded.signals`, c.ID, c.Revision, string(signals)); err != nil {
+		if err := setRevisionColumn(tx, c, "signals", string(signals)); err != nil {
 			return protocol.ChangeSubmitResult{}, err
 		}
 	}
@@ -542,8 +541,7 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 		if err != nil {
 			return protocol.ChangeSubmitResult{}, err
 		}
-		if _, err := tx.Exec(`INSERT INTO delivery_revision_stats(change_id,revision,diff_stat,handback_check) VALUES(?,?,'',?)
-			ON CONFLICT(change_id,revision) DO UPDATE SET handback_check=excluded.handback_check`, c.ID, c.Revision, string(check)); err != nil {
+		if err := setRevisionColumn(tx, c, "handback_check", string(check)); err != nil {
 			return protocol.ChangeSubmitResult{}, err
 		}
 	}
@@ -1296,6 +1294,22 @@ func writeChange(tx *sql.Tx, c protocol.Change, insert bool) error {
 	return err
 }
 
+// setRevisionColumn stores the diff stat, the signals or the hand-back check
+// of change c's current revision on its revision row. The row is written with
+// the revision, so a missing one is a broken store, not something to skip.
+func setRevisionColumn(tx *sql.Tx, c protocol.Change, column, value string) error {
+	res, err := tx.Exec(`UPDATE delivery_revisions SET `+column+`=? WHERE change_id=? AND number=?`, value, c.ID, c.Revision)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n == 0 {
+		return fmt.Errorf("change %s has no revision %d row to store %s on", c.ID, c.Revision, column)
+	}
+	return nil
+}
+
 // insertRevision records change c's current head as its revision.
 func insertRevision(tx *sql.Tx, c protocol.Change) error {
 	at := c.UpdatedAt
@@ -1382,7 +1396,7 @@ func insertEvidence(tx *sql.Tx, e protocol.Evidence) error {
 // revision recorded before signals existed has none.
 func changeSignals(q deliveryQuerier, id string, revision int) ([]protocol.QualitySignal, error) {
 	var raw string
-	err := q.QueryRow(`SELECT signals FROM delivery_revision_stats WHERE change_id=? AND revision=?`, id, revision).Scan(&raw)
+	err := q.QueryRow(`SELECT signals FROM delivery_revisions WHERE change_id=? AND number=?`, id, revision).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -1403,7 +1417,7 @@ func changeSignals(q deliveryQuerier, id string, revision int) ([]protocol.Quali
 // A revision recorded before checks existed has none.
 func changeHandbackCheck(q deliveryQuerier, id string, revision int) (*protocol.HandbackCheck, error) {
 	var raw string
-	err := q.QueryRow(`SELECT handback_check FROM delivery_revision_stats WHERE change_id=? AND revision=?`, id, revision).Scan(&raw)
+	err := q.QueryRow(`SELECT handback_check FROM delivery_revisions WHERE change_id=? AND number=?`, id, revision).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

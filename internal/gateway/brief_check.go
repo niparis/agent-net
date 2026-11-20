@@ -149,7 +149,7 @@ func (s *Store) workerBriefTask(session string) (string, error) {
 func (s *Store) openChangeBriefs(project string) ([]briefOverlap, error) {
 	rows, err := s.db.Query(`SELECT c.id, c.branch, COALESCE(st.diff_stat,'')
 		FROM delivery_changes c
-		LEFT JOIN delivery_revision_stats st ON st.change_id=c.id AND st.revision=c.revision
+		LEFT JOIN delivery_revisions st ON st.change_id=c.id AND st.number=c.revision
 		WHERE c.project=? AND c.state='open' ORDER BY c.id`, project)
 	if err != nil {
 		return nil, err
