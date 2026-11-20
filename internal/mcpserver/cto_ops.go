@@ -54,6 +54,7 @@ var ctoOwnerOpTypes = map[string]reflect.Type{
 	"tools_import":     reflect.TypeOf(protocol.ToolImport{}),
 	"tools_versions":   reflect.TypeOf(protocol.ToolVersionRequest{}),
 	"bar_edit":         reflect.TypeOf(protocol.BarEditRequest{}),
+	"edge_set":         reflect.TypeOf(protocol.Edge{}),
 	"tools_items":      reflect.TypeOf(protocol.ToolsFilter{}),
 	"permission_apply": reflect.TypeOf(protocol.PermissionOwnerApplyRequest{}),
 	"permission_undo":  reflect.TypeOf(protocol.PermissionUndoRequest{}),
@@ -69,6 +70,7 @@ var ctoOwnerOpExamples = map[string]string{
 	"tools_import":     `{"item":"skill-id","location":{"node_id":"node-id","location":"/home/owner/skill"}}`,
 	"tools_versions":   `{"item":"skill-id"}`,
 	"bar_edit":         `{"project":"demo","add":["Performance first."]}`,
+	"edge_set":         `{"from":"agent-1","to":"lead-agent","kind":"reports_to"}`,
 	"tools_items":      `{"compact":true,"name":"wiki","limit":50}`,
 	"permission_apply": `{"rules":["Bash(gh pr merge:*)"],"targets":["demo"],"owner_words":"let demo merge its PRs"}`,
 	"permission_undo":  `{"id":"pp_1"}`,
@@ -79,6 +81,7 @@ var ctoOwnerOpExamples = map[string]string{
 // ctoOwnerOpPurposes words the ops whose name alone does not say what they do.
 var ctoOwnerOpPurposes = map[string]string{
 	"bar_edit":         "Add, edit or remove the short rules that workers and reviewers check a project's diffs against. Name the project.",
+	"edge_set":         "Set a directed graph edge, or an agent's reports_to parent in the org tree.",
 	"tools_items":      "List skills and MCP servers. With compact true, one short row per item: id, name, kind, machines, file_count, trimmed and a one-line description, paged by limit and cursor. Read one item in full with tools_item and its id.",
 	"permission_apply": "When the owner tells you in this chat to grant a Claude Code permission rule or folder trust, apply it now with his words quoted in owner_words; do not file a Desk proposal. Give rules and targets (registered repo names) as agent_permission_propose takes them, kind trust with machine and folders, or id alone to approve a pp_ proposal that waits on the Desk. Returns the stored record: each target's status, the rules added and the file written. Undo with permission_undo.",
 	"learned_answer":   "Decide a learned suggestion (suggestion_id, action accept or reject), or a charter draft with suggestion_id as minus its draft number. Read drafts with cto_proposals_find kind draft. Accept on a draft writes the value and returns the stored row with history_id; undo it with graph_change action undo on that id. Reject writes nothing.",
@@ -100,6 +103,9 @@ func ownerOpSchema(method string) map[string]any {
 					}
 					if method == "bar_edit" {
 						out["required"] = []string{"project"}
+					}
+					if method == "edge_set" {
+						out["required"] = []string{"from", "to", "kind"}
 					}
 					if method == "permission_apply" {
 						out["required"] = []string{"owner_words"}

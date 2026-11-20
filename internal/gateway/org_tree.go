@@ -84,6 +84,12 @@ func agentParentTx(tx *sql.Tx, agent string) (string, error) {
 		var repo string
 		err := tx.QueryRow(`SELECT pm.project FROM project_mergers pm JOIN sessions s ON s.id=pm.session_id WHERE s.agent_id=? ORDER BY pm.project LIMIT 1`, agent).Scan(&repo)
 		if err == sql.ErrNoRows {
+			err = tx.QueryRow(`SELECT SUBSTR(over_ref,6) FROM node_scopes WHERE node=? AND kind='merge' AND over_ref LIKE 'repo:%' ORDER BY over_ref LIMIT 1`, agent).Scan(&repo)
+		}
+		if err == sql.ErrNoRows {
+			err = tx.QueryRow(`SELECT id FROM repos WHERE id||'-merger'=? ORDER BY id LIMIT 1`, agent).Scan(&repo)
+		}
+		if err == sql.ErrNoRows {
 			return "", nil
 		}
 		if err != nil {
@@ -233,6 +239,29 @@ func placeRepoAgentsTx(tx *sql.Tx, repo string) error {
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
+		return err
+	}
+	mergerRows, err := tx.Query(`SELECT DISTINCT a.id FROM agents a
+		WHERE a.role='merger' AND a.tombstone=0
+		AND (EXISTS(SELECT 1 FROM node_scopes ns WHERE ns.node=a.id AND ns.kind='merge' AND ns.over_ref='repo:'||?)
+		     OR EXISTS(SELECT 1 FROM project_mergers pm JOIN sessions s ON s.id=pm.session_id WHERE pm.project=? AND s.agent_id=a.id)
+		     OR a.id=?||'-merger')
+		ORDER BY a.id`, repo, repo, repo)
+	if err != nil {
+		return err
+	}
+	for mergerRows.Next() {
+		var agent string
+		if err = mergerRows.Scan(&agent); err != nil {
+			mergerRows.Close()
+			return err
+		}
+		if !seen[agent] {
+			agents = append(agents, agent)
+			seen[agent] = true
+		}
+	}
+	if err = mergerRows.Err(); err != nil {
 		return err
 	}
 	for _, agent := range agents {
