@@ -611,7 +611,7 @@ func TestChiefSortRefusesNonChief(t *testing.T) {
 	s, _, chief, asker, node := chiefRig(t)
 	id := chiefAsk(t, s, asker, "Is it done?")
 	args := protocol.AskSortArgs{Ask: id, Result: protocol.AskSortClose, Reason: "done"}
-	if _, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: asker, AskSortArgs: args}); err == nil || !strings.Contains(err.Error(), "only the chief of staff") {
+	if _, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: asker, AskSortArgs: args}); err == nil || !strings.Contains(err.Error(), "you do not hold ask") {
 		t.Fatalf("a non-chief sorted: %v", err)
 	}
 	if status, _, _ := askRow(t, s, `id=?`, id); status != "open" {

@@ -884,10 +884,12 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 		}
 		sorter, sorterName, source = q.SessionID, sessionLabel(tx, q.SessionID), "desk"
 	case holder:
+		if a.status != "open" {
+			return out, none, reject("ask %s is not open", q.Ask)
+		}
 		var holderNode string
-		if err := tx.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, q.SessionID).Scan(&holderNode); err != nil || holderNode != node ||
-			a.status != "open" || a.next != q.SessionID {
-			return out, none, reject("only the chief of staff or the session that holds ask %s may close it", q.Ask)
+		if err := tx.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, q.SessionID).Scan(&holderNode); err != nil || holderNode != node || a.next != q.SessionID {
+			return out, none, reject("you do not hold ask %s, so you cannot close it. To settle it, answer it, or ask the chief of staff to close it.", q.Ask)
 		}
 		sorter, sorterName, source = q.SessionID, sessionLabel(tx, q.SessionID), "desk"
 	case q.Result == protocol.AskSortWithdraw && q.ReplacedBy != "":
@@ -1110,9 +1112,11 @@ func replacementCheck(q askDB, ask, replacement, session string) error {
 }
 
 // chiefMaySort says whether the chief may sort ask a now. It may sort an ask
-// that waits for it. It may close or merge an ask it routed to a session, the
-// CTO included, because either side of a routed item may close it (decision
-// 0150). It may sort again an ask it routed whose holder is offline, so an ask
+// that waits for it. It may close or merge an open ask that a session holds,
+// whoever routed it there, the CTO included: either side of a routed item may
+// close it (decision 0150). A pipeline route leaves no send row, so the holder
+// is not checked against the chief's routes. The owner's asks are not closed
+// here. It may sort again an ask it routed whose holder is offline, so an ask
 // does not stay with a session that is gone.
 func chiefMaySort(tx *sql.Tx, q protocol.AskSortRequest, a askSortRow) error {
 	refuse := reject("ask %s is not waiting for the chief of staff", q.Ask)
@@ -1128,6 +1132,9 @@ func chiefMaySort(tx *sql.Tx, q protocol.AskSortRequest, a askSortRow) error {
 	}
 	if a.next == "" || a.next == protocol.AskNextOwner {
 		return refuse
+	}
+	if closing {
+		return nil
 	}
 	var routed, online int
 	if err := tx.QueryRow(`SELECT EXISTS (SELECT 1 FROM ask_sorts WHERE ask_id=? AND result=?),
