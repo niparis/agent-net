@@ -5268,6 +5268,13 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 	if _, err := tx.Exec(`UPDATE sessions SET owner_uses=MIN(1000000, (owner_uses >> MIN(30, MAX(0, (? - owner_used_at) / ?))) + 1), owner_used_at=? WHERE id=? AND EXISTS (SELECT 1 FROM sessions WHERE id=? AND harness=?)`, now.UnixNano(), int64(24*time.Hour), now.UnixNano(), m.To, m.From, protocol.OwnerHarness); err != nil {
 		return msg, false, err
 	}
+	// A busy session that sends is making progress, whatever its harness
+	// reports: an OpenCode session replied twice in a turn and was still asked
+	// about as stalled (2026-11-20). An idle sender keeps its activity, so a
+	// stuck delivery to it is still reported.
+	if _, err := tx.Exec(`UPDATE sessions SET harness_activity=MAX(harness_activity,?) WHERE id=? AND status='busy'`, now.UnixNano(), m.From); err != nil {
+		return msg, false, err
+	}
 	detail := strings.TrimPrefix(pairs("type", m.Type, "to", m.To, "bytes", len(m.Body)), " ")
 	if m.FromCTO {
 		detail += " by=cto"

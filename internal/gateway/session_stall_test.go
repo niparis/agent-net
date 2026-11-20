@@ -741,3 +741,72 @@ func TestSessionStallIgnoresNestedBatchMembers(t *testing.T) {
 		t.Fatalf("stall items for an idle session: %+v %v", items, err)
 	}
 }
+
+// sessionStalls is stallItems for one session: the idle peer of a send gets
+// its own ask for the delivery nobody acknowledges.
+func sessionStalls(t *testing.T, s *Store, id string) []protocol.InboxItem {
+	t.Helper()
+	var out []protocol.InboxItem
+	for _, item := range stallItems(t, s) {
+		if item.SessionID == id {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+// busySender registers a busy OpenCode session and a peer it can send to.
+func busySender(t *testing.T, s *Store) (id, peer string) {
+	t.Helper()
+	node, _, err := s.CreateNode("test-host", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err = s.UpsertSession(node, protocol.SessionInfo{Harness: "opencode", NativeID: "sender", Status: "busy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer, err = s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "peer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id, peer
+}
+
+// A busy session that sends messages is working, even when its harness
+// reports nothing. On 2026-11-20 an OpenCode session replied to its lead twice
+// in a turn and still got two stall asks.
+func TestSessionStallBusySessionThatSendsIsNotStalled(t *testing.T) {
+	s, c := newTestStore(t)
+	id, peer := busySender(t, s)
+	c.t = c.t.Add(15 * time.Minute)
+	if _, _, err := send(s, id, peer, "reply", ""); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(10 * time.Minute)
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	if stalls := sessionStalls(t, s, id); len(stalls) != 0 {
+		t.Fatalf("a session that sent 10 minutes ago was reported stalled: %+v", stalls)
+	}
+}
+
+// A send moves the baseline; it does not hide a session that goes quiet after it.
+func TestSessionStallBusySessionQuietAfterSendStillRaises(t *testing.T) {
+	s, c := newTestStore(t)
+	id, peer := busySender(t, s)
+	c.t = c.t.Add(5 * time.Minute)
+	if _, _, err := send(s, id, peer, "reply", ""); err != nil {
+		t.Fatal(err)
+	}
+	sent := c.t
+	c.t = c.t.Add(21 * time.Minute)
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	stalls := sessionStalls(t, s, id)
+	if len(stalls) != 1 || stalls[0].Status != "open" || stalls[0].ConversationID != fmt.Sprint(sent.Unix()) {
+		t.Fatalf("want one open stall since the send at %d: %+v", sent.Unix(), stalls)
+	}
+}

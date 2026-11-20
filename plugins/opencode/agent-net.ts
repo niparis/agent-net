@@ -1462,8 +1462,9 @@ export default {
           const id = h.rootOf.get(sessionID) ?? sessionID;
           const link = h.links.get(id)?.link;
           link?.touch();
-          // Output, step and tool events show progress; viewing or discovery does not.
-          if (/^session\.(message|step|tool|execution)\./.test(String(event.type))) link?.progress();
+          // Output (text and reasoning), step and tool events show progress;
+          // viewing or discovery does not.
+          if (/^session\.(message|step|tool|execution|text|reasoning)\./.test(String(event.type))) link?.progress();
         }
       }
     }
@@ -1706,7 +1707,10 @@ export default {
             try {
               const link = await ensureLink(sid);
               if (!link) return text("agent-net: this session is not registered with the daemon.");
-              link.touch(); // using an agent-net tool is activity
+              // Using an agent-net tool is activity, and progress in a turn. It
+              // does not depend on OpenCode's event stream reaching this plugin.
+              link.touch();
+              link.progress();
               const mapped = def.mapParams ? def.mapParams(input ?? {}) : (input ?? {});
               const method = mapped?.__method ?? def.method;
               const params = mapped?.__params ?? (def.method === "list" ? { online_only: true, ...(mapped ?? {}) } : mapped);

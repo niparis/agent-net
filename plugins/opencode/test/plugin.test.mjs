@@ -31,9 +31,10 @@ const plugin = (await import(pathToFileURL(jsPath).href)).default;
 const hellos = [];
 const statuses = []; // status calls: { id, params }
 const closed = [];
-const calls = []; // [method, params] of every call except hello
+const calls = []; // [method, params] of every call except hello and harness_activity
 const conns = new Map(); // session ID -> its latest daemon connection
 const textResults = []; // params of every session_text_result
+const progressFrom = []; // session ID of every harness_activity call
 let charterReply = null;
 let graphReply = null;
 let hintReply = {}; // what the fake daemon answers to "hint"
@@ -54,8 +55,10 @@ const server = createServer((conn) => {
         hellos.push({ id: line.params.native_id, cwd: line.params.cwd, model: line.params.model, mode: line.params.mode,
           name: line.params.name, status: line.params.status, activity: line.params.opencode_activity });
       }
-      if (line.method !== "hello") calls.push([line.method, line.params]);
+      // Progress reports go to progressFrom, so a test reads a tool's own call.
+      if (line.method !== "hello" && line.method !== "harness_activity") calls.push([line.method, line.params]);
       if (line.method === "session_text_result") textResults.push(line.params);
+      if (line.method === "harness_activity") progressFrom.push(conn.sessionID);
       if (line.method === "status") statuses.push({ id: conn.sessionID, params: line.params });
       const result =
         charterReply && line.method === "sessions_find" ? { items: [charterReply], total: 1 }
@@ -1670,6 +1673,38 @@ for (const [authority, rule] of [
     if (authority === "delegated" && (!text.includes("repo lead or team lead") || !text.includes("agent_owner_ask"))) throw new Error(text);
   });
 }
+
+await test("model output and agent-net tool calls during a turn report progress", async () => {
+  // A busy OpenCode session that replied to its lead twice was still reported
+  // stalled (2026-11-20): only step, tool and message events counted.
+  freshHub();
+  const sessions = new Map([
+    ["ses_text", session("ses_text", "/work/p")],
+    ["ses_think", session("ses_think", "/work/p")],
+    ["ses_call", session("ses_call", "/work/p")],
+  ]);
+  let tools;
+  const c = makeContext("/work/p", sessions, {
+    onTransform(fn) {
+      tools = [];
+      fn({ add: (t) => tools.push(t) });
+    },
+  });
+  const stop = await plugin.setup(c.ctx);
+  for (const id of sessions.keys()) {
+    c.emit({ type: "session.created", data: { sessionID: id } });
+    await until("hello for " + id, () => registered(id));
+  }
+  c.emit({ type: "session.text.delta", data: { sessionID: "ses_text" } });
+  await until("progress from text output", () => progressFrom.includes("ses_text"));
+  c.emit({ type: "session.reasoning.delta", data: { sessionID: "ses_think" } });
+  await until("progress from reasoning output", () => progressFrom.includes("ses_think"));
+  const find = tools.find((t) => t.name === "agent_machines_find");
+  if (!find) throw new Error("agent_machines_find is not registered");
+  await find.execute({}, { sessionID: "ses_call" });
+  await until("progress from an agent-net tool call", () => progressFrom.includes("ses_call"));
+  stop();
+});
 
 server.close();
 rmSync(dir, { recursive: true, force: true });
