@@ -1,0 +1,264 @@
+{
+ "schema_version": 1,
+ "diagram_type": "sequence",
+ "meta": {
+  "title": "Share a repo with a named person, then the first message",
+  "output": "docs/design/gateway-network/share-and-message.html",
+  "viewBox": [
+   1080,
+   692
+  ],
+  "column_fit": "spread",
+  "quality_profile": "showcase",
+  "locale": "en",
+  "legend": {
+   "entries": {
+    "emphasis": {
+     "label": "outside request"
+    },
+    "security": {
+     "label": "identity check"
+    },
+    "dashed": {
+     "label": "out of band"
+    },
+    "return": {
+     "label": "reply"
+    },
+    "default": {
+     "label": "local step"
+    }
+   }
+  }
+ },
+ "participants": [
+  {
+   "id": "you",
+   "type": "external",
+   "icon": "person",
+   "label": "You",
+   "sublabel": "repo owner"
+  },
+  {
+   "id": "lead",
+   "type": "backend",
+   "label": "Repo lead",
+   "sublabel": "your agent session"
+  },
+  {
+   "id": "gwA",
+   "type": "backend",
+   "label": "Your gateway",
+   "sublabel": "federation listener"
+  },
+  {
+   "id": "idp",
+   "type": "security",
+   "label": "Identity issuer",
+   "sublabel": "OIDC"
+  },
+  {
+   "id": "gwB",
+   "type": "backend",
+   "label": "Their gateway",
+   "sublabel": "federation listener"
+  },
+  {
+   "id": "ana",
+   "type": "external",
+   "icon": "person",
+   "label": "Ana",
+   "sublabel": "named person"
+  }
+ ],
+ "segments": [
+  {
+   "from": 160,
+   "to": 212,
+   "label": "Share"
+  },
+  {
+   "from": 224,
+   "to": 414,
+   "label": "Join"
+  },
+  {
+   "from": 426,
+   "to": 588,
+   "label": "First message"
+  }
+ ],
+ "messages": [
+  {
+   "id": "set-shared",
+   "from": "you",
+   "to": "gwA",
+   "y": 174,
+   "label": "set repo: shared with Ana's email"
+  },
+  {
+   "id": "invite",
+   "from": "you",
+   "to": "ana",
+   "y": 202,
+   "label": "invite link, by any channel",
+   "variant": "dashed"
+  },
+  {
+   "id": "open",
+   "from": "ana",
+   "to": "gwB",
+   "y": 236,
+   "label": "open invite"
+  },
+  {
+   "id": "signin",
+   "from": "gwB",
+   "to": "idp",
+   "y": 264,
+   "label": "sign in",
+   "variant": "security"
+  },
+  {
+   "id": "token",
+   "from": "idp",
+   "to": "gwB",
+   "y": 292,
+   "label": "signed token",
+   "variant": "return"
+  },
+  {
+   "id": "hello",
+   "from": "gwB",
+   "to": "gwA",
+   "y": 320,
+   "label": "hello: gateway key + token",
+   "variant": "security"
+  },
+  {
+   "id": "check",
+   "from": "gwA",
+   "to": "idp",
+   "y": 348,
+   "label": "fetch issuer keys, check",
+   "variant": "security"
+  },
+  {
+   "id": "ok",
+   "from": "idp",
+   "to": "gwA",
+   "y": 376,
+   "label": "valid",
+   "variant": "return"
+  },
+  {
+   "id": "card",
+   "from": "gwA",
+   "to": "gwB",
+   "y": 404,
+   "label": "repo card: id, charter, settings",
+   "variant": "return"
+  },
+  {
+   "id": "ask",
+   "from": "ana",
+   "to": "gwB",
+   "y": 438,
+   "label": "her agent sends a request"
+  },
+  {
+   "id": "outside",
+   "from": "gwB",
+   "to": "gwA",
+   "y": 466,
+   "label": "signed outside request",
+   "variant": "emphasis"
+  },
+  {
+   "id": "deliver",
+   "from": "gwA",
+   "to": "lead",
+   "y": 494,
+   "label": "outside request, no approval note",
+   "variant": "emphasis"
+  },
+  {
+   "id": "reply",
+   "from": "lead",
+   "to": "gwA",
+   "y": 522,
+   "label": "accept or refuse, by charter",
+   "variant": "return"
+  },
+  {
+   "id": "reply-out",
+   "from": "gwA",
+   "to": "gwB",
+   "y": 550,
+   "label": "signed reply",
+   "variant": "return"
+  },
+  {
+   "id": "reply-ana",
+   "from": "gwB",
+   "to": "ana",
+   "y": 578,
+   "label": "reply",
+   "variant": "return"
+  }
+ ],
+ "activations": [
+  {
+   "participant": "gwB",
+   "from": 231,
+   "to": 410,
+   "type": "backend"
+  },
+  {
+   "participant": "gwA",
+   "from": 315,
+   "to": 410,
+   "type": "backend"
+  },
+  {
+   "participant": "gwA",
+   "from": 461,
+   "to": 556,
+   "type": "backend"
+  },
+  {
+   "participant": "lead",
+   "from": 489,
+   "to": 528,
+   "type": "backend"
+  }
+ ],
+ "cards": [
+  {
+   "dot": "rose",
+   "title": "Two signatures",
+   "items": [
+    "The gateway key signs the hello",
+    "The issuer signs the token",
+    "Your gateway checks both; nobody in the middle is trusted"
+   ]
+  },
+  {
+   "dot": "emerald",
+   "title": "Messages only",
+   "items": [
+    "The repo lead judges the request under its charter",
+    "The request cannot start or wake a session",
+    "A message to the owner goes to the front desk instead"
+   ]
+  },
+  {
+   "dot": "amber",
+   "title": "Without sign-in",
+   "items": [
+    "Share with a gateway key instead of an email",
+    "Same flow, minus the issuer steps"
+   ]
+  }
+ ]
+}
