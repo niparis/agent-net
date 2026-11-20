@@ -354,6 +354,55 @@ func (d *Daemon) fetchOpenInboxItems(ctx context.Context) ([]protocol.InboxItem,
 	return res.Items, nil
 }
 
+// After a warning is raised, a new one waits until usage reaches
+// diskRepeatPct or grows diskRepeatStepPts past the last warned percent. A
+// fall below the clear mark drops the record, so the next crossing asks again.
+const (
+	diskRepeatPct     = 92.0
+	diskRepeatStepPts = 3.0
+)
+
+// diskAlertDue tells whether a new warning is due at pct. last is the alert
+// record, when alerted is true.
+func diskAlertDue(pct float64, last diskAlert, alerted bool) bool {
+	if !alerted {
+		return true
+	}
+	return pct >= diskRepeatPct || pct >= last.Pct+diskRepeatStepPts
+}
+
+// lastDiskAlert reads the alert record. A read error is logged and reads as no
+// record, so the warning is raised rather than lost.
+func (d *Daemon) lastDiskAlert() (diskAlert, bool) {
+	if d.st == nil {
+		return diskAlert{}, false
+	}
+	a, ok, err := d.st.lastDiskAlert()
+	if err != nil {
+		d.Logf("disk.warning read alert record: %v", err)
+		return diskAlert{}, false
+	}
+	return a, ok
+}
+
+func (d *Daemon) saveDiskAlert(a diskAlert) {
+	if d.st == nil {
+		return
+	}
+	if err := d.st.setDiskAlert(a); err != nil {
+		d.Logf("disk.warning save alert record: %v", err)
+	}
+}
+
+func (d *Daemon) clearDiskAlert() {
+	if d.st == nil {
+		return
+	}
+	if err := d.st.clearDiskAlert(); err != nil {
+		d.Logf("disk.warning clear alert record: %v", err)
+	}
+}
+
 func (d *Daemon) checkDiskWarning(ctx context.Context, now time.Time) error {
 	pct, ok := d.diskMaxUsagePct()
 	if !ok {
@@ -393,10 +442,18 @@ func (d *Daemon) checkDiskWarning(ctx context.Context, now time.Time) error {
 					if item.Kind == "check" && strings.HasPrefix(item.Text, "Disk space low on "+d.hostName()) && item.Status == "open" {
 						itemID = item.ID
 						active = true
+						// A warning raised before the alert record existed still needs one.
+						if _, alerted := d.lastDiskAlert(); !alerted {
+							d.saveDiskAlert(diskAlert{Pct: pct, At: now})
+						}
 						return nil
 					}
 				}
 			}
+		}
+		last, alerted := d.lastDiskAlert()
+		if !diskAlertDue(pct, last, alerted) {
+			return nil
 		}
 		workerDir := d.workerGoCacheDir()
 		ownerDir := ownerGoBuildCacheDir(d.cfg.HomeDir)
@@ -431,6 +488,7 @@ func (d *Daemon) checkDiskWarning(ctx context.Context, now time.Time) error {
 			itemID = res.Item.ID
 		}
 		active = true
+		d.saveDiskAlert(diskAlert{Pct: pct, At: now})
 		if d.log != nil {
 			d.Logf("disk.warning raised: %.1f%% used", pct)
 		}
@@ -438,7 +496,13 @@ func (d *Daemon) checkDiskWarning(ctx context.Context, now time.Time) error {
 	}
 
 	if pct < clearThreshold {
-		if !active {
+		// A restart leaves no warning in memory, but the record and any open
+		// warning from the earlier run still need clearing.
+		_, alerted := d.lastDiskAlert()
+		if alerted {
+			d.clearDiskAlert()
+		}
+		if !active && !alerted {
 			return nil
 		}
 		active = false

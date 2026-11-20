@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS start_outcome_outbox (key TEXT PRIMARY KEY, kind TEXT
 CREATE TABLE IF NOT EXISTS worker_idle_notice (worker_id TEXT PRIMARY KEY, since INTEGER NOT NULL, notice_key TEXT NOT NULL, report TEXT NOT NULL DEFAULT '', sent INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS worker_lost_notice (worker_id TEXT PRIMARY KEY, run_generation INTEGER NOT NULL DEFAULT 0, sent INTEGER NOT NULL DEFAULT 0, wip_sha TEXT NOT NULL DEFAULT '', wip_sent INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS inventory_scan (id INTEGER PRIMARY KEY CHECK(id=1), version TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS disk_alert (id INTEGER PRIMARY KEY CHECK(id=1), pct REAL NOT NULL, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS session_activity (harness TEXT NOT NULL, native_id TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (harness, native_id));
 CREATE TABLE IF NOT EXISTS cleanup_worktrees (
  worker_id TEXT PRIMARY KEY, project TEXT NOT NULL, path TEXT NOT NULL,
@@ -335,6 +336,37 @@ CREATE TABLE IF NOT EXISTS workers (
 }
 
 func (s *state) close() error { return s.db.Close() }
+
+// diskAlert is the disk warning the daemon last raised, while usage has not
+// been below the clear mark since.
+type diskAlert struct {
+	Pct float64
+	At  time.Time
+}
+
+// lastDiskAlert reads the alert record; ok is false when there is none.
+func (s *state) lastDiskAlert() (a diskAlert, ok bool, err error) {
+	var at int64
+	err = s.db.QueryRow(`SELECT pct, at FROM disk_alert WHERE id=1`).Scan(&a.Pct, &at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return diskAlert{}, false, nil
+	}
+	if err != nil {
+		return diskAlert{}, false, err
+	}
+	a.At = time.Unix(at, 0)
+	return a, true, nil
+}
+
+func (s *state) setDiskAlert(a diskAlert) error {
+	_, err := s.db.Exec(`INSERT INTO disk_alert(id,pct,at) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET pct=excluded.pct, at=excluded.at`, a.Pct, a.At.Unix())
+	return err
+}
+
+func (s *state) clearDiskAlert() error {
+	_, err := s.db.Exec(`DELETE FROM disk_alert WHERE id=1`)
+	return err
+}
 
 // mouseNoticeAt is when the Claude mouse problem key was last reported.
 func (s *state) mouseNoticeAt(key string) (time.Time, bool, error) {
