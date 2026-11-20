@@ -102,6 +102,8 @@ Another. Your Mac's daemon hangs after an upgrade. The agent that owns agent-net
 
 The Quality sub-tab (TUI tab 3, then Tab twice) shows the picker as it decides: each registered model's score at each difficulty level that has tasks, the number of tasks behind each score, and whether the selected model is allowed at that level.
 
+For the full model-selection deep dive, read [how agent-net chooses a model](docs/model-choice.md).
+
 ### Level 3. Rules, so many agents stay a team
 
 More agents need structure, not more prompting.
