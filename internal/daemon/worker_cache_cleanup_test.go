@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -581,6 +582,175 @@ func TestDiskWarningHysteresis(t *testing.T) {
 	}
 	if len(createdItems) != 2 {
 		t.Fatalf("expected 2 created items after re-crossing 85%%, got %d", len(createdItems))
+	}
+}
+
+// diskInbox is the gateway's inbox as the disk check sees it. A test closes a
+// warning the way the owner does, by changing its status.
+type diskInbox struct {
+	items   []protocol.InboxItem
+	creates int
+}
+
+func (in *diskInbox) call(_ context.Context, typ string, params any) (json.RawMessage, bool, error) {
+	switch typ {
+	case "inbox.create":
+		p := params.(map[string]any)
+		in.creates++
+		item := protocol.InboxItem{
+			ID:     fmt.Sprintf("i_disk_%d", in.creates),
+			Kind:   p["kind"].(string),
+			Text:   p["text"].(string),
+			Status: "open",
+		}
+		in.items = append(in.items, item)
+		raw, _ := json.Marshal(map[string]any{"item": item})
+		return raw, true, nil
+	case "inbox.answer":
+		p := params.(map[string]string)
+		for i := range in.items {
+			if in.items[i].ID == p["item_id"] {
+				in.items[i].Status = "dismissed"
+			}
+		}
+		raw, _ := json.Marshal(map[string]any{"item": protocol.InboxItem{ID: p["item_id"], Status: "dismissed"}})
+		return raw, true, nil
+	case "inbox.list":
+		raw, _ := json.Marshal(map[string]any{"items": in.items})
+		return raw, true, nil
+	}
+	return nil, false, nil
+}
+
+// diskWarningHarness runs the disk check the way the daemon does. A restart is
+// a new daemon over the same state directory, so only daemon.db carries over.
+type diskWarningHarness struct {
+	t     *testing.T
+	dir   string
+	inbox *diskInbox
+	pct   float64
+	d     *Daemon
+}
+
+func newDiskWarningHarness(t *testing.T) *diskWarningHarness {
+	t.Helper()
+	isolateDaemonCaches(t)
+	h := &diskWarningHarness{t: t, dir: t.TempDir(), inbox: &diskInbox{}}
+	h.restart()
+	t.Cleanup(func() { h.d.st.close() })
+	return h
+}
+
+func (h *diskWarningHarness) restart() {
+	h.t.Helper()
+	if h.d != nil {
+		h.d.st.close()
+	}
+	st, err := openState(h.dir)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	h.d = &Daemon{
+		st: st,
+		cfg: Config{
+			NodeID:          "n_test",
+			Hostname:        "test-node",
+			StateDir:        h.dir,
+			testGatewayCall: h.inbox.call,
+			testDiskPercent: func(string) (float64, bool) { return h.pct, true },
+		},
+	}
+}
+
+// check runs one disk check at pct and returns how many asks it raised.
+func (h *diskWarningHarness) check(pct float64) int {
+	h.t.Helper()
+	h.pct = pct
+	before := h.inbox.creates
+	if err := h.d.checkDiskWarning(context.Background(), time.Now()); err != nil {
+		h.t.Fatal(err)
+	}
+	return h.inbox.creates - before
+}
+
+// closeOpenWarnings is the owner closing every open warning.
+func (h *diskWarningHarness) closeOpenWarnings() {
+	for i := range h.inbox.items {
+		if h.inbox.items[i].Status == "open" {
+			h.inbox.items[i].Status = "answered"
+		}
+	}
+}
+
+// After a restart, with the earlier warning closed, usage must grow by the
+// step or reach the mark before another ask is raised.
+func TestDiskWarningRepeatRule(t *testing.T) {
+	cases := []struct {
+		name    string
+		first   float64
+		checks  []float64
+		wantAsk []bool
+	}{
+		{"three points above the last alert", 86, []float64{86, 87, 88, 89}, []bool{false, false, false, true}},
+		{"92 percent mark above a 90 alert", 90, []float64{91, 92}, []bool{false, true}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newDiskWarningHarness(t)
+			if got := h.check(tc.first); got != 1 {
+				t.Fatalf("first alert at %v%%: %d asks, want 1", tc.first, got)
+			}
+			h.restart()
+			h.closeOpenWarnings()
+			for i, pct := range tc.checks {
+				want := 0
+				if tc.wantAsk[i] {
+					want = 1
+				}
+				if got := h.check(pct); got != want {
+					t.Fatalf("check at %v%%: %d asks, want %d", pct, got, want)
+				}
+			}
+		})
+	}
+}
+
+// Usage below 80% clears the alert, also across a restart. The next crossing of
+// 85% asks again, and the warning the earlier daemon left open is dismissed.
+func TestDiskWarningClearsAfterRestart(t *testing.T) {
+	h := newDiskWarningHarness(t)
+	if got := h.check(86); got != 1 {
+		t.Fatalf("first alert at 86%%: %d asks, want 1", got)
+	}
+	h.restart()
+	if got := h.check(79); got != 0 {
+		t.Fatalf("check at 79%%: %d asks, want 0", got)
+	}
+	if h.inbox.items[0].Status != "dismissed" {
+		t.Fatalf("warning after drop below 80%%: status %q, want dismissed", h.inbox.items[0].Status)
+	}
+	if got := h.check(85); got != 1 {
+		t.Fatalf("crossing 85%% again: %d asks, want 1", got)
+	}
+}
+
+// A warning open before the alert record existed (a release before this one)
+// is kept, and recorded, so closing it does not raise another ask after a restart.
+func TestDiskWarningAdoptsOpenWarningWithoutRecord(t *testing.T) {
+	h := newDiskWarningHarness(t)
+	h.inbox.items = []protocol.InboxItem{{
+		ID:     "i_old",
+		Kind:   "check",
+		Text:   "Disk space low on test-node: 86% used",
+		Status: "open",
+	}}
+	if got := h.check(86); got != 0 {
+		t.Fatalf("check at 86%% with an open warning: %d asks, want 0", got)
+	}
+	h.closeOpenWarnings()
+	h.restart()
+	if got := h.check(87); got != 0 {
+		t.Fatalf("check at 87%% after the warning was closed: %d asks, want 0", got)
 	}
 }
 
