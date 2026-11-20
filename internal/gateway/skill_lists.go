@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -870,7 +871,10 @@ var skillWordSplit = regexp.MustCompile(`[^a-z0-9]+`)
 
 var skillStopwords = func() map[string]bool {
 	out := map[string]bool{}
-	for _, word := range strings.Fields("this that with from your when then will have been does what into over under about they them their there here which where while should could would must only also just make made more most some such than the and for not are was were you our its his her has had how why who all any can may use used using") {
+	// The filler words are the ones a repo's own text uses without saying what
+	// it is. The last group is agent-net's own vocabulary, which every node's
+	// charter and sessions carry.
+	for _, word := range strings.Fields("this that with from your when then will have been does what into over under about they them their there here which where while should could would must only also just make made more most some such than the and for not are was were you our its his her has had how why who all any can may use used using none still whether needs need needed hand live data json request requests state like keep each other same very much well first last next before after between through during within without across every file files uses work works main agent agents node nodes session sessions claude codex harness charter maturity skill skills repo repos project projects") {
 		out[word] = true
 	}
 	return out
@@ -912,8 +916,8 @@ func skillReason(matched []string, description string) string {
 }
 
 // skillSuggest ranks archive skills against the node's own text. It makes no
-// model call: shared words with the skill's name and description decide, and
-// the description explains the pick.
+// model call: distinctive words shared with the skill's name and description
+// decide, and the description explains the pick.
 func (g *Gateway) skillSuggest(req protocol.SkillSuggestRequest) (protocol.SkillSuggestion, error) {
 	level := strings.TrimSpace(req.Level)
 	scope := strings.TrimSpace(req.Scope)
@@ -941,29 +945,48 @@ func (g *Gateway) skillSuggest(req protocol.SkillSuggestRequest) (protocol.Skill
 		}
 	}
 	contextWords := skillWords(g.store.skillNodeContext(level, scope, repoCtx))
+	// A word that many archive skills share says nothing about which one fits
+	// this node, so it never selects a skill. Each word that is left weighs more
+	// the fewer skills use it.
+	words := map[string]map[string]bool{}
+	uses := map[string]int{}
+	for name, latest := range idx.latest {
+		words[name] = skillWords(name + " " + idx.meta[name][latest].Description)
+		for word := range words[name] {
+			uses[word]++
+		}
+	}
+	commonLimit := max(1, len(idx.latest)/10)
 	type scored struct {
 		name    string
 		version int
 		reason  string
 		size    int
 		context int
-		score   int
+		score   float64
 		matched []string
 		already bool
 	}
 	var ranked []scored
 	for name, latest := range idx.latest {
 		meta := idx.meta[name][latest]
-		skillSet := skillWords(name + " " + meta.Description)
 		var matched []string
-		for word := range skillSet {
-			if contextWords[word] {
-				matched = append(matched, word)
+		score := 0.0
+		for word := range words[name] {
+			if !contextWords[word] || uses[word] > commonLimit {
+				continue
 			}
+			matched = append(matched, word)
+			score += math.Log(1 + float64(len(idx.latest))/float64(uses[word]))
 		}
-		sort.Strings(matched)
+		sort.Slice(matched, func(i, j int) bool {
+			if uses[matched[i]] != uses[matched[j]] {
+				return uses[matched[i]] < uses[matched[j]]
+			}
+			return matched[i] < matched[j]
+		})
 		ranked = append(ranked, scored{
-			name: name, version: latest, size: meta.SizeTokens, context: meta.ContextTokens, score: len(matched), matched: matched,
+			name: name, version: latest, size: meta.SizeTokens, context: meta.ContextTokens, score: score, matched: matched,
 			reason: skillReason(matched, meta.Description), already: already[name],
 		})
 	}
@@ -999,7 +1022,7 @@ func (g *Gateway) skillSuggest(req protocol.SkillSuggestRequest) (protocol.Skill
 		suggestion.Skills[i].MissingMcp = missing
 	}
 	if len(suggestion.Skills) == 0 {
-		suggestion.Note = "No archive skill shares a word with this node's text. Add skills with skill_archive, or give the node a charter and description."
+		suggestion.Note = "No archive skill shares a distinctive word with this node's text. Add skills with skill_archive, or give the node a charter and description."
 	}
 	suggestion.ID = protocol.NewID("sg")
 	data, _ := json.Marshal(suggestion)
