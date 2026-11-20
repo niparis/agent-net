@@ -233,7 +233,7 @@ func skillContentFromBundle(name string, bundle []byte) (skillArchiveContent, er
 // reads them for the registered projects.
 func (g *Gateway) inventoryFolders(id string) (folders []intakeFolder, known bool, err error) {
 	var present int
-	if err = g.store.db.QueryRow(`SELECT COUNT(*) FROM inventory_reports WHERE node_id=?`, id).Scan(&present); err != nil || present == 0 {
+	if err = g.store.db.QueryRow(`SELECT COUNT(*) FROM nodes WHERE id=? AND inventory_report<>''`, id).Scan(&present); err != nil || present == 0 {
 		return nil, false, err
 	}
 	rows, err := g.store.db.Query(`

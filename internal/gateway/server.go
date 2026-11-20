@@ -1332,7 +1332,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		var supported bool
-		if err := st.db.QueryRow(`SELECT supported FROM node_graph_refs WHERE node_id=?`, nc.id).Scan(&supported); err != nil {
+		if err := st.db.QueryRow(`SELECT graph_refs_supported FROM nodes WHERE id=?`, nc.id).Scan(&supported); err != nil {
 			return nil, err
 		}
 		nc.graphRefs.Store(supported)

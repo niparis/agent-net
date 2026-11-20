@@ -21,6 +21,7 @@ func TestInventoryStorePreservesFailedScan(t *testing.T) {
 	}
 	defer s.Close()
 	report := protocol.InventoryReport{Machine: "untrusted", State: protocol.InventoryOK, Items: []protocol.InventoryItem{{Name: "test", State: protocol.InventoryOK}}}
+	enrollMachines(t, s, "node-a")
 	if err := s.SetInventory("node-a", report); err != nil {
 		t.Fatal(err)
 	}
@@ -43,6 +44,7 @@ func TestInventoryKeepsFreshItemsWhenOneSourceFails(t *testing.T) {
 	}
 	defer s.Close()
 	old := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "old", Harness: "claude", Scope: "user", Location: "/home/n/.claude/skills/demo", State: protocol.InventoryOK}
+	enrollMachines(t, s, "node-a")
 	if err = s.SetInventory("node-a", protocol.InventoryReport{State: protocol.InventoryOK, Items: []protocol.InventoryItem{old}}); err != nil {
 		t.Fatal(err)
 	}
@@ -87,6 +89,7 @@ func TestInventoryItemManifestIsStored(t *testing.T) {
 	}
 	defer s.Close()
 	item := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "h", Harness: "claude", Scope: "user", Location: "/home/n/.claude/skills/demo", State: protocol.InventoryOK}
+	enrollMachines(t, s, "node-a")
 	if err = s.SetInventory("node-a", protocol.InventoryReport{State: protocol.InventoryOK, Items: []protocol.InventoryItem{item}}); err != nil {
 		t.Fatal(err)
 	}
@@ -133,6 +136,7 @@ func TestInventoryIdentitiesAndReplacement(t *testing.T) {
 	}
 	defer s.Close()
 	item := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "hash-a", Harness: "codex", Scope: "user", Location: "/a", State: "ok"}
+	enrollMachines(t, s, "one", "two")
 	if err = s.SetInventory("one", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{item}}); err != nil {
 		t.Fatal(err)
 	}
@@ -187,6 +191,7 @@ func TestToolsItemsVariantsAndProjects(t *testing.T) {
 	b := a
 	b.Hash = "b"
 	b.Files = []string{"SKILL.md", "two.txt"}
+	enrollMachines(t, s, "one")
 	if err = s.SetInventory("one", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{a, b}}); err != nil {
 		t.Fatal(err)
 	}
@@ -215,6 +220,7 @@ func TestInventoryNativeSecretsStayOutOfStoreAndJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
+	enrollMachines(t, s, "one")
 	if err = s.SetInventory("one", report); err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +237,7 @@ func TestInventoryNativeSecretsStayOutOfStoreAndJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stored string
-	if err = s.db.QueryRow(`SELECT report FROM inventory_reports WHERE node_id='one'`).Scan(&stored); err != nil {
+	if err = s.db.QueryRow(`SELECT inventory_report FROM nodes WHERE id='one'`).Scan(&stored); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(raw, secret) || strings.Contains(stored, secret) || strings.Contains(string(b), secret) {
@@ -256,7 +262,7 @@ func TestInventoryMigrationBackfillsReports(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if _, err = s.db.Exec(`DROP TABLE tool_results; DROP TABLE tool_audit; DROP TABLE tool_plans; DROP TABLE tool_revisions; DROP TABLE skill_versions; DROP TABLE tool_locations; DROP TABLE tool_identities; ALTER TABLE sessions DROP COLUMN last_active; ALTER TABLE messages DROP COLUMN reminded; DELETE FROM schema_version WHERE version >= (SELECT MAX(version)-` + strconv.Itoa(backfillMigrationsBack()) + ` FROM schema_version); INSERT INTO inventory_reports VALUES('node','{"state":"ok","items":[{"kind":"skill","name":"demo","hash":"abc"}]}')`); err != nil {
+	if _, err = s.db.Exec(`DROP TABLE tool_results; DROP TABLE tool_audit; DROP TABLE tool_plans; DROP TABLE tool_revisions; DROP TABLE skill_versions; DROP TABLE tool_locations; DROP TABLE tool_identities; ALTER TABLE sessions DROP COLUMN last_active; ALTER TABLE messages DROP COLUMN reminded; DELETE FROM schema_version WHERE version >= (SELECT MAX(version)-` + strconv.Itoa(backfillMigrationsBack()) + ` FROM schema_version); INSERT INTO nodes (id, hostname, reported_hostname, os, token_hash, created_at) VALUES ('node','node','node','linux','hash-node',0); CREATE TABLE inventory_reports (node_id TEXT PRIMARY KEY, report TEXT NOT NULL); INSERT INTO inventory_reports VALUES('node','{"state":"ok","items":[{"kind":"skill","name":"demo","hash":"abc"}]}')`); err != nil {
 		t.Fatal(err)
 	}
 	if err = migrateOldFixture(t, s); err != nil {

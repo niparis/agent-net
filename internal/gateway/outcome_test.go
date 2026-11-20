@@ -289,9 +289,6 @@ func TestExistingOutcomesMigrateToInbox(t *testing.T) {
 	if _, err = s.db.Exec(`DROP TABLE tool_results; DROP TABLE tool_audit; DROP TABLE tool_plans; DROP TABLE tool_revisions; DROP TABLE skill_versions; DROP TABLE tool_locations; DROP TABLE tool_identities`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec(`DROP TABLE inventory_reports`); err != nil {
-		t.Fatal(err)
-	}
 	if _, err = s.db.Exec(`DROP TABLE inbox_items`); err != nil {
 		t.Fatal(err)
 	}

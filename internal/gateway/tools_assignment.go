@@ -172,10 +172,13 @@ func (s *Store) toolSnapshot(tx *sql.Tx, item string) (string, error) {
 			return "", errors.New("plan out of date")
 		}
 	}
+	// The rows of the inventory are the same as they were in the old table, so a
+	// plan written before the node fold keeps the same snapshot.
+	inventoryQuery := `SELECT id,inventory_report FROM nodes WHERE inventory_report<>'' ORDER BY id`
 	for _, query := range []string{
 		`SELECT id,hostname,os FROM nodes ORDER BY id`,
 		`SELECT node_id,path,name,remote,default_branch FROM projects ORDER BY node_id,path`,
-		`SELECT node_id,report FROM inventory_reports ORDER BY node_id`,
+		inventoryQuery,
 		`SELECT id,kind,name,hash FROM tool_identities ORDER BY id`,
 		`SELECT item,hash,commit_id FROM skill_versions ORDER BY item,hash`,
 		`SELECT item,revision,assignment,version FROM tool_revisions ORDER BY item,revision`,
@@ -212,7 +215,7 @@ func (s *Store) toolSnapshot(tx *sql.Tx, item string) (string, error) {
 				rows.Close()
 				return "", err
 			}
-			if strings.Contains(query, "FROM inventory_reports") {
+			if query == inventoryQuery {
 				var raw string
 				switch v := vals[1].(type) {
 				case string:

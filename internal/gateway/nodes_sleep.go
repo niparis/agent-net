@@ -89,7 +89,7 @@ func (s *Store) NodeLinkDown(nodeID string, t time.Time) error {
 		return err
 	}
 	var asleepFrom, asleepTo int64
-	err := s.db.QueryRow(`SELECT asleep_from,asleep_to FROM node_silence WHERE node_id=?`, nodeID).Scan(&asleepFrom, &asleepTo)
+	err := s.db.QueryRow(`SELECT silence_asleep_from,silence_asleep_to FROM nodes WHERE id=?`, nodeID).Scan(&asleepFrom, &asleepTo)
 	if err != nil && err != sql.ErrNoRows {
 		return err
 	}
@@ -98,12 +98,11 @@ func (s *Store) NodeLinkDown(nodeID string, t time.Time) error {
 		keep = sleepExplains(t.UnixNano(), time.Unix(0, asleepFrom), time.Unix(0, asleepTo))
 	}
 	if keep {
-		_, err := s.db.Exec(`UPDATE node_silence SET dropped_at=?,silent_at=0 WHERE node_id=?`, t.UnixNano(), nodeID)
+		_, err := s.db.Exec(`UPDATE nodes SET silence_dropped_at=?,silence_silent_at=0 WHERE id=?`, t.UnixNano(), nodeID)
 		return err
 	}
-	_, err = s.db.Exec(`INSERT INTO node_silence(node_id,dropped_at,asleep_from,asleep_to,silent_at) VALUES(?,?,0,0,0)
-ON CONFLICT(node_id) DO UPDATE SET dropped_at=excluded.dropped_at, asleep_from=0, asleep_to=0, silent_at=0`,
-		nodeID, t.UnixNano())
+	_, err = s.db.Exec(`UPDATE nodes SET silence_dropped_at=?,silence_asleep_from=0,silence_asleep_to=0,silence_silent_at=0 WHERE id=?`,
+		t.UnixNano(), nodeID)
 	return err
 }
 
@@ -119,7 +118,7 @@ func (s *Store) NodeLinkUp(nodeID string) error {
 	defer tx.Rollback()
 	var row NodeSilence
 	var dropped, asleepFrom, asleepTo, silentAt int64
-	err = tx.QueryRow(`SELECT dropped_at,asleep_from,asleep_to,silent_at FROM node_silence WHERE node_id=?`, nodeID).
+	err = tx.QueryRow(`SELECT silence_dropped_at,silence_asleep_from,silence_asleep_to,silence_silent_at FROM nodes WHERE id=?`, nodeID).
 		Scan(&dropped, &asleepFrom, &asleepTo, &silentAt)
 	if err == sql.ErrNoRows {
 		return tx.Commit()
@@ -145,7 +144,7 @@ func (s *Store) NodeLinkUp(nodeID string) error {
 			return err
 		}
 	}
-	if _, err := tx.Exec(`DELETE FROM node_silence WHERE node_id=?`, nodeID); err != nil {
+	if _, err := tx.Exec(`UPDATE nodes SET silence_dropped_at=0,silence_asleep_from=0,silence_asleep_to=0,silence_silent_at=0 WHERE id=?`, nodeID); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -166,22 +165,24 @@ func (s *Store) NodeSlept(nodeID string, from, to time.Time) (bool, error) {
 	}
 	defer tx.Rollback()
 	var dropped, asleepFrom, asleepTo, silentAt int64
-	err = tx.QueryRow(`SELECT dropped_at,asleep_from,asleep_to,silent_at FROM node_silence WHERE node_id=?`, nodeID).
+	err = tx.QueryRow(`SELECT silence_dropped_at,silence_asleep_from,silence_asleep_to,silence_silent_at FROM nodes WHERE id=?`, nodeID).
 		Scan(&dropped, &asleepFrom, &asleepTo, &silentAt)
 	if err == sql.ErrNoRows {
-		if to.IsZero() {
-			// An announced sleep that is still ongoing. The drop that follows
-			// it will keep the span (NodeLinkDown).
-			_, err = tx.Exec(`INSERT INTO node_silence(node_id,dropped_at,asleep_from,asleep_to,silent_at) VALUES(?,0,?,0,0)`,
-				nodeID, from.UnixNano())
-			if err != nil {
-				return false, err
-			}
-		}
 		return false, tx.Commit()
 	}
 	if err != nil {
 		return false, err
+	}
+	if dropped == 0 && asleepFrom == 0 && asleepTo == 0 && silentAt == 0 {
+		// No outage is open. An announced sleep that is still ongoing is kept,
+		// and the drop that follows it keeps the span (NodeLinkDown).
+		if to.IsZero() {
+			if _, err := tx.Exec(`UPDATE nodes SET silence_asleep_from=?,silence_asleep_to=0,silence_silent_at=0 WHERE id=?`,
+				from.UnixNano(), nodeID); err != nil {
+				return false, err
+			}
+		}
+		return false, tx.Commit()
 	}
 	if !sleepExplains(dropped, from, to) {
 		return false, tx.Commit()
@@ -190,7 +191,7 @@ func (s *Store) NodeSlept(nodeID string, from, to time.Time) (bool, error) {
 	if !to.IsZero() {
 		toNanos = to.UnixNano()
 	}
-	if _, err := tx.Exec(`UPDATE node_silence SET asleep_from=?,asleep_to=?,silent_at=0 WHERE node_id=?`,
+	if _, err := tx.Exec(`UPDATE nodes SET silence_asleep_from=?,silence_asleep_to=?,silence_silent_at=0 WHERE id=?`,
 		from.UnixNano(), toNanos, nodeID); err != nil {
 		return false, err
 	}
@@ -247,10 +248,10 @@ func (s *Store) MarkSilentNodes(now time.Time) ([]NodeSilence, error) {
 		return nil, err
 	}
 	defer tx.Rollback()
-	rows, err := tx.Query(`SELECT sl.node_id,sl.dropped_at,sl.asleep_from,sl.asleep_to,sl.silent_at,
- COALESCE(NULLIF(n.display_name,''),NULLIF(n.hostname,''),sl.node_id)
-FROM node_silence sl LEFT JOIN nodes n ON n.id=sl.node_id
-WHERE sl.dropped_at>0 AND sl.silent_at=0 AND sl.dropped_at<=?`, cutoff)
+	rows, err := tx.Query(`SELECT n.id,n.silence_dropped_at,n.silence_asleep_from,n.silence_asleep_to,n.silence_silent_at,
+ COALESCE(NULLIF(n.display_name,''),NULLIF(n.hostname,''),n.id)
+FROM nodes n
+WHERE n.silence_dropped_at>0 AND n.silence_silent_at=0 AND n.silence_dropped_at<=?`, cutoff)
 	if err != nil {
 		return nil, err
 	}
@@ -288,7 +289,7 @@ WHERE sl.dropped_at>0 AND sl.silent_at=0 AND sl.dropped_at<=?`, cutoff)
 	}
 	var marked []NodeSilence
 	for _, c := range list {
-		res, err := tx.Exec(`UPDATE node_silence SET silent_at=? WHERE node_id=? AND silent_at=0`, now.UnixNano(), c.row.NodeID)
+		res, err := tx.Exec(`UPDATE nodes SET silence_silent_at=? WHERE id=? AND silence_silent_at=0`, now.UnixNano(), c.row.NodeID)
 		if err != nil {
 			return nil, err
 		}

@@ -123,7 +123,7 @@ func TestMachineStateNamesAsleepAndSilent(t *testing.T) {
 		t.Fatalf("state = %q since %d, want silent since %d", nodes[0].DownState, nodes[0].DownSince, drop.Unix())
 	}
 	// The same row, with a sleep report that covers the drop, reads asleep.
-	if _, err := s.db.Exec(`UPDATE node_silence SET silent_at=0 WHERE node_id=?`, node); err != nil {
+	if _, err := s.db.Exec(`UPDATE nodes SET silence_silent_at=0 WHERE id=?`, node); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.NodeSlept(node, drop.Add(-time.Minute), drop.Add(30*time.Minute)); err != nil {
