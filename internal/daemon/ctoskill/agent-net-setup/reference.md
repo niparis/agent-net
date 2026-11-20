@@ -369,6 +369,7 @@ Every key in standard.yaml, grouped by the part before its first dot. Each row i
 | `messages.inbox_limit` | network, repo, agent | 5 | min 0, max 100 | 3 | How many undelivered messages may wait at the gateway for one session; zero means no limit. Owner and CTO-as-owner messages skip it. |
 | `messages.owed_reply_nudge_after` | network, team, repo | 15m | min 0s | 3 | How long an idle recipient may owe an open request or order before receiving an automatic reminder nudge. |
 | `messages.owed_reply_ask_after` | network, team, repo | 10m | min 0s | 3 | How long after the reminder nudge an unanswered request or order waits before raising an ask to the chief of staff. |
+| `messages.owed_reply_progress_grace` | network, team, repo | 2h | min 0s | 3 | How long a progress reply without follow_up_at holds off the owed-reply reminder and ask for its request, counted from that reply. Zero turns the hold off. A progress reply with follow_up_at holds until that time instead. |
 
 ### `picker.*`
 

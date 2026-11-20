@@ -198,6 +198,14 @@ settings:
     levels: [network, team, repo]
     default: "10m"
     live: true
+  - key: messages.owed_reply_progress_grace
+    description: How long a progress reply without follow_up_at holds off the owed-reply reminder and ask for its request, counted from that reply. Zero turns the hold off. A progress reply with follow_up_at holds until that time instead.
+    kind: advice
+    type: duration
+    min: "0s"
+    levels: [network, team, repo]
+    default: "2h"
+    live: true
   - key: cto.requests_per_hour
     description: How many new conversations with the CTO a lead-level agent may start in one hour; later requests wait for the window.
     kind: rule
