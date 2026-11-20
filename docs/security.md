@@ -47,10 +47,8 @@ The daemon runs each installed harness's own update command as the current user,
 
 Decision [0036](decisions/0036-primitives.md) distinguishes authority over actions from autonomy over decisions about work. An agent is a chartered identity; a session is its running process. The checks below describe current behavior, including the autonomy setting and its guard rails.
 
-The network-wide CTO harness, model preference and auto-compaction rules are
-owner settings. The daemon's `cto_settings` method uses the owner gate and
-refuses agent sessions. Values are bounded: a threshold from 10 to 100 percent,
-a floor up to 10 million tokens, and cache windows up to one day. The
+The network-wide CTO harness and model preference are owner settings. The daemon's `cto_settings` method uses the owner gate and
+refuses agent sessions. The
 owner-facing CTO title is also an owner setting, stored at the gateway as
 `cto_title`: 1 to 24 printable characters, trimmed, and refused when it
 contains `[agent-net` or `<cross-session`, so it cannot imitate a note that
@@ -148,6 +146,8 @@ or proposal. Only node removal, agent tombstone, repo archive, machine removal
 and machine token rotation are proposals. The CTO runs other changes at once;
 the owner sees Inbox notices and can undo supported changes. A proposal still
 requires a dialog or Inbox approval.
+
+### CTO stop, resume and restart
 
 The CTO can stop, resume and restart an owner or agent session with
 `session_change` (actions `stop`, `resume`, `restart`). These are immediate
@@ -497,14 +497,7 @@ A message from the person at a machine is sent from that machine's **owner sessi
 - **Nothing is deleted.** Each sort keeps the ask as it was in `ask_sorts`, so a sort can be undone.
 - **Only the owner or the CTO undoes any sort; the chief undoes only its own newest one.** `ask.undo` (operator `ask_undo`) and `ask.mark` (operator `ask_mark`) need the owner or CTO actor, and the daemon gate for both is the owner gate, so no agent tool calls them. The chief's own undo is `agent_ask_sort` with `result: "undo"`; it is refused unless the newest sort is the chief's, and the ask goes back to the chief. An undo is refused when the ask changed since the sort.
 
-- **No timer sends an ask to the owner while the chief works.** The 15 minute
-  fallback is removed (decision 0150). A chief that cannot work is covered by a
-  safety net: an ask in security, outage or money goes to the owner after one
-  missed wake (10 minutes), the rest after two, and a claimed ask that goes quiet
-  pings the chief after the stuck-work limit (`delivery.step_stuck`) and never
-  reaches the owner. An item idle that long with the CTO goes back to the chief.
-  The owner asked for this (decision 0150). It only moves items between the
-  chief, the CTO and the owner path; it answers, closes and approves nothing.
+- **The safety net only moves items.** While the chief works, no timer sends an ask to the owner. A chief that cannot work is covered by a safety net, which sends an ask in security, outage or money to the owner after one missed wake. It answers, closes and approves nothing. The timers are in [reference.md](reference.md#the-chief-of-staff-decision-0114) and [decision 0150](decisions/0150-owner-front-door.md).
 
 See [decision 0114](decisions/0114-chief-of-staff.md) and [reference](reference.md#the-chief-of-staff-decision-0114).
 
@@ -627,9 +620,7 @@ A new daemon checks merge ancestry in the target repository before reporting a
 merge pass. It sends an optional `merge_contains_head` result for the exact
 reported head and merged commit. A negative result is refused by the gateway
 before evidence is stored. Missing commits, non-commit objects and failed git
-checks count as negative. Daemons from version 0.4.131 and dev builds must send
-proof; the gateway reads their version from the authenticated machine's hello.
-A positive result cannot bypass required steps or a head change. Older daemons omit the proof and retain the existing checks.
+checks count as negative. Daemons must send proof. The gateway reads their version from the authenticated machine's hello. A positive result cannot bypass required steps or a head change.
 
 - **A machine speaks only for its own sessions.** A submit names a session on the sending machine, or the hand-back of a worker on that machine which the session started. A session submits only its own work. A step report comes from a session on the sending machine. `done_by` names a worker that session started, or `owner` for a direct owner approval of a delegated step.
 - **The owner reads every change.** The TUI reads changes with the daemon method `changes_owner_find`, which is read only and follows the same gate as the other owner reads: only the owner's command line or TUI, not an agent connection and not a command line that runs inside an agent session. Agents keep `changes_find`, and a TUI connection cannot call it or the write methods.
@@ -652,7 +643,7 @@ A positive result cannot bypass required steps or a head change. Older daemons o
 
 ## What a worker can do: the sandbox level
 
-A worker is an agent that nobody watches, so agent-net does not let it ask for approval. The daemon declines approvals where the harness supports them. The worker permission level is set per project in the TUI (`p`, line Workers) or the settings layer and applies to that project on every machine. Codex uses its own sandbox; Antigravity uses its own `--sandbox` flag. Claude workers enforce the level with Claude Code's own settings: `permissions.blockWritesOutsideWorkingDirectories` for its file tools, and Claude Code's Bash sandbox (`sandbox.enabled`, with `allowUnsandboxedCommands` off) for shell commands. On Linux, Pi and OpenCode workers of a project that has the OS sandbox on run in bubblewrap ([below](#the-os-sandbox-for-pi-and-opencode-workers)). Otherwise OpenCode and Pi workers run with the owner's permissions. The owner-only `session_policy` method prevents an agent from widening a project's level. When no level is set, the node's maturity default applies ([decision 0022](decisions/0022-component-graph-and-cto.md)): `experimental`, `early`, `growing` and `mature` give `sandboxed`, and a node with no maturity keeps `sandboxed`. The owner can override it with `node_settings_set worker_sandbox`. Both the policy form and node setting change the same repo value. At cutover, the strictest machine policy and old node fallback win. An existing repo value is tightened only if its effective value would otherwise be looser than the old fallback or a machine policy. Inbox checks name the machines made stricter and their old values, and report case-ambiguous project names.
+A worker is an agent that nobody watches, so agent-net does not let it ask for approval. The daemon declines approvals where the harness supports them. The worker permission level is set per project in the TUI (`p`, line Workers) or the settings layer and applies to that project on every machine. Codex uses its own sandbox; Antigravity uses its own `--sandbox` flag. Claude workers enforce the level with Claude Code's own settings: `permissions.blockWritesOutsideWorkingDirectories` for its file tools, and Claude Code's Bash sandbox (`sandbox.enabled`, with `allowUnsandboxedCommands` off) for shell commands. Pi and OpenCode workers run in an OS sandbox by default: bubblewrap on Linux and `sandbox-exec` on macOS. A project opts out with `workers.os_sandbox_off` in `node.json` ([below](#the-os-sandbox-for-pi-and-opencode-workers)). Claude workers are not wrapped in that sandbox; they rely on Claude Code's own settings above. The owner-only `session_policy` method prevents an agent from widening a project's level. When no level is set, the node's maturity default applies ([decision 0022](decisions/0022-component-graph-and-cto.md)): `experimental`, `early`, `growing` and `mature` give `sandboxed`, and a node with no maturity keeps `sandboxed`. The owner can override it with `node_settings_set worker_sandbox`. Both the policy form and node setting change the same repo value. At cutover, the strictest machine policy and old node fallback win. An existing repo value is tightened only if its effective value would otherwise be looser than the old fallback or a machine policy. Inbox checks name the machines made stricter and their old values, and report case-ambiguous project names.
 
 The level definitions below hold for Codex's sandbox, Antigravity's flag and Claude Code's settings; the limits describe Codex's sandbox, with the differences noted for the others.
 
@@ -743,7 +734,7 @@ The Desk (tab 7) excludes worker sessions. The daemon refuses a worker's explici
 - **What it changes.** An explicit ask also causes a desktop notification on machines with an owner TUI open, at most once per session per five minutes. The notification contains no question text. A session can lie about waiting, just as it can lie in its announced task. The owner can turn notifications off on each machine. Reading or changing that setting uses the owner-only gate and the private CTO channel. A wait carries no authority and clears when the session works again or you answer.
 - **The hooks.** The Claude Code hooks are added only with your consent (the one integrations question, or `--claude-needs-hook`), removed by `agent-net uninstall`, talk to the local daemon only, give up after 300 ms and print nothing on any error. They run inside the session's process tree and use the session ID Claude gives them. After an upgrade the daemon updates them at start, only when the answer is on, agent-net added them and they differ; it never adds them for a binary whose name does not start with `agent-net`, because those hooks could not be told from yours.
 
-- **Friction lines.** `agent_handback` and `agent_step_report` may carry friction entries (decision [0170](decisions/0170-friction-reports.md)). A worker writes the text, so it is model output, not the owner's words. The gateway masks secret shapes with `redact.Secrets` before it stores the line and quotes the line on read. A line can name a path or a command, and every enrolled machine's CTO and TUI can read it. The line is one line of at most 200 characters, and it never enters the picker, the ratings or the defect counts.
+- **Friction lines.** `agent_handback` and `agent_step_report` may carry friction entries (decision [0170](decisions/0170-friction-reports.md)). A worker writes the text, so it is model output, not the owner's words. The gateway masks secret shapes with `redact.Secrets` before it stores the line and quotes the line on read. A line can name a path or a command, and every enrolled machine's CTO and TUI can read it. The line is one line of at most 200 characters, and it never enters the picker, the ratings or the defect counts. Only the owner's command line or TUI, the CTO and an agent's pinned lead session can change a friction report's status (`friction_mark`). The gateway refuses workers and other agent sessions.
 
 ## Gateway notes
 
@@ -854,7 +845,7 @@ This section covers everything the owner can do with skills and MCP servers acro
 ### Who may change things
 
 - **Shared MCP server administration.** The daemon refuses `mcp_add` and `mcp_remove` from bound agent sessions. The gateway also refuses add or remove requests with non-empty `added_by_session` attribution. The owner's TUI and CLI keep working. A CTO `mcp_change` runs at once through the owner CLI path. Agent sessions may still list and test shared servers. Plugin calls to add or remove a shared server reach the same daemon check and are refused.
-- **The owner gate.** `tools_import`, `tools_save_changed`, `tools_update_plan`, `tools_update_copies`, `tools_plan`, `tools_apply`, `tools_undo`, `tools_history`, `mcp_import`, `mcp_native_remove`, `mcp_coverage_plan`, `mcp_coverage_apply` and `mcp_coverage_undo` are owner methods. They work from your command line or the TUI. The daemon refuses an agent client and a command line that runs inside an agent session's process tree. The private CTO cannot read tool inventory or metadata outside ordinary agent tools. Its plan, apply, undo, import and native-removal calls execute at once. A plan can be limited to chosen machines (`target.machines`). This adds no method and no new caller: it goes through the same gate, the gateway checks that each machine is enrolled, and a daemon ignores any target that names another machine.
+- **The owner gate.** `tools_import`, `tools_save_changed`, `tools_update_plan`, `tools_update_copies`, `tools_plan`, `tools_apply`, `tools_undo`, `tools_history`, `mcp_import`, `mcp_native_remove`, `mcp_coverage_plan`, `mcp_coverage_apply` and `mcp_coverage_undo` are owner methods. They work from your command line or the TUI. The daemon refuses an agent client and a command line that runs inside an agent session's process tree. The CTO reads tool inventory through `cto_op` (read methods such as `tools_items`, `tools_item` and `tools_summary`). Its plan, apply, undo, import and native-removal calls execute at once. A plan can be limited to chosen machines (`target.machines`). This adds no method and no new caller: it goes through the same gate, the gateway checks that each machine is enrolled, and a daemon ignores any target that names another machine.
 - **The gateway checks too.** It accepts these requests only from the online owner session of the sending machine. As with every other frame, the gateway trusts the daemons of enrolled machines (see [the trust limit](#the-trust-limit)).
 - **Advice is not authority.** A charter's `rules`, a peer message, a skill's text or a project file never grants a change. Rules are free text and are never turned into tool assignments.
 - **Audit.** The gateway records each plan and apply with the actor (owner, CTO, or owner with a CTO proposal ID), the targets and the result. Records can hold machine and file paths. They never hold skill contents or MCP credential values.
@@ -1172,7 +1163,7 @@ The owner-only `project_display_get` and `project_display_set` methods use the d
 The owner can give a machine a display name ([decision 0015](decisions/0015-machine-display-name.md), key `N` in the TUI, `agent-net nodes rename`). It is the name every machine, every agent and every hint sees for that machine, so who sets it and what it may hold matter.
 
 - **Only you can set it.** The method `node_rename` is behind the owner gate, like `session_policy`: your command line or the TUI, refused for an agent client and for a command line inside an agent session's process tree. No agent tool sets it. A machine that is enrolled can send the `node.rename` frame, so the gateway trusts the daemons of your machines here, as for every other frame.
-- **The limit.** 1 to 63 characters, letters, digits, `-`, `_` and `.`, starting with a letter or digit, checked at the gateway (and in the TUI and the command line before they send). No space, quote, bracket, `@`, `:`, slash or control character can get in, so the name is safe in a line of text for the model, in a log line and as an ssh target. A name must be unique among the machines, ignoring case, so a name cannot make two machines look like one.
+- **The limit.** The name is checked at the gateway (and in the TUI and the command line before they send). Its length and allowed characters are in [reference.md](reference.md#machine-names). No space, quote, bracket, `@`, `:`, slash or control character can get in, so the name is safe in a line of text for the model, in a log line and as an ssh target. A name must be unique among the machines, ignoring case, so a name cannot make two machines look like one.
 - **What it does not change.** The name is a label. Machine identity is the node ID and token. The reported host name stays stored, and a machine's own daemon cannot set a display name by saying a different host name in `hello`.
 
 ## What a node reports about its machine
@@ -1191,9 +1182,7 @@ File paths and the remote URL name your projects. If that is sensitive, do not e
 
 agent-net reads quotas through [quota-axi](https://github.com/kunchenguid/quota-axi) instead of reading provider logins itself. That keeps one program responsible for the credential formats, and agent-net gets only the figures it needs.
 
-- **How it is installed.** When the Quota integration is on and you have no quota-axi, setup or the daemon runs `npm install --prefix ~/.local/share/agent-net/quota-axi --no-fund --no-audit quota-axi@0.1.69` in the background, with a 3 minute limit. The version is pinned in the binary; updating it is part of an agent-net release, and npm checks the package integrity from the registry. agent-net does not install Node. Without Node 22.19 or newer and npm, it installs nothing and says so once.
-- **Which copy runs.** A working recorded choice stays in use. For a new choice, a supported owner copy wins over the private copy. Discovery checks the configured path, login and process paths, nvm, Homebrew, the npm prefix and `~/.local/bin`. The daemon puts a suitable Node folder first on `PATH`.
-- **What runs.** The daemon runs `quota-axi --json --max-age 5m --no-credential-refresh` every 5 minutes, with a 90 second limit. The integration is on by default; the owner can turn it off in the integrations question or with `--no-quota-axi`, which also removes the private copy. Setup may run an upgrade command for an older owner copy only after the owner agrees. The daemon never upgrades an owner copy. Interactive setup may run read-only `auth` and offer a Keychain prompt; it stores provider status, not source paths or credentials.
+- **Install, copy and schedule.** The pinned quota-axi is installed only when the Quota integration is on and you have no compatible copy. The daemon runs it with `--no-credential-refresh`, and never with `--full`. The how-to is in [reference.md](reference.md#subscription-quotas). The daemon never upgrades an owner copy. Setup may run an upgrade for an older owner copy only after the owner agrees.
 - **What quota-axi reads.** quota-axi reads the local logins of your model providers (files, environment variables, and on macOS or Windows a native secure store when you approved it), and asks the providers' own usage endpoints. Those are the same sources the provider CLIs use. The risk is quota-axi's, not a new one: it already runs as your user on the machine that holds the logins.
 - **No refresh, no identity.** `--no-credential-refresh` tells quota-axi never to run a vendor CLI's refresh command, so agent-net cannot make a login rotate (the risk in decision [0019](decisions/0019-opencode-worker-logins.md)). agent-net never passes `--full`, the audit tier that carries account identity and source attempts. It passes no `--provider`, so quota-axi reads what is set up on the machine.
 - **What leaves the machine.** Provider id, plan name (when quota-axi reports one), whether the provider needs attention, and per window: id, label, kind, percent used, reset time, pace and exhausted. The quota-axi version, whether it is private, and the executable directory also travel with the usage report, including before the first reading. The gateway caps the version at 40 bytes and the directory at 300 bytes. No token, credential file path, account id, email, or account key is kept or sent. The reading travels to the gateway with the usage report and is kept in memory there, readable by every enrolled machine like the agent list.
@@ -1267,6 +1256,8 @@ Outcome reasons and recommendations are visible to enrolled machines through the
 ## Instruction signals
 
 The Claude Code `UserPromptSubmit` policy hook sends the first 300 characters of each latest prompt to the gateway for that session. The daemon does not forward, and the gateway ignores, every turn Claude Code injects (a delivered cross-session message, a task notice, a system reminder, a scheduled or autonomous-loop turn: one shared list, `protocol.InjectedClaudePrompt`, checked on the first 512 bytes), so they never count as owner instructions; the owner's earlier prompt is kept, so a message that arrives between the owner's prompt and the send does not erase it. Pi and OpenCode do not send prompts to this signal path. The gateway stores it for a 10-minute matching window, even if no message is sent. Only the first send in that window is considered. If the prompt names the recipient session or project, the gateway stores the excerpt with the sender and recipient project nodes and message ID as an instruction signal. A non-matching send also consumes the prompt. The excerpt may contain private information or secrets typed in the prompt. A match is based on time and names, so it does not prove the owner intended that particular send. Signal records, including matched prompt text, are retained for 90 days. The hourly retention timer removes expired records; the short-lived latest-prompt row is removed after its window by the same timer.
+
+The same hook's `Stop` event can block a turn that ends with a question to the owner, so the model asks through agent-net instead. This steers the model only; it enforces nothing.
 
 The recipient can read up to 200 characters of a linked prompt in the message and delivery note. Only the owner authority path can list instruction signals. The CTO has no signal read tool. The daemon restricts the CTO channel to its checked process tree, and the gateway verifies an owner session on the requesting node. As with other owner-gated operations, the gateway trusts enrolled daemons; a compromised enrolled machine can impersonate its owner session. Protect the gateway database and its backups, which contain the prompt excerpts. Reply outcomes and reasons also have their existing visibility described in [Request outcome decisions](#request-outcome-decisions).
 
@@ -1449,8 +1440,7 @@ the target machine is online. The receiving daemon asks the gateway again and
 checks the same fields before it starts, resumes or stops anything, so a
 `session.owner_*` frame with a missing or borrowed owner flag is refused. Only
 the gateway sends those frames; a node that sends one to the gateway gets
-"unknown frame type". The gateway never runs a command. A machine that runs an
-agent-net older than v0.4.46, or is offline, is refused with a line that names
+"unknown frame type". The gateway never runs a command. A machine that is offline is refused with a line that names
 it. This gives the owner nothing beyond an ssh to that machine.
 
 A start that answered `starting` and then failed in the background is reported
@@ -1518,36 +1508,17 @@ adds the rule if an adopted role does not have it, and checks that the service
 stored it. Other OpenCode sessions do not get the rule. A role cannot start or
 resume if the service cannot confirm the rule.
 
-Pi has no background mode with a screen, so the daemon hosts it in its own tmux
-server, with the folder and the chosen session ID as separate arguments:
-
-```
-tmux -L agent-net new-session -d -c <folder> -- pi --session-id <uuid> --name <project> [--model M]
-```
-
-The daemon picks the UUID before Pi starts, so the extension binds the session
-to it. If tmux is missing, the start is refused with
-`pi needs tmux on <machine> to run in the background`. The first message is
+Pi has no background mode with a screen, so the daemon starts it in herdr, the same place as the other agent-net views. A Pi session that agent-net started runs in agent-net's own herdr server, which is separate from your herdr (decision [0154](decisions/0154-the-owners-herdr-is-read-only.md)). A Pi session you started in your own herdr stays there. The daemon picks the session UUID before Pi starts, so the extension binds the session to it. If herdr cannot host the session, the start is refused with `cannot start Pi in herdr on <machine>`. The first message is
 not a command argument: after the session registers, the daemon sends it as an
 ordinary message from the owner session through the Pi extension, the same path
 as a worker's first task. Pi's own tool permissions apply to what the agent
 does next.
 
-The private server uses the socket `$TMUX_TMPDIR/tmux-<uid>/agent-net`
-(default `/tmp/tmux-<uid>/agent-net`). tmux creates the folder with mode 0700
-and the socket with mode 0660, so only your user (and root) can reach it. Any
-process running as your user on that machine can attach to the server and
-watch or type in a Pi session; this is the same boundary as the rest of your
-account, not an extra one. The socket is local and is not exposed on the
-network. Pi owner sessions are not sandboxed. The tmux server forks away from
-the daemon, and the service unit has `KillMode=process` (the launchd job has
-`AbandonProcessGroup`), so a daemon restart leaves it and its sessions running.
+herdr runs as your user. Any process running as your user can reach its server and watch or type in a Pi session. This is the same boundary as the rest of your account, not an extra one. Pi owner sessions are not sandboxed.
 
 Resume accepts only a stored offline local Claude or Pi session ID. The daemon
 uses the stored native ID and folder, checks that the folder still exists, and
-passes the native ID as a separate argument. Pi resumes with
-`pi --session <id>` in a new window of the same tmux server, or a new session
-there when no window is left. The gateway's session views include native IDs so
+passes the native ID as a separate argument. Pi resumes with `pi --session <id>` in a herdr pane, the same way as a start. The gateway's session views include native IDs so
 the local daemon can resolve an offline row after a restart. Enrolled machines
 and their agent connections can read those IDs.
 
@@ -1660,9 +1631,7 @@ rare.
 
 
 
-Quality weighting is off for good (decision 0105). The methods `quality_get` and
-`quality_set` remain owner only on the local socket, but `quality_set` changes
-nothing and `quality_get` always answers disabled. The picker reads its own
+Quality weighting is gone from the picker (decision 0105). The live setting for the reweighted rule is `picker.quality_v2` (default off). The methods `quality_get` and `quality_set` remain owner only on the local socket for older clients: `quality_set` changes nothing and `quality_get` always answers disabled. The picker reads its own
 table of task results (`picker_get`, owner only on the local socket). That table
 only decides which allowed profiles rotate. It cannot bypass protected
 providers, worker floors or quota exclusions, and an explicit model request
@@ -1821,7 +1790,7 @@ Only the owner through the TUI/CLI owner gate or the CTO
 may register a project's merger. Ordinary agent sessions and workers cannot
 call the owner-only `merger_set` operation. A session cannot become a merger
 by announcing a type. The gateway derives that type from its registration.
-A registration must name a non-worker Claude session of the same project on
+A registration must name a non-worker session of the same project on
 the named machine. Deleting that session record clears the registration;
 stopping the harness session or taking it offline keeps the registration and
 leaves its tasks waiting. The gateway accepts a cross-machine change when the
@@ -1916,24 +1885,9 @@ still count as use. These signals are not proof of human identity against
 another process running as the same user. Use times, scores and pins appear in session listings available to
 enrolled agents. Prompt text is not stored by this feature.
 
-Automatic archival changes visibility, not historical records. It excludes
-pinned, online, recently owner-used, owner, CTO, bot, and registered merger
-sessions, and the owner can restore an archived record. A restore records use
-so the automatic job does not immediately archive it again.
+Automatic archival changes visibility, not historical records, and the owner can restore an archived session. The rules are in [reference.md](reference.md#owner-session-use-and-pins).
 
-Worker retention cleanup deletes harness data only for ended worker records.
-Live workers are excluded. Codex deletion uses the recorded thread UUID and the
-harness's forced delete command, never a session name or a project-wide delete.
-OpenCode deletion runs against the worker's private data directory, never the
-owner's shared OpenCode database. Configuration and owner authentication files
-are not removed. Failed harness deletion retains the worker record for retry.
-Worker records are dropped if harness deletion still fails seven days after
-cleanup eligibility. An unsupported Codex delete command also drops the record.
-Safety refusals for live workers and invalid identities or data paths never
-expire. Deletion runs in a bounded background pass, separate from gateway link
-setup and worker health checks.
-The daemon logs these skips; an explicit missing-thread response counts as success.
-`workers.delete_sessions: false` in node.json disables harness data deletion.
+Worker retention cleanup deletes harness data only for ended worker records. Live workers are excluded. Codex deletion uses the recorded thread UUID and never a session name or a project-wide delete. OpenCode deletion runs against the worker's private data directory, never the owner's shared database. Configuration and owner authentication files are not removed. Safety refusals never expire. The retry and timing rules are in [reference.md](reference.md#owner-session-use-and-pins).
 
 
 Repo and Team leads affect message routing, not trust or approval. Only the
@@ -1949,12 +1903,7 @@ A hand-off (`agent_message_handoff`) is the one message whose stored sender is n
 
 **Orders, authority mode and held back (decision 0089).** An order is a message the sender flagged with `order` on `agent_message_send`. The gateway keeps the flag only when it checks the tree and finds the sender above the recipient: a team lead is above every repo, repo lead and agent of its team, and a repo lead is above the other agents that work in its repo. From anyone else, from a reply, or from a bot, the flag is dropped, the message is stored as a request, and the sender's receipt says so. The gateway stores the checked result as `is_order` and writes the order note on every delivery from the live tree, outside the body, so a body cannot supply it, and a lead that has since left the tree loses its label. A reply from a session above the recipient carries the advice note, which says it does not bind. The note names the lead, the team or repo and the team's authority mode, says what the mode means, and always says that deleting data, spending money, and using or sharing secrets that can spend money stay with the owner. The owner changes a team's mode and held back text and a repo's held back text from the Teams list. The CTO sets the same Team fields with `graph_change` `team_charter`, `attr: mode` or `attr: held_back`, at once as an owner action under the private owner operations above; graph undo restores the earlier value. The held back text is free text for agents to read. No code reads it as a grant or a limit, and `rules` text never grants or removes authority. Delivery approvals for `delegated` merges go to the repo lead and the lead of the repo's team, never to the agent that made the change.
 
-Idle Claude compaction types `/compact` only into an idle background session
-with a job ID after the configured idle time and context threshold. It excludes
-running `claude attach <jobId>` clients using the process list, checks again
-before typing, and skips compaction if that check fails. A client can still
-attach between the last check and the write. The daemon stops only its own
-attach client, not the background process. See decision 0078.
+Idle Claude compaction types `/compact` only into an idle background session that no open client is viewing. It stops only its own attach client, never the background process. The rules are in [reference.md](reference.md#auto-compaction-of-persistent-sessions) and [decision 0078](decisions/0078-idle-compaction-for-background-sessions.md).
 
 ## Inherited charter values
 
@@ -1996,21 +1945,7 @@ conversations. Failure details are message text, not the capped waiting field.
 
 ### Machine process inspection
 
-`agent_machine_get` with `include: ["processes"]` reads the target daemon's
-machine-wide process table. `sort` is `rss` (default) or `cpu`. The existing
-`limit` and `cursor` page the ordered rows. Each row includes pid, ppid, user,
-RSS in bytes, CPU percent of one core, elapsed seconds, command, owner kind
-and owner ID, and `refusal` when `process_stop` would refuse it. Commands use
-the sampler's existing redaction. The CTO can use this read to choose pids.
-Process tables can change between pages. Refusals are advisory; stopping
-checks the process again through the existing safeguards.
-
-Claude background rosters with a supervisor are trusted regardless of age
-only when the supervisor is alive, belongs to the daemon user, and started
-before the roster was written. A dead or unverifiable supervisor keeps the
-conservative refusal for Claude background commands. Live sessions, their
-children, and the supervisor remain protected. Legacy rosters without a
-supervisor retain their existing short freshness window.
+Process listings are advisory: stopping checks the process again through the existing safeguards. A Claude background roster with a supervisor is trusted regardless of age only when the supervisor is alive, belongs to the daemon user and started before the roster was written. Live sessions, their children and the supervisor stay protected. The how-to is in [reference.md](reference.md#machine-process-inspection).
 
 ## Delegated authority (decision 0166)
 
@@ -2026,10 +1961,5 @@ and are never allowed by a scope. Only the owner sets scopes (`scope.set`,
 400 ms budget and a 2 second timeout. Setup adds it to `~/.claude/settings.json`
 without a question and uninstall removes it.
 
-The same scopes lift three agent-net holds (a worker start that names a model, a
-permission proposal, an owner ask) and answer Codex command approvals and
-OpenCode shell permission requests. Each lift is allow or no decision: a request
-no scope covers behaves exactly as before. A permission rule that names a whole
-tool, or whose command is on the never list, and folder trust, always stay with
-the owner. The OpenCode reply is `once` only.
+Scopes also lift three agent-net holds and answer Codex and OpenCode permission requests. Folder trust, whole-tool rules and never-list commands always stay with the owner. The OpenCode reply is `once` only. The table, the holds and the wiring are in [reference.md](reference.md#delegated-authority).
 
