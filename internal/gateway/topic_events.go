@@ -12,14 +12,14 @@ import (
 // reads used by the screen. Column keys keep session activity from moving graph.
 var topicTables = map[string][]string{
 	protocol.TopicAgents:   agentsTables,
-	protocol.TopicNodes:    tableUnion(nodesTables, calibrationTables, []string{"quota_blocks", "node_health", "playbook", "owner_settings", "setting_values"}),
+	protocol.TopicNodes:    tableUnion(nodesTables, calibrationTables, []string{"quota_blocks", "nodes.health_report", "nodes.health_reported_at", "playbook", "owner_settings", "setting_values"}),
 	protocol.TopicWorkers:  tableUnion(workerLogTables, calibrationTables, []string{"worker_starts", "quota_blocks", "owner_settings", "setting_values"}),
 	protocol.TopicGraph:    graphTables,
 	protocol.TopicInbox:    tableUnion(inboxTables, []string{"messages", "ask_sorts", "desk_log", "charter_draft_asks", "owner_settings"}),
 	protocol.TopicChanges:  []string{"delivery_changes", "delivery_revisions", "delivery_evidence", "delivery_step_tasks", "delivery_step_messages", "delivery_revision_stats", "delivery_step_inbox", "delivery_step_delegates", "events", "messages"},
-	protocol.TopicProjects: tableUnion([]string{"projects", "repos", "project_display_names", "project_mergers", "sessions", "nodes"}, graphTables),
+	protocol.TopicProjects: tableUnion([]string{"projects", "repos", "project_display_names", "project_mergers", "sessions", "nodes.id", "nodes.hostname"}, graphTables),
 	protocol.TopicLearned:  learnedListTables,
-	protocol.TopicUsage:    []string{"sessions", "nodes", "quota_blocks"},
+	protocol.TopicUsage:    tableUnion(nodesTables, []string{"sessions", "quota_blocks"}),
 }
 
 func (s *Store) topicVersions() map[string]uint64 {

@@ -121,8 +121,7 @@ func (s *Store) SetNodeTimeZone(nodeID, zone string) error {
 	if zone == "" {
 		return nil
 	}
-	_, err := s.db.Exec(`INSERT INTO node_time_zones(node_id,zone,updated_at) VALUES(?,?,?)
-ON CONFLICT(node_id) DO UPDATE SET zone=excluded.zone,updated_at=excluded.updated_at`, nodeID, zone, s.now().UnixNano())
+	_, err := s.db.Exec(`UPDATE nodes SET time_zone=?,time_zone_updated_at=? WHERE id=?`, zone, s.now().UnixNano(), nodeID)
 	return err
 }
 
@@ -133,26 +132,26 @@ ON CONFLICT(node_id) DO UPDATE SET zone=excluded.zone,updated_at=excluded.update
 func (s *Store) SetNodeTailscaleIP(nodeID, ip string) error {
 	addr, err := netip.ParseAddr(strings.TrimSpace(ip))
 	if err != nil {
-		_, err := s.db.Exec(`DELETE FROM node_tailscale WHERE node_id=?`, nodeID)
+		_, err := s.db.Exec(`UPDATE nodes SET tailscale_ip='',tailscale_updated_at=0 WHERE id=?`, nodeID)
 		return err
 	}
-	_, err = s.db.Exec(`INSERT INTO node_tailscale(node_id,ip,updated_at) VALUES(?,?,?)
-ON CONFLICT(node_id) DO UPDATE SET ip=excluded.ip,updated_at=excluded.updated_at`, nodeID, addr.String(), s.now().UnixNano())
+	_, err = s.db.Exec(`UPDATE nodes SET tailscale_ip=?,tailscale_updated_at=? WHERE id=?`, addr.String(), s.now().UnixNano(), nodeID)
 	return err
 }
 
 // Nodes lists every node that has connected at least once. Online is left
 // false; the gateway fills it from its live connections.
-// nodesTables are the tables Nodes reads. Keep it equal to the query there (see
-// readThrough).
-var nodesTables = []string{"nodes", "node_time_zones", "node_tailscale", "node_silence"}
+// nodesTables are the node columns Nodes reads. Keep it equal to the query there
+// (see readThrough). A health or inventory report is not in it, so it does not
+// refresh the topics that list machines.
+var nodesTables = []string{"nodes.id", "nodes.hostname", "nodes.os", "nodes.version", "nodes.seen_at", "nodes.removed",
+	"nodes.harnesses", "nodes.launch", "nodes.display_name", "nodes.reported_hostname",
+	"nodes.time_zone", "nodes.tailscale_ip", "nodes.silence_dropped_at", "nodes.silence_asleep_from", "nodes.silence_asleep_to", "nodes.silence_silent_at"}
 
 func (s *Store) Nodes() ([]protocol.NodeView, error) {
-	rows, err := s.db.Query(`SELECT n.id, n.hostname, n.os, n.version, n.seen_at, n.harnesses, n.launch, n.display_name, n.reported_hostname, COALESCE(z.zone,''), COALESCE(ts.ip,''),
- COALESCE(sl.dropped_at,0), COALESCE(sl.asleep_from,0), COALESCE(sl.asleep_to,0), COALESCE(sl.silent_at,0)
-FROM nodes n LEFT JOIN node_time_zones z ON z.node_id=n.id LEFT JOIN node_tailscale ts ON ts.node_id=n.id
-LEFT JOIN node_silence sl ON sl.node_id=n.id
-WHERE n.seen_at > 0 AND n.removed=0 ORDER BY n.hostname, n.id`)
+	rows, err := s.db.Query(`SELECT n.id, n.hostname, n.os, n.version, n.seen_at, n.harnesses, n.launch, n.display_name, n.reported_hostname, n.time_zone, n.tailscale_ip,
+ n.silence_dropped_at, n.silence_asleep_from, n.silence_asleep_to, n.silence_silent_at
+FROM nodes n WHERE n.seen_at > 0 AND n.removed=0 ORDER BY n.hostname, n.id`)
 	if err != nil {
 		return nil, err
 	}
@@ -293,14 +292,14 @@ func orDash(s string) string {
 // daemon connects, so stale data cannot be mistaken for the current process.
 func (s *Store) SetNodeHealth(nodeID string, h *protocol.MachineHealth) error {
 	if h == nil {
-		_, err := s.db.Exec(`DELETE FROM node_health WHERE node_id=?`, nodeID)
+		_, err := s.db.Exec(`UPDATE nodes SET health_report='',health_reported_at=0 WHERE id=?`, nodeID)
 		return err
 	}
 	raw, err := json.Marshal(h)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`INSERT INTO node_health(node_id,report,reported_at) VALUES(?,?,?) ON CONFLICT(node_id) DO UPDATE SET report=excluded.report,reported_at=excluded.reported_at`, nodeID, string(raw), s.now().Unix())
+	_, err = s.db.Exec(`UPDATE nodes SET health_report=?,health_reported_at=? WHERE id=?`, string(raw), s.now().Unix(), nodeID)
 	return err
 }
 
@@ -308,7 +307,7 @@ func (s *Store) nodeHealth(nodeID string, online bool) (protocol.MachineHealth, 
 	h := protocol.MachineHealth{Status: "not reported"}
 	var raw string
 	var at int64
-	err := s.db.QueryRow(`SELECT report,reported_at FROM node_health WHERE node_id=?`, nodeID).Scan(&raw, &at)
+	err := s.db.QueryRow(`SELECT health_report,health_reported_at FROM nodes WHERE id=? AND health_report<>''`, nodeID).Scan(&raw, &at)
 	if err == sql.ErrNoRows {
 		return h, nil
 	}

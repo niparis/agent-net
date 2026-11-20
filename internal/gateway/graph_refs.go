@@ -26,10 +26,12 @@ func (s *Store) loadGraphRefs() error {
 }
 
 // SetNodeGraphRefs records every hello, including a downgraded daemon's report.
+// The version it reports is stored by SetNodeHello, in nodes.version, from the
+// same hello.
 func (s *Store) SetNodeGraphRefs(node, version string, supported bool) error {
 	_, release := upgrade.ParseRelease(version)
 	supported = supported && release
-	_, err := s.db.Exec(`INSERT INTO node_graph_refs VALUES(?,?,?) ON CONFLICT(node_id) DO UPDATE SET version=excluded.version,supported=excluded.supported`, node, version, supported)
+	_, err := s.db.Exec(`UPDATE nodes SET graph_refs_supported=? WHERE id=?`, supported, node)
 	return err
 }
 
@@ -48,7 +50,7 @@ func (g *Gateway) graphRefsBlockers(ctx context.Context, q interface {
 		}
 		g.mu.Unlock()
 	}
-	rows, err := q.QueryContext(ctx, `SELECT n.id, n.hostname, (COALESCE(c.supported,0)=0 OR trim(COALESCE(c.version,'')) IN ('','unknown') OR c.version<>n.version) FROM nodes n LEFT JOIN node_graph_refs c ON c.node_id=n.id WHERE n.removed=0`)
+	rows, err := q.QueryContext(ctx, `SELECT n.id, n.hostname, (n.graph_refs_supported=0 OR trim(n.version) IN ('','unknown')) FROM nodes n WHERE n.removed=0`)
 	if err != nil {
 		return nil, err
 	}

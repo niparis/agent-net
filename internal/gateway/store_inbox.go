@@ -391,7 +391,7 @@ const inboxColumns = `id,kind,session_id,node,text,recommendation,message_id,con
 // their changes, the names of the askers (agentNames: sessions, nodes, profiles)
 // and the pipeline of a delivery step, which reads the graph and the settings.
 // Keep it equal to those queries (see readThrough).
-var inboxTables = tableUnion([]string{"inbox_items", "delivery_step_inbox", "delivery_changes", "sessions", "nodes", "profiles"}, graphTables)
+var inboxTables = tableUnion([]string{"inbox_items", "delivery_step_inbox", "delivery_changes", "sessions", "nodes.id", "nodes.hostname", "profiles"}, graphTables)
 
 // ListInbox lists the open and recent inbox items. The read is kept until one
 // of inboxTables is written, and never past the second it was read in: the

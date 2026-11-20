@@ -79,7 +79,7 @@ func listedMachine(t *testing.T, g *Gateway, node string) protocol.NodeView {
 func silenceRows(t *testing.T, g *Gateway, node string) int {
 	t.Helper()
 	var n int
-	if err := g.store.db.QueryRow(`SELECT COUNT(*) FROM node_silence WHERE node_id=?`, node).Scan(&n); err != nil {
+	if err := g.store.db.QueryRow(`SELECT COUNT(*) FROM nodes WHERE id=? AND (silence_dropped_at<>0 OR silence_asleep_from<>0 OR silence_asleep_to<>0 OR silence_silent_at<>0)`, node).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
