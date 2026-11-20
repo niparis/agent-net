@@ -30,7 +30,9 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .status { font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--warn); background: var(--warn-soft); padding: 4px 10px; border-radius: 4px; align-self: flex-start; }
 .lede { font-size: 1.15rem; color: var(--muted); }
 section { display: flex; flex-direction: column; gap: 18px; }
-.rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 0; border-top: 1px solid var(--line); }
+.rules { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-top: 1px solid var(--line); }
+@media (max-width: 860px) { .rules { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 520px) { .rules { grid-template-columns: 1fr; } }
 .rules div { padding: 16px 18px 18px 0; border-bottom: 1px solid var(--line); min-width: 0; }
 .rules b { font-family: var(--display); display: block; margin-bottom: 4px; }
 .rules span { color: var(--muted); font-size: 0.95rem; }
