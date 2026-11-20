@@ -48,8 +48,5 @@ func setAgentCharterTx(tx *sql.Tx, agent, attr, value, actor string, now int64) 
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec(`INSERT INTO agent_charter_history(agent_id,attr,old_value,new_value,at,actor) VALUES(?,?,?,?,?,?)`, agent, attr, old, value, now, actor); err != nil {
-		return err
-	}
 	return graphRecord(tx, "agent_charter", agent, attr, old, value, actor, now)
 }

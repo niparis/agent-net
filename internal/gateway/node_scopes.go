@@ -141,8 +141,8 @@ func scopeValue(row *protocol.Scope) string {
 }
 
 // writeScopeTx moves a scope from old to want (nil removes it) and records the
-// change in node_scopes_history and graph_history, so graph_undo reverses it.
-// It returns the stored row, or the removed one.
+// change in graph_history, so graph_undo reverses it. It returns the stored row,
+// or the removed one.
 func writeScopeTx(tx *sql.Tx, old, want *protocol.Scope, actor string, now int64) (protocol.Scope, error) {
 	ref := want
 	if ref == nil {
@@ -165,10 +165,6 @@ func writeScopeTx(tx *sql.Tx, old, want *protocol.Scope, actor string, now int64
 		}
 	}
 	newValue := scopeValue(want)
-	if _, err := tx.Exec(`INSERT INTO node_scopes_history(node,kind,over_ref,old_value,new_value,at,actor) VALUES(?,?,?,?,?,?,?)`,
-		ref.Node, ref.Kind, ref.Over, oldValue, newValue, now, actor); err != nil {
-		return protocol.Scope{}, err
-	}
 	if err := graphRecord(tx, "scope", ref.Node, ref.Kind+" "+ref.Over, oldValue, newValue, actor, now); err != nil {
 		return protocol.Scope{}, err
 	}

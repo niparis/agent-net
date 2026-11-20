@@ -20,7 +20,7 @@ func TestAgentCharterMigrationReopen(t *testing.T) {
 		if count != len(ctoDefaultCharter) {
 			t.Fatalf("agent charter starts with %d rows, want the %d CTO defaults", count, len(ctoDefaultCharter))
 		}
-		if err := s.db.QueryRow(`SELECT count(*) FROM agent_charter_history`).Scan(&count); err != nil {
+		if err := s.db.QueryRow(`SELECT count(*) FROM graph_history WHERE type='agent_charter' AND node='cto'`).Scan(&count); err != nil {
 			t.Fatal(err)
 		}
 		if count != len(ctoDefaultCharter) {
@@ -34,15 +34,24 @@ func TestAgentCharterMigrationReopen(t *testing.T) {
 
 func TestAgentCharterHistory(t *testing.T) {
 	r := newDeliveryRig(t)
+	historyRows := func() int {
+		var n int
+		if err := r.s.db.QueryRow(`SELECT count(*) FROM graph_history WHERE type='agent_charter' AND node='demo' AND attr='purpose'`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	before := historyRows()
 	for _, value := range []string{"first", "second", ""} {
 		if err := r.s.SetAgentCharter("demo", "purpose", value, "owner"); err != nil {
 			t.Fatal(err)
 		}
 	}
-	var count int
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM agent_charter_history WHERE agent_id='demo'`).Scan(&count); err != nil || count != 3 {
-		t.Fatalf("history %d: %v", count, err)
+	// Each change is one graph_history row.
+	if got := historyRows() - before; got != 3 {
+		t.Fatalf("graph history rows for 3 changes: %d", got)
 	}
+	var count int
 	if err := r.s.db.QueryRow(`SELECT count(*) FROM agent_charter WHERE agent_id='demo'`).Scan(&count); err != nil || count != 0 {
 		t.Fatalf("current %d: %v", count, err)
 	}

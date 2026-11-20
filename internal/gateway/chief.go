@@ -1238,9 +1238,8 @@ func (s *Store) AskSortHistory(askID string) ([]protocol.AskSort, error) {
 // chiefCorrectionsMigration keeps the owner's marks of the Desk (decision 0114,
 // part 2). A mark is a correction the chief reads in its next batch.
 // The marks now live in the owner judgment store (kind correction, area chief).
-// This table is no longer written or read; its rows were copied there by the
-// last migration (ownerMarksMigration). It stays, because dropping it would
-// delete data.
+// This table is no longer written or read; its rows were copied there by
+// ownerMarksMigration, and the schema reduction drop migration removes it.
 const chiefCorrectionsMigration = `-- The owner's marks on asks (decision 0114, part 2): didnt_need_me or
 -- should_have_asked. area is the ask's project, ref the ask id.
 CREATE TABLE IF NOT EXISTS chief_corrections (
@@ -1254,8 +1253,7 @@ const chiefJudgmentArea = "chief"
 // ownerMarksMigration copies the marks of chief_corrections into the owner
 // judgment store (kind correction, area chief, ref the ask id). Rows go in
 // order, so the newest mark has the highest rowid. A row that is already there
-// is not copied again, so the statement is safe to replay. The old table is
-// kept.
+// is not copied again, so the statement is safe to replay.
 const ownerMarksMigration = `
 -- Owner marks move to the judgment store (decision 0114, part 2): one memory.
 INSERT INTO standing_orders(id,text,saved_at,source,tags,pinned,updated_at,kind,area,ref)

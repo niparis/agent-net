@@ -131,10 +131,6 @@ func TestAskMarkStoresCorrectionForTheChief(t *testing.T) {
 	if !strings.Contains(j.Text, "did not need ask "+id) || !strings.Contains(j.Text, "the deploy is routine") {
 		t.Fatalf("judgment text %q", j.Text)
 	}
-	var n int
-	if err := s.db.QueryRow(`SELECT count(*) FROM chief_corrections`).Scan(&n); err != nil || n != 0 {
-		t.Fatalf("the old table got %d rows (%v)", n, err)
-	}
 	if !deskLogHas(t, s, "Owner marked ask "+id) {
 		t.Fatal("the mark has no log line")
 	}
@@ -218,18 +214,19 @@ func TestChiefBatchReadsNewestFiveCorrectionsFromJudgments(t *testing.T) {
 	}
 }
 
-// Marks of the old chief_corrections table move into the judgment store once.
-// The table stays, and a replay does not copy a row twice.
+// Marks of the old chief_corrections table move into the judgment store, and the
+// drop migration then removes the table. A replay does not copy a row twice.
 func TestChiefCorrectionsMigrateToJudgments(t *testing.T) {
 	s, _ := newTestStore(t)
-	for i, text := range []string{"first mark", "second mark"} {
-		if _, err := s.db.Exec(`INSERT INTO chief_corrections(at,mark,text,area,ref) VALUES(?,?,?,?,?)`,
-			int64(1700000000+i)*1e9, protocol.MarkDidntNeedMe, text, "demo", fmt.Sprintf("i_%d", i)); err != nil {
-			t.Fatal(err)
-		}
-	}
 	rewind := migrationVersion(t, "Owner marks move to the judgment store") - 1
 	for i := 0; i < 2; i++ {
+		recreateDeadTables(t, s)
+		for j, text := range []string{"first mark", "second mark"} {
+			if _, err := s.db.Exec(`INSERT INTO chief_corrections(at,mark,text,area,ref) VALUES(?,?,?,?,?)`,
+				int64(1700000000+j)*1e9, protocol.MarkDidntNeedMe, text, "demo", fmt.Sprintf("i_%d", j)); err != nil {
+				t.Fatal(err)
+			}
+		}
 		if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>?`, rewind); err != nil {
 			t.Fatal(err)
 		}
@@ -243,9 +240,8 @@ func TestChiefCorrectionsMigrateToJudgments(t *testing.T) {
 		if len(found) != 2 || found[0].Text != "second mark" || found[1].Text != "first mark" || found[0].Ref != "i_1" || found[0].SavedAt != 1700000001 {
 			t.Fatalf("round %d: %+v", i, found)
 		}
-	}
-	var n int
-	if err := s.db.QueryRow(`SELECT count(*) FROM chief_corrections`).Scan(&n); err != nil || n != 2 {
-		t.Fatalf("the old table has %d rows (%v)", n, err)
+		if tableExists(t, s, "chief_corrections") {
+			t.Fatalf("round %d: the drop migration kept chief_corrections", i)
+		}
 	}
 }

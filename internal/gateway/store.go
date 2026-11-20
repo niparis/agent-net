@@ -1325,7 +1325,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -6426,3 +6426,18 @@ func (s *Store) SetSessionClosed(nodeID, sessionID string, closed bool) error {
 // sessions: the cause of a session's last failed turn and its time. The
 // migration loop adds the columns when they are missing.
 const sessionTurnErrorMigration = `SELECT 1 /* session turn error columns */;`
+
+// deadTablesDropMigration drops the tables that no code reads or writes
+// (schema reduction, part 1). The older migrations that name them run before
+// this one, so an old database replays through them first. IF EXISTS keeps a
+// rewind that replays this drop safe.
+const deadTablesDropMigration = `
+-- Schema reduction part 1: drop the tables no code reads or writes.
+DROP TABLE IF EXISTS chief_corrections;
+DROP TABLE IF EXISTS delivery_settings_legacy;
+DROP TABLE IF EXISTS skill_suggestions;
+DROP TABLE IF EXISTS playbook_notes;
+DROP TABLE IF EXISTS session_agent_history;
+DROP TABLE IF EXISTS agent_charter_history;
+DROP TABLE IF EXISTS node_scopes_history;
+`
