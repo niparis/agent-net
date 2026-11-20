@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"os/exec"
+	"regexp"
 	"strings"
 )
 
@@ -88,11 +89,13 @@ func runClaudeBackground(ctx context.Context, bin, dir string, s claudeBackgroun
 	cmd.Dir = dir
 	cmd.Env = env
 	out, err = cmd.CombinedOutput()
-	if err != nil {
-		return out, "", err
+	// The job id is read also when the client failed. A client that a shutdown
+	// killed has already backgrounded the job, and only its id can stop it.
+	for _, re := range []*regexp.Regexp{claudeBgID, claudeBgBackgrounded} {
+		if m := re.FindStringSubmatch(string(out)); m != nil {
+			jobID = m[1]
+			break
+		}
 	}
-	if m := claudeBgID.FindStringSubmatch(string(out)); m != nil {
-		jobID = m[1]
-	}
-	return out, jobID, nil
+	return out, jobID, err
 }

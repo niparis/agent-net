@@ -56,6 +56,10 @@ type claudeLauncher struct{}
 
 var claudeBgID = regexp.MustCompile(`claude stop ([0-9A-Za-z-]+)`)
 
+// claudeBgBackgrounded is the first line of the output, which a killed client
+// may have printed without the lines that follow it.
+var claudeBgBackgrounded = regexp.MustCompile(`backgrounded\s+\S+\s+([0-9A-Za-z-]+)`)
+
 // claudeSessionFile is the part of a session file that matters here.
 type claudeSessionFile struct {
 	Status    string `json:"status"`
@@ -895,6 +899,11 @@ func (d *Daemon) launchClaudeBackground(ctx context.Context, bin, path string, s
 		}
 	}
 	if err != nil {
+		// A job that is up must be known to the caller, which stops it: the
+		// session it left would register as a stray owner session.
+		if id != "" && onJob != nil {
+			onJob(id)
+		}
 		if claudeTrustPrompt(out) {
 			return claudeSessionFile{}, fmt.Errorf("Claude Code does not trust %s", path)
 		}

@@ -161,6 +161,9 @@ func (d *Daemon) startWithinBudget(ctx context.Context, caller string, p protoco
 	// that its outcome is never lost.
 	detached = true
 	d.noteAccepted(id)
+	// If the daemon stops before the start ends, the caller still hears of it.
+	// Held under mu, so the end of the start cannot be overwritten by it.
+	d.holdAcceptedStart(id, caller, p)
 	mu.Unlock()
 	d.Logf("worker.accepted start=%s project=%s harness=%s model=%s after=%dms", id, p.Project, p.Harness, p.Model, time.Since(began).Milliseconds())
 	if ctxErr != nil {
@@ -194,11 +197,10 @@ func (d *Daemon) reportAcceptedStart(id, caller string, p protocol.WorkerStartRe
 }
 
 // startReport sends the gateway the end of an accepted start, which makes the
-// notice to the caller. A gateway that does not know the frame cannot.
+// notice to the caller. A gateway that does not know the frame cannot. The
+// report is kept until the gateway has taken it (start_outcome.go).
 func (d *Daemon) startReport(ctx context.Context, r protocol.WorkerStartReport) {
-	if _, err := d.call(ctx, "worker.start_report", r); err != nil {
-		d.Logf("worker.start_report start=%s: %v", r.ID, err)
-	}
+	d.reportStartOutcome(ctx, startReportOutcomeKey(r.ID), outcomeStartReport, r)
 }
 
 // acceptedStart is what the daemon that took an accepted start knows of it, so

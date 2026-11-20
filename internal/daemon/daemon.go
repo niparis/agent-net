@@ -581,8 +581,15 @@ type Daemon struct {
 	recent map[string]recentWorker
 	// resumeMu serializes starting an ended worker again, so two messages
 	// from its owner cannot start two processes.
-	resumeMu      sync.Mutex
-	claudeStartMu sync.Mutex
+	resumeMu sync.Mutex
+	// outcomeBusy holds the keys of start reports that a send is working on
+	// now, so one report is not sent twice at once.
+	// strandedStopped holds the Claude sessions whose job was stopped as
+	// stranded, so the stop is not repeated on every poll.
+	strandedStopped sync.Map
+	outcomeMu       sync.Mutex
+	outcomeBusy     map[string]bool
+	claudeStartMu   sync.Mutex
 	// chiefStarting is set while the chief is being started (chief_start.go).
 	// It is a flag, not a lock: a start calls the gateway.
 	chiefStarting atomic.Bool
@@ -789,6 +796,13 @@ func (d *Daemon) Start(ctx context.Context) error {
 		d.wg.Add(1)
 		go func() { defer d.wg.Done(); d.integrationsLoop(ctx) }()
 	}
+	// A report held for a launch that the last daemon never finished is
+	// ready now: nothing of this daemon is launching yet.
+	if n, err := d.st.readyHeldStartOutcomes(); err != nil {
+		d.Logf("start outcome outbox: %v", err)
+	} else if n > 0 {
+		d.Logf("start outcome outbox: %d start(s) were launching when the last daemon stopped; their callers are told", n)
+	}
 	d.adoptWorkers()
 	close(d.adopted)
 	d.wg.Add(1)
@@ -940,6 +954,9 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 			d.wmu.Unlock()
 			infos[i].Mode = protocol.ModeBackground
 			infos[i].Name = ""
+		}
+		if harness == "claude" && d.strandedWorkerSession(infos[i]) {
+			continue
 		}
 		infos[i].Type = protocol.SessionType(harness, infos[i].Worker, infos[i].Type)
 		// A session whose process asks to stay off the network is not
