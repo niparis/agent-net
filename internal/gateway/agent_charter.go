@@ -10,7 +10,7 @@ import (
 // charter levels (charterTables). A long view also reads the graph and the
 // settings snapshot. Keep it equal to the queries there and in the resolver
 // (see readThrough).
-var shortAgentChartersTables = tableUnion([]string{"graph_charter"}, charterTables)
+var shortAgentChartersTables = tableUnion(charterTables)
 
 // applyAgentCharters adds only the public charter fields to agent views.
 func (s *Store) applyAgentCharters(agents []protocol.AgentView, short bool) error {
@@ -27,7 +27,7 @@ func (s *Store) applyAgentCharters(agents []protocol.AgentView, short bool) erro
 // applyAgentChartersWith takes the graph and snapshot the caller already read.
 // A short view does not use them.
 func (s *Store) applyAgentChartersWith(agents []protocol.AgentView, short bool, in agentViewInputs) error {
-	rows, err := s.db.Query(`SELECT node,attr,value FROM graph_charter WHERE attr IN ('purpose','maturity','accepts','refuses','feature_requests')`)
+	rows, err := s.db.Query(`SELECT scope,attr,value FROM charter_values WHERE level='repo' AND attr IN ('purpose','maturity','accepts','refuses','feature_requests')`)
 	if err != nil {
 		return err
 	}

@@ -22,6 +22,7 @@ func resetIdentityMigration(t *testing.T, s *Store) {
 	if version == 0 {
 		t.Fatal("identity migration missing")
 	}
+	restoreOldCharterTables(t, s)
 	if _, err := s.db.Exec(`DROP TABLE IF EXISTS project_display_names`); err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +51,7 @@ func identityFixture(t *testing.T, s *Store, folder, charter string) {
 	if _, err = s.db.Exec(`INSERT INTO graph_nodes VALUES(?, 'component', 1)`, folder); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec(`INSERT INTO graph_charter VALUES(?, 'purpose', ?, 1, 'owner')`, folder, charter); err != nil {
+	if _, err = s.db.Exec(`INSERT INTO charter_values VALUES('repo', ?, 'purpose', ?, 1, 'owner')`, folder, charter); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = s.db.Exec(`INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES(?, 'other', 'depends', '', 'normal')`, folder); err != nil {
@@ -88,7 +89,7 @@ func TestProjectIdentityMigration(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, q := range []string{
-			`SELECT count(*) FROM graph_charter WHERE node='agent-net' AND value='project purpose'`,
+			`SELECT count(*) FROM charter_values WHERE level='repo' AND scope='agent-net' AND value='project purpose'`,
 			`SELECT count(*) FROM projects WHERE name='agent-net'`,
 			`SELECT count(*) FROM sessions WHERE repo_project='agent-net'`,
 			`SELECT count(*) FROM graph_edges WHERE source='agent-net' AND target='other'`,
@@ -132,7 +133,7 @@ func TestProjectIdentityMigrationMergesChartersAndLogs(t *testing.T) {
 	}
 	defer g.Close()
 	var value string
-	if err = g.store.db.QueryRow(`SELECT value FROM graph_charter WHERE node='agent-net' AND attr='purpose'`).Scan(&value); err != nil {
+	if err = g.store.db.QueryRow(`SELECT value FROM charter_values WHERE level='repo' AND scope='agent-net' AND attr='purpose'`).Scan(&value); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(value, "first charter") || !strings.Contains(value, "second charter") {
@@ -172,9 +173,9 @@ func TestProjectIdentityMigrationConflictDoesNotBlockOtherProjects(t *testing.T)
 	}
 	defer g.Close()
 	for _, q := range []string{
-		`SELECT count(*) FROM graph_charter WHERE node='a2a-ocs' AND value='conflicting charter'`,
+		`SELECT count(*) FROM charter_values WHERE level='repo' AND scope='a2a-ocs' AND value='conflicting charter'`,
 		`SELECT count(*) FROM graph_node_settings WHERE node='agent-net' AND value='different'`,
-		`SELECT count(*) FROM graph_charter WHERE node='clean-repo' AND value='clean charter'`,
+		`SELECT count(*) FROM charter_values WHERE level='repo' AND scope='clean-repo' AND value='clean charter'`,
 		`SELECT count(*) FROM projects WHERE name='clean-repo'`,
 	} {
 		var n int

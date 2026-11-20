@@ -121,7 +121,7 @@ func learnedAdd(tx *sql.Tx, at int64, node, field, edgeKind, phrase, severity, o
 			return err
 		}
 		if err == nil {
-			err = tx.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, node, field).Scan(&current)
+			err = tx.QueryRow(`SELECT value FROM charter_values WHERE level='repo' AND scope=? AND attr=?`, node, field).Scan(&current)
 			if err != nil && err != sql.ErrNoRows {
 				return err
 			}
@@ -165,7 +165,7 @@ func learnedAdd(tx *sql.Tx, at int64, node, field, edgeKind, phrase, severity, o
 	}
 	// Critical nodes are always classified major, even before the application phase.
 	var maturity string
-	err = tx.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr='maturity'`, node).Scan(&maturity)
+	err = tx.QueryRow(`SELECT value FROM charter_values WHERE level='repo' AND scope=? AND attr='maturity'`, node).Scan(&maturity)
 	if err != nil && err != sql.ErrNoRows {
 		return err
 	}

@@ -278,7 +278,7 @@ func (g *Gateway) enableGraphRefsAutomatically(ctx context.Context) {
 		g.logLine("graph.cutover.deferred", "backup", backup, "blockers", len(blockers))
 		return
 	}
-	if _, err = tx.Exec(`INSERT OR IGNORE INTO agent_charter(agent_id,attr,value,updated_at,updated_by) SELECT c.node,c.attr,c.value,c.updated_at,c.updated_by FROM graph_charter c JOIN graph_nodes n ON n.name=c.node AND n.kind='architect'`); err != nil {
+	if _, err = tx.Exec(`INSERT OR IGNORE INTO charter_values(level,scope,attr,value,updated_at,updated_by) SELECT 'agent',c.scope,c.attr,c.value,c.updated_at,c.updated_by FROM charter_values c JOIN graph_nodes n ON n.name=c.scope AND n.kind='architect' WHERE c.level='repo'`); err != nil {
 		fail(err)
 		return
 	}

@@ -38,7 +38,7 @@ func seedRepo(t *testing.T, s *Store, repo, maturity string) {
 		t.Fatal(err)
 	}
 	if maturity != "" {
-		if _, err := s.db.Exec(`INSERT INTO graph_charter(node,attr,value,updated_at,updated_by) VALUES(?,'maturity',?,0,'owner')`, repo, maturity); err != nil {
+		if _, err := s.db.Exec(`INSERT INTO charter_values(level,scope,attr,value,updated_at,updated_by) VALUES('repo',?,'maturity',?,0,'owner')`, repo, maturity); err != nil {
 			t.Fatal(err)
 		}
 	}

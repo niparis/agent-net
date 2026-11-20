@@ -10,6 +10,7 @@ import (
 
 func TestCharterLevelsMigrationReplay(t *testing.T) {
 	s, _ := newTestStore(t)
+	restoreOldCharterTables(t, s)
 	attrs := map[string]string{"purpose": "purpose", "maturity": "mature - daily use", "accepts": "fixes", "refuses": "secrets", "feature_requests": "ideas", "escalate": "owner", "consumers": "clients", "needs": "database", "notes": "careful"}
 	for k, v := range attrs {
 		if _, err := s.db.Exec(`INSERT INTO graph_charter VALUES('example',?,?,1,'owner')`, k, v); err != nil {
@@ -26,22 +27,23 @@ func TestCharterLevelsMigrationReplay(t *testing.T) {
 	}
 	for i := 0; i < 2; i++ {
 		var maturity, note, rules string
-		if err := s.db.QueryRow(`SELECT value FROM graph_charter WHERE node='example' AND attr='maturity'`).Scan(&maturity); err != nil {
+		if err := s.db.QueryRow(`SELECT value FROM charter_values WHERE level='repo' AND scope='example' AND attr='maturity'`).Scan(&maturity); err != nil {
 			t.Fatal(err)
 		}
-		if err := s.db.QueryRow(`SELECT value FROM graph_charter WHERE node='example' AND attr='maturity_note'`).Scan(&note); err != nil {
+		if err := s.db.QueryRow(`SELECT value FROM charter_values WHERE level='repo' AND scope='example' AND attr='maturity_note'`).Scan(&note); err != nil {
 			t.Fatal(err)
 		}
-		if err := s.db.QueryRow(`SELECT value FROM graph_charter WHERE node='example' AND attr='rules'`).Scan(&rules); err != nil {
+		if err := s.db.QueryRow(`SELECT value FROM charter_values WHERE level='repo' AND scope='example' AND attr='rules'`).Scan(&rules); err != nil {
 			t.Fatal(err)
 		}
 		if maturity != "mature" || note != "daily use" || rules != "Consumers:\nclients\n\nNeeds:\ndatabase\n\nNotes:\ncareful" {
 			t.Fatalf("migration: %q %q %q", maturity, note, rules)
 		}
 		var n int
-		if err := s.db.QueryRow(`SELECT count(*) FROM graph_charter WHERE attr IN ('consumers','needs','notes')`).Scan(&n); err != nil || n != 0 {
+		if err := s.db.QueryRow(`SELECT count(*) FROM charter_values WHERE level='repo' AND attr IN ('consumers','needs','notes')`).Scan(&n); err != nil || n != 0 {
 			t.Fatalf("dropped: %d %v", n, err)
 		}
+		restoreOldCharterTables(t, s)
 		if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>?`, rewind); err != nil {
 			t.Fatal(err)
 		}

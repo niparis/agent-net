@@ -108,7 +108,7 @@ func TestSessionIdentityUsesSelectedAgentAndRepoSeparately(t *testing.T) {
 	if _, err := r.s.db.Exec(`UPDATE sessions SET agent_id='advisor' WHERE id=?`, r.caller); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.s.db.Exec(`INSERT INTO agent_charter VALUES('advisor','purpose','Advisor purpose',1,'owner')`); err != nil {
+	if _, err := r.s.db.Exec(`INSERT INTO charter_values VALUES('agent','advisor','purpose','Advisor purpose',1,'owner')`); err != nil {
 		t.Fatal(err)
 	}
 	c, err := r.s.resolveSessionContext(r.caller)

@@ -110,7 +110,7 @@ func (s *Store) ProcessLearnedContext(ctx context.Context) error {
 			class = "major"
 		}
 		var maturity string
-		err = tx.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr='maturity'`, v.Node).Scan(&maturity)
+		err = tx.QueryRow(`SELECT value FROM charter_values WHERE level='repo' AND scope=? AND attr='maturity'`, v.Node).Scan(&maturity)
 		if err != nil && err != sql.ErrNoRows {
 			return err
 		}
@@ -119,7 +119,7 @@ func (s *Store) ProcessLearnedContext(ctx context.Context) error {
 		}
 		if v.Field == "edge" {
 			maturity = ""
-			err = tx.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr='maturity'`, v.Phrase).Scan(&maturity)
+			err = tx.QueryRow(`SELECT value FROM charter_values WHERE level='repo' AND scope=? AND attr='maturity'`, v.Phrase).Scan(&maturity)
 			if err != nil && err != sql.ErrNoRows {
 				return err
 			}
@@ -157,7 +157,7 @@ func (s *Store) ProcessLearnedContext(ctx context.Context) error {
 			}
 		} else {
 			var old string
-			err = tx.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, v.Node, v.Field).Scan(&old)
+			err = tx.QueryRow(`SELECT value FROM charter_values WHERE level='repo' AND scope=? AND attr=?`, v.Node, v.Field).Scan(&old)
 			if err == sql.ErrNoRows {
 				err = nil
 			}

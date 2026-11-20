@@ -9,11 +9,11 @@ import (
 
 // learnedListTables are the tables OwnerLearned reads: the suggestions and their
 // details, phrase state and views, the history of a change (graph_history), the
-// graph charter and the drafts. The drafts' own-value check (draftOwnValue) reads
-// the agent and team charters, and the drafts' names (draftName) read the agents
+// charter values and the drafts. The drafts' own-value check (draftOwnValue)
+// reads the charter values, and the drafts' names (draftName) read the agents
 // and the teams. Keep it equal to those queries (see readThrough).
 var learnedListTables = []string{"learned_suggestions", "learned_suggestion_details", "learned_phrase_state",
-	"learned_views", "graph_history", "graph_charter", "charter_drafts", "agent_charter", "charter_values", "teams", "agents"}
+	"learned_views", "graph_history", "charter_drafts", "charter_values", "teams", "agents"}
 
 // ownerLearnedRows is what the owner's list reads from the database: every
 // suggestion, ready or not, and the pending drafts. OwnerLearned applies the
@@ -66,7 +66,7 @@ func (s *Store) ownerLearnedRead() (ownerLearnedRows, error) {
 			v.By = actor
 		}
 		if v.Status == "pending" && v.Field != "edge" {
-			err = s.db.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, v.Node, v.Field).Scan(&v.OldValue)
+			err = s.db.QueryRow(`SELECT value FROM charter_values WHERE level='repo' AND scope=? AND attr=?`, v.Node, v.Field).Scan(&v.OldValue)
 			if err != nil && err != sql.ErrNoRows {
 				return ownerLearnedRows{}, err
 			}
@@ -177,7 +177,7 @@ func (s *Store) decideLearned(id int64, action, actor string) error {
 			return reject("unsupported suggestion")
 		}
 		var old string
-		err = tx.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, v.Node, v.Field).Scan(&old)
+		err = tx.QueryRow(`SELECT value FROM charter_values WHERE level='repo' AND scope=? AND attr=?`, v.Node, v.Field).Scan(&old)
 		if err == sql.ErrNoRows {
 			err = nil
 		}
@@ -270,7 +270,7 @@ func (s *Store) settleLearnedDone() error {
 			}
 		} else {
 			var old string
-			err = s.db.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, v.Node, v.Field).Scan(&old)
+			err = s.db.QueryRow(`SELECT value FROM charter_values WHERE level='repo' AND scope=? AND attr=?`, v.Node, v.Field).Scan(&old)
 			if err == sql.ErrNoRows {
 				err = nil
 			}

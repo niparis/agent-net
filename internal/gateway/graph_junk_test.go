@@ -102,7 +102,7 @@ func TestGraphViewHidesOldEmptyImplicitProjects(t *testing.T) {
 func TestGraphJunkMigrationPreservesManagedNodes(t *testing.T) {
 	s, _ := newTestStore(t)
 	_, err := s.db.Exec(`INSERT INTO graph_nodes VALUES ('tmpabc123','component',1),('keep-charter','component',1),('keep-edge','component',1),('keep-history','component',1);
- INSERT INTO graph_charter VALUES ('keep-charter','purpose','useful',1,'owner');
+ INSERT INTO charter_values VALUES('repo','keep-charter','purpose','useful',1,'owner');
  INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES ('keep-edge','other','depends','','normal');
  INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor) VALUES ('node','keep-history','','','component',1,'owner');
  `)
@@ -119,6 +119,7 @@ func TestGraphJunkMigrationPreservesManagedNodes(t *testing.T) {
 	if migration == "" {
 		t.Fatal("missing graph cleanup migration")
 	}
+	restoreOldCharterTables(t, s)
 	if _, err := s.db.Exec(migration); err != nil {
 		t.Fatal(err)
 	}
