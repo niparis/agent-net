@@ -392,6 +392,50 @@ await test("agent_message_get sends the message ID the daemon reads", async () =
   await p.fire("session_shutdown", {});
 });
 
+await test("agent_message_withdraw sends the message ID the daemon reads", async () => {
+  const p = makePi();
+  extension(p.api);
+  try {
+    const n = hellos.length;
+    await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+    await until("hello", () => hellos.length === n + 1);
+    const before = requests.length;
+    await p.tools.get("agent_message_withdraw").execute("id", { message: "m_1" });
+    const sent = requests.slice(before).find((r) => r.method === "withdraw");
+    if (!sent || sent.params.message_id !== "m_1" || "message" in sent.params) throw new Error("withdraw request: " + JSON.stringify(sent));
+  } finally {
+    await p.fire("session_shutdown", {});
+  }
+});
+
+await test("every catalog field the daemon names differently is sent under that name", async () => {
+  const { TOOL_CATALOG } = await import(pathToFileURL(join(dir, "tools.gen.js")).href);
+  const renamed = TOOL_CATALOG.filter((tool) => Object.keys(tool.daemon_fields ?? {}).length > 0);
+  if (renamed.length === 0) throw new Error("the generated catalog has no renamed fields");
+  const p = makePi();
+  extension(p.api);
+  try {
+    const n = hellos.length;
+    await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+    await until("hello", () => hellos.length === n + 1);
+    for (const tool of renamed) {
+      const input = {};
+      for (const field of Object.keys(tool.daemon_fields)) input[field] = "V_" + field;
+      const before = requests.length;
+      await p.tools.get(tool.name).execute("id", input);
+      const sent = requests.slice(before).find((r) => r.method === tool.method);
+      if (!sent) throw new Error(tool.name + " sent no " + tool.method + " request");
+      for (const [field, daemonField] of Object.entries(tool.daemon_fields)) {
+        if (sent.params[daemonField] !== "V_" + field || field in sent.params) {
+          throw new Error(tool.name + ": " + field + " should reach " + tool.method + " as " + daemonField + ": " + JSON.stringify(sent.params));
+        }
+      }
+    }
+  } finally {
+    await p.fire("session_shutdown", {});
+  }
+});
+
 await test("a worker gets no announce rule and no reminder", async () => {
   process.env.AGENT_NET_WORKER = "1";
   try {

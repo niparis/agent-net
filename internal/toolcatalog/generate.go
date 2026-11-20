@@ -20,6 +20,9 @@ type PluginTool struct {
 	InputSchema json.RawMessage `json:"inputSchema"`
 	Roles       []Role          `json:"roles"`
 	Method      string          `json:"method"`
+	// DaemonFields maps the catalog input fields the daemon gets under another
+	// name to that name. See daemon_fields.go.
+	DaemonFields map[string]string `json:"daemon_fields"`
 }
 
 var pluginMethods = map[string]string{
@@ -73,7 +76,7 @@ func PluginTools() ([]PluginTool, error) {
 		if !ok {
 			return nil, fmt.Errorf("tool %q has no plugin daemon method mapping", tool.Name)
 		}
-		out = append(out, PluginTool{Name: tool.Name, Description: tool.Description, InputSchema: tool.InputSchema, Roles: roles, Method: method})
+		out = append(out, PluginTool{Name: tool.Name, Description: tool.Description, InputSchema: tool.InputSchema, Roles: roles, Method: method, DaemonFields: DaemonFields(tool.Name)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil

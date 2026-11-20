@@ -137,7 +137,7 @@ func addMessageWriteTools(s *mcp.Server, run func(context.Context, string, any) 
 			return toolError(err)
 		}
 		out, err := opResult(run(ctx, "withdraw", map[string]any{
-			"message_id": in.MessageID,
+			toolcatalog.DaemonField("agent_message_withdraw", "message"): in.MessageID,
 			"older_than": in.OlderThan,
 		}))
 		if err != nil {

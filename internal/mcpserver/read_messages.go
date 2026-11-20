@@ -14,6 +14,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/toolcatalog"
 )
 
 type roMessagesFindIn struct {
@@ -198,7 +199,7 @@ func roMessageKey(row roMessageRow) string { return row.key }
 // roLoadMessage is the one message read. agent_message_get and the
 // agent_message_get go through it.
 func roLoadMessage(ctx context.Context, call Caller, id string) (protocol.MessageResult, error) {
-	raw, err := call(ctx, "message_status", map[string]any{"message_id": id})
+	raw, err := call(ctx, "message_status", map[string]any{toolcatalog.DaemonField("agent_message_get", "message"): id})
 	if err != nil {
 		return protocol.MessageResult{}, err
 	}
@@ -228,7 +229,7 @@ func roAllMessages(ctx context.Context, call Caller, conversation string) ([]pro
 	seen := map[string]bool{}
 	offset := 0
 	for page := 0; page < 200; page++ {
-		raw, err := call(ctx, "messages", map[string]any{"conversation_id": conversation, "limit": 200, "offset": offset})
+		raw, err := call(ctx, "messages", map[string]any{toolcatalog.DaemonField("agent_messages_find", "conversation"): conversation, "limit": 200, "offset": offset})
 		if err != nil {
 			return nil, err
 		}
