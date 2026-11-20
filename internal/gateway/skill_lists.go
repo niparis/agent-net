@@ -809,11 +809,11 @@ func (s *Store) skillRestartOffer(level, scope string) protocol.SkillRestartOffe
 // --- suggest ---
 
 // skillNodeContext is the text a suggestion matches skills against. It holds
-// only what the node says about itself: the charter values set at its own
-// level, a Team's purpose, a repo's description, name and remote, and an Agent's
-// profile. Values inherited from the global and Team levels, and the project's
-// bar, are the same agent-net boilerplate on every node, so they never pick a
-// skill.
+// only what the node says it is: the purpose, a repo's description and name,
+// and an Agent's function and expertise. Process attributes (rules, refuses,
+// escalate, maturity and the like) are the same agent-net vocabulary on every
+// node, and inherited levels and the project's bar repeat it, so none of them
+// picks a skill.
 func (s *Store) skillNodeContext(level, scope, repoCtx string) (string, error) {
 	var parts []string
 	add := func(query string, args ...any) error {
@@ -833,35 +833,32 @@ func (s *Store) skillNodeContext(level, scope, repoCtx string) (string, error) {
 	}
 	switch level {
 	case "global":
-		if err := add(`SELECT value FROM charter_values WHERE level='global' AND scope='' ORDER BY attr`); err != nil {
+		if err := add(`SELECT value FROM charter_values WHERE level='global' AND scope='' AND attr='purpose'`); err != nil {
 			return "", err
 		}
 	case "team":
-		if err := add(`SELECT value FROM charter_values WHERE level='team' AND scope=? ORDER BY attr`, scope); err != nil {
+		if err := add(`SELECT value FROM charter_values WHERE level='team' AND scope=? AND attr='purpose'`, scope); err != nil {
 			return "", err
 		}
 		if err := add(`SELECT purpose FROM teams WHERE id=?`, scope); err != nil {
 			return "", err
 		}
 	case "agent":
-		if err := add(`SELECT value FROM agent_charter WHERE agent_id=? ORDER BY attr`, scope); err != nil {
+		if err := add(`SELECT value FROM agent_charter WHERE agent_id=? AND attr='purpose'`, scope); err != nil {
 			return "", err
 		}
-		if err := add(`SELECT COALESCE(p.name,'')||' '||COALESCE(p.function,'')||' '||COALESCE(p.task,'')||' '||COALESCE(p.expertise,'')
+		if err := add(`SELECT COALESCE(p.function,'')||' '||COALESCE(p.expertise,'')
 			FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
 			WHERE s.agent_id=? ORDER BY s.last_seen DESC LIMIT 1`, scope); err != nil {
 			return "", err
 		}
 	}
 	if repoCtx != "" {
-		if err := add(`SELECT value FROM graph_charter WHERE node=? ORDER BY attr`, repoCtx); err != nil {
+		if err := add(`SELECT value FROM graph_charter WHERE node=? AND attr='purpose'`, repoCtx); err != nil {
 			return "", err
 		}
 		parts = append(parts, repoCtx)
 		if err := add(`SELECT repo_description FROM sessions WHERE repo_project=? AND repo_description<>'' ORDER BY last_seen DESC LIMIT 1`, repoCtx); err != nil {
-			return "", err
-		}
-		if err := add(`SELECT remote FROM projects WHERE name=? AND remote<>'' LIMIT 1`, repoCtx); err != nil {
 			return "", err
 		}
 	}
@@ -873,9 +870,9 @@ var skillWordSplit = regexp.MustCompile(`[^a-z0-9]+`)
 var skillStopwords = func() map[string]bool {
 	out := map[string]bool{}
 	// The filler words are the ones a repo's own text uses without saying what
-	// it is. The last groups are agent-net's own vocabulary, which every node's
-	// charter and sessions carry, and the hosts a remote URL names.
-	for _, word := range strings.Fields("this that with from your when then will have been does what into over under about they them their there here which where while should could would must only also just make made more most some such than the and for not are was were you our its his her has had how why who all any can may use used using none still whether needs need needed hand live data json request requests state like keep each other same very much well first last next before after between through during within without across every file files uses work works main agent agents node nodes session sessions claude codex harness charter maturity skill skills repo repos project projects github gitlab bitbucket") {
+	// it is. The last group is agent-net's own vocabulary, which every node's
+	// purpose and sessions carry.
+	for _, word := range strings.Fields("this that with from your when then will have been does what into over under about they them their there here which where while should could would must only also just make made more most some such than the and for not are was were you our its his her has had how why who all any can may use used using none still whether needs need needed hand live data json request requests state like keep each other same very much well first last next before after between through during within without across every file files uses work works main agent agents node nodes session sessions claude codex harness charter maturity skill skills repo repos project projects") {
 		out[word] = true
 	}
 	return out

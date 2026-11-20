@@ -458,3 +458,54 @@ func TestSkillSuggestMatchesOwnTextNotInheritedBoilerplate(t *testing.T) {
 		t.Fatalf("voicemechs suggested %+v, want only threejs-browser-games", got.Skills)
 	}
 }
+
+// TestSkillSuggestIgnoresProcessWordsInOwnCharter gives the repo its own
+// process attributes (rules, refuses, escalate, maturity_note) in the words
+// every agent-net node carries. Only the purpose and the description say what
+// the repo is, so only those may pick a skill.
+func TestSkillSuggestIgnoresProcessWordsInOwnCharter(t *testing.T) {
+	g := archiveGateway(t)
+	s := g.store
+	seedRepo(t, s, "voicemechs", "")
+	seedCharterAttr(t, s, "voicemechs", "purpose", "Three.js browser game: vanilla TypeScript, Vite and imperative Three.js.")
+	seedCharterAttr(t, s, "voicemechs", "rules", "Never deploy without owner test. Send ideas and questions to the owner.")
+	seedCharterAttr(t, s, "voicemechs", "refuses", "Deploys during a freeze. Owner notes without a test.")
+	seedCharterAttr(t, s, "voicemechs", "escalate", "Owner idea requests and deploy questions.")
+	seedCharterAttr(t, s, "voicemechs", "maturity_note", "Never shipped: the owner has not tested it yet.")
+	if _, err := s.db.Exec(`INSERT INTO sessions(id,node_id,harness,native_id,repo_project,repo_description,last_seen,online)
+		VALUES('s_x','n','claude','x','voicemechs','Three.js browser game: vanilla TypeScript, Vite and imperative Three.js',0,1)`); err != nil {
+		t.Fatal(err)
+	}
+	seedFillerArchive(t, s)
+	seedArchiveSkill(t, s, "threejs-browser-games", 1, 40, "Build browser game scenes with Three.js, TypeScript and Vite.", "t")
+	seedArchiveSkill(t, s, "honeycomb-traces", 1, 40, "Query Honeycomb traces for latency.", "h")
+	seedArchiveSkill(t, s, "trading-research", 1, 40, "Research trading ideas and market state for the owner.", "r")
+	seedArchiveSkill(t, s, "owner-workers", 1, 40, "Route questions, notes and reports between owner and workers.", "o")
+	seedArchiveSkill(t, s, "deploy-freeze", 1, 40, "Freeze deploys when the release train never passes its test.", "f")
+	got, err := g.skillSuggest(protocol.SkillSuggestRequest{Level: "repo", Scope: "voicemechs", By: "cto"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Skills) != 1 || got.Skills[0].Name != "threejs-browser-games" {
+		t.Fatalf("voicemechs suggested %+v, want only threejs-browser-games", got.Skills)
+	}
+}
+
+// TestSkillSuggestMatchesDistinctiveWordInPurpose checks that a word from the
+// repo's purpose still picks a skill when that word is rare in the archive.
+func TestSkillSuggestMatchesDistinctiveWordInPurpose(t *testing.T) {
+	g := archiveGateway(t)
+	s := g.store
+	seedRepo(t, s, "ingest-forge", "")
+	seedCharterAttr(t, s, "ingest-forge", "purpose", "Ingest web pages and posts into the knowledge store.")
+	seedFillerArchive(t, s)
+	seedArchiveSkill(t, s, "process-inbox", 1, 40, "Process inbox items and ingest each one.", "p")
+	seedArchiveSkill(t, s, "honeycomb-traces", 1, 40, "Query Honeycomb traces for latency.", "h")
+	got, err := g.skillSuggest(protocol.SkillSuggestRequest{Level: "repo", Scope: "ingest-forge", By: "cto"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Skills) != 1 || got.Skills[0].Name != "process-inbox" {
+		t.Fatalf("ingest-forge suggested %+v, want only process-inbox", got.Skills)
+	}
+}
