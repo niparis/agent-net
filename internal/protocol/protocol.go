@@ -647,7 +647,11 @@ type (
 		// sender. The body may be empty and an outcome is refused. The request
 		// then counts as answered for reminders, the TUI's wait/owes view and
 		// idle checks.
-		Ack      bool   `json:"ack,omitempty"`
+		Ack bool `json:"ack,omitempty"`
+		// Progress marks an interim update to an open request or order. The
+		// reply is delivered and counts as activity, but leaves the parent
+		// request or order open.
+		Progress bool   `json:"progress,omitempty"`
 		Type     string `json:"message_type"`
 		Body     string `json:"body"`
 		ParentID string `json:"parent_message_id,omitempty"`

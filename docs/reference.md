@@ -3807,7 +3807,17 @@ For a node with `ask` merge authority, request approval for the exact merge usin
 
 `agent_message_reply` accepts optional `outcome`: `accept`, `reject`, `redirect` or `escalate`. Reject, redirect and escalate need `reason`; redirect also needs `redirect_to` (a node name), and escalate needs `recommendation`. Each text field is limited to 2048 bytes, and the node name to the project name limit. Control characters are removed. Outcomes apply to replies to requests. The gateway records the request's source and target project names, request and reply IDs, outcome, reason, redirect, recommendation and time. Projects unknown to the sessions appear as empty names.
 
-A request that needs no answer is closed with `ack: true` instead. The body may be empty, and `ack` cannot be combined with `outcome`. The gateway stores an `ack` message from the recipient and marks the request `acknowledged`, so `agent_message_status` and `agent_message_get` show the acknowledgement. Nothing is delivered to the sender and it is not woken. An acknowledged request counts as answered everywhere: no reminder follows, and it is no longer owed in the Sessions tab or in the idle check.
+A request that needs no answer is closed with `ack: true` instead. The body may be empty, and `ack` cannot be combined with `outcome` or `progress`. The gateway stores an `ack` message from the recipient and marks the request `acknowledged`, so `agent_message_status` and `agent_message_get` show the acknowledgement. Nothing is delivered to the sender and it is not woken. An acknowledged request counts as answered everywhere: no reminder follows, and it is no longer owed in the Sessions tab or in the idle check.
+
+An interim update is sent with `progress: true`. A progress reply is delivered to the sender and counts as activity for the recipient, but leaves the parent request or order open. A reply without the flag is final and closes the request.
+
+### Owed replies
+
+An open request or order with no final reply, whose recipient has been idle for `messages.owed_reply_nudge_after` (default 15m) since its last activity, receives one automatic reminder nudge from agent-net (decision [0177](decisions/0177-owed-replies.md)): `You still owe <sender name> a final reply to <message id> (<first line>). Reply with the result, or hand back.` A recipient that is busy, waiting on the owner (an explicit wait or an open ask), or waiting on others (a running worker it started, or a claimed delivery step) is skipped. Withdrawn and expired requests are skipped.
+
+If there is still no final reply `messages.owed_reply_ask_after` (default 10m) after the nudge, agent-net raises one ask routed to the chief of staff (`next_who chief`). The ask names the chain: who waits on whom, since when, the message id and its first line, the nudge time, and the sender's lead if any. Exactly one nudge and one ask are raised per request. A final reply before the nudge or ask stops the chain.
+
+The settings `messages.owed_reply_nudge_after` (default `15m`) and `messages.owed_reply_ask_after` (default `10m`) are available at the network, team and repo levels.
 
 A rejection or escalation of another agent's request appears as a separate Inbox entry until the owner resolves it. The entry shows the request's first line, outcome, reason and recommendation. Press `s` to let the decision stand or `O` to overrule it. Letting it stand sends the receiving session a notice that its decision stands. Overrule sends the original request again from the owner with the agent-net note `the owner overrules: do it.` The operator method is `outcome_overrule` with `reply_id` and `action` (`let_stand` or `overrule`).
 
@@ -4885,6 +4895,7 @@ sessions of its current agent members and sessions in member repos.
 | `wake_failed` | The recipient is offline and could not be woken |
 | `member_blocked` | A member is blocked or waiting, sent to its lead |
 | `redirect_reminder` | A redirected or handed-off request still has no reply |
+| `owed_reply` | You still owe a final reply to an open request or order |
 
 The target is the recipient of the automatic message. Pauses suppress message
 creation and leave each mechanism's bookkeeping unchanged. Nothing accumulates

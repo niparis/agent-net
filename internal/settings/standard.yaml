@@ -182,6 +182,22 @@ settings:
     levels: [network, repo, agent]
     default: 5
     live: true
+  - key: messages.owed_reply_nudge_after
+    description: How long an idle recipient may owe an open request or order before receiving an automatic reminder nudge.
+    kind: advice
+    type: duration
+    min: "0s"
+    levels: [network, team, repo]
+    default: "15m"
+    live: true
+  - key: messages.owed_reply_ask_after
+    description: How long after the reminder nudge an unanswered request or order waits before raising an ask to the chief of staff.
+    kind: advice
+    type: duration
+    min: "0s"
+    levels: [network, team, repo]
+    default: "10m"
+    live: true
   - key: cto.requests_per_hour
     description: How many new conversations with the CTO a lead-level agent may start in one hour; later requests wait for the window.
     kind: rule
@@ -1058,7 +1074,7 @@ settings:
     kind: advice
     type: text
     levels: [network]
-    default: "- **Keep messages short and complete.** Put the point in the first line. Give the context it cannot see (repo, branch, files). One message per need. No status updates, thanks or acknowledgements. A status report or FYI that needs no answer is sent with type \"notification\"; agent_message_reply with ack: true closes a request that needs no answer."
+    default: "- **Keep messages short and complete.** Put the point in the first line. Give the context it cannot see (repo, branch, files). One message per need. No status updates, thanks or acknowledgements. A status report or FYI that needs no answer is sent with type \"notification\"; agent_message_reply with ack: true closes a request that needs no answer. Use progress: true for interim updates; a request stays owed until a final reply."
     live: true
   - key: guidance.announce_task
     rows: [13]

@@ -1981,6 +1981,10 @@ func openStoreWith(path string, o storeOpen) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("external merge repair: %w", err)
 	}
+	if err := s.initOwedRepliesLiveSince(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("owed replies live since: %w", err)
+	}
 	if err := s.backfillDeliveryTasks(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("delivery task backfill: %w", err)
@@ -5217,7 +5221,7 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 			}
 		}
 	}
-	if m.Type == protocol.TypeReply {
+	if m.Type == protocol.TypeReply && !p.Progress {
 		// A team lead's answer to a question of its member closes the ask.
 		if err := s.closeLeadAsk(tx, m); err != nil {
 			return msg, false, err
@@ -5234,7 +5238,7 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 				m.ParentID, m.ParentID, protocol.StateAcknowledged); err != nil {
 				return msg, false, err
 			}
-		} else {
+		} else if !p.Progress {
 			if err := s.storeHandoffCopy(tx, m.ParentID, m); err != nil {
 				return msg, false, err
 			}
@@ -5245,9 +5249,16 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 			if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id=? AND EXISTS (SELECT 1 FROM messages WHERE id=? AND state='replied')`, m.ParentID, m.ParentID); err != nil {
 				return msg, false, err
 			}
+			if _, err := tx.Exec(`UPDATE inbox_items SET status='closed', answer='replied', answered_at=? WHERE source_ref=? AND status='open'`, now.UnixNano(), "owed-ask:"+m.ParentID); err != nil {
+				return msg, false, err
+			}
+		} else {
+			if err := s.storeHandoffCopy(tx, m.ParentID, m); err != nil {
+				return msg, false, err
+			}
 		}
 	}
-	if m.ParentID != "" {
+	if m.ParentID != "" && !p.Progress {
 		state := protocol.StateReplied
 		if m.Type == protocol.TypeAck {
 			state = protocol.StateAcknowledged
@@ -5257,7 +5268,7 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 			return msg, false, err
 		}
 	}
-	if threaded && m.Type == protocol.TypeReply {
+	if threaded && (m.Type == protocol.TypeReply || m.Type == "" || m.Type == "message") && !p.Progress {
 		// A reply to a handed-off request also goes to the lead as a copy.
 		var handed string
 		err := tx.QueryRow(`SELECT id FROM messages WHERE conversation_id=? AND sender=? AND recipient=? AND type=? AND handed_off_by<>'' ORDER BY rowid DESC LIMIT 1`,
@@ -5272,13 +5283,20 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		}
 		// A reply to the conversation answers every open request there from
 		// its recipient, as the reminder check already counts it.
-		if _, err := tx.Exec(`UPDATE messages SET state = ? WHERE conversation_id = ? AND sender = ? AND recipient = ? AND type = ? AND state IN (?,?,?)`,
+		if _, err := tx.Exec(`UPDATE messages SET state = ? WHERE conversation_id = ? AND sender = ? AND recipient = ? AND (type = ? OR is_order = 1) AND state IN (?,?,?)`,
 			protocol.StateReplied, m.ConversationID, m.To, m.From, protocol.TypeRequest,
 			protocol.StateStored, protocol.StateDispatched, protocol.StateDelivered); err != nil {
 			return msg, false, err
 		}
-		if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id IN (SELECT id FROM messages WHERE conversation_id = ? AND sender = ? AND recipient = ? AND type = ? AND state = ?)`,
+		if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id IN (SELECT id FROM messages WHERE conversation_id = ? AND sender = ? AND recipient = ? AND (type = ? OR is_order = 1) AND state = ?)`,
 			m.ConversationID, m.To, m.From, protocol.TypeRequest, protocol.StateReplied); err != nil {
+			return msg, false, err
+		}
+		if _, err := tx.Exec(`UPDATE inbox_items SET status='closed', answer='replied', answered_at=?
+			WHERE status='open' AND source_ref IN (
+				SELECT 'owed-ask:'||id FROM messages
+				WHERE conversation_id=? AND sender=? AND recipient=? AND (type=? OR is_order=1)
+			)`, now.UnixNano(), m.ConversationID, m.To, m.From, protocol.TypeRequest); err != nil {
 			return msg, false, err
 		}
 	}
@@ -5291,6 +5309,11 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 	// stuck delivery to it is still reported.
 	if _, err := tx.Exec(`UPDATE sessions SET harness_activity=MAX(harness_activity,?) WHERE id=? AND status='busy'`, now.UnixNano(), m.From); err != nil {
 		return msg, false, err
+	}
+	if p.Progress {
+		if _, err := tx.Exec(`UPDATE sessions SET harness_activity=MAX(harness_activity,?), last_active=MAX(last_active,?) WHERE id=?`, now.UnixNano(), now.UnixNano(), m.From); err != nil {
+			return msg, false, err
+		}
 	}
 	detail := strings.TrimPrefix(pairs("type", m.Type, "to", m.To, "bytes", len(m.Body)), " ")
 	if m.FromCTO {

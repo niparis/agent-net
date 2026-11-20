@@ -40,6 +40,7 @@ type messageReplyIn struct {
 	Message        string `json:"message"`
 	Body           string `json:"body"`
 	Ack            bool   `json:"ack,omitempty"`
+	Progress       bool   `json:"progress,omitempty"`
 	Outcome        string `json:"outcome,omitempty"`
 	Reason         string `json:"reason,omitempty"`
 	RedirectTo     string `json:"redirect_to,omitempty"`
@@ -120,6 +121,9 @@ func addMessageWriteTools(s *mcp.Server, run func(context.Context, string, any) 
 		}
 		if in.Ack && outcome.Outcome != "" {
 			return toolError(errors.New("ack cannot be combined with outcome; ack closes the request without a reply"))
+		}
+		if in.Ack && in.Progress {
+			return toolError(errors.New("ack cannot be combined with progress; ack closes the request without a reply"))
 		}
 		if strings.TrimSpace(in.Body) == "" && !in.Ack {
 			return toolError(errors.New(`body is empty; pass a body, or set ack: true to close a request that needs no answer`))

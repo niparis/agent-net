@@ -117,6 +117,7 @@ func (d *Daemon) localReply(ctx context.Context, lc *localConn, raw json.RawMess
 		MessageID      string `json:"message_id"`
 		Body           string `json:"body"`
 		Ack            bool   `json:"ack"`
+		Progress       bool   `json:"progress"`
 		AsOwner        bool   `json:"as_owner"`
 		IdempotencyKey string `json:"idempotency_key"`
 		Receipt        bool   `json:"receipt"`
@@ -136,6 +137,9 @@ func (d *Daemon) localReply(ctx context.Context, lc *localConn, raw json.RawMess
 	if p.Ack && p.Outcome != "" {
 		return nil, errors.New("ack cannot be combined with outcome")
 	}
+	if p.Ack && p.Progress {
+		return nil, errors.New("ack cannot be combined with progress")
+	}
 	data, err := d.call(ctx, "query.message", protocol.QueryMessage{MessageID: p.MessageID})
 	if err != nil {
 		return nil, err
@@ -151,7 +155,7 @@ func (d *Daemon) localReply(ctx context.Context, lc *localConn, raw json.RawMess
 		kind = protocol.TypeAck
 	}
 	data, err = d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: parent.Message.From,
-		Type: kind, Body: p.Body, ParentID: p.MessageID, IdempotencyKey: p.IdempotencyKey, ReplyOutcome: p.ReplyOutcome, Ack: p.Ack, FromCTO: p.AsOwner, OwnerApproved: p.AsOwner})
+		Type: kind, Body: p.Body, ParentID: p.MessageID, IdempotencyKey: p.IdempotencyKey, ReplyOutcome: p.ReplyOutcome, Ack: p.Ack, Progress: p.Progress, FromCTO: p.AsOwner, OwnerApproved: p.AsOwner})
 	if err == nil && sid == d.ctoSessionID() {
 		err = d.recordCTOSent(ctx, parent.Message.From, p.AsOwner)
 	}

@@ -182,9 +182,15 @@ func shippedLockLines(dir, ref, rel string) (lines []string, skip string) {
 	if _, err := exec.LookPath("git"); err != nil {
 		return nil, "git is not installed"
 	}
-	out, err := exec.Command("git", "-C", dir, "show", ref+":"+rel).Output()
+	targetRef := ref
+	if mb, err := exec.Command("git", "-C", dir, "merge-base", "HEAD", ref).Output(); err == nil {
+		if trimmed := strings.TrimSpace(string(mb)); trimmed != "" {
+			targetRef = trimmed
+		}
+	}
+	out, err := exec.Command("git", "-C", dir, "show", targetRef+":"+rel).Output()
 	if err != nil {
-		return nil, fmt.Sprintf("%s has no %s (%v)", ref, rel, err)
+		return nil, fmt.Sprintf("%s has no %s (%v)", targetRef, rel, err)
 	}
 	return strings.Fields(string(out)), ""
 }
