@@ -32,7 +32,7 @@ Reduce the schema from 155 tables and 1158 columns to 118 tables and 1042 column
 | 5 | Delivery and messages: fold `delivery_revision_stats`, `delivery_step_inbox`, `message_files`. | 3 |
 | 6 | Small same-key folds: `learned_phrase_state`, `learned_suggestion_details`, `session_wake_failures`, `retired_session_wakes`, `worker_defect_auto`, `model_successes`, `member_blocked_ticks`. Derive `friction_status` from its history. | 8 |
 | 7 | One `tool_plans` with a kind (takes `mcp_import_plans`, `mcp_native_plans`). One OAuth attempts table (takes `oauth_registration_attempts`). | 3 |
-| 8 | New `gateway_state(key, value, updated_at)`: takes `graph_cutover_state`, `graph_ref_gate`, `skill_archive_meta` and the 11 marker rows of `owner_settings`. `graph_node_settings` moves into `setting_values`. | 4 (1 new) |
+| 8 | New `gateway_state(key, value, updated_at)`: takes `graph_cutover_state`, `graph_ref_gate`, `skill_archive_meta` and the 12 marker rows of `owner_settings`. `graph_node_settings` moves into `setting_values`. | 4 (1 new) |
 | 9 | History: stop the team lead double write, then move `team_history` into `graph_history`. | 1 |
 | 10 | `graph_nodes` into `repos`, with its six triggers. | 1 |
 

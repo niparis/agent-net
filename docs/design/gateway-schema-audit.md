@@ -11,7 +11,7 @@ Date: 2026-11-20. Read-only analysis for the agent-net lead. No product code cha
 | Change | -37 (24%) | -116 (10%) |
 
 - 117 tables stay as they are. The schema is large mostly because the product keeps many kinds of things. It is not large because of waste.
-- 7 tables can be dropped. 4 of them need no code change.
+- 7 tables can be dropped. 3 of them need no code change.
 - 27 tables fold into a table that already exists, and 1 is replaced by a query. Most are side tables with the same key as their parent.
 - 3 one-row tables become rows of one new key-value table, `gateway_state`.
 - The audit found two more places where one decision is kept twice (proposal 0163): team lead history, and the repo lead.
@@ -113,7 +113,7 @@ Columns: W = statements that write, R = statements that read, both in production
 | `oauth_pending` | Pending device and browser sign-ins | 15 | 0 | 10: oauth_store.go:111, oauth_store.go:172 | 12: oauth_store.go:189, oauth_store.go:207 | **keep**. empty but used; 2 columns no code names |
 | `oauth_registration_attempts` | Client registrations per source, for the rate limit | 2 | 0 | 3: oauth_store.go:122, oauth_store.go:125 | 1: oauth_store.go:101 | **merge into oauth_code_misses**. same two columns (source, time) |
 | `outcome_overrules` | Outcomes the owner overruled | 2 | 3 | 1: store_outcome.go:85 | 1: store.go:4683 | **keep** |
-| `owner_settings` | Key-value store: owner settings and one-time markers | 3 | 23 | 34: cto_settings.go:47, cto_settings.go:90 (+1 in migrations) | 57: cto_settings.go:23, cto_settings.go:54 (+1 in migrations) | **keep**. 11 of 23 rows are markers; they move to gateway_state |
+| `owner_settings` | Key-value store: owner settings and one-time markers | 3 | 23 | 34: cto_settings.go:47, cto_settings.go:90 (+1 in migrations) | 57: cto_settings.go:23, cto_settings.go:54 (+1 in migrations) | **keep**. 12 of 23 rows are markers; they move to gateway_state |
 | `permission_proposals` | Permission changes proposed by agents | 15 | 23 | 7: permissions.go:216, permissions.go:552 | 6: permissions.go:420, permissions.go:475 | **keep** |
 | `pick_candidates` | Every candidate of every automatic worker pick | 39 | 3716 | 1: worker_assessment.go:83 | 0 | **keep**. no reader in the gateway; read by tools/pickerreplay and research/picker-ml |
 | `playbook` | Notes about models and harnesses | 11 | 15 | 4: track.go:352, track.go:360 (+3 in migrations) | 3: track.go:379, track.go:390 | **keep** |
@@ -128,7 +128,7 @@ Columns: W = statements that write, R = statements that read, both in production
 | `quota_blocks` | Provider quota blocks per machine | 7 | 4 | 1: store_record.go:594 | 1: store_record.go:603 | **keep** |
 | `quota_budgets` | Learned token budget per provider window | 4 | 2 | 1: quota_burn.go:107 | 1: quota_burn.go:72 | **keep** |
 | `repo_held_back` | Held-back flag of a repo | 2 | 0 | 4: authority.go:221, authority.go:223 | 2: authority.go:60, place_node.go:144 | **columns of repos**. one row per repo; empty |
-| `repo_leads` | Lead override of a repo | 2 | 3 | 3: store_graph.go:728, store_graph.go:730 | 12: lead_session.go:59, store.go:4343 (+5 in migrations) | **columns of repos**. read as COALESCE(repo_leads.agent_id, repos.owner_agent_id) in 8 places |
+| `repo_leads` | Lead override of a repo | 2 | 3 | 3: store_graph.go:728, store_graph.go:730 | 12: lead_session.go:59, store.go:4343 (+5 in migrations) | **columns of repos**. read as COALESCE(repo_leads.agent_id, repos.owner_agent_id) in 5 places |
 | `repo_start_reservations` | Short reservation while a repo session starts | 6 | 0 | 7: session_max.go:32, session_max.go:39 | 2: session_max.go:62, session_max.go:70 | **keep**. empty but used |
 | `repos` | The repos of the org tree | 5 | 43 | 1: graph_lifecycle.go:83 (+18 in migrations) | 44: lead_session.go:58, authority.go:203 (+8 in migrations) | **keep** |
 | `retired_session_wakes` | Last wake attempt of a retired session | 2 | 37 | 1: session_wake.go:32 | 0 | **columns of session_wakes**. same key; read through its upsert (session_wake.go:32) |
@@ -212,8 +212,8 @@ Columns: W = statements that write, R = statements that read, both in production
 ### One decision in two places (proposal 0163)
 
 1. **Team lead history, new.** A lead change writes `graph_history` and `team_history` in the same transaction: `store_graph.go:747` and `751`, `leads_max.go:211` and `215`. This is the same defect as the charter and scope double writes.
-2. **Repo lead, new.** `repos.owner_agent_id` holds the lead and `repo_leads` holds an override. Readers must write `COALESCE(repo_leads.agent_id, repos.owner_agent_id)`, and 8 places do (`lead_session.go:59`, `node_scopes.go:241` and `374`, `graph_refs.go:190`, `place_node.go:78`, `org_read.go:20`, and others). A reader that forgets the override gets the wrong lead. Live data: 3 override rows, and only 1 equals the owner column.
-3. **Charter values.** Three tables with the same five columns: `graph_charter` (61 rows, repo nodes), `agent_charter` (43 rows) and `charter_values` (6 rows, global and team). `charter_values` already has a level and a scope, so it can hold all three.
+2. **Repo lead, new.** `repos.owner_agent_id` holds the lead and `repo_leads` holds an override. Readers must write `COALESCE(repo_leads.agent_id, repos.owner_agent_id)`, and 5 places do (`lead_session.go:59`, `node_scopes.go:374`, `graph_refs.go:190`, `place_node.go:78`, `org_read.go:20`). A sixth, `node_scopes.go:241`, reads both with a `UNION`. A reader that forgets the override gets the wrong lead. Live data: 3 override rows, and only 1 equals the owner column.
+3. **Charter values.** Three tables with the same shape (`charter_values` adds a level and a scope in place of the node or agent key): `graph_charter` (61 rows, repo nodes), `agent_charter` (43 rows) and `charter_values` (6 rows, global and team). `charter_values` already has a level and a scope, so it can hold all three.
 4. **Node version.** `node_graph_refs.version` repeats `nodes.version` (equal for 2 of 2 machines).
 5. **Worker facts on ratings.** `worker_ratings`, `worker_defects` and `worker_rate_offers` each carry `harness`, `model`, `effort` and `difficulty`, which `worker_runs` also holds. For 542 of 744 ratings the copy differs from the run, because the run stores the model with its effort (`gpt-6-luna:xhigh`) and the rating stores them apart. This is not in the plan below, because the picker reads these columns. It needs its own decision on which side is right.
 
@@ -241,7 +241,7 @@ These hold at most one row per parent row and are read with the parent.
 | Table | Verdict |
 |---|---|
 | `graph_cutover_state`, `graph_ref_gate`, `skill_archive_meta` | Rows of the new `gateway_state(key, value, updated_at)`. |
-| `owner_settings` | Stays. 11 of its 23 rows are markers and not settings: `rework_backfill_done`, `task_rework_backfill_done`, `asks_moved_on_cleanup_v1`, `front_door_flush_v1`, `cto_default_charter_v1`, `org_tree_built`, `node_scopes_seeded`, `cto_legacy_route_start`, `owed_replies_live_since`, and the three `chief.brief_last_*` keys. They move to `gateway_state`. `owner_settings` is in three topic lists, so today a marker write refreshes the Nodes, Workers and Inbox screens for nothing. |
+| `owner_settings` | Stays. 12 of its 23 rows are markers and not settings: `rework_backfill_done`, `task_rework_backfill_done`, `asks_moved_on_cleanup_v1`, `front_door_flush_v1`, `cto_default_charter_v1`, `org_tree_built`, `node_scopes_seeded`, `cto_legacy_route_start`, `owed_replies_live_since`, and the three `chief.brief_last_*` keys. They move to `gateway_state`. `owner_settings` is in three topic lists, so today a marker write refreshes the Nodes, Workers and Inbox screens for nothing. |
 | `setting_revision` | Stays. It is read inside settings transactions in 13 places. |
 | `table_versions` | Stays. Triggers move it and the runs cache reads it. |
 | `app_refresh_budget` | Stays. It has one row today but its key is the token family. |
@@ -324,12 +324,12 @@ Each part ships alone. Order matters only where stated. Sizes are counts of stat
 |---|---|---|---|
 | 1 | Drop migration (see the list below). Remove the `session_agent_history` writer and the `playbook_notes` name in `topic_events.go:15`. | 7 | 3 |
 | 2 | `nodes`: fold `node_health`, `node_tailscale`, `node_time_zones`, `node_silence`, `node_graph_refs`, `inventory_reports`. Move the topic lists that read `nodes` to column keys. | 6 | 30 |
-| 3 | `repos`: add `archived`, `held_back`, `lead_agent_id`. One helper returns the lead, and the 8 `COALESCE` copies go. | 3 | 43 |
+| 3 | `repos`: add `archived`, `held_back`, `lead_agent_id`. One helper returns the lead, and the 5 `COALESCE` copies go. | 3 | 43 |
 | 4 | One charter store: move `agent_charter` and `graph_charter` into `charter_values` with levels `agent` and `repo`. | 2 | 43 |
 | 5 | Delivery and messages: fold `delivery_revision_stats`, `delivery_step_inbox`, `message_files`. | 3 | 33 |
 | 6 | Small same-key folds: learned (2), session wakes (2), `worker_defect_auto`, `model_successes`, `member_blocked_ticks`; derive `friction_status`. | 8 | 62 |
 | 7 | One `tool_plans` with a kind, one OAuth attempts table. | 3 | 14 |
-| 8 | `gateway_state`: three one-row tables and the 11 marker rows of `owner_settings`. `graph_node_settings` into `setting_values`. | 4 (+1 new) | about 40 |
+| 8 | `gateway_state`: three one-row tables and the 12 marker rows of `owner_settings`. `graph_node_settings` into `setting_values`. | 4 (+1 new) | about 40 |
 | 9 | History: stop the team lead double write, then move `team_history` into `graph_history`. | 1 | 7 |
 | 10 | `graph_nodes` into `repos`, with its six triggers. Do this last and only after part 3. Needs a short design note first, because the code still knows the kind `architect`. | 1 | 29 |
 
