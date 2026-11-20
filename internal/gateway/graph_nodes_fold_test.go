@@ -328,6 +328,32 @@ func TestGraphNodesAreTheReposWithACharterOrAnEdge(t *testing.T) {
 	}
 }
 
+// A repo is a node because it has a session, not because the store wrote a
+// charter value for it. A written value would be hidden data in the owner's
+// charter (decision 0163), and the owner's own first value would collide.
+func TestRegisteringASessionInANewRepoWritesNoCharterValue(t *testing.T) {
+	s, _ := newTestStore(t)
+	graphSessions(t, s, "fresh")
+	var n int
+	// The CTO's default charter is an agent-level value that a migration seeds.
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM charter_values WHERE level='repo'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("registering a session wrote %d repo charter values", n)
+	}
+	nodes, err := s.graphNodes()
+	if err != nil || len(nodes) != 1 || nodes[0].Name != "fresh" || nodes[0].Kind != "component" {
+		t.Fatalf("nodes = %+v, %v; want the repo as a component", nodes, err)
+	}
+	if err := s.SetNodeSetting("fresh", protocol.SettingLoopEvery, "4h", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM charter_values WHERE level='repo'`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("a node setting wrote %d repo charter values, %v", n, err)
+	}
+}
+
 // An agent made with the role architect after the cutover is a legacy
 // architect: it is a node, and its name guards a project of the same name.
 func TestAnAgentWithTheRoleArchitectIsAnArchitectNode(t *testing.T) {
