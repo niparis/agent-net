@@ -212,11 +212,6 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 	if _, err = tx.Exec(`INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor,target_kind) VALUES('lead',?,?,?,?,?,?,?)`, q.Ref.ID, historyAttr, old.String, next, now, actor, q.Ref.Kind); err != nil {
 		return err
 	}
-	if q.Ref.Kind == "team" {
-		if _, err = tx.Exec(`INSERT INTO team_history(action,team_id,old_team_id,member_kind,member_id,old_value,new_value,at,actor) VALUES('lead',?,'','','',?,?,?,?)`, q.Ref.ID, old.String, next, now, actor); err != nil {
-			return err
-		}
-	}
 	if validate {
 		return nil
 	}
