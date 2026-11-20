@@ -21,8 +21,7 @@ func oneCharterStoreStep() int {
 // ensureOldCharterTablesTx lets a rewind replay a shipped step that reads the
 // old tables. A store that already ran the merge has no graph_charter or
 // agent_charter; its charter_values accepts the repo level. The tables come
-// back empty (and agent_charter_history, which part 1 dropped and the step
-// that copies agent charters reads), so the replayed step has nothing to change, and the merge step
+// back empty, so the replayed step has nothing to change, and the merge step
 // at the end of the replay drops them again. A store that has not run the
 // merge is left alone: its steps create the tables themselves.
 func ensureOldCharterTablesTx(tx *sql.Tx) error {
@@ -32,8 +31,7 @@ func ensureOldCharterTablesTx(tx *sql.Tx) error {
 		return err
 	}
 	_, err = tx.Exec(`CREATE TABLE IF NOT EXISTS graph_charter (node TEXT NOT NULL, attr TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, PRIMARY KEY(node, attr));
-CREATE TABLE IF NOT EXISTS agent_charter (agent_id TEXT NOT NULL, attr TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, PRIMARY KEY(agent_id, attr));
-CREATE TABLE IF NOT EXISTS agent_charter_history (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id TEXT NOT NULL, attr TEXT NOT NULL, old_value TEXT NOT NULL, new_value TEXT NOT NULL, at INTEGER NOT NULL, actor TEXT NOT NULL)`)
+CREATE TABLE IF NOT EXISTS agent_charter (agent_id TEXT NOT NULL, attr TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, PRIMARY KEY(agent_id, attr))`)
 	return err
 }
 
