@@ -330,6 +330,8 @@ func TestWorkerSandboxLegacyFallbackWithoutMaturity(t *testing.T) {
 		t.Fatal(err)
 	}
 	legacyNodeSetting(t, s, "shop", "worker_sandbox", "read-only")
+	// The helper belongs to a migration step that ran before the tables merged.
+	restoreOldCharterTables(t, s)
 	tx, err := s.db.Begin()
 	if err != nil {
 		t.Fatal(err)

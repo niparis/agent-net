@@ -29,15 +29,6 @@ func legacyNodeSetting(t testing.TB, s *Store, node, setting, value string) {
 	}
 }
 
-func tableExists(t testing.TB, s *Store, name string) bool {
-	t.Helper()
-	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	return n > 0
-}
-
 func stateRows(t testing.TB, s *Store) map[string]string {
 	t.Helper()
 	rows, err := s.db.Query(`SELECT key,value FROM gateway_state`)
@@ -170,9 +161,13 @@ func TestGatewayStateMigrationReplaysAfterARewind(t *testing.T) {
 	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "Typed Graph capability reports")); err != nil {
 		t.Fatal(err)
 	}
+	// The older steps also read tables that parts 1 and 3 dropped. The charter
+	// tables of part 4 come back by themselves (ensureOldCharterTablesTx).
+	recreateDeadTables(t, s)
 	if err = s.Close(); err != nil {
 		t.Fatal(err)
 	}
+	restoreRepoSideTablesAt(t, path)
 	s, err = OpenStore(path)
 	if err != nil {
 		t.Fatalf("replay failed: %v", err)
