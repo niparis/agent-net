@@ -3835,6 +3835,24 @@ The expected event is:
 
 `change` needs `follow_up_at`, and `follow_up_at` is refused on merge, owner and the other results.
 
+### Due items
+
+A follow-up checks an event but never wakes the session that owns the step. A session that has a step for later records it with `agent_due` (decision [0177](decisions/0177-owed-replies.md), addition of 2026-11-21). Actions:
+
+- `add` takes `what` (the step, in one line) and one of `due` or `after`. `due` is an RFC 3339 time or a duration counted from now (`45m`). `after` takes exactly one of `reply` (a message id: its conversation gets a reply from the recipient), `change_step` (a change id: a step of the change moves) or `ask_closed` (an ask id: the ask closes).
+- `list` shows the caller's open items.
+- `done` closes one item by `id`. Only the session that added it can close it.
+
+`blocker` says what the item waits for. `none` is the default. `owner` means the owner. A session id means that session.
+
+The gateway keeps items in the `session_dues` table and checks them on its minute tick:
+
+- An item with blocker `none` wakes its session when it falls due, or when its event has happened. The wake is one message from agent-net, sent through the normal message path. Whether a stopped session starts follows its wake and autonomy settings.
+- After the wake, the session has 15 minutes to show activity: a message it sends, or harness activity such as output or a turn. If it shows none, the chief of staff gets one ask (`next_who chief`, source `due:<id>`). `done` before then raises nothing.
+- An item with blocker `owner` or a session id wakes nothing. It raises one chief ask when it falls due.
+
+An item raises at most one ask. Detection reads the database only and uses no model tokens.
+
 A rejection or escalation of another agent's request appears as a separate Inbox entry until the owner resolves it. The entry shows the request's first line, outcome, reason and recommendation. Press `s` to let the decision stand or `O` to overrule it. Letting it stand sends the receiving session a notice that its decision stands. Overrule sends the original request again from the owner with the agent-net note `the owner overrules: do it.` The operator method is `outcome_overrule` with `reply_id` and `action` (`let_stand` or `overrule`).
 
 The daemon marks its private Claude CTO folder and Claude worker worktrees trusted in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`). It removes the worktree trust setting when a known Claude worker worktree is deleted. Uninstall removes the CTO folder's trust setting and preserves other project settings.

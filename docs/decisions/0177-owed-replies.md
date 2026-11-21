@@ -68,3 +68,26 @@ The expected event is:
 - Part 1's owed-reply rules (nudge, ask, skips) do not change.
 - No model tokens are used for detection.
 - Follow-ups are never limits or approval gates: they only raise an ask the chief can close.
+
+## Addition 2026-11-21: agent_due
+
+### Context
+
+A PN50 migration step stalled four times. The session that owned the step had set it for a later time or for after an event. Nothing woke the session when the step fell due. The owner had to ask for a status update to learn that nothing was blocked and the session was only waiting. A follow-up never wakes the session that owns the step: it raises an ask when an event is missing.
+
+### Design
+
+`agent_due` lets a session record a step it owns, with a time (`due`) or an event (`after`: a reply, a change step or an ask closing). It is stored in the `session_dues` table and checked on the minute tick.
+
+- An item with blocker `none` wakes its session when it falls due. The wake is a message from agent-net through the normal message path.
+- If the session shows no activity for 15 minutes after the wake, the chief is asked once. Activity is a message the session sends, or the harness activity the stall check reads.
+- An item marked `done` before then raises nothing.
+- An item with blocker `owner` or a session id wakes nothing. It raises one chief ask when it falls due.
+
+### Invariants
+
+- One wake per item. At most one chief ask per item.
+- The wake uses the normal message path. The session's wake and autonomy settings decide whether a stopped session starts.
+- Owner and session blocks never wake a session.
+- No model tokens are used for detection.
+- It is never a limit or an approval gate: it only wakes a session or raises an ask the chief can close.

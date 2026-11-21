@@ -29,7 +29,7 @@ import (
 // other methods.
 func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string, raw json.RawMessage) (res any, handled bool, err error) {
 	switch method {
-	case protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport, protocol.OpChangesFind, protocol.OpAskSort, protocol.OpAskIntake, protocol.OpOwnerBrief, protocol.OpNudgePause, protocol.OpNudgeResume, protocol.OpNudgePausesFind, protocol.OpNudgeStats, protocol.OpJudgmentRecord, protocol.OpFrictionMarkLead:
+	case protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport, protocol.OpChangesFind, protocol.OpAskSort, protocol.OpAskIntake, protocol.OpOwnerBrief, protocol.OpNudgePause, protocol.OpNudgeResume, protocol.OpNudgePausesFind, protocol.OpNudgeStats, protocol.OpJudgmentRecord, protocol.OpFrictionMarkLead, protocol.OpDue:
 	default:
 		return nil, false, nil
 	}
@@ -115,6 +115,20 @@ func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string
 		}
 		var out protocol.NudgeStatsResult
 		err := d.deliveryCall(ctx, protocol.FrameNudgeStats, a, &out)
+		return out, true, err
+	case protocol.OpDue:
+		if info.Worker != nil {
+			return nil, true, errors.New("a worker does not record due items")
+		}
+		var a protocol.DueArgs
+		if err := decodeDeliveryArgs(method, raw, &a); err != nil {
+			return nil, true, err
+		}
+		if err := a.Validate(); err != nil {
+			return nil, true, err
+		}
+		var out protocol.DueResult
+		err := d.deliveryCall(ctx, protocol.FrameDue, protocol.DueRequest{SessionID: sid, DueArgs: a}, &out)
 		return out, true, err
 	case protocol.OpAskSort:
 		if info.Worker != nil {

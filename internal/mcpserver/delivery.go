@@ -44,5 +44,6 @@ func addDeliveryTools(s *mcp.Server, call Caller) {
 	deliveryTool[protocol.FrictionMarkRequest, protocol.FrictionMarkResult](s, call, "agent_friction_mark", protocol.OpFrictionMarkLead)
 	deliveryTool[protocol.AskSortArgs, protocol.AskSortResult](s, call, "agent_ask_sort", protocol.OpAskSort)
 	deliveryTool[protocol.AskIntakeArgs, protocol.AskIntakeResult](s, call, "agent_ask_intake", protocol.OpAskIntake)
+	deliveryTool[protocol.DueArgs, protocol.DueResult](s, call, "agent_due", protocol.OpDue)
 	deliveryTool[protocol.JudgmentRecordArgs, protocol.JudgmentRecordResult](s, call, "agent_owner_judgment_record", protocol.OpJudgmentRecord)
 }
