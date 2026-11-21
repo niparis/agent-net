@@ -3811,7 +3811,7 @@ For a node with `ask` merge authority, request approval for the exact merge usin
 
 A request that needs no answer is closed with `ack: true` instead. The body may be empty, and `ack` cannot be combined with `outcome` or `progress`. The gateway stores an `ack` message from the recipient and marks the request `acknowledged`, so `agent_message_status` and `agent_message_get` show the acknowledgement. Nothing is delivered to the sender and it is not woken. An acknowledged request counts as answered everywhere: no reminder follows, and it is no longer owed in the Sessions tab or in the idle check.
 
-An interim update is sent with `progress: true`. A progress reply is delivered to the sender and counts as activity for the recipient, but leaves the parent request or order open. A reply without the flag is final and closes the request.
+An interim update is sent with `progress: true`. A progress reply is delivered to the sender and counts as activity for the recipient, but leaves the parent request or order open. A reply without the flag is final and closes the request. With `progress: true`, `follow_up_at` says when the work is due and holds the owed-reply reminder until then (see [owed replies](#owed-replies)).
 
 ### Owed replies
 
@@ -3819,7 +3819,9 @@ An open request or order with no final reply, whose recipient has been idle for 
 
 If there is still no final reply `messages.owed_reply_ask_after` (default 10m) after the nudge, agent-net raises one ask routed to the chief of staff (`next_who chief`). The ask names the chain: who waits on whom, since when, the message id and its first line, the nudge time, and the sender's lead if any. Exactly one nudge and one ask are raised per request. A final reply before the nudge or ask stops the chain.
 
-The settings `messages.owed_reply_nudge_after` (default `15m`) and `messages.owed_reply_ask_after` (default `10m`) are available at the network, team and repo levels.
+A progress reply holds this chase. With `follow_up_at` on the reply (an RFC 3339 time or a duration such as `45m`), no reminder and no ask goes out before that time. Without it, the hold lasts `messages.owed_reply_progress_grace` (default `2h`) after the latest progress reply. When the hold ends and there is still no final reply, the usual rules apply: one nudge if the recipient is idle, then one ask. `follow_up_at` is accepted only with `progress: true`, because a final reply ends the wait.
+
+The settings `messages.owed_reply_nudge_after` (default `15m`), `messages.owed_reply_ask_after` (default `10m`) and `messages.owed_reply_progress_grace` (default `2h`) are available at the network, team and repo levels. A grace of `0s` turns the progress hold off.
 
 ### Follow-ups
 

@@ -43,6 +43,7 @@ type messageReplyIn struct {
 	Body           string `json:"body"`
 	Ack            bool   `json:"ack,omitempty"`
 	Progress       bool   `json:"progress,omitempty"`
+	FollowUpAt     string `json:"follow_up_at,omitempty"`
 	Outcome        string `json:"outcome,omitempty"`
 	Reason         string `json:"reason,omitempty"`
 	RedirectTo     string `json:"redirect_to,omitempty"`

@@ -1329,7 +1329,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -2599,6 +2599,24 @@ func (s *Store) migrate() error {
 				}
 				if has == 0 {
 					if _, err := tx.Exec(`ALTER TABLE messages ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+						tx.Rollback()
+						return err
+					}
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "owed reply progress columns") {
+			for _, col := range []struct{ name, spec string }{
+				{"progress", "progress INTEGER NOT NULL DEFAULT 0"},
+				{"progress_until", "progress_until INTEGER NOT NULL DEFAULT 0"},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name=?`, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE messages ADD COLUMN ` + col.spec); err != nil {
 						tx.Rollback()
 						return err
 					}
@@ -5251,10 +5269,24 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		}
 		filesJSON = string(raw)
 	}
+	// A progress reply can give the time its work is due. The owed-reply check
+	// holds its reminder until then. A send's follow_up_at is a chief follow-up
+	// instead, recorded below.
+	progress, progressUntil := 0, int64(0)
+	if p.Progress {
+		progress = 1
+		if p.FollowUpAt != "" {
+			due, err := protocol.ParseFollowUp(p.FollowUpAt, now)
+			if err != nil {
+				return msg, false, reject("%v", err)
+			}
+			progressUntil = due.UnixNano()
+		}
+	}
 	_, err = tx.Exec(`INSERT INTO messages (id, conversation_id, parent_id, sender, recipient, type, body, hop,
-		idem_key, created_at, expires_at, state, sender_cto, owner_approved, worker_task, is_order, urgent, hold_kind, hold_until, files) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		idem_key, created_at, expires_at, state, sender_cto, owner_approved, worker_task, is_order, urgent, hold_kind, hold_until, files, progress, progress_until) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		m.ID, m.ConversationID, m.ParentID, m.From, m.To, m.Type, m.Body, m.Hop,
-		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State, m.FromCTO, m.OwnerApproved, workerTask, m.IsOrder, m.Urgent, holdKind, holdUntil, filesJSON)
+		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State, m.FromCTO, m.OwnerApproved, workerTask, m.IsOrder, m.Urgent, holdKind, holdUntil, filesJSON, progress, progressUntil)
 	if err != nil {
 		return msg, false, err
 	}
@@ -5263,7 +5295,7 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 			return msg, false, err
 		}
 	}
-	if p.FollowUpAt != "" {
+	if p.FollowUpAt != "" && !p.Progress {
 		if err := recordSendFollowUp(tx, m, p.FollowUpAt, now); err != nil {
 			return msg, false, err
 		}

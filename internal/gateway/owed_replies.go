@@ -43,7 +43,23 @@ type owedCandidate struct {
 	waitsForOthers bool
 	openAsksCount  int
 	nudgeAt        int64
+	progressAt     int64
+	progressUntil  int64
 	askRaised      bool
+}
+
+// holdNanos is the time the owed-reply chase waits until. It is the time the
+// latest progress reply gave, or that reply's time plus the grace when it gave
+// none. Zero means no hold.
+func (c owedCandidate) holdNanos(grace time.Duration) int64 {
+	switch {
+	case c.progressAt == 0:
+		return 0
+	case c.progressUntil > 0:
+		return c.progressUntil
+	default:
+		return c.progressAt + int64(grace)
+	}
 }
 
 // sessionSenderLead finds the lead of the sender session, if any.
@@ -70,6 +86,8 @@ func (s *Store) sessionSenderLead(senderID string) string {
 // checkOwedReplies checks open requests and orders with no final reply.
 // An idle recipient gets one nudge after messages.owed_reply_nudge_after.
 // If still unanswered messages.owed_reply_ask_after later, an ask is routed to the chief.
+// A progress reply holds both until the time it gives, or for
+// messages.owed_reply_progress_grace after it when it gives none.
 func (s *Store) checkOwedReplies() ([]protocol.Message, error) {
 	snap, err := s.SettingsSnapshot()
 	if err != nil {
@@ -127,6 +145,10 @@ func (s *Store) checkOwedReplies() ([]protocol.Message, error) {
 		`+dstWaitsForOthersSQL+`,
 		(SELECT COUNT(*) FROM inbox_items ii WHERE ii.session_id=dst.id AND ii.status='open'),
 		COALESCE((SELECT m.created_at FROM messages m WHERE m.parent_id=q.id AND m.sender='agent-net' AND m.idem_key='owed-nudge:'||q.id LIMIT 1), 0),
+		COALESCE((SELECT p.created_at FROM messages p WHERE p.conversation_id=q.conversation_id AND p.parent_id=q.id
+			AND p.sender=q.recipient AND p.recipient=q.sender AND p.progress=1 ORDER BY p.created_at DESC LIMIT 1), 0),
+		COALESCE((SELECT p.progress_until FROM messages p WHERE p.conversation_id=q.conversation_id AND p.parent_id=q.id
+			AND p.sender=q.recipient AND p.recipient=q.sender AND p.progress=1 ORDER BY p.created_at DESC LIMIT 1), 0),
 		EXISTS(SELECT 1 FROM inbox_items ii WHERE ii.source_ref='owed-ask:'||q.id)
 	FROM messages q
 	JOIN sessions src ON src.id=q.sender
@@ -161,7 +183,7 @@ func (s *Store) checkOwedReplies() ([]protocol.Message, error) {
 			&c.dstRepo, &c.dstTeam, &c.srcRepo,
 			&c.senderName, &c.recipientName,
 			&c.waitsForOthers, &c.openAsksCount,
-			&c.nudgeAt, &c.askRaised,
+			&c.nudgeAt, &c.progressAt, &c.progressUntil, &c.askRaised,
 		); err != nil {
 			rows.Close()
 			return nil, err
@@ -186,8 +208,15 @@ func (s *Store) checkOwedReplies() ([]protocol.Message, error) {
 			askAfter = 10 * time.Minute
 		}
 
+		// A progress reply holds the chase until the time it gives, or the grace after it.
+		grace := snap.Duration("messages.owed_reply_progress_grace", where)
+		hold := time.Unix(0, c.holdNanos(grace))
+
 		// Nudge phase
 		if c.nudgeAt == 0 {
+			if now.Before(hold) {
+				continue
+			}
 			// Skip busy recipient, waiting on owner, or waiting on others.
 			if c.dstStatus == "busy" || c.dstWaiting != "" || c.openAsksCount > 0 || c.waitsForOthers {
 				continue
@@ -246,7 +275,13 @@ func (s *Store) checkOwedReplies() ([]protocol.Message, error) {
 		// Ask phase
 		if !c.askRaised {
 			nudgeTime := time.Unix(0, c.nudgeAt)
-			if now.Sub(nudgeTime) < askAfter {
+			// The ask waits askAfter from the nudge, or from the end of a progress
+			// hold when that is later.
+			askFrom := nudgeTime
+			if hold.After(askFrom) {
+				askFrom = hold
+			}
+			if now.Sub(askFrom) < askAfter {
 				continue
 			}
 

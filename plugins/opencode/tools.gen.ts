@@ -1176,6 +1176,10 @@ export const TOOL_CATALOG = [
           "type": "boolean",
           "description": "Interim update: delivers the reply and keeps the request open. A reply without progress is final."
         },
+        "follow_up_at": {
+          "type": "string",
+          "description": "With progress: when the work is due, as an RFC 3339 time or a duration such as 45m. No reminder or ask before then."
+        },
         "outcome": {
           "type": "string",
           "enum": [

@@ -68,3 +68,25 @@ The expected event is:
 - Part 1's owed-reply rules (nudge, ask, skips) do not change.
 - No model tokens are used for detection.
 - Follow-ups are never limits or approval gates: they only raise an ask the chief can close.
+
+## Addition 2026-11-20: progress replies hold the chase
+
+### Context
+
+Two progress replies from the merger on 2026-11-20 gave a time: "about 2 hours" and "final reply after the release". The owed-reply nudge and ask still fired on their old clocks. That made three false asks to the chief and one needless chase, while the work kept moving.
+
+### Design
+
+`agent_message_reply` with `progress: true` takes an optional `follow_up_at`, an RFC 3339 time or a positive duration. It is refused without `progress`, since a final reply ends the wait. The gateway keeps the progress flag and the due time on the reply's message row. It does not create a chief follow-up, so the `follow_ups` table is unchanged.
+
+While a hold lasts, the owed-reply check sends no nudge and raises no ask for that request. The hold is the due time of the latest progress reply. A progress reply without `follow_up_at` gives a hold of `messages.owed_reply_progress_grace` (default `2h`) after its own time. A later progress reply replaces an earlier one. A grace of `0s` turns the hold off.
+
+When the hold ends with no final reply, the usual rules apply. The nudge comes at the first tick when the recipient is idle. The ask comes `messages.owed_reply_ask_after` after the nudge, or after the hold ends when that is later.
+
+### Invariants
+
+- A request with no progress reply behaves as before.
+- A final reply still closes the chain at once.
+- `follow_up_at` on a send or a sort is unchanged: it still raises a chief follow-up.
+- The progress hold is a timer, not a limit or an approval gate.
+- No model tokens are used for detection.
