@@ -45,7 +45,7 @@ These files record how the project was planned and built. They are kept for cont
 - [0177](decisions/0177-owed-replies.md): open requests and orders with no final reply get one automatic reminder nudge to the recipient after an idle duration, then one ask routed to the chief of staff.
 - [0178](decisions/0178-gateway-network.md): proposed, not scheduled. A network of gateways: each owner keeps one gateway, gateways link through a separate listener, only messages cross, repos are private, shared or public.
 - [0179](decisions/0179-gateway-schema-reduction.md): approved 2026-11-20. Reduce the gateway schema from 155 to 118 tables in 10 parts; the audit in `docs/design/gateway-schema-audit.md` is the evidence.
-- [0180](decisions/0180-urgent-messages-reach-a-busy-session.md): accepted 2026-11-21. An urgent message reaches a busy Claude Code session at its next tool call, through a hook; Pi, OpenCode and Codex can do the same and follow.
+- [0180](decisions/0180-urgent-messages-reach-a-busy-session.md): accepted 2026-11-21. An urgent message reaches a busy session at its next tool call (Claude Code hook, Pi and OpenCode plugins) or in its running turn (Codex).
 - [0175](decisions/0175-friction-status.md): each friction report has a read state (new, read, triaged, fixed, wontfix, infra) with a history; the owner and the CTO set it with `friction_mark`, groups of duplicate reports close together, and `friction_find` pages with a cursor.
 - [0174](decisions/0174-sign-in-on-the-browser-machine.md): sign in on the browser machine.
 - [0173](decisions/0173-picker-quality.md): picker quality, proposed, settings off.

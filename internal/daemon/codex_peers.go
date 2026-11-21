@@ -42,6 +42,9 @@ type codexAdapter struct {
 	// The value is true once Codex reports the message taken into a turn
 	// (codex_delivery.go).
 	queued map[string]bool
+	// turns is the active turn of each thread, from turn/started to
+	// turn/completed. turn/steer needs it (decision 0180).
+	turns map[string]string
 }
 
 // codexThread is what the adapter keeps of one open thread.
@@ -101,7 +104,7 @@ func (a *codexAdapter) loop(ctx context.Context) {
 		a.watch(ctx, rpc)
 		rpc.close()
 		a.mu.Lock()
-		a.rpc, a.threads = nil, map[string]codexThread{}
+		a.rpc, a.threads, a.turns = nil, map[string]codexThread{}, nil
 		a.mu.Unlock()
 		a.d.SetSessions("codex", nil)
 		if ctx.Err() == nil {
@@ -150,8 +153,12 @@ func (a *codexAdapter) onNote(method string, raw json.RawMessage) {
 	if method == "turn/started" {
 		var p struct {
 			ThreadID string `json:"threadId"`
+			Turn     struct {
+				ID string `json:"id"`
+			} `json:"turn"`
 		}
 		if json.Unmarshal(raw, &p) == nil && p.ThreadID != "" {
+			a.setTurn(p.ThreadID, p.Turn.ID)
 			a.d.mu.Lock()
 			ls := a.d.sessions[key("codex", p.ThreadID)]
 			a.d.mu.Unlock()
@@ -164,6 +171,12 @@ func (a *codexAdapter) onNote(method string, raw json.RawMessage) {
 		}
 	}
 	if method == "turn/completed" {
+		var p struct {
+			ThreadID string `json:"threadId"`
+		}
+		if json.Unmarshal(raw, &p) == nil {
+			a.setTurn(p.ThreadID, "")
+		}
 		a.turnCompleted(raw)
 	}
 	if method == "thread/archived" {

@@ -1,7 +1,7 @@
 # 0180 - An urgent message reaches a busy session at its next tool call
 
 **Date:** 2026-11-21
-**Status:** Accepted. Part 1 (Claude Code) is built. Parts for Pi, OpenCode and Codex follow.
+**Status:** Accepted. Built for Claude Code, Pi, OpenCode and Codex.
 
 ## Context
 
@@ -35,6 +35,24 @@ takes it out of the hold. The daemon records it for reply matching, reports it
 delivered, and the hook prints it as `additionalContext` with a line that says
 it is urgent. The model reads it before its next step.
 
+**c2. Pi and OpenCode ask from their plugin.** Their plugins already run code
+at every tool call. After a tool call the plugin sends the local method
+`urgent_take` on its own bound connection. The daemon answers from memory, as
+for Claude Code, and otherwise takes the messages from the gateway, records them
+delivered and returns them in the answer. Pi appends the text to the tool
+result, which the model reads next. OpenCode has no hook that changes a tool
+result, so the plugin holds the text and adds it to the system prompt of the
+next model request, as it does for hints. Each plugin keeps the IDs it showed
+and never shows one twice. Nothing is pushed to the plugin for it.
+
+**c3. Codex is pushed by the daemon.** Codex has no hook at a tool call, but its
+app server takes input into the running turn with `turn/steer`. The daemon keeps
+the active turn of each thread (from `turn/started` to `turn/completed`). When
+the gateway's frame says an urgent message is held for a Codex thread, the daemon
+takes it and sends `turn/steer` with that turn. If the app server refuses, or no
+turn is known, the message is queued as a normal delivery. A daemon that started
+during a turn does not know the turn, so the message then waits for the turn end.
+
 **d. Delivered once.** The take clears the hold in the same statement that
 claims the message. The turn-end release does not see it. A second hook call
 finds nothing.
@@ -50,25 +68,26 @@ message goes at the turn end, as in 0130. It is never lost.
 **g. Who can do it.** Any sender may mark a message `urgent`, as in 0130. It
 still counts toward the inbox limit. No new limit or approval gate is added.
 
-## Other harnesses
+## Checked APIs
 
 Checked on 2026-11-21 against the installed tools.
 
-- **Pi.** Can do it. The extension already has a `tool_result` handler that may
-  append content, and `sendMessage` takes `deliverAs: "steer"`.
-- **OpenCode.** Can do it. The plugin API has `tool.execute.after`, and its
-  `output.output` text may be changed. agent-net's plugin already uses this hook
-  for hints.
-- **Codex.** Can do it. The app server has `turn/steer` (thread, input,
-  `expectedTurnId`), which adds input to the active turn. agent-net does not
-  call it yet.
-
-Each of these needs the same take on the daemon side and its own show step, so
-each is its own part. Until then, an urgent message to a busy Pi, OpenCode or
-Codex session waits for the turn end, as in 0130.
+- **Pi.** `tool_result` handlers may return changed content. The extension
+  already used this for hints.
+- **OpenCode.** The plugin has an `execute.after` hook for tool calls, and a
+  `context` hook that changes the system prompt of the next request.
+- **Codex.** The app server has `turn/steer` (thread, input, `expectedTurnId`).
 
 ## Consequences
 
 Every tool call of every Claude Code session now starts one small process.
-It reads stdin, makes one local socket call and exits. The daemon does not call
-the gateway for it unless an urgent message waits.
+It reads stdin, makes one local socket call and exits. Every tool call of a Pi
+or OpenCode session makes one local socket call. The daemon does not call the
+gateway for any of these unless an urgent message waits.
+
+One edge: if the daemon hands a message over and the hook or plugin dies before
+it shows it, the message is marked delivered and the model never sees it. The
+gateway call is bounded to 1.5 seconds so the window is small.
+
+A Claude Code session with no tool call in its turn, or a session whose
+harness has no active turn known, still gets the message at the turn end.

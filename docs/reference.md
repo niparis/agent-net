@@ -538,7 +538,7 @@ action tool per area:
 
 | CTO change tool | Actions or area |
 |---|---|
-| `agent_message_send` | one message, or a group with `to_set`; `as_owner: true` sends on the owner's instructions; `urgent: true` goes ahead of older waiting messages, and reaches a busy Claude Code session at its next tool call instead of at the end of its turn (decision [0180](decisions/0180-urgent-messages-reach-a-busy-session.md)); `follow_up_at` (an RFC 3339 time or a duration such as `45m`, one recipient only) sets a follow-up, see [Follow-ups](#follow-ups) |
+| `agent_message_send` | one message, or a group with `to_set`; `as_owner: true` sends on the owner's instructions; `urgent: true` goes ahead of older waiting messages, and reaches a busy session at its next tool call (Codex: in its running turn) instead of at the end of its turn (decision [0180](decisions/0180-urgent-messages-reach-a-busy-session.md)); `follow_up_at` (an RFC 3339 time or a duration such as `45m`, one recipient only) sets a follow-up, see [Follow-ups](#follow-ups) |
 | `agent_message_reply` | a reply with an outcome, or `ack: true` to close a request that needs no answer; `as_owner: true` replies on the owner's instructions |
 | `agent_message_withdraw` | one undelivered message, or with `older_than: true` every undelivered message to that recipient that is this old or older; the owner and the CTO may withdraw another session's message |
 | `agent_owner_ask` | a question, approval or idea with a recommendation and up to four answers, into the Inbox |

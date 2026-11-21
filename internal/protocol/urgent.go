@@ -36,8 +36,11 @@ type UrgentTakeRequest struct {
 	NativeID string `json:"native_id"`
 }
 
-// UrgentTakeResult is the answer to MethodUrgentTake. Text is what the hook
-// shows the model, or empty when nothing urgent was waiting.
+// UrgentTakeResult is the answer to MethodUrgentTake. A Claude Code hook gets
+// Text, ready to show the model. A plugin (Pi, OpenCode) gets the Messages and
+// formats them as it formats a pushed delivery. Both are empty when nothing
+// urgent was waiting.
 type UrgentTakeResult struct {
-	Text string `json:"text,omitempty"`
+	Text     string    `json:"text,omitempty"`
+	Messages []Message `json:"messages,omitempty"`
 }

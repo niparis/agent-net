@@ -945,22 +945,48 @@ export default function (pi: ExtensionAPI) {
   // sees the hint in the same turn. Any problem leaves the result as it was.
   pi.on("tool_result", async (event: any) => {
     try {
-      if (!connected || String(event.toolName ?? "").startsWith("agent_")) return;
-      const text = blocksText(event.content).slice(0, 4000);
-      if (!text.trim()) return;
-      const failed = event.isError === true;
-      if (!failed && !(event.toolName === "bash" && FAILURE_PREFILTER.test(text))) return;
-      let timer: NodeJS.Timeout | undefined;
-      const wait = new Promise<undefined>((resolve) => (timer = setTimeout(() => resolve(undefined), HINT_WAIT_MS)));
-      const res = await Promise.race([request("hint", { text, failed }).catch(() => undefined), wait]);
-      if (timer) clearTimeout(timer);
-      const line = res?.text;
-      if (typeof line !== "string" || !line) return;
-      return { content: [...(event.content ?? []), { type: "text" as const, text: line }] };
+      if (!connected) return;
+      const [urgent, hint] = await Promise.all([takeUrgent(), hintFor(event)]);
+      const extra = [urgent, hint].filter((t): t is string => typeof t === "string" && t.length > 0);
+      if (extra.length === 0) return;
+      return { content: [...(event.content ?? []), ...extra.map((text) => ({ type: "text" as const, text }))] };
     } catch {
       return;
     }
   });
+
+  // An urgent message for a busy session (decision 0180). The gateway holds
+  // every message while a turn runs; an urgent one is collected here, after any
+  // tool call, so the model reads it before its next step. The daemon answers
+  // at once when nothing waits. A message the daemon hands over is marked
+  // delivered, so the extension never asks twice for it.
+  const URGENT_HEAD =
+    "[agent-net] An urgent message arrived while you were working. Read it now, before your next step, and act on it. Do not wait for the end of your turn.\n\n";
+  async function takeUrgent(): Promise<string | undefined> {
+    const res = await request("urgent_take", {}).catch(() => undefined);
+    const messages = res && Array.isArray(res.messages) ? res.messages : [];
+    const parts: string[] = [];
+    for (const m of messages) {
+      if (!m || injectedMessages.has(m.message_id)) continue;
+      injectedMessages.add(m.message_id);
+      parts.push(formatDelivery(m));
+    }
+    return parts.length ? URGENT_HEAD + parts.join("\n\n") : undefined;
+  }
+
+  async function hintFor(event: any): Promise<string | undefined> {
+    if (String(event.toolName ?? "").startsWith("agent_")) return;
+    const text = blocksText(event.content).slice(0, 4000);
+    if (!text.trim()) return;
+    const failed = event.isError === true;
+    if (!failed && !(event.toolName === "bash" && FAILURE_PREFILTER.test(text))) return;
+    let timer: NodeJS.Timeout | undefined;
+    const wait = new Promise<undefined>((resolve) => (timer = setTimeout(() => resolve(undefined), HINT_WAIT_MS)));
+    const res = await Promise.race([request("hint", { text, failed }).catch(() => undefined), wait]);
+    if (timer) clearTimeout(timer);
+    const line = res?.text;
+    return typeof line === "string" && line ? line : undefined;
+  }
 
   // Until this session has announced its task, every agent-net tool result
   // ends with the reminder line.

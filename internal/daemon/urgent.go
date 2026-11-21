@@ -29,35 +29,65 @@ const urgentTakeBudget = 1500 * time.Millisecond
 // onUrgentHeld remembers that the gateway holds an urgent message for a local
 // session. It is the only reason a hook call reaches the gateway.
 func (d *Daemon) onUrgentHeld(sessionID string) {
-	if sessionID != "" {
-		d.urgentHeld.Store(sessionID, struct{}{})
+	if sessionID == "" {
+		return
 	}
+	d.urgentHeld.Store(sessionID, struct{}{})
+	// Codex has no hook at a tool call, but its app server takes input into the
+	// active turn (turn/steer). The daemon pushes the message at once.
+	ls := d.sessionByID(sessionID)
+	if ls == nil || d.infoOf(ls).Harness != "codex" {
+		return
+	}
+	d.wg.Add(1)
+	go func() {
+		defer d.wg.Done()
+		if a, ok := d.adapters["codex"].(*codexAdapter); ok && a.activeTurn(d.infoOf(ls).NativeID) != "" {
+			d.takeUrgentAndDeliver(context.Background(), sessionID)
+		}
+	}()
 }
 
-// inlineCapture receives the text of a message delivered inside a turn.
-type inlineCapture struct{ text string }
+// inlineCapture receives a message delivered inside a turn: the text an
+// adapter built (Claude Code), or the message itself for a plugin that formats
+// it (Pi, OpenCode).
+type inlineCapture struct {
+	text string
+	m    *protocol.Message
+}
 
-// urgentTakeCall serves MethodUrgentTake for a command-line client. It is
-// silent when the session is unknown or nothing is waiting: a hook must never
-// disturb the turn that runs it.
-func (lc *localConn) urgentTakeCall(ctx context.Context, client string, raw json.RawMessage) (any, error) {
-	if client != "cli" {
-		return nil, errors.New("this method is for a harness hook")
-	}
-	var p protocol.UrgentTakeRequest
-	if json.Unmarshal(raw, &p) != nil || p.NativeID == "" {
-		return protocol.UrgentTakeResult{}, nil
-	}
+// urgentTakeCall serves MethodUrgentTake. A command-line client (the Claude
+// Code hook) names the session. A plugin (Pi, OpenCode) is bound to its own.
+// It is silent when the session is unknown or nothing is waiting: a hook must
+// never disturb the turn that runs it.
+func (lc *localConn) urgentTakeCall(ctx context.Context, client string, ls *localSession, raw json.RawMessage) (any, error) {
 	d := lc.d
-	d.mu.Lock()
-	ls := d.sessions[key(p.Harness, p.NativeID)]
-	d.mu.Unlock()
+	if client == "cli" {
+		var p protocol.UrgentTakeRequest
+		if json.Unmarshal(raw, &p) != nil || p.NativeID == "" {
+			return protocol.UrgentTakeResult{}, nil
+		}
+		d.mu.Lock()
+		ls = d.sessions[key(p.Harness, p.NativeID)]
+		d.mu.Unlock()
+	} else if ls == nil {
+		return nil, errors.New("this method needs a bound session")
+	}
 	if ls == nil || ls.sessionID == "" {
 		return protocol.UrgentTakeResult{}, nil
 	}
-	sid := ls.sessionID
+	texts, msgs := d.takeUrgentAndDeliver(ctx, ls.sessionID)
+	return protocol.UrgentTakeResult{Text: strings.Join(texts, "\n\n"), Messages: msgs}, nil
+}
+
+// takeUrgentAndDeliver fetches the urgent messages held for a session and runs
+// each through the normal delivery path with its last step replaced: the
+// adapter shows it inside the turn (DeliverInline), or a plugin gets the
+// message in the answer. It returns what to show, and nothing when no urgent
+// message was waiting.
+func (d *Daemon) takeUrgentAndDeliver(ctx context.Context, sid string) (texts []string, msgs []protocol.Message) {
 	if _, ok := d.urgentHeld.LoadAndDelete(sid); !ok {
-		return protocol.UrgentTakeResult{}, nil
+		return nil, nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, urgentTakeBudget)
 	defer cancel()
@@ -66,13 +96,12 @@ func (lc *localConn) urgentTakeCall(ctx context.Context, client string, raw json
 		// Ask again at the next tool call.
 		d.urgentHeld.Store(sid, struct{}{})
 		d.Logf("urgent take for %s: %v", sid, err)
-		return protocol.UrgentTakeResult{}, nil
+		return nil, nil
 	}
 	var taken protocol.UrgentTaken
 	if json.Unmarshal(res, &taken) != nil {
-		return protocol.UrgentTakeResult{}, nil
+		return nil, nil
 	}
-	var texts []string
 	for _, m := range taken.Messages {
 		capture := &inlineCapture{}
 		d.inlineCaptures.Store(m.ID, capture)
@@ -83,8 +112,24 @@ func (lc *localConn) urgentTakeCall(ctx context.Context, client string, raw json
 		if capture.text != "" {
 			texts = append(texts, capture.text)
 		}
+		if capture.m != nil {
+			msgs = append(msgs, *capture.m)
+		}
 	}
-	return protocol.UrgentTakeResult{Text: strings.Join(texts, "\n\n")}, nil
+	return texts, msgs
+}
+
+// capturePluginInline is deliverTo for a plugin session whose message a tool
+// call is collecting: the plugin gets the message in the answer and shows it
+// itself, so nothing is pushed. It is not a turn start, so the OpenCode
+// delivery check does not apply.
+func (d *Daemon) capturePluginInline(m protocol.Message) bool {
+	v, ok := d.inlineCaptures.Load(m.ID)
+	if !ok {
+		return false
+	}
+	v.(*inlineCapture).m = &m
+	return true
 }
 
 // deliverInline is deliverTo for a message a hook is collecting. It reports

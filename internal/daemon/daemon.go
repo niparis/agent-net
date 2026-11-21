@@ -1840,6 +1840,9 @@ func (d *Daemon) deliverTo(ctx context.Context, ls *localSession, m protocol.Mes
 	conn := ls.conn
 	d.mu.Unlock()
 	if conn != nil {
+		if d.capturePluginInline(m) {
+			return Result{Delivered: true, Detail: "shown inside the turn"}
+		}
 		result := conn.push(ctx, m, d.cfg.PluginAckTimeout)
 		if result.Delivered && m.FromHarness == protocol.OwnerHarness {
 			d.setWaiting(ls, nil)
