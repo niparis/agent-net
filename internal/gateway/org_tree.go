@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -9,10 +10,10 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// The org tree (decision 0160) is stored in the records the graph already
-// has: a reports_to edge in graph_edges, agents.lead_session and
-// sessions.started_by. This file holds its checks, its one-time build and the
-// update each later write runs so the tree follows the old tables.
+// The org tree (decision 0160, 0184) is computed on read from the leads of
+// repos and teams, team membership and roles. The only stored reports_to rows
+// are explicit moves by the CTO or the owner (edge_set); they win over the
+// computed parent. This file holds the computation and the checks of a move.
 
 // orgTreeBuiltKey is the gateway_state marker of the one-time build.
 const orgTreeBuiltKey = "org_tree_built"
@@ -23,7 +24,8 @@ const orgTreeBuiltKey = "org_tree_built"
 // Team Agent members under their Team lead, Repo leads of a Team's Repos under
 // the Team lead, other Team leads under cto, and Agents working in a Repo
 // under that Repo's lead. Targets that are tombstoned, mergers, or would make
-// a cycle are skipped.
+// a cycle are skipped. A stored reports_to edge (an explicit move) replaces
+// the computed parent when its target is valid.
 func agentParentsQ(q leadDB) (map[string]string, error) {
 	type agentRow struct {
 		id, role, teamID string
@@ -174,6 +176,25 @@ func agentParentsQ(q leadDB) (map[string]string, error) {
 	}
 	rows.Close()
 
+	explicit := map[string]string{}
+	rows, err = q.Query(`SELECT source,target FROM graph_edges WHERE kind='reports_to'`)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var from, to string
+		if err = rows.Scan(&from, &to); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		explicit[from] = to
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
 	rawParent := func(a agentRow) string {
 		if a.role == "merger" {
 			repo := mergerRepo[a.id]
@@ -203,26 +224,111 @@ func agentParentsQ(q leadDB) (map[string]string, error) {
 	}
 
 	parents := make(map[string]string, len(agents))
-	for _, a := range agents {
-		want := rawParent(a)
-		if want == "" || want == a.id {
-			continue
+	valid := func(a agentRow, want string) bool {
+		if want == "" || want == a.id || (want != protocol.OrgRoot && !liveNonMerger[want]) {
+			return false
 		}
-		if want != protocol.OrgRoot && !liveNonMerger[want] {
-			continue
-		}
-		cycle := false
 		for cur, steps := want, 0; cur != "" && cur != protocol.OrgRoot && steps <= len(agents); cur, steps = parents[cur], steps+1 {
 			if cur == a.id {
-				cycle = true
-				break
+				return false
 			}
 		}
-		if !cycle {
+		return true
+	}
+	// Explicit moves go first, so a computed parent that would close a cycle
+	// with one of them gives way.
+	for _, a := range agents {
+		if want := explicit[a.id]; valid(a, want) {
 			parents[a.id] = want
 		}
 	}
+	for _, a := range agents {
+		if _, moved := parents[a.id]; !moved {
+			if want := rawParent(a); valid(a, want) {
+				parents[a.id] = want
+			}
+		}
+	}
 	return parents, nil
+}
+
+// checkReportsToTarget holds the endpoint rules of a move: the source is a
+// live Agent, the target is a live Agent that is not a merger, or the root,
+// and the move makes no cycle with other explicit moves.
+func checkReportsToTarget(tx *sql.Tx, from, to string) error {
+	var live bool
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM agents WHERE id=? AND tombstone=0)`, from).Scan(&live); err != nil {
+		return err
+	}
+	if !live {
+		return reject("unknown or inactive Agent %q", from)
+	}
+	if to != protocol.OrgRoot {
+		var role sql.NullString
+		if err := tx.QueryRow(`SELECT role FROM agents WHERE id=? AND tombstone=0`, to).Scan(&role); err != nil && err != sql.ErrNoRows {
+			return err
+		}
+		if !role.Valid {
+			return reject("unknown or inactive Agent %q", to)
+		}
+		if role.String == "merger" {
+			return reject("a merger is never a lead: nothing reports to %s", to)
+		}
+	}
+	// Only explicit moves can close a cycle: a computed parent gives way.
+	var cycle bool
+	if err := tx.QueryRow(`WITH RECURSIVE up(id) AS (SELECT ? UNION SELECT e.target FROM graph_edges e JOIN up ON e.source=up.id WHERE e.kind='reports_to')
+		SELECT EXISTS(SELECT 1 FROM up WHERE id=?)`, to, from).Scan(&cycle); err != nil {
+		return err
+	}
+	if cycle {
+		return reject("%s reports up to %s already; this edge would make a cycle", to, from)
+	}
+	return nil
+}
+
+// checkReportsTo adds the one-parent rule: an Agent has one explicit parent.
+func checkReportsTo(tx *sql.Tx, from, to string) error {
+	if err := checkReportsToTarget(tx, from, to); err != nil {
+		return err
+	}
+	var parent string
+	err := tx.QueryRow(`SELECT target FROM graph_edges WHERE source=? AND kind='reports_to' AND target<>?`, from, to).Scan(&parent)
+	if err == nil {
+		return reject("%s already reports to %s; remove that edge first", from, parent)
+	}
+	if err != sql.ErrNoRows {
+		return err
+	}
+	return nil
+}
+
+// moveReportsToTx stores an explicit reports_to edge and replaces the Agent's
+// current explicit parent in the same transaction. It writes one history row
+// whose old value is the old parent edge, so one undo restores that parent.
+func moveReportsToTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
+	var parent string
+	err := tx.QueryRow(`SELECT target FROM graph_edges WHERE source=? AND kind='reports_to' AND target<>?`, e.From, e.To).Scan(&parent)
+	if err == sql.ErrNoRows {
+		return storeEdgeTx(tx, e, actor, now)
+	}
+	if err != nil {
+		return err
+	}
+	var previous protocol.Edge
+	previous.From, previous.To, previous.Kind = e.From, parent, e.Kind
+	if err := tx.QueryRow(`SELECT mode,rule FROM graph_edges WHERE source=? AND target=? AND kind=?`, e.From, parent, e.Kind).Scan(&previous.Mode, &previous.Rule); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM graph_edges WHERE source=? AND target=? AND kind=?`, e.From, parent, e.Kind); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES(?,?,?,?,?) ON CONFLICT(source,target,kind) DO UPDATE SET mode=excluded.mode,rule=excluded.rule`, e.From, e.To, e.Kind, e.Mode, e.Rule); err != nil {
+		return err
+	}
+	before, _ := json.Marshal(previous)
+	after, _ := json.Marshal(e)
+	return graphRecord(tx, "edge", e.From, e.Kind, string(before), string(after), actor, now)
 }
 
 // agentAboveTx says whether one Agent is above another in the org tree: its

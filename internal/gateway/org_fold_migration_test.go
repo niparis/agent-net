@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -9,15 +10,10 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-func TestOrgFoldMigration(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "gateway.db")
-	s, err := OpenStore(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Rewind to the schema right before orgFoldMigration so we can seed rows
-	// in the old shape and verify the upgrade path.
+// rewindBeforeOrgFold puts a store back to the shape before orgFoldMigration:
+// repos with owner_agent_id, and the four side tables that migration folds.
+func rewindBeforeOrgFold(t *testing.T, s *Store) {
+	t.Helper()
 	if _, err := s.db.Exec(`
 		DELETE FROM schema_version WHERE version=(SELECT MAX(version) FROM schema_version);
 		DROP TRIGGER IF EXISTS repo_live_lead_insert;
@@ -54,6 +50,20 @@ func TestOrgFoldMigration(t *testing.T) {
 			PRIMARY KEY(level,scope)
 		);
 		CREATE TABLE project_display_names (project TEXT PRIMARY KEY, name TEXT NOT NULL);
+	`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOrgFoldMigration(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gateway.db")
+	s, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rewindBeforeOrgFold(t, s)
+	if _, err := s.db.Exec(`
 		INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES
 			('a1','A1','',1,1,0),
 			('a2','A2','',1,1,0),
@@ -238,7 +248,127 @@ func TestComputedOrgTreeAndStaleLeadBug(t *testing.T) {
 	if reportsTo, _, err := s.sessionOrgLines(visitorSession); err != nil || !strings.HasPrefix(reportsTo, "lead2") {
 		t.Fatalf("sessionOrgLines=%q err=%v, want prefix lead2", reportsTo, err)
 	}
-	if err := s.SetEdge(protocol.Edge{From: "visitor", To: "other", Kind: protocol.EdgeReportsTo}, "owner"); err == nil {
-		t.Fatal("expected SetEdge with reports_to to be rejected")
+	// An explicit move is not refused: it is stored and wins over the lead.
+	if err := s.SetEdge(protocol.Edge{From: "visitor", To: "other", Kind: protocol.EdgeReportsTo}, "owner"); err != nil {
+		t.Fatalf("explicit reports_to move: %v", err)
 	}
+	if parents, err = agentParentsQ(s.db); err != nil || parents["visitor"] != "other" {
+		t.Fatalf("after an explicit move visitor reports to %q (%v), want other", parents["visitor"], err)
+	}
+}
+
+// The tree every session sees does not change with the migration. The fixture
+// has the live shape: 51 agents, 44 repos, 4 teams, 24 agent-to-agent and 2
+// agent-to-owner stored reports_to edges. After the migration the stored edges
+// are gone and the computed parents are the same.
+func TestOrgFoldKeepsTheLiveTree(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gateway.db")
+	s, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rewindBeforeOrgFold(t, s)
+	node, _, err := s.CreateNode("fixture", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"cto": protocol.OrgRoot, "chief": protocol.OrgRoot}
+	var stmts []string
+	add := func(format string, args ...any) { stmts = append(stmts, fmt.Sprintf(format, args...)) }
+	agent := func(id, role string) {
+		add(`INSERT OR IGNORE INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES('%s','%s','%s',1,1,0)`, id, id, role)
+	}
+	agent("cto", "")
+	agent("chief", "")
+	for i := 1; i <= 4; i++ {
+		lead := fmt.Sprintf("tl%d", i)
+		agent(lead, "")
+		add(`INSERT INTO teams(id,name,purpose,owner_agent_id,active,created_at,updated_at) VALUES('t%d','Team %d','','%s',1,1,1)`, i, i, lead)
+		want[lead] = "cto"
+	}
+	for i := 1; i <= 3; i++ {
+		member := fmt.Sprintf("m%d", i)
+		agent(member, "")
+		add(`INSERT INTO team_members(member_kind,member_id,team_id) VALUES('agent','%s','t%d')`, member, i)
+		want[member] = fmt.Sprintf("tl%d", i)
+	}
+	teamOfRepo := map[int]int{0: 1, 1: 1, 2: 1, 3: 2, 4: 2, 5: 3}
+	for i := 0; i < 31; i++ {
+		lead, repo := fmt.Sprintf("rl%02d", i), fmt.Sprintf("rp%02d", i)
+		agent(lead, "")
+		// Half of the repos follow their owner, half have an explicit lead.
+		explicit := "NULL"
+		if i%2 == 1 {
+			explicit = "'" + lead + "'"
+		}
+		add(`INSERT INTO repos(id,display_name,created_at,updated_at,owner_agent_id,lead_agent_id) VALUES('%s','%s',1,1,'%s',%s)`, repo, repo, lead, explicit)
+		if team, ok := teamOfRepo[i]; ok {
+			add(`INSERT INTO team_members(member_kind,member_id,team_id) VALUES('repo','%s','t%d')`, repo, team)
+			want[lead] = fmt.Sprintf("tl%d", team)
+		}
+	}
+	for i := 0; i < 13; i++ {
+		add(`INSERT INTO repos(id,display_name,created_at,updated_at) VALUES('rx%02d','rx%02d',1,1)`, i, i)
+	}
+	for i := 0; i < 8; i++ {
+		helper, lead := fmt.Sprintf("h%d", i), fmt.Sprintf("rl%02d", 10+i)
+		agent(helper, "")
+		add(`INSERT INTO sessions(id,node_id,harness,native_id,last_seen,repo_id,agent_id) VALUES('s_%s','%s','claude','%s',0,'rp%02d','%s')`, helper, node, helper, 10+i, helper)
+		want[helper] = lead
+	}
+	for i := 20; i < 23; i++ {
+		merger := fmt.Sprintf("rp%02d-merger", i)
+		agent(merger, "merger")
+		want[merger] = fmt.Sprintf("rl%02d", i)
+	}
+	add(`INSERT INTO sessions(id,node_id,harness,native_id,last_seen,agent_id) VALUES('s_chief','%s','claude','chief',0,'chief')`, node)
+	add(`INSERT INTO owner_settings(key,value,updated_at) VALUES('chief_session','s_chief',1)`)
+	for child, parent := range want {
+		kind := "agent"
+		if parent == protocol.OrgRoot {
+			kind = "special"
+		}
+		add(`INSERT INTO graph_edges(source,target,kind,mode,rule,source_kind,target_kind) VALUES('%s','%s','reports_to','','normal','agent','%s')`, child, parent, kind)
+	}
+	if err := execAllDB(s.db, stmts); err != nil {
+		t.Fatal(err)
+	}
+	var agents, repos, teams, edges int
+	if err := s.db.QueryRow(`SELECT (SELECT COUNT(*) FROM agents), (SELECT COUNT(*) FROM repos), (SELECT COUNT(*) FROM teams), (SELECT COUNT(*) FROM graph_edges WHERE kind='reports_to')`).Scan(&agents, &repos, &teams, &edges); err != nil {
+		t.Fatal(err)
+	}
+	if agents != 51 || repos != 44 || teams != 4 || edges != 26 {
+		t.Fatalf("fixture has %d agents, %d repos, %d teams, %d edges; want 51, 44, 4, 26", agents, repos, teams, edges)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if s, err = OpenStore(path); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM graph_edges WHERE kind='reports_to'`).Scan(&edges); err != nil || edges != 0 {
+		t.Fatalf("stored reports_to edges after the migration: %d %v", edges, err)
+	}
+	got, err := agentParentsQ(s.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("computed %d parents, want %d: %v", len(got), len(want), got)
+	}
+	for child, parent := range want {
+		if got[child] != parent {
+			t.Errorf("%s reports to %q, want %q", child, got[child], parent)
+		}
+	}
+}
+
+func execAllDB(db repoDB, stmts []string) error {
+	for _, q := range stmts {
+		if _, err := db.Exec(q); err != nil {
+			return fmt.Errorf("%s: %w", q, err)
+		}
+	}
+	return nil
 }

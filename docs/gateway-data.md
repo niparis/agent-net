@@ -385,7 +385,7 @@ Owner settings and their history.
 
 ### graph_edges
 
-- **Holds:** One typed link between two nodes of the org tree (`depends`, `deploys`, or a `/delivery/*` step owner), with its mode and rule. `reports_to` is computed on read from leadership and team membership and is not stored here.
+- **Holds:** One typed link between two nodes of the org tree (`depends`, `deploys`, or a `/delivery/*` step owner), with its mode and rule. `reports_to` is computed on read from leadership and team membership. Only an explicit move by the CTO or the owner (`edge_set`) is stored here, and it wins over the computed parent.
 - **Written by:** `gateway/edge_kinds.go`, `gateway/held.go`, `gateway/merger.go`, `gateway/merger_restore.go`, `gateway/settings.go`, `gateway/store_graph.go`
 - **Read by:** `gateway/cto_graph.go`, `gateway/graph_lifecycle.go`, `gateway/graph_refs.go`, `gateway/graph_view.go`, `gateway/graphread.go`, `gateway/held.go`, `gateway/learned.go`, `gateway/learned_apply.go`, `gateway/learned_owner.go`, `gateway/merger.go` and others
 - **Shown in:** TUI, Graph; tool `agent_graph_read`; CTO op `edge_set`; CTO op `edge_remove`; CTO op `merger_set`

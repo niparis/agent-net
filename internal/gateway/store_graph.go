@@ -690,15 +690,6 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 			if current.String != value {
 				return reject("lead changed since that history entry")
 			}
-			if old != "" {
-				var belongs bool
-				if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND lead_agent_id=? UNION ALL SELECT 1 FROM sessions WHERE repo_id=? AND agent_id=?)`, node, old, node, old).Scan(&belongs); err != nil {
-					return err
-				}
-				if !belongs {
-					return reject("lead Agent has no session in this Repo")
-				}
-			}
 			_, err = tx.Exec(`UPDATE repos SET lead_agent_id=? WHERE id=?`, storedLead(lead), node)
 		case "team":
 			err = tx.QueryRow(`SELECT owner_agent_id FROM teams WHERE id=? AND active=1`, node).Scan(&current)
@@ -912,8 +903,16 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 		if old == "" {
 			_, err = tx.Exec(`DELETE FROM graph_edges WHERE source=? AND target=? AND kind=?`, e.From, e.To, e.Kind)
 		} else {
+			moved := e
 			if err = json.Unmarshal([]byte(old), &e); err != nil {
 				return err
+			}
+			// Undoing a parent move drops the new parent, then restores the
+			// old one, so the one-parent rule below sees a free slot.
+			if e.Kind == protocol.EdgeReportsTo && e.To != moved.To {
+				if _, err = tx.Exec(`DELETE FROM graph_edges WHERE source=? AND target=? AND kind=?`, moved.From, moved.To, moved.Kind); err != nil {
+					return err
+				}
 			}
 			if deliveryEdgeStep(e.Kind) != "" && e.Kind != "deploys" {
 				var count int
@@ -925,7 +924,9 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 				}
 			}
 			if e.Kind == protocol.EdgeReportsTo {
-				return reject("reports_to is computed from team membership, repo leads and roles")
+				if err = checkReportsTo(tx, e.From, e.To); err != nil {
+					return err
+				}
 			}
 			owner := protocol.DeliveryOwnerFromSource(e.From)
 			if owner.Kind != protocol.OwnerNode {
@@ -1193,7 +1194,13 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 		return reject("invalid edge rule")
 	}
 	if e.Kind == protocol.EdgeReportsTo {
-		return reject("reports_to is computed from team membership, repo leads and roles; use lead_set or team_member_add")
+		if e.Mode != "" {
+			return reject("an edge has no mode")
+		}
+		if err := checkReportsToTarget(tx, e.From, e.To); err != nil {
+			return err
+		}
+		return moveReportsToTx(tx, e, actor, now)
 	}
 	deliveryEdge := deliveryEdgeStep(e.Kind) != "" && e.Kind != "deploys"
 	if e.Kind != "depends" && e.Kind != "deploys" && !deliveryEdge {

@@ -51,8 +51,7 @@ func TestCTOOperatorEdgeSetReportsTo(t *testing.T) {
 		cli.mustCall("agent_create", protocol.GraphLifecycleRequest{Name: name})
 	}
 
-	// reports_to is computed from team membership, repo leads and roles, so
-	// edge_set refuses to store it.
+	// 1. CTO edge_set op moves child's parent to parent1.
 	opArgs := map[string]any{
 		"method": "edge_set",
 		"args": map[string]any{
@@ -62,8 +61,69 @@ func TestCTOOperatorEdgeSetReportsTo(t *testing.T) {
 		},
 	}
 	raw, _ := json.Marshal(opArgs)
-	if _, err := n.d.runCTOTool(ctx, "cto_op", raw); err == nil || !strings.Contains(err.Error(), "computed") {
-		t.Fatalf("expected reports_to edge_set to be refused as computed, got: %v", err)
+	if _, err := n.d.runCTOTool(ctx, "cto_op", raw); err != nil {
+		t.Fatalf("cto_op edge_set: %v", err)
+	}
+	if _, err := g.gw.Store().StoredEdge(protocol.Edge{From: "child", To: "parent1", Kind: "reports_to"}); err != nil {
+		t.Fatalf("child reports_to parent1 not stored: %v", err)
+	}
+
+	// 2. A second edge_set moves the parent in one step.
+	secondParentArgs := map[string]any{
+		"method": "edge_set",
+		"args": map[string]any{
+			"from": "child",
+			"to":   "parent2",
+			"kind": "reports_to",
+		},
+	}
+	rawSecond, _ := json.Marshal(secondParentArgs)
+	if _, err := n.d.runCTOTool(ctx, "cto_op", rawSecond); err != nil {
+		t.Fatalf("moving the parent should work: %v", err)
+	}
+	if _, err := g.gw.Store().StoredEdge(protocol.Edge{From: "child", To: "parent2", Kind: "reports_to"}); err != nil {
+		t.Fatalf("child reports_to parent2 not stored: %v", err)
+	}
+	if _, err := g.gw.Store().StoredEdge(protocol.Edge{From: "child", To: "parent1", Kind: "reports_to"}); err == nil {
+		t.Fatal("after the move child still reports to parent1")
+	}
+
+	// 3. Tree rules refuse a cycle: parent2 cannot report to child.
+	cycleArgs := map[string]any{
+		"method": "edge_set",
+		"args": map[string]any{
+			"from": "parent2",
+			"to":   "child",
+			"kind": "reports_to",
+		},
+	}
+	rawCycle, _ := json.Marshal(cycleArgs)
+	if _, err := n.d.runCTOTool(ctx, "cto_op", rawCycle); err == nil || !strings.Contains(err.Error(), "cycle") {
+		t.Fatalf("cycle should be refused: %v", err)
+	}
+
+	// 4. The move left one undo row for child, and it restores parent1.
+	items, err := inboxAndLog(g.gw.Store())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The notices are in the order the CTO applied them: set, then move.
+	var undos []protocol.InboxItem
+	for _, it := range items {
+		if len(it.Options) == 2 && it.Options[0] == "graph_undo" {
+			undos = append(undos, it)
+		}
+	}
+	if len(undos) != 2 {
+		t.Fatalf("want one undo notice per edge_set (set, move), got %d: %+v", len(undos), items)
+	}
+	moveNotice := &undos[1]
+	cli.mustCall(moveNotice.Options[0], json.RawMessage(moveNotice.Options[1]))
+	if _, err := g.gw.Store().StoredEdge(protocol.Edge{From: "child", To: "parent1", Kind: "reports_to"}); err != nil {
+		t.Fatalf("after undo child should report to parent1 again: %v", err)
+	}
+	if _, err := g.gw.Store().StoredEdge(protocol.Edge{From: "child", To: "parent2", Kind: "reports_to"}); err == nil {
+		t.Fatal("after undo child still reports to parent2")
 	}
 }
 

@@ -39,11 +39,86 @@ func lastHistoryID(t *testing.T, s *Store) (id int64, rows int) {
 	return id, rows
 }
 
-// reports_to is computed from leadership and team membership, so SetEdge refuses it.
-func TestReportsToSetIsRefusedAsComputed(t *testing.T) {
+// An explicit edge_set moves the parent in one write: one history row, one undo.
+func TestReportsToSetMovesTheParent(t *testing.T) {
 	s := teamStore(t)
-	if err := s.SetEdge(reportsEdge("demo", "other"), "owner"); err == nil || !strings.Contains(err.Error(), "computed") {
-		t.Fatalf("expected reports_to SetEdge to be refused as computed, got: %v", err)
+	if err := s.SetEdge(reportsEdge("demo", "other"), "owner"); err != nil {
+		t.Fatal(err)
+	}
+	_, before := lastHistoryID(t, s)
+	if err := s.SetEdge(reportsEdge("demo", "cto"), "owner"); err != nil {
+		t.Fatalf("moving the parent: %v", err)
+	}
+	if got := reportsTo(t, s, "demo"); got != "cto" {
+		t.Fatalf("demo reports to %q, want cto", got)
+	}
+	id, after := lastHistoryID(t, s)
+	if after != before+1 {
+		t.Fatalf("a move wrote %d history rows, want 1", after-before)
+	}
+	if err := s.GraphUndo(id, "owner"); err != nil {
+		t.Fatalf("undo of the move: %v", err)
+	}
+	if got := reportsTo(t, s, "demo"); got != "other" {
+		t.Fatalf("after undo demo reports to %q, want other", got)
+	}
+	// Undoing the undo moves the parent forward again.
+	redo, _ := lastHistoryID(t, s)
+	if err := s.GraphUndo(redo, "owner"); err != nil {
+		t.Fatalf("undo of the undo: %v", err)
+	}
+	if got := reportsTo(t, s, "demo"); got != "cto" {
+		t.Fatalf("after redo demo reports to %q, want cto", got)
+	}
+}
+
+// A move keeps the other tree rules: no cycle, and no parent that is a merger.
+func TestReportsToMoveKeepsTheTreeRules(t *testing.T) {
+	s := teamStore(t)
+	for _, e := range []protocol.Edge{reportsEdge("demo", "other"), reportsEdge("other", "cto")} {
+		if err := s.SetEdge(e, "owner"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.SetEdge(reportsEdge("other", "demo"), "owner"); err == nil || !strings.Contains(err.Error(), "cycle") {
+		t.Fatalf("a cycle through a move was accepted: %v", err)
+	}
+	if got := reportsTo(t, s, "other"); got != "cto" {
+		t.Fatalf("a refused move changed the parent to %q", got)
+	}
+}
+
+// The one-parent rule still holds for a writer that is not an explicit
+// edge_set: undoing a removal must not add a second parent.
+func TestReportsToUndoKeepsOneParent(t *testing.T) {
+	s := teamStore(t)
+	if err := s.SetEdge(reportsEdge("demo", "other"), "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RemoveEdge(reportsEdge("demo", "other"), "owner"); err != nil {
+		t.Fatal(err)
+	}
+	removal, _ := lastHistoryID(t, s)
+	if err := s.SetEdge(reportsEdge("demo", "cto"), "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.GraphUndo(removal, "owner"); err == nil || !strings.Contains(err.Error(), "already reports to") {
+		t.Fatalf("undo added a second parent: %v", err)
+	}
+	if got := reportsTo(t, s, "demo"); got != "cto" {
+		t.Fatalf("demo reports to %q, want cto", got)
+	}
+}
+
+func TestReportsToRefusesACycle(t *testing.T) {
+	s := teamStore(t)
+	for _, e := range []protocol.Edge{reportsEdge("demo", "other"), reportsEdge("other", "cto")} {
+		if err := s.SetEdge(e, "owner"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.SetEdge(reportsEdge("cto", "demo"), "owner"); err == nil {
+		t.Fatal("a cycle was accepted")
 	}
 }
 
@@ -51,6 +126,9 @@ func TestReportsToSetIsRefusedAsComputed(t *testing.T) {
 // reports_to edge never shows as a graph edge or adds an implicit node.
 func TestReportsToStaysOutOfTheGraphReads(t *testing.T) {
 	s := teamStore(t)
+	if err := s.SetEdge(reportsEdge("cto", protocol.OrgRoot), "owner"); err != nil {
+		t.Fatal(err)
+	}
 	for _, typed := range []bool{false, true} {
 		var g protocol.Graph
 		var err error
@@ -72,6 +150,34 @@ func TestReportsToStaysOutOfTheGraphReads(t *testing.T) {
 				t.Fatalf("typed=%v: graph shows a node for the root: %+v", typed, n)
 			}
 		}
+	}
+}
+
+func TestEdgeSetReturnsTheStoredEdge(t *testing.T) {
+	s := teamStore(t)
+	g := &Gateway{store: s}
+	raw, _ := json.Marshal(map[string]string{"from": "demo", "to": protocol.OrgRoot, "kind": protocol.EdgeReportsTo})
+	out, err := g.handle(context.Background(), typedNode("n"), "edge.set", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(out)
+	var got struct {
+		OK   bool `json:"ok"`
+		Edge struct {
+			From protocol.GraphRef `json:"from"`
+			To   protocol.GraphRef `json:"to"`
+			Kind string            `json:"kind"`
+			Rule string            `json:"rule"`
+		} `json:"edge"`
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("%s: %v", b, err)
+	}
+	if !got.OK || got.Edge.From != (protocol.GraphRef{Kind: "agent", ID: "demo"}) ||
+		got.Edge.To != (protocol.GraphRef{Kind: "special", ID: protocol.OrgRoot}) ||
+		got.Edge.Kind != protocol.EdgeReportsTo || got.Edge.Rule != "normal" {
+		t.Fatalf("edge.set answered %s", b)
 	}
 }
 

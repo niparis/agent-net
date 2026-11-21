@@ -89,6 +89,10 @@ func TestTeamLeadChangeMovesMembers(t *testing.T) {
 	}
 	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "alpha", Name: "Alpha", Owner: &protocol.GraphRef{Kind: "agent", ID: "demo"}})
 	teamWrite(t, s, protocol.TeamWrite{Action: "membership", ID: "alpha", Member: &protocol.GraphRef{Kind: "agent", ID: "helper"}})
+	// demo leads only the team, so losing the team lead frees its pin.
+	if err := s.SetLead(protocol.LeadSetRequest{Ref: protocol.GraphRef{Kind: "repo", ID: "demo"}}, "owner", false); err != nil {
+		t.Fatal(err)
+	}
 	if got := reportsTo(t, s, "helper"); got != "demo" {
 		t.Fatalf("helper reports to %q, want demo", got)
 	}
@@ -122,9 +126,9 @@ func TestTeamMemberChangeMovesTheMember(t *testing.T) {
 	}
 }
 
-// A repo owner change, here the architect delete trigger clearing the owner,
+// A repo lead change, here the architect delete trigger clearing the lead,
 // moves the Agents that work in the repo.
-func TestRepoOwnerChangeMovesRepoAgents(t *testing.T) {
+func TestRepoLeadClearedByArchitectDeleteMovesRepoAgents(t *testing.T) {
 	s, _ := newTestStore(t)
 	node, _, err := s.CreateNode("shop-node", "linux")
 	if err != nil {
@@ -139,7 +143,7 @@ func TestRepoOwnerChangeMovesRepoAgents(t *testing.T) {
 	if _, err = s.AddProjects(node, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "shop", Path: "/w/shop"}}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec(`UPDATE repos SET owner_agent_id='advisor' WHERE id='shop'`); err != nil {
+	if _, err = s.db.Exec(`UPDATE repos SET lead_agent_id='advisor' WHERE id='shop'`); err != nil {
 		t.Fatal(err)
 	}
 	session, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "visit",
@@ -150,8 +154,8 @@ func TestRepoOwnerChangeMovesRepoAgents(t *testing.T) {
 	if _, err = s.db.Exec(`UPDATE sessions SET agent_id='visitor' WHERE id=?`, session); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec(`INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES('visitor','advisor','reports_to','','normal')`); err != nil {
-		t.Fatal(err)
+	if got := reportsTo(t, s, "visitor"); got != "advisor" {
+		t.Fatalf("visitor reports to %q before the lead went, want advisor", got)
 	}
 	if err = s.RemoveArchitect("advisor", "owner"); err != nil {
 		t.Fatal(err)
@@ -253,6 +257,10 @@ func liveLeadFixture(t *testing.T) (*Store, string) {
 // not only the lead that was set.
 func TestRepoLeadChangeMovesTheRepoOwnerAgent(t *testing.T) {
 	s, lead := liveLeadFixture(t)
+	// The org fold migration deletes stored edges; the tree is computed.
+	if _, err := s.db.Exec(`DELETE FROM graph_edges WHERE kind='reports_to'`); err != nil {
+		t.Fatal(err)
+	}
 	leadSession(t, s, protocol.GraphRef{Kind: "repo", ID: "demo"}, lead)
 	if got := reportsTo(t, s, "demo"); got != "lead2" {
 		t.Fatalf("the Repo's owner Agent reports to %q, want lead2", got)

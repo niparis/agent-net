@@ -132,7 +132,7 @@ func TestCTOLeadGraphUndo(t *testing.T) {
 	}
 }
 
-func TestCTORepoLeadUndoRestoresDefault(t *testing.T) {
+func TestCTORepoLeadUndoRestoresThePreviousLead(t *testing.T) {
 	s := teamStore(t)
 	repo := protocol.GraphRef{Kind: "repo", ID: "demo"}
 	other := protocol.GraphRef{Kind: "agent", ID: "other"}
@@ -149,9 +149,9 @@ func TestCTORepoLeadUndoRestoresDefault(t *testing.T) {
 	if err = s.GraphUndo(history[0].ID, "owner"); err != nil {
 		t.Fatal(err)
 	}
-	var explicit bool
-	if err = s.db.QueryRow(`SELECT lead_agent_id IS NOT NULL FROM repos WHERE id='demo'`).Scan(&explicit); err != nil || explicit {
-		t.Fatalf("default lead is still an explicit lead: %v %v", explicit, err)
+	var lead string
+	if err = s.db.QueryRow(`SELECT COALESCE(lead_agent_id,'') FROM repos WHERE id='demo'`).Scan(&lead); err != nil || lead != "demo" {
+		t.Fatalf("undo left lead %q, want the previous lead demo: %v", lead, err)
 	}
 }
 

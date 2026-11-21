@@ -267,7 +267,7 @@ func TestFirstSessionPinsTheLeadAgent(t *testing.T) {
 	if err := s.GraphLifecycle("agent.create", protocol.GraphLifecycleRequest{Name: "solo"}, "owner", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO repos(id,display_name,created_at,updated_at,owner_agent_id) VALUES('solo','solo',0,0,'solo')`); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO repos(id,display_name,created_at,updated_at,lead_agent_id) VALUES('solo','solo',0,0,'solo')`); err != nil {
 		t.Fatal(err)
 	}
 	var node string

@@ -293,11 +293,20 @@ func restoreRepoSideTables(t *testing.T, db repoDB) {
 		}
 	}
 	if cur < migrationVersion(t, orgFoldMarker) {
+		// A test that rewinds past the repo and agent records has dropped these
+		// tables; the replay creates them in their old shape.
+		var haveRepos, haveAgents int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='repos'`).Scan(&haveRepos); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='agents'`).Scan(&haveAgents); err != nil {
+			t.Fatal(err)
+		}
 		var hasOwner int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('repos') WHERE name='owner_agent_id'`).Scan(&hasOwner); err != nil {
 			t.Fatal(err)
 		}
-		if hasOwner == 0 {
+		if haveRepos > 0 && hasOwner == 0 {
 			for _, q := range []string{
 				`DROP TRIGGER IF EXISTS repo_live_lead_insert`,
 				`DROP TRIGGER IF EXISTS repo_live_lead_update`,
@@ -314,7 +323,7 @@ func restoreRepoSideTables(t *testing.T, db repoDB) {
 		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('agents') WHERE name='team_id'`).Scan(&hasAgentTeam); err != nil {
 			t.Fatal(err)
 		}
-		if hasAgentTeam > 0 {
+		if haveAgents > 0 && hasAgentTeam > 0 {
 			for _, q := range []string{
 				`INSERT OR IGNORE INTO team_members(member_kind,member_id,team_id) SELECT 'agent',id,team_id FROM agents WHERE team_id<>''`,
 				`DROP TRIGGER IF EXISTS bot_agent_revoke`,
@@ -331,7 +340,7 @@ func restoreRepoSideTables(t *testing.T, db repoDB) {
 		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('repos') WHERE name='team_id'`).Scan(&hasRepoTeam); err != nil {
 			t.Fatal(err)
 		}
-		if hasRepoTeam > 0 {
+		if haveRepos > 0 && hasRepoTeam > 0 {
 			for _, q := range []string{
 				`INSERT OR IGNORE INTO team_members(member_kind,member_id,team_id) SELECT 'repo',id,team_id FROM repos WHERE team_id<>''`,
 				`DROP INDEX IF EXISTS repos_team`,

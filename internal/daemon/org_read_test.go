@@ -6,8 +6,6 @@ import (
 	"sort"
 	"strings"
 	"testing"
-
-	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // The CTO's agent_graph_read with root reads one subtree of the org tree,
@@ -25,12 +23,7 @@ func TestCTOGraphReadRootIsOneSubtree(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitGraphCutover(t, g)
-	if err := g.gw.Store().WriteTeam(protocol.TeamWrite{Action: "create", ID: "t_org", Name: "Org", Owner: &protocol.GraphRef{Kind: "agent", ID: "org-lead"}}, "owner"); err != nil {
-		t.Fatal(err)
-	}
-	if err := g.gw.Store().WriteTeam(protocol.TeamWrite{Action: "membership", ID: "t_org", Member: &protocol.GraphRef{Kind: "agent", ID: "org-member"}}, "owner"); err != nil {
-		t.Fatal(err)
-	}
+	w.cli.mustCall("edge_set", map[string]any{"from": "org-member", "to": "org-lead", "kind": "reports_to"})
 	if err := w.d.registerCTOSession(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +46,7 @@ func TestCTOGraphReadRootIsOneSubtree(t *testing.T) {
 		got = append(got, n.Name+"<"+n.ReportsTo)
 	}
 	sort.Strings(got)
-	if strings.Join(got, " ") != "org-lead<cto org-member<org-lead" {
+	if strings.Join(got, " ") != "org-lead< org-member<org-lead" {
 		t.Fatalf("root org-lead read %v: %s", got, raw)
 	}
 	t.Logf("agent_graph_read {\"root\":\"org-lead\"}: %s", raw)
