@@ -28,10 +28,13 @@ var (
 	// Phrases that tell the worker to leave files alone. The files after a
 	// prefix phrase run to the end of its clause; the files before a suffix
 	// phrase run back to the start of its clause.
-	briefAvoidRE      = regexp.MustCompile(`(?i)\b(?:(?:do\s+not|don'?t|never|must\s+not|not\s+to|please\s+don'?t)\s+(?:touch|edit|change|modify|alter|rewrite|delete|remove|rename|move)|avoid\s+(?:touching|editing|changing|modifying|touch|edit|change|modify))\b`)
+	briefAvoidRE      = regexp.MustCompile(`(?i)\b(?:(?:do\s+not|don'?t|never|must\s+not|not\s+to|please\s+don'?t)(?:\s+(?:touch|edit|change|modify|alter|rewrite|delete|remove|rename|move|use|run))?|not\s+(?:touch|touching|edit|editing|change|changing|modify|modifying|use|run|running)|avoid\s+(?:touching|editing|changing|modifying|touch|edit|change|modify)|only\s+(?:runs?|running|to\s+run))\b`)
 	briefAvoidEndRE   = regexp.MustCompile(`(?i)\n|;|\.(?:\s|$)|\s(?:but|however|except|instead|rather)\b|[,\s]+(?:(?:and|or|then)\s+)?(?:change|changes|edit|edits|fix|fixes|add|adds|update|updates|write|writes|implement|make|refactor|rename|move|delete|remove|create|wire|modify|extend)\b`)
-	briefAvoidAfterRE = regexp.MustCompile(`(?i)\b(?:(?:is|are)\s+(?:out\s+of\s+scope|off\s+limits|not\s+in\s+scope)|(?:is|are)\s+not\s+to\s+be\s+(?:touched|edited|changed|modified)|(?:must|should)\s+not\s+be\s+(?:touched|edited|changed|modified))\b`)
+	briefAvoidAfterRE = regexp.MustCompile(`(?i)\b(?:(?:is|are)\s+(?:out\s+of\s+scope|off\s+limits|not\s+in\s+scope)|(?:is|are)\s+not\s+to\s+be\s+(?:touched|edited|changed|modified)|(?:must|should)\s+not\s+be\s+(?:touched|edited|changed|modified)|(?:(?:is|are)\s+)?only\s+runs?|(?::\s*)?(?:do\s+not\s+touch|not\s+touch|only\s+runs?))\b`)
 	briefAvoidStartRE = regexp.MustCompile(`(?i)[;,\n]|\.\s|\s(?:and|or|but|then)\s`)
+
+	briefChangeScriptRE      = regexp.MustCompile(`(?i)\b(?:change|changes|changing|edit|edits|editing|fix|fixes|fixing|update|updates|updating|modify|modifies|modifying|alter|alters|altering|rewrite|rewrites|rewriting|refactor|refactors|refactoring|patch|patches|patching)\s+(?:(?:to|in|the|of|this|that|script|(?:bug|issue|defect|error|problem|crash|failure|flake)\s+in)\s+)*(?:scripts/)?test-changed\.sh\b|\b(?:scripts/)?test-changed\.sh\b\s*(?:[:\-]\s*(?:(?:to|in|the|of|this|that|script)\s+)*|\s+(?:is|are|was|were|needs?\s+to\s+be|to\s+be)\s+)(?:change|changes|changed|changing|edit|edits|edited|editing|fix|fixes|fixed|fixing|update|updates|updated|updating|modify|modifies|modified|modifying|alter|alters|altered|altering|rewrite|rewrites|rewritten|rewriting|refactor|refactors|refactored|refactoring|patch|patches|patched|patching)\b`)
+	briefTestChangedScriptRE = regexp.MustCompile(`(?i)\b(?:scripts/)?test-changed\.sh\b`)
 )
 
 // BriefTargetIDs returns the change, worker and session ids a brief names. A
@@ -44,6 +47,91 @@ func BriefTargetIDs(text string) map[string]bool {
 	return ids
 }
 
+func isKnownBriefSection(label string) bool {
+	switch {
+	case label == "evidence":
+		return true
+	case label == "problem" || label == "goal":
+		return true
+	case label == "done" || label == "definition of done" || strings.HasPrefix(label, "done"):
+		return true
+	case strings.HasPrefix(label, "hypothesis"):
+		return true
+	case label == "scope":
+		return true
+	case label == "task" || label == "notes":
+		return true
+	case label == "limits" || label == "how you are graded" || label == "how graded":
+		return true
+	case label == "files or areas" || label == "files":
+		return true
+	case label == "overlap ok":
+		return true
+	default:
+		return false
+	}
+}
+
+func isBriefSectionStart(trimmed string) bool {
+	if trimmed == "" || strings.HasPrefix(trimmed, "-") || strings.HasPrefix(trimmed, "*") || strings.HasPrefix(trimmed, "+") {
+		return false
+	}
+	label, _ := briefLineLabel(trimmed)
+	return isKnownBriefSection(label)
+}
+
+func blankRange(b []byte, from, to int) {
+	if from < 0 {
+		from = 0
+	}
+	if to > len(b) {
+		to = len(b)
+	}
+	for i := from; i < to; i++ {
+		if b[i] != '\n' {
+			b[i] = ' '
+		}
+	}
+}
+
+func blankEvidence(b []byte, text string) {
+	inEvidence := false
+	evidenceStart := 0
+	lineStart := 0
+
+	for lineStart < len(text) {
+		lineEnd := strings.IndexByte(text[lineStart:], '\n')
+		var nextLineStart int
+		if lineEnd < 0 {
+			lineEnd = len(text)
+			nextLineStart = len(text)
+		} else {
+			lineEnd = lineStart + lineEnd
+			nextLineStart = lineEnd + 1
+		}
+		line := text[lineStart:lineEnd]
+		trimmed := strings.TrimSpace(line)
+
+		if isBriefSectionStart(trimmed) {
+			label, _ := briefLineLabel(trimmed)
+			if label == "evidence" {
+				if !inEvidence {
+					inEvidence = true
+					evidenceStart = lineStart
+				}
+			} else if inEvidence {
+				blankRange(b, evidenceStart, lineStart)
+				inEvidence = false
+			}
+		}
+
+		lineStart = nextLineStart
+	}
+	if inEvidence {
+		blankRange(b, evidenceStart, len(text))
+	}
+}
+
 // BriefWithoutAvoided blanks the parts of a brief that tell the worker to leave
 // files alone, so the paths in them do not count as work the worker holds. A
 // brief that asks to avoid a file another worker changes is not an overlap. The
@@ -51,26 +139,28 @@ func BriefTargetIDs(text string) map[string]bool {
 // to change still counts, and any unclear wording stays an overlap.
 func BriefWithoutAvoided(text string) string {
 	b := []byte(text)
-	blank := func(from, to int) {
-		for i := from; i < to; i++ {
-			if b[i] != '\n' {
-				b[i] = ' '
-			}
+
+	blankEvidence(b, text)
+
+	if !briefChangeScriptRE.MatchString(text) {
+		for _, loc := range briefTestChangedScriptRE.FindAllStringIndex(text, -1) {
+			blankRange(b, loc[0], loc[1])
 		}
 	}
+
 	for _, loc := range briefAvoidRE.FindAllStringIndex(text, -1) {
 		end := len(text)
 		if m := briefAvoidEndRE.FindStringIndex(text[loc[1]:]); m != nil {
 			end = loc[1] + m[0]
 		}
-		blank(loc[0], end)
+		blankRange(b, loc[0], end)
 	}
 	for _, loc := range briefAvoidAfterRE.FindAllStringIndex(text, -1) {
 		start := 0
 		for _, m := range briefAvoidStartRE.FindAllStringIndex(text[:loc[0]], -1) {
 			start = m[1]
 		}
-		blank(start, loc[1])
+		blankRange(b, start, loc[1])
 	}
 	return string(b)
 }

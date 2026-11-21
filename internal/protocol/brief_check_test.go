@@ -32,6 +32,13 @@ func TestBriefWithoutAvoidedKeepsWhatTheWorkerChanges(t *testing.T) {
 		{"Do not touch internal/a/x.go and change internal/b/y.go.", "internal/b/y.go"},
 		{"Change internal/b/y.go and internal/a/x.go is out of scope.", "internal/b/y.go"},
 		{"Change internal/b/y.go, not internal/a/x.go.", "internal/b/y.go,internal/a/x.go"},
+		{"Scope: not touch internal/a/x.go. Change internal/b/y.go.", "internal/b/y.go"},
+		{"Scope: only runs scripts/test-changed.sh. Change internal/b/y.go.", "internal/b/y.go"},
+		{"Evidence:\n- internal/a/x.go\nDone:\n- change internal/b/y.go", "internal/b/y.go"},
+		{"Evidence:\n- internal/a/x.go\nDone:\n- change internal/a/x.go", "internal/a/x.go"},
+		{"Run scripts/test-changed.sh. Change internal/b/y.go.", "internal/b/y.go"},
+		{"Change scripts/test-changed.sh.", "scripts/test-changed.sh"},
+		{"Done:\n- update scripts/test-changed.sh", "scripts/test-changed.sh"},
 	} {
 		t.Run(tc.text, func(t *testing.T) {
 			if got := strings.Join(BriefPaths(BriefWithoutAvoided(tc.text)), ","); got != tc.want {
