@@ -36,14 +36,15 @@ type runsSnapshot struct {
 
 // runsSnapshot returns the copy of worker_runs for its current version. It
 // reads one number per call and reloads the table only when SQLite bumped the
-// version, which a trigger does on every insert, update and delete.
+// version (the gateway_state key worker_runs_version), which a trigger does on
+// every insert, update and delete.
 func (s *Store) runsSnapshot() (*runsSnapshot, error) {
 	s.runsMu.Lock()
 	defer s.runsMu.Unlock()
 	// The version is read before the rows. A write between the two reads leaves
 	// a copy that is newer than its version, so the next call reloads it.
 	var version int64
-	if err := s.db.QueryRow(`SELECT n FROM table_versions WHERE name='worker_runs'`).Scan(&version); err != nil {
+	if err := s.db.QueryRow(`SELECT COALESCE((SELECT CAST(value AS INTEGER) FROM gateway_state WHERE key='worker_runs_version'), 0)`).Scan(&version); err != nil {
 		return nil, err
 	}
 	if s.runs != nil && s.runs.version == version {

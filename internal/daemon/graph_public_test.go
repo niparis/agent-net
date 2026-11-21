@@ -244,38 +244,6 @@ func TestAgentGraphAndCTOViewHideSecretsButShowRules(t *testing.T) {
 	}
 }
 
-// The delegation policy the owner set for a project is a rule, so the public
-// graph shows it read-only, per machine.
-func TestAgentGraphShowsDelegationPolicy(t *testing.T) {
-	t.Parallel()
-	g := startGateway(t, t.TempDir(), "")
-	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
-	cli := cliClient(t, n)
-	cli.mustCall("node_add", map[string]any{"name": "shop"})
-	cli.mustCall("charter_set", map[string]any{"node": "shop", "attr": "maturity", "value": "mature"})
-	sid, err := g.gw.Store().UpsertSession(n.cfg.NodeID, protocol.SessionInfo{Harness: "pi", NativeID: "delegation-session",
-		Repo: protocol.RepoInfo{Project: "shop"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := g.gw.Store().SetDelegation(sid, protocol.ScopeProject, protocol.DelegationPolicy{
-		Delegate: protocol.DelegateWorkers, CoderModel: "fake/m1", Workers: protocol.WorkersReadOnly}); err != nil {
-		t.Fatal(err)
-	}
-	agent, _ := helloPi(t, n, "delegation-reader", "/w/reader", true)
-	var detail protocol.PublicGraphPage
-	if err := json.Unmarshal(agent.mustCall("agent_graph", map[string]any{"node": "shop"}), &detail); err != nil {
-		t.Fatal(err)
-	}
-	if len(detail.Nodes) != 1 || len(detail.Nodes[0].Delegation) != 1 {
-		t.Fatalf("delegation: %+v", detail.Nodes)
-	}
-	d := detail.Nodes[0].Delegation[0]
-	if d.Machine != n.cfg.NodeID || d.Delegate != protocol.DelegateWorkers || d.Workers != protocol.WorkersReadOnly {
-		t.Fatalf("delegation policy: %+v", d)
-	}
-}
-
 // agent_get shows a session's node rules, so a session can check its own rules.
 func TestAgentGetShowsSessionNodeRules(t *testing.T) {
 	t.Parallel()

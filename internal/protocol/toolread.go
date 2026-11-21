@@ -111,7 +111,6 @@ type SessionRow struct {
 	Purpose      string            `json:"purpose,omitempty"`
 	Charter      *ReadCharter      `json:"charter,omitempty"`
 	Rules        map[string]string `json:"rules,omitempty"`
-	Delegation   string            `json:"delegation,omitempty"`
 	Worker       *SessionWorker    `json:"worker,omitempty"`
 	// Loop is the standing loop of the session's node (decision 0094).
 	Loop *LoopView `json:"loop,omitempty"`

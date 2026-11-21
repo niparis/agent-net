@@ -20,8 +20,8 @@ func TestWorkerSandboxCutover(t *testing.T) {
 		legacyNodeSetting(t, s, row[0], "worker_sandbox", row[1])
 	}
 	for _, row := range [][3]string{{"one", "shop", "no-network"}, {"two", "shop", "read-only"}, {"one", "twins", "sandboxed"}} {
-		b, _ := json.Marshal(protocol.DelegationPolicy{Workers: row[2]})
-		if _, err := s.db.Exec(`INSERT INTO project_policies VALUES(?,?,?,1)`, row[0], row[1], string(b)); err != nil {
+		b, _ := legacyPolicy(row[2])
+		if _, err := legacyPolicyDB(t, s).Exec(`INSERT INTO project_policies VALUES(?,?,?,1)`, row[0], row[1], string(b)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -81,38 +81,6 @@ func TestWorkerSandboxCutover(t *testing.T) {
 	}
 }
 
-func TestWorkerSandboxSettingsAdapters(t *testing.T) {
-	s, _, session, _, _ := policyFixture(t)
-	if err := s.AddArchitect("CogForge", "owner"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.SetDelegation(session, protocol.ScopeProject, protocol.DelegationPolicy{Workers: protocol.WorkersReadOnly}); err != nil {
-		t.Fatal(err)
-	}
-	snap, err := s.SettingsSnapshot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !snap.WorkerSandboxCutover || snap.String("workers.sandbox_level", settings.Where{Repo: "CogForge"}) != "read-only" {
-		t.Fatalf("policy did not write settings: %+v", snap)
-	}
-	got, err := s.WorkerPermissions("elsewhere", "cogforge")
-	if err != nil || got != "read-only" {
-		t.Fatalf("permissions = %q %v", got, err)
-	}
-	node, err := s.NodeSettings("CogForge")
-	if err != nil || node.Effective.WorkerSandbox != "read-only" {
-		t.Fatalf("node = %+v %v", node, err)
-	}
-	if err := s.SetNodeSetting("CogForge", protocol.SettingWorkerSandbox, "no-network", "owner"); err != nil {
-		t.Fatal(err)
-	}
-	got, err = s.WorkerPermissions("elsewhere", "COGFORGE")
-	if err != nil || got != "no-network" {
-		t.Fatalf("node write = %q %v", got, err)
-	}
-}
-
 func TestWorkerSandboxLegacyBackupDoesNotOverrideSettings(t *testing.T) {
 	s, _ := newTestStore(t)
 	if err := s.AddArchitect("shop", "owner"); err != nil {
@@ -165,8 +133,8 @@ func TestWorkerSandboxCutoverPreservesMachineFallback(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			raw, _ := json.Marshal(protocol.DelegationPolicy{Workers: protocol.WorkersSandboxed})
-			if _, err := s.db.Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, a, string(raw)); err != nil {
+			raw, _ := legacyPolicy(protocol.WorkersSandboxed)
+			if _, err := legacyPolicyDB(t, s).Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, a, string(raw)); err != nil {
 				t.Fatal(err)
 			}
 			restoreOldCharterTables(t, s)
@@ -261,8 +229,8 @@ func TestWorkerSandboxCutoverNoticesMachineWithoutPolicy(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	raw, _ := json.Marshal(protocol.DelegationPolicy{Workers: protocol.WorkersReadOnly})
-	if _, err := s.db.Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, a, string(raw)); err != nil {
+	raw, _ := legacyPolicy(protocol.WorkersReadOnly)
+	if _, err := legacyPolicyDB(t, s).Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, a, string(raw)); err != nil {
 		t.Fatal(err)
 	}
 	restoreOldCharterTables(t, s)
@@ -367,8 +335,8 @@ func TestWorkerSandboxCutoverPreservesExactMachineProjectFallback(t *testing.T) 
 	if _, err = s.db.Exec(`INSERT INTO charter_values VALUES('repo','SHOP','maturity','critical',1,'owner')`); err != nil {
 		t.Fatal(err)
 	}
-	raw, _ := json.Marshal(protocol.DelegationPolicy{Workers: protocol.WorkersSandboxed})
-	if _, err = s.db.Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, a, string(raw)); err != nil {
+	raw, _ := legacyPolicy(protocol.WorkersSandboxed)
+	if _, err = legacyPolicyDB(t, s).Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, a, string(raw)); err != nil {
 		t.Fatal(err)
 	}
 	restoreOldCharterTables(t, s)
@@ -446,8 +414,8 @@ func TestWorkerSandboxCutoverNoticeListsAllAffectedMachines(t *testing.T) {
 		}
 	}
 	for _, p := range []struct{ id, value string }{{a, protocol.WorkersNoNetwork}, {c, protocol.WorkersReadOnly}} {
-		raw, _ := json.Marshal(protocol.DelegationPolicy{Workers: p.value})
-		if _, err = s.db.Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, p.id, string(raw)); err != nil {
+		raw, _ := legacyPolicy(p.value)
+		if _, err = legacyPolicyDB(t, s).Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, p.id, string(raw)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -482,8 +450,8 @@ func TestWorkerSandboxCutoverNoticeUsesActualProjectCase(t *testing.T) {
 	if _, err = s.AddProjects(id, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "Shop", Path: "/work/shop", GraphChecked: true}}}); err != nil {
 		t.Fatal(err)
 	}
-	raw, _ := json.Marshal(protocol.DelegationPolicy{Delegate: protocol.DelegateOff})
-	if _, err = s.db.Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, id, string(raw)); err != nil {
+	raw, _ := legacyPolicy("")
+	if _, err = legacyPolicyDB(t, s).Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, id, string(raw)); err != nil {
 		t.Fatal(err)
 	}
 	restoreOldCharterTables(t, s)
@@ -525,8 +493,8 @@ func TestWorkerSandboxCutoverNoticesSessionInferredProject(t *testing.T) {
 	if _, err = s.UpsertSession(b, protocol.SessionInfo{Harness: "claude", NativeID: "test", Cwd: "/work/shop"}); err != nil {
 		t.Fatal(err)
 	}
-	raw, _ := json.Marshal(protocol.DelegationPolicy{Workers: protocol.WorkersReadOnly})
-	if _, err = s.db.Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, a, string(raw)); err != nil {
+	raw, _ := legacyPolicy(protocol.WorkersReadOnly)
+	if _, err = legacyPolicyDB(t, s).Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, a, string(raw)); err != nil {
 		t.Fatal(err)
 	}
 	restoreOldCharterTables(t, s)
@@ -571,8 +539,8 @@ func TestWorkerSandboxCutoverNoticesSeenProjectWithDifferentRegistrationName(t *
 	if _, err = s.UpsertSession(b, protocol.SessionInfo{Harness: "claude", NativeID: "test", Cwd: "/work/other", Repo: protocol.RepoInfo{Project: "other", Root: "/work/other"}}); err != nil {
 		t.Fatal(err)
 	}
-	raw, _ := json.Marshal(protocol.DelegationPolicy{Workers: protocol.WorkersReadOnly})
-	if _, err = s.db.Exec(`INSERT INTO project_policies VALUES(?,'other',?,1)`, a, string(raw)); err != nil {
+	raw, _ := legacyPolicy(protocol.WorkersReadOnly)
+	if _, err = legacyPolicyDB(t, s).Exec(`INSERT INTO project_policies VALUES(?,'other',?,1)`, a, string(raw)); err != nil {
 		t.Fatal(err)
 	}
 	restoreOldCharterTables(t, s)
@@ -586,4 +554,13 @@ func TestWorkerSandboxCutoverNoticesSeenProjectWithDifferentRegistrationName(t *
 	if err != nil || len(inbox) != 1 || !strings.Contains(inbox[0].Text, "host-b: no-network") {
 		t.Fatalf("missing seen project machine: %+v %v", inbox, err)
 	}
+}
+
+// legacyPolicy is the policy JSON that project_policies rows held before the
+// delegation policy was removed: the workers level, or an empty policy.
+func legacyPolicy(workers string) ([]byte, error) {
+	if workers == "" {
+		return []byte(`{"delegate":"off"}`), nil
+	}
+	return json.Marshal(map[string]string{"workers": workers})
 }

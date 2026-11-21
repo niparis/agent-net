@@ -207,8 +207,6 @@ type fakeSource struct {
 	renames          []renameCall
 	projectNames     []renameCall
 	renameErr        error
-	policyFn         func(protocol.SessionPolicyRequest) (protocol.SessionPolicyResult, error)
-	policyErr        error
 	intg             protocol.Integrations
 	intgSet          bool
 	intgGetErr       error
@@ -340,13 +338,6 @@ func (f *fakeSource) SessionText(_ context.Context, q protocol.TextQuery) (proto
 		return protocol.TextPage{}, errors.New("session_text is not available")
 	}
 	return f.textFn(q)
-}
-
-func (f *fakeSource) SetSessionPolicy(_ context.Context, q protocol.SessionPolicyRequest) (protocol.SessionPolicyResult, error) {
-	if f.policyFn != nil {
-		return f.policyFn(q)
-	}
-	return protocol.SessionPolicyResult{SessionID: q.SessionID}, f.policyErr
 }
 
 func (f *fakeSource) Integrations(context.Context) (protocol.IntegrationsResult, error) {

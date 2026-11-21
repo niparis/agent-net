@@ -309,22 +309,6 @@ func TestCTOSettingsSchemasDescribeNestedValues(t *testing.T) {
 	}
 }
 
-func TestCTOSessionPolicyToolDescribesWrite(t *testing.T) {
-	list, err := ctoTestSession(t).ListTools(context.Background(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tool := range list.Tools {
-		if tool.Name == "session_change" {
-			if strings.Contains(strings.ToLower(tool.Description), "read or set") || !strings.Contains(tool.Description, "policy") {
-				t.Fatalf("misleading policy description: %s", tool.Description)
-			}
-			return
-		}
-	}
-	t.Fatal("session_change missing")
-}
-
 func TestCTOToolManagementDescriptions(t *testing.T) {
 	list, err := ctoTestSession(t).ListTools(context.Background(), nil)
 	if err != nil {

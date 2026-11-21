@@ -126,9 +126,6 @@ func refAgents(s *Store, f protocol.QueryAgents) ([]protocol.AgentView, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := s.applyDelegation(out); err != nil {
-		return nil, err
-	}
 	if err := s.applyAgentCharters(out, true); err != nil {
 		return nil, err
 	}
@@ -437,11 +434,6 @@ func agentsFixture(t *testing.T) *Store {
 	send(4, 5, protocol.TypeRequest, "three")
 	send(5, 4, protocol.TypeReply, "answer to three")
 	send(1, 0, protocol.TypeRequest, "four")
-	for _, p := range []struct{ project, policy string }{{"alpha", `{"delegate":"auto","coder_model":"gpt-6.1-terra"}`}, {"beta", `{"delegate":"auto","main_model":"claude-opus-5-5","workers":"sandboxed"}`}} {
-		if _, err := s.db.Exec(`INSERT INTO project_policies(node_id,project,policy,updated_at) VALUES(?,?,?,0)`, node, p.project, p.policy); err != nil {
-			t.Fatal(err)
-		}
-	}
 	return s
 }
 
@@ -467,15 +459,9 @@ func TestAgentsSameAsBefore(t *testing.T) {
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("%+v:\n got %+v\nwant %+v", f, got, want)
 		}
-		pending, delegated := 0, 0
+		pending := 0
 		for _, a := range got {
 			pending += len(a.Pending)
-			if a.Delegation != nil {
-				delegated++
-			}
-		}
-		if f.Harness == "" && f.Project == "" && f.Text == "" && delegated == 0 {
-			t.Fatalf("%+v: the fixture has no delegation", f)
 		}
 		if f.Harness == "" && f.Project == "" && f.Text == "" && pending == 0 {
 			t.Fatalf("%+v: the fixture has no pending requests", f)

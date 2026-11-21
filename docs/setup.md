@@ -82,7 +82,7 @@ Connect your agents fully? Recommended:
   - Claude: accept messages from your other agents
   - Codex: call agent-net tools without asking
   - Claude: hint which session to ask after an error
-  - Claude: apply the delegation policy you set in the TUI
+  - Claude: add your node's charter to each prompt
   - Claude: show "Needs you" in the TUI
   - Claude: show your workers above the prompt
   - Quota: read your subscription quotas with quota-axi
@@ -102,7 +102,7 @@ Each item, what it changes, and how to turn it off:
 
 **Claude: hint which session to ask after an error.** Setup adds a Claude Code hook, `agent-net hint`, to `~/.claude/settings.json`. After a failed tool call it checks the error text on this machine against your other online sessions (project, host, task, expertise). If one of them may own the failing service, Claude gets one line telling it to ask that session. No model is called. It adds `PostToolUseFailure` and `PostToolUse` with matcher `Bash`, each with a 2 second timeout, and keeps every other hook. `--claude-hint-hook` and `--no-claude-hint-hook` are the per-item flags. Uninstall removes only our entries.
 
-**Claude: apply the delegation policy you set in the TUI.** A second hook, `agent-net policy-hook`, runs on each prompt. It asks agent-net for the delegation policy you set for the session in the TUI (for example: hand code changes to a subagent or a worker), and adds it as context. When you set a policy that names a subagent, agent-net also writes a marked file in `~/.claude/agents/`. No model is called. It adds one `UserPromptSubmit` entry with a 3 second timeout and keeps every other hook. `--claude-policy-hook` and `--no-claude-policy-hook` are the per-item flags. Uninstall removes the hook and the marked subagent files.
+**Claude: add your node's charter to each prompt.** A second hook, `agent-net policy-hook`, runs on each prompt. It asks agent-net for the charter of the session's node and adds it as context. No model is called. It adds one `UserPromptSubmit` entry with a 3 second timeout and keeps every other hook. `--claude-policy-hook` and `--no-claude-policy-hook` are the per-item flags. Uninstall removes the hook, and the marked subagent files that older versions wrote.
 
 **Claude: show "Needs you" in the TUI.** Hooks tell the local daemon when a Claude Code session waits for your permission or input, so it appears on the Desk (tab 7) with what it asks, including the question of an `AskUserQuestion` dialog. A prompt or the answer to the dialog clears that. They add `PermissionRequest`, `Notification` (agent needs input and elicitation waits), `PreToolUse`, `UserPromptSubmit`, and `PostToolUse` and `PostToolUseFailure` for `AskUserQuestion` and `ExitPlanMode`, each with a 2 second timeout, and keep every other hook. The daemon brings them up to date at start after an upgrade. Only the local daemon is called. No model is called. Without the hooks the Inbox still shows a waiting Claude Code session, because Claude Code writes that state into its session file. `--claude-needs-hook` and `--no-claude-needs-hook` are the per-item flags. Uninstall removes only our entries.
 

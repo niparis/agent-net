@@ -16,7 +16,7 @@ import (
 // that a run's lookup finds (messages), and the agent rows of the workers
 // (agentListTables, which covers the session, node and caller profile). Keep it
 // equal to those queries (see readThrough).
-var workerLogTables = tableUnion([]string{"worker_runs", "messages", "worker_brief_defects", "worker_usage", "model_prices"}, agentListTables)
+var workerLogTables = tableUnion([]string{"worker_runs", "messages", "worker_defects", "model_prices"}, agentListTables)
 
 // WorkerLog combines ended runs and current starts, with a hard owner-view limit.
 //
@@ -37,7 +37,7 @@ func (s *Store) WorkerLog(limit int) ([]protocol.WorkerLogEntry, error) {
 func (s *Store) workerLogRead(limit int) ([]protocol.WorkerLogEntry, error) {
 	// worker_runs.started_at is Unix seconds. An assessment's started_at is
 	// Unix nanoseconds; the join below converts explicitly.
-	rows, err := s.db.Query(`SELECT r.session_id,r.node_id,COALESCE(n.hostname,''),COALESCE(NULLIF(s.repo_project,''),json_extract(CASE WHEN json_valid(s.worker) THEN s.worker ELSE '{}' END,'$.project'),''),r.harness,r.model,COALESCE(NULLIF(s.worker_title,''),s.title,''),COALESCE(NULLIF(r.difficulty_used,''),r.difficulty),r.outcome,r.started_at,r.run_seconds,r.ended_at,COALESCE(NULLIF(r.caller_session_id,''),json_extract(CASE WHEN json_valid(s.worker) THEN s.worker ELSE '{}' END,'$.owner'),'') FROM worker_runs r LEFT JOIN sessions s ON s.id=r.session_id LEFT JOIN nodes n ON n.id=r.node_id ORDER BY r.started_at DESC,r.id DESC LIMIT ?`, limit)
+	rows, err := s.db.Query(`SELECT r.session_id,r.node_id,COALESCE(n.hostname,''),COALESCE(NULLIF(s.repo_project,''),json_extract(CASE WHEN json_valid(s.worker) THEN s.worker ELSE '{}' END,'$.project'),''),r.harness,r.model,COALESCE(NULLIF(s.worker_title,''),s.title,''),COALESCE(NULLIF(r.difficulty_used,''),r.difficulty),r.outcome,r.started_at,r.run_seconds,r.ended_at,COALESCE(NULLIF(r.caller_session_id,''),json_extract(CASE WHEN json_valid(s.worker) THEN s.worker ELSE '{}' END,'$.owner'),''),r.usage_in,r.usage_out,r.usage_reasoning,r.usage_cache_read,r.usage_cache_write,r.cost_usd FROM worker_runs r LEFT JOIN sessions s ON s.id=r.session_id LEFT JOIN nodes n ON n.id=r.node_id ORDER BY r.started_at DESC,r.id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -45,12 +45,16 @@ func (s *Store) workerLogRead(limit int) ([]protocol.WorkerLogEntry, error) {
 	type runRow struct {
 		entry    protocol.WorkerLogEntry
 		callerID string
+		tokens   protocol.RunTokens
+		cost     sql.NullFloat64
 	}
 	var runs []runRow
 	for rows.Next() {
 		var r protocol.WorkerLogEntry
 		var callerID string
-		if err = rows.Scan(&r.SessionID, &r.NodeID, &r.Hostname, &r.Project, &r.Harness, &r.Model, &r.Title, &r.Difficulty, &r.Status, &r.StartedAt, &r.RunSeconds, &r.EndedAt, &callerID); err != nil {
+		var t protocol.RunTokens
+		var cost sql.NullFloat64
+		if err = rows.Scan(&r.SessionID, &r.NodeID, &r.Hostname, &r.Project, &r.Harness, &r.Model, &r.Title, &r.Difficulty, &r.Status, &r.StartedAt, &r.RunSeconds, &r.EndedAt, &callerID, &t.In, &t.Out, &t.Reasoning, &t.CacheRead, &t.CacheWrite, &cost); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -62,7 +66,7 @@ func (s *Store) workerLogRead(limit int) ([]protocol.WorkerLogEntry, error) {
 		case protocol.OutcomeTimedOut:
 			r.Status = "timed out"
 		}
-		runs = append(runs, runRow{entry: r, callerID: callerID})
+		runs = append(runs, runRow{entry: r, callerID: callerID, tokens: t, cost: cost})
 	}
 	err = rows.Err()
 	rows.Close()
@@ -94,20 +98,19 @@ func (s *Store) workerLogRead(limit int) ([]protocol.WorkerLogEntry, error) {
 		}
 		return name, host, err
 	}
-	var ids []string
-	for _, run := range runs {
-		ids = append(ids, run.entry.SessionID)
-	}
-	usage, err := s.workerUsage(ids...)
-	if err != nil {
-		return nil, err
-	}
+	book := s.priceBook()
 	for _, run := range runs {
 		r := run.entry
-		if t, ok := usage[r.SessionID]; ok {
+		if t := run.tokens; !t.Zero() {
 			r.Tokens = &t
-			cost, listed, ok := s.RunCost(protocol.PickerModelKey(r.Harness, r.Model), t)
-			r.Cost, r.PriceUnknown = cost, ok && !listed
+			// A run that ended before any price was listed has no stored cost.
+			p, known, ok := book.PriceOf(protocol.PickerModelKey(r.Harness, r.Model))
+			r.PriceUnknown = ok && !known
+			if run.cost.Valid {
+				r.Cost = run.cost.Float64
+			} else if ok {
+				r.Cost = p.Cost(t)
+			}
 		}
 		r.BriefDefects = briefDefects[run.callerID]
 		if r.Caller, r.CallerHost, err = workerCaller(run.callerID); err != nil {
@@ -196,7 +199,7 @@ func (s *Store) briefDefectsByCaller(callers []string) (map[string]int, error) {
 	for i, c := range callers {
 		args[i] = c
 	}
-	rows, err := s.db.Query(`SELECT caller, COUNT(*) FROM worker_brief_defects WHERE caller IN (?`+strings.Repeat(",?", len(callers)-1)+`) GROUP BY caller`, args...)
+	rows, err := s.db.Query(`SELECT caller, COUNT(*) FROM worker_defects WHERE blame='brief' AND caller IN (?`+strings.Repeat(",?", len(callers)-1)+`) GROUP BY caller`, args...)
 	if err != nil {
 		return nil, err
 	}

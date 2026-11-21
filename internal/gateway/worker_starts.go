@@ -20,6 +20,8 @@ import (
 //   - closed: the worker is running and its task was sent. The machine can no
 //     longer say it never started.
 //   - not_started: the machine said it never became a worker.
+//   - refused: the brief check refused the start, so no machine ever held it. It
+//     is closed when made, and counts the retries of one task (brief_check.go).
 type workerStart struct {
 	Ref, NodeID, Owner, Project, Harness, Permissions, State string
 }

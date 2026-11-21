@@ -62,23 +62,52 @@ func (s *Store) RecordWorkerRun(r protocol.WorkerRun) error {
 		}
 		r.RunSeconds = e.RunSeconds
 	}
+	// The price book loads through the store's own handle, so it is read before
+	// the transaction starts.
+	book := s.priceBook()
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if r.ProofUnavailable != "" {
-		if _, err := tx.Exec(`INSERT INTO worker_visual_proof(node_id,session_id,generation,model,unavailable,at) VALUES(?,?,?,?,?,?) ON CONFLICT(node_id,session_id,generation) DO NOTHING`, r.NodeID, r.SessionID, r.RunGeneration, r.Model, r.ProofUnavailable, r.EndedAt); err != nil {
+	// A run reported twice by one start keeps its proof report once.
+	proof := r.ProofUnavailable
+	if proof != "" {
+		var n int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM worker_runs WHERE node_id=? AND session_id=? AND run_generation=? AND proof_unavailable<>''`, r.NodeID, r.SessionID, r.RunGeneration).Scan(&n); err != nil {
 			return err
 		}
+		if n > 0 {
+			proof = ""
+		}
+	}
+	tokens, err := runUsageTx(tx, r.SessionID)
+	if err != nil {
+		return err
+	}
+	var cost any
+	if p, _, ok := book.PriceOf(protocol.PickerModelKey(r.Harness, r.Model)); ok && !tokens.Zero() {
+		cost = p.Cost(tokens)
 	}
 	sf, sr, srt, se, senv, stop, strace, scapped := struggleRow(r.Struggle)
-	if _, err := tx.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, started_at, ended_at, run_seconds, continue_count, fix_count, auto_continue_count, caller, caller_session_id, difficulty, touches, difficulty_used, task_id, midrun_count, counters_known, files_changed, lines_changed, worker_complete, early_quit, caller_agent_id, struggle_failed, struggle_repeats, struggle_retries, struggle_exploration, struggle_env, struggle_top, struggle_trace, struggle_capped, cause)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1, ?,?,?,?, CASE WHEN EXISTS(SELECT 1 FROM worker_starts WHERE session_id=? AND owner=?) THEN (SELECT caller_agent_id FROM worker_starts WHERE session_id=? AND owner=? ORDER BY created_at DESC,rowid DESC LIMIT 1) ELSE (SELECT agent_id FROM sessions WHERE id=?) END, ?,?,?,?,?,?,?,?,?)`, r.NodeID, r.SessionID, r.Harness, r.Model, r.Outcome, r.StartedAt, r.EndedAt, r.RunSeconds, r.Continue, r.Fix, r.AutoContinue, r.Caller, r.CallerSessionID, r.Difficulty, strings.Join(r.Touches, ","), r.DifficultyUsed, r.TaskID, r.Midrun, files, lines, complete, early, r.SessionID, r.CallerSessionID, r.SessionID, r.CallerSessionID, r.CallerSessionID, sf, sr, srt, se, senv, stop, strace, scapped, causeOrUnknown(r.Cause)); err != nil {
+	res, err := tx.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, started_at, ended_at, run_seconds, continue_count, fix_count, auto_continue_count, caller, caller_session_id, difficulty, touches, difficulty_used, task_id, midrun_count, counters_known, files_changed, lines_changed, worker_complete, early_quit, caller_agent_id, struggle_failed, struggle_repeats, struggle_retries, struggle_exploration, struggle_env, struggle_top, struggle_trace, struggle_capped, cause, usage_in, usage_out, usage_reasoning, usage_cache_read, usage_cache_write, cost_usd, run_generation, proof_unavailable)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1, ?,?,?,?, CASE WHEN EXISTS(SELECT 1 FROM worker_starts WHERE session_id=? AND owner=?) THEN (SELECT caller_agent_id FROM worker_starts WHERE session_id=? AND owner=? ORDER BY created_at DESC,rowid DESC LIMIT 1) ELSE (SELECT agent_id FROM sessions WHERE id=?) END, ?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?)`, r.NodeID, r.SessionID, r.Harness, r.Model, r.Outcome, r.StartedAt, r.EndedAt, r.RunSeconds, r.Continue, r.Fix, r.AutoContinue, r.Caller, r.CallerSessionID, r.Difficulty, strings.Join(r.Touches, ","), r.DifficultyUsed, r.TaskID, r.Midrun, files, lines, complete, early, r.SessionID, r.CallerSessionID, r.SessionID, r.CallerSessionID, r.CallerSessionID, sf, sr, srt, se, senv, stop, strace, scapped, causeOrUnknown(r.Cause),
+		tokens.In, tokens.Out, tokens.Reasoning, tokens.CacheRead, tokens.CacheWrite, cost, r.RunGeneration, proof)
+	if err != nil {
 		return err
 	}
-	if err := recordWorkerUsageTx(tx, r.SessionID, r.EndedAt); err != nil {
-		return err
+	// The hand-back notice comes before the run is recorded. A rating or a rate
+	// offer made in between waits on the session: the rating has no run yet, and
+	// the offer moves to the session's first run.
+	if id, err := res.LastInsertId(); err == nil {
+		if _, err := tx.Exec(`UPDATE worker_ratings SET run_id=? WHERE session_id=? AND run_id=0`, id, r.SessionID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE worker_runs SET offered_at=s.rate_offered_at, rate_asked=s.rate_asked FROM sessions s
+			WHERE worker_runs.id=? AND s.id=worker_runs.session_id AND s.rate_offered_at>0
+			AND NOT EXISTS (SELECT 1 FROM worker_runs o WHERE o.session_id=s.id AND o.offered_at>0)`, id); err != nil {
+			return err
+		}
 	}
 	// Work that failed on quota after it started joins the provider's quota
 	// thread (decision 0152).

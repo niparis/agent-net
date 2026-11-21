@@ -58,7 +58,7 @@ func ValidateCTOActionSchema(tool string, raw json.RawMessage) error {
 				"team_member_add": "team_member_add", "team_member_remove": "team_member_remove",
 				"scope_set": "scope_set", "scope_remove": "scope_remove",
 			}[action],
-			"session_change": map[string]string{"rename": "session_rename", "trust": "session_trust", "mcp_servers": "folder_mcp", "policy": "session_policy", "session_start": "session_start", "merger_start": "merger_start", "merger_stop": "merger_stop", "stop": "session_stop", "resume": "session_resume", "restart": "session_restart"}[action],
+			"session_change": map[string]string{"rename": "session_rename", "trust": "session_trust", "mcp_servers": "folder_mcp", "session_start": "session_start", "merger_start": "merger_start", "merger_stop": "merger_stop", "stop": "session_stop", "resume": "session_resume", "restart": "session_restart"}[action],
 			"worker_change":  map[string]string{"start": "worker_start", "stop": "worker_stop"}[action],
 		}[tool]
 	}

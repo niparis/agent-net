@@ -193,7 +193,7 @@ func run(ctx context.Context, argv []string, stderr io.Writer) int {
 		err = cmdPlaybook(ctx, args)
 	case "hint": // hidden: the Claude Code hook (decision 0013)
 		err = cmdHint(ctx, args)
-	case "policy-hook": // hidden: the Claude Code delegation policy hook (decision 0014)
+	case "policy-hook": // hidden: the Claude Code charter hook (decision 0014)
 		err = cmdPolicyHook(ctx, args)
 	case "needs-hook": // hidden: the Claude Code "needs you" hook (decision 0016)
 		err = cmdNeedsHook(ctx, args)

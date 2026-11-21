@@ -79,7 +79,7 @@ func TestAgyQuotaFailureLearnsTheBudget(t *testing.T) {
 // budget it learned, and the picker holds the next start when it would not last.
 func TestWithQuotaBurnHoldsTheNextStartOnAProviderThatWouldRunOut(t *testing.T) {
 	g, node, c := burnGateway(t)
-	if _, err := g.store.db.Exec(`INSERT INTO quota_budgets (provider, window_seconds, tokens, at) VALUES ('codex', ?, 4000000, 1)`, int64(5*time.Hour/time.Second)); err != nil {
+	if _, err := g.store.db.Exec(`INSERT INTO quota_blocks (node_id, provider, window_id, resets_at, at, window_seconds, budget_tokens) VALUES ('', 'codex', 'w' || ?1, 0, 1, ?1, 4000000)`, int64(5*time.Hour/time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	// Finished workers set how long a run lasts: 30 minutes.
@@ -106,7 +106,7 @@ func TestWithQuotaBurnHoldsTheNextStartOnAProviderThatWouldRunOut(t *testing.T) 
 		t.Fatalf("agy held: %s", reason)
 	}
 	// A provider with plenty of quota is unaffected: a larger budget lets the start go.
-	if _, err := g.store.db.Exec(`UPDATE quota_budgets SET tokens = 400000000`); err != nil {
+	if _, err := g.store.db.Exec(`UPDATE quota_blocks SET budget_tokens = 400000000 WHERE node_id = ''`); err != nil {
 		t.Fatal(err)
 	}
 	q = g.withQuotaBurn(nil, agents)
@@ -126,7 +126,7 @@ func TestWithQuotaBurnHoldsTheNextStartOnAProviderThatWouldRunOut(t *testing.T) 
 func TestAutomaticStartLeavesAProviderThatWouldRunOut(t *testing.T) {
 	g, node, owner, _, c := setupFloorGateway(t)
 	nc := g.conns[node]
-	if _, err := g.store.db.Exec(`INSERT INTO quota_budgets (provider, window_seconds, tokens, at) VALUES ('codex', ?, 4000000, 1)`, int64(5*time.Hour/time.Second)); err != nil {
+	if _, err := g.store.db.Exec(`INSERT INTO quota_blocks (node_id, provider, window_id, resets_at, at, window_seconds, budget_tokens) VALUES ('', 'codex', 'w' || ?1, 0, 1, ?1, 4000000)`, int64(5*time.Hour/time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	finishedWorker(t, g, node, "codex", "gpt-6.1-terra", 100, c.t.Add(-9*time.Hour), c.t.Add(-9*time.Hour+30*time.Minute))
@@ -157,7 +157,7 @@ func TestAutomaticStartLeavesAProviderThatWouldRunOut(t *testing.T) {
 		t.Fatalf("a codex-only start must be refused with the hold: %v", err)
 	}
 	// The budget is large: Codex is not touched.
-	if _, err := g.store.db.Exec(`UPDATE quota_budgets SET tokens = 400000000`); err != nil {
+	if _, err := g.store.db.Exec(`UPDATE quota_blocks SET budget_tokens = 400000000 WHERE node_id = ''`); err != nil {
 		t.Fatal(err)
 	}
 	ans, err := start("codex")

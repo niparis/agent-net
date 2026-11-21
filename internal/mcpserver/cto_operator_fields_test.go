@@ -27,7 +27,6 @@ var ctoOperatorRequests = map[string]func() any{
 	"node_rename":             func() any { return &protocol.NodeRenameRequest{} },
 	"session_rename":          func() any { return &protocol.SessionRenameRequest{} },
 	"folder_mcp":              func() any { return &protocol.FolderMCPRequest{} },
-	"session_policy":          func() any { return &protocol.SessionPolicyRequest{} },
 	"process_stop":            func() any { return &protocol.ProcessStopRequest{} },
 	"worker_start":            func() any { return &protocol.WorkerStartRequest{} },
 	"worker_stop":             func() any { return &protocol.WorkerStopRequest{} },

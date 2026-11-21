@@ -96,7 +96,10 @@ func TestPolicyAndHintHooksLiveSideBySideAndUninstallRemovesOnlyOurs(t *testing.
 	}
 	// A subagent file the daemon wrote, and one the owner wrote.
 	t.Setenv("CLAUDE_CONFIG_DIR", claudeHome)
-	if _, err := claudeagents.Ensure("agent-net-coder-sonnet", "sonnet"); err != nil {
+	if err := os.MkdirAll(filepath.Join(claudeHome, "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(claudeHome, "agents", "agent-net-coder-sonnet.md"), []byte("---\nname: agent-net-coder-sonnet\n---\n"+claudeagents.Marker+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	mine := filepath.Join(claudeHome, "agents", "agent-net-coder-mine.md")

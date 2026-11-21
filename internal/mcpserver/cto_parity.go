@@ -74,7 +74,6 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("session_replace", "Move an old session's work to the session that replaced it.", map[string]ctoField{"old_session": sid, "new_session": s("Session that replaced it.")})
 	add("session_trust", "Set session peer trust, or trust a project or path folder for Claude Code.", map[string]ctoField{"session_id": sid, "on": b("Enable."), "project": s("Registered project to trust for Claude Code."), "path": s("Existing folder to trust for Claude Code."), "node_id": s("Machine; omit for this machine.")})
 	add("folder_mcp", "Approve or disable the .mcp.json servers Claude Code would load in a project or path folder, so a Claude session start does not stop on the approval prompt.", map[string]ctoField{"project": s("Registered project."), "path": s("Existing folder."), "node_id": s("Machine; omit for this machine."), "mcp_servers": en("Choice.", "approve", "disable")})
-	add("session_policy", "Set policy; read get first.", map[string]ctoField{"session_id": sid, "scope": en("Default session.", "session", "project"), "policy": obj("Policy."), "dry_run": b("Preview.")})
 	add("machine_remove", "Remove a machine and revoke its token. Owner approval required.", map[string]ctoField{"node_id": s("Machine ID.")})
 	add("machine_rotate", "Rotate an online machine token. Offline machines can only be removed. Owner approval required.", map[string]ctoField{"node_id": s("Machine ID.")})
 	add("process_stop", "Stop processes on a machine: SIGTERM, then SIGKILL. No undo. Live Claude and agent-net sessions are refused.", map[string]ctoField{"node_id": s("Machine; required."), "pids": {typ: "array", desc: "Process IDs.", items: map[string]any{"type": "integer"}}})
@@ -169,11 +168,6 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 		out[tool] = spec
 	}
 	setProperties("tools_plan", "target", map[string]any{"scope": property("string", "Scope.", "global", "projects", "uninstalled"), "projects": stringsArray("Projects."), "machines": stringsArray("All.")})
-	setProperties("session_policy", "policy", map[string]any{
-		"delegate":    property("string", "Mode.", "", "off", "native", "workers"),
-		"coder_model": property("string", "Coder."), "main_model": property("string", "Main."),
-		"workers": property("string", "Sandbox.", "", "sandboxed", "no-network", "read-only"),
-	})
 	setProperties("mcp_add", "server", map[string]any{
 		"name": property("string", "Server name."), "transport": property("string", "Transport.", "stdio", "http", "sse"),
 		"command": property("string", "Command."), "args": stringsArray("No secrets."), "env": stringsArray("Names, not values."),

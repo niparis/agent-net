@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -271,7 +272,6 @@ type Model struct {
 	defectWorker    string          // worker session the defect is about
 	defectName      string          // how the prompt names the worker
 	defectLevel     int             // the severity the owner chose
-	pol             policyForm
 	apps            appsForm
 	intg            integrationsForm // the setup integrations of the whole network
 	rename          textinput.Model  // the machine name prompt
@@ -1479,12 +1479,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fixScroll()
 		return m, detailCmd
 
-	case policyPreviewMsg:
-		return m.onPolicyPreview(msg)
-
-	case policySavedMsg:
-		return m.onPolicySaved(msg)
-
 	case standingMsg:
 		return m.onStanding(msg)
 	case nudgeStatsMsg:
@@ -1797,8 +1791,6 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.quotaFloorKey(k)
 	case modeTrust:
 		return m.trustKey(k)
-	case modePolicy:
-		return m.policyKey(k)
 	case modeRename:
 		return m.renameKey(k)
 	case modeProjectRename:
@@ -2259,26 +2251,26 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "cell":
 		if m.tab == sessionsTab {
 			if a, ok := m.selectedAgent(); ok && !protocol.IsOwner(a.Harness) && a.Harness != "bot" {
+				// The cells are the name, the request rule (a session with a
+				// project) and the agent (a session whose agent can change).
+				cells := []int{0}
+				if firstNonEmpty(a.Repo.Project, a.Profile.Project) != "" {
+					cells = append(cells, 1)
+				}
+				if canChangeSessionAgent(a) {
+					cells = append(cells, 2)
+				}
+				i := slices.Index(cells, m.sessionCell)
 				if k.String() == "right" {
-					last := 2
-					if canChangeSessionAgent(a) {
-						last = 3
-					}
-					m.sessionCell = min(m.sessionCell+1, last)
+					i = min(i+1, len(cells)-1)
 				} else {
-					m.sessionCell = max(m.sessionCell-1, 0)
+					i = max(i-1, 0)
 				}
-				if m.sessionCell == 1 && firstNonEmpty(a.Repo.Project, a.Profile.Project) == "" {
-					if k.String() == "right" {
-						m.sessionCell = 2
-					} else {
-						m.sessionCell = 0
-					}
-				}
+				m.sessionCell = cells[i]
 			}
 		}
 	case "change cell":
-		if m.tab == sessionsTab && m.sessionCell == 3 {
+		if m.tab == sessionsTab && m.sessionCell == 2 {
 			return m.cycleSessionAgent()
 		}
 		if m.tab == sessionsTab && m.sessionCell == 1 {
@@ -2286,11 +2278,8 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "message body", "open session":
 		if m.tab == sessionsTab {
-			if m.sessionCell == 3 {
-				return m.cycleSessionAgent()
-			}
 			if m.sessionCell == 2 {
-				return m.startPolicy()
+				return m.cycleSessionAgent()
 			}
 			if m.sessionCell == 1 {
 				return m, nil

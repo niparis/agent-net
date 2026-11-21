@@ -50,7 +50,7 @@ func TestQualityCacheAndChanges(t *testing.T) {
 	}
 	node, _, _ := s.CreateNode("test", "linux")
 	caller := ratingCaller(t, s, node, "caller", "gpt-6.1-sol")
-	worker := ratingWorker(t, s, node, caller, "model:high", "normal")
+	worker := ratingRun(t, s, node, caller, "model:high", "normal")
 	if _, err := s.AddRating(protocol.RateFrame{RateRequest: protocol.RateRequest{Worker: worker, Score: 4}, Rater: caller}); err != nil {
 		t.Fatal(err)
 	}

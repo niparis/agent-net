@@ -49,7 +49,7 @@ var operatorMethods = map[string]bool{
 	protocol.OpConversations:        true,
 	protocol.OpConversationMessages: true,
 	protocol.OpProjectDisplayGet:    true, protocol.OpProjectDisplaySet: true,
-	protocol.OpGraphView: true, protocol.OpGraphTalk: true, protocol.OpSessionTrust: true, protocol.OpFolderTrust: true, protocol.OpFolderMCP: true, protocol.OpProcessStop: true, protocol.OpStandingOrders: true, protocol.OpJudgmentAdd: true, protocol.OpSessionPolicy: true, protocol.OpSessionAgentSet: true, protocol.OpSessionAgentList: true, protocol.OpNotesCopy: true, protocol.OpNotesUncopy: true, protocol.OpSessionRename: true, protocol.OpSessionReplace: true, protocol.OpNodeRename: true, protocol.OpMachineRemove: true, protocol.OpMachineRotate: true,
+	protocol.OpGraphView: true, protocol.OpGraphTalk: true, protocol.OpSessionTrust: true, protocol.OpFolderTrust: true, protocol.OpFolderMCP: true, protocol.OpProcessStop: true, protocol.OpStandingOrders: true, protocol.OpJudgmentAdd: true, protocol.OpSessionAgentSet: true, protocol.OpSessionAgentList: true, protocol.OpNotesCopy: true, protocol.OpNotesUncopy: true, protocol.OpSessionRename: true, protocol.OpSessionReplace: true, protocol.OpNodeRename: true, protocol.OpMachineRemove: true, protocol.OpMachineRotate: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
 	protocol.OpHiddenGet: true, protocol.OpHiddenSet: true, "onboarding_get": true, "onboarding_set": true, "onboarding_restart": true,
 	protocol.OpQualityGet: true, protocol.OpQualitySet: true, protocol.OpTimeZoneGet: true, protocol.OpTimeZoneSet: true, protocol.OpProtectedProvidersGet: true, protocol.OpProtectedProvidersSet: true, protocol.OpWorkerFloorsGet: true, protocol.OpWorkerFloorsSet: true, protocol.OpWorkerProvidersGet: true, protocol.OpWorkerProvidersSet: true, "difficulty_get": true, "difficulty_set": true, protocol.OpDifficultyJudgePick: true, protocol.OpScoresGet: true, protocol.OpScoresSet: true, protocol.OpScoresWeekly: true, protocol.OpWorkerRotationGet: true, protocol.OpPickerGet: true, protocol.OpCTOSettings: true, protocol.OpCTOEnter: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true, protocol.OpCTOGraphHistory: true,
@@ -1156,25 +1156,6 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if data, err = d.call(ctx, "playbook.set", q); err == nil {
 			res = data
 			d.Logf("playbook.set model=%s harness=%s", q.Model, q.Harness)
-		}
-	case protocol.OpSessionPolicy:
-		// The policy is owner text that goes into the model's context every
-		// turn: only the owner at the keyboard sets it (decision 0014). The
-		// gate above refuses agent sessions, and no agent tool exists for it.
-		var q protocol.SessionPolicyRequest
-		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" {
-			return nil, true, errors.New("session_policy needs session_id")
-		}
-		var data json.RawMessage
-		if data, err = d.call(ctx, "session.policy", q); err == nil {
-			var out protocol.SessionPolicyResult
-			if err = json.Unmarshal(data, &out); err == nil {
-				res = out
-				d.policy.forget(q.SessionID)
-				if out.Saved {
-					d.Logf("session.policy session=%s scope=%s delegate=%s", q.SessionID, q.Scope, q.Policy.Delegate)
-				}
-			}
 		}
 	case protocol.OpCTOGraphHistory:
 		var p struct {

@@ -302,7 +302,7 @@ func (s *Snapshot) readEvidence(db *sql.DB) error {
 	// The defect agent-net records for a failed merger test step is skipped:
 	// the failed step is already counted, and one failure costs once.
 	rows, err = db.Query(`SELECT session_id,severity,at FROM worker_defects
-		WHERE moved_at = 0 AND auto_kind IS NOT 'test'`)
+		WHERE blame = 'worker' AND auto_kind IS NOT 'test'`)
 	if err != nil {
 		return err
 	}
@@ -364,18 +364,20 @@ func (s *Snapshot) readEvidence(db *sql.DB) error {
 }
 
 func (s *Snapshot) readUsage(db *sql.DB) error {
-	rows, err := db.Query(`SELECT session_id,usage FROM worker_usage`)
+	// A session's usage is its running total, which its latest run holds.
+	rows, err := db.Query(`SELECT session_id,MAX(usage_in),MAX(usage_out),MAX(usage_reasoning),MAX(usage_cache_read),MAX(usage_cache_write)
+		FROM worker_runs WHERE session_id<>'' GROUP BY session_id`)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var session, raw string
-		if err := rows.Scan(&session, &raw); err != nil {
+		var session string
+		var t protocol.RunTokens
+		if err := rows.Scan(&session, &t.In, &t.Out, &t.Reasoning, &t.CacheRead, &t.CacheWrite); err != nil {
 			return err
 		}
-		var t protocol.RunTokens
-		if json.Unmarshal([]byte(raw), &t) == nil && !t.Zero() {
+		if !t.Zero() {
 			s.Usage[session] = t
 		}
 	}

@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"strings"
 
@@ -21,7 +22,7 @@ import (
 // FrameStartDecision, not to the asking session as a message.
 
 // CreateStartOverrideAsk puts the ask on the Desk for a session of the node and
-// keeps its facts. It stays open when the owner types in the asking session.
+// keeps its facts on the ask. It stays open when the owner types in the asking session.
 func (s *Store) CreateStartOverrideAsk(node string, p protocol.StartOverrideAsk) (protocol.InboxItem, error) {
 	agent, project, name, err := s.askingSession(node, p.Session)
 	if err != nil {
@@ -34,12 +35,11 @@ func (s *Store) CreateStartOverrideAsk(node string, p protocol.StartOverrideAsk)
 	if err != nil {
 		return item, err
 	}
-	review := 0
-	if p.Review {
-		review = 1
+	raw, err := json.Marshal(p.OverrideFacts)
+	if err != nil {
+		return item, err
 	}
-	_, err = s.db.Exec(`INSERT OR REPLACE INTO start_override_facts(ask_id,harness,model,effort,level,provider,caller_family,override_family,review) VALUES(?,?,?,?,?,?,?,?,?)`,
-		item.ID, p.Harness, p.Model, p.Effort, p.Level, p.Provider, p.CallerFamily, p.OverrideFamily, review)
+	_, err = s.db.Exec(`UPDATE inbox_items SET override_facts=? WHERE id=?`, string(raw), item.ID)
 	return item, err
 }
 
@@ -47,12 +47,15 @@ func (s *Store) CreateStartOverrideAsk(node string, p protocol.StartOverrideAsk)
 // the facts were kept has none.
 func overrideFacts(q askDB, id string) (protocol.OverrideFacts, error) {
 	var f protocol.OverrideFacts
-	err := q.QueryRow(`SELECT harness,model,effort,level,provider,caller_family,override_family,review<>0 FROM start_override_facts WHERE ask_id=?`, id).
-		Scan(&f.Harness, &f.Model, &f.Effort, &f.Level, &f.Provider, &f.CallerFamily, &f.OverrideFamily, &f.Review)
-	if errors.Is(err, sql.ErrNoRows) {
+	var raw string
+	err := q.QueryRow(`SELECT override_facts FROM inbox_items WHERE id=?`, id).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) || raw == "" {
 		return f, nil
 	}
-	return f, err
+	if err != nil {
+		return f, err
+	}
+	return f, json.Unmarshal([]byte(raw), &f)
 }
 
 // confirmOverrideCheck applies the confirm rule for the chief (with the

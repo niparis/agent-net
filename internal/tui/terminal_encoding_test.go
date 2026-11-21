@@ -143,16 +143,6 @@ func TestShiftTabEncodings(t *testing.T) {
 			}
 		})
 
-		t.Run("worker_form_"+enc.name, func(t *testing.T) {
-			m := newModel(80, 24)
-			m.mode = modePolicy
-			m.pol = policyForm{cur: pfCoder}
-
-			res, _ := runEncodingProgram(t, m, enc.raw)
-			if res.pol.cur == pfCoder {
-				t.Fatalf("%s: Shift+Tab did not move to previous field in worker policy form", enc.name)
-			}
-		})
 	}
 }
 

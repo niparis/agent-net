@@ -63,7 +63,7 @@ var ctoChangeActions = map[string]map[string]string{
 		"lead_set": "lead_set", "team_create": "team_create", "team_rename": "team_rename", "team_purpose": "team_purpose", "team_charter": "team_charter", "team_archive": "team_archive", "team_member_add": "team_member_add", "team_member_remove": "team_member_remove",
 		"scope_set": "scope_set", "scope_remove": "scope_remove",
 	},
-	"session_change": {"rename": "session_rename", "replace": "session_replace", "trust": "session_trust", "mcp_servers": "folder_mcp", "policy": "session_policy", "session_start": "session_start", "merger_start": "merger_start", "merger_stop": "merger_stop", "stop": "session_stop", "resume": "session_resume", "restart": "session_restart"},
+	"session_change": {"rename": "session_rename", "replace": "session_replace", "trust": "session_trust", "mcp_servers": "folder_mcp", "session_start": "session_start", "merger_start": "merger_start", "merger_stop": "merger_stop", "stop": "session_stop", "resume": "session_resume", "restart": "session_restart"},
 	"worker_change":  {"start": "worker_start", "stop": "worker_stop"},
 	"answer":         {"held": "held_answer", "inbox": "inbox_answer", "outcome": "outcome_overrule"},
 	"tools_change": {
@@ -110,7 +110,7 @@ var ctoActionClasses = map[string]map[string]ctoToolClass{
 		"team_member_add": ctoMinor, "team_member_remove": ctoMinor,
 		"scope_set": ctoMinor, "scope_remove": ctoMinor,
 	},
-	"session_change":  {"rename": ctoMinor, "replace": ctoMinor, "trust": ctoMinor, "mcp_servers": ctoMinor, "policy": ctoMinor, "session_start": ctoMinor, "merger_start": ctoMinor, "merger_stop": ctoMinor, "stop": ctoMinor, "resume": ctoMinor, "restart": ctoMinor},
+	"session_change":  {"rename": ctoMinor, "replace": ctoMinor, "trust": ctoMinor, "mcp_servers": ctoMinor, "session_start": ctoMinor, "merger_start": ctoMinor, "merger_stop": ctoMinor, "stop": ctoMinor, "resume": ctoMinor, "restart": ctoMinor},
 	"worker_change":   {"start": ctoMinor, "stop": ctoMinor},
 	"answer":          {"held": ctoMinor, "inbox": ctoMinor, "outcome": ctoMinor},
 	"tools_change":    {"toggle": ctoMinor, "new_projects": ctoMinor, "plan": ctoMinor, "apply": ctoMinor, "undo": ctoMinor, "import": ctoMinor, "native_remove": ctoMinor},

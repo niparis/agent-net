@@ -70,9 +70,6 @@ type Operator interface {
 	// SetPeerTrust turns peer trust on or off for a session: whether it may act
 	// on requests from other agents without asking (decision 0012). Owner only.
 	SetPeerTrust(ctx context.Context, session string, on bool) error
-	// SetSessionPolicy sets (or with DryRun only checks) the delegation policy
-	// of a session or its project (decision 0014). Owner only.
-	SetSessionPolicy(ctx context.Context, q protocol.SessionPolicyRequest) (protocol.SessionPolicyResult, error)
 	// RenameNode gives a machine a display name that every machine sees, or
 	// clears it with an empty name (decision 0015). Owner only.
 	RenameNode(ctx context.Context, nodeID, name string) (protocol.NodeRenameResult, error)

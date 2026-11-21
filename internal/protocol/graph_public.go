@@ -45,23 +45,22 @@ type PublicRule struct {
 // Kind, Maturity, Line and Rules. A detail carries the full Charter and the
 // node's delegation policies as well.
 type PublicGraphNode struct {
-	Active     *bool            `json:"active,omitempty"`
-	Ref        *GraphRef        `json:"ref,omitempty"`
-	Owner      *GraphRef        `json:"owner,omitempty"`
-	Lead       *GraphRef        `json:"lead,omitempty"`
-	MaxAgents  int              `json:"max_agents,omitempty"`
-	AgentCount int              `json:"agent_count,omitempty"`
-	OverMax    bool             `json:"over_max,omitempty"`
-	Role       string           `json:"role,omitempty"`
-	LeadLevel  string           `json:"lead_level,omitempty"`
-	Name       string           `json:"name"`
-	Kind       string           `json:"kind,omitempty"`
-	Maturity   string           `json:"maturity,omitempty"`
-	Line       string           `json:"line,omitempty"`
-	Rules      []PublicRule     `json:"rules,omitempty"`
-	Delegation []NodeDelegation `json:"delegation,omitempty"`
-	Charter    *Charter         `json:"charter,omitempty"`
-	Loop       *LoopView        `json:"loop,omitempty"`
+	Active     *bool        `json:"active,omitempty"`
+	Ref        *GraphRef    `json:"ref,omitempty"`
+	Owner      *GraphRef    `json:"owner,omitempty"`
+	Lead       *GraphRef    `json:"lead,omitempty"`
+	MaxAgents  int          `json:"max_agents,omitempty"`
+	AgentCount int          `json:"agent_count,omitempty"`
+	OverMax    bool         `json:"over_max,omitempty"`
+	Role       string       `json:"role,omitempty"`
+	LeadLevel  string       `json:"lead_level,omitempty"`
+	Name       string       `json:"name"`
+	Kind       string       `json:"kind,omitempty"`
+	Maturity   string       `json:"maturity,omitempty"`
+	Line       string       `json:"line,omitempty"`
+	Rules      []PublicRule `json:"rules,omitempty"`
+	Charter    *Charter     `json:"charter,omitempty"`
+	Loop       *LoopView    `json:"loop,omitempty"`
 	// The org tree of an Agent node; see Node.
 	ReportsTo   string         `json:"reports_to,omitempty"`
 	LeadSession *GraphSession  `json:"lead_session,omitempty"`
@@ -180,14 +179,13 @@ func PublicGraph(g Graph, q PublicGraphQuery) PublicGraphPage {
 func publicNode(n Node) PublicGraphNode {
 	return PublicGraphNode{
 		Ref: n.Ref, Owner: n.Owner, Lead: n.Lead, MaxAgents: n.MaxAgents, AgentCount: n.AgentCount, OverMax: n.OverMax, Role: n.Role, Active: n.Active,
-		LeadLevel:  n.LeadLevel,
-		Name:       n.Name,
-		Kind:       n.Kind,
-		Maturity:   n.Charter.Maturity,
-		Line:       publicNodeLine(n),
-		Rules:      publicRules(n),
-		Delegation: publicDelegation(n.Delegation),
-		Loop:       n.Loop,
+		LeadLevel: n.LeadLevel,
+		Name:      n.Name,
+		Kind:      n.Kind,
+		Maturity:  n.Charter.Maturity,
+		Line:      publicNodeLine(n),
+		Rules:     publicRules(n),
+		Loop:      n.Loop,
 
 		ReportsTo: n.ReportsTo, LeadSession: n.LeadSession, Sessions: n.Sessions, Scopes: n.Scopes,
 	}
@@ -216,22 +214,6 @@ func RulesFor(maturity string, settings map[string]string) []PublicRule {
 		{Name: SettingDeployRule, Value: d.DeployRule},
 		{Name: SettingAutonomy, Value: NodeAutonomy(settings)},
 	}
-}
-
-// publicDelegation copies only valid, non-empty delegation policies. A policy
-// with an invalid value (old or hand-written data) is dropped, like an invalid
-// node setting.
-func publicDelegation(in []NodeDelegation) []NodeDelegation {
-	out := make([]NodeDelegation, 0, len(in))
-	for _, d := range in {
-		clean, err := d.DelegationPolicy.Clean()
-		if err != nil || clean.Empty() {
-			continue
-		}
-		out = append(out, NodeDelegation{Machine: d.Machine, DelegationPolicy: clean})
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Machine < out[j].Machine })
-	return out
 }
 
 // publicNodeLine is the compact list row: name, kind, maturity, purpose, and

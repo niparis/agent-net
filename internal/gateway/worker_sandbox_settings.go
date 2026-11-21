@@ -178,7 +178,9 @@ func (s *Store) cutoverWorkerSandboxTx(tx *sql.Tx) error {
 		if project != key {
 			continue
 		}
-		var p protocol.DelegationPolicy
+		var p struct {
+			Workers string `json:"workers"`
+		}
 		if json.Unmarshal([]byte(raw), &p) != nil || rank[p.Workers] == 0 {
 			continue
 		}

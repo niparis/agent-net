@@ -54,12 +54,7 @@ func TestSettingsSessionCells(t *testing.T) {
 	if len(src.edges) != 1 || src.edges[0].Rule != "ask" {
 		t.Errorf("rule calls: %+v", src.edges)
 	}
-	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyRight})
-	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if m.mode != modePolicy {
-		t.Fatalf("enter on DELEGATE: mode %v", m.mode)
-	}
-	m = keys(m, "esc", "esc")
+	m = keys(m, "esc")
 	if got := ansi.Strip(m.helpLine(120)); strings.Contains(got, "space") {
 		t.Errorf("esc did not return to NAME: %s", got)
 	}

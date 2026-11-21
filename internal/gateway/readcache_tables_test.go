@@ -51,18 +51,11 @@ func readCases() []readCase {
 const richAgentID = "s_readcase"
 
 // richReadStore is a store whose cached reads take every branch: sessions with
-// delegation policies (so models are resolved), charters, edges, a loop, a
+// charters, edges, a loop, a
 // failed model, a request that waits for a reply.
 func richReadStore(t *testing.T) *Store {
 	t.Helper()
 	s, node, oc1, oc2, _ := policyFixture(t)
-	pol := protocol.DelegationPolicy{Delegate: protocol.DelegateNative, CoderModel: "deepseek 4.1 flash", MainModel: "sol 6.1"}
-	if ok, err := s.SetDelegation(oc1, protocol.ScopeSession, pol); err != nil || !ok {
-		t.Fatalf("session policy: %v %v", ok, err)
-	}
-	if ok, err := s.SetDelegation(oc2, protocol.ScopeProject, pol); err != nil || !ok {
-		t.Fatalf("project policy: %v %v", ok, err)
-	}
 	if err := s.RecordModelFailure(node, "opencode", "deepseek/deepseek-v4.1-flash"); err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +303,7 @@ func rowFor(s *Store, table string, n int) error {
 			args = append(args, jsonColumns[c.name])
 		case checkedColumns[table+"."+c.name] != "":
 			args = append(args, checkedColumns[table+"."+c.name])
-		case strings.Contains(typ, "INT") || strings.Contains(typ, "BOOL"):
+		case strings.Contains(typ, "INT") || strings.Contains(typ, "BOOL") || strings.Contains(typ, "REAL"):
 			args = append(args, n)
 		default:
 			args = append(args, fmt.Sprintf("zz%d", n))
@@ -352,13 +345,12 @@ func writeKey(t *testing.T, s *Store, key string, n int) {
 // writeRow is how the tests change a table. A table the generic row does not
 // fit has its own statement here.
 var writeRowSQL = map[string]string{
-	"setting_history":      `INSERT INTO setting_history(revision,seq,key,level,scope,item,old_value,new_value,actor,reason,cause,at) SELECT COALESCE(MAX(revision),0)+1,0,'revision','network','network','',NULL,'"bump"','t','t','cutover',0 FROM setting_history`,
-	"setting_values":       `INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES('probe','repo','probe','','"x"',1)`,
-	"charter_values":       `INSERT INTO charter_values(level,scope,attr,value,updated_at,updated_by) VALUES('global','','probe','x',1,'t')`,
-	"apps":                 `INSERT INTO apps(id,name,kind,client_id,client_name,created_at) VALUES('app_probe','probe','owner_app','c','c',1)`,
-	"teams":                `INSERT INTO teams(id,name,created_at,updated_at) VALUES('t_probe','probe',1,1)`,
-	"team_members":         `INSERT INTO team_members(member_kind,member_id,team_id) VALUES('repo','probe','t_probe')`,
-	"worker_brief_defects": `INSERT INTO worker_brief_defects(severity,at) VALUES(1,1)`,
+	"setting_history": `INSERT INTO setting_history(revision,seq,key,level,scope,item,old_value,new_value,actor,reason,cause,at) SELECT COALESCE(MAX(revision),0)+1,0,'revision','network','network','',NULL,'"bump"','t','t','cutover',0 FROM setting_history`,
+	"setting_values":  `INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES('probe','repo','probe','','"x"',1)`,
+	"charter_values":  `INSERT INTO charter_values(level,scope,attr,value,updated_at,updated_by) VALUES('global','','probe','x',1,'t')`,
+	"apps":            `INSERT INTO apps(id,name,kind,client_id,client_name,created_at) VALUES('app_probe','probe','owner_app','c','c',1)`,
+	"teams":           `INSERT INTO teams(id,name,created_at,updated_at) VALUES('t_probe','probe',1,1)`,
+	"team_members":    `INSERT INTO team_members(member_kind,member_id,team_id) VALUES('repo','probe','t_probe')`,
 }
 
 // writeColumnSQL is how the tests change a column the generic update cannot.

@@ -55,7 +55,7 @@ The picker reads the machine, quota, past results and prices to choose a model, 
 5. `model_prices` (reads): It reads the price of each model, so the picker can compare the expected cost per accepted result.
 6. `worker_runs` (reads): It reads the track record of past worker runs (complete, partial, failed, fixes needed) per model, which scores each model on tasks of this difficulty.
 7. `worker_assessments` (reads): It reads the difficulty the judge gave to past tasks, to place each past run in the right difficulty bucket.
-8. `worker_usage` (reads): It reads the tokens past runs used, to turn token counts into a cost per run.
+8. `worker_runs` (reads): It reads the tokens past runs used, to turn token counts into a cost per run.
 9. `model_failures` (reads): It reads which models recently failed or lost sign-in on this machine, to skip models that are cooling down.
 10. `gateway_state` (writes): The rotation counter is saved, so the next start spreads work across models instead of always picking the same one.
 11. `worker_starts` (writes): The gateway records the start (reference, machine, who asked, project, harness, permissions, the 'done' list) before it asks the machine to launch.
@@ -64,8 +64,7 @@ The picker reads the machine, quota, past results and prices to choose a model, 
 14. `events` (writes): The audit log records 'worker.started' with project, harness, model and who started it.
 15. `delivery_changes` (writes): At a complete hand-back, the worker's branch is submitted as a change to deliver (a first revision row is saved with it).
 16. `messages` (writes): The hand-back notice is saved as a reply to the starter's task message, and the task is marked 'replied'. It is delivered to the starter like any message.
-17. `worker_runs` (writes): When the worker stops, its run is saved: model, outcome, seconds, files and lines changed, fixes, and struggle counters. This feeds the track record the picker reads next time.
-18. `worker_usage` (writes): The tokens the worker used are saved with the run, so its cost can be computed later.
+17. `worker_runs` (writes): When the worker stops, its run is saved: model, outcome, seconds, files and lines changed, fixes, struggle counters, the tokens the worker used and their cost at API prices. This feeds the track record the picker reads next time.
 
 ## Journey: A machine connects and reports health
 
@@ -212,7 +211,7 @@ Agent sessions, with their checks and wake-ups, and the due steps they set.
 
 ### sessions
 
-- **Holds:** One row per agent session (a coding agent running on a machine, a worker, the CTO or the chief): name, folder, repo, status, online state, model, worker data and archive and pin marks. It also holds the owner's last typed prompt to the session (`owner_prompt`, with its time `owner_prompt_at`), what the session announced (`announced_project`, `capabilities`, `task`, `task_started`, `expertise`, `announced_at`), the idle check state (the `check_` columns), and the automatic wake state (the `wake_` columns: the day's count, the no-progress streak, the last refused wake and the last wake attempt). `name_fixed` is 1 when the owner or the merger set the name, so a new report keeps it. A session's project is its detected repo (`repo_project`), else its announced project.
+- **Holds:** One row per agent session (a coding agent running on a machine, a worker, the CTO or the chief): name, folder, repo, status, online state, model, worker data and archive and pin marks. It also holds the owner's last typed prompt to the session (`owner_prompt`, with its time `owner_prompt_at`), what the session announced (`announced_project`, `capabilities`, `task`, `task_started`, `expertise`, `announced_at`), the idle check state (the `check_` columns), and the automatic wake state (the `wake_` columns: the day's count, the no-progress streak, the last refused wake and the last wake attempt). `name_fixed` is 1 when the owner or the merger set the name, so a new report keeps it. A session's project is its detected repo (`repo_project`), else its announced project. A rate offer made before the session's first run is recorded waits here (`rate_offered_at`, `rate_asked`) and moves to the run.
 - **Written by:** `gateway/apps.go`, `gateway/bot_agent.go`, `gateway/bot_names.go`, `gateway/bot_session.go`, `gateway/busy_hold.go`, `gateway/chief.go`, `gateway/cto_session.go`, `gateway/machine_tokens.go`, `gateway/merger.go`, `gateway/org_tree.go` and others
 - **Read by:** `gateway/ask_holder.go`, `gateway/ask_intake.go`, `gateway/asks.go`, `gateway/asks_to.go`, `gateway/authority.go`, `gateway/automatic_message.go`, `gateway/bot_names.go`, `gateway/bot_session.go`, `gateway/bot_tools.go`, `gateway/busy_hold.go` and others
 - **Shown in:** TUI, Sessions; TUI, Graph; tool `agent_announce`; tool `agent_sessions_find`; tool `agent_session_get`; CTO op `session_change`; CTO op `sessions_archive`
@@ -338,11 +337,11 @@ Owner settings and their history.
 
 ### gateway_state
 
-- **Holds:** A key-value table of what the gateway remembers about itself: the CTO and chief of staff session ids, the chief's clear and silence marks, worker rotation, onboarding progress, hidden items, graph cutover version and gate, skill archive marks, brief last-sent dates, the network settings token, the marks of one-time cleanups that a running gateway still reads the escalation of waiting caller steps (`caller_escalation:<owner>`, with the time of the wake and whether the repo lead was offered the steps) and the nodes that finished a node step of a live change (`step_node:<change>/<node>`, deleted when the change is done or stopped; it keeps that node's sessions from doing the caller's steps of the change).
+- **Holds:** A key-value table of what the gateway remembers about itself: the CTO and chief of staff session ids, the chief's clear and silence marks, worker rotation, onboarding progress, hidden items, graph cutover version and gate, skill archive marks, brief last-sent dates, the change counter of `worker_runs`, the network settings token, the marks of one-time cleanups that a running gateway still reads the escalation of waiting caller steps (`caller_escalation:<owner>`, with the time of the wake and whether the repo lead was offered the steps) and the nodes that finished a node step of a live change (`step_node:<change>/<node>`, deleted when the change is done or stopped; it keeps that node's sessions from doing the caller's steps of the change).
 - **Written by:** `gateway/caller_agent.go`, `gateway/chief.go`, `gateway/chief_health.go`, `gateway/chief_stuck.go`, `gateway/cto_session.go`, `gateway/gateway_state.go`, `gateway/hidden.go`, `gateway/onboarding.go`, `gateway/settings_targets.go`, `gateway/worker_rotation.go` and others
-- **Read by:** `gateway/ask_intake.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/cto_lead.go`, `gateway/cto_session.go`, `gateway/gateway_state.go`, `gateway/store.go` and others
+- **Read by:** `gateway/ask_intake.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/cto_lead.go`, `gateway/cto_session.go`, `gateway/gateway_state.go`, `gateway/runs_snapshot.go`, `gateway/store.go` and others
 - **Shown in:** TUI, Settings; TUI, Quotas; tool `agent_worker_profiles_find`; CTO op `chief_set`
-- **Kept:** Until overwritten; a key is deleted when a role is cleared. The escalation of an owner is deleted once the owner is live again or has nothing waiting.
+- **Kept:** Until overwritten; a key is deleted when a role is cleared. The escalation of an owner is deleted once the owner is live again or has nothing waiting. The `worker_runs_version` key is raised by triggers on `worker_runs`.
 
 ### schema_version
 
@@ -550,7 +549,7 @@ What the owner sees on the Desk: asks, sorts, follow-ups and the log.
 
 ### inbox_items
 
-- **Holds:** One ask: a question or request that waits for the owner (or the chief of staff), with its state, answer, priority and who sorted or routed it.
+- **Holds:** One ask: a question or request that waits for the owner (or the chief of staff), with its state, answer, priority and who sorted or routed it. An ask that holds a worker start with picker overrides also holds the override facts the confirm rule checks.
 - **Written by:** `gateway/agentnet_reply.go`, `gateway/apps_public_asks.go`, `gateway/asks.go`, `gateway/asks_to.go`, `gateway/brief.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/chief_health.go`, `gateway/chief_stuck.go`, `gateway/delivery_approval.go` and others
 - **Read by:** `gateway/agentnet_reply.go`, `gateway/apps_asks.go`, `gateway/apps_public_asks.go`, `gateway/ask_intake.go`, `gateway/asks.go`, `gateway/brief.go`, `gateway/caller_agent.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/chief_health.go` and others
 - **Shown in:** TUI, Desk; tool `agent_owner_ask`; tool `agent_ask_intake`; tool `agent_ask_sort`; CTO op `inbox_list`; CTO op `inbox_answer`
@@ -696,45 +695,13 @@ Worker runs, their quality and cost, and the data the picker reads.
 - **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
 - **Kept:** Forever.
 
-### project_policies
-
-- **Holds:** The delegation policy the owner set for a project on a machine: how its sessions handle code changes (do it themselves, a subagent or a worker) and which models to use.
-- **Written by:** `gateway/store_policy.go`
-- **Read by:** `gateway/store_graph.go`, `gateway/store_policy.go`, `gateway/worker_sandbox_settings.go`
-- **Shown in:** TUI, Sessions; CTO op `session_policy`; tool `agent_settings_read`
-- **Kept:** Until the owner clears the policy.
-
 ### quota_blocks
 
-- **Holds:** One row per machine, provider and quota window that a worker run reported as used up, with the time it resets.
-- **Written by:** `gateway/store_record.go`
-- **Read by:** `gateway/store_record.go`
+- **Holds:** One row per quota window of a provider. A row with a machine says that a worker run reported the window used up there, and when it resets. A row with no machine says how many tokens the window holds, learned from the last time it ran out.
+- **Written by:** `gateway/quota_burn.go`, `gateway/store_record.go`
+- **Read by:** `gateway/quota_burn.go`, `gateway/store_record.go`
 - **Shown in:** TUI, Quotas (Subscriptions)
-- **Kept:** Rows are not deleted; one row per window, overwritten, and ignored after its reset time.
-
-### quota_budgets
-
-- **Holds:** One row per provider and window length holding the token budget learned from the last time that window ran out.
-- **Written by:** `gateway/quota_burn.go`
-- **Read by:** `gateway/quota_burn.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** One row per provider and window length, replaced by the newest failure.
-
-### start_override_facts
-
-- **Holds:** One row per Desk ask about a model override on a worker start, with the harness, model, effort and family facts that the ask is about.
-- **Written by:** `gateway/start_override.go`
-- **Read by:** `gateway/start_override.go`
-- **Shown in:** TUI, Desk (Needs you)
-- **Kept:** Forever.
-
-### table_versions
-
-- **Holds:** One row per watched table holding a change counter that database triggers raise; today only worker_runs.
-- **Written by:** Triggers on `worker_runs`. No Go code writes it.
-- **Read by:** `gateway/runs_snapshot.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** One row, updated in place by triggers.
+- **Kept:** Rows are not deleted; one row per window, overwritten. A machine row is ignored after its reset time. A learned budget is replaced by the newest failure.
 
 ### worker_assessments
 
@@ -744,41 +711,17 @@ Worker runs, their quality and cost, and the data the picker reads.
 - **Shown in:** TUI, Quotas (Workers log, Difficulty details); tool `agent_workers_find`
 - **Kept:** Forever.
 
-### worker_brief_defects
-
-- **Holds:** One row per defect that was blamed on the brief the caller wrote rather than on the worker, with severity and note.
-- **Written by:** `gateway/brief_check.go`, `gateway/ratings.go`
-- **Read by:** `gateway/ratings.go`, `gateway/scores_weekly.go`, `gateway/worker_log.go`
-- **Shown in:** TUI, Quotas (Workers log); tool `agent_worker_rate`
-- **Kept:** Forever.
-
-### worker_brief_rejections
-
-- **Holds:** One row per time the brief check refused a worker brief from a caller, counting the failures for that task.
-- **Written by:** `gateway/brief_check.go`
-- **Read by:** `gateway/brief_check.go`
-- **Shown in:** tool `agent_worker_start`
-- **Kept:** Forever.
-
 ### worker_defects
 
-- **Holds:** One row per defect found in a worker's result, from a rating or filed automatically (failed verify, failed test, fix of a shipped change), with severity, cause and the change it came from.
+- **Holds:** One row per defect found in a worker's result, from a rating or filed automatically (failed verify, failed test, fix of a shipped change), with severity, cause and the change it came from. Its blame says whether the worker or the brief the caller wrote caused it. A brief defect is charged to the caller and never reaches the picker. The run it names holds the model, harness and difficulty.
 - **Written by:** `gateway/defect_auto.go`, `gateway/ratings.go`, `gateway/side_fold.go`
-- **Read by:** `gateway/defect_auto.go`, `gateway/picker.go`, `gateway/quality_families.go`, `gateway/ratings.go`, `gateway/scores_weekly.go`
-- **Shown in:** tool `agent_worker_rate`; TUI, Quotas (Quality · worker picker)
-- **Kept:** Forever.
-
-### worker_rate_offers
-
-- **Holds:** One row per finished worker for which the caller was offered a chance to rate it, with whether the ask was actually made.
-- **Written by:** `gateway/ratings.go`, `gateway/session_replace.go`
-- **Read by:** `gateway/ratings.go`
-- **Shown in:** tool `agent_worker_rate`
+- **Read by:** `gateway/defect_auto.go`, `gateway/picker.go`, `gateway/quality_families.go`, `gateway/ratings.go`, `gateway/scores_weekly.go`, `gateway/worker_log.go`
+- **Shown in:** tool `agent_worker_rate`; TUI, Quotas (Workers log, Quality · worker picker)
 - **Kept:** Forever.
 
 ### worker_ratings
 
-- **Holds:** One row per rating a caller gave to a worker's result, with a score and note.
+- **Holds:** One row per rating a caller gave to a worker's result, with a score and note. The run it names holds the model, harness and difficulty.
 - **Written by:** `gateway/ratings.go`
 - **Read by:** `gateway/quality.go`, `gateway/quality_families.go`, `gateway/ratings.go`
 - **Shown in:** tool `agent_worker_rate`; TUI, Quotas (Quality · worker picker)
@@ -786,35 +729,19 @@ Worker runs, their quality and cost, and the data the picker reads.
 
 ### worker_runs
 
-- **Holds:** One row per worker run: which machine, harness and model, how it ended, how long it ran, how much rework it needed and how hard it struggled.
-- **Written by:** `gateway/rework_backfill.go`, `gateway/session_replace.go`, `gateway/store_record.go`, `gateway/task_rework_backfill.go`, `gateway/track.go`, `gateway/worker_cause.go`
+- **Holds:** One row per worker run: which machine, harness and model, how it ended, how long it ran, how much rework it needed and how hard it struggled. It also holds the tokens the run's session used by kind and their cost at API prices when the run was recorded, a visual proof report when the worker said it could not give one, and whether the caller was offered a rating (that offer is per session and sits on its first run).
+- **Written by:** `gateway/ratings.go`, `gateway/rework_backfill.go`, `gateway/session_replace.go`, `gateway/store_record.go`, `gateway/task_rework_backfill.go`, `gateway/track.go`, `gateway/worker_cause.go`
 - **Read by:** `gateway/context_resolver.go`, `gateway/delivery_tasks.go`, `gateway/intake_feeds.go`, `gateway/loop.go`, `gateway/member_loop.go`, `gateway/model_health.go`, `gateway/quota_burn.go`, `gateway/ratings.go`, `gateway/rework_backfill.go`, `gateway/runs_snapshot.go` and others
 - **Shown in:** TUI, Quotas (Workers log); tool `agent_workers_find`
 - **Kept:** Forever by default; the gateway flag keep-worker-runs can prune runs older than a set time.
 
 ### worker_starts
 
-- **Holds:** One row per request to start a worker, with the machine, project, harness, session, whether it is open or closed, and the brief's done list. Two columns serve the picker: `brief_hash` (a hash of the project and the problem and task text) and `not_attempted_at` (when a run of the start ended without attempting the task).
-- **Written by:** `gateway/brief_launch.go`, `gateway/session_replace.go`, `gateway/store.go`, `gateway/worker_starts.go`
-- **Read by:** `gateway/brief_launch.go`, `gateway/context_resolver.go`, `gateway/graph_lifecycle.go`, `gateway/track.go`, `gateway/worker_starts.go`
+- **Holds:** One row per request to start a worker, with the machine, project, harness, session, whether it is open or closed, and the brief's done list. A start that the brief check refused is a closed row in state `refused`, with the task key and the failures, so the third attempt of a task can start. Two columns serve the picker: `brief_hash` (a hash of the project and the problem and task text) and `not_attempted_at` (when a run of the start ended without attempting the task).
+- **Written by:** `gateway/brief_check.go`, `gateway/brief_launch.go`, `gateway/session_replace.go`, `gateway/store.go`, `gateway/worker_starts.go`
+- **Read by:** `gateway/brief_check.go`, `gateway/brief_launch.go`, `gateway/context_resolver.go`, `gateway/graph_lifecycle.go`, `gateway/track.go`, `gateway/worker_starts.go`
 - **Shown in:** tool `agent_worker_start`; tool `agent_workers_find`
 - **Kept:** Closed starts are deleted after 30 days, when the next start is recorded.
-
-### worker_usage
-
-- **Holds:** One row per worker session holding its token usage, used to work out what the run cost.
-- **Written by:** `gateway/prices.go`
-- **Read by:** `gateway/prices.go`
-- **Shown in:** TUI, Quotas (Workers log)
-- **Kept:** Replaced on each usage report, never deleted.
-
-### worker_visual_proof
-
-- **Holds:** One row per worker run saying whether the worker gave visual proof (a screenshot or similar) or the check was unavailable.
-- **Written by:** `gateway/track.go`
-- **Read by:** `gateway/scores_weekly.go`
-- **Shown in:** TUI, Quotas (Quality · scores over time)
-- **Kept:** Forever.
 
 ## Tools and skills
 

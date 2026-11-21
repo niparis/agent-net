@@ -46,7 +46,7 @@ func TestHelpScrollsAndWrapsAt80(t *testing.T) {
 			t.Errorf("help line unreachable: %q", line)
 		}
 	}
-	for _, want := range []string{"more below", "more above", "delegation policy", "Messages", "select the previous or next message", "In overlays", "states", "open the selected message body"} {
+	for _, want := range []string{"more below", "more above", "request rule", "Messages", "select the previous or next message", "In overlays", "states", "open the selected message body"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("help did not show %q", want)
 		}

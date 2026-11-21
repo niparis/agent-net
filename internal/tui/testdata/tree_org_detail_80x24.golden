@@ -15,8 +15,8 @@ Selected session ─────────────────────
   function none: add a `# Project: <one line>` line… │
   trust    -                                         │
   rule     normal                                    │
-  delegate -                                         │
   allowed  you may review and accept changes         │
+           everywhere; you may merge in team forge   │
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │

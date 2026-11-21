@@ -144,7 +144,7 @@ func BenchmarkSideFoldAutoDefect(b *testing.B) {
 			b.Run("PickerDefectRead", func(b *testing.B) {
 				for i := 0; i < b.N; i++ {
 					rows, err := s.db.Query(`SELECT session_id, COUNT(*), COALESCE(SUM(severity), 0) FROM worker_defects
-						WHERE moved_at = 0 GROUP BY session_id`)
+						WHERE blame = 'worker' GROUP BY session_id`)
 					if err != nil {
 						b.Fatal(err)
 					}

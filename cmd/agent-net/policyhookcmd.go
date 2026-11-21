@@ -31,8 +31,8 @@ type policyHookInput struct {
 // runPolicyHook is `agent-net policy-hook`: a Claude Code hook on
 // UserPromptSubmit, PostCompact, SessionStart (matcher compact) and Stop
 // (runStopHook). It reads
-// the hook input on stdin, asks the daemon for the delegation policy of the
-// session and the charter of its node, and prints the hook output when there
+// the hook input on stdin, asks the daemon for the charter of the session's
+// node, and prints the hook output when there
 // is one:
 //
 //	{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"..."}}
@@ -73,10 +73,10 @@ func runPolicyHook(ctx context.Context, stdin io.Reader, stdout io.Writer,
 		in.Prompt = string(r[:300])
 	}
 	res, err := ask(ctx, protocol.PolicyRequest{Harness: "claude", NativeID: in.SessionID, Prompt: in.Prompt, PromptID: in.PromptID, TranscriptPath: in.TranscriptPath})
-	if err != nil || (res.Text == "" && res.Charter == "" && res.Notice == "") {
+	if err != nil || (res.Charter == "" && res.Notice == "") {
 		return
 	}
-	context := res.Text
+	context := ""
 	for _, part := range []string{res.Charter, res.Notice} {
 		if part == "" {
 			continue

@@ -35,7 +35,7 @@ Key `1` opens it.
 |---|---|
 | pgup/pgdn | page |
 | home/g, end | first, last row |
-| enter | open the selected session; details show trust, request rule and delegation policy |
+| enter | open the selected session; details show trust and request rule |
 | m | send a message to the session as yourself |
 | n | start a session in herdr: project, harness, model, folder and first message (a form) |
 | x | stop or remove the selected session |

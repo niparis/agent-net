@@ -124,8 +124,6 @@ func (g *Gateway) validateCTOProposal(ctx context.Context, nc *nodeConn, raw []b
 			return nil, reject("unknown or untrustable session")
 		}
 		return nil, nil
-	case "session_policy":
-		return g.handle(ctx, nc, "session.policy", q.Args)
 	case "held_answer":
 		return st.AnswerHeld(str("message_id"), str("action"), true)
 	case "inbox_answer":

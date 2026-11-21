@@ -543,7 +543,7 @@ type Daemon struct {
 	quota quotaState
 	// hints holds the rate limits and the session cache of hints (hint.go).
 	hints hintState
-	// policy caches the delegation policy per session (policy.go).
+	// policy caches the per-turn context of each session (policy.go).
 	policy policyState
 	// charterSends keeps the charter block of each Claude Code session from
 	// being repeated on every prompt (charter_send.go).

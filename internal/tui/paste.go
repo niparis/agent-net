@@ -27,14 +27,6 @@ func (m Model) paste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
 		m.defectSeverity, cmd = m.defectSeverity.Update(msg)
 	case modeRename, modeProjectRename, modeTimeZone, modeStandingAdd, modeSettingValue, modeSettingRepo, modeQuotaFloor:
 		m.rename, cmd = m.rename.Update(msg)
-	case modePolicy:
-		m.pol.err = ""
-		switch m.pol.cur {
-		case pfCoder:
-			m.pol.coder, cmd = m.pol.coder.Update(msg)
-		case pfMain:
-			m.pol.main, cmd = m.pol.main.Update(msg)
-		}
 	case modeApps:
 		return m.pasteApps(msg)
 	case modeNormal:

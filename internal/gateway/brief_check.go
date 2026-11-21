@@ -175,48 +175,28 @@ func (s *Store) openChangeBriefs(project string) ([]briefOverlap, error) {
 	return out, rows.Err()
 }
 
-// recordBriefRejection stores one refused start for the per-caller count.
+// recordBriefRejection stores one refused start as a closed worker_starts row in
+// state 'refused'. The row's age is the 24 hour window the retry rule counts in.
 func (s *Store) recordBriefRejection(caller, taskKey string, failures []string) error {
-	_, err := s.db.Exec(`INSERT INTO worker_brief_rejections(caller,task_key,failures,at) VALUES(?,?,?,?)`,
-		caller, taskKey, strings.Join(failures, "\n"), s.now().Unix())
+	at := s.now().UnixNano()
+	_, err := s.db.Exec(`INSERT INTO worker_starts(ref,node_id,owner,state,created_at,closed_at,task_key,failures) VALUES(?,'',?,'refused',?,?,?,?)`,
+		protocol.NewID("refused"), caller, at, at, taskKey, strings.Join(failures, "\n"))
 	return err
 }
 
 // briefRejectionCount counts the refused starts of one task since cut.
 func (s *Store) briefRejectionCount(caller, taskKey string, cut int64) (int, error) {
 	var n int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_brief_rejections WHERE caller=? AND task_key=? AND at>=?`,
-		caller, taskKey, cut).Scan(&n)
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_starts WHERE state='refused' AND owner=? AND task_key=? AND created_at>=?`,
+		caller, taskKey, cut*int64(time.Second)).Scan(&n)
 	return n, err
-}
-
-// BriefRejectionCountsByCaller counts the refused briefs of each caller since
-// cut. The weekly table adds it beside BriefDefectCountsByCaller.
-func (s *Store) BriefRejectionCountsByCaller(cut int64) (map[string]int, error) {
-	rows, err := s.db.Query(`SELECT caller, COUNT(*) FROM worker_brief_rejections WHERE at>=? GROUP BY caller`, cut)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]int{}
-	for rows.Next() {
-		var caller string
-		var n int
-		if err := rows.Scan(&caller, &n); err != nil {
-			return nil, err
-		}
-		out[caller] = n
-	}
-	return out, rows.Err()
 }
 
 // recordBriefDefectFromBrief charges one brief defect to the caller when the
 // third attempt starts with overlaps still there.
 func (s *Store) recordBriefDefectFromBrief(caller string, failures []string) error {
 	note := "brief started after 2 rejections: " + strings.Join(failures, "; ")
-	_, err := s.db.Exec(`INSERT INTO worker_brief_defects
-		(run_id, worker_session_id, caller, rater, rater_model, severity, note, at)
-		VALUES (0,'',?,?,'',2,?,?)`, caller, caller, note, s.now().Unix())
+	_, err := s.db.Exec(`INSERT INTO worker_defects(session_id,caller,severity,note,at,blame) VALUES('',?,2,?,?,'brief')`, caller, note, s.now().Unix())
 	return err
 }
 

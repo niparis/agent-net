@@ -94,10 +94,7 @@ func Reference() string {
 	w("`reports_to` is the org tree: each Agent has at most one parent, the tree has no cycle, and the top is `%s`. Mergers are agents named `<project>-merger` under the repo's top agent. Lead level comes from a `lead_set` grant, from being a team lead, or from being chief of staff (`%s`). `started_by` says `agent-net` or `owner`.\n\n", protocol.OrgRoot, strings.Join([]string{protocol.LeadLevelGrant, protocol.LeadLevelTeamLead, protocol.LeadLevelChief}, "`, `"))
 
 	w("## Delegation and workers\n\n")
-	w("`session_change` action `policy`, with `scope` `session` or `project`:\n\n")
-	w("- `delegate`: %s, %s or %s (empty means no mode)\n", protocol.DelegateOff, protocol.DelegateNative, protocol.DelegateWorkers)
-	w("- `coder_model` and `main_model`: loose model names, resolved on the machine of the session\n")
-	w("- `workers`: %s\n\n", strings.Join(protocol.WorkersLevels, ", "))
+	w("The permission level of workers started in a project is the repo setting `workers.sandbox_level`: %s.\n\n", strings.Join(protocol.WorkersLevels, ", "))
 	w("A worker start leaves harness, model, provider, effort and machine empty to let the picker choose. Naming one needs the owner's words in `owner_words`, or the start waits for the owner. The difficulty is judged automatically. `isolation` is `%s` or `%s`; `none` is for read-only or non-code work. `fixes` names a shipped change this work fixes with `fixes_severity` from 1 to 4, `continue` names an ended worker to continue, and `base` names the base branch. Worker harnesses: %s.\n\n", protocol.IsolationWorktree, protocol.IsolationNone, strings.Join(protocol.WorkerHarnesses, ", "))
 
 	w("## Worker profiles\n\n")

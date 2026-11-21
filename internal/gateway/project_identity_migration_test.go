@@ -55,7 +55,7 @@ func identityFixture(t *testing.T, s *Store, folder, charter string) {
 		t.Fatal(err)
 	}
 	legacyNodeSetting(t, s, folder, "sandbox", "workspace")
-	if _, err = s.db.Exec(`INSERT INTO project_policies VALUES(?, ?, 'ask', 1)`, n, folder); err != nil {
+	if _, err = legacyPolicyDB(t, s).Exec(`INSERT INTO project_policies VALUES(?, ?, 'ask', 1)`, n, folder); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = s.db.Exec(`INSERT INTO projects(node_id,path,name,remote,added_at,checked_at) VALUES(?,?,?,'https://example.com/team/agent-net.git',1,1)`, n, "/src/"+folder, folder); err != nil {
@@ -89,7 +89,6 @@ func TestProjectIdentityMigration(t *testing.T) {
 			`SELECT count(*) FROM sessions WHERE repo_project='agent-net'`,
 			`SELECT count(*) FROM graph_edges WHERE source='agent-net' AND target='other'`,
 			`SELECT count(*) FROM setting_values WHERE key='node_setting.sandbox' AND scope='agent-net' AND value='"workspace"'`,
-			`SELECT count(*) FROM project_policies WHERE project='agent-net' AND policy='ask'`,
 			`SELECT count(*) FROM learned_suggestions WHERE node='agent-net'`,
 			`SELECT count(*) FROM graph_history WHERE node='agent-net' AND actor='learned'`,
 		} {

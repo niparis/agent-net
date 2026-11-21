@@ -38,7 +38,7 @@ func TestOwnerStatusKeepsWholeBusyHighlight(t *testing.T) {
 func TestSessionVisualPolish(t *testing.T) {
 	m := newModel(80, 24)
 	detail := detailText(m)
-	for _, label := range []string{"trust    ", "rule     ", "delegate ", "source   "} {
+	for _, label := range []string{"trust    ", "rule     ", "source   "} {
 		if !strings.Contains(detail, label) {
 			t.Errorf("detail missing label %q", label)
 		}

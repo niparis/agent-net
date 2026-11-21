@@ -141,7 +141,6 @@ func TestCTOProposalValidationLeavesDatabaseUnchanged(t *testing.T) {
 		{"session_rename", map[string]any{"session_id": a, "name": "planner"}},
 		{"session_rename", map[string]any{"session_id": a, "name": ""}},
 		{"session_trust", map[string]any{"session_id": a, "on": true}},
-		{"session_policy", map[string]any{"session_id": a, "policy": map[string]any{"delegate": "off"}}},
 		{"node_rename", map[string]any{"node_id": node, "name": "name"}},
 		{"project_display_set", map[string]any{"project": "alpha", "name": "name"}},
 		{"project_remove", map[string]any{"name": "alpha"}},

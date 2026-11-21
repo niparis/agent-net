@@ -188,7 +188,6 @@ func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, er
 		{`UPDATE sessions SET worker=json_set(worker,'$.owner',?) WHERE worker<>'' AND json_valid(worker) AND json_extract(worker,'$.owner')=?`, []any{newSessionID, sessionID}},
 		{`UPDATE worker_starts SET owner=?, caller_agent_id=(SELECT agent_id FROM sessions WHERE id=?) WHERE owner=? AND state IN ('open','starting')`, []any{newSessionID, newSessionID, sessionID}},
 		{`UPDATE worker_runs SET caller_session_id=? WHERE caller_session_id=?`, []any{newSessionID, sessionID}},
-		{`UPDATE worker_rate_offers SET caller=? WHERE caller=?`, []any{newSessionID, sessionID}},
 		// The caller's open changes and the steps it has claimed.
 		{`UPDATE delivery_changes SET caller=?, updated_at=? WHERE caller=? AND state IN ('open','merged')`, []any{newSessionID, now, sessionID}},
 		{`UPDATE delivery_step_tasks SET claimed_by=? WHERE claimed_by=? AND change_id IN (SELECT id FROM delivery_changes WHERE state IN ('open','merged'))`, []any{newSessionID, sessionID}},

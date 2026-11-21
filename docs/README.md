@@ -48,6 +48,7 @@ These files record how the project was planned and built. They are kept for cont
 - [0178](decisions/0178-gateway-network.md): proposed, not scheduled. A network of gateways: each owner keeps one gateway, gateways link through a separate listener, only messages cross, repos are private, shared or public.
 - [0179](decisions/0179-gateway-schema-reduction.md): approved 2026-11-20. Reduce the gateway schema from 155 to 118 tables in 10 parts; the audit in `docs/design/gateway-schema-audit.md` is the evidence.
 - [0180](decisions/0180-urgent-messages-reach-a-busy-session.md): accepted 2026-11-21. An urgent message reaches a busy session at its next tool call (Claude Code hook, Pi and OpenCode plugins) or in its running turn (Codex).
+- [0181](decisions/0181-worker-tables-rework.md): approved 2026-11-21. Fold nine worker and picker tables into the rows they describe, and remove the delegation policy.
 - [0175](decisions/0175-friction-status.md): each friction report has a read state (new, read, triaged, fixed, wontfix, infra) with a history; the owner and the CTO set it with `friction_mark`, groups of duplicate reports close together, and `friction_find` pages with a cursor.
 - [0174](decisions/0174-sign-in-on-the-browser-machine.md): sign in on the browser machine.
 - [0173](decisions/0173-picker-quality.md): picker quality, proposed, settings off.
@@ -75,7 +76,7 @@ These files record how the project was planned and built. They are kept for cont
 - [0011](decisions/0011-opencode-sessions-stay-visible.md): OpenCode sessions survive a plugin reload; discovery looks back 7 days; dormant after 24 hours.
 - [0012](decisions/0012-codex-peers.md): interactive Codex threads as peers (shared app server, queue, per-thread MCP server), and why Codex workers stay private.
 - [0013](decisions/0013-peer-trust-and-hints.md): peer trust (a per-session switch, set by the owner, that lets a session act on peer requests without asking), the sender-relays rule, and hints about which session can help after a failed tool call.
-- [0014](decisions/0014-delegation-policy.md): delegation policy (the owner sets, per session or project, whether a session does the coding itself or hands it to a native subagent or a worker; applied on every turn).
+- [0014](decisions/0014-delegation-policy.md): delegation policy (the owner set, per session or project, whether a session did the coding itself or handed it to a native subagent or a worker; removed on 2026-11-21, the per-turn context call stays).
 - [0020](decisions/0020-worker-sandbox.md): unattended workers get a sandbox, not approval prompts (a level per project, Codex first). Amends 0002 W6.
 - [0059](decisions/0059-worker-os-sandbox.md): an optional OS sandbox (bubblewrap on Linux) for Pi and OpenCode workers, per project in node.json; Claude and no-network starts are refused while it is on. Amends 0020.
 - [0021](decisions/0021-network-integrations.md): one setup integrations question, answered once for the whole network.

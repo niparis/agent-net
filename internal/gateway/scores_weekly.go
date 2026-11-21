@@ -65,7 +65,7 @@ func (s *Store) ScoresWeeklyAt(now time.Time) ([]protocol.ScoresWeeklyRow, error
 
 	// Count explicit inability to capture proof in ended runs, by model. Missing proof alone
 	// is not a declaration that the worker could not produce it.
-	proofRows, err := s.db.Query(`SELECT at,model,unavailable FROM worker_visual_proof WHERE at>=? AND at<?`, startUnix, endUnix)
+	proofRows, err := s.db.Query(`SELECT ended_at,model,proof_unavailable FROM worker_runs WHERE proof_unavailable<>'' AND ended_at>=? AND ended_at<?`, startUnix, endUnix)
 	if err != nil {
 		return nil, err
 	}
@@ -151,16 +151,16 @@ func (s *Store) ScoresWeeklyAt(now time.Time) ([]protocol.ScoresWeeklyRow, error
 	}
 
 	// Brief defects are charged to the caller, not to the worker, and are
-	// counted in the week the caller filed them (worker_brief_defects.at is
+	// counted in the week the caller filed them (worker_defects.at is
 	// Unix seconds, like every other at column).
-	if err := s.countWeeklyAt(`SELECT at FROM worker_brief_defects WHERE at >= ? AND at < ?`, startUnix, endUnix, index, buckets, func(b *weekBuckets) { b.briefDefects++ }); err != nil {
+	if err := s.countWeeklyAt(`SELECT at FROM worker_defects WHERE blame = 'brief' AND at >= ? AND at < ?`, startUnix, endUnix, index, buckets, func(b *weekBuckets) { b.briefDefects++ }); err != nil {
 		return nil, err
 	}
-	if err := s.countWeeklyAt(`SELECT at FROM worker_defects WHERE moved_at = 0 AND at >= ? AND at < ?`, startUnix, endUnix, index, buckets, func(b *weekBuckets) { b.defects++ }); err != nil {
+	if err := s.countWeeklyAt(`SELECT at FROM worker_defects WHERE blame = 'worker' AND at >= ? AND at < ?`, startUnix, endUnix, index, buckets, func(b *weekBuckets) { b.defects++ }); err != nil {
 		return nil, err
 	}
 	// A defect found later is caught before release or escaped (decision 0145).
-	rows, err = s.db.Query(`SELECT at, COALESCE(escape_phase,'') FROM worker_defects WHERE moved_at = 0 AND at >= ? AND at < ?`, startUnix, endUnix)
+	rows, err = s.db.Query(`SELECT at, COALESCE(escape_phase,'') FROM worker_defects WHERE blame = 'worker' AND at >= ? AND at < ?`, startUnix, endUnix)
 	if err != nil {
 		return nil, err
 	}

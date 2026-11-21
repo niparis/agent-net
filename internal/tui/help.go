@@ -143,7 +143,7 @@ func (m Model) hints() []hint {
 	}
 	if m.tab == sessionsTab && m.sessionCell > 0 {
 		if a, ok := m.selectedAgent(); ok && !protocol.IsOwner(a.Harness) && a.Harness != "bot" {
-			if m.sessionCell == 3 && canChangeSessionAgent(a) {
+			if m.sessionCell == 2 && canChangeSessionAgent(a) {
 				return []hint{{key: "left/right", label: "cell"}, {key: "space", label: "next agent"}, {key: "esc", label: "name"}, sessionHelp, sessionQuit}
 			}
 			if m.sessionCell == 1 {
@@ -156,7 +156,6 @@ func (m Model) hints() []hint {
 				}
 				return []hint{{key: "left/right", label: "cell"}, {key: "space", label: rule + " -> " + next}, {key: "esc", label: "name"}, sessionHelp, sessionQuit}
 			}
-			return []hint{{key: "left/right", label: "cell"}, {key: "enter", label: "delegation policy"}, {key: "esc", label: "name"}, sessionHelp, sessionQuit}
 		}
 	}
 	pin := bindingHint(contextSessions, "pin")
@@ -291,8 +290,6 @@ func (m Model) helpLine(w int) string {
 		return clip(m.rename.View()+sDim.Render("   enter saves, empty resets, esc cancels"), w)
 	case modeTrust:
 		return clip(sBold.Render(confirmName("Let ", m.confirmName, " act on peer requests without asking?", w)), w)
-	case modePolicy:
-		return sDim.Render(clip("left/right change  up/down or enter field  enter saves  esc cancels", w))
 	}
 	hs := m.hints()
 	if w <= 80 {

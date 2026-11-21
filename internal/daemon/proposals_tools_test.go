@@ -137,7 +137,6 @@ func TestCTOChangeParity(t *testing.T) {
 		"session_start":           {"session_change", `{"action":"session_start","project":"garden","harness":"claude"}`},
 		"session_rename":          {"session_change", `{"action":"rename","session_id":"s_test","name":"planner"}`},
 		"session_trust":           {"session_change", `{"action":"trust","session_id":"s_test","on":true}`},
-		"session_policy":          {"session_change", `{"action":"policy","session_id":"s_test","policy":{"delegate":"off"}}`},
 		"worker_start":            {"worker_change", `{"action":"start","project":"project","task":"test","harness":"claude","touches":["tests"]}`},
 		"worker_stop":             {"worker_change", `{"action":"stop","session":"s_test"}`},
 		"held_answer":             {"answer", `{"kind":"held","message_id":"m_test","action":"a"}`},

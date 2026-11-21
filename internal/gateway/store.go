@@ -1331,7 +1331,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration, workerTablesMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -2014,10 +2014,6 @@ func openStoreWith(path string, o storeOpen) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if err := s.backfillNoticeUsage(); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("notice usage backfill: %w", err)
-	}
 	if err := s.refreshQuality(); err != nil {
 		db.Close()
 		return nil, err
@@ -2066,6 +2062,12 @@ func (s *Store) migrate() error {
 					tx.Rollback()
 					return fmt.Errorf("migration %d: %w", i+1, err)
 				}
+			}
+		}
+		if strings.Contains(migrations[i], workerTablesMarker) {
+			if err := workerTablesPrepare(tx); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
 		}
 		if strings.Contains(migrations[i], graphNodesFoldMarker) {
@@ -2881,6 +2883,12 @@ func (s *Store) migrate() error {
 		if err != nil {
 			tx.Rollback()
 			return fmt.Errorf("migration %d: %w", i+1, err)
+		}
+		if strings.Contains(migrations[i], workerTablesMarker) {
+			if err := workerTablesFinish(tx); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
 		}
 		if strings.Contains(migrations[i], "node scopes seed") {
 			if err := seedNodeScopesTx(tx, s.now().UnixNano()); err != nil {
@@ -4432,7 +4440,7 @@ var agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.
 	s.name, s.repo_description, s.announced_project,
 	s.capabilities, s.task,
 	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree, s.mode, s.model, s.pid, s.worker, s.repo_description,
-	s.peer_trust, s.expertise, s.delegation, s.title, s.created_at, s.tools_version, s.tools_old, s.waiting, COALESCE((SELECT name FROM project_display_names WHERE project=COALESCE(NULLIF(s.repo_project,''),s.announced_project)),''),
+	s.peer_trust, s.expertise, s.title, s.created_at, s.tools_version, s.tools_old, s.waiting, COALESCE((SELECT name FROM project_display_names WHERE project=COALESCE(NULLIF(s.repo_project,''),s.announced_project)),''),
 	CASE WHEN ` + registeredMergerSQL("s") + ` THEN 'merger' ELSE '' END,
  s.task_started,
  COALESCE((SELECT json_object('run_id',wa.run_id,'session_id',wa.session_id,'started_at',wa.started_at,
@@ -4499,12 +4507,12 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 	var lastSeen, lastActive, created int64
 	var caps, worker, assessment string
 	var trust int
-	var deleg, waiting string
+	var waiting string
 	var toolsOld int
 	err := sc.Scan(&a.SessionID, &a.NodeID, &a.Hostname, &a.Harness, &a.Cwd, &a.NativeID, &a.Status, &online, &lastSeen, &lastActive,
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
-		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName,
+		&trust, &a.Profile.Expertise, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName,
 		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.ReportsTo, &a.RepoLead, &a.RepoLeadExplicit, &a.TeamLead, &a.RepoMaxAgents, &a.RepoAgentCount, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.LastCompactedAt, &a.LastCompactedReason, &a.StalledSince, &a.GatewayHeld, &a.InSession, &a.LimitedUntil, &a.LimitedReason, &a.TurnError, &a.TurnErrorAt, &a.ReplacedBy, &a.BusySince)
 	if err != nil {
 		return a, err
@@ -4514,12 +4522,6 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 		var w protocol.Waiting
 		if json.Unmarshal([]byte(waiting), &w) == nil {
 			a.Waiting = protocol.CleanWaiting(&w)
-		}
-	}
-	if deleg != "" {
-		var p protocol.DelegationPolicy
-		if json.Unmarshal([]byte(deleg), &p) == nil && !p.Empty() {
-			a.Delegation = &protocol.DelegationView{DelegationPolicy: p, Scope: protocol.ScopeSession}
 		}
 	}
 	a.PeerTrust = trust != 0
@@ -4551,10 +4553,10 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 }
 
 // agentOneTables are the tables Agent reads, through every function it calls:
-// the agent row (agentListTables), its delegation, its charter and its loop.
+// the agent row (agentListTables), its charter and its loop.
 // The long view reads the graph, which carries each project's bar.
 // Keep it equal to those queries (see readThrough).
-var agentOneTables = tableUnion(agentListTables, delegationTables, shortAgentChartersTables, loopTables, []string{"project_bar_rules"})
+var agentOneTables = tableUnion(agentListTables, agentViewTables, shortAgentChartersTables, loopTables, []string{"project_bar_rules"})
 
 type agentOne struct {
 	a  protocol.AgentView
@@ -4586,9 +4588,6 @@ func (s *Store) agentRead(sessionID string) (protocol.AgentView, bool, error) {
 	if err != nil {
 		return a, false, err
 	}
-	if err := s.applyDelegationWith(one, in); err != nil {
-		return a, false, err
-	}
 	if err := s.applyAgentChartersWith(one, false, in); err != nil {
 		return a, false, err
 	}
@@ -4601,7 +4600,7 @@ func (s *Store) agentRead(sessionID string) (protocol.AgentView, bool, error) {
 	return one[0], true, nil
 }
 
-// agentBase reads one agent row without delegation, charter or rules. Callers
+// agentBase reads one agent row without charter or rules. Callers
 // that need only the stored fields (name, title, node) use it so they do not
 // build the graph and the settings snapshot.
 func (s *Store) agentBase(sessionID string) (protocol.AgentView, bool, error) {
@@ -4639,10 +4638,10 @@ const piChildSQL = `s.harness = 'pi' AND s.mode = 'background' AND s.pid > 0 AND
 		AND (s.online = 1 OR s.last_seen >= parent.created_at))`
 
 // agentsTables are the tables agentsRead reads, through every function it
-// calls: the agent rows (agentListTables), the delegation of each agent, its
+// calls: the agent rows (agentListTables), the charter of each agent, its
 // public charter, its pending requests and its loop. Keep it equal to those
 // queries (see readThrough).
-var agentsTables = tableUnion(agentListTables, delegationTables, shortAgentChartersTables, pendingTables, loopTables, []string{"node_scopes"})
+var agentsTables = tableUnion(agentListTables, agentViewTables, shortAgentChartersTables, pendingTables, loopTables, []string{"node_scopes"})
 
 // Agents lists the agent views that match f.
 //
@@ -4666,9 +4665,6 @@ func (s *Store) agentsRead(f protocol.QueryAgents) ([]protocol.AgentView, error)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.applyDelegation(out); err != nil {
-		return nil, err
-	}
 	if err := s.applyAgentCharters(out, true); err != nil {
 		return nil, err
 	}
@@ -4687,7 +4683,7 @@ func (s *Store) agentsRead(f protocol.QueryAgents) ([]protocol.AgentView, error)
 	return out, nil
 }
 
-// agentsBase is Agents without delegation, charters and pending requests. A
+// agentsBase is Agents without charters and pending requests. A
 // caller that reads only the stored fields (id, node, harness, model, worker)
 // uses it, so it does not build the graph and the settings snapshot.
 func (s *Store) agentsBase(f protocol.QueryAgents) ([]protocol.AgentView, error) {

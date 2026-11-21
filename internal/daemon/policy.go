@@ -10,13 +10,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/niparis/agent-net/internal/claudeagents"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/repoinfo"
 )
 
-// Delegation policy (decision 0014). A harness adapter asks for the effective
-// policy of its session on every turn (MethodPolicy). The daemon asks the
+// The per-turn policy call (decision 0014). A harness adapter asks for the
+// context of its session on every turn (MethodPolicy). The daemon asks the
 // gateway (policy.get) and keeps the answer for policyTTL, so a turn costs one
 // local call, and a change by the owner shows within a few seconds.
 
@@ -137,57 +136,10 @@ func policyHookInstalled() bool {
 	return json.Unmarshal(b, &st) == nil && st.Installed
 }
 
-// validName reports whether a model name from the gateway holds only name
-// characters. A name that does not is not put into text for the model.
-func validName(s string) bool {
-	_, err := protocol.DelegationPolicy{CoderModel: s}.Clean()
-	return err == nil
-}
-
-// policyResult turns the gateway's answer into what the adapter needs. The
-// adapter of a harness without native subagents gets the workers text.
-func (d *Daemon) policyResult(harness string, got protocol.PolicyGot) protocol.PolicyResult {
-	res := protocol.PolicyResult{Charter: got.Charter}
-	v := got.Delegation
-	if v == nil || !protocol.SupportFor(harness).Applied {
-		return res
-	}
-	if _, err := v.DelegationPolicy.Clean(); err != nil || (v.CoderResolved != "" && !validName(v.CoderResolved)) ||
-		(v.MainResolved != "" && !validName(v.MainResolved)) {
-		return res // bad data from the gateway: say nothing about the policy
-	}
-	view := *v
-	if view.Delegate == "" {
-		// Only a main model is set.
-		res.Main = mainFor(harness, view)
-		return res
-	}
-	mode := protocol.EffectiveMode(harness, view.Delegate)
-	res.Mode, res.Main = mode, mainFor(harness, view)
-	if mode == protocol.DelegateNative {
-		res.Coder = view.Coder()
-		res.AgentID = protocol.CoderAgentID(res.Coder)
-		if harness == "claude" {
-			// Claude Code takes subagents from files. The file is written
-			// here, on this machine, because the owner set the policy and
-			// installed the hook (decision 0014).
-			if _, err := claudeagents.Ensure(res.AgentID, res.Coder); err != nil {
-				d.Logf("policy: claude subagent file: %v", err)
-				mode = protocol.DelegateWorkers // no subagent to name: use workers
-				res.Mode, res.AgentID = mode, ""
-				view.Delegate = protocol.DelegateWorkers
-			}
-		}
-	}
-	res.Text = protocol.PolicyText(view, harness, res.AgentID)
-	return res
-}
-
-func mainFor(harness string, v protocol.DelegationView) string {
-	if !protocol.SupportFor(harness).MainModel {
-		return ""
-	}
-	return v.Main()
+// policyResult turns the gateway's answer into what the adapter needs: the
+// charter context.
+func (d *Daemon) policyResult(got protocol.PolicyGot) protocol.PolicyResult {
+	return protocol.PolicyResult{Charter: got.Charter}
 }
 
 // policyCall serves MethodPolicy. A plugin or MCP client asks for its own
@@ -237,7 +189,7 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 	if !ok {
 		return protocol.PolicyResult{Notice: notice}, nil
 	}
-	res := d.policyResult(d.infoOf(ls).Harness, got)
+	res := d.policyResult(got)
 	res.Notice = notice
 	// A Claude Code hook answer is kept in the transcript. Send the full
 	// charter block once, again when it changed, and again after a compaction.

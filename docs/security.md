@@ -279,9 +279,7 @@ may read the whole graph, read-only. `agent_graph_read` returns every node's cha
 fields and maturity, every node's rules with name and value, and every edge's
 kind, mode and request rule. The rules are the six node settings resolved
 against the node's maturity (`tests_before_merge`, `merge_authority`,
-`worker_sandbox`, `judge_consumers`, `deploy_rule`, `autonomy`) and the delegation policies
-the owner set for the node's project on each machine (`delegate`,
-`coder_model`, `main_model`, `workers`). `agent_session_get` puts the same rules on the
+`worker_sandbox`, `judge_consumers`, `deploy_rule`, `autonomy`). `agent_session_get` puts the same rules on the
 session's node, so a session can check its own rules directly. Delivery rules,
 including merge authority and its displayed text, are settings-layer rules.
 The owner and CTO can change them.
@@ -290,7 +288,7 @@ the receiver's merge text with each delivered message, overriding any sender
 value. The delegated approval modes are inserted into the rule text, so a
 changed mode is not paired with the old list in that text. An older daemon or
 extension ignores the new text field and uses its built-in wording until it is
-upgraded. Only changes are owner-gated (`node_settings_set` and `session_policy`). What stays hidden
+upgraded. Only changes are owner-gated (`node_settings_set`). What stays hidden
 is not a rule: secrets and tokens, machine paths and locations, the
 learned-change history with its evidence excerpts, and the owner's
 hidden-items preferences. What stays hidden, and why:
@@ -559,7 +557,7 @@ Setup can set `default_tools_approval_mode = "approve"` for the `agent-net` MCP 
 
 Your answers to the integrations question ([decision 0021](decisions/0021-network-integrations.md)) are stored at the gateway, and every daemon applies them: it adds or removes the Claude Code hooks and plugin, the Claude peer-message setting and the Codex tool approval on its own machine, at start and every minute.
 
-- **Only you can change them** from a command line or the TUI: `integrations_set` is behind the owner gate, like `session_trust` and `session_policy`.
+- **Only you can change them** from a command line or the TUI: `integrations_set` is behind the owner gate, like `session_trust`.
 - **A machine you lose control of can change them for all machines.** The gateway takes the answers from any enrolled machine's token, the same trust as for trust and policy settings. A compromised machine could turn on, for example, accepted peer messages in Claude Code on your other machines. Remove a lost machine at the gateway at once (see [node tokens](#node-tokens)).
 - **A machine can say no for itself.** A local `--no-...` answer at `setup` wins over the network answer on that machine, and the daemon never undoes it.
 - **Quota-axi reads local logins.** The quota item only lets the daemon run quota-axi on each machine; see [subscription quotas](#subscription-quotas).
@@ -573,7 +571,7 @@ interfaces.
 
 - **Only the owner can change it locally.** `hidden_get` and `hidden_set` use
   the operator owner gate. The daemon refuses agent clients and command lines
-  inside an agent session's process tree, like `session_policy`.
+  inside an agent session's process tree, like `session_trust`.
 - **Enrolled machines are trusted to write owner settings.** The gateway accepts
   these frames from a machine with a valid node token, as it does for the other
   owner settings. A compromised enrolled machine could change the hidden list
@@ -586,16 +584,13 @@ Onboarding progress is also stored in gateway owner settings. Its operator
 methods use the same owner gate. The CTO restart tool uses the CTO process-tree
 check. As with hidden items, an enrolled machine can change the gateway entry.
 
-## Delegation policy
+## Session context hook
 
-A delegation policy (key `p` in the TUI, [decision 0014](decisions/0014-delegation-policy.md)) is text that agent-net adds to a session's context on every turn: hand code changes to a subagent or a worker, or do them yourself. It is your standing instruction to the session, so who can set it matters.
+The Claude Code `UserPromptSubmit` hook ([decision 0014](decisions/0014-delegation-policy.md)) adds the charter of the session's node to each prompt. It once carried a delegation policy too, a standing instruction that the owner set with `p` in the TUI. That policy was removed on 2026-11-21, with the method `session_policy`, the table `project_policies` and the subagent files it wrote.
 
-- **Only you can set it.** The method `session_policy` is behind the owner gate, like `session_trust`: it works from your command line or the TUI, and is refused for an agent client and for a command line that runs inside an agent session's process tree (a program that detaches itself from its parent is not caught). No MCP, Pi or OpenCode tool sets it. A session can read its own policy (the local method `policy`), nothing else. The gateway stores it and logs a `session.policy` event with the session ID, scope, mode and model names. A machine that is enrolled can send the frame, so the gateway trusts the daemons of your machines, as it does for every other frame.
-- **A peer cannot imitate it.** The text starts with the marker `[agent-net`, which is broken in every message body ([peer trust](#peer-trust), the marker rule). The model names in it are checked at the gateway and again in the daemon: letters, digits and `. _ : / @ + -` and spaces only, at most 100 characters. No bracket, newline, quote or backtick can get in, so a model name cannot carry an instruction.
-- **What it costs.** A policy can make a session start workers (the limits in [who may start workers](#sending-as-the-owner-and-who-may-start-workers) apply: the daemon's limits, the worktree default) or edit less itself. It cannot give a session more permission than its harness already gives it. The session can still ignore it, as with all text.
-- **Claude Code files.** With the policy hook (your yes in `setup`), the daemon writes `~/.claude/agents/agent-net-coder-<model>.md` for a `native` policy. Only files with that name prefix and agent-net's marker are changed or removed; a file of yours with the same name is left alone. `uninstall` removes ours. A subagent in that folder can run with the tools of the session: the file does not set `tools`, so it inherits them (Claude Code's default).
-- **What the gateway keeps.** A session's own policy lives in its session record and goes when the gateway deletes the old offline session (the retention flags). A project default is a small row in `project_policies` that the retention rules do not delete; clear it in the TUI (`p`, mode none, scope project).
-- **The hook adds text, not authority.** The `UserPromptSubmit` hook only prints the context for the prompt. It never blocks a prompt, never changes it, and prints nothing when it has no policy or the daemon does not answer within 700 ms.
+- **A peer cannot imitate it.** The text starts with the marker `[agent-net`, which is broken in every message body ([peer trust](#peer-trust), the marker rule).
+- **Old subagent files.** Older versions wrote `~/.claude/agents/agent-net-coder-<model>.md`. `uninstall` removes only files with that name prefix and agent-net's marker; a file of yours with the same name is left alone.
+- **The hook adds text, not authority.** The `UserPromptSubmit` hook only prints the context for the prompt. It never blocks a prompt, never changes it, and prints nothing when it has nothing to add or the daemon does not answer within 700 ms.
 
 ## Merge authority
 
@@ -652,7 +647,7 @@ checks count as negative. Daemons must send proof. The gateway reads their versi
 
 ## What a worker can do: the sandbox level
 
-A worker is an agent that nobody watches, so agent-net does not let it ask for approval. The daemon declines approvals where the harness supports them. The worker permission level is set per project in the TUI (`p`, line Workers) or the settings layer and applies to that project on every machine. Codex uses its own sandbox; Antigravity uses its own `--sandbox` flag. Claude workers enforce the level with Claude Code's own settings: `permissions.blockWritesOutsideWorkingDirectories` for its file tools, and Claude Code's Bash sandbox (`sandbox.enabled`, with `allowUnsandboxedCommands` off) for shell commands. Pi and OpenCode workers run in an OS sandbox by default: bubblewrap on Linux and `sandbox-exec` on macOS. A project opts out with `workers.os_sandbox_off` in `node.json` ([below](#the-os-sandbox-for-pi-and-opencode-workers)). Claude workers are not wrapped in that sandbox; they rely on Claude Code's own settings above. The owner-only `session_policy` method prevents an agent from widening a project's level. When no level is set, the node's maturity default applies ([decision 0022](decisions/0022-component-graph-and-cto.md)): `experimental`, `early`, `growing` and `mature` give `sandboxed`, and a node with no maturity keeps `sandboxed`. The owner can override it with `node_settings_set worker_sandbox`. Both the policy form and node setting change the same repo value. At cutover, the strictest machine policy and old node fallback win. An existing repo value is tightened only if its effective value would otherwise be looser than the old fallback or a machine policy. Inbox checks name the machines made stricter and their old values, and report case-ambiguous project names.
+A worker is an agent that nobody watches, so agent-net does not let it ask for approval. The daemon declines approvals where the harness supports them. The worker permission level is set per project in the settings layer (the repo setting `workers.sandbox_level`, or the node setting `worker_sandbox`) and applies to that project on every machine. Codex uses its own sandbox; Antigravity uses its own `--sandbox` flag. Claude workers enforce the level with Claude Code's own settings: `permissions.blockWritesOutsideWorkingDirectories` for its file tools, and Claude Code's Bash sandbox (`sandbox.enabled`, with `allowUnsandboxedCommands` off) for shell commands. Pi and OpenCode workers run in an OS sandbox by default: bubblewrap on Linux and `sandbox-exec` on macOS. A project opts out with `workers.os_sandbox_off` in `node.json` ([below](#the-os-sandbox-for-pi-and-opencode-workers)). Claude workers are not wrapped in that sandbox; they rely on Claude Code's own settings above. The owner-only settings gate prevents an agent from widening a project's level. When no level is set, the node's maturity default applies ([decision 0022](decisions/0022-component-graph-and-cto.md)): `experimental`, `early`, `growing` and `mature` give `sandboxed`, and a node with no maturity keeps `sandboxed`. The owner can override it with `node_settings_set worker_sandbox`. The node setting changes the same repo value. At cutover, the strictest machine policy and old node fallback win. An existing repo value is tightened only if its effective value would otherwise be looser than the old fallback or a machine policy. Inbox checks name the machines made stricter and their old values, and report case-ambiguous project names.
 
 The level definitions below hold for Codex's sandbox, Antigravity's flag and Claude Code's settings; the limits describe Codex's sandbox, with the differences noted for the others.
 
@@ -1168,7 +1163,7 @@ The owner-only `project_display_get` and `project_display_set` methods use the d
 
 The owner can give a machine a display name ([decision 0015](decisions/0015-machine-display-name.md), key `N` in the TUI, `agent-net nodes rename`). It is the name every machine, every agent and every hint sees for that machine, so who sets it and what it may hold matter.
 
-- **Only you can set it.** The method `node_rename` is behind the owner gate, like `session_policy`: your command line or the TUI, refused for an agent client and for a command line inside an agent session's process tree. No agent tool sets it. A machine that is enrolled can send the `node.rename` frame, so the gateway trusts the daemons of your machines here, as for every other frame.
+- **Only you can set it.** The method `node_rename` is behind the owner gate, like `session_trust`: your command line or the TUI, refused for an agent client and for a command line inside an agent session's process tree. No agent tool sets it. A machine that is enrolled can send the `node.rename` frame, so the gateway trusts the daemons of your machines here, as for every other frame.
 - **The limit.** The name is checked at the gateway (and in the TUI and the command line before they send). Its length and allowed characters are in [reference.md](reference.md#machine-names). No space, quote, bracket, `@`, `:`, slash or control character can get in, so the name is safe in a line of text for the model, in a log line and as an ssh target. A name must be unique among the machines, ignoring case, so a name cannot make two machines look like one.
 - **What it does not change.** The name is a label. Machine identity is the node ID and token. The reported host name stays stored, and a machine's own daemon cannot set a display name by saying a different host name in `hello`.
 

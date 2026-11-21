@@ -34,10 +34,6 @@ func publicGraphFixture() Graph {
 					"unknown_setting":       "OWNER_ONLY_NODE_SETTING_CANARY",
 				},
 				Locations: []GraphLocation{{Machine: "m1", Path: "/home/owner/PRIVATE_PATH_CANARY"}},
-				Delegation: []NodeDelegation{{
-					Machine:          "m1",
-					DelegationPolicy: DelegationPolicy{Delegate: DelegateWorkers, CoderModel: "deepseek/deepseek-v4.1-flash", Workers: WorkersReadOnly},
-				}},
 			},
 			{Name: "billing", Kind: "component", Charter: Charter{Purpose: "Takes money", Maturity: "growing"}},
 			{Name: "architect", Kind: "architect", Charter: Charter{Purpose: "Owns the design", Maturity: "early"}},
@@ -143,10 +139,6 @@ func TestPublicGraphReturnsNodeRules(t *testing.T) {
 			if got[name] != value {
 				t.Errorf("query %+v rule %s = %q, want %q (all: %+v)", q, name, got[name], value, shop.Rules)
 			}
-		}
-		if len(shop.Delegation) != 1 || shop.Delegation[0].Machine != "m1" ||
-			shop.Delegation[0].Delegate != DelegateWorkers || shop.Delegation[0].Workers != WorkersReadOnly {
-			t.Fatalf("query %+v delegation: %+v", q, shop.Delegation)
 		}
 	}
 }

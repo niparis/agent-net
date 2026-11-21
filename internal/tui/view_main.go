@@ -317,12 +317,6 @@ func (m Model) mainView(w, h int) []string {
 		}
 		return out
 	}
-	if m.mode == modePolicy {
-		for _, s := range m.policyView(w, l.detail+l.feed+2) {
-			add(s)
-		}
-		return out
-	}
 	if m.mode == modeApps {
 		for _, s := range m.appsView(w, l.detail+l.feed+2) {
 			add(s)
@@ -1206,7 +1200,7 @@ func (m Model) sessionsTable(w, n int) []string {
 	}
 
 	for i := range cols {
-		if cols[i].name == "PROJECT" && m.sessionCell == 3 {
+		if cols[i].name == "PROJECT" && m.sessionCell == 2 {
 			cols[i].name = "AGENT"
 		}
 		if cols[i].name == "STATUS" {
@@ -1219,9 +1213,6 @@ func (m Model) sessionsTable(w, n int) []string {
 			head += " "
 		}
 		label := c.name
-		if w <= 80 && label == "DELEGATE" {
-			label = "DLG"
-		}
 		if c.right {
 			head += cellR(label, c.width)
 		} else {
@@ -1451,7 +1442,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 				v = m.sessionMachine(a)
 			case "TYPE", "AGENT":
 				v = "bot"
-			case "PROJECT", "MODEL", "TRUST", "RULE", "DELEGATE":
+			case "PROJECT", "MODEL", "TRUST", "RULE":
 				v = "-"
 			case "STATUS":
 				v = state
@@ -1514,11 +1505,6 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 			v = m.requestRuleBadge(a)
 		case "RULE":
 			v = m.wildcardRule(firstNonEmpty(a.Repo.Project, a.Profile.Project))
-		case "DELEGATE":
-			v = "-"
-			if a.Delegation != nil && a.Delegation.Delegate != "" {
-				v = a.Delegation.Delegate
-			}
 		case "TASK":
 			v = taskText(a)
 			if pending := m.pendingTask(a, c.width); pending != "" {
@@ -1564,14 +1550,14 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 				v = statusLabel(v)
 			case "AGENT", "TASK":
 				v = sDim.Render(v)
-			case "TRUST", "RULE", "DELEGATE":
+			case "TRUST", "RULE":
 				value := strings.TrimSpace(v)
 				if value == "-" || c.name == "RULE" && value == "normal" {
 					v = sDim.Render(v)
 				}
 			}
 		}
-		if selected && ((m.sessionCell == 0 && c.name == "NAME") || (m.sessionCell == 1 && c.name == "RULE") || (m.sessionCell == 2 && c.name == "DELEGATE") || (m.sessionCell == 3 && c.name == "AGENT")) {
+		if selected && ((m.sessionCell == 0 && c.name == "NAME") || (m.sessionCell == 1 && c.name == "RULE") || (m.sessionCell == 2 && c.name == "AGENT")) {
 			v = sSel.Render(stripStyles(v))
 		}
 		parts = append(parts, v)

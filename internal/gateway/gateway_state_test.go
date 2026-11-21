@@ -132,6 +132,8 @@ func TestGatewayStateMigrationMovesTheOldRows(t *testing.T) {
 	for _, key := range markerKeys {
 		want[key] = "v-" + key
 	}
+	// The worker tables rework keeps the run version here, from zero.
+	want["worker_runs_version"] = "0"
 	// The settings fold migration moves the role and rotation rows here and
 	// drops the mark that nothing reads.
 	want["worker_rotation"], want["cto_session"] = "{}", "s_cto"

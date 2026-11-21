@@ -66,11 +66,7 @@ The repo lead is the repo's owner agent unless `lead_set` names another. The tea
 
 ## Delegation and workers
 
-`session_change` action `policy`, with `scope` `session` or `project`:
-
-- `delegate`: off, native or workers (empty means no mode)
-- `coder_model` and `main_model`: loose model names, resolved on the machine of the session
-- `workers`: sandboxed, no-network, read-only
+The permission level of workers started in a project is the repo setting `workers.sandbox_level`: sandboxed, no-network, read-only.
 
 A worker start leaves harness, model, provider, effort and machine empty to let the picker choose. Naming one needs the owner's words in `owner_words`, or the start waits for the owner. The difficulty is judged automatically. `isolation` is `worktree` or `none`; `none` is for read-only or non-code work. `fixes` names a shipped change this work fixes with `fixes_severity` from 1 to 4, `continue` names an ended worker to continue, and `base` names the base branch. Worker harnesses: opencode, claude, pi, codex, agy.
 
@@ -99,7 +95,7 @@ Desktop notifications are one owner preference per machine: `notification_settin
 | `claude_peer_messages` | Claude: accept messages from your other agents |
 | `codex_tools` | Codex: call agent-net tools without asking |
 | `claude_hint_hook` | Claude: hint which session to ask after an error |
-| `claude_policy_hook` | Claude: apply the delegation policy you set in the TUI |
+| `claude_policy_hook` | Claude: add your node's charter to each prompt |
 | `claude_needs_hook` | Claude: show "Needs you" in the TUI |
 | `claude_workers_mod` | Claude: show your workers above the prompt |
 | `quota_axi` | Quota: read your subscription quotas with quota-axi |

@@ -360,6 +360,9 @@ func restoreRepoSideTables(t *testing.T, db repoDB) {
 		restoreStepTasksCompleted(t, db)
 		restoreMergerRows(t, db)
 	}
+	if cur < migrationVersion(t, workerTablesMarker) {
+		recreateWorkerDroppedColumns(t, db)
+	}
 	// Last, so the steps above rebuild the tables they know, with their rows.
 	restoreDroppedSince(t, db, cur)
 }

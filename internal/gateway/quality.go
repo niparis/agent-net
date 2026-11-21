@@ -196,7 +196,8 @@ func (s *Store) refreshQuality() error {
 	if err != nil {
 		return err
 	}
-	rows, err := s.db.Query(`SELECT model,harness,effort,difficulty,score,rater_model FROM worker_ratings ORDER BY id`)
+	rows, err := s.db.Query(`SELECT r.model, r.harness, COALESCE(NULLIF(r.difficulty,''),?), w.score, w.rater_model
+		FROM worker_ratings w JOIN worker_runs r ON r.id = w.run_id ORDER BY w.id`, ratingDifficultyDefault)
 	if err != nil {
 		return err
 	}
@@ -205,10 +206,11 @@ func (s *Store) refreshQuality() error {
 	for rows.Next() {
 		var x qualitySample
 		var rater string
-		if err := rows.Scan(&x.Model, &x.Harness, &x.Effort, &x.Difficulty, &x.Value, &rater); err != nil {
+		if err := rows.Scan(&x.Model, &x.Harness, &x.Difficulty, &x.Value, &rater); err != nil {
 			rows.Close()
 			return err
 		}
+		x.Model, x.Effort = protocol.SplitModelLevel(x.Model)
 		x.Model = qualityModel(x.Model)
 		x.Weight = .5
 		if score, ok := protocol.LookupModelScore(rater, scores); ok && score.Score >= protocol.CalibrationStrongScore {

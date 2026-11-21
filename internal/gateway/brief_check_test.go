@@ -302,9 +302,12 @@ func TestBriefRejectionsAreCountedPerTaskFor24Hours(t *testing.T) {
 	if err != nil || n != 0 {
 		t.Fatalf("old rejection counted: %d, %v", n, err)
 	}
-	counts, err := s.BriefRejectionCountsByCaller(0)
-	if err != nil || counts["s_caller"] != 1 {
-		t.Fatalf("weekly counts = %v, %v", counts, err)
+	// The refusal is a closed start in state refused, so the 30 day sweep of
+	// closed starts clears it with the others.
+	var state string
+	var closed int64
+	if err := s.db.QueryRow(`SELECT state, closed_at FROM worker_starts WHERE owner='s_caller' AND task_key=?`, key).Scan(&state, &closed); err != nil || state != "refused" || closed == 0 {
+		t.Fatalf("refusal row = %q closed %d, %v", state, closed, err)
 	}
 }
 
@@ -332,14 +335,14 @@ func TestThirdBriefAttemptStartsAndRecordsADefect(t *testing.T) {
 		t.Fatalf("third attempt was still refused: %v", err)
 	}
 	var defects int
-	if err := a.g.store.db.QueryRow(`SELECT COUNT(*) FROM worker_brief_defects WHERE caller=?`, a.owner).Scan(&defects); err != nil {
+	if err := a.g.store.db.QueryRow(`SELECT COUNT(*) FROM worker_defects WHERE blame='brief' AND caller=?`, a.owner).Scan(&defects); err != nil {
 		t.Fatal(err)
 	}
 	if defects != 1 {
 		t.Fatalf("brief defects = %d, want 1", defects)
 	}
 	var note string
-	if err := a.g.store.db.QueryRow(`SELECT note FROM worker_brief_defects WHERE caller=?`, a.owner).Scan(&note); err != nil {
+	if err := a.g.store.db.QueryRow(`SELECT note FROM worker_defects WHERE blame='brief' AND caller=?`, a.owner).Scan(&note); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(note, "overlaps open change ch_open") {
@@ -358,7 +361,7 @@ func TestWorkerBriefWithoutTheSixSectionsStarts(t *testing.T) {
 		t.Fatalf("a plain brief was refused: %v", err)
 	}
 	var rejections int
-	if err := a.g.store.db.QueryRow(`SELECT COUNT(*) FROM worker_brief_rejections`).Scan(&rejections); err != nil {
+	if err := a.g.store.db.QueryRow(`SELECT COUNT(*) FROM worker_starts WHERE state='refused'`).Scan(&rejections); err != nil {
 		t.Fatal(err)
 	}
 	if rejections != 0 {

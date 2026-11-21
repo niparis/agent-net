@@ -43,8 +43,7 @@ func TestAutomaticStartKeepsTheCellNoteWhenTheGateSkipsTheFirstPick(t *testing.T
 			session := fmt.Sprintf("s_%s_%d", strings.ReplaceAll(model, "/", "_"), i)
 			pickerRun(t, s, node, session, "opencode", model, protocol.OutcomeComplete, 0, int64(1000+i))
 			pickerAssessment(t, s, session, d)
-			if _, err := s.db.Exec(`INSERT OR REPLACE INTO worker_usage(session_id,usage,updated_at) VALUES(?,?,0)`,
-				session, fmt.Sprintf(`{"in":%g,"out":%g}`, in, out)); err != nil {
+			if _, err := s.db.Exec(`UPDATE worker_runs SET usage_in=?, usage_out=? WHERE session_id=?`, in, out, session); err != nil {
 				t.Fatal(err)
 			}
 		}

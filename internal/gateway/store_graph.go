@@ -1407,10 +1407,10 @@ var graphNodesTables = []string{"agents.id", "agents.role", "agents.tombstone", 
 
 // graphTables are the tables graphWith reads, through every function it calls:
 // the nodes, the charters and their levels (charterTables), the settings
-// snapshot, the loops (loopTables), the delegation policies and the edges.
+// snapshot, the loops (loopTables) and the edges.
 // Keep it equal to those queries (see readThrough).
 var graphTables = tableUnion(graphNodesTables, charterTables, settingsTables, loopTables,
-	[]string{"project_policies", "graph_edges", "project_bar_rules"})
+	[]string{"graph_edges", "project_bar_rules"})
 
 // Graph returns explicit and implicit nodes and all edges.
 //
@@ -1580,39 +1580,6 @@ func (s *Store) graphWith(snapshot *settings.Snapshot) (protocol.Graph, error) {
 		}
 	}
 	if err = s.applyLoopsToGraph(&g); err != nil {
-		return g, err
-	}
-	// The owner's delegation policies are rules agents follow, so the public
-	// read shows them read-only. They are stored per machine and project.
-	rows, err = s.db.Query(`SELECT node_id,project,policy FROM project_policies ORDER BY project,node_id`)
-	if err != nil {
-		return g, err
-	}
-	for rows.Next() {
-		var machine, project, raw string
-		if err = rows.Scan(&machine, &project, &raw); err != nil {
-			rows.Close()
-			return g, err
-		}
-		var policy protocol.DelegationPolicy
-		if json.Unmarshal([]byte(raw), &policy) != nil {
-			continue
-		}
-		policy.Workers = "" // legacy worker value is a downgrade backup
-		if n := byLower[strings.ToLower(project)]; n != nil {
-			for _, v := range snap.Values {
-				if v.Key == workerSandboxKey && v.Level == "repo" && v.Scope == n.Name && v.Item == "" {
-					_ = json.Unmarshal(v.Value, &policy.Workers)
-				}
-			}
-			if !policy.Empty() {
-				n.Delegation = append(n.Delegation, protocol.NodeDelegation{Machine: machine, DelegationPolicy: policy})
-			}
-		}
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
 		return g, err
 	}
 	// The org tree (reports_to) is read on its own; the Graph shows it once

@@ -2952,64 +2952,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		g.logLine("hidden.set", "node", nc.id, "sessions", len(items.Sessions), "nodes", len(items.Nodes))
 		return items, nil
 
-	case "session.policy":
-		p, err := decodeOperator[protocol.SessionPolicy](raw)
-		if err != nil {
-			return nil, err
-		}
-		if p.SessionID == "" {
-			return nil, reject("bad session.policy")
-		}
-		clean, err := p.Policy.Clean()
-		if err != nil {
-			return nil, reject("%v", err)
-		}
-		if p.Scope == "" {
-			p.Scope = protocol.ScopeSession
-		}
-		if p.Scope != protocol.ScopeSession && p.Scope != protocol.ScopeProject {
-			return nil, reject("scope must be %s or %s", protocol.ScopeSession, protocol.ScopeProject)
-		}
-		if clean.Workers != "" && p.Scope != protocol.ScopeProject {
-			return nil, reject("the workers level is set per project: use scope project")
-		}
-		view, ok, err := st.PolicyDryRun(p.SessionID, p.Scope, clean)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			return nil, reject("unknown or unsuitable session %q", p.SessionID)
-		}
-		// A model name that does not resolve is refused, so the owner learns
-		// at once and not on the next turn of the session.
-		if view != nil && !p.DryRun {
-			if view.CoderError != "" {
-				return nil, reject("coder model: %s", view.CoderError)
-			}
-			if view.MainError != "" {
-				return nil, reject("main model: %s", view.MainError)
-			}
-		}
-		res := protocol.SessionPolicyResult{SessionID: p.SessionID, Effective: view}
-		if validatingProposal(ctx) {
-			return nil, nil
-		}
-		if !p.DryRun {
-			ok, err := st.SetDelegation(p.SessionID, p.Scope, clean)
-			if err != nil {
-				return nil, reject("%v", err)
-			}
-			if !ok {
-				return nil, reject("unknown or unsuitable session %q", p.SessionID)
-			}
-			res.Saved = true
-			detail := "scope=" + p.Scope + " delegate=" + clean.Delegate + " coder=" + clean.CoderModel + " main=" + clean.MainModel + " workers=" + clean.Workers
-			st.Event("session.policy", nc.id, p.SessionID, "", detail)
-			g.logLine("session.policy", "node", nc.id, "session", p.SessionID, "scope", p.Scope,
-				"delegate", clean.Delegate, "coder", clean.CoderModel, "main", clean.MainModel, "workers", clean.Workers)
-		}
-		return res, nil
-
 	case "signal.prompt":
 		var p struct {
 			SessionID string `json:"session_id"`
@@ -3159,7 +3101,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
-		got := protocol.PolicyGot{Harness: a.Harness, Delegation: a.Delegation, Project: c.Project, Charter: c.agentText()}
+		got := protocol.PolicyGot{Harness: a.Harness, Project: c.Project, Charter: c.agentText()}
 		// The scopes of the role node travel with the policy, so the daemon
 		// answers tool_decide from its cache (decision 0165). A failed read
 		// leaves them out: no scope means no decision, never a failed turn.

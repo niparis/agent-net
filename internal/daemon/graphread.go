@@ -11,8 +11,7 @@ import (
 )
 
 // Graph read (decision 0022). A session's charter and the edges that matter to
-// it come from the gateway on every turn, through the same local method as the
-// delegation policy. The graph changes rarely, so the daemon keeps the last
+// it come from the gateway on every turn, through the per-turn policy call. The graph changes rarely, so the daemon keeps the last
 // answer for graphTTL, and uses it for graphStale when the gateway is gone.
 
 const (

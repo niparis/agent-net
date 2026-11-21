@@ -15,11 +15,11 @@ Selected session ─────────────────────
   function none: add a `# Project: <one line>` line to AGENTS.… │
   trust    -                                                    │
   rule     normal                                               │
-  delegate -                                                    │
   allowed  you may review and accept changes everywhere; you    │
            may merge in team forge                              │
   remote   -                                                    │
   messages none seen yet                                        │
+                                                                │
                                                                 │
                                                                 │
                                                                 │

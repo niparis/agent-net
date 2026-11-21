@@ -102,18 +102,17 @@ func TestSessionSettingsColors(t *testing.T) {
 	a := m.snap.Agents[0]
 	m.selected = "other"
 	a.Online = true
-	cols := []column{{name: "TRUST", width: 5}, {name: "RULE", width: 6}, {name: "DELEGATE", width: 8}}
+	cols := []column{{name: "TRUST", width: 5}, {name: "RULE", width: 6}}
 	line := m.sessionLine(a, treeMark{}, cols, 120, 0)
-	for _, want := range []string{sDim.Render(cell("-", 5)), sDim.Render(cell("normal", 6)), sDim.Render(cell("-", 8))} {
+	for _, want := range []string{sDim.Render(cell("-", 5)), sDim.Render(cell("normal", 6))} {
 		if !strings.Contains(line, want) {
 			t.Errorf("default style missing %q: %q", want, line)
 		}
 	}
 	project := firstNonEmpty(a.Repo.Project, a.Profile.Project)
 	m.snap.Edges = []protocol.Edge{{From: "*", To: project, Rule: "ask"}}
-	a.Delegation = &protocol.DelegationView{DelegationPolicy: protocol.DelegationPolicy{Delegate: protocol.DelegateNative}}
 	line = m.sessionLine(a, treeMark{}, cols, 120, 0)
-	for _, value := range []string{cell("ask", 5), cell("ask", 6), cell("native", 8)} {
+	for _, value := range []string{cell("ask", 5), cell("ask", 6)} {
 		if !strings.Contains(line, value) || strings.Contains(line, sDim.Render(value)) {
 			t.Errorf("non-default value should be normal text: %q in %q", value, line)
 		}

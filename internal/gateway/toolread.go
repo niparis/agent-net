@@ -209,29 +209,6 @@ func sessionKind(a protocol.AgentView) string {
 	return protocol.SessionType(a.Harness, a.Worker, a.Type)
 }
 
-func delegationText(v *protocol.DelegationView) string {
-	if v == nil {
-		return ""
-	}
-	var parts []string
-	if v.Delegate != "" {
-		parts = append(parts, "delegate "+v.Delegate)
-	}
-	if coder := v.Coder(); coder != "" {
-		parts = append(parts, "coder "+coder)
-	}
-	if main := v.Main(); main != "" {
-		parts = append(parts, "main "+main)
-	}
-	if v.Workers != "" {
-		parts = append(parts, "workers "+v.Workers)
-	}
-	if v.Scope != "" {
-		parts = append(parts, "scope "+v.Scope)
-	}
-	return strings.Join(parts, ", ")
-}
-
 func sessionRow(a protocol.AgentView, full bool, now time.Time, name func(string) string) protocol.SessionRow {
 	row := protocol.SessionRow{
 		AgentID: a.AgentID, AgentName: a.AgentName, RepoLead: a.RepoLead, RepoLeadExplicit: a.RepoLeadExplicit, TeamLead: a.TeamLead,
@@ -296,7 +273,6 @@ func sessionRow(a protocol.AgentView, full bool, now time.Time, name func(string
 			row.Rules[rule.Name] = rule.Value
 		}
 	}
-	row.Delegation = delegationText(a.Delegation)
 	row.Loop = a.Loop
 	if a.Worker != nil {
 		state := "ended"

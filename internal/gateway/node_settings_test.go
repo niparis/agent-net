@@ -118,7 +118,7 @@ func TestWorkerPermissionsUseTheNodesMaturityUntilAProjectOverride(t *testing.T)
 	if got, _ := s.WorkerPermissions("n_test", "shop"); got != protocol.WorkersReadOnly {
 		t.Fatalf("node override: %q", got)
 	}
-	// The owner's project policy still wins over both.
+	// The owner's project setting still wins over both.
 	nodeID, _, err := s.CreateNode("worker-host", "linux")
 	if err != nil {
 		t.Fatal(err)
@@ -128,11 +128,12 @@ func TestWorkerPermissionsUseTheNodesMaturityUntilAProjectOverride(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.SetDelegation(sid, protocol.ScopeProject, protocol.DelegationPolicy{Workers: protocol.WorkersSandboxed}); err != nil {
+	_ = sid
+	if err := s.SetNodeSetting("shop", protocol.SettingWorkerSandbox, protocol.WorkersSandboxed, "owner"); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := s.WorkerPermissions(nodeID, "shop"); got != protocol.WorkersSandboxed {
-		t.Fatalf("project policy: %q", got)
+		t.Fatalf("project setting: %q", got)
 	}
 	// A node with no maturity keeps today's default.
 	if got, _ := s.WorkerPermissions("n_test", "other"); got != protocol.WorkersSandboxed {

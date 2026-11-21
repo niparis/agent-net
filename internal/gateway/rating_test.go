@@ -36,8 +36,9 @@ func TestRateSampleEveryFifthWorker(t *testing.T) {
 	// Five ratings for this model take the little-rated rule out of the way,
 	// so only the every-fifth rule remains.
 	for i := 0; i < 5; i++ {
-		if _, err := s.db.Exec(`INSERT INTO worker_ratings (session_id, caller, harness, model, effort, difficulty, score, at)
-			VALUES (?,?,?,?,?,?,?,?)`, "s_seed"+string(rune('a'+i)), caller, "opencode", "m", "", "normal", 4, s.now().Unix()); err != nil {
+		seed := ratingRun(t, s, node, caller, "m", "normal")
+		if _, err := s.db.Exec(`INSERT INTO worker_ratings (run_id, session_id, caller, score, at)
+			VALUES ((SELECT id FROM worker_runs WHERE session_id = ?), ?, ?, 4, ?)`, seed, seed, caller, s.now().Unix()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -88,11 +89,41 @@ func TestRateOfferIsCountedOnce(t *testing.T) {
 		t.Fatalf("offer changed on repeat: %+v then %+v", first, second)
 	}
 	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_rate_offers WHERE session_id = ?`, wid).Scan(&n); err != nil {
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id = ? AND rate_offered_at > 0`, wid).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 1 {
 		t.Fatalf("offers stored %d times", n)
+	}
+}
+
+// The hand-back notice, and with it the offer, usually comes before the run is
+// recorded. The offer waits on the session and moves to the session's first run
+// when that run is recorded, and the sampling counts it once on either side.
+func TestRateOfferMovesToItsRun(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("mac", "linux")
+	caller := ratingCaller(t, s, node, "caller", "claude-opus-5-5")
+	wid := ratingWorker(t, s, node, caller, "m", "normal")
+	offer, err := s.OfferRate(wid)
+	if err != nil || !offer.Ask {
+		t.Fatalf("offer: %+v %v", offer, err)
+	}
+	if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: wid, Harness: "opencode", Model: "m",
+		Outcome: protocol.OutcomeComplete, EndedAt: s.now().Unix(), Caller: caller, CallerSessionID: caller, Difficulty: "normal"}); err != nil {
+		t.Fatal(err)
+	}
+	var asked int
+	if err := s.db.QueryRow(`SELECT rate_asked FROM worker_runs WHERE session_id = ? AND offered_at > 0`, wid).Scan(&asked); err != nil || asked != 1 {
+		t.Fatalf("the run does not carry the offer: asked %d, %v", asked, err)
+	}
+	again, err := s.OfferRate(wid)
+	if err != nil || again.Ask != offer.Ask {
+		t.Fatalf("offer after the run: %+v %v", again, err)
+	}
+	var offers int
+	if err := s.db.QueryRow(offersSQL+`SELECT COUNT(*) FROM offers WHERE caller = ?`, caller).Scan(&offers); err != nil || offers != 1 {
+		t.Fatalf("offers counted %d times, %v", offers, err)
 	}
 }
 
@@ -203,12 +234,11 @@ func TestRateAndDefectAfterFollowUpRun(t *testing.T) {
 		t.Fatalf("defect after a follow-up run: %+v", defect)
 	}
 	var defectRun int64
-	var difficulty string
-	if err := s.db.QueryRow(`SELECT run_id, difficulty FROM worker_defects WHERE session_id = ?`, wid).Scan(&defectRun, &difficulty); err != nil {
+	if err := s.db.QueryRow(`SELECT run_id FROM worker_defects WHERE session_id = ?`, wid).Scan(&defectRun); err != nil {
 		t.Fatal(err)
 	}
-	if defectRun != latestRun || difficulty != "hard" {
-		t.Fatalf("defect stored with run %d difficulty %q, want run %d difficulty hard", defectRun, difficulty, latestRun)
+	if defectRun != latestRun {
+		t.Fatalf("defect stored with run %d, want run %d", defectRun, latestRun)
 	}
 
 	foreign, err := s.AddRating(protocol.RateFrame{RateRequest: protocol.RateRequest{Worker: wid, Score: 5}, Rater: other})
@@ -335,5 +365,29 @@ func TestRateRejectsBadInput(t *testing.T) {
 	}
 	if out.Accepted {
 		t.Fatalf("a missing worker was rated: %+v", out)
+	}
+}
+
+// A caller can rate right after the hand-back notice, before the run is
+// recorded. The rating has no run to read its model from, so the run adopts it
+// when it is recorded, and the quality fit counts it then.
+func TestRatingBeforeItsRunIsAdoptedByTheRun(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("mac", "linux")
+	caller := ratingCaller(t, s, node, "caller", "claude-opus-5-5")
+	wid := ratingWorker(t, s, node, caller, "p/m:high", "hard")
+	out, err := s.AddRating(protocol.RateFrame{RateRequest: protocol.RateRequest{Worker: wid, Score: 4}, Rater: caller})
+	if err != nil || !out.Accepted {
+		t.Fatalf("rating: %+v %v", out, err)
+	}
+	if got := s.QualityAnalysis().Ratings; got != 0 {
+		t.Fatalf("a rating with no run counted: %d", got)
+	}
+	if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: wid, Harness: "opencode", Model: "p/m:high",
+		Outcome: protocol.OutcomeComplete, EndedAt: s.now().Unix(), Caller: caller, Difficulty: "hard"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.QualityAnalysis().Ratings; got != 1 {
+		t.Fatalf("ratings after the run: %d, want 1", got)
 	}
 }

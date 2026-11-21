@@ -143,9 +143,9 @@ var ctoTools = map[string]ctoToolDef{
 		},
 	},
 	"session_change": {
-		desc: "Change a session: rename, replace, trust (a session, or a project or path folder for Claude Code), mcp_servers (approve or disable a folder's .mcp.json servers), policy, session_start, merger_start, merger_stop, or stop, resume and restart an agent session.",
+		desc: "Change a session: rename, replace, trust (a session, or a project or path folder for Claude Code), mcp_servers (approve or disable a folder's .mcp.json servers), session_start, merger_start, merger_stop, or stop, resume and restart an agent session.",
 		fields: map[string]ctoField{
-			"action":      {typ: "string", enum: []string{"rename", "replace", "trust", "mcp_servers", "policy", "session_start", "merger_start", "merger_stop", "stop", "resume", "restart"}},
+			"action":      {typ: "string", enum: []string{"rename", "replace", "trust", "mcp_servers", "session_start", "merger_start", "merger_stop", "stop", "resume", "restart"}},
 			"session_id":  {typ: "string", desc: "Session ID."},
 			"old_session": {typ: "string", desc: "Session to move."},
 			"new_session": {typ: "string", desc: "Session that replaced it."},
@@ -157,9 +157,6 @@ var ctoTools = map[string]ctoToolDef{
 			"on":          {typ: "boolean", desc: "Enable trust."},
 			"trust":       {typ: "boolean", desc: "With session_start: trust the folder for Claude Code first."},
 			"mcp_servers": {typ: "string", desc: "Approve or disable .mcp.json servers; with session_start, before it starts.", enum: []string{"approve", "disable"}},
-			"scope":       {typ: "string", desc: "Default session.", enum: []string{"session", "project"}},
-			"policy":      {typ: "object", desc: "Policy."},
-			"dry_run":     {typ: "boolean", desc: "Preview."},
 		},
 	},
 	"worker_change": {
