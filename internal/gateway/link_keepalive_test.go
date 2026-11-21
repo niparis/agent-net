@@ -245,7 +245,7 @@ func TestLinkOfflineGraceQuickRedial(t *testing.T) {
 
 func TestLinkKeepaliveGatewayBusyHandler(t *testing.T) {
 	g, url, id, token := newLinkGateway(t, 70*time.Millisecond)
-	fake := &blockingPhraseWorker{started: make(chan struct{}), release: make(chan struct{})}
+	fake := &blockingSummaryWorker{started: make(chan struct{}), release: make(chan struct{})}
 	g.store.phraseCleaner = phrasing.New(fake)
 	t.Cleanup(func() { close(fake.release) })
 	owner, err := g.store.UpsertSession(id, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: "owner", Name: "owner"})

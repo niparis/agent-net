@@ -408,7 +408,7 @@ func New(opts Options) (*Gateway, error) {
 		stepTaskQuietWindow: opts.StepTaskQuietWindow, stepTaskRecentWindow: opts.StepTaskRecentWindow, stepTaskBatchCap: opts.StepTaskBatchCap}
 	store.settingsHook = func() { g.goBackground(g.settingsChanged) }
 	store.charterHook = func() { g.goBackground(g.charterChanged) }
-	store.phraseCleaner = phrasing.New(phraseWorker{g}, phraseLimiter{store})
+	store.phraseCleaner = phrasing.New(summaryWorker{g})
 	skills, err := openSkillStore(opts.DataDir, store)
 	if err != nil {
 		store.Close()
@@ -638,15 +638,15 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 	}
 }
 
-// RunLearning processes suggestions independently of message expiry because a
-// phrasing worker can take up to three minutes to finish.
+// RunLearning processes suggestions once a minute, independently of message
+// expiry, until the context ends.
 func (g *Gateway) RunLearning(ctx context.Context) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	for {
 		func() {
 			defer g.slowLoop("learning", time.Now())
-			if err := g.store.ProcessLearnedContext(ctx); err != nil && ctx.Err() == nil {
+			if err := g.store.ProcessLearned(); err != nil && ctx.Err() == nil {
 				g.logLine("error", "where", "learned suggestions", "err", err)
 			}
 		}()

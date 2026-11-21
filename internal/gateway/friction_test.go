@@ -124,3 +124,49 @@ func TestFrictionDoesNotChangePickerOrWorkerCounts(t *testing.T) {
 		t.Fatalf("worker ratings changed: %+v -> %+v", beforeScores, afterScores)
 	}
 }
+
+// FrictionFind's main page read must use a covering index on friction and
+// never do a full table scan of friction.
+func TestFrictionFindUsesCoveringIndex(t *testing.T) {
+	s, _ := newTestStore(t)
+	for _, tc := range []struct {
+		name    string
+		project string
+		area    string
+		status  string
+	}{
+		{name: "all"},
+		{name: "project", project: "demo"},
+		{name: "area", area: protocol.FrictionCI},
+		{name: "status", status: protocol.FrictionNew},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			where, args := frictionFilter(tc.project, tc.area, tc.status, "", 0, 0)
+			q := `EXPLAIN QUERY PLAN SELECT ` + frictionCols + frictionFrom + where + ` ORDER BY f.id DESC LIMIT ?`
+			rows, err := s.db.Query(q, append(args, frictionDefaultLimit+1)...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var plan []string
+			for rows.Next() {
+				var id, parent, notused int
+				var detail string
+				if err := rows.Scan(&id, &parent, &notused, &detail); err != nil {
+					rows.Close()
+					t.Fatal(err)
+				}
+				plan = append(plan, detail)
+			}
+			rows.Close()
+			joined := strings.Join(plan, "\n")
+			for _, d := range plan {
+				if d == "SCAN f" || strings.HasPrefix(d, "SCAN friction") {
+					t.Fatalf("main query does a full scan of friction:\n%s", joined)
+				}
+			}
+			if !strings.Contains(joined, "USING COVERING INDEX friction_") {
+				t.Fatalf("main query does not use a covering index on friction:\n%s", joined)
+			}
+		})
+	}
+}

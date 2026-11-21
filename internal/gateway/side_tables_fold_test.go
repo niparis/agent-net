@@ -120,7 +120,7 @@ func TestSideTablesFoldKeepsEveryRead(t *testing.T) {
 
 	// Running the migration again, as a rewind does, keeps every value.
 	mustExec(t, s, `DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, sideTablesFoldMarker))
-	if err := s.migrate(); err != nil {
+	if err := replayMigrations(t, s); err != nil {
 		t.Fatalf("replay: %v", err)
 	}
 	if hb, err := changeHandbackCheck(s.db, foldChange, 1); err != nil || hb == nil || hb.Status != "passed" {

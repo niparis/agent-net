@@ -1330,7 +1330,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -2045,77 +2045,30 @@ func (s *Store) migrate() error {
 	if cur > len(migrations) {
 		return fmt.Errorf("gateway.db schema version %d is newer than this agent-net (knows %d); upgrade agent-net or restore the backup taken before the upgrade", cur, len(migrations))
 	}
-	mergeStep := oneCharterStoreStep()
-	foldStep, createStep := graphNodesFoldIndex(), graphNodesCreateIndex()
-	var graphNodes graphNodesReplay
-	// A rewind replays shipped steps, and some of them read tables that
-	// gatewayStateMigration drops, and the migration itself reads them. Put them
-	// back for the replay.
-	if idx := gatewayStateMigrationIndex(); cur <= idx {
-		tx, err := s.db.Begin()
-		if err != nil {
-			return err
-		}
-		has, err := stateTableExists(tx)
-		if err == nil && has {
-			err = restoreLegacyStateTables(tx)
-		}
-		if err != nil {
-			tx.Rollback()
-			return err
-		}
-		if err = tx.Commit(); err != nil {
-			return err
-		}
-	}
 	for i := cur; i < len(migrations); i++ {
 		tx, err := s.db.Begin()
 		if err != nil {
 			return err
 		}
 		stmt := migrations[i]
-		if i < mergeStep {
-			if err := ensureOldCharterTablesTx(tx); err != nil {
-				tx.Rollback()
-				return err
+		if strings.Contains(migrations[i], learnedTablesMarker) {
+			for _, col := range learnedTablesColumns {
+				var has int
+				err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?`, col.table, col.name).Scan(&has)
+				if err == nil && has == 0 {
+					_, err = tx.Exec(`ALTER TABLE ` + col.table + ` ADD COLUMN ` + col.name + ` ` + col.spec)
+				}
+				if err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
 			}
 		}
-		// A rewind replays steps that name graph_nodes on a store that no longer
-		// has it (see graphNodesReplay). The fold repairs the table's rows first.
-		if i > createStep && i < foldStep {
-			if err := graphNodes.before(tx); err != nil {
-				tx.Rollback()
-				return err
-			}
-		}
-		if i == foldStep {
+		if strings.Contains(migrations[i], graphNodesFoldMarker) {
 			if err := s.foldGraphNodesTx(tx); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
-		}
-		// The typed-graph migration inserts into agents by position. A rewind
-		// can replay it after a later migration added a column to agents, so
-		// name the columns and replace the old triggers on replay.
-		if strings.Contains(stmt, "Repo and agent records, preserving legacy graph keys") {
-			for _, trigger := range []string{"repo_agent_project_insert", "repo_agent_project_update", "repo_agent_session_insert", "repo_agent_session_update", "repo_agent_architect_insert"} {
-				if _, err := tx.Exec(`DROP TRIGGER IF EXISTS ` + trigger); err != nil {
-					tx.Rollback()
-					return err
-				}
-			}
-			stmt = strings.NewReplacer(
-				"INSERT OR IGNORE INTO agents SELECT name,name,'',0,0,0 FROM split_components;",
-				"INSERT OR IGNORE INTO agents(id,display_name,role,created_at,updated_at,tombstone) SELECT name,name,'',0,0,0 FROM split_components;",
-				"INSERT OR IGNORE INTO agents SELECT name,name,'architect',created_at,created_at,0 FROM graph_nodes WHERE kind='architect';",
-				"INSERT OR IGNORE INTO agents(id,display_name,role,created_at,updated_at,tombstone) SELECT name,name,'architect',created_at,created_at,0 FROM graph_nodes WHERE kind='architect';",
-				"INSERT OR IGNORE INTO repos SELECT name,name,0,0,name FROM split_components;",
-				"INSERT OR IGNORE INTO repos(id,display_name,created_at,updated_at,owner_agent_id) SELECT name,name,0,0,name FROM split_components;",
-				"INSERT INTO agents VALUES(",
-				"INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES(",
-				"INSERT INTO repos VALUES(",
-				"INSERT INTO repos(id,display_name,created_at,updated_at,owner_agent_id) VALUES(",
-			).Replace(stmt)
 		}
 		if strings.Contains(migrations[i], "Standing order search columns") {
 			for _, col := range []struct{ name, decl string }{{"tags", "TEXT NOT NULL DEFAULT '[]'"}, {"pinned", "INTEGER NOT NULL DEFAULT 0"}, {"updated_at", "INTEGER NOT NULL DEFAULT 0"}} {
@@ -2907,7 +2860,7 @@ func (s *Store) migrate() error {
 				}
 			}
 		} else if strings.Contains(migrations[i], repoLeadFoldMarker) {
-			// A replay after a rewind finds the copy done. Only the trigger
+			// An idempotent replay finds the copy done. Only the trigger
 			// rewrite and the drops run again, so no lead set later is reset.
 			var has int
 			err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('repos') WHERE name='lead_agent_id'`).Scan(&has)
@@ -3263,11 +3216,7 @@ func (s *Store) migrate() error {
 		// upgrade without losing the rows they hold.
 		if strings.Contains(migrations[i], "change quality signals column") {
 			var has int
-			// A later migration folds this table into delivery_revisions. A
-			// rewind that replays this step after that has no table to alter,
-			// so a missing table counts as the column being there.
-			if err := tx.QueryRow(`SELECT CASE WHEN EXISTS (SELECT 1 FROM sqlite_master WHERE type='table' AND name='delivery_revision_stats')
-				THEN (SELECT COUNT(*) FROM pragma_table_info('delivery_revision_stats') WHERE name='signals') ELSE 1 END`).Scan(&has); err != nil {
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('delivery_revision_stats') WHERE name='signals'`).Scan(&has); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
@@ -3282,11 +3231,7 @@ func (s *Store) migrate() error {
 		// column only when absent, so old databases upgrade in place.
 		if strings.Contains(migrations[i], "change handback check column") {
 			var has int
-			// A later migration folds this table into delivery_revisions. A
-			// rewind that replays this step after that has no table to alter,
-			// so a missing table counts as the column being there.
-			if err := tx.QueryRow(`SELECT CASE WHEN EXISTS (SELECT 1 FROM sqlite_master WHERE type='table' AND name='delivery_revision_stats')
-				THEN (SELECT COUNT(*) FROM pragma_table_info('delivery_revision_stats') WHERE name='handback_check') ELSE 1 END`).Scan(&has); err != nil {
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('delivery_revision_stats') WHERE name='handback_check'`).Scan(&has); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
@@ -4841,7 +4786,7 @@ func (s *Store) agentsBaseOwned(selectSQL string, f protocol.QueryAgents, owners
 
 const msgSelect = `SELECT m.id, m.conversation_id, m.parent_id, m.sender, m.recipient, m.type, m.body, m.hop,
 	m.idem_key, m.created_at, m.expires_at, m.state, COALESCE((SELECT d.detail FROM deliveries d WHERE d.message_id=m.id AND d.state=m.state ORDER BY d.rowid DESC LIMIT 1),'') || COALESCE((SELECT ' (retry ' || attempts || ' scheduled)' FROM delivery_retries WHERE message_id=m.id AND m.state='failed'),''),
-	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto, m.owner_approved, EXISTS(SELECT 1 FROM outcome_overrules oo WHERE oo.message_id=m.id), m.approval_note, COALESCE((SELECT substr(cs.prompt,1,200) FROM charter_signals cs WHERE cs.message_id=m.id),''),
+	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto, m.owner_approved, EXISTS(SELECT 1 FROM outcome_overrules oo WHERE oo.message_id=m.id), m.approval_note, substr(m.owner_prompt,1,200),
 	m.files, m.worker_task, m.is_order,
 	m.urgent, m.held_for_busy, m.batch_json, m.batch_id
 	FROM messages m LEFT JOIN sessions s ON s.id = m.sender LEFT JOIN profiles p ON p.session_id = m.sender`
@@ -5383,7 +5328,7 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		if _, err := tx.Exec(`INSERT INTO graph_outcomes(source,target,message_id,reply_id,outcome,reason,redirect_to,recommendation,at) VALUES(?,?,?,?,?,?,?,?,?)`, from, to, p.ParentID, m.ID, p.Outcome, p.Reason, p.RedirectTo, p.Recommendation, now.UnixNano()); err != nil {
 			return msg, false, err
 		}
-		if err := s.signalOutcome(tx, m, p); err != nil {
+		if err := s.learnOutcome(tx, m.ID, m.CreatedAt.UnixNano()); err != nil {
 			return msg, false, err
 		}
 		if p.Outcome == "reject" || p.Outcome == "escalate" {
@@ -5893,8 +5838,8 @@ func conversationsPageSQL(normalWhere, systemWhere, cursor string, limit int) (s
 	),
 	cited AS MATERIALIZED (
 		SELECT DISTINCT b.pair_gid AS gid
-		FROM charter_signals cs2 CROSS JOIN messages b ON b.id = cs2.message_id
-		WHERE cs2.prompt <> '' AND b.pair_gid IN (SELECT gid FROM page) AND ` + systemWhere + `
+		FROM messages b
+		WHERE b.owner_prompt <> '' AND b.pair_gid IN (SELECT gid FROM page) AND ` + systemWhere + `
 	),
 	sys AS MATERIALIZED (
 		SELECT p.gid,
@@ -5910,7 +5855,7 @@ func conversationsPageSQL(normalWhere, systemWhere, cursor string, limit int) (s
 	SELECT p.gid, p.last_at, m.id, m.sender, m.recipient, m.body, m.state, m.sender_cto, m.type, t.n,
 		COALESCE(NULLIF(fp.name,''), fs.name, ''),
 		COALESCE(NULLIF(rp.name,''), rs.name, ''),
-		EXISTS(SELECT 1 FROM charter_signals cs WHERE cs.message_id = m.id),
+		m.owner_prompt <> '',
 		COALESCE(fs.harness, ''), COALESCE(rs.harness, ''),
 		CASE WHEN t.direct_owner <> 0 OR c.gid IS NOT NULL THEN 1 ELSE 0 END, t.blocked, t.system,
 		COALESCE(s.body, ''), COALESCE(s.recipient, ''), p.total
@@ -5970,7 +5915,7 @@ func conversationsWorkerPageSQL(cursor string, limit int) (string, []any) {
 	SELECT p.gid, p.last_at, m.id, m.sender, m.recipient, m.body, m.state, m.sender_cto, m.type, p.n,
 		COALESCE(NULLIF(fp.name,''), fs.name, ''),
 		COALESCE(NULLIF(rp.name,''), rs.name, ''),
-		EXISTS(SELECT 1 FROM charter_signals cs WHERE cs.message_id = m.id),
+		m.owner_prompt <> '',
 		COALESCE(fs.harness, ''), COALESCE(rs.harness, ''), 0,
 		CASE WHEN p.blocked <> 0 THEN 1 ELSE 0 END, 0, '', '', p.total
 	FROM latest p
@@ -6084,7 +6029,7 @@ func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.Conve
 func (s *Store) conversationsVersion() uint64 {
 	stamp := s.readStamp([]string{
 		"messages", "sessions.name", "sessions.harness", "sessions.worker",
-		"profiles.name", "charter_signals",
+		"profiles.name",
 	})
 	return uint64(s.convEpoch)<<32 | uint64(uint32(stamp))
 }
@@ -6607,7 +6552,7 @@ const sessionTurnErrorMigration = `SELECT 1 /* session turn error columns */;`
 // deadTablesDropMigration drops the tables that no code reads or writes
 // (schema reduction, part 1). The older migrations that name them run before
 // this one, so an old database replays through them first. IF EXISTS keeps a
-// rewind that replays this drop safe.
+// replayed drop safe.
 const deadTablesDropMigration = `
 -- Schema reduction part 1: drop the tables no code reads or writes.
 DROP TABLE IF EXISTS chief_corrections;

@@ -9,7 +9,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// RememberOwnerPrompt keeps only the latest prompt; it is never logged.
+// RememberOwnerPrompt keeps only the latest prompt of a session; it is never logged.
 func (s *Store) RememberOwnerPrompt(session, prompt string) error {
 	// Claude delivers peer messages, task notices and reminders as user turns.
 	// They are not the owner's words, so they are not kept. The owner's earlier
@@ -22,7 +22,7 @@ func (s *Store) RememberOwnerPrompt(session, prompt string) error {
 	if len(r) > 300 {
 		prompt = string(r[:300])
 	}
-	_, err := s.db.Exec(`INSERT INTO signal_prompts(session_id,prompt,at) VALUES(?,?,?) ON CONFLICT(session_id) DO UPDATE SET prompt=excluded.prompt,at=excluded.at`, session, prompt, s.now().UnixNano())
+	_, err := s.db.Exec(`UPDATE sessions SET owner_prompt=?, owner_prompt_at=? WHERE id=?`, prompt, s.now().UnixNano(), session)
 	return err
 }
 
@@ -50,47 +50,47 @@ func mentionsName(text, name string) bool {
 	return false
 }
 
+// signalRequest keeps the owner's prompt on the first request its session
+// sends after the prompt, when the prompt names the recipient, its project or
+// its name. The prompt explains at most that first send, so it is cleared
+// either way.
 func (s *Store) signalRequest(tx *sql.Tx, m protocol.Message) error {
 	var prompt, from, to, name, sessionName, project string
 	var at int64
-	err := tx.QueryRow(`SELECT p.prompt,p.at,COALESCE(NULLIF(a.repo_project,''),ap.project,''),COALESCE(NULLIF(b.repo_project,''),bp.project,''),COALESCE(bp.name,''),COALESCE(b.name,''),COALESCE(bp.project,'') FROM signal_prompts p JOIN sessions a ON a.id=p.session_id JOIN sessions b ON b.id=? LEFT JOIN profiles ap ON ap.session_id=a.id LEFT JOIN profiles bp ON bp.session_id=b.id WHERE p.session_id=?`, m.To, m.From).Scan(&prompt, &at, &from, &to, &name, &sessionName, &project)
-	if err == sql.ErrNoRows {
+	err := tx.QueryRow(`SELECT a.owner_prompt,a.owner_prompt_at,COALESCE(NULLIF(a.repo_project,''),ap.project,''),COALESCE(NULLIF(b.repo_project,''),bp.project,''),COALESCE(bp.name,''),COALESCE(b.name,''),COALESCE(bp.project,'') FROM sessions a JOIN sessions b ON b.id=? LEFT JOIN profiles ap ON ap.session_id=a.id LEFT JOIN profiles bp ON bp.session_id=b.id WHERE a.id=?`, m.To, m.From).Scan(&prompt, &at, &from, &to, &name, &sessionName, &project)
+	if err == sql.ErrNoRows || (err == nil && prompt == "") {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	// A prompt can explain at most the first send, even when it names someone else.
-	if _, err = tx.Exec(`DELETE FROM signal_prompts WHERE session_id=?`, m.From); err != nil {
+	if _, err = tx.Exec(`UPDATE sessions SET owner_prompt='', owner_prompt_at=0 WHERE id=?`, m.From); err != nil {
 		return err
 	}
 	if m.CreatedAt.UnixNano()-at < 0 || m.CreatedAt.UnixNano()-at > int64(10*time.Minute) {
 		return nil
 	}
 	if !mentionsName(prompt, to) && !mentionsName(prompt, project) && !mentionsName(prompt, name) && !mentionsName(prompt, sessionName) {
-		// Learn explicit assignments privately without attaching the owner's
-		// prompt to a message addressed to another project.
-		return s.learnOwner(tx, from, to, m.ID, prompt, m.CreatedAt.UnixNano())
+		return nil
 	}
-	_, err = tx.Exec(`INSERT INTO charter_signals(message_id,source,target,prompt,at) VALUES(?,?,?,?,?)`, m.ID, from, to, prompt, m.CreatedAt.UnixNano())
-	if err != nil {
-		return err
-	}
-	return s.learnOwner(tx, from, to, m.ID, prompt, m.CreatedAt.UnixNano())
+	_, err = tx.Exec(`UPDATE messages SET owner_prompt=? WHERE id=?`, prompt, m.ID)
+	return err
 }
 
-func (s *Store) signalOutcome(tx *sql.Tx, m protocol.Message, p protocol.MsgSend) error {
-	// Keep outcomes even without a prompt: redirects are evidence too.
-	_, err := tx.Exec(`INSERT OR IGNORE INTO charter_signals(message_id,source,target,prompt,at)
- SELECT q.id,COALESCE(NULLIF(a.repo_project,''),ap.project,''),COALESCE(NULLIF(b.repo_project,''),bp.project,''),'',? FROM messages q JOIN sessions a ON a.id=q.sender JOIN sessions b ON b.id=q.recipient LEFT JOIN profiles ap ON ap.session_id=a.id LEFT JOIN profiles bp ON bp.session_id=b.id WHERE q.id=?`, m.CreatedAt.UnixNano(), p.ParentID)
-	if err != nil {
-		return err
-	}
-	return s.learnOutcome(tx, m.ID, m.CreatedAt.UnixNano())
-}
-
+// Signals lists, newest first, the requests that carry the owner's prompt and
+// the outcomes of requests, for the last 90 days. An outcome shows its request's
+// prompt when the request has one.
 func (s *Store) Signals() ([]protocol.CharterSignal, error) {
-	rows, err := s.db.Query(`SELECT s.source,s.target,s.message_id,s.prompt,COALESCE(o.reply_id,''),COALESCE(o.outcome,''),COALESCE(o.reason,''),COALESCE(o.redirect_to,''),s.at FROM charter_signals s LEFT JOIN graph_outcomes o ON o.message_id=s.message_id WHERE s.at>=? ORDER BY s.at DESC, o.at DESC LIMIT 200`, s.now().Add(-90*24*time.Hour).UnixNano())
+	since := s.now().Add(-90 * 24 * time.Hour).UnixNano()
+	rows, err := s.db.Query(`SELECT base.src,base.dst,base.mid,base.prompt,COALESCE(o.reply_id,''),COALESCE(o.outcome,''),COALESCE(o.reason,''),COALESCE(o.redirect_to,''),base.at FROM (
+		SELECT COALESCE(NULLIF(a.repo_project,''),ap.project,'') AS src,COALESCE(NULLIF(b.repo_project,''),bp.project,'') AS dst,m.id AS mid,m.owner_prompt AS prompt,m.created_at AS at
+		FROM messages m JOIN sessions a ON a.id=m.sender JOIN sessions b ON b.id=m.recipient LEFT JOIN profiles ap ON ap.session_id=a.id LEFT JOIN profiles bp ON bp.session_id=b.id
+		WHERE m.owner_prompt<>'' AND m.created_at>=?
+		UNION ALL
+		SELECT o.source,o.target,o.message_id,'',o.at FROM graph_outcomes o
+		WHERE o.at>=? AND NOT EXISTS (SELECT 1 FROM messages p WHERE p.id=o.message_id AND p.owner_prompt<>'')
+	) base LEFT JOIN graph_outcomes o ON o.message_id=base.mid
+	ORDER BY base.at DESC, o.at DESC LIMIT 200`, since, since)
 	if err != nil {
 		return nil, err
 	}

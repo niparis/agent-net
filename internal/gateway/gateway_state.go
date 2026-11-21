@@ -3,7 +3,6 @@ package gateway
 import (
 	"database/sql"
 	"errors"
-	"strings"
 )
 
 // gateway_state is one key-value table for what the gateway remembers about
@@ -18,10 +17,6 @@ import (
 // the tables and the rows. graph_node_settings folds into setting_values: the
 // ten settings the node settings door writes were copied there by their own
 // cutovers long ago, so only a row with another name moves, under node_setting.
-//
-// It is replayable. A rewind runs the shipped steps again, and some of them
-// read the old tables, so migrate puts them back before it replays a step older
-// than this one (see restoreLegacyStateTables); this migration drops them again.
 const gatewayStateMigration = `
 -- Gateway state: one key-value table instead of three one-row tables and the marker rows of owner_settings.
 CREATE TABLE IF NOT EXISTS gateway_state (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL DEFAULT 0);
@@ -82,8 +77,8 @@ func graphRefGateOn(q interface{ QueryRow(string, ...any) *sql.Row }) (bool, err
 
 // A marker is written by a seed that runs inside the migration loop, so it
 // meets two schemas: before this migration the marker lives in owner_settings,
-// and gateway_state does not exist; after it (a rewind replays the seed) it
-// lives in gateway_state. The seed finds it in whichever holds it.
+// and gateway_state does not exist; after it the marker lives in gateway_state.
+// The seed finds it in whichever holds it.
 func stateTableExists(tx *sql.Tx) (bool, error) {
 	var n int
 	err := tx.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='gateway_state'`).Scan(&n)
@@ -120,36 +115,6 @@ func markerSetTx(tx *sql.Tx, key, value string, now int64) error {
 	_, err = tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?)
 		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, key, value, now)
 	return err
-}
-
-// legacyStateTables is the schema of the tables this migration drops, as the
-// shipped migrations made them.
-const legacyStateTables = `
-CREATE TABLE IF NOT EXISTS graph_node_settings (node TEXT NOT NULL, setting TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, PRIMARY KEY(node, setting));
-CREATE TABLE IF NOT EXISTS graph_ref_gate (id INTEGER PRIMARY KEY CHECK(id=1), enabled INTEGER NOT NULL DEFAULT 0, backup TEXT NOT NULL DEFAULT '');
-INSERT OR IGNORE INTO graph_ref_gate(id) VALUES(1);
-CREATE TABLE IF NOT EXISTS graph_cutover_state (id INTEGER PRIMARY KEY CHECK(id=1), gateway_version TEXT NOT NULL DEFAULT '', upgraded_at INTEGER NOT NULL DEFAULT 0);
-INSERT OR IGNORE INTO graph_cutover_state(id) VALUES(1);
-CREATE TABLE IF NOT EXISTS skill_archive_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '');
-`
-
-// restoreLegacyStateTables puts the four dropped tables back when a rewind is
-// about to replay this migration or an older step, because some of those steps
-// read them. They come back empty, so a replay does not undo a gate that is on:
-// the migration copies with INSERT OR IGNORE and gateway_state wins.
-func restoreLegacyStateTables(tx *sql.Tx) error {
-	_, err := tx.Exec(legacyStateTables)
-	return err
-}
-
-// gatewayStateMigrationIndex is the 0-based position of the migration.
-func gatewayStateMigrationIndex() int {
-	for i, m := range migrations {
-		if strings.Contains(m, "-- Gateway state: one key-value table") {
-			return i
-		}
-	}
-	return -1
 }
 
 // ctoLegacyRouteStartKey holds the time of the first start of the gateway that

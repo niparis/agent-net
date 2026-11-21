@@ -87,7 +87,7 @@ func TestPlanAndAttemptTablesMergeWithKinds(t *testing.T) {
 	const plansQuery = `SELECT kind||'|'||id||'|'||item||'|'||snapshot||'|'||plan||'|'||applied||'|'||state FROM plans ORDER BY kind,id`
 	const attemptsQuery = `SELECT kind||'|'||source||'|'||at FROM oauth_attempts ORDER BY kind,source,at`
 
-	if err := s.migrate(); err != nil {
+	if err := replayMigrations(t, s); err != nil {
 		t.Fatal(err)
 	}
 	equalLines(t, "plans after the merge", queryLines(t, s, plansQuery), wantPlans)
@@ -99,7 +99,7 @@ func TestPlanAndAttemptTablesMergeWithKinds(t *testing.T) {
 
 	// Replay: the tables are gone, and the merge must still run without an error or a copy.
 	rewindToMerge()
-	if err := s.migrate(); err != nil {
+	if err := replayMigrations(t, s); err != nil {
 		t.Fatalf("replay of the merge: %v", err)
 	}
 	equalLines(t, "plans after the replay", queryLines(t, s, plansQuery), wantPlans)

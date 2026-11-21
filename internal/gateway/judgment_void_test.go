@@ -79,7 +79,7 @@ func TestMigrationVoidsCompactionJudgments(t *testing.T) {
 	seedJudgment(t, s, "so_normal", protocol.StandingKindAnswer, "Q: compact the db? / A: yes, compact it")
 	seedJudgment(t, s, "so_mention", protocol.StandingKindAnswer, "Q: what did the agent type? / A: it typed /compact Keep: the current task earlier")
 
-	if err := s.migrate(); err != nil {
+	if err := replayMigrations(t, s); err != nil {
 		t.Fatal(err)
 	}
 	rows, err := s.db.Query(`SELECT id,voided_at,void_reason FROM standing_orders ORDER BY id`)

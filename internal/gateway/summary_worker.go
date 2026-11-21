@@ -10,11 +10,11 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// phraseWorker uses the same gateway chooser and launch path as agent_worker_start.
+// summaryWorker uses the same gateway chooser and launch path as agent_worker_start.
 // The request has no model or harness and adds a mandatory read-only constraint.
-type phraseWorker struct{ g *Gateway }
+type summaryWorker struct{ g *Gateway }
 
-func (w phraseWorker) taskBody(harness, task string) (string, error) {
+func (w summaryWorker) taskBody(harness, task string) (string, error) {
 	snap, err := w.g.store.SettingsSnapshot()
 	if err != nil {
 		return "", err
@@ -22,13 +22,13 @@ func (w phraseWorker) taskBody(harness, task string) (string, error) {
 	return protocol.WorkerTaskBodyWithSettings(harness, task, "", "", "", "", protocol.WorkersReadOnly, snap), nil
 }
 
-func (w phraseWorker) Run(ctx context.Context, req protocol.WorkerStartRequest) (string, error) {
+func (w summaryWorker) Run(ctx context.Context, req protocol.WorkerStartRequest) (string, error) {
 	initial, err := w.taskBody("", req.Task)
 	if err != nil {
 		return "", err
 	}
 	if len(initial) > protocol.MaxBodyBytes {
-		return "", errors.New("phrasing batch exceeds the worker message limit")
+		return "", errors.New("summary comparison exceeds the worker message limit")
 	}
 	projects, err := w.g.store.Projects("")
 	if err != nil {
@@ -64,7 +64,7 @@ func (w phraseWorker) Run(ctx context.Context, req protocol.WorkerStartRequest) 
 		}
 	}
 	if nc == nil {
-		return "", errors.New("no connected owner and project for phrasing")
+		return "", errors.New("no connected owner and project for a summary")
 	}
 	req.Project = project.Path
 	req.Machine = project.NodeID
@@ -92,7 +92,7 @@ func (w phraseWorker) Run(ctx context.Context, req protocol.WorkerStartRequest) 
 		return "", err
 	}
 	if !created || m.State == protocol.StateHeld {
-		return "", errors.New("phrasing task could not be delivered")
+		return "", errors.New("summary task could not be delivered")
 	}
 	w.g.dispatch(ctx, m)
 	ticker := time.NewTicker(time.Second)
@@ -100,7 +100,7 @@ func (w phraseWorker) Run(ctx context.Context, req protocol.WorkerStartRequest) 
 	for {
 		var text string
 		func() {
-			defer w.g.slowLoop("learned_phrase_poll", time.Now())
+			defer w.g.slowLoop("summary_poll", time.Now())
 			err = w.g.store.db.QueryRow(`SELECT body FROM messages WHERE sender=? AND recipient=? AND parent_id=? AND body LIKE '[agent-net worker notice]%' ORDER BY created_at DESC LIMIT 1`, started.SessionID, owner.SessionID, m.ID).Scan(&text)
 		}()
 		if err != nil && err != sql.ErrNoRows {
@@ -109,11 +109,11 @@ func (w phraseWorker) Run(ctx context.Context, req protocol.WorkerStartRequest) 
 		if err == nil {
 			completed = true
 			if !workerNoticeDone(text) {
-				return "", errors.New("phrasing worker failed")
+				return "", errors.New("summary worker failed")
 			}
 			_, report, ok := strings.Cut(text, protocol.ReportMarker)
 			if !ok {
-				return "", errors.New("phrasing worker returned no report")
+				return "", errors.New("summary worker returned no report")
 			}
 			report, _, _ = strings.Cut(report, protocol.ChecklistMarker)
 			report = strings.TrimSpace(report)

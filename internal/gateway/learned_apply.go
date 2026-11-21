@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"context"
 	"database/sql"
 	"regexp"
 	"strings"
@@ -56,15 +55,8 @@ func (s *Store) RejectLearnedSuggestion(id int64) error {
 // ProcessLearned classifies ready suggestions and applies eligible additions.
 // Each graph change, its history and the suggestion status commit together.
 func (s *Store) ProcessLearned() error {
-	return s.ProcessLearnedContext(context.Background())
-}
-
-func (s *Store) ProcessLearnedContext(ctx context.Context) error {
 	s.learnMu.Lock()
 	defer s.learnMu.Unlock()
-	if err := s.phraseReady(ctx); err != nil {
-		return err
-	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -77,9 +69,6 @@ func (s *Store) ProcessLearnedContext(ctx context.Context) error {
 
 	now := s.now().UnixNano()
 	query := `SELECT l.id,l.node,l.field,l.edge_kind,l.kind,l.phrase,l.severity,l.origin,COALESCE(l.raw_phrase,l.phrase) FROM learned_suggestions l WHERE l.status='pending' AND l.ready_at<=?`
-	if s.phraseCleaner != nil {
-		query += ` AND NOT (l.origin='owner' AND l.field IN ('accepts','rules') AND l.raw_phrase IS NULL)`
-	}
 	rows, err := tx.Query(query+` ORDER BY l.id`, now)
 	if err != nil {
 		return err

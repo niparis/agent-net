@@ -9,7 +9,7 @@ import (
 // table that holds their key (decision 0179, part 6). The work is in Go
 // (foldSideTablesTx), so the SQL only carries the marker. Each step adds its
 // columns only when absent and reads a side table only when it exists, so a
-// replay after a rewind does not fail and loses no row.
+// replay does not fail and loses no row.
 const sideFoldMarker = "Side tables folded into their parents (decision 0179, part 6)"
 
 const sideFoldMigration = `

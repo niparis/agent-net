@@ -7,13 +7,14 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// learnedListTables are the tables OwnerLearned reads: the suggestions and their
-// views, the history of a change (graph_history), the charter values and the
-// drafts. The drafts' own-value check (draftOwnValue) reads the charter values,
-// and the drafts' names (draftName) read the agents and the teams. Keep it equal
-// to those queries (see readThrough).
+// learnedListTables are the tables OwnerLearned reads: the suggestions (with
+// the seen mark of each applied change), the history of a change
+// (graph_history), the charter values and the drafts. The drafts' own-value
+// check (draftOwnValue) reads the charter values, and the drafts' names
+// (draftName) read the agents and the teams. Keep it equal to those queries
+// (see readThrough).
 var learnedListTables = []string{"learned_suggestions",
-	"learned_views", "graph_history", "charter_drafts", "charter_values", "teams", "agents"}
+	"graph_history", "charter_drafts", "charter_values", "teams", "agents"}
 
 // ownerLearnedRows is what the owner's list reads from the database: every
 // suggestion, ready or not, and the pending drafts. OwnerLearned applies the
@@ -49,20 +50,19 @@ func (s *Store) ownerLearnedRead() (ownerLearnedRows, error) {
 	if err != nil {
 		return ownerLearnedRows{}, err
 	}
+	unseen, err := s.unseenLearnedIDs()
+	if err != nil {
+		return ownerLearnedRows{}, err
+	}
 	items := make([]protocol.LearnedSuggestion, 0, len(all))
 	for _, v := range all {
-		var seen int64
-		err = s.db.QueryRow(`SELECT last_seen_id FROM learned_views WHERE node=?`, v.Node).Scan(&seen)
-		if err != nil && err != sql.ErrNoRows {
-			return ownerLearnedRows{}, err
-		}
 		if v.HistoryID != 0 {
 			var actor string
 			err = s.db.QueryRow(`SELECT actor,new_value FROM graph_history WHERE id=?`, v.HistoryID).Scan(&actor, &v.NewValue)
 			if err != nil && err != sql.ErrNoRows {
 				return ownerLearnedRows{}, err
 			}
-			v.Unseen = v.Status == "applied" && actor == "learned" && v.HistoryID > seen
+			v.Unseen = v.Status == "applied" && actor == "learned" && unseen[v.ID]
 			v.By = actor
 		}
 		if v.Status == "pending" && v.Field != "edge" {
@@ -104,7 +104,8 @@ func learnedValue(old, phrase, kind string) string {
 	return strings.Join(items, "; ")
 }
 
-// MarkLearnedViewed advances a per-node watermark without skipping later work.
+// MarkLearnedViewed marks the applied changes of a node up to the viewed one as
+// seen. A later change of the node stays unseen.
 func (s *Store) MarkLearnedViewed(node string, id int64) error {
 	if node == "" || id <= 0 {
 		return reject("node and learned change required")
@@ -115,8 +116,27 @@ func (s *Store) MarkLearnedViewed(node string, id int64) error {
 	} else if err != nil {
 		return err
 	}
-	_, err := s.db.Exec(`INSERT INTO learned_views(node,last_seen_id) VALUES(?,?) ON CONFLICT(node) DO UPDATE SET last_seen_id=MAX(last_seen_id,excluded.last_seen_id)`, node, historyID)
+	_, err := s.db.Exec(`UPDATE learned_suggestions SET learned_seen=1 WHERE node=? AND status='applied' AND history_id>0 AND history_id<=?`, node, historyID)
 	return err
+}
+
+// unseenLearnedIDs returns the ids of the applied changes the owner has not
+// marked as seen.
+func (s *Store) unseenLearnedIDs() (map[int64]bool, error) {
+	rows, err := s.db.Query(`SELECT id FROM learned_suggestions WHERE status='applied' AND learned_seen=0`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
 }
 
 // DecideLearned applies a reviewed major suggestion or records its rejection.

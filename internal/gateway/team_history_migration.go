@@ -9,8 +9,8 @@ package gateway
 //
 // The rows that graph_history does not hold yet are copied, in their order,
 // and team_history is dropped. The bot revoke triggers now write their
-// membership row to graph_history too. A rewind can run this migration again
-// after team_history was dropped, so the table is created first when missing.
+// membership row to graph_history too. The table is created first when missing
+// so an interrupted upgrade can replay the step cleanly.
 const teamHistoryMigration = `
 -- Team history moves into graph_history (schema reduction, part 9).
 CREATE TABLE IF NOT EXISTS team_history (

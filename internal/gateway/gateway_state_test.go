@@ -16,6 +16,36 @@ var markerKeys = []string{
 	"owed_replies_live_since", "chief.brief_last_item", "chief.brief_last_sent", "chief.brief_last_wake",
 }
 
+// legacyStateTables is the schema of the tables gatewayStateMigration drops,
+// as the shipped migrations made them.
+const legacyStateTables = `
+CREATE TABLE IF NOT EXISTS graph_node_settings (node TEXT NOT NULL, setting TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, PRIMARY KEY(node, setting));
+CREATE TABLE IF NOT EXISTS graph_ref_gate (id INTEGER PRIMARY KEY CHECK(id=1), enabled INTEGER NOT NULL DEFAULT 0, backup TEXT NOT NULL DEFAULT '');
+INSERT OR IGNORE INTO graph_ref_gate(id) VALUES(1);
+CREATE TABLE IF NOT EXISTS graph_cutover_state (id INTEGER PRIMARY KEY CHECK(id=1), gateway_version TEXT NOT NULL DEFAULT '', upgraded_at INTEGER NOT NULL DEFAULT 0);
+INSERT OR IGNORE INTO graph_cutover_state(id) VALUES(1);
+CREATE TABLE IF NOT EXISTS skill_archive_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '');
+`
+
+// restoreLegacyStateTables puts the four dropped tables back when a test
+// rewinds to gatewayStateMigration or an older step, because some of those
+// steps and the migration itself read them. They come back empty, so a replay
+// does not undo a gate that is on: the migration copies with INSERT OR IGNORE
+// and gateway_state wins.
+func restoreLegacyStateTables(t testing.TB, db repoDB) {
+	t.Helper()
+	var has int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='gateway_state'`).Scan(&has); err != nil {
+		t.Fatal(err)
+	}
+	if has == 0 {
+		return
+	}
+	if _, err := db.Exec(legacyStateTables); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // legacyNodeSetting writes a row into graph_node_settings, which a migrated
 // store no longer has. A test that replays a step older than the gateway state
 // migration needs the row there, as the old version left it.
@@ -86,6 +116,7 @@ func TestGatewayStateMigrationMovesTheOldRows(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	restoreRepoSideTablesAt(t, path)
 	s, err = OpenStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -153,6 +184,7 @@ func TestGatewayStateMigrationReplaysAfterARewind(t *testing.T) {
 	if err = s.Close(); err != nil {
 		t.Fatal(err)
 	}
+	restoreRepoSideTablesAt(t, path)
 	s, err = OpenStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -267,6 +299,7 @@ func TestNodeSettingsAreTheSameAcrossTheMigration(t *testing.T) {
 	if err = s.Close(); err != nil {
 		t.Fatal(err)
 	}
+	restoreRepoSideTablesAt(t, path)
 	s, err = OpenStore(path)
 	if err != nil {
 		t.Fatal(err)

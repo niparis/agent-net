@@ -52,6 +52,24 @@ func restoreOldCharterTables(t testing.TB, s *Store) {
 	}
 }
 
+// ensureOldCharterTables puts empty graph_charter and agent_charter tables back
+// on a merged store when a test rewinds to a step before the charter merge and
+// did not call restoreOldCharterTables itself.
+func ensureOldCharterTables(t testing.TB, db repoDB) {
+	t.Helper()
+	var merged bool
+	if err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='charter_values' AND sql LIKE '%''repo''%') AND NOT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='graph_charter')`).Scan(&merged); err != nil {
+		t.Fatal(err)
+	}
+	if !merged {
+		return
+	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS graph_charter (node TEXT NOT NULL, attr TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, PRIMARY KEY(node, attr));
+CREATE TABLE IF NOT EXISTS agent_charter (agent_id TEXT NOT NULL, attr TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, PRIMARY KEY(agent_id, attr))`); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestOneCharterStoreMigratesAllLevels shows the effective charter of an
 // agent, a repo and a team does not change when the repo and agent values
 // move into charter_values, and that the old tables are gone.
@@ -161,7 +179,7 @@ func TestOneCharterStoreReplays(t *testing.T) {
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, oneCharterStoreMarker)); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.migrate(); err != nil {
+	if err := replayMigrations(t, s); err != nil {
 		t.Fatal(err)
 	}
 	var n int

@@ -32,32 +32,6 @@ func learnedFind(v []LearnedSuggestion, node, field, phrase string) *LearnedSugg
 	}
 	return nil
 }
-func TestLearnedOwnerMergeAndQuiet(t *testing.T) {
-	s, c, a, b := learnedProjects(t)
-	for i := 0; i < 2; i++ {
-		if err := s.RememberOwnerPrompt(a, "ops: backups are his job"); err != nil {
-			t.Fatal(err)
-		}
-		if _, _, err := send(s, a, b, "", ""); err != nil {
-			t.Fatal(err)
-		}
-		c.t = c.t.Add(time.Minute)
-	}
-	all := learnedRead(t, s, false)
-	for _, x := range [][3]string{{"ops", "accepts", "backups"}, {"app", "rules", "ops for backups"}} {
-		v := learnedFind(all, x[0], x[1], x[2])
-		if v == nil || len(v.Evidence) != 2 || v.Status != "pending" {
-			t.Fatalf("suggestions: %+v", all)
-		}
-	}
-	if v := learnedRead(t, s, true); len(v) != 0 {
-		t.Fatalf("ready early: %+v", v)
-	}
-	c.t = c.t.Add(time.Minute)
-	if v := learnedRead(t, s, true); len(v) != 2 {
-		t.Fatalf("not ready: %+v", v)
-	}
-}
 func learnedOutcome(t *testing.T, s *Store, a, b, outcome, reason, redirect string) {
 	t.Helper()
 	m, _, err := send(s, a, b, "", "")
@@ -132,22 +106,6 @@ func TestLearnedMessageFlow(t *testing.T) {
 	}
 }
 
-func TestLearnedNamedOwnerAndOtherRecipient(t *testing.T) {
-	s, _, a, b := learnedProjects(t)
-	if err := s.AddArchitect("infra", "owner"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.RememberOwnerPrompt(a, "backups belongs to infra"); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := send(s, a, b, "", ""); err != nil {
-		t.Fatal(err)
-	}
-	v := learnedRead(t, s, false)
-	if learnedFind(v, "infra", "accepts", "backups") == nil || learnedFind(v, "app", "rules", "infra for backups") == nil || learnedFind(v, "ops", "accepts", "backups") != nil {
-		t.Fatalf("named target: %+v", v)
-	}
-}
 func TestLearnedFlowMergesBothDirections(t *testing.T) {
 	s, _, a, b := learnedProjects(t)
 	for i := 0; i < 6; i++ {
@@ -228,38 +186,5 @@ func TestLearnedOutcomeUsesProfileProjects(t *testing.T) {
 	}
 	if v := learnedRead(t, s, false); learnedFind(v, "ops", "refuses", "deployments") == nil {
 		t.Fatalf("profile projects: %+v", v)
-	}
-}
-
-func TestLearnedPrunesOldFlowEvidence(t *testing.T) {
-	s, c, a, b := learnedProjects(t)
-	m, _, err := send(s, a, b, "", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = s.ApplyDelivery(m.ID, protocol.StateDelivered, ""); err != nil {
-		t.Fatal(err)
-	}
-	c.t = c.t.Add(8 * 24 * time.Hour)
-	if _, err = s.Prune(Retention{}); err != nil {
-		t.Fatal(err)
-	}
-	var n int
-	if err = s.db.QueryRow(`SELECT COUNT(*) FROM learned_message_flow`).Scan(&n); err != nil || n != 0 {
-		t.Fatalf("old flow rows=%d err=%v", n, err)
-	}
-}
-
-func TestLearnedOwnerCanAssignSendingProject(t *testing.T) {
-	s, _, a, b := learnedProjects(t)
-	if err := s.RememberOwnerPrompt(a, "backups belongs to app"); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := send(s, a, b, "", ""); err != nil {
-		t.Fatal(err)
-	}
-	v := learnedRead(t, s, false)
-	if len(v) != 1 || learnedFind(v, "app", "accepts", "backups") == nil {
-		t.Fatalf("self assignment: %+v", v)
 	}
 }
