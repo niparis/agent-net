@@ -112,7 +112,7 @@ func TestHeldRequestExpires(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = m.ExpiresAt.Add(time.Second)
+	c.set(m.ExpiresAt.Add(time.Second))
 	if _, err = s.Expire(); err != nil {
 		t.Fatal(err)
 	}

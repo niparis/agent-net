@@ -34,7 +34,7 @@ func TestSignalPromptSendOutcomeAndRetention(t *testing.T) {
 	if v.From != "sovl-clone" || v.To != "homelab" || v.MessageID != m.ID || len([]rune(v.Prompt)) != 300 || v.Outcome != "reject" || v.Reason != "already in main" || v.ReplyID != reply.ID {
 		t.Fatalf("signal: %+v", v)
 	}
-	c.t = c.t.Add(91 * 24 * time.Hour)
+	c.advance(91 * 24 * time.Hour)
 	if _, err = s.Prune(Retention{}); err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestSignalPromptExpiryAndRecipientMention(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.RememberOwnerPrompt(a, "ask homelab")
-	c.t = c.t.Add(11 * time.Minute)
+	c.advance(11 * time.Minute)
 	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "hello"}); err != nil {
 		t.Fatal(err)
 	}

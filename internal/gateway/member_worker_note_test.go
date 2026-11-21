@@ -14,7 +14,7 @@ import (
 
 func TestTaskLineNamingAnEndedWorkerGetsANote(t *testing.T) {
 	s, c, member, _ := leadTeamRig(t)
-	c.t = time.Date(2026, 11, 9, 1, 30, 0, 0, time.UTC)
+	c.set(time.Date(2026, 11, 9, 1, 30, 0, 0, time.UTC))
 	ended := memberWorker(t, s, member, "", time.Date(2026, 11, 9, 1, 7, 0, 0, time.UTC))
 	task := "T2b worker " + ended + " running, PR #130 next"
 	announce(t, s, member, protocol.ProfileAnnounce{Task: task})

@@ -43,12 +43,12 @@ func TestChiefQuotaExhaustedMovesWaitingAsks(t *testing.T) {
 	if next := askNext(t, s, id); next != protocol.AskNextChief {
 		t.Fatalf("next = %q with a healthy chief, want chief", next)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, ok := sendDueChief(t, s, c.t); !ok {
 		t.Fatal("the healthy chief got no batch")
 	}
 	s.setChiefQuota(chief, "codex quota exhausted (weekly window)")
-	c.t = c.t.Add(2 * protocol.ChiefWakeInterval)
+	c.advance(2 * protocol.ChiefWakeInterval)
 	if err := s.releaseChiefAsks(c.t); err != nil {
 		t.Fatal(err)
 	}
@@ -69,18 +69,18 @@ func TestChiefQuotaExhaustedMovesWaitingAsks(t *testing.T) {
 func TestChiefSilentWithNoActivityIsUnavailable(t *testing.T) {
 	s, c, chief, asker, _ := chiefRig(t)
 	id := chiefAsk(t, s, asker, "Ship it?")
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, ok := sendDueChief(t, s, c.t); !ok {
 		t.Fatal("no batch went to the chief")
 	}
-	c.t = c.t.Add(protocol.ChiefSilentAfter - time.Second)
+	c.advance(protocol.ChiefSilentAfter - time.Second)
 	if err := s.releaseChiefAsks(c.t); err != nil {
 		t.Fatal(err)
 	}
 	if next := askNext(t, s, id); next != protocol.AskNextChief {
 		t.Fatalf("next = %q before the silence limit, want chief", next)
 	}
-	c.t = c.t.Add(2 * time.Second)
+	c.advance(2 * time.Second)
 	if err := s.releaseChiefAsks(c.t); err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestChiefSilentWithNoActivityIsUnavailable(t *testing.T) {
 	if next := askNext(t, s, id); next != protocol.AskNextChief {
 		t.Fatalf("next = %q after one missed wake, want chief", next)
 	}
-	c.t = c.t.Add(protocol.ChiefWakeInterval)
+	c.advance(protocol.ChiefWakeInterval)
 	if err := s.releaseChiefAsks(c.t); err != nil {
 		t.Fatal(err)
 	}
@@ -116,11 +116,11 @@ func TestChiefSilentWithNoActivityIsUnavailable(t *testing.T) {
 func TestChiefWithRecentHarnessActivityIsNotSilent(t *testing.T) {
 	s, c, chief, asker, _ := chiefRig(t)
 	id := chiefAsk(t, s, asker, "Ship it?")
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, ok := sendDueChief(t, s, c.t); !ok {
 		t.Fatal("no batch went to the chief")
 	}
-	c.t = c.t.Add(protocol.ChiefSilentAfter + time.Minute)
+	c.advance(protocol.ChiefSilentAfter + time.Minute)
 	// The chief's harness was active a minute ago.
 	if _, err := s.db.Exec(`UPDATE sessions SET harness_activity=? WHERE id=?`, c.t.Add(-time.Minute).UnixNano(), chief); err != nil {
 		t.Fatal(err)
@@ -135,7 +135,7 @@ func TestChiefWithRecentHarnessActivityIsNotSilent(t *testing.T) {
 		t.Fatalf("down = %q for a working chief, want none", st.Down)
 	}
 	// Its activity stops: ChiefSilentAfter later, it is silent.
-	c.t = c.t.Add(protocol.ChiefSilentAfter)
+	c.advance(protocol.ChiefSilentAfter)
 	if err := s.releaseChiefAsks(c.t); err != nil {
 		t.Fatal(err)
 	}
@@ -148,16 +148,16 @@ func TestChiefWithRecentHarnessActivityIsNotSilent(t *testing.T) {
 func TestChiefSilentEndsWithASort(t *testing.T) {
 	s, c, chief, asker, node := chiefRig(t)
 	id := chiefAsk(t, s, asker, "Ship it?")
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	sendDueChief(t, s, c.t)
-	c.t = c.t.Add(protocol.ChiefSilentAfter + time.Second)
+	c.advance(protocol.ChiefSilentAfter + time.Second)
 	if err := s.releaseChiefAsks(c.t); err != nil {
 		t.Fatal(err)
 	}
 	if st, _ := s.ChiefStatus(); st.Down == "" {
 		t.Fatal("the silent chief is not marked down")
 	}
-	c.t = c.t.Add(time.Second)
+	c.advance(time.Second)
 	// An ask can still reach the chief while it is marked (a race with the
 	// tick). Its sort ends the silence.
 	if _, err := s.db.Exec(`UPDATE inbox_items SET next_who=? WHERE id=?`, protocol.AskNextChief, id); err != nil {
@@ -181,19 +181,19 @@ func TestChiefSilentEndsWithASort(t *testing.T) {
 func TestChiefSilentRetriesAfterWait(t *testing.T) {
 	s, c, _, asker, _ := chiefRig(t)
 	chiefAsk(t, s, asker, "Ship it?")
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	sendDueChief(t, s, c.t)
-	c.t = c.t.Add(protocol.ChiefSilentAfter + time.Second)
+	c.advance(protocol.ChiefSilentAfter + time.Second)
 	if err := s.releaseChiefAsks(c.t); err != nil {
 		t.Fatal(err)
 	}
 	// The first ask has missed two wakes and is with the owner, so the chief
 	// has nothing waiting when the retry wait ends.
-	c.t = c.t.Add(protocol.ChiefWakeInterval)
+	c.advance(protocol.ChiefWakeInterval)
 	if err := s.releaseChiefAsks(c.t); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(protocol.ChiefRetryAfter + time.Second)
+	c.advance(protocol.ChiefRetryAfter + time.Second)
 	id := chiefAskKind(t, s, asker, "approval", "Probe?")
 	if next := askNext(t, s, id); next != protocol.AskNextChief {
 		t.Fatalf("next = %q after the retry wait, want chief", next)
@@ -206,7 +206,7 @@ func TestChiefRecoveryRoutesNewAsksToChiefAndKeepsMovedOnes(t *testing.T) {
 	s, c, chief, asker, _ := chiefRig(t)
 	old := chiefAsk(t, s, asker, "Old one?")
 	s.setChiefQuota(chief, "codex quota exhausted (weekly window)")
-	c.t = c.t.Add(2 * protocol.ChiefWakeInterval)
+	c.advance(2 * protocol.ChiefWakeInterval)
 	if err := s.releaseChiefAsks(c.t); err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +221,7 @@ func TestChiefRecoveryRoutesNewAsksToChiefAndKeepsMovedOnes(t *testing.T) {
 	if next := askNext(t, s, fresh); next != protocol.AskNextChief {
 		t.Fatalf("new ask next = %q after recovery, want chief", next)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +250,7 @@ func TestChiefHarnessErrorIsUnavailable(t *testing.T) {
 	if !strings.Contains(st.Down, "harness error") || !strings.Contains(st.Down, "ChatGPT usage limit") {
 		t.Fatalf("down = %q, want the harness error", st.Down)
 	}
-	c.t = c.t.Add(2 * time.Hour)
+	c.advance(2 * time.Hour)
 	if st, _ := s.ChiefStatus(); st.Down != "" {
 		t.Fatalf("down = %q after the limit ended, want none", st.Down)
 	}
@@ -303,7 +303,7 @@ func TestFlushChiefReadsMachineQuotaAndMovesAsks(t *testing.T) {
 	if next := askNext(t, st, ask); next != protocol.AskNextChief {
 		t.Fatalf("next = %q right after the quota ran out, want chief until two wakes are missed", next)
 	}
-	c.t = c.t.Add(2 * protocol.ChiefWakeInterval)
+	c.advance(2 * protocol.ChiefWakeInterval)
 	g.usage.set(node, c.t, protocol.UsageReport{Quotas: &protocol.Quotas{GeneratedAt: c.t.Unix(), Providers: []protocol.QuotaProvider{{Provider: "codex",
 		Windows: []protocol.QuotaWindow{{ID: "weekly", Label: "weekly", PercentUsed: 100, ResetsAt: reset.Unix()}}}}}})
 	g.flushChief(context.Background())

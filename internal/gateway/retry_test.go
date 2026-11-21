@@ -113,7 +113,7 @@ func TestRetryUncertainAndExpiry(t *testing.T) {
 	if err = s.ApplyDelivery(n.ID, "failed", "no such local session"); err != nil {
 		t.Fatal(err)
 	}
-	c.t = n.ExpiresAt.Add(time.Second)
+	c.set(n.ExpiresAt.Add(time.Second))
 	if _, err = s.Expire(); err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestRetryDispatchAndMayHaveArrived(t *testing.T) {
 	if got.State != "failed" {
 		t.Fatalf("sent early: %s", got.State)
 	}
-	c.t = c.t.Add(30 * time.Second)
+	c.advance(30 * time.Second)
 	g.sendDeliver(ctx, node, m)
 	if _, _, err = client.Read(ctx); err != nil {
 		t.Fatal(err)

@@ -74,7 +74,7 @@ func TestNudgeFireRecordedForEveryKind(t *testing.T) {
 		}
 		idleSince(t, s, c, b, 21*time.Minute)
 		checks(t, s)
-		c.t = c.t.Add(time.Minute)
+		c.advance(time.Minute)
 		if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "more: finish it"}); err != nil {
 			t.Fatal(err)
 		}
@@ -97,7 +97,7 @@ func TestNudgeFireRecordedForEveryKind(t *testing.T) {
 		if _, err := s.db.Exec("UPDATE sessions SET status='idle', last_active=? WHERE id=?", c.t.UnixNano(), b); err != nil {
 			t.Fatal(err)
 		}
-		c.t = c.t.Add(3 * time.Minute)
+		c.advance(3 * time.Minute)
 		reminders, err := s.remindPending()
 		if err != nil || len(reminders) != 1 {
 			t.Fatalf("reminders = %+v, %v", reminders, err)
@@ -128,7 +128,7 @@ func TestNudgeFireRecordedForEveryKind(t *testing.T) {
 		q := r.workerSubmit("feature/fire-reminder", commitA)
 		r.submit(r.a, q)
 		r.g.dispatchStepTasks(context.Background())
-		r.clk.t = r.clk.t.Add(2*time.Hour + 30*time.Minute)
+		r.clk.advance(2*time.Hour + 30*time.Minute)
 		r.g.dispatchStepTasks(context.Background())
 		fire := oneFire(t, r.s, "step_reminder")
 		var body string
@@ -145,7 +145,7 @@ func TestNudgeFireRecordedForEveryKind(t *testing.T) {
 		q := r.workerSubmit("feature/fire-stuck", commitA)
 		r.submit(r.a, q)
 		r.g.dispatchStepTasks(context.Background())
-		r.clk.t = r.clk.t.Add(13 * time.Hour)
+		r.clk.advance(13 * time.Hour)
 		r.g.checkStuckStepTasks(context.Background(), 12*time.Hour)
 		fire := oneFire(t, r.s, "stuck_step")
 		if fire.recipient == "" || fire.messageID == "" {
@@ -235,13 +235,13 @@ func TestNudgeFollowedByToolCallAnnounceAndMessage(t *testing.T) {
 			}
 		}, "tool_call"},
 		{"announce", func(t *testing.T, s *Store, c *clock, a, b string) {
-			c.t = c.t.Add(5 * time.Minute)
+			c.advance(5 * time.Minute)
 			if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "working"}); err != nil {
 				t.Fatal(err)
 			}
 		}, "announce"},
 		{"message", func(t *testing.T, s *Store, c *clock, a, b string) {
-			c.t = c.t.Add(5 * time.Minute)
+			c.advance(5 * time.Minute)
 			if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, Body: "working on it"}); err != nil {
 				t.Fatal(err)
 			}
@@ -250,7 +250,7 @@ func TestNudgeFollowedByToolCallAnnounceAndMessage(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s, c := newTestStore(t)
 			a, b, fire := idleCheckFire(t, s, c)
-			c.t = c.t.Add(6 * time.Minute)
+			c.advance(6 * time.Minute)
 			tc.work(t, s, c, a, b)
 			out, err := s.NudgeStats(protocol.NudgeStatsArgs{})
 			if err != nil {
@@ -270,7 +270,7 @@ func TestNudgeFollowedByToolCallAnnounceAndMessage(t *testing.T) {
 func TestNudgeAckDoesNotCountAsWork(t *testing.T) {
 	s, c := newTestStore(t)
 	a, b, _ := idleCheckFire(t, s, c)
-	c.t = c.t.Add(5 * time.Minute)
+	c.advance(5 * time.Minute)
 	req, _, err := send(s, a, b, "another", "")
 	if err != nil {
 		t.Fatal(err)
@@ -290,7 +290,7 @@ func TestNudgeAckDoesNotCountAsWork(t *testing.T) {
 func TestNudgeReplyAfterWindowDoesNotCount(t *testing.T) {
 	s, c := newTestStore(t)
 	a, b, _ := idleCheckFire(t, s, c)
-	c.t = c.t.Add(31 * time.Minute)
+	c.advance(31 * time.Minute)
 	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, Body: "late"}); err != nil {
 		t.Fatal(err)
 	}
@@ -396,7 +396,7 @@ func TestNudgeBatchedEnvelopeWritesARowPerPart(t *testing.T) {
 	if _, err := s.db.Exec("UPDATE sessions SET status='idle',last_active=? WHERE id=?", c.t.UnixNano(), b); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(3 * time.Minute)
+	c.advance(3 * time.Minute)
 	reminders, err := s.remindPending()
 	if err != nil || len(reminders) != 2 {
 		t.Fatalf("reminders = %+v, %v", reminders, err)

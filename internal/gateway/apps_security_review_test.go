@@ -177,7 +177,7 @@ func TestTokenAccessCap(t *testing.T) {
 		if _, err = s.IssueToken(app.ID, "access", time.Hour); err != nil {
 			t.Fatal(err)
 		}
-		c.t = c.t.Add(time.Second)
+		c.advance(time.Second)
 	}
 	var n int
 	if err = s.db.QueryRow("SELECT count(*) FROM app_tokens WHERE app_id=? AND type='access'", app.ID).Scan(&n); err != nil || n > 20 {

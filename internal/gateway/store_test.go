@@ -33,6 +33,14 @@ func (c *clock) advance(d time.Duration) {
 	c.t = c.t.Add(d)
 }
 
+// set moves the test clock to an exact time. Tests write the clock only
+// through set and advance: a wake goroutine may still be reading it.
+func (c *clock) set(t time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = t
+}
+
 func newTestStore(t testing.TB) (*Store, *clock) {
 	t.Helper()
 	s, err := OpenStore(seededStorePath(t, "gw.db"))
@@ -239,7 +247,7 @@ func TestHopLimit(t *testing.T) {
 	from, to := b, a
 	// Hops 1..8 are fine, hop 9 is refused. Keep under the rate limit.
 	for i := 1; i <= protocol.MaxHop; i++ {
-		c.t = c.t.Add(time.Minute)
+		c.advance(time.Minute)
 		m, _, err = send(s, from, to, "k"+string(rune('a'+i)), m.ID)
 		if err != nil {
 			t.Fatalf("hop %d: %v", i, err)
@@ -249,7 +257,7 @@ func TestHopLimit(t *testing.T) {
 		}
 		from, to = to, from
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	_, _, err = send(s, from, to, "kz", m.ID)
 	var rj Rejection
 	if !errors.As(err, &rj) || !strings.Contains(err.Error(), "hop") {
@@ -266,14 +274,14 @@ func TestConversationBudget(t *testing.T) {
 	count := 1
 	for ; count < protocol.MaxConvMessages; count++ {
 		if count%15 == 0 {
-			c.t = c.t.Add(time.Minute)
+			c.advance(time.Minute)
 		}
 		_, _, err := send(s, b, a, "r"+string(rune('A'+count/26))+string(rune('a'+count%26)), m.ID)
 		if err != nil {
 			t.Fatalf("message %d: %v", count+1, err)
 		}
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	_, _, err := send(s, b, a, "overflow", m.ID)
 	if err == nil || !strings.Contains(err.Error(), "budget") {
 		t.Fatalf("51st message: got %v, want budget rejection", err)
@@ -292,7 +300,7 @@ func TestRateLimit(t *testing.T) {
 	if _, _, err := send(s, a, b, "extra", ""); err == nil || !strings.Contains(err.Error(), "rate") {
 		t.Fatalf("21st message: got %v, want rate limit", err)
 	}
-	c.t = c.t.Add(10 * time.Second) // refills ~3 tokens
+	c.advance(10 * time.Second) // refills ~3 tokens
 	if _, _, err := send(s, a, b, "later", ""); err != nil {
 		t.Fatalf("after refill: %v", err)
 	}
@@ -328,7 +336,7 @@ func TestExpiry(t *testing.T) {
 	if p, _ := s.Pending(nodeB, true); len(p) != 1 {
 		t.Fatalf("pending = %d, want 1", len(p))
 	}
-	c.t = c.t.Add(protocol.DefaultTTL + time.Second)
+	c.advance(protocol.DefaultTTL + time.Second)
 	if n, _ := s.Expire(); n != 1 {
 		t.Fatalf("expired %d, want 1", n)
 	}
@@ -387,7 +395,7 @@ func TestEnrollCodeRules(t *testing.T) {
 		t.Fatal("code worked twice")
 	}
 	code2, _ := s.CreateEnrollCode(10 * time.Minute)
-	c.t = c.t.Add(10*time.Minute + time.Second)
+	c.advance(10*time.Minute + time.Second)
 	if ok, _ := s.ConsumeEnrollCode(code2); ok {
 		t.Fatal("expired code accepted")
 	}

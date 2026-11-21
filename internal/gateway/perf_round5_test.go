@@ -418,7 +418,7 @@ func TestRunsCopyFollowsTheClock(t *testing.T) {
 	f := runsFix(t)
 	before := sameCalibration(t, f.s)
 	trackBefore, _ := f.s.TrackRecords("", 0)
-	f.c.t = f.c.t.Add(30*24*time.Hour - 12*time.Hour)
+	f.c.advance(30*24*time.Hour - 12*time.Hour)
 	after := sameCalibration(t, f.s)
 	sameTracks(t, f.s, "", 0)
 	sameTasks(t, f.s, f.c.now().Add(-calibrationWindow).Unix())

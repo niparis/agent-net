@@ -23,7 +23,7 @@ func TestOwnerUseAndPinSnapshot(t *testing.T) {
 	if err != nil || !ok || a.OwnerUses != 1 || a.OwnerUsedAt != c.t.Unix() || a.PinnedAt != c.t.Unix() {
 		t.Fatalf("snapshot: %+v %v", a, err)
 	}
-	c.t = c.t.Add(8 * 24 * time.Hour)
+	c.advance(8 * 24 * time.Hour)
 	a, _, _ = s.Agent(id)
 	if a.OwnerUses != 0 {
 		t.Fatalf("score did not decay on read: %+v", a)

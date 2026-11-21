@@ -274,7 +274,7 @@ func TestAutoDefectDoesNotDoubleAManualOne(t *testing.T) {
 	if err != nil || !out.Accepted {
 		t.Fatalf("manual defect: %+v %v", out, err)
 	}
-	r.clk.t = r.clk.t.Add(30 * time.Minute)
+	r.clk.advance(30 * time.Minute)
 	r.report1(verifyAfterMerge, id, commitMerged, protocol.StepResultFail, nil, "broken")
 	rows := autoDefectRows(t, r.s)
 	if len(rows) != 1 || rows[0].note != "filed by hand" {
@@ -294,7 +294,7 @@ func TestAutoDefectRecordsWhenTheManualOneIsOld(t *testing.T) {
 	if out, err := r.s.AddRating(defectFrame(r.worker, r.caller, "older")); err != nil || !out.Accepted {
 		t.Fatalf("manual defect: %+v %v", out, err)
 	}
-	r.clk.t = r.clk.t.Add(2 * time.Hour)
+	r.clk.advance(2 * time.Hour)
 	r.report1(verifyAfterMerge, id, commitMerged, protocol.StepResultFail, nil, "broken")
 	if rows := autoDefectRows(t, r.s); len(rows) != 2 {
 		t.Fatalf("defects: %+v", rows)

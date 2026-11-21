@@ -144,7 +144,7 @@ func TestPendingOutcomeSurvivesRetention(t *testing.T) {
 	if _, err = s.db.Exec(`UPDATE sessions SET online=0`); err != nil {
 		t.Fatal(err)
 	}
-	clock.t = clock.t.Add(48 * time.Hour)
+	clock.advance(48 * time.Hour)
 	if _, err = s.Prune(Retention{Messages: 24 * time.Hour, Sessions: 24 * time.Hour}); err != nil {
 		t.Fatal(err)
 	}

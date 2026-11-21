@@ -117,7 +117,7 @@ func TestUndeliveredNoticeExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	stored := sendBody(t, s, a, b, "stored", "never sent")
-	c.t = stored.ExpiresAt.Add(time.Second)
+	c.set(stored.ExpiresAt.Add(time.Second))
 	if _, err := s.Expire(); err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestUndeliveredNoticeDispatchedExpiryIsUncertain(t *testing.T) {
 	if err := s.MarkDispatched(m.ID); err != nil {
 		t.Fatal(err)
 	}
-	c.t = m.ExpiresAt.Add(time.Second)
+	c.set(m.ExpiresAt.Add(time.Second))
 	if _, err := s.Expire(); err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func TestUndeliveredNoticeNotForDelivered(t *testing.T) {
 	if err := s.ApplyDelivery(m.ID, protocol.StateFailed, "plugin refused: busy"); err != nil {
 		t.Fatal(err)
 	}
-	c.t = m.ExpiresAt.Add(time.Second)
+	c.set(m.ExpiresAt.Add(time.Second))
 	if _, err := s.Expire(); err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestUndeliveredNoticeNeverAboutNotice(t *testing.T) {
 	if err := s.ApplyDelivery(m2.ID, protocol.StateFailed, "plugin refused: busy"); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(protocol.DefaultTTL + time.Hour)
+	c.advance(protocol.DefaultTTL + time.Hour)
 	if _, err := s.Expire(); err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestUndeliveredNoticeMayHaveArrivedOnce(t *testing.T) {
 	if err := s.ApplyDelivery(m.ID, protocol.StateFailed, detail); err != nil {
 		t.Fatal(err)
 	}
-	c.t = m.ExpiresAt.Add(time.Second)
+	c.set(m.ExpiresAt.Add(time.Second))
 	if _, err := s.Expire(); err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +308,7 @@ func TestUndeliveredNoticeSkipsOwnerBotAndHeld(t *testing.T) {
 	if _, err := s.db.Exec(`UPDATE messages SET state='held' WHERE id=?`, held.ID); err != nil {
 		t.Fatal(err)
 	}
-	c.t = held.ExpiresAt.Add(time.Second)
+	c.set(held.ExpiresAt.Add(time.Second))
 	if _, err := s.Expire(); err != nil {
 		t.Fatal(err)
 	}
@@ -362,7 +362,7 @@ func TestUndeliveredExpirySkipsEndedWorker(t *testing.T) {
 			if _, err := s.db.Exec(`UPDATE sessions SET worker=?,online=?,worker_run_active=? WHERE id=?`, tc.worker, tc.online, tc.active, b); err != nil {
 				t.Fatal(err)
 			}
-			c.t = m.ExpiresAt.Add(time.Second)
+			c.set(m.ExpiresAt.Add(time.Second))
 			if _, err := s.Expire(); err != nil {
 				t.Fatal(err)
 			}

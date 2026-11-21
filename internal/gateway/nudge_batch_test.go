@@ -30,20 +30,20 @@ func TestStepRemindersPullForwardOneHour(t *testing.T) {
 	first := r.submit(r.a, r.workerSubmit("feature/first", commitA)).Change.Change.ID
 	r.g.dispatchStepTasks(context.Background())
 	r.g.flushStepTasks(r.caller)
-	r.clk.t = r.clk.t.Add(20 * time.Minute)
+	r.clk.advance(20 * time.Minute)
 	second := r.submit(r.a, r.workerSubmit("feature/second", commitA)).Change.Change.ID
 	r.g.dispatchStepTasks(context.Background())
 	r.g.flushStepTasks(r.caller)
 	if _, err := r.s.db.Exec(`UPDATE messages SET state='delivered' WHERE recipient=?`, r.caller); err != nil {
 		t.Fatal(err)
 	}
-	r.clk.t = r.clk.t.Add(60 * time.Minute)
+	r.clk.advance(60 * time.Minute)
 	r.g.dispatchStepTasks(context.Background())
 	r.g.flushStepTasks(r.caller)
 	if got := nudgeMessages(t, r); len(got) != 0 {
 		t.Fatalf("future candidates alone triggered a nudge: %+v", got)
 	}
-	r.clk.t = r.clk.t.Add(41 * time.Minute)
+	r.clk.advance(41 * time.Minute)
 	r.g.dispatchStepTasks(context.Background())
 	r.g.flushStepTasks(r.caller)
 	got := nudgeMessages(t, r)
@@ -53,7 +53,7 @@ func TestStepRemindersPullForwardOneHour(t *testing.T) {
 	if _, err := r.s.db.Exec(`UPDATE messages SET state='delivered' WHERE recipient=?`, r.caller); err != nil {
 		t.Fatal(err)
 	}
-	r.clk.t = r.clk.t.Add(20 * time.Minute)
+	r.clk.advance(20 * time.Minute)
 	r.g.dispatchStepTasks(context.Background())
 	r.g.flushStepTasks(r.caller)
 	if got := nudgeMessages(t, r); len(got) != 0 {
@@ -73,7 +73,7 @@ func TestStuckAndStepReminderShareMessage(t *testing.T) {
 	if _, err := r.s.db.Exec(`UPDATE messages SET state='delivered' WHERE recipient=?`, r.caller); err != nil {
 		t.Fatal(err)
 	}
-	r.clk.t = r.clk.t.Add(2*time.Hour + time.Minute)
+	r.clk.advance(2*time.Hour + time.Minute)
 	r.g.dispatchStepTasks(context.Background())
 	r.g.flushStepTasks(r.caller)
 	got := nudgeMessages(t, r)
@@ -90,7 +90,7 @@ func TestReplyReminderPullsForwardStepNudge(t *testing.T) {
 	if _, err := r.s.db.Exec(`UPDATE messages SET state='delivered' WHERE recipient=?`, r.caller); err != nil {
 		t.Fatal(err)
 	}
-	r.clk.t = r.clk.t.Add(100 * time.Minute)
+	r.clk.advance(100 * time.Minute)
 	req, _, err := send(r.s, r.sonnet, r.caller, "please reply", "")
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +98,7 @@ func TestReplyReminderPullsForwardStepNudge(t *testing.T) {
 	if _, err = r.s.db.Exec(`UPDATE sessions SET status='idle',last_active=? WHERE id=?`, r.clk.t.UnixNano(), r.caller); err != nil {
 		t.Fatal(err)
 	}
-	r.clk.t = r.clk.t.Add(3 * time.Minute)
+	r.clk.advance(3 * time.Minute)
 	r.g.dispatchStepTasks(context.Background())
 	r.g.flushStepTasks(r.caller)
 	got := nudgeMessages(t, r)
@@ -123,7 +123,7 @@ func TestStepReminderPullsForwardYoungReply(t *testing.T) {
 	if _, err := r.s.db.Exec(`UPDATE messages SET state='delivered' WHERE recipient=?`, r.caller); err != nil {
 		t.Fatal(err)
 	}
-	r.clk.t = r.clk.t.Add(2*time.Hour + time.Minute)
+	r.clk.advance(2*time.Hour + time.Minute)
 	req, _, err := send(r.s, r.sonnet, r.caller, "please reply", "")
 	if err != nil {
 		t.Fatal(err)
@@ -140,7 +140,7 @@ func TestStepReminderPullsForwardYoungReply(t *testing.T) {
 	if _, err = r.s.db.Exec(`UPDATE messages SET state='delivered' WHERE recipient=?`, r.caller); err != nil {
 		t.Fatal(err)
 	}
-	r.clk.t = r.clk.t.Add(3 * time.Minute)
+	r.clk.advance(3 * time.Minute)
 	r.g.dispatchStepTasks(context.Background())
 	r.g.flushStepTasks(r.caller)
 	if got := nudgeMessages(t, r); len(got) != 0 {
@@ -159,7 +159,7 @@ func TestVerifyReminderPulledForwardAdvancesCadence(t *testing.T) {
 	r.g.dispatchStepTasks(context.Background())
 	r.g.flushStepTasks(r.caller)
 	start := r.clk.t
-	r.clk.t = start.Add(10 * time.Minute)
+	r.clk.set(start.Add(10 * time.Minute))
 	req, _, err := send(r.s, r.sonnet, r.caller, "please reply", "")
 	if err != nil {
 		t.Fatal(err)
@@ -167,7 +167,7 @@ func TestVerifyReminderPulledForwardAdvancesCadence(t *testing.T) {
 	if _, err = r.s.db.Exec(`UPDATE sessions SET status='idle',last_active=? WHERE id=?`, start.UnixNano(), r.caller); err != nil {
 		t.Fatal(err)
 	}
-	r.clk.t = r.clk.t.Add(3 * time.Minute)
+	r.clk.advance(3 * time.Minute)
 	r.g.dispatchStepTasks(context.Background())
 	r.g.flushStepTasks(r.caller)
 	var sent, covered int64
@@ -180,13 +180,13 @@ func TestVerifyReminderPulledForwardAdvancesCadence(t *testing.T) {
 	if _, _, err = send(r.s, r.caller, r.sonnet, "done", req.ID); err != nil {
 		t.Fatal(err)
 	}
-	r.clk.t = start.Add(31 * time.Minute)
+	r.clk.set(start.Add(31 * time.Minute))
 	target := nodeTaskTarget{id: c.ID, revision: c.Revision, ref: protocol.StepRef{Step: protocol.StepVerify, AfterMerge: true}, session: r.caller}
 	recorded, err := r.s.stepMessageRecorded(target, r.s.stepReminderCutoff())
 	if err != nil || !recorded {
 		t.Fatalf("pulled verify due again at 30m: recorded=%v %v", recorded, err)
 	}
-	r.clk.t = start.Add(2 * time.Hour)
+	r.clk.set(start.Add(2 * time.Hour))
 	recorded, err = r.s.stepMessageRecorded(target, r.s.stepReminderCutoff())
 	if err != nil || recorded {
 		t.Fatalf("next verify slot changed: recorded=%v %v", recorded, err)
@@ -202,7 +202,7 @@ func TestRemindOfflineCountWithoutDueNudge(t *testing.T) {
 	if _, err := s.db.Exec(`UPDATE sessions SET online=0,status='idle',last_active=? WHERE id=?`, c.t.UnixNano(), b); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(3 * time.Minute)
+	c.advance(3 * time.Minute)
 	got, err := s.remindPendingBefore(c.t.Add(nudgeLookahead), map[string]bool{})
 	if err != nil || len(got) != 0 {
 		t.Fatalf("offline reminders: %+v %v", got, err)
@@ -223,13 +223,13 @@ func TestNudgeWaitingStepNotPulledForward(t *testing.T) {
 	if err := r.s.db.QueryRow(`SELECT waiting_at,last_notice_at FROM delivery_step_tasks WHERE change_id=? AND step='verify'`, c.ID).Scan(&waitingAt, &lastNotice); err != nil {
 		t.Fatal(err)
 	}
-	r.clk.t = r.clk.t.Add(10 * time.Minute)
+	r.clk.advance(10 * time.Minute)
 	req, _, err := send(r.s, r.sonnet, r.caller, "please reply", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	idleSince(t, r.s, r.clk, r.caller, 3*time.Minute)
-	r.clk.t = r.clk.t.Add(3 * time.Minute)
+	r.clk.advance(3 * time.Minute)
 	waitingDispatch(r)
 	got := nudgeMessages(t, r)
 	if len(got) != 1 || !strings.Contains(got[0].Body, req.ID) || strings.Contains(got[0].Body, c.ID) {
@@ -263,7 +263,7 @@ func TestNudgeEnvelopeExcludesPausedParts(t *testing.T) {
 					t.Fatal(err)
 				}
 				idleSince(t, r.s, r.clk, r.caller, 3*time.Minute)
-				r.clk.t = r.clk.t.Add(2*time.Hour + time.Minute)
+				r.clk.advance(2*time.Hour + time.Minute)
 				apply := func() { nudgeApply(t, r.s, r.sonnet, map[string]any{"kind": kind, "agent": "envelope-agent"}) }
 				if !after {
 					apply()
@@ -303,12 +303,12 @@ func TestNudgePausedReplyDoesNotTriggerLookahead(t *testing.T) {
 	if _, err := r.s.db.Exec(`UPDATE messages SET state='delivered' WHERE recipient=?`, r.caller); err != nil {
 		t.Fatal(err)
 	}
-	r.clk.t = r.clk.t.Add(100 * time.Minute)
+	r.clk.advance(100 * time.Minute)
 	if _, _, err := send(r.s, r.sonnet, r.caller, "please reply", ""); err != nil {
 		t.Fatal(err)
 	}
 	idleSince(t, r.s, r.clk, r.caller, 3*time.Minute)
-	r.clk.t = r.clk.t.Add(3 * time.Minute)
+	r.clk.advance(3 * time.Minute)
 	nudgeApply(t, r.s, r.sonnet, map[string]any{"kind": "reply_reminder", "agent": "lookahead-agent"})
 	waitingDispatch(r)
 	if got := nudgeMessages(t, r); len(got) != 0 {

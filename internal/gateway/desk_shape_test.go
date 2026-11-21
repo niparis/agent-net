@@ -141,7 +141,7 @@ func TestDuplicateByNormalizedTextJoinsWithin24Hours(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Hour)
+	c.advance(time.Hour)
 	again, err := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: asker, Node: "demo", Text: "  merge CHANGE   ch_9f8e7d6c5b NOW?"})
 	if err != nil {
 		t.Fatal(err)
@@ -149,7 +149,7 @@ func TestDuplicateByNormalizedTextJoinsWithin24Hours(t *testing.T) {
 	if again.ID != first.ID {
 		t.Fatalf("same normalized text made item %s, want %s", again.ID, first.ID)
 	}
-	c.t = c.t.Add(24 * time.Hour)
+	c.advance(24 * time.Hour)
 	later, err := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: asker, Node: "demo", Text: "Merge change ch_1a2b3c4d5e now?"})
 	if err != nil {
 		t.Fatal(err)
@@ -544,14 +544,14 @@ func TestWaitingAskWaitsForTheDebounce(t *testing.T) {
 	if asks, _ := s.ListAsks(); len(askByKind(asks, "waiting")) != 0 {
 		t.Fatalf("a wait of 0s made an ask: %+v", asks)
 	}
-	c.t = c.t.Add(waitingAskDebounce - time.Second)
+	c.advance(waitingAskDebounce - time.Second)
 	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}
 	if asks, _ := s.ListAsks(); len(askByKind(asks, "waiting")) != 0 {
 		t.Fatalf("a wait shorter than the debounce made an ask: %+v", asks)
 	}
-	c.t = c.t.Add(2 * time.Second)
+	c.advance(2 * time.Second)
 	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}

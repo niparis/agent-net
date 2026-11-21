@@ -147,7 +147,7 @@ func TestReadCacheForTimedReadsLastOneSecond(t *testing.T) {
 	if loads != 1 {
 		t.Fatalf("%d loads in the same second", loads)
 	}
-	clk.t = clk.t.Add(1100 * time.Millisecond)
+	clk.advance(1100 * time.Millisecond)
 	read()
 	if loads != 2 {
 		t.Fatalf("%d loads after the clock moved a second", loads)

@@ -177,7 +177,7 @@ func TestDailyBriefAutoZoneComesFromOwnerMac(t *testing.T) {
 	addZoneNode(t, s, "Nicolas-MBP", "darwin", "Asia/Kolkata")
 	setBriefTime(t, s, "08:15")
 
-	c.t = time.Date(2026, 11, 9, 2, 0, 0, 0, time.UTC) // 07:30 in Kolkata
+	c.set(time.Date(2026, 11, 9, 2, 0, 0, 0, time.UTC)) // 07:30 in Kolkata
 	status, err := s.dailyBriefStatus(c.t)
 	if err != nil {
 		t.Fatal(err)
@@ -283,7 +283,7 @@ func TestDailyBriefSendsOnceWhenTheTickWasMissed(t *testing.T) {
 	if _, sent, err := s.checkDailyBrief(late); err != nil || !sent {
 		t.Fatalf("a missed tick: sent=%v err=%v", sent, err)
 	}
-	c.t = late.Add(time.Minute)
+	c.set(late.Add(time.Minute))
 	if _, sent, err := s.checkDailyBrief(c.t); err != nil || sent {
 		t.Fatalf("the next tick: sent=%v err=%v", sent, err)
 	}
@@ -300,7 +300,7 @@ func TestDailyBriefUsesBriefTimeInHalfHourZone(t *testing.T) {
 	setBriefTime(t, s, "08:15")
 
 	// 07:30 local: the next run is 08:15 local, 02:45 UTC.
-	c.t = time.Date(2026, 11, 9, 2, 0, 0, 0, time.UTC)
+	c.set(time.Date(2026, 11, 9, 2, 0, 0, 0, time.UTC))
 	status, err := s.dailyBriefStatus(c.t)
 	if err != nil {
 		t.Fatal(err)
@@ -485,7 +485,7 @@ func TestOwnerBriefStatusReturnsNextRun(t *testing.T) {
 	s, c, chief, _ := briefRig(t)
 	setBriefZone(t, s, "Asia/Kolkata")
 	setBriefTime(t, s, "08:15")
-	c.t = time.Date(2026, 11, 9, 2, 0, 0, 0, time.UTC)
+	c.set(time.Date(2026, 11, 9, 2, 0, 0, 0, time.UTC))
 	status, err := s.dailyBriefStatus(c.t)
 	if err != nil {
 		t.Fatal(err)

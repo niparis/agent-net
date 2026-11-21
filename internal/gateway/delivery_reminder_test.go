@@ -49,7 +49,7 @@ func TestDeliveryStepReminder(t *testing.T) {
 	}
 
 	// Advance clock by 1 hour (default reminder is 2h): should NOT send reminder yet.
-	r.clk.t = r.clk.t.Add(1 * time.Hour)
+	r.clk.advance(1 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 
 	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE recipient=? AND type=?`, r.caller, protocol.TypeNotification).Scan(&count); err != nil || count != 1 {
@@ -57,7 +57,7 @@ func TestDeliveryStepReminder(t *testing.T) {
 	}
 
 	// Advance clock by another 1.5 hours (total 2.5h > 2h): reminder should be sent.
-	r.clk.t = r.clk.t.Add(90 * time.Minute)
+	r.clk.advance(90 * time.Minute)
 	r.g.dispatchStepTasks(context.Background())
 
 	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE recipient=? AND type=?`, r.caller, protocol.TypeNotification).Scan(&count); err != nil || count != 2 {
@@ -76,7 +76,7 @@ func TestDeliveryStepReminder(t *testing.T) {
 	}
 
 	// Advance clock by 10 minutes: at most one reminder per interval, so no duplicate.
-	r.clk.t = r.clk.t.Add(10 * time.Minute)
+	r.clk.advance(10 * time.Minute)
 	r.g.dispatchStepTasks(context.Background())
 
 	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE recipient=? AND type=?`, r.caller, protocol.TypeNotification).Scan(&count); err != nil || count != 2 {
@@ -89,7 +89,7 @@ func TestDeliveryStepReminder(t *testing.T) {
 	}
 
 	// Advance clock by another 3 hours: claimed task must not be re-sent.
-	r.clk.t = r.clk.t.Add(3 * time.Hour)
+	r.clk.advance(3 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 
 	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE recipient=? AND type=?`, r.caller, protocol.TypeNotification).Scan(&count); err != nil || count != 2 {
@@ -143,7 +143,7 @@ func TestDeliveryStepReminderSkipsClaimedStepInBatch(t *testing.T) {
 		t.Fatalf("pair notice does not name both steps:\n%s", first)
 	}
 
-	r.clk.t = r.clk.t.Add(2*time.Hour + time.Minute)
+	r.clk.advance(2*time.Hour + time.Minute)
 	// Recent, unrelated activity keeps the due reminders in the quiet window.
 	recentStepMessageTo(t, r, r.sonnet, c.ID, stepAccept)
 	r.g.dispatchStepTasks(context.Background())
@@ -176,7 +176,7 @@ func TestDeliveryStepReminderSkipsStepWaitingOnClaimedStep(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r.clk.t = r.clk.t.Add(2*time.Hour + time.Minute)
+	r.clk.advance(2*time.Hour + time.Minute)
 	r.g.dispatchStepTasks(context.Background())
 	r.g.flushStepTasks(r.sonnet)
 
@@ -251,7 +251,7 @@ func TestDeliveryStepPairReadyTogetherNoEarlyReminder(t *testing.T) {
 
 	// Dispatch several times inside the reminder interval. Nothing new may go out.
 	for i := 0; i < 3; i++ {
-		r.clk.t = r.clk.t.Add(3 * time.Second)
+		r.clk.advance(3 * time.Second)
 		r.g.dispatchStepTasks(context.Background())
 		r.g.flushStepTasks(r.caller)
 	}
@@ -260,7 +260,7 @@ func TestDeliveryStepPairReadyTogetherNoEarlyReminder(t *testing.T) {
 	}
 
 	// Past delivery.step_reminder exactly one reminder goes out.
-	r.clk.t = r.clk.t.Add(2*time.Hour + time.Minute)
+	r.clk.advance(2*time.Hour + time.Minute)
 	r.g.dispatchStepTasks(context.Background())
 	r.g.flushStepTasks(r.caller)
 	bodies = taskBodies(t, r)
@@ -276,7 +276,7 @@ func TestDeliveryStepPairReadyTogetherNoEarlyReminder(t *testing.T) {
 	}
 
 	// A further dispatch must not repeat the reminder.
-	r.clk.t = r.clk.t.Add(time.Minute)
+	r.clk.advance(time.Minute)
 	r.g.dispatchStepTasks(context.Background())
 	r.g.flushStepTasks(r.caller)
 	if got := taskBodies(t, r); len(got) != 2 {
@@ -295,7 +295,7 @@ func TestDeliveryStepStuckNotice(t *testing.T) {
 	r.g.dispatchStepTasks(context.Background())
 
 	// At 11h a due step reminder pulls the 12h stuck notice forward.
-	r.clk.t = r.clk.t.Add(11 * time.Hour)
+	r.clk.advance(11 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 
 	var stuckCount int
@@ -304,7 +304,7 @@ func TestDeliveryStepStuckNotice(t *testing.T) {
 	}
 
 	// Advance clock by 2 hours (total 13h > 12h): stuck notice should be sent to caller.
-	r.clk.t = r.clk.t.Add(2 * time.Hour)
+	r.clk.advance(2 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 
 	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE recipient=? AND idem_key LIKE 'delivery:stuck:%' AND body LIKE '%has waited%nobody claimed it%'`, r.caller).Scan(&stuckCount); err != nil || stuckCount != 1 {
@@ -321,7 +321,7 @@ func TestDeliveryStepStuckNotice(t *testing.T) {
 	}
 
 	// Dispatch again: exactly one stuck notice must be sent per change, revision and step.
-	r.clk.t = r.clk.t.Add(2 * time.Hour)
+	r.clk.advance(2 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 
 	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE recipient=? AND idem_key LIKE 'delivery:stuck:%' AND body LIKE '%has waited%nobody claimed it%'`, r.caller).Scan(&stuckCount); err != nil || stuckCount != 1 {
@@ -337,7 +337,7 @@ func TestDeliveryStepStuckNotice(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r.clk.t = r.clk.t.Add(14 * time.Hour)
+	r.clk.advance(14 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 
 	var claimedStuckCount int
@@ -369,7 +369,7 @@ func TestDeliveryReminderAndStuckDisabledByZero(t *testing.T) {
 	}
 
 	// Advance clock by 48 hours: neither reminders nor stuck notices should be sent.
-	r.clk.t = r.clk.t.Add(48 * time.Hour)
+	r.clk.advance(48 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 
 	var afterCount int
@@ -392,7 +392,7 @@ func TestVerifyReminderBackoff(t *testing.T) {
 	start := r.clk.t
 	// Reopen the store after the first reminder; the next dispatch keeps its schedule.
 	for _, minutes := range []int{29, 30, 31, 119, 120, 121, 479, 480, 481, 1439, 1440, 1441, 2879, 2880} {
-		r.clk.t = start.Add(time.Duration(minutes) * time.Minute)
+		r.clk.set(start.Add(time.Duration(minutes) * time.Minute))
 		got, err := r.s.stepMessageRecorded(target, r.s.stepReminderCutoff())
 		due := minutes == 30 || minutes == 120 || minutes == 480 || minutes == 1440 || minutes == 2880
 		if err != nil || got == due {
@@ -422,7 +422,7 @@ func TestVerifyStuckNoticeSurvivesPruning(t *testing.T) {
 	if _, err := r.s.db.Exec("UPDATE delivery_step_tasks SET completed=1 WHERE step<>'verify'"); err != nil {
 		t.Fatal(err)
 	}
-	r.clk.t = r.clk.t.Add(12 * time.Hour)
+	r.clk.advance(12 * time.Hour)
 	r.g.checkStuckStepTasks(context.Background(), 12*time.Hour)
 	var count int
 	if err := r.s.db.QueryRow("SELECT count(*) FROM messages WHERE idem_key LIKE 'delivery:stuck:%' AND body LIKE '%nobody claimed%'").Scan(&count); err != nil || count != 1 {
@@ -431,7 +431,7 @@ func TestVerifyStuckNoticeSurvivesPruning(t *testing.T) {
 	if _, err := r.s.db.Exec("DELETE FROM messages"); err != nil {
 		t.Fatal(err)
 	}
-	r.clk.t = r.clk.t.Add(24 * time.Hour)
+	r.clk.advance(24 * time.Hour)
 	r.g.checkStuckStepTasks(context.Background(), 12*time.Hour)
 	if err := r.s.db.QueryRow("SELECT count(*) FROM messages WHERE idem_key LIKE 'delivery:stuck:%' AND body LIKE '%nobody claimed%'").Scan(&count); err != nil || count != 0 {
 		t.Fatalf("repeated notice=%d err=%v", count, err)

@@ -101,7 +101,7 @@ func TestTurnEndQuestionGoesToTheChief(t *testing.T) {
 func TestTurnEndQuestionIsRoutedWhenTheOwnerTypedLately(t *testing.T) {
 	s, c, g, _, asker, node := questionRig(t)
 	nodeCall(t, g, node, "session.owner_use", map[string]any{"session_id": asker, "prompt": true, "text": "go on"})
-	c.t = c.t.Add(5 * time.Minute)
+	c.advance(5 * time.Minute)
 	routed, id := turnEnd(t, g, node, asker, "Ship the release today?")
 	if !routed {
 		t.Fatal("not routed while the owner works in the session")

@@ -21,7 +21,7 @@ func TestSessionStallHarnessesAndInbox(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			c.t = c.t.Add(21 * time.Minute)
+			c.advance(21 * time.Minute)
 			if err := s.checkSessionStalls(); err != nil {
 				t.Fatal(err)
 			}
@@ -48,7 +48,7 @@ func TestSessionStallHarnessesAndInbox(t *testing.T) {
 			if a.StalledSince != 0 || items[0].Status == "open" {
 				t.Fatalf("activity did not clear stall: %+v %+v", a, items)
 			}
-			c.t = c.t.Add(21 * time.Minute)
+			c.advance(21 * time.Minute)
 			if err := s.checkSessionStalls(); err != nil {
 				t.Fatal(err)
 			}
@@ -81,7 +81,7 @@ func TestSessionStallPendingAndWorkers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestSessionStallSettingsAndDismissal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	// A repeated discovery is not progress.
 	if _, err := s.UpsertSession(node, in); err != nil {
 		t.Fatal(err)
@@ -116,7 +116,7 @@ func TestSessionStallSettingsAndDismissal(t *testing.T) {
 	if len(items) != 0 {
 		t.Fatalf("repo timeout ignored: %+v", items)
 	}
-	c.t = c.t.Add(10 * time.Minute)
+	c.advance(10 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestSessionStallPendingDeliveryClearsOnAck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if err = s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestSessionStallNewPendingDoesNotClearBusyNotice(t *testing.T) {
 	if _, err := s.UpsertSession(node, in); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +211,7 @@ func TestSessionStallLostBusySessionGetsNoAsk(t *testing.T) {
 	if err := s.SetSessionLost(node, id); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +267,7 @@ func TestSessionStallOneAskPerActivity(t *testing.T) {
 	if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "once", Status: "busy"}); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +278,7 @@ func TestSessionStallOneAskPerActivity(t *testing.T) {
 	closeByChief(t, s, stalls[0].ID)
 	// Every later minute sees the same activity time and must add nothing.
 	for i := 0; i < 3; i++ {
-		c.t = c.t.Add(time.Minute)
+		c.advance(time.Minute)
 		if err := s.checkSessionStalls(); err != nil {
 			t.Fatal(err)
 		}
@@ -298,7 +298,7 @@ func TestSessionStallNoReRaiseAfterClose(t *testing.T) {
 	if _, err := s.UpsertSession(node, in); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestSessionStallNoReRaiseAfterClose(t *testing.T) {
 		t.Fatalf("first ask: %+v", stalls)
 	}
 	closeByChief(t, s, stalls[0].ID)
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -319,7 +319,7 @@ func TestSessionStallNoReRaiseAfterClose(t *testing.T) {
 	if _, err := s.UpsertSession(node, in); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +344,7 @@ func TestSessionStallNoReRaiseAfterOwnerAnswer(t *testing.T) {
 	if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "answered", Status: "busy"}); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -355,7 +355,7 @@ func TestSessionStallNoReRaiseAfterOwnerAnswer(t *testing.T) {
 	if _, err := s.AnswerInbox(stalls[0].ID, "restarted it"); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -378,7 +378,7 @@ func TestSessionStallSkipsOfflineAndIdleDone(t *testing.T) {
 		if err := s.SetSessionLost(node, id); err != nil {
 			t.Fatal(err)
 		}
-		c.t = c.t.Add(21 * time.Minute)
+		c.advance(21 * time.Minute)
 		if err := s.checkSessionStalls(); err != nil {
 			t.Fatal(err)
 		}
@@ -403,7 +403,7 @@ func TestSessionStallSkipsOfflineAndIdleDone(t *testing.T) {
 		if _, _, err := send(s, sender, id, "idle-done-pending", ""); err != nil {
 			t.Fatal(err)
 		}
-		c.t = c.t.Add(21 * time.Minute)
+		c.advance(21 * time.Minute)
 		if err := s.checkSessionStalls(); err != nil {
 			t.Fatal(err)
 		}
@@ -427,7 +427,7 @@ func TestSessionStallIdlePendingDeliveryStillRaises(t *testing.T) {
 	if _, _, err := send(s, sender, id, "idle-pending-delivery", ""); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -435,7 +435,7 @@ func TestSessionStallIdlePendingDeliveryStillRaises(t *testing.T) {
 	if len(stalls) != 1 || stalls[0].Status != "open" || stalls[0].SessionID != id {
 		t.Fatalf("idle pending stall: %+v", stalls)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -454,7 +454,7 @@ func TestSessionStallBusySessionStillRaises(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -481,7 +481,7 @@ func TestSessionStallBusyWhileWaiting(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				c.t = c.t.Add(21 * time.Minute)
+				c.advance(21 * time.Minute)
 				if err = s.checkSessionStalls(); err != nil {
 					t.Fatal(err)
 				}
@@ -498,7 +498,7 @@ func TestSessionStallBusyWhileWaiting(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				c.t = c.t.Add(time.Hour)
+				c.advance(time.Hour)
 				if err = s.checkSessionStalls(); err != nil {
 					t.Fatal(err)
 				}
@@ -528,12 +528,12 @@ func TestSessionStallLongBusyRunWithCPUProgress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(15 * time.Minute)
+	c.advance(15 * time.Minute)
 	in.HarnessActivity = c.t.Unix() // daemon reports a fresh busy process-tree CPU sample
 	if _, err = s.UpsertSession(node, in); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(10 * time.Minute)
+	c.advance(10 * time.Minute)
 	if err = s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -541,7 +541,7 @@ func TestSessionStallLongBusyRunWithCPUProgress(t *testing.T) {
 	if a.StalledSince != 0 {
 		t.Fatal("active long test incorrectly stalled")
 	}
-	c.t = c.t.Add(11 * time.Minute)
+	c.advance(11 * time.Minute)
 	if err = s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -566,7 +566,7 @@ func TestSessionStallNoAskWhileSessionWaitsForItsWorkers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -598,7 +598,7 @@ func TestSessionStallNoAskWhileItsStepTaskIsClaimed(t *testing.T) {
 	if _, err := s.db.Exec(`INSERT INTO delivery_step_tasks(change_id,revision,step,owner_node,claimed_by,completed,created_at) VALUES('ch_1',1,'test','n','s_merger',0,1)`); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -626,7 +626,7 @@ func TestSessionStallNoNewAskWithinTheWindowAfterAClose(t *testing.T) {
 	if _, err := s.UpsertSession(node, in); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -646,7 +646,7 @@ func TestSessionStallNoNewAskWithinTheWindowAfterAClose(t *testing.T) {
 	}
 	// 16 minutes later that activity is 21 minutes old, but the ask closed 16
 	// minutes ago: still inside the window.
-	c.t = c.t.Add(16 * time.Minute)
+	c.advance(16 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -654,7 +654,7 @@ func TestSessionStallNoNewAskWithinTheWindowAfterAClose(t *testing.T) {
 		t.Fatalf("new ask %d minutes after the last one closed: %+v", 16, got)
 	}
 	// Once the window has passed the session may be asked about again.
-	c.t = c.t.Add(5 * time.Minute)
+	c.advance(5 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -674,7 +674,7 @@ func TestSessionStallDismissedLongAgoDoesNotBlockANewStall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -686,11 +686,11 @@ func TestSessionStallDismissedLongAgoDoesNotBlockANewStall(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Two hours later the session is busy again, then silent for 21 minutes.
-	c.t = c.t.Add(2 * time.Hour)
+	c.advance(2 * time.Hour)
 	if _, err := s.db.Exec(`UPDATE sessions SET harness_activity=? WHERE id=?`, c.t.UnixNano(), id); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -732,7 +732,7 @@ func TestSessionStallIgnoresNestedBatchMembers(t *testing.T) {
 	if err := s.ApplyDelivery(outer.ID, protocol.StateDelivered, ""); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(6 * time.Hour)
+	c.advance(6 * time.Hour)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -779,11 +779,11 @@ func busySender(t *testing.T, s *Store) (id, peer string) {
 func TestSessionStallBusySessionThatSendsIsNotStalled(t *testing.T) {
 	s, c := newTestStore(t)
 	id, peer := busySender(t, s)
-	c.t = c.t.Add(15 * time.Minute)
+	c.advance(15 * time.Minute)
 	if _, _, err := send(s, id, peer, "reply", ""); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(10 * time.Minute)
+	c.advance(10 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -796,12 +796,12 @@ func TestSessionStallBusySessionThatSendsIsNotStalled(t *testing.T) {
 func TestSessionStallBusySessionQuietAfterSendStillRaises(t *testing.T) {
 	s, c := newTestStore(t)
 	id, peer := busySender(t, s)
-	c.t = c.t.Add(5 * time.Minute)
+	c.advance(5 * time.Minute)
 	if _, _, err := send(s, id, peer, "reply", ""); err != nil {
 		t.Fatal(err)
 	}
 	sent := c.t
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}

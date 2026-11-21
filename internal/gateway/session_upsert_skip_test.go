@@ -72,7 +72,7 @@ func TestSessionUpsertUnchangedWritesNothing(t *testing.T) {
 		t.Fatal("a new session did not run the step dispatch")
 	}
 	for i := 0; i < 5; i++ {
-		p.c.t = p.c.t.Add(10 * time.Second)
+		p.c.advance(10 * time.Second)
 		if got := p.report(t, probeSession); got != id {
 			t.Fatalf("session id changed: %s, want %s", got, id)
 		}
@@ -90,7 +90,7 @@ func TestSessionUpsertChangedFieldWrites(t *testing.T) {
 	id := p.report(t, probeSession)
 	seen, _, _ := p.row(t, id)
 	runs := p.g.stepDispatchRuns.Load()
-	p.c.t = p.c.t.Add(10 * time.Second)
+	p.c.advance(10 * time.Second)
 	busy := probeSession
 	busy.Status = "busy"
 	p.report(t, busy)
@@ -103,7 +103,7 @@ func TestSessionUpsertChangedFieldWrites(t *testing.T) {
 	}
 	// Activity time alone is stored too, but it is not a reason to sweep.
 	runs = p.g.stepDispatchRuns.Load()
-	p.c.t = p.c.t.Add(10 * time.Second)
+	p.c.advance(10 * time.Second)
 	busy.HarnessActivity = p.c.t.Unix()
 	busy.LastActive = p.c.t.Unix()
 	p.report(t, busy)
@@ -128,7 +128,7 @@ func TestSessionUpsertSameReportStillBringsOfflineSessionBack(t *testing.T) {
 	if err := p.g.store.SetSessionOffline(p.n, id); err != nil {
 		t.Fatal(err)
 	}
-	p.c.t = p.c.t.Add(10 * time.Second)
+	p.c.advance(10 * time.Second)
 	p.report(t, probeSession)
 	if _, online, _ := p.row(t, id); online != 1 {
 		t.Fatal("an unchanged report left an offline session offline")
@@ -139,7 +139,7 @@ func TestSessionUpsertKeepaliveRefreshesLastSeen(t *testing.T) {
 	p := newUpsertProbe(t)
 	id := p.report(t, probeSession)
 	seen, _, _ := p.row(t, id)
-	p.c.t = p.c.t.Add(sessionKeepalive + time.Second)
+	p.c.advance(sessionKeepalive + time.Second)
 	p.report(t, probeSession)
 	if now, _, _ := p.row(t, id); now <= seen {
 		t.Fatalf("last_seen = %d after the keepalive, want it past %d", now, seen)
@@ -158,7 +158,7 @@ func TestSessionUpsertRepairsColumnChangedElsewhere(t *testing.T) {
 	if _, err := p.g.store.db.Exec(`UPDATE sessions SET name='drifted' WHERE id=?`, id); err != nil {
 		t.Fatal(err)
 	}
-	p.c.t = p.c.t.Add(10 * time.Second)
+	p.c.advance(10 * time.Second)
 	p.report(t, probeSession)
 	var got string
 	if err := p.g.store.db.QueryRow(`SELECT name FROM sessions WHERE id=?`, id).Scan(&got); err != nil {

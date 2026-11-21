@@ -66,7 +66,7 @@ func TestAgyAccountQuotaFailureRefusesNextAgyStart(t *testing.T) {
 		t.Fatalf("quota reading lacks the block: %+v", q)
 	}
 	// It ends at the reset time.
-	c.t = c.t.Add(160*time.Hour + 24*time.Minute + 5*time.Second)
+	c.advance(160*time.Hour + 24*time.Minute + 5*time.Second)
 	if err := start("agy", "claude-opus-5-5-high"); err != nil {
 		t.Fatalf("start after the reset: %v", err)
 	}

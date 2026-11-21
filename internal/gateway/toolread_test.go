@@ -17,7 +17,7 @@ import (
 // fields these read tools use: three machines, twelve sessions, four workers.
 func findFixture(t *testing.T, s *Store, c *clock) map[string]string {
 	t.Helper()
-	c.t = time.Date(2026, 1, 1, 11, 0, 0, 0, time.UTC)
+	c.set(time.Date(2026, 1, 1, 11, 0, 0, 0, time.UTC))
 	nodes := map[string]string{}
 	for _, name := range []string{"research", "build", "desk"} {
 		id, _, err := s.CreateNode(name, "linux")
@@ -72,14 +72,14 @@ func findFixture(t *testing.T, s *Store, c *clock) map[string]string {
 		if _, err := s.RenameSession(id, sp.id); err != nil {
 			t.Fatal(err)
 		}
-		c.t = time.Date(2026, 1, 1, 11, 0, 0, 0, time.UTC)
+		c.set(time.Date(2026, 1, 1, 11, 0, 0, 0, time.UTC))
 		if _, err := s.Announce(nodes[sp.machine], protocol.ProfileAnnounce{
 			SessionID: id, Task: "work on " + sp.id, Project: sp.project,
 			Capabilities: []string{"cap-" + sp.id}, Expertise: "expert " + sp.id,
 		}); err != nil {
 			t.Fatal(err)
 		}
-		c.t = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+		c.set(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 		if sp.offline {
 			if _, err := s.db.Exec(`UPDATE sessions SET online = 0, last_seen = ? WHERE id = ?`, c.t.UnixNano(), id); err != nil {
 				t.Fatal(err)
@@ -289,7 +289,7 @@ func TestAnnounceTaskStarted(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := time.Date(2026, 1, 1, 11, 0, 0, 0, time.UTC)
-	c.t = first
+	c.set(first)
 	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: id, Task: "first task"}); err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +302,7 @@ func TestAnnounceTaskStarted(t *testing.T) {
 	}
 
 	// The same task again keeps the recorded start.
-	c.t = first.Add(time.Hour)
+	c.set(first.Add(time.Hour))
 	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: id, Task: "first task"}); err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +312,7 @@ func TestAnnounceTaskStarted(t *testing.T) {
 	}
 
 	// A new task records a new start.
-	c.t = first.Add(2 * time.Hour)
+	c.set(first.Add(2 * time.Hour))
 	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: id, Task: "second task"}); err != nil {
 		t.Fatal(err)
 	}
@@ -446,7 +446,7 @@ func TestFindProjects(t *testing.T) {
 // the old list answers on the same twenty-session fixture.
 func TestReadToolAnswerSize(t *testing.T) {
 	s, c := newTestStore(t)
-	c.t = time.Date(2026, 1, 1, 11, 0, 0, 0, time.UTC)
+	c.set(time.Date(2026, 1, 1, 11, 0, 0, 0, time.UTC))
 	nodes := map[string]string{}
 	for _, name := range []string{"research", "build", "desk"} {
 		id, _, err := s.CreateNode(name, "linux")

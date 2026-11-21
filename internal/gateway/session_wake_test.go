@@ -224,7 +224,7 @@ func TestWakeBackoffAndExpiry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	clock.t = m.ExpiresAt.Add(-time.Second)
+	clock.set(m.ExpiresAt.Add(-time.Second))
 	ok, err := s.claimWake(to)
 	if err != nil || !ok {
 		t.Fatalf("first claim: %v %v", ok, err)
@@ -233,11 +233,11 @@ func TestWakeBackoffAndExpiry(t *testing.T) {
 	if err != nil || ok {
 		t.Fatalf("second claim: %v %v", ok, err)
 	}
-	clock.t = m.ExpiresAt.Add(wakeTimeout - time.Second)
+	clock.set(m.ExpiresAt.Add(wakeTimeout - time.Second))
 	if n, err := s.Expire(); err != nil || n != 0 {
 		t.Fatalf("expired during wake: %d %v", n, err)
 	}
-	clock.t = m.ExpiresAt.Add(wakeBackoff)
+	clock.set(m.ExpiresAt.Add(wakeBackoff))
 	ok, err = s.claimWake(to)
 	if err != nil || !ok {
 		t.Fatalf("claim after backoff: %v %v", ok, err)

@@ -152,7 +152,7 @@ func TestPlaybookNoteGoesStaleAndPinnedStays(t *testing.T) {
 	if err := s.SetPlaybookPin("terra", "", "keep this", boolPtr(true)); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add((protocol.PlaybookStaleDays + 1) * 24 * time.Hour)
+	c.advance((protocol.PlaybookStaleDays + 1) * 24 * time.Hour)
 	notes, _ = s.PlaybookForChoice("m", "pi", "shop", "mac")
 	if len(notes) != 0 {
 		t.Errorf("stale automatic note still shown: %+v", notes)

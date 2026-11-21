@@ -56,7 +56,7 @@ func loopTicks(t *testing.T, s *Store) []loopTickResult {
 // runLoops advances the clock one interval and ticks.
 func runLoops(t *testing.T, s *Store, c *clock) []loopTickResult {
 	t.Helper()
-	c.t = c.t.Add(loopEvery + time.Minute)
+	c.advance(loopEvery + time.Minute)
 	return loopTicks(t, s)
 }
 
@@ -105,11 +105,11 @@ func TestLoopTickSendsThePromptToAnIdleSession(t *testing.T) {
 	if res := loopTicks(t, s); len(res) != 0 {
 		t.Fatalf("first run = %+v", res)
 	}
-	c.t = c.t.Add(loopEvery - time.Minute)
+	c.advance(loopEvery - time.Minute)
 	if res := loopTicks(t, s); len(res) != 0 {
 		t.Fatalf("early run = %+v", res)
 	}
-	c.t = c.t.Add(2 * time.Minute)
+	c.advance(2 * time.Minute)
 	idleSince(t, s, c, b, time.Minute)
 	res := loopTicks(t, s)
 	if len(res) != 1 || res[0].Outcome != protocol.LoopSent || res[0].Message == nil {
@@ -367,7 +367,7 @@ func TestLoopSharesTheDailyCapWithTheWakeRule(t *testing.T) {
 		t.Fatal(err)
 	}
 	idleSince(t, s, c, b, time.Minute)
-	c.t = c.t.Add(loopEvery + time.Minute)
+	c.advance(loopEvery + time.Minute)
 	idleSince(t, s, c, b, time.Minute)
 	res := loopTicks(t, s)
 	if len(res) != 1 || res[0].Outcome != protocol.LoopPaused {
@@ -381,7 +381,7 @@ func TestLoopSharesTheDailyCapWithTheWakeRule(t *testing.T) {
 		t.Fatalf("asks = %+v", asks)
 	}
 	// A new day lifts the cap and closes the ask.
-	c.t = c.t.Add(24 * time.Hour)
+	c.advance(24 * time.Hour)
 	idleSince(t, s, c, b, time.Minute)
 	res = loopTicks(t, s)
 	if len(res) != 1 || res[0].Outcome != protocol.LoopSent {
@@ -442,7 +442,7 @@ func TestLoopWakesAnOfflineSessionThroughTheWakePath(t *testing.T) {
 			}
 			p.g.loopTick(context.Background())
 			p.expectNoWake(t)
-			c.t = c.t.Add(loopEvery + time.Minute)
+			c.advance(loopEvery + time.Minute)
 			p.g.loopTick(context.Background())
 			w := p.expectWake(t, id)
 			if w["autonomy"] != protocol.AutonomyWake {

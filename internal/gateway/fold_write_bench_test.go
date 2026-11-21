@@ -45,14 +45,14 @@ func TestBenchFoldWritePaths(t *testing.T) {
 				t.Fatal(err)
 			}
 			for i := 0; i < 3000; i++ {
-				clk.t = clk.t.Add(5 * time.Second) // stay under the per-session rate limit
+				clk.advance(5 * time.Second) // stay under the per-session rate limit
 				if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: from, Recipient: to, Body: body, IdempotencyKey: fmt.Sprintf("seed-%d", i)}); err != nil {
 					t.Fatalf("bench: %v", err)
 				}
 			}
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				clk.t = clk.t.Add(5 * time.Second)
+				clk.advance(5 * time.Second)
 				send := protocol.MsgSend{Sender: from, Recipient: to, Body: body, IdempotencyKey: fmt.Sprintf("bench-%d", i)}
 				if withFiles {
 					send.Files = files

@@ -72,7 +72,7 @@ func TestAckStopsTheReminder(t *testing.T) {
 	if _, err = s.db.Exec("UPDATE sessions SET status='idle', last_active=? WHERE id=?", c.t.UnixNano(), b); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(3 * time.Minute)
+	c.advance(3 * time.Minute)
 	if _, _, err = s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: req.ID, Ack: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -93,12 +93,12 @@ func TestAckAfterReminderCountsAnswered(t *testing.T) {
 	if _, err = s.db.Exec("UPDATE sessions SET status='idle', last_active=? WHERE id=?", c.t.UnixNano(), b); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(3 * time.Minute)
+	c.advance(3 * time.Minute)
 	reminders, err := s.remindPending()
 	if err != nil || len(reminders) != 1 {
 		t.Fatalf("reminders: %+v %v", reminders, err)
 	}
-	c.t = c.t.Add(5 * time.Minute)
+	c.advance(5 * time.Minute)
 	if _, _, err = s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: req.ID, Ack: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +333,7 @@ func TestAckToEndedWorkerClosesRequestNoReminder(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c.t = c.t.Add(3 * time.Minute)
+	c.advance(3 * time.Minute)
 
 	if _, _, err := s.StoreMessage(protocol.MsgSend{
 		Sender:    ownerID,
@@ -377,7 +377,7 @@ func TestAckToEndedWorkerClosesRequestNoReminder(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c.t = c.t.Add(3 * time.Minute)
+	c.advance(3 * time.Minute)
 	if _, _, err := s.StoreMessage(protocol.MsgSend{
 		Sender:    ownerID,
 		Recipient: workerID,

@@ -141,7 +141,7 @@ func TestBotsCountsUseLastCall(t *testing.T) {
 	if err != nil || counts.Online != 1 {
 		t.Fatalf("fresh: %+v %v", counts, err)
 	}
-	c.t = c.t.Add(11 * time.Minute)
+	c.advance(11 * time.Minute)
 	counts, err = s.SessionCounts(24 * time.Hour)
 	if err != nil || counts.Online != 0 || counts.Offline24h != 1 {
 		t.Fatalf("stale: %+v %v", counts, err)

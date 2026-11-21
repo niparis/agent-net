@@ -108,7 +108,7 @@ func TestCallerCloseStopsStepReminders(t *testing.T) {
 		return n
 	}
 	afterClose := count()
-	r.clk.t = r.clk.t.Add(13 * time.Hour)
+	r.clk.advance(13 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 	if got := count(); got != afterClose {
 		t.Fatalf("messages for the closed change grew from %d to %d after the reminder pass", afterClose, got)

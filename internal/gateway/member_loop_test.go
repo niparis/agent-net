@@ -57,7 +57,7 @@ func loopLeadRig(t *testing.T) (s *Store, c *clock, member, lead string) {
 
 func TestLoopTickShowsABlockedMemberAndAnEndedUnreviewedWorker(t *testing.T) {
 	s, c, member, lead := loopLeadRig(t)
-	c.t = c.t.Add(10 * time.Minute)
+	c.advance(10 * time.Minute)
 	announce(t, s, member, protocol.ProfileAnnounce{Task: deniedMerge})
 	pending := memberWorker(t, s, member, "ch_w1", c.t.Add(time.Minute))
 	accepted := memberWorker(t, s, member, "ch_w2", c.t.Add(2*time.Minute))

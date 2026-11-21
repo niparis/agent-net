@@ -243,7 +243,7 @@ func TestSessionStartAgentHoldExpiresAndNextStartWorks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	clock.t = clock.t.Add(sessionAgentStartTimeout)
+	clock.advance(sessionAgentStartTimeout)
 	pending, err := s.Pending(node, false)
 	if err != nil {
 		t.Fatal(err)
@@ -330,7 +330,7 @@ func TestSessionStartAgentFailureCancelsBoundReservation(t *testing.T) {
 	if err = s.ReserveSessionAgent(node, next); err != nil {
 		t.Fatal(err)
 	}
-	clock.t = clock.t.Add(time.Second)
+	clock.advance(time.Second)
 	id, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: p.NativeID, Cwd: p.Cwd, Repo: protocol.RepoInfo{Project: "repo"}})
 	if err != nil {
 		t.Fatal(err)

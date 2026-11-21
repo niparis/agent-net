@@ -335,7 +335,7 @@ func TestNodesInfoPreviewFollowsItsInputsAtOnce(t *testing.T) {
 		}
 		// The first failures were 10 minutes ago, so the model is cooling
 		// now whatever the new ones are. Move the clock past the cooldown.
-		c.t = c.t.Add(5 * time.Hour)
+		c.advance(5 * time.Hour)
 	})
 }
 

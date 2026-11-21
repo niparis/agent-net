@@ -45,12 +45,12 @@ func TestWaitingVerifyReminder(t *testing.T) {
 	reportWaiting(t, r, c, ref, "")
 	waitAt := waitingRecordedAt(t, r, c)
 	n := len(taskBodies(t, r))
-	r.clk.t = r.clk.t.Add(23 * time.Hour)
+	r.clk.advance(23 * time.Hour)
 	waitingDispatch(r)
 	if got := len(taskBodies(t, r)); got != n {
 		t.Fatalf("during wait got %d notices, want %d", got, n)
 	}
-	r.clk.t = r.clk.t.Add(time.Hour)
+	r.clk.advance(time.Hour)
 	waitingDispatch(r)
 	assertWaitingExpiredWithoutRefresh(t, r, c, ref, waitAt)
 	bodies := taskBodies(t, r)
@@ -65,7 +65,7 @@ func TestWaitingVerifyReminder(t *testing.T) {
 func TestWaitingNewEvidence(t *testing.T) {
 	r, c, ref := waitingRig(t)
 	reportWaiting(t, r, c, ref, "")
-	r.clk.t = r.clk.t.Add(time.Hour)
+	r.clk.advance(time.Hour)
 	if _, err := r.s.db.Exec(`INSERT INTO delivery_evidence(change_id,revision,step,for_step,after_merge,result,commit_hash,fields,by_session,note,at) SELECT change_id,revision,step,for_step,after_merge,result,commit_hash,fields,by_session,note,? FROM delivery_evidence WHERE change_id=? LIMIT 1`, r.clk.t.Unix(), c.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -82,13 +82,13 @@ func TestWaitingUntil(t *testing.T) {
 	waitAt := waitingRecordedAt(t, r, c)
 	n := len(taskBodies(t, r))
 	for _, h := range []int{47, 48, 71} {
-		r.clk.t = start.Add(time.Duration(h) * time.Hour)
+		r.clk.set(start.Add(time.Duration(h) * time.Hour))
 		waitingDispatch(r)
 		if len(taskBodies(t, r)) != n {
 			t.Fatalf("reminded at %dh", h)
 		}
 	}
-	r.clk.t = start.Add(72 * time.Hour)
+	r.clk.set(start.Add(72 * time.Hour))
 	waitingDispatch(r)
 	assertWaitingExpiredWithoutRefresh(t, r, c, ref, waitAt)
 	if len(taskBodies(t, r)) != n+1 {
@@ -98,7 +98,7 @@ func TestWaitingUntil(t *testing.T) {
 func TestWaitingNoStuck(t *testing.T) {
 	r, c, ref := waitingRig(t)
 	reportWaiting(t, r, c, ref, "")
-	r.clk.t = r.clk.t.Add(13 * time.Hour)
+	r.clk.advance(13 * time.Hour)
 	r.g.checkStuckStepTasks(context.Background(), 12*time.Hour)
 	var n int
 	if err := r.s.db.QueryRow("SELECT count(*) FROM messages WHERE body LIKE '%nobody claimed%'").Scan(&n); err != nil || n != 0 {
@@ -158,7 +158,7 @@ func TestWaitingOrdinaryReminderCadence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.clk.t = r.clk.t.Add(time.Hour)
+	r.clk.advance(time.Hour)
 	tx, err := r.s.db.Begin()
 	if err != nil {
 		t.Fatal(err)
@@ -174,7 +174,7 @@ func TestWaitingOrdinaryReminderCadence(t *testing.T) {
 	if len(taskBodies(t, r)) != n {
 		t.Fatal("ordinary reminder arrived before its existing 2h cadence")
 	}
-	r.clk.t = r.clk.t.Add(time.Hour + time.Minute)
+	r.clk.advance(time.Hour + time.Minute)
 	waitingDispatch(r)
 	if len(taskBodies(t, r)) != n+1 {
 		t.Fatal("ordinary reminder did not resume on cadence")

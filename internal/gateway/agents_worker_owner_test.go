@@ -78,7 +78,7 @@ func TestAgentsWorkersOwnedBySkipsWorkersThatEndedLongAgo(t *testing.T) {
 	}
 	// Twenty workers ended an hour and a half before this poll. One ended
 	// thirty seconds ago.
-	c.t = now.Add(-time.Hour)
+	c.set(now.Add(-time.Hour))
 	var oldIDs []string
 	for i := 0; i < 20; i++ {
 		id, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "opencode", NativeID: fmt.Sprintf("old%d", i), Cwd: "/old",
@@ -91,7 +91,7 @@ func TestAgentsWorkersOwnedBySkipsWorkersThatEndedLongAgo(t *testing.T) {
 		}
 		oldIDs = append(oldIDs, id)
 	}
-	c.t = now
+	c.set(now)
 	running, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "opencode", NativeID: "running", Cwd: "/work",
 		Worker: &protocol.WorkerInfo{ID: "running", Owner: owner, Project: "shop"}})
 	if err != nil {
@@ -105,7 +105,7 @@ func TestAgentsWorkersOwnedBySkipsWorkersThatEndedLongAgo(t *testing.T) {
 	if err := s.SetWorkerSessionEnded(node, recent); err != nil {
 		t.Fatal(err)
 	}
-	c.t = now.Add(30 * time.Second)
+	c.set(now.Add(30 * time.Second))
 
 	all, err := s.Agents(protocol.QueryAgents{IncludeOwners: true})
 	if err != nil || len(all) != 23 {

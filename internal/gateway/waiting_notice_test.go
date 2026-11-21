@@ -105,7 +105,7 @@ func TestWaitingNoticeOncePerSenderPerWait(t *testing.T) {
 	}
 
 	// A second request from the same sender in the same wait: no notice.
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, _, noticed := deliver(t, s, a, b, "second"); noticed {
 		t.Fatal("second request from the same sender got a notice")
 	}
@@ -160,13 +160,13 @@ func TestWaitingNoticeStopsWhenTheWaitEnds(t *testing.T) {
 
 	// The user answered: no more notices.
 	setWait(t, s, b, nil)
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, _, noticed := deliver(t, s, a, b, "two"); noticed {
 		t.Fatal("a session that no longer waits sent a notice")
 	}
 
 	// A new wait is a new period: the same sender hears once more.
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	setWait(t, s, b, &protocol.Waiting{Kind: protocol.WaitingQuestion, Text: "Deploy now?", Since: c.t.Unix()})
 	if _, n, noticed := deliver(t, s, a, b, "three"); !noticed || !strings.Contains(n.Body, "(since 2026-10-28 12:02 UTC)") {
 		t.Fatalf("new wait: %v %q", noticed, n.Body)
@@ -335,7 +335,7 @@ func TestWaitingNoticeNotResentAfterRestart(t *testing.T) {
 	if err := other.SetAllOffline(); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	setWait(t, other, b, &protocol.Waiting{Kind: protocol.WaitingQuestion, Text: "Merge?", Since: c.t.Unix()})
 	if _, _, noticed := deliver(t, other, a, b, "after"); noticed {
 		t.Fatal("a restart sent the same sender a second notice for the same wait")

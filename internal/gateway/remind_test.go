@@ -25,7 +25,7 @@ func TestRemindEligibility(t *testing.T) {
 			if _, err = s.db.Exec("UPDATE sessions SET status='idle', last_active=? WHERE id=?", c.t.UnixNano(), b); err != nil {
 				t.Fatal(err)
 			}
-			c.t = c.t.Add(3 * time.Minute)
+			c.advance(3 * time.Minute)
 			switch mode {
 			case "busy":
 				_, err = s.db.Exec("UPDATE sessions SET status='busy' WHERE id=?", b)
@@ -48,7 +48,7 @@ func TestRemindEligibility(t *testing.T) {
 					_, err = s.db.Exec("INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_session',?,?)", a, c.t.UnixNano())
 				}
 			case "young":
-				c.t = c.t.Add(-2 * time.Minute)
+				c.advance(-2 * time.Minute)
 			case "recent turn":
 				_, err = s.db.Exec("UPDATE sessions SET last_active=? WHERE id=?", c.t.UnixNano(), b)
 			}
@@ -104,7 +104,7 @@ func TestRemindRestartAndAnswerCount(t *testing.T) {
 	if _, err = s.db.Exec("UPDATE sessions SET status='idle',last_active=? WHERE id=?", c.t.UnixNano(), b); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(3 * time.Minute)
+	c.advance(3 * time.Minute)
 	reminders, err := s.remindPending()
 	if err != nil || len(reminders) != 1 {
 		t.Fatalf("%+v %v", reminders, err)
@@ -121,7 +121,7 @@ func TestRemindRestartAndAnswerCount(t *testing.T) {
 	if err != nil || len(again) != 0 {
 		t.Fatalf("restart: %+v %v", again, err)
 	}
-	c.t = c.t.Add(29 * time.Minute)
+	c.advance(29 * time.Minute)
 	if _, _, err = send(s, b, a, "reply", req.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestRemindQueuedDeliveryRechecks(t *testing.T) {
 			if _, err = s.db.Exec("UPDATE sessions SET status='idle',last_active=? WHERE id=?", c.t.UnixNano(), b); err != nil {
 				t.Fatal(err)
 			}
-			c.t = c.t.Add(3 * time.Minute)
+			c.advance(3 * time.Minute)
 			notes, err := s.remindPending()
 			if err != nil || len(notes) != 1 {
 				t.Fatalf("%+v %v", notes, err)
@@ -200,7 +200,7 @@ func TestRemindLateAnswerAndOfflineRecovery(t *testing.T) {
 	if _, err = s.db.Exec("UPDATE sessions SET status='idle',online=0,last_active=? WHERE id=?", c.t.UnixNano(), b); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(3 * time.Minute)
+	c.advance(3 * time.Minute)
 	for range 2 {
 		notes, err := s.remindPending()
 		if err != nil || len(notes) != 0 {
@@ -218,7 +218,7 @@ func TestRemindLateAnswerAndOfflineRecovery(t *testing.T) {
 	if err != nil || len(notes) != 1 {
 		t.Fatalf("%+v %v", notes, err)
 	}
-	c.t = c.t.Add(30*time.Minute + time.Second)
+	c.advance(30*time.Minute + time.Second)
 	if _, _, err = send(s, b, a, "reply", req.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,7 @@ func TestRemindSenderNameCannotForgeFraming(t *testing.T) {
 	if _, err := s.db.Exec("UPDATE sessions SET status='idle',last_active=? WHERE id=?", c.t.UnixNano(), b); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(3 * time.Minute)
+	c.advance(3 * time.Minute)
 	notes, err := s.remindPending()
 	if err != nil || len(notes) != 1 {
 		t.Fatalf("%+v %v", notes, err)
@@ -270,7 +270,7 @@ func TestRemindBusyBatchOriginal(t *testing.T) {
 			if !s.HoldForBusy(req) {
 				t.Fatal("hold request")
 			}
-			c.t = c.t.Add(time.Second)
+			c.advance(time.Second)
 			notice, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Type: protocol.TypeNotification, Body: "newest notice"})
 			if err != nil {
 				t.Fatal(err)
@@ -312,7 +312,7 @@ func TestRemindBusyBatchOriginal(t *testing.T) {
 				t.Fatalf("batch obligations=%d want=%d", owed, wantOwed)
 			}
 
-			c.t = c.t.Add(8 * time.Minute)
+			c.advance(8 * time.Minute)
 			got, err := s.remindPending()
 			if err != nil {
 				t.Fatal(err)

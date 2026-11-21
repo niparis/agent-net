@@ -229,7 +229,7 @@ func TestWorkerListCarriesTheCause(t *testing.T) {
 func TestWeeklyScoresCountCauses(t *testing.T) {
 	s, c := newTestStore(t)
 	at := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC).Unix()
-	c.t = time.Unix(at, 0)
+	c.set(time.Unix(at, 0))
 	if _, err := s.db.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, ended_at, cause)
 		VALUES ('n','s_a','claude','m','failed',?,?)`, at, protocol.CauseQuotaAuth); err != nil {
 		t.Fatal(err)

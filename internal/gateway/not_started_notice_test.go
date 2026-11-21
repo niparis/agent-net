@@ -385,7 +385,7 @@ func TestPruneKeepsOpenStartsAndCountsFromClosing(t *testing.T) {
 	if err := f.s.closeStart(f.nodeA, "q_old", ""); err != nil {
 		t.Fatal(err)
 	}
-	f.clock.t = f.clock.t.Add(40 * 24 * time.Hour)
+	f.clock.advance(40 * 24 * time.Hour)
 	if err := f.s.closeStart(f.nodeA, "q_slow", ""); err != nil {
 		t.Fatal(err)
 	}

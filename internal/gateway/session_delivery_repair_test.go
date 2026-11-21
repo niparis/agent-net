@@ -118,7 +118,7 @@ func TestDeliveryReminderRetiresObsoleteTasks(t *testing.T) {
 			}
 			// Past the reminder interval the same task becomes a reminder. It
 			// must not outlive the change either.
-			r.clk.t = r.clk.t.Add(2*time.Hour + time.Minute)
+			r.clk.advance(2*time.Hour + time.Minute)
 			r.g.dispatchStepTasks(context.Background())
 			r.g.flushStepTasks(r.caller)
 			var sent int
@@ -128,7 +128,7 @@ func TestDeliveryReminderRetiresObsoleteTasks(t *testing.T) {
 			}
 			// A stuck notice is a plain message with its own key, so the
 			// change's retirement must reach it too.
-			r.clk.t = r.clk.t.Add(13 * time.Hour)
+			r.clk.advance(13 * time.Hour)
 			r.g.dispatchStepTasks(context.Background())
 			var stuck int
 			if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE sender='agent-net'
@@ -138,7 +138,7 @@ func TestDeliveryReminderRetiresObsoleteTasks(t *testing.T) {
 			if _, err := r.s.db.Exec("UPDATE delivery_changes SET state=? WHERE id=?", state, c.ID); err != nil {
 				t.Fatal(err)
 			}
-			r.clk.t = r.clk.t.Add(3 * time.Hour)
+			r.clk.advance(3 * time.Hour)
 			r.g.dispatchStepTasks(context.Background())
 			if err := r.s.db.QueryRow("SELECT COUNT(*) FROM delivery_step_tasks WHERE change_id=? AND completed=0", c.ID).Scan(&pending); err != nil {
 				t.Fatal(err)

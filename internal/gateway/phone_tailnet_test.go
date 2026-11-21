@@ -103,7 +103,7 @@ func TestPhoneTailnetIdentity(t *testing.T) {
 				t.Fatalf("paired repeat: %d", w.Code)
 			}
 			// Renewal uses the existing token and does not create another device or notice.
-			c.t = c.t.Add(61 * 24 * time.Hour)
+			c.advance(61 * 24 * time.Hour)
 			if w = request(ck); len(w.Result().Cookies()) != 1 {
 				t.Fatal("no sliding renewal")
 			}

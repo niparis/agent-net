@@ -79,7 +79,7 @@ func TestFormatLineQuotesAndDropsEmpty(t *testing.T) {
 func TestMessageLogLines(t *testing.T) {
 	s, c, lc := newLoggedStore(t)
 	a, b := twoSessions(t, s)
-	c.t = c.t.Add(time.Second)
+	c.advance(time.Second)
 	m, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "TOP-SECRET-BODY-TEXT", IdempotencyKey: "k1"})
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +136,7 @@ func TestMessageLogLines(t *testing.T) {
 	if ls := lc.with("event=msg.stored", "type=notification", "from=agent-net", "to="+a); len(ls) != 1 {
 		t.Fatalf("notice lines: %v", lc.all())
 	}
-	c.t = c.t.Add(protocol.DefaultTTL + time.Second)
+	c.advance(protocol.DefaultTTL + time.Second)
 	if n, _ := s.Expire(); n != 2 {
 		t.Fatalf("expired %d, want m3 and the notice about m2", n)
 	}
@@ -225,7 +225,7 @@ func TestProjects(t *testing.T) {
 	n2, _, _ := s.CreateNode("linux-box", "linux")
 	repo := protocol.RepoInfo{Root: "/src/shop", Project: "shop", Remote: "https://example.com/shop.git", Branch: "main"}
 	s.UpsertSession(n1, protocol.SessionInfo{Harness: "claude", NativeID: "a", Cwd: "/src/shop/web", Repo: repo})
-	c.t = c.t.Add(time.Hour)
+	c.advance(time.Hour)
 	s.UpsertSession(n1, protocol.SessionInfo{Harness: "opencode", NativeID: "b", Cwd: "/src/shop", Repo: repo})
 	s.UpsertSession(n2, protocol.SessionInfo{Harness: "pi", NativeID: "c", Cwd: "/home/u/shop",
 		Repo: protocol.RepoInfo{Root: "/home/u/shop", Project: "shop"}})
@@ -290,11 +290,11 @@ func TestQueryEventsFilters(t *testing.T) {
 	a, b := twoSessions(t, s)
 	nodeA, nodeB := mustNode(t, s, a), mustNode(t, s, b)
 	s.Event("node.connected", nodeA, "", "", "127.0.0.1")
-	c.t = c.t.Add(time.Hour)
+	c.advance(time.Hour)
 	m, _, _ := send(s, a, b, "k", "")
 	s.MarkDispatched(m.ID)
 	s.ApplyDelivery(m.ID, protocol.StateDelivered, "")
-	c.t = c.t.Add(time.Hour)
+	c.advance(time.Hour)
 	s.Event("node.connected", nodeB, "", "", "127.0.0.2")
 
 	kinds := func(f EventFilter) string {
@@ -411,7 +411,7 @@ func TestPruneDeletesOldDataOnly(t *testing.T) {
 	gone, _ := s.UpsertSession(nodeA, protocol.SessionInfo{Harness: "claude", NativeID: "gone", Name: "gone"})
 	s.SetSessionOffline(nodeA, gone)
 
-	c.t = c.t.Add(40 * day)
+	c.advance(40 * day)
 	fresh, _, _ := send(s, a, b, "fresh", "")
 	s.ApplyDelivery(fresh.ID, protocol.StateDelivered, "")
 	s.Event("custom.fresh", "", "", "", "")
@@ -461,7 +461,7 @@ func TestPruneDeletesOldDataOnly(t *testing.T) {
 	}
 
 	// Events: 100 days later the old ones go, and the sessions a and b (online) stay.
-	c.t = c.t.Add(60 * day)
+	c.advance(60 * day)
 	res, _ = s.Prune(Retention{Events: 90 * day})
 	if res.Events == 0 {
 		t.Fatalf("no events pruned: %+v", res)
@@ -473,7 +473,7 @@ func TestPruneDeletesOldDataOnly(t *testing.T) {
 		t.Fatal("event younger than 90 days deleted")
 	}
 	// A zero period keeps everything.
-	c.t = c.t.Add(3650 * day)
+	c.advance(3650 * day)
 	before := count(`SELECT COUNT(*) FROM events`)
 	if res, _ := s.Prune(Retention{}); res.Any() || count(`SELECT COUNT(*) FROM events`) != before {
 		t.Fatal("zero retention deleted data")
@@ -498,7 +498,7 @@ func TestDefaultRetentionKeepsMessagesAndWorkerRunsForever(t *testing.T) {
 	gone, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "gone"})
 	s.SetSessionOffline(node, gone)
 
-	c.t = c.t.Add(400 * day)
+	c.advance(400 * day)
 	res, err := s.Prune(DefaultRetention())
 	if err != nil {
 		t.Fatal(err)
@@ -530,12 +530,12 @@ func TestOfflineSessionClockStartsWhenItGoesOffline(t *testing.T) {
 	s, c := newTestStore(t)
 	node, _, _ := s.CreateNode("h", "linux")
 	id, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "long"})
-	c.t = c.t.Add(40 * 24 * time.Hour)
+	c.advance(40 * 24 * time.Hour)
 	s.SetSessionOffline(node, id)
 	if res, _ := s.Prune(Retention{Sessions: 30 * 24 * time.Hour}); res.Sessions != 0 {
 		t.Fatalf("deleted a session that just went offline: %+v", res)
 	}
-	c.t = c.t.Add(31 * 24 * time.Hour)
+	c.advance(31 * 24 * time.Hour)
 	if res, _ := s.Prune(Retention{Sessions: 30 * 24 * time.Hour}); res.Sessions != 1 {
 		t.Fatalf("kept a session offline for 31 days: %+v", res)
 	}

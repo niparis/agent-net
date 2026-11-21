@@ -19,7 +19,7 @@ func TestModelUsageCountsRecentSessionsOfTheNode(t *testing.T) {
 		}
 	}
 	up(node, "old", "opencode", "p/old")
-	clock.t = clock.t.Add(40 * 24 * time.Hour)
+	clock.advance(40 * 24 * time.Hour)
 	up(node, "a", "opencode", "p/m")
 	up(node, "b", "opencode", "p/m")
 	up(node, "c", "opencode", "p/n")
@@ -57,11 +57,11 @@ func TestModelSuccessesAreRememberedPerNodeAndHarness(t *testing.T) {
 	if g, _ := s.SucceededModels(node, "opencode"); len(g) != 0 {
 		t.Errorf("another harness sees it: %v", g)
 	}
-	clock.t = clock.t.Add(time.Duration(protocol.ModelSuccessDays-1) * 24 * time.Hour)
+	clock.advance(time.Duration(protocol.ModelSuccessDays-1) * 24 * time.Hour)
 	if g, _ := s.SucceededModels(node, "codex"); len(g) != 1 {
 		t.Errorf("before the window ends: %v", g)
 	}
-	clock.t = clock.t.Add(25 * time.Hour)
+	clock.advance(25 * time.Hour)
 	if g, _ := s.SucceededModels(node, "codex"); len(g) != 0 {
 		t.Errorf("after the window: %v", g)
 	}
@@ -89,16 +89,16 @@ func TestModelFailuresAreRemembered24Hours(t *testing.T) {
 	if g, _ := s.FailedModels(node, "pi"); len(g) != 0 {
 		t.Errorf("another harness sees it: %v", g)
 	}
-	clock.t = clock.t.Add(23 * time.Hour)
+	clock.advance(23 * time.Hour)
 	if g, _ := s.FailedModels(node, "opencode"); len(g) != 1 {
 		t.Errorf("after 23 hours: %v", g)
 	}
 	s.RecordModelFailure(node, "opencode", "p/m") // fails again: the time restarts
-	clock.t = clock.t.Add(23 * time.Hour)
+	clock.advance(23 * time.Hour)
 	if g, _ := s.FailedModels(node, "opencode"); len(g) != 1 {
 		t.Errorf("a new failure did not restart the time: %v", g)
 	}
-	clock.t = clock.t.Add(2 * time.Hour)
+	clock.advance(2 * time.Hour)
 	if g, _ := s.FailedModels(node, "opencode"); len(g) != 0 {
 		t.Errorf("after 25 hours: %v", g)
 	}

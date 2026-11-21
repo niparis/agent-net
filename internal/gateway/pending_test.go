@@ -54,7 +54,7 @@ func TestPendingRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(24*time.Hour + time.Second)
+	c.advance(24*time.Hour + time.Second)
 	check(0)
 }
 
@@ -70,7 +70,7 @@ func TestPendingStallCountOncePerIdlePeriod(t *testing.T) {
 	if err := s.samplePendingStalls(); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if err := s.samplePendingStalls(); err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestPendingWaitClearsOnProgress(t *testing.T) {
 			// Keep message timestamps equal to exercise ordering within a clock tick.
 			switch event {
 			case "busy", "busy then idle", "activity on status update":
-				c.t = c.t.Add(10 * time.Hour)
+				c.advance(10 * time.Hour)
 				in := protocol.SessionInfo{Harness: "claude", NativeID: "na", Status: "busy"}
 				if event == "activity on status update" {
 					in.Status = "idle"

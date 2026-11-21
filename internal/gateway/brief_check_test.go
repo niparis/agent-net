@@ -297,7 +297,7 @@ func TestBriefRejectionsAreCountedPerTaskFor24Hours(t *testing.T) {
 	if err != nil || n != 1 {
 		t.Fatalf("count = %d, %v", n, err)
 	}
-	c.t = c.t.Add(25 * time.Hour)
+	c.advance(25 * time.Hour)
 	n, err = s.briefRejectionCount("s_caller", key, s.now().Add(-24*time.Hour).Unix())
 	if err != nil || n != 0 {
 		t.Fatalf("old rejection counted: %d, %v", n, err)

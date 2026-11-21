@@ -27,7 +27,7 @@ func TestFirstSeenStaysWhenTheSessionReportsAgain(t *testing.T) {
 	if err != nil || !ok || a.FirstSeen != first || a.Title != "builder" {
 		t.Fatalf("first report: %+v (ok %v, err %v), want first seen %d", a, ok, err, first)
 	}
-	c.t = c.t.Add(2 * time.Hour)
+	c.advance(2 * time.Hour)
 	if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "n1", Name: "builder", Status: "busy"}); err != nil {
 		t.Fatal(err)
 	}

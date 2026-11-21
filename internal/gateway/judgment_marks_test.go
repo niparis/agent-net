@@ -18,7 +18,7 @@ func TestOwnerJudgmentMarksFind(t *testing.T) {
 	if err := s.MarkAsk(protocol.AskMarkRequest{Ask: first, Mark: protocol.MarkDidntNeedMe, Why: "the deploy is routine"}, "owner"); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	second := chiefAskKind(t, s, asker, "approval", "Rotate the admin token?")
 	sortAsk(t, s, chief, node, protocol.AskSortArgs{Ask: second, Result: protocol.AskSortOwner, Priority: 2, WhyYou: "only the owner holds the token", Reason: "needs a decision"})
 	if err := s.MarkAsk(protocol.AskMarkRequest{Ask: second, Mark: protocol.MarkShouldHaveAsked}, "owner"); err != nil {

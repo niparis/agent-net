@@ -85,9 +85,9 @@ func TestCheckActivityResetsTheIdlePeriod(t *testing.T) {
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("first check = %+v", got)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	activity(t, s, b, "pi", "nb")
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("check after activity = %+v", got)
 	}
@@ -107,18 +107,18 @@ func TestCheckAnswerDone(t *testing.T) {
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("check = %+v", got)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "done"}); err != nil {
 		t.Fatal(err)
 	}
-	if c.t = c.t.Add(21 * time.Minute); len(checks(t, s)) != 0 {
+	if c.advance(21 * time.Minute); len(checks(t, s)) != 0 {
 		t.Fatal("done did not stop checks until new activity")
 	}
 	if _, _, err := send(s, a, b, "new work after done", ""); err != nil {
 		t.Fatal(err)
 	}
 	activity(t, s, b, "pi", "nb")
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("check after new activity = %+v", got)
 	}
@@ -138,7 +138,7 @@ func TestCheckAnswerMoreLeavesOneNeedsYouRow(t *testing.T) {
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("check = %+v", got)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "more: write the docs"}); err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestCheckAnswerBlockedNamesTheBlocker(t *testing.T) {
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("check = %+v", got)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "blocked on the deploy key"}); err != nil {
 		t.Fatal(err)
 	}
@@ -208,14 +208,14 @@ func TestCheckMoreWaitsForANewTaskLine(t *testing.T) {
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("check 1 = %+v", got)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: "more: first step"}); err != nil {
 		t.Fatal(err)
 	}
 	// A turn changes no message and no open work.
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	activity(t, s, b, "pi", "nb")
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if got := checks(t, s); len(got) != 0 {
 		t.Fatalf("check after the same more line: %+v", got)
 	}
@@ -223,19 +223,19 @@ func TestCheckMoreWaitsForANewTaskLine(t *testing.T) {
 	if _, _, err := send(s, b, a, "reply", req.ID); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	activity(t, s, b, "pi", "nb")
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("check after progress with the same more line: %+v", got)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: "working on the second step"}); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	activity(t, s, b, "pi", "nb")
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if got := checks(t, s); len(got) != 0 {
 		t.Fatalf("fresh announce after the task changed = %+v", got)
 	}
@@ -287,9 +287,9 @@ func TestCheckDailyCap(t *testing.T) {
 		if got := checks(t, s); len(got) != 1 {
 			t.Fatalf("check %d = %+v", i+1, got)
 		}
-		c.t = c.t.Add(time.Minute)
+		c.advance(time.Minute)
 		activity(t, s, b, "pi", "nb")
-		c.t = c.t.Add(21 * time.Minute)
+		c.advance(21 * time.Minute)
 	}
 	if got := checks(t, s); len(got) != 0 {
 		t.Fatalf("check %d over the daily cap: %+v", 7, got)
@@ -388,12 +388,12 @@ func TestCheckNotRepeatedAfterSameAnswerSameTask(t *testing.T) {
 		t.Fatalf("first check = %+v", got)
 	}
 	for i := 0; i < 5; i++ {
-		c.t = c.t.Add(time.Minute)
+		c.advance(time.Minute)
 		if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: task}); err != nil {
 			t.Fatal(err)
 		}
 		activity(t, s, b, "pi", "nb")
-		c.t = c.t.Add(21 * time.Minute)
+		c.advance(21 * time.Minute)
 		if got := checks(t, s); len(got) != 0 {
 			t.Fatalf("round %d: repeated check after the same answer: %+v", i, got)
 		}
@@ -416,14 +416,14 @@ func TestCheckNotRepeatedAfterDone(t *testing.T) {
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("first check = %+v", got)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: "done"}); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 3; i++ {
-		c.t = c.t.Add(time.Minute)
+		c.advance(time.Minute)
 		activity(t, s, b, "pi", "nb")
-		c.t = c.t.Add(21 * time.Minute)
+		c.advance(21 * time.Minute)
 		if got := checks(t, s); len(got) != 0 {
 			t.Fatalf("round %d: check after done: %+v", i, got)
 		}
@@ -446,20 +446,20 @@ func TestCheckTaskChangeAllowsNewCheck(t *testing.T) {
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("first check = %+v", got)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: "blocked on the owner: cleanup"}); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	activity(t, s, b, "pi", "nb")
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if got := checks(t, s); len(got) != 0 {
 		t.Fatalf("check with the same task: %+v", got)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	seedCheckTask(t, s, b, "writing the migration")
 	activity(t, s, b, "pi", "nb")
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("check after the task changed = %+v", got)
 	}
@@ -476,15 +476,15 @@ func TestCheckDailyCapHoldsWhenTaskChanges(t *testing.T) {
 	for i := 0; i < idleCheckDailyCap; i++ {
 		seedCheckTask(t, s, b, fmt.Sprintf("step %d", i))
 		activity(t, s, b, "pi", "nb")
-		c.t = c.t.Add(21 * time.Minute)
+		c.advance(21 * time.Minute)
 		if got := checks(t, s); len(got) != 1 {
 			t.Fatalf("check %d = %+v", i+1, got)
 		}
-		c.t = c.t.Add(time.Minute)
+		c.advance(time.Minute)
 	}
 	seedCheckTask(t, s, b, "step last")
 	activity(t, s, b, "pi", "nb")
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if got := checks(t, s); len(got) != 0 {
 		t.Fatalf("check over the daily cap: %+v", got)
 	}
@@ -503,19 +503,19 @@ func TestCheckNotRepeatedAfterMoreWithSameTask(t *testing.T) {
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("first check = %+v", got)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "more: write the docs"}); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 3; i++ {
 		// A notification and a turn do not change the work fingerprint.
-		c.t = c.t.Add(time.Minute)
+		c.advance(time.Minute)
 		if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: fmt.Sprintf("note-%d", i), Type: protocol.TypeNotification}); err != nil {
 			t.Fatal(err)
 		}
-		c.t = c.t.Add(time.Minute)
+		c.advance(time.Minute)
 		activity(t, s, b, "pi", "nb")
-		c.t = c.t.Add(21 * time.Minute)
+		c.advance(21 * time.Minute)
 		if got := checks(t, s); len(got) != 0 {
 			t.Fatalf("round %d: check after more with the same task: %+v", i, got)
 		}
@@ -564,7 +564,7 @@ func TestCheckWakeSessionAfterMoreWithProgressGetsItsNextCheck(t *testing.T) {
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("check 1 = %+v", got)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "more: first step"}); err != nil {
 		t.Fatal(err)
 	}
@@ -572,13 +572,13 @@ func TestCheckWakeSessionAfterMoreWithProgressGetsItsNextCheck(t *testing.T) {
 		t.Fatalf("wake after more = %d, want 1", len(got))
 	}
 	// Progress: the request is answered. The task line is unchanged.
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, _, err := send(s, b, a, "reply", req.ID); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	activity(t, s, b, "pi", "nb")
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("wake session check after more with progress = %+v, want 1", got)
 	}
@@ -592,7 +592,7 @@ func TestCheckAnnounceFingerprint(t *testing.T) {
 	if got := checks(t, s); len(got) != 0 {
 		t.Fatalf("unchanged announce checked: %+v", got)
 	}
-	c.t = c.t.Add(25 * time.Hour)
+	c.advance(25 * time.Hour)
 	if got := checks(t, s); len(got) != 0 {
 		t.Fatalf("unchanged announce expired: %+v", got)
 	}
@@ -603,7 +603,7 @@ func TestCheckAnnounceFingerprint(t *testing.T) {
 		t.Fatalf("changed owed count: %+v", got)
 	}
 	announce(t, s, b, protocol.ProfileAnnounce{Task: "implement the fix"})
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if got := checks(t, s); len(got) != 0 {
 		t.Fatalf("fresh announce checked again: %+v", got)
 	}
@@ -674,7 +674,7 @@ func TestBlockedAnswerRepeatingASettledWaitMakesNoCheckRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(waitingAskDebounce)
+	c.advance(waitingAskDebounce)
 	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}
@@ -686,7 +686,7 @@ func TestBlockedAnswerRepeatingASettledWaitMakesNoCheckRow(t *testing.T) {
 	if _, err := s.db.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting) VALUES(?,?,1)`, sid, c.t.Unix()); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Hour)
+	c.advance(time.Hour)
 	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: sid, Task: "blocked on the owner's TRUNCATE decision"}); err != nil {
 		t.Fatal(err)
 	}
@@ -711,7 +711,7 @@ func TestChangedWaitAfterAClosedAskRaisesANewAsk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(waitingAskDebounce)
+	c.advance(waitingAskDebounce)
 	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}
@@ -722,7 +722,7 @@ func TestChangedWaitAfterAClosedAskRaisesANewAsk(t *testing.T) {
 		Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: "Delete worktree w_2?"}}); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(waitingAskDebounce)
+	c.advance(waitingAskDebounce)
 	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}
@@ -749,7 +749,7 @@ func TestBlockedAnswerRepeatingItsOwnWaitAfterBusyMakesNoAsk(t *testing.T) {
 		t.Fatal(err)
 	}
 	since := c.t.Unix()
-	c.t = c.t.Add(waitingAskDebounce)
+	c.advance(waitingAskDebounce)
 	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}
@@ -758,7 +758,7 @@ func TestBlockedAnswerRepeatingItsOwnWaitAfterBusyMakesNoAsk(t *testing.T) {
 		t.Fatal(err)
 	}
 	// An hour later the check arrives and the session goes busy to answer it.
-	c.t = c.t.Add(time.Hour)
+	c.advance(time.Hour)
 	if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p", Status: "busy"}); err != nil {
 		t.Fatal(err)
 	}
@@ -787,7 +787,7 @@ func TestBlockedAnswerRepeatingItsOwnWaitAfterBusyMakesNoAsk(t *testing.T) {
 	if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p", Waiting: reported}); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(waitingAskDebounce)
+	c.advance(waitingAskDebounce)
 	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}

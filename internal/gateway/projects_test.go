@@ -28,7 +28,7 @@ func TestAddProjectsAddsAndReportsExisting(t *testing.T) {
 	if len(res.Added) != 2 || len(res.Existing) != 0 {
 		t.Fatalf("first add: %+v", res)
 	}
-	c.t = c.t.Add(time.Hour)
+	c.advance(time.Hour)
 	changed := entry("a", "/c/a")
 	changed.Remote, changed.DefaultBranch = "git@example.com:o/a.git", "trunk"
 	res, err = s.AddProjects(n, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{changed, entry("c", "/c/c")}, AddedByHarness: "cli"})
@@ -182,7 +182,7 @@ func TestRegisteredProjectOutlivesSessions(t *testing.T) {
 	s.UpsertSession(n, protocol.SessionInfo{Harness: "pi", NativeID: "b", Cwd: "/c/p", Repo: protocol.RepoInfo{Root: "/c/p", Project: "p"}})
 	s.AddProjects(n, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{entry("p", "/c/p")}})
 	s.SyncSessions(n, nil) // offline
-	c.t = c.t.Add(48 * time.Hour)
+	c.advance(48 * time.Hour)
 	if _, err := s.Prune(Retention{Sessions: time.Hour}); err != nil {
 		t.Fatal(err)
 	}

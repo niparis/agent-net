@@ -207,7 +207,7 @@ func TestDeliveryMergerConfirmsExternalMerge(t *testing.T) {
 	if _, err := r.s.ClaimStep(r.a, protocol.StepClaimRequest{SessionID: r.sonnet, ChangeID: c.ID, StepRef: protocol.StepRef{Step: protocol.StepMerge}, Commit: commitA}); err != nil {
 		t.Fatalf("claim merge: %v", err)
 	}
-	r.clk.t = r.clk.t.Add(11 * time.Minute)
+	r.clk.advance(11 * time.Minute)
 	if _, err := deliveryCall[protocol.ChangeView](r, r.a, protocol.FrameChangeReconcile, externalReconcile(c)); err != nil {
 		t.Fatalf("external merge after the grace window: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestDeliveryMergerConfirmDoneOnlyAfterVerify(t *testing.T) {
 	r := setupMergerRig(t)
 	c := r.submit(r.a, r.workerSubmit("feature/after", commitA)).Change.Change
 	passedToMerge(t, r, c)
-	r.clk.t = r.clk.t.Add(11 * time.Minute)
+	r.clk.advance(11 * time.Minute)
 	if _, err := deliveryCall[protocol.ChangeView](r, r.a, protocol.FrameChangeReconcile, externalReconcile(c)); err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +281,7 @@ func TestDeliveryRepairExternalDone(t *testing.T) {
 	before := r.get(raced.ID).Evidence
 
 	plain := r.submit(r.a, r.workerSubmit("feature/plain", commitB)).Change.Change
-	r.clk.t = r.clk.t.Add(time.Hour)
+	r.clk.advance(time.Hour)
 	if _, err := deliveryCall[protocol.ChangeView](r, r.a, protocol.FrameChangeReconcile, protocol.ChangeReconcileRequest{ChangeID: plain.ID, Revision: plain.Revision, HeadCommit: plain.HeadCommit, Kind: "external", MergedCommit: commitMerged}); err != nil {
 		t.Fatal(err)
 	}

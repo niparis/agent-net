@@ -182,7 +182,7 @@ func TestOfflineCallerAgentWokenOnceWithItsWaitingSteps(t *testing.T) {
 	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE recipient=? AND idem_key LIKE 'delivery:agentwake:%'`, caller).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("agent was woken before the stuck limit: %d, %v", n, err)
 	}
-	r.clk.t = r.clk.t.Add(13 * time.Hour)
+	r.clk.advance(13 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 	if id := r.waitWake(); id != caller {
 		t.Fatalf("woke %s, want %s", id, caller)
@@ -223,7 +223,7 @@ func TestNonWakeableCallerAgentStepsGoToRepoLead(t *testing.T) {
 	if _, err := r.accept(lead, id, commitA); err == nil {
 		t.Fatal("the repo lead acted on a caller step before the offer")
 	}
-	r.clk.t = r.clk.t.Add(13 * time.Hour)
+	r.clk.advance(13 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 	var body string
 	if err := r.s.db.QueryRow(`SELECT m.body FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id WHERE d.session_id=?`, lead).Scan(&body); err != nil || !strings.Contains(body, id) {
@@ -239,7 +239,7 @@ func TestUnansweredWakeFallsBackToRepoLead(t *testing.T) {
 	caller := r.onlyOfflineSession("codex")
 	lead := r.leadOf()
 	id := r.submitAs(caller, "feature/unanswered", commitA)
-	r.clk.t = r.clk.t.Add(13 * time.Hour)
+	r.clk.advance(13 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 	if got := r.waitWake(); got != caller {
 		t.Fatalf("woke %s, want %s", got, caller)
@@ -248,7 +248,7 @@ func TestUnansweredWakeFallsBackToRepoLead(t *testing.T) {
 		t.Fatal("lead was offered the step while the wake was still under way")
 	}
 	// The wake window passes and nobody of the agent is online.
-	r.clk.t = r.clk.t.Add(wakeTimeout + time.Minute)
+	r.clk.advance(wakeTimeout + time.Minute)
 	r.g.dispatchStepTasks(context.Background())
 	if _, err := r.accept(lead, id, commitA); err != nil {
 		t.Fatalf("lead refused after the wake window: %v", err)
@@ -282,12 +282,12 @@ func TestWaitingWorkDeskLineCountsUpdatesAndCloses(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		ids = append(ids, r.submitAs(caller, fmt.Sprintf("feature/desk-%d", i), commits[i]))
 	}
-	r.clk.t = r.clk.t.Add(23 * time.Hour)
+	r.clk.advance(23 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 	if lines := r.deskLines(); len(lines) != 0 {
 		t.Fatalf("a line before 24 hours: %v", lines)
 	}
-	r.clk.t = r.clk.t.Add(2 * time.Hour)
+	r.clk.advance(2 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 	want := "demo: 3 finished changes waiting for accept, oldest 25 hours, lead offline"
 	if lines := r.deskLines(); len(lines) != 1 || lines[0] != want {
@@ -299,7 +299,7 @@ func TestWaitingWorkDeskLineCountsUpdatesAndCloses(t *testing.T) {
 	}
 	// A fourth change updates the same line.
 	ids = append(ids, r.submitAs(caller, "feature/desk-3", commits[3]))
-	r.clk.t = r.clk.t.Add(24 * time.Hour)
+	r.clk.advance(24 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 	want = "demo: 4 finished changes waiting for accept, oldest 2 days, lead offline"
 	var again, text string
@@ -391,7 +391,7 @@ func TestMergerSessionOfCallerAgentNeverGetsCallerSteps(t *testing.T) {
 	}
 	// The agent has an online session (the merger), so nobody is woken: the
 	// task goes to the lead once it waited past the stuck limit.
-	r.clk.t = r.clk.t.Add(13 * time.Hour)
+	r.clk.advance(13 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 	var wakes int
 	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE idem_key LIKE 'delivery:agentwake:%'`).Scan(&wakes); err != nil || wakes != 0 {
@@ -416,7 +416,7 @@ func TestCallerOnlyStepNoticeWaitsForTheReminderInterval(t *testing.T) {
 	if n := r.stepMessageCount(r.caller); n != 0 {
 		t.Fatalf("a young caller step sent %d messages", n)
 	}
-	r.clk.t = r.clk.t.Add(2*time.Hour + time.Minute)
+	r.clk.advance(2*time.Hour + time.Minute)
 	r.g.dispatchStepTasks(context.Background())
 	r.g.flushStepTaskBatches()
 	var n int
@@ -438,7 +438,7 @@ func TestCallerWakeNotSentWhileASessionOfTheAgentIsOnline(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.submitAs(r.caller, "feature/online-merger", commitA)
-	r.clk.t = r.clk.t.Add(13 * time.Hour)
+	r.clk.advance(13 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 	var n int
 	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE idem_key LIKE 'delivery:agentwake:%'`).Scan(&n); err != nil || n != 0 {
