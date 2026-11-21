@@ -50,7 +50,7 @@ func TestEnrollmentExpiredCodeRefused(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateEnrollCode: %v", err)
 	}
-	c.t = c.t.Add(10*time.Minute + time.Second)
+	c.advance(10*time.Minute + time.Second)
 	if valid, _ := s.EnrollCodeValid(code); valid {
 		t.Fatal("expired code valid; want false")
 	}
