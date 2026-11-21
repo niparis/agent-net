@@ -15,9 +15,21 @@ import (
 // override check on: an agent that sets selection fields is held.
 func overrideNode(t *testing.T) (*testGateway, *workerNode, *localClient, string) {
 	t.Helper()
+	return overrideNodeWith(t, shortSet, nil)
+}
+
+// overrideNodeWith is overrideNode with the worker settings and a config hook
+// of the test.
+func overrideNodeWith(t *testing.T, set WorkerSettings, cfg func(*Config)) (*testGateway, *workerNode, *localClient, string) {
+	t.Helper()
 	setupShadowJudge(t, difficultyScoresJSON, false)
 	g := startGateway(t, t.TempDir(), "")
-	w := startWorkerNode(t, g, shortSet, withDifficulty(func(c *Config) { c.testOpenSelection = false }))
+	w := startWorkerNode(t, g, set, withDifficulty(func(c *Config) {
+		c.testOpenSelection = false
+		if cfg != nil {
+			cfg(c)
+		}
+	}))
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	score := 51.0

@@ -379,6 +379,7 @@ type Daemon struct {
 	ownerPromptClock    func() time.Time // test hook
 	heldMu              sync.Mutex
 	heldStarts          map[string]*heldStart // start id -> a start that waits for the owner, guarded by heldMu
+	withdrawnStarts     map[string]time.Time  // held start id -> when its ask was withdrawn, guarded by heldMu
 	acceptedMu          sync.Mutex
 	accepted            map[string]*acceptedStart // start id -> an accepted start, guarded by acceptedMu
 	openCodeRoutes      opencodeapi.Cache

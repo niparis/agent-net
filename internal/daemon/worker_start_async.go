@@ -210,6 +210,12 @@ func (d *Daemon) startReport(ctx context.Context, r protocol.WorkerStartReport) 
 type acceptedStart struct {
 	Queue, Session string
 	Settled        bool
+	// The next fields exist only for a start that a confirm released from the
+	// hold (worker_override_withdraw.go): its caller may still withdraw it.
+	cancel    context.CancelFunc
+	done      chan struct{} // closed when the start settles
+	withdrawn bool
+	cancelled bool // the start ended because of the withdraw, not on its own
 }
 
 // noteAccepted records an accepted start. It is called before the answer goes
@@ -232,6 +238,10 @@ func (d *Daemon) settleAccepted(id string, res *protocol.WorkerStartResult, err 
 		return
 	}
 	e.Settled = true
+	if e.done != nil {
+		close(e.done)
+		e.done = nil
+	}
 	switch {
 	case err != nil || res == nil:
 		// Did not start: nothing is queued and no worker exists.
