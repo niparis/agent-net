@@ -70,7 +70,7 @@ func TestRepoFoldKeepsTheLeadArchiveAndHeldBack(t *testing.T) {
 	s, _ := newTestStore(t)
 	beforeRepoFold(t, s)
 	foldRepos(t, s)
-	if err := s.migrate(); err != nil {
+	if err := replayMigrations(t, s); err != nil {
 		t.Fatal(err)
 	}
 	for repo, want := range map[string]string{"demo": "other", "plain": "demo", "cleared": "", "old": ""} {
@@ -139,7 +139,7 @@ func TestRepoFoldDiscoveredRepoLeadsAsItsOwner(t *testing.T) {
 	s, _ := newTestStore(t)
 	beforeRepoFold(t, s)
 	foldRepos(t, s)
-	if err := s.migrate(); err != nil {
+	if err := replayMigrations(t, s); err != nil {
 		t.Fatal(err)
 	}
 	var positional int
@@ -247,43 +247,102 @@ type repoDB interface {
 	QueryRow(string, ...any) *sql.Row
 }
 
-// restoreRepoSideTables puts back each repo side table that the fold dropped,
-// with the rows the fold moved into repos, so the replayed steps read the data
-// the old schema had. A table that exists already keeps its rows, which a test
-// may have put there on purpose. Before the fold the tables exist, and nothing
-// is restored.
+// restoreRepoSideTables puts back the tables and older table shapes that later
+// migrations dropped or folded, so a test that rewinds schema_version can
+// replay the shipped steps forward without rewind branches in the production
+// migrator.
 func restoreRepoSideTables(t *testing.T, db repoDB) {
 	t.Helper()
+	var table int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='schema_version'`).Scan(&table); err != nil {
+		t.Fatal(err)
+	}
+	if table == 0 {
+		return
+	}
+	var cur int
+	if err := db.QueryRow(`SELECT COALESCE(MAX(version),0) FROM schema_version`).Scan(&cur); err != nil {
+		t.Fatal(err)
+	}
+	if cur < migrationVersion(t, "Schema reduction part 1: drop the tables") {
+		recreateDeadTablesDB(t, db)
+	}
 	var folded int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('repos') WHERE name='lead_agent_id'`).Scan(&folded); err != nil {
 		t.Fatal(err)
 	}
-	if folded == 0 {
-		return
-	}
-	for _, rebuild := range []struct{ table, create, fill string }{
-		{"archived_repos",
-			`CREATE TABLE archived_repos (repo_id TEXT PRIMARY KEY REFERENCES repos(id))`,
-			`INSERT INTO archived_repos(repo_id) SELECT id FROM repos WHERE archived<>0`},
-		{"repo_held_back",
-			`CREATE TABLE repo_held_back (repo_id TEXT PRIMARY KEY REFERENCES repos(id), held_back TEXT NOT NULL DEFAULT '')`,
-			`INSERT INTO repo_held_back(repo_id,held_back) SELECT id,held_back FROM repos WHERE held_back<>''`},
-		{"repo_leads",
-			`CREATE TABLE repo_leads (repo_id TEXT PRIMARY KEY REFERENCES repos(id), agent_id TEXT REFERENCES agents(id))`,
-			`INSERT INTO repo_leads(repo_id,agent_id) SELECT id, NULLIF(lead_agent_id,'') FROM repos WHERE lead_agent_id IS NOT NULL`},
-	} {
-		var exists int
-		if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, rebuild.table).Scan(&exists); err != nil {
-			t.Fatal(err)
-		}
-		if exists > 0 {
-			continue
-		}
-		for _, q := range []string{rebuild.create, rebuild.fill} {
-			if _, err := db.Exec(q); err != nil {
-				t.Fatalf("%s: %v", q, err)
+	if folded > 0 && cur < migrationVersion(t, repoLeadFoldMarker) {
+		for _, rebuild := range []struct{ table, create, fill string }{
+			{"archived_repos",
+				`CREATE TABLE archived_repos (repo_id TEXT PRIMARY KEY REFERENCES repos(id))`,
+				`INSERT INTO archived_repos(repo_id) SELECT id FROM repos WHERE archived<>0`},
+			{"repo_held_back",
+				`CREATE TABLE repo_held_back (repo_id TEXT PRIMARY KEY REFERENCES repos(id), held_back TEXT NOT NULL DEFAULT '')`,
+				`INSERT INTO repo_held_back(repo_id,held_back) SELECT id,held_back FROM repos WHERE held_back<>''`},
+			{"repo_leads",
+				`CREATE TABLE repo_leads (repo_id TEXT PRIMARY KEY REFERENCES repos(id), agent_id TEXT REFERENCES agents(id))`,
+				`INSERT INTO repo_leads(repo_id,agent_id) SELECT id, NULLIF(lead_agent_id,'') FROM repos WHERE lead_agent_id IS NOT NULL`},
+		} {
+			var exists int
+			if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, rebuild.table).Scan(&exists); err != nil {
+				t.Fatal(err)
+			}
+			if exists > 0 {
+				continue
+			}
+			for _, q := range []string{rebuild.create, rebuild.fill} {
+				if _, err := db.Exec(q); err != nil {
+					t.Fatalf("%s: %v", q, err)
+				}
 			}
 		}
+	}
+	if cur < migrationVersion(t, "Repo and agent records, preserving legacy graph keys") {
+		for _, trigger := range []string{
+			"repo_agent_project_insert", "repo_agent_project_update",
+			"repo_agent_session_insert", "repo_agent_session_update",
+			"repo_agent_architect_insert", "repo_agent_architect_delete",
+			"repo_lead_delete", "repo_lead_tombstone",
+		} {
+			if _, err := db.Exec(`DROP TRIGGER IF EXISTS ` + trigger); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, col := range []struct{ table, name string }{
+			{"repos", "archived"}, {"repos", "held_back"}, {"repos", "lead_agent_id"},
+			{"agents", "lead_level"}, {"agents", "lead_session"},
+		} {
+			var has int
+			if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?`, col.table, col.name).Scan(&has); err != nil {
+				t.Fatal(err)
+			}
+			if has > 0 {
+				if _, err := db.Exec(`ALTER TABLE ` + col.table + ` DROP COLUMN ` + col.name); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
+	if cur < migrationVersion(t, oneCharterStoreMarker) {
+		ensureOldCharterTables(t, db)
+	}
+	if cur < migrationVersion(t, sideTablesFoldMarker) {
+		var foldedStats bool
+		if err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM pragma_table_info('delivery_revisions') WHERE name='diff_stat')
+ AND NOT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='delivery_revision_stats')`).Scan(&foldedStats); err != nil {
+			t.Fatal(err)
+		}
+		if foldedStats {
+			if _, err := db.Exec(`CREATE TABLE delivery_revision_stats (change_id TEXT NOT NULL, revision INTEGER NOT NULL, diff_stat TEXT NOT NULL, signals TEXT NOT NULL DEFAULT '[]', handback_check TEXT NOT NULL DEFAULT '', PRIMARY KEY(change_id, revision))`); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if cur < migrationVersion(t, "-- Gateway state: one key-value table") {
+		restoreLegacyStateTables(t, db)
+	}
+	if cur >= migrationVersion(t, "CREATE TABLE graph_nodes (") && cur < migrationVersion(t, graphNodesFoldMarker) {
+		restoreGraphNodesForReplay(t, db)
 	}
 }
 

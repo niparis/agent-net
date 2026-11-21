@@ -1,39 +1,9 @@
 package gateway
 
-import (
-	"database/sql"
-	"strings"
-)
+import "database/sql"
 
 // oneCharterStoreMarker names the migration that merges the charter tables.
 const oneCharterStoreMarker = "One charter store (schema reduction part 4)"
-
-// oneCharterStoreStep is the index of that migration in migrations.
-func oneCharterStoreStep() int {
-	for i, m := range migrations {
-		if strings.Contains(m, oneCharterStoreMarker) {
-			return i
-		}
-	}
-	return len(migrations)
-}
-
-// ensureOldCharterTablesTx lets a rewind replay a shipped step that reads the
-// old tables. A store that already ran the merge has no graph_charter or
-// agent_charter; its charter_values accepts the repo level. The tables come
-// back empty, so the replayed step has nothing to change, and the merge step
-// at the end of the replay drops them again. A store that has not run the
-// merge is left alone: its steps create the tables themselves.
-func ensureOldCharterTablesTx(tx *sql.Tx) error {
-	var merged bool
-	err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='charter_values' AND sql LIKE '%''repo''%') AND NOT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='graph_charter')`).Scan(&merged)
-	if err != nil || !merged {
-		return err
-	}
-	_, err = tx.Exec(`CREATE TABLE IF NOT EXISTS graph_charter (node TEXT NOT NULL, attr TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, PRIMARY KEY(node, attr));
-CREATE TABLE IF NOT EXISTS agent_charter (agent_id TEXT NOT NULL, attr TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, PRIMARY KEY(agent_id, attr))`)
-	return err
-}
 
 // oneCharterStoreMigration moves the repo and agent charter values into
 // charter_values, which already held the global and team values, and drops the

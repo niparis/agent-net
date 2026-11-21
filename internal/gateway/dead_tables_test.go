@@ -1,10 +1,48 @@
 package gateway
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
+
+// Production migration code only moves a store forward. Rebuilding dropped
+// tables or older column layouts so a test can rewind schema_version and replay
+// shipped steps belongs in _test.go helpers.
+func TestProductionCodeHasNoRewindHelpers(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rewindOnly := []string{
+		"ensureOldCharterTablesTx",
+		"oneCharterStoreStep",
+		"restoreLegacyStateTables",
+		"legacyStateTables",
+		"gatewayStateMigrationIndex",
+		"graphNodesReplay",
+		"graphNodesFoldIndex",
+		"graphNodesCreateIndex",
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(src)
+		for _, symbol := range rewindOnly {
+			if strings.Contains(text, symbol) {
+				t.Errorf("production file %s still carries rewind helper %s", name, symbol)
+			}
+		}
+	}
+}
 
 // deadTables are the tables that no code reads or writes any more. The schema
 // reduction (part 1) drops them. Each one is named by an older migration, which
@@ -50,14 +88,23 @@ var deadTableSQL struct {
 // migrations that read them replay before the drop, so they must exist.
 func recreateDeadTables(t *testing.T, s *Store) {
 	t.Helper()
+	recreateDeadTablesDB(t, s.db)
+}
+
+func recreateDeadTablesDB(t *testing.T, db repoDB) {
+	t.Helper()
 	deadTableSQL.once.Do(func() {
 		deadTableSQL.sql = readDeadTableSQL(t)
 	})
 	for _, name := range deadTables {
-		if tableExists(t, s, name) {
+		var n int
+		if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n == 1 {
 			continue
 		}
-		if _, err := s.db.Exec(deadTableSQL.sql[name]); err != nil {
+		if _, err := db.Exec(deadTableSQL.sql[name]); err != nil {
 			t.Fatalf("recreate %s: %v", name, err)
 		}
 	}

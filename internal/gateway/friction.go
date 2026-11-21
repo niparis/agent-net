@@ -61,6 +61,17 @@ CREATE TABLE IF NOT EXISTS friction_status_history (
 CREATE INDEX IF NOT EXISTS friction_status_history_report ON friction_status_history(friction_id, id);
 `
 
+// frictionIndexMigration covers the main page read and the project, area and
+// status counts of FrictionFind, so a read walks an index instead of scanning
+// the friction table or joining friction_status_history twice per row.
+const frictionIndexMigration = `
+-- Covering indexes for friction_find (decision 0179).
+CREATE INDEX IF NOT EXISTS friction_read ON friction(id DESC, project, area, created_at, session, change_id, harness, model, text);
+CREATE INDEX IF NOT EXISTS friction_project_id ON friction(project, id DESC, area, created_at, session, change_id, harness, model, text);
+CREATE INDEX IF NOT EXISTS friction_area_id ON friction(area, id DESC, project, created_at, session, change_id, harness, model, text);
+CREATE INDEX IF NOT EXISTS friction_status_history_latest ON friction_status_history(friction_id, id DESC, status);
+`
+
 // frictionReadLimit bounds one page. A caller asking for more gets a full page
 // and a cursor, never a refusal.
 const frictionReadLimit = 200
@@ -74,6 +85,10 @@ const frictionSampleLimit = 20
 // frictionFrom joins each report to its current mark: its latest history row.
 // A report with no mark reads as new.
 const frictionFrom = " FROM friction f LEFT JOIN friction_status_history st ON st.id=(SELECT MAX(id) FROM friction_status_history WHERE friction_id=f.id)"
+
+// frictionStatusSQL reads the current status of report f from the covering
+// index on friction_status_history. A report with no mark reads as new.
+const frictionStatusSQL = "COALESCE((SELECT status FROM friction_status_history WHERE friction_id=f.id ORDER BY id DESC LIMIT 1),'new')"
 
 // frictionCols are the columns a read returns, in the order it scans them.
 const frictionCols = "f.id,f.project,f.session,f.change_id,f.harness,f.model,f.area,f.text,f.created_at," +
@@ -120,8 +135,10 @@ func insertFrictionTx(tx *sql.Tx, q protocol.FrictionReportRequest, at int64) er
 
 // frictionFilter is the WHERE clause that a read, its counts and a mark share.
 // It filters on the current status, and an empty status filter matches all.
+// f.id>0 is always true for rowid rows and lets SQLite walk a covering index
+// on friction in id DESC order instead of scanning the table.
 func frictionFilter(project, area, status, text string, since, id int64) (string, []any) {
-	where := " WHERE 1=1"
+	where := " WHERE f.id>0"
 	var args []any
 	if project != "" {
 		where += " AND f.project=?"
@@ -132,7 +149,7 @@ func frictionFilter(project, area, status, text string, since, id int64) (string
 		args = append(args, area)
 	}
 	if status != "" {
-		where += " AND COALESCE(st.status,'new')=?"
+		where += " AND " + frictionStatusSQL + "=?"
 		args = append(args, status)
 	}
 	if text != "" {
@@ -159,7 +176,7 @@ func frictionIn(n int) string {
 // clause holds, oldest first. A group is computed from the text, so the rows are
 // read and compared here; only the ids are kept.
 func (s *Store) frictionIDsInGroup(where string, args []any, group string) ([]int64, error) {
-	rows, err := s.db.Query(`SELECT f.id,f.area,f.text`+frictionFrom+where+` ORDER BY f.id`, args...)
+	rows, err := s.db.Query(`SELECT f.id,f.area,f.text FROM friction f`+where+` ORDER BY f.id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -215,8 +232,11 @@ func (s *Store) FrictionFind(q protocol.FrictionQuery) (protocol.FrictionFindRes
 			args = append(args, id)
 		}
 	}
-	if err := s.frictionCounts(&out, where, args); err != nil {
+	if err := s.frictionCounts(&out, where, args, q.Status); err != nil {
 		return out, err
+	}
+	if out.Total == 0 {
+		return out, nil
 	}
 	page := where
 	pageArgs := append([]any(nil), args...)
@@ -266,9 +286,17 @@ func (s *Store) FrictionFind(q protocol.FrictionQuery) (protocol.FrictionFindRes
 }
 
 // frictionCounts fills the totals and the per-project counts of the WHERE
-// clause. It reads no page, so a reader can count without paging.
-func (s *Store) frictionCounts(out *protocol.FrictionFindResult, where string, args []any) error {
-	rows, err := s.db.Query(`SELECT f.project,COUNT(*),SUM(CASE WHEN COALESCE(st.status,'new')='new' THEN 1 ELSE 0 END)`+frictionFrom+where+` GROUP BY f.project`, args...)
+// clause. It reads no page, so a reader can count without paging. When status
+// is already fixed by where, unread follows from the count without a second
+// history lookup per row.
+func (s *Store) frictionCounts(out *protocol.FrictionFindResult, where string, args []any, status string) error {
+	unreadExpr := `SUM(CASE WHEN ` + frictionStatusSQL + `='new' THEN 1 ELSE 0 END)`
+	if status == protocol.FrictionNew {
+		unreadExpr = `COUNT(*)`
+	} else if status != "" {
+		unreadExpr = `0`
+	}
+	rows, err := s.db.Query(`SELECT f.project,COUNT(*),`+unreadExpr+` FROM friction f`+where+` GROUP BY f.project`, args...)
 	if err != nil {
 		return err
 	}
@@ -414,7 +442,7 @@ func (s *Store) frictionMarkIDs(q protocol.FrictionMarkRequest) ([]int64, error)
 
 // frictionIDRows returns the ids of the reports the WHERE clause holds.
 func (s *Store) frictionIDRows(where string, args []any) ([]int64, error) {
-	rows, err := s.db.Query(`SELECT f.id`+frictionFrom+where+` ORDER BY f.id`, args...)
+	rows, err := s.db.Query(`SELECT f.id FROM friction f`+where+` ORDER BY f.id`, args...)
 	if err != nil {
 		return nil, err
 	}

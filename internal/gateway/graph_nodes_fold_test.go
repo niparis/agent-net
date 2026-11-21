@@ -55,6 +55,31 @@ func beforeGraphNodesFold(t *testing.T, s *Store) {
 	}
 }
 
+// restoreGraphNodesForReplay brings graph_nodes back when a test rewinds a
+// folded store to a step between the creation of graph_nodes and the fold.
+// Each repo charter scope becomes a component row and each architect agent an
+// architect row, so steps like the worker sandbox cutover see the project
+// names the old layout gave, and the fold at the end drops the table again.
+func restoreGraphNodesForReplay(t testing.TB, db repoDB) {
+	t.Helper()
+	var folded bool
+	if err := db.QueryRow(`SELECT NOT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='graph_nodes')
+ AND EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='repos')
+ AND EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='agents')
+ AND EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='charter_values' AND sql LIKE '%''repo''%')`).Scan(&folded); err != nil {
+		t.Fatal(err)
+	}
+	if !folded {
+		return
+	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS graph_nodes (name TEXT PRIMARY KEY, kind TEXT NOT NULL, created_at INTEGER NOT NULL);
+INSERT OR IGNORE INTO graph_nodes(name,kind,created_at) SELECT id,'architect',updated_at FROM agents WHERE role='architect' AND tombstone=0;
+INSERT OR IGNORE INTO graph_nodes(name,kind,created_at) SELECT c.scope,'component',COALESCE((SELECT created_at FROM repos r WHERE r.id=c.scope),0)
+ FROM (SELECT DISTINCT scope FROM charter_values WHERE level='repo') c WHERE c.scope NOT IN (SELECT id FROM agents WHERE role='architect' AND tombstone=0)`); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // legacyNodeKinds is the answer of the old node list query, name to kind.
 func legacyNodeKinds(t testing.TB, s *Store) map[string]string {
 	t.Helper()

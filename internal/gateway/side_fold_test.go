@@ -139,6 +139,7 @@ func oldSideTableLayout(t *testing.T) (path string, friction []int64) {
 	sideFoldExec(t, s, `INSERT INTO friction_status(friction_id,status,changed_by,changed_at,link,note) VALUES(?,?,?,?,?,?)`, orphan, protocol.FrictionFixed, "owner", 999, "ch_2", "by hand")
 
 	sideFoldExec(t, s, `DELETE FROM schema_version WHERE version >= ?`, sideFoldMigrationIndex(t))
+	restoreRepoSideTables(t, s.db)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -312,6 +313,7 @@ func TestSideFoldMigrationReplays(t *testing.T) {
 	sideFoldExec(t, s, `CREATE TABLE IF NOT EXISTS friction_status (friction_id INTEGER PRIMARY KEY, status TEXT NOT NULL, changed_by TEXT NOT NULL DEFAULT '', changed_at INTEGER NOT NULL, link TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '')`)
 	history := sideFoldInt(t, s, `SELECT COUNT(*) FROM friction_status_history`)
 	sideFoldExec(t, s, `DELETE FROM schema_version WHERE version >= ?`, sideFoldMigrationIndex(t))
+	restoreRepoSideTables(t, s.db)
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
