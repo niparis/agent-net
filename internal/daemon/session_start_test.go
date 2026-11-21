@@ -532,6 +532,33 @@ func TestSessionStartOpenCodeRejectsSessionCreatedElsewhere(t *testing.T) {
 	}
 }
 
+// fakeOwnerOpenCodeLoad is the owner's OpenCode service for one session in
+// repo: it answers the plugin discovery and the load of that session.
+func fakeOwnerOpenCodeLoad(t *testing.T, repo, native string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/openapi.json" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Path == "/api/location" {
+			// An empty daemon also boots shared-service plugin discovery.
+			fmt.Fprint(w, `{"data":{}}`)
+			return
+		}
+		if r.URL.Path == "/api/session/active" {
+			fmt.Fprint(w, `{"data":[]}`)
+			return
+		}
+		if r.Method != "GET" || r.URL.Path != "/api/session/"+native || r.Header.Get("x-opencode-directory") != strings.ReplaceAll(url.QueryEscape(repo), "+", "%20") {
+			t.Errorf("unexpected load: %s %s", r.Method, r.URL)
+			http.NotFound(w, r)
+			return
+		}
+		fmt.Fprintf(w, `{"data":{"id":%q}}`, native)
+	}))
+}
+
 func writeOwnerOpenCodeService(t *testing.T, state, address string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(state, "opencode"), 0700); err != nil {
@@ -901,27 +928,7 @@ func TestSessionResumeOpenCodeRegistered(t *testing.T) {
 		t.Fatal(err)
 	}
 	g.gw.Store().SetSessionOffline(n.d.NodeID(), id)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/openapi.json" {
-			http.NotFound(w, r)
-			return
-		}
-		if r.URL.Path == "/api/location" {
-			// An empty daemon also boots shared-service plugin discovery.
-			fmt.Fprint(w, `{"data":{}}`)
-			return
-		}
-		if r.URL.Path == "/api/session/active" {
-			fmt.Fprint(w, `{"data":[]}`)
-			return
-		}
-		if r.Method != "GET" || r.URL.Path != "/api/session/"+native || r.Header.Get("x-opencode-directory") != strings.ReplaceAll(url.QueryEscape(repo), "+", "%20") {
-			t.Errorf("unexpected load: %s %s", r.Method, r.URL)
-			http.NotFound(w, r)
-			return
-		}
-		fmt.Fprintf(w, `{"data":{"id":%q}}`, native)
-	}))
+	server := fakeOwnerOpenCodeLoad(t, repo, native)
 	defer server.Close()
 	writeOwnerOpenCodeService(t, state, server.URL)
 	var r protocol.StartedSession
