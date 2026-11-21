@@ -441,6 +441,117 @@ func TestWorkerBriefSharedDocumentationOnlyWarns(t *testing.T) {
 	}
 }
 
+// scripts/test-changed.sh never counts as an overlap unless the brief says to change it.
+func TestWorkerBriefNamingTestChangedScriptOnlyToRunItStarts(t *testing.T) {
+	s, _ := newTestStore(t)
+	repo := briefTestRepo()
+	repo.Files = append(repo.Files, "scripts/test-changed.sh")
+	insertOpenChange(t, s, "ch_script", "agent-net/w_script", "scripts/test-changed.sh")
+
+	task := "Problem: Fix parser crash in internal/toolcatalog/catalog.go.\n" +
+		"Done:\n- parser tests pass\n- run scripts/test-changed.sh\n"
+	failures, _, err := s.checkWorkerBrief(briefFrame(task), "shop", repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(failures) != 0 {
+		t.Fatalf("brief naming scripts/test-changed.sh to run it failed: %v", failures)
+	}
+}
+
+// A brief citing a file only as evidence starts without overlap refusals.
+func TestWorkerBriefCitingFileOnlyAsEvidenceStarts(t *testing.T) {
+	s, _ := newTestStore(t)
+	runningWorkerWithTask(t, s, "Fix internal/gateway/brief.go and its tests.")
+	insertOpenChange(t, s, "ch_other", "agent-net/w_other", "internal/tui/other.go")
+
+	task := "Problem: Fix parser crash in internal/toolcatalog/catalog.go.\n" +
+		"Evidence:\n- crash was seen in internal/gateway/brief.go and internal/tui/other.go\n" +
+		"Done:\n- tests pass in internal/toolcatalog/catalog.go\n"
+	failures, _, err := s.checkWorkerBrief(briefFrame(task), "shop", briefTestRepo())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(failures) != 0 {
+		t.Fatalf("brief citing files only as evidence failed: %v", failures)
+	}
+}
+
+// A brief that asks to change scripts/test-changed.sh overlaps a change or worker holding it.
+func TestWorkerBriefChangingTestChangedScriptIsRefused(t *testing.T) {
+	s, _ := newTestStore(t)
+	repo := briefTestRepo()
+	repo.Files = append(repo.Files, "scripts/test-changed.sh")
+	insertOpenChange(t, s, "ch_script", "agent-net/w_script", "scripts/test-changed.sh")
+
+	task := "Problem: Fix issue in test runner.\n" +
+		"Done:\n- change scripts/test-changed.sh to add timeout flag\n"
+	failures, _, err := s.checkWorkerBrief(briefFrame(task), "shop", repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "overlaps open change ch_script on scripts/test-changed.sh"
+	if !strings.Contains(strings.Join(failures, "\n"), want) {
+		t.Fatalf("failures %q do not say %q", failures, want)
+	}
+}
+
+// A brief whose done list changes a held file is still refused.
+func TestWorkerBriefWhoseDoneListChangesHeldFileIsRefused(t *testing.T) {
+	s, _ := newTestStore(t)
+	worker := runningWorkerWithTask(t, s, "Fix internal/gateway/brief.go and its tests.")
+
+	task := "Problem: Fix parser crash in internal/toolcatalog/catalog.go.\n" +
+		"Evidence:\n- see stack trace in internal/tui/other.go\n" +
+		"Done:\n- change internal/gateway/brief.go to fix crash\n"
+	failures, _, err := s.checkWorkerBrief(briefFrame(task), "shop", briefTestRepo())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "overlaps running worker " + worker + " on internal/gateway/brief.go"
+	if !strings.Contains(strings.Join(failures, "\n"), want) {
+		t.Fatalf("failures %q do not say %q", failures, want)
+	}
+}
+
+// A brief where 'do not' or 'never' does not use an avoidance verb still counts
+// named files as overlaps, while 'do not run', 'do not touch', and 'only runs' blank.
+func TestWorkerBriefAvoidVerbRequired(t *testing.T) {
+	s, _ := newTestStore(t)
+	worker := runningWorkerWithTask(t, s, "Fix internal/gateway/brief.go and its tests.")
+
+	for _, task := range []string{
+		"Problem: Fix names do not swap in internal/gateway/brief.go.\nDone:\n- tests pass in internal/toolcatalog/catalog.go\n",
+		"Problem: The session never wakes in internal/gateway/brief.go.\nDone:\n- tests pass in internal/toolcatalog/catalog.go\n",
+	} {
+		t.Run(task, func(t *testing.T) {
+			failures, _, err := s.checkWorkerBrief(briefFrame(task), "shop", briefTestRepo())
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "overlaps running worker " + worker + " on internal/gateway/brief.go"
+			if !strings.Contains(strings.Join(failures, "\n"), want) {
+				t.Fatalf("failures %q do not say %q", failures, want)
+			}
+		})
+	}
+
+	for _, task := range []string{
+		"Problem: Do not run the full package.\nScope: do not touch internal/gateway/brief.go.\nDone:\n- tests pass in internal/toolcatalog/catalog.go\n",
+		"Problem: Only runs scripts/test-changed.sh.\nScope: do not touch internal/gateway/brief.go.\nDone:\n- tests pass in internal/toolcatalog/catalog.go\n",
+	} {
+		t.Run(task, func(t *testing.T) {
+			failures, _, err := s.checkWorkerBrief(briefFrame(task), "shop", briefTestRepo())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(failures) != 0 {
+				t.Fatalf("unexpected failures: %v", failures)
+			}
+		})
+	}
+}
+
 func briefTestRepo() protocol.WorkerBriefRepo {
 	return protocol.WorkerBriefRepo{Root: "/repo/shop", Files: []string{
 		"internal/gateway/brief.go", "internal/tui/other.go", "internal/toolcatalog/catalog.go",
