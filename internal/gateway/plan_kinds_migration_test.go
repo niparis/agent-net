@@ -47,13 +47,7 @@ func TestPlanAndAttemptTablesMergeWithKinds(t *testing.T) {
 	// The tools retire migration drops plans later, so the replay stops at the merge.
 	replayToMerge := func() error {
 		t.Helper()
-		if behind(t, s.db) {
-			restoreRepoSideTables(t, s.db)
-		}
-		full := migrations
-		migrations = full[:rewind+1]
-		defer func() { migrations = full }()
-		return s.migrate()
+		return replayMigrationsUpTo(t, s, rewind+1)
 	}
 	rewindToMerge := func() {
 		t.Helper()

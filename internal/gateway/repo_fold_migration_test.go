@@ -219,6 +219,20 @@ func replayMigrations(t *testing.T, s *Store) error {
 	return s.migrate()
 }
 
+// replayMigrationsUpTo is replayMigrations for the first steps migrations only.
+// The tables come back before the list is cut: the restore looks up the later
+// migrations by name.
+func replayMigrationsUpTo(t *testing.T, s *Store, steps int) error {
+	t.Helper()
+	if behind(t, s.db) {
+		restoreRepoSideTables(t, s.db)
+	}
+	full := migrations
+	migrations = full[:steps]
+	defer func() { migrations = full }()
+	return s.migrate()
+}
+
 // restoreRepoSideTablesAt does what replayMigrations does for a database file
 // that a test is about to open, so the gateway migrates it itself.
 func restoreRepoSideTablesAt(t *testing.T, path string) {
