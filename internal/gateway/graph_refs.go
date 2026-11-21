@@ -50,7 +50,7 @@ func (g *Gateway) graphRefsBlockers(ctx context.Context, q interface {
 		}
 		g.mu.Unlock()
 	}
-	rows, err := q.QueryContext(ctx, `SELECT n.id, n.hostname, (n.graph_refs_supported=0 OR trim(n.version) IN ('','unknown')) FROM nodes n WHERE n.removed=0`)
+	rows, err := q.QueryContext(ctx, `SELECT n.id, n.hostname, (n.graph_refs_supported=0 OR trim(n.version) IN ('','unknown')) FROM nodes n WHERE n.removed=0 AND n.state='enrolled'`)
 	if err != nil {
 		return nil, err
 	}
