@@ -126,7 +126,7 @@ func TestIdleCompact(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Setenv("COMPACT_TRANSCRIPT", transcript)
-			t.Setenv("COMPACT_WANT", "\x1b[200~/compact "+compactInstructions+"\x1b[201~")
+			t.Setenv("COMPACT_WANT", "/compact "+compactInstructions)
 			starts := filepath.Join(dir, "starts")
 			t.Setenv("COMPACT_STARTS", starts)
 			h := &compactHost{fakeHost: &fakeHost{}, snap: settings.Snapshot{}, viewing: map[int]bool{77: tc.viewing}}
@@ -400,7 +400,7 @@ func TestIdleCompactNoActivitySinceCompact(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Setenv("COMPACT_TRANSCRIPT", transcript)
-			t.Setenv("COMPACT_WANT", "\x1b[200~/compact "+compactInstructions+"\x1b[201~")
+			t.Setenv("COMPACT_WANT", "/compact "+compactInstructions)
 			starts := filepath.Join(dir, "starts")
 			t.Setenv("COMPACT_STARTS", starts)
 			h := &compactHost{fakeHost: &fakeHost{}, snap: settings.Snapshot{}}
@@ -442,9 +442,11 @@ func TestIdleCompactNoActivitySinceCompact(t *testing.T) {
 	}
 }
 
-// The daemon types "/compact " and the fixed instructions wrapped in bracketed
-// paste, then a carriage return, into the attach terminal. The fake claude
-// reads the raw bytes (raw mode keeps the \r) and checks them byte for byte.
+// The daemon types "/compact " and the fixed instructions as keys, with no
+// bracketed paste, then a carriage return, into the attach terminal. With the
+// paste markers the CTO got "\/compact" and the command did not run. The fake
+// claude reads the raw bytes (raw mode keeps the \r) and checks them byte for
+// byte.
 func TestIdleCompactTypesFixedInstructions(t *testing.T) {
 	const assistant = `{"type":"assistant","message":{"usage":{"input_tokens":10,"cache_creation_input_tokens":20,"cache_read_input_tokens":299970}}}` + "\n"
 	dir := t.TempDir()
@@ -472,7 +474,7 @@ func TestIdleCompactTypesFixedInstructions(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	want := "\x1b[200~/compact " + compactInstructions + "\x1b[201~\r"
+	want := "/compact " + compactInstructions + "\r"
 	bin := filepath.Join(dir, "claude")
 	script := fmt.Sprintf("#!/bin/sh\nstty raw -echo\nprintf '❯'\ndd bs=1 count=%d of=\"$COMPACT_LINE\" 2>/dev/null\n", len(want)) + fakeCompactOutput + "IFS= read -r line\n"
 	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
