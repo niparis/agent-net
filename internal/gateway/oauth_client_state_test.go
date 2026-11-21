@@ -64,14 +64,14 @@ func TestUnapprovedClientIsSweptAfterAnHour(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c.t = c.t.Add(59 * time.Minute)
+	c.advance(59 * time.Minute)
 	if err := s.CleanupOAuth(c.t); err != nil {
 		t.Fatal(err)
 	}
 	if w := oauthAuthorize(h, forgotten, nil); w.Code != 200 {
 		t.Fatalf("client swept before an hour: %d", w.Code)
 	}
-	c.t = c.t.Add(2 * time.Minute)
+	c.advance(2 * time.Minute)
 	if err := s.CleanupOAuth(c.t); err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestUnapprovedClientIsSweptAfterAnHour(t *testing.T) {
 	if err := s.RevokeApp(apps[0].ID); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(24 * time.Hour)
+	c.advance(24 * time.Hour)
 	if err := s.CleanupOAuth(c.t); err != nil {
 		t.Fatal(err)
 	}

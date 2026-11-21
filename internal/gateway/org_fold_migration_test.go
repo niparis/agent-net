@@ -49,6 +49,7 @@ func rewindBeforeOrgFold(t *testing.T, s *Store) {
 	`); err != nil {
 		t.Fatal(err)
 	}
+	restoreRepoSideTables(t, s.db)
 }
 
 func TestOrgFoldMigration(t *testing.T) {
