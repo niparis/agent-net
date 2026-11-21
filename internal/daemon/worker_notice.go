@@ -1831,6 +1831,33 @@ func (d *Daemon) openCodeTurnIdle(session string) bool {
 	return pending
 }
 
+// workerLeftoverSkipped tells whether the worker-end commit leaves a file out
+// on purpose: a built tool, a compiled binary, a binary blob or a file over
+// 5 MB. Such a file is build output, not work. Cleanup uses the same answer.
+func workerLeftoverSkipped(dir, path string, info os.FileInfo) (bool, error) {
+	skip := path == "agent-net" || strings.HasSuffix(path, ".test") || strings.HasSuffix(path, ".exe") || info.Size() > 5_000_000
+	if !info.Mode().IsRegular() || skip {
+		return skip, nil
+	}
+	f, err := os.Open(filepath.Join(dir, path))
+	if err != nil {
+		return false, err
+	}
+	buf := make([]byte, 8192)
+	n, _ := f.Read(buf)
+	f.Close()
+	buf = buf[:n]
+	magic := string(buf)
+	skip = strings.HasPrefix(magic, "\x7fELF") || strings.HasPrefix(magic, "MZ")
+	if len(buf) >= 4 {
+		switch string(buf[:4]) {
+		case "\xfe\xed\xfa\xce", "\xce\xfa\xed\xfe", "\xfe\xed\xfa\xcf", "\xcf\xfa\xed\xfe", "\xca\xfe\xba\xbe", "\xbe\xba\xfe\xca":
+			skip = true
+		}
+	}
+	return skip || bytes.IndexByte(buf, 0) >= 0, nil
+}
+
 // stageWorkerLeftovers filters both staged and unstaged paths before adding them.
 func stageWorkerLeftovers(ctx context.Context, dir string) (string, error) {
 	paths, err := gitOut(ctx, dir, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
@@ -1854,25 +1881,9 @@ func stageWorkerLeftovers(ctx context.Context, dir string) (string, error) {
 		if isUntrackedSandboxPlaceholder(ctx, dir, path, info) {
 			continue
 		}
-		skip := path == "agent-net" || strings.HasSuffix(path, ".test") || strings.HasSuffix(path, ".exe") || info.Size() > 5_000_000
-		if info.Mode().IsRegular() && !skip {
-			f, err := os.Open(filepath.Join(dir, path))
-			if err != nil {
-				return "", err
-			}
-			buf := make([]byte, 8192)
-			n, _ := f.Read(buf)
-			f.Close()
-			buf = buf[:n]
-			magic := string(buf)
-			skip = strings.HasPrefix(magic, "\x7fELF") || strings.HasPrefix(magic, "MZ")
-			if len(buf) >= 4 {
-				switch string(buf[:4]) {
-				case "\xfe\xed\xfa\xce", "\xce\xfa\xed\xfe", "\xfe\xed\xfa\xcf", "\xcf\xfa\xed\xfe", "\xca\xfe\xba\xbe", "\xbe\xba\xfe\xca":
-					skip = true
-				}
-			}
-			skip = skip || bytes.IndexByte(buf, 0) >= 0
+		skip, err := workerLeftoverSkipped(dir, path, info)
+		if err != nil {
+			return "", err
 		}
 		if skip {
 			// Reset also removes a file the worker had already staged.

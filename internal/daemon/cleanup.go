@@ -198,7 +198,10 @@ type cleanupWorktree struct {
 	ID, Project, Path, Branch, Harness, DefaultBranch  string
 	EndedAt, ChangeEndedAt, RetainUntil, DirtyLoggedAt time.Time
 	ChangeState, MergedCommit, RetainHead              string
-	ChangeChecked                                      bool
+	// ChangeHead is the branch head the change recorded. A merged change says
+	// nothing about commits made after it.
+	ChangeHead    string
+	ChangeChecked bool
 	// RemoteDefaultRef is the fetched origin/<default> ref for the project,
 	// resolved once per cleanup pass outside the cleanup locks.
 	RemoteDefaultRef string
@@ -338,11 +341,11 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 		if err != nil || checkedOut != branchRef {
 			return nil
 		}
-		status, err := gitOut(ctx, w.Path, "status", "--porcelain=v1", "--untracked-files=all")
+		dirty, err := cleanupHoldsWork(ctx, w.Path)
 		if err != nil {
 			return err
 		}
-		if status != "" {
+		if dirty {
 			if d.log != nil && (w.DirtyLoggedAt.IsZero() || now.Sub(w.DirtyLoggedAt) >= 24*time.Hour) {
 				d.Logf("worker.worktree_cleanup path=%q dirty=true", w.Path)
 				if d.st != nil {
@@ -400,6 +403,9 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 	// closedSafe marks a closed change whose commits are all kept elsewhere, so
 	// its branch can go with its worktree.
 	closedSafe := false
+	// folderOnly frees the folder and leaves the branch, with no later
+	// deletion: the branch may hold the only copy of the commits.
+	folderOnly := false
 	if w.ChangeState != "" && w.ChangeState != protocol.ChangeMerged && w.ChangeState != protocol.ChangeDone && w.ChangeState != protocol.ChangeStopped {
 		return nil
 	}
@@ -411,8 +417,16 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 				return nil
 			}
 			// A squash lands on the default branch as one normal commit, so
-			// this ancestry check covers both a merge and a squash.
-			if _, err := gitOut(ctx, w.Project, "merge-base", "--is-ancestor", w.MergedCommit, defaultRef); err != nil {
+			// this ancestry check covers both a merge and a squash. A pull
+			// request merges on the remote, and the local default branch may
+			// never be pulled, so the remote ref counts too.
+			defaults := cleanupDefaultRefs(ctx, w.Project, defaultRef, w.RemoteDefaultRef)
+			if !cleanupOnAny(ctx, w.Project, w.MergedCommit, defaults) {
+				return nil
+			}
+			// The change merged the head it recorded. Commits made after that
+			// are work nobody merged.
+			if w.ChangeHead != "" && w.ChangeHead != head && !cleanupOnAny(ctx, w.Project, head, defaults) {
 				return nil
 			}
 			// Disregard deadlines saved by an older cleanup pass.
@@ -455,39 +469,29 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 		if w.MergedReason != "" {
 			reason = w.MergedReason
 		} else {
-			if !w.ChangeChecked || now.Sub(w.EndedAt) <= 14*24*time.Hour {
+			if !w.ChangeChecked {
 				return nil
 			}
-			// A worker record or symbolic ref may still name this branch.
-			if d.st != nil {
-				var references int
-				if err := d.st.db.QueryRow(`SELECT count(*) FROM workers WHERE id<>? AND base=?`, w.ID, w.Branch).Scan(&references); err != nil {
-					return err
-				}
-				if references != 0 {
-					return nil
-				}
-			}
-			symrefs, err := gitOut(ctx, w.Project, "for-each-ref", "--format=%(symref)")
-			if err != nil {
-				return err
-			}
-			for _, ref := range strings.Split(symrefs, "\n") {
-				if ref == branchRef {
-					return nil
-				}
-			}
-			// Keep commits referenced by another branch or remote.
+			// No proof that the work landed. Only the folder goes, never the
+			// branch, so no commit is lost: the branch keeps them. A branch
+			// that another ref already holds (a push, another branch) frees
+			// its folder after three days, as a closed change does; one that
+			// only this branch holds waits 14 days.
+			wait := 14 * 24 * time.Hour
 			others, err := gitOut(ctx, w.Project, "for-each-ref", "--format=%(refname)", "--contains", head, "refs/heads/", "refs/remotes/")
 			if err != nil {
 				return err
 			}
 			for _, ref := range strings.Split(others, "\n") {
 				if ref != "" && ref != branchRef {
-					return nil
+					wait = 3 * 24 * time.Hour
+					break
 				}
 			}
-			reason = "stale"
+			if now.Sub(w.EndedAt) <= wait {
+				return nil
+			}
+			reason, folderOnly = "stale", true
 		}
 	}
 	if !retainUntil.IsZero() && d.st != nil {
@@ -510,7 +514,9 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 		return err
 	}
 	if !missing {
-		if _, err := gitOut(ctx, w.Project, "worktree", "remove", w.Path); err != nil {
+		// --force because the dirty check let untracked build output through.
+		// It does not override a lock.
+		if _, err := gitOut(ctx, w.Project, "worktree", "remove", "--force", w.Path); err != nil {
 			unlocked := false
 			reason, locked := worktreeLockReason(ctx, w.Project, w.Path)
 			if locked && reason == "initializing" {
@@ -523,7 +529,7 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 						if d.log != nil {
 							d.Logf("worker.worktree_cleanup path=%q unlocked_stale=initializing", w.Path)
 						}
-						if _, remErr := gitOut(ctx, w.Project, "worktree", "remove", w.Path); remErr != nil {
+						if _, remErr := gitOut(ctx, w.Project, "worktree", "remove", "--force", w.Path); remErr != nil {
 							return remErr
 						}
 						unlocked = true
@@ -543,6 +549,15 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 	if !missing && d.log != nil {
 		d.Logf("worker.worktree_cleanup path=%q branch=%q reason=%s freed=%d", w.Path, w.Branch, reason, size)
 	}
+	if folderOnly {
+		// The branch is not this ledger's to remove any more.
+		if d.st != nil {
+			if _, err := d.st.db.Exec(`DELETE FROM cleanup_worktrees WHERE worker_id=? AND ended_at=?`, w.ID, w.EndedAt.UnixNano()); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	if (w.ChangeState == protocol.ChangeStopped && !closedSafe) || (!retainUntil.IsZero() && now.Before(retainUntil)) {
 		return nil
 	}
@@ -559,6 +574,70 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 		}
 	}
 	return nil
+}
+
+// cleanupDefaultRefs lists the refs that count as the project's default branch:
+// the local branch, and origin's tracking ref. The tracking ref is the one this
+// pass fetched, or the last one fetched when the fetch failed; either way it
+// only holds commits that were on the remote.
+func cleanupDefaultRefs(ctx context.Context, project, localRef, fetchedRef string) []string {
+	refs := []string{localRef}
+	if fetchedRef == "" {
+		fetchedRef = "refs/remotes/origin/" + strings.TrimPrefix(localRef, "refs/heads/")
+		if _, err := gitOut(ctx, project, "show-ref", "--verify", "--quiet", fetchedRef); err != nil {
+			return refs
+		}
+	}
+	return append(refs, fetchedRef)
+}
+
+// cleanupOnAny reports whether commit is an ancestor of one of refs.
+func cleanupOnAny(ctx context.Context, project, commit string, refs []string) bool {
+	for _, ref := range refs {
+		if _, err := gitOut(ctx, project, "merge-base", "--is-ancestor", commit, ref); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// cleanupHoldsWork reports whether a worktree has work that exists nowhere
+// else: a tracked change, or an untracked file the worker-end commit would have
+// saved. Untracked files that commit leaves out on purpose (the empty files the
+// OS sandbox mounts, compiled binaries, files over 5 MB) are build output, and
+// they must not keep a finished worker's folder for ever.
+func cleanupHoldsWork(ctx context.Context, dir string) (bool, error) {
+	tracked, err := gitOut(ctx, dir, "status", "--porcelain=v1", "--untracked-files=no")
+	if err != nil || tracked != "" {
+		return tracked != "", err
+	}
+	others, err := gitOut(ctx, dir, "ls-files", "-z", "--others", "--exclude-standard")
+	if err != nil {
+		return false, err
+	}
+	for _, path := range strings.Split(others, "\x00") {
+		if path == "" {
+			continue
+		}
+		info, err := os.Lstat(filepath.Join(dir, path))
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		if isUntrackedSandboxPlaceholder(ctx, dir, path, info) {
+			continue
+		}
+		skipped, err := workerLeftoverSkipped(dir, path, info)
+		if err != nil {
+			return false, err
+		}
+		if !skipped {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // worktreeLockReason reads the lock reason for targetPath from git worktree list.
@@ -895,15 +974,32 @@ func (d *Daemon) cleanupChange(ctx context.Context, project string, w *cleanupWo
 		return fmt.Errorf("gateway does not support branch lookup")
 	}
 	w.ChangeChecked = true
-	if len(page.Changes) > 1 || page.Next != "" {
+	if page.Next != "" {
 		w.ChangeState = protocol.ChangeOpen
 		return nil
 	}
-	if len(page.Changes) == 1 {
-		c := page.Changes[0].Change
-		w.ChangeState, w.MergedCommit = c.State, c.MergedCommit
-		if c.UpdatedAt != 0 {
-			w.ChangeEndedAt = time.Unix(c.UpdatedAt, 0)
+	// A branch can carry several changes: a closed one and the one that merged,
+	// or a continued worker's second round. While one is still open the
+	// worktree is in use. When all are finished, the newest decides, and
+	// cleanupWorktree checks the branch head against git before it removes
+	// anything.
+	var newest *protocol.Change
+	for i := range page.Changes {
+		c := &page.Changes[i].Change
+		switch c.State {
+		case protocol.ChangeMerged, protocol.ChangeDone, protocol.ChangeStopped:
+		default:
+			w.ChangeState = protocol.ChangeOpen
+			return nil
+		}
+		if newest == nil || c.UpdatedAt >= newest.UpdatedAt {
+			newest = c
+		}
+	}
+	if newest != nil {
+		w.ChangeState, w.MergedCommit, w.ChangeHead = newest.State, newest.MergedCommit, newest.HeadCommit
+		if newest.UpdatedAt != 0 {
+			w.ChangeEndedAt = time.Unix(newest.UpdatedAt, 0)
 		}
 	}
 	return nil
