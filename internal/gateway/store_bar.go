@@ -3,6 +3,7 @@ package gateway
 import (
 	"database/sql"
 	"fmt"
+	"path"
 	"strconv"
 	"strings"
 
@@ -263,12 +264,19 @@ func (s *Store) barAskText(tx *sql.Tx, session string, c resolvedContext, hash s
 	if !lead {
 		return "", nil
 	}
+	// The rules come from the repo's own AGENTS.md, so only a session in the
+	// repo's folder is asked (see draftRepoFolder).
+	folder, err := s.draftRepoFolder(tx, session, c.Repo)
+	if err != nil || folder == "" {
+		return "", err
+	}
 	if err = record("bar", c.Repo, hash); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("[agent-net] Project rules request. You lead %s, and it has no project rules yet.\n"+
 		"Workers read these rules in their brief and check their diff against each one. The accept and review steps check the same list.\n"+
-		"Read AGENTS.md and README.md. Then write 5 to 15 short rules with one agent_bar_edit call (add: [...]). "+
+		"Read %s and %s. Then write 5 to 15 short rules with one agent_bar_edit call (add: [...]). "+
 		"Each rule is one line, concrete and checkable against a diff. Take them from what AGENTS.md and README.md say, and from rules reviewers would reject a change for. Do not guess.\n"+
-		"agent-net asks once, and again only if AGENTS.md changes. You and the owner can change the rules later with agent_bar_edit.", c.Repo), nil
+		"agent-net asks once, and again only if AGENTS.md changes. You and the owner can change the rules later with agent_bar_edit.",
+		c.Repo, path.Join(folder, "AGENTS.md"), path.Join(folder, "README.md")), nil
 }

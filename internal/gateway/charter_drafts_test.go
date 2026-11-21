@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -26,7 +27,7 @@ func mustAsk(t *testing.T, s *Store, sid, hash string) string {
 }
 
 func TestCharterDraftAskedOncePerAgentsMD(t *testing.T) {
-	s := teamStore(t)
+	s := draftFolderStore(t)
 	sid := draftSession(t, s, "demo")
 	text := mustAsk(t, s, sid, "h1")
 	for _, want := range []string{"AGENTS.md", "agent_charter_draft", "purpose", "maturity", "accepts", "escalate", "feature_requests"} {
@@ -55,7 +56,7 @@ func TestCharterDraftAskedOncePerAgentsMD(t *testing.T) {
 }
 
 func TestCharterDraftAskNamesOnlyMissingFields(t *testing.T) {
-	s := teamStore(t)
+	s := draftFolderStore(t)
 	for _, q := range []protocol.CharterSetRequest{
 		{Level: "repo", Node: "demo", Attr: "purpose", Value: "Demo repo"},
 		{Level: "repo", Node: "demo", Attr: "maturity", Value: "early"},
@@ -292,5 +293,77 @@ func TestTeamRequestNeverGoesToTheMerger(t *testing.T) {
 	}
 	if got := mustAsk(t, s, lead, "h1"); !strings.Contains(got, "You lead team Alpha") {
 		t.Fatalf("the lead was not asked for the team charter:\n%s", got)
+	}
+}
+
+// draftFolderStore is teamStore with each repo's folder recorded on the node,
+// as `agent-net projects add` does. The repo's sessions work in that folder.
+func draftFolderStore(t *testing.T) *Store {
+	t.Helper()
+	s := teamStore(t)
+	if _, err := s.db.Exec(`INSERT INTO projects(node_id,path,name,added_at,checked_at) SELECT node_id,cwd,repo_project,0,0 FROM sessions WHERE repo_project<>'' AND cwd<>''`); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func TestCharterDraftIsAskedOnlyInTheRepoFolder(t *testing.T) {
+	s := draftFolderStore(t)
+	var node, repo string
+	if err := s.db.QueryRow(`SELECT node_id,id FROM sessions WHERE cwd='/w/demo'`).Scan(&node, &repo); err != nil {
+		t.Fatal(err)
+	}
+	// An umbrella session in /w names the repo too, but its AGENTS.md is the
+	// umbrella's. A draft from it would describe the umbrella, not the repo.
+	umbrella, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "umbrella", Cwd: "/w",
+		Repo: protocol.RepoInfo{Root: "/w", Project: "demo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A draft asked before this fix left a row for the umbrella. It must not
+	// block the ask to the repo session.
+	if _, err := s.db.Exec(`INSERT INTO charter_draft_asks(level,scope,source_hash,asked_at,session_id) VALUES('repo','demo','h-umbrella',0,?)`, umbrella); err != nil {
+		t.Fatal(err)
+	}
+	if text := mustAsk(t, s, umbrella, "h-umbrella-2"); text != "" {
+		t.Fatalf("umbrella session was asked to draft the repo:\n%s", text)
+	}
+	text := mustAsk(t, s, repo, "h-repo")
+	if !strings.Contains(text, "Read /w/demo/AGENTS.md") || strings.Contains(text, "Read AGENTS.md") {
+		t.Fatalf("request does not name the repo's AGENTS.md:\n%s", text)
+	}
+	if again := mustAsk(t, s, repo, "h-repo"); again != "" {
+		t.Fatalf("asked twice for the same AGENTS.md:\n%s", again)
+	}
+}
+
+func TestCharterDraftWaitsForASessionInTheRepoFolder(t *testing.T) {
+	s := draftFolderStore(t)
+	if _, err := s.db.Exec(`UPDATE sessions SET cwd='/w' WHERE cwd='/w/demo'`); err != nil {
+		t.Fatal(err)
+	}
+	var reasons []string
+	s.logf = func(event string, kv ...any) {
+		reasons = append(reasons, event+fmt.Sprint(kv...))
+	}
+	sid := draftSession(t, s, "demo")
+	if text := mustAsk(t, s, sid, "h1"); text != "" {
+		t.Fatalf("asked from outside the repo folder:\n%s", text)
+	}
+	if len(reasons) != 1 || !strings.Contains(reasons[0], "outside the repo folder") {
+		t.Fatalf("reason not logged once: %q", reasons)
+	}
+	if again := mustAsk(t, s, sid, "h1"); again != "" || len(reasons) != 1 {
+		t.Fatalf("same skip asked or logged again: %q %q", again, reasons)
+	}
+}
+
+func TestCharterDraftNeedsARecordedRepoFolder(t *testing.T) {
+	s := draftFolderStore(t)
+	if _, err := s.db.Exec(`DELETE FROM projects WHERE name='demo'`); err != nil {
+		t.Fatal(err)
+	}
+	if text := mustAsk(t, s, draftSession(t, s, "demo"), "h1"); text != "" {
+		t.Fatalf("asked for a repo with no recorded folder:\n%s", text)
 	}
 }

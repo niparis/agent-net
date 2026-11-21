@@ -16,7 +16,7 @@ type barFixture struct {
 
 func newBarFixture(t *testing.T) barFixture {
 	t.Helper()
-	s := teamStore(t)
+	s := draftFolderStore(t)
 	f := barFixture{s: s, lead: draftSession(t, s, "demo")}
 	var node string
 	if err := s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, f.lead).Scan(&node); err != nil {
@@ -196,10 +196,21 @@ func TestBarIsInTheAcceptAndReviewTasks(t *testing.T) {
 	}
 }
 
+func TestBarRequestWaitsForTheLeadInTheRepoFolder(t *testing.T) {
+	f := newBarFixture(t)
+	// The lead works in an umbrella folder above the repo's folder.
+	if _, err := f.s.db.Exec(`UPDATE sessions SET cwd='/w' WHERE id=?`, f.lead); err != nil {
+		t.Fatal(err)
+	}
+	if text := mustAsk(t, f.s, f.lead, "h1"); strings.Contains(text, "Project rules request") {
+		t.Fatalf("lead outside the repo folder was asked for the rules:\n%s", text)
+	}
+}
+
 func TestBarRequestToTheLeadOncePerAgentsMD(t *testing.T) {
 	f := newBarFixture(t)
 	text := mustAsk(t, f.s, f.lead, "h1")
-	for _, want := range []string{"Project rules request", "agent_bar_edit", "5 to 15", "AGENTS.md"} {
+	for _, want := range []string{"Project rules request", "agent_bar_edit", "5 to 15", "/w/demo/AGENTS.md"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("request lacks %q:\n%s", want, text)
 		}

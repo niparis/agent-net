@@ -38,6 +38,7 @@ func reject(format string, args ...any) error { return Rejection(fmt.Sprintf(for
 type Store struct {
 	graphRefsOn    atomic.Bool
 	upsertSeen     sync.Map // session report key -> sessionSeen, see session_upsert_skip.go
+	draftSkips     sync.Map // session and repo -> why a charter draft was last not asked
 	settingsHookMu sync.RWMutex
 	settingsHook   func()
 	charterHookMu  sync.RWMutex

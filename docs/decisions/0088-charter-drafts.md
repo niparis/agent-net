@@ -25,8 +25,14 @@ no own value for a field, the gateway asks a live session of that repo.
   `charter_draft_asks(level, scope, source_hash)` holds the last hash. A new
   request needs a different hash, which means AGENTS.md changed. No AGENTS.md
   means no request. Workers, the owner, the CTO and bots are never asked.
+- Only a session in the repo's folder is asked. The folder is the path the
+  repo has in the `projects` table on the session's machine. A session counts
+  when its working folder is that path or below it. An umbrella session above
+  the repo folder is not asked, because its AGENTS.md is not the repo's. The
+  project rules request (decision 0147) uses the same rule. With no such session,
+  nothing is asked, and the reason is logged once per session and repo.
 - The text the session gets starts `[agent-net] Charter draft request.` It
-  says to read AGENTS.md (and README.md if needed), lists the empty fields with
+  says to read the repo folder's AGENTS.md (and README.md there if needed), lists the empty fields with
   the charter guide's meaning and size for each, and says to call
   `agent_charter_draft` once per field. It adds that a draft is a suggestion,
   that nothing changes until the owner accepts it, that a draft never grants

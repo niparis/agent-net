@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 
@@ -58,6 +59,47 @@ func draftMissing(q draftQuerier, level, scope string, fields []string) ([]strin
 		}
 	}
 	return out, nil
+}
+
+// draftDue lists the fields of one level that are still empty and were not
+// asked about for this version of AGENTS.md. A level with no name has none.
+func draftDue(q draftQuerier, level, scope, hash string, fields []string) ([]string, error) {
+	if scope == "" {
+		return nil, nil
+	}
+	asked, err := draftAsked(q, level, scope, hash)
+	if err != nil || asked {
+		return nil, err
+	}
+	return draftMissing(q, level, scope, fields)
+}
+
+// draftRepoFolder is the folder of repo on the session's machine when the
+// session works in that folder or below it. It is "" otherwise, and the reason
+// is logged once per session and repo, since every turn asks again.
+func (s *Store) draftRepoFolder(q draftQuerier, session, repo string) (string, error) {
+	var folder string
+	err := q.QueryRow(`SELECT p.path FROM sessions s JOIN projects p ON p.node_id=s.node_id AND p.name=?
+		WHERE s.id=? AND (s.cwd=p.path OR substr(s.cwd,1,length(p.path)+1)=p.path||'/')
+		ORDER BY length(p.path) DESC LIMIT 1`, repo, session).Scan(&folder)
+	if err == nil {
+		return folder, nil
+	}
+	if err != sql.ErrNoRows {
+		return "", err
+	}
+	var recorded int
+	if err = q.QueryRow(`SELECT COUNT(*) FROM sessions s JOIN projects p ON p.node_id=s.node_id AND p.name=? WHERE s.id=?`, repo, session).Scan(&recorded); err != nil {
+		return "", err
+	}
+	reason := "the session works outside the repo folder"
+	if recorded == 0 {
+		reason = "the repo has no recorded folder on this machine"
+	}
+	if last, loaded := s.draftSkips.Swap(session+"\x00"+repo, reason); !loaded || last != reason {
+		s.logf("charter draft not asked", "repo", repo, "session", session, "reason", reason)
+	}
+	return "", nil
 }
 
 func draftAsked(q draftQuerier, level, scope, hash string) (bool, error) {
@@ -126,46 +168,45 @@ func (s *Store) charterDraftAskFor(session string, c resolvedContext, hash strin
 	}
 	var text strings.Builder
 	if hash != "" {
-		var sections []string
-		if c.Repo != "" {
-			asked, err := draftAsked(tx, "repo", c.Repo, hash)
+		repoMissing, err := draftDue(tx, "repo", c.Repo, hash, draftRepoFields)
+		if err != nil {
+			return "", err
+		}
+		agentMissing, err := draftDue(tx, "agent", c.Agent, hash, draftAgentFields)
+		if err != nil {
+			return "", err
+		}
+		// The repo's charter is drafted from the AGENTS.md in the repo's folder. A
+		// session that works elsewhere, such as an umbrella folder above the repo,
+		// would draft from another file, so only a session in that folder is asked.
+		read := "Read AGENTS.md (and README.md if you need it)."
+		if c.Repo != "" && len(repoMissing)+len(agentMissing) > 0 {
+			folder, err := s.draftRepoFolder(tx, session, c.Repo)
 			if err != nil {
 				return "", err
 			}
-			if !asked {
-				missing, err := draftMissing(tx, "repo", c.Repo, draftRepoFields)
-				if err != nil {
-					return "", err
-				}
-				if len(missing) > 0 {
-					sections = append(sections, fmt.Sprintf("- level repo (%s):\n%s", c.Repo, draftFieldLines(missing)))
-					if err = record("repo", c.Repo, hash); err != nil {
-						return "", err
-					}
-				}
+			if folder == "" {
+				repoMissing, agentMissing = nil, nil
+			} else {
+				read = fmt.Sprintf("Read %s (and README.md in that folder if you need it).", path.Join(folder, "AGENTS.md"))
 			}
 		}
-		if c.Agent != "" {
-			asked, err := draftAsked(tx, "agent", c.Agent, hash)
-			if err != nil {
+		var sections []string
+		if len(repoMissing) > 0 {
+			sections = append(sections, fmt.Sprintf("- level repo (%s):\n%s", c.Repo, draftFieldLines(repoMissing)))
+			if err = record("repo", c.Repo, hash); err != nil {
 				return "", err
 			}
-			if !asked {
-				missing, err := draftMissing(tx, "agent", c.Agent, draftAgentFields)
-				if err != nil {
-					return "", err
-				}
-				if len(missing) > 0 {
-					sections = append(sections, "- level agent (your own work):\n"+draftFieldLines(missing))
-					if err = record("agent", c.Agent, hash); err != nil {
-						return "", err
-					}
-				}
+		}
+		if len(agentMissing) > 0 {
+			sections = append(sections, "- level agent (your own work):\n"+draftFieldLines(agentMissing))
+			if err = record("agent", c.Agent, hash); err != nil {
+				return "", err
 			}
 		}
 		if len(sections) > 0 {
 			text.WriteString("[agent-net] Charter draft request. Some charter fields for this project are empty.\n" +
-				"Read AGENTS.md (and README.md if you need it). Then draft these fields with agent_charter_draft, one call per field (level, attr, value):\n")
+				read + " Then draft these fields with agent_charter_draft, one call per field (level, attr, value):\n")
 			for _, section := range sections {
 				text.WriteString(section)
 			}
