@@ -177,6 +177,12 @@ func TestCleanupDirtyCheckIgnoresUnsavedLeftovers(t *testing.T) {
 	}{
 		{"binary build output", func(t *testing.T, dir string) { writeFile(t, dir, "tool", elf) }, true},
 		{"sandbox placeholder", func(t *testing.T, dir string) { writeFile(t, dir, ".bashrc", nil) }, true},
+		{"sandbox placeholder in a subfolder", func(t *testing.T, dir string) {
+			if err := os.MkdirAll(filepath.Join(dir, "sub", ".claude"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, dir, "sub/.claude/agents", nil)
+		}, true},
 		{"untracked source file", func(t *testing.T, dir string) { writeFile(t, dir, "notes.go", []byte("package x\n")) }, false},
 		{"tracked change", func(t *testing.T, dir string) { writeFile(t, dir, "README.md", []byte("edited\n")) }, false},
 	} {

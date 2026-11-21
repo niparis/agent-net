@@ -302,6 +302,26 @@ func (d *Daemon) createWorktree(ctx context.Context, w *worker, requestedBase ..
 	return nil
 }
 
+// untrackedWorkFiles lists the untracked files in dir that the worker-end commit
+// would save. The sandbox placeholders are left out, as the commit leaves them out.
+func untrackedWorkFiles(ctx context.Context, dir string) []string {
+	out, err := gitOut(ctx, dir, "ls-files", "-z", "--others", "--exclude-standard")
+	if err != nil {
+		return nil
+	}
+	var files []string
+	for _, path := range strings.Split(out, "\x00") {
+		if path == "" {
+			continue
+		}
+		if info, err := os.Lstat(filepath.Join(dir, path)); err == nil && isUntrackedSandboxPlaceholder(ctx, dir, path, info) {
+			continue
+		}
+		files = append(files, path)
+	}
+	return files
+}
+
 // worktreeFacts returns git diff --stat of the worktree against the commit it
 // started from, with the untracked files, and whether there is anything.
 func (d *Daemon) worktreeFacts(w *worker) (stat string, changed bool) {
@@ -320,8 +340,7 @@ func (d *Daemon) worktreeFacts(w *worker) (stat string, changed bool) {
 	if s, err := gitOut(ctx, dir, "diff", "--stat", base); err == nil && s != "" {
 		parts = append(parts, s)
 	}
-	if u, err := gitOut(ctx, dir, "ls-files", "--others", "--exclude-standard"); err == nil && u != "" {
-		files := strings.Split(u, "\n")
+	if files := untrackedWorkFiles(ctx, dir); len(files) > 0 {
 		more := ""
 		if len(files) > 20 {
 			files, more = files[:20], fmt.Sprintf(" and %d more", len(files)-20)
