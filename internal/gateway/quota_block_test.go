@@ -32,8 +32,7 @@ func TestAgyAccountQuotaFailureRefusesNextAgyStart(t *testing.T) {
 		t.Fatal(err)
 	}
 	nc := &nodeConn{id: node}
-	g.conns[node] = nc
-	t.Cleanup(func() { delete(g.conns, node) })
+	setTestConn(t, g, node, nc)
 	start := func(harness, model string) error {
 		t.Helper()
 		_, err := g.workerStart(context.Background(), nc, protocol.WorkerStartFrame{Owner: owner, Level: "normal",

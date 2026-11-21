@@ -52,7 +52,7 @@ func newCallerAgentRig(t *testing.T) *callerAgentRig {
 	t.Helper()
 	r := &callerAgentRig{deliveryRig: newDeliveryRig(t), wakes: make(chan string, 8)}
 	r.g.logger = log.New(io.Discard, "", 0)
-	r.g.conns = map[string]*nodeConn{}
+	resetTestConns(r.g)
 	fakeOwnerNode(t, r.g, r.a, func(h protocol.Header, raw []byte) error {
 		if h.Type == protocol.FrameSessionWake {
 			var p struct {

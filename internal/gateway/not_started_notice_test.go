@@ -215,9 +215,7 @@ func fakeOwnerNode(t *testing.T, g *Gateway, n string, handle func(h protocol.He
 	}
 	ws := <-accepted
 	nc := &nodeConn{id: n, ws: ws, dead: make(chan struct{}), cancel: cancel}
-	g.mu.Lock()
-	g.conns[n] = nc
-	g.mu.Unlock()
+	setTestConn(t, g, n, nc)
 	go func() {
 		for {
 			_, raw, e := client.Read(ctx)
@@ -239,9 +237,7 @@ func fakeOwnerNode(t *testing.T, g *Gateway, n string, handle func(h protocol.He
 		}
 	}()
 	t.Cleanup(func() {
-		g.mu.Lock()
-		delete(g.conns, n)
-		g.mu.Unlock()
+		removeTestConn(g, n)
 		cancel()
 		client.CloseNow()
 		ws.CloseNow()
@@ -601,9 +597,7 @@ func TestNotStartedRosterUsesThePickerReasons(t *testing.T) {
 		t.Fatal(err)
 	}
 	nc := &nodeConn{id: f.nodeA}
-	f.g.mu.Lock()
-	f.g.conns[f.nodeA] = nc
-	f.g.mu.Unlock()
+	setTestConn(t, f.g, f.nodeA, nc)
 
 	if err := f.s.trackWorkerStart("q_1", f.nodeA, f.a, "shop", "claude", ""); err != nil {
 		t.Fatal(err)

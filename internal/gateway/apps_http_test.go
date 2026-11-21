@@ -124,7 +124,7 @@ func TestBotDeliveryNoteAndUnreadRetention(t *testing.T) {
 	defer client.CloseNow()
 	ws := <-connections
 	defer ws.CloseNow()
-	g.conns[node] = &nodeConn{id: node, ws: ws}
+	setTestConn(t, g, node, &nodeConn{id: node, ws: ws})
 	httpServer := httptest.NewServer(testAppsHandler(g))
 	defer httpServer.Close()
 	bot := botClient(t, httpServer.URL, token)

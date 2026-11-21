@@ -35,7 +35,7 @@ func benchRealGateway(b *testing.B) *Gateway {
 		b.Fatal(err)
 	}
 	for _, n := range nodes {
-		g.conns[n.NodeID] = &nodeConn{id: n.NodeID}
+		setTestConn(b, g, n.NodeID, &nodeConn{id: n.NodeID})
 	}
 	return g
 }

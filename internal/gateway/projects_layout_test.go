@@ -37,9 +37,7 @@ func fakeConnectedNode(t *testing.T, g *Gateway, nodeID, hostname string, layout
 
 	ws := <-accepted
 	nc := &nodeConn{id: nodeID, ws: ws, dead: make(chan struct{}), cancel: cancel}
-	g.mu.Lock()
-	g.conns[nodeID] = nc
-	g.mu.Unlock()
+	setTestConn(t, g, nodeID, nc)
 
 	// Read loop on server end to route answers to nc
 	go func() {
@@ -166,9 +164,7 @@ func fakeSlowNode(t *testing.T, g *Gateway, nodeID, hostname string) {
 
 	ws := <-accepted
 	nc := &nodeConn{id: nodeID, ws: ws, dead: make(chan struct{}), cancel: cancel}
-	g.mu.Lock()
-	g.conns[nodeID] = nc
-	g.mu.Unlock()
+	setTestConn(t, g, nodeID, nc)
 
 	// Server read loop
 	go func() {

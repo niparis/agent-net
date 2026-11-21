@@ -179,7 +179,7 @@ func TestMergerReleaseRouting(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.g.logger = log.New(io.Discard, "", 0)
-	r.g.conns = map[string]*nodeConn{}
+	resetTestConns(r.g)
 	wakes := make(chan string, 1)
 	fakeOwnerNode(t, r.g, r.a, func(h protocol.Header, raw []byte) error {
 		if h.Type == protocol.FrameSessionWake {

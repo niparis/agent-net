@@ -49,7 +49,7 @@ func newBenchFixtureChanges(b testing.TB, changes int) *benchFixture {
 			b.Fatal(err)
 		}
 		f.nodes = append(f.nodes, id)
-		g.conns[id] = &nodeConn{id: id}
+		setTestConn(b, g, id, &nodeConn{id: id})
 	}
 	for i := 0; i < 60; i++ {
 		node := f.nodes[i%len(f.nodes)]

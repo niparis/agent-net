@@ -36,8 +36,7 @@ func twoMachineRecheck(t *testing.T) (*Gateway, *nodeConn, *nodeConn, string) {
 		t.Fatal(err)
 	}
 	ncB := &nodeConn{id: nodeB}
-	g.conns[nodeB] = ncB
-	t.Cleanup(func() { delete(g.conns, nodeB) })
+	setTestConn(t, g, nodeB, ncB)
 	quotas := &protocol.Quotas{
 		GeneratedAt: c.now().Unix(),
 		Providers: []protocol.QuotaProvider{

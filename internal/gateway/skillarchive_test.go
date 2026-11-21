@@ -287,9 +287,7 @@ func archiveFakeNodeAnswer(t *testing.T, g *Gateway, n string, bundles map[strin
 	}
 	ws := <-accepted
 	nc := &nodeConn{id: n, ws: ws, dead: make(chan struct{}), cancel: cancel}
-	g.mu.Lock()
-	g.conns[n] = nc
-	g.mu.Unlock()
+	setTestConn(t, g, n, nc)
 	done := make(chan struct{})
 	snapshots := map[string][]byte{}
 	go func() {
@@ -325,9 +323,7 @@ func archiveFakeNodeAnswer(t *testing.T, g *Gateway, n string, bundles map[strin
 		}
 	}()
 	t.Cleanup(func() {
-		g.mu.Lock()
-		delete(g.conns, n)
-		g.mu.Unlock()
+		removeTestConn(g, n)
 		cancel()
 		client.CloseNow()
 		ws.CloseNow()

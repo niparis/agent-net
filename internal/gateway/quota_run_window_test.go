@@ -59,8 +59,7 @@ func newAgyGate(t *testing.T) agyGate {
 		t.Fatal(err)
 	}
 	nc := &nodeConn{id: node}
-	g.conns[node] = nc
-	t.Cleanup(func() { delete(g.conns, node) })
+	setTestConn(t, g, node, nc)
 	return agyGate{g: g, node: node, clock: c, owner: owner, nc: nc}
 }
 
