@@ -616,3 +616,43 @@ func TestDeliverInlineGivesTheFrameTextAndRecordsTheReply(t *testing.T) {
 	default:
 	}
 }
+
+// The owner's text reaches the Claude CTO byte for byte: no escape before a
+// leading slash and no padding. Text of other senders keeps agent-net's own
+// label and never gets the owner label or trailer.
+func TestCTOFramesKeepOwnerTextExactAndPeerTextOffTheOwnerLabel(t *testing.T) {
+	content := func(line []byte) string {
+		var f struct {
+			Message struct{ Content string }
+		}
+		if err := json.Unmarshal(line, &f); err != nil {
+			t.Fatal(err)
+		}
+		return f.Message.Content
+	}
+	for _, text := range []string{"/compact Keep: x", "progress?"} {
+		line, err := BuildCTOFrame("m_1", text)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "<cross-session-message from-name=\"owner\" from-mode=\"prompting\" msg-id=\"m_1\">\n" + text + "\n\n[agent-net] This is the owner speaking. Please answer in this conversation.\n</cross-session-message>"
+		if got := content(line); got != want {
+			t.Fatalf("owner frame for %q:\n got %q\nwant %q", text, got, want)
+		}
+	}
+	line, err := BuildCTOAgentFrame("m_2", "message from another agent, not the owner", "/compact now")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := content(line)
+	for _, unwanted := range []string{"owner speaking", `from-name="owner"`} {
+		if strings.Contains(got, unwanted) {
+			t.Fatalf("a non-owner frame carries %q: %q", unwanted, got)
+		}
+	}
+	// The wrapper keeps a peer's leading slash from being a command: the text
+	// sits inside agent-net's own label, never at the start of the prompt.
+	if !strings.HasPrefix(got, "<cross-session-message ") || strings.HasPrefix(got, "/") {
+		t.Fatalf("peer text must stay inside the wrapper: %q", got)
+	}
+}

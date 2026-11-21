@@ -238,7 +238,7 @@ func TestProposalWaitsForCTOIdle(t *testing.T) {
 		t.Fatal(err)
 	}
 	after := readFake(t, filepath.Join(f.n.cfg.StateDir, "cto"))
-	if got := after.Turns[len(after.Turns)-1]; got != id+" approved and applied" || strings.Contains(got, "result-marker") {
+	if got := after.Turns[len(after.Turns)-1]; got != "[agent-net: agent-net notice, not the owner]\n\n"+id+" approved and applied" || strings.Contains(got, "result-marker") {
 		t.Fatalf("note: %q", got)
 	}
 }
