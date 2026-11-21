@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -23,10 +24,15 @@ var topicTables = map[string][]string{
 	protocol.TopicUsage:    tableUnion(nodesTables, []string{"sessions", "quota_blocks"}),
 }
 
-// No screen topic follows gateway_state, even if a cached read declares it.
+// No screen topic follows gateway_state, even if a cached read declares it by
+// table or by column (calibration reads gateway_state.key and .value for the
+// worker_runs_version counter, which moves in the same transaction as the
+// worker_runs write that the topic already follows).
 func init() {
 	for topic, tables := range topicTables {
-		topicTables[topic] = slices.DeleteFunc(slices.Clone(tables), func(t string) bool { return t == "gateway_state" })
+		topicTables[topic] = slices.DeleteFunc(slices.Clone(tables), func(t string) bool {
+			return t == "gateway_state" || strings.HasPrefix(t, "gateway_state.")
+		})
 	}
 }
 
