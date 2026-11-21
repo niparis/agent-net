@@ -184,40 +184,40 @@ pick 12: first=b weight=0 share="b: 10 of the last 10 normal starts" quota="pb 2
   note: bucket 2.33-2.67: b 1.00 [1.00-1.00] n5, lowest expected cost; qualifying: a 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected, b 1.00 [1.00-1.00] n5 $1.00/run, p 1.00, $1.00 expected
   order: b, a
 == rotation over the allowed set when none qualifies
-pick 1: first=y weight=1.23214 share="y: 1 of the last 1 normal starts" quota="" why="difficulty normal (D 2.50); y 0.82 (n2); no other qualifying" fallback=false
-  note: bucket 2.33-2.67: y 0.82 [0.59-1.00] n2, chosen (benchmark); x 0.68 [0.40-0.96] n2 allowed (benchmark)
-  order: y, x
-pick 2: first=x weight=1.01786 share="x: 1, y: 1 of the last 2 normal starts" quota="" why="difficulty normal (D 2.50); x 0.68 (n2); no other qualifying" fallback=false
+pick 1: first=x weight=1.5 share="x: 1 of the last 1 normal starts" quota="" why="difficulty normal (D 2.50); x 0.68 (n2); none qualified; fallback draw by expected cost" fallback=false
   note: bucket 2.33-2.67: x 0.68 [0.40-0.96] n2, chosen (benchmark); y 0.82 [0.59-1.00] n2 allowed (benchmark)
   order: x, y
-pick 3: first=y weight=1.23214 share="y: 2, x: 1 of the last 3 normal starts" quota="" why="difficulty normal (D 2.50); y 0.82 (n2); no other qualifying" fallback=false
+pick 2: first=y weight=1.5 share="x: 1, y: 1 of the last 2 normal starts" quota="" why="difficulty normal (D 2.50); y 0.82 (n2); none qualified; fallback draw by expected cost" fallback=false
   note: bucket 2.33-2.67: y 0.82 [0.59-1.00] n2, chosen (benchmark); x 0.68 [0.40-0.96] n2 allowed (benchmark)
   order: y, x
-pick 4: first=x weight=1.01786 share="x: 2, y: 2 of the last 4 normal starts" quota="" why="difficulty normal (D 2.50); x 0.68 (n2); no other qualifying" fallback=false
+pick 3: first=x weight=1.5 share="x: 2, y: 1 of the last 3 normal starts" quota="" why="difficulty normal (D 2.50); x 0.68 (n2); none qualified; fallback draw by expected cost" fallback=false
   note: bucket 2.33-2.67: x 0.68 [0.40-0.96] n2, chosen (benchmark); y 0.82 [0.59-1.00] n2 allowed (benchmark)
   order: x, y
-pick 5: first=y weight=1.23214 share="y: 3, x: 2 of the last 5 normal starts" quota="" why="difficulty normal (D 2.50); y 0.82 (n2); no other qualifying" fallback=false
+pick 4: first=y weight=1.5 share="x: 2, y: 2 of the last 4 normal starts" quota="" why="difficulty normal (D 2.50); y 0.82 (n2); none qualified; fallback draw by expected cost" fallback=false
   note: bucket 2.33-2.67: y 0.82 [0.59-1.00] n2, chosen (benchmark); x 0.68 [0.40-0.96] n2 allowed (benchmark)
   order: y, x
-pick 6: first=x weight=1.01786 share="x: 3, y: 3 of the last 6 normal starts" quota="" why="difficulty normal (D 2.50); x 0.68 (n2); no other qualifying" fallback=false
+pick 5: first=x weight=1.5 share="x: 3, y: 2 of the last 5 normal starts" quota="" why="difficulty normal (D 2.50); x 0.68 (n2); none qualified; fallback draw by expected cost" fallback=false
   note: bucket 2.33-2.67: x 0.68 [0.40-0.96] n2, chosen (benchmark); y 0.82 [0.59-1.00] n2 allowed (benchmark)
   order: x, y
-pick 7: first=y weight=1.23214 share="y: 4, x: 3 of the last 7 normal starts" quota="" why="difficulty normal (D 2.50); y 0.82 (n2); no other qualifying" fallback=false
+pick 6: first=y weight=1.5 share="x: 3, y: 3 of the last 6 normal starts" quota="" why="difficulty normal (D 2.50); y 0.82 (n2); none qualified; fallback draw by expected cost" fallback=false
   note: bucket 2.33-2.67: y 0.82 [0.59-1.00] n2, chosen (benchmark); x 0.68 [0.40-0.96] n2 allowed (benchmark)
   order: y, x
-pick 8: first=x weight=1.01786 share="x: 4, y: 4 of the last 8 normal starts" quota="" why="difficulty normal (D 2.50); x 0.68 (n2); no other qualifying" fallback=false
+pick 7: first=x weight=1.5 share="x: 4, y: 3 of the last 7 normal starts" quota="" why="difficulty normal (D 2.50); x 0.68 (n2); none qualified; fallback draw by expected cost" fallback=false
   note: bucket 2.33-2.67: x 0.68 [0.40-0.96] n2, chosen (benchmark); y 0.82 [0.59-1.00] n2 allowed (benchmark)
   order: x, y
-pick 9: first=y weight=1.23214 share="y: 5, x: 4 of the last 9 normal starts" quota="" why="difficulty normal (D 2.50); y 0.82 (n2); no other qualifying" fallback=false
+pick 8: first=y weight=1.5 share="x: 4, y: 4 of the last 8 normal starts" quota="" why="difficulty normal (D 2.50); y 0.82 (n2); none qualified; fallback draw by expected cost" fallback=false
   note: bucket 2.33-2.67: y 0.82 [0.59-1.00] n2, chosen (benchmark); x 0.68 [0.40-0.96] n2 allowed (benchmark)
   order: y, x
-pick 10: first=x weight=1.01786 share="x: 5, y: 5 of the last 10 normal starts" quota="" why="difficulty normal (D 2.50); x 0.68 (n2); no other qualifying" fallback=false
+pick 9: first=x weight=1.5 share="x: 5, y: 4 of the last 9 normal starts" quota="" why="difficulty normal (D 2.50); x 0.68 (n2); none qualified; fallback draw by expected cost" fallback=false
   note: bucket 2.33-2.67: x 0.68 [0.40-0.96] n2, chosen (benchmark); y 0.82 [0.59-1.00] n2 allowed (benchmark)
   order: x, y
-pick 11: first=y weight=1.23214 share="x: 5, y: 5 of the last 10 normal starts" quota="" why="difficulty normal (D 2.50); y 0.82 (n2); no other qualifying" fallback=false
+pick 10: first=y weight=1.5 share="x: 5, y: 5 of the last 10 normal starts" quota="" why="difficulty normal (D 2.50); y 0.82 (n2); none qualified; fallback draw by expected cost" fallback=false
   note: bucket 2.33-2.67: y 0.82 [0.59-1.00] n2, chosen (benchmark); x 0.68 [0.40-0.96] n2 allowed (benchmark)
   order: y, x
-pick 12: first=y weight=1.23214 share="y: 6, x: 4 of the last 10 normal starts" quota="" why="difficulty normal (D 2.50); y 0.82 (n2); no other qualifying" fallback=false
+pick 11: first=x weight=1.5 share="x: 5, y: 5 of the last 10 normal starts" quota="" why="difficulty normal (D 2.50); x 0.68 (n2); none qualified; fallback draw by expected cost" fallback=false
+  note: bucket 2.33-2.67: x 0.68 [0.40-0.96] n2, chosen (benchmark); y 0.82 [0.59-1.00] n2 allowed (benchmark)
+  order: x, y
+pick 12: first=y weight=1.5 share="x: 5, y: 5 of the last 10 normal starts" quota="" why="difficulty normal (D 2.50); y 0.82 (n2); none qualified; fallback draw by expected cost" fallback=false
   note: bucket 2.33-2.67: y 0.82 [0.59-1.00] n2, chosen (benchmark); x 0.68 [0.40-0.96] n2 allowed (benchmark)
   order: y, x
 == level rule when no model is allowed

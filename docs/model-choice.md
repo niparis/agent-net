@@ -131,15 +131,32 @@ The pick is the allowed candidate with at least three tasks and the lowest
 expected cost after pace (section 5). A tie goes to the higher cell score, then
 to the name.
 
-When no candidate has three tasks in the bucket, the picker rotates among the
-allowed candidates. The weights come from pace, benchmark and record. When no
-candidate is allowed, the level rule takes over: candidates whose benchmark
-meets the level, in order.
+When no candidate has three tasks in the bucket, nothing is proven. The picker
+then makes a fallback draw among the allowed candidates (decision 0181). A
+candidate's weight is 1 divided by its expected cost, the cost in the list
+above, in place of the cell score of the rotation. A cheaper run is drawn more
+often.
+  - *Pace:* the quota pace factor applies as before, so a provider behind its
+    pace gets more weight. The weight is the pace factor over the expected cost,
+    which is the same as 1 over the cost after pace in section 5.
+  - *Uncertain boost:* the weight is times `picker.uncertain_boost` (1.5) for a
+    thin cell that is not far above the work.
+  - *Record and recent marks:* the track record, the recent success (times 1.2)
+    and the recent early quit (halved) apply as in the rotation.
+  - *Floor:* a cost of zero or an unbounded cost reads as the bounds of
+    `FallbackDrawWeight`, so every allowed candidate keeps a chance to build a
+    record.
+
+The draw is a weighted rotation, so each candidate's share of the picks follows
+its weight over time. The start note says `none qualified; fallback draw by
+expected cost`. When no candidate is allowed, the level rule takes over:
+candidates whose benchmark meets the level, in order.
 
 Where: `internal/protocol/picker.go` (cell, `ExpectedCost`),
 `internal/protocol/picker_choose.go` (`PickerBucketVerdicts`,
-`pickOrderByCells`, `expectedCosts`), `internal/protocol/chooser.go`
-(`rotateRanked`, `rotationWeight`), decision 0161.
+`pickOrderByCells`, `expectedCosts`, `FallbackDrawWeight`),
+`internal/protocol/chooser.go` (`rotateRanked`, `rotationWeight`), decisions
+0161 and 0181.
 
 ### 4. Explore
 

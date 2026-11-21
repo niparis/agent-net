@@ -100,7 +100,7 @@ CREATE TABLE pick_candidates (run_id TEXT, pos INTEGER, name TEXT, harness TEXT,
   rule TEXT, bucket_lo REAL, bucket_hi REAL, cell_score REAL, cell_low REAL, cell_high REAL, cell_n INTEGER,
   is_allowed INTEGER, is_qualified INTEGER, is_prior INTEGER, is_best INTEGER, is_chosen INTEGER, is_winner INTEGER,
   left_out_reason TEXT NOT NULL DEFAULT '', cost_per_run REAL, p_clean REAL, rescue_cost REAL, expected_cost REAL, pace_room REAL,
-  pace_factor REAL, adjusted_cost REAL);
+  pace_factor REAL, adjusted_cost REAL, weight REAL NOT NULL DEFAULT 0, probability REAL NOT NULL DEFAULT 0);
 `
 	if _, err := db.Exec(schema); err != nil {
 		t.Fatal(err)
@@ -338,5 +338,39 @@ func TestReplayLeavesOutAProtectedProvider(t *testing.T) {
 	r := RunReplay(s, nil, nil)
 	if r.V2.Models["deepseek"] != 0 || r.V2.Models["big"] != 1 {
 		t.Fatalf("V2 picked %v, want big only", r.V2.Models)
+	}
+}
+
+// The recorded fallback pick has two allowed candidates and no qualifier. The
+// live draw favoured big (share 0.6); big is the dearer one, so the draw by
+// expected cost moves the most likely candidate to deepseek.
+func TestFallbackReplayMovesTheDrawToTheCheapestCandidate(t *testing.T) {
+	s, err := OpenSnapshot(fixture(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Picks) != 1 {
+		t.Fatalf("picks: %d", len(s.Picks))
+	}
+	rows := s.Picks[0].Rows
+	for i := range rows {
+		rows[i].Qualified = false
+		rows[i].Allowed = true
+		switch rows[i].Name {
+		case "deepseek":
+			rows[i].Expected, rows[i].Share = 0.2, 0.4
+		case "big":
+			rows[i].Expected, rows[i].Share = 0.8, 0.6
+		}
+	}
+	r := RunFallback(s)
+	if r.Picks != 1 || r.Replayed != 1 {
+		t.Fatalf("picks %d replayed %d", r.Picks, r.Replayed)
+	}
+	if r.Changed != 1 || r.Moves["big -> deepseek"] != 1 {
+		t.Fatalf("moves: %v", r.Moves)
+	}
+	if r.NewCost >= r.OldCost {
+		t.Fatalf("expected cost of the draw did not fall: recorded %.4f, new %.4f", r.OldCost, r.NewCost)
 	}
 }

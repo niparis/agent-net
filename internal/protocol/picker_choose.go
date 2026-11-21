@@ -9,9 +9,10 @@ import (
 
 // The cell pick (decision 0105) keeps the interval-based allowed set, then
 // picks the proven candidate with the lowest expected cost, a run's cost plus
-// the rescue of the next dearer model when it fails (decision 0161). Allowed thin cells receive an exploration share. When no candidates qualify,
-// the original allowed rotation applies. When nothing is allowed the caller
-// falls back to the level rule.
+// the rescue of the next dearer model when it fails (decision 0161). Allowed
+// thin cells receive an exploration share. When no candidates qualify, the
+// allowed set is drawn by the expected cost of each run (FallbackDrawWeight).
+// When nothing is allowed the caller falls back to the level rule.
 
 // PickerCandidateFacts is what the cell rule reads about one candidate in one
 // bucket. The TUI builds these from picker_get and the picker builds them from
@@ -245,6 +246,29 @@ func expectedCosts(entries []*pickerEntry, table *PickerTable, bucket int, price
 	}
 }
 
+// fallbackCostMin and fallbackCostMax bound the expected cost that
+// FallbackDrawWeight reads, in dollars per accepted run. Without the bounds a
+// zero cost gives an infinite weight and an unbounded cost a zero weight.
+const (
+	fallbackCostMin = 1e-6
+	fallbackCostMax = 1e6
+)
+
+// FallbackDrawWeight is the draw weight of a candidate when no candidate is
+// proven: 1 divided by its expected cost (cost plus rework, decision 0161). A
+// cheaper run is drawn more often. The cost is held inside the fallback bounds,
+// so the weight is never zero and every allowed candidate keeps a chance to
+// build a record. An unbounded expected cost (the quality v2 rule, no clean run
+// yet) reads as the top bound, and a zero cost as the bottom one.
+func FallbackDrawWeight(expected float64) float64 {
+	if math.IsNaN(expected) || expected > fallbackCostMax {
+		expected = fallbackCostMax
+	} else if expected < fallbackCostMin {
+		expected = fallbackCostMin
+	}
+	return 1 / expected
+}
+
 // pickOrderByCells returns the cell rule's whole order (decision 0162). The
 // first choice is the one the rule picked and carries the pick's rows and note;
 // the rest follow in the order the gate should try them.
@@ -369,7 +393,10 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 			// An early quit is one failed attempt, with the existing failure weight.
 			c := e.c
 			c.Failed = c.Failed || c.EarlyQuitLevels[level]
-			fit := math.Max(e.cell.Score, .05)
+			// Nothing is proven, so the cell score does not weigh the draw: the
+			// expected cost does (decision 0181). rotationWeight still applies the
+			// quota pace, the track record and the recent success or failure.
+			fit := FallbackDrawWeight(e.expected)
 			if e.cell.N < set.UncertainN && !e.above {
 				fit *= set.UncertainBoost
 			}
@@ -579,10 +606,12 @@ func pickerShortWhy(level string, d float64, difficultyNote string, chosen *pick
 	if chosen != nil && chosen.qualified && altCount > 0 {
 		altCount--
 	}
-	switch altCount {
-	case 0:
+	switch {
+	case qualifyingCount == 0:
+		parts = append(parts, "none qualified; fallback draw by expected cost")
+	case altCount == 0:
 		parts = append(parts, "no other qualifying")
-	case 1:
+	case altCount == 1:
 		parts = append(parts, "1 other qualifying")
 	default:
 		parts = append(parts, fmt.Sprintf("%d other qualifying", altCount))
