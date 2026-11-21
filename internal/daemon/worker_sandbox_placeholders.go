@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"os"
+	"strings"
 )
 
 // sandboxPlaceholderNames are the paths Claude Code's bwrap sandbox masks. When
@@ -20,6 +21,7 @@ var sandboxPlaceholderNames = []string{
 	".claude/loop.md",
 	".claude/output-styles",
 	".claude/routines",
+	".claude/settings.json",
 	".claude/skills",
 	".claude/workflows",
 	".gitconfig",
@@ -40,16 +42,21 @@ func isUntrackedSandboxPlaceholder(ctx context.Context, dir, path string, info o
 	if !info.Mode().IsRegular() || info.Size() != 0 {
 		return false
 	}
-	known := false
-	for _, name := range sandboxPlaceholderNames {
-		if name == path {
-			known = true
-			break
-		}
-	}
-	if !known {
+	if !isSandboxPlaceholderPath(path) {
 		return false
 	}
 	_, err := gitOut(ctx, dir, "ls-files", "--error-unmatch", "--", path)
 	return err != nil
+}
+
+// isSandboxPlaceholderPath tells whether a worktree-relative path has a placeholder
+// name at the root or in any subfolder. A worker that runs commands in a
+// subfolder gets the same masked files there.
+func isSandboxPlaceholderPath(path string) bool {
+	for _, name := range sandboxPlaceholderNames {
+		if path == name || strings.HasSuffix(path, "/"+name) {
+			return true
+		}
+	}
+	return false
 }

@@ -91,3 +91,75 @@ func TestLeftoverKeepsRealFilesWithPlaceholderNames(t *testing.T) {
 		t.Fatalf("leftover commit has %q, want .bashrc and .gitconfig", got)
 	}
 }
+
+// A sandboxed worker that runs commands in a subfolder gets the same empty
+// placeholders there. They are not work at any depth.
+func TestLeftoverSkipsSandboxPlaceholdersInSubfolders(t *testing.T) {
+	repo := newRepo(t, "placeholder-subdirs")
+	for _, name := range []string{"sub/.claude/agents", "sub/.mcp.json", "sub/deeper/.bashrc", "internal/gateway/.claude/settings.json"} {
+		file := filepath.Join(repo, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(repo, "keep.txt"), []byte("work"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d := commitTestDaemon(t)
+	w := &worker{id: "w_placeholder_subdirs_test", worktree: repo}
+	if !d.saveWorkerChanges(w, "save", "test", false) {
+		t.Fatal("nothing committed")
+	}
+	if got := gitOutT(t, repo, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"); got != "keep.txt" {
+		t.Fatalf("leftover commit has %q, want only keep.txt", got)
+	}
+}
+
+// A non-empty file with a placeholder name in a subfolder is work and is kept.
+func TestLeftoverKeepsRealFilesWithPlaceholderNamesInSubfolders(t *testing.T) {
+	repo := newRepo(t, "placeholder-subdirs-real")
+	for name, data := range map[string][]byte{
+		"sub/.mcp.json":             []byte("{}\n"),
+		"sub/.claude/settings.json": []byte("{}\n"),
+		"sub/.claude/agents":        nil,
+	} {
+		file := filepath.Join(repo, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d := commitTestDaemon(t)
+	w := &worker{id: "w_placeholder_subdirs_real_test", worktree: repo}
+	if !d.saveWorkerChanges(w, "save", "test", false) {
+		t.Fatal("nothing committed")
+	}
+	if got := gitOutT(t, repo, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"); got != "sub/.claude/settings.json\nsub/.mcp.json" {
+		t.Fatalf("leftover commit has %q, want the two non-empty files", got)
+	}
+}
+
+// The hand-back's untracked list tells the owner what the worker left behind.
+// Placeholders are not work, so they must not be listed as untracked files.
+func TestHandbackFactsSkipSandboxPlaceholders(t *testing.T) {
+	repo := newRepo(t, "placeholder-facts")
+	base := gitOutT(t, repo, "rev-parse", "HEAD")
+	writeSandboxPlaceholders(t, repo)
+	d := commitTestDaemon(t)
+	w := &worker{id: "w_placeholder_facts_test", worktree: repo, base: base}
+	if stat, changed := d.worktreeFacts(w); changed {
+		t.Fatalf("placeholders alone count as work:\n%s", stat)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "keep.txt"), []byte("work"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stat, _ := d.worktreeFacts(w)
+	if stat != "untracked: keep.txt" {
+		t.Fatalf("untracked list is %q, want only keep.txt", stat)
+	}
+}
