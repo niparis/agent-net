@@ -98,7 +98,7 @@ func TestBriefFailedHarnessesScope(t *testing.T) {
 	if got, _ := g.store.briefFailedHarnesses(hash); !got["agy"] {
 		t.Fatalf("same brief not marked: %v", got)
 	}
-	c.t = c.t.Add(briefLaunchWindow + time.Minute)
+	c.advance(briefLaunchWindow + time.Minute)
 	if got, _ := g.store.briefFailedHarnesses(hash); len(got) != 0 {
 		t.Fatalf("exclusion outlived the window: %v", got)
 	}
