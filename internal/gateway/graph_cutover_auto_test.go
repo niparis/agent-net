@@ -3,7 +3,9 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 
@@ -93,7 +95,10 @@ func waitGraphCutoverOn(t *testing.T, g *Gateway) {
 func graphCutoverBackup(t *testing.T, g *Gateway) string {
 	t.Helper()
 	var backup string
-	if err := g.store.db.QueryRow(`SELECT value FROM gateway_state WHERE key='graph_ref_backup'`).Scan(&backup); err != nil {
+	// The settings fold deletes the empty backup row the state migration copied,
+	// so a gateway that has not cut over has no row at all.
+	err := g.store.db.QueryRow(`SELECT value FROM gateway_state WHERE key='graph_ref_backup'`).Scan(&backup)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		t.Fatal(err)
 	}
 	return backup

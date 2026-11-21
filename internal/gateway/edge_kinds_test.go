@@ -49,6 +49,9 @@ func removeEdgeKindsForTest(t *testing.T, s *Store) {
 	if _, err := s.db.Exec(`DROP TRIGGER edge_kinds_insert; DROP TRIGGER edge_history_kinds_insert; DROP TRIGGER merger_removed; DROP TRIGGER merger_replaced;`); err != nil {
 		t.Fatal(err)
 	}
+	// The old merger trigger bumps setting_revision, which the settings fold
+	// dropped. SQLite checks every trigger when a column is dropped below.
+	restoreSettingsFoldTables(t, s.db)
 	if _, err := s.db.Exec(mergerLifecycleMigration()); err != nil {
 		t.Fatal(err)
 	}

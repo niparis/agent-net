@@ -152,8 +152,14 @@ func agentParentTx(tx *sql.Tx, agent string) (string, error) {
 	if agent == "cto" {
 		return protocol.OrgRoot, nil
 	}
+	// The org tree build runs inside migration 202, when the chief session is
+	// still in owner_settings and gateway_state does not exist yet.
+	chiefSession, _, err := markerGetTx(tx, chiefSessionKey)
+	if err != nil {
+		return "", err
+	}
 	var chief bool
-	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions WHERE agent_id=? AND id=(SELECT value FROM gateway_state WHERE key='chief_session'))`, agent).Scan(&chief); err != nil {
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions WHERE agent_id=? AND id=?)`, agent, chiefSession).Scan(&chief); err != nil {
 		return "", err
 	}
 	if chief {
