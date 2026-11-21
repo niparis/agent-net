@@ -290,6 +290,7 @@ type compactHost struct {
 	where   settings.Where
 	scans   int // calls of AttachClientsViewing: one per scan
 	notes   []compactNote
+	typed   []string // texts the adapter told the host it typed
 }
 
 // compactNote is one record the adapter sent with NoteCompacted.
@@ -319,6 +320,12 @@ func (h *compactHost) NoteCompacted(harness, nativeID string, at int64, reason s
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.notes = append(h.notes, compactNote{harness: harness, session: nativeID, at: at, reason: reason})
+}
+
+func (h *compactHost) NoteTypedPrompt(harness, nativeID, text string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.typed = append(h.typed, harness+" "+nativeID+" "+text)
 }
 
 func (h *compactHost) AttachClientsViewing(pids []int) map[int]bool {
@@ -497,6 +504,12 @@ func TestIdleCompactTypesFixedInstructions(t *testing.T) {
 	}
 	if string(got) != want {
 		t.Fatalf("typed %q, want %q; logs=%v", got, want, h.logs)
+	}
+	// The daemon must know the line is its own, not the owner's.
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.typed) != 1 || h.typed[0] != "claude test /compact "+compactInstructions {
+		t.Fatalf("host was told %q", h.typed)
 	}
 }
 

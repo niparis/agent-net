@@ -111,6 +111,69 @@ func TestClaudeTypedPromptIsTheOwner(t *testing.T) {
 	}
 }
 
+// The idle compaction line the daemon types is recorded as a human prompt, so
+// the transcript says "owner". The daemon knows it typed the line, so the owner
+// effects must not run. Another text in the same session still counts.
+func TestClaudeDaemonTypedPromptIsNotTheOwner(t *testing.T) {
+	const native, typed = "claude-compact", "/compact Keep: the current task."
+	g, n, sid := claudeSessionFor(t, native)
+	n.d.NoteTypedPrompt("claude", native, typed)
+	transcript := writeClaudeTranscript(t, t.TempDir(), native,
+		claudeUserEntry("p-compact", typed, typedOrigin),
+		claudeUserEntry("p-owner", "fix it", typedOrigin))
+	c := cliClient(t, n)
+	askPolicy(t, c, protocol.PolicyRequest{
+		Harness: "claude", NativeID: native, Prompt: typed,
+		PromptID: "p-compact", TranscriptPath: transcript,
+	})
+	a, _, err := g.gw.Store().Agent(sid)
+	if err != nil || a.OwnerUses != 0 {
+		t.Fatalf("a prompt the daemon typed counted as the owner typing: %+v %v", a, err)
+	}
+	askPolicy(t, c, protocol.PolicyRequest{
+		Harness: "claude", NativeID: native, Prompt: "fix it",
+		PromptID: "p-owner", TranscriptPath: transcript,
+	})
+	a, _, err = g.gw.Store().Agent(sid)
+	if err != nil || a.OwnerUses != 1 {
+		t.Fatalf("the owner's own prompt did not count: %+v %v", a, err)
+	}
+}
+
+// The owner effects are skipped for a daemon-typed line even though its
+// transcript entry says "human". This needs no socket.
+func TestWhenClaudeOwnerPromptSkipsDaemonTypedText(t *testing.T) {
+	const native, typed = "claude-skip", "/compact Keep: the current task."
+	transcript := writeClaudeTranscript(t, t.TempDir(), native,
+		claudeUserEntry("p-1", typed, typedOrigin), claudeUserEntry("p-2", "fix it", typedOrigin))
+	var d Daemon
+	d.NoteTypedPrompt("claude", native, typed)
+	ran := map[string]bool{}
+	for _, tc := range []struct{ id, text string }{{"p-1", typed}, {"p-2", "fix it"}} {
+		d.whenClaudeOwnerPrompt(context.Background(), protocol.PolicyRequest{
+			Harness: "claude", NativeID: native, Prompt: tc.text, PromptID: tc.id, TranscriptPath: transcript,
+		}, func(context.Context) { ran[tc.id] = true })
+	}
+	if ran["p-1"] || !ran["p-2"] {
+		t.Fatalf("owner effects ran for %v, want only p-2", ran)
+	}
+}
+
+// A note expires, so the same text typed by the owner later counts again.
+func TestDaemonTypedNoteExpires(t *testing.T) {
+	now := time.Now()
+	var d daemonTyped
+	d.now = func() time.Time { return now }
+	d.note("s1", "/compact x")
+	if !d.typed("s1", " /compact x\n") || d.typed("s2", "/compact x") {
+		t.Fatal("a note must match its own session and trimmed text only")
+	}
+	now = now.Add(daemonTypedTTL + time.Second)
+	if d.typed("s1", "/compact x") {
+		t.Fatal("an expired note still matched")
+	}
+}
+
 // Claude Code writes the prompt to the transcript after the hook has run, so
 // the typed prompt is counted once its entry appears.
 func TestClaudeTypedPromptCountsAfterTheTranscriptWrite(t *testing.T) {

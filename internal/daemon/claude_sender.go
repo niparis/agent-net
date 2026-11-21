@@ -49,11 +49,16 @@ type claudeTurn struct {
 }
 
 // whenClaudeOwnerPrompt runs apply unless the prompt was sent by a schedule, a
-// peer or Claude Code itself. The prompt hook runs before Claude Code writes
+// peer, Claude Code itself or the daemon. The prompt hook runs before Claude Code writes
 // the prompt to the transcript, and the docs say the file may lag, so the
 // entry is usually missing when the hook runs. The check then waits in the
 // background. A prompt without a usable transcript gets the old answer at once.
 func (d *Daemon) whenClaudeOwnerPrompt(ctx context.Context, p protocol.PolicyRequest, apply func(context.Context)) {
+	// Claude Code records a line the daemon typed itself as a human prompt, so
+	// the transcript cannot tell it from the owner. The daemon knows it.
+	if d.daemonTyped.typed(p.NativeID, p.Prompt) {
+		return
+	}
 	if !claudeTranscriptFor(p.TranscriptPath, p.NativeID, p.PromptID) {
 		apply(ctx)
 		return
