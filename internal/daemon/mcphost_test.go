@@ -98,6 +98,8 @@ func TestMain(m *testing.M) {
 	os.Setenv("GORACE", "atexit_sleep_ms=0")
 	os.Setenv(envFakeOpenCode, "1")
 	os.Setenv(envFakeCodex, "1")
+	// Confine quota-axi discovery to test temp folders. quotaaxi.inDiscoveryRoot
+	// accepts both this root (TMPDIR) and GOTMPDIR.
 	quotaaxi.SetDiscoveryRootForTesting(os.TempDir())
 	quotaaxi.SetSystemNodeDirsForTesting(nil)
 	hideRealHerdr()

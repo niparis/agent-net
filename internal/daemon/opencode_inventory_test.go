@@ -14,22 +14,14 @@ import (
 )
 
 func TestOpenCodeInventoryProbeIsolation(t *testing.T) {
-	tempRoot := filepath.Clean(os.TempDir())
-	withinTemp := func(path string) bool {
-		if path == "" {
-			return false
-		}
-		rel, err := filepath.Rel(tempRoot, filepath.Clean(path))
-		return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
-	}
 	for _, name := range []string{"XDG_STATE_HOME", "XDG_DATA_HOME", "HOME"} {
 		got := os.Getenv(name)
-		if !withinTemp(got) {
-			t.Errorf("%s=%q is outside temp dir %q", name, got, tempRoot)
+		if !testTempFolder(got) {
+			t.Errorf("%s=%q is outside a test temp folder", name, got)
 		}
 	}
-	if path, err := ownerOpenCodeServicePath(""); err != nil || !withinTemp(path) {
-		t.Fatalf("default probe path %q (%v) is outside temp dir %q", path, err, tempRoot)
+	if path, err := ownerOpenCodeServicePath(""); err != nil || !testTempFolder(path) {
+		t.Fatalf("default probe path %q (%v) is outside a test temp folder", path, err)
 	}
 
 	outsideHome := t.TempDir()
@@ -42,10 +34,10 @@ func TestOpenCodeInventoryProbeIsolation(t *testing.T) {
 	writeOwnerOpenCodeService(t, filepath.Join(outsideHome, ".local", "state"), trap.URL)
 
 	t.Setenv("XDG_STATE_HOME", "")
-	if path, err := ownerOpenCodeServicePath(""); err != nil || !withinTemp(path) {
-		t.Fatalf("HOME-fallback probe path %q (%v) is outside temp dir %q", path, err, tempRoot)
-	}
 	t.Setenv("HOME", outsideHome)
+	if path, err := ownerOpenCodeServicePath(""); err != nil || !testTempFolder(path) {
+		t.Fatalf("HOME-fallback probe path %q (%v) is outside a test temp folder", path, err)
+	}
 	list := []protocol.HarnessInfo{{Name: "opencode", Version: "2.2.6"}}
 	(&Daemon{cfg: Config{HomeDir: allowedHome}}).checkOpenCodeCapabilities(context.Background(), list)
 	if path, err := ownerOpenCodeServicePath(allowedHome); err != nil || !strings.HasPrefix(path, allowedHome+string(filepath.Separator)) {
