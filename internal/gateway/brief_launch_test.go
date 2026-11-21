@@ -33,7 +33,11 @@ func briefStartedOn(t *testing.T, g *Gateway, node, owner, hash, harness string)
 
 func stopWorker(t *testing.T, g *Gateway, node, sid, harness string, failure string, ev *protocol.WorkerEvidence) {
 	t.Helper()
-	reason := protocol.StopRunFailed
+	stopWorkerFor(t, g, node, sid, harness, protocol.StopRunFailed, failure, ev)
+}
+
+func stopWorkerFor(t *testing.T, g *Gateway, node, sid, harness, reason, failure string, ev *protocol.WorkerEvidence) {
+	t.Helper()
 	raw, _ := json.Marshal(protocol.WorkerStopped{SessionID: sid, Harness: harness, Model: "m", Reason: reason, Failure: failure, Evidence: ev})
 	if _, err := g.handleWorker(context.Background(), &nodeConn{id: node}, "worker.stopped", raw); err != nil {
 		t.Fatal(err)
@@ -67,6 +71,18 @@ func TestWorkerStoppedNotAttemptedMarksBriefHarness(t *testing.T) {
 				t.Fatalf("failed harnesses %v, want agy=%v", got, tc.want)
 			}
 		})
+	}
+}
+
+// A stop the caller asked for says nothing about the harness: its notice reads
+// as an early quit, but the brief must stay open to that harness.
+func TestWorkerStoppedOnRequestDoesNotMarkBrief(t *testing.T) {
+	g, node, owner, _, _ := setupFloorGateway(t)
+	hash := protocol.BriefHash("alpha", protocol.WorkerStartRequest{Problem: "write the plan", Task: "docs"})
+	sid := briefStartedOn(t, g, node, owner, hash, "agy")
+	stopWorkerFor(t, g, node, sid, "agy", protocol.StopRequested, "", &protocol.WorkerEvidence{EarlyQuit: true, RunSeconds: 82})
+	if got, err := g.store.briefFailedHarnesses(hash); err != nil || len(got) != 0 {
+		t.Fatalf("a stop on request marked the brief: %v, %v", got, err)
 	}
 }
 

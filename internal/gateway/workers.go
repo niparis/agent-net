@@ -269,9 +269,11 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 				return nil, err
 			}
 		}
-		if protocol.WorkerNotAttempted(p.Failure, p.Evidence) {
+		if p.Reason != protocol.StopRequested && p.Reason != protocol.StopOwnerGone && protocol.WorkerNotAttempted(p.Failure, p.Evidence) {
 			// The harness ended the run without trying the task. A retry of the
-			// same brief leaves this harness out, for every model.
+			// same brief leaves this harness out, for every model. A stop the
+			// caller or owner chose reads as an early quit too, but it says
+			// nothing about the harness.
 			if err := g.store.markBriefNotAttempted(p.SessionID); err != nil {
 				return nil, err
 			}
