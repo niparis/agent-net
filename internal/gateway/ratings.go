@@ -67,15 +67,19 @@ func (s *Store) OfferRate(sessionID string) (protocol.RateOfferResult, error) {
 		return out, err
 	}
 
-	var finishedForCaller, ratings, askedForModel int
+	var finishedForCaller int
 	if err := tx.QueryRow(offersSQL+`SELECT COUNT(*) FROM offers WHERE caller = ?`, caller).Scan(&finishedForCaller); err != nil {
 		return out, err
 	}
 	ordinal := finishedForCaller + 1
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM worker_ratings w JOIN worker_runs r ON r.id = w.run_id WHERE r.model = ?`, model).Scan(&ratings); err != nil {
+	ratings, err := countOfModelLevel(tx, `SELECT r.model, COUNT(*) FROM worker_ratings w JOIN worker_runs r ON r.id = w.run_id
+		WHERE r.model = ?1 OR r.model LIKE ?1 || ':%' GROUP BY r.model`, base, effort)
+	if err != nil {
 		return out, err
 	}
-	if err := tx.QueryRow(offersSQL+`SELECT COUNT(*) FROM offers WHERE model = ? AND asked = 1`, model).Scan(&askedForModel); err != nil {
+	askedForModel, err := countOfModelLevel(tx, offersSQL+`SELECT model, COUNT(*) FROM offers
+		WHERE asked = 1 AND (model = ?1 OR model LIKE ?1 || ':%') GROUP BY model`, base, effort)
+	if err != nil {
 		return out, err
 	}
 	out.Ask = ordinal%protocol.RateEvery == 0 ||
@@ -100,11 +104,37 @@ func (s *Store) OfferRate(sessionID string) (protocol.RateOfferResult, error) {
 	return out, nil
 }
 
+// countOfModelLevel sums the counts of a "model, count" query over the models
+// that are this model and effort. A run keeps its model with the effort suffix
+// ("m:high"), the worker's session without it, so the two are compared split.
+func countOfModelLevel(q deliveryQuerier, query, base, effort string) (int, error) {
+	rows, err := q.Query(query, base)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	total := 0
+	for rows.Next() {
+		var model string
+		var n int
+		if err := rows.Scan(&model, &n); err != nil {
+			return 0, err
+		}
+		if b, e := protocol.SplitModelLevel(model); b == base && e == effort {
+			total += n
+		}
+	}
+	return total, rows.Err()
+}
+
 // offersSQL lists the rate offers made so far: one per worker session, with its
 // caller and model. An offer is on the session's first run, or on its session
-// while no run is recorded.
+// while no run is recorded. The model is the session's, which is the one
+// OfferRate looks up, so an offer is counted for the model it was made for even
+// when the run later reports its model in another form.
 const offersSQL = `WITH offers(caller, model, asked) AS (
-	SELECT COALESCE(NULLIF(caller_session_id, ''), caller), model, rate_asked FROM worker_runs WHERE offered_at > 0
+	SELECT COALESCE(NULLIF(r.caller_session_id, ''), r.caller), COALESCE((SELECT x.model FROM sessions x WHERE x.id = r.session_id), r.model), r.rate_asked
+	FROM worker_runs r WHERE r.offered_at > 0
 	UNION ALL SELECT json_extract(CASE WHEN json_valid(worker) THEN worker ELSE '{}' END, '$.owner'), model, rate_asked FROM sessions s
 	WHERE rate_offered_at > 0 AND NOT EXISTS (SELECT 1 FROM worker_runs r WHERE r.session_id = s.id AND r.offered_at > 0)) `
 

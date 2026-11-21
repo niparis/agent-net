@@ -127,6 +127,30 @@ func TestRateOfferMovesToItsRun(t *testing.T) {
 	}
 }
 
+// A run can report its model with an effort suffix that its session lacks. The
+// offer is still counted for the model the session was asked about, so the
+// first three tasks of a little-rated model ask and the fourth does not.
+func TestRateOfferCountsWhenRunModelDiffersFromSession(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("mac", "linux")
+	caller := ratingCaller(t, s, node, "caller", "claude-opus-5-5")
+	want := []bool{true, true, true, false}
+	for i, ask := range want {
+		wid := ratingWorker(t, s, node, caller, "new-model", "normal")
+		out, err := s.OfferRate(wid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out.Ask != ask {
+			t.Fatalf("finished worker %d: ask = %v, want %v (%+v)", i+1, out.Ask, ask, out)
+		}
+		if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: wid, Harness: "opencode", Model: "new-model:high",
+			Outcome: protocol.OutcomeComplete, EndedAt: s.now().Unix(), Caller: caller, CallerSessionID: caller, Difficulty: "normal"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func ratingRun(t *testing.T, s *Store, node, caller, model, difficulty string) string {
 	t.Helper()
 	wid := ratingWorker(t, s, node, caller, model, difficulty)
