@@ -973,7 +973,8 @@ func (g *Gateway) intakeSkillGit() (protocol.SkillArchiveMultiResult, error) {
 		out.Skills = append(out.Skills, added)
 	}
 	if len(out.Skills) > 0 {
-		if _, err = g.store.db.Exec(`INSERT INTO skill_archive_meta(key,value) VALUES('git_intake_at',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, strconv.FormatInt(g.skillArchiveEpoch(), 10)); err != nil {
+		epoch := g.skillArchiveEpoch()
+		if err = stateSet(g.store.db, skillArchiveStatePrefix+"git_intake_at", strconv.FormatInt(epoch, 10), epoch); err != nil {
 			return out, err
 		}
 	}
@@ -985,8 +986,7 @@ func (g *Gateway) intakeSkillGit() (protocol.SkillArchiveMultiResult, error) {
 // start. A marker keeps later starts from repeating the work; a second run
 // would store nothing new anyway.
 func (g *Gateway) skillArchiveStartIntake() {
-	var done string
-	if err := g.store.db.QueryRow(`SELECT value FROM skill_archive_meta WHERE key='git_intake_done'`).Scan(&done); err == nil && done != "" {
+	if done, _, err := stateGet(g.store.db, skillArchiveStatePrefix+"git_intake_done"); err == nil && done != "" {
 		return
 	}
 	result, err := g.intakeSkillGit()
@@ -994,7 +994,8 @@ func (g *Gateway) skillArchiveStartIntake() {
 		g.logLine("error", "where", "skill archive intake", "err", err)
 		return
 	}
-	if _, err = g.store.db.Exec(`INSERT INTO skill_archive_meta(key,value) VALUES('git_intake_done',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, strconv.FormatInt(g.skillArchiveEpoch(), 10)); err != nil {
+	epoch := g.skillArchiveEpoch()
+	if err = stateSet(g.store.db, skillArchiveStatePrefix+"git_intake_done", strconv.FormatInt(epoch, 10), epoch); err != nil {
 		g.logLine("error", "where", "skill archive intake marker", "err", err)
 		return
 	}

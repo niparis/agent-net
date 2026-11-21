@@ -17,9 +17,7 @@ func TestWorkerSandboxCutover(t *testing.T) {
 		}
 	}
 	for _, row := range [][2]string{{"Shop", "sandboxed"}, {"Keep", "read-only"}, {"Twins", "no-network"}} {
-		if _, err := s.db.Exec(`INSERT INTO graph_node_settings VALUES(?, 'worker_sandbox', ?, 1, 'owner')`, row[0], row[1]); err != nil {
-			t.Fatal(err)
-		}
+		legacyNodeSetting(t, s, row[0], "worker_sandbox", row[1])
 	}
 	for _, row := range [][3]string{{"one", "shop", "no-network"}, {"two", "shop", "read-only"}, {"one", "twins", "sandboxed"}} {
 		b, _ := json.Marshal(protocol.DelegationPolicy{Workers: row[2]})
@@ -120,9 +118,7 @@ func TestWorkerSandboxLegacyBackupDoesNotOverrideSettings(t *testing.T) {
 	if err := s.AddArchitect("shop", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO graph_node_settings VALUES('shop','worker_sandbox','read-only',1,'owner')`); err != nil {
-		t.Fatal(err)
-	}
+	legacyNodeSetting(t, s, "shop", "worker_sandbox", "read-only")
 	if err := s.SetNodeSetting("shop", protocol.SettingWorkerSandbox, "no-network", "owner"); err != nil {
 		t.Fatal(err)
 	}
@@ -137,10 +133,6 @@ func TestWorkerSandboxLegacyBackupDoesNotOverrideSettings(t *testing.T) {
 	}
 	if err := s.RemoveArchitect("shop", "owner"); err != nil {
 		t.Fatal(err)
-	}
-	var old string
-	if err := s.db.QueryRow(`SELECT value FROM graph_node_settings WHERE node='shop' AND setting='worker_sandbox'`).Scan(&old); err != nil || old != "read-only" {
-		t.Fatalf("lost backup %q %v", old, err)
 	}
 }
 
@@ -158,9 +150,7 @@ func TestWorkerSandboxCutoverPreservesMachineFallback(t *testing.T) {
 				t.Fatal(err)
 			}
 			if tc.override != "" {
-				if _, err := s.db.Exec(`INSERT INTO graph_node_settings VALUES('shop','worker_sandbox',?,1,'owner')`, tc.override); err != nil {
-					t.Fatal(err)
-				}
+				legacyNodeSetting(t, s, "shop", "worker_sandbox", tc.override)
 			}
 			a, _, err := s.CreateNode("host-a", "linux")
 			if err != nil {
@@ -339,9 +329,7 @@ func TestWorkerSandboxLegacyFallbackWithoutMaturity(t *testing.T) {
 	if err := s.AddArchitect("shop", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO graph_node_settings VALUES('shop','worker_sandbox','read-only',1,'owner')`); err != nil {
-		t.Fatal(err)
-	}
+	legacyNodeSetting(t, s, "shop", "worker_sandbox", "read-only")
 	// The helper belongs to a migration step that ran before the tables merged.
 	restoreOldCharterTables(t, s)
 	tx, err := s.db.Begin()

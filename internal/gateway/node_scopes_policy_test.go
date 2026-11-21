@@ -42,7 +42,7 @@ func TestScopeWriteTellsDaemonsToDropCaches(t *testing.T) {
 // authority text built from them. A session with no scope gets neither.
 func TestPolicyGetCarriesScopesAndDelegatedText(t *testing.T) {
 	r := newDeliveryRig(t)
-	if _, err := r.s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
+	if _, err := r.s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.s.loadGraphRefs(); err != nil {
@@ -131,7 +131,7 @@ func permissionScopeRig(t *testing.T) (*Store, string) {
 	if _, err := s.AddProjects(node, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "other", Path: "/tmp/other"}}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
+	if _, err := s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.loadGraphRefs(); err != nil {

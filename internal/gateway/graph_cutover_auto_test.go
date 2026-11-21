@@ -93,7 +93,7 @@ func waitGraphCutoverOn(t *testing.T, g *Gateway) {
 func graphCutoverBackup(t *testing.T, g *Gateway) string {
 	t.Helper()
 	var backup string
-	if err := g.store.db.QueryRow(`SELECT backup FROM graph_ref_gate WHERE id=1`).Scan(&backup); err != nil {
+	if err := g.store.db.QueryRow(`SELECT value FROM gateway_state WHERE key='graph_ref_backup'`).Scan(&backup); err != nil {
 		t.Fatal(err)
 	}
 	return backup
@@ -189,7 +189,7 @@ func TestGraphCutoverFailureKeepsBackupAndRaisesOneInboxItem(t *testing.T) {
 	now := time.Date(2026, 11, 7, 10, 0, 5, 0, time.UTC)
 	g, _ := autoCutoverGateway(t, now)
 	reportGraphNode(t, g, "fixture", "v0.4.145", true)
-	if _, err := g.store.db.Exec(`CREATE TRIGGER fail_graph_cutover BEFORE UPDATE ON graph_ref_gate BEGIN SELECT RAISE(ABORT,'fixture failure'); END`); err != nil {
+	if _, err := g.store.db.Exec(`CREATE TRIGGER fail_graph_cutover BEFORE INSERT ON gateway_state WHEN NEW.key='graph_ref_gate' BEGIN SELECT RAISE(ABORT,'fixture failure'); END`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -227,7 +227,7 @@ func TestGraphCutoverStaleBlockersRaiseOneInboxItem(t *testing.T) {
 	g, _ := autoCutoverGateway(t, now)
 	node := reportGraphNode(t, g, "behind", "v0.4.144", false)
 
-	if _, err := g.store.db.Exec(`UPDATE graph_cutover_state SET upgraded_at=? WHERE id=1`, now.Add(-23*time.Hour).UnixNano()); err != nil {
+	if _, err := g.store.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_cutover_upgraded_at',CAST(?1 AS TEXT),?1)`, now.Add(-23*time.Hour).UnixNano()); err != nil {
 		t.Fatal(err)
 	}
 	g.checkGraphCutover(context.Background())
@@ -235,7 +235,7 @@ func TestGraphCutoverStaleBlockersRaiseOneInboxItem(t *testing.T) {
 		t.Fatalf("notice before 24 hours: %v", items)
 	}
 
-	if _, err := g.store.db.Exec(`UPDATE graph_cutover_state SET upgraded_at=? WHERE id=1`, now.Add(-25*time.Hour).UnixNano()); err != nil {
+	if _, err := g.store.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_cutover_upgraded_at',CAST(?1 AS TEXT),?1)`, now.Add(-25*time.Hour).UnixNano()); err != nil {
 		t.Fatal(err)
 	}
 	g.checkGraphCutover(context.Background())

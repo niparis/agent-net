@@ -18,9 +18,7 @@ func TestDeliveryCutoverMigratesLegacyRows(t *testing.T) {
 	}
 	legacy := map[string]string{protocol.SettingTestsBeforeMerge: "optional", protocol.SettingMergeAuthority: "delegated", protocol.SettingJudgeConsumers: "free", protocol.SettingDeployRule: "ask", protocol.SettingAutonomy: "wake", protocol.SettingWorkerSandbox: "read-only"}
 	for key, value := range legacy {
-		if _, err := s.db.Exec(`INSERT INTO graph_node_settings VALUES(?,?,?,1,'owner')`, "alpha", key, value); err != nil {
-			t.Fatal(err)
-		}
+		legacyNodeSetting(t, s, "alpha", key, value)
 	}
 	// Replay only the final migration, with data in the old tables.
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "delivery settings cutover")); err != nil {
@@ -30,10 +28,6 @@ func TestDeliveryCutoverMigratesLegacyRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	for key, value := range legacy {
-		var old string
-		if err := s.db.QueryRow(`SELECT value FROM graph_node_settings WHERE node='alpha' AND setting=?`, key).Scan(&old); err != nil || old != value {
-			t.Fatalf("backup %s: %q %v", key, old, err)
-		}
 		if key == protocol.SettingWorkerSandbox {
 			continue
 		}
@@ -61,7 +55,7 @@ func TestDeliveryAdapterUndoAndRemoval(t *testing.T) {
 	if err := s.AddArchitect("alpha", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO graph_node_settings VALUES('alpha','merge_authority','ask',1,'owner'); INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor) VALUES('setting','alpha','merge_authority','','ask',1,'owner')`); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor) VALUES('setting','alpha','merge_authority','','ask',1,'owner')`); err != nil {
 		t.Fatal(err)
 	}
 	var id int64
@@ -77,10 +71,6 @@ func TestDeliveryAdapterUndoAndRemoval(t *testing.T) {
 	got, err := s.NodeSettings("alpha")
 	if err != nil || got.Effective.MergeAuthority != "delegated" || got.Overrides[protocol.SettingMergeAuthority] != "delegated" {
 		t.Fatalf("adapter: %+v %v", got, err)
-	}
-	var backup string
-	if err = s.db.QueryRow(`SELECT value FROM graph_node_settings WHERE node='alpha' AND setting='merge_authority'`).Scan(&backup); err != nil || backup != "ask" {
-		t.Fatalf("backup changed: %s %v", backup, err)
 	}
 	if err = s.RemoveArchitect("alpha", "owner"); err != nil {
 		t.Fatal(err)
@@ -314,7 +304,9 @@ func TestDeliveryNodeSettingsFrameActorCompatibility(t *testing.T) {
 
 func TestDeliveryCutoverIsIdempotentAndKeepsExistingValues(t *testing.T) {
 	s, _ := newTestStore(t)
-	if _, err := s.db.Exec(`INSERT INTO graph_node_settings VALUES('alpha','merge_authority','ask',1,'owner'),('beta','deploy_rule','owner',1,'owner'); INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES('delivery.merge_authority','repo','alpha','','"full"',0)`); err != nil {
+	legacyNodeSetting(t, s, "alpha", "merge_authority", "ask")
+	legacyNodeSetting(t, s, "beta", "deploy_rule", "owner")
+	if _, err := s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES('delivery.merge_authority','repo','alpha','','"full"',0)`); err != nil {
 		t.Fatal(err)
 	}
 	run := func() {

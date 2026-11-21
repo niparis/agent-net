@@ -13,7 +13,7 @@ import (
 func botAgentFixture(t *testing.T) (*Store, App) {
 	t.Helper()
 	s, _ := newTestStore(t)
-	if _, err := s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
+	if _, err := s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.loadGraphRefs(); err != nil {

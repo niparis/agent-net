@@ -27,23 +27,46 @@ func (s *Store) noteGatewayVersion(version string, now time.Time) (time.Time, er
 	if strings.TrimSpace(version) == "" {
 		version = "unknown"
 	}
-	var stored string
-	var at int64
-	if err := s.db.QueryRow(`SELECT gateway_version,upgraded_at FROM graph_cutover_state WHERE id=1`).Scan(&stored, &at); err != nil {
+	stored, _, err := stateGet(s.db, graphCutoverVersionKey)
+	if err != nil {
+		return time.Time{}, err
+	}
+	at, err := s.graphCutoverUpgradedNanos()
+	if err != nil {
 		return time.Time{}, err
 	}
 	if stored != version {
 		at = now.UnixNano()
-		if _, err := s.db.Exec(`UPDATE graph_cutover_state SET gateway_version=?,upgraded_at=? WHERE id=1`, version, at); err != nil {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return time.Time{}, err
+		}
+		defer tx.Rollback()
+		if err := stateSet(tx, graphCutoverVersionKey, version, at); err != nil {
+			return time.Time{}, err
+		}
+		if err := stateSet(tx, graphCutoverUpgradedKey, strconv.FormatInt(at, 10), at); err != nil {
+			return time.Time{}, err
+		}
+		if err := tx.Commit(); err != nil {
 			return time.Time{}, err
 		}
 	}
 	return time.Unix(0, at).UTC(), nil
 }
 
+// graphCutoverUpgradedNanos is the time the running version first started, or 0.
+func (s *Store) graphCutoverUpgradedNanos() (int64, error) {
+	raw, set, err := stateGet(s.db, graphCutoverUpgradedKey)
+	if err != nil || !set {
+		return 0, err
+	}
+	return strconv.ParseInt(raw, 10, 64)
+}
+
 func (s *Store) gatewayUpgradedAt() (time.Time, error) {
-	var at int64
-	if err := s.db.QueryRow(`SELECT upgraded_at FROM graph_cutover_state WHERE id=1`).Scan(&at); err != nil {
+	at, err := s.graphCutoverUpgradedNanos()
+	if err != nil {
 		return time.Time{}, err
 	}
 	if at == 0 {
@@ -286,7 +309,11 @@ func (g *Gateway) enableGraphRefsAutomatically(ctx context.Context) {
 		fail(err)
 		return
 	}
-	if _, err = tx.Exec(`UPDATE graph_ref_gate SET enabled=1,backup=? WHERE id=1`, backup); err != nil {
+	if err = stateSet(tx, graphRefGateKey, "1", st.now().UnixNano()); err != nil {
+		fail(err)
+		return
+	}
+	if err = stateSet(tx, graphRefBackupKey, backup, st.now().UnixNano()); err != nil {
 		fail(err)
 		return
 	}

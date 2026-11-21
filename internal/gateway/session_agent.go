@@ -12,7 +12,7 @@ import (
 func checkActiveSessionIdentity(q interface{ QueryRow(string, ...any) *sql.Row }, session string) error {
 	var inactive bool
 	err := q.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s WHERE s.id=? AND s.online=1
- AND (SELECT enabled FROM graph_ref_gate WHERE id=1)=1 AND
+ AND `+graphRefGateSQL+`='1' AND
  (EXISTS(SELECT 1 FROM repos WHERE id=s.repo_id AND archived<>0) OR EXISTS(SELECT 1 FROM agents WHERE id=s.agent_id AND tombstone<>0)))`, session).Scan(&inactive)
 	if err != nil {
 		return err

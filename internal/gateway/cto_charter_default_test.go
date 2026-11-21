@@ -34,7 +34,7 @@ func ctoCharter(t *testing.T, s *Store) map[string]string {
 func rerunCTOCharterSeed(t *testing.T, s *Store, fresh bool) {
 	t.Helper()
 	if fresh {
-		if _, err := s.db.Exec(`DELETE FROM owner_settings WHERE key=?`, ctoDefaultCharterKey); err != nil {
+		if _, err := s.db.Exec(`DELETE FROM gateway_state WHERE key=?`, ctoDefaultCharterKey); err != nil {
 			t.Fatal(err)
 		}
 	}

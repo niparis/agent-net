@@ -119,7 +119,7 @@ func TestScopeGraphUndo(t *testing.T) {
 func TestNodeScopesMigrationSeedsTodaysGrants(t *testing.T) {
 	s, _ := newTestStore(t)
 	ids, node := graphSessions(t, s, "demo", "other", "app", "chief-of-staff", "wbgpoc-lead", "homelab")
-	if _, err := s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
+	if _, err := s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.loadGraphRefs(); err != nil {
@@ -150,7 +150,7 @@ func TestNodeScopesMigrationSeedsTodaysGrants(t *testing.T) {
 	rerun := func(clear bool) {
 		t.Helper()
 		if clear {
-			if _, err := s.db.Exec(`DELETE FROM node_scopes; DELETE FROM owner_settings WHERE key='node_scopes_seeded'`); err != nil {
+			if _, err := s.db.Exec(`DELETE FROM node_scopes; DELETE FROM gateway_state WHERE key='node_scopes_seeded'`); err != nil {
 				t.Fatal(err)
 			}
 		}

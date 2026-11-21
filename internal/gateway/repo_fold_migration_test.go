@@ -98,7 +98,7 @@ func TestRepoFoldKeepsTheLeadArchiveAndHeldBack(t *testing.T) {
 	}
 
 	// The writes that used the three tables, on the migrated store.
-	if _, err := s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
+	if _, err := s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.loadGraphRefs(); err != nil {
@@ -300,7 +300,7 @@ func TestRepoFoldScopeReadsTheLeadOfAStoreBeforeTheFold(t *testing.T) {
 			t.Fatalf("%s: %v", q, err)
 		}
 	}
-	if _, err := s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
+	if _, err := s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.loadGraphRefs(); err != nil {

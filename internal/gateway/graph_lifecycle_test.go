@@ -39,7 +39,7 @@ func TestGraphLifecycleGateAuthorityAndUndo(t *testing.T) {
 			t.Errorf("%s before cutover: %v", typ, err)
 		}
 	}
-	if _, err = s.db.Exec(`UPDATE graph_ref_gate SET enabled=1`); err != nil {
+	if _, err = s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.loadGraphRefs(); err != nil {
@@ -102,7 +102,7 @@ func TestGraphLifecycleReferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec(`UPDATE graph_ref_gate SET enabled=1`); err != nil {
+	if _, err = s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.loadGraphRefs(); err != nil {
@@ -164,7 +164,7 @@ func TestGraphLifecycleMigrationDuplicates(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err = s.db.Exec(`UPDATE graph_ref_gate SET enabled=1`); err != nil {
+	if _, err = s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.loadGraphRefs(); err != nil {
@@ -211,7 +211,7 @@ func TestGraphLifecycleProposalAndRetainedData(t *testing.T) {
 	nc.graphRefs.Store(true)
 	g := &Gateway{store: s}
 	ctx := context.Background()
-	if _, err = s.db.Exec(`UPDATE graph_ref_gate SET enabled=1`); err != nil {
+	if _, err = s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.loadGraphRefs(); err != nil {
@@ -272,7 +272,7 @@ func TestGraphLifecycleProposalAndRetainedData(t *testing.T) {
 
 func TestGraphLifecycleEdgeUndoCannotAttachInactiveIdentity(t *testing.T) {
 	s, _ := newTestStore(t)
-	if _, err := s.db.Exec(`UPDATE graph_ref_gate SET enabled=1`); err != nil {
+	if _, err := s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.loadGraphRefs(); err != nil {
@@ -315,7 +315,7 @@ func TestGraphLifecycleRepoNamesakeOfLegacyArchitect(t *testing.T) {
 	if err := s.SetCharter("advisor", "purpose", "actor only", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO charter_values SELECT 'agent',scope,attr,value,updated_at,updated_by FROM charter_values WHERE level='repo' AND scope='advisor'; UPDATE graph_ref_gate SET enabled=1`); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO charter_values SELECT 'agent',scope,attr,value,updated_at,updated_by FROM charter_values WHERE level='repo' AND scope='advisor'; INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.loadGraphRefs(); err != nil {
@@ -360,7 +360,7 @@ func TestGraphLifecycleAutomaticRegistrationNames(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err = s.db.Exec(`UPDATE graph_ref_gate SET enabled=1`); err != nil {
+			if _, err = s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 				t.Fatal(err)
 			}
 			if err = s.loadGraphRefs(); err != nil {
@@ -404,7 +404,7 @@ func TestGraphLifecycleAutomaticRegistrationTombstonedOwner(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err = s.db.Exec(`UPDATE graph_ref_gate SET enabled=1`); err != nil {
+			if _, err = s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 				t.Fatal(err)
 			}
 			if err = s.loadGraphRefs(); err != nil {

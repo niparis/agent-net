@@ -37,7 +37,7 @@ func TestSessionLifecycleRejectsInactiveContextAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec(`UPDATE graph_ref_gate SET enabled=1`); err != nil {
+	if _, err = s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.loadGraphRefs(); err != nil {
@@ -102,7 +102,7 @@ func TestSessionLifecycleUsesPersistedCutoverGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec(`UPDATE sessions SET agent_id='former',online=0 WHERE id=?; UPDATE graph_ref_gate SET enabled=1`, id); err != nil {
+	if _, err = s.db.Exec(`UPDATE sessions SET agent_id='former',online=0 WHERE id=?; INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`, id); err != nil {
 		t.Fatal(err)
 	}
 	// The database commit can precede publishing the in-memory gate.

@@ -14,7 +14,7 @@ import (
 // sessions.started_by. This file holds its checks, its one-time build and the
 // update each later write runs so the tree follows the old tables.
 
-// orgTreeBuiltKey is the owner_settings marker of the one-time build.
+// orgTreeBuiltKey is the gateway_state marker of the one-time build.
 const orgTreeBuiltKey = "org_tree_built"
 
 // checkReportsToTarget holds the endpoint rules of the tree: the source is a
@@ -474,7 +474,7 @@ func (s *Store) StoredLead(ref protocol.GraphRef) (protocol.LeadSetResult, error
 
 // buildOrgTreeOnceTx adds the org tree columns, then builds the tree from
 // the records that implied it before (decision 0160). The columns are added
-// whenever they are missing; the tree is built once, then the owner_settings
+// whenever they are missing; the tree is built once, then the gateway_state
 // marker stops it, so a replayed migration never undoes a later edit.
 func buildOrgTreeOnceTx(tx *sql.Tx, now int64) error {
 	for _, col := range []struct{ table, name, spec string }{
@@ -491,8 +491,7 @@ func buildOrgTreeOnceTx(tx *sql.Tx, now int64) error {
 			}
 		}
 	}
-	var built bool
-	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM owner_settings WHERE key=?)`, orgTreeBuiltKey).Scan(&built); err != nil || built {
+	if _, built, err := markerGetTx(tx, orgTreeBuiltKey); err != nil || built {
 		return err
 	}
 	// Each merger row gets its Agent first, so the Agent loop finds it. The
@@ -534,8 +533,7 @@ func buildOrgTreeOnceTx(tx *sql.Tx, now int64) error {
 		OR EXISTS(SELECT 1 FROM session_agent_starts a WHERE a.node_id=sessions.node_id AND a.harness=sessions.harness AND a.native_id=sessions.native_id)`); err != nil {
 		return err
 	}
-	_, err = tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,'1',?)`, orgTreeBuiltKey, now)
-	return err
+	return markerSetTx(tx, orgTreeBuiltKey, "1", now)
 }
 
 // orgSessionNameSQL names session x the way the graph lists a session: its

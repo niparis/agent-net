@@ -1239,7 +1239,7 @@ func TestDeliveryDelegateIsTheTeamLead(t *testing.T) {
 	if err := r.s.AddArchitect("boss", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
+	if _, err := r.s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.s.loadGraphRefs(); err != nil {

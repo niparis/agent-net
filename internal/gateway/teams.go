@@ -75,8 +75,8 @@ func (s *Store) writeTeamTx(q protocol.TeamWrite, actor string, dryRun bool) err
 		return err
 	}
 	defer tx.Rollback()
-	var on bool
-	if err = tx.QueryRow(`SELECT enabled FROM graph_ref_gate WHERE id=1`).Scan(&on); err != nil {
+	on, err := graphRefGateOn(tx)
+	if err != nil {
 		return err
 	}
 	if !on {

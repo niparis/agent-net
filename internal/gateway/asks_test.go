@@ -839,7 +839,7 @@ func TestMovedOnCleanupRunsOnceAndIsConservative(t *testing.T) {
 	same, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "same"})
 	check, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "check"})
 	two, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "two"})
-	if _, err := s.db.Exec(`DELETE FROM owner_settings WHERE key=?`, movedOnCleanupKey); err != nil {
+	if _, err := s.db.Exec(`DELETE FROM gateway_state WHERE key=?`, movedOnCleanupKey); err != nil {
 		t.Fatal(err)
 	}
 	// moved: an approval and a question, then a task announced 11 minutes later.

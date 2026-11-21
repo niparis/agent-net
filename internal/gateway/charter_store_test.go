@@ -90,7 +90,7 @@ func TestOneCharterStoreMigratesAllLevels(t *testing.T) {
 			t.Fatalf("charter_values %s = %q, want %q (all: %v)", k, rows[k], want, rows)
 		}
 	}
-	if _, err := s.db.Exec(`UPDATE graph_ref_gate SET enabled=1 WHERE id=1`); err != nil {
+	if _, err := s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.loadGraphRefs(); err != nil {
