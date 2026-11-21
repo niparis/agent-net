@@ -3,8 +3,12 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -76,6 +80,10 @@ func TestUrgentMessageReachesBusySessionAtItsNextToolCall(t *testing.T) {
 		return known
 	})
 
+	marker := UrgentMarkerPath(n.d.cfg.StateDir, "fake", "nc")
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("no marker for the session with an urgent message held: %v", err)
+	}
 	cli := cliClient(t, n)
 	if text := urgentTake(t, cli, "nc"); text != "inline: STOP copying" {
 		t.Fatalf("the hook got %q, want the urgent message", text)
@@ -87,6 +95,9 @@ func TestUrgentMessageReachesBusySessionAtItsNextToolCall(t *testing.T) {
 		m, ok, err := g.gw.Store().Message(stop)
 		return err == nil && ok && m.State == protocol.StateDelivered
 	})
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("the marker is still there after the take: %v", err)
+	}
 	if text := urgentTake(t, cli, "nc"); text != "" {
 		t.Fatalf("a second hook call got %q, want nothing", text)
 	}
@@ -216,4 +227,139 @@ func TestCodexInlineDeliveryQueuesWhenNoTurnIsActive(t *testing.T) {
 	if !res.Delivered || len(f.steered()) != 0 || queuedCopies(f, "msg-late") != 1 {
 		t.Fatalf("result %+v, steers %v, queued %d", res, f.steered(), queuedCopies(f, "msg-late"))
 	}
+}
+
+// busyWithUrgent sets up a busy session "nc" that has an urgent message held,
+// and returns the node, the adapter, the session ID and the message ID.
+func busyWithUrgent(t *testing.T, cfg func(*Config)) (*testGateway, *node, *fakeAdapter, string, string) {
+	t.Helper()
+	g := startGateway(t, t.TempDir(), "")
+	fa := &fakeAdapter{harness: "fake"}
+	n := startNode(t, g, nodeOpts{adapter: fa, cfg: cfg})
+	busy := fakeSession("nc", "carol")
+	busy.Status = "busy"
+	fa.setSessions(fakeSession("na", "alice"), busy)
+	eventually(t, "both sessions known", func() bool {
+		return fa.host.SessionID("fake", "na") != "" && fa.host.SessionID("fake", "nc") != ""
+	})
+	alice, carol := fa.host.SessionID("fake", "na"), fa.host.SessionID("fake", "nc")
+	eventually(t, "the gateway sees carol busy", func() bool {
+		a, ok, err := g.gw.Store().Agent(carol)
+		return err == nil && ok && a.Status == "busy"
+	})
+	raw, err := n.d.send(context.Background(), protocol.MsgSend{Sender: alice, Recipient: carol,
+		Type: protocol.TypeRequest, Body: "STOP copying", IdempotencyKey: "stop", Urgent: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop := sendResult(t, raw).ID
+	marker := UrgentMarkerPath(n.d.cfg.StateDir, "fake", "nc")
+	eventually(t, "the message is held and the marker is set", func() bool {
+		m, ok, err := g.gw.Store().Message(stop)
+		_, statErr := os.Stat(marker)
+		return err == nil && ok && m.HeldForBusy && statErr == nil
+	})
+	return g, n, fa, carol, stop
+}
+
+// When the turn ends before any tool call took the message, the release sends
+// it and the marker goes, so the hook is free again.
+func TestUrgentMarkerGoesWhenTheTurnEndReleasesTheMessage(t *testing.T) {
+	t.Parallel()
+	g, n, fa, _, stop := busyWithUrgent(t, nil)
+	fa.setSessions(fakeSession("na", "alice"), fakeSession("nc", "carol"))
+	eventually(t, "the turn end delivers the urgent message", func() bool {
+		m, ok, err := g.gw.Store().Message(stop)
+		return err == nil && ok && m.State == protocol.StateDelivered
+	})
+	marker := UrgentMarkerPath(n.d.cfg.StateDir, "fake", "nc")
+	eventually(t, "the marker is gone", func() bool {
+		_, err := os.Stat(marker)
+		return os.IsNotExist(err)
+	})
+}
+
+// A marker left behind, for example by a message the sender withdrew, costs
+// one take: the daemon finds nothing and removes it.
+func TestUrgentTakeRemovesAStaleMarker(t *testing.T) {
+	t.Parallel()
+	_, n, _, carol, _ := busyWithUrgent(t, nil)
+	n.d.urgentHeld.Delete(carol) // what a restart does to the memory flag
+	cli := cliClient(t, n)
+	if text := urgentTake(t, cli, "nc"); text != "" {
+		t.Fatalf("take = %q, want nothing", text)
+	}
+	if _, err := os.Stat(UrgentMarkerPath(n.d.cfg.StateDir, "fake", "nc")); !os.IsNotExist(err) {
+		t.Fatalf("the stale marker is still there: %v", err)
+	}
+}
+
+// A take that answers after the hook's deadline must not show the message
+// inside the answer: that would mark it delivered while nobody reads it. The
+// message goes the normal way instead and still arrives (decision 0180).
+func TestUrgentTakePastItsDeadlineDeliversTheNormalWay(t *testing.T) {
+	t.Parallel()
+	var held protocol.Message
+	var late atomic.Bool
+	g, n, fa, _, stop := busyWithUrgent(t, func(c *Config) {
+		c.testGatewayCall = func(ctx context.Context, typ string, _ any) (json.RawMessage, bool, error) {
+			if typ != protocol.OpUrgentTake || !late.Load() {
+				return nil, false, nil
+			}
+			// The gateway claims the message but answers after the deadline.
+			<-ctx.Done()
+			raw, _ := json.Marshal(protocol.UrgentTaken{Messages: []protocol.Message{held}})
+			return raw, true, nil
+		}
+	})
+	m, ok, err := g.gw.Store().Message(stop)
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	held = m
+	late.Store(true)
+	cli := cliClient(t, n)
+	raw := cli.mustCall(protocol.MethodUrgentTake, protocol.UrgentTakeRequest{Harness: "fake", NativeID: "nc", DeadlineMS: 50})
+	var res protocol.UrgentTakeResult
+	if err := json.Unmarshal(raw, &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.Text != "" || len(res.Messages) != 0 {
+		t.Fatalf("a take past its deadline returned %+v, want nothing", res)
+	}
+	if got := fa.collected(); len(got) != 0 {
+		t.Fatalf("the message was shown inline after the deadline: %+v", got)
+	}
+	eventually(t, "the message reaches the inbox the normal way", func() bool {
+		for _, d := range fa.delivered() {
+			if d.ID == stop {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+// The cost of one urgent_take that finds nothing, as a Pi or OpenCode plugin
+// pays it after every tool call: one request on its open local socket.
+// It only measures, so it runs on request:
+//
+//	AGENT_NET_MEASURE=1 go test ./internal/daemon -run '^TestMeasureUrgentTakeWithNothingHeld$' -v
+func TestMeasureUrgentTakeWithNothingHeld(t *testing.T) {
+	if os.Getenv("AGENT_NET_MEASURE") == "" {
+		t.Skip("set AGENT_NET_MEASURE=1 to measure")
+	}
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{adapter: &fakeAdapter{harness: "fake"}, cmdline: "pi"})
+	pi, _ := helloPi(t, n, "nc", "/work/carol", false)
+	const runs = 2000
+	times := make([]time.Duration, 0, runs)
+	for i := 0; i < runs; i++ {
+		start := time.Now()
+		pi.mustCall(protocol.MethodUrgentTake, map[string]any{})
+		times = append(times, time.Since(start))
+	}
+	sort.Slice(times, func(i, j int) bool { return times[i] < times[j] })
+	t.Logf("urgent_take with nothing held, %d calls on one open socket: p50=%v p95=%v max=%v",
+		runs, times[runs/2], times[runs*95/100], times[runs-1])
 }

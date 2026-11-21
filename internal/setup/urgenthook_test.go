@@ -2,6 +2,8 @@ package setup
 
 import (
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -24,7 +26,7 @@ func TestUrgentHookIsAddedKeptAndRemoved(t *testing.T) {
 	for _, event := range []string{"PostToolUse", "PostToolUseFailure"} {
 		groups := withCommand(allHooksOfFile(t, f)[event], " urgent-hook")
 		if len(groups) != 1 || groups[0].Matcher != "" || len(groups[0].Hooks) != 1 ||
-			groups[0].Hooks[0].Type != "command" || groups[0].Hooks[0].Command != "/opt/test/agent-net urgent-hook" || groups[0].Hooks[0].Timeout != 3 {
+			groups[0].Hooks[0].Type != "command" || groups[0].Hooks[0].Command != urgentCommand("/opt/test/agent-net") || groups[0].Hooks[0].Timeout != 3 {
 			t.Fatalf("%s urgent-hook groups: %+v", event, groups)
 		}
 	}
@@ -64,19 +66,21 @@ func TestUrgentHookFollowsTheBinaryAndLeavesInvalidJSON(t *testing.T) {
 	writeSettings(t, f, otherKeys)
 	old := refreshExecutable
 	t.Cleanup(func() { refreshExecutable = old })
+	// A machine set up by the first version of the hook has the bare command.
+	writeSettings(t, f, `{"hooks":{"PostToolUse":[{"hooks":[{"type":"command","command":"/opt/one/agent-net urgent-hook"}]}]}}`)
 	for _, exe := range []string{"/opt/one/agent-net", "/opt/two/agent-net"} {
 		refreshExecutable = func() (string, error) { return exe, nil }
 		refreshUrgentHook(nil)
 	}
 	groups := urgentGroups(t, f)
-	if len(groups) != 1 || groups[0].Hooks[0].Command != "/opt/two/agent-net urgent-hook" {
+	if len(groups) != 1 || groups[0].Hooks[0].Command != urgentCommand("/opt/two/agent-net") {
 		t.Fatalf("groups after a move: %+v", groups)
 	}
 
 	// A binary that is not named agent-net is left alone.
 	refreshExecutable = func() (string, error) { return "/tmp/setup.test", nil }
 	refreshUrgentHook(nil)
-	if groups := urgentGroups(t, f); len(groups) != 1 || groups[0].Hooks[0].Command != "/opt/two/agent-net urgent-hook" {
+	if groups := urgentGroups(t, f); len(groups) != 1 || groups[0].Hooks[0].Command != urgentCommand("/opt/two/agent-net") {
 		t.Fatalf("a foreign binary changed the hook: %+v", groups)
 	}
 
@@ -85,5 +89,62 @@ func TestUrgentHookFollowsTheBinaryAndLeavesInvalidJSON(t *testing.T) {
 	(&runner{Options: Options{Out: &out, Exe: "/opt/two/agent-net"}}).claudeUrgentHook()
 	if got := readSettingsFile(t, f); got != "not json" || !strings.Contains(out.String(), "not valid JSON") {
 		t.Fatalf("invalid settings: %q, step %q", got, out.String())
+	}
+}
+
+// The hook runs after every tool call, so its command must not start agent-net
+// when no urgent message waits. It starts it only when the urgent folder of the
+// daemon's state directory has a marker, and still for an exe path with spaces.
+func TestUrgentCommandStartsAgentNetOnlyWhenAMarkerExists(t *testing.T) {
+	dir := t.TempDir()
+	state := filepath.Join(dir, "state")
+	exe := filepath.Join(dir, "my bin", "agent-net")
+	ran := filepath.Join(dir, "ran")
+	if err := os.MkdirAll(filepath.Dir(exe), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!/bin/sh\necho \"$1\" > '" + ran + "'\n"
+	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run := func(extra ...string) {
+		t.Helper()
+		cmd := exec.Command("sh", "-c", urgentCommand(exe))
+		cmd.Env = append([]string{"PATH=" + os.Getenv("PATH"), "HOME=" + filepath.Join(dir, "home")}, extra...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("hook command failed: %v\n%s", err, out)
+		}
+	}
+	run("AGENT_NET_STATE_DIR=" + state)
+	if _, err := os.Stat(ran); !os.IsNotExist(err) {
+		t.Fatal("agent-net started with no marker")
+	}
+	if err := os.MkdirAll(filepath.Join(state, "urgent"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run("AGENT_NET_STATE_DIR=" + state)
+	if _, err := os.Stat(ran); !os.IsNotExist(err) {
+		t.Fatal("agent-net started with an empty urgent folder")
+	}
+	if err := os.WriteFile(filepath.Join(state, "urgent", "claude-abc"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run("AGENT_NET_STATE_DIR=" + state)
+	if b, err := os.ReadFile(ran); err != nil || strings.TrimSpace(string(b)) != "urgent-hook" {
+		t.Fatalf("agent-net not started with urgent-hook after a marker: %q, %v", b, err)
+	}
+
+	// Without AGENT_NET_STATE_DIR the folder is the one daemon.StateDir uses.
+	os.Remove(ran)
+	xdg := filepath.Join(dir, "xdg")
+	if err := os.MkdirAll(filepath.Join(xdg, "agent-net", "daemon", "urgent"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(xdg, "agent-net", "daemon", "urgent", "claude-abc"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run("XDG_STATE_HOME=" + xdg)
+	if _, err := os.Stat(ran); err != nil {
+		t.Fatalf("the XDG state folder was not checked: %v", err)
 	}
 }

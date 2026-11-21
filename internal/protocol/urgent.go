@@ -34,6 +34,10 @@ type UrgentTaken struct {
 type UrgentTakeRequest struct {
 	Harness  string `json:"harness"`
 	NativeID string `json:"native_id"`
+	// DeadlineMS is how long the caller waits for the answer. The daemon never
+	// hands a message over after it, so a caller that gave up has not left a
+	// message marked delivered that nobody saw. 0 means the daemon's own limit.
+	DeadlineMS int `json:"deadline_ms,omitempty"`
 }
 
 // UrgentTakeResult is the answer to MethodUrgentTake. A Claude Code hook gets

@@ -781,6 +781,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 		d.cfg.RefreshAgentFiles(d.Logf, d.SettingsSnapshot())
 	}
 	d.adoptLiveClaudeCTO()
+	d.clearUrgentMarkers()
 	d.mcp.start(ctx)
 	ln, err := listenLocal(d, d.cfg.SocketPath)
 	if err != nil {
@@ -1633,6 +1634,10 @@ func (d *Daemon) resolveTo(ctx context.Context, to string) (string, error) {
 // ---- delivery ----
 
 func (d *Daemon) onDeliver(ctx context.Context, m protocol.Message) {
+	if m.Urgent {
+		// The turn-end release of a held urgent message: nothing waits now.
+		d.clearUrgentHeld(m.To)
+	}
 	// The gateway may push right after the sync result, before the handshake
 	// here has recorded session IDs.
 	for i := 0; i < 100 && d.isConnecting() && ctx.Err() == nil; i++ {

@@ -7,12 +7,18 @@ import (
 	"os"
 	"time"
 
+	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // urgentHookBudget is how long `agent-net urgent-hook` may take in all. It
 // runs after every tool call, so it gives up quickly and then prints nothing.
 const urgentHookBudget = 1800 * time.Millisecond
+
+// urgentTakeDeadline is how long the daemon may take to answer a take. It is
+// shorter than the budget, so the daemon stops handing messages over before
+// this process gives up and a message is never marked delivered but unseen.
+const urgentTakeDeadline = 1200 * time.Millisecond
 
 // urgentContextHead is agent-net's own line before the message, so the model
 // knows why it is reading it between two tool calls (decision 0180).
@@ -36,7 +42,11 @@ type urgentHookOutput struct {
 // the model reads before its next step. A message is shown once: the daemon
 // reports it delivered when it hands the text over. On anything else it prints
 // nothing and never fails a tool call.
-func runUrgentHook(ctx context.Context, stdin io.Reader, stdout io.Writer,
+//
+// This runs after every tool call, and almost always nothing waits. The daemon
+// leaves a marker file for a session with a held urgent message, so without
+// one the hook exits after one stat: no dial and no daemon call.
+func runUrgentHook(ctx context.Context, stdin io.Reader, stdout io.Writer, stateDir string,
 	take func(ctx context.Context, req protocol.UrgentTakeRequest) (protocol.UrgentTakeResult, error)) {
 	raw, err := io.ReadAll(io.LimitReader(stdin, 1<<20))
 	if err != nil {
@@ -46,9 +56,17 @@ func runUrgentHook(ctx context.Context, stdin io.Reader, stdout io.Writer,
 	if json.Unmarshal(raw, &in) != nil || in.SessionID == "" || (in.EventName != "PostToolUse" && in.EventName != "PostToolUseFailure") {
 		return
 	}
+	marker := daemon.UrgentMarkerPath(stateDir, "claude", in.SessionID)
+	if marker == "" {
+		return
+	}
+	if _, err := os.Stat(marker); err != nil {
+		return
+	}
 	ctx, cancel := context.WithTimeout(ctx, urgentHookBudget)
 	defer cancel()
-	res, err := take(ctx, protocol.UrgentTakeRequest{Harness: "claude", NativeID: in.SessionID})
+	res, err := take(ctx, protocol.UrgentTakeRequest{Harness: "claude", NativeID: in.SessionID,
+		DeadlineMS: int(urgentTakeDeadline / time.Millisecond)})
 	if err != nil || res.Text == "" {
 		return
 	}
@@ -63,7 +81,7 @@ func runUrgentHook(ctx context.Context, stdin io.Reader, stdout io.Writer,
 }
 
 func cmdUrgentHook(ctx context.Context) error {
-	runUrgentHook(ctx, os.Stdin, os.Stdout, func(ctx context.Context, req protocol.UrgentTakeRequest) (protocol.UrgentTakeResult, error) {
+	runUrgentHook(ctx, os.Stdin, os.Stdout, daemon.StateDir(), func(ctx context.Context, req protocol.UrgentTakeRequest) (protocol.UrgentTakeResult, error) {
 		var res protocol.UrgentTakeResult
 		cl, err := dialCLI(ctx)
 		if err != nil {

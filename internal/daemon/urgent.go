@@ -33,19 +33,34 @@ func (d *Daemon) onUrgentHeld(sessionID string) {
 		return
 	}
 	d.urgentHeld.Store(sessionID, struct{}{})
+	ls := d.sessionByID(sessionID)
+	if ls == nil {
+		return
+	}
+	info := d.infoOf(ls)
+	d.setUrgentMarker(info.Harness, info.NativeID)
 	// Codex has no hook at a tool call, but its app server takes input into the
 	// active turn (turn/steer). The daemon pushes the message at once.
-	ls := d.sessionByID(sessionID)
-	if ls == nil || d.infoOf(ls).Harness != "codex" {
+	if info.Harness != "codex" {
 		return
 	}
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
 		if a, ok := d.adapters["codex"].(*codexAdapter); ok && a.activeTurn(d.infoOf(ls).NativeID) != "" {
-			d.takeUrgentAndDeliver(context.Background(), sessionID)
+			d.takeUrgentAndDeliver(context.Background(), sessionID, 0)
 		}
 	}()
+}
+
+// restoreUrgentHeld puts the flag and the marker back after a take that could
+// not reach the gateway, so the next tool call asks again.
+func (d *Daemon) restoreUrgentHeld(sessionID string) {
+	d.urgentHeld.Store(sessionID, struct{}{})
+	if ls := d.sessionByID(sessionID); ls != nil {
+		info := d.infoOf(ls)
+		d.setUrgentMarker(info.Harness, info.NativeID)
+	}
 }
 
 // inlineCapture receives a message delivered inside a turn: the text an
@@ -76,7 +91,14 @@ func (lc *localConn) urgentTakeCall(ctx context.Context, client string, ls *loca
 	if ls == nil || ls.sessionID == "" {
 		return protocol.UrgentTakeResult{}, nil
 	}
-	texts, msgs := d.takeUrgentAndDeliver(ctx, ls.sessionID)
+	var deadline time.Duration
+	if client == "cli" {
+		var p protocol.UrgentTakeRequest
+		if json.Unmarshal(raw, &p) == nil && p.DeadlineMS > 0 {
+			deadline = time.Duration(p.DeadlineMS) * time.Millisecond
+		}
+	}
+	texts, msgs := d.takeUrgentAndDeliver(ctx, ls.sessionID, deadline)
 	return protocol.UrgentTakeResult{Text: strings.Join(texts, "\n\n"), Messages: msgs}, nil
 }
 
@@ -85,16 +107,23 @@ func (lc *localConn) urgentTakeCall(ctx context.Context, client string, ls *loca
 // adapter shows it inside the turn (DeliverInline), or a plugin gets the
 // message in the answer. It returns what to show, and nothing when no urgent
 // message was waiting.
-func (d *Daemon) takeUrgentAndDeliver(ctx context.Context, sid string) (texts []string, msgs []protocol.Message) {
-	if _, ok := d.urgentHeld.LoadAndDelete(sid); !ok {
+func (d *Daemon) takeUrgentAndDeliver(ctx context.Context, sid string, deadline time.Duration) (texts []string, msgs []protocol.Message) {
+	// A hook only gets here when its marker exists, and the flag may be gone
+	// (a restart, a turn-end release, a withdrawn message), so the marker is
+	// removed either way: the next tool call is then free again.
+	if !d.clearUrgentHeld(sid) {
 		return nil, nil
 	}
-	ctx, cancel := context.WithTimeout(ctx, urgentTakeBudget)
+	budget := urgentTakeBudget
+	if deadline > 0 && deadline < budget {
+		budget = deadline
+	}
+	ctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 	res, err := d.call(ctx, protocol.OpUrgentTake, protocol.UrgentTake{SessionID: sid})
 	if err != nil {
 		// Ask again at the next tool call.
-		d.urgentHeld.Store(sid, struct{}{})
+		d.restoreUrgentHeld(sid)
 		d.Logf("urgent take for %s: %v", sid, err)
 		return nil, nil
 	}
@@ -103,6 +132,13 @@ func (d *Daemon) takeUrgentAndDeliver(ctx context.Context, sid string) (texts []
 		return nil, nil
 	}
 	for _, m := range taken.Messages {
+		if ctx.Err() != nil {
+			// The caller has given up, or is about to. Showing the message in
+			// its answer would mark it delivered and nobody would read it, so
+			// it takes the normal path and the turn end delivers it.
+			d.onDeliver(context.WithoutCancel(ctx), m)
+			continue
+		}
 		capture := &inlineCapture{}
 		d.inlineCaptures.Store(m.ID, capture)
 		// The normal delivery path records the message and reports it delivered

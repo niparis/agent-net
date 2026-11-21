@@ -54,11 +54,20 @@ func saveUrgentState(st urgentState) error {
 	return atomicWrite(urgentStatePath(), append(b, '\n'), 0o600)
 }
 
+// urgentCommand is the hook command line. Starting the agent-net binary costs
+// about 40 ms, nearly all of it package start-up, and this hook runs after
+// every tool call of every session. Almost always no urgent message waits, so
+// the shell first looks for a marker file in the daemon's urgent folder and
+// exits when there is none. The path is the one daemon.StateDir gives.
+// Only when some session has a marker does it start agent-net, which then
+// checks the marker of its own session.
 func urgentCommand(exe string) string {
+	bin := exe
 	if strings.ContainsAny(exe, " \t'\"") {
-		return `"` + strings.ReplaceAll(exe, `"`, `\"`) + `" urgent-hook`
+		bin = `"` + strings.ReplaceAll(exe, `"`, `\"`) + `"`
 	}
-	return exe + " urgent-hook"
+	return `set -- "${AGENT_NET_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/agent-net/daemon}"/urgent/*; ` +
+		`[ -e "$1" ] || exit 0; exec ` + bin + " urgent-hook"
 }
 
 func isUrgentCommand(cmd string) bool { return isOurCommand(cmd, "urgent-hook") }
