@@ -3791,7 +3791,7 @@ tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harne
 	// wake wait concluded. Leaving the failure would tell senders it cannot
 	// be woken the next time it is offline.
 	if online == 1 {
-		if _, err := q.Exec(`UPDATE session_wakes SET wake_failed_at=0,wake_failed_reason='' WHERE session_id=? AND wake_failed_at>0`, id); err != nil {
+		if _, err := q.Exec(`UPDATE sessions SET wake_failed_at=0,wake_failed_reason='' WHERE id=? AND wake_failed_at>0`, id); err != nil {
 			return "", false, err
 		}
 	}
