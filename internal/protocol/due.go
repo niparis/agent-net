@@ -32,13 +32,15 @@ type DueAfter struct {
 }
 
 // DueArgs is agent_due. Add takes What, and either Due or After. Done takes ID.
+// The catalog calls the item id "id", but a gateway frame owns that name, so
+// the wire name is due_id (toolcatalog daemonFields maps it).
 type DueArgs struct {
 	Action  string    `json:"action"`
 	What    string    `json:"what,omitempty"`
 	Due     string    `json:"due,omitempty"`
 	After   *DueAfter `json:"after,omitempty"`
 	Blocker string    `json:"blocker,omitempty"`
-	ID      string    `json:"id,omitempty"`
+	ID      string    `json:"due_id,omitempty"`
 }
 
 // Validate checks the shape of the call. The gateway checks that the named

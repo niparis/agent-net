@@ -541,7 +541,9 @@ export const TOOL_CATALOG = [
       "agent"
     ],
     "method": "due",
-    "daemon_fields": {}
+    "daemon_fields": {
+      "id": "due_id"
+    }
   },
   {
     "name": "agent_file_send",
