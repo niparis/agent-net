@@ -359,8 +359,8 @@ func (s *Store) ChiefStatus() (protocol.ChiefStatus, error) {
 		out.ClearedAt, err = s.chiefClearedAt()
 		return out, err
 	}
-	err = s.db.QueryRow(`SELECT COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),s.title,''), s.online=1 AND s.archived_at=0
-		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, id).Scan(&out.Name, &out.Online)
+	err = s.db.QueryRow(`SELECT COALESCE(NULLIF(s.name,''),s.title,''), s.online=1 AND s.archived_at=0
+		FROM sessions s WHERE s.id=?`, id).Scan(&out.Name, &out.Online)
 	if errors.Is(err, sql.ErrNoRows) {
 		out.Down = "session offline"
 		return out, nil

@@ -770,7 +770,7 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
         EXISTS(SELECT 1 FROM delivery_step_messages d WHERE d.change_id=t.change_id AND d.revision=t.revision
         AND d.step=t.step AND d.for_step=t.for_step AND d.after_merge=t.after_merge AND d.session_id=s.id)
 		FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
-		JOIN sessions s ON s.online=1 AND s.worker='' LEFT JOIN profiles p ON p.session_id=s.id
+		JOIN sessions s ON s.online=1 AND s.worker=''
 		WHERE `+g.store.stepNotWaitingAt()+` AND t.completed=0 AND t.claimed_by='' AND c.state IN ('open','merged')
 		AND ((t.owner_node='/merger' AND EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.project=c.project AND pm.node_id=c.machine AND pm.session_id=s.id)) OR (t.owner_node=? AND s.id=`+offeredCallerSessionSQL+`) OR `+sessionRepoSQL+`=t.owner_node OR
 		 (t.owner_node=? AND EXISTS(SELECT 1 FROM delivery_step_delegates a WHERE a.change_id=t.change_id AND a.revision=t.revision
@@ -2158,7 +2158,7 @@ func checkNodeTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, session,
 	var project, worker, harness, node, agent string
 	var online int
 	err = tx.QueryRow(`SELECT `+sessionRepoSQL+`,s.worker,s.online,s.harness,s.node_id,COALESCE(s.agent_id,'')
-		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, session).Scan(&project, &worker, &online, &harness, &node, &agent)
+		FROM sessions s WHERE s.id=?`, session).Scan(&project, &worker, &online, &harness, &node, &agent)
 	if errors.Is(err, sql.ErrNoRows) {
 		return true, reject("unknown session %q", session)
 	}
@@ -2223,7 +2223,7 @@ func claimDirectOwnerApproval(tx *sql.Tx, c protocol.Change, ref protocol.StepRe
 	var project, worker, harness, node, agent string
 	var online int
 	err = tx.QueryRow(`SELECT `+sessionRepoSQL+`,s.worker,s.online,s.harness,s.node_id,COALESCE(s.agent_id,'')
-		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, session).Scan(&project, &worker, &online, &harness, &node, &agent)
+		FROM sessions s WHERE s.id=?`, session).Scan(&project, &worker, &online, &harness, &node, &agent)
 	if err != nil {
 		return true, err
 	}

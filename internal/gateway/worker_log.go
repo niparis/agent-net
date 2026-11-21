@@ -220,8 +220,8 @@ func (s *Store) workerCaller(id string) (name, host string, err error) {
 		return "", "", nil
 	}
 	var harness, sessionName, hostname string
-	err = s.db.QueryRow(`SELECT s.harness, COALESCE(NULLIF(p.name,''), NULLIF(s.name,''), NULLIF(s.title,''), s.id), COALESCE(n.hostname,'')
-		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id LEFT JOIN nodes n ON n.id=s.node_id WHERE s.id=?`, id).Scan(&harness, &sessionName, &hostname)
+	err = s.db.QueryRow(`SELECT s.harness, COALESCE(NULLIF(s.name,''), NULLIF(s.title,''), s.id), COALESCE(n.hostname,'')
+		FROM sessions s LEFT JOIN nodes n ON n.id=s.node_id WHERE s.id=?`, id).Scan(&harness, &sessionName, &hostname)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", nil
 	}

@@ -4,9 +4,13 @@ package gateway
 // columns below before the statement runs.
 const learnedTablesMarker = "learned tables rework"
 
-// learnedTablesColumns are the columns the rework adds. The loop adds each one
-// only when it is missing, so a rewound database keeps the values it has.
-var learnedTablesColumns = []struct{ table, name, spec string }{
+// migrationColumn is a column a marked migration adds before its statement
+// runs. The loop adds each one only when it is missing, so a rewound database
+// keeps the values it has.
+type migrationColumn struct{ table, name, spec string }
+
+// learnedTablesColumns are the columns the learned tables rework adds.
+var learnedTablesColumns = []migrationColumn{
 	{"messages", "owner_prompt", `TEXT NOT NULL DEFAULT ''`},
 	{"sessions", "owner_prompt", `TEXT NOT NULL DEFAULT ''`},
 	{"sessions", "owner_prompt_at", `INTEGER NOT NULL DEFAULT 0`},

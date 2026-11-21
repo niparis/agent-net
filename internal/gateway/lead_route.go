@@ -175,8 +175,8 @@ func routeLead(tx *sql.Tx, m *protocol.Message, now time.Time, quota leadQuotaRe
 // queue and the wake on message resumes it, like a send to its ID.
 func (s *Store) resolveSessionName(name string) (string, error) {
 	rows, err := s.db.Query(`SELECT s.id,COALESCE(s.agent_id,''),s.online,s.worker,s.harness,COALESCE(n.hostname,'-'),s.cwd
-		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id LEFT JOIN nodes n ON n.id=s.node_id
-		WHERE COALESCE(NULLIF(p.name,''),s.name)=? AND s.archived_at=0`, name)
+		FROM sessions s LEFT JOIN nodes n ON n.id=s.node_id
+		WHERE s.name=? AND s.archived_at=0`, name)
 	if err != nil {
 		return "", err
 	}
@@ -283,7 +283,7 @@ func validateLeadAddress(tx *sql.Tx, address, recipient string, now time.Time) e
 func limitedNote(tx *sql.Tx, recipient string, now time.Time) (string, error) {
 	var until int64
 	var reason, name string
-	err := tx.QueryRow(`SELECT s.limited_until,s.limited_reason,COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),s.id) FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, recipient).Scan(&until, &reason, &name)
+	err := tx.QueryRow(`SELECT s.limited_until,s.limited_reason,COALESCE(NULLIF(s.name,''),s.id) FROM sessions s WHERE s.id=?`, recipient).Scan(&until, &reason, &name)
 	if err == sql.ErrNoRows {
 		return "", nil
 	}

@@ -178,7 +178,7 @@ func TestLearnedOutcomeUsesProfileProjects(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := s.db.Exec(`INSERT INTO profiles(session_id,project,updated_at) VALUES(?, 'app', 0),(?, 'ops', 0)`, a, b); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET announced_project=CASE id WHEN ? THEN 'app' ELSE 'ops' END WHERE id IN (?,?)`, a, a, b); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 3; i++ {

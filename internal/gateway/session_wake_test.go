@@ -205,7 +205,7 @@ func TestWakeNodeOwnedTaskLeavesOfflineSessionsAsleep(t *testing.T) {
 	}
 	for _, id := range ids {
 		var wakes, messages int
-		if err := r.s.db.QueryRow(`SELECT count(*) FROM session_wakes WHERE session_id=? AND wake_attempted_at>0`, id).Scan(&wakes); err != nil {
+		if err := r.s.db.QueryRow(`SELECT count(*) FROM sessions WHERE id=? AND wake_attempted_at>0`, id).Scan(&wakes); err != nil {
 			t.Fatal(err)
 		}
 		if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE session_id=?`, id).Scan(&messages); err != nil {

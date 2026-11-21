@@ -29,7 +29,7 @@ func (s *Store) SetMerger(q protocol.MergerSetRequest, actor string) error {
 		err = s.stopMergerTx(tx, q.Project, actor)
 	} else {
 		var valid int
-		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=? AND s.node_id=? AND `+sessionRepoSQL+`=? AND s.worker='')`, q.SessionID, q.NodeID, q.Project).Scan(&valid)
+		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s WHERE s.id=? AND s.node_id=? AND `+sessionRepoSQL+`=? AND s.worker='')`, q.SessionID, q.NodeID, q.Project).Scan(&valid)
 		if err != nil {
 			return err
 		}
@@ -49,7 +49,7 @@ func (s *Store) SetMerger(q protocol.MergerSetRequest, actor string) error {
 		return err
 	}
 	if q.Configure && q.SessionID != "" {
-		_, err = tx.Exec(`INSERT INTO profiles(session_id,name,function,project,capabilities,task,updated_at,expertise) VALUES(?,?,'','','[]','',?,'') ON CONFLICT(session_id) DO UPDATE SET name=excluded.name`, q.SessionID, q.Project+" merger", s.now().UnixNano())
+		_, err = tx.Exec(`UPDATE sessions SET name=?, name_fixed=1 WHERE id=?`, q.Project+" merger", q.SessionID)
 		if err != nil {
 			return err
 		}

@@ -95,6 +95,7 @@ type Store struct {
 	path string
 	// vacuumMu guards the weekly schedule of the vacuum.
 	vacuumMu   sync.Mutex
+	holds      startHolds
 	lastVacuum time.Time
 
 	mu            sync.Mutex
@@ -1330,7 +1331,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -2051,11 +2052,11 @@ func (s *Store) migrate() error {
 			return err
 		}
 		stmt := migrations[i]
-		for marker, columns := range map[string][]struct{ table, name, spec string }{learnedTablesMarker: learnedTablesColumns, settingsFoldMarker: settingsFoldColumns} {
+		for marker, cols := range map[string][]migrationColumn{learnedTablesMarker: learnedTablesColumns, settingsFoldMarker: settingsFoldColumns, sessionTablesMarker: sessionTablesColumns} {
 			if !strings.Contains(migrations[i], marker) {
 				continue
 			}
-			for _, col := range columns {
+			for _, col := range cols {
 				var has int
 				err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?`, col.table, col.name).Scan(&has)
 				if err == nil && has == 0 {
@@ -3618,8 +3619,9 @@ func (s *Store) upsertSession(q interface {
 		}
 	}
 	var knownID, knownName, knownWaiting, knownStatus, knownReplaced string
-	err = q.QueryRow(`SELECT id, name, waiting, status, replaced_by FROM sessions WHERE node_id=? AND harness=? AND native_id=?`,
-		nodeID, in.Harness, in.NativeID).Scan(&knownID, &knownName, &knownWaiting, &knownStatus, &knownReplaced)
+	var knownFixed bool
+	err = q.QueryRow(`SELECT id, name, waiting, status, replaced_by, name_fixed FROM sessions WHERE node_id=? AND harness=? AND native_id=?`,
+		nodeID, in.Harness, in.NativeID).Scan(&knownID, &knownName, &knownWaiting, &knownStatus, &knownReplaced, &knownFixed)
 	known := err == nil
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", false, err
@@ -3688,6 +3690,8 @@ func (s *Store) upsertSession(q interface {
 		name = "CTO"
 	} else if protocol.IsOwner(in.Harness) {
 		name = protocol.CleanModel(in.Name)
+	} else if knownFixed {
+		name = knownName // set by the owner or the merger
 	} else if name, err = chooseSessionName(q, nodeID, knownID, knownName, knownReplaced != "", in); err != nil {
 		return "", false, err
 	}
@@ -3752,7 +3756,8 @@ tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harne
 		last_active=MAX(sessions.last_active, excluded.last_active),
 		harness_activity=MAX(sessions.harness_activity, ?,
 			CASE WHEN excluded.status='busy' AND sessions.status<>'busy' THEN excluded.last_seen ELSE 0 END),
-		repo_root=excluded.repo_root, repo_project=excluded.repo_project,
+		repo_root=excluded.repo_root,
+		repo_project=excluded.repo_project,
 		repo_remote=excluded.repo_remote, repo_branch=excluded.repo_branch,
 		repo_worktree=excluded.repo_worktree, mode=excluded.mode, model=excluded.model, worker=excluded.worker,
 		worker_title=excluded.worker_title,
@@ -3813,31 +3818,26 @@ tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harne
 	// Triggers from the repo migration have now created any new repo records.
 	// A sync may update the repo context but must not replace a selected agent.
 	_, err = q.Exec(`UPDATE sessions SET
-		repo_id=CASE WHEN harness IN ('cto','owner') THEN NULL ELSE (SELECT id FROM repos WHERE id=COALESCE(NULLIF(repo_project,''),(SELECT project FROM profiles WHERE session_id=sessions.id))) END,
-		agent_id=CASE WHEN harness='cto' THEN 'cto' WHEN harness='owner' OR worker<>'' THEN NULL ELSE COALESCE(agent_id,(SELECT owner_agent_id FROM repos WHERE id=COALESCE(NULLIF(repo_project,''),(SELECT project FROM profiles WHERE session_id=sessions.id)))) END
+		repo_id=CASE WHEN harness IN ('cto','owner') THEN NULL ELSE (SELECT id FROM repos WHERE id=COALESCE(NULLIF(repo_project,''),announced_project)) END,
+		agent_id=CASE WHEN harness='cto' THEN 'cto' WHEN harness='owner' OR worker<>'' THEN NULL ELSE COALESCE(agent_id,(SELECT owner_agent_id FROM repos WHERE id=COALESCE(NULLIF(repo_project,''),announced_project))) END
 		WHERE id=?`, id)
 	if err != nil {
 		return "", false, err
 	}
-	removed, err := q.Exec(`DELETE FROM repo_start_reservations WHERE node_id=? AND harness=? AND native_id=? AND native_id<>''`, nodeID, in.Harness, in.NativeID)
-	if err != nil {
-		return "", false, err
-	}
-	n, err := removed.RowsAffected()
-	if err != nil {
-		return "", false, err
-	}
-	// A new record says who started it: agent-net for a worker, the CTO and
-	// a start it reserved; the column default says the owner for the rest.
-	if !known && (in.Worker != nil || in.Harness == "cto" || n > 0) {
-		if _, err = q.Exec(`UPDATE sessions SET started_by=? WHERE id=?`, protocol.StartedByAgentNet, id); err != nil {
+	// A new session ends the launch hold it used. Codex can hand a terminal to
+	// the owner before it has a native ID, so a new session without a match
+	// ends the oldest unnamed hold of its repo.
+	var repo string
+	if !known && in.Worker == nil {
+		if err = q.QueryRow(`SELECT COALESCE(repo_id,'') FROM sessions WHERE id=?`, id).Scan(&repo); err != nil {
 			return "", false, err
 		}
 	}
-	if n == 0 && !known && in.Worker == nil {
-		// Codex can hand a new terminal to the owner before it has a native
-		// ID. Count the new live session in place of one matching launch.
-		if _, err = q.Exec(`DELETE FROM repo_start_reservations WHERE rowid IN (SELECT r.rowid FROM repo_start_reservations r JOIN sessions s ON s.id=? WHERE r.node_id=? AND r.harness=? AND r.native_id='' AND r.repo_id=s.repo_id ORDER BY r.expires_at,r.ref LIMIT 1)`, id, nodeID, in.Harness); err != nil {
+	reserved := s.holds.releaseRepoHold(nodeID, in.Harness, in.NativeID, repo)
+	// A new record says who started it: agent-net for a worker, the CTO and
+	// a start it reserved; the column default says the owner for the rest.
+	if !known && (in.Worker != nil || in.Harness == "cto" || reserved) {
+		if _, err = q.Exec(`UPDATE sessions SET started_by=? WHERE id=?`, protocol.StartedByAgentNet, id); err != nil {
 			return "", false, err
 		}
 	}
@@ -3849,7 +3849,7 @@ tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harne
 			return "", false, err
 		}
 	}
-	if err := s.updateFailedAgentSession(q, nodeID, in.NativeID, id); err != nil {
+	if err := s.updateFailedAgentSession(q, nodeID, in.Harness, in.NativeID, id); err != nil {
 		return "", false, err
 	}
 	if err = checkActiveSessionIdentity(q, id); err != nil {
@@ -3939,9 +3939,8 @@ func chooseSessionName(q interface {
 	}
 	base, worker := sessionBaseName(in), in.Worker != nil
 	used := map[string]bool{"CTO": true}
-	rows, err := q.Query(`SELECT COALESCE(NULLIF(p.name,''), s.name), s.online,
-		s.node_id, s.harness, s.mode, s.pid, s.worker FROM sessions s
-		LEFT JOIN profiles p ON p.session_id = s.id WHERE s.id <> ? AND
+	rows, err := q.Query(`SELECT s.name, s.online,
+		s.node_id, s.harness, s.mode, s.pid, s.worker FROM sessions s WHERE s.id <> ? AND
 		((s.online = 1 AND NOT (`+piChildSQL+`)) OR
 		(? = 'pi' AND ? = 'foreground' AND ? > 0 AND s.node_id = ?
 		 AND s.harness = 'pi' AND s.mode = 'background' AND s.pid = ? AND s.worker = ''))`,
@@ -4272,9 +4271,6 @@ func (s *Store) CleanWorkers(nodeID string, age time.Duration, running []string)
 		return 0, err
 	}
 	for _, id := range ids {
-		if _, err := tx.Exec(`DELETE FROM profiles WHERE session_id = ?`, id); err != nil {
-			return 0, err
-		}
 		if _, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {
 			return 0, err
 		}
@@ -4324,9 +4320,6 @@ func (s *Store) CleanWorktreeSessions(nodeID, dir string) (int, error) {
 		return 0, err
 	}
 	for _, id := range ids {
-		if _, err := tx.Exec(`DELETE FROM profiles WHERE session_id = ?`, id); err != nil {
-			return 0, err
-		}
 		if _, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {
 			return 0, err
 		}
@@ -4381,22 +4374,17 @@ func (s *Store) AnnounceNotify(nodeID string, p protocol.ProfileAnnounce) (proto
 	}
 	// The time of the session's earlier announce, for the asks it left open.
 	var previousAnnounce int64
-	if err := s.db.QueryRow(`SELECT updated_at FROM profiles WHERE session_id=?`, p.SessionID).Scan(&previousAnnounce); err != nil && err != sql.ErrNoRows {
+	if err := s.db.QueryRow(`SELECT announced_at FROM sessions WHERE id=?`, p.SessionID).Scan(&previousAnnounce); err != nil && err != sql.ErrNoRows {
 		return protocol.Profile{}, nil, err
 	}
-	_, err = s.db.Exec(`INSERT INTO profiles (session_id, name, function, project, capabilities, task, updated_at, expertise, task_started)
-		VALUES (?,'','',?,?,?,?,?,?)
-		ON CONFLICT (session_id) DO UPDATE SET
-		project=CASE WHEN excluded.project='' THEN profiles.project ELSE excluded.project END,
-		capabilities=CASE WHEN ? THEN profiles.capabilities ELSE excluded.capabilities END,
-		task=CASE WHEN excluded.task='' THEN profiles.task ELSE excluded.task END,
-		expertise=CASE WHEN excluded.expertise='' THEN profiles.expertise ELSE excluded.expertise END,
-		task_started=CASE
-			WHEN excluded.task='' THEN profiles.task_started
-			WHEN profiles.task=excluded.task THEN profiles.task_started
-			ELSE excluded.task_started END,
-		updated_at=excluded.updated_at`,
-		p.SessionID, p.Project, caps, p.Task, now, p.Expertise, taskStarted, p.Capabilities == nil)
+	_, err = s.db.Exec(`UPDATE sessions SET
+		announced_project=CASE WHEN ?='' THEN announced_project ELSE ? END,
+		capabilities=CASE WHEN ? THEN capabilities ELSE ? END,
+		task_started=CASE WHEN ?='' OR task=? THEN task_started ELSE ? END,
+		task=CASE WHEN ?='' THEN task ELSE ? END,
+		expertise=CASE WHEN ?='' THEN expertise ELSE ? END,
+		announced_at=? WHERE id=?`,
+		p.Project, p.Project, p.Capabilities == nil, caps, p.Task, p.Task, taskStarted, p.Task, p.Task, p.Expertise, p.Expertise, now, p.SessionID)
 	if err != nil {
 		return protocol.Profile{}, nil, err
 	}
@@ -4441,12 +4429,12 @@ func (s *Store) AnnounceNotify(nodeID string, p protocol.ProfileAnnounce) (proto
 //     subqueries ran once per row.
 var agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.harness, s.cwd, s.native_id, s.status,
 	CASE WHEN s.harness='bot' THEN EXISTS(SELECT 1 FROM apps a WHERE a.id=s.node_id AND a.kind='bot' AND a.revoked_at IS NULL) ELSE s.online END, s.last_seen, s.last_active,
-	COALESCE(NULLIF(p.name,''), s.name), s.repo_description, COALESCE(p.project,''),
-	COALESCE(p.capabilities,'[]'), COALESCE(p.task,''),
+	s.name, s.repo_description, s.announced_project,
+	s.capabilities, s.task,
 	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree, s.mode, s.model, s.pid, s.worker, s.repo_description,
-	s.peer_trust, COALESCE(p.expertise,''), s.delegation, s.title, s.created_at, s.tools_version, s.tools_old, s.waiting, COALESCE((SELECT name FROM project_display_names WHERE project=COALESCE(NULLIF(s.repo_project,''),p.project)),''),
+	s.peer_trust, s.expertise, s.delegation, s.title, s.created_at, s.tools_version, s.tools_old, s.waiting, COALESCE((SELECT name FROM project_display_names WHERE project=COALESCE(NULLIF(s.repo_project,''),s.announced_project)),''),
 	CASE WHEN ` + registeredMergerSQL("s") + ` THEN 'merger' ELSE '' END,
- COALESCE(p.task_started,0),
+ s.task_started,
  COALESCE((SELECT json_object('run_id',wa.run_id,'session_id',wa.session_id,'started_at',wa.started_at,
  'assessed_at',wa.assessed_at,'reasoning',wa.reasoning,'scope',wa.scope,'coupling',wa.coupling,
  'uncertainty',wa.uncertainty,'verification',wa.verification,'risk',wa.risk,'d',wa.d,
@@ -4466,11 +4454,11 @@ var agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.
  @HELD@
  @INSESSION@
  s.limited_until, s.limited_reason, s.turn_error, s.turn_error_at, s.replaced_by, s.busy_since
-	FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id@JOINS@`
+	FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id@JOINS@`
 
 // agentListTables are the tables agentListSelect and its joins read, with the
 // piChildSQL filter. Keep it equal to those queries (see readThrough).
-var agentListTables = []string{"sessions", "nodes.id", "nodes.hostname", "profiles", "apps", "project_display_names", "project_mergers",
+var agentListTables = []string{"sessions", "nodes.id", "nodes.hostname", "apps", "project_display_names", "project_mergers",
 	"worker_assessments", "agents", "graph_edges", "repos", "teams", "team_members", "setting_values", "inbox_items",
 	"messages", "gateway_state"}
 
@@ -4797,10 +4785,10 @@ func (s *Store) agentsBaseOwned(selectSQL string, f protocol.QueryAgents, owners
 
 const msgSelect = `SELECT m.id, m.conversation_id, m.parent_id, m.sender, m.recipient, m.type, m.body, m.hop,
 	m.idem_key, m.created_at, m.expires_at, m.state, COALESCE((SELECT d.detail FROM deliveries d WHERE d.message_id=m.id AND d.state=m.state ORDER BY d.rowid DESC LIMIT 1),'') || COALESCE((SELECT ' (retry ' || attempts || ' scheduled)' FROM delivery_retries WHERE message_id=m.id AND m.state='failed'),''),
-	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto, m.owner_approved, EXISTS(SELECT 1 FROM outcome_overrules oo WHERE oo.message_id=m.id), m.approval_note, substr(m.owner_prompt,1,200),
+	COALESCE(s.name,''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto, m.owner_approved, EXISTS(SELECT 1 FROM outcome_overrules oo WHERE oo.message_id=m.id), m.approval_note, substr(m.owner_prompt,1,200),
 	m.files, m.worker_task, m.is_order,
 	m.urgent, m.held_for_busy, m.batch_json, m.batch_id
-	FROM messages m LEFT JOIN sessions s ON s.id = m.sender LEFT JOIN profiles p ON p.session_id = m.sender`
+	FROM messages m LEFT JOIN sessions s ON s.id = m.sender`
 
 func scanMessage(sc interface{ Scan(...any) error }) (protocol.Message, error) {
 	var m protocol.Message
@@ -5523,10 +5511,11 @@ func (s *Store) Pending(nodeID string, includeDispatched bool) ([]protocol.Messa
 	if includeDispatched {
 		states = `m.state IN ('stored','dispatched')`
 	}
+	held, args := s.heldSQL("r")
 	rows, err := s.db.Query(msgSelect+` JOIN sessions r ON r.id = m.recipient
-		WHERE NOT ( `+sessionAgentHoldSQL("r")+` ) AND r.node_id = ? AND r.harness <> 'bot' AND r.online = 1 AND `+states+` AND m.expires_at > ?
+		WHERE NOT `+held+` AND r.node_id = ? AND r.harness <> 'bot' AND r.online = 1 AND `+states+` AND m.expires_at > ?
 		AND m.held_for_busy=0 AND m.batch_id=''
-		ORDER BY m.urgent DESC, m.created_at, m.rowid`, nodeID, s.now().UnixNano())
+		ORDER BY m.urgent DESC, m.created_at, m.rowid`, append(args, nodeID, s.now().UnixNano())...)
 	if err != nil {
 		return nil, err
 	}
@@ -5864,8 +5853,8 @@ func conversationsPageSQL(normalWhere, systemWhere, cursor string, limit int) (s
 		WHERE p.gid IN (SELECT gid FROM totals WHERE system <> 0)
 	)
 	SELECT p.gid, p.last_at, m.id, m.sender, m.recipient, m.body, m.state, m.sender_cto, m.type, t.n,
-		COALESCE(NULLIF(fp.name,''), fs.name, ''),
-		COALESCE(NULLIF(rp.name,''), rs.name, ''),
+		COALESCE(fs.name,''),
+		COALESCE(rs.name,''),
 		m.owner_prompt <> '',
 		COALESCE(fs.harness, ''), COALESCE(rs.harness, ''),
 		CASE WHEN t.direct_owner <> 0 OR c.gid IS NOT NULL THEN 1 ELSE 0 END, t.blocked, t.system,
@@ -5877,9 +5866,7 @@ func conversationsPageSQL(normalWhere, systemWhere, cursor string, limit int) (s
 	LEFT JOIN cited c ON c.gid = p.gid
 	LEFT JOIN sys s ON s.gid = p.gid
 	LEFT JOIN sessions fs ON fs.id = m.sender
-	LEFT JOIN profiles fp ON fp.session_id = m.sender
 	LEFT JOIN sessions rs ON rs.id = m.recipient
-	LEFT JOIN profiles rp ON rp.session_id = m.recipient
 	ORDER BY p.last_at DESC, p.gid DESC`
 	return sqlText, append(args, limit)
 }
@@ -5924,17 +5911,15 @@ func conversationsWorkerPageSQL(cursor string, limit int) (string, []any) {
 		FROM page p
 	)
 	SELECT p.gid, p.last_at, m.id, m.sender, m.recipient, m.body, m.state, m.sender_cto, m.type, p.n,
-		COALESCE(NULLIF(fp.name,''), fs.name, ''),
-		COALESCE(NULLIF(rp.name,''), rs.name, ''),
+		COALESCE(fs.name,''),
+		COALESCE(rs.name,''),
 		m.owner_prompt <> '',
 		COALESCE(fs.harness, ''), COALESCE(rs.harness, ''), 0,
 		CASE WHEN p.blocked <> 0 THEN 1 ELSE 0 END, 0, '', '', p.total
 	FROM latest p
 	JOIN messages m ON m.rowid = p.rid
 	LEFT JOIN sessions fs ON fs.id = m.sender
-	LEFT JOIN profiles fp ON fp.session_id = m.sender
 	LEFT JOIN sessions rs ON rs.id = m.recipient
-	LEFT JOIN profiles rp ON rp.session_id = m.recipient
 	ORDER BY p.last_at DESC, p.gid DESC`
 	return sqlText, append(args, limit)
 }
@@ -6040,7 +6025,6 @@ func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.Conve
 func (s *Store) conversationsVersion() uint64 {
 	stamp := s.readStamp([]string{
 		"messages", "sessions.name", "sessions.harness", "sessions.worker",
-		"profiles.name",
 	})
 	return uint64(s.convEpoch)<<32 | uint64(uint32(stamp))
 }
@@ -6246,8 +6230,8 @@ func (s *Store) fillWorkerRows(rows []protocol.ConversationView) error {
 	type workerFact struct{ owner, task, name string }
 	facts := map[string]workerFact{}
 	got, err = s.db.Query(`SELECT s.id, COALESCE(json_extract(s.worker,'$.owner'),''),
-		COALESCE(json_extract(s.worker,'$.task'),''), COALESCE(NULLIF(p.name,''), s.name, '')
-		FROM sessions s LEFT JOIN profiles p ON p.session_id = s.id WHERE s.id IN (`+values+`)`, args...)
+		COALESCE(json_extract(s.worker,'$.task'),''), COALESCE(s.name,'')
+		FROM sessions s WHERE s.id IN (`+values+`)`, args...)
 	if err != nil {
 		return err
 	}
@@ -6284,8 +6268,8 @@ func (s *Store) fillWorkerRows(rows []protocol.ConversationView) error {
 			nameArgs[i] = id
 		}
 		nameValues := strings.TrimSuffix(strings.Repeat("(?),", len(nameIDs)), ",")
-		got, err = s.db.Query(`SELECT s.id, COALESCE(NULLIF(p.name,''), s.name, '')
-			FROM sessions s LEFT JOIN profiles p ON p.session_id = s.id
+		got, err = s.db.Query(`SELECT s.id, COALESCE(s.name,'')
+			FROM sessions s
 			WHERE s.id IN (`+nameValues+`)`, nameArgs...)
 		if err != nil {
 			return err
@@ -6349,8 +6333,8 @@ func (s *Store) fillWorkerRows(rows []protocol.ConversationView) error {
 // its record is gone.
 func (s *Store) displayName(id string) string {
 	var name string
-	if err := s.db.QueryRow(`SELECT COALESCE(NULLIF(p.name,''), s.name, '')
-		FROM sessions s LEFT JOIN profiles p ON p.session_id = s.id WHERE s.id = ?`, id).Scan(&name); err != nil {
+	if err := s.db.QueryRow(`SELECT COALESCE(s.name,'')
+		FROM sessions s WHERE s.id = ?`, id).Scan(&name); err != nil {
 		return ""
 	}
 	return name

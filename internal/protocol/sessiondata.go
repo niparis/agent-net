@@ -316,11 +316,8 @@ type SessionCounts struct {
 	PendingRemindersOffline      int `json:"pending_reminders_offline"`
 	PendingAnsweredAfterReminder int `json:"pending_answered_after_reminder"`
 	PendingStalls                int `json:"pending_stalls"`
-	// The idle check: messages sent, and what the sessions answered.
-	ChecksSent          int `json:"checks_sent"`
-	CheckAnswersDone    int `json:"check_answers_done"`
-	CheckAnswersMore    int `json:"check_answers_more"`
-	CheckAnswersBlocked int `json:"check_answers_blocked"`
+	// ChecksSent counts the idle check messages sent.
+	ChecksSent int `json:"checks_sent"`
 	// WakeUpsToday counts autonomy wake-ups sent today, across agents.
 	WakeUpsToday int `json:"wake_ups_today"`
 	Online       int `json:"online"`

@@ -735,8 +735,7 @@ func (s *Store) SkillListUndo(change string) (protocol.SkillSetResult, error) {
 // run the old set. Nothing restarts here; the CTO acts on this list.
 func (s *Store) skillRestartOffer(level, scope string) protocol.SkillRestartOffer {
 	out := protocol.SkillRestartOffer{Call: "session_change restart"}
-	query := `SELECT s.id, COALESCE(NULLIF(p.name,''), NULLIF(s.name,''), '') FROM sessions s
-		LEFT JOIN profiles p ON p.session_id=s.id
+	query := `SELECT s.id, COALESCE(NULLIF(s.name,''), '') FROM sessions s
 		WHERE s.online=1 AND s.archived_at=0 AND s.harness NOT IN ('owner','cto','bot')`
 	args := []any{}
 	// The sessions of a node and below. A repo includes its sessions; a team

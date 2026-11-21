@@ -113,7 +113,7 @@ func (s *Store) markNudgeFollows(since time.Time) error {
 		var kind string
 		var at int64
 		err := tx.QueryRow(`SELECT kind,at FROM (
- SELECT 'announce' AS kind, updated_at AS at FROM profiles WHERE session_id=?
+ SELECT 'announce' AS kind, announced_at AS at FROM sessions WHERE id=?
  UNION ALL
  SELECT 'message', created_at FROM messages WHERE sender=? AND type<>'ack'
  UNION ALL

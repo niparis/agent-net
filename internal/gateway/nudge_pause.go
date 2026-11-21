@@ -145,7 +145,7 @@ func (s *Store) PauseNudge(node string, r protocol.NudgePauseRequest) (protocol.
 		return out, err
 	}
 	scope := `s.agent_id=? AND ?<>'' OR EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id=? AND ((tm.member_kind='agent' AND tm.member_id=s.agent_id) OR (tm.member_kind='repo' AND tm.member_id=s.repo_id)))`
-	rows, err := tx.Query(`SELECT s.id,COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),s.id) FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE `+scope+` ORDER BY s.id`, agent, agent, team)
+	rows, err := tx.Query(`SELECT s.id,COALESCE(NULLIF(s.name,''),s.id) FROM sessions s WHERE `+scope+` ORDER BY s.id`, agent, agent, team)
 	if err != nil {
 		return out, err
 	}

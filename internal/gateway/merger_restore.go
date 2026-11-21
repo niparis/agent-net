@@ -19,7 +19,7 @@ func (s *Store) RestoreMergerRegistrations(project string, saved []protocol.Merg
 			return reject("invalid merger snapshot")
 		}
 		var valid bool
-		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=? AND s.node_id=? AND `+sessionRepoSQL+`=? AND s.worker='')`, q.SessionID, q.NodeID, project).Scan(&valid); err != nil {
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s WHERE s.id=? AND s.node_id=? AND `+sessionRepoSQL+`=? AND s.worker='')`, q.SessionID, q.NodeID, project).Scan(&valid); err != nil {
 			return err
 		}
 		if !valid {

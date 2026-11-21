@@ -69,11 +69,11 @@ func (s *Store) resolveRunContext(run int64) (resolvedContext, error) {
 // legacy adapter for sessions reported by old daemons without repo metadata.
 // sessionRepoSQL is shared with queries that run inside a transaction, where
 // calling the resolver on the store's single database connection would block.
-const sessionRepoSQL = `COALESCE(s.repo_id,NULLIF(s.repo_project,''),p.project,'')`
+const sessionRepoSQL = `COALESCE(s.repo_id,NULLIF(s.repo_project,''),s.announced_project)`
 
 func sessionIdentityQuery(q interface{ QueryRow(string, ...any) *sql.Row }, session string) (project, agent, harness string, worker bool, err error) {
 	var w string
-	err = q.QueryRow(`SELECT `+sessionRepoSQL+`,COALESCE(s.agent_id,''),s.harness,s.worker FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, session).Scan(&project, &agent, &harness, &w)
+	err = q.QueryRow(`SELECT `+sessionRepoSQL+`,COALESCE(s.agent_id,''),s.harness,s.worker FROM sessions s WHERE s.id=?`, session).Scan(&project, &agent, &harness, &w)
 	return project, agent, harness, w != "", err
 }
 

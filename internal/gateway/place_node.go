@@ -160,8 +160,8 @@ func (s *Store) buildPlaceIndex(repos []RepoRecord, agents []AgentRecord, now ti
 	rows.Close()
 
 	rows, err = s.db.Query(`SELECT s.id,COALESCE(s.agent_id,''),COALESCE(s.repo_id,''),s.online,s.worker,s.harness,COALESCE(s.limited_until,0),s.last_seen,
-		COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),NULLIF(s.title,''),NULLIF(s.repo_project,''),NULLIF(p.project,''),'')
-		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
+		COALESCE(NULLIF(s.name,''),NULLIF(s.title,''),NULLIF(s.repo_project,''),s.announced_project)
+		FROM sessions s
 		ORDER BY s.last_seen DESC,s.id`)
 	if err != nil {
 		return nil, err

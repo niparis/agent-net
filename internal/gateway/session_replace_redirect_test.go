@@ -74,7 +74,7 @@ func (r *replaceRedirectRig) waitDelivered(id string) protocol.Message {
 func (r *replaceRedirectRig) wakeClaims(session string) int {
 	r.t.Helper()
 	var n int
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM session_wakes WHERE session_id=? AND wake_attempted_at>0`, session).Scan(&n); err != nil {
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM sessions WHERE id=? AND wake_attempted_at>0`, session).Scan(&n); err != nil {
 		r.t.Fatal(err)
 	}
 	return n

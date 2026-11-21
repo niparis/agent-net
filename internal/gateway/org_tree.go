@@ -606,16 +606,15 @@ func buildOrgTreeOnceTx(tx *sql.Tx, now int64) error {
 	}
 	if _, err := tx.Exec(`UPDATE sessions SET started_by='` + protocol.StartedByAgentNet + `' WHERE worker<>'' OR harness='cto'
 		OR id=(SELECT value FROM owner_settings WHERE key='cto_session')
-		OR id IN (SELECT session_id FROM project_mergers)
-		OR EXISTS(SELECT 1 FROM session_agent_starts a WHERE a.node_id=sessions.node_id AND a.harness=sessions.harness AND a.native_id=sessions.native_id)`); err != nil {
+		OR id IN (SELECT session_id FROM project_mergers)`); err != nil {
 		return err
 	}
 	return markerSetTx(tx, orgTreeBuiltKey, "1", now)
 }
 
 // orgSessionNameSQL names session x the way the graph lists a session: its
-// profile name, else its stored name, else its harness title.
-const orgSessionNameSQL = `COALESCE(NULLIF(p.name,''),NULLIF(x.name,''),x.title,'')`
+// name, else its harness title.
+const orgSessionNameSQL = `COALESCE(NULLIF(x.name,''),x.title,'')`
 
 // addOrgTree puts the org tree on the Agent nodes of a typed read: the
 // parent, the lead session, who started each listed session, and the
@@ -626,7 +625,6 @@ func (s *Store) addOrgTree(byRef map[protocol.GraphRef]*protocol.Node) error {
 		FROM agents a
 		LEFT JOIN graph_edges e ON e.source=a.id AND e.kind='reports_to'
 		LEFT JOIN sessions x ON x.id=a.lead_session
-		LEFT JOIN profiles p ON p.session_id=a.lead_session
 		WHERE a.tombstone=0 AND (e.target IS NOT NULL OR a.lead_session IS NOT NULL)`)
 	if err != nil {
 		return err
@@ -738,7 +736,7 @@ func (s *Store) GraphForRoot(ref *protocol.GraphRef, root string) (protocol.Grap
 func (s *Store) sessionOrgLines(session string) (reportsTo, also string, err error) {
 	var repo, agent, lead, leadName, parent, parentLead, parentLeadName string
 	name := func(col string) string {
-		return `COALESCE((SELECT ` + orgSessionNameSQL + ` FROM sessions x LEFT JOIN profiles p ON p.session_id=x.id WHERE x.id=` + col + `),'')`
+		return `COALESCE((SELECT ` + orgSessionNameSQL + ` FROM sessions x WHERE x.id=` + col + `),'')`
 	}
 	err = s.db.QueryRow(`SELECT COALESCE(s.repo_id,''), COALESCE(a.id,''), COALESCE(a.lead_session,''), `+name("a.lead_session")+`,
 		COALESCE(e.target,''), COALESCE(pa.lead_session,''), `+name("pa.lead_session")+`

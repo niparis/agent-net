@@ -104,8 +104,8 @@ func blockedReading(task string, waiting *protocol.Waiting) (text string, ok boo
 // then its own name. The id follows in a notice, so the lead can message it.
 func memberLabel(q interface{ QueryRow(string, ...any) *sql.Row }, session string) string {
 	var agent, name string
-	if q.QueryRow(`SELECT COALESCE((SELECT display_name FROM agents WHERE id=s.agent_id),''),COALESCE(NULLIF(p.name,''),s.name,'')
-		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, session).Scan(&agent, &name) != nil {
+	if q.QueryRow(`SELECT COALESCE((SELECT display_name FROM agents WHERE id=s.agent_id),''),COALESCE(s.name,'')
+		FROM sessions s WHERE s.id=?`, session).Scan(&agent, &name) != nil {
 		return session
 	}
 	return firstNonEmpty(agent, name, session)
@@ -195,7 +195,7 @@ func (s *Store) blockedMemberNotice(p protocol.ProfileAnnounce) (*protocol.Messa
 	defer s.checkMu.Unlock()
 	var task string
 	var started int64
-	err := s.db.QueryRow(`SELECT task,task_started FROM profiles WHERE session_id=?`, p.SessionID).Scan(&task, &started)
+	err := s.db.QueryRow(`SELECT task,task_started FROM sessions WHERE id=?`, p.SessionID).Scan(&task, &started)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

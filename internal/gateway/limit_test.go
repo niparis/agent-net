@@ -74,7 +74,7 @@ func TestIdleCheckSkipsLimitedSession(t *testing.T) {
 	if _, err := s.db.Exec("UPDATE sessions SET status='idle', last_active=? WHERE id=?", c.t.UnixNano(), b); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO profiles(session_id,name,function,project,capabilities,task,updated_at,expertise,task_started) VALUES(?,'bob','','','[]','build the thing',?,'',?) ON CONFLICT(session_id) DO UPDATE SET task='build the thing'`, b, c.t.UnixNano(), c.t.UnixNano()); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET name='bob',name_fixed=1,task='build the thing',announced_at=?,task_started=? WHERE id=?`, c.t.UnixNano(), c.t.UnixNano(), b); err != nil {
 		t.Fatal(err)
 	}
 	c.advance(idleCheckAfter + time.Minute)

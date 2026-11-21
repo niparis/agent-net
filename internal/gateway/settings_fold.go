@@ -3,7 +3,7 @@ package gateway
 // settingsFoldMarker names the migration; the migrate loop adds the columns first.
 const settingsFoldMarker = "settings fold: one settings system"
 
-var settingsFoldColumns = []struct{ table, name, spec string }{
+var settingsFoldColumns = []migrationColumn{
 	{"repos", "settings_token", `TEXT NOT NULL DEFAULT ''`},
 	{"agents", "settings_token", `TEXT NOT NULL DEFAULT ''`},
 	{"teams", "settings_token", `TEXT NOT NULL DEFAULT ''`},

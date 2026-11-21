@@ -219,12 +219,11 @@ func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, er
 	}
 	// The name belongs to the conversation, so both records carry it: the live
 	// one shows it, and the replaced one says it was replaced by it.
-	if _, err := tx.Exec(`INSERT INTO profiles(session_id,name,function,project,capabilities,task,expertise,updated_at)
-		SELECT ?,name,function,project,capabilities,task,expertise,? FROM profiles WHERE session_id=?
-		ON CONFLICT(session_id) DO NOTHING`, newSessionID, now, sessionID); err != nil {
+	if _, err := tx.Exec(`UPDATE sessions SET function=o.function, announced_project=o.announced_project, capabilities=o.capabilities, task=o.task, expertise=o.expertise, announced_at=?
+		FROM sessions o WHERE o.id=? AND sessions.id=? AND sessions.announced_at=0`, now, sessionID, newSessionID); err != nil {
 		return false, err
 	}
-	if _, err := tx.Exec(`UPDATE sessions SET name=? WHERE id=?`, name, newSessionID); err != nil {
+	if _, err := tx.Exec(`UPDATE sessions SET name=?, name_fixed=CASE WHEN ?=? THEN (SELECT name_fixed FROM sessions WHERE id=?) ELSE name_fixed END WHERE id=?`, name, name, oldName, sessionID, newSessionID); err != nil {
 		return false, err
 	}
 	if _, err := tx.Exec(`UPDATE sessions SET name=?, replaced_by=?, online=0, status='replaced', waiting='' WHERE id=?`,
@@ -341,9 +340,9 @@ func liveNameHeld(q interface {
 	QueryRow(string, ...any) *sql.Row
 }, name, sessionID, newSessionID string) (bool, error) {
 	var held bool
-	err := q.QueryRow(`SELECT EXISTS (SELECT 1 FROM sessions s LEFT JOIN profiles p ON p.session_id = s.id
+	err := q.QueryRow(`SELECT EXISTS (SELECT 1 FROM sessions s
 		WHERE s.id NOT IN (?, ?) AND s.online = 1 AND NOT (`+piChildSQL+`)
-		AND COALESCE(NULLIF(p.name,''), s.name) = ?)`, sessionID, newSessionID, name).Scan(&held)
+		AND s.name = ?)`, sessionID, newSessionID, name).Scan(&held)
 	return held, err
 }
 

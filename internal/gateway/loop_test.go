@@ -363,7 +363,7 @@ func TestLoopSharesTheDailyCapWithTheWakeRule(t *testing.T) {
 	loopTicks(t, s)
 	// The idle-check wakes already used the day's six.
 	today := s.now().Add(loopEvery + time.Minute).UTC().Format(idleCheckDay)
-	if _, err := s.db.Exec(`INSERT INTO session_wakes(session_id,wake_day,wake_day_count) VALUES(?,?,?)`, b, today, wakeDailyCap); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET wake_day=?,wake_day_count=? WHERE id=?`, today, wakeDailyCap, b); err != nil {
 		t.Fatal(err)
 	}
 	idleSince(t, s, c, b, time.Minute)

@@ -50,7 +50,7 @@ func TestTaskLineNamingAnEndedWorkerGetsANote(t *testing.T) {
 	}
 	// The stored task is the member's own words.
 	var stored string
-	if err := s.db.QueryRow(`SELECT task FROM profiles WHERE session_id=?`, member).Scan(&stored); err != nil || stored != task {
+	if err := s.db.QueryRow(`SELECT task FROM sessions WHERE id=?`, member).Scan(&stored); err != nil || stored != task {
 		t.Fatalf("stored task = %q, %v", stored, err)
 	}
 }

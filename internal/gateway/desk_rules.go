@@ -34,8 +34,8 @@ func (s *Store) askRepoTeam(q askDB, id string) (repo, team string, err error) {
 		_ = q.QueryRow(`SELECT c.project FROM delivery_step_inbox d JOIN delivery_changes c ON c.id=d.change_id WHERE d.item_id=?`, id).Scan(&repo)
 	}
 	if repo == "" && session != "" {
-		_ = q.QueryRow(`SELECT COALESCE(NULLIF(s.repo_project,''),NULLIF(p.project,''),s.repo_id,'')
-			FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, session).Scan(&repo)
+		_ = q.QueryRow(`SELECT COALESCE(NULLIF(s.repo_project,''),NULLIF(s.announced_project,''),s.repo_id,'')
+			FROM sessions s WHERE s.id=?`, session).Scan(&repo)
 	}
 	if team == "" && session != "" {
 		_ = q.QueryRow(`SELECT t.name FROM teams t JOIN team_members tm ON tm.team_id=t.id JOIN sessions s ON s.id=?

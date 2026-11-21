@@ -105,8 +105,7 @@ func mcpVisible(a protocol.ToolAssignment, project string) bool {
 // resolves it, and whether the session exists on that node.
 func (s *Store) SessionProject(sessionID, nodeID string) (string, bool, error) {
 	var project string
-	err := s.db.QueryRow(`SELECT COALESCE(NULLIF(s.repo_project,''),p.project,'') FROM sessions s
-		LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=? AND s.node_id=?`, sessionID, nodeID).Scan(&project)
+	err := s.db.QueryRow(`SELECT COALESCE(NULLIF(s.repo_project,''),s.announced_project) FROM sessions s WHERE s.id=? AND s.node_id=?`, sessionID, nodeID).Scan(&project)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}
@@ -257,9 +256,9 @@ func forgetMCPItemTx(tx *sql.Tx, name string) error {
 // that may have loaded a native MCP entry: all of them, or only those of the
 // project when project is not empty. Owner sessions are never listed.
 func (s *Store) sessionsHoldingNative(nodeID, harness, project string) ([]string, error) {
-	rows, err := s.db.Query(`SELECT s.id FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
+	rows, err := s.db.Query(`SELECT s.id FROM sessions s
 		WHERE s.node_id=? AND s.harness=? AND s.harness<>? AND s.online=1
-		AND (?='' OR COALESCE(NULLIF(s.repo_project,''),p.project,'')=?) ORDER BY s.id`, nodeID, harness, protocol.OwnerHarness, project, project)
+		AND (?='' OR COALESCE(NULLIF(s.repo_project,''),s.announced_project)=?) ORDER BY s.id`, nodeID, harness, protocol.OwnerHarness, project, project)
 	if err != nil {
 		return nil, err
 	}

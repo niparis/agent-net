@@ -108,10 +108,10 @@ func (s *Store) DeskLog(limit int) ([]protocol.DeskLogEntry, error) {
 }
 
 const askSelect = `SELECT i.id,i.kind,i.session_id,i.node,i.text,i.recommendation,i.message_id,i.conversation_id,i.created_at,i.status,i.answer,i.answered_at,i.options,
- COALESCE(NULLIF(i.asker_name,''), CASE WHEN s.archived_at=0 THEN COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),s.title,'') ELSE '' END, ''),
+ COALESCE(NULLIF(i.asker_name,''), CASE WHEN s.archived_at=0 THEN COALESCE(NULLIF(s.name,''),s.title,'') ELSE '' END, ''),
  i.change_title,i.from_kind,i.source_ref,i.about_kind,i.about_id,i.next_who,i.why_you,i.detail,i.priority,i.owner,i.state,i.category,
  COALESCE(d.change_id,''),COALESCE(d.step,''),COALESCE(d.for_step,''),COALESCE(d.after_merge,0),COALESCE(d.commit_hash,''),COALESCE(c.project,''),COALESCE(c.title,'')
- FROM inbox_items i LEFT JOIN sessions s ON s.id=i.session_id LEFT JOIN profiles p ON p.session_id=i.session_id
+ FROM inbox_items i LEFT JOIN sessions s ON s.id=i.session_id
  LEFT JOIN delivery_step_inbox d ON d.item_id=i.id LEFT JOIN delivery_changes c ON c.id=d.change_id`
 
 // ListAsks returns every open ask, oldest first, in one query. The Desk reads
@@ -316,7 +316,7 @@ const movedOnGap = 10 * time.Minute
 // approvals at once, so a newer item never closes an older one; a replaced
 // item already has its own status.
 const movedOnCond = `from_kind IN ('','session') AND kind IN ('approval','check')
-	AND EXISTS (SELECT 1 FROM profiles p WHERE p.session_id=inbox_items.session_id AND p.task_started > inbox_items.created_at + ?)`
+	AND EXISTS (SELECT 1 FROM sessions s WHERE s.id=inbox_items.session_id AND s.task_started > inbox_items.created_at + ?)`
 
 // reconcileMovedOnOnce closes the asks that sessions left behind before the
 // close-on-activity rules existed, once. It closes and never deletes. The

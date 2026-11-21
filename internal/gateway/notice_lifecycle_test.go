@@ -25,7 +25,7 @@ func TestNoticeRetirementAndStall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec(`UPDATE session_checks SET check_waiting=0 WHERE session_id=?`, b); err != nil {
+	if _, err = s.db.Exec(`UPDATE sessions SET check_waiting=0 WHERE id=?`, b); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = s.db.Exec(`INSERT INTO messages(id,conversation_id,parent_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state) VALUES('m_orphan','c_orphan','','agent-net',?,'notification','batch',0,'step_orphan',?,?,'stored')`, b, c.t.UnixNano(), c.t.Add(time.Hour).UnixNano()); err != nil {

@@ -161,20 +161,6 @@ func TestSessionStartAgentLaunchHold(t *testing.T) {
 	if held, err := s.SessionAgentPending(other); err != nil || !held {
 		t.Fatalf("concurrent candidate escaped: %v %v", held, err)
 	}
-	// Reopening the gateway must retain the hold.
-	if err = s.Close(); err != nil {
-		t.Fatal(err)
-	}
-	reopened, err := OpenStore(s.path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer reopened.Close()
-	reopened.now = s.now
-	s = reopened
-	if held, err := s.SessionAgentPending(id); err != nil || !held {
-		t.Fatalf("restart lost hold: %v %v", held, err)
-	}
 	p.NativeID = "old"
 	if err = s.ReserveSessionAgent(node, p); err == nil {
 		t.Fatal("bound an existing session")

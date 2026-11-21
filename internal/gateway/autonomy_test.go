@@ -17,8 +17,7 @@ func setAutonomy(t *testing.T, s *Store, session, value string) {
 	if _, err := s.db.Exec(`UPDATE sessions SET repo_project='proj', repo_root='/w/proj' WHERE id=?`, session); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO profiles(session_id,project,updated_at) VALUES(?,'proj',?)
-		ON CONFLICT(session_id) DO UPDATE SET project='proj'`, session, s.now().UnixNano()); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET announced_project='proj',announced_at=? WHERE id=?`, s.now().UnixNano(), session); err != nil {
 		t.Fatal(err)
 	}
 	// A turn may clear the session's repo fields; keep the test's node alive with
@@ -222,7 +221,7 @@ func TestWakeDailyCapIsSeparateFromTheCheckCap(t *testing.T) {
 	}
 	// A seventh "more" answer has progress but must not exceed the wake cap.
 	// Set the check wait directly so the check cap is not involved.
-	if _, err := s.db.Exec(`UPDATE session_checks SET check_waiting=1,check_active=0,check_more=0 WHERE session_id=?`, b); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET check_waiting=1,check_active=0,check_more=0 WHERE id=?`, b); err != nil {
 		t.Fatal(err)
 	}
 	c.advance(time.Minute)
@@ -275,7 +274,7 @@ func TestTwoWakeUpsWithoutProgressStopWakingWithOneRow(t *testing.T) {
 	}
 	// A third "more" answer with no progress must not wake again or add a row.
 	// Set the check wait directly so the check cap does not decide this.
-	if _, err := s.db.Exec(`UPDATE session_checks SET check_waiting=1,check_active=0,check_more=0 WHERE session_id=?`, b); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET check_waiting=1,check_active=0,check_more=0 WHERE id=?`, b); err != nil {
 		t.Fatal(err)
 	}
 	c.advance(time.Minute)
@@ -293,7 +292,7 @@ func TestTwoWakeUpsWithoutProgressStopWakingWithOneRow(t *testing.T) {
 	if _, _, err := send(s, b, a, "progress", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`UPDATE session_checks SET check_waiting=1,check_active=0,check_more=0 WHERE session_id=?`, b); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET check_waiting=1,check_active=0,check_more=0 WHERE id=?`, b); err != nil {
 		t.Fatal(err)
 	}
 	c.advance(time.Minute)

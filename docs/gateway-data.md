@@ -200,55 +200,7 @@ Computers that run the daemon, and how they enrol and report health.
 
 ## Sessions
 
-Agent sessions, and the checks and wake-ups that go with them.
-
-### check_answer_counts
-
-- **Holds:** How many answers the idle check got per day, by kind (done, more, blocked).
-- **Written by:** `gateway/check.go`
-- **Read by:** `gateway/check.go`
-- **Shown in:** CTO op `counts`
-- **Kept:** Forever.
-
-### profiles
-
-- **Holds:** One row per session with what it announced about itself: name, function, project, capabilities, current task, expertise and when it started the task.
-- **Written by:** `gateway/cto_session.go`, `gateway/merger.go`, `gateway/session_replace.go`, `gateway/sessionrename.go`, `gateway/store.go`, `gateway/store_record.go`
-- **Read by:** `gateway/ask_intake.go`, `gateway/asks.go`, `gateway/calibration.go`, `gateway/caller_agent.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/cited.go`, `gateway/context_resolver.go`, `gateway/delivery_changes.go`, `gateway/delivery_tasks.go` and others
-- **Shown in:** TUI, Sessions; tool `agent_announce`; tool `agent_sessions_find`; tool `agent_session_get`
-- **Kept:** Deleted with its session (cleanup or the 30 day prune of un-archived offline sessions).
-
-### repo_start_reservations
-
-- **Holds:** One row per short hold on a repo slot while a session is being started, so two launches cannot pass the repo's session cap together.
-- **Written by:** `gateway/session_max.go`, `gateway/store.go`
-- **Read by:** `gateway/session_max.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** For 2 minutes; removed on the next start request or when the session registers.
-
-### session_agent_start_failures
-
-- **Holds:** One row per failed Agent choice for a new session: the machine, reference, project, the Desk item raised and the reason.
-- **Written by:** `gateway/session_start_agent_expiry.go`
-- **Read by:** `gateway/session_start_agent.go`, `gateway/session_start_agent_expiry.go`
-- **Shown in:** TUI, Desk
-- **Kept:** Forever; no code deletes it.
-
-### session_agent_starts
-
-- **Holds:** One row per new session waiting to be bound to an Agent of the org graph, chosen by the owner before the session first registers.
-- **Written by:** `gateway/session_start_agent.go`, `gateway/session_start_agent_expiry.go`
-- **Read by:** `gateway/org_tree.go`, `gateway/session_start_agent.go`, `gateway/session_start_agent_expiry.go`
-- **Shown in:** TUI, Sessions
-- **Kept:** For 2 minutes; deleted when the session registers or the choice expires.
-
-### session_checks
-
-- **Holds:** One row per session holding the state of the idle check loop: whether a check is active or waiting, open work and message counts, the day's check count and the last announce time.
-- **Written by:** `gateway/check.go`
-- **Read by:** `gateway/check.go`, `gateway/notice_lifecycle.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Forever; never deleted, even after the session is removed.
+Agent sessions, with their checks and wake-ups, and the due steps they set.
 
 ### session_dues
 
@@ -258,21 +210,15 @@ Agent sessions, and the checks and wake-ups that go with them.
 - **Shown in:** tool `agent_due`; the wake message (idempotency key `due:<id>`); a chief ask after 15 minutes idle
 - **Kept:** Forever; the state moves from pending to woken or raised.
 
-### session_wakes
-
-- **Holds:** One row per session counting automatic wake-ups: the day's count, the no-progress streak, open work, and when and why the last wake failed.
-- **Written by:** `gateway/check.go`, `gateway/loop.go`, `gateway/session_wake.go`, `gateway/side_fold.go`, `gateway/wake_failure.go`
-- **Read by:** `gateway/caller_agent.go`, `gateway/check.go`, `gateway/loop.go`, `gateway/session_wake.go`, `gateway/wake_failure.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Forever; never deleted, even after the session is removed.
-
 ### sessions
 
-- **Holds:** One row per agent session (a coding agent running on a machine, a worker, the CTO or the chief): name, folder, repo, status, online state, model, worker data and archive and pin marks. It also holds the owner's last typed prompt to the session (`owner_prompt`, with its time `owner_prompt_at`).
+- **Holds:** One row per agent session (a coding agent running on a machine, a worker, the CTO or the chief): name, folder, repo, status, online state, model, worker data and archive and pin marks. It also holds the owner's last typed prompt to the session (`owner_prompt`, with its time `owner_prompt_at`), what the session announced (`announced_project`, `capabilities`, `task`, `task_started`, `expertise`, `announced_at`), the idle check state (the `check_` columns), and the automatic wake state (the `wake_` columns: the day's count, the no-progress streak, the last refused wake and the last wake attempt). `name_fixed` is 1 when the owner or the merger set the name, so a new report keeps it. A session's project is its detected repo (`repo_project`), else its announced project.
 - **Written by:** `gateway/apps.go`, `gateway/bot_agent.go`, `gateway/bot_names.go`, `gateway/bot_session.go`, `gateway/busy_hold.go`, `gateway/chief.go`, `gateway/cto_session.go`, `gateway/machine_tokens.go`, `gateway/merger.go`, `gateway/org_tree.go` and others
 - **Read by:** `gateway/ask_holder.go`, `gateway/ask_intake.go`, `gateway/asks.go`, `gateway/asks_to.go`, `gateway/authority.go`, `gateway/automatic_message.go`, `gateway/bot_names.go`, `gateway/bot_session.go`, `gateway/bot_tools.go`, `gateway/busy_hold.go` and others
-- **Shown in:** TUI, Sessions; TUI, Graph; tool `agent_sessions_find`; tool `agent_session_get`; CTO op `session_change`; CTO op `sessions_archive`
+- **Shown in:** TUI, Sessions; TUI, Graph; tool `agent_announce`; tool `agent_sessions_find`; tool `agent_session_get`; CTO op `session_change`; CTO op `sessions_archive`
 - **Kept:** Offline sessions are archived after 7 days and kept; an un-archived offline session unused for 30 days is deleted by the hourly prune; cleaned workers are deleted on request. The owner prompt is cleared at the session's first send, and after 10 minutes at most (hourly prune).
+
+Sessions being started have no row yet. Their two-minute holds (a repo slot under the repo's session cap, and the owner's Agent choice) live in the gateway's memory, with the Agent choices that failed. A gateway restart drops them. The Desk item a failed choice raises keeps its reason.
 
 ## Messages
 

@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS caller_step_escalations (
 func ownsOtherStepSQL(a string) string {
 	return `(EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.project=c.project AND pm.node_id=c.machine AND pm.session_id=` + a + `.id)
  OR EXISTS(SELECT 1 FROM delivery_step_tasks o WHERE o.change_id=c.id AND o.owner_node NOT LIKE '/%'
- AND o.owner_node=COALESCE(` + a + `.repo_id,NULLIF(` + a + `.repo_project,''),(SELECT pr.project FROM profiles pr WHERE pr.session_id=` + a + `.id),'')))`
+ AND o.owner_node=COALESCE(` + a + `.repo_id,NULLIF(` + a + `.repo_project,''),` + a + `.announced_project)))`
 }
 
 var (
@@ -211,7 +211,7 @@ func (g *Gateway) wakeCallerAgent(ctx context.Context, key string, tasks []waiti
 	var target string
 	err := g.store.db.QueryRow(`SELECT s.id FROM sessions s JOIN delivery_changes c ON c.id=?
 		WHERE s.online=0 AND s.worker='' AND s.harness IN ('claude','codex','opencode') AND s.archived_at=0 AND s.replaced_by=''
-		AND NOT EXISTS(SELECT 1 FROM session_wakes f WHERE f.session_id=s.id AND f.wake_failed_at>0)
+		AND s.wake_failed_at=0
 		AND (s.id=? OR (s.agent_id=? AND NOT `+ownsOtherStepSQL("s")+`))
 		ORDER BY CASE WHEN s.id=? THEN 0 ELSE 1 END,s.last_seen DESC,s.id LIMIT 1`,
 		tasks[0].changeID, tasks[0].caller, key, tasks[0].caller).Scan(&target)

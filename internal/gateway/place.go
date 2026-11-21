@@ -321,7 +321,7 @@ func stripRoutingNote(body string) string {
 // sessionLabel is the name a session goes by in text, or its ID.
 func sessionLabel(q interface{ QueryRow(string, ...any) *sql.Row }, id string) string {
 	var name string
-	if q.QueryRow(`SELECT COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),s.id) FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, id).Scan(&name) != nil || name == "" {
+	if q.QueryRow(`SELECT COALESCE(NULLIF(s.name,''),s.id) FROM sessions s WHERE s.id=?`, id).Scan(&name) != nil || name == "" {
 		return id
 	}
 	return name

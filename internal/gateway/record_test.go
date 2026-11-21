@@ -445,9 +445,6 @@ func TestPruneDeletesOldDataOnly(t *testing.T) {
 	if _, ok, _ := s.Agent(gone); ok {
 		t.Fatal("old offline session kept")
 	}
-	if n := count(`SELECT COUNT(*) FROM profiles WHERE session_id = '` + gone + `'`); n != 0 {
-		t.Fatal("profile of a deleted session kept")
-	}
 	for _, id := range []string{a, b, recent} {
 		if _, ok, _ := s.Agent(id); !ok {
 			t.Fatalf("session %s deleted", id)

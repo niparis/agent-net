@@ -314,8 +314,7 @@ func (r *lifeRig) apply(e lifeEvent) string {
 		r.must(err, "busy")
 
 	case opCheck:
-		_, err := r.s.db.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting) VALUES(?,?,1)
-			ON CONFLICT(session_id) DO UPDATE SET check_waiting=1`, sid, r.c.now().Unix())
+		_, err := r.s.db.Exec(`UPDATE sessions SET check_active=CASE WHEN check_waiting=0 AND check_active=0 THEN ? ELSE check_active END,check_waiting=1 WHERE id=?`, r.c.now().Unix(), sid)
 		r.must(err, "check")
 
 	case opAnnounce:
@@ -459,7 +458,7 @@ func (r *lifeRig) liveEpoch(i int, text string) *lifeEpoch {
 
 func (r *lifeRig) checkArmed(sid string) bool {
 	var n int
-	err := r.s.db.QueryRow(`SELECT COALESCE((SELECT check_waiting FROM session_checks WHERE session_id=?),0)`, sid).Scan(&n)
+	err := r.s.db.QueryRow(`SELECT COALESCE((SELECT check_waiting FROM sessions WHERE id=?),0)`, sid).Scan(&n)
 	r.must(err, "read check")
 	return n == 1
 }

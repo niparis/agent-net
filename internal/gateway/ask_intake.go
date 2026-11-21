@@ -73,9 +73,8 @@ func (g *Gateway) askIntakeList(ctx context.Context, q protocol.AskIntakeRequest
 		limit = protocol.AskIntakeMaxListLimit
 	}
 	rows, err := g.store.db.Query(`SELECT s.id,
-		COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),''),s.harness,n.hostname,s.node_id,s.waiting
+		COALESCE(NULLIF(s.name,''),''),s.harness,n.hostname,s.node_id,s.waiting
 		FROM sessions s JOIN nodes n ON n.id=s.node_id
-		LEFT JOIN profiles p ON p.session_id=s.id
 		WHERE s.archived_at=0 AND s.harness NOT IN ('owner','cto') AND s.worker=''
 		  AND s.id<>COALESCE((SELECT value FROM gateway_state WHERE key='cto_session'),'')
 		  AND (s.online=1 OR s.status='idle') AND s.status<>'busy'

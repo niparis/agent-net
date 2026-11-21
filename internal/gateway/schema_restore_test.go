@@ -55,14 +55,35 @@ func tablesAtVersion(t *testing.T, version int) map[string]string {
 func restoreDroppedSince(t *testing.T, db repoDB, cur int) {
 	t.Helper()
 	for name, stmt := range tablesAtVersion(t, cur) {
-		var n int
-		if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&n); err != nil {
-			t.Fatal(err)
+		createIfMissing(t, db, name, stmt)
+	}
+}
+
+// restoreTablesAt puts back the named tables that are missing, each with the
+// statement it had at schema version v. A test that writes rows into an old
+// table before it rewinds schema_version needs the table first; the rewind
+// itself restores the rest through restoreDroppedSince.
+func restoreTablesAt(t *testing.T, db repoDB, v int, names ...string) {
+	t.Helper()
+	tables := tablesAtVersion(t, v)
+	for _, name := range names {
+		stmt, ok := tables[name]
+		if !ok {
+			t.Fatalf("%s does not exist at schema version %d", name, v)
 		}
-		if n == 0 {
-			if _, err := db.Exec(stmt); err != nil {
-				t.Fatalf("restore %s: %v", name, err)
-			}
+		createIfMissing(t, db, name, stmt)
+	}
+}
+
+func createIfMissing(t *testing.T, db repoDB, name, stmt string) {
+	t.Helper()
+	var n int
+	if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n == 0 {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("restore %s: %v", name, err)
 		}
 	}
 }

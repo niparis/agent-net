@@ -35,8 +35,8 @@ func sessionWait(q queryer, id string) (string, *protocol.Waiting, error) {
 	var name, raw string
 	var online bool
 	var worker sql.NullString
-	err := q.QueryRow(`SELECT COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),s.id), s.waiting, s.online, s.worker
-		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, id).Scan(&name, &raw, &online, &worker)
+	err := q.QueryRow(`SELECT COALESCE(NULLIF(s.name,''),s.id), s.waiting, s.online, s.worker
+		FROM sessions s WHERE s.id=?`, id).Scan(&name, &raw, &online, &worker)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil, nil
 	}

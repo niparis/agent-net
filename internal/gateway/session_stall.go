@@ -52,11 +52,11 @@ func (s *Store) checkSessionStalls() error {
 	}
 	defer tx.Rollback()
 	rows, err := tx.Query(`SELECT s.id,s.harness,s.status,s.online,s.worker,s.waiting,
- COALESCE(NULLIF(s.repo_project,''),p.project,''),s.harness_activity,COALESCE(p.task,''),
+ COALESCE(NULLIF(s.repo_project,''),s.announced_project),s.harness_activity,s.task,
  COALESCE((SELECT MIN(m.created_at) FROM messages m WHERE m.recipient=s.id AND
  (m.state IN ('stored','dispatched') OR (m.state='failed' AND EXISTS(SELECT 1 FROM delivery_retries r WHERE r.message_id=m.id)))),0),
  ` + sessionWaitsForOthersSQL + `
- FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
+ FROM sessions s
  WHERE s.harness IN ('claude','codex','opencode','pi')`)
 	if err != nil {
 		return err

@@ -816,7 +816,7 @@ func TestStoppedWithWorkLeftRowClosesOnNewWorkAnnounce(t *testing.T) {
 	node, _, _ := s.CreateNode("box", "linux")
 	sid, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p"})
 	row, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "check", SessionID: sid, Text: "p stopped with work left: x"})
-	if _, err := s.db.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting) VALUES(?,?,1)`, sid, c.t.Unix()); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET check_active=?,check_waiting=1 WHERE id=?`, c.t.Unix(), sid); err != nil {
 		t.Fatal(err)
 	}
 	c.advance(time.Minute)

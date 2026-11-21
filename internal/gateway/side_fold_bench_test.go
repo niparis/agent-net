@@ -65,21 +65,19 @@ func BenchmarkSideFoldModelMarks(b *testing.B) {
 func BenchmarkSideFoldSessionWakes(b *testing.B) {
 	s, _ := newTestStore(b)
 	for i := 0; i < 500; i++ {
-		benchExec(b, s, `INSERT INTO session_wakes(session_id,wake_day,wake_day_count) VALUES(?,?,?)`, fmt.Sprintf("s_%d", i), "2026-11-20", 1)
+		benchExec(b, s, `INSERT INTO sessions(id,node_id,harness,native_id,last_seen,wake_day,wake_day_count) VALUES(?,'n1','claude',?,1,?,1)`, fmt.Sprintf("s_%d", i), fmt.Sprintf("w_%d", i), "2026-11-20")
 	}
 	// The parent's own write, as the idle check and the loop make it.
 	b.Run("ParentUpsert", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			benchExec(b, s, `INSERT INTO session_wakes(session_id,wake_day,wake_day_count) VALUES(?,?,1)
-				ON CONFLICT(session_id) DO UPDATE SET wake_day=excluded.wake_day,
-				wake_day_count=CASE WHEN session_wakes.wake_day=excluded.wake_day THEN session_wakes.wake_day_count+1 ELSE 1 END`,
-				fmt.Sprintf("s_%d", i%500), "2026-11-20")
+			benchExec(b, s, `UPDATE sessions SET wake_day_count=CASE WHEN wake_day=? THEN wake_day_count+1 ELSE 1 END, wake_day=? WHERE id=?`,
+				"2026-11-20", "2026-11-20", fmt.Sprintf("s_%d", i%500))
 		}
 	})
 	b.Run("ClaimWake", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			// A new session each time, so every claim passes the back-off.
-			if _, err := s.claimWake(fmt.Sprintf("c_%d", i)); err != nil {
+			// A claim runs the same update whether the back-off passes or not.
+			if _, err := s.claimWake(fmt.Sprintf("s_%d", i%500)); err != nil {
 				b.Fatal(err)
 			}
 		}

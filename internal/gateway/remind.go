@@ -20,7 +20,6 @@ const reminderWindow = 24 * time.Hour
 // from the CTO may still remind the peer that owes an answer.
 const remindableRequest = ` FROM messages q
  JOIN sessions src ON src.id=q.sender JOIN sessions dst ON dst.id=q.recipient
- LEFT JOIN profiles sp ON sp.session_id=src.id LEFT JOIN profiles dp ON dp.session_id=dst.id
  WHERE q.type='request' AND q.batch_json='' AND q.held_for_busy=0 AND q.state IN ('stored','dispatched','delivered')
  AND q.created_at>=? AND (q.created_at<? OR q.reminded=2) AND q.expires_at>?
  AND dst.status='idle' AND dst.last_active>0 AND (dst.last_active<? OR q.reminded=2)
@@ -28,8 +27,8 @@ const remindableRequest = ` FROM messages q
  AND NOT EXISTS (SELECT 1 FROM gateway_state c WHERE c.key='cto_session' AND c.value=q.recipient)
  AND NOT EXISTS (SELECT 1 FROM messages r WHERE r.conversation_id=q.conversation_id AND r.type IN ` + answeredTypesSQL + ` AND r.created_at>=q.created_at)
  AND COALESCE((SELECT e.rule FROM graph_edges e
- WHERE e.target=COALESCE(NULLIF(dst.repo_project,''),dp.project,'')
- AND e.target<>'' AND (e.source=COALESCE(NULLIF(src.repo_project,''),sp.project,'') OR e.source='*')
+ WHERE e.target=COALESCE(NULLIF(dst.repo_project,''),dst.announced_project)
+ AND e.target<>'' AND (e.source=COALESCE(NULLIF(src.repo_project,''),src.announced_project) OR e.source='*')
  AND e.kind IN ('depends','deploys')
  ORDER BY CASE WHEN e.source='*' THEN 1 ELSE 0 END,e.kind LIMIT 1),'normal') NOT IN ('never','ask')
  AND dst.limited_until<=?`
@@ -68,7 +67,7 @@ func (s *Store) remindPendingBefore(before time.Time, sessions map[string]bool) 
 	args[1] = before.Add(-reminderGrace).UnixNano()
 	args[3] = before.Add(-reminderGrace).UnixNano()
 	rows, err := tx.Query(`SELECT q.id,q.conversation_id,q.recipient,q.created_at,dst.online,dst.last_active,
- COALESCE(NULLIF(sp.name,''),NULLIF(src.name,''),q.sender)`+remindableRequest+" AND q.reminded=0", args...)
+ COALESCE(NULLIF(src.name,''),q.sender)`+remindableRequest+" AND q.reminded=0", args...)
 	if err != nil {
 		return nil, err
 	}

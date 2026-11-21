@@ -28,8 +28,8 @@ type leadSessionRef struct {
 // worker, not a merger, not archived, and not the owner, CTO or a bot.
 func leadSessionCandidatesQ(q leadDB, agent string) ([]leadSessionRef, error) {
 	rows, err := q.Query(`SELECT s.id,
-		COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),NULLIF(s.title,''),NULLIF(s.repo_project,''),s.id)
-		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
+		COALESCE(NULLIF(s.name,''),NULLIF(s.title,''),NULLIF(s.repo_project,''),s.id)
+		FROM sessions s
 		WHERE s.agent_id=? AND s.worker='' AND s.archived_at=0
 		AND s.harness NOT IN ('owner','cto','bot')
 		AND NOT EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=s.id)

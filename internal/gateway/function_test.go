@@ -77,7 +77,7 @@ func TestNoDescriptionMeansNoFunction(t *testing.T) {
 		t.Fatalf("the agent's own text became the function: %q", got)
 	}
 	// An old announce in the database does not show either.
-	if _, err := s.db.Exec(`UPDATE profiles SET function = 'stale model text' WHERE session_id = ?`, id); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET function = 'stale model text' WHERE id = ?`, id); err != nil {
 		t.Fatal(err)
 	}
 	if got := agentOf(t, s, id).Profile.Function; got != "" {

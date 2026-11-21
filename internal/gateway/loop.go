@@ -19,7 +19,7 @@ import (
 // node with a loop; with no loop set the tick does nothing else.
 //
 // The safety stops reuse the autonomy wake rules: the day's cap is the same 6
-// wakes of a session a day, counted in session_wakes with the idle-check
+// wakes of a session a day, counted in the sessions wake columns with the idle-check
 // wakes, and two ticks in a row with no progress pause the loop. Progress is a
 // new announce, a new message, or a change in open work.
 
@@ -400,7 +400,7 @@ func (s *Store) loopOne(r loopRow, agents []protocol.AgentView, graph protocol.G
 	// The cap is the wake rule's, per session, shared with the idle checks.
 	var wakeDay string
 	var wakeCount int
-	err = s.db.QueryRow(`SELECT wake_day,wake_day_count FROM session_wakes WHERE session_id=?`, target.SessionID).Scan(&wakeDay, &wakeCount)
+	err = s.db.QueryRow(`SELECT wake_day,wake_day_count FROM sessions WHERE id=?`, target.SessionID).Scan(&wakeDay, &wakeCount)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return res, err
 	}
@@ -451,10 +451,8 @@ func (s *Store) loopOne(r loopRow, agents []protocol.AgentView, graph protocol.G
 	if err := s.recordMemberTold(tx, changes.members.told); err != nil {
 		return res, err
 	}
-	if _, err = tx.Exec(`INSERT INTO session_wakes(session_id,wake_day,wake_day_count) VALUES(?,?,1)
-		ON CONFLICT(session_id) DO UPDATE SET wake_day=excluded.wake_day,
-		wake_day_count=CASE WHEN session_wakes.wake_day=excluded.wake_day THEN session_wakes.wake_day_count+1 ELSE 1 END`,
-		target.SessionID, today); err != nil {
+	if _, err = tx.Exec(`UPDATE sessions SET wake_day_count=CASE WHEN wake_day=? THEN wake_day_count+1 ELSE 1 END, wake_day=? WHERE id=?`,
+		today, today, target.SessionID); err != nil {
 		return res, err
 	}
 	if _, err = tx.Exec(`UPDATE agent_loops SET last_at=?,sent_at=?,session_id=?,day=?,day_ticks=?,day_progress=?,streak=?,last_open=?,last_msgs=?,

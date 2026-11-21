@@ -35,7 +35,7 @@ func orgReadRig(t *testing.T) (*Store, map[string]string) {
 		{`UPDATE agents SET lead_session=NULL WHERE id='chief'`, nil},
 		{`UPDATE sessions SET online=0 WHERE id=?`, []any{ids["lead"]}},
 		{`UPDATE sessions SET started_by='agent-net' WHERE id=?`, []any{ids["member-2"]}},
-		{`INSERT INTO profiles(session_id,name,updated_at) VALUES(?,'lead-main',0),(?,'member-main',0)`, []any{ids["lead"], ids["member"]}},
+		{`UPDATE sessions SET name=CASE id WHEN ? THEN 'lead-main' ELSE 'member-main' END,name_fixed=1 WHERE id IN (?,?)`, []any{ids["lead"], ids["lead"], ids["member"]}},
 	} {
 		if _, err := s.db.Exec(q.sql, q.args...); err != nil {
 			t.Fatalf("%s: %v", q.sql, err)

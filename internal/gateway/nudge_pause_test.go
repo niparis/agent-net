@@ -57,7 +57,7 @@ func TestNudgePauseIdleAgent(t *testing.T) {
 	s, c, chief, target := nudgeSetup(t)
 	nudgeApply(t, s, chief, map[string]any{"kind": "idle_check", "agent": "target-agent name"})
 	for _, id := range []string{chief, target} {
-		if _, err := s.db.Exec(`INSERT INTO profiles(session_id,task,updated_at) VALUES(?,'work',0) ON CONFLICT(session_id) DO UPDATE SET task='work'`, id); err != nil {
+		if _, err := s.db.Exec(`UPDATE sessions SET task='work' WHERE id=?`, id); err != nil {
 			t.Fatal(err)
 		}
 		idleSince(t, s, c, id, 21*time.Minute)
@@ -67,7 +67,7 @@ func TestNudgePauseIdleAgent(t *testing.T) {
 		t.Fatalf("checks=%+v", got)
 	}
 	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM session_checks WHERE session_id=?`, target).Scan(&n); err != nil || n != 0 {
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id=? AND (check_active<>0 OR check_waiting<>0 OR check_day<>'')`, target).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("paused bookkeeping=%d: %v", n, err)
 	}
 }
@@ -162,7 +162,7 @@ func TestNudgePauseExpiry(t *testing.T) {
 }
 func TestNudgePreviewReadOnly(t *testing.T) {
 	s, c, chief, target := nudgeSetup(t)
-	if _, err := s.db.Exec(`INSERT INTO profiles(session_id,task,updated_at) VALUES(?,'work',0) ON CONFLICT(session_id) DO UPDATE SET task='work'`, target); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET task='work' WHERE id=?`, target); err != nil {
 		t.Fatal(err)
 	}
 	idleSince(t, s, c, target, 21*time.Minute)

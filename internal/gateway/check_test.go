@@ -123,7 +123,7 @@ func TestCheckAnswerDone(t *testing.T) {
 		t.Fatalf("check after new activity = %+v", got)
 	}
 	counts, err := s.SessionCounts(24 * time.Hour)
-	if err != nil || counts.CheckAnswersDone != 1 || counts.ChecksSent != 2 {
+	if err != nil || counts.ChecksSent != 2 {
 		t.Fatalf("counts = %+v, %v", counts, err)
 	}
 }
@@ -155,10 +155,6 @@ func TestCheckAnswerMoreLeavesOneNeedsYouRow(t *testing.T) {
 	if len(open) != 1 || !strings.Contains(open[0].Text, "stopped with work left: write the docs") {
 		t.Fatalf("Needs you rows = %+v", open)
 	}
-	counts, err := s.SessionCounts(24 * time.Hour)
-	if err != nil || counts.CheckAnswersMore != 1 {
-		t.Fatalf("counts = %+v, %v", counts, err)
-	}
 }
 
 func TestCheckAnswerBlockedNamesTheBlocker(t *testing.T) {
@@ -187,10 +183,6 @@ func TestCheckAnswerBlockedNamesTheBlocker(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("no blocked row: %+v", items)
-	}
-	counts, err := s.SessionCounts(24 * time.Hour)
-	if err != nil || counts.CheckAnswersBlocked != 1 {
-		t.Fatalf("counts = %+v, %v", counts, err)
 	}
 }
 
@@ -429,7 +421,7 @@ func TestCheckNotRepeatedAfterDone(t *testing.T) {
 		}
 	}
 	counts, err := s.SessionCounts(24 * time.Hour)
-	if err != nil || counts.ChecksSent != 1 || counts.CheckAnswersDone != 1 {
+	if err != nil || counts.ChecksSent != 1 {
 		t.Fatalf("counts = %+v, %v", counts, err)
 	}
 }
@@ -521,7 +513,7 @@ func TestCheckNotRepeatedAfterMoreWithSameTask(t *testing.T) {
 		}
 	}
 	counts, err := s.SessionCounts(24 * time.Hour)
-	if err != nil || counts.ChecksSent != 1 || counts.CheckAnswersMore != 1 {
+	if err != nil || counts.ChecksSent != 1 {
 		t.Fatalf("counts = %+v, %v", counts, err)
 	}
 }
@@ -636,7 +628,7 @@ func TestCheckAnnounceClearsPreviousWaitingFingerprint(t *testing.T) {
 // task retained across the fingerprint migration.
 func seedCheckTask(t *testing.T, s *Store, id, task string) {
 	t.Helper()
-	if _, err := s.db.Exec(`INSERT INTO profiles(session_id,task,updated_at) VALUES(?,?,?) ON CONFLICT(session_id) DO UPDATE SET task=excluded.task,updated_at=excluded.updated_at`, id, task, s.now().UnixNano()); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET task=?,announced_at=? WHERE id=?`, task, s.now().UnixNano(), id); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -683,7 +675,7 @@ func TestBlockedAnswerRepeatingASettledWaitMakesNoCheckRow(t *testing.T) {
 		t.Fatal(err)
 	}
 	// An hour later the check asks, and the session answers blocked.
-	if _, err := s.db.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting) VALUES(?,?,1)`, sid, c.t.Unix()); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET check_active=?,check_waiting=1 WHERE id=?`, c.t.Unix(), sid); err != nil {
 		t.Fatal(err)
 	}
 	c.advance(time.Hour)
@@ -770,7 +762,7 @@ func TestBlockedAnswerRepeatingItsOwnWaitAfterBusyMakesNoAsk(t *testing.T) {
 		t.Fatalf("the busy turn kept the wait: %s", raw)
 	}
 	// The check is out and waits for the answer.
-	if _, err := s.db.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting) VALUES(?,?,1)`, sid, c.t.Unix()); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET check_active=?,check_waiting=1 WHERE id=?`, c.t.Unix(), sid); err != nil {
 		t.Fatal(err)
 	}
 	// The answer names the same wait again. The daemon kept its original start

@@ -18,8 +18,7 @@ func (e ErrSessionName) Error() string { return e.Reason }
 
 // RenameSession gives a session the name the owner chose, or with an empty
 // name returns it to its automatic project name (decision 0033). A name set
-// here survives every later report, because reports only write the automatic
-// name. It may not be the name of another live session: agent_message_send matches
+// here survives every later report: name_fixed tells a report to keep it. It may not be the name of another live session: agent_message_send matches
 // names exactly, so a duplicate would be ambiguous.
 func (s *Store) RenameSession(sessionID, name string, validate ...bool) (protocol.SessionRenameResult, error) {
 	var res protocol.SessionRenameResult
@@ -52,9 +51,8 @@ func (s *Store) RenameSession(sessionID, name string, validate ...bool) (protoco
 			return res, ErrSessionName{"a session name cannot look like a session ID"}
 		}
 		var live string
-		err := s.db.QueryRow(`SELECT COALESCE(NULLIF(p.name,''), s.name) FROM sessions s
-			LEFT JOIN profiles p ON p.session_id = s.id
-			WHERE s.online = 1 AND s.id <> ? AND COALESCE(NULLIF(p.name,''), s.name) = ? LIMIT 1`,
+		err := s.db.QueryRow(`SELECT s.name FROM sessions s
+			WHERE s.online = 1 AND s.id <> ? AND s.name = ? LIMIT 1`,
 			sessionID, name).Scan(&live)
 		if err == nil {
 			return res, ErrSessionName{fmt.Sprintf("another live session is already named %q; use a different name or its session_id", name)}
@@ -65,11 +63,7 @@ func (s *Store) RenameSession(sessionID, name string, validate ...bool) (protoco
 		if len(validate) > 0 && validate[0] {
 			return res, nil
 		}
-		_, err = s.db.Exec(`INSERT INTO profiles (session_id, name, function, project, capabilities, task, updated_at, expertise)
-			VALUES (?,?,'','','[]','',?,'')
-			ON CONFLICT (session_id) DO UPDATE SET name = excluded.name`,
-			sessionID, name, s.now().UnixNano())
-		if err != nil {
+		if _, err = s.db.Exec(`UPDATE sessions SET name = ?, name_fixed = 1 WHERE id = ?`, name, sessionID); err != nil {
 			return res, err
 		}
 		res.Name = name
@@ -89,18 +83,7 @@ func (s *Store) RenameSession(sessionID, name string, validate ...bool) (protoco
 		if len(validate) > 0 && validate[0] {
 			return res, nil
 		}
-		tx, err := s.db.Begin()
-		if err != nil {
-			return res, err
-		}
-		if _, err = tx.Exec(`UPDATE sessions SET name = ? WHERE id = ?`, next, sessionID); err == nil {
-			_, err = tx.Exec(`UPDATE profiles SET name = '' WHERE session_id = ?`, sessionID)
-		}
-		if err != nil {
-			tx.Rollback()
-			return res, err
-		}
-		if err = tx.Commit(); err != nil {
+		if _, err = s.db.Exec(`UPDATE sessions SET name = ?, name_fixed = 0 WHERE id = ?`, next, sessionID); err != nil {
 			return res, err
 		}
 		res.Name = next

@@ -44,7 +44,7 @@ func (s *Store) RegisterCTOSession(node string) (string, error) {
 	if _, err = tx.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES('cto_session',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, id, s.now().UnixNano()); err != nil {
 		return "", err
 	}
-	if _, err = tx.Exec(`DELETE FROM profiles WHERE session_id=?`, id); err != nil {
+	if _, err = tx.Exec(`UPDATE sessions SET name_fixed=0, function='', announced_project='', capabilities='[]', task='', expertise='', task_started=0, announced_at=0 WHERE id=?`, id); err != nil {
 		return "", err
 	}
 	return id, tx.Commit()

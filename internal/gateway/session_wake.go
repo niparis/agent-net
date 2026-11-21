@@ -32,9 +32,7 @@ func (s *Store) claimWake(session string) (bool, error) {
 		return false, err
 	}
 	defer tx.Rollback()
-	res, err := tx.Exec(`INSERT INTO session_wakes(session_id,wake_attempted_at) VALUES(?,?)
- ON CONFLICT(session_id) DO UPDATE SET wake_attempted_at=excluded.wake_attempted_at
- WHERE session_wakes.wake_attempted_at<=?`, session, now.UnixNano(), now.Add(-wakeBackoff).UnixNano())
+	res, err := tx.Exec(`UPDATE sessions SET wake_attempted_at=? WHERE id=? AND wake_attempted_at<=?`, now.UnixNano(), session, now.Add(-wakeBackoff).UnixNano())
 	if err != nil {
 		return false, err
 	}
@@ -339,7 +337,7 @@ func (g *Gateway) wakeInFlight(session string) bool {
 func (g *Gateway) wakePending(ctx context.Context, node string) {
 	rows, err := g.store.db.Query(msgSelect+` JOIN sessions r ON r.id=m.recipient
  WHERE r.node_id=? AND r.online=0 AND r.harness IN ('claude','codex','opencode') AND r.worker=''
- AND NOT EXISTS (SELECT 1 FROM session_wakes f WHERE f.session_id=m.recipient AND f.wake_failed_at>0)
+ AND r.wake_failed_at=0
  AND m.state='stored' AND m.expires_at>? ORDER BY m.created_at,m.rowid`, node, g.store.now().UnixNano())
 	if err != nil {
 		g.logLine("error", "where", "wake pending", "err", err)

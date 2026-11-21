@@ -209,16 +209,6 @@ func sessionKind(a protocol.AgentView) string {
 	return protocol.SessionType(a.Harness, a.Worker, a.Type)
 }
 
-func sessionProject(a protocol.AgentView) string {
-	// Keep the legacy announced project in the read-tool display while the
-	// resolved repo agrees with the reported repo. If the context differs,
-	// the resolved context is the only current repo.
-	if a.Profile.Project != "" && (a.RepoContext == "" || a.RepoContext == a.Repo.Project) {
-		return a.Profile.Project
-	}
-	return projectOfSession(a)
-}
-
 func delegationText(v *protocol.DelegationView) string {
 	if v == nil {
 		return ""
@@ -251,7 +241,7 @@ func sessionRow(a protocol.AgentView, full bool, now time.Time, name func(string
 		Kind:     sessionKind(a),
 		Type:     sessionKind(a),
 		Machine:  a.Hostname,
-		Project:  sessionProject(a),
+		Project:  projectOfSession(a),
 		Harness:  a.Harness,
 		Model:    a.Model,
 		Online:   a.Online,
@@ -396,7 +386,7 @@ func (s *Store) FindSessions(p protocol.SessionsFindRequest) (protocol.SessionsP
 		if p.Machine != "" && !equalFoldAny(a.Hostname, p.Machine) && !equalFoldAny(a.NodeID, p.Machine) {
 			continue
 		}
-		if p.Project != "" && !equalFoldAny(sessionProject(a), p.Project) {
+		if p.Project != "" && !equalFoldAny(projectOfSession(a), p.Project) {
 			continue
 		}
 		if p.Harness != "" && !strings.EqualFold(a.Harness, p.Harness) {
@@ -407,7 +397,7 @@ func (s *Store) FindSessions(p protocol.SessionsFindRequest) (protocol.SessionsP
 		}
 		if text != "" {
 			hay := strings.ToLower(strings.Join(append([]string{a.SessionID, a.Profile.Name, a.Profile.Function,
-				sessionProject(a), a.Profile.Task, a.Profile.Expertise, a.Cwd, a.Hostname,
+				projectOfSession(a), a.Profile.Task, a.Profile.Expertise, a.Cwd, a.Hostname,
 				a.Repo.Branch, a.Repo.Remote}, a.Profile.Capabilities...), " "))
 			if !strings.Contains(hay, text) {
 				continue
