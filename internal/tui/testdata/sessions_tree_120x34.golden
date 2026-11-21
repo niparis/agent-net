@@ -9,9 +9,9 @@
   chief of staff        Mac          -         claude                   idle       ?     ?
   CTO cto               Mac          -         cto                      idle       ?     ?
   ├─ ★ strategy lead    Mac          -         claude                   busy       ?     ?
+  │  ├─ backtest        Mac          -         claude                   idle       ?     ?
   │  ├─ research        Mac          -         claude                   busy       ?     ?
-  │  ├─ strategy worker Mac          -         opencode                 busy       ?     ? probe
-  │  └─ backtest        Mac          -         claude                   idle       ?     ?
+  │  └─ strategy worker Mac          -         opencode                 busy       ?     ? probe
   └─ ★ tenebrae lead    Mac          -         claude                   idle       ?     ?
      ├─ tenebrae 2      Mac          -         claude                   busy       ?     ?
      ├─ tenebrae 3      Mac          -         claude                   idle       ?     ?
