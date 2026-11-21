@@ -16,7 +16,7 @@ import (
 // that a run's lookup finds (messages), and the agent rows of the workers
 // (agentListTables, which covers the session, node and caller profile). Keep it
 // equal to those queries (see readThrough).
-var workerLogTables = tableUnion([]string{"worker_runs", "messages", "worker_defects", "model_prices"}, agentListTables)
+var workerLogTables = tableUnion([]string{"worker_runs", "messages", "worker_defects", "model_prices", "graph_edges"}, agentListTables)
 
 // WorkerLog combines ended runs and current starts, with a hard owner-view limit.
 //
