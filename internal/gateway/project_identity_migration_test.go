@@ -48,9 +48,6 @@ func identityFixture(t *testing.T, s *Store, folder, charter string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec(`INSERT INTO graph_nodes VALUES(?, 'component', 1)`, folder); err != nil {
-		t.Fatal(err)
-	}
 	if _, err = s.db.Exec(`INSERT INTO charter_values VALUES('repo', ?, 'purpose', ?, 1, 'owner')`, folder, charter); err != nil {
 		t.Fatal(err)
 	}

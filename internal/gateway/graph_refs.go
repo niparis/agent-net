@@ -453,7 +453,7 @@ func (s *Store) setRefCharter(ref protocol.GraphRef, attr, value, actor string, 
 			return err
 		}
 		defer tx.Rollback()
-		if err = setCharterKindTx(tx, ref.ID, attr, value, actor, s.now().UnixNano(), true); err != nil {
+		if err = setCharterKindTx(tx, ref.ID, attr, value, actor, s.now().UnixNano()); err != nil {
 			return err
 		}
 		if validate {

@@ -331,6 +331,15 @@ func writeKey(t *testing.T, s *Store, key string, n int) {
 		return
 	}
 	before := s.connector.Stamp(key)
+	if q, ok := writeColumnSQL[key]; ok {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatalf("write to %s: %v. Fix its statement in writeColumnSQL.", key, err)
+		}
+		if s.connector.Stamp(key) == before {
+			t.Fatalf("a write that changed %s did not move its stamp", key)
+		}
+		return
+	}
 	q := fmt.Sprintf(`UPDATE "%[1]s" SET "%[2]s" = CASE WHEN typeof("%[2]s") IN ('integer','real') THEN "%[2]s"+1 ELSE coalesce("%[2]s",'')||'probe' END`, tbl, col)
 	if _, err := s.db.Exec(q); err != nil {
 		t.Fatalf("write to %s: %v", key, err)
@@ -350,6 +359,13 @@ var writeRowSQL = map[string]string{
 	"teams":                `INSERT INTO teams(id,name,created_at,updated_at) VALUES('t_probe','probe',1,1)`,
 	"team_members":         `INSERT INTO team_members(member_kind,member_id,team_id) VALUES('repo','probe','t_probe')`,
 	"worker_brief_defects": `INSERT INTO worker_brief_defects(severity,at) VALUES(1,1)`,
+}
+
+// writeColumnSQL is how the tests change a column the generic update cannot.
+// A trigger refuses the tombstone of an agent that owns or leads a repo, and a
+// tombstoned agent cannot own one afterwards, so a new row stands in.
+var writeColumnSQL = map[string]string{
+	"agents.tombstone": `INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES('probe_tombstone','probe','',1,1,1)`,
 }
 
 func writeTo(t *testing.T, s *Store, table string, n int) {

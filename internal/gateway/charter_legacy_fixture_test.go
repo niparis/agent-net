@@ -25,9 +25,6 @@ func (s *Store) seedLegacyCharter(node, attr, value, actor string) error {
 		return nil
 	}
 	now := s.now().UnixNano()
-	if _, err = tx.Exec(`INSERT OR IGNORE INTO graph_nodes VALUES(?,'component',?)`, node, now); err != nil {
-		return err
-	}
 	if _, err = tx.Exec(`INSERT INTO charter_values VALUES('repo',?,?,?,?,?) ON CONFLICT(level,scope,attr) DO UPDATE SET value=excluded.value`, node, attr, value, now, actor); err != nil {
 		return err
 	}

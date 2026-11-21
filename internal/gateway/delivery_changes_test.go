@@ -186,7 +186,7 @@ func TestChangeSubmitCreatesChange(t *testing.T) {
 // delivery settings describe, with the owner's steps after merge.
 func TestChangePipelineFollowsDeliverySettings(t *testing.T) {
 	r := newDeliveryRig(t)
-	if _, err := r.s.db.Exec(`INSERT INTO graph_nodes(name,kind,created_at) VALUES('demo','component',0)`); err != nil {
+	if _, err := r.s.db.Exec(`INSERT INTO charter_values(level,scope,attr,value,updated_at,updated_by) VALUES('repo','demo','purpose','a node kept by its charter',0,'owner')`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.s.WriteSettings([]SettingsChange{

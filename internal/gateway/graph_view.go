@@ -85,7 +85,7 @@ func (s *Store) graphView(project string, historyPerNode int, all bool) (protoco
 	rows, err := s.db.Query(`SELECT id,node,attr,old_value,new_value,at,actor FROM (
 		SELECT id,node,attr,old_value,new_value,at,actor,
 		       ROW_NUMBER() OVER (PARTITION BY node ORDER BY id DESC) AS rn
-		FROM graph_history WHERE type='charter' OR (type='agent_charter' AND node IN (SELECT name FROM graph_nodes WHERE kind='architect'))
+		FROM graph_history WHERE type='charter' OR (type='agent_charter' AND node IN (SELECT id FROM agents WHERE role='architect' AND tombstone=0))
 	) WHERE rn<=? ORDER BY id DESC`, historyPerNode)
 	if err != nil {
 		return out, err
@@ -133,7 +133,7 @@ func (s *Store) visibleGraphRead(all bool) (protocol.Graph, error) {
 		}
 		return s.graphContext(g)
 	}
-	rows, err := s.db.Query(`SELECT name FROM graph_nodes UNION SELECT name FROM projects WHERE graph_excluded<>1 UNION SELECT scope FROM charter_values WHERE level='repo' AND value<>'' UNION SELECT source FROM graph_edges WHERE kind<>'reports_to' UNION SELECT target FROM graph_edges WHERE kind<>'reports_to' UNION SELECT repo_project FROM sessions WHERE archived_at=0 AND repo_project<>'' AND (online=1 OR last_seen>=?)`, s.now().Add(-7*24*time.Hour).UnixNano())
+	rows, err := s.db.Query(`SELECT id FROM agents WHERE role='architect' AND tombstone=0 UNION SELECT name FROM projects WHERE graph_excluded<>1 UNION SELECT scope FROM charter_values WHERE level='repo' AND value<>'' UNION SELECT source FROM graph_edges WHERE kind<>'reports_to' UNION SELECT target FROM graph_edges WHERE kind<>'reports_to' UNION SELECT repo_project FROM sessions WHERE archived_at=0 AND repo_project<>'' AND (online=1 OR last_seen>=?)`, s.now().Add(-7*24*time.Hour).UnixNano())
 	if err != nil {
 		return g, err
 	}

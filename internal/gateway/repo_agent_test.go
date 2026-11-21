@@ -79,7 +79,13 @@ func TestRepoAgentMigrationPreservesGraphAndDelivery(t *testing.T) {
 		t.Fatalf("expected open and merged backfill tasks, got %+v", beforeTasks)
 	}
 	before := repoAgentLegacySnapshot(t, r.s, r.caller, r.sonnet, openChange, mergedChange)
-	_, err := r.s.db.Exec(`DROP TRIGGER IF EXISTS session_lifecycle_insert; DROP TRIGGER IF EXISTS session_lifecycle_update; DROP TRIGGER repo_agent_project_insert; DROP TRIGGER repo_agent_project_update; DROP TRIGGER repo_agent_session_insert; DROP TRIGGER repo_agent_session_update; DROP TRIGGER repo_agent_architect_insert; DROP TRIGGER repo_agent_architect_delete; DROP TRIGGER IF EXISTS bot_agent_insert; DROP TRIGGER IF EXISTS bot_agent_rename; DROP TRIGGER IF EXISTS bot_agent_revoke; DROP TRIGGER IF EXISTS bot_names_rename; DROP TRIGGER IF EXISTS bot_names_revoke; DROP TABLE repos; DROP TABLE agents; DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "Repo and agent records"))
+	// The store before this migration had graph_nodes, and the migration reads it
+	// to place the architects. Dropping agents below would lose them, so keep them
+	// in the table the way that store had them.
+	mustExec(t, r.s, createGraphNodesSQL)
+	mustExec(t, r.s, `INSERT INTO graph_nodes SELECT id,'architect',created_at FROM agents WHERE role='architect' AND tombstone=0`)
+	mustExec(t, r.s, `INSERT OR IGNORE INTO graph_nodes SELECT DISTINCT c.scope,'component',COALESCE((SELECT created_at FROM repos r WHERE r.id=c.scope),0) FROM charter_values c WHERE c.level='repo'`)
+	_, err := r.s.db.Exec(`DROP TRIGGER IF EXISTS session_lifecycle_insert; DROP TRIGGER IF EXISTS session_lifecycle_update; DROP TRIGGER repo_agent_project_insert; DROP TRIGGER repo_agent_project_update; DROP TRIGGER repo_agent_session_insert; DROP TRIGGER repo_agent_session_update; DROP TRIGGER IF EXISTS repo_agent_architect_insert; DROP TRIGGER IF EXISTS repo_agent_architect_delete; DROP TRIGGER IF EXISTS bot_agent_insert; DROP TRIGGER IF EXISTS bot_agent_rename; DROP TRIGGER IF EXISTS bot_agent_revoke; DROP TRIGGER IF EXISTS bot_names_rename; DROP TRIGGER IF EXISTS bot_names_revoke; DROP TABLE repos; DROP TABLE agents; DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "Repo and agent records"))
 	if err != nil {
 		t.Fatal(err)
 	}

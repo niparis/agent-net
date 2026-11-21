@@ -49,8 +49,8 @@ func (s *Store) GraphLifecycle(action string, p protocol.GraphLifecycleRequest, 
 		// Old architect charters still use this legacy key. Keep a new Repo's
 		// identity separate from that copy when their display names coincide.
 		if kind == "repo" {
-			var architect bool
-			if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM graph_nodes WHERE name=? AND kind='architect')`, id).Scan(&architect); err != nil {
+			architect, err := isArchitect(tx, id)
+			if err != nil {
 				return err
 			}
 			if architect {
@@ -58,7 +58,7 @@ func (s *Store) GraphLifecycle(action string, p protocol.GraphLifecycleRequest, 
 				id = base
 				for n := 2; ; n++ {
 					var used bool
-					if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? UNION ALL SELECT 1 FROM graph_nodes WHERE name=?)`, id, id).Scan(&used); err != nil {
+					if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? UNION ALL SELECT 1 FROM agents WHERE id=? AND role='architect' AND tombstone=0)`, id, id).Scan(&used); err != nil {
 						return err
 					}
 					if !used {

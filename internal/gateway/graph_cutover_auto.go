@@ -301,11 +301,11 @@ func (g *Gateway) enableGraphRefsAutomatically(ctx context.Context) {
 		g.logLine("graph.cutover.deferred", "backup", backup, "blockers", len(blockers))
 		return
 	}
-	if _, err = tx.Exec(`INSERT OR IGNORE INTO charter_values(level,scope,attr,value,updated_at,updated_by) SELECT 'agent',c.scope,c.attr,c.value,c.updated_at,c.updated_by FROM charter_values c JOIN graph_nodes n ON n.name=c.scope AND n.kind='architect' WHERE c.level='repo'`); err != nil {
+	if _, err = tx.Exec(`INSERT OR IGNORE INTO charter_values(level,scope,attr,value,updated_at,updated_by) SELECT 'agent',c.scope,c.attr,c.value,c.updated_at,c.updated_by FROM charter_values c JOIN agents n ON n.id=c.scope AND n.role='architect' AND n.tombstone=0 WHERE c.level='repo'`); err != nil {
 		fail(err)
 		return
 	}
-	if _, err = tx.Exec(`UPDATE graph_history SET target_kind=CASE WHEN node IN (SELECT name FROM graph_nodes WHERE kind='architect') THEN 'agent' ELSE 'repo' END WHERE type='charter' AND target_kind=''`); err != nil {
+	if _, err = tx.Exec(`UPDATE graph_history SET target_kind=CASE WHEN node IN (SELECT id FROM agents WHERE role='architect' AND tombstone=0) THEN 'agent' ELSE 'repo' END WHERE type='charter' AND target_kind=''`); err != nil {
 		fail(err)
 		return
 	}

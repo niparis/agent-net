@@ -101,6 +101,7 @@ func TestGraphViewHidesOldEmptyImplicitProjects(t *testing.T) {
 
 func TestGraphJunkMigrationPreservesManagedNodes(t *testing.T) {
 	s, _ := newTestStore(t)
+	mustExec(t, s, createGraphNodesSQL)
 	_, err := s.db.Exec(`INSERT INTO graph_nodes VALUES ('tmpabc123','component',1),('keep-charter','component',1),('keep-edge','component',1),('keep-history','component',1);
  INSERT INTO charter_values VALUES('repo','keep-charter','purpose','useful',1,'owner');
  INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES ('keep-edge','other','depends','','normal');

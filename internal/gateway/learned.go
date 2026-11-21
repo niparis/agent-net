@@ -186,7 +186,7 @@ func (s *Store) learnOwner(tx *sql.Tx, from, to, id, prompt string, at int64) er
 		name := strings.TrimSpace(m[2])
 		// The named target must be an exact known graph name, not a guess based on
 		// the message recipient.
-		rows, err := tx.Query(`SELECT name FROM graph_nodes UNION SELECT repo_project FROM sessions WHERE archived_at=0 AND repo_project<>'' UNION SELECT name FROM projects`)
+		rows, err := tx.Query(`SELECT id FROM agents WHERE role='architect' AND tombstone=0 UNION SELECT scope FROM charter_values WHERE level='repo' UNION SELECT repo_project FROM sessions WHERE archived_at=0 AND repo_project<>'' UNION SELECT name FROM projects`)
 		if err != nil {
 			return err
 		}
