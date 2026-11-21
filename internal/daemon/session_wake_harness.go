@@ -34,11 +34,13 @@ type wakeCall struct {
 // A session runs one wake at a time. The gateway shows a woken session offline
 // until it registers, so a second wake in that window would start a second
 // copy of the same agent. It joins the first wake instead. A session this
-// daemon already holds live is not woken at all.
+// daemon already holds live is not started again, but it is registered with
+// the gateway again: the gateway asks for a wake only for a session it shows
+// offline, so a live one here means the two disagree (attachLive).
 func (d *Daemon) wakeSession(ctx context.Context, id, token string, autonomy bool) error {
-	if d.sessionByID(id) != nil {
-		d.Logf("session wake: %s is already live; nothing to start", id)
-		return nil
+	if ls := d.sessionByID(id); ls != nil {
+		d.Logf("session wake: %s is already live here; registering it with the gateway again", id)
+		return d.attachLive(ctx, id, ls)
 	}
 	d.wakeMu.Lock()
 	if call, ok := d.wakes[id]; ok {
@@ -233,6 +235,42 @@ func (d *Daemon) waitWokenSession(ctx context.Context, harness string, a protoco
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("the resumed %s session did not register: %w", harness, ctx.Err())
+		case <-ticker.C:
+		}
+	}
+}
+
+// attachWait bounds how long attachLive waits for the gateway to show the
+// session online after the registration.
+const attachWait = 15 * time.Second
+
+// attachLive brings a session this daemon holds live, and the gateway shows
+// offline, online at the gateway. It starts nothing. An OpenCode conversation
+// lives in the owner's shared service, so it stays loaded after the owner
+// closes it in agent-net (session_stop), and its plugin stays connected. The
+// gateway keeps a closed session offline and ignores its registration until
+// OpenCode reports newer activity (UpsertSession), so a wake that answered
+// "already live" left the queued messages to expire. Here the close is lifted
+// the way Enter lifts it, and the session is registered with force. It fails,
+// with the reason, when the gateway still shows the session offline.
+func (d *Daemon) attachLive(ctx context.Context, id string, ls *localSession) error {
+	if ls.info.Harness == "opencode" && ls.info.Worker == nil {
+		if _, err := d.call(ctx, "session.remove", protocol.SessionRemove{SessionID: id, Reopen: true}); err != nil {
+			return fmt.Errorf("cannot reopen the session at the gateway: %w", err)
+		}
+	}
+	d.pushSession(ls)
+	ctx, cancel := context.WithTimeout(ctx, attachWait)
+	defer cancel()
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if a, err := d.agentView(ctx, id); err == nil && a.Online {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return errors.New("the session is running here, but the gateway still shows it offline after it was registered again")
 		case <-ticker.C:
 		}
 	}

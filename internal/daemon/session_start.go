@@ -532,6 +532,19 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, 
 	if a.Online {
 		return protocol.StartedSession{}, errors.New("session is already online")
 	}
+	// An OpenCode conversation the daemon still holds live has nothing to
+	// start: the shared service keeps it loaded and its plugin stays connected.
+	// The gateway shows it offline because it was closed (attachLive).
+	if a.Harness == "opencode" && a.Worker == nil {
+		if ls := d.sessionByID(a.SessionID); ls != nil && ls.plugin() {
+			if err := d.attachLive(ctx, a.SessionID, ls); err != nil {
+				return protocol.StartedSession{}, err
+			}
+			r := d.resumeRecord(a)
+			r.Status, r.SessionID, r.Attached = "started", a.SessionID, true
+			return r, nil
+		}
+	}
 	info, err := os.Stat(a.Cwd)
 	if err != nil || !info.IsDir() {
 		return protocol.StartedSession{}, fmt.Errorf("session folder is gone: %s", a.Cwd)

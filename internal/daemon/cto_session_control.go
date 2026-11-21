@@ -70,18 +70,28 @@ func (d *Daemon) ctoSessionControl(ctx context.Context, concrete string, raw jso
 			return nil, err
 		}
 		out.Start = &start
-		out.Note = "Resumed " + out.Name + " in the background. Press Enter on it in the Sessions tab to open it."
+		out.Note = resumeNote("Resumed", out.Name, start)
 	case "restart":
 		start, err := d.restartSession(ctx, id, view.Online)
 		if err != nil {
 			return nil, err
 		}
 		out.Start = &start
-		out.Note = "Restarted " + out.Name + " in the background. Press Enter on it in the Sessions tab to open it."
+		out.Note = resumeNote("Restarted", out.Name, start)
 	default:
 		return nil, fmt.Errorf("unknown session control %q", concrete)
 	}
 	return out, nil
+}
+
+// resumeNote is the CTO's line after a resume or restart. A session that was
+// already running here and was registered again is reported as that, not as a
+// start.
+func resumeNote(verb, name string, start protocol.StartedSession) string {
+	if start.Attached {
+		return name + " was already running on this machine. Nothing was started: agent-net registered it with the gateway again, and its queued messages are delivered now."
+	}
+	return verb + " " + name + " in the background. Press Enter on it in the Sessions tab to open it."
 }
 
 // restartSession stops a live session, waits until it is reported ended, then

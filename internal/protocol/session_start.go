@@ -184,7 +184,10 @@ type StartedSession struct {
 	EnterNote string `json:"enter_note,omitempty"`
 	// Resumes is the session a resume started from. It is local bookkeeping
 	// for the restart that must keep the session ID, and is never sent.
-	Resumes   string     `json:"-"`
+	Resumes string `json:"-"`
+	// Attached says a resume started nothing: the session was already running
+	// here, and the resume registered it with the gateway again.
+	Attached  bool       `json:"attached,omitempty"`
 	StartedAt int64      `json:"started_at"`
 	JobID     string     `json:"job_id,omitempty"`
 	NativeID  string     `json:"native_id,omitempty"`
