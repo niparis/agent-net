@@ -278,13 +278,9 @@ func restoreRepoSideTables(t *testing.T, db repoDB) {
 	if cur < migrationVersion(t, workerTablesMarker) {
 		dropWorkerVersionTriggers(t, db)
 	}
-	if cur < migrationVersion(t, settingsFoldMarker) {
-		restoreSettingsFoldTables(t, db)
-		dropSettingsTokenColumns(t, db)
-	}
-	if cur < migrationVersion(t, "Schema reduction part 1: drop the tables") {
-		recreateDeadTablesDB(t, db)
-	}
+	// The newest change comes back first: dropping a column checks every
+	// trigger, so the org fold's owner_agent_id has to be back before the
+	// older steps drop the columns they added.
 	if cur < migrationVersion(t, "Team history moves into graph_history") {
 		for _, trig := range []string{"bot_agent_revoke", "bot_names_revoke"} {
 			if _, err := db.Exec(`DROP TRIGGER IF EXISTS ` + trig); err != nil {
@@ -318,7 +314,7 @@ func restoreRepoSideTables(t *testing.T, db repoDB) {
 				}
 			}
 		}
-		restoreTablesAt(t, db, cur, "team_members", "outcome_overrules", "charter_draft_asks", "project_display_names")
+		restoreTablesAt(t, db, migrationVersion(t, orgFoldMarker)-1, "team_members", "outcome_overrules", "charter_draft_asks", "project_display_names")
 		var hasAgentTeam int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('agents') WHERE name='team_id'`).Scan(&hasAgentTeam); err != nil {
 			t.Fatal(err)
@@ -351,6 +347,13 @@ func restoreRepoSideTables(t *testing.T, db repoDB) {
 				}
 			}
 		}
+	}
+	if cur < migrationVersion(t, settingsFoldMarker) {
+		restoreSettingsFoldTables(t, db)
+		dropSettingsTokenColumns(t, db)
+	}
+	if cur < migrationVersion(t, "Schema reduction part 1: drop the tables") {
+		recreateDeadTablesDB(t, db)
 	}
 	var folded int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('repos') WHERE name='lead_agent_id'`).Scan(&folded); err != nil {

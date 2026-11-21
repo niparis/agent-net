@@ -1,6 +1,9 @@
 package gateway
 
-import "database/sql"
+import (
+	"database/sql"
+	"strings"
+)
 
 // orgFoldMarker names the migration that unifies repo leadership on
 // repos.lead_agent_id, removes stored reports_to edges, and folds
@@ -69,7 +72,18 @@ func foldOrgGraphTx(tx *sql.Tx) error {
 		} else if hasTeamMembers {
 			teamExpr = "COALESCE((SELECT team_id FROM team_members WHERE member_kind='repo' AND member_id=r.id),'')"
 		}
-		if err := execAll(tx,
+		// Later schema changes add columns, indexes and triggers to repos. The
+		// rebuild keeps every column it does not own, and gives back each index
+		// and trigger it does not recreate below.
+		extraDefs, extraNames, err := repoExtraColumnsTx(tx)
+		if err != nil {
+			return err
+		}
+		kept, err := repoDependentSchemaTx(tx)
+		if err != nil {
+			return err
+		}
+		stmts := []string{
 			`DROP TRIGGER IF EXISTS repo_live_owner_insert`,
 			`DROP TRIGGER IF EXISTS repo_live_owner_update`,
 			`DROP TRIGGER IF EXISTS agent_owned_tombstone`,
@@ -89,22 +103,47 @@ func foldOrgGraphTx(tx *sql.Tx) error {
  archived INTEGER NOT NULL DEFAULT 0,
  held_back TEXT NOT NULL DEFAULT '',
  lead_agent_id TEXT,
- team_id TEXT NOT NULL DEFAULT ''
+ team_id TEXT NOT NULL DEFAULT ''` + extraDefs + `
 )`,
-			`INSERT INTO repos_new(id,display_name,created_at,updated_at,archived,held_back,lead_agent_id,team_id)
-SELECT r.id,`+displayExpr+`,r.created_at,r.updated_at,r.archived,r.held_back,`+leadExpr+`,`+teamExpr+` FROM repos r`,
+			`INSERT INTO repos_new(id,display_name,created_at,updated_at,archived,held_back,lead_agent_id,team_id` + extraNames + `)
+SELECT r.id,` + displayExpr + `,r.created_at,r.updated_at,r.archived,r.held_back,` + leadExpr + `,` + teamExpr + extraSelect(extraNames) + ` FROM repos r`,
 			`DROP TABLE repos`,
 			`ALTER TABLE repos_new RENAME TO repos`,
-		); err != nil {
+		}
+		// The kept triggers and indexes go first and come back last.
+		drops := make([]string, 0, len(kept))
+		for _, o := range kept {
+			drops = append(drops, `DROP `+o.kind+` IF EXISTS `+o.name)
+		}
+		if err := execAll(tx, append(drops, stmts...)...); err != nil {
 			return err
 		}
+		for _, o := range kept {
+			if _, err := tx.Exec(o.sql); err != nil {
+				return err
+			}
+		}
+	}
+	// The settings fold dropped settings_target_identity and its triggers. A
+	// store from before that fold still has the table, so it still needs this one.
+	hasTokenTable, err := hasTable(tx, "settings_target_identity")
+	if err != nil {
+		return err
+	}
+	tokenTrigger := []string{}
+	if hasTokenTable {
+		tokenTrigger = []string{
+			`DROP TRIGGER IF EXISTS settings_target_identity_repo_delete`,
+			`CREATE TRIGGER settings_target_identity_repo_delete AFTER DELETE ON repos BEGIN
+ DELETE FROM settings_target_identity WHERE kind='repo' AND id=OLD.id;
+END`,
+		}
+	}
+	if err := execAll(tx, tokenTrigger...); err != nil {
+		return err
 	}
 	if err := execAll(tx,
 		`CREATE INDEX IF NOT EXISTS repos_team ON repos(team_id)`,
-		`DROP TRIGGER IF EXISTS settings_target_identity_repo_delete`,
-		`CREATE TRIGGER settings_target_identity_repo_delete AFTER DELETE ON repos BEGIN
- DELETE FROM settings_target_identity WHERE kind='repo' AND id=OLD.id;
-END`,
 		`DROP TRIGGER IF EXISTS session_identity_repo_update`,
 		`CREATE TRIGGER session_identity_repo_update AFTER UPDATE OF repo_project ON sessions BEGIN
  UPDATE sessions SET repo_id=(SELECT id FROM repos WHERE id=NEW.repo_project) WHERE id=NEW.id AND NEW.harness NOT IN ('cto','owner');
@@ -257,4 +296,85 @@ SELECT level,scope,'','','',source_hash,'asked',session_id,asked_at,asked_at FRO
 		return err
 	}
 	return nil
+}
+
+// repoOwnColumns are the columns the repos rebuild writes itself.
+var repoOwnColumns = map[string]bool{"id": true, "display_name": true, "created_at": true, "updated_at": true,
+	"archived": true, "held_back": true, "lead_agent_id": true, "owner_agent_id": true, "team_id": true}
+
+// repoExtraColumnsTx returns the definitions (for CREATE TABLE) and the names
+// (for the column lists) of the columns of repos that the rebuild does not own,
+// each with a leading comma.
+func repoExtraColumnsTx(tx *sql.Tx) (defs, names string, err error) {
+	rows, err := tx.Query(`SELECT name,type,"notnull",dflt_value FROM pragma_table_info('repos') ORDER BY cid`)
+	if err != nil {
+		return "", "", err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name, typ string
+		var notNull int
+		var dflt sql.NullString
+		if err := rows.Scan(&name, &typ, &notNull, &dflt); err != nil {
+			return "", "", err
+		}
+		if repoOwnColumns[name] {
+			continue
+		}
+		def := ", " + name + " " + typ
+		if notNull != 0 {
+			def += " NOT NULL"
+		}
+		if dflt.Valid {
+			def += " DEFAULT " + dflt.String
+		}
+		defs += def
+		names += ", " + name
+	}
+	return defs, names, rows.Err()
+}
+
+// extraSelect turns a leading-comma name list into the same list on r.
+func extraSelect(names string) string {
+	out := ""
+	for _, n := range strings.Split(names, ",") {
+		if n = strings.TrimSpace(n); n != "" {
+			out += ", r." + n
+		}
+	}
+	return out
+}
+
+type savedSchema struct{ kind, name, sql string }
+
+// repoRebuildOwns are the triggers the repos rebuild drops and recreates itself.
+var repoRebuildOwns = map[string]bool{
+	"repo_live_owner_insert": true, "repo_live_owner_update": true, "agent_owned_tombstone": true,
+	"repo_lead_delete": true, "repo_lead_tombstone": true, "repo_agent_project_insert": true,
+	"repo_agent_project_update": true, "repo_agent_session_insert": true, "repo_agent_session_update": true,
+	"settings_target_identity_repo_delete": true, "session_identity_repo_update": true,
+	"repo_live_lead_insert": true, "repo_live_lead_update": true,
+}
+
+// repoDependentSchemaTx saves the indexes of repos and the triggers that name
+// repos, except the ones the rebuild owns. SQLite refuses to drop repos while
+// a trigger on another table names it, and drops the others with the table.
+func repoDependentSchemaTx(tx *sql.Tx) ([]savedSchema, error) {
+	rows, err := tx.Query(`SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL
+ AND ((type='trigger' AND (tbl_name='repos' OR sql LIKE '%repos%')) OR (type='index' AND tbl_name='repos')) ORDER BY rowid`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []savedSchema
+	for rows.Next() {
+		var o savedSchema
+		if err := rows.Scan(&o.kind, &o.name, &o.sql); err != nil {
+			return nil, err
+		}
+		if !repoRebuildOwns[o.name] {
+			out = append(out, o)
+		}
+	}
+	return out, rows.Err()
 }

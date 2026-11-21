@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -14,8 +15,11 @@ import (
 // repos with owner_agent_id, and the four side tables that migration folds.
 func rewindBeforeOrgFold(t *testing.T, s *Store) {
 	t.Helper()
+	// repos keeps the columns later changes added (settings token, bar, merger),
+	// so the old shape is made by taking the fold's team_id off and putting
+	// owner_agent_id back.
 	if _, err := s.db.Exec(`
-		DELETE FROM schema_version WHERE version=(SELECT MAX(version) FROM schema_version);
+		DELETE FROM schema_version WHERE version>=` + strconv.Itoa(migrationVersion(t, orgFoldMarker)) + `;
 		DROP TRIGGER IF EXISTS repo_live_lead_insert;
 		DROP TRIGGER IF EXISTS repo_live_lead_update;
 		DROP TRIGGER IF EXISTS repo_lead_delete;
@@ -26,17 +30,9 @@ func rewindBeforeOrgFold(t *testing.T, s *Store) {
 		DROP TRIGGER IF EXISTS repo_agent_session_update;
 		DROP TRIGGER IF EXISTS settings_target_identity_repo_delete;
 		DROP TRIGGER IF EXISTS session_identity_repo_update;
-		DROP TABLE repos;
-		CREATE TABLE repos (
-			id TEXT PRIMARY KEY,
-			display_name TEXT NOT NULL,
-			created_at INTEGER NOT NULL,
-			updated_at INTEGER NOT NULL,
-			owner_agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
-			archived INTEGER NOT NULL DEFAULT 0,
-			held_back TEXT NOT NULL DEFAULT '',
-			lead_agent_id TEXT
-		);
+		DROP INDEX IF EXISTS repos_team;
+		ALTER TABLE repos DROP COLUMN team_id;
+		ALTER TABLE repos ADD COLUMN owner_agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL;
 		CREATE TABLE team_members (
 			member_kind TEXT NOT NULL CHECK(member_kind IN ('agent','repo')),
 			member_id TEXT NOT NULL,
@@ -195,7 +191,7 @@ func TestComputedOrgTreeAndStaleLeadBug(t *testing.T) {
 	if _, err := s.db.Exec(`UPDATE sessions SET agent_id='chief-agent' WHERE id=?`, chiefSess); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT OR REPLACE INTO owner_settings(key,value,updated_at) VALUES('chief_session',?,1)`, chiefSess); err != nil {
+	if _, err := s.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('chief_session',?,1)`, chiefSess); err != nil {
 		t.Fatal(err)
 	}
 	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "t_eng", Name: "Eng", Owner: &protocol.GraphRef{Kind: "agent", ID: "other"}})
@@ -322,7 +318,7 @@ func TestOrgFoldKeepsTheLiveTree(t *testing.T) {
 		want[merger] = fmt.Sprintf("rl%02d", i)
 	}
 	add(`INSERT INTO sessions(id,node_id,harness,native_id,last_seen,agent_id) VALUES('s_chief','%s','claude','chief',0,'chief')`, node)
-	add(`INSERT INTO owner_settings(key,value,updated_at) VALUES('chief_session','s_chief',1)`)
+	add(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('chief_session','s_chief',1)`)
 	for child, parent := range want {
 		kind := "agent"
 		if parent == protocol.OrgRoot {
