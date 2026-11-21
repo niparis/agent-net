@@ -289,7 +289,7 @@ func TestPickUncertainBoostIsOnTheWeight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	near(t, "weight", choice.Weight, table.Cell("fresh", 4).Score*1.5)
+	near(t, "weight", choice.Weight, FallbackDrawWeight(choice.PickRows[0].ExpectedCost)*1.5)
 	choice, err = chooseFirst(pickCandidates("known"), "normal", scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: 2.5, Table: table})
 	if err != nil {
 		t.Fatal(err)
@@ -317,7 +317,7 @@ func TestPickNoUncertainBoostMoreThanOneBucketBelowTheCeiling(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}
-		near(t, c.name, choice.Weight, table.Cell("fresh", 4).Score*c.boost)
+		near(t, c.name, choice.Weight, FallbackDrawWeight(choice.PickRows[0].ExpectedCost)*c.boost)
 	}
 }
 
@@ -803,6 +803,89 @@ func TestPickerBPrimeWithoutQualifiersRotatesTheAllowedSet(t *testing.T) {
 	}
 }
 
+// Nothing is proven at D 3.70: every candidate has two tasks, so the draw is
+// the fallback. hydrogen has the best record, so the highest cell score. neon is
+// the cheapest run with its rework. The fallback draws by expected cost, so neon
+// gets the largest share, and every allowed candidate keeps a chance.
+func TestPickFallbackDrawFavoursTheCheapestExpectedCost(t *testing.T) {
+	var tasks []PickerTask
+	tasks = append(tasks, costTasks("hydrogen", 3.7, .89, 1, 1)...)
+	tasks = append(tasks, costTasks("neon", 3.7, .36, 1, 0)...)
+	tasks = append(tasks, costTasks("opus", 3.7, .92, 1, 1)...)
+	tasks = append(tasks, costTasks("sonnet", 3.7, 3.0, .5, 1)...)
+	scores := pickScores(map[string]float64{"hydrogen": 60, "neon": 60, "opus": 70, "sonnet": 70})
+	in := &PickerInput{D: 3.7, Table: BuildPickerTable(tasks, DefaultPickerSettings())}
+	order, _, err := WorkerPickOrder(pickCandidates("hydrogen", "neon", "opus", "sonnet"), "hard", scores, nil, nil, nil, &WorkerRotation{}, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := order[0].PickRows
+	var cheapest, largest *PickCandidate
+	for i := range rows {
+		r := &rows[i]
+		if r.Qualified {
+			t.Fatalf("%s qualified at D 3.70: the test is not a fallback", r.Name)
+		}
+		if r.Probability <= 0 {
+			t.Errorf("%s has no chance in the fallback draw", r.Name)
+		}
+		if cheapest == nil || r.ExpectedCost < cheapest.ExpectedCost {
+			cheapest = r
+		}
+		if largest == nil || r.Probability > largest.Probability {
+			largest = r
+		}
+	}
+	if largest.Name != cheapest.Name {
+		t.Fatalf("largest share %s (%.3f), cheapest expected %s (%.3f): %v", largest.Name, largest.Probability, cheapest.Name, cheapest.Probability, rows)
+	}
+	if !strings.Contains(order[0].Why, "none qualified; fallback draw by expected cost") {
+		t.Errorf("why lacks the fallback: %s", order[0].Why)
+	}
+}
+
+// FallbackDrawWeight is one over the expected cost. A cost of zero or an
+// unbounded one must still give a positive weight.
+func TestFallbackDrawWeightIsOneOverCost(t *testing.T) {
+	near(t, "weight at cost 0.5", FallbackDrawWeight(.5), 2)
+	near(t, "weight at cost 2", FallbackDrawWeight(2), .5)
+	for _, cost := range []float64{0, -1, math.NaN(), math.Inf(1)} {
+		if w := FallbackDrawWeight(cost); !(w > 0) || math.IsInf(w, 0) {
+			t.Errorf("cost %v: weight %v, want a positive finite weight", cost, w)
+		}
+	}
+}
+
+// With a proven candidate the rotation is the one from before: the exploration
+// pick weights the thin candidate by its quota pace and benchmark, and the
+// expected cost does not enter. The values are those of the code before the
+// fallback change.
+func TestPickerProvenRotationIsUnchanged(t *testing.T) {
+	tasks := append(pickTasks("good", 2.5, repeat(15, 1, .5)...), pickTasks("new", 2.5, 1, 0)...)
+	scores := pickScores(map[string]float64{"good": 51, "new": 39})
+	in := &PickerInput{D: 2.5, Table: BuildPickerTable(tasks, DefaultPickerSettings())}
+	rotation := &WorkerRotation{}
+	for i := 0; i < 10; i++ {
+		order, _, err := WorkerPickOrder(pickCandidates("good", "new"), "normal", scores, nil, nil, nil, rotation, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		clone := rotation.Clone()
+		rotation = &clone
+		if order[0].Name != "new" {
+			continue
+		}
+		for _, r := range order[0].PickRows {
+			if r.Name == "new" {
+				near(t, "new weight", r.Weight, 1.307692)
+				near(t, "new share", r.Probability, 1)
+			}
+		}
+		return
+	}
+	t.Fatal("no exploration pick in ten picks")
+}
+
 func TestPickerBPrimeExplorationStateSurvivesAClone(t *testing.T) {
 	tasks := append(pickTasks("good", 2.5, repeat(15, 1, .5)...), pickTasks("new", 2.5, 1, 0)...)
 	scores := pickScores(map[string]float64{"good": 51, "new": 39})
@@ -902,7 +985,7 @@ func TestPickerWhyCountsTheOtherQualifyingProfiles(t *testing.T) {
 		qualified bool
 		want      string
 	}{
-		{"none", 0, false, "no other qualifying"},
+		{"none", 0, false, "none qualified; fallback draw by expected cost"},
 		{"chosen is the only one", 1, true, "no other qualifying"},
 		{"one other", 1, false, "1 other qualifying"},
 		{"three others", 3, false, "3 other qualifying"},

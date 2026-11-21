@@ -477,7 +477,11 @@ type CandRow struct {
 	Rescue     float64
 	Expected   float64
 	Adjusted   float64
-	HasCost    bool
+	// Weight and Share are the rotation weight and the recorded share of the
+	// candidate: its probability in the draw the live picker made.
+	Weight  float64
+	Share   float64
+	HasCost bool
 }
 
 // Key is the model key of the candidate, as the picker table holds it.
@@ -488,7 +492,7 @@ func (s *Snapshot) readPicks(db *sql.DB) error {
 	var order []*Pick
 	rows, err := db.Query(`SELECT run_id,pos,name,harness,provider,model,effort,rule,bucket_lo,bucket_hi,
 		cell_score,cell_low,cell_high,cell_n,is_allowed,is_qualified,is_prior,is_best,is_chosen,is_winner,left_out_reason,
-		cost_per_run,p_clean,rescue_cost,expected_cost,pace_room,pace_factor,adjusted_cost
+		cost_per_run,p_clean,rescue_cost,expected_cost,pace_room,pace_factor,adjusted_cost,weight,probability
 		FROM pick_candidates ORDER BY run_id,pos`)
 	if err != nil {
 		return err
@@ -497,10 +501,11 @@ func (s *Snapshot) readPicks(db *sql.DB) error {
 		var runID string
 		var r CandRow
 		var cellScore, cellLo, cellHi, paceRoom, cost, p, rescue, expected, adjusted sql.NullFloat64
+		var weight, share float64
 		var cellN sql.NullInt64
 		if err := rows.Scan(&runID, &r.Pos, &r.Name, &r.Harness, &r.Provider, &r.Model, &r.Effort, &r.Rule, &r.BucketLo, &r.BucketHi,
 			&cellScore, &cellLo, &cellHi, &cellN, &r.Allowed, &r.Qualified, &r.Prior, &r.Best, &r.Chosen, &r.Winner, &r.LeftOut,
-			&cost, &p, &rescue, &expected, &paceRoom, &r.PaceFactor, &adjusted); err != nil {
+			&cost, &p, &rescue, &expected, &paceRoom, &r.PaceFactor, &adjusted, &weight, &share); err != nil {
 			rows.Close()
 			return err
 		}
@@ -509,6 +514,7 @@ func (s *Snapshot) readPicks(db *sql.DB) error {
 		r.PaceRoom = paceRoom.Float64
 		r.CostPerRun, r.PClean, r.Rescue, r.Expected, r.Adjusted = cost.Float64, p.Float64, rescue.Float64, expected.Float64, adjusted.Float64
 		r.HasCost = cost.Valid
+		r.Weight, r.Share = weight, share
 		pick := byRun[runID]
 		if pick == nil {
 			pick = &Pick{}

@@ -19,6 +19,9 @@ Flags:
   live store.
 - `-alphas` (default empty): extra alpha values to replay. The owner decided against alpha, so the default prints only today, V2 and V2 with the ceiling rule.
 - `-floors` (default empty): floor sets `A,B,C` to replay.
+- `-fallback` (default off): replay the fallback draw by expected cost over the
+  recorded picks that no candidate qualified for, and print how many draws
+  change and to what. It skips the other methods.
 - `-protected` (default `alibaba-token-plan`): protected providers, matched like the gateway does (`protocol.ProfileProvider` of the harness and model). The live picker never starts on one, so no method competes with them. Pass an empty value to keep every recorded candidate.
 - `-exhausted` (default `opencode-go`): quota providers that are used up. They do not compete in any method, as in the live picker. The snapshot keeps no quota reading from the time of a pick, so one set applies to every pick. Pass an empty value to keep every recorded candidate. The replay check always reads the recorded roster.
 

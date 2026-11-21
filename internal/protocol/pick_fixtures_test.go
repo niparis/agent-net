@@ -145,8 +145,10 @@ func dumpName(c WorkerModelCandidate) string {
 }
 
 // The picks of the fixtures, as the picker made them before the pick rows were
-// added. The file is recorded once from that picker and is never regenerated:
-// a change to a pick, a weight, a share, a why line or a note fails this test.
+// added. Only the section with no qualifying candidate changed on 2026-11-21,
+// when the fallback draw became the inverse expected cost (owner yes). Every
+// other section is the record from before that change, and a change to any of
+// them, a pick, a weight, a share, a why line or a note, fails this test.
 func TestPicksOnFixedFixturesAreUnchanged(t *testing.T) {
 	want, err := os.ReadFile("testdata/pick_fixtures_before.txt")
 	if err != nil {

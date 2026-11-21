@@ -20,6 +20,7 @@ func main() {
 	floors := flag.String("floors", "", "comma separated floor sets A, B and C; empty disables them")
 	exhausted := flag.String("exhausted", "opencode-go", "comma separated quota providers that are exhausted; they do not compete in any method (empty keeps every recorded candidate)")
 	protected := flag.String("protected", "alibaba-token-plan", "comma separated protected providers; the live picker never starts on them, so no method competes with them (empty keeps every recorded candidate)")
+	fallback := flag.Bool("fallback", false, "replay the fallback draw by expected cost over the recorded picks that no candidate qualified for, and print it instead of the picker report")
 	flag.Parse()
 	if *db == "" {
 		fmt.Fprintln(os.Stderr, "pickerreplay: -db is required; pass a copy of the gateway store, never the live one")
@@ -58,6 +59,10 @@ func main() {
 		if name = strings.ToLower(strings.TrimSpace(name)); name != "" {
 			s.Protected[name] = true
 		}
+	}
+	if *fallback {
+		printFallback(RunFallback(s))
+		return
 	}
 	report := RunReplay(s, list, selected)
 	printReport(report)
