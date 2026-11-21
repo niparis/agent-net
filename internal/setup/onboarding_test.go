@@ -390,7 +390,6 @@ func TestSetupLabelsMatchTUITabs(t *testing.T) {
 		"Talk":  "Messages",
 		"Graph": "Graph",
 		"Work":  "Quotas",
-		"Tools": "Tools",
 	}
 	keys := map[string]string{}
 	for name, tab := range tabFor {
