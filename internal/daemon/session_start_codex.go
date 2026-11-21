@@ -117,7 +117,7 @@ func (d *Daemon) codexOwnerRolePolicy(ctx context.Context, r protocol.StartedSes
 	}
 	var roots []string
 	if r.Type == "merger" {
-		roots = append(workerGitRoots(ctx, r.Path), d.workerGoCacheDir())
+		roots = append(workerGitRoots(ctx, r.Path), d.workerGoCacheDir(), d.workerSandboxGoTmpDir())
 		config["shell_environment_policy"] = map[string]any{"set": map[string]string{"GOCACHE": d.workerGoCacheDir()}}
 	}
 	sandbox := writeSandbox(roots, true)

@@ -85,6 +85,9 @@ func TestAgyWorkerToolchainDirs(t *testing.T) {
 			// The worker may be gone by now, so the cache dir is checked by its
 			// shape and then compared as the last entry.
 			want = append(append([]string(nil), toolchains...), workerGitRoots(context.Background(), gitDir)...)
+			// A worker that may write gets its Go temp folder (GOTMPDIR) after the
+			// git roots and before the cache dir.
+			want = append(want, w.d.workerSandboxGoTmpDir())
 			if len(got) > 0 {
 				last := got[len(got)-1]
 				if filepath.Base(last) != "cache" || filepath.Dir(filepath.Dir(last)) != filepath.Join(w.d.cfg.StateDir, "workers") {

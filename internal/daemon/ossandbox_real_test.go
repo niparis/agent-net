@@ -25,15 +25,29 @@ func requireRealSandbox(t *testing.T) {
 	if err := osSandboxReady(); err != nil {
 		t.Fatalf("AGENT_NET_TEST_REAL_SANDBOX=1, but the sandbox cannot run here: %v", err)
 	}
+	if runtime.GOOS == "linux" {
+		// bubblewrap cannot bind from /dev/shm, so the test's folders go elsewhere
+		// (see requireBwrap).
+		t.Setenv("TMPDIR", sandboxFolder(t, "tmp"))
+	}
 }
 
 // outsideHome is a folder the test can write and the sandbox can see but must
 // not write: not under /tmp, which the sandbox replaces with a private one.
 func outsideHome(t *testing.T) string {
 	t.Helper()
-	d, err := os.MkdirTemp("/var/tmp", "agent-net-osbox-home-")
+	return sandboxFolder(t, "home")
+}
+
+// sandboxFolder makes a folder under /var/tmp for a sandbox test and removes it
+// with the test. It is not under /tmp or /dev/shm: the sandbox replaces /tmp with
+// the worker's own folder, and bubblewrap mounts a fresh /dev over /dev/shm, so
+// neither can be bound into the sandbox.
+func sandboxFolder(t *testing.T, name string) string {
+	t.Helper()
+	d, err := os.MkdirTemp("/var/tmp", "agent-net-osbox-"+name+"-")
 	if err != nil {
-		t.Skipf("no /var/tmp to make a home outside the sandbox: %v", err)
+		t.Skipf("no /var/tmp to make a %s folder for the sandbox test: %v", name, err)
 	}
 	t.Cleanup(func() { os.RemoveAll(d) })
 	return resolved(d)

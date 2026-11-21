@@ -371,7 +371,10 @@ func startAgyNode(t *testing.T, set WorkerSettings) (*workerNode, string, string
 		t.Fatal(err)
 	}
 	g := startGateway(t, t.TempDir(), "")
-	w := startWorkerNodeWithDetect(t, g, set, agyInventory, func(c *Config) { c.HarnessPaths = map[string]string{"agy": bin} })
+	w := startWorkerNodeWithDetect(t, g, set, agyInventory, func(c *Config) {
+		c.HarnessPaths = map[string]string{"agy": bin}
+		c.WorkerGoTmp = filepath.Join(dir, "gotmp")
+	})
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	return w, dir, repo
@@ -785,6 +788,30 @@ func TestAgyWorkerGitDirsInLinkedWorktree(t *testing.T) {
 			t.Fatalf("git folder %s missing from --add-dir: %v", want, got)
 		}
 	}
+}
+
+// agy's terminal sandbox writes only in the working folder and /tmp, so the Go
+// temp folder a worker's go command uses must be an added folder too.
+func TestAgyWorkerGoTmpIsAnAddDir(t *testing.T) {
+	t.Parallel()
+	w, dir, _ := startAgyNode(t, shortSet)
+	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:handback"})
+	w.waitNotice(t, 1)
+	r := agyRecords(dir)[0]
+	if want := filepath.Join(dir, "gotmp"); !strings.Contains("\n"+strings.Join(addDirs(r.Args), "\n")+"\n", "\n"+want+"\n") {
+		t.Fatalf("Go temp folder %s missing from --add-dir: %v", want, addDirs(r.Args))
+	}
+}
+
+// addDirs lists the --add-dir folders of an agy command line.
+func addDirs(args []string) []string {
+	var out []string
+	for i, arg := range args {
+		if arg == "--add-dir" && i+1 < len(args) {
+			out = append(out, args[i+1])
+		}
+	}
+	return out
 }
 
 func TestAgyWorkerReadOnly(t *testing.T) {

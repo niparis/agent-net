@@ -79,7 +79,7 @@ func TestClaudeWorkerLaunchRestrictsWritesToItsWorktree(t *testing.T) {
 		t.Fatalf("the sandbox carries no filesystem rules: %v", sandbox)
 	}
 	writes := stringList(t, files["allowWrite"], "sandbox.filesystem.allowWrite")
-	for _, want := range []string{res.Worktree, c.d.workerGoCacheDir(), c.d.workerGoTmpDir()} {
+	for _, want := range []string{res.Worktree, c.d.workerGoCacheDir(), c.d.workerSandboxGoTmpDir()} {
 		if !hasString(writes, want) {
 			t.Errorf("the worker cannot write %s: %v", want, writes)
 		}

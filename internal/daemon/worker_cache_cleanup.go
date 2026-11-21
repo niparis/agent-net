@@ -29,14 +29,49 @@ func (d *Daemon) workerGoCacheDir() string {
 	return "/tmp/agent-net-gocache"
 }
 
-func (d *Daemon) workerGoTmpDir() string {
+// explicitGoTmpDir is the Go temp folder the owner or a test named, or "".
+func (d *Daemon) explicitGoTmpDir() string {
 	if d.cfg.WorkerGoTmp != "" {
 		return d.cfg.WorkerGoTmp
 	}
-	if v := os.Getenv("AGENT_NET_GOTMPDIR"); v != "" {
-		return v
+	return os.Getenv("AGENT_NET_GOTMPDIR")
+}
+
+// workerGoTmpDir is the Go temp folder of unsandboxed workers: a RAM folder when
+// /dev/shm has room, else the disk folder (see defaultGoTmpDir).
+func (d *Daemon) workerGoTmpDir() string {
+	if dir := d.explicitGoTmpDir(); dir != "" {
+		return dir
 	}
-	return "/tmp/agent-net-gotmp"
+	return defaultGoTmpDir(d.shmNow())
+}
+
+// workerSandboxGoTmpDir is the Go temp folder of a worker whose sandbox mounts
+// its own /dev (see sandboxHidesHostDev). The folder must exist inside that
+// sandbox, so it is on disk, where the sandbox's write list binds it.
+func (d *Daemon) workerSandboxGoTmpDir() string {
+	if dir := d.explicitGoTmpDir(); dir != "" {
+		return dir
+	}
+	return gotmpDiskDir
+}
+
+// workerGoTmpFor is the Go temp folder a worker's shell gets as GOTMPDIR.
+func (d *Daemon) workerGoTmpFor(w *worker) string {
+	if sandboxHidesHostDev(w.harness) {
+		return d.workerSandboxGoTmpDir()
+	}
+	return d.workerGoTmpDir()
+}
+
+// workerRAMTmpDir is the TMPDIR a worker's shell gets when its harness keeps the
+// host /dev/shm: the RAM folder when /dev/shm has room, else "". A named Go temp
+// folder leaves TMPDIR as the daemon had it.
+func (d *Daemon) workerRAMTmpDir() string {
+	if d.explicitGoTmpDir() != "" || !shmHasRoom(d.shmNow()) {
+		return ""
+	}
+	return gotmpShmTmpDir
 }
 
 func ownerGoBuildCacheDir(homeDir string) string {
@@ -262,7 +297,26 @@ func (d *Daemon) cleanWorkerGoTmp(now time.Time, maxAge time.Duration) uint64 {
 	if maxAge <= 0 {
 		return 0
 	}
-	tmpDir := d.workerGoTmpDir()
+	// Both folders can hold worker test runs: the RAM one for unsandboxed
+	// workers and the disk one for sandboxed workers. The RAM TMPDIR folder holds
+	// the temp files of the same runs, unless a Go temp folder is named.
+	dirs := []string{d.workerGoTmpDir()}
+	if sandbox := d.workerSandboxGoTmpDir(); sandbox != dirs[0] {
+		dirs = append(dirs, sandbox)
+	}
+	if d.explicitGoTmpDir() == "" {
+		dirs = append(dirs, gotmpShmTmpDir)
+	}
+	var freed uint64
+	for _, dir := range dirs {
+		freed += cleanGoTmpFolder(dir, now, maxAge)
+	}
+	return freed
+}
+
+// cleanGoTmpFolder removes the old subfolders of one Go temp folder (see
+// cleanWorkerGoTmp).
+func cleanGoTmpFolder(tmpDir string, now time.Time, maxAge time.Duration) uint64 {
 	info, err := os.Stat(tmpDir)
 	if err != nil || !info.IsDir() {
 		return 0

@@ -759,11 +759,23 @@ func TestWorkerCacheTestDaemonIsolation(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 
+	// A test's folders sit under the system temp folder, or under GOTMPDIR, which
+	// go test uses for t.TempDir and which is the RAM folder when a test script runs.
+	tempRoots := []string{os.TempDir(), filepath.Dir(filepath.Dir(t.TempDir()))}
+	inTemp := func(path string) bool {
+		for _, root := range tempRoots {
+			if strings.HasPrefix(path, root) {
+				return true
+			}
+		}
+		return false
+	}
+
 	cacheDir := n.d.workerGoCacheDir()
 	tmpDir := n.d.workerGoTmpDir()
 
-	if cacheDir == "" || cacheDir == "/tmp/agent-net-gocache" {
-		t.Fatalf("default test daemon workerGoCacheDir = %q, want inside test temp dir", cacheDir)
+	if cacheDir == "" || cacheDir == "/tmp/agent-net-gocache" || !inTemp(cacheDir) {
+		t.Fatalf("default test daemon workerGoCacheDir = %q, want inside a test temp dir", cacheDir)
 	}
 	if tmpDir == "" || tmpDir == "/tmp/agent-net-gotmp" {
 		t.Fatalf("default test daemon workerGoTmpDir = %q, want inside test temp dir", tmpDir)

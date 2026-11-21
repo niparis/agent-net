@@ -56,11 +56,15 @@ func codexWritableRoots(ctx context.Context, w *worker) []string {
 }
 
 // codexRootsFor adds the worker's package caches (UV_CACHE_DIR and the others)
-// to the git folders.
+// and the Go temp folder to the git folders. A worker's scripts pick the Go temp
+// folder themselves, so it is listed here as a writable root, not left to the
+// sandbox's defaults.
 func (d *Daemon) codexRootsFor(ctx context.Context, w *worker) []string {
 	cache := d.workerCacheRoot(w)
 	_ = os.MkdirAll(cache, 0o700) // a root that does not exist yet is not writable
-	return append(codexWritableRoots(ctx, w), cache)
+	goTmp := d.workerSandboxGoTmpDir()
+	_ = os.MkdirAll(goTmp, 0o700)
+	return append(codexWritableRoots(ctx, w), cache, goTmp)
 }
 
 // codexSandbox is what the worker's level means for Codex.

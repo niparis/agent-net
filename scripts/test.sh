@@ -167,6 +167,25 @@ while IFS='=' read -r name _; do
   esac
 done < <(env)
 
+# Go writes test binaries to GOTMPDIR and deletes them after each run. Use the
+# RAM folder when the machine has one with room, so the runs do not wear the
+# disk. A GOTMPDIR the caller set stays as it is.
+. "$script_dir/gotmpdir.sh"
+if [[ -z ${GOTMPDIR:-} ]]; then
+  GOTMPDIR=$(gotmp_default) || fail "could not choose the Go temp folder"
+  export GOTMPDIR
+fi
+mkdir -p "$GOTMPDIR" || fail "could not make the Go temp folder $GOTMPDIR"
+# The tests write their temp files to TMPDIR, which GOTMPDIR does not cover, so
+# it takes the RAM folder too. A TMPDIR the caller set stays as it is. The OS
+# sandbox tests copy the test binary out of /dev/shm before bwrap runs it.
+if [[ -z ${TMPDIR:-} ]]; then
+  if tmp_dir=$(tmp_default); then
+    TMPDIR=$tmp_dir
+    export TMPDIR
+  fi
+fi
+
 work=$(mktemp -d "${TMPDIR:-/tmp}/agent-net-test.XXXXXX") || fail "could not create temporary directory"
 cleanup() {
   rm -rf "$work"

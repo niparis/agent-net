@@ -152,6 +152,23 @@ func (d *Daemon) workerToolEnv(w *worker) map[string]string {
 	if err := os.MkdirAll(d.workerCacheRoot(w), 0o700); err != nil {
 		d.Logf("worker %s: cache folder: %v", w.id, err)
 	}
+	// The Go temp folder is made here, since Go does not create GOTMPDIR itself.
+	goTmp := d.workerGoTmpFor(w)
+	if err := os.MkdirAll(goTmp, 0o700); err != nil {
+		d.Logf("worker %s: Go temp folder: %v", w.id, err)
+	}
+	set["GOTMPDIR"] = goTmp
+	// Test runs write their temp files to TMPDIR, which Go's GOTMPDIR does not
+	// cover. A harness whose sandbox mounts its own /dev keeps the TMPDIR it has.
+	if !sandboxHidesHostDev(w.harness) {
+		if tmp := d.workerRAMTmpDir(); tmp != "" {
+			if err := os.MkdirAll(tmp, 0o700); err != nil {
+				d.Logf("worker %s: temp folder: %v", w.id, err)
+			} else {
+				set["TMPDIR"] = tmp
+			}
+		}
+	}
 	set["PATH"] = d.workerSearchPATH()
 	if ca := d.systemCA(); ca != "" {
 		// uv and pip carry their own CA list, which lacks a local CA that the

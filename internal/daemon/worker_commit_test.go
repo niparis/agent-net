@@ -20,7 +20,9 @@ import (
 // commit hook helpers. It never touches the real setup.
 func commitTestDaemon(t *testing.T) *Daemon {
 	t.Helper()
-	return &Daemon{cfg: Config{StateDir: t.TempDir()}, log: log.New(io.Discard, "", 0)}
+	stateDir := t.TempDir()
+	// The Go temp folder is set, so a test never makes the real one under /tmp or /dev/shm.
+	return &Daemon{cfg: Config{StateDir: stateDir, WorkerGoTmp: filepath.Join(stateDir, "gotmp")}, log: log.New(io.Discard, "", 0)}
 }
 
 // commitTestWorker makes a worktree for a worker with a full identity.

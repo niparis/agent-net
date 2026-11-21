@@ -168,6 +168,22 @@ if command -v agent-net >/dev/null 2>&1 && agent-net test-run --help >/dev/null 
   have_runner=1
 fi
 
+# Go writes build and test binaries to GOTMPDIR, and the tests write their temp
+# files to TMPDIR. Both take the RAM folder when the machine has one with room,
+# unless the caller set one (see scripts/gotmpdir.sh).
+# They are set before the first go call, and the work folder below goes in TMPDIR.
+. "$script_dir/gotmpdir.sh"
+if [ -z "${GOTMPDIR:-}" ]; then
+  GOTMPDIR=$(gotmp_default) || fail "could not choose the Go temp folder"
+  export GOTMPDIR
+fi
+mkdir -p "$GOTMPDIR" || fail "could not make the Go temp folder $GOTMPDIR"
+if [ -z "${TMPDIR:-}" ]; then
+  if tmp_dir=$(tmp_default); then
+    TMPDIR=$tmp_dir
+    export TMPDIR
+  fi
+fi
 work=$(mktemp -d "${TMPDIR:-/tmp}/agent-net-test-changed.XXXXXX") || fail "could not create a temporary directory"
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 

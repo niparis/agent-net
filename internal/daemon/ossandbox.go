@@ -347,13 +347,7 @@ func (d *Daemon) osSandboxWrap(w *worker, bin string, args, env []string) (strin
 	if err != nil {
 		return "", nil, nil, err
 	}
-	tmp := osSandboxTmpEnv(filepath.Join(in.WorkerDir, "tmp"))
-	set := map[string]string{"TMPDIR": tmp}
-	// The caches live in the private tmp, which the wrapper makes writable and
-	// the daemon removes with the worker.
-	for k, v := range workerCacheVars(filepath.Join(tmp, "cache")) {
-		set[k] = v
-	}
+	set := osSandboxSetEnv(osSandboxTmpEnv(filepath.Join(in.WorkerDir, "tmp")))
 	switch harness {
 	case "pi":
 		if err := d.piPrivateAgent(&in, set); err != nil {
@@ -521,4 +515,16 @@ func containsString(list []string, s string) bool {
 func fileExists(p string) bool {
 	_, err := os.Lstat(p)
 	return err == nil
+}
+
+// osSandboxSetEnv is the environment the wrapper gives a command inside it. Go
+// writes its temp files to the private tmp, as it does to TMPDIR, and not to
+// the Go temp folder on /dev/shm. The caches live in the private tmp too, which
+// the wrapper makes writable and the daemon removes with the worker.
+func osSandboxSetEnv(tmp string) map[string]string {
+	set := map[string]string{"TMPDIR": tmp, "GOTMPDIR": tmp}
+	for k, v := range workerCacheVars(filepath.Join(tmp, "cache")) {
+		set[k] = v
+	}
+	return set
 }
