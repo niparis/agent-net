@@ -3862,12 +3862,15 @@ func isAutomaticName(name, base string, worker bool) bool {
 // chooseSessionName gives a session its name. A live session keeps the name it
 // has while it fits its project. A new session, or one whose name another live
 // session took while it was away, gets the lowest free number. Only live
-// sessions hold a name (decision 0024). A replaced record keeps its name: it
-// is history for the session that took over, not another session.
+// sessions hold a name (decision 0024). A replaced record is history for the
+// session that took over. One that reports as exited stays offline and keeps
+// its name. One that comes back online keeps its old name only while no other
+// live session holds it: its harness can still list the old conversation, and
+// a live holder must not be renumbered.
 func chooseSessionName(q interface {
 	Query(string, ...any) (*sql.Rows, error)
 }, nodeID, sessionID, current string, replaced bool, in protocol.SessionInfo) (string, error) {
-	if replaced && current != "" {
+	if replaced && current != "" && in.Status == "exited" {
 		return current, nil
 	}
 	base, worker := sessionBaseName(in), in.Worker != nil
@@ -3905,7 +3908,7 @@ func chooseSessionName(q interface {
 	if err := rows.Err(); err != nil {
 		return "", err
 	}
-	if current != "" && !used[current] && isAutomaticName(current, base, worker) {
+	if current != "" && !used[current] && (replaced || isAutomaticName(current, base, worker)) {
 		return current, nil
 	}
 	first := 1
