@@ -39,6 +39,11 @@ func TestBriefWithoutAvoidedKeepsWhatTheWorkerChanges(t *testing.T) {
 		{"Run scripts/test-changed.sh. Change internal/b/y.go.", "internal/b/y.go"},
 		{"Change scripts/test-changed.sh.", "scripts/test-changed.sh"},
 		{"Done:\n- update scripts/test-changed.sh", "scripts/test-changed.sh"},
+		{"Fix it so names do not swap in internal/a/x.go.", "internal/a/x.go"},
+		{"the session never wakes in internal/a/x.go.", "internal/a/x.go"},
+		{"Do not run the full package. Change internal/b/y.go.", "internal/b/y.go"},
+		{"Do not touch internal/a/x.go. Change internal/b/y.go.", "internal/b/y.go"},
+		{"Only runs scripts/test-changed.sh. Change internal/b/y.go.", "internal/b/y.go"},
 	} {
 		t.Run(tc.text, func(t *testing.T) {
 			if got := strings.Join(BriefPaths(BriefWithoutAvoided(tc.text)), ","); got != tc.want {

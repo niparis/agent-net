@@ -28,7 +28,7 @@ var (
 	// Phrases that tell the worker to leave files alone. The files after a
 	// prefix phrase run to the end of its clause; the files before a suffix
 	// phrase run back to the start of its clause.
-	briefAvoidRE      = regexp.MustCompile(`(?i)\b(?:(?:do\s+not|don'?t|never|must\s+not|not\s+to|please\s+don'?t)(?:\s+(?:touch|edit|change|modify|alter|rewrite|delete|remove|rename|move|use|run))?|not\s+(?:touch|touching|edit|editing|change|changing|modify|modifying|use|run|running)|avoid\s+(?:touching|editing|changing|modifying|touch|edit|change|modify)|only\s+(?:runs?|running|to\s+run))\b`)
+	briefAvoidRE      = regexp.MustCompile(`(?i)\b(?:(?:do\s+not|don'?t|never|must\s+not|not\s+to|please\s+don'?t)\s+(?:touch|edit|change|modify|alter|rewrite|delete|remove|rename|move|use|run)|not\s+(?:touch|touching|edit|editing|change|changing|modify|modifying|use|run|running)|avoid\s+(?:touching|editing|changing|modifying|touch|edit|change|modify)|only\s+(?:runs?|running|to\s+run))\b`)
 	briefAvoidEndRE   = regexp.MustCompile(`(?i)\n|;|\.(?:\s|$)|\s(?:but|however|except|instead|rather)\b|[,\s]+(?:(?:and|or|then)\s+)?(?:change|changes|edit|edits|fix|fixes|add|adds|update|updates|write|writes|implement|make|refactor|rename|move|delete|remove|create|wire|modify|extend)\b`)
 	briefAvoidAfterRE = regexp.MustCompile(`(?i)\b(?:(?:is|are)\s+(?:out\s+of\s+scope|off\s+limits|not\s+in\s+scope)|(?:is|are)\s+not\s+to\s+be\s+(?:touched|edited|changed|modified)|(?:must|should)\s+not\s+be\s+(?:touched|edited|changed|modified)|(?:(?:is|are)\s+)?only\s+runs?|(?::\s*)?(?:do\s+not\s+touch|not\s+touch|only\s+runs?))\b`)
 	briefAvoidStartRE = regexp.MustCompile(`(?i)[;,\n]|\.\s|\s(?:and|or|but|then)\s`)

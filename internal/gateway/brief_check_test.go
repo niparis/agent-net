@@ -514,6 +514,44 @@ func TestWorkerBriefWhoseDoneListChangesHeldFileIsRefused(t *testing.T) {
 	}
 }
 
+// A brief where 'do not' or 'never' does not use an avoidance verb still counts
+// named files as overlaps, while 'do not run', 'do not touch', and 'only runs' blank.
+func TestWorkerBriefAvoidVerbRequired(t *testing.T) {
+	s, _ := newTestStore(t)
+	worker := runningWorkerWithTask(t, s, "Fix internal/gateway/brief.go and its tests.")
+
+	for _, task := range []string{
+		"Problem: Fix names do not swap in internal/gateway/brief.go.\nDone:\n- tests pass in internal/toolcatalog/catalog.go\n",
+		"Problem: The session never wakes in internal/gateway/brief.go.\nDone:\n- tests pass in internal/toolcatalog/catalog.go\n",
+	} {
+		t.Run(task, func(t *testing.T) {
+			failures, _, err := s.checkWorkerBrief(briefFrame(task), "shop", briefTestRepo())
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "overlaps running worker " + worker + " on internal/gateway/brief.go"
+			if !strings.Contains(strings.Join(failures, "\n"), want) {
+				t.Fatalf("failures %q do not say %q", failures, want)
+			}
+		})
+	}
+
+	for _, task := range []string{
+		"Problem: Do not run the full package.\nScope: do not touch internal/gateway/brief.go.\nDone:\n- tests pass in internal/toolcatalog/catalog.go\n",
+		"Problem: Only runs scripts/test-changed.sh.\nScope: do not touch internal/gateway/brief.go.\nDone:\n- tests pass in internal/toolcatalog/catalog.go\n",
+	} {
+		t.Run(task, func(t *testing.T) {
+			failures, _, err := s.checkWorkerBrief(briefFrame(task), "shop", briefTestRepo())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(failures) != 0 {
+				t.Fatalf("unexpected failures: %v", failures)
+			}
+		})
+	}
+}
+
 func briefTestRepo() protocol.WorkerBriefRepo {
 	return protocol.WorkerBriefRepo{Root: "/repo/shop", Files: []string{
 		"internal/gateway/brief.go", "internal/tui/other.go", "internal/toolcatalog/catalog.go",
