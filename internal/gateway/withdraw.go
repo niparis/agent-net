@@ -174,6 +174,12 @@ func (s *Store) withdrawOne(tx *sql.Tx, m protocol.Message, now int64) error {
 	if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id=?`, m.ID); err != nil {
 		return err
 	}
+	// The reply the follow-up waits for can no longer come. Only the follow-up
+	// the send set goes; a sort's follow-up about an ask that mentions the
+	// message keeps its own event.
+	if _, err := tx.Exec(`DELETE FROM follow_ups WHERE message_id=? AND event='reply' AND status='pending'`, m.ID); err != nil {
+		return err
+	}
 	if m.State == protocol.StateHeld {
 		if err := s.closeHeldAsk(tx, m.ID, protocol.AskReasonResolved); err != nil {
 			return err

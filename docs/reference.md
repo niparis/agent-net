@@ -1304,7 +1304,8 @@ The message gets the state `withdrawn` and stays visible to its sender in
 `agent_message_status`. A message the harness already accepted (delivered,
 replied or acknowledged) cannot be withdrawn, and the error says so. A
 withdrawn original leaves its pending batch, and the batch text is rebuilt
-without it.
+without it. Withdrawing a message also ends its pending `follow_up_at` (see
+[Follow-ups](#follow-ups)): no follow-up ask is raised for it later.
 
 ## Delivery states
 
@@ -3527,7 +3528,11 @@ is the owner-local date as `YYYY-MM-DD`. It creates one Desk item of kind
 `brief`, labelled `Daily brief <date>`, with the body as its text. A brief is
 informational: it has no approve or refuse, only dismiss, and it is never an
 approval ask. A second call for the same date replaces that date's brief and
-returns its item id and the date. For example:
+returns its item id and the date. The same call also closes every older open
+brief of that chief, the ones with an earlier date. Each closed brief keeps the
+answer `replaced by the brief of <date>`, naming the new brief. The close is
+written by the gateway, not by the owner, so the owner's Desk shows one open
+brief per day. A brief for an earlier date never closes a newer open brief. For example:
 
 ```
 agent_owner_brief {"body":"Handled the deploy fix and two reviews.\nDecisions waiting: PR #31 (recommend merge), the storage plan (recommend wait).\nStuck: the Mac build needs a signing key.","date":"2026-11-09"}
@@ -3838,6 +3843,8 @@ The expected event is:
 - For a close or send with neither: any later message in the ask's conversation that is not from agent-net. When the ask has no conversation, any later message from or to the asker.
 
 `change` needs `follow_up_at`, and `follow_up_at` is refused on merge, owner and the other results.
+
+A withdrawn message ends its pending send follow-up (an expected reply from the recipient). The row is deleted, so the follow-up never falls due and raises no ask. Follow-ups that a sort set are not affected by the withdraw.
 
 ### Due items
 

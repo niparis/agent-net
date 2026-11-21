@@ -315,3 +315,21 @@ func followUpChief(t *testing.T, r *deliveryRig) (chief, node string) {
 	}
 	return chief, node
 }
+
+// Withdrawing a message ends its pending reply follow-up: the expected reply
+// can no longer come, so no ask is raised when the follow-up falls due.
+func TestWithdrawEndsThePendingFollowUpOfTheMessage(t *testing.T) {
+	s, c, _, a, b, _ := followUpRig(t)
+	req, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "Review ch_2 and flip it", Type: protocol.TypeRequest, FollowUpAt: "45m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Withdraw(req.ID, a); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(time.Hour)
+	tickFollowUps(t, s)
+	if got := followUpAsks(t, s); len(got) != 0 {
+		t.Fatalf("a withdrawn message raised a follow-up ask: %+v", got)
+	}
+}

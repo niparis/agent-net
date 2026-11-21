@@ -260,6 +260,13 @@ func (s *Store) putOwnerBrief(session string, a protocol.OwnerBriefArgs, now tim
 		return protocol.OwnerBriefResult{}, err
 	}
 	defer tx.Rollback()
+	// The Desk keeps one open brief per day: the briefs of older dates from
+	// the same chief close now. Dates are YYYY-MM-DD, so the source keys sort
+	// by date.
+	if _, err := s.closeAsks(tx, `kind=? AND session_id=? AND source_ref<?`,
+		[]any{protocol.AskKindBrief, chief, ref}, "replaced by the brief of "+date); err != nil {
+		return protocol.OwnerBriefResult{}, err
+	}
 	var id string
 	err = tx.QueryRow(`SELECT id FROM inbox_items WHERE source_ref=? ORDER BY created_at DESC, id DESC LIMIT 1`, ref).Scan(&id)
 	switch {
