@@ -36,7 +36,10 @@ func (s *Store) SetMerger(q protocol.MergerSetRequest, actor string) error {
 		if valid == 0 {
 			return reject("merger must be a session of this project on this machine")
 		}
-		_, err = tx.Exec(`INSERT INTO project_mergers(project,node_id,session_id) VALUES(?,?,?) ON CONFLICT(project,node_id) DO UPDATE SET session_id=excluded.session_id`, q.Project, q.NodeID, q.SessionID)
+		// A repo has one merger: a new registration replaces the old one.
+		now := s.now().UnixNano()
+		_, err = tx.Exec(`INSERT INTO repos(id,display_name,created_at,updated_at,merger_node,merger_session) VALUES(?,?,?,?,?,?)
+			ON CONFLICT(id) DO UPDATE SET merger_node=excluded.merger_node,merger_session=excluded.merger_session`, q.Project, q.Project, now, now, q.NodeID, q.SessionID)
 		if err == nil {
 			err = bindMergerAgentTx(tx, q.Project, q.SessionID, s.now().UnixNano())
 		}
@@ -120,6 +123,12 @@ func (s *Store) SetMerger(q protocol.MergerSetRequest, actor string) error {
 	s.refreshDeliveryTasks()
 	s.settingsNotify()
 	return nil
+}
+
+// mergerSessionSQL is true when session alias s is the merger registered for
+// change alias c: the repo's merger session, on the machine of the change.
+func mergerSessionSQL(s string) string {
+	return `EXISTS(SELECT 1 FROM repos pm WHERE pm.id=c.project AND pm.merger_node=c.machine AND pm.merger_session=` + s + `.id)`
 }
 
 // MergerNeedsDefault detects projects where testing was optional. All projects
@@ -236,25 +245,26 @@ func (s *Store) stopMergerTx(tx *sql.Tx, project, actor string) error {
 	if err := resetStoppedMergerTasks(tx, project); err != nil {
 		return err
 	}
-	_, err = tx.Exec(`DELETE FROM project_mergers WHERE project=?`, project)
+	_, err = tx.Exec(`UPDATE repos SET merger_session='',merger_node='' WHERE id=?`, project)
 	return err
 }
 
 // resetStoppedMergerTasks expires queued @merger notices and returns every open
 // @merger task of the project to the caller on every machine.
 func resetStoppedMergerTasks(tx *sql.Tx, project string) error {
-	if _, err := tx.Exec(`UPDATE messages SET state='expired' WHERE state IN ('stored','dispatched','failed') AND id IN
- (SELECT d.message_id FROM delivery_step_messages d JOIN delivery_step_tasks t USING(change_id,revision,step,for_step,after_merge)
- JOIN delivery_changes c ON c.id=t.change_id WHERE c.project=? AND t.owner_node='/merger' AND t.completed=0)`, project); err != nil {
+	if err := expireStepNotices(tx, `c.project=? AND t.owner_node='/merger'`, project); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM delivery_step_messages WHERE message_id IN
- (SELECT d.message_id FROM delivery_step_messages d JOIN delivery_step_tasks t USING(change_id,revision,step,for_step,after_merge)
- JOIN delivery_changes c ON c.id=t.change_id WHERE c.project=? AND t.owner_node='/merger' AND t.completed=0)`, project); err != nil {
-		return err
-	}
-	_, err := tx.Exec(`UPDATE delivery_step_tasks SET owner_node=?,claimed_by='',urgent=1 WHERE owner_node='/merger' AND completed=0
+	_, err := tx.Exec(`UPDATE delivery_step_tasks SET owner_node=?,notices='{}',claimed_by='',urgent=1 WHERE owner_node='/merger'
  AND change_id IN (SELECT id FROM delivery_changes WHERE project=?)`, callerTaskOwner, project)
+	return err
+}
+
+// expireStepNotices expires the queued notices of the tasks that match where,
+// an expression over the aliases t (the task) and c (its change).
+func expireStepNotices(tx *sql.Tx, where string, args ...any) error {
+	_, err := tx.Exec(`UPDATE messages SET state='expired' WHERE state IN ('stored','dispatched','failed') AND id IN
+ (SELECT d.value FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id JOIN json_each(t.notices) d WHERE `+where+`)`, args...)
 	return err
 }
 
@@ -273,20 +283,14 @@ func resetConfiguredMergerTasks(tx *sql.Tx, project, node string) error {
 		if step.Owner.Kind != protocol.OwnerMerger {
 			continue
 		}
-		args := []any{project, node, step.Step, step.For, boolInt(step.AfterMerge)}
-		for _, query := range []string{
-			`UPDATE messages SET state='expired' WHERE state IN ('stored','dispatched','failed') AND id IN
-    (SELECT d.message_id FROM delivery_step_messages d JOIN delivery_step_tasks t USING(change_id,revision,step,for_step,after_merge)
-    JOIN delivery_changes c ON c.id=t.change_id WHERE c.project=? AND c.machine=? AND t.step=? AND t.for_step=? AND t.after_merge=? AND t.completed=0 AND (t.after_merge=0 OR t.claimed_by=''))`,
-			`DELETE FROM delivery_step_messages WHERE message_id IN
-    (SELECT d.message_id FROM delivery_step_messages d JOIN delivery_step_tasks t USING(change_id,revision,step,for_step,after_merge)
-    JOIN delivery_changes c ON c.id=t.change_id WHERE c.project=? AND c.machine=? AND t.step=? AND t.for_step=? AND t.after_merge=? AND t.completed=0 AND (t.after_merge=0 OR t.claimed_by=''))`,
-			`UPDATE delivery_step_tasks SET owner_node='/merger',claimed_by='',urgent=1 WHERE change_id IN
-    (SELECT id FROM delivery_changes WHERE project=? AND machine=?) AND step=? AND for_step=? AND after_merge=? AND completed=0 AND (after_merge=0 OR claimed_by='')`,
-		} {
-			if _, err := tx.Exec(query, args...); err != nil {
-				return err
-			}
+		if err := expireStepNotices(tx, `c.project=? AND c.machine=? AND t.step=? AND t.for_step=? AND t.after_merge=? AND (t.after_merge=0 OR t.claimed_by='')`,
+			project, node, step.Step, step.For, boolInt(step.AfterMerge)); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE delivery_step_tasks SET owner_node='/merger',notices='{}',claimed_by='',urgent=1 WHERE change_id IN
+    (SELECT id FROM delivery_changes WHERE project=? AND machine=?) AND step=? AND for_step=? AND after_merge=? AND (after_merge=0 OR claimed_by='')`,
+			project, node, step.Step, step.For, boolInt(step.AfterMerge)); err != nil {
+			return err
 		}
 	}
 	return nil

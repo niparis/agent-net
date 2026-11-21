@@ -607,9 +607,7 @@ func listFixture(t *testing.T) (*Store, map[string]string) {
 	add("cto", "claude", "demo", nil)
 	add("norepo", "claude", "", nil)
 	add("norepo2", "codex", "", nil)
-	if _, err := s.db.Exec(`INSERT INTO project_mergers(project,node_id,session_id) VALUES('demo',?,?)`, node, ids["demomerger"]); err != nil {
-		t.Fatal(err)
-	}
+	registerMerger(t, s.db, "demo", node, ids["demomerger"])
 	if _, err := s.db.Exec(`UPDATE sessions SET online=0 WHERE id=?`, ids["demooff"]); err != nil {
 		t.Fatal(err)
 	}

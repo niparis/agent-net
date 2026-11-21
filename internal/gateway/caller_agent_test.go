@@ -89,7 +89,7 @@ func (r *callerAgentRig) accept(session, change, commit string) (protocol.StepRe
 func (r *callerAgentRig) stepMessageCount(session string) int {
 	r.t.Helper()
 	var n int
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE session_id=?`, session).Scan(&n); err != nil {
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM `+stepNoticesSQL+` WHERE session_id=?`, session).Scan(&n); err != nil {
 		r.t.Fatal(err)
 	}
 	return n
@@ -114,7 +114,7 @@ func TestCallerStepOfferedToLiveSessionOfCallerAgent(t *testing.T) {
 	id := r.submitAs(r.caller, "feature/offered", commitA)
 	r.g.dispatchStepTasks(context.Background())
 	var body string
-	if err := r.s.db.QueryRow(`SELECT m.body FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id WHERE d.session_id=?`, r.second).Scan(&body); err != nil {
+	if err := r.s.db.QueryRow(`SELECT m.body FROM `+stepNoticesSQL+` d JOIN messages m ON m.id=d.message_id WHERE d.session_id=?`, r.second).Scan(&body); err != nil {
 		t.Fatalf("live session of the caller's agent got no task: %v", err)
 	}
 	if !strings.Contains(body, id) {
@@ -226,7 +226,7 @@ func TestNonWakeableCallerAgentStepsGoToRepoLead(t *testing.T) {
 	r.clk.advance(13 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 	var body string
-	if err := r.s.db.QueryRow(`SELECT m.body FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id WHERE d.session_id=?`, lead).Scan(&body); err != nil || !strings.Contains(body, id) {
+	if err := r.s.db.QueryRow(`SELECT m.body FROM `+stepNoticesSQL+` d JOIN messages m ON m.id=d.message_id WHERE d.session_id=?`, lead).Scan(&body); err != nil || !strings.Contains(body, id) {
 		t.Fatalf("lead was not offered %s: %q, %v", id, body, err)
 	}
 	if res, err := r.accept(lead, id, commitA); err != nil || res.Evidence.By != lead {
@@ -328,7 +328,7 @@ func TestWaitingWorkDeskLineCountsUpdatesAndCloses(t *testing.T) {
 func (r *callerAgentRig) taskOwner(change string, ref protocol.StepRef) string {
 	r.t.Helper()
 	var owner string
-	err := r.s.db.QueryRow(`SELECT owner_node FROM delivery_step_tasks WHERE change_id=? AND step=? AND for_step=? AND after_merge=? AND completed=0`,
+	err := r.s.db.QueryRow(`SELECT owner_node FROM delivery_step_tasks WHERE change_id=? AND step=? AND for_step=? AND after_merge=?`,
 		change, ref.Step, ref.For, boolInt(ref.AfterMerge)).Scan(&owner)
 	if err != nil && err.Error() != "sql: no rows in result set" {
 		r.t.Fatal(err)
@@ -420,7 +420,7 @@ func TestCallerOnlyStepNoticeWaitsForTheReminderInterval(t *testing.T) {
 	r.g.dispatchStepTasks(context.Background())
 	r.g.flushStepTaskBatches()
 	var n int
-	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&n); err != nil || n != 1 {
+	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM `+stepNoticesSQL+` WHERE session_id=?`, r.caller).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("a caller step that waited past the reminder interval sent %d messages, want 1 (%v)", n, err)
 	}
 }
@@ -434,9 +434,7 @@ func TestCallerWakeNotSentWhileASessionOfTheAgentIsOnline(t *testing.T) {
 	if err := r.s.SetSessionOffline(r.a, r.caller); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.s.db.Exec(`INSERT INTO project_mergers(project,node_id,session_id) VALUES('demo',?,?)`, r.a, r.second); err != nil {
-		t.Fatal(err)
-	}
+	registerMerger(t, r.s.db, "demo", r.a, r.second)
 	r.submitAs(r.caller, "feature/online-merger", commitA)
 	r.clk.advance(13 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())

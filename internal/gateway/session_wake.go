@@ -62,7 +62,7 @@ func wakeHarness(h string) bool { return protocol.WakeHarness(h) }
 func (s *Store) roleSession(id string) bool {
 	var held bool
 	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM gateway_state WHERE key=? AND value=?)
- OR EXISTS(SELECT 1 FROM project_mergers WHERE session_id=?)`, chiefSessionKey, id, id).Scan(&held)
+ OR EXISTS(SELECT 1 FROM repos WHERE merger_session=?)`, chiefSessionKey, id, id).Scan(&held)
 	return err == nil && held
 }
 

@@ -91,13 +91,13 @@ func TestDeliveryStepTaskBatch(t *testing.T) {
 	check := func(want int) {
 		t.Helper()
 		var n int
-		if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&n); err != nil || n != want {
+		if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM `+stepNoticesSQL+` WHERE session_id=?`, r.caller).Scan(&n); err != nil || n != want {
 			t.Fatalf("messages=%d want=%d err=%v", n, want, err)
 		}
 	}
 	check(1)
 	var body string
-	if err := r.s.db.QueryRow(`SELECT body FROM messages WHERE id IN (SELECT message_id FROM delivery_step_messages WHERE session_id=?)`, r.caller).Scan(&body); err != nil {
+	if err := r.s.db.QueryRow(`SELECT body FROM messages WHERE id IN (SELECT message_id FROM `+stepNoticesSQL+` WHERE session_id=?)`, r.caller).Scan(&body); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range ids {
@@ -111,14 +111,14 @@ func TestDeliveryStepTaskBatch(t *testing.T) {
 	r.g.dispatchStepTasks(context.Background())
 	r.g.flushStepTasks(r.caller)
 	check(2)
-	if _, err := r.s.db.Exec(`UPDATE messages SET state='expired' WHERE id IN (SELECT message_id FROM delivery_step_messages WHERE session_id=?)`, r.caller); err != nil {
+	if _, err := r.s.db.Exec(`UPDATE messages SET state='expired' WHERE id IN (SELECT message_id FROM `+stepNoticesSQL+` WHERE session_id=?)`, r.caller); err != nil {
 		t.Fatal(err)
 	}
 	r.g.dispatchStepTasks(context.Background())
 	r.g.flushStepTasks(r.caller)
 	check(1)
 	var listed int
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&listed); err != nil || listed != 5 {
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM `+stepNoticesSQL+` WHERE session_id=?`, r.caller).Scan(&listed); err != nil || listed != 5 {
 		t.Fatalf("listed=%d want=5 err=%v", listed, err)
 	}
 }
@@ -207,7 +207,7 @@ func TestMergerReleaseRouting(t *testing.T) {
 	}
 	r.g.dispatchStepTasks(context.Background())
 	var n int
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE change_id=? AND step='release' AND session_id=?`, c.ID, r.sonnet).Scan(&n); err != nil || n != 1 {
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM `+stepNoticesSQL+` WHERE change_id=? AND step='release' AND session_id=?`, c.ID, r.sonnet).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("release notices=%d err=%v", n, err)
 	}
 	if _, err := r.s.ClaimStep(r.a, protocol.StepClaimRequest{SessionID: r.sonnet, ChangeID: c.ID, StepRef: ref, Commit: commitMerged}); err != nil {

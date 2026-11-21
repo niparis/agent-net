@@ -754,12 +754,11 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 			if confirm {
 				// The daemon closed this merge task when it saw the merge.
 				// The merger that confirms it takes the task back.
-				if _, err := tx.Exec(`UPDATE delivery_step_tasks SET completed=0, claimed_by='' WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND completed=1`,
-					c.ID, c.Revision, q.StepRef.Step, q.StepRef.For, boolInt(q.StepRef.AfterMerge)); err != nil {
+				if err := reopenStepTask(tx, c, p, q.StepRef, "", now); err != nil {
 					return protocol.StepReportResult{}, err
 				}
 			}
-			if err := reopenOwnReport(tx, c, p, e, q.SessionID); err != nil {
+			if err := reopenReporterTask(tx, c, p, q.StepRef, q.Commit, q.SessionID, now); err != nil {
 				return protocol.StepReportResult{}, err
 			}
 			found, err = claimNodeTask(tx, c, q.StepRef, q.SessionID, machine, true)
@@ -768,7 +767,7 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 			return protocol.StepReportResult{}, err
 		}
 		if step, ok := p.Find(q.StepRef); !found && ok && (step.Owner.Kind == protocol.OwnerNode || step.Owner.Kind == protocol.OwnerDelegate || step.Owner.Kind == protocol.OwnerMerger) {
-			return protocol.StepReportResult{}, reject("%s has not reached its owner", q.StepRef)
+			return protocol.StepReportResult{}, missingTaskError(tx, c, q.StepRef, "%s has not reached its owner")
 		}
 	}
 	if err := insertEvidence(tx, e); err != nil {
@@ -885,51 +884,47 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	return protocol.StepReportResult{Evidence: e, Change: view}, err
 }
 
-// reopenOwnReport lets the session that reported a step report it again on
-// the same commit, so it can add a field it forgot or correct a result: the
-// newest evidence wins, as it does for every read. It holds only while no
-// step that requires this one has passed on the revision, because that step
-// already relied on the old evidence. Merge is never reopened: its pass moves
-// the change. Another session's second report stays refused by the task
-// check.
-func reopenOwnReport(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, e protocol.Evidence, session string) error {
-	if e.Step == protocol.StepMerge {
+// reopenReporterTask lets the session that reported a step take it again, by
+// queueing its task with that session's claim. It holds when the step's newest
+// evidence came from session and either says needs_owner, or (for a report
+// on commit, never merge) is on the same commit while no step that requires
+// this one has passed: the newest evidence wins, as it does for every read, so
+// the session can add a field it forgot or correct a result. Merge is never
+// reopened this way: its pass moves the change. Another session's second
+// report stays refused. A claim passes an empty commit.
+func reopenReporterTask(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, ref protocol.StepRef, commit, session string, now int64) error {
+	var result, last, by string
+	err := tx.QueryRow(`SELECT result,commit_hash,COALESCE(NULLIF(reported_by,''),by_session) FROM delivery_evidence
+		WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? ORDER BY seq DESC LIMIT 1`,
+		c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)).Scan(&result, &last, &by)
+	if errors.Is(err, sql.ErrNoRows) || by != session {
 		return nil
 	}
-	var claimed, commit string
-	var completed int
-	err := tx.QueryRow(`SELECT t.claimed_by,t.completed,COALESCE((SELECT commit_hash FROM delivery_evidence
-		WHERE change_id=t.change_id AND revision=t.revision AND step=t.step AND for_step=t.for_step AND after_merge=t.after_merge ORDER BY seq DESC LIMIT 1),'')
-		FROM delivery_step_tasks t WHERE t.change_id=? AND t.revision=? AND t.step=? AND t.for_step=? AND t.after_merge=?`,
-		c.ID, c.Revision, e.Step, e.For, boolInt(e.AfterMerge)).Scan(&claimed, &completed, &commit)
-	if errors.Is(err, sql.ErrNoRows) || err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil
-		}
-		return err
-	}
-	if completed == 0 || claimed != session || commit != e.Commit {
-		return nil
-	}
-	evidence, err := changeEvidence(tx, c.ID)
 	if err != nil {
 		return err
 	}
-	for _, s := range p.Steps {
-		for _, r := range s.Requires {
-			if r.StepRef != e.StepRef {
-				continue
-			}
-			for _, old := range evidence {
-				if old.Revision == c.Revision && old.StepRef == s.StepRef && old.Result == protocol.StepResultPass {
-					return nil
+	if result != string(protocol.StepResultNeedsOwner) {
+		if commit == "" || ref.Step == protocol.StepMerge || last != commit {
+			return nil
+		}
+		evidence, err := changeEvidence(tx, c.ID)
+		if err != nil {
+			return err
+		}
+		for _, s := range p.Steps {
+			for _, r := range s.Requires {
+				if r.StepRef != ref {
+					continue
+				}
+				for _, old := range evidence {
+					if old.Revision == c.Revision && old.StepRef == s.StepRef && old.Result == protocol.StepResultPass {
+						return nil
+					}
 				}
 			}
 		}
 	}
-	_, err = tx.Exec(`UPDATE delivery_step_tasks SET completed=0 WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`,
-		c.ID, c.Revision, e.Step, e.For, boolInt(e.AfterMerge))
-	return err
+	return reopenStepTask(tx, c, p, ref, session, now)
 }
 
 // afterMergeDone reports whether every step after merge passed or is left
@@ -1086,7 +1081,7 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 		// caller's test task handed out with its accept waits for the accept.
 		if c.State == protocol.ChangeOpen && st.Step == protocol.StepTest && !st.AfterMerge && st.State == protocol.StepStateWaiting {
 			var exists int
-			if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_tasks WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=0 AND completed=0 AND owner_node<>?)`, c.ID, c.Revision, st.Step, st.For, callerTaskOwner).Scan(&exists); err != nil {
+			if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_tasks WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=0 AND owner_node<>?)`, c.ID, c.Revision, st.Step, st.For, callerTaskOwner).Scan(&exists); err != nil {
 				return protocol.ChangeView{}, err
 			}
 			if exists != 0 {
@@ -1104,7 +1099,7 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 		}
 		if st.Owner.Kind == protocol.OwnerDelegate && st.Step == protocol.StepApprove {
 			var claimed string
-			err := s.db.QueryRow(`SELECT claimed_by FROM delivery_step_tasks WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND completed=0`,
+			err := s.db.QueryRow(`SELECT claimed_by FROM delivery_step_tasks WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`,
 				c.ID, c.Revision, st.Step, st.For, boolInt(st.AfterMerge)).Scan(&claimed)
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return protocol.ChangeView{}, err
@@ -1116,8 +1111,9 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 				continue
 			}
 			var online int
-			err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_delegates d JOIN sessions s ON s.online=1 AND s.worker='' WHERE d.change_id=? AND d.revision=? AND d.step=? AND d.for_step=? AND d.after_merge=?
-				AND (d.node=`+sessionRepoSQL+` OR d.node='agent:'||COALESCE(s.agent_id,'')) AND s.harness NOT IN ('owner','bot','cto'))`,
+			err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_tasks t, json_each(t.delegates) d JOIN sessions s ON s.online=1 AND s.worker=''
+				WHERE t.change_id=? AND t.revision=? AND t.step=? AND t.for_step=? AND t.after_merge=?
+				AND (d.value=`+sessionRepoSQL+` OR d.value='agent:'||COALESCE(s.agent_id,'')) AND s.harness NOT IN ('owner','bot','cto'))`,
 				c.ID, c.Revision, st.Step, st.For, boolInt(st.AfterMerge)).Scan(&online)
 			if err != nil {
 				return protocol.ChangeView{}, err
@@ -1146,7 +1142,7 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 		}
 		var claimed string
 		err := s.db.QueryRow(`SELECT claimed_by FROM delivery_step_tasks
-			WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND completed=0`,
+			WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`,
 			c.ID, c.Revision, st.Step, st.For, boolInt(st.AfterMerge)).Scan(&claimed)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return protocol.ChangeView{}, err
@@ -1156,7 +1152,7 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 		}
 		if st.Owner.Kind == protocol.OwnerMerger {
 			var online int
-			if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM project_mergers pm JOIN sessions s ON s.id=pm.session_id WHERE pm.project=? AND pm.node_id=? AND s.online=1)`, c.Project, c.Machine).Scan(&online); err != nil {
+			if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos pm JOIN sessions s ON s.id=pm.merger_session WHERE pm.id=? AND pm.merger_node=? AND s.online=1)`, c.Project, c.Machine).Scan(&online); err != nil {
 				return protocol.ChangeView{}, err
 			}
 			if online == 0 {
@@ -1174,7 +1170,7 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 		}
 		var online int
 		if st.Owner.Kind == protocol.OwnerMerger {
-			err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM project_mergers pm JOIN sessions s ON s.id=pm.session_id WHERE pm.project=? AND pm.node_id=? AND s.online=1)`, c.Project, c.Machine).Scan(&online)
+			err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos pm JOIN sessions s ON s.id=pm.merger_session WHERE pm.id=? AND pm.merger_node=? AND s.online=1)`, c.Project, c.Machine).Scan(&online)
 		} else if st.Owner.Kind == protocol.OwnerCaller {
 			err = s.db.QueryRow(`SELECT `+callerOwnerLiveSQL+` FROM delivery_changes c WHERE c.id=?`, c.ID).Scan(&online)
 		} else {

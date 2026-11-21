@@ -110,9 +110,7 @@ func TestAutoArchiveOwnerUse(t *testing.T) {
 	if err := s.SetSessionPin(ids["pinned"], true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO project_mergers(project,node_id,session_id) VALUES('shop',?,?)`, node, ids["merger"]); err != nil {
-		t.Fatal(err)
-	}
+	registerMerger(t, s.db, "shop", node, ids["merger"])
 	archived, err := s.AutoArchiveSessions()
 	if err != nil {
 		t.Fatal(err)

@@ -22,9 +22,7 @@ func TestCTOOnlyAcceptsReplies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec(`INSERT INTO project_mergers(project,node_id,session_id) VALUES(?,?,?)`, "demo", node, merger); err != nil {
-		t.Fatal(err)
-	}
+	registerMerger(t, s.db, "demo", node, merger)
 	for _, sender := range []string{agent, orchestrator, merger} {
 		_, _, err := s.StoreMessage(protocol.MsgSend{Sender: sender, Recipient: cto, Body: "hello"})
 		if err == nil || !strings.Contains(err.Error(), "The CTO only takes replies.") {

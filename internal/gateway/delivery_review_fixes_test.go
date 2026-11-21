@@ -85,7 +85,7 @@ func TestDeliveryUnclaimedTaskMovesToNewOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	var owner string
-	if err := r.s.db.QueryRow(`SELECT owner_node FROM delivery_step_tasks WHERE change_id=? AND step='accept' AND completed=0`, id).Scan(&owner); err != nil {
+	if err := r.s.db.QueryRow(`SELECT owner_node FROM delivery_step_tasks WHERE change_id=? AND step='accept'`, id).Scan(&owner); err != nil {
 		t.Fatal(err)
 	}
 	if owner != "second" {
@@ -137,7 +137,7 @@ func TestDeliveryPersonReassignmentRetiresQueuedTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	var owner string
-	_ = r.s.db.QueryRow(`SELECT owner_node FROM delivery_step_tasks WHERE change_id=? AND step='accept' AND completed=0`, id).Scan(&owner)
+	_ = r.s.db.QueryRow(`SELECT owner_node FROM delivery_step_tasks WHERE change_id=? AND step='accept'`, id).Scan(&owner)
 	if owner == "first" {
 		t.Fatalf("the old node still owns accept after the step moved to the person")
 	}
@@ -284,7 +284,7 @@ func TestDeliveryReassignmentBackToNode(t *testing.T) {
 		t.Fatal(err)
 	}
 	var count int
-	if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM delivery_step_tasks WHERE change_id=? AND step='accept' AND completed=0 AND owner_node='first'`, id).Scan(&count); err != nil || count != 1 {
+	if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM delivery_step_tasks WHERE change_id=? AND step='accept' AND owner_node='first'`, id).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("active node task = %d, %v", count, err)
 	}
 }

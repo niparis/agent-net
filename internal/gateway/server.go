@@ -2753,7 +2753,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) || p.Project == "" {
 			return nil, reject("owner and project required")
 		}
-		rows, err := st.db.Query(`SELECT project,node_id,session_id FROM project_mergers WHERE project=? ORDER BY node_id`, p.Project)
+		rows, err := st.db.Query(`SELECT id,merger_node,merger_session FROM repos WHERE id=? AND merger_session<>''`, p.Project)
 		if err != nil {
 			return nil, err
 		}

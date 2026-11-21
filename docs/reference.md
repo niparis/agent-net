@@ -673,8 +673,8 @@ The retained references include `projects`, `sessions`,
 `project_policies`, `charter_values`,
 `graph_edges`, `graph_history`, `setting_values`, `setting_history`,
 `delivery_changes`, `delivery_revisions`, `delivery_evidence`,
-`delivery_step_tasks`, `delivery_step_messages`, `delivery_step_inbox`,
-`project_mergers`, `worker_starts`, `worker_runs`, `inbox_items`, `desk_log`,
+`delivery_step_tasks`, `delivery_step_inbox`,
+`repos.merger_session`, `worker_starts`, `worker_runs`, `inbox_items`, `desk_log`,
 `learned_suggestions`, `findings`, `playbook` and `repos.owner_agent_id`.
 No ownership, edge, delivery, charter or session is silently moved or deleted.
 
@@ -4382,22 +4382,23 @@ When a dispatch pass finds several new tasks for one session, it sends one
 notice listing each change ID, step, after-merge flag, commit and title. Claim
 and report instructions appear once. A single task keeps the detailed notice.
 Each listed task keeps its own notice association, so later tasks get a new
-notice and listed tasks are not sent again until their notice expires.
+notice and listed tasks are not sent again until their notice expires. A task
+lives only while its step is open: when the step is reported or closed, the task
+and its notices are removed, and the step's evidence is the record.
 
-A merger registration maps a project and machine to one session. Only that
-session receives, claims, and reports `@merger` steps for changes on that
-machine. Stopping the merger's harness session or taking it offline keeps
+A merger registration maps a project to one session on one machine. A repo
+has one merger: registering another session replaces the first. Only the
+registered session receives, claims, and reports `@merger` steps for changes
+on its machine. Stopping the merger's harness session or taking it offline keeps
 its registration; tasks wait and Delivery says "waiting for merger". Deleting
 the session record clears the registration. Explicitly stopping routing with
 `merger_stop` or clearing the registration does the same. All of the project's
 `@merger` assignments and unfinished tasks, including after-merge steps, return
 to the caller. Accept keeps its current owner. A stop works even when no
-registration record exists. Stopping the merger stops it for the project on
-every machine: the project's other registrations are removed too, so no merger
-session stays registered without routing. Replacing the registered session
+registration record exists. Replacing the registered session
 keeps `@merger` ownership, releases the old claims and queues notices for the
-new merger. Completed evidence is preserved. Registrations are stored in the
-gateway's `project_mergers` table.
+new merger. Completed evidence is preserved. The registration is stored in the
+`merger_node` and `merger_session` columns of the repo.
 
 The merger reads the project's own instructions and build files, tests the
 changed parts, reads CI results where available, and merges in its own merge

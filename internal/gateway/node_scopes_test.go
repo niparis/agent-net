@@ -135,7 +135,7 @@ func TestNodeScopesMigrationSeedsTodaysGrants(t *testing.T) {
 	for _, q := range []string{
 		fmt.Sprintf(`INSERT INTO owner_settings(key,value,updated_at) VALUES('chief_session','%s',0)`, ids["chief-of-staff"]),
 		`INSERT INTO standing_orders(id,text,saved_at) VALUES('so_f960d5fd38dcd366','wbgpoc-lead merges its team''s repos',0)`,
-		fmt.Sprintf(`INSERT INTO project_mergers(project,node_id,session_id) VALUES('demo','%s','%s')`, node, ids["other"]),
+		fmt.Sprintf(`INSERT INTO repos(id,display_name,created_at,updated_at,merger_node,merger_session) VALUES('demo','demo',0,0,'%s','%s') ON CONFLICT(id) DO UPDATE SET merger_node=excluded.merger_node,merger_session=excluded.merger_session`, node, ids["other"]),
 		`INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES('/delivery/merger','demo','releases','','normal')`,
 		`INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES('/delivery/merger','demo','merges','','normal')`,
 		`INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES('/delivery/caller','demo','accepts','','normal')`,

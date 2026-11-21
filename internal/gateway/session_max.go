@@ -42,7 +42,7 @@ func (s *Store) ReserveRepoStart(node string, p protocol.RepoStartReservation) (
 	var online bool
 	var name string
 	err := s.db.QueryRow(`SELECT COALESCE((SELECT CAST(value AS INTEGER) FROM setting_values WHERE key='max_agents' AND level='repo' AND scope=? AND item=''),0),
-		(SELECT COUNT(*) FROM sessions s WHERE s.repo_id=? AND s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','cto','bot') AND s.id<>COALESCE((SELECT value FROM gateway_state WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM project_mergers m WHERE m.session_id=s.id)),
+		(SELECT COUNT(*) FROM sessions s WHERE s.repo_id=? AND s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','cto','bot') AND s.id<>COALESCE((SELECT value FROM gateway_state WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM repos m WHERE m.merger_session=s.id)),
 		EXISTS(SELECT 1 FROM sessions WHERE node_id=? AND harness=? AND native_id=? AND native_id<>'' AND online=1),
 		COALESCE((SELECT display_name FROM repos WHERE id=?),?)`, p.Project, p.Project, node, p.Harness, p.NativeID, p.Project, p.Project).Scan(&max, &live, &online, &name)
 	if err != nil && err != sql.ErrNoRows {

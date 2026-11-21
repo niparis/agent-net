@@ -96,7 +96,7 @@ func TestDeliveryAssignmentQueuesAlreadyReadyStep(t *testing.T) {
 		t.Fatal(err)
 	}
 	var owner string
-	if err := r.s.db.QueryRow(`SELECT owner_node FROM delivery_step_tasks WHERE change_id=? AND step='accept' AND completed=0`, id).Scan(&owner); err != nil || owner != "reviewer" {
+	if err := r.s.db.QueryRow(`SELECT owner_node FROM delivery_step_tasks WHERE change_id=? AND step='accept'`, id).Scan(&owner); err != nil || owner != "reviewer" {
 		t.Fatalf("ready step owner = %q, %v", owner, err)
 	}
 }
@@ -394,10 +394,9 @@ func TestDeliveryUndoTightenedApprovalRestoresNodeTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	var owner string
-	var completed int
-	err = r.s.db.QueryRow(`SELECT owner_node,completed FROM delivery_step_tasks WHERE change_id=? AND step='approve' AND for_step='merge'`, id).Scan(&owner, &completed)
-	if err != nil || owner != "reviewer" || completed != 0 {
-		t.Fatalf("restored task = %q, completed %d, %v", owner, completed, err)
+	err = r.s.db.QueryRow(`SELECT owner_node FROM delivery_step_tasks WHERE change_id=? AND step='approve' AND for_step='merge'`, id).Scan(&owner)
+	if err != nil || owner != "reviewer" {
+		t.Fatalf("restored task = %q, %v", owner, err)
 	}
 	items, err := r.s.ListInbox()
 	if err != nil || len(items) != 1 || items[0].Status != "dismissed" {
@@ -428,10 +427,9 @@ func TestDeliveryUndoWrittenApprovalRestoresDelegateTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	var owner string
-	var completed int
-	err = r.s.db.QueryRow(`SELECT owner_node,completed FROM delivery_step_tasks WHERE change_id=? AND step='approve' AND for_step='merge'`, id).Scan(&owner, &completed)
-	if err != nil || owner != delegateTaskOwner || completed != 0 {
-		t.Fatalf("restored delegate task = %q, completed %d, %v", owner, completed, err)
+	err = r.s.db.QueryRow(`SELECT owner_node FROM delivery_step_tasks WHERE change_id=? AND step='approve' AND for_step='merge'`, id).Scan(&owner)
+	if err != nil || owner != delegateTaskOwner {
+		t.Fatalf("restored delegate task = %q, %v", owner, err)
 	}
 }
 
@@ -641,7 +639,7 @@ func TestDeliveryExpiredTaskNoticeCanBeSentAgain(t *testing.T) {
 	id := r.submit(r.a, r.workerSubmit("feature/retry", commitA)).Change.Change.ID
 	r.g.dispatchStepTasks(context.Background())
 	var old string
-	if err := r.s.db.QueryRow(`SELECT message_id FROM delivery_step_messages WHERE change_id=? AND session_id=?`, id, sid).Scan(&old); err != nil {
+	if err := r.s.db.QueryRow(`SELECT message_id FROM `+stepNoticesSQL+` WHERE change_id=? AND session_id=?`, id, sid).Scan(&old); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.s.db.Exec(`UPDATE messages SET state='expired' WHERE id=?`, old); err != nil {
@@ -649,7 +647,7 @@ func TestDeliveryExpiredTaskNoticeCanBeSentAgain(t *testing.T) {
 	}
 	r.g.dispatchStepTasks(context.Background())
 	var next string
-	if err := r.s.db.QueryRow(`SELECT message_id FROM delivery_step_messages WHERE change_id=? AND session_id=?`, id, sid).Scan(&next); err != nil || next == old {
+	if err := r.s.db.QueryRow(`SELECT message_id FROM `+stepNoticesSQL+` WHERE change_id=? AND session_id=?`, id, sid).Scan(&next); err != nil || next == old {
 		t.Fatalf("task notice did not retry: old %q, new %q, error %v", old, next, err)
 	}
 }

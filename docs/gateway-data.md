@@ -101,14 +101,14 @@ An agent hands in a change, the delivery steps open one after another, each step
 5. `delivery_revisions` (writes): The head commit is recorded as revision 1. A new head later adds revision 2, 3 and so on, and starts the steps again.
 6. `delivery_step_tasks` (writes): The first ready step (accept) gets a task row that names its owner. Steps that need an earlier step wait.
 7. `messages` (writes): A notice 'you have a step to claim' is stored for the session that owns the step.
-8. `delivery_step_messages` (writes): The notice is linked to the step task, so it can be cancelled when the step is claimed, finished or replaced.
+8. `delivery_step_tasks` (writes): The notice is saved in the step task, under the session it went to, so it can be cancelled when the step is claimed, finished or replaced.
 9. `desk_log` (writes): A line 'Sent step ... of change ... to a session' is added to the Desk log.
 10. `delivery_step_tasks` (writes): The owner session claims the step (agent_step_claim). The task now shows who works on it, and nobody else can report it.
-11. `delivery_step_tasks` (writes): When the step is reported (agent_step_report), the task is marked completed under the same session.
+11. `delivery_step_tasks` (writes): When the step is reported (agent_step_report), the task is deleted. Its evidence is the record, and the task table holds open work only.
 12. `delivery_evidence` (writes): The result (pass, fail or needs owner), the commit, the fields and who did the work are stored as evidence. Evidence is never edited, a newer report just wins.
 13. `delivery_step_tasks` (writes): The gateway reads all evidence, finds which steps are now ready, and opens the next task (review, test, approve, merge, release, verify in turn).
-14. `project_mergers` (reads): For a step owned by the merger, the gateway looks up which session is the merger for this repo on this machine, and only that session may claim the step.
-15. `delivery_step_delegates` (writes): For an approve step set to delegated, the repo lead and the team lead (found from the repo and team tables) are listed as the sessions allowed to approve. The caller is never its own approver.
+14. `repos` (reads): For a step owned by the merger, the gateway reads the merger session and machine of the repo, and only that session may claim the step.
+15. `delivery_step_tasks` (writes): For an approve step set to delegated, the repo lead and the team lead (found from the repo and team tables) are listed in the task as the agents allowed to approve. The caller is never its own approver.
 16. `delivery_step_inbox` (writes): For an approve step that needs the owner's written approval, an Inbox item is created and linked to the step, revision and commit.
 17. `delivery_changes` (writes): A passing merge report moves the change to merged and stores the merged commit. When every step after merge has passed, the state becomes done (a close report makes it stopped).
 18. `inbox_items` (writes): When the change is done or stopped, the open asks about it are closed so nothing stale stays on the Desk.
@@ -338,11 +338,11 @@ Owner settings and their history.
 
 ### gateway_state
 
-- **Holds:** A key-value table of what the gateway remembers about itself: the CTO and chief of staff session ids, the chief's clear and silence marks, worker rotation, onboarding progress, hidden items, graph cutover version and gate, skill archive marks, brief last-sent dates, the network settings token and the marks of one-time cleanups that a running gateway still reads.
-- **Written by:** `gateway/chief.go`, `gateway/chief_health.go`, `gateway/chief_stuck.go`, `gateway/cto_session.go`, `gateway/gateway_state.go`, `gateway/hidden.go`, `gateway/onboarding.go`, `gateway/settings_targets.go`, `gateway/worker_rotation.go` and others
+- **Holds:** A key-value table of what the gateway remembers about itself: the CTO and chief of staff session ids, the chief's clear and silence marks, worker rotation, onboarding progress, hidden items, graph cutover version and gate, skill archive marks, brief last-sent dates, the network settings token, the marks of one-time cleanups that a running gateway still reads and the escalation of waiting caller steps (`caller_escalation:<owner>`, with the time of the wake and whether the repo lead was offered the steps).
+- **Written by:** `gateway/caller_agent.go`, `gateway/chief.go`, `gateway/chief_health.go`, `gateway/chief_stuck.go`, `gateway/cto_session.go`, `gateway/gateway_state.go`, `gateway/hidden.go`, `gateway/onboarding.go`, `gateway/settings_targets.go`, `gateway/worker_rotation.go` and others
 - **Read by:** `gateway/ask_intake.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/cto_lead.go`, `gateway/cto_session.go`, `gateway/gateway_state.go`, `gateway/store.go` and others
 - **Shown in:** TUI, Settings; TUI, Quotas; tool `agent_worker_profiles_find`; CTO op `chief_set`
-- **Kept:** Until overwritten; a key is deleted when a role is cleared.
+- **Kept:** Until overwritten; a key is deleted when a role is cleared. The escalation of an owner is deleted once the owner is live again or has nothing waiting.
 
 ### schema_version
 
@@ -474,11 +474,11 @@ Owner settings and their history.
 
 ### repos
 
-- **Holds:** One repo (project) node of the org tree, with its display name, owner agent, lead agent, flags for archived and held back, and its settings token.
-- **Written by:** `gateway/authority.go`, `gateway/graph_lifecycle.go`, `gateway/leads_max.go`, `gateway/repo_fold_migration.go`, `gateway/store.go`, `gateway/store_graph.go`
+- **Holds:** One repo (project) node of the org tree, with its display name, owner agent, lead agent, flags for archived and held back, and its settings token. It also holds the number the next bar rule will get (`bar_next`, so numbers are never reused), the count of failed merge-queue test runs in a row and the last run (`train_fails`, `train_last_run`), and the merger's machine and session (`merger_node`, `merger_session`). A repo has one merger.
+- **Written by:** `gateway/authority.go`, `gateway/graph_lifecycle.go`, `gateway/intake_feeds.go`, `gateway/leads_max.go`, `gateway/merger.go`, `gateway/merger_restore.go`, `gateway/repo_fold_migration.go`, `gateway/session_replace.go`, `gateway/store.go`, `gateway/store_bar.go` and others
 - **Read by:** `gateway/authority.go`, `gateway/charter_levels.go`, `gateway/graph_lifecycle.go`, `gateway/graph_refs.go`, `gateway/intake.go`, `gateway/lead_session.go`, `gateway/lead_session_migration.go`, `gateway/leads_max.go`, `gateway/node_scopes.go`, `gateway/org_read.go` and others
-- **Shown in:** TUI, Graph; tool `agent_graph_read`; CTO op `repo_create`; CTO op `repo_archive`; CTO op `lead_set`
-- **Kept:** Forever (an archived repo is only flagged).
+- **Shown in:** TUI, Graph; TUI, Desk; tool `agent_graph_read`; CTO op `repo_create`; CTO op `repo_archive`; CTO op `lead_set`; CTO op `merger_set`; CTO op `merger_get`; CTO op `merger_restore`
+- **Kept:** Forever (an archived repo is only flagged). A merger is cleared when it is stopped, replaced, or its session is deleted.
 
 ### team_members
 
@@ -628,14 +628,6 @@ Standing orders, notes, findings, and what the gateway learns from signals.
 
 Changes, steps and merger work, from accept to release.
 
-### caller_step_escalations
-
-- **Holds:** One row per agent owner whose waiting delivery steps were escalated: when its offline session was woken and whether its lead was offered the steps.
-- **Written by:** `gateway/caller_agent.go`
-- **Read by:** `gateway/caller_agent.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Removed once the owner is live again or has nothing waiting, checked on each sweep.
-
 ### delivery_changes
 
 - **Holds:** One row per change (a branch of work) that a worker or session has submitted for delivery, with its project, branch, title, current state and merged commit.
@@ -660,45 +652,13 @@ Changes, steps and merger work, from accept to release.
 - **Shown in:** TUI, Desk (Change panel); tool `agent_changes_find`; tool `agent_change_submit`
 - **Kept:** Forever.
 
-### delivery_step_delegates
-
-- **Holds:** One row per machine that a delivery step was handed to, when a rule delegates that step instead of asking the owner.
-- **Written by:** `gateway/delivery_tasks.go`
-- **Read by:** `gateway/delivery_changes.go`, `gateway/delivery_tasks.go`
-- **Shown in:** TUI, Desk (Steps and evidence panel)
-- **Kept:** Until the step task is completed and queued again, then removed.
-
-### delivery_step_messages
-
-- **Holds:** One row per notice message sent to a session telling it to do a delivery step, linking the step to that message.
-- **Written by:** `gateway/delivery_tasks.go`, `gateway/merger.go`, `gateway/session_replace.go`
-- **Read by:** `gateway/delivery_tasks.go`, `gateway/delivery_waiting.go`, `gateway/merger.go`, `gateway/session_replace.go`, `gateway/store_graph.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Until the step is completed, re-queued or its merger task is reset; moved when a session is replaced.
-
 ### delivery_step_tasks
 
-- **Holds:** One row per delivery step of a change that needs someone to do it: who owns it, who claimed it, whether it is done, and when it was last nudged or is waiting.
+- **Holds:** One row per open delivery step of a change that needs someone to do it: who owns it, who claimed it, and when it was last nudged or is waiting. It also holds the notices sent for the step (`notices`, a map from a session to the notice message) and the agents that may approve it when it is delegated (`delegates`).
 - **Written by:** `gateway/delivery_approval.go`, `gateway/delivery_changes.go`, `gateway/delivery_tasks.go`, `gateway/delivery_waiting.go`, `gateway/merger.go`, `gateway/session_replace.go`, `gateway/store_graph.go`
 - **Read by:** `gateway/caller_agent.go`, `gateway/delivery_approval.go`, `gateway/delivery_changes.go`, `gateway/delivery_tasks.go`, `gateway/delivery_waiting.go`, `gateway/graph_lifecycle.go`, `gateway/merger.go`, `gateway/nudge_batch.go`, `gateway/owed_replies.go`, `gateway/session_stall.go` and others
 - **Shown in:** tool `agent_step_claim`; tool `agent_step_report`; TUI, Desk (Steps and evidence panel)
-- **Kept:** A finished task is removed when its step is queued again; otherwise kept.
-
-### merge_train_fails
-
-- **Holds:** One row per project counting how many merge-queue test runs failed in a row on the train tip.
-- **Written by:** `gateway/intake_feeds.go`
-- **Read by:** `gateway/intake_feeds.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Forever, one row per project, overwritten.
-
-### project_bar_next
-
-- **Holds:** One row per project holding the number the next bar rule will get, so numbers are never reused.
-- **Written by:** `gateway/store_bar.go`
-- **Read by:** `gateway/store_bar.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Forever, one row per project.
+- **Kept:** Until the step is reported, closed, retired or its change ends. A done step keeps no task: its row in `delivery_evidence` is the record.
 
 ### project_bar_rules
 
@@ -707,14 +667,6 @@ Changes, steps and merger work, from accept to release.
 - **Read by:** `gateway/store_bar.go`
 - **Shown in:** TUI, Graph (Project rules card); tool `agent_bar_edit`; CTO op `bar_edit`
 - **Kept:** Until the rule is removed with a bar edit.
-
-### project_mergers
-
-- **Holds:** Which session is the merger of a project on a machine.
-- **Written by:** `gateway/merger.go`, `gateway/merger_restore.go`, `gateway/session_replace.go`
-- **Read by:** `gateway/caller_agent.go`, `gateway/cto_session.go`, `gateway/delivery_changes.go`, `gateway/delivery_tasks.go`, `gateway/graph_lifecycle.go`, `gateway/lead_session.go`, `gateway/lead_session_migration.go`, `gateway/leads_max.go`, `gateway/node_scopes.go`, `gateway/org_read.go` and others
-- **Shown in:** TUI, Desk; TUI, Graph; CTO op `merger_set`; CTO op `merger_get`; CTO op `merger_restore`
-- **Kept:** Until the merger is stopped or replaced.
 
 ## Workers and picker
 

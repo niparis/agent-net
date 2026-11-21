@@ -61,6 +61,6 @@ func (s *Store) RoleNetwork() (protocol.RoleNetwork, error) {
 	if out.ChiefSession, err = chiefSession(s.db); err != nil {
 		return out, err
 	}
-	err = s.db.QueryRow(`SELECT COUNT(*) FROM project_mergers`).Scan(&out.Mergers)
+	err = s.db.QueryRow(`SELECT COUNT(*) FROM repos WHERE merger_session<>''`).Scan(&out.Mergers)
 	return out, err
 }

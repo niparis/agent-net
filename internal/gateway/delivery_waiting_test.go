@@ -17,7 +17,7 @@ func waitingRig(t *testing.T) (*deliveryRig, protocol.Change, protocol.StepRef) 
 	c := mergedChange(t, r, "feature/wait", true)
 	ref := protocol.StepRef{Step: protocol.StepVerify, AfterMerge: true}
 	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: protocol.StepRef{Step: protocol.StepRelease, AfterMerge: true}, Result: "pass", Commit: c.MergedCommit})
-	if _, err := r.s.db.Exec("UPDATE delivery_step_tasks SET completed=1 WHERE step<>'verify'"); err != nil {
+	if _, err := r.s.db.Exec("DELETE FROM delivery_step_tasks WHERE step<>'verify'"); err != nil {
 		t.Fatal(err)
 	}
 	r.g.dispatchStepTasks(context.Background())
@@ -123,10 +123,9 @@ func TestWaitingDoesNotClaimOrRecordEvidence(t *testing.T) {
 	reportWaiting(t, r, c, ref, "")
 	r.s.db.QueryRow("SELECT count(*) FROM delivery_evidence").Scan(&after)
 	var claimed string
-	var completed int
-	err := r.s.db.QueryRow("SELECT claimed_by,completed FROM delivery_step_tasks WHERE change_id=? AND step='verify'", c.ID).Scan(&claimed, &completed)
-	if err != nil || claimed != "" || completed != 0 || after != before {
-		t.Fatalf("claim=%q complete=%d evidence=%d/%d err=%v", claimed, completed, before, after, err)
+	err := r.s.db.QueryRow("SELECT claimed_by FROM delivery_step_tasks WHERE change_id=? AND step='verify'", c.ID).Scan(&claimed)
+	if err != nil || claimed != "" || after != before {
+		t.Fatalf("claim=%q evidence=%d/%d err=%v", claimed, before, after, err)
 	}
 	if _, err := r.s.ClaimStep(r.a, protocol.StepClaimRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: ref, Commit: c.MergedCommit}); err != nil {
 		t.Fatal(err)

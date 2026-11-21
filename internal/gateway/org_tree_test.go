@@ -315,7 +315,7 @@ func TestReplaceSessionMovesTheTreePlaces(t *testing.T) {
 	var lead, owner, place string
 	if err := s.db.QueryRow(`SELECT (SELECT lead_session FROM agents WHERE id='demo-merger'),
 		(SELECT json_extract(worker,'$.owner') FROM sessions WHERE id=?),
-		(SELECT session_id FROM project_mergers WHERE project='demo')`, worker).Scan(&lead, &owner, &place); err != nil {
+		(SELECT session_id FROM `+mergerRowsSQL+` WHERE project='demo')`, worker).Scan(&lead, &owner, &place); err != nil {
 		t.Fatal(err)
 	}
 	if lead != fresh || owner != fresh || place != fresh {
@@ -496,7 +496,7 @@ func orgFixture(t *testing.T) (*Store, map[string]string) {
 		{`UPDATE repos SET lead_agent_id='homelab-agent' WHERE id='homelab-agent'`, nil},
 		{`UPDATE repos SET lead_agent_id='agent-net' WHERE id='agent-net'`, nil},
 		{`UPDATE teams SET lead_session=? WHERE id='ops'`, []any{ids["h2"]}},
-		{`INSERT INTO project_mergers(project,node_id,session_id) VALUES('agent-net',?,?)`, []any{node, ids["merge"]}},
+		{`UPDATE repos SET merger_node=?,merger_session=? WHERE id='agent-net'`, []any{node, ids["merge"]}},
 		{`INSERT INTO gateway_state(key,value,updated_at) VALUES('chief_session',?,0)`, []any{ids["chief-of-staff"]}},
 	} {
 		if _, err := s.db.Exec(q.sql, q.args...); err != nil {

@@ -20,7 +20,7 @@ func (s *Store) RepoAgentLimit(repo string) (protocol.RepoAgentLimit, error) {
 			return out, err
 		}
 	}
-	err = s.db.QueryRow(`SELECT COUNT(*) FROM sessions s WHERE s.repo_id=? AND s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','cto','bot') AND s.id<>COALESCE((SELECT value FROM gateway_state WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM project_mergers m WHERE m.session_id=s.id)`, repo).Scan(&out.AgentCount)
+	err = s.db.QueryRow(`SELECT COUNT(*) FROM sessions s WHERE s.repo_id=? AND s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','cto','bot') AND s.id<>COALESCE((SELECT value FROM gateway_state WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM repos m WHERE m.merger_session=s.id)`, repo).Scan(&out.AgentCount)
 	out.OverMax = out.MaxAgents > 0 && out.AgentCount > out.MaxAgents
 	return out, err
 }

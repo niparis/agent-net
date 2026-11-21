@@ -52,7 +52,7 @@ func (s *Store) dueNudgeSessions(stuck time.Duration) (map[string]bool, error) {
 		return out, nil
 	}
 	rows, err = s.db.Query(`SELECT DISTINCT c.caller FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
- WHERE `+s.stepNotWaitingAt()+` AND t.completed=0 AND t.claimed_by='' AND (t.step<>'verify' OR t.after_merge=0 OR t.stuck_notified=0)
+ WHERE `+s.stepNotWaitingAt()+` AND t.claimed_by='' AND (t.step<>'verify' OR t.after_merge=0 OR t.stuck_notified=0)
  AND ((t.after_merge=0 AND c.state='open') OR (t.after_merge=1 AND c.state='merged'))
  AND c.caller<>'' AND t.created_at<=? AND EXISTS(SELECT 1 FROM sessions WHERE id=c.caller)
  AND NOT EXISTS(SELECT 1 FROM messages WHERE sender='agent-net' AND idem_key='delivery:stuck:' || t.change_id || ':' || t.revision || ':' || t.step || ':' || t.for_step || ':' || t.after_merge)`, s.now().Add(-stuck).Unix())

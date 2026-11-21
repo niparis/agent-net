@@ -32,7 +32,7 @@ func leadSessionCandidatesQ(q leadDB, agent string) ([]leadSessionRef, error) {
 		FROM sessions s
 		WHERE s.agent_id=? AND s.worker='' AND s.archived_at=0
 		AND s.harness NOT IN ('owner','cto','bot')
-		AND NOT EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=s.id)
+		AND NOT EXISTS(SELECT 1 FROM repos pm WHERE pm.merger_session=s.id)
 		AND NOT EXISTS(SELECT 1 FROM agents ma WHERE ma.id=s.agent_id AND ma.role='merger')
 		ORDER BY s.last_seen DESC,s.id`, agent)
 	if err != nil {

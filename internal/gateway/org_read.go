@@ -33,12 +33,12 @@ var (
 // keeps a Repo's lead in repo_leads and its archive flag in archived_repos. The
 // shipped migration steps that place Agents or check scopes run on such a store,
 // so they ask this which columns exist. Runtime readers use the columns directly.
-type repoSchema struct{ folded bool }
+type repoSchema struct{ folded, mergers bool }
 
 func repoSchemaOf(q leadDB) (repoSchema, error) {
-	var n int
-	err := q.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('repos') WHERE name='lead_agent_id'`).Scan(&n)
-	return repoSchema{folded: n > 0}, err
+	var folded, mergers int
+	err := q.QueryRow(`SELECT COUNT(*) FILTER (WHERE name='lead_agent_id'), COUNT(*) FILTER (WHERE name='merger_session') FROM pragma_table_info('repos')`).Scan(&folded, &mergers)
+	return repoSchema{folded: folded > 0, mergers: mergers > 0}, err
 }
 
 // repoTopAgentTx is the lead of one Repo in the layout of this store. It
@@ -66,7 +66,7 @@ func (r repoSchema) lead(repo string) string {
 // columns exist, so a reader that runs later does not ask the schema.
 func (s *Store) repoLayout() (repoSchema, error) {
 	if s.repoFolded.Load() {
-		return repoSchema{folded: true}, nil
+		return repoSchema{folded: true, mergers: true}, nil
 	}
 	return repoSchemaOf(s.db)
 }
@@ -89,6 +89,15 @@ func (r repoSchema) live() string {
 	return `NOT EXISTS(SELECT 1 FROM archived_repos ar WHERE ar.repo_id=repos.id)`
 }
 
+// mergerSessions lists the (project, session_id) pairs of the registered
+// mergers in the layout of this store.
+func (r repoSchema) mergerSessions() string {
+	if r.mergers {
+		return `SELECT id AS project, merger_session AS session_id FROM repos WHERE merger_session<>''`
+	}
+	return `SELECT project, session_id FROM project_mergers`
+}
+
 // mergerAgentSQL is true when the session alias runs as a merger Agent.
 func mergerAgentSQL(alias string) string {
 	return `EXISTS(SELECT 1 FROM agents ma WHERE ma.id=` + alias + `.agent_id AND ma.role='merger')`
@@ -96,7 +105,7 @@ func mergerAgentSQL(alias string) string {
 
 // registeredMergerSQL is a merger Agent with a live registration.
 func registeredMergerSQL(alias string) string {
-	return `(` + mergerAgentSQL(alias) + ` AND EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=` + alias + `.id))`
+	return `(` + mergerAgentSQL(alias) + ` AND EXISTS(SELECT 1 FROM repos pm WHERE pm.merger_session=` + alias + `.id))`
 }
 
 func orgPairs(q leadDB, query string, args ...any) (map[string]string, error) {

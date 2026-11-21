@@ -21,7 +21,7 @@ func (s *Store) initOwedRepliesLiveSince() error {
 
 const dstWaitsForOthersSQL = `(EXISTS(SELECT 1 FROM sessions w WHERE w.online=1 AND w.worker<>'' AND json_extract(w.worker,'$.owner')=dst.id)
  OR EXISTS(SELECT 1 FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
- WHERE c.caller=dst.id AND c.state='open' AND t.completed=0 AND t.claimed_by<>'' AND t.claimed_by<>dst.id))`
+ WHERE c.caller=dst.id AND c.state='open' AND t.claimed_by<>'' AND t.claimed_by<>dst.id))`
 
 type owedCandidate struct {
 	reqID          string

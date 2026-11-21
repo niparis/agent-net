@@ -595,7 +595,7 @@ func TestSessionStallNoAskWhileItsStepTaskIsClaimed(t *testing.T) {
 	if _, err := s.db.Exec(`INSERT INTO delivery_changes(id,project,branch,head_commit,revision,origin,caller,state,created_at) VALUES('ch_1','demo','b','h',1,'{}',?,'open',1)`, lead); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO delivery_step_tasks(change_id,revision,step,owner_node,claimed_by,completed,created_at) VALUES('ch_1',1,'test','n','s_merger',0,1)`); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO delivery_step_tasks(change_id,revision,step,owner_node,claimed_by,created_at) VALUES('ch_1',1,'test','n','s_merger',1)`); err != nil {
 		t.Fatal(err)
 	}
 	c.advance(21 * time.Minute)
@@ -605,7 +605,7 @@ func TestSessionStallNoAskWhileItsStepTaskIsClaimed(t *testing.T) {
 	if got := stallItems(t, s); len(got) != 0 {
 		t.Fatalf("stall ask while the merger works on the session's change: %+v", got)
 	}
-	if _, err := s.db.Exec(`UPDATE delivery_step_tasks SET completed=1`); err != nil {
+	if _, err := s.db.Exec(`DELETE FROM delivery_step_tasks`); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.checkSessionStalls(); err != nil {

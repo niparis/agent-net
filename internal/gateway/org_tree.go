@@ -129,7 +129,7 @@ func agentParentTx(tx *sql.Tx, agent string) (string, error) {
 	lead := rs.lead("repos.id")
 	if role == "merger" {
 		var repo string
-		err := tx.QueryRow(`SELECT pm.project FROM project_mergers pm JOIN sessions s ON s.id=pm.session_id WHERE s.agent_id=? ORDER BY pm.project LIMIT 1`, agent).Scan(&repo)
+		err := tx.QueryRow(`SELECT pm.project FROM (`+rs.mergerSessions()+`) pm JOIN sessions s ON s.id=pm.session_id WHERE s.agent_id=? ORDER BY pm.project LIMIT 1`, agent).Scan(&repo)
 		if err == sql.ErrNoRows {
 			err = tx.QueryRow(`SELECT SUBSTR(over_ref,6) FROM node_scopes WHERE node=? AND kind='merge' AND over_ref LIKE 'repo:%' ORDER BY over_ref LIMIT 1`, agent).Scan(&repo)
 		}
@@ -193,7 +193,7 @@ func agentParentTx(tx *sql.Tx, agent string) (string, error) {
 		return "cto", nil
 	}
 	err = tx.QueryRow(`SELECT `+lead+` FROM sessions s JOIN repos ON repos.id=s.repo_id
-		WHERE s.agent_id=? AND s.worker='' AND NOT EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=s.id)
+		WHERE s.agent_id=? AND s.worker='' AND NOT EXISTS(SELECT 1 FROM (`+rs.mergerSessions()+`) pm WHERE pm.session_id=s.id)
 		AND `+lead+`<>'' AND `+lead+`<>s.agent_id
 		ORDER BY `+lead+` LIMIT 1`, agent).Scan(&parent)
 	if err == nil {
@@ -274,7 +274,11 @@ func placeRepoAgentsTx(tx *sql.Tx, repo string) error {
 		agents = append(agents, top)
 		seen[top] = true
 	}
-	rows, err := tx.Query(`SELECT DISTINCT s.agent_id FROM sessions s WHERE s.repo_id=? AND s.agent_id IS NOT NULL AND s.agent_id<>'' AND s.worker='' AND NOT EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=s.id) ORDER BY s.agent_id`, repo)
+	rs, err := repoSchemaOf(tx)
+	if err != nil {
+		return err
+	}
+	rows, err := tx.Query(`SELECT DISTINCT s.agent_id FROM sessions s WHERE s.repo_id=? AND s.agent_id IS NOT NULL AND s.agent_id<>'' AND s.worker='' AND NOT EXISTS(SELECT 1 FROM (`+rs.mergerSessions()+`) pm WHERE pm.session_id=s.id) ORDER BY s.agent_id`, repo)
 	if err != nil {
 		return err
 	}
@@ -297,7 +301,7 @@ func placeRepoAgentsTx(tx *sql.Tx, repo string) error {
 	mergerRows, err := tx.Query(`SELECT DISTINCT a.id FROM agents a
 		WHERE a.role='merger' AND a.tombstone=0
 		AND (EXISTS(SELECT 1 FROM node_scopes ns WHERE ns.node=a.id AND ns.kind='merge' AND ns.over_ref='repo:'||?)
-		     OR EXISTS(SELECT 1 FROM project_mergers pm JOIN sessions s ON s.id=pm.session_id WHERE pm.project=? AND s.agent_id=a.id)
+		     OR EXISTS(SELECT 1 FROM (`+rs.mergerSessions()+`) pm JOIN sessions s ON s.id=pm.session_id WHERE pm.project=? AND s.agent_id=a.id)
 		     OR a.id=?||'-merger')
 		ORDER BY a.id`, repo, repo, repo)
 	if err != nil {

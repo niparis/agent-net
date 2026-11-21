@@ -170,8 +170,8 @@ func (p *wakeProbe) stepMessage(t *testing.T, to string) protocol.Message {
 		VALUES(?, 'proj', 'node1', 'feature', 'head1', 1, '{}', 'open', ?)`, changeID, now.Unix()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.s.db.Exec(`INSERT INTO delivery_step_tasks(change_id, revision, step, for_step, after_merge, owner_node, claimed_by, completed, created_at)
-		VALUES(?, 1, 'test', '', 0, 'node1', '', 0, ?)`, changeID, now.Unix()); err != nil {
+	if _, err := p.s.db.Exec(`INSERT INTO delivery_step_tasks(change_id, revision, step, for_step, after_merge, owner_node, claimed_by, created_at)
+		VALUES(?, 1, 'test', '', 0, 'node1', '', ?)`, changeID, now.Unix()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := p.s.db.Exec(`INSERT INTO messages(id, conversation_id, sender, recipient, type, body, hop, idem_key, created_at, expires_at, state)
@@ -179,10 +179,7 @@ func (p *wakeProbe) stepMessage(t *testing.T, to string) protocol.Message {
 		msgID, to, idemKey, now.UnixNano(), expires.UnixNano()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.s.db.Exec(`INSERT INTO delivery_step_messages(change_id, revision, step, for_step, after_merge, session_id, message_id)
-		VALUES(?, 1, 'test', '', 0, ?, ?)`, changeID, to, msgID); err != nil {
-		t.Fatal(err)
-	}
+	linkStepNotice(t, p.s.db, changeID, 1, "test", "", 0, to, msgID)
 	m, ok, err := p.s.Message(msgID)
 	if err != nil || !ok {
 		t.Fatalf("step message: ok=%v err=%v", ok, err)

@@ -73,7 +73,7 @@ func TestDeliveryReconcileListKeepsTerminalEvidence(t *testing.T) {
 		t.Fatalf("missing list status: %+v", page)
 	}
 	var pending int
-	if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM delivery_step_tasks WHERE change_id=? AND completed=0`, c.ID).Scan(&pending); err != nil {
+	if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM delivery_step_tasks WHERE change_id=?`, c.ID).Scan(&pending); err != nil {
 		t.Fatal(err)
 	}
 	if pending != 0 {
@@ -300,7 +300,7 @@ func TestDeliveryRepairExternalDone(t *testing.T) {
 		t.Fatalf("repair changed evidence: %d reports, had %d", len(v.Evidence), len(before))
 	}
 	var queued int
-	if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM delivery_step_tasks WHERE change_id=? AND after_merge=1 AND completed=0`, raced.ID).Scan(&queued); err != nil {
+	if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM delivery_step_tasks WHERE change_id=? AND after_merge=1`, raced.ID).Scan(&queued); err != nil {
 		t.Fatal(err)
 	}
 	if queued == 0 {

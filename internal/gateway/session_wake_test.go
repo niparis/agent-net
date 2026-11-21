@@ -57,7 +57,7 @@ func TestWakeOfflineMergerTaskBatched(t *testing.T) {
 		r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: changes[len(changes)-1], StepRef: stepAccept, Result: protocol.StepResultPass, Commit: commitA})
 	}
 	var n int
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE session_id=?`, r.sonnet).Scan(&n); err != nil || n != 0 {
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM `+stepNoticesSQL+` WHERE session_id=?`, r.sonnet).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("offline step messages=%d, err=%v", n, err)
 	}
 	select {
@@ -82,7 +82,7 @@ func TestWakeOfflineMergerTaskBatched(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("no batched task delivery")
 	}
-	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=?`, r.sonnet).Scan(&n); err != nil || n != 1 {
+	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM `+stepNoticesSQL+` WHERE session_id=?`, r.sonnet).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("batched messages=%d, err=%v", n, err)
 	}
 	select {
@@ -141,7 +141,7 @@ func TestWakeOfflineCallerTaskBatched(t *testing.T) {
 		changes = append(changes, r.submit(r.a, r.workerSubmit(fmt.Sprintf("feature/caller-%d", i), commitA)).Change.Change.ID)
 	}
 	var n int
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&n); err != nil || n != 0 {
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM `+stepNoticesSQL+` WHERE session_id=?`, r.caller).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("offline caller notices=%d err=%v", n, err)
 	}
 	select {
@@ -166,7 +166,7 @@ func TestWakeOfflineCallerTaskBatched(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("no batched caller task delivery")
 	}
-	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&n); err != nil || n != 1 {
+	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM `+stepNoticesSQL+` WHERE session_id=?`, r.caller).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("batched caller messages=%d, err=%v", n, err)
 	}
 	select {
@@ -208,7 +208,7 @@ func TestWakeNodeOwnedTaskLeavesOfflineSessionsAsleep(t *testing.T) {
 		if err := r.s.db.QueryRow(`SELECT count(*) FROM sessions WHERE id=? AND wake_attempted_at>0`, id).Scan(&wakes); err != nil {
 			t.Fatal(err)
 		}
-		if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE session_id=?`, id).Scan(&messages); err != nil {
+		if err := r.s.db.QueryRow(`SELECT count(*) FROM `+stepNoticesSQL+` WHERE session_id=?`, id).Scan(&messages); err != nil {
 			t.Fatal(err)
 		}
 		if wakes != 0 || messages != 0 {

@@ -102,7 +102,7 @@ func TestStepTaskContracts(t *testing.T) {
 				if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.contract." + step, Level: level, Scope: scope, Value: value}}, "cto", "update contract"); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := r.s.db.Exec(`UPDATE messages SET state='expired' WHERE id IN (SELECT message_id FROM delivery_step_messages WHERE change_id=?)`, c.ID); err != nil {
+				if _, err := r.s.db.Exec(`UPDATE messages SET state='expired' WHERE id IN (SELECT message_id FROM `+stepNoticesSQL+` WHERE change_id=?)`, c.ID); err != nil {
 					t.Fatal(err)
 				}
 				check("contract:\n  " + text)

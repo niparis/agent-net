@@ -200,7 +200,7 @@ func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, er
 		{`UPDATE agents SET lead_session=? WHERE lead_session=?`, []any{newSessionID, sessionID}},
 		// A merger place follows the conversation, unless the new record is
 		// already the merger of another project.
-		{`UPDATE project_mergers SET session_id=? WHERE session_id=? AND NOT EXISTS (SELECT 1 FROM project_mergers WHERE session_id=?)`, []any{newSessionID, sessionID, newSessionID}},
+		{`UPDATE repos SET merger_session=? WHERE merger_session=? AND NOT EXISTS (SELECT 1 FROM repos WHERE merger_session=?)`, []any{newSessionID, sessionID, newSessionID}},
 	}
 	for _, step := range steps {
 		if _, err := tx.Exec(step.query, step.args...); err != nil {
@@ -246,12 +246,14 @@ const undeliveredStates = `('held','stored','dispatched','failed')`
 // one is expired and dropped, so it neither wakes the old session nor reaches
 // the new one twice.
 func moveStepNotices(tx *sql.Tx, oldID, newID string) (int64, error) {
-	const duplicate = `session_id=? AND change_id IN (SELECT id FROM delivery_changes WHERE state IN ('open','merged'))
-		AND EXISTS (SELECT 1 FROM delivery_step_messages n WHERE n.session_id=? AND n.change_id=delivery_step_messages.change_id
-		AND n.revision=delivery_step_messages.revision AND n.step=delivery_step_messages.step
-		AND n.for_step=delivery_step_messages.for_step AND n.after_merge=delivery_step_messages.after_merge)`
+	const (
+		oldNotice = `json_extract(notices,'$."'||?||'"')`
+		newNotice = oldNotice
+		live      = `change_id IN (SELECT id FROM delivery_changes WHERE state IN ('open','merged'))`
+		duplicate = live + ` AND ` + oldNotice + ` IS NOT NULL AND ` + newNotice + ` IS NOT NULL`
+	)
 	if _, err := tx.Exec(`UPDATE messages SET state='expired' WHERE state IN `+undeliveredStates+`
-		AND id IN (SELECT message_id FROM delivery_step_messages WHERE `+duplicate+`)`, oldID, newID); err != nil {
+		AND id IN (SELECT `+oldNotice+` FROM delivery_step_tasks WHERE `+duplicate+`)`, oldID, oldID, newID); err != nil {
 		return 0, err
 	}
 	var changed int64
@@ -259,8 +261,8 @@ func moveStepNotices(tx *sql.Tx, oldID, newID string) (int64, error) {
 		query string
 		args  []any
 	}{
-		{`DELETE FROM delivery_step_messages WHERE ` + duplicate, []any{oldID, newID}},
-		{`UPDATE delivery_step_messages SET session_id=? WHERE session_id=? AND change_id IN (SELECT id FROM delivery_changes WHERE state IN ('open','merged'))`, []any{newID, oldID}},
+		{`UPDATE delivery_step_tasks SET notices=json_remove(notices,'$."'||?||'"') WHERE ` + duplicate, []any{oldID, oldID, newID}},
+		{`UPDATE delivery_step_tasks SET notices=json_set(json_remove(notices,'$."'||?||'"'),'$."'||?||'"',` + oldNotice + `) WHERE ` + live + ` AND ` + oldNotice + ` IS NOT NULL`, []any{oldID, newID, oldID, oldID}},
 	} {
 		res, err := tx.Exec(step.query, step.args...)
 		if err != nil {

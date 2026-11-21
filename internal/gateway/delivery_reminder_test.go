@@ -117,10 +117,6 @@ func recentStepMessageTo(t *testing.T, r *deliveryRig, session, change string, r
 		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.s.db.Exec(`INSERT INTO delivery_step_messages(change_id,revision,step,for_step,after_merge,session_id,message_id)
-		VALUES(?,?,?,?,?,?,?)`, change, 1, ref.Step, ref.For, boolInt(ref.AfterMerge), session, m.ID); err != nil {
-		t.Fatal(err)
-	}
 }
 
 // A step claimed after its reminder batch was selected must not appear in the
@@ -242,11 +238,11 @@ func TestDeliveryStepPairReadyTogetherNoEarlyReminder(t *testing.T) {
 		t.Fatalf("pair line missing from:\n%s", bodies[0])
 	}
 
-	// Every step named in the message has its delivery_step_messages row.
+	// Every step named in the message has its notice in the task.
 	var rows int
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE change_id=? AND session_id=?`,
-		c.ID, r.caller).Scan(&rows); err != nil || rows != 3 {
-		t.Fatalf("step message rows=%d want=3 (recent + release + verify) err=%v", rows, err)
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM `+stepNoticesSQL+` WHERE change_id=? AND session_id=?`,
+		c.ID, r.caller).Scan(&rows); err != nil || rows != 2 {
+		t.Fatalf("step message rows=%d want=2 (release + verify) err=%v", rows, err)
 	}
 
 	// Dispatch several times inside the reminder interval. Nothing new may go out.
@@ -419,7 +415,7 @@ func TestVerifyStuckNoticeSurvivesPruning(t *testing.T) {
 	r := newDeliveryRig(t)
 	callerNeedsSharedPipeline(t, r)
 	mergedChange(t, r, "feature/stuck-verify", true)
-	if _, err := r.s.db.Exec("UPDATE delivery_step_tasks SET completed=1 WHERE step<>'verify'"); err != nil {
+	if _, err := r.s.db.Exec("DELETE FROM delivery_step_tasks WHERE step<>'verify'"); err != nil {
 		t.Fatal(err)
 	}
 	r.clk.advance(12 * time.Hour)

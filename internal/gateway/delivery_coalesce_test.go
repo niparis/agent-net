@@ -35,12 +35,12 @@ func TestCoalesceSingleIsolatedTask(t *testing.T) {
 	r.g.dispatchStepTasks(context.Background())
 
 	var n int
-	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&n); err != nil || n != 1 {
+	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM `+stepNoticesSQL+` WHERE session_id=?`, r.caller).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("message count=%d want=1 err=%v", n, err)
 	}
 
 	var body string
-	if err := r.s.db.QueryRow(`SELECT body FROM messages WHERE id IN (SELECT message_id FROM delivery_step_messages WHERE session_id=?)`, r.caller).Scan(&body); err != nil {
+	if err := r.s.db.QueryRow(`SELECT body FROM messages WHERE id IN (SELECT message_id FROM `+stepNoticesSQL+` WHERE session_id=?)`, r.caller).Scan(&body); err != nil {
 		t.Fatal(err)
 	}
 
@@ -93,11 +93,11 @@ func TestCoalesceMixedBurstTwoRecipients(t *testing.T) {
 	checkRecipient := func(sessionID string, label string) {
 		t.Helper()
 		var n int
-		if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=?`, sessionID).Scan(&n); err != nil || n != 1 {
+		if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM `+stepNoticesSQL+` WHERE session_id=?`, sessionID).Scan(&n); err != nil || n != 1 {
 			t.Fatalf("%s message count=%d want=1 err=%v", label, n, err)
 		}
 		var body string
-		if err := r.s.db.QueryRow(`SELECT body FROM messages WHERE id IN (SELECT message_id FROM delivery_step_messages WHERE session_id=?)`, sessionID).Scan(&body); err != nil {
+		if err := r.s.db.QueryRow(`SELECT body FROM messages WHERE id IN (SELECT message_id FROM `+stepNoticesSQL+` WHERE session_id=?)`, sessionID).Scan(&body); err != nil {
 			t.Fatal(err)
 		}
 		if !strings.HasPrefix(body, "[agent-net step tasks]\n") {
@@ -127,7 +127,7 @@ func TestCoalesceBatchedTaskClaimAndReport(t *testing.T) {
 	r.g.dispatchStepTasks(context.Background())
 
 	var n int
-	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&n); err != nil || n != 1 {
+	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM `+stepNoticesSQL+` WHERE session_id=?`, r.caller).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("expected 1 batch message, got %d", n)
 	}
 
@@ -245,7 +245,7 @@ func TestCoalesce25ChangesReleaseThenVerifyGiveAtMostTwoMessages(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	var msgsBeforeVerify int
-	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&msgsBeforeVerify); err != nil {
+	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM `+stepNoticesSQL+` WHERE session_id=?`, r.caller).Scan(&msgsBeforeVerify); err != nil {
 		t.Fatal(err)
 	}
 
@@ -260,7 +260,7 @@ func TestCoalesce25ChangesReleaseThenVerifyGiveAtMostTwoMessages(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	var totalMessages int
-	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&totalMessages); err != nil {
+	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM `+stepNoticesSQL+` WHERE session_id=?`, r.caller).Scan(&totalMessages); err != nil {
 		t.Fatal(err)
 	}
 
@@ -330,14 +330,14 @@ func TestCoalesce25CallerVerifyTasksWithCallerDeliveryEdgeGiveOneBatch(t *testin
 	r.g.flushStepTaskBatches()
 
 	var verifyMessages int
-	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=? AND step='verify'`, r.caller).Scan(&verifyMessages); err != nil {
+	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM `+stepNoticesSQL+` WHERE session_id=? AND step='verify'`, r.caller).Scan(&verifyMessages); err != nil {
 		t.Fatal(err)
 	}
 
 	// All 25 tasks must be in the first message: a batch cut in two would
 	// show here at once, before its second half is sent.
 	var covered int
-	if err := r.s.db.QueryRow(`SELECT count(DISTINCT change_id) FROM delivery_step_messages WHERE session_id=? AND step='verify'`, r.caller).Scan(&covered); err != nil {
+	if err := r.s.db.QueryRow(`SELECT count(DISTINCT change_id) FROM `+stepNoticesSQL+` WHERE session_id=? AND step='verify'`, r.caller).Scan(&covered); err != nil {
 		t.Fatal(err)
 	}
 	if verifyMessages != 1 || covered != numChanges {
@@ -345,7 +345,7 @@ func TestCoalesce25CallerVerifyTasksWithCallerDeliveryEdgeGiveOneBatch(t *testin
 	}
 
 	var body string
-	if err := r.s.db.QueryRow(`SELECT body FROM messages WHERE id IN (SELECT message_id FROM delivery_step_messages WHERE session_id=? AND step='verify')`, r.caller).Scan(&body); err != nil {
+	if err := r.s.db.QueryRow(`SELECT body FROM messages WHERE id IN (SELECT message_id FROM `+stepNoticesSQL+` WHERE session_id=? AND step='verify')`, r.caller).Scan(&body); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(body, "[agent-net step tasks]\n") {
@@ -396,7 +396,7 @@ func TestCoalesceStaleQuietTimerDoesNotCutTheBurst(t *testing.T) {
 	}
 	count := func() int {
 		var n int
-		if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&n); err != nil {
+		if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM `+stepNoticesSQL+` WHERE session_id=?`, r.caller).Scan(&n); err != nil {
 			t.Fatal(err)
 		}
 		return n

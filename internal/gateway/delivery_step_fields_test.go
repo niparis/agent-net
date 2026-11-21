@@ -58,7 +58,8 @@ func TestSameSessionReportsAStoredPassAgainWithTheMissingField(t *testing.T) {
 		VALUES(?,1,'test','',0,'pass',?,'{"independent":"none"}',?,'','','','',1)`, id, commitA, r.sonnet); err != nil {
 		t.Fatal(err)
 	}
-	if res, err := r.s.db.Exec(`UPDATE delivery_step_tasks SET claimed_by=?,completed=1 WHERE change_id=? AND step='test' AND after_merge=0`, r.sonnet, id); err != nil {
+	// The test step's task ended with that report.
+	if res, err := r.s.db.Exec(`DELETE FROM delivery_step_tasks WHERE change_id=? AND step='test' AND after_merge=0`, id); err != nil {
 		t.Fatal(err)
 	} else if n, _ := res.RowsAffected(); n != 1 {
 		t.Fatalf("test task rows %d, want 1", n)

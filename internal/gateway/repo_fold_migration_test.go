@@ -307,13 +307,19 @@ func restoreRepoSideTables(t *testing.T, db repoDB) {
 			"repo_agent_session_insert", "repo_agent_session_update",
 			"repo_agent_architect_insert", "repo_agent_architect_delete",
 			"repo_lead_delete", "repo_lead_tombstone",
+			// They name repos.merger_session, which the loop below drops.
+			"merger_removed", "merger_replaced", "remove_project_merger",
 		} {
 			if _, err := db.Exec(`DROP TRIGGER IF EXISTS ` + trigger); err != nil {
 				t.Fatal(err)
 			}
 		}
+		if _, err := db.Exec(`DROP INDEX IF EXISTS repos_merger_session`); err != nil {
+			t.Fatal(err)
+		}
 		for _, col := range []struct{ table, name string }{
 			{"repos", "archived"}, {"repos", "held_back"}, {"repos", "lead_agent_id"},
+			{"repos", "bar_next"}, {"repos", "train_fails"}, {"repos", "train_last_run"}, {"repos", "merger_node"}, {"repos", "merger_session"},
 			{"agents", "lead_level"}, {"agents", "lead_session"},
 		} {
 			var has int
@@ -347,6 +353,12 @@ func restoreRepoSideTables(t *testing.T, db repoDB) {
 	}
 	if cur >= migrationVersion(t, "CREATE TABLE graph_nodes (") && cur < migrationVersion(t, graphNodesFoldMarker) {
 		restoreGraphNodesForReplay(t, db)
+	}
+	if cur < migrationVersion(t, stepTablesMarker) {
+		// The merger rows go back into project_mergers, so it comes back first.
+		restoreDroppedSince(t, db, cur)
+		restoreStepTasksCompleted(t, db)
+		restoreMergerRows(t, db)
 	}
 	// Last, so the steps above rebuild the tables they know, with their rows.
 	restoreDroppedSince(t, db, cur)

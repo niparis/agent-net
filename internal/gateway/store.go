@@ -1331,7 +1331,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -2052,7 +2052,7 @@ func (s *Store) migrate() error {
 			return err
 		}
 		stmt := migrations[i]
-		for marker, cols := range map[string][]migrationColumn{learnedTablesMarker: learnedTablesColumns, settingsFoldMarker: settingsFoldColumns, sessionTablesMarker: sessionTablesColumns} {
+		for marker, cols := range map[string][]migrationColumn{learnedTablesMarker: learnedTablesColumns, settingsFoldMarker: settingsFoldColumns, sessionTablesMarker: sessionTablesColumns, stepTablesMarker: stepTablesColumns} {
 			if !strings.Contains(migrations[i], marker) {
 				continue
 			}
@@ -4052,7 +4052,7 @@ func (s *Store) SyncSessions(nodeID string, in []protocol.SessionInfo) ([]protoc
 		keep[id] = true
 		si.SessionID = id
 		var merger int
-		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM project_mergers WHERE session_id=?)`, id).Scan(&merger); err != nil {
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE merger_session=?)`, id).Scan(&merger); err != nil {
 			return nil, err
 		}
 		explicit := ""
@@ -4458,14 +4458,14 @@ var agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.
 
 // agentListTables are the tables agentListSelect and its joins read, with the
 // piChildSQL filter. Keep it equal to those queries (see readThrough).
-var agentListTables = []string{"sessions", "nodes.id", "nodes.hostname", "apps", "project_display_names", "project_mergers",
+var agentListTables = []string{"sessions", "nodes.id", "nodes.hostname", "apps", "project_display_names",
 	"worker_assessments", "agents", "graph_edges", "repos", "teams", "team_members", "setting_values", "inbox_items",
 	"messages", "gateway_state"}
 
 const (
 	// agentRepoCountWhere is what makes a session count toward its Repo's
 	// agent limit. x is the session.
-	agentRepoCountWhere = `x.online=1 AND x.worker='' AND x.harness NOT IN ('owner','cto','bot') AND x.id<>COALESCE((SELECT value FROM gateway_state WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=x.id)`
+	agentRepoCountWhere = `x.online=1 AND x.worker='' AND x.harness NOT IN ('owner','cto','bot') AND x.id<>COALESCE((SELECT value FROM gateway_state WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM repos pm WHERE pm.merger_session=x.id)`
 
 	// A Repo has one max_agents row, as the key is unique. The stall item is
 	// the newest of the session, and the later row when two are as new, which

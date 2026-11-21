@@ -136,17 +136,17 @@ func TestRepoAgentMigrationPreservesGraphAndDelivery(t *testing.T) {
 }
 
 // Exclude creation time: backfill records the time of each run.
-func repoAgentTaskSnapshot(t *testing.T, s *Store) [][7]string {
+func repoAgentTaskSnapshot(t *testing.T, s *Store) [][6]string {
 	t.Helper()
-	rows, err := s.db.Query(`SELECT change_id,revision,step,for_step,after_merge,owner_node,completed FROM delivery_step_tasks ORDER BY change_id,revision,step,for_step,after_merge`)
+	rows, err := s.db.Query(`SELECT change_id,revision,step,for_step,after_merge,owner_node FROM delivery_step_tasks ORDER BY change_id,revision,step,for_step,after_merge`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer rows.Close()
-	var out [][7]string
+	var out [][6]string
 	for rows.Next() {
-		var v [7]string
-		if err := rows.Scan(&v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6]); err != nil {
+		var v [6]string
+		if err := rows.Scan(&v[0], &v[1], &v[2], &v[3], &v[4], &v[5]); err != nil {
 			t.Fatal(err)
 		}
 		out = append(out, v)
