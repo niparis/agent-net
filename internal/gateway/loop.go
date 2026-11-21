@@ -26,6 +26,7 @@ import (
 // loopRow is a node's loop: the setting and the stored state.
 type loopRow struct {
 	node        string
+	level       string
 	every       time.Duration
 	everyText   string
 	prompt      string
@@ -72,16 +73,18 @@ var loopTables = []string{"setting_values", "agent_loops"}
 
 func (s *Store) loadLoops() ([]loopRow, error) {
 	rows, err := s.db.Query(`SELECT v.scope,v.value,
-		COALESCE((SELECT p.value FROM setting_values p WHERE p.key='loop.prompt' AND p.level='repo' AND p.scope=v.scope AND p.item=''),''),
-		COALESCE((SELECT p.value FROM setting_values p WHERE p.key='loop.mode' AND p.level='repo' AND p.scope=v.scope AND p.item=''),'""'),
-		COALESCE((SELECT p.value FROM setting_values p WHERE p.key='loop.plan' AND p.level='repo' AND p.scope=v.scope AND p.item=''),'""'),
-		l.node IS NOT NULL,` + loopCols + `
+		COALESCE((SELECT p.value FROM setting_values p WHERE p.key='loop.prompt' AND p.level=v.level AND p.scope=v.scope AND p.item=''),''),
+		COALESCE((SELECT p.value FROM setting_values p WHERE p.key='loop.mode' AND p.level=v.level AND p.scope=v.scope AND p.item=''),'""'),
+		COALESCE((SELECT p.value FROM setting_values p WHERE p.key='loop.plan' AND p.level=v.level AND p.scope=v.scope AND p.item=''),'""'),
+		l.node IS NOT NULL,` + loopCols + `,
+		v.level
 		FROM setting_values v LEFT JOIN agent_loops l ON l.node=v.scope
-		WHERE v.key='loop.every' AND v.level='repo' AND v.item=''
+		WHERE v.key='loop.every' AND v.level IN ('repo', 'agent') AND v.item=''
 		UNION ALL
-		SELECT l.node,'""','','""','""',1,` + loopCols + `
+		SELECT l.node,'""','','""','""',1,` + loopCols + `,
+		COALESCE((SELECT level FROM setting_values WHERE key='loop.every' AND scope=l.node AND item='' LIMIT 1),'repo')
 		FROM agent_loops l WHERE NOT EXISTS (SELECT 1 FROM setting_values v
-		WHERE v.key='loop.every' AND v.level='repo' AND v.item='' AND v.scope=l.node)`)
+		WHERE v.key='loop.every' AND v.level IN ('repo', 'agent') AND v.item='' AND v.scope=l.node)`)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +95,7 @@ func (s *Store) loadLoops() ([]loopRow, error) {
 		var every, prompt, mode, plan string
 		var announced, awaiting, counted int
 		if err := rows.Scan(&r.node, &every, &prompt, &mode, &plan, &r.has, &r.startedAt, &r.lastAt, &r.sentAt, &r.sessionID, &r.day,
-			&r.dayTicks, &r.dayProgress, &r.streak, &r.lastOpen, &r.lastMsgs, &announced, &awaiting, &counted, &r.paused, &r.lastResult); err != nil {
+			&r.dayTicks, &r.dayProgress, &r.streak, &r.lastOpen, &r.lastMsgs, &announced, &awaiting, &counted, &r.paused, &r.lastResult, &r.level); err != nil {
 			return nil, err
 		}
 		r.announced, r.awaiting, r.counted = announced != 0, awaiting != 0, counted != 0
@@ -161,8 +164,12 @@ func (s *Store) applyLoops(agents []protocol.AgentView) error {
 		return err
 	}
 	for i := range agents {
-		if v, ok := views[nodeName(agents[i])]; ok && agents[i].Worker == nil {
-			agents[i].Loop = v
+		if agents[i].Worker == nil {
+			if v, ok := views[agents[i].AgentID]; ok {
+				agents[i].Loop = v
+			} else if v, ok := views[nodeName(agents[i])]; ok {
+				agents[i].Loop = v
+			}
 		}
 	}
 	return nil
@@ -290,7 +297,6 @@ func (s *Store) loopLog(node, text string) error {
 
 func (s *Store) loopOne(r loopRow, agents []protocol.AgentView, graph protocol.Graph, now time.Time, today string) (loopTickResult, error) {
 	res := loopTickResult{Node: r.node}
-	target, ok := loopTarget(agents, r.node)
 	skip := func(outcome, why string) (loopTickResult, error) {
 		if _, err := s.db.Exec(`UPDATE agent_loops SET last_at=? WHERE node=?`, now.Unix(), r.node); err != nil {
 			return res, err
@@ -302,8 +308,33 @@ func (s *Store) loopOne(r loopRow, agents []protocol.AgentView, graph protocol.G
 		res.Outcome = outcome
 		return res, s.loopLog(r.node, text)
 	}
-	if !ok {
-		return skip(protocol.LoopSkippedNone, "")
+	var target protocol.AgentView
+	var ok bool
+	if r.level == "agent" {
+		var leadSession sql.NullString
+		err := s.db.QueryRow(`SELECT lead_session FROM agents WHERE id=? AND tombstone=0`, r.node).Scan(&leadSession)
+		if err != nil && err != sql.ErrNoRows {
+			return res, err
+		}
+		if !leadSession.Valid || strings.TrimSpace(leadSession.String) == "" {
+			return skip(protocol.LoopSkippedNone, "no lead session")
+		}
+		leadID := strings.TrimSpace(leadSession.String)
+		for _, a := range agents {
+			if a.SessionID == leadID && a.Worker == nil && !protocol.IsOwner(a.Harness) && a.Harness != "cto" && a.Harness != "bot" {
+				target = a
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return skip(protocol.LoopSkippedNone, "no lead session")
+		}
+	} else {
+		target, ok = loopTarget(agents, r.node)
+		if !ok {
+			return skip(protocol.LoopSkippedNone, "")
+		}
 	}
 	if paused, err := s.nudgePaused(s.db, "loop_tick", target.SessionID); err != nil {
 		return res, err
@@ -386,6 +417,9 @@ func (s *Store) loopOne(r loopRow, agents []protocol.AgentView, graph protocol.G
 			purpose = n.Charter.Purpose
 			break
 		}
+	}
+	if purpose == "" {
+		_ = s.db.QueryRow(`SELECT value FROM charter_values WHERE level='agent' AND scope=? AND attr='purpose'`, r.node).Scan(&purpose)
 	}
 	open, msgs, err := s.loopMarkers(target.SessionID)
 	if err != nil {

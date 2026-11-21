@@ -230,7 +230,7 @@ settings:
     kind: advice
     type: duration
     min: "0s"
-    levels: [repo]
+    levels: [repo, agent]
     default: "0s"
     live: true
   - key: loop.prompt
@@ -238,7 +238,7 @@ settings:
     description: The text a loop tick sends after "your purpose is ...", instead of the default sentence; empty means the default.
     kind: advice
     type: text
-    levels: [repo]
+    levels: [repo, agent]
     default: ""
     live: true
   - key: loop.mode
@@ -247,7 +247,7 @@ settings:
     kind: advice
     type: enum
     values: [always, on_change]
-    levels: [repo]
+    levels: [repo, agent]
     default: always
     live: true
   - key: loop.plan
@@ -255,7 +255,7 @@ settings:
     description: A plan file, relative to the session's folder, that each loop tick names; empty means none.
     kind: advice
     type: text
-    levels: [repo]
+    levels: [repo, agent]
     default: ""
     live: true
   - key: delivery.test_text_optional

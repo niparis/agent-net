@@ -156,3 +156,90 @@ func TestNodeSettingsValuesAreClean(t *testing.T) {
 		t.Fatalf("setting names: %v", protocol.NodeSettingNames())
 	}
 }
+
+func TestAgentNodeLoopSettings(t *testing.T) {
+	s, _ := newTestStore(t)
+	if _, err := s.db.Exec(`INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES('homelab-lead','homelab-lead','',0,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	// The CTO sets loop settings without a proposal (advice).
+	if err := s.SetNodeSetting("homelab-lead", protocol.SettingLoopEvery, "30m", "cto"); err != nil {
+		t.Fatalf("SetNodeSetting loop_every by cto: %v", err)
+	}
+	if err := s.SetNodeSetting("homelab-lead", protocol.SettingLoopPrompt, "PN50 migration loop", "cto"); err != nil {
+		t.Fatalf("SetNodeSetting loop_prompt by cto: %v", err)
+	}
+	if err := s.SetNodeSetting("homelab-lead", protocol.SettingLoopMode, protocol.LoopModeOnChange, "cto"); err != nil {
+		t.Fatalf("SetNodeSetting loop_mode by cto: %v", err)
+	}
+	if err := s.SetNodeSetting("homelab-lead", protocol.SettingLoopPlan, "PLAN.md", "cto"); err != nil {
+		t.Fatalf("SetNodeSetting loop_plan by cto: %v", err)
+	}
+	res, err := s.NodeSettings("homelab-lead")
+	if err != nil {
+		t.Fatalf("NodeSettings: %v", err)
+	}
+	if res.Overrides[protocol.SettingLoopEvery] != "30m" {
+		t.Errorf("loop_every = %q, want 30m", res.Overrides[protocol.SettingLoopEvery])
+	}
+	if res.Overrides[protocol.SettingLoopPrompt] != "PN50 migration loop" {
+		t.Errorf("loop_prompt = %q, want PN50 migration loop", res.Overrides[protocol.SettingLoopPrompt])
+	}
+	if res.Overrides[protocol.SettingLoopMode] != protocol.LoopModeOnChange {
+		t.Errorf("loop_mode = %q, want on_change", res.Overrides[protocol.SettingLoopMode])
+	}
+	if res.Overrides[protocol.SettingLoopPlan] != "PLAN.md" {
+		t.Errorf("loop_plan = %q, want PLAN.md", res.Overrides[protocol.SettingLoopPlan])
+	}
+
+	// Clearing loop_every removes the override.
+	if err := s.SetNodeSetting("homelab-lead", protocol.SettingLoopEvery, "", "cto"); err != nil {
+		t.Fatalf("clear loop_every: %v", err)
+	}
+	res, err = s.NodeSettings("homelab-lead")
+	if err != nil {
+		t.Fatalf("NodeSettings after clear: %v", err)
+	}
+	if _, ok := res.Overrides[protocol.SettingLoopEvery]; ok {
+		t.Errorf("loop_every still present after clear: %#v", res.Overrides)
+	}
+}
+
+func TestAgentNodeCharterAndEdgeRejected(t *testing.T) {
+	s, _ := newTestStore(t)
+	if _, err := s.db.Exec(`INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES('homelab-lead','homelab-lead','',0,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddArchitect("shop", "owner"); err != nil {
+		t.Fatal(err)
+	}
+
+	// charter_set on an agent node must be rejected and write no charter_values row at any level for that id.
+	if err := s.SetCharter("homelab-lead", "purpose", "stand alone", "owner"); err == nil {
+		t.Fatal("SetCharter on agent node was accepted; want rejection")
+	}
+	var count int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM charter_values WHERE scope='homelab-lead'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("charter_values has %d rows for homelab-lead, want 0", count)
+	}
+	g, err := s.Graph()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range g.Nodes {
+		if n.Name == "homelab-lead" {
+			t.Fatalf("Graph() contains homelab-lead as a node: %+v", n)
+		}
+	}
+
+	// An edge with an agent id endpoint must be rejected.
+	if err := s.SetEdge(protocol.Edge{From: "homelab-lead", To: "shop", Kind: "depends"}, "owner"); err == nil {
+		t.Fatal("SetEdge with agent node as source was accepted; want rejection")
+	}
+	if err := s.SetEdge(protocol.Edge{From: "shop", To: "homelab-lead", Kind: "depends"}, "owner"); err == nil {
+		t.Fatal("SetEdge with agent node as target was accepted; want rejection")
+	}
+}
