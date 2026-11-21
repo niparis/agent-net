@@ -525,6 +525,15 @@ if [ "$plan" = 1 ]; then
   exit 0
 fi
 
+# Go writes test binaries to GOTMPDIR. Use the RAM folder when the machine has
+# one with room, unless the caller set a folder (see scripts/gotmpdir.sh).
+. "$script_dir/gotmpdir.sh"
+if [ -z "${GOTMPDIR:-}" ]; then
+  GOTMPDIR=$(gotmp_default) || fail "could not choose the Go temp folder"
+  export GOTMPDIR
+fi
+mkdir -p "$GOTMPDIR" || fail "could not make the Go temp folder $GOTMPDIR"
+
 # Each run gets its own AGENT_NET_* directories, so no test can touch the real
 # setup, and one run cannot see another run's state.
 go_test() {

@@ -305,8 +305,11 @@ type Config struct {
 	// Empty uses AGENT_NET_GOCACHE or /tmp/agent-net-gocache.
 	WorkerGoCache string
 	// WorkerGoTmp is the shared worker test temporary directory.
-	// Empty uses AGENT_NET_GOTMPDIR or /tmp/agent-net-gotmp.
+	// Empty uses AGENT_NET_GOTMPDIR, else a folder on /dev/shm when that has room,
+	// else /tmp/agent-net-gotmp.
 	WorkerGoTmp string
+	// testShm replaces the reading of /dev/shm in tests.
+	testShm func() shmInfo
 	// testDiskPercent overrides disk percentage used in tests.
 	testDiskPercent func(path string) (float64, bool)
 	// testWorkerCacheCleanFirst overrides the initial delay of worker cache cleanup in tests.

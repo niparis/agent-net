@@ -501,4 +501,31 @@ got=0
 grep -q 'unix sockets are blocked' "$work/out" && got=1
 [ "$got" = "$want" ] || fail "the real probe disagrees with the helper (blocked line: $got, helper blocked: $want)"
 
+# The Go temp folder rule (scripts/gotmpdir.sh) reads /dev/shm with a fake stat,
+# so no folder is made and the real /dev/shm is only checked for existence.
+statbin=$work/statbin
+mkdir "$statbin"
+cat >"$statbin/stat" <<'STAT'
+#!/bin/sh
+[ -z "${FAKE_STAT_FAIL:-}" ] || exit 1
+printf '%s\n' "$FAKE_STAT_OUT"
+STAT
+chmod +x "$statbin/stat"
+if [ -d /dev/shm ]; then shm_want=/dev/shm/agent-net-gotmp; else shm_want=/tmp/agent-net-gotmp; fi
+gotmp_for() {
+  env -i PATH="$statbin:/usr/bin:/bin" FAKE_STAT_OUT="$1" FAKE_STAT_FAIL="${2:-}" \
+    sh -c '. "$1"; gotmp_default' sh "$root/scripts/gotmpdir.sh"
+}
+for tc in "tmpfs 4096 2097152|$shm_want|8 GiB tmpfs" "tmpfs 4096 1048576|$shm_want|exactly 4 GiB tmpfs" \
+  "tmpfs 4096 1048575|/tmp/agent-net-gotmp|just under 4 GiB tmpfs" "ext4 4096 2097152|/tmp/agent-net-gotmp|8 GiB disk"; do
+  out=${tc%%|*}
+  rest=${tc#*|}
+  want=${rest%%|*}
+  name=${rest#*|}
+  got=$(gotmp_for "$out") || fail "gotmp_default failed for $name"
+  [ "$got" = "$want" ] || fail "Go temp folder for $name is $got, want $want"
+done
+got=$(gotmp_for "" 1) || fail "gotmp_default failed when stat fails"
+[ "$got" = /tmp/agent-net-gotmp ] || fail "Go temp folder when stat fails is $got, want /tmp/agent-net-gotmp"
+
 echo "test-changed-test: ok"

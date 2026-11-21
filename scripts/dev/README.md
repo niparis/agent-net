@@ -6,7 +6,7 @@ agent-net never need them.
 ## gocache-trim.sh
 
 Workers that build agent-net share one Go build cache, `/tmp/agent-net-gocache`,
-and one build temp folder, `/tmp/agent-net-gotmp` (see `.agent-net/worker.md`).
+and one build temp folder, `/dev/shm/agent-net-gotmp` when that tmpfs has room, else `/tmp/agent-net-gotmp` (see `scripts/gotmpdir.sh` and `.agent-net/worker.md`).
 Go never trims its cache by size, so the script:
 
 - deletes cache files unused for two hours;

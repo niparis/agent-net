@@ -186,11 +186,16 @@ func (d *Daemon) startAgy(ctx context.Context, w *worker) error {
 	for _, path := range gitDirs {
 		args = append(args, "--add-dir", path)
 	}
-	// The package caches of the worker (UV_CACHE_DIR and the others).
+	// The package caches of the worker (UV_CACHE_DIR and the others), and the
+	// Go temp folder the worker's go command writes to (GOTMPDIR).
 	if permissions != protocol.WorkersReadOnly {
 		cache := d.workerCacheRoot(w)
 		if err := os.MkdirAll(cache, 0o700); err == nil {
 			args = append(args, "--add-dir", cache)
+		}
+		goTmp := d.workerGoTmpDir()
+		if err := os.MkdirAll(goTmp, 0o700); err == nil {
+			args = append(args, "--add-dir", goTmp)
 		}
 	}
 	if native != "" {

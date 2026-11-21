@@ -93,11 +93,7 @@ func (d *Daemon) bootstrapOutput(ctx context.Context, w *worker, cmdText string)
 		if err != nil {
 			return "", err
 		}
-		tmp := osSandboxTmpEnv(filepath.Join(in.WorkerDir, "tmp"))
-		set := map[string]string{"TMPDIR": tmp}
-		for k, v := range workerCacheVars(filepath.Join(tmp, "cache")) {
-			set[k] = v
-		}
+		set := osSandboxSetEnv(osSandboxTmpEnv(filepath.Join(in.WorkerDir, "tmp")))
 		env = workerEnv(env, set)
 		args = osSandboxCommand(buildOSSandboxPolicy(in), bin, args)
 		bin = tool

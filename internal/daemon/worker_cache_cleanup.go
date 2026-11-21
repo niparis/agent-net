@@ -29,6 +29,8 @@ func (d *Daemon) workerGoCacheDir() string {
 	return "/tmp/agent-net-gocache"
 }
 
+// workerGoTmpDir is the Go temp folder of workers and their sandboxes: a RAM
+// folder when /dev/shm has room, else the disk folder (see defaultGoTmpDir).
 func (d *Daemon) workerGoTmpDir() string {
 	if d.cfg.WorkerGoTmp != "" {
 		return d.cfg.WorkerGoTmp
@@ -36,7 +38,7 @@ func (d *Daemon) workerGoTmpDir() string {
 	if v := os.Getenv("AGENT_NET_GOTMPDIR"); v != "" {
 		return v
 	}
-	return "/tmp/agent-net-gotmp"
+	return defaultGoTmpDir(d.shmNow())
 }
 
 func ownerGoBuildCacheDir(homeDir string) string {
