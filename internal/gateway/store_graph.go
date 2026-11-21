@@ -52,14 +52,7 @@ func graphKind(tx *sql.Tx, name string) (string, error) {
 			return "", err
 		}
 		if !repo {
-			var agent bool
-			if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM agents WHERE id=? AND tombstone=0)`, name).Scan(&agent); err != nil {
-				return "", err
-			}
-			if !agent {
-				return "", reject("unknown node %q", name)
-			}
-			return "agent", nil
+			return "", reject("unknown node %q", name)
 		}
 	}
 	return "component", nil
@@ -353,12 +346,15 @@ func (s *Store) SetNodeSetting(node, setting, value, actor string, validate ...b
 		return err
 	}
 	defer tx.Rollback()
-	nodeKind, err := graphKind(tx, node)
-	if err != nil {
-		return err
-	}
 	targetLevel := "repo"
-	if nodeKind == "agent" {
+	if _, err := graphKind(tx, node); err != nil {
+		var agentExists bool
+		if aerr := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM agents WHERE id=? AND tombstone=0)`, node).Scan(&agentExists); aerr != nil {
+			return aerr
+		}
+		if !agentExists {
+			return err
+		}
 		targetLevel = "agent"
 	}
 	if key, moved := deliveryNodeKeys[setting]; moved {

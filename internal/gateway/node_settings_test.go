@@ -204,3 +204,42 @@ func TestAgentNodeLoopSettings(t *testing.T) {
 		t.Errorf("loop_every still present after clear: %#v", res.Overrides)
 	}
 }
+
+func TestAgentNodeCharterAndEdgeRejected(t *testing.T) {
+	s, _ := newTestStore(t)
+	if _, err := s.db.Exec(`INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES('homelab-lead','homelab-lead','',0,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddArchitect("shop", "owner"); err != nil {
+		t.Fatal(err)
+	}
+
+	// charter_set on an agent node must be rejected and write no charter_values row at any level for that id.
+	if err := s.SetCharter("homelab-lead", "purpose", "stand alone", "owner"); err == nil {
+		t.Fatal("SetCharter on agent node was accepted; want rejection")
+	}
+	var count int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM charter_values WHERE scope='homelab-lead'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("charter_values has %d rows for homelab-lead, want 0", count)
+	}
+	g, err := s.Graph()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range g.Nodes {
+		if n.Name == "homelab-lead" {
+			t.Fatalf("Graph() contains homelab-lead as a node: %+v", n)
+		}
+	}
+
+	// An edge with an agent id endpoint must be rejected.
+	if err := s.SetEdge(protocol.Edge{From: "homelab-lead", To: "shop", Kind: "depends"}, "owner"); err == nil {
+		t.Fatal("SetEdge with agent node as source was accepted; want rejection")
+	}
+	if err := s.SetEdge(protocol.Edge{From: "shop", To: "homelab-lead", Kind: "depends"}, "owner"); err == nil {
+		t.Fatal("SetEdge with agent node as target was accepted; want rejection")
+	}
+}
