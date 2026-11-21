@@ -113,6 +113,27 @@ func TestRestoreBringsBackATableALaterMigrationDropped(t *testing.T) {
 	}
 }
 
+// The OAuth clients rework dropped oauth_clients and app_refresh_budget. A test
+// that rewinds before it needs both back, empty, because the rework already
+// moved their facts into apps and app_tokens.
+func TestRestoreBringsBackTheOAuthTables(t *testing.T) {
+	s, _ := newTestStore(t)
+	before := migrationVersion(t, oauthClientsMarker) - 1
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>?`, before); err != nil {
+		t.Fatal(err)
+	}
+	restoreRepoSideTables(t, s.db)
+	for _, name := range []string{"oauth_clients", "app_refresh_budget"} {
+		if !tableExists(t, s, name) {
+			t.Fatalf("%s is missing after the restore", name)
+		}
+		var n int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM ` + name).Scan(&n); err != nil || n != 0 {
+			t.Fatalf("restored %s holds %d rows, want none (%v)", name, n, err)
+		}
+	}
+}
+
 // Only replayMigrations calls migrate in a test. A direct call replays without
 // the tables that later migrations dropped, and fails on the first drop it
 // reaches. The helper file itself is the one exception.

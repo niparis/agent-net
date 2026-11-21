@@ -1567,17 +1567,23 @@ policy, for example with a tag. tsnet sends its logs to Tailscale's log
 service, as tailscaled does. Uninstall logs the node out and deletes the folder,
 only when it has agent-net's marker.
 
-Each OAuth sign-in requires a fresh code approved by the owner. Unapproved
-registrations expire after one hour and are limited to five per source per
+Each OAuth sign-in requires a fresh code approved by the owner. A client made
+by registration is a row in the apps table in the `registered` state. It has no
+name and cannot get tokens, and it does not show in Connected apps, the CTO's
+apps list or the app operations (grant, rename, revoke) until the owner
+approves it. Unapproved registrations expire after one hour and are limited to five per source per
 hour and 200 total. Pending sign-ins expire after ten minutes and are limited
 to three per client, three per source, and 20 total. Oldest unapproved entries
 are evicted when a total pool is full. Access tokens are limited to 20 per app.
 Refresh tokens rotate; reuse of a consumed token revokes its token family.
-Each family may rotate at most 200 times in a 24-hour window starting at its
-first rotation. Exceeding the limit revokes the family and requires a new
-sign-in. The gateway retains up to 2,000 consumed refresh hashes per app,
-deleting the oldest first, and deletes any remaining hashes 90 days after use.
+Each family may rotate at most 200 times in any 24 hours. The gateway counts
+the family's used refresh hashes from the last 24 hours, so the count slides
+with the clock and a burst at the edge of a day cannot double the limit.
+Exceeding the limit revokes the family and requires a new sign-in. The
+gateway retains up to 2,000 consumed refresh hashes per app, deleting the oldest first, and deletes any remaining hashes 90 days after use.
 A reused hash that has been removed can no longer trigger family revocation.
+The count reads those hashes, so the cap of 2,000 per app could remove one
+early only if the app's other families rotated more than 2,000 times since.
 Before an authorization code is exchanged, its plaintext is stored temporarily
 in the private gateway database so a lost polling response can be retried with
 the same code. It expires after 45 seconds, is cleared on exchange or cleanup,

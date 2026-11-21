@@ -67,7 +67,7 @@ func TestConnectedAppsOperatorToGateway(t *testing.T) {
 	}
 	defer db.Close()
 	now := time.Now()
-	_, err = db.Exec(`INSERT INTO oauth_clients (client_id,client_name,redirect_uris,grant_types,response_types,token_endpoint_auth_method,created_at) VALUES ('c','Cursor','["https://client.example/cb"]','[]','[]','none',?)`, now.UnixNano())
+	_, err = db.Exec(`INSERT INTO apps (id,name,kind,client_id,client_name,redirect_uris,created_at,state) VALUES ('app_c','','owner_app','c','Cursor','["https://client.example/cb"]',?,'registered')`, now.UnixNano())
 	if err != nil {
 		t.Fatal(err)
 	}

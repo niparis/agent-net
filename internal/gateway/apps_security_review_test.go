@@ -69,7 +69,7 @@ func TestOAuthRegistrationAndPendingFairness(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := s.db.Exec(`UPDATE oauth_clients SET source='one-flood-source'`); err != nil {
+	if _, err := s.db.Exec(`UPDATE apps SET source='one-flood-source'`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.registerOAuthClient(oauthClient{ClientName: "other"}, c.t, "new-source"); err != nil {
@@ -358,7 +358,13 @@ func TestAppTokenFamilyMigrationUpgrade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.db.Exec(`DROP INDEX app_tokens_family; DROP INDEX oauth_clients_source; DROP INDEX oauth_pending_source; DROP TABLE oauth_attempts; ALTER TABLE app_tokens DROP COLUMN family_id; ALTER TABLE app_tokens DROP COLUMN used_at; ALTER TABLE oauth_clients DROP COLUMN source; ALTER TABLE oauth_pending DROP COLUMN source; DELETE FROM schema_version WHERE version >= ?`, migrationVersion(t, "Token families and source limits"))
+	// Rewind first: the restore brings back oauth_clients as it was before this
+	// migration, without its source column.
+	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version >= ?`, migrationVersion(t, "Token families and source limits")); err != nil {
+		t.Fatal(err)
+	}
+	restoreRepoSideTables(t, s.db)
+	_, err = s.db.Exec(`DROP INDEX app_tokens_family; DROP INDEX oauth_pending_source; DROP TABLE oauth_attempts; ALTER TABLE app_tokens DROP COLUMN family_id; ALTER TABLE app_tokens DROP COLUMN used_at; ALTER TABLE oauth_pending DROP COLUMN source`)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -250,17 +250,9 @@ Messages between sessions, their delivery records, and automatic nudges.
 
 Connected apps, and the OAuth sign-in they use.
 
-### app_refresh_budget
-
-- **Holds:** One row per refresh-token family counting how many times it rotated in the current 24 hour window.
-- **Written by:** `gateway/apps.go`
-- **Read by:** `gateway/apps.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Until no token of the family is left; swept every 10 minutes.
-
 ### app_tokens
 
-- **Holds:** One row per hashed access or refresh token of a connected app, with its type, expiry, token family and the time it was used.
+- **Holds:** One row per hashed access or refresh token of a connected app, with its type, expiry, token family and the time it was used. The rotations of a token family in the last 24 hours are its used refresh hashes.
 - **Written by:** `gateway/apps.go`, `gateway/oauth_store.go`, `gateway/phone_auth.go`
 - **Read by:** `gateway/apps.go`, `gateway/oauth_store.go`, `gateway/phone_auth.go`
 - **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
@@ -268,11 +260,11 @@ Connected apps, and the OAuth sign-in they use.
 
 ### apps
 
-- **Holds:** One row per connected app (phone, bot or other client): name, kind, OAuth client, redirect addresses, when created and last used, when revoked, and what it is granted.
+- **Holds:** One row per connected app (phone, bot or other client): name, kind, OAuth client (name, redirect addresses, grant types, where it came from), when created and last used, when revoked, and what it is granted. A client that registered itself and waits for the owner is a row in the `registered` state, with no name; approval makes it the app.
 - **Written by:** `gateway/apps.go`, `gateway/oauth_store.go`, `gateway/phone_tailnet.go`
 - **Read by:** `gateway/apps.go`, `gateway/bot_agent.go`, `gateway/bot_mcp_grant.go`, `gateway/bot_names.go`, `gateway/bot_session.go`, `gateway/oauth_store.go`, `gateway/phone_auth.go`, `gateway/phone_pairing.go`, `gateway/phone_tailnet.go`, `gateway/store.go` and others
-- **Shown in:** TUI, Settings; CTO op `apps_list`; CTO op `app_grant`; CTO op `app_ungrant`; CTO op `app_rename`; CTO op `app_revoke`
-- **Kept:** Forever; a revoked app is only marked revoked.
+- **Shown in:** TUI, Settings; CTO op `apps_list`; CTO op `app_grant`; CTO op `app_ungrant`; CTO op `app_rename`; CTO op `app_revoke`. A registered row is not shown.
+- **Kept:** An app forever; a revoked app is only marked revoked. A registered row 1 hour if the owner does not approve it; swept every 10 minutes.
 
 ### oauth_attempts
 
@@ -281,14 +273,6 @@ Connected apps, and the OAuth sign-in they use.
 - **Read by:** `gateway/oauth_store.go`, `gateway/server.go`
 - **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
 - **Kept:** Registrations 1 hour, wrong codes 10 minutes.
-
-### oauth_clients
-
-- **Holds:** One row per OAuth client an app registered (or a phone pairing created): client name, redirect addresses, grant types and where it came from.
-- **Written by:** `gateway/oauth_store.go`, `gateway/phone_pairing.go`
-- **Read by:** `gateway/oauth_store.go`
-- **Shown in:** TUI, Settings
-- **Kept:** For 1 hour if no connected app uses it; kept while an app does; swept every 10 minutes.
 
 ### oauth_codes
 

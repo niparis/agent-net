@@ -28,9 +28,6 @@ func (s *Store) newPhonePending(name, source string, now time.Time) (oauthPendin
 		return p, err
 	}
 	var count int
-	if _, err = tx.Exec(`INSERT OR IGNORE INTO oauth_clients (client_id,client_name,redirect_uris,grant_types,response_types,token_endpoint_auth_method,created_at) VALUES ('phone','Phone','[]','[]','[]','none',?)`, now.UnixNano()); err != nil {
-		return p, err
-	}
 	p.ID, err = oauthRandom(16)
 	if err != nil {
 		return p, err

@@ -230,7 +230,7 @@ func seedAppPending(t *testing.T, g *testGateway) {
 	}
 	defer db.Close()
 	now := time.Now()
-	if _, err := db.Exec(`INSERT INTO oauth_clients(client_id,client_name,redirect_uris,grant_types,response_types,token_endpoint_auth_method,created_at) VALUES('fixture','Fixture','["https://client.example/cb"]','[]','[]','none',?)`, now.UnixNano()); err != nil {
+	if _, err := db.Exec(`INSERT INTO apps(id,name,kind,client_id,client_name,redirect_uris,created_at,state) VALUES('app_fixture','','owner_app','fixture','Fixture','["https://client.example/cb"]',?,'registered')`, now.UnixNano()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`INSERT INTO oauth_pending(id,user_code,client_id,redirect_uri,code_challenge,state,resource,created_at,expires_at,status) VALUES('pending-fixture','ABC234','fixture','https://client.example/cb','','','',?,?,'pending')`, now.UnixNano(), now.Add(time.Minute).UnixNano()); err != nil {
