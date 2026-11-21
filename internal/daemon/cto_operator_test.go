@@ -107,15 +107,17 @@ func TestCTOOperatorEdgeSetReportsTo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var moveNotice *protocol.InboxItem
-	for i := range items {
-		if len(items[i].Options) == 2 && strings.Contains(items[i].Text, "parent2") {
-			moveNotice = &items[i]
+	// The notices are in the order the CTO applied them: set, then move.
+	var undos []protocol.InboxItem
+	for _, it := range items {
+		if len(it.Options) == 2 && it.Options[0] == "graph_undo" {
+			undos = append(undos, it)
 		}
 	}
-	if moveNotice == nil {
-		t.Fatalf("undo notice for the move missing: %+v", items)
+	if len(undos) != 2 {
+		t.Fatalf("want one undo notice per edge_set (set, move), got %d: %+v", len(undos), items)
 	}
+	moveNotice := &undos[1]
 	cli.mustCall(moveNotice.Options[0], json.RawMessage(moveNotice.Options[1]))
 	if _, err := g.gw.Store().StoredEdge(protocol.Edge{From: "child", To: "parent1", Kind: "reports_to"}); err != nil {
 		t.Fatalf("after undo child should report to parent1 again: %v", err)
