@@ -4214,8 +4214,9 @@ session says which of three cases applies:
   message or by an earlier one. The receipt does not repeat an earlier failure.
 - `queued; <name> is offline and its last wake failed: <reason>`. No wake is
   under way, and the last wake the machine refused for a reason has not been
-  cleared by a wake that worked. The sender also gets one notice with the same
-  reason.
+  cleared by a wake that worked or by the session coming online. The sender
+  also gets one notice with the same reason. It says that the next message sent
+  after the 10 minute wake backoff asks for a wake again.
 
 What each harness does:
 

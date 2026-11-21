@@ -25,6 +25,31 @@ type wakeProbe struct {
 	refusal string
 	// gate, when set, holds the machine's answer to a wake until it is closed.
 	gate chan struct{}
+	// online makes an accepted wake bring the session online, as a real machine does.
+	online bool
+}
+
+// bringsSessionsOnline makes the machine register the session when it accepts a wake.
+func (p *wakeProbe) bringsSessionsOnline() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.online = true
+}
+
+// cameOnline registers the woken session online, if the probe is set to.
+func (p *wakeProbe) cameOnline(session string) error {
+	p.mu.Lock()
+	on := p.online
+	p.mu.Unlock()
+	if !on {
+		return nil
+	}
+	a, ok, err := p.s.Agent(session)
+	if err != nil || !ok {
+		return err
+	}
+	_, err = p.s.UpsertSession(p.node, protocol.SessionInfo{Harness: a.Harness, NativeID: a.NativeID, Cwd: a.Cwd, Mode: a.Mode, Status: "idle"})
+	return err
 }
 
 func (p *wakeProbe) setRefusal(reason string) {
@@ -95,6 +120,7 @@ func newWakeProbeRefusing(t *testing.T, refusal string) *wakeProbe {
 			if reason := p.wakeRefusal(); reason != "" {
 				return errors.New(reason)
 			}
+			return p.cameOnline(m["session_id"])
 		}
 		return nil
 	})

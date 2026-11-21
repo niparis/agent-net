@@ -3779,6 +3779,14 @@ tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harne
 	if err := setBusySince(q, id, in.Status, knownStatus, now); err != nil {
 		return "", false, err
 	}
+	// A session that registers online has been woken, whatever an earlier
+	// wake wait concluded. Leaving the failure would tell senders it cannot
+	// be woken the next time it is offline.
+	if online == 1 {
+		if _, err := q.Exec(`UPDATE session_wakes SET wake_failed_at=0,wake_failed_reason='' WHERE session_id=? AND wake_failed_at>0`, id); err != nil {
+			return "", false, err
+		}
+	}
 	if waiting != knownWaiting {
 		if err := s.syncWaitingAsk(q, id, waiting); err != nil {
 			return "", false, err

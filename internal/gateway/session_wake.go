@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -151,7 +152,7 @@ func (g *Gateway) waitingReason(a protocol.AgentView, m protocol.Message) string
 		return ""
 	}
 	if reason, ok := g.store.wakeFailure(a.SessionID); ok {
-		return "it is offline, and its last wake failed: " + strings.TrimSuffix(reason, ".") + ". It is delivered when the session starts again"
+		return "it is offline, and its last wake failed: " + strings.TrimSuffix(reason, ".") + ". It is delivered when the session starts again. The next message sent after " + strconv.Itoa(int(wakeBackoff.Minutes())) + " minutes asks for a wake again"
 	}
 	return ""
 }
@@ -176,7 +177,11 @@ func (g *Gateway) tellWaiting(ctx context.Context, a protocol.AgentView, m proto
 // session online (decision 0099). A machine can accept a wake and start
 // nothing, for instance when it holds the session live already, so the
 // gateway checks the result instead of trusting the answer.
-const onlineWait = 30 * time.Second
+//
+// A cold Claude or Codex start on a loaded machine can take more than 30
+// seconds, so the wait is 2 minutes. A session that comes online later clears
+// the failure this wait records (see upsertSession).
+const onlineWait = 2 * time.Minute
 
 // awaitOnline waits until the session is online, up to the gateway's online
 // wait. It returns an error that says so when it is not. A read error is not a

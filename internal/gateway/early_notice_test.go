@@ -154,3 +154,57 @@ func TestBusyHoldOfSessionThatWentOfflineIsReleased(t *testing.T) {
 		t.Fatalf("message after sweep: held=%v state=%s ok=%v err=%v", got.HeldForBusy, got.State, ok, err)
 	}
 }
+
+// A wake that worked but took longer than the online wait is recorded as failed.
+// When the session then registers online, the record must go: otherwise the next
+// time it is offline, senders hear at once that it will not be woken.
+func TestSessionComingOnlineClearsRecordedWakeFailure(t *testing.T) {
+	p := newWakeProbe(t)
+	id := p.closedOpenCode(t)
+	if _, err := p.s.failWake(id, "attempt-late", "the machine accepted the wake, but the session did not come online within 30s"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.s.UpsertSession(p.node, protocol.SessionInfo{Harness: "opencode", NativeID: "opencode-native", Cwd: "/w/proj", Name: "opencode", Status: "idle",
+		// The OpenCode server reports activity after the owner closed the session.
+		OpenCodeActivity: p.s.now().Add(time.Hour).UnixMilli()}); err != nil {
+		t.Fatal(err)
+	}
+	if reason, ok := p.s.wakeFailure(id); ok {
+		t.Fatalf("wake failure still recorded after the session came online: %q", reason)
+	}
+	if err := p.s.SetSessionOffline(p.node, id); err != nil {
+		t.Fatal(err)
+	}
+	// A new message asks for a wake again and does not say the last wake failed.
+	if _, started := p.sendMessage(t, id); !started {
+		t.Fatal("the message did not start a wake")
+	}
+	for _, n := range p.agentNetNotices(t, p.from) {
+		if strings.Contains(n, "last wake failed") {
+			t.Fatalf("early notice blames an old wake: %q", n)
+		}
+	}
+}
+
+// The failure notice says what happens next, with the real backoff.
+func TestWakeFailureNoticeSaysNextMessageAsksAgain(t *testing.T) {
+	p := newWakeProbe(t)
+	id := p.closedOpenCode(t)
+	p.message(t, id)
+	p.expectWake(t, id)
+	if _, err := p.s.failWake(id, "attempt-x", "boom"); err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, n := range p.agentNetNotices(t, p.from) {
+		if strings.Contains(n, "could not be woken") {
+			found = true
+			if !strings.Contains(n, "next message sent after 10 minutes") {
+				t.Fatalf("notice does not say when agent-net asks again: %q", n)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("no failure notice")
+	}
+}

@@ -149,8 +149,8 @@ func (s *Store) wakeFailureNotice(tx *sql.Tx, to, session, attempt, reason strin
 	if err != nil {
 		return none, false, err
 	}
-	body := fmt.Sprintf("[agent-net] %s is offline and could not be woken: %s.\nYour message to it stays queued and is delivered when it starts again. This is a notice from agent-net. No reply is needed.",
-		protocol.NeutralizeMarkers(name), protocol.NeutralizeMarkers(reason))
+	body := fmt.Sprintf("[agent-net] %s is offline and could not be woken: %s.\nYour message to it stays queued. It is delivered when the session starts again, and agent-net tries to wake it again with the next message sent after %d minutes. This is a notice from agent-net. No reply is needed.",
+		protocol.NeutralizeMarkers(name), protocol.NeutralizeMarkers(reason), int(wakeBackoff.Minutes()))
 	now := s.now()
 	n := protocol.Message{ID: protocol.NewID("m"), ConversationID: protocol.NewID("c"),
 		From: "agent-net", FromName: "agent-net", FromHarness: "agent-net", To: to, Type: protocol.TypeNotification,
