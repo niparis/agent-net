@@ -292,3 +292,62 @@ func TestOwnerNameIsKept(t *testing.T) {
 		t.Fatalf("owner name %q", got)
 	}
 }
+
+// A restart that resumes the first session under a new conversation registers
+// the new record while the second session is live, so it gets "shop 2". The
+// record it replaces is the first session, whose name "shop" is free while it
+// is offline. Handing that name over would leave two live sessions named
+// "shop", and the second session's next report would renumber it: the two
+// would swap names (the homelab-agent incident of 2026-11-20).
+func TestResumeDoesNotTakeANameAliveSessionHolds(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, err := s.CreateNode("box", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := func(native string) protocol.SessionInfo {
+		return protocol.SessionInfo{Harness: "claude", NativeID: native, Cwd: "/code/shop",
+			Repo: protocol.RepoInfo{Root: "/code/shop", Project: "shop"}}
+	}
+	first, err := s.UpsertSession(node, report("n1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetSessionOffline(node, first); err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.UpsertSession(node, report("n2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := s.UpsertSession(node, report("n3"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := agentOf(t, s, resumed).Profile.Name; got != "shop 2" {
+		t.Fatalf("resumed conversation registered as %q, want shop 2", got)
+	}
+
+	if moved, err := s.ReplaceSession(node, first, resumed); err != nil || !moved {
+		t.Fatalf("replace: moved=%v err=%v", moved, err)
+	}
+	if got := agentOf(t, s, resumed).Profile.Name; got != "shop 2" {
+		t.Fatalf("the resumed session took %q, a name the live session holds", got)
+	}
+	if got := agentOf(t, s, first).Profile.Name; got != "shop" {
+		t.Fatalf("the replaced record was renamed to %q", got)
+	}
+
+	// The daemon reconnects and syncs both live sessions, as it does after a
+	// lost connection. A sync writes every row, so it is not skipped as a
+	// repeated report.
+	if _, err := s.SyncSessions(node, []protocol.SessionInfo{report("n2"), report("n3")}); err != nil {
+		t.Fatal(err)
+	}
+	if got := agentOf(t, s, second).Profile.Name; got != "shop" {
+		t.Fatalf("the live session was renamed to %q", got)
+	}
+	if got := agentOf(t, s, resumed).Profile.Name; got != "shop 2" {
+		t.Fatalf("the resumed session was renamed to %q", got)
+	}
+}

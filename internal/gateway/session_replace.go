@@ -86,6 +86,7 @@ func (s *Store) RebindResumedSession(nodeID, sessionID, nativeID string) (bool, 
 // of open and merged delivery changes and their steps, undelivered messages and open
 // requests, the agent and repo binding, and the name. The old record keeps its
 // name and says which session replaced it, so nothing is renamed to "name 2".
+// The new record takes the old name only when no other live session holds it.
 func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, error) {
 	if !validSessionID(sessionID) || !validSessionID(newSessionID) || sessionID == newSessionID {
 		return false, reject("a replaced session needs its ID and a different new session")
@@ -160,7 +161,22 @@ func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, er
 	if newWorker != "" {
 		return false, reject("a worker does not take over a restarted session")
 	}
-	name = replacedSessionName(name, newName)
+	// The conversation takes the old name only when no other live session shows
+	// it. Two live sessions must not share a name, or the holder's next report
+	// renumbers it and the two swap names (decision 0024). A refused name stays
+	// with the old record, which keeps its own name as history.
+	oldName := name
+	name = replacedSessionName(oldName, newName)
+	recordName := name
+	if name != newName {
+		held, err := liveNameHeld(tx, name, sessionID, newSessionID)
+		if err != nil {
+			return false, err
+		}
+		if held {
+			name, recordName = newName, oldName
+		}
+	}
 	now := s.now().UnixNano()
 
 	// The caller role of running and queued workers and the ratings that were
@@ -212,7 +228,7 @@ func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, er
 		return false, err
 	}
 	if _, err := tx.Exec(`UPDATE sessions SET name=?, replaced_by=?, online=0, status='replaced', waiting='' WHERE id=?`,
-		name, newSessionID, sessionID); err != nil {
+		recordName, newSessionID, sessionID); err != nil {
 		return false, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -316,6 +332,19 @@ func replacedSessionName(old, fresh string) string {
 		return old
 	}
 	return fresh
+}
+
+// liveNameHeld says whether a live session other than the two given ones shows
+// name. It uses the same rule as chooseSessionName: a name is taken by an
+// online session, and the owner's name wins over the automatic one.
+func liveNameHeld(q interface {
+	QueryRow(string, ...any) *sql.Row
+}, name, sessionID, newSessionID string) (bool, error) {
+	var held bool
+	err := q.QueryRow(`SELECT EXISTS (SELECT 1 FROM sessions s LEFT JOIN profiles p ON p.session_id = s.id
+		WHERE s.id NOT IN (?, ?) AND s.online = 1 AND NOT (`+piChildSQL+`)
+		AND COALESCE(NULLIF(p.name,''), s.name) = ?)`, sessionID, newSessionID, name).Scan(&held)
+	return held, err
 }
 
 // automaticNameParts splits "shop" and "shop 3" into the base and the number.
