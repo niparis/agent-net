@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -1747,6 +1748,11 @@ func (s *Store) queueSteps(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, n
 		c.ID, c.Revision, c.State, c.State); err != nil {
 		return err
 	}
+	if c.State == protocol.ChangeDone || c.State == protocol.ChangeStopped {
+		if _, err := tx.Exec(`DELETE FROM gateway_state WHERE key GLOB ?`, stepNodePrefix+c.ID+"/*"); err != nil {
+			return err
+		}
+	}
 	for _, step := range p.Steps {
 		if step.Step == protocol.StepApprove && step.Owner.Kind == protocol.OwnerNone {
 			if err := dismissStepInbox(tx, c, step.StepRef, s.now().UnixNano()); err != nil {
@@ -1800,6 +1806,10 @@ func (s *Store) queueSteps(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, n
 			if err := dismissStepInbox(tx, c, ref, s.now().UnixNano()); err != nil {
 				return err
 			}
+		} else if slices.ContainsFunc(evidence, func(e protocol.Evidence) bool { return e.Revision == c.Revision && e.StepRef == ref }) {
+			// A reported step whose pass did not count (not independent
+			// enough) gets no new task: its reporter may report again.
+			continue
 		}
 		result, err := tx.Exec(`INSERT OR IGNORE INTO delivery_step_tasks
 			(change_id,revision,step,for_step,after_merge,owner_node,created_at) VALUES(?,?,?,?,?,?,?)`,
@@ -2135,8 +2145,14 @@ func checkNodeTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, session,
 	if !claim {
 		return true, nil
 	}
-	// A report ends the task: its evidence is the record.
+	// A report ends the task: its evidence is the record. A node step also
+	// leaves a mark, so the node stays barred from the caller's steps.
 	if complete {
+		if !strings.HasPrefix(owner, "/") {
+			if err := stateSet(tx, stepNodePrefix+c.ID+"/"+owner, "1", time.Now().UnixNano()); err != nil {
+				return true, err
+			}
+		}
 		return true, endStepTasks(tx, `t.change_id=? AND t.revision=? AND t.step=? AND t.for_step=? AND t.after_merge=?`,
 			c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge))
 	}

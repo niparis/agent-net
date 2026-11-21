@@ -24,7 +24,9 @@ func TestStepTablesMigrationMovesEachFact(t *testing.T) {
 		`INSERT INTO delivery_changes(id,project,machine,branch,head_commit,revision,origin,state,created_at) VALUES('ch_1','demo','n1','b','h',1,'{}','open',1)`,
 		// One open step with two notices and two delegates, and two done steps.
 		`INSERT INTO delivery_step_tasks(change_id,revision,step,owner_node,created_at,completed) VALUES
-			('ch_1',1,'review','/delegate',1,0),('ch_1',1,'accept','/caller',1,1),('ch_1',1,'test','/merger',1,1)`,
+			('ch_1',1,'review','/delegate',1,0),('ch_1',1,'accept','/caller',1,1),('ch_1',1,'test','/merger',1,1),
+			('ch_1',1,'approve','nodeown',1,1),('ch_2',1,'approve','oldnode',1,1)`,
+		`INSERT INTO delivery_changes(id,project,machine,branch,head_commit,revision,origin,state,created_at) VALUES('ch_2','demo','n1','b2','h',1,'{}','done',1)`,
 		`INSERT INTO messages(id,conversation_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state) VALUES
 			('m_one','c','agent-net','s_one','notification','x',0,'step_1',1,9,'stored'),
 			('m_two','c','agent-net','s_two','notification','x',0,'step_2',1,9,'delivered'),
@@ -64,6 +66,8 @@ func TestStepTablesMigrationMovesEachFact(t *testing.T) {
 		{"an escalation that only woke", `SELECT value||':'||updated_at FROM gateway_state WHERE key='caller_escalation:s_solo'`, "0:5678"},
 		{"the notices of the open task", `SELECT json_extract(notices,'$.s_one')||json_extract(notices,'$.s_two') FROM delivery_step_tasks WHERE step='review'`, "m_onem_two"},
 		{"the delegates of the open task", `SELECT delegates FROM delivery_step_tasks WHERE step='review'`, `["agent:lead","other"]`},
+		{"a node that finished a step of a live change", `SELECT value FROM gateway_state WHERE key='step_node:ch_1/nodeown'`, "1"},
+		{"a node that finished a step of a done change", `SELECT CAST(COUNT(*) AS TEXT) FROM gateway_state WHERE key LIKE 'step_node:ch_2/%'`, "0"},
 		{"only open work stays", `SELECT group_concat(step) FROM delivery_step_tasks`, "review"},
 		{"a notice that only done tasks pointed at is expired", `SELECT state FROM messages WHERE id='m_done'`, "expired"},
 		{"a notice shared by two done tasks is expired", `SELECT state FROM messages WHERE id='m_shared'`, "expired"},

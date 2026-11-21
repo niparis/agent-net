@@ -52,6 +52,10 @@ UPDATE delivery_step_tasks SET delegates=(SELECT json_group_array(d.node) FROM d
 UPDATE messages SET state='expired' WHERE state IN ('stored','dispatched')
  AND id IN (SELECT d.message_id FROM delivery_step_messages d JOIN delivery_step_tasks t USING(change_id,revision,step,for_step,after_merge) WHERE t.completed=1)
  AND id NOT IN (SELECT d.message_id FROM delivery_step_messages d JOIN delivery_step_tasks t USING(change_id,revision,step,for_step,after_merge) WHERE t.completed=0);
+-- A node that finished a step of a live change stays barred from its caller steps.
+INSERT OR IGNORE INTO gateway_state(key,value,updated_at)
+ SELECT DISTINCT 'step_node:'||t.change_id||'/'||t.owner_node,'1',0 FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id
+ WHERE t.completed=1 AND t.owner_node NOT LIKE '/%' AND c.state IN ('open','merged');
 DELETE FROM delivery_step_tasks WHERE completed=1;
 DROP TABLE delivery_step_messages;
 DROP TABLE delivery_step_delegates;

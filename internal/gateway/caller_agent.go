@@ -36,16 +36,23 @@ CREATE TABLE IF NOT EXISTS caller_step_escalations (
  owner_key TEXT PRIMARY KEY, woken_at INTEGER NOT NULL, lead_offered INTEGER NOT NULL DEFAULT 0);
 `
 
+// stepNodePrefix starts the gateway_state key "step_node:<change>/<node>" that
+// says node did a node step of the change. A done step keeps no task, so this
+// key and the open tasks are what ownsOtherStepSQL reads. A slash cannot occur
+// in a node name.
+const stepNodePrefix = "step_node:"
+
 // ownsOtherStepSQL is true when session a owns a step of change c that is not
-// a caller step: it is the project's merger for the change's machine, or the
-// node that owns a node step of the change. Such a session does its own step.
-// It is never handed the caller's steps, and may not act on them, so one
-// session does not accept, test and merge the same change. It uses the same
-// identity checks as the step dispatch.
+// a caller step, done or open: it is the project's merger for the change's
+// machine, or the node that owns a node step of the change. Such a session
+// does its own step. It is never handed the caller's steps, and may not act on
+// them, so one session does not accept, test and merge the same change. It
+// uses the same identity checks as the step dispatch.
 func ownsOtherStepSQL(a string) string {
+	node := `COALESCE(` + a + `.repo_id,NULLIF(` + a + `.repo_project,''),` + a + `.announced_project)`
 	return `(` + mergerSessionSQL(a) + `
- OR EXISTS(SELECT 1 FROM delivery_step_tasks o WHERE o.change_id=c.id AND o.owner_node NOT LIKE '/%'
- AND o.owner_node=COALESCE(` + a + `.repo_id,NULLIF(` + a + `.repo_project,''),` + a + `.announced_project)))`
+ OR EXISTS(SELECT 1 FROM delivery_step_tasks o WHERE o.change_id=c.id AND o.owner_node NOT LIKE '/%' AND o.owner_node=` + node + `)
+ OR EXISTS(SELECT 1 FROM gateway_state d WHERE d.key='` + stepNodePrefix + `'||c.id||'/'||` + node + `))`
 }
 
 var (

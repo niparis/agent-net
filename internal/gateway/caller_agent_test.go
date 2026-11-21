@@ -443,3 +443,64 @@ func TestCallerWakeNotSentWhileASessionOfTheAgentIsOnline(t *testing.T) {
 		t.Fatalf("woke the agent while its session %s is online: %d wake messages, %v", r.second, n, err)
 	}
 }
+
+// A session of the caller's agent that finished a node step of a change stays
+// barred from the caller's steps of that change, although a finished step
+// leaves no task behind: one session does not review and then accept.
+func TestSessionThatFinishedNodeStepStaysBarredFromCallerSteps(t *testing.T) {
+	r := newCallerAgentRig(t)
+	if err := r.s.AddArchitect("nodeown", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.SetEdge(protocol.Edge{From: "nodeown", To: "demo", Kind: "reviews"}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	q := r.workerSubmit("feature/finished-node-step", commitA)
+	q.SessionID, q.Difficulty = r.caller, "hard"
+	id := r.submit(r.a, q).Change.Change.ID
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: stepAccept, Result: protocol.StepResultPass, Commit: commitA})
+	node, err := r.s.UpsertSession(r.a, protocol.SessionInfo{Harness: "claude", NativeID: "nodeown", Repo: protocol.RepoInfo{Project: "nodeown"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = r.s.db.Exec(`UPDATE sessions SET agent_id='alpha' WHERE id=?`, node); err != nil {
+		t.Fatal(err)
+	}
+	review := protocol.StepRef{Step: protocol.StepReview}
+	acts := func() bool {
+		t.Helper()
+		ok, err := sessionActsForCaller(r.s.db, r.get(id).Change, protocol.StepRef{Step: protocol.StepTest}, node)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	if acts() {
+		t.Fatal("the node's session may act for the caller while its step is open")
+	}
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: node, ChangeID: id, StepRef: review, Result: protocol.StepResultPass, Commit: commitA})
+	var open int
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_tasks WHERE change_id=? AND step='review'`, id).Scan(&open); err != nil || open != 0 {
+		t.Fatalf("a reported step kept %d tasks, %v", open, err)
+	}
+	if acts() {
+		t.Fatal("the node's session may act for the caller after its step finished")
+	}
+}
+
+// A pass that does not count (not independent enough) leaves the step without
+// a task, as before: its reporter may report again, and nobody is notified.
+func TestUncountedPassQueuesNoNewTask(t *testing.T) {
+	r := newDeliveryRig(t)
+	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.pipeline.review.independent", Level: "repo", Scope: "demo", Value: json.RawMessage(`"family"`)}}, "owner", "test"); err != nil {
+		t.Fatal(err)
+	}
+	id := r.submit(r.a, protocol.ChangeSubmitRequest{SessionID: r.caller, Project: "demo", Branch: "agent-net/uncounted", HeadCommit: commitA, Difficulty: "hard",
+		Origin: protocol.ChangeOrigin{Kind: protocol.OriginSession, SessionID: r.caller}}).Change.Change.ID
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: protocol.StepRef{Step: protocol.StepReview},
+		Result: protocol.StepResultPass, Commit: commitA, Fields: map[string]string{protocol.FieldFindingsOpen: "0"}})
+	var tasks int
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_tasks WHERE change_id=? AND step='review'`, id).Scan(&tasks); err != nil || tasks != 0 {
+		t.Fatalf("an uncounted pass left %d review tasks, %v", tasks, err)
+	}
+}
