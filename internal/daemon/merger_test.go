@@ -106,9 +106,6 @@ func TestMergerStartStopProposal(t *testing.T) {
 			if got := env["GOCACHE"]; got != target.d.workerGoCacheDir() {
 				t.Fatalf("merger GOCACHE = %v, want %s", got, target.d.workerGoCacheDir())
 			}
-			if got := env["GOTMPDIR"]; got != target.d.workerGoTmpDir() {
-				t.Fatalf("merger GOTMPDIR = %v, want %s", got, target.d.workerGoTmpDir())
-			}
 			if started.EnterPlan != nil {
 				t.Fatalf("merger opened a view: %+v", started.EnterPlan)
 			}

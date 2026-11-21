@@ -193,7 +193,7 @@ func (d *Daemon) startAgy(ctx context.Context, w *worker) error {
 		if err := os.MkdirAll(cache, 0o700); err == nil {
 			args = append(args, "--add-dir", cache)
 		}
-		goTmp := d.workerGoTmpDir()
+		goTmp := d.workerSandboxGoTmpDir()
 		if err := os.MkdirAll(goTmp, 0o700); err == nil {
 			args = append(args, "--add-dir", goTmp)
 		}

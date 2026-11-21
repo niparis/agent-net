@@ -69,7 +69,7 @@ func TestCodexRoleStartUsesUnattendedPolicy(t *testing.T) {
 				}
 				sandbox := cfg["sandbox_workspace_write"].(map[string]any)
 				roots := anyStrings(sandbox["writable_roots"])
-				for _, want := range []string{filepath.Join(repo, ".git", "objects"), filepath.Join(repo, ".git", "refs"), filepath.Join(repo, ".git", "logs"), filepath.Join(repo, ".git", "worktrees", "shop"), n.d.workerGoCacheDir(), n.d.workerGoTmpDir()} {
+				for _, want := range []string{filepath.Join(repo, ".git", "objects"), filepath.Join(repo, ".git", "refs"), filepath.Join(repo, ".git", "logs"), filepath.Join(repo, ".git", "worktrees", "shop"), n.d.workerGoCacheDir(), n.d.workerSandboxGoTmpDir()} {
 					found := false
 					for _, root := range roots {
 						found = found || root == want

@@ -293,7 +293,7 @@ func claudeWriteRule(dir string) string {
 func (d *Daemon) claudeWorkerWrites(dir string) []string {
 	paths := []string{dir}
 	paths = append(paths, workerGitRoots(context.Background(), dir)...)
-	paths = append(paths, d.workerGoModCache(dir), d.workerGoCacheDir(), d.workerGoTmpDir())
+	paths = append(paths, d.workerGoModCache(dir), d.workerGoCacheDir(), d.workerSandboxGoTmpDir())
 	var out []string
 	seen := map[string]bool{}
 	for _, p := range paths {

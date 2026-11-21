@@ -4,8 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/harnesses"
 )
@@ -13,17 +13,29 @@ import (
 // roomy is a /dev/shm tmpfs with more room than the minimum.
 func roomy() shmInfo { return shmInfo{tmpfs: true, free: 8 << 30} }
 
+// useGoTmpFolders points the two Go temp folders at temp folders of the test, so
+// no test makes a folder under the real /dev/shm or /tmp.
+func useGoTmpFolders(t *testing.T) (shm, disk string) {
+	t.Helper()
+	shm, disk = filepath.Join(t.TempDir(), "shm"), filepath.Join(t.TempDir(), "disk")
+	prevShm, prevDisk := gotmpShmDir, gotmpDiskDir
+	gotmpShmDir, gotmpDiskDir = shm, disk
+	t.Cleanup(func() { gotmpShmDir, gotmpDiskDir = prevShm, prevDisk })
+	return shm, disk
+}
+
 func TestDefaultGoTmpDirUsesRAMOnlyWhenItHasRoom(t *testing.T) {
+	shm, disk := useGoTmpFolders(t)
 	for _, tc := range []struct {
 		name string
 		shm  shmInfo
 		want string
 	}{
-		{"tmpfs with room", roomy(), gotmpShmDir},
-		{"tmpfs with exactly the minimum", shmInfo{tmpfs: true, free: gotmpShmMinFree}, gotmpShmDir},
-		{"tmpfs one byte short", shmInfo{tmpfs: true, free: gotmpShmMinFree - 1}, gotmpDiskDir},
-		{"not a tmpfs", shmInfo{tmpfs: false, free: 8 << 30}, gotmpDiskDir},
-		{"no /dev/shm to probe", shmInfo{}, gotmpDiskDir},
+		{"tmpfs with room", roomy(), shm},
+		{"tmpfs with exactly the minimum", shmInfo{tmpfs: true, free: gotmpShmMinFree}, shm},
+		{"tmpfs one byte short", shmInfo{tmpfs: true, free: gotmpShmMinFree - 1}, disk},
+		{"not a tmpfs", shmInfo{tmpfs: false, free: 8 << 30}, disk},
+		{"no /dev/shm to probe", shmInfo{}, disk},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := defaultGoTmpDir(tc.shm); got != tc.want {
@@ -36,6 +48,7 @@ func TestDefaultGoTmpDirUsesRAMOnlyWhenItHasRoom(t *testing.T) {
 // Each worker start reads /dev/shm again, so a tmpfs that fills up moves the
 // next worker to the disk folder.
 func TestWorkerGoTmpDirFollowsTheRoomAtEachCall(t *testing.T) {
+	shm, disk := useGoTmpFolders(t)
 	t.Setenv("AGENT_NET_GOTMPDIR", "")
 	probes := []shmInfo{roomy(), {tmpfs: true, free: 1 << 20}}
 	d := &Daemon{cfg: Config{testShm: func() shmInfo {
@@ -43,18 +56,22 @@ func TestWorkerGoTmpDirFollowsTheRoomAtEachCall(t *testing.T) {
 		probes = probes[1:]
 		return p
 	}}}
-	if got := d.workerGoTmpDir(); got != gotmpShmDir {
-		t.Fatalf("first worker: %s, want %s", got, gotmpShmDir)
+	if got := d.workerGoTmpDir(); got != shm {
+		t.Fatalf("first worker: %s, want %s", got, shm)
 	}
-	if got := d.workerGoTmpDir(); got != gotmpDiskDir {
-		t.Fatalf("second worker: %s, want %s", got, gotmpDiskDir)
+	if got := d.workerGoTmpDir(); got != disk {
+		t.Fatalf("second worker: %s, want %s", got, disk)
 	}
 }
 
 func TestExplicitGoTmpDirWinsOverRAM(t *testing.T) {
+	useGoTmpFolders(t)
 	d := &Daemon{cfg: Config{WorkerGoTmp: "/configured/gotmp", testShm: func() shmInfo { return roomy() }}}
 	if got := d.workerGoTmpDir(); got != "/configured/gotmp" {
 		t.Fatalf("config value lost: %s", got)
+	}
+	if got := d.workerSandboxGoTmpDir(); got != "/configured/gotmp" {
+		t.Fatalf("config value lost for a sandbox: %s", got)
 	}
 	t.Setenv("AGENT_NET_GOTMPDIR", "/env/gotmp")
 	d.cfg.WorkerGoTmp = ""
@@ -63,18 +80,34 @@ func TestExplicitGoTmpDirWinsOverRAM(t *testing.T) {
 	}
 }
 
-// A worker's shell gets the folder as GOTMPDIR, and the folder exists before the
-// first go command runs in it.
-func TestWorkerToolEnvSetsGOTMPDIR(t *testing.T) {
-	d := commitTestDaemon(t)
-	d.cfg.HarnessSearch = &harnesses.Options{LoginShellPATH: func(context.Context) string { return "" }}
-	w := envWorker(t, d)
-	got := d.workerToolEnv(w)["GOTMPDIR"]
-	if want := d.workerGoTmpDir(); got != want {
-		t.Fatalf("GOTMPDIR = %q, want %q", got, want)
-	}
-	if fi, err := os.Stat(got); err != nil || !fi.IsDir() {
-		t.Fatalf("Go temp folder not made: %v", err)
+// A worker's shell gets a Go temp folder it can see. A sandbox that mounts its
+// own /dev cannot see the RAM folder the daemon makes, so those harnesses get
+// the disk folder. The folder exists before the first go command runs in it.
+func TestWorkerToolEnvPicksTheGoTempFolderPerHarness(t *testing.T) {
+	shm, disk := useGoTmpFolders(t)
+	t.Setenv("AGENT_NET_GOTMPDIR", "")
+	for _, tc := range []struct{ harness, want string }{
+		{"claude", disk},
+		{"codex", disk},
+		{"agy", disk},
+		{"pi", shm},
+		{"opencode", shm},
+	} {
+		t.Run(tc.harness, func(t *testing.T) {
+			d := commitTestDaemon(t)
+			d.cfg.WorkerGoTmp = ""
+			d.cfg.testShm = func() shmInfo { return roomy() }
+			d.cfg.HarnessSearch = &harnesses.Options{LoginShellPATH: func(context.Context) string { return "" }}
+			w := envWorker(t, d)
+			w.harness = tc.harness
+			got := d.workerToolEnv(w)["GOTMPDIR"]
+			if got != tc.want {
+				t.Fatalf("GOTMPDIR = %q, want %q", got, tc.want)
+			}
+			if fi, err := os.Stat(got); err != nil || !fi.IsDir() {
+				t.Fatalf("Go temp folder not made: %v", err)
+			}
+		})
 	}
 }
 
@@ -90,17 +123,23 @@ func TestOSSandboxEnvPutsGoTempInThePrivateTmp(t *testing.T) {
 	}
 }
 
-// The Go temp folder is written by a merger's go test, so a merger's Claude
-// settings name it, next to the shared build cache.
-func TestMergerSettingsNameTheGoTempFolder(t *testing.T) {
-	settings := mergerClaudeSettings("/cache", "/shm/gotmp")
-	if !strings.Contains(settings, `"GOTMPDIR":"/shm/gotmp"`) || !strings.Contains(settings, `"GOCACHE":"/cache"`) {
-		t.Fatalf("merger settings = %s", settings)
+// A sandboxed Claude or Codex worker may write the folder its shell uses, which
+// is the disk folder, even when the RAM folder has room.
+func TestSandboxedWorkersMayWriteTheDiskGoTempFolder(t *testing.T) {
+	_, disk := useGoTmpFolders(t)
+	t.Setenv("AGENT_NET_GOTMPDIR", "")
+	d := &Daemon{cfg: Config{StateDir: t.TempDir(), testShm: func() shmInfo { return roomy() }}}
+	w := &worker{id: "w_codex", path: t.TempDir()}
+	if writes := d.claudeWorkerWrites(w.path); !hasString(writes, disk) {
+		t.Fatalf("Claude writable folders %v lack the disk Go temp folder %s", writes, disk)
+	}
+	if roots := d.codexRootsFor(context.Background(), w); !hasString(roots, disk) {
+		t.Fatalf("Codex writable roots %v lack the disk Go temp folder %s", roots, disk)
 	}
 }
 
-// A Codex worker's sandbox writes the Go temp folder, because its scripts use
-// it when the daemon does not set GOTMPDIR.
+// A Codex worker's sandbox writes the Go temp folder the owner names, because
+// its scripts use it when the daemon does not set GOTMPDIR.
 func TestCodexWorkerCanWriteTheGoTempFolder(t *testing.T) {
 	goTmp := filepath.Join(t.TempDir(), "gotmp")
 	d := &Daemon{cfg: Config{StateDir: t.TempDir(), WorkerGoTmp: goTmp}}
@@ -111,5 +150,32 @@ func TestCodexWorkerCanWriteTheGoTempFolder(t *testing.T) {
 	}
 	if fi, err := os.Stat(goTmp); err != nil || !fi.IsDir() {
 		t.Fatalf("Go temp folder not made: %v", err)
+	}
+}
+
+// The hourly cleanup empties old test folders in both Go temp folders, since
+// an unsandboxed worker and a sandboxed one use different folders.
+func TestGoTmpCleanupRemovesOldFoldersInBothFolders(t *testing.T) {
+	shm, disk := useGoTmpFolders(t)
+	t.Setenv("AGENT_NET_GOTMPDIR", "")
+	now := time.Now()
+	old := now.Add(-10 * time.Hour)
+	var olds []string
+	for _, root := range []string{shm, disk} {
+		sub := filepath.Join(root, "run_old")
+		if err := os.MkdirAll(sub, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(sub, old, old); err != nil {
+			t.Fatal(err)
+		}
+		olds = append(olds, sub)
+	}
+	d := &Daemon{cfg: Config{StateDir: t.TempDir(), testShm: func() shmInfo { return roomy() }}}
+	d.cleanWorkerGoTmp(now, 6*time.Hour)
+	for _, sub := range olds {
+		if _, err := os.Stat(sub); !os.IsNotExist(err) {
+			t.Errorf("old test folder %s kept: %v", sub, err)
+		}
 	}
 }

@@ -152,13 +152,13 @@ func (d *Daemon) workerToolEnv(w *worker) map[string]string {
 	if err := os.MkdirAll(d.workerCacheRoot(w), 0o700); err != nil {
 		d.Logf("worker %s: cache folder: %v", w.id, err)
 	}
-		// The Go temp folder is made here, since Go does not create GOTMPDIR itself.
-		goTmp := d.workerGoTmpDir()
-		if err := os.MkdirAll(goTmp, 0o700); err != nil {
-			d.Logf("worker %s: Go temp folder: %v", w.id, err)
-		}
-		set["GOTMPDIR"] = goTmp
-		set["PATH"] = d.workerSearchPATH()
+	// The Go temp folder is made here, since Go does not create GOTMPDIR itself.
+	goTmp := d.workerGoTmpFor(w)
+	if err := os.MkdirAll(goTmp, 0o700); err != nil {
+		d.Logf("worker %s: Go temp folder: %v", w.id, err)
+	}
+	set["GOTMPDIR"] = goTmp
+	set["PATH"] = d.workerSearchPATH()
 	if ca := d.systemCA(); ca != "" {
 		// uv and pip carry their own CA list, which lacks a local CA that the
 		// system trusts. uv reads the system store with UV_NATIVE_TLS; pip

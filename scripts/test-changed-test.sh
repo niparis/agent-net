@@ -501,8 +501,8 @@ got=0
 grep -q 'unix sockets are blocked' "$work/out" && got=1
 [ "$got" = "$want" ] || fail "the real probe disagrees with the helper (blocked line: $got, helper blocked: $want)"
 
-# The Go temp folder rule (scripts/gotmpdir.sh) reads /dev/shm with a fake stat,
-# so no folder is made and the real /dev/shm is only checked for existence.
+# The Go temp folder rule (scripts/gotmpdir.sh) reads a fake stat and a fake
+# /dev/shm root in the temp folder, so the real /dev/shm is never touched.
 statbin=$work/statbin
 mkdir "$statbin"
 cat >"$statbin/stat" <<'STAT'
@@ -511,21 +511,29 @@ cat >"$statbin/stat" <<'STAT'
 printf '%s\n' "$FAKE_STAT_OUT"
 STAT
 chmod +x "$statbin/stat"
-if [ -d /dev/shm ]; then shm_want=/dev/shm/agent-net-gotmp; else shm_want=/tmp/agent-net-gotmp; fi
+shm_root=$work/shm
+mkdir "$shm_root"
+# A file where the RAM folder should be makes its mkdir fail.
+busy_root=$work/busy
+mkdir "$busy_root"
+: >"$busy_root/agent-net-gotmp"
 gotmp_for() {
-  env -i PATH="$statbin:/usr/bin:/bin" FAKE_STAT_OUT="$1" FAKE_STAT_FAIL="${2:-}" \
+  env -i PATH="$statbin:/usr/bin:/bin" GOTMP_SHM_ROOT="$2" FAKE_STAT_OUT="$1" FAKE_STAT_FAIL="${3:-}" \
     sh -c '. "$1"; gotmp_default' sh "$root/scripts/gotmpdir.sh"
 }
-for tc in "tmpfs 4096 2097152|$shm_want|8 GiB tmpfs" "tmpfs 4096 1048576|$shm_want|exactly 4 GiB tmpfs" \
+for tc in "tmpfs 4096 2097152|$shm_root/agent-net-gotmp|8 GiB tmpfs" "tmpfs 4096 1048576|$shm_root/agent-net-gotmp|exactly 4 GiB tmpfs" \
   "tmpfs 4096 1048575|/tmp/agent-net-gotmp|just under 4 GiB tmpfs" "ext4 4096 2097152|/tmp/agent-net-gotmp|8 GiB disk"; do
   out=${tc%%|*}
   rest=${tc#*|}
   want=${rest%%|*}
   name=${rest#*|}
-  got=$(gotmp_for "$out") || fail "gotmp_default failed for $name"
+  got=$(gotmp_for "$out" "$shm_root") || fail "gotmp_default failed for $name"
   [ "$got" = "$want" ] || fail "Go temp folder for $name is $got, want $want"
 done
-got=$(gotmp_for "" 1) || fail "gotmp_default failed when stat fails"
+[ -d "$shm_root/agent-net-gotmp" ] || fail "the RAM folder was not made"
+got=$(gotmp_for "tmpfs 4096 2097152" "$busy_root") || fail "gotmp_default failed when the RAM folder cannot be made"
+[ "$got" = /tmp/agent-net-gotmp ] || fail "Go temp folder when the RAM folder cannot be made is $got, want /tmp/agent-net-gotmp"
+got=$(gotmp_for "" "$shm_root" 1) || fail "gotmp_default failed when stat fails"
 [ "$got" = /tmp/agent-net-gotmp ] || fail "Go temp folder when stat fails is $got, want /tmp/agent-net-gotmp"
 
 echo "test-changed-test: ok"

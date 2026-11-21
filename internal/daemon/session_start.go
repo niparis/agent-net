@@ -349,7 +349,7 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	// owns (decision 0128); a launch carries no copy of it.
 	settings := ""
 	if p.Merger {
-		settings = mergerClaudeSettings(d.workerGoCacheDir(), d.workerGoTmpDir())
+		settings = mergerClaudeSettings(d.workerGoCacheDir())
 	}
 	if p.Chief {
 		name, settings = "chief of staff", chiefClaudeSettings()
@@ -619,7 +619,7 @@ func (d *Daemon) moveToBackground(ctx context.Context, a protocol.AgentView, soc
 func (d *Daemon) claudeResumeSpec(a protocol.AgentView) claudeBackground {
 	settings := ""
 	if a.Type == "merger" {
-		settings = mergerClaudeSettings(d.workerGoCacheDir(), d.workerGoTmpDir())
+		settings = mergerClaudeSettings(d.workerGoCacheDir())
 	}
 	// A resumed chief keeps what its start had: no harness memory.
 	if d.isChiefSession(context.Background(), a.SessionID) {

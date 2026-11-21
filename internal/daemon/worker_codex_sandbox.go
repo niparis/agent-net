@@ -62,7 +62,7 @@ func codexWritableRoots(ctx context.Context, w *worker) []string {
 func (d *Daemon) codexRootsFor(ctx context.Context, w *worker) []string {
 	cache := d.workerCacheRoot(w)
 	_ = os.MkdirAll(cache, 0o700) // a root that does not exist yet is not writable
-	goTmp := d.workerGoTmpDir()
+	goTmp := d.workerSandboxGoTmpDir()
 	_ = os.MkdirAll(goTmp, 0o700)
 	return append(codexWritableRoots(ctx, w), cache, goTmp)
 }
