@@ -97,6 +97,8 @@ type Gateway struct {
 	previewMemo previewMemo
 	// relayWait overrides defaultRelayWait, for tests.
 	relayWait time.Duration
+	// wakeOnlineWait overrides onlineWait, for tests.
+	wakeOnlineWait time.Duration
 
 	// profileCheckTimeout overrides ProfileCheckTimeout, for tests.
 	profileCheckTimeout time.Duration
@@ -577,15 +579,7 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 				if err := g.store.reconcileAsks(); err != nil {
 					g.logLine("error", "where", "asks", "err", err)
 				}
-				// A session that stays busy past BusyHoldLimit gets its held
-				// messages anyway (decision 0130, part c).
-				if stuck, err := g.store.StuckBusySessions(); err != nil {
-					g.logLine("error", "where", "stuck busy", "err", err)
-				} else {
-					for _, id := range stuck {
-						g.releaseBusyHold(ctx, id, true)
-					}
-				}
+				g.sweepBusyHolds(ctx)
 				// Lead-level requests that waited for the CTO rate window go
 				// out as soon as the window allows.
 				if released, err := g.store.ReleaseCTOHolds(g.store.now()); err != nil {
@@ -4118,7 +4112,11 @@ func (g *Gateway) dispatch(ctx context.Context, m protocol.Message) bool {
 		return false
 	}
 	if !a.Online {
-		return g.wakeForMessage(ctx, a, m)
+		started := g.wakeForMessage(ctx, a, m)
+		if !started {
+			g.tellWaiting(ctx, a, m)
+		}
+		return started
 	}
 	g.sendDeliver(ctx, a.NodeID, m)
 	return false
@@ -4311,6 +4309,27 @@ func (g *Gateway) releaseBusyHold(ctx context.Context, sessionID string, force b
 	}
 	if force {
 		g.store.clearBusySince(sessionID)
+	}
+}
+
+// sweepBusyHolds is the minute check of held messages. A held message for a
+// session that went offline goes back through dispatch, which wakes it or tells
+// the sender. A session that stays busy past BusyHoldLimit gets its held
+// messages anyway (decision 0130, part c).
+func (g *Gateway) sweepBusyHolds(ctx context.Context) {
+	if freed, err := g.store.ReleaseOfflineHolds(); err != nil {
+		g.logLine("error", "where", "offline busy holds", "err", err)
+	} else {
+		for _, m := range freed {
+			g.dispatch(ctx, m)
+		}
+	}
+	if stuck, err := g.store.StuckBusySessions(); err != nil {
+		g.logLine("error", "where", "stuck busy", "err", err)
+	} else {
+		for _, id := range stuck {
+			g.releaseBusyHold(ctx, id, true)
+		}
 	}
 }
 

@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -128,6 +129,82 @@ func (g *Gateway) wakeForMessage(ctx context.Context, a protocol.AgentView, m pr
 	return g.wakeSessionAs(ctx, a, isLoopMessage(m), fromMessage)
 }
 
+// waitingReason says why an offline recipient will not be woken for a queued
+// message, so its sender is told at once and not at expiry. It is empty when a
+// wake is under way or can still start (the machine is away, or a wake ran
+// moments ago), because the message then waits for a reason the sender need
+// not act on.
+func (g *Gateway) waitingReason(a protocol.AgentView, m protocol.Message) string {
+	if a.Online || m.State != protocol.StateStored || !m.ExpiresAt.After(g.store.now()) {
+		return ""
+	}
+	switch {
+	case a.Worker != nil:
+		return "it is an ended worker, and a message does not start a worker. It is delivered only if the worker is started again"
+	case a.Harness == "pi" && g.autonomyWake(a):
+		return "it is offline, and Pi sessions are not woken by messages. It is delivered when the session starts again"
+	case !wakeHarness(a.Harness):
+		return ""
+	case !g.wakeAllowed(a, isLoopMessage(m) || g.autonomyWake(a)):
+		return "it is offline, and wake is off for this agent. It is delivered when the session starts again"
+	case g.wakeInFlight(a.SessionID):
+		return ""
+	}
+	if reason, ok := g.store.wakeFailure(a.SessionID); ok {
+		return "it is offline, and its last wake failed: " + strings.TrimSuffix(reason, ".") + ". It is delivered when the session starts again"
+	}
+	return ""
+}
+
+// tellWaiting gives the sender of m the early notice when waitingReason has one.
+func (g *Gateway) tellWaiting(ctx context.Context, a protocol.AgentView, m protocol.Message) {
+	reason := g.waitingReason(a, m)
+	if reason == "" {
+		return
+	}
+	notice, ok, err := g.store.WaitingNotice(m, reason)
+	if err != nil {
+		g.logLine("error", "where", "waiting notice", "msg", m.ID, "err", err)
+		return
+	}
+	if ok {
+		g.dispatch(ctx, notice)
+	}
+}
+
+// onlineWait is how long a wake that the machine accepted may take to bring the
+// session online (decision 0099). A machine can accept a wake and start
+// nothing, for instance when it holds the session live already, so the
+// gateway checks the result instead of trusting the answer.
+const onlineWait = 30 * time.Second
+
+// awaitOnline waits until the session is online, up to the gateway's online
+// wait. It returns an error that says so when it is not. A read error is not a
+// failed wake and returns nil.
+func (g *Gateway) awaitOnline(ctx context.Context, session string) error {
+	wait := g.wakeOnlineWait
+	if wait <= 0 {
+		wait = onlineWait
+	}
+	deadline := time.NewTimer(wait)
+	defer deadline.Stop()
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		a, ok, err := g.store.Agent(session)
+		if err != nil || !ok || a.Online {
+			return nil
+		}
+		select {
+		case <-deadline.C:
+			return fmt.Errorf("the machine accepted the wake, but the session did not come online within %s", wait.Round(time.Second))
+		case <-ctx.Done():
+			return nil
+		case <-tick.C:
+		}
+	}
+}
+
 // isLoopMessage tells whether the reserved sender's message is a standing
 // loop tick. The owner set the loop, so it may wake a session the way an
 // autonomy wake does.
@@ -219,6 +296,11 @@ func (g *Gateway) wakeSessionAs(ctx context.Context, a protocol.AgentView, loop 
 		var res protocol.StartedSession
 		if json.Unmarshal(raw, &res) == nil && res.Status == "needs_trust" && res.Path != "" {
 			g.raiseTrustAsk(a.SessionID, a.NodeID, a.Hostname, res.Path, res.Project, a.SessionID, nil)
+		}
+		if err := g.awaitOnline(wctx, a.SessionID); err != nil {
+			g.logLine("error", "where", "session wake", "session", a.SessionID, "err", err)
+			g.wakeFailed(wctx, a.SessionID, token, err)
+			return
 		}
 		if err := g.store.clearWakeFailure(a.SessionID); err != nil {
 			g.logLine("error", "where", "clear session wake failure", "session", a.SessionID, "err", err)

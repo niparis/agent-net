@@ -153,6 +153,55 @@ func (s *Store) ReleaseBusyHold(sessionID string, force bool) ([]protocol.Messag
 	return carriers, len(held), nil
 }
 
+// ReleaseOfflineHolds frees the messages held for a session that is no longer
+// online. A hold waits for the end of a turn, and a session that ended or lost
+// its machine in that turn never reports one, so the hold would wait for the
+// 30 minute fallback and then push the message at a session nobody can reach.
+// The released messages go through dispatch like any queued message: the
+// session is woken, or the sender is told why it is not.
+func (s *Store) ReleaseOfflineHolds() ([]protocol.Message, error) {
+	now := s.now().UnixNano()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.Query(msgSelect+` JOIN sessions r ON r.id=m.recipient
+		WHERE m.held_for_busy=1 AND m.state='stored' AND m.batch_id='' AND m.expires_at>? AND r.online=0
+		ORDER BY m.created_at, m.rowid`, now)
+	if err != nil {
+		return nil, err
+	}
+	var out []protocol.Message
+	for rows.Next() {
+		m, err := scanMessage(rows)
+		if err != nil {
+			rows.Close()
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		if _, err := tx.Exec(`UPDATE messages SET held_for_busy=0, held_at=0 WHERE id=?`, out[i].ID); err != nil {
+			return nil, err
+		}
+		out[i].HeldForBusy = false
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	for _, m := range out {
+		s.Event("msg.released_offline", "", m.To, m.ID, "")
+		s.logStep("msg.released_offline", m.ID, "reason", "recipient offline")
+	}
+	return out, nil
+}
+
 // insertBusyBatch writes the batch message and marks every held message as
 // part of it. The batch keeps each original message in its Batch field.
 func (s *Store) insertBusyBatch(tx *sql.Tx, sessionID string, held []protocol.Message, now time.Time) (protocol.Message, error) {

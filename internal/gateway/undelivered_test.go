@@ -187,7 +187,7 @@ func TestUndeliveredNoticeNotResentAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, sent, err := other.undeliveredNotice(tx, cur, "plugin refused: busy", false); err != nil || sent {
+	if _, sent, err := other.undeliveredNotice(tx, cur, "plugin refused: busy", false, false); err != nil || sent {
 		t.Fatalf("second notice: sent=%v err=%v", sent, err)
 	}
 	if err := tx.Commit(); err != nil {
