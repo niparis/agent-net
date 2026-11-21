@@ -263,6 +263,14 @@ func ctoGraphClassTx(tx *sql.Tx, typ, node, attr, old, value string) (string, er
 			if previous.Rule != "" && previous.Rule != "normal" {
 				return "major", nil
 			}
+			// A parent move leaves the old parent too.
+			if previous.To != e.To {
+				if yes, err := critical(previous.To); err != nil {
+					return "", err
+				} else if yes {
+					return "major", nil
+				}
+			}
 		}
 	default:
 		return "major", nil

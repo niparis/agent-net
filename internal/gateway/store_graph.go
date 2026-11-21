@@ -957,8 +957,16 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 		if old == "" {
 			_, err = tx.Exec(`DELETE FROM graph_edges WHERE source=? AND target=? AND kind=?`, e.From, e.To, e.Kind)
 		} else {
+			moved := e
 			if err = json.Unmarshal([]byte(old), &e); err != nil {
 				return err
+			}
+			// Undoing a parent move drops the new parent, then restores the
+			// old one, so the one-parent rule below sees a free slot.
+			if e.Kind == protocol.EdgeReportsTo && e.To != moved.To {
+				if _, err = tx.Exec(`DELETE FROM graph_edges WHERE source=? AND target=? AND kind=?`, moved.From, moved.To, moved.Kind); err != nil {
+					return err
+				}
 			}
 			if deliveryEdgeStep(e.Kind) != "" && e.Kind != "deploys" {
 				var count int
@@ -1243,10 +1251,12 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 		if e.Mode != "" {
 			return reject("an edge has no mode")
 		}
-		if err := checkReportsTo(tx, e.From, e.To); err != nil {
+		if err := checkReportsToTarget(tx, e.From, e.To); err != nil {
 			return err
 		}
-		return storeEdgeTx(tx, e, actor, now)
+		// An explicit edge_set moves the parent; the one-parent rule still
+		// holds for every other writer (checkReportsTo).
+		return moveReportsToTx(tx, e, actor, now)
 	}
 	deliveryEdge := deliveryEdgeStep(e.Kind) != "" && e.Kind != "deploys"
 	if e.Kind != "depends" && e.Kind != "deploys" && !deliveryEdge {
