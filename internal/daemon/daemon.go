@@ -374,6 +374,7 @@ type Daemon struct {
 	workerEnvState      workerEnvState // login PATH and system CA bundle, found once
 	claudeSandboxLog    sync.Once      // the Claude sandbox gap is logged once per start
 	ownerPrompts        ownerPrompts
+	daemonTyped         daemonTyped    // text the daemon typed into a session terminal, not the owner's
 	claudeChecks        sync.WaitGroup // background checks of Claude prompts that wait for the transcript
 	turnEnds            turnEndAsks
 	ownerPromptClock    func() time.Time // test hook

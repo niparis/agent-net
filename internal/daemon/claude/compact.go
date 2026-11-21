@@ -65,6 +65,12 @@ type compactNoteHost interface {
 	NoteCompacted(harness, nativeID string, at int64, reason string)
 }
 
+// compactTypedHost lets the daemon know what the adapter types into a session,
+// so it does not take that line for the owner typing.
+type compactTypedHost interface {
+	NoteTypedPrompt(harness, nativeID, text string)
+}
+
 // isCTOJob says whether job is the CTO's Claude conversation.
 func (a *Adapter) isCTOJob(job string) bool {
 	h, ok := a.host.(compactCTOHost)
@@ -551,6 +557,11 @@ func (a *Adapter) compactSession(ctx context.Context, f found, path string) (res
 	var sf sessionFile
 	if err != nil || json.Unmarshal(raw, &sf) != nil || !betweenTurns(sf.Status) || sf.SessionID != f.info.NativeID || sf.JobID != f.job {
 		return fmt.Errorf("session changed before compact")
+	}
+	// Claude Code records this line as a human prompt. Tell the daemon first, so
+	// its prompt hook does not run the owner effects for it.
+	if n, ok := a.host.(compactTypedHost); ok {
+		n.NoteTypedPrompt("claude", f.info.NativeID, "/compact "+compactInstructions)
 	}
 	// The command is typed as keys, as the owner types it. With bracketed paste
 	// around it, the CTO got "\/compact" and the command did not run (transcript,
