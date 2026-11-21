@@ -218,6 +218,7 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 		return protocol.PolicyResult{}, nil
 	}
 	if p.Event == "Stop" {
+		d.ownerTypedWhileBusy(ctx, ls, sid)
 		d.recordTurnEndQuestion(ctx, ls, sid, p.LastMessage)
 		return protocol.PolicyResult{}, nil
 	}
