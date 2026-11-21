@@ -103,3 +103,5 @@ One migration (`foldSideTablesTx`, `internal/gateway/side_fold.go`) folds all se
 | `model_successes` | column `success_at` of `model_failures` |
 | `member_blocked_ticks` | column `tick_hash` of `member_blocked_notices` |
 | `friction_status` | dropped; the current mark is the latest row of `friction_status_history` |
+
+Tables after the reduction, with what each holds and who uses it: [gateway-data.md](../gateway-data.md).
