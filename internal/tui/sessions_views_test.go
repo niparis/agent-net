@@ -88,14 +88,15 @@ func layoutGroupOf(m Model, host string) group {
 }
 
 // The tree view is one group: every session of a tree stays under its root,
-// and each set of siblings lists its busy rows first.
+// and each set of siblings keeps its start order, with a merger last. A busy
+// sibling does not move up.
 func TestTreeViewIsOneGroupAndKeepsTreesWhole(t *testing.T) {
 	m := layoutModel(120, 34, layoutFixture())
 	groups := m.groups()
 	if len(groups) != 1 || !groups[0].tree {
 		t.Fatalf("tree view has %d groups, want one tree group", len(groups))
 	}
-	want := []string{layoutChief, layoutCTO, layoutStrategy, layoutResearch, layoutWorker, layoutBacktest,
+	want := []string{layoutChief, layoutCTO, layoutStrategy, layoutBacktest, layoutResearch, layoutWorker,
 		layoutTenebrae, layoutTenebrae2, layoutTenebrae3, layoutMerger}
 	if got := ids(m); fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("tree order\n got %v\nwant %v", got, want)

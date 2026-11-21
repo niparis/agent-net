@@ -70,6 +70,19 @@ func sessionActive(a protocol.AgentView) time.Time {
 	return time.Time{}
 }
 
+// sessionStart is when a session began: a worker's start, else the first time
+// the gateway saw the session. It never changes while the session works, so
+// rows that share a parent keep their order.
+func sessionStart(a protocol.AgentView) time.Time {
+	if a.Worker != nil && a.Worker.StartedAt > 0 {
+		return time.Unix(a.Worker.StartedAt, 0)
+	}
+	if a.FirstSeen > 0 {
+		return time.Unix(a.FirstSeen, 0)
+	}
+	return time.Time{}
+}
+
 // activeWithin tells whether the session did something within d. It uses the
 // same activity time as the order, never the last report from its daemon.
 func (m Model) activeWithin(a protocol.AgentView, d time.Duration) bool {

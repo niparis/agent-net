@@ -2614,18 +2614,15 @@ func (m Model) sessionGroups(collapse bool) []group {
 		return a.SessionID < b.SessionID
 	}
 	sort.SliceStable(roots, func(i, j int) bool { return less(roots[i], roots[j]) })
+	// Rows under one parent never sort by a flag that changes with the stream:
+	// a worker that goes busy would jump past its siblings on the next refresh.
 	for _, cs := range children {
 		sort.Slice(cs, func(i, j int) bool {
-			if !m.groupedSessions {
-				if ri, rj := flags[cs[i].SessionID].rank(), flags[cs[j].SessionID].rank(); ri != rj {
-					return ri < rj
-				}
-			}
 			if isMerger(cs[i]) != isMerger(cs[j]) {
 				return !isMerger(cs[i])
 			}
-			if cs[i].Worker != nil && cs[j].Worker != nil && cs[i].Worker.StartedAt != cs[j].Worker.StartedAt {
-				return cs[i].Worker.StartedAt < cs[j].Worker.StartedAt
+			if si, sj := sessionStart(cs[i]), sessionStart(cs[j]); !si.Equal(sj) {
+				return si.Before(sj)
 			}
 			return cs[i].SessionID < cs[j].SessionID
 		})
