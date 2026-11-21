@@ -327,8 +327,16 @@ func isolateDaemonCaches(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 }
 
+// testTempFolder reports whether path is inside a folder that t.TempDir may
+// use. Go makes t.TempDir folders under GOTMPDIR when it is set and under
+// os.TempDir() (TMPDIR) otherwise. The two can differ, so a test that checks
+// where a file lives must accept either folder.
+func testTempFolder(path string) bool {
+	return pathWithin(os.TempDir(), path) || pathWithin(os.Getenv("GOTMPDIR"), path)
+}
+
 func pathWithin(base, path string) bool {
-	if path == "" {
+	if path == "" || base == "" {
 		return false
 	}
 	rel, err := filepath.Rel(base, path)
@@ -336,6 +344,27 @@ func pathWithin(base, path string) bool {
 		return false
 	}
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// The test-folder check must accept both roots, whichever one t.TempDir uses,
+// and must not accept a sibling whose name only starts the same way.
+func TestTestTempFolderAcceptsTMPDIRAndGOTMPDIR(t *testing.T) {
+	t.Setenv("TMPDIR", "/var/tmp/agent-net-tmp-a")
+	t.Setenv("GOTMPDIR", "/var/tmp/agent-net-gotmp-b")
+	for _, tc := range []struct {
+		path string
+		want bool
+	}{
+		{"/var/tmp/agent-net-tmp-a/TestX/001/h.sock", true},
+		{"/var/tmp/agent-net-gotmp-b/TestX/001/herdr", true},
+		{"/var/tmp/agent-net-gotmp-bb/TestX/001/herdr", false},
+		{"/var/tmp/agent-net-tmp-ab/x", false},
+		{"/home/someone/herdr", false},
+	} {
+		if got := testTempFolder(tc.path); got != tc.want {
+			t.Errorf("testTempFolder(%q) = %v, want %v", tc.path, got, tc.want)
+		}
+	}
 }
 
 func TestDaemonTestCacheEnvironmentIsolated(t *testing.T) {

@@ -769,25 +769,24 @@ func TestWorkerCacheTestDaemonIsolation(t *testing.T) {
 		t.Fatalf("default test daemon workerGoTmpDir = %q, want inside test temp dir", tmpDir)
 	}
 
-	tempRoot := os.TempDir()
-	if !strings.HasPrefix(cacheDir, tempRoot) {
-		t.Fatalf("workerGoCacheDir %q is not inside temp dir %q", cacheDir, tempRoot)
+	if !testTempFolder(cacheDir) {
+		t.Fatalf("workerGoCacheDir %q is not inside a test temp folder", cacheDir)
 	}
-	if !strings.HasPrefix(tmpDir, tempRoot) {
-		t.Fatalf("workerGoTmpDir %q is not inside temp dir %q", tmpDir, tempRoot)
+	if !testTempFolder(tmpDir) {
+		t.Fatalf("workerGoTmpDir %q is not inside a test temp folder", tmpDir)
 	}
 	ownerCache := ownerGoBuildCacheDir(n.d.cfg.HomeDir)
-	if ownerCache == "" || !strings.HasPrefix(ownerCache, tempRoot) {
-		t.Fatalf("owner Go cache %q is not inside temp dir %q", ownerCache, tempRoot)
+	if ownerCache == "" || !testTempFolder(ownerCache) {
+		t.Fatalf("owner Go cache %q is not inside a test temp folder", ownerCache)
 	}
 
 	w := startWorkerNode(t, g, shortSet, nil)
 	wCache := w.d.workerGoCacheDir()
 	wTmp := w.d.workerGoTmpDir()
-	if wCache == "" || wCache == "/tmp/agent-net-gocache" || !strings.HasPrefix(wCache, tempRoot) {
+	if wCache == "" || wCache == "/tmp/agent-net-gocache" || !testTempFolder(wCache) {
 		t.Fatalf("default test workerNode workerGoCacheDir = %q, want inside temp dir", wCache)
 	}
-	if wTmp == "" || wTmp == "/tmp/agent-net-gotmp" || !strings.HasPrefix(wTmp, tempRoot) {
+	if wTmp == "" || wTmp == "/tmp/agent-net-gotmp" || !testTempFolder(wTmp) {
 		t.Fatalf("default test workerNode workerGoTmpDir = %q, want inside temp dir", wTmp)
 	}
 
@@ -805,10 +804,10 @@ func TestWorkerCacheTestDaemonIsolation(t *testing.T) {
 	if bareTmp == "" || bareTmp == "/tmp/agent-net-gotmp" {
 		t.Fatalf("bare daemon workerGoTmpDir = %q, want guarded temp dir", bareTmp)
 	}
-	if !strings.HasPrefix(bareCache, tempRoot) {
-		t.Fatalf("bare daemon workerGoCacheDir %q is not inside temp dir %q", bareCache, tempRoot)
+	if !testTempFolder(bareCache) {
+		t.Fatalf("bare daemon workerGoCacheDir %q is not inside a test temp folder", bareCache)
 	}
-	if !strings.HasPrefix(bareTmp, tempRoot) {
-		t.Fatalf("bare daemon workerGoTmpDir %q is not inside temp dir %q", bareTmp, tempRoot)
+	if !testTempFolder(bareTmp) {
+		t.Fatalf("bare daemon workerGoTmpDir %q is not inside a test temp folder", bareTmp)
 	}
 }
