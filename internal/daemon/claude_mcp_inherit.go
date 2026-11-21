@@ -172,13 +172,7 @@ func ensureClaudeSettingsIgnored(worktree string) error {
 	if _, err := gitOut(ctx, worktree, "check-ignore", "-q", "--", rel); err == nil {
 		return nil
 	}
-	return addInfoExcludeLines(worktree, []string{"/" + rel})
-}
-
-// addInfoExcludeLines appends the patterns that info/exclude does not have yet.
-// A pattern already there is skipped, so a second call writes nothing.
-func addInfoExcludeLines(worktree string, patterns []string) error {
-	path, err := gitOut(context.Background(), worktree, "rev-parse", "--git-path", "info/exclude")
+	path, err := gitOut(ctx, worktree, "rev-parse", "--git-path", "info/exclude")
 	if err != nil {
 		return err
 	}
@@ -186,24 +180,16 @@ func addInfoExcludeLines(worktree string, patterns []string) error {
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(worktree, path)
 	}
-	raw, _ := os.ReadFile(path) // a missing file starts empty
-	have := map[string]bool{}
-	for _, l := range strings.Split(string(raw), "\n") {
-		have[strings.TrimSpace(l)] = true
-	}
-	var add strings.Builder
-	for _, p := range patterns {
-		if !have[p] {
-			have[p] = true
-			add.WriteString(p + "\n")
+	line := "/" + rel
+	if raw, err := os.ReadFile(path); err == nil {
+		for _, l := range strings.Split(string(raw), "\n") {
+			if strings.TrimSpace(l) == line {
+				return nil
+			}
 		}
-	}
-	if add.Len() == 0 {
-		return nil
-	}
-	text := add.String()
-	if len(raw) > 0 && !strings.HasSuffix(string(raw), "\n") {
-		text = "\n" + text
+		if len(raw) > 0 && !strings.HasSuffix(string(raw), "\n") {
+			line = "\n" + line
+		}
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -213,7 +199,7 @@ func addInfoExcludeLines(worktree string, patterns []string) error {
 		return err
 	}
 	defer f.Close()
-	_, err = f.WriteString(text)
+	_, err = f.WriteString(line + "\n")
 	return err
 }
 

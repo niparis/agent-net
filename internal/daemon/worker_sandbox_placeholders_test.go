@@ -3,6 +3,7 @@ package daemon
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -21,21 +22,29 @@ func writeSandboxPlaceholders(t *testing.T, dir string) {
 	}
 }
 
-// A new worker worktree hides the placeholders from git status, so the worker
-// and the leftover commit never see them.
-func TestWorkerWorktreeHidesSandboxPlaceholders(t *testing.T) {
-	repo := newRepo(t, "placeholder-worktree")
+// info/exclude is shared by the owner's checkout and every worktree of the repo.
+// A worker worktree must not write placeholder lines there, or a .mcp.json or
+// .vscode the owner adds later would vanish from git status.
+func TestWorkerWorktreeAddsNoSandboxPlaceholderExcludes(t *testing.T) {
+	repo := newRepo(t, "placeholder-exclude")
 	d := commitTestDaemon(t)
-	w := &worker{id: "w_placeholder_worktree_test", path: repo}
+	w := &worker{id: "w_placeholder_exclude_test", path: repo}
 	if err := d.createWorktree(t.Context(), w); err != nil {
 		t.Fatal(err)
 	}
-	writeSandboxPlaceholders(t, w.worktree)
-	if err := os.WriteFile(filepath.Join(w.worktree, "keep.txt"), []byte("work"), 0o644); err != nil {
+	exclude := filepath.Join(repo, filepath.FromSlash(gitOutT(t, repo, "rev-parse", "--git-path", "info/exclude")))
+	raw, err := os.ReadFile(exclude)
+	if err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
-	if got := gitOutT(t, w.worktree, "status", "--porcelain", "--untracked-files=all"); got != "?? keep.txt" {
-		t.Fatalf("status shows placeholders:\n%s", got)
+	have := map[string]bool{}
+	for _, l := range strings.Split(string(raw), "\n") {
+		have[strings.TrimSpace(l)] = true
+	}
+	for _, name := range sandboxPlaceholderNames {
+		if have["/"+name] {
+			t.Fatalf("info/exclude hides %s after a worker worktree was made:\n%s", name, raw)
+		}
 	}
 }
 
