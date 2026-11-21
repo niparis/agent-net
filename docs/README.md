@@ -27,6 +27,7 @@
 
 - [../AGENTS.md](../AGENTS.md): build, test, layout and conventions.
 - [../RELEASING.md](../RELEASING.md): cut a release and update machines.
+- [roadmap.md](roadmap.md): work the owner wants that has not started yet.
 - [design/onboarding.md](design/onboarding.md): onboarding design.
 - [design/start-sessions.md](design/start-sessions.md): proposed owner session starts.
 - [design/tool-redesign.md](design/tool-redesign.md): the agent and CTO tool redesign: contracts, owner decisions and the task list.
