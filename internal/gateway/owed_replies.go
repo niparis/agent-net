@@ -46,6 +46,7 @@ type owedCandidate struct {
 	progressAt     int64
 	progressUntil  int64
 	askRaised      bool
+	limitedUntil   int64
 }
 
 // holdNanos is the time the owed-reply chase waits until. It is the time the
@@ -88,6 +89,7 @@ func (s *Store) sessionSenderLead(senderID string) string {
 // If still unanswered messages.owed_reply_ask_after later, an ask is routed to the chief.
 // A progress reply holds both until the time it gives, or for
 // messages.owed_reply_progress_grace after it when it gives none.
+// A recipient with a usage limit gets neither until the limit ends.
 func (s *Store) checkOwedReplies() ([]protocol.Message, error) {
 	snap, err := s.SettingsSnapshot()
 	if err != nil {
@@ -149,7 +151,8 @@ func (s *Store) checkOwedReplies() ([]protocol.Message, error) {
 			AND p.sender=q.recipient AND p.recipient=q.sender AND p.progress=1 ORDER BY p.created_at DESC LIMIT 1), 0),
 		COALESCE((SELECT p.progress_until FROM messages p WHERE p.conversation_id=q.conversation_id AND p.parent_id=q.id
 			AND p.sender=q.recipient AND p.recipient=q.sender AND p.progress=1 ORDER BY p.created_at DESC LIMIT 1), 0),
-		EXISTS(SELECT 1 FROM inbox_items ii WHERE ii.source_ref='owed-ask:'||q.id)
+		EXISTS(SELECT 1 FROM inbox_items ii WHERE ii.source_ref='owed-ask:'||q.id),
+		dst.limited_until
 	FROM messages q
 	JOIN sessions src ON src.id=q.sender
 	JOIN sessions dst ON dst.id=q.recipient
@@ -183,7 +186,7 @@ func (s *Store) checkOwedReplies() ([]protocol.Message, error) {
 			&c.dstRepo, &c.dstTeam, &c.srcRepo,
 			&c.senderName, &c.recipientName,
 			&c.waitsForOthers, &c.openAsksCount,
-			&c.nudgeAt, &c.progressAt, &c.progressUntil, &c.askRaised,
+			&c.nudgeAt, &c.progressAt, &c.progressUntil, &c.askRaised, &c.limitedUntil,
 		); err != nil {
 			rows.Close()
 			return nil, err
@@ -212,6 +215,13 @@ func (s *Store) checkOwedReplies() ([]protocol.Message, error) {
 		grace := snap.Duration("messages.owed_reply_progress_grace", where)
 		hold := time.Unix(0, c.holdNanos(grace))
 
+		// A recipient on a usage limit cannot reply. The chase sends it nothing
+		// until the limit ends, and then counts its waits from that end.
+		limitEnd := time.Unix(c.limitedUntil, 0)
+		if now.Before(limitEnd) {
+			continue
+		}
+
 		// Nudge phase
 		if c.nudgeAt == 0 {
 			if now.Before(hold) {
@@ -227,6 +237,9 @@ func (s *Store) checkOwedReplies() ([]protocol.Message, error) {
 			}
 			if baseline <= 0 || baseline < c.reqCreatedAt {
 				baseline = c.reqCreatedAt
+			}
+			if limitNanos := limitEnd.UnixNano(); limitNanos > baseline {
+				baseline = limitNanos
 			}
 			idleSince := time.Unix(0, baseline)
 			if now.Sub(idleSince) < nudgeAfter {
@@ -276,10 +289,13 @@ func (s *Store) checkOwedReplies() ([]protocol.Message, error) {
 		if !c.askRaised {
 			nudgeTime := time.Unix(0, c.nudgeAt)
 			// The ask waits askAfter from the nudge, or from the end of a progress
-			// hold when that is later.
+			// hold or a usage limit when that is later.
 			askFrom := nudgeTime
 			if hold.After(askFrom) {
 				askFrom = hold
+			}
+			if limitEnd.After(askFrom) {
+				askFrom = limitEnd
 			}
 			if now.Sub(askFrom) < askAfter {
 				continue
