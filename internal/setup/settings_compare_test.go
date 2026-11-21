@@ -11,7 +11,7 @@ import (
 )
 
 // settingsMatch compares two settings documents, ignoring the Claude mouse key
-// and the tool-decide hook that every setup run writes, and an env or hooks
+// and the tool-decide and urgent hooks that every setup run writes, and an env or hooks
 // object that holds nothing else. Every other key and value must match.
 func settingsMatch(t *testing.T, got, want string) bool {
 	t.Helper()
@@ -28,7 +28,7 @@ func settingsMatch(t *testing.T, got, want string) bool {
 			}
 		}
 		if hooks, ok := doc["hooks"].(map[string]any); ok {
-			dropToolDecideHook(hooks)
+			dropAlwaysOnHooks(hooks)
 			if len(hooks) == 0 {
 				delete(doc, "hooks")
 			}
@@ -38,14 +38,14 @@ func settingsMatch(t *testing.T, got, want string) bool {
 	return reflect.DeepEqual(strip(got), strip(want))
 }
 
-// dropToolDecideHook removes the groups of the always-on tool-decide hook from
-// a decoded hooks object.
-func dropToolDecideHook(hooks map[string]any) {
+// dropAlwaysOnHooks removes the groups of the always-on tool-decide and urgent
+// hooks from a decoded hooks object.
+func dropAlwaysOnHooks(hooks map[string]any) {
 	for event, raw := range hooks {
 		groups, _ := raw.([]any)
 		var keep []any
 		for _, g := range groups {
-			if !strings.Contains(fmt.Sprint(g), "tool-decide") {
+			if text := fmt.Sprint(g); !strings.Contains(text, "tool-decide") && !strings.Contains(text, "urgent-hook") {
 				keep = append(keep, g)
 			}
 		}

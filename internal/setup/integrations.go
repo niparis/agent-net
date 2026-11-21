@@ -25,6 +25,7 @@ func ApplyIntegrations(net protocol.Integrations, logf func(format string, args 
 		refreshNeedsHook(want.NeedsHook, logf)
 		refreshPolicyHook(want.PolicyHook, logf)
 		refreshToolDecideHook(logf)
+		refreshUrgentHook(logf)
 		applyQuotaAnswer(want.QuotaAXI, logf)
 		return nil
 	}
@@ -39,6 +40,7 @@ func ApplyIntegrations(net protocol.Integrations, logf func(format string, args 
 	r.claudePolicyHook()
 	r.claudeNeedsHook()
 	r.claudeToolDecideHook()
+	r.claudeUrgentHook()
 	r.claudeWorkersMod()
 	if r.failed == nil {
 		integrations.SaveApplied(daemon.ConfigDir(), want)

@@ -369,6 +369,8 @@ type activityUpdate struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
+	urgentHeld          sync.Map       // session ID -> an urgent message is held for it at the gateway (decision 0180)
+	inlineCaptures      sync.Map       // message ID -> *inlineCapture, a hook is collecting this message
 	workerEnvState      workerEnvState // login PATH and system CA bundle, found once
 	ownerPrompts        ownerPrompts
 	turnEnds            turnEndAsks
@@ -1868,7 +1870,10 @@ func (d *Daemon) deliverTo(ctx context.Context, ls *localSession, m protocol.Mes
 	if a == nil {
 		return Result{Detail: "no adapter for harness " + info.Harness}
 	}
-	result := a.Deliver(ctx, info, m)
+	result, inline := d.deliverInline(ctx, a, info, m)
+	if !inline {
+		result = a.Deliver(ctx, info, m)
+	}
 	if result.Delivered && m.FromHarness == protocol.OwnerHarness {
 		d.setWaiting(ls, nil)
 	}

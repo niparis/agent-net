@@ -477,19 +477,9 @@ func checkSocket(path string) error {
 	return nil
 }
 
-func (a *Adapter) Deliver(ctx context.Context, target protocol.SessionInfo, m protocol.Message) daemon.Result {
-	if warning := a.deliveryWarning(); warning != "" {
-		return daemon.Result{Detail: warning}
-	}
-	a.mu.Lock()
-	f, ok := a.byNative[target.NativeID]
-	a.mu.Unlock()
-	if !ok || f.sock == "" {
-		return daemon.Result{Detail: "Claude session is gone or has no inbox socket"}
-	}
-	if err := checkSocket(f.sock); err != nil {
-		return daemon.Result{Detail: "inbox socket refused: " + err.Error()}
-	}
+// prepareFrame records the delivery for reply matching and builds the frame
+// for m. forget undoes the record when the message cannot be delivered.
+func (a *Adapter) prepareFrame(target protocol.SessionInfo, m protocol.Message) (line []byte, forget func(), err error) {
 	// The record that matches Claude's answer to this message is written
 	// before the session can see the message (W4.4), and before its reply
 	// socket exists, so a sweep never closes that socket.
@@ -507,7 +497,7 @@ func (a *Adapter) Deliver(ctx context.Context, target protocol.SessionInfo, m pr
 			a.host.Logf("claude: cannot record delivery %s for reply matching: %v", r.ID, err)
 		}
 	}
-	forget := func() {
+	forget = func() {
 		for _, r := range records {
 			if err := book.ForgetDelivery(r.ID); err != nil {
 				a.host.Logf("claude: cannot forget undelivered %s: %v", r.ID, err)
@@ -518,9 +508,45 @@ func (a *Adapter) Deliver(ctx context.Context, target protocol.SessionInfo, m pr
 	if err != nil {
 		a.host.Logf("claude: no reply socket for %s, sending without a reply address: %v", m.From, err)
 	}
-	line, err := BuildFrameFor(m, replySock, target.Worker != nil)
+	line, err = BuildFrameFor(m, replySock, target.Worker != nil)
 	if err != nil {
 		forget()
+		return nil, nil, err
+	}
+	return line, forget, nil
+}
+
+// DeliverInline is Deliver for a message a Claude Code hook shows inside a turn
+// (decision 0180): the same record for reply matching and the same text, but
+// no write to the inbox. The hook prints the returned text to the model.
+func (a *Adapter) DeliverInline(ctx context.Context, target protocol.SessionInfo, m protocol.Message) (string, daemon.Result) {
+	line, forget, err := a.prepareFrame(target, m)
+	if err != nil {
+		return "", daemon.Result{Detail: err.Error()}
+	}
+	var f frame
+	if err := json.Unmarshal(line, &f); err != nil || f.Message.Content == "" {
+		forget()
+		return "", daemon.Result{Detail: "cannot read the frame it just built"}
+	}
+	return f.Message.Content, daemon.Result{Delivered: true}
+}
+
+func (a *Adapter) Deliver(ctx context.Context, target protocol.SessionInfo, m protocol.Message) daemon.Result {
+	if warning := a.deliveryWarning(); warning != "" {
+		return daemon.Result{Detail: warning}
+	}
+	a.mu.Lock()
+	f, ok := a.byNative[target.NativeID]
+	a.mu.Unlock()
+	if !ok || f.sock == "" {
+		return daemon.Result{Detail: "Claude session is gone or has no inbox socket"}
+	}
+	if err := checkSocket(f.sock); err != nil {
+		return daemon.Result{Detail: "inbox socket refused: " + err.Error()}
+	}
+	line, forget, err := a.prepareFrame(target, m)
+	if err != nil {
 		return daemon.Result{Detail: err.Error()}
 	}
 	conn, err := net.DialTimeout("unix", f.sock, 2*time.Second)

@@ -29,8 +29,8 @@ func withCommand(groups []hookGroupOf, suffix string) []hookGroupOf {
 	return out
 }
 
-// hooksOfFile decodes the hooks object of the settings file.
-func hooksOfFile(t *testing.T, f *fixture) map[string][]struct {
+// allHooksOfFile decodes the hooks object of the settings file, with every hook.
+func allHooksOfFile(t *testing.T, f *fixture) map[string][]struct {
 	Matcher string `json:"matcher"`
 	Hooks   []struct {
 		Type    string `json:"type"`
@@ -55,6 +55,22 @@ func hooksOfFile(t *testing.T, f *fixture) map[string][]struct {
 		t.Fatalf("settings: %v\n%s", err, readSettingsFile(t, f))
 	}
 	return doc.Hooks
+}
+
+// hooksOfFile is allHooksOfFile without the always-on urgent hook, which every
+// setup run adds to PostToolUse and PostToolUseFailure. The other hook tests
+// count their own groups there.
+func hooksOfFile(t *testing.T, f *fixture) map[string][]hookGroupOf {
+	t.Helper()
+	out := map[string][]hookGroupOf{}
+	for event, groups := range allHooksOfFile(t, f) {
+		for _, g := range groups {
+			if len(withCommand([]hookGroupOf{g}, " urgent-hook")) == 0 {
+				out[event] = append(out[event], g)
+			}
+		}
+	}
+	return out
 }
 
 func TestHintHookIsAskedAndAddedOnYes(t *testing.T) {
