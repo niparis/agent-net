@@ -89,6 +89,30 @@ func TestClaudeWorkerLaunchRestrictsWritesToItsWorktree(t *testing.T) {
 	}
 }
 
+// The daemon tests and the agent-net socket need unix sockets. On Linux
+// Claude Code's seccomp filter refuses socket(AF_UNIX) unless every socket is
+// allowed, since a path list has no effect there. Nothing else about the
+// network is loosened: local port binding stays off.
+func TestClaudeWorkerSandboxAllowsUnixSockets(t *testing.T) {
+	dir := "/state/worktrees/w_1"
+	for _, level := range []string{protocol.WorkersSandboxed, protocol.WorkersNoNetwork, protocol.WorkersReadOnly} {
+		sandbox := claudeWorkerSandbox(level, dir, []string{dir})
+		net, ok := sandbox["network"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s: the sandbox carries no network rules: %v", level, sandbox)
+		}
+		if net["allowAllUnixSockets"] != true {
+			t.Errorf("%s: unix sockets are refused, so the daemon socket cannot be made or used: %v", level, net)
+		}
+		if len(net) != 1 {
+			t.Errorf("%s: the network rules loosen more than unix sockets: %v", level, net)
+		}
+		if sandbox["enabled"] != true || sandbox["allowUnsandboxedCommands"] != false {
+			t.Errorf("%s: the sandbox was loosened: %v", level, sandbox)
+		}
+	}
+}
+
 // The other levels keep their meaning: no-network blocks the sandbox's hosts,
 // and read-only also refuses writes inside the worktree.
 func TestClaudeWorkerPermissionLevels(t *testing.T) {
