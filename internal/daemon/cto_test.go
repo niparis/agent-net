@@ -636,7 +636,6 @@ func testCTOToolsThroughFakeOpenCode(t *testing.T) {
 		t.Fatal("CTO reply not delivered")
 	}
 	call("agent_session_get", map[string]any{"session": target})
-	call("session_change", map[string]any{"action": "policy", "session_id": target, "scope": "session", "policy": map[string]any{"delegate": "off"}})
 	call("agent_learn", map[string]any{"subject_kind": "model", "subject": "fake/m1", "finding": "Needs clear tasks", "evidence": []string{"two runs"}})
 	call("worker_change", map[string]any{"action": "start", "project": "shop", "harness": "opencode", "model": "fake/m1", "task": "test", "touches": []string{"tests"}})
 	eventually(t, "approved worker task comes from the owner", func() bool {
