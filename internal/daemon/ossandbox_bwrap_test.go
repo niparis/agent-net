@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -18,11 +19,47 @@ import (
 // installed or cannot make a sandbox (user namespaces off): a skip proves
 // nothing about the sandbox.
 
+// requireBwrap skips the test when bubblewrap cannot make a sandbox. Otherwise it
+// points TMPDIR at a folder under /var/tmp, so t.TempDir, the repositories and the
+// state folders the test makes can be bound into the sandbox. Go may run the test
+// with TMPDIR on /dev/shm, and bwrap cannot bind anything from there. So the test
+// must not run in parallel.
 func requireBwrap(t *testing.T) {
 	t.Helper()
 	if err := osSandboxReady(); err != nil {
 		t.Skipf("bubblewrap cannot run here: %v", err)
 	}
+	t.Setenv("TMPDIR", sandboxFolder(t, "tmp"))
+}
+
+// sandboxHarnessCopy copies the running test binary to a folder under /var/tmp
+// and returns the copy's path. The fake harnesses are this binary, and go test
+// runs it from the Go temp folder, which may be on /dev/shm. The sandbox binds the
+// harness by its path, so it must come from a folder the sandbox can see.
+func sandboxHarnessCopy(t *testing.T) string {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := os.Open(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	dst := filepath.Join(sandboxFolder(t, "bin"), filepath.Base(exe))
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(out, src); err != nil {
+		out.Close()
+		t.Fatal(err)
+	}
+	if err := out.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return dst
 }
 
 // The probe script writes its findings to /tmp/result, which is the private
@@ -122,7 +159,6 @@ func groupMembers(pgid int) []int {
 // Without --die-with-parent and --new-session, the harness and its children
 // stay in bubblewrap's process group: the daemon's stop reaches all of them.
 func TestOSSandboxGroupStopReachesTheHarness(t *testing.T) {
-	t.Parallel()
 	requireBwrap(t)
 	d, w, _ := sandboxWorker(t, protocol.WorkersSandboxed)
 	if err := d.spawnWorker(w, "/bin/sh", []string{"-c", "sleep 60 & wait"}, os.Environ()); err != nil {
@@ -165,7 +201,7 @@ func TestOSSandboxPiWorkerEndToEnd(t *testing.T) {
 	set := shortSet
 	set.OSSandbox = []string{"shop"}
 	w := startWorkerNode(t, g, set, func(c *Config) {
-		c.HarnessPaths = map[string]string{"pi": resolved(os.Args[0])}
+		c.HarnessPaths = map[string]string{"pi": sandboxHarnessCopy(t)}
 		c.PiSessionsDir = sessions
 	})
 	w.register(t, newRepo(t, "shop"))
@@ -228,12 +264,12 @@ func TestOSSandboxPiWorkerEndToEnd(t *testing.T) {
 // private server over loopback (the network level keeps the host network),
 // its plugin registers through the bound socket, and it answers.
 func TestOSSandboxOpenCodeWorkerEndToEnd(t *testing.T) {
-	t.Parallel()
 	requireBwrap(t)
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.OSSandbox = []string{"shop"}
-	w := startWorkerNode(t, g, set, nil)
+	harness := sandboxHarnessCopy(t)
+	w := startWorkerNode(t, g, set, func(c *Config) { c.HarnessPaths = map[string]string{"opencode": harness} })
 	w.register(t, newRepo(t, "shop"))
 	owner := w.ownerID()
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "say ok", Isolation: protocol.IsolationWorktree})

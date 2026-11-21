@@ -518,10 +518,8 @@ mkdir "$shm_root"
 busy_root=$work/busy
 mkdir "$busy_root"
 : >"$busy_root/agent-net-gotmp"
-# GOTMP_BWRAP names a command that is not installed, so the RAM rule applies even
-# on a machine that has bubblewrap.
 gotmp_for() {
-  env -i PATH="$statbin:/usr/bin:/bin" GOTMP_BWRAP=no-bwrap-here GOTMP_SHM_ROOT="$2" FAKE_STAT_OUT="$1" FAKE_STAT_FAIL="${3:-}" \
+  env -i PATH="$statbin:/usr/bin:/bin" GOTMP_SHM_ROOT="$2" FAKE_STAT_OUT="$1" FAKE_STAT_FAIL="${3:-}" \
     sh -c '. "$1"; gotmp_default' sh "$root/scripts/gotmpdir.sh"
 }
 for tc in "tmpfs 4096 2097152|$shm_root/agent-net-gotmp|8 GiB tmpfs" "tmpfs 4096 1048576|$shm_root/agent-net-gotmp|exactly 4 GiB tmpfs" \
@@ -542,7 +540,7 @@ got=$(gotmp_for "" "$shm_root" 1) || fail "gotmp_default failed when stat fails"
 # The TMPDIR rule (tmp_default) uses the same room test as the Go temp folder,
 # and prints nothing when the RAM folder is not usable.
 tmp_for() {
-  env -i PATH="$statbin:/usr/bin:/bin" GOTMP_BWRAP=no-bwrap-here GOTMP_SHM_ROOT="$2" FAKE_STAT_OUT="$1" FAKE_STAT_FAIL="${3:-}" \
+  env -i PATH="$statbin:/usr/bin:/bin" GOTMP_SHM_ROOT="$2" FAKE_STAT_OUT="$1" FAKE_STAT_FAIL="${3:-}" \
     sh -c '. "$1"; tmp_default' sh "$root/scripts/gotmpdir.sh"
 }
 : >"$busy_root/agent-net-tmp"
@@ -562,26 +560,12 @@ done
 if got=$(tmp_for "tmpfs 4096 2097152" "$busy_root"); then fail "TMPDIR folder when the RAM folder cannot be made is $got, want none"; fi
 if got=$(tmp_for "" "$shm_root" 1); then fail "TMPDIR folder when stat fails is $got, want none"; fi
 
-# Where bwrap is installed, both folders stay on disk even with room in RAM: the OS
-# sandbox tests run the test binary inside bwrap, which cannot see /dev/shm. Only
-# the folder names are checked, so nothing is made under the real /tmp.
-bwrap_shm=$work/bwrap-shm
-mkdir "$bwrap_shm"
-bwrap_gotmp=$(env -i PATH="$statbin:/usr/bin:/bin" GOTMP_BWRAP=sh GOTMP_SHM_ROOT="$bwrap_shm" FAKE_STAT_OUT="tmpfs 4096 2097152" \
-  sh -c '. "$1"; gotmp_default' sh "$root/scripts/gotmpdir.sh") || fail "gotmp_default failed where bwrap is installed"
-[ "$bwrap_gotmp" = /tmp/agent-net-gotmp ] || fail "Go temp folder where bwrap is installed is $bwrap_gotmp, want /tmp/agent-net-gotmp"
-if env -i PATH="$statbin:/usr/bin:/bin" GOTMP_BWRAP=sh GOTMP_SHM_ROOT="$bwrap_shm" FAKE_STAT_OUT="tmpfs 4096 2097152" \
-  sh -c '. "$1"; tmp_default' sh "$root/scripts/gotmpdir.sh" >/dev/null; then
-  fail "tmp_default printed a RAM folder where bwrap is installed"
-fi
-[ -z "$(ls -A "$bwrap_shm")" ] || fail "a RAM folder was made where bwrap is installed: $(ls -A "$bwrap_shm")"
-
 # test-changed.sh sets TMPDIR to the RAM folder when the caller set none, and keeps
 # a TMPDIR the caller set. The fake go logs the TMPDIR and GOTMPDIR of each call.
 reset_tree
 change_production
 : >"$work/go-env.log"
-env -u TMPDIR -u GOTMPDIR PATH="$statbin:$work/bin:/usr/bin:/bin" GOTMP_BWRAP=no-bwrap-here GOTMP_SHM_ROOT="$shm_root" \
+env -u TMPDIR -u GOTMPDIR PATH="$statbin:$work/bin:/usr/bin:/bin" GOTMP_SHM_ROOT="$shm_root" \
   FAKE_STAT_OUT="tmpfs 4096 2097152" FAKE_GO_LOG="$work/go.log" FAKE_GO_TMP_LOG="$work/go-env.log" \
   FAKE_GOFMT_LOG="$work/gofmt.log" TEST_CHANGED_GO="$real_go" \
   sh "$script" HEAD >"$work/out" 2>&1 || fail "a run with the RAM folders failed: $(cat "$work/out")"
@@ -592,7 +576,7 @@ mkdir -p "$work/caller-tmp"
 reset_tree
 change_production
 : >"$work/go-env.log"
-env -u GOTMPDIR TMPDIR="$work/caller-tmp" PATH="$statbin:$work/bin:/usr/bin:/bin" GOTMP_BWRAP=no-bwrap-here GOTMP_SHM_ROOT="$shm_root" \
+env -u GOTMPDIR TMPDIR="$work/caller-tmp" PATH="$statbin:$work/bin:/usr/bin:/bin" GOTMP_SHM_ROOT="$shm_root" \
   FAKE_STAT_OUT="tmpfs 4096 2097152" FAKE_GO_LOG="$work/go.log" FAKE_GO_TMP_LOG="$work/go-env.log" \
   FAKE_GOFMT_LOG="$work/gofmt.log" TEST_CHANGED_GO="$real_go" \
   sh "$script" HEAD >"$work/out" 2>&1 || fail "a run with a caller TMPDIR failed: $(cat "$work/out")"
