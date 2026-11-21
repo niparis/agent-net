@@ -9,7 +9,7 @@ var settingsFoldColumns = []struct{ table, name, spec string }{
 	{"teams", "settings_token", `TEXT NOT NULL DEFAULT ''`},
 }
 
-// settingsFoldMigration leaves one settings system (decision 0181): see the
+// settingsFoldMigration leaves one settings system (decision 0182): see the
 // decision for where each table's facts go.
 const settingsFoldMigration = `
 -- settings fold: one settings system.
