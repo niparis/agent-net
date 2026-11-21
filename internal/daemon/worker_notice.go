@@ -1851,6 +1851,9 @@ func stageWorkerLeftovers(ctx context.Context, dir string) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		if isUntrackedSandboxPlaceholder(ctx, dir, path, info) {
+			continue
+		}
 		skip := path == "agent-net" || strings.HasSuffix(path, ".test") || strings.HasSuffix(path, ".exe") || info.Size() > 5_000_000
 		if info.Mode().IsRegular() && !skip {
 			f, err := os.Open(filepath.Join(dir, path))
