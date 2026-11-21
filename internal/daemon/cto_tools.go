@@ -387,6 +387,19 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		}
 		b, _ := json.Marshal(p)
 		return d.localReply(ctx, d.ctoReadConn(), b)
+	case "agent_message_withdraw":
+		// The gateway decides whether the CTO may take the message back: its
+		// own, or any undelivered message to a session (decision 0130).
+		var p map[string]any
+		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad agent_message_withdraw arguments")
+		}
+		if message, ok := p["message"]; ok {
+			delete(p, "message")
+			p["message_id"] = message
+		}
+		b, _ := json.Marshal(p)
+		return d.localWithdraw(ctx, d.ctoReadConn(), b)
 	case "agent_owner_ask":
 		var p struct {
 			Kind           string   `json:"kind"`
