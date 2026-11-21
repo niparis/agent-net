@@ -59,6 +59,12 @@ func (d *Daemon) loginPATH() string {
 	return d.workerEnvState.loginPath
 }
 
+// workerSearchPATH is the PATH a worker's processes get: the daemon's PATH with
+// the entries of the login shell that it lacks.
+func (d *Daemon) workerSearchPATH() string {
+	return mergePATH(os.Getenv("PATH"), d.loginPATH())
+}
+
 // mergePATH is current with the entries of extra that it lacks, in order. The
 // daemon's own entries stay first, so a tool that resolved before still does.
 func mergePATH(current, extra string) string {
@@ -146,7 +152,7 @@ func (d *Daemon) workerToolEnv(w *worker) map[string]string {
 	if err := os.MkdirAll(d.workerCacheRoot(w), 0o700); err != nil {
 		d.Logf("worker %s: cache folder: %v", w.id, err)
 	}
-	set["PATH"] = mergePATH(os.Getenv("PATH"), d.loginPATH())
+	set["PATH"] = d.workerSearchPATH()
 	if ca := d.systemCA(); ca != "" {
 		// uv and pip carry their own CA list, which lacks a local CA that the
 		// system trusts. uv reads the system store with UV_NATIVE_TLS; pip

@@ -372,6 +372,7 @@ type Daemon struct {
 	urgentHeld          sync.Map       // session ID -> an urgent message is held for it at the gateway (decision 0180)
 	inlineCaptures      sync.Map       // message ID -> *inlineCapture, a hook is collecting this message
 	workerEnvState      workerEnvState // login PATH and system CA bundle, found once
+	claudeSandboxLog    sync.Once      // the Claude sandbox gap is logged once per start
 	ownerPrompts        ownerPrompts
 	claudeChecks        sync.WaitGroup // background checks of Claude prompts that wait for the transcript
 	turnEnds            turnEndAsks
