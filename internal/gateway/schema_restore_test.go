@@ -134,6 +134,33 @@ func TestRestoreBringsBackTheOAuthTables(t *testing.T) {
 	}
 }
 
+// The Desk rework dropped cto_intake, delivery_step_inbox and
+// ask_sort_hide_receipts. A test that rewinds before it needs all three back,
+// empty, and the dropped inbox_items columns restored.
+func TestRestoreBringsBackTheDeskTables(t *testing.T) {
+	s, _ := newTestStore(t)
+	before := migrationVersion(t, deskTablesMarker) - 1
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>?`, before); err != nil {
+		t.Fatal(err)
+	}
+	restoreRepoSideTables(t, s.db)
+	for _, name := range []string{"cto_intake", "delivery_step_inbox", "ask_sort_hide_receipts"} {
+		if !tableExists(t, s, name) {
+			t.Fatalf("%s is missing after the restore", name)
+		}
+		var n int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM ` + name).Scan(&n); err != nil || n != 0 {
+			t.Fatalf("restored %s holds %d rows, want none (%v)", name, n, err)
+		}
+	}
+	for _, col := range []string{"state", "dup_of", "back_note", "override_facts"} {
+		var has int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('inbox_items') WHERE name=?`, col).Scan(&has); err != nil || has == 0 {
+			t.Fatalf("inbox_items.%s is missing after the restore (%v)", col, err)
+		}
+	}
+}
+
 // Only replayMigrations calls migrate in a test. A direct call replays without
 // the tables that later migrations dropped, and fails on the first drop it
 // reaches. The helper file itself is the one exception.

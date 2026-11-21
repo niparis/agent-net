@@ -17,18 +17,11 @@ import (
 const deskTablesReworkMarker = "desk tables rework"
 
 // recreateDeskDroppedTables restores the tables and inbox_items columns that
-// deskTablesMigration dropped, for tests that rewind schema_version before it.
+// deskTablesMigration dropped, for tests that seed old rows or rewind
+// schema_version before it.
 func recreateDeskDroppedTables(t *testing.T, db repoDB) {
 	t.Helper()
-	for _, q := range []string{
-		`CREATE TABLE IF NOT EXISTS cto_intake (id TEXT PRIMARY KEY, kind TEXT NOT NULL, subject TEXT NOT NULL, severity INTEGER NOT NULL, text TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '', first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL, count INTEGER NOT NULL DEFAULT 1, state TEXT NOT NULL DEFAULT 'open', alert_ask TEXT NOT NULL DEFAULT '', stuck_ask TEXT NOT NULL DEFAULT '', lead TEXT NOT NULL DEFAULT '', closed_at INTEGER NOT NULL DEFAULT 0, close_reason TEXT NOT NULL DEFAULT '')`,
-		`CREATE TABLE IF NOT EXISTS delivery_step_inbox (change_id TEXT NOT NULL, revision INTEGER NOT NULL, step TEXT NOT NULL, for_step TEXT NOT NULL DEFAULT '', after_merge INTEGER NOT NULL DEFAULT 0, commit_hash TEXT NOT NULL, item_id TEXT NOT NULL UNIQUE, PRIMARY KEY(change_id, revision, step, for_step, after_merge))`,
-		`CREATE TABLE IF NOT EXISTS ask_sort_hide_receipts (id TEXT PRIMARY KEY, ids TEXT NOT NULL, undone INTEGER NOT NULL DEFAULT 0)`,
-	} {
-		if _, err := db.Exec(q); err != nil {
-			t.Fatalf("recreate desk table: %v", err)
-		}
-	}
+	restoreTablesAt(t, db, migrationVersion(t, deskTablesMarker)-1, "cto_intake", "delivery_step_inbox", "ask_sort_hide_receipts")
 	var hasInbox int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='inbox_items'`).Scan(&hasInbox); err != nil {
 		t.Fatal(err)
@@ -108,9 +101,9 @@ func seedPreDeskReworkDB(t *testing.T, s *Store, now int64) {
 		`INSERT INTO sessions(id,node_id,harness,native_id,name,online,last_seen) VALUES
 			('s_chief','n1','claude','nc','chief',1,1),
 			('s_asker','n1','codex','na','asker',1,1)`,
-		`INSERT INTO owner_settings(key,value,updated_at) VALUES('chief_session','s_chief',1)`,
+		`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('chief_session','s_chief',1)`,
 		`INSERT INTO agents(id,display_name,created_at,updated_at) VALUES('a-net','agent-net lead',0,0)`,
-		`INSERT INTO repos(id,display_name,created_at,updated_at,owner_agent_id) VALUES('agent-net','agent-net',0,0,'a-net')`,
+		`INSERT INTO repos(id,display_name,created_at,updated_at,lead_agent_id) VALUES('agent-net','agent-net',0,0,'a-net')`,
 		`INSERT INTO delivery_changes(id,project,machine,branch,head_commit,revision,origin,title,state,created_at,updated_at)
 			VALUES('ch_mig','demo','n1','feat','deadbeef',2,'{}','Migrate title','open',1,1)`,
 		// Existing inbox_items covering each status/state/back_note and targets for alert_ask, stuck_ask, delivery_step_inbox.
@@ -190,7 +183,7 @@ func TestDeskTablesMigrationCopiesAndDrops(t *testing.T) {
 			t.Errorf("column inbox_items.%s still exists", gone)
 		}
 	}
-	for _, want := range []string{"dedupe_key", "count", "first_seen", "last_seen", "severity"} {
+	for _, want := range []string{"dedupe_key", "count", "first_seen", "last_seen", "severity", "override_facts"} {
 		if !cols[want] {
 			t.Errorf("column inbox_items.%s missing", want)
 		}
@@ -351,7 +344,7 @@ func TestDeskTablesFreshMatchesUpgradedSchema(t *testing.T) {
 func TestDeskOperationsAfterRework(t *testing.T) {
 	s, c, chief, asker, cto, node := deskRig(t)
 	if _, err := s.db.Exec(`INSERT INTO agents(id,display_name,created_at,updated_at) VALUES('a-net','agent-net lead',0,0);
-		INSERT INTO repos(id,display_name,created_at,updated_at,owner_agent_id) VALUES('agent-net','agent-net',0,0,'a-net')`); err != nil {
+		INSERT INTO repos(id,display_name,created_at,updated_at,lead_agent_id) VALUES('agent-net','agent-net',0,0,'a-net')`); err != nil {
 		t.Fatal(err)
 	}
 

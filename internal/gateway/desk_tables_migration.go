@@ -4,6 +4,16 @@ import "database/sql"
 
 const deskTablesMarker = "desk tables rework"
 
+// deskTablesColumns are the CTO intake columns added to inbox_items by the
+// migrate loop before migrateDeskTablesTx runs.
+var deskTablesColumns = []migrationColumn{
+	{"inbox_items", "dedupe_key", `TEXT NOT NULL DEFAULT ''`},
+	{"inbox_items", "count", `INTEGER NOT NULL DEFAULT 0`},
+	{"inbox_items", "first_seen", `INTEGER NOT NULL DEFAULT 0`},
+	{"inbox_items", "last_seen", `INTEGER NOT NULL DEFAULT 0`},
+	{"inbox_items", "severity", `INTEGER NOT NULL DEFAULT 0`},
+}
+
 const deskTablesMigration = `
 -- desk tables rework: fold cto_intake, delivery_step_inbox and ask_sort_hide_receipts
 -- into inbox_items and desk_log, keep one status field, drop dup_of and back_note.
@@ -58,21 +68,6 @@ func migrateDeskTablesTx(tx *sql.Tx) error {
 		var n int
 		err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('inbox_items') WHERE name=?`, name).Scan(&n)
 		return n > 0, err
-	}
-	for _, col := range [][2]string{
-		{"dedupe_key", `TEXT NOT NULL DEFAULT ''`},
-		{"count", `INTEGER NOT NULL DEFAULT 0`},
-		{"first_seen", `INTEGER NOT NULL DEFAULT 0`},
-		{"last_seen", `INTEGER NOT NULL DEFAULT 0`},
-		{"severity", `INTEGER NOT NULL DEFAULT 0`},
-	} {
-		if ok, err := hasCol(col[0]); err != nil {
-			return err
-		} else if !ok {
-			if _, err := tx.Exec(`ALTER TABLE inbox_items ADD COLUMN ` + col[0] + ` ` + col[1]); err != nil {
-				return err
-			}
-		}
 	}
 	for _, step := range [][2]string{
 		{"state", `UPDATE inbox_items SET status='carried_out' WHERE state='carried_out'`},
