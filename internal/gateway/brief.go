@@ -312,7 +312,7 @@ func (s *Store) briefFacts(now time.Time) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	rows, err := s.db.Query(`SELECT text FROM standing_orders WHERE kind IN (?,?) AND saved_at>=? ORDER BY saved_at,id`,
+	rows, err := s.db.Query(`SELECT text FROM standing_orders WHERE kind IN (?,?) AND voided_at=0 AND saved_at>=? ORDER BY saved_at,id`,
 		protocol.StandingKindAnswer, protocol.StandingKindRule, now.Add(-24*time.Hour).Unix())
 	if err != nil {
 		return "", err
