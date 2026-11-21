@@ -127,7 +127,7 @@ func TestOAuthRegistration(t *testing.T) {
 	s, c, h := oauthFixture(t)
 	id := oauthRegister(t, h)
 	var uris string
-	if err := s.db.QueryRow("SELECT redirect_uris FROM oauth_clients WHERE client_id=?", id).Scan(&uris); err != nil || !strings.Contains(uris, "localhost") {
+	if err := s.db.QueryRow("SELECT redirect_uris FROM apps WHERE client_id=? AND state='registered'", id).Scan(&uris); err != nil || !strings.Contains(uris, "localhost") {
 		t.Fatalf("stored uris %s %v", uris, err)
 	}
 	body := `{"client_name":"Test","redirect_uris":["https://example.test/cb","http://127.0.0.1/cb","http://[::1]:123/cb"],"grant_types":["authorization_code","refresh_token"],"response_types":["code"],"token_endpoint_auth_method":"none"}`
@@ -294,10 +294,10 @@ func TestOAuthClientLimitCleanup(t *testing.T) {
 		t.Fatal("client ID reused")
 	}
 	var count int
-	if err := s.db.QueryRow("SELECT count(*) FROM oauth_clients WHERE client_id=?", kept).Scan(&count); err != nil || count != 1 {
+	if err := s.db.QueryRow("SELECT count(*) FROM apps WHERE client_id=? AND state='approved'", kept).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("approved client removed: %d %v", count, err)
 	}
-	if err := s.db.QueryRow("SELECT count(*) FROM oauth_clients").Scan(&count); err != nil || count != 2 {
+	if err := s.db.QueryRow("SELECT count(*) FROM apps").Scan(&count); err != nil || count != 2 {
 		t.Fatalf("cleanup count: %d %v", count, err)
 	}
 }

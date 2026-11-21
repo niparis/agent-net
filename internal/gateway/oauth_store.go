@@ -70,6 +70,13 @@ func oauthContains(items []string, value string) bool {
 	return false
 }
 
+// sweepRegisteredClients forgets a client the owner did not approve within the
+// hour. An approved client is an app and stays.
+const sweepRegisteredClients = `DELETE FROM apps WHERE state='registered' AND created_at<=?`
+
+// oldestRegistered picks the registered client that a full pool gives up first.
+const oldestRegistered = `SELECT id FROM apps WHERE state='registered' ORDER BY created_at,rowid LIMIT 1`
+
 func (s *Store) registerOAuthClient(c oauthClient, now time.Time, source string) (oauthClient, error) {
 	var err error
 	c.ClientID, err = oauthRandom(32)
@@ -94,7 +101,7 @@ func (s *Store) registerOAuthClient(c oauthClient, now time.Time, source string)
 		return c, err
 	}
 	defer tx.Rollback()
-	if _, err = tx.Exec(`DELETE FROM oauth_clients WHERE created_at <= ? AND NOT EXISTS (SELECT 1 FROM apps WHERE apps.client_id=oauth_clients.client_id)`, now.Add(-time.Hour).UnixNano()); err != nil {
+	if _, err = tx.Exec(sweepRegisteredClients, now.Add(-time.Hour).UnixNano()); err != nil {
 		return c, err
 	}
 	var count int
@@ -104,18 +111,20 @@ func (s *Store) registerOAuthClient(c oauthClient, now time.Time, source string)
 	if count >= 5 {
 		return c, errOAuthLimit
 	}
-	if err = tx.QueryRow(`SELECT count(*) FROM oauth_clients WHERE NOT EXISTS (SELECT 1 FROM apps WHERE apps.client_id=oauth_clients.client_id)`).Scan(&count); err != nil {
+	if err = tx.QueryRow(`SELECT count(*) FROM apps WHERE state='registered'`).Scan(&count); err != nil {
 		return c, err
 	}
 	if count >= oauthClientLimit {
-		if _, err = tx.Exec(`DELETE FROM oauth_pending WHERE client_id=(SELECT client_id FROM oauth_clients WHERE NOT EXISTS (SELECT 1 FROM apps WHERE apps.client_id=oauth_clients.client_id) ORDER BY created_at,rowid LIMIT 1)`); err != nil {
+		if _, err = tx.Exec(`DELETE FROM oauth_pending WHERE client_id=(SELECT client_id FROM apps WHERE id=(` + oldestRegistered + `))`); err != nil {
 			return c, err
 		}
-		if _, err = tx.Exec(`DELETE FROM oauth_clients WHERE client_id=(SELECT client_id FROM oauth_clients WHERE NOT EXISTS (SELECT 1 FROM apps WHERE apps.client_id=oauth_clients.client_id) ORDER BY created_at,rowid LIMIT 1)`); err != nil {
+		if _, err = tx.Exec(`DELETE FROM apps WHERE id=(` + oldestRegistered + `)`); err != nil {
 			return c, err
 		}
 	}
-	_, err = tx.Exec(`INSERT INTO oauth_clients (client_id,client_name,redirect_uris,grant_types,response_types,token_endpoint_auth_method,created_at,source) VALUES (?,?,?,?,?,?,?,?)`, c.ClientID, c.ClientName, string(uris), string(grants), string(responses), c.TokenEndpointAuthMethod, now.UnixNano(), source)
+	// The row is not an app yet: it has no name and a placeholder kind, which
+	// approval sets. Every reader of apps skips state 'registered'.
+	_, err = tx.Exec(`INSERT INTO apps (id,name,kind,client_id,client_name,redirect_uris,created_at,grants,grant_types,response_types,token_endpoint_auth_method,source,state) VALUES (?,'','owner_app',?,?,?,?,'[]',?,?,?,?,'registered')`, protocol.NewID("app"), c.ClientID, c.ClientName, string(uris), now.UnixNano(), string(grants), string(responses), c.TokenEndpointAuthMethod, source)
 	if err != nil {
 		return c, err
 	}
@@ -131,7 +140,7 @@ func oauthReadClient(q interface{ QueryRow(string, ...any) *sql.Row }, id string
 	var c oauthClient
 	var uris, grants, responses string
 	var created int64
-	err := q.QueryRow(`SELECT client_id,client_name,redirect_uris,grant_types,response_types,token_endpoint_auth_method,created_at FROM oauth_clients WHERE client_id=?`, id).Scan(&c.ClientID, &c.ClientName, &uris, &grants, &responses, &c.TokenEndpointAuthMethod, &created)
+	err := q.QueryRow(`SELECT client_id,client_name,redirect_uris,grant_types,response_types,token_endpoint_auth_method,created_at FROM apps WHERE client_id=? LIMIT 1`, id).Scan(&c.ClientID, &c.ClientName, &uris, &grants, &responses, &c.TokenEndpointAuthMethod, &created)
 	if err != nil {
 		return c, err
 	}
@@ -159,7 +168,7 @@ func (s *Store) newOAuthPending(clientID, redirect, challenge, state, resource, 
 		return p, err
 	}
 	defer tx.Rollback()
-	if _, err = tx.Exec(`DELETE FROM oauth_clients WHERE created_at<=? AND NOT EXISTS (SELECT 1 FROM apps WHERE apps.client_id=oauth_clients.client_id)`, now.Add(-time.Hour).UnixNano()); err != nil {
+	if _, err = tx.Exec(sweepRegisteredClients, now.Add(-time.Hour).UnixNano()); err != nil {
 		return p, err
 	}
 	client, err := oauthReadClient(tx, clientID)
@@ -247,7 +256,7 @@ func (s *Store) PendingByUserCode(code, source string, now time.Time) (OAuthPend
 	}
 	normalized := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(code), "-", ""))
 	var created, expires int64
-	err = tx.QueryRow(`SELECT p.id,p.user_code,p.client_id,CASE WHEN p.client_id='phone' THEN p.state ELSE c.client_name END,p.redirect_uri,p.resource,p.created_at,p.expires_at FROM oauth_pending p JOIN oauth_clients c ON c.client_id=p.client_id WHERE p.user_code=? AND p.status='pending' AND p.expires_at>?`, normalized, now.UnixNano()).Scan(&p.ID, &p.UserCode, &p.ClientID, &p.ClientName, &p.RedirectURI, &p.Resource, &created, &expires)
+	err = tx.QueryRow(`SELECT p.id,p.user_code,p.client_id,CASE WHEN p.client_id='phone' THEN p.state ELSE c.client_name END,p.redirect_uri,p.resource,p.created_at,p.expires_at FROM oauth_pending p LEFT JOIN apps c ON c.id=(SELECT id FROM apps WHERE client_id=p.client_id LIMIT 1) WHERE (p.client_id='phone' OR c.id IS NOT NULL) AND p.user_code=? AND p.status='pending' AND p.expires_at>?`, normalized, now.UnixNano()).Scan(&p.ID, &p.UserCode, &p.ClientID, &p.ClientName, &p.RedirectURI, &p.Resource, &created, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		if _, err = tx.Exec("INSERT INTO oauth_attempts (kind,source,at) VALUES ('code_miss',?,?)", source, now.UnixNano()); err != nil {
 			return p, err
@@ -287,16 +296,20 @@ func (s *Store) ApprovePending(id, kind, name string, now time.Time, ownerSessio
 		return err
 	}
 	defer tx.Rollback()
-	var clientID, clientName, uris, redirect string
-	err = tx.QueryRow(`SELECT c.client_id,CASE WHEN p.client_id='phone' THEN p.state ELSE c.client_name END,c.redirect_uris,p.redirect_uri FROM oauth_pending p JOIN oauth_clients c ON c.client_id=p.client_id WHERE p.id=? AND p.status='pending' AND p.expires_at>?`, id, now.UnixNano()).Scan(&clientID, &clientName, &uris, &redirect)
+	var clientID, clientName, redirect string
+	err = tx.QueryRow(`SELECT p.client_id,CASE WHEN p.client_id='phone' THEN p.state ELSE c.client_name END,p.redirect_uri FROM oauth_pending p LEFT JOIN apps c ON c.id=(SELECT id FROM apps WHERE client_id=p.client_id LIMIT 1) WHERE (p.client_id='phone' OR c.id IS NOT NULL) AND p.id=? AND p.status='pending' AND p.expires_at>?`, id, now.UnixNano()).Scan(&clientID, &clientName, &redirect)
 	if err != nil {
 		return err
 	}
 	// This is the same record as CreateApp, in the approval transaction so a
-	// failed or racing approval cannot leave an app without an approval.
+	// failed or racing approval cannot leave an app without an approval. The new
+	// row copies the client columns of an existing row of the client (a phone
+	// pairing has none). A registered row is replaced by the app.
 	appID := protocol.NewID("app")
-	_, err = tx.Exec(`INSERT INTO apps (id,name,kind,client_id,client_name,redirect_uris,created_at,last_used_at,revoked_at,grants) VALUES (?,?,?,?,?,?,?,NULL,NULL,'[]')`, appID, name, kind, clientID, clientName, uris, now.UnixNano())
-	if err != nil {
+	if _, err = tx.Exec(`INSERT INTO apps (id,name,kind,client_id,client_name,redirect_uris,created_at,grant_types,response_types,token_endpoint_auth_method,source) SELECT ?,?,?,?,?,COALESCE(c.redirect_uris,'[]'),?,COALESCE(c.grant_types,'[]'),COALESCE(c.response_types,'[]'),COALESCE(c.token_endpoint_auth_method,'none'),COALESCE(c.source,'') FROM (SELECT 1) LEFT JOIN apps c ON c.client_id=? LIMIT 1`, appID, name, kind, clientID, clientName, now.UnixNano(), clientID); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`DELETE FROM apps WHERE client_id=? AND state='registered'`, clientID); err != nil {
 		return err
 	}
 	if _, err = tx.Exec("UPDATE oauth_pending SET status='approved', app_id=?, approved_at=? WHERE id=?", appID, now.UnixNano(), id); err != nil {
@@ -538,13 +551,13 @@ func (s *Store) CleanupOAuth(now time.Time) error {
 		`DELETE FROM oauth_pending WHERE expires_at<=?`,
 		`DELETE FROM oauth_attempts WHERE kind='registration' AND at<=?`,
 		`DELETE FROM oauth_codes WHERE (used_at IS NULL AND expires_at<=? AND NOT EXISTS (SELECT 1 FROM oauth_pending WHERE oauth_pending.id=oauth_codes.pending_id)) OR (used_at IS NOT NULL AND used_at<=?)`,
-		`DELETE FROM oauth_clients WHERE created_at<=? AND NOT EXISTS (SELECT 1 FROM apps WHERE apps.client_id=oauth_clients.client_id)`,
+		sweepRegisteredClients,
 	} {
 		var args []any
 		switch {
 		case strings.Contains(q, "oauth_codes"):
 			args = []any{now.UnixNano(), now.Add(-90 * 24 * time.Hour).UnixNano()}
-		case strings.Contains(q, "oauth_clients"), strings.Contains(q, "oauth_attempts"):
+		case q == sweepRegisteredClients, strings.Contains(q, "oauth_attempts"):
 			args = []any{now.Add(-time.Hour).UnixNano()}
 		default:
 			args = []any{now.UnixNano()}

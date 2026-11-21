@@ -56,26 +56,6 @@ func scanApp(row interface{ Scan(...any) error }) (App, error) {
 	return app, nil
 }
 
-// CreateApp records an approval. Names are unique among active apps.
-func (s *Store) CreateApp(name, kind, clientID, clientName string, redirectURIs []string) (App, error) {
-	if kind != "owner_app" && kind != "bot" {
-		return App{}, reject("invalid app kind %q", kind)
-	}
-	if redirectURIs == nil {
-		redirectURIs = []string{}
-	}
-	uris, err := json.Marshal(redirectURIs)
-	if err != nil {
-		return App{}, err
-	}
-	app := App{ID: protocol.NewID("app"), Name: name, Kind: kind, ClientID: clientID, ClientName: clientName, RedirectURIs: append([]string{}, redirectURIs...), CreatedAt: s.now(), Grants: []string{}}
-	_, err = s.db.Exec("INSERT INTO apps ("+appColumns+") VALUES (?,?,?,?,?,?,?,NULL,NULL,'[]')", app.ID, name, kind, clientID, clientName, string(uris), app.CreatedAt.UnixNano())
-	if err != nil {
-		return App{}, err
-	}
-	return app, nil
-}
-
 func newAppToken() (string, error) {
 	var bytes [32]byte
 	if _, err := rand.Read(bytes[:]); err != nil {
@@ -84,20 +64,12 @@ func newAppToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(bytes[:]), nil
 }
 
-func issueAppToken(tx *sql.Tx, appID, kind string, now time.Time, ttl time.Duration) (string, error) {
-	family, err := oauthRandom(32)
-	if err != nil {
-		return "", err
-	}
-	return issueFamilyToken(tx, appID, family, kind, "oauth", now, ttl)
-}
-
 func issueFamilyToken(tx *sql.Tx, appID, family, kind, purpose string, now time.Time, ttl time.Duration) (string, error) {
 	raw, err := newAppToken()
 	if err != nil {
 		return "", err
 	}
-	result, err := tx.Exec("INSERT INTO app_tokens (hash, app_id, type, expires_at, created_at, family_id, purpose) SELECT ?, id, ?, ?, ?, ?, ? FROM apps WHERE id = ? AND revoked_at IS NULL", hashHex(raw), kind, now.Add(ttl).UnixNano(), now.UnixNano(), family, purpose, appID)
+	result, err := tx.Exec("INSERT INTO app_tokens (hash, app_id, type, expires_at, created_at, family_id, purpose) SELECT ?, id, ?, ?, ?, ?, ? FROM apps WHERE id = ? AND revoked_at IS NULL AND state = 'approved'", hashHex(raw), kind, now.Add(ttl).UnixNano(), now.UnixNano(), family, purpose, appID)
 	if err != nil {
 		return "", err
 	}
@@ -112,30 +84,6 @@ func issueFamilyToken(tx *sql.Tx, appID, family, kind, purpose string, now time.
 		if _, err := tx.Exec(`DELETE FROM app_tokens WHERE hash IN (SELECT hash FROM app_tokens WHERE app_id=? AND type='access' ORDER BY created_at DESC, rowid DESC LIMIT -1 OFFSET 20)`, appID); err != nil {
 			return "", err
 		}
-	}
-	return raw, nil
-}
-
-// IssueToken returns a 256-bit URL-safe token, storing only its SHA-256 hash.
-// A missing or revoked app returns sql.ErrNoRows.
-func (s *Store) IssueToken(appID, kind string, ttl time.Duration) (string, error) {
-	if kind != "access" && kind != "refresh" {
-		return "", reject("invalid app token type %q", kind)
-	}
-	if ttl <= 0 {
-		return "", reject("app token lifetime must be positive")
-	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return "", err
-	}
-	defer tx.Rollback()
-	raw, err := issueAppToken(tx, appID, kind, s.now(), ttl)
-	if err != nil {
-		return "", err
-	}
-	if err := tx.Commit(); err != nil {
-		return "", err
 	}
 	return raw, nil
 }
@@ -199,16 +147,11 @@ func (s *Store) RotateRefresh(raw string, now time.Time) (access, refresh string
 	if expires <= now.UnixNano() {
 		return "", "", sql.ErrNoRows
 	}
-	// A fixed 24-hour window starts at the first rotation for this family.
-	var started int64
+	// Each rotation leaves a used refresh hash, so the rotations of the last 24
+	// hours are those rows. The window slides with the clock.
 	var rotations int
-	err = tx.QueryRow(`SELECT window_started_at,rotations FROM app_refresh_budget WHERE family_id=?`, family).Scan(&started, &rotations)
-	if err != nil && err != sql.ErrNoRows {
+	if err = tx.QueryRow(`SELECT count(*) FROM app_tokens WHERE family_id=? AND type='refresh' AND used_at>?`, family, now.Add(-24*time.Hour).UnixNano()).Scan(&rotations); err != nil {
 		return "", "", err
-	}
-	if err == sql.ErrNoRows || now.UnixNano()-started >= int64(24*time.Hour) {
-		started = now.UnixNano()
-		rotations = 0
 	}
 	if rotations >= 200 {
 		if _, err = tx.Exec(`DELETE FROM app_tokens WHERE family_id=? AND used_at IS NULL`, family); err != nil {
@@ -219,9 +162,6 @@ func (s *Store) RotateRefresh(raw string, now time.Time) (access, refresh string
 		}
 		s.logf("oauth.refresh_rotation_limit", "app", appID)
 		return "", "", sql.ErrNoRows
-	}
-	if _, err = tx.Exec(`INSERT INTO app_refresh_budget(family_id,window_started_at,rotations) VALUES(?,?,?) ON CONFLICT(family_id) DO UPDATE SET window_started_at=excluded.window_started_at,rotations=excluded.rotations`, family, started, rotations+1); err != nil {
-		return "", "", err
 	}
 	if _, err = tx.Exec(`UPDATE app_tokens SET used_at=? WHERE hash=?`, now.UnixNano(), hashHex(raw)); err != nil {
 		return "", "", err
@@ -251,7 +191,7 @@ func (s *Store) RevokeApp(id string) error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec("UPDATE apps SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL", s.now().UnixNano(), id); err != nil {
+	if _, err := tx.Exec("UPDATE apps SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL AND state = 'approved'", s.now().UnixNano(), id); err != nil {
 		return err
 	}
 	if _, err := tx.Exec("DELETE FROM app_tokens WHERE app_id = ?", id); err != nil {
@@ -275,7 +215,7 @@ func (s *Store) RenameApp(id, name string) error {
 		return err
 	}
 	defer tx.Rollback()
-	result, err := tx.Exec("UPDATE apps SET name=? WHERE id=? AND revoked_at IS NULL", name, id)
+	result, err := tx.Exec("UPDATE apps SET name=? WHERE id=? AND revoked_at IS NULL AND state='approved'", name, id)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			return errors.New("name in use")
@@ -321,7 +261,7 @@ func (s *Store) SetAppGrant(id, grant string, on bool) error {
 	}
 	defer tx.Rollback()
 	var kind, raw string
-	if err = tx.QueryRow("SELECT kind, grants FROM apps WHERE id=? AND revoked_at IS NULL", id).Scan(&kind, &raw); err != nil {
+	if err = tx.QueryRow("SELECT kind, grants FROM apps WHERE id=? AND revoked_at IS NULL AND state='approved'", id).Scan(&kind, &raw); err != nil {
 		return err
 	}
 	if kind != "bot" {
@@ -352,7 +292,7 @@ func (s *Store) SetAppGrant(id, grant string, on bool) error {
 
 // ListApps includes revoked apps, ordered by creation time and ID.
 func (s *Store) ListApps() ([]App, error) {
-	rows, err := s.db.Query("SELECT " + appColumns + " FROM apps ORDER BY created_at, id")
+	rows, err := s.db.Query("SELECT " + appColumns + " FROM apps WHERE state = 'approved' ORDER BY created_at, id")
 	if err != nil {
 		return nil, err
 	}
@@ -389,9 +329,6 @@ func (s *Store) DeleteExpiredTokens(now time.Time) error {
 		return err
 	}
 	if _, err = tx.Exec(`DELETE FROM app_tokens WHERE rowid IN (SELECT rowid FROM (SELECT rowid, row_number() OVER (PARTITION BY app_id ORDER BY used_at DESC, rowid DESC) AS rank FROM app_tokens WHERE type='refresh' AND used_at IS NOT NULL) WHERE rank>2000)`); err != nil {
-		return err
-	}
-	if _, err = tx.Exec(`DELETE FROM app_refresh_budget WHERE NOT EXISTS (SELECT 1 FROM app_tokens WHERE app_tokens.family_id=app_refresh_budget.family_id)`); err != nil {
 		return err
 	}
 	return tx.Commit()

@@ -2,8 +2,14 @@ package daemon
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/base64"
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -28,13 +34,35 @@ func (x botHostTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 // botClient connects a new bot app to the gateway's public /mcp.
 func botClient(t *testing.T, g *testGateway, base, name string) (gateway.App, *mcp.ClientSession) {
 	t.Helper()
-	app, err := g.gw.Store().CreateApp(name, "bot", "client-"+name, "Client "+name, []string{"https://" + botPublicHost + "/cb"})
+	// The gateway makes apps only by approval. This writes the rows that an
+	// approval and a sign-in would leave.
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(g.dir, "gateway.db")+"?_pragma=busy_timeout(5000)")
 	if err != nil {
 		t.Fatal(err)
 	}
-	token, err := g.gw.Store().IssueToken(app.ID, "access", time.Hour)
-	if err != nil {
+	defer db.Close()
+	now := time.Now()
+	app := gateway.App{ID: protocol.NewID("app"), Name: name, Kind: "bot"}
+	// The public /mcp accepts only a bearer of 32 random bytes in unpadded
+	// URL-safe base64 (43 characters). A hex token would be refused before the
+	// store is asked, which is why a protocol.NewToken here fails with
+	// Unauthorized.
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
 		t.Fatal(err)
+	}
+	token := base64.RawURLEncoding.EncodeToString(raw)
+	hash := sha256.Sum256([]byte(token))
+	for _, q := range []struct {
+		sql  string
+		args []any
+	}{
+		{`INSERT INTO apps(id,name,kind,client_id,client_name,redirect_uris,created_at) VALUES(?,?,'bot',?,?,?,?)`, []any{app.ID, name, "client-" + name, "Client " + name, `["https://` + botPublicHost + `/cb"]`, now.UnixNano()}},
+		{`INSERT INTO app_tokens(hash,app_id,type,expires_at,created_at,family_id,purpose) VALUES(?,?,'access',?,?,?,'oauth')`, []any{hex.EncodeToString(hash[:]), app.ID, now.Add(time.Hour).UnixNano(), now.UnixNano(), app.ID}},
+	} {
+		if _, err := db.Exec(q.sql, q.args...); err != nil {
+			t.Fatal(err)
+		}
 	}
 	c := mcp.NewClient(&mcp.Implementation{Name: name, Version: "1"}, nil)
 	sess, err := c.Connect(context.Background(), &mcp.StreamableClientTransport{Endpoint: base + "/mcp",
