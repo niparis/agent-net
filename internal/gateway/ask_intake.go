@@ -112,16 +112,14 @@ func (g *Gateway) askIntakeList(ctx context.Context, q protocol.AskIntakeRequest
 			continue
 		}
 		ref := protocol.AskIntakeSourceRef(c.id, turn.Ref)
-		imported, err := g.askIntakeImported(ref)
-		if err != nil {
+		if id, _, err := g.askIntakeImportedAsk(ref); err != nil {
 			return protocol.AskIntakeResult{}, err
-		}
-		if imported {
+		} else if id != "" {
 			continue
 		}
 		row := protocol.AskIntakeSession{Session: c.id, Name: c.name, Harness: c.harness, Machine: c.machine,
 			State: protocol.AskIntakeOK, LastTurn: ref, LastTurnAt: turn.At, Waiting: askIntakeWaiting(c.waiting)}
-		if row.OpenAsk, err = g.askIntakeOpenAsk(c.id); err != nil {
+		if row.OpenAsk, _, err = g.askIntakeExistingAsk(c.id); err != nil {
 			return protocol.AskIntakeResult{}, err
 		}
 		out.Sessions = append(out.Sessions, row)
@@ -146,23 +144,23 @@ func (g *Gateway) askIntakeTurns(ctx context.Context, candidates []askIntakeCand
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			turns[i] = g.askIntakeTurn(ctx, candidates[i])
+			turns[i] = g.askIntakeTurn(ctx, candidates[i].nodeID, candidates[i].id)
 		}(i)
 	}
 	wg.Wait()
 	return turns
 }
 
-// askIntakeTurn asks the daemon that holds the session for its last turn.
-func (g *Gateway) askIntakeTurn(ctx context.Context, c askIntakeCandidate) protocol.AskIntakeTurnAnswer {
+// askIntakeTurn asks the daemon that holds sessionID on nodeID for its last turn.
+func (g *Gateway) askIntakeTurn(ctx context.Context, nodeID, sessionID string) protocol.AskIntakeTurnAnswer {
 	unavailable := func(reason string) protocol.AskIntakeTurnAnswer {
-		return protocol.AskIntakeTurnAnswer{Session: c.id, State: protocol.AskIntakeUnavailable, Reason: reason}
+		return protocol.AskIntakeTurnAnswer{Session: sessionID, State: protocol.AskIntakeUnavailable, Reason: reason}
 	}
-	nc := g.conn(c.nodeID)
+	nc := g.conn(nodeID)
 	if nc == nil {
 		return unavailable("the machine that holds this session is offline")
 	}
-	raw, err := nc.request(ctx, protocol.FrameAskIntakeTurn, protocol.AskIntakeTurnRequest{SessionID: c.id}, askIntakeTurnWait)
+	raw, err := nc.request(ctx, protocol.FrameAskIntakeTurn, protocol.AskIntakeTurnRequest{SessionID: sessionID}, askIntakeTurnWait)
 	if err != nil {
 		reason := "the machine did not answer: " + err.Error()
 		if strings.Contains(err.Error(), "unknown frame type") {
@@ -171,7 +169,7 @@ func (g *Gateway) askIntakeTurn(ctx context.Context, c askIntakeCandidate) proto
 		return unavailable(protocol.CleanWaitingText(redact.Secrets(reason)))
 	}
 	var turn protocol.AskIntakeTurnAnswer
-	if err := json.Unmarshal(raw, &turn); err != nil || turn.Session != c.id {
+	if err := json.Unmarshal(raw, &turn); err != nil || turn.Session != sessionID {
 		return unavailable("the machine gave an unreadable answer")
 	}
 	if turn.State == "" {
@@ -187,7 +185,7 @@ func (g *Gateway) askIntakeRead(ctx context.Context, q protocol.AskIntakeRequest
 	if err != nil {
 		return protocol.AskIntakeResult{}, err
 	}
-	turn := g.askIntakeTurnOf(ctx, a)
+	turn := g.askIntakeTurn(ctx, a.NodeID, a.SessionID)
 	source := turn.InputSource
 	if source == "" && turn.PrecedingInput != "" {
 		// A machine on an older version sends the input without its source.
@@ -204,30 +202,6 @@ func (g *Gateway) askIntakeRead(ctx context.Context, q protocol.AskIntakeRequest
 	}
 	out.Turn = &row
 	return out, nil
-}
-
-// askIntakeTurnOf reads one session's last turn from its machine.
-func (g *Gateway) askIntakeTurnOf(ctx context.Context, a protocol.AgentView) protocol.AskIntakeTurnAnswer {
-	nc := g.conn(a.NodeID)
-	if nc == nil {
-		return protocol.AskIntakeTurnAnswer{Session: a.SessionID, State: protocol.AskIntakeUnavailable, Reason: "the machine that holds this session is offline"}
-	}
-	raw, err := nc.request(ctx, protocol.FrameAskIntakeTurn, protocol.AskIntakeTurnRequest{SessionID: a.SessionID}, askIntakeTurnWait)
-	if err != nil {
-		reason := "the machine did not answer: " + err.Error()
-		if strings.Contains(err.Error(), "unknown frame type") {
-			reason = "the machine runs an agent-net version that cannot read session turns"
-		}
-		return protocol.AskIntakeTurnAnswer{Session: a.SessionID, State: protocol.AskIntakeUnavailable, Reason: protocol.CleanWaitingText(redact.Secrets(reason))}
-	}
-	var turn protocol.AskIntakeTurnAnswer
-	if err := json.Unmarshal(raw, &turn); err != nil || turn.Session != a.SessionID {
-		return protocol.AskIntakeTurnAnswer{Session: a.SessionID, State: protocol.AskIntakeUnavailable, Reason: "the machine gave an unreadable answer"}
-	}
-	if turn.State == "" {
-		turn.State = protocol.AskIntakeOK
-	}
-	return turn
 }
 
 // askIntakeImport creates one owner ask from a turn, or reports the ask that
@@ -361,14 +335,6 @@ func askIntakeWaiting(raw string) *protocol.AskIntakeWaiting {
 	return &protocol.AskIntakeWaiting{Kind: kind, Text: w.Text, Since: w.Since}
 }
 
-// askIntakeImported tells whether a source key already has an ask, open or
-// closed.
-func (g *Gateway) askIntakeImported(ref string) (bool, error) {
-	var n int
-	err := g.store.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref=?`, ref).Scan(&n)
-	return n > 0, err
-}
-
 // askIntakeImportedAsk returns the ask id and status of a source key, or "".
 func (g *Gateway) askIntakeImportedAsk(ref string) (string, string, error) {
 	var id, status string
@@ -379,18 +345,7 @@ func (g *Gateway) askIntakeImportedAsk(ref string) (string, string, error) {
 	return id, status, err
 }
 
-// askIntakeOpenAsk returns the newest open ask from a session, if any.
-func (g *Gateway) askIntakeOpenAsk(session string) (string, error) {
-	var id string
-	err := g.store.db.QueryRow(`SELECT id FROM inbox_items WHERE session_id=? AND status='open' ORDER BY created_at DESC,id DESC LIMIT 1`, session).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
-	}
-	return id, err
-}
-
-// askIntakeExistingAsk returns the newest open ask from a session with its
-// text, for the import refusal.
+// askIntakeExistingAsk returns the newest open ask from a session with its text.
 func (g *Gateway) askIntakeExistingAsk(session string) (string, string, error) {
 	var id, text string
 	err := g.store.db.QueryRow(`SELECT id,text FROM inbox_items WHERE session_id=? AND status='open' ORDER BY created_at DESC,id DESC LIMIT 1`, session).Scan(&id, &text)

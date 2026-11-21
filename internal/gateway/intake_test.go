@@ -151,14 +151,14 @@ func TestIntakeDeduplicatesByKindAndSubject(t *testing.T) {
 		t.Fatalf("a digest line woke the CTO: %+v", second)
 	}
 	var rows int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM cto_intake`).Scan(&rows); err != nil || rows != 1 {
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE dedupe_key<>''`).Scan(&rows); err != nil || rows != 1 {
 		t.Fatalf("%d rows, %v", rows, err)
 	}
 	// Another subject is another row.
 	if _, err := s.RecordIntake(intakeEvent{Kind: protocol.IntakePhonePaired, Subject: "phone-2", Text: "Paired"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM cto_intake`).Scan(&rows); err != nil || rows != 2 {
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE dedupe_key<>''`).Scan(&rows); err != nil || rows != 2 {
 		t.Fatalf("%d rows, %v", rows, err)
 	}
 }
@@ -230,7 +230,7 @@ func requireOneCTOAlert(t *testing.T, s *Store, kind, subject, lead string, mess
 	if next != protocol.AskNextChief || priority != 1 || !strings.Contains(why, lead) {
 		t.Fatalf("alert next=%q priority=%d why=%q, want chief, P1, lead %q", next, priority, why, lead)
 	}
-	e, err := openIntake(s.db, kind, subject)
+	e, err := s.openIntake(s.db, kind, subject)
 	if err != nil {
 		t.Fatalf("no open %s entry for %s: %v", kind, subject, err)
 	}
@@ -275,7 +275,7 @@ func TestWakeMachineSilent(t *testing.T) {
 	if err := s.NodeLinkUp(node); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := openIntake(s.db, protocol.IntakeMachineSilent, node); err == nil {
+	if _, err := s.openIntake(s.db, protocol.IntakeMachineSilent, node); err == nil {
 		t.Fatal("entry still open after the machine returned")
 	}
 }
@@ -297,7 +297,7 @@ func TestSleepingMachineRaisesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	var entries int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM cto_intake`).Scan(&entries); err != nil || entries != 0 {
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE dedupe_key<>''`).Scan(&entries); err != nil || entries != 0 {
 		t.Fatalf("%d intake entries for a sleeping machine: %v", entries, err)
 	}
 	noCTOAlert(t, s)
@@ -361,7 +361,7 @@ func TestWakeMCPRepairFailureRepeatsOverAnHour(t *testing.T) {
 	}
 	open("one")
 	open("one")
-	e, err := openIntake(s.db, protocol.IntakeMCPRepair, "research/agent-net")
+	e, err := s.openIntake(s.db, protocol.IntakeMCPRepair, "research/agent-net")
 	if err != nil || e.Count != 1 {
 		t.Fatalf("entry %+v, %v", e, err)
 	}
@@ -446,7 +446,7 @@ func TestWakeMergeQueueThreeFailedTrainRuns(t *testing.T) {
 	requireOneCTOAlert(t, s, protocol.IntakeMergeQueue, "shop", "shop lead", before)
 	// The next pass closes the entry and its alert.
 	report("ci/8", protocol.StepResultPass, false)
-	if _, err := openIntake(s.db, protocol.IntakeMergeQueue, "shop"); err == nil {
+	if _, err := s.openIntake(s.db, protocol.IntakeMergeQueue, "shop"); err == nil {
 		t.Fatal("entry still open after a pass")
 	}
 	var open int
@@ -517,7 +517,7 @@ func TestQuotaExhaustionIsOneThread(t *testing.T) {
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE id IN (?,?) AND status='open'`, second.Stuck, second.Alert).Scan(&open); err != nil || open != 0 {
 		t.Fatalf("%d thread items still open: %v", open, err)
 	}
-	if _, err := openIntake(s.db, protocol.IntakeQuota, "zai"); err == nil {
+	if _, err := s.openIntake(s.db, protocol.IntakeQuota, "zai"); err == nil {
 		t.Fatal("entry still open")
 	}
 }
@@ -538,11 +538,11 @@ func TestQuotaFeedFollowsUsageReports(t *testing.T) {
 		}
 	}
 	send(true)
-	if _, err := openIntake(g.store.db, protocol.IntakeQuota, "zai"); err != nil {
+	if _, err := g.store.openIntake(g.store.db, protocol.IntakeQuota, "zai"); err != nil {
 		t.Fatalf("no quota entry after an exhausted reading: %v", err)
 	}
 	send(false)
-	if _, err := openIntake(g.store.db, protocol.IntakeQuota, "zai"); err == nil {
+	if _, err := g.store.openIntake(g.store.db, protocol.IntakeQuota, "zai"); err == nil {
 		t.Fatal("quota entry still open after a reading with room")
 	}
 }
@@ -636,7 +636,7 @@ func TestQuotaFailureMidRunJoinsTheProviderThread(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	e, err := openIntake(s.db, protocol.IntakeQuota, "zai")
+	e, err := s.openIntake(s.db, protocol.IntakeQuota, "zai")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -699,7 +699,7 @@ func TestNoProviderAvailableJoinsQuotaThreads(t *testing.T) {
 		t.Fatalf("%d stuck items, want one per provider: %v", items, err)
 	}
 	for _, provider := range []string{protocol.QuotaProviderForStart("opencode", "zai/glm-5"), protocol.QuotaProviderForStart("opencode", "moonshot/kimi-k3")} {
-		e, err := openIntake(s.db, protocol.IntakeQuota, provider)
+		e, err := s.openIntake(s.db, protocol.IntakeQuota, provider)
 		if err != nil || e.Stuck == "" || e.Count != 2 {
 			t.Fatalf("%s thread = %+v, %v", provider, e, err)
 		}

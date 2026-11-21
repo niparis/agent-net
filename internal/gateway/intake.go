@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -10,13 +9,12 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// The CTO intake queue of decision 0152. Detectors write entries keyed by
-// (kind, subject); a repeat raises the count and the last seen time. An entry
-// whose wake rule holds raises one P1 "CTO alert" item in the chief's queue,
-// naming the lead that owns the cause. Nothing here starts a CTO turn or
-// reaches the owner.
+// The CTO intake queue of decision 0152, stored as inbox_items owned by 'cto'
+// keyed by dedupe_key (kind:subject). A repeat bumps count and last_seen; a
+// wake or quota_stuck promotes that same row into the chief's queue.
 
-// ctoIntakeMigration adds the queue and the merge queue detector's counter.
+// ctoIntakeMigration is the shipped migration; deskTablesMigration later folds
+// cto_intake into inbox_items.
 const ctoIntakeMigration = `
 -- CTO intake queue (decision 0152).
 CREATE TABLE IF NOT EXISTS cto_intake (
@@ -45,26 +43,19 @@ CREATE TABLE IF NOT EXISTS merge_train_fails (
  updated_at INTEGER NOT NULL DEFAULT 0);
 `
 
-// Intake close reasons.
 const (
 	intakeResolved = "resolved"
 	intakeReturned = "returned"
 	intakeSlept    = "slept"
 	intakePassed   = "passed"
+	intakeFindMax  = 200
 )
 
-// intakeEvent is one sighting a detector reports.
 type intakeEvent struct {
 	Kind, Subject, Text, Detail string
-	// AboutKind and AboutID tie the CTO alert to what it is about, so the
-	// code that closes asks about a machine closes it too.
-	AboutKind, AboutID string
-	// Project is the project that owns the cause, when the detector knows it.
-	Project string
+	AboutKind, AboutID, Project string
 }
 
-// recordIntake stores one sighting in the caller's transaction and raises the
-// CTO alert when the kind's wake rule holds. It returns the entry.
 func (s *Store) recordIntake(tx askDB, ev intakeEvent, now time.Time) (protocol.IntakeEntry, error) {
 	rt, ok := routeOf(routeIntake, ev.Kind)
 	if !ok {
@@ -73,143 +64,131 @@ func (s *Store) recordIntake(tx askDB, ev intakeEvent, now time.Time) (protocol.
 	if strings.TrimSpace(ev.Subject) == "" {
 		return protocol.IntakeEntry{}, errors.New("intake subject is required")
 	}
-	n := now.UnixNano()
-	res, err := tx.Exec(`UPDATE cto_intake SET count=count+1,last_seen=?,text=?,detail=? WHERE kind=? AND subject=? AND state='open'`,
-		n, ev.Text, ev.Detail, ev.Kind, ev.Subject)
+	n, key := now.UnixNano(), ev.Kind+":"+ev.Subject
+	res, err := tx.Exec(`UPDATE inbox_items SET count=count+1, last_seen=?,
+		text=CASE WHEN kind='cto_alert' THEN 'CTO alert: '||? WHEN kind='quota_stuck' THEN 'Work is stuck: '||? ELSE ? END,
+		detail=CASE WHEN kind='cto_intake' THEN ? ELSE detail END WHERE dedupe_key=? AND status='open'`,
+		n, ev.Text, ev.Text, ev.Text, ev.Detail, key)
 	if err != nil {
 		return protocol.IntakeEntry{}, err
 	}
 	if c, err := res.RowsAffected(); err != nil {
 		return protocol.IntakeEntry{}, err
 	} else if c == 0 {
-		severity := protocol.IntakeSeverityAlert
+		sev, cat := protocol.IntakeSeverityAlert, protocol.CategoryNormal
 		if rt.Wake == wakeNever {
-			severity = protocol.IntakeSeverityDigest
+			sev = protocol.IntakeSeverityDigest
 		}
-		if _, err := tx.Exec(`INSERT INTO cto_intake(id,kind,subject,severity,text,detail,first_seen,last_seen,count,lead) VALUES(?,?,?,?,?,?,?,?,1,?)`,
-			protocol.NewID("ci"), ev.Kind, ev.Subject, severity, ev.Text, ev.Detail, n, n, s.causeLead(tx, ev.Project)); err != nil {
+		if ev.Kind == protocol.IntakeMachineSilent {
+			cat = protocol.CategoryOutage
+		}
+		if _, err := tx.Exec(`INSERT INTO inbox_items (id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,options,asker_name,change_title,
+			from_kind,source_ref,about_kind,about_id,next_who,why_you,detail,route_fixed,owner,category,dedupe_key,count,first_seen,last_seen,severity)
+			VALUES (?,?,?,?,?,'','','',?,'open','[]','agent-net','',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			protocol.NewID("i"), protocol.AskKindCTOIntake, gatewayAsker, ev.Project, ev.Text, n,
+			protocol.AskFromGateway, "", ev.AboutKind, ev.AboutID, protocol.DeskOwnerCTO, "", ev.Detail,
+			1, protocol.DeskOwnerCTO, cat, key, 1, n, n, sev); err != nil {
 			return protocol.IntakeEntry{}, err
 		}
 	}
-	e, err := openIntake(tx, ev.Kind, ev.Subject)
+	e, err := s.openIntake(tx, ev.Kind, ev.Subject)
 	if err != nil {
 		return e, err
 	}
-	if e.Alert == "" && intakeWakes(rt.Wake, e) {
-		if e, err = s.raiseCTOAlert(tx, e, ev); err != nil {
+	if e.Alert == "" && (rt.Wake == wakeAtOnce || (rt.Wake == wakeRepeatHour && e.Count > 1 && e.LastSeen.Sub(e.FirstSeen) > protocol.IntakeRepeatWake)) {
+		lead := e.Lead
+		if lead == "" {
+			lead = "none: the CTO owns it"
+		}
+		why := "Lead that owns the cause: " + lead + ". Route it there and tell the CTO; it reaches the owner only for money, secrets or security."
+		detail := fmt.Sprintf("CTO intake entry %s (%s, %s): seen %d times since %s.", e.ID, e.Kind, e.Subject, e.Count, e.FirstSeen.UTC().Format(time.RFC3339))
+		if _, err := tx.Exec(`UPDATE inbox_items SET kind=CASE WHEN kind='quota_stuck' THEN 'quota_stuck' ELSE ? END,
+			next_who=?, priority=1, severity=?, source_ref=CASE WHEN source_ref='' THEN ? ELSE source_ref END,
+			text=CASE WHEN kind='quota_stuck' THEN text ELSE ? END, why_you=CASE WHEN kind='quota_stuck' THEN why_you ELSE ? END,
+			detail=CASE WHEN kind='quota_stuck' THEN detail ELSE ? END WHERE id=?`,
+			protocol.AskKindCTOAlert, protocol.AskNextChief, protocol.IntakeSeverityWake, "cto-alert:"+e.ID, "CTO alert: "+e.Text, why, detail, e.ID); err != nil {
 			return e, err
 		}
+		e.Alert, e.Severity = e.ID, protocol.IntakeSeverityWake
 	}
 	return e, nil
 }
 
-// intakeWakes applies a wake rule of decision 0152 to an entry.
-func intakeWakes(rule string, e protocol.IntakeEntry) bool {
-	switch rule {
-	case wakeAtOnce:
-		return true
-	case wakeRepeatHour:
-		return e.Count > 1 && e.LastSeen.Sub(e.FirstSeen) > protocol.IntakeRepeatWake
-	}
-	return false
-}
-
-// raiseCTOAlert opens the one P1 "CTO alert" item of an entry in the chief's
-// queue. It names the lead that owns the cause; the chief routes it there.
-func (s *Store) raiseCTOAlert(tx askDB, e protocol.IntakeEntry, ev intakeEvent) (protocol.IntakeEntry, error) {
-	lead := e.Lead
-	if lead == "" {
-		lead = "none: the CTO owns it"
-	}
-	item, err := s.createInboxItem(tx, protocol.InboxItem{
-		Kind: protocol.AskKindCTOAlert, SessionID: gatewayAsker, Node: ev.Project,
-		FromKind: protocol.AskFromGateway, AskerName: "agent-net",
-		SourceRef: "cto-alert:" + e.ID, AboutKind: ev.AboutKind, AboutID: ev.AboutID,
-		NextWho: protocol.AskNextChief,
-		Text:    "CTO alert: " + e.Text,
-		WhyYou:  "Lead that owns the cause: " + lead + ". Route it there and tell the CTO; it reaches the owner only for money, secrets or security.",
-		Detail:  fmt.Sprintf("CTO intake entry %s (%s, %s): seen %d times since %s.", e.ID, e.Kind, e.Subject, e.Count, e.FirstSeen.UTC().Format(time.RFC3339)),
-	})
-	if err != nil {
-		return e, err
-	}
-	if _, err := tx.Exec(`UPDATE inbox_items SET priority=1 WHERE id=?`, item.ID); err != nil {
-		return e, err
-	}
-	if _, err := tx.Exec(`UPDATE cto_intake SET alert_ask=?,severity=? WHERE id=?`, item.ID, protocol.IntakeSeverityWake, e.ID); err != nil {
-		return e, err
-	}
-	e.Alert, e.Severity = item.ID, protocol.IntakeSeverityWake
-	return e, nil
-}
-
-// causeLead names the lead that owns the cause: the project's lead when the
-// detector knows the project, else the lead of agent-net itself, since the
-// other alerts are about agent-net's own machines, harnesses and providers.
 func (s *Store) causeLead(q askDB, project string) string {
 	for _, p := range []string{project, "agent-net"} {
 		if p == "" {
 			continue
 		}
 		var repo string
-		err := q.QueryRow(`SELECT id FROM repos WHERE id=? OR display_name=? LIMIT 1`, p, p).Scan(&repo)
-		if err != nil {
+		if q.QueryRow(`SELECT id FROM repos WHERE id=? OR display_name=? LIMIT 1`, p, p).Scan(&repo) != nil {
 			continue
 		}
-		lead, err := repoTopAgentQ(q, repo)
-		if err != nil || lead == "" {
-			continue
-		}
-		if name, err := agentNameQ(q, lead); err == nil && name != "" {
-			return name
+		if lead, err := repoTopAgentQ(q, repo); err == nil && lead != "" {
+			if name, err := agentNameQ(q, lead); err == nil && name != "" {
+				return name
+			}
 		}
 	}
 	return ""
 }
 
-// openIntake reads the open entry of a kind and subject.
-func openIntake(q askDB, kind, subject string) (protocol.IntakeEntry, error) {
-	return scanIntake(q.QueryRow(`SELECT `+intakeColumns+` FROM cto_intake WHERE kind=? AND subject=? AND state='open'`, kind, subject))
+const intakeColumns = `id,kind,dedupe_key,severity,text,detail,first_seen,last_seen,count,node,why_you`
+
+type scannedIntake struct {
+	entry        protocol.IntakeEntry
+	node, whyYou string
 }
 
-const intakeColumns = `id,kind,subject,severity,text,detail,first_seen,last_seen,count,alert_ask,stuck_ask,lead`
-
-func scanIntake(row inboxScanner) (protocol.IntakeEntry, error) {
-	var e protocol.IntakeEntry
+func scanIntakeRow(row inboxScanner) (scannedIntake, error) {
+	var r scannedIntake
+	var itemKind, key string
 	var first, last int64
-	err := row.Scan(&e.ID, &e.Kind, &e.Subject, &e.Severity, &e.Text, &e.Detail, &first, &last, &e.Count, &e.Alert, &e.Stuck, &e.Lead)
-	e.FirstSeen, e.LastSeen = time.Unix(0, first).UTC(), time.Unix(0, last).UTC()
-	return e, err
+	if err := row.Scan(&r.entry.ID, &itemKind, &key, &r.entry.Severity, &r.entry.Text, &r.entry.Detail, &first, &last, &r.entry.Count, &r.node, &r.whyYou); err != nil {
+		return r, err
+	}
+	r.entry.Kind, r.entry.Subject, _ = strings.Cut(key, ":")
+	r.entry.FirstSeen, r.entry.LastSeen = time.Unix(0, first).UTC(), time.Unix(0, last).UTC()
+	if r.entry.Severity == protocol.IntakeSeverityWake || itemKind == protocol.AskKindCTOAlert {
+		r.entry.Alert, r.entry.Text = r.entry.ID, strings.TrimPrefix(r.entry.Text, "CTO alert: ")
+	}
+	if itemKind == protocol.AskKindQuotaStuck {
+		r.entry.Stuck, r.entry.Text = r.entry.ID, strings.TrimPrefix(r.entry.Text, "Work is stuck: ")
+	}
+	return r, nil
 }
 
-// closeIntake closes the open entry of a kind and subject, and with it the
-// CTO alert and the stuck-work item it raised: closing the cause closes the
-// whole thread. It is a no-op when no entry is open.
-func (s *Store) closeIntake(tx askDB, kind, subject, reason string, now time.Time) error {
-	e, err := openIntake(tx, kind, subject)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
+func (s *Store) fillIntakeLead(q askDB, r *scannedIntake) {
+	proj := r.node
+	if proj == "" && r.entry.Kind == protocol.IntakeMergeQueue {
+		proj = r.entry.Subject
 	}
+	if lead := s.causeLead(q, proj); lead != "" {
+		r.entry.Lead = lead
+	} else if rest, ok := strings.CutPrefix(r.whyYou, "Lead that owns the cause: "); ok {
+		if lead, _, ok := strings.Cut(rest, "."); ok && lead != "none: the CTO owns it" {
+			r.entry.Lead = lead
+		}
+	}
+}
+
+func (s *Store) openIntake(q askDB, kind, subject string) (protocol.IntakeEntry, error) {
+	r, err := scanIntakeRow(q.QueryRow(`SELECT `+intakeColumns+` FROM inbox_items WHERE dedupe_key=? AND status='open'`, kind+":"+subject))
 	if err != nil {
-		return err
+		return protocol.IntakeEntry{}, err
 	}
-	if _, err := tx.Exec(`UPDATE cto_intake SET state='closed',closed_at=?,close_reason=? WHERE id=?`, now.UnixNano(), reason, e.ID); err != nil {
-		return err
-	}
-	for _, id := range []string{e.Alert, e.Stuck} {
-		if id == "" {
-			continue
-		}
-		if _, err := s.closeAsks(tx, `id=?`, []any{id}, protocol.AskReasonResolved); err != nil {
-			return err
-		}
-	}
-	return nil
+	s.fillIntakeLead(q, &r)
+	return r.entry, nil
 }
 
-// openIntakeSubjects lists the subjects of the open entries of one kind.
+func (s *Store) closeIntake(tx askDB, kind, subject, reason string, now time.Time) error {
+	_, err := tx.Exec(`UPDATE inbox_items SET status='closed', answer=?, answered_at=?
+		WHERE status='open' AND (dedupe_key=? OR (kind='quota_stuck' AND source_ref=?))`,
+		reason, now.UnixNano(), kind+":"+subject, "quota-stuck:"+subject)
+	return err
+}
+
 func (s *Store) openIntakeSubjects(kind string) (map[string]bool, error) {
-	rows, err := s.db.Query(`SELECT subject FROM cto_intake WHERE kind=? AND state='open'`, kind)
+	rows, err := s.db.Query(`SELECT substr(dedupe_key,?) FROM inbox_items WHERE dedupe_key LIKE ? AND status='open'`, len(kind)+2, kind+":%")
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +204,6 @@ func (s *Store) openIntakeSubjects(kind string) (map[string]bool, error) {
 	return out, rows.Err()
 }
 
-// RecordIntake stores one sighting in its own transaction.
 func (s *Store) RecordIntake(ev intakeEvent) (protocol.IntakeEntry, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -239,49 +217,44 @@ func (s *Store) RecordIntake(ev intakeEvent) (protocol.IntakeEntry, error) {
 	return e, tx.Commit()
 }
 
-// CloseIntake closes an entry and its thread in its own transaction.
 func (s *Store) CloseIntake(kind, subject, reason string) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if err := s.closeIntake(tx, kind, subject, reason, s.now().UTC()); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return s.closeIntake(s.db, kind, subject, reason, s.now().UTC())
 }
 
-// intakeFindMax caps one read; the queue is deduplicated, so it stays short.
-const intakeFindMax = 200
-
-// CTOIntake returns the open entries, newest first. The CTO calls it at the
-// start of each owner conversation.
+// CTOIntake returns the open entries, newest first.
 func (s *Store) CTOIntake(limit int) (protocol.IntakeFindResult, error) {
 	if limit <= 0 || limit > intakeFindMax {
 		limit = intakeFindMax
 	}
 	out := protocol.IntakeFindResult{Entries: []protocol.IntakeEntry{}}
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM cto_intake WHERE state='open'`).Scan(&out.Total); err != nil {
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE dedupe_key<>'' AND status='open'`).Scan(&out.Total); err != nil {
 		return out, err
 	}
-	rows, err := s.db.Query(`SELECT `+intakeColumns+` FROM cto_intake WHERE state='open' ORDER BY last_seen DESC,id LIMIT ?`, limit)
+	rows, err := s.db.Query(`SELECT `+intakeColumns+` FROM inbox_items WHERE dedupe_key<>'' AND status='open' ORDER BY last_seen DESC,id LIMIT ?`, limit)
 	if err != nil {
 		return out, err
 	}
-	defer rows.Close()
+	var scanned []scannedIntake
 	for rows.Next() {
-		e, err := scanIntake(rows)
+		r, err := scanIntakeRow(rows)
 		if err != nil {
+			rows.Close()
 			return out, err
 		}
-		out.Entries = append(out.Entries, e)
+		scanned = append(scanned, r)
 	}
-	return out, rows.Err()
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return out, err
+	}
+	for i := range scanned {
+		s.fillIntakeLead(s.db, &scanned[i])
+		out.Entries = append(out.Entries, scanned[i].entry)
+	}
+	return out, nil
 }
 
-// ReportIntake stores a daemon's report. The subject gains the machine's name,
-// so the same harness on two machines is two entries.
 func (s *Store) ReportIntake(node string, r protocol.IntakeReport) error {
 	if err := r.Validate(); err != nil {
 		return reject("%s", err.Error())
@@ -294,35 +267,24 @@ func (s *Store) ReportIntake(node string, r protocol.IntakeReport) error {
 	return err
 }
 
-// quotaStuck records that work stopped because a provider has no quota left:
-// the CTO entry of the provider (the cause) and the chief's stuck-work item
-// that links it are one thread.
 func (s *Store) quotaStuck(tx askDB, provider, text string, now time.Time) (protocol.IntakeEntry, error) {
 	e, err := s.recordIntake(tx, intakeEvent{Kind: protocol.IntakeQuota, Subject: provider, Text: text}, now)
 	if err != nil || e.Stuck != "" {
 		return e, err
 	}
-	item, err := s.createInboxItem(tx, protocol.InboxItem{
-		Kind: protocol.AskKindQuotaStuck, SessionID: gatewayAsker, FromKind: protocol.AskFromGateway, AskerName: "agent-net",
-		SourceRef: "quota-stuck:" + provider, NextWho: protocol.AskNextChief,
-		Text:   "Work is stuck: " + text,
-		WhyYou: "Get the work moving or re-route it. The CTO fixes the cause; buying more goes to the owner through you.",
-		Detail: "CTO intake entry " + e.ID + " (quota, " + provider + "). It closes when the provider has quota again.",
-	})
-	if err != nil {
+	if _, err := tx.Exec(`UPDATE inbox_items SET kind=?, next_who=?, source_ref=?, text=?, why_you=?, detail=? WHERE id=?`,
+		protocol.AskKindQuotaStuck, protocol.AskNextChief, "quota-stuck:"+provider, "Work is stuck: "+text,
+		"Get the work moving or re-route it. The CTO fixes the cause; buying more goes to the owner through you.",
+		"CTO intake entry "+e.ID+" (quota, "+provider+"). It closes when the provider has quota again.", e.ID); err != nil {
 		return e, err
 	}
-	if _, err := tx.Exec(`UPDATE cto_intake SET stuck_ask=? WHERE id=?`, item.ID, e.ID); err != nil {
-		return e, err
-	}
-	e.Stuck = item.ID
+	e.Stuck = e.ID
 	return e, nil
 }
 
-// healthLine is the morning brief's one system-health line, from the open
-// entries of the queue.
 func (s *Store) healthLine(q askDB) (string, error) {
-	rows, err := q.Query(`SELECT kind,severity,COUNT(*) FROM cto_intake WHERE state='open' GROUP BY kind,severity ORDER BY severity,kind`)
+	rows, err := q.Query(`SELECT substr(dedupe_key,1,instr(dedupe_key,':')-1) AS k, severity, COUNT(*)
+		FROM inbox_items WHERE dedupe_key<>'' AND status='open' GROUP BY k, severity ORDER BY severity, k`)
 	if err != nil {
 		return "", err
 	}
@@ -345,11 +307,8 @@ func (s *Store) healthLine(q askDB) (string, error) {
 			kinds = append(kinds, strings.ReplaceAll(kind, "_", " "))
 		}
 	}
-	if err := rows.Err(); err != nil {
-		return "", err
-	}
-	if total == 0 {
-		return "System health: no open alerts.", nil
+	if err := rows.Err(); err != nil || total == 0 {
+		return "System health: no open alerts.", err
 	}
 	alerts, woke := fmt.Sprintf("%d open alerts", total), fmt.Sprintf("%d woke the CTO", wakes)
 	if total == 1 {

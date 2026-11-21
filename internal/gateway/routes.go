@@ -77,6 +77,7 @@ var routes = []route{
 	{Class: routeAsk, Kind: protocol.AskKindProposal, To: routeChief, Note: "a CTO proposal"},
 	{Class: routeAsk, Kind: protocol.AskKindQuotaStuck, To: routeChief, Auto: true, Note: "work stuck on quota; links the CTO entry of the provider"},
 	{Class: routeAsk, Kind: protocol.AskKindCTOAlert, To: routeChief, Auto: true, Note: "P1 wake of the CTO; the chief routes it to the lead that owns the cause"},
+	{Class: routeAsk, Kind: protocol.AskKindCTOIntake, To: routeCTO, Auto: true, Note: "CTO intake queue entry; wakes as cto_alert or quota_stuck"},
 	{Class: routeAsk, Kind: protocol.AskKindMachine, To: routeChief, Auto: true, Note: "old rows only; a silent machine is now a CTO alert"},
 	// The chief's own brief and agents' owner-only asks: not automatic.
 	{Class: routeAsk, Kind: protocol.AskKindBrief, To: routeOwner, Note: "written by the chief"},
@@ -125,5 +126,5 @@ func askRouteKey(item protocol.InboxItem) string {
 // kind: a CTO alert and a quota stuck item are the chief's to route to a lead,
 // and reach the owner only when the chief sends them.
 func neverOwnerAsk(kind string) bool {
-	return kind == protocol.AskKindCTOAlert || kind == protocol.AskKindQuotaStuck
+	return kind == protocol.AskKindCTOAlert || kind == protocol.AskKindQuotaStuck || kind == protocol.AskKindCTOIntake
 }

@@ -93,10 +93,10 @@ func TestPhoneTailnetIdentity(t *testing.T) {
 				t.Fatalf("apps: %+v %v", apps, err)
 			}
 			var count int
-			if err = s.db.QueryRow(`SELECT count(*) FROM cto_intake WHERE text=? AND kind=? AND state='open'`, "Paired "+apps[0].Name+" by Tailscale sign-in", protocol.IntakePhonePaired).Scan(&count); err != nil || count != 1 {
+			if err = s.db.QueryRow(`SELECT count(*) FROM inbox_items WHERE text=? AND dedupe_key LIKE ? AND status='open' AND owner='cto'`, "Paired "+apps[0].Name+" by Tailscale sign-in", protocol.IntakePhonePaired+":%").Scan(&count); err != nil || count != 1 {
 				t.Fatalf("CTO digest count=%d: %v", count, err)
 			}
-			if err = s.db.QueryRow(`SELECT count(*) FROM inbox_items WHERE text LIKE 'Paired %'`).Scan(&count); err != nil || count != 0 {
+			if err = s.db.QueryRow(`SELECT count(*) FROM inbox_items WHERE text LIKE 'Paired %' AND kind<>'cto_intake'`).Scan(&count); err != nil || count != 0 {
 				t.Fatalf("owner notice count=%d, want none: %v", count, err)
 			}
 			if w = request(ck); w.Code != 200 || len(w.Result().Cookies()) != 0 {
@@ -107,7 +107,7 @@ func TestPhoneTailnetIdentity(t *testing.T) {
 			if w = request(ck); len(w.Result().Cookies()) != 1 {
 				t.Fatal("no sliding renewal")
 			}
-			if err = s.db.QueryRow(`SELECT count(*) FROM cto_intake WHERE kind=?`, protocol.IntakePhonePaired).Scan(&count); err != nil || count != 1 {
+			if err = s.db.QueryRow(`SELECT count(*) FROM inbox_items WHERE dedupe_key LIKE ?`, protocol.IntakePhonePaired+":%").Scan(&count); err != nil || count != 1 {
 				t.Fatalf("duplicate notice: %d %v", count, err)
 			}
 			if err = s.RevokeApp(apps[0].ID); err != nil {

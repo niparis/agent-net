@@ -23,7 +23,7 @@ const frontDoorFlushKey = "front_door_flush_v1"
 // flushKeptSQL keeps the owner items that something else still waits on. A
 // delivery approval gates a merge and a permission ask its proposal; neither
 // is asked again, so closing them would strand the change or the proposal.
-var flushKeptSQL = `id NOT IN (SELECT item_id FROM delivery_step_inbox) AND source_ref NOT LIKE '` + permissionAskPrefix + `%'`
+var flushKeptSQL = `about_kind<>'step' AND source_ref NOT LIKE '` + permissionAskPrefix + `%'`
 
 // flushOwnerAsksOnceTx closes every open item that waits on the owner, once.
 // It keeps each row, with the reason in answer and the time in answered_at.

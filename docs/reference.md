@@ -671,7 +671,7 @@ The retained references include `projects`, `sessions`,
 `charter_values`,
 `graph_edges`, `graph_history`, `setting_values`, `setting_history`,
 `delivery_changes`, `delivery_revisions`, `delivery_evidence`,
-`delivery_step_tasks`, `delivery_step_inbox`,
+`delivery_step_tasks`,
 `repos.merger_session`, `worker_starts`, `worker_runs`, `inbox_items`, `desk_log`,
 `learned_suggestions`, `findings`, `playbook` and `repos.owner_agent_id`.
 No ownership, edge, delivery, charter or session is silently moved or deleted.
@@ -1142,7 +1142,7 @@ machine reconnects first. A reconnect syncs the sessions again.
 | Temporary files | `.claude.json.lock` (a folder, next to `~/.claude.json`) | Short-lived. `.claude.json.lock` is Claude Code's own lock folder, taken for the length of one edit. A lock folder untouched for 30 seconds was left by a Claude that crashed, and the daemon removes it; trusting a folder that is already trusted takes no lock. |
 | Shared MCP server records | `~/.local/state/agent-net/daemon/mcp-pids/<pid>` | One short file for each stdio server the MCP host started: the pid of the server (also its process group) and its start time. A hosted server runs in its own process group. When the daemon stops, or a server ends or is replaced, the host sends SIGTERM to the group, then SIGKILL after 2 seconds, so programs the server started (uv starts python, npx starts node) end with it. The unit has `KillMode=process`, so systemd would not end them. If the daemon died before it could, the next daemon ends the groups named in these files at start. It checks the start time first and never touches a process it did not start. Uninstall removes the folder with the state folder. |
 | Reply sockets | `<socket directory>/r/<session id>.<conversation id>.sock` and `<socket directory>/r/<session id>.sock` | One per sending session and conversation, used to catch Claude Code's native replies (see [Claude replies](#claude-replies)). The socket of a conversation is closed when its rows leave `daemon.db`. The one per sending session is for messages without a conversation and for frames from an older daemon. Mode 0600. |
-| Gateway data | `~/.local/state/agent-net/gateway/` | `funnel.json` records the port and loopback target managed by agent-net so uninstall can safely remove its Funnel route; it is removed when cleanup succeeds or the port is repurposed. `tailscale-node.json` (mode 0600) holds the `--apps-tailscale-name` choice: the name and, if given, the auth key file path, never the key. `tailscale/` (mode 0700) is the state of agent-net's own Tailscale node, with its private keys; `tailscale/agent-net-owned.json` marks it as agent-net's. `ca.pem`, `ca.key`, `server-key.pem`, `gateway.db` (SQLite, with `-wal` and `-shm` files; it also holds the MCP registry, the `skill_archive` (with its `in_use` mark of the version a node following latest gets), `skill_archive_blocks`, `skill_node_lists` and `skill_changes` (the undo log of both) tables, the `repos` and `agents` identity tables, the `gateway_state` key-value table (the CTO and chief of staff session ids, worker rotation, onboarding, hidden items, the network settings token, the typed Graph gate and cutover time, the one-time markers of backfills; no screen refreshes from it), the `setting_values` and append-only `setting_history` tables (the newest history revision is the settings revision, and the owner's own values are network settings under the key prefix `owner.`), and the delivery pipeline's `delivery_changes`, `delivery_revisions`, append-only `delivery_evidence`, `delivery_step_tasks` and `delivery_step_inbox` tables), `admin.json` (mode 0600: the local admin URL and token). Uninstall keeps the gateway data, even with `--purge`, apart from the Funnel route record after cleanup and agent-net's own Tailscale node. **Back this folder up** with `agent-net gateway backup --out /absolute/new-directory`; it writes a consistent snapshot while the gateway is running. A backup holds the CA key, so keep it private. Without it every machine has to join again. See [security.md](security.md#what-the-gateway-logs-and-keeps). |
+| Gateway data | `~/.local/state/agent-net/gateway/` | `funnel.json` records the port and loopback target managed by agent-net so uninstall can safely remove its Funnel route; it is removed when cleanup succeeds or the port is repurposed. `tailscale-node.json` (mode 0600) holds the `--apps-tailscale-name` choice: the name and, if given, the auth key file path, never the key. `tailscale/` (mode 0700) is the state of agent-net's own Tailscale node, with its private keys; `tailscale/agent-net-owned.json` marks it as agent-net's. `ca.pem`, `ca.key`, `server-key.pem`, `gateway.db` (SQLite, with `-wal` and `-shm` files; it also holds the MCP registry, the `skill_archive` (with its `in_use` mark of the version a node following latest gets), `skill_archive_blocks`, `skill_node_lists` and `skill_changes` (the undo log of both) tables, the `repos` and `agents` identity tables, the `gateway_state` key-value table (the CTO and chief of staff session ids, worker rotation, onboarding, hidden items, the network settings token, the typed Graph gate and cutover time, the one-time markers of backfills; no screen refreshes from it), the `setting_values` and append-only `setting_history` tables (the newest history revision is the settings revision, and the owner's own values are network settings under the key prefix `owner.`), and the delivery pipeline's `delivery_changes`, `delivery_revisions`, append-only `delivery_evidence` and `delivery_step_tasks` tables), `admin.json` (mode 0600: the local admin URL and token). Uninstall keeps the gateway data, even with `--purge`, apart from the Funnel route record after cleanup and agent-net's own Tailscale node. **Back this folder up** with `agent-net gateway backup --out /absolute/new-directory`; it writes a consistent snapshot while the gateway is running. A backup holds the CA key, so keep it private. Without it every machine has to join again. See [security.md](security.md#what-the-gateway-logs-and-keeps). |
 | Gateway upgrade backups | `~/.local/state/agent-net/gateway-backups/pre-v<version>-<UTC time>/` | Written by the gateway before it migrates an older database, with the same parts as a manual `gateway backup`: the database snapshot, `skills.git`, `ca.pem`, `ca.key` and `server-key.pem`. Holds the CA key, so keep it private. Never deleted automatically. |
 | Gateway transfer parts | `~/.local/state/agent-net/gateway/transfers/<upload id>/` | One file per part of an upload between machines, named by its part number. Folders 0700, files 0600. At most 100 MB per upload and 1 GB staged for each sending machine. A part file is deleted when the receiving machine confirms the whole file, or 7 days after the upload began. A `gateway backup` does not copy parts that are still in flight. Uninstall keeps them with the rest of the gateway data. See [security.md](security.md#files-between-machines). |
 | Received files | `~/.local/state/agent-net/daemon/inbox/<session>/<message>/<name>` | The files that came with a message to a session of this machine (see [Files between machines](#files-between-machines)). Folders 0700, files 0600. The daemon deletes a message's folder 7 days after its last file arrived. Uninstall keeps them with the state folder; `--purge` removes them. |
@@ -2437,10 +2437,9 @@ The log (`desk_log`) holds what is not a question: "CTO applied ...", "CTO sent 
 
 Each item in `inbox_items` also has:
 
-- `owner`: `chief` or `cto`. An item waits on the CTO when its `next_who` is the CTO's session; every other item is the chief's, who curates the Desk.
-- `state`: `verifying` (the chief or a session it chose has it), `with_cto`, `ready` (it waits on the owner), `answered`, `carried_out` or `closed`. Triggers keep `owner` and `state` equal to `status` and `next_who`, whatever changes them.
+- `owner`: `chief` or `cto`. CTO intake problems and items routed to the CTO's session are owned by `cto`; every other item is owned by `chief`, who curates the Desk.
+- `status`: `open`, `answered`, `approved`, `refused`, `carried_out`, `closed`, `replaced` or `dismissed`. `asks_list` derives `desk_state` (`verifying`, `with_cto`, `ready`, `answered`, `carried_out` or `closed`) from `status`, `owner` and `next_who`.
 - `category`: `security`, `outage`, `money` or `normal`. The kind sets it where the kind fixes it (`sign_in` and `permission` are security, `machine` is outage), else the asker's value, else `normal`. The chief corrects it with `category` on any `agent_ask_sort` call.
-- `dup_of`: for a duplicate, the open item it joined. Its `status` is `joined`.
 
 `asks_list` adds `owner`, `desk_state` and `category` to each ask; inbox reads add `category`.
 
@@ -2529,7 +2528,7 @@ gateway writes the log line `route.missing`.
   one-click asks. The chief's own daily brief and an agent's permission
   proposal also show to the owner; neither is automatic. Nothing else that
   agent-net makes by itself reaches the owner.
-- **The CTO intake queue.** System-health alerts go to the table `cto_intake`.
+- **The CTO intake queue.** System-health alerts are stored in `inbox_items` with `owner='cto'` and a `dedupe_key` of `kind:subject`.
 
 ### The CTO intake queue
 
@@ -2672,12 +2671,11 @@ asks from holding a batch back.
   limit, the ask goes to the replacement, which gets a message from `agent-net`
   with the ask and the note. Otherwise it goes back to the chief like a CTO item.
   No new limit: both use `delivery.step_stuck`.
-- *Back note.* Every return keeps a one-line note in `inbox_items.back_note`,
+- *Back note.* Every return appends a one-line note (`Why it is back: ...`) to `inbox_items.detail`,
   such as `back from homelab-agent 4: offline for 76 h` or `back from the CTO: no
   move for 12 h`. The chief's batch shows it under the ask as `Why it is back:
   <note>`, and the Desk log gets one line (`Ask <id> is back with the chief,
-  <note>: ...` or `Ask <id> went to <replacement>, <note>: ...`). The next sort
-  of the ask clears the note.
+  <note>: ...` or `Ask <id> went to <replacement>, <note>: ...`).
 - *Safety net.* It applies only when the chief cannot work (offline, no quota, a
   harness error or silent, see below). A wake is the batch message to the chief.
   It is missed when the chief has not claimed or sorted the ask within

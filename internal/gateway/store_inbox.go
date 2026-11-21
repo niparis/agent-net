@@ -22,11 +22,7 @@ func (s *Store) CreateInboxItem(item protocol.InboxItem) (protocol.InboxItem, er
 	defer tx.Rollback()
 	now := s.now().UTC()
 	if item.Replaces != "" {
-		var old protocol.InboxItem
-		var created, answered int64
-		var options string
-		err := tx.QueryRow(`SELECT `+inboxColumns+` FROM inbox_items WHERE id=?`, item.Replaces).
-			Scan(&old.ID, &old.Kind, &old.SessionID, &old.Node, &old.Text, &old.Recommendation, &old.MessageID, &old.ConversationID, &created, &old.Status, &old.Answer, &answered, &options, &old.AskerName, &old.ChangeTitle, &old.Category)
+		old, err := scanInbox(tx.QueryRow(`SELECT `+inboxColumns+` FROM inbox_items WHERE id=?`, item.Replaces))
 		if err == sql.ErrNoRows {
 			return item, reject("unknown inbox item %q", item.Replaces)
 		}
@@ -107,7 +103,7 @@ func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.Inb
 	switch item.Kind {
 	case "approval", "feature_idea", "question", "rejection", "escalation", "check", "session_stall",
 		protocol.AskKindHeld, protocol.AskKindLearned, protocol.AskKindDraft, protocol.AskKindProposal, protocol.AskKindPermission, protocol.AskKindStep, protocol.AskKindWaiting,
-		protocol.AskKindBrief, protocol.AskKindSignIn, protocol.AskKindMachine, protocol.AskKindCTOAlert, protocol.AskKindQuotaStuck:
+		protocol.AskKindBrief, protocol.AskKindSignIn, protocol.AskKindMachine, protocol.AskKindCTOAlert, protocol.AskKindQuotaStuck, protocol.AskKindCTOIntake:
 	default:
 		return item, reject("invalid inbox kind")
 	}
@@ -181,7 +177,7 @@ func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.Inb
 		err := db.QueryRow(`SELECT id,session_id FROM inbox_items WHERE source_ref=? AND status='open'`, item.SourceRef).Scan(&id, &session)
 		if err == nil {
 			if session != item.SessionID && fromSession {
-				err := s.joinItem(db, id, item, now)
+				err := noteRepeat(db, repeatAsk{id: id, session: session, status: "open"}, item)
 				item.ID = id
 				return item, err
 			}
@@ -204,17 +200,8 @@ func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.Inb
 			return item, err
 		}
 		if found.id != "" {
-			// A repeat joins the open ask, and every asker that joined gets
-			// its answer. A note on the ask keeps the repeat visible to the
-			// chief. A repeat right after the ask closed joins nothing: the
-			// closed ask's id goes back, so the asker reads the answer.
 			if err := noteRepeat(db, found, item); err != nil {
 				return item, err
-			}
-			if found.status == "open" && found.session != item.SessionID {
-				if err := s.joinItem(db, found.id, item, now); err != nil {
-					return item, err
-				}
 			}
 			return scanInbox(db.QueryRow(`SELECT `+inboxColumns+` FROM inbox_items WHERE id=?`, found.id))
 		}
@@ -342,21 +329,6 @@ func noteRepeat(db askDB, found repeatAsk, item protocol.InboxItem) error {
 	return err
 }
 
-// joinItem records another asker of an open item. The joined row is answered
-// or closed with the item (trigger inbox_items_joined_settle), and its asker
-// gets the answer.
-func (s *Store) joinItem(db askDB, into string, item protocol.InboxItem, now time.Time) error {
-	options, err := json.Marshal(item.Options)
-	if err != nil {
-		return err
-	}
-	_, err = db.Exec(`INSERT INTO inbox_items (id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,options,asker_name,change_title,
-		from_kind,source_ref,about_kind,about_id,next_who,detail,category,dup_of) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		protocol.NewID("i"), item.Kind, item.SessionID, item.Node, item.Text, item.Recommendation, item.MessageID, item.ConversationID, now.UnixNano(), protocol.ItemStatusJoined, string(options), item.AskerName, item.ChangeTitle,
-		item.FromKind, item.SourceRef, item.AboutKind, item.AboutID, "", item.Detail, item.Category, into)
-	return err
-}
-
 // sourceRefID reads the numeric ID from a source key such as draft:12.
 func sourceRefID(ref, prefix string) (int64, error) {
 	if !strings.HasPrefix(ref, prefix) {
@@ -391,7 +363,7 @@ const inboxColumns = `id,kind,session_id,node,text,recommendation,message_id,con
 // their changes, the names of the askers (agentNames: sessions, nodes, profiles)
 // and the pipeline of a delivery step, which reads the graph and the settings.
 // Keep it equal to those queries (see readThrough).
-var inboxTables = tableUnion([]string{"inbox_items", "delivery_step_inbox", "delivery_changes", "sessions", "nodes.id", "nodes.hostname"}, graphTables)
+var inboxTables = tableUnion([]string{"inbox_items", "delivery_changes", "sessions", "nodes.id", "nodes.hostname"}, graphTables)
 
 // ListInbox lists the open and recent inbox items. The read is kept until one
 // of inboxTables is written, and never past the second it was read in: the
@@ -405,21 +377,42 @@ func (s *Store) ListInbox() ([]protocol.InboxItem, error) {
 }
 
 func (s *Store) inboxRead() ([]protocol.InboxItem, error) {
-	// An open ask that waits on someone other than the owner (a team lead) is
-	// not the owner's Inbox item.
-	rows, err := s.db.Query(`SELECT ` + inboxColumns + ` FROM inbox_items WHERE NOT (status='open' AND next_who NOT IN ('owner','')) AND status<>'joined' ORDER BY created_at,id`)
+	rows, err := s.db.Query(`SELECT i.id,i.kind,i.session_id,i.node,i.text,i.recommendation,i.message_id,i.conversation_id,i.created_at,i.status,i.answer,i.answered_at,i.options,i.asker_name,i.change_title,i.category,
+		i.about_kind,i.about_id,COALESCE(c.project,''),COALESCE(c.title,'')
+		FROM inbox_items i LEFT JOIN delivery_changes c ON i.about_kind='step' AND c.id=substr(i.about_id,1,instr(i.about_id,':')-1)
+		WHERE i.kind<>'cto_intake' AND NOT (i.status='open' AND i.next_who NOT IN ('owner','')) ORDER BY i.created_at,i.id`)
 	if err != nil {
 		return nil, err
 	}
+	var stepLinks []deliveryLink
 	items := []protocol.InboxItem{}
 	for rows.Next() {
-		item, err := scanInbox(rows)
-		if err != nil {
+		var item protocol.InboxItem
+		var created, answered int64
+		var options, aboutKind, aboutID, project, title string
+		if err := rows.Scan(&item.ID, &item.Kind, &item.SessionID, &item.Node, &item.Text, &item.Recommendation, &item.MessageID, &item.ConversationID, &created, &item.Status, &item.Answer, &answered, &options, &item.AskerName, &item.ChangeTitle, &item.Category, &aboutKind, &aboutID, &project, &title); err != nil {
 			rows.Close()
 			return nil, err
 		}
+		if err := json.Unmarshal([]byte(options), &item.Options); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		item.CreatedAt = time.Unix(0, created).UTC()
+		if answered != 0 {
+			item.AnsweredAt = time.Unix(0, answered).UTC()
+		}
 		if item.Kind == "check" && item.Node == "apps" && strings.HasPrefix(item.Text, "Connected: ") && !item.CreatedAt.After(s.now().Add(-24*time.Hour)) {
 			continue
+		}
+		if aboutKind == protocol.AskAboutStep {
+			if changeID, _, ref, commit, ok := parseStepAboutID(aboutID); ok && project != "" {
+				item.Delivery = &protocol.InboxDelivery{ChangeID: changeID, StepRef: ref, Commit: commit}
+				if item.ChangeTitle == "" {
+					item.ChangeTitle = title
+				}
+				stepLinks = append(stepLinks, deliveryLink{item.Delivery, project})
+			}
 		}
 		items = append(items, item)
 	}
@@ -443,56 +436,28 @@ func (s *Store) inboxRead() ([]protocol.InboxItem, error) {
 			items[i].AskerName = "an agent"
 		}
 	}
-	byID := map[string]int{}
-	for i := range items {
-		byID[items[i].ID] = i
-	}
-	rows, err = s.db.Query(`SELECT d.item_id,d.change_id,d.step,d.for_step,d.after_merge,d.commit_hash,c.project,c.title
-		FROM delivery_step_inbox d JOIN delivery_changes c ON c.id=d.change_id`)
-	if err != nil {
-		return nil, err
-	}
-	type deliveryItem struct {
-		id, project, title string
-		delivery           protocol.InboxDelivery
-	}
-	var deliveries []deliveryItem
-	for rows.Next() {
-		var d deliveryItem
-		var after int
-		if err := rows.Scan(&d.id, &d.delivery.ChangeID, &d.delivery.Step, &d.delivery.For, &after, &d.delivery.Commit, &d.project, &d.title); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		d.delivery.AfterMerge = after != 0
-		deliveries = append(deliveries, d)
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return nil, err
-	}
+	return items, s.fillDeliveryReportFields(stepLinks)
+}
+
+type deliveryLink struct {
+	delivery *protocol.InboxDelivery
+	project  string
+}
+
+func (s *Store) fillDeliveryReportFields(links []deliveryLink) error {
 	pipelines := map[string]protocol.Pipeline{}
-	for _, d := range deliveries {
-		i, ok := byID[d.id]
+	for _, sl := range links {
+		p, ok := pipelines[sl.project]
 		if !ok {
-			continue
-		}
-		p, ok := pipelines[d.project]
-		if !ok {
-			p, err = s.deliveryPipeline(d.project)
-			if err != nil {
-				return nil, err
+			var err error
+			if p, err = s.deliveryPipeline(sl.project); err != nil {
+				return err
 			}
-			pipelines[d.project] = p
+			pipelines[sl.project] = p
 		}
-		d.delivery.ReportFields = p.ReportFields(d.delivery.StepRef)
-		items[i].Delivery = &d.delivery
-		if items[i].ChangeTitle == "" {
-			items[i].ChangeTitle = d.title
-		}
+		sl.delivery.ReportFields = p.ReportFields(sl.delivery.StepRef)
 	}
-	return items, nil
+	return nil
 }
 
 // AnswerInbox records the owner's answer.
@@ -719,25 +684,36 @@ func (s *Store) answerInbox(id, answer, actor string, scope *protocol.RuleScope,
 	return item, nil
 }
 
-// joinedAskers lists the sessions that joined an item, other than its own
-// asker. Joined rows follow their item, so they are read whatever their
-// status.
+// joinedAskers lists the other sessions recorded as repeats in an item's detail.
 func joinedAskers(q askDB, id string) ([]string, error) {
-	rows, err := q.Query(`SELECT DISTINCT j.session_id FROM inbox_items j JOIN inbox_items i ON i.id=j.dup_of
-		WHERE j.dup_of=? AND j.session_id<>i.session_id ORDER BY j.session_id`, id)
-	if err != nil {
+	var ownerSession, detail string
+	if err := q.QueryRow(`SELECT session_id,detail FROM inbox_items WHERE id=?`, id).Scan(&ownerSession, &detail); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
 		return nil, err
 	}
-	defer rows.Close()
+	seen := map[string]bool{ownerSession: true, "": true, "another asker": true}
 	var out []string
-	for rows.Next() {
-		var sid string
-		if err := rows.Scan(&sid); err != nil {
-			return nil, err
+	for _, line := range strings.Split(detail, "\n") {
+		rest, ok := strings.CutPrefix(line, "Repeated by ")
+		if !ok {
+			continue
 		}
-		out = append(out, sid)
+		who, _, ok := strings.Cut(rest, ":")
+		if !ok {
+			continue
+		}
+		sid := strings.TrimSpace(who)
+		if i := strings.LastIndex(sid, " ("); i >= 0 && strings.HasSuffix(sid, ")") {
+			sid = sid[i+2 : len(sid)-1]
+		}
+		if !seen[sid] {
+			seen[sid] = true
+			out = append(out, sid)
+		}
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // CloseArchivedSessionInbox closes only requests belonging to a session on the authenticated node.
@@ -772,48 +748,17 @@ func (s *Store) agentNames() (map[string]string, error) {
 }
 
 func (s *Store) askArea(tx askDB, item protocol.InboxItem) string {
-	var aboutKind, aboutID string
-	_ = tx.QueryRow(`SELECT about_kind, about_id FROM inbox_items WHERE id=?`, item.ID).Scan(&aboutKind, &aboutID)
-
-	var project string
-	if aboutKind == "change" && aboutID != "" {
-		_ = tx.QueryRow(`SELECT project FROM delivery_changes WHERE id=?`, aboutID).Scan(&project)
-		if project != "" {
-			return project
+	if repo, team, err := s.askRepoTeam(tx, item.ID); err == nil {
+		if repo != "" {
+			return repo
+		}
+		if team != "" {
+			return team
 		}
 	}
-	_ = tx.QueryRow(`SELECT c.project FROM delivery_step_inbox d JOIN delivery_changes c ON c.id=d.change_id WHERE d.item_id=?`, item.ID).Scan(&project)
-	if project != "" {
-		return project
-	}
-
-	if (aboutKind == "project" || aboutKind == "repo" || aboutKind == "team") && aboutID != "" {
-		return aboutID
-	}
-
-	if item.SessionID != "" {
-		var repoProject, repoID string
-		_ = tx.QueryRow(`SELECT COALESCE(NULLIF(s.repo_project,''),s.announced_project), COALESCE(s.repo_id,'') FROM sessions s WHERE s.id=?`, item.SessionID).Scan(&repoProject, &repoID)
-		if repoProject != "" {
-			return repoProject
-		}
-		if repoID != "" {
-			return repoID
-		}
-
-		var teamName string
-		_ = tx.QueryRow(`SELECT t.name FROM teams t JOIN sessions s ON s.id=?
-			WHERE t.active=1 AND ((s.repo_id<>'' AND EXISTS(SELECT 1 FROM repos r WHERE r.id=s.repo_id AND r.team_id=t.id)) OR (s.agent_id<>'' AND EXISTS(SELECT 1 FROM agents a WHERE a.id=s.agent_id AND a.team_id=t.id))) LIMIT 1`,
-			item.SessionID).Scan(&teamName)
-		if teamName != "" {
-			return teamName
-		}
-	}
-
 	if item.Node != "" && !strings.HasPrefix(item.Node, "n_") {
 		return item.Node
 	}
-
 	return ""
 }
 

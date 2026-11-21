@@ -36,11 +36,11 @@ func setOffline(t *testing.T, s *Store, id string, at time.Time) {
 
 func backNote(t *testing.T, s *Store, id string) string {
 	t.Helper()
-	var note string
-	if err := s.db.QueryRow(`SELECT back_note FROM inbox_items WHERE id=?`, id).Scan(&note); err != nil {
+	var detail string
+	if err := s.db.QueryRow(`SELECT detail FROM inbox_items WHERE id=?`, id).Scan(&detail); err != nil {
 		t.Fatal(err)
 	}
-	return note
+	return backNoteFromDetail(detail)
 }
 
 // A routed ask whose holder stayed offline for the stuck-work limit goes back

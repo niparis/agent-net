@@ -25,13 +25,14 @@ func (s *Store) askRepoTeam(q askDB, id string) (repo, team string, err error) {
 	switch aboutKind {
 	case protocol.AskAboutChange:
 		_ = q.QueryRow(`SELECT project FROM delivery_changes WHERE id=?`, aboutID).Scan(&repo)
+	case protocol.AskAboutStep:
+		if changeID, _, _, _, ok := parseStepAboutID(aboutID); ok {
+			_ = q.QueryRow(`SELECT project FROM delivery_changes WHERE id=?`, changeID).Scan(&repo)
+		}
 	case protocol.AskAboutProject, "repo":
 		repo = aboutID
 	case "team":
 		team = aboutID
-	}
-	if repo == "" {
-		_ = q.QueryRow(`SELECT c.project FROM delivery_step_inbox d JOIN delivery_changes c ON c.id=d.change_id WHERE d.item_id=?`, id).Scan(&repo)
 	}
 	if repo == "" && session != "" {
 		_ = q.QueryRow(`SELECT COALESCE(NULLIF(s.repo_project,''),NULLIF(s.announced_project,''),s.repo_id,'')
@@ -165,20 +166,20 @@ func (s *Store) RecordJudgment(node string, q protocol.JudgmentRecordRequest) (p
 
 // joinedNodes lists the machines of the askers that joined an item.
 func (s *Store) joinedNodes(id string) ([]string, error) {
-	rows, err := s.db.Query(`SELECT DISTINCT x.node_id FROM inbox_items j JOIN sessions x ON x.id=j.session_id WHERE j.dup_of=?`, id)
-	if err != nil {
+	askers, err := joinedAskers(s.db, id)
+	if err != nil || len(askers) == 0 {
 		return nil, err
 	}
-	defer rows.Close()
+	seen := map[string]bool{}
 	var out []string
-	for rows.Next() {
+	for _, sid := range askers {
 		var node string
-		if err := rows.Scan(&node); err != nil {
-			return nil, err
+		if err := s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, sid).Scan(&node); err == nil && node != "" && !seen[node] {
+			seen[node] = true
+			out = append(out, node)
 		}
-		out = append(out, node)
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // discussAsk is the owner's "discuss" on a Desk item (decision 0150). For a CTO

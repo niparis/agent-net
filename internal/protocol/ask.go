@@ -50,6 +50,7 @@ const (
 	AskAboutProject = "project"
 	AskAboutSession = "session"
 	AskAboutMachine = "machine"
+	AskAboutStep    = "step"
 )
 
 // Where an ask comes from, besides a session.
@@ -126,6 +127,8 @@ const (
 	// provider has no quota left. It links the CTO intake entry of the
 	// provider, and closes with it.
 	AskKindQuotaStuck = "quota_stuck"
+	// AskKindCTOIntake is a deduplicated system-health problem owned by the CTO.
+	AskKindCTOIntake = "cto_intake"
 )
 
 // Ask is one row of the Desk. It has the shape of a delivery step: who waits,

@@ -330,9 +330,9 @@ func (s *Store) stepClosedNoticeTx(tx *sql.Tx, c protocol.Change, session string
 }
 
 func dismissStepInbox(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, at int64) error {
-	_, err := tx.Exec(`UPDATE inbox_items SET status='dismissed',answer='rule_disabled',answered_at=? WHERE (status='open' OR (status='dismissed' AND answer='')) AND id IN (
-		SELECT item_id FROM delivery_step_inbox WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?)`,
-		at, c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge))
+	_, err := tx.Exec(`UPDATE inbox_items SET status='dismissed',answer='rule_disabled',answered_at=?
+		WHERE (status='open' OR (status='dismissed' AND answer='')) AND about_kind=? AND about_id LIKE ?`,
+		at, protocol.AskAboutStep, stepAboutPrefix(c.ID, c.Revision, ref)+"%")
 	return err
 }
 
@@ -1947,30 +1947,26 @@ func delegateAgents(tx *sql.Tx, c protocol.Change) ([]string, error) {
 }
 
 func (s *Store) queueOwnerApproval(tx *sql.Tx, c protocol.Change, ref protocol.StepRef) error {
+	prefix := stepAboutPrefix(c.ID, c.Revision, ref) + "%"
 	var exists int
-	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_inbox WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?)`,
-		c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)).Scan(&exists); err != nil || exists != 0 {
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM inbox_items WHERE about_kind=? AND about_id LIKE ?)`,
+		protocol.AskAboutStep, prefix).Scan(&exists); err != nil || exists != 0 {
 		if err != nil {
 			return err
 		}
 		// A rule can be re-enabled for this same revision after it was
 		// relaxed. Restore an unanswered item rather than creating a duplicate.
-		_, err = tx.Exec(`UPDATE inbox_items SET status='open',answered_at=0 WHERE status='dismissed' AND answer='rule_disabled' AND id IN
-			(SELECT item_id FROM delivery_step_inbox WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?)`,
-			c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge))
+		_, err = tx.Exec(`UPDATE inbox_items SET status='open',answered_at=0 WHERE status='dismissed' AND answer='rule_disabled' AND about_kind=? AND about_id LIKE ?`,
+			protocol.AskAboutStep, prefix)
 		return err
 	}
 	commit := c.HeadCommit
 	if ref.AfterMerge {
 		commit = c.MergedCommit
 	}
-	item, err := s.createInboxItem(tx, protocol.InboxItem{Kind: "approval", SessionID: c.Caller, Node: c.Project, ChangeTitle: c.Title,
+	_, err := s.createInboxItem(tx, protocol.InboxItem{Kind: "approval", SessionID: c.Caller, Node: c.Project, ChangeTitle: c.Title,
+		AboutKind: protocol.AskAboutStep, AboutID: stepAboutID(c.ID, c.Revision, ref, commit),
 		Text: fmt.Sprintf("Approve %s for change %s, project %s, branch %s, commit %s", strings.TrimPrefix(ref.String(), "approve for "), c.ID, c.Project, c.Branch, commit)})
-	if err != nil {
-		return err
-	}
-	_, err = tx.Exec(`INSERT INTO delivery_step_inbox(change_id,revision,step,for_step,after_merge,commit_hash,item_id) VALUES(?,?,?,?,?,?,?)`,
-		c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge), commit, item.ID)
 	return err
 }
 

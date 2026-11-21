@@ -217,7 +217,7 @@ func dueEventHappened(q askDB, d sessionDue) (bool, error) {
 		return eventHappened(q, followUp{event: "change", changeID: d.afterRef, createdAt: d.createdAt})
 	}
 	var closed bool
-	err := q.QueryRow(`SELECT EXISTS(SELECT 1 FROM inbox_items WHERE id=? AND status IN ('answered','closed'))`, d.afterRef).Scan(&closed)
+	err := q.QueryRow(`SELECT EXISTS(SELECT 1 FROM inbox_items WHERE id=? AND status IN ('answered','closed','carried_out'))`, d.afterRef).Scan(&closed)
 	return closed, err
 }
 

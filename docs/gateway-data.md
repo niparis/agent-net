@@ -85,7 +85,7 @@ A machine enrolls once with a code, then on each connection proves its token, sa
 13. `events` (writes): The audit log records 'node.disconnected'.
 14. `sessions` (writes): After the offline grace period, every session of that machine is marked offline, and ended workers are marked 'ended'.
 15. `nodes` (writes): If the outage stays unexplained for the silence limit, the machine is marked silent. The once-a-minute check does this.
-16. `cto_intake` (writes): A silent machine is queued for the CTO with the text '<host> went silent ... it may be hung' (it is not sent to the owner).
+16. `inbox_items` (writes): A silent machine is queued for the CTO (owned by `cto`, deduplicated by kind and subject) with the text '<host> went silent ... it may be hung' (it is not sent to the owner).
 
 ## Journey: A change from accept to release
 
@@ -106,7 +106,7 @@ An agent hands in a change, the delivery steps open one after another, each step
 13. `delivery_step_tasks` (writes): The gateway reads all evidence, finds which steps are now ready, and opens the next task (review, test, approve, merge, release, verify in turn).
 14. `repos` (reads): For a step owned by the merger, the gateway reads the merger session and machine of the repo, and only that session may claim the step.
 15. `delivery_step_tasks` (writes): For an approve step set to delegated, the repo lead and the team lead (found from the repo and team tables) are listed in the task as the agents allowed to approve. The caller is never its own approver.
-16. `delivery_step_inbox` (writes): For an approve step that needs the owner's written approval, an Inbox item is created and linked to the step, revision and commit.
+16. `inbox_items` (writes): For an approve step that needs the owner's written approval, an Inbox item is created with `about_kind='step'` and `about_id` naming the change, revision, step and commit.
 17. `delivery_changes` (writes): A passing merge report moves the change to merged and stores the merged commit. When every step after merge has passed, the state becomes done (a close report makes it stopped).
 18. `inbox_items` (writes): When the change is done or stopped, the open asks about it are closed so nothing stale stays on the Desk.
 
@@ -426,14 +426,6 @@ Owner settings and their history.
 
 What the owner sees on the Desk: asks, sorts, follow-ups and the log.
 
-### ask_sort_hide_receipts
-
-- **Holds:** An undo receipt for one batch hide of asks on the Desk: the ids hidden and whether it was undone.
-- **Written by:** `gateway/chief_hide.go`
-- **Read by:** `gateway/chief_hide.go`
-- **Shown in:** TUI, Desk; tool `agent_ask_sort`
-- **Kept:** Forever.
-
 ### ask_sorts
 
 - **Holds:** One sort decision the chief of staff made on an ask (answer, route, merge, close, hide), with what it replaced so it can be undone.
@@ -442,29 +434,13 @@ What the owner sees on the Desk: asks, sorts, follow-ups and the log.
 - **Shown in:** TUI, Desk; tool `agent_ask_sort`; CTO op `chief_sorts`; CTO op `ask_history`; CTO op `ask_undo`
 - **Kept:** Forever.
 
-### cto_intake
-
-- **Holds:** One problem fed to the CTO, deduplicated by kind and subject, with severity, count, first and last seen and state.
-- **Written by:** `gateway/intake.go`
-- **Read by:** `gateway/intake.go`
-- **Shown in:** CTO op `cto_intake_find`
-- **Kept:** Forever (a closed entry keeps its close time and reason).
-
-### delivery_step_inbox
-
-- **Holds:** One row per Desk item raised to get the owner's approval of a delivery step, linking the step to the Desk item.
-- **Written by:** `gateway/delivery_tasks.go`
-- **Read by:** `gateway/asks.go`, `gateway/delivery_approval.go`, `gateway/delivery_changes.go`, `gateway/delivery_reconcile.go`, `gateway/delivery_tasks.go`, `gateway/desk_flush.go`, `gateway/desk_rules.go`, `gateway/store.go`, `gateway/store_inbox.go`
-- **Shown in:** TUI, Desk (Needs you)
-- **Kept:** Forever.
-
 ### desk_log
 
-- **Holds:** One log line about something that happened on the Desk (an ask sorted, a permission applied), with what undoes it.
-- **Written by:** `gateway/asks.go`, `gateway/permissions.go`, `gateway/store.go`
-- **Read by:** `gateway/asks.go`, `gateway/permissions.go`, `gateway/server.go`, `gateway/store.go`
-- **Shown in:** TUI, Desk; CTO op `desk_log`; CTO op `desk_settle`
-- **Kept:** The newest 2000 lines, trimmed on every 200th insert.
+- **Holds:** One log line about something that happened on the Desk (an ask sorted, a permission applied, a batch hide undo receipt), with what undoes it.
+- **Written by:** `gateway/asks.go`, `gateway/chief_hide.go`, `gateway/permissions.go`, `gateway/store.go`
+- **Read by:** `gateway/asks.go`, `gateway/chief_hide.go`, `gateway/permissions.go`, `gateway/server.go`, `gateway/store.go`
+- **Shown in:** TUI, Desk; tool `agent_ask_sort`; CTO op `desk_log`; CTO op `desk_settle`
+- **Kept:** The newest 2000 lines, trimmed on every 200th insert (active hide undo receipts stay until undone).
 
 ### follow_ups
 
@@ -476,11 +452,11 @@ What the owner sees on the Desk: asks, sorts, follow-ups and the log.
 
 ### inbox_items
 
-- **Holds:** One ask: a question or request that waits for the owner (or the chief of staff), with its state, answer, priority and who sorted or routed it. An ask that holds a worker start with picker overrides also holds the override facts the confirm rule checks.
-- **Written by:** `gateway/agentnet_reply.go`, `gateway/apps_public_asks.go`, `gateway/asks.go`, `gateway/asks_to.go`, `gateway/brief.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/chief_health.go`, `gateway/chief_stuck.go`, `gateway/delivery_approval.go` and others
-- **Read by:** `gateway/agentnet_reply.go`, `gateway/apps_asks.go`, `gateway/apps_public_asks.go`, `gateway/ask_intake.go`, `gateway/asks.go`, `gateway/brief.go`, `gateway/caller_agent.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/chief_health.go` and others
-- **Shown in:** TUI, Desk; tool `agent_owner_ask`; tool `agent_ask_intake`; tool `agent_ask_sort`; CTO op `inbox_list`; CTO op `inbox_answer`
-- **Kept:** Forever (answered asks stay).
+- **Holds:** One ask or CTO problem: a question, approval (including delivery step approvals via `about_kind='step'`), or deduplicated CTO intake alert (`owner='cto'`, with `dedupe_key`, `count`, `first_seen`, `last_seen`, `severity`), with its single `status`, answer, priority and who sorted or routed it. An ask that holds a worker start with picker overrides also holds the override facts the confirm rule checks.
+- **Written by:** `gateway/agentnet_reply.go`, `gateway/apps_public_asks.go`, `gateway/asks.go`, `gateway/asks_to.go`, `gateway/brief.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/chief_health.go`, `gateway/chief_stuck.go`, `gateway/delivery_approval.go`, `gateway/delivery_tasks.go`, `gateway/intake.go` and others
+- **Read by:** `gateway/agentnet_reply.go`, `gateway/apps_asks.go`, `gateway/apps_public_asks.go`, `gateway/ask_intake.go`, `gateway/asks.go`, `gateway/brief.go`, `gateway/caller_agent.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/chief_health.go`, `gateway/intake.go` and others
+- **Shown in:** TUI, Desk; tool `agent_owner_ask`; tool `agent_ask_intake`; tool `agent_ask_sort`; CTO op `inbox_list`; CTO op `inbox_answer`; CTO op `cto_intake_find`
+- **Kept:** Forever (answered and closed rows stay).
 
 ### permission_proposals
 

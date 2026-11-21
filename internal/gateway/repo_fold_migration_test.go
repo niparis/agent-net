@@ -369,6 +369,9 @@ func restoreRepoSideTables(t *testing.T, db repoDB) {
 	if cur < migrationVersion(t, "Schema reduction part 1: drop the tables") {
 		recreateDeadTablesDB(t, db)
 	}
+	if cur < migrationVersion(t, deskTablesMarker) {
+		recreateDeskDroppedTables(t, db)
+	}
 	var folded int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('repos') WHERE name='lead_agent_id'`).Scan(&folded); err != nil {
 		t.Fatal(err)

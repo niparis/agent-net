@@ -67,12 +67,10 @@ func TestFrontDoorFlushClosesOwnerItemsAndKeepsTheRows(t *testing.T) {
 		legacyAsk{id: "i_lead", kind: protocol.AskKindQuestion, next: "s_lead"},
 		legacyAsk{id: "i_gate", kind: protocol.AskKindApproval, next: protocol.AskNextOwner},
 		legacyAsk{id: "i_perm", kind: protocol.AskKindPermission, next: protocol.AskNextOwner, sourceRef: permissionAskPrefix + "p1"},
-		legacyAsk{id: "i_old", kind: protocol.AskKindQuestion, status: "answered"},
-		legacyAsk{id: "i_joined", kind: protocol.AskKindQuestion, status: protocol.ItemStatusJoined})
+		legacyAsk{id: "i_old", kind: protocol.AskKindQuestion, status: "answered"})
 	for _, stmt := range []string{
-		`UPDATE inbox_items SET dup_of='i_blank' WHERE id='i_joined'`,
 		`UPDATE inbox_items SET answer='yes', answered_at=7 WHERE id='i_old'`,
-		`INSERT INTO delivery_step_inbox(change_id,revision,step,for_step,after_merge,commit_hash,item_id) VALUES('ch_1',1,'approve','merge',0,'abc','i_gate')`,
+		`UPDATE inbox_items SET about_kind='step', about_id='ch_1:1:approve:merge:0:abc' WHERE id='i_gate'`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
 			t.Fatal(err)
@@ -84,7 +82,7 @@ func TestFrontDoorFlushClosesOwnerItemsAndKeepsTheRows(t *testing.T) {
 	}
 	rerunFrontDoorFlush(t, s, true)
 	now := c.now().UnixNano()
-	for _, id := range []string{"i_blank", "i_owner", "i_sign", "i_joined"} {
+	for _, id := range []string{"i_blank", "i_owner", "i_sign"} {
 		if status, answer, at := flushRow(t, s, id); status != "closed" || answer != protocol.AskReasonFlushedByFrontDoor || at != now {
 			t.Errorf("%s: status=%s answer=%q at=%d, want closed as %s at %d", id, status, answer, at, protocol.AskReasonFlushedByFrontDoor, now)
 		}

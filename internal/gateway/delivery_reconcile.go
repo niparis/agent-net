@@ -143,7 +143,8 @@ func (s *Store) ReconcileChange(machine string, q protocol.ChangeReconcileReques
 			return protocol.ChangeView{}, err
 		}
 	}
-	if _, err := tx.Exec(`UPDATE inbox_items SET status='dismissed', answered_at=? WHERE status='open' AND id IN (SELECT item_id FROM delivery_step_inbox WHERE change_id=?)`, s.now().UnixNano(), c.ID); err != nil {
+	if _, err := tx.Exec(`UPDATE inbox_items SET status='dismissed', answered_at=? WHERE status='open' AND about_kind=? AND about_id LIKE ?`,
+		s.now().UnixNano(), protocol.AskAboutStep, c.ID+":%"); err != nil {
 		return protocol.ChangeView{}, err
 	}
 	if err := retireStepMessages(tx, c.ID); err != nil {

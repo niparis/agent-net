@@ -41,10 +41,6 @@ const (
 	CategoryClientFacing = "client_facing"
 )
 
-// ItemStatusJoined is the status of a duplicate that joined an open item. It
-// is answered or closed with that item.
-const ItemStatusJoined = "joined"
-
 // ValidItemCategory says whether c is an item category.
 func ValidItemCategory(c string) bool {
 	switch c {

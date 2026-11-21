@@ -586,8 +586,8 @@ func TestAsksMigrationKeepsOpenItems(t *testing.T) {
 	s, _ := newTestStore(t)
 	version := migrationVersion(t, "Asks and the Desk (decision 0090)")
 	for _, stmt := range []string{
-		`DROP TRIGGER inbox_items_desk_insert`, `DROP TRIGGER inbox_items_desk_update`, `DROP TRIGGER inbox_items_joined_settle`,
-		`DROP INDEX inbox_items_open_source`, `DROP INDEX inbox_items_status`, `DROP TABLE desk_log`,
+		`DROP TRIGGER IF EXISTS inbox_items_desk_insert`, `DROP TRIGGER IF EXISTS inbox_items_desk_update`, `DROP TRIGGER IF EXISTS inbox_items_joined_settle`,
+		`DROP INDEX IF EXISTS inbox_items_open_source`, `DROP INDEX IF EXISTS inbox_items_status`, `DROP TABLE desk_log`,
 		`ALTER TABLE inbox_items DROP COLUMN from_kind`, `ALTER TABLE inbox_items DROP COLUMN source_ref`,
 		`ALTER TABLE inbox_items DROP COLUMN about_kind`, `ALTER TABLE inbox_items DROP COLUMN about_id`,
 		`ALTER TABLE inbox_items DROP COLUMN next_who`, `ALTER TABLE inbox_items DROP COLUMN why_you`,
@@ -614,6 +614,7 @@ func TestAsksMigrationKeepsOpenItems(t *testing.T) {
 	if _, err := s.db.Exec(`INSERT INTO delivery_changes(id,project,machine,branch,head_commit,revision,origin,title,state,created_at,updated_at) VALUES('ch_1','demo','n1','b','abc',1,'{}','Title','open',0,0)`); err != nil {
 		t.Skipf("cannot seed a change on this schema: %v", err)
 	}
+	recreateDeskDroppedTables(t, s.db)
 	if _, err := s.db.Exec(`INSERT INTO delivery_step_inbox(change_id,revision,step,for_step,after_merge,commit_hash,item_id) VALUES('ch_1',1,'approve','merge',0,'abc','i_appr')`); err != nil {
 		t.Fatal(err)
 	}

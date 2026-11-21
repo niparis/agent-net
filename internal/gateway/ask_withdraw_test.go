@@ -22,7 +22,7 @@ func agentAsk(t *testing.T, s *Store, from, kind, text string) string {
 func deskAsk(t *testing.T, s *Store, from, kind, text string) string {
 	t.Helper()
 	id := agentAsk(t, s, from, kind, text)
-	if _, err := s.db.Exec(`UPDATE inbox_items SET next_who='owner', owner='chief', state=? WHERE id=?`, protocol.DeskReady, id); err != nil {
+	if _, err := s.db.Exec(`UPDATE inbox_items SET next_who='owner', owner='chief' WHERE id=?`, id); err != nil {
 		t.Fatal(err)
 	}
 	return id
@@ -38,7 +38,7 @@ func TestAskerWithdrawsItsDeskAskThroughTheAskText(t *testing.T) {
 	if id == "" {
 		t.Fatalf("the ask was not created: %+v", res)
 	}
-	if _, err := s.db.Exec(`UPDATE inbox_items SET next_who='owner', owner='chief', state=? WHERE id=?`, protocol.DeskReady, id); err != nil {
+	if _, err := s.db.Exec(`UPDATE inbox_items SET next_who='owner', owner='chief' WHERE id=?`, id); err != nil {
 		t.Fatal(err)
 	}
 
@@ -128,7 +128,7 @@ func TestChiefWithdrawsAReplacedDeskAsk(t *testing.T) {
 	stale := deskAsk(t, s, asker, "approval", "Approve merge #935 at 2143e3af")
 	c.advance(time.Minute)
 	replacement := agentAsk(t, s, asker, "approval", "Approve merge #935 at 9999abcd")
-	if _, err := s.db.Exec(`UPDATE inbox_items SET next_who='owner', owner='chief', state=? WHERE id=?`, protocol.DeskReady, replacement); err != nil {
+	if _, err := s.db.Exec(`UPDATE inbox_items SET next_who='owner', owner='chief' WHERE id=?`, replacement); err != nil {
 		t.Fatal(err)
 	}
 	// A new head is a new ask, not a repeat of the stale one.
@@ -201,12 +201,12 @@ func TestRelayedRepeatsJoinTheOneAsk(t *testing.T) {
 	if err != nil || len(asks) != 1 || asks[0].ID != id {
 		t.Fatalf("the repeats made more than one ask: %+v, %v", asks, err)
 	}
-	var joined int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE dup_of=? AND status=?`, id, protocol.ItemStatusJoined).Scan(&joined); err != nil {
+	joined, err := joinedAskers(s.db, id)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if joined != 3 {
-		t.Fatalf("%d relayed repeats joined the ask, want 3", joined)
+	if len(joined) != 3 {
+		t.Fatalf("%d relayed repeats joined the ask, want 3", len(joined))
 	}
 	var detail string
 	if err := s.db.QueryRow(`SELECT detail FROM inbox_items WHERE id=?`, id).Scan(&detail); err != nil {
