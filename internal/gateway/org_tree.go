@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -66,6 +67,34 @@ func checkReportsTo(tx *sql.Tx, from, to string) error {
 		return err
 	}
 	return nil
+}
+
+// moveReportsToTx stores an explicit reports_to edge and replaces the Agent's
+// current parent in the same transaction. It writes one history row whose old
+// value is the old parent edge, so one undo restores that parent.
+func moveReportsToTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
+	var parent string
+	err := tx.QueryRow(`SELECT target FROM graph_edges WHERE source=? AND kind='reports_to' AND target<>?`, e.From, e.To).Scan(&parent)
+	if err == sql.ErrNoRows {
+		return storeEdgeTx(tx, e, actor, now)
+	}
+	if err != nil {
+		return err
+	}
+	var previous protocol.Edge
+	previous.From, previous.To, previous.Kind = e.From, parent, e.Kind
+	if err := tx.QueryRow(`SELECT mode,rule FROM graph_edges WHERE source=? AND target=? AND kind=?`, e.From, parent, e.Kind).Scan(&previous.Mode, &previous.Rule); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM graph_edges WHERE source=? AND target=? AND kind=?`, e.From, parent, e.Kind); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES(?,?,?,?,?) ON CONFLICT(source,target,kind) DO UPDATE SET mode=excluded.mode,rule=excluded.rule`, e.From, e.To, e.Kind, e.Mode, e.Rule); err != nil {
+		return err
+	}
+	before, _ := json.Marshal(previous)
+	after, _ := json.Marshal(e)
+	return graphRecord(tx, "edge", e.From, e.Kind, string(before), string(after), actor, now)
 }
 
 // agentParentTx is the parent the old tables imply for one Agent. The order is

@@ -31,22 +31,83 @@ func reportsEdge(from, to string) protocol.Edge {
 	return protocol.Edge{From: from, To: to, Kind: protocol.EdgeReportsTo}
 }
 
-func TestReportsToKeepsOneParent(t *testing.T) {
+// lastHistoryID is the newest graph_history row.
+func lastHistoryID(t *testing.T, s *Store) (id int64, rows int) {
+	t.Helper()
+	if err := s.db.QueryRow(`SELECT COALESCE(MAX(id),0), COUNT(*) FROM graph_history`).Scan(&id, &rows); err != nil {
+		t.Fatal(err)
+	}
+	return id, rows
+}
+
+// An explicit edge_set moves the parent in one write: one history row, one undo.
+func TestReportsToSetMovesTheParent(t *testing.T) {
 	s := teamStore(t)
 	if err := s.SetEdge(reportsEdge("demo", "other"), "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetEdge(reportsEdge("demo", "cto"), "owner"); err == nil {
-		t.Fatal("a second parent was accepted")
+	_, before := lastHistoryID(t, s)
+	if err := s.SetEdge(reportsEdge("demo", "cto"), "owner"); err != nil {
+		t.Fatalf("moving the parent: %v", err)
+	}
+	if got := reportsTo(t, s, "demo"); got != "cto" {
+		t.Fatalf("demo reports to %q, want cto", got)
+	}
+	id, after := lastHistoryID(t, s)
+	if after != before+1 {
+		t.Fatalf("a move wrote %d history rows, want 1", after-before)
+	}
+	if err := s.GraphUndo(id, "owner"); err != nil {
+		t.Fatalf("undo of the move: %v", err)
 	}
 	if got := reportsTo(t, s, "demo"); got != "other" {
-		t.Fatalf("demo reports to %q, want other", got)
+		t.Fatalf("after undo demo reports to %q, want other", got)
+	}
+	// Undoing the undo moves the parent forward again.
+	redo, _ := lastHistoryID(t, s)
+	if err := s.GraphUndo(redo, "owner"); err != nil {
+		t.Fatalf("undo of the undo: %v", err)
+	}
+	if got := reportsTo(t, s, "demo"); got != "cto" {
+		t.Fatalf("after redo demo reports to %q, want cto", got)
+	}
+}
+
+// A move keeps the other tree rules: no cycle, and no parent that is a merger.
+func TestReportsToMoveKeepsTheTreeRules(t *testing.T) {
+	s := teamStore(t)
+	for _, e := range []protocol.Edge{reportsEdge("demo", "other"), reportsEdge("other", "cto")} {
+		if err := s.SetEdge(e, "owner"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.SetEdge(reportsEdge("other", "demo"), "owner"); err == nil || !strings.Contains(err.Error(), "cycle") {
+		t.Fatalf("a cycle through a move was accepted: %v", err)
+	}
+	if got := reportsTo(t, s, "other"); got != "cto" {
+		t.Fatalf("a refused move changed the parent to %q", got)
+	}
+}
+
+// The one-parent rule still holds for a writer that is not an explicit
+// edge_set: undoing a removal must not add a second parent.
+func TestReportsToUndoKeepsOneParent(t *testing.T) {
+	s := teamStore(t)
+	if err := s.SetEdge(reportsEdge("demo", "other"), "owner"); err != nil {
+		t.Fatal(err)
 	}
 	if err := s.RemoveEdge(reportsEdge("demo", "other"), "owner"); err != nil {
 		t.Fatal(err)
 	}
+	removal, _ := lastHistoryID(t, s)
 	if err := s.SetEdge(reportsEdge("demo", "cto"), "owner"); err != nil {
-		t.Fatalf("a new parent after the old one went: %v", err)
+		t.Fatal(err)
+	}
+	if err := s.GraphUndo(removal, "owner"); err == nil || !strings.Contains(err.Error(), "already reports to") {
+		t.Fatalf("undo added a second parent: %v", err)
+	}
+	if got := reportsTo(t, s, "demo"); got != "cto" {
+		t.Fatalf("demo reports to %q, want cto", got)
 	}
 }
 
