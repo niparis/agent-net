@@ -898,6 +898,9 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	if method == protocol.MethodWaiting {
 		return lc.waitingCall(client, ls, raw)
 	}
+	if method == protocol.MethodUrgentTake {
+		return lc.urgentTakeCall(ctx, client, ls, raw)
+	}
 	readOnly := map[string]bool{"info": true, "list": true, "get": true, "messages": true, "message_status": true,
 		"nodes": true, "restart": true, "projects": true, "events": true, protocol.OpWorkers: true, "judgments_find": true}
 	if client == "cli" && !readOnly[method] && !strings.HasPrefix(method, "mcp_") &&

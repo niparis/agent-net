@@ -776,6 +776,22 @@ await test("a failed tool call asks the daemon and appends one hint line", async
   await p.fire("session_shutdown", {});
 });
 
+await test("an urgent message is shown after a tool call, once (decision 0180)", async () => {
+  const p = await started();
+  replies.urgent_take = { messages: [{ message_id: "m_00000000000000u1", sender_name: "chief", sender_session_id: "s_c", sender_harness: "claude", message_type: "request", conversation_id: "c_1", body: "STOP copying now" }] };
+  const ok = { type: "tool_result", toolName: "read", isError: false, input: {}, content: [{ type: "text", text: "file text" }] };
+  const out = await p.fire("tool_result", ok);
+  const texts = (out?.content ?? []).map((c) => c.text);
+  if (texts.length !== 2 || texts[0] !== "file text" || !texts[1].includes("urgent message") || !texts[1].includes("STOP copying now") || !texts[1].includes("m_00000000000000u1")) {
+    throw new Error("result: " + JSON.stringify(out));
+  }
+  // The daemon hands a message over once; a repeat of the same ID is not shown again.
+  const again = await p.fire("tool_result", ok);
+  if (again !== undefined) throw new Error("shown twice: " + JSON.stringify(again));
+  delete replies.urgent_take;
+  await p.fire("session_shutdown", {});
+});
+
 await test("no hint: the result is left alone; ok output and agent-net's own tools never ask", async () => {
   const p = await started();
   let before = requests.length;

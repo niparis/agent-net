@@ -48,6 +48,10 @@ type fakeThread struct {
 	Flags []string
 }
 
+type fakeSteer struct {
+	Thread, Turn, ClientID, Text string
+}
+
 type fakeQueued struct {
 	Thread, ClientID, Text string
 }
@@ -62,6 +66,8 @@ type fakeShared struct {
 	mu      sync.Mutex
 	threads map[string]*fakeThread
 	queued  []fakeQueued
+	// steers holds the turn/steer calls, in order (decision 0180).
+	steers []fakeSteer
 	// turns holds the prompts of turn/start, in order.
 	turns    []string
 	conns    []*websocket.Conn
@@ -129,6 +135,12 @@ func (f *fakeShared) extraRootCalls() int {
 	return f.extraRoots
 }
 
+func (f *fakeShared) steered() []fakeSteer {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]fakeSteer(nil), f.steers...)
+}
+
 func (f *fakeShared) queue() []fakeQueued {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -193,6 +205,7 @@ func (f *fakeShared) handle(w http.ResponseWriter, r *http.Request) {
 			DevInstr            string `json:"developerInstructions"`
 			ThreadID            string `json:"threadId"`
 			ClientUserMessageID string `json:"clientUserMessageId"`
+			ExpectedTurnID      string `json:"expectedTurnId"`
 			Input               []struct {
 				Text string `json:"text"`
 			} `json:"input"`
@@ -269,6 +282,15 @@ func (f *fakeShared) handle(w http.ResponseWriter, r *http.Request) {
 			f.turns = append(f.turns, text)
 			f.mu.Unlock()
 			reply(map[string]any{"turn": map[string]any{"id": "turn-fake"}}, "")
+			continue
+		case "turn/steer":
+			text := ""
+			if len(p.Input) > 0 {
+				text = p.Input[0].Text
+			}
+			f.steers = append(f.steers, fakeSteer{p.ThreadID, p.ExpectedTurnID, p.ClientUserMessageID, text})
+			f.mu.Unlock()
+			reply(map[string]any{"turnId": p.ExpectedTurnID}, "")
 			continue
 		case "thread/queue/add":
 			if f.threads[p.ThreadID] == nil {

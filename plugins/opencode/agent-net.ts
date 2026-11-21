@@ -1556,6 +1556,12 @@ export default {
     // session, and goes into the system prompt of the next model request of
     // that session (OpenCode has no hook that adds text to a tool result).
     const pendingHints = new Map<string, string>();
+    // An urgent message collected after a tool call (decision 0180) waits here
+    // the same way, per root session, and goes into the next model request
+    // ahead of the hint. The daemon marks it delivered when it hands it over, so
+    // the plugin keeps the IDs it has shown and never shows one twice.
+    const pendingUrgent = new Map<string, string>();
+    const urgentShown = new Set<string>();
 
     // Delegation policy (decision 0014). The owner sets it in agent-net; the
     // daemon says what it is for this session. Each request gets the text, and
@@ -1624,6 +1630,11 @@ export default {
       void ctx.session
         .hook("context", (input: any) => {
           const sid = input.sessionID ? String(input.sessionID) : "";
+          const urgent = sid ? pendingUrgent.get(h.rootOf.get(sid) ?? sid) : undefined;
+          if (urgent) {
+            pendingUrgent.delete(h.rootOf.get(sid) ?? sid);
+            input.system.push({ type: "text", text: urgent });
+          }
           const hint = sid ? pendingHints.get(h.rootOf.get(sid) ?? sid) : undefined;
           if (hint) {
             pendingHints.delete(h.rootOf.get(sid) ?? sid);
@@ -1666,11 +1677,35 @@ export default {
     } catch {
       // Without this hook the first request of a session may lack the subagent.
     }
+    async function collectUrgent(sid: string) {
+      try {
+        const root = h.rootOf.get(sid) ?? sid;
+        const link = h.links.get(root)?.link;
+        if (!link) return;
+        const res = await link.request("urgent_take", {}).catch(() => undefined);
+        const parts: string[] = [];
+        for (const m of Array.isArray(res?.messages) ? res.messages : []) {
+          if (!m || urgentShown.has(m.message_id)) continue;
+          urgentShown.add(m.message_id);
+          parts.push(formatDelivery(m));
+        }
+        if (!parts.length) return;
+        const text =
+          "[agent-net] An urgent message arrived while you were working. Read it now, before your next step, and act on it. Do not wait for the end of your turn.\n\n" +
+          parts.join("\n\n");
+        const old = pendingUrgent.get(root);
+        pendingUrgent.set(root, old ? `${old}\n\n${text}` : text);
+      } catch {
+        // The message goes at the turn end.
+      }
+    }
+
     try {
       void (ctx.tool as any)
         .hook?.("execute.after", async (input: any) => {
           try {
             const tool = String(input.tool ?? "");
+            if (input.sessionID) await collectUrgent(String(input.sessionID));
             if (tool.startsWith("agent_") || !input.sessionID) return;
             const failed = input.status === "error";
             const text = resultText(failed ? input.error : input.result);

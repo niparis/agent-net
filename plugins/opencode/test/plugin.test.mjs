@@ -38,6 +38,7 @@ const progressFrom = []; // session ID of every harness_activity call
 let charterReply = null;
 let graphReply = null;
 let hintReply = {}; // what the fake daemon answers to "hint"
+let urgentReply = {}; // what the fake daemon answers to "urgent_take"
 let policyReply = {}; // what the fake daemon answers to "policy"
 const server = createServer((conn) => {
   let buf = "";
@@ -81,6 +82,8 @@ const server = createServer((conn) => {
               playbooks: [{ subject_kind: "model", subject: line.params.model, note: "ask for the diff" }] }
         : line.method === "hint"
           ? hintReply
+        : line.method === "urgent_take"
+          ? urgentReply
         : line.method === "policy"
           ? policyReply
         : line.method === "worker_handback"
@@ -1499,6 +1502,26 @@ await test("a failed tool call asks the daemon; the hint goes into the next requ
     const again = { sessionID: sid, system: [{ type: "text", text: "x" }] };
     hooked.context(again);
     if (again.system.some((p) => p.text.includes("cogforge"))) throw new Error("hint shown twice");
+  });
+});
+
+await test("an urgent message is collected after a tool call and goes into the next request, once (decision 0180)", async () => {
+  await withHints(async (hooked, sid) => {
+    urgentReply = { messages: [{ message_id: "m_00000000000000u1", sender_name: "chief", sender_session_id: "s_c", sender_harness: "claude", message_type: "request", conversation_id: "c_1", body: "STOP copying now" }] };
+    try {
+      await hooked["tool:execute.after"]({ tool: "read", sessionID: sid, id: "c9", input: {}, status: "completed", result: { content: "file text" } });
+      const input = { sessionID: sid, system: [{ type: "text", text: "You are OpenCode." }] };
+      hooked.context(input);
+      const joined = input.system.map((p) => p.text).join("\n");
+      if (!joined.includes("urgent message") || !joined.includes("STOP copying now") || !joined.includes("m_00000000000000u1")) throw new Error(joined);
+      // The daemon hands a message over once; the same ID is not shown again.
+      await hooked["tool:execute.after"]({ tool: "read", sessionID: sid, id: "c10", input: {}, status: "completed", result: { content: "file text" } });
+      const again = { sessionID: sid, system: [{ type: "text", text: "x" }] };
+      hooked.context(again);
+      if (again.system.some((p) => p.text.includes("STOP copying"))) throw new Error("shown twice");
+    } finally {
+      urgentReply = {};
+    }
   });
 });
 

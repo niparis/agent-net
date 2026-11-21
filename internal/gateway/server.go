@@ -3319,6 +3319,20 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		ask.State = protocol.AskAnswered
 		return ask, nil
+	case protocol.OpUrgentTake:
+		// The hook of a busy session asks for its urgent held messages
+		// (decision 0180).
+		var p struct {
+			SessionID string `json:"session_id"`
+		}
+		if json.Unmarshal(raw, &p) != nil || p.SessionID == "" {
+			return nil, reject("bad msg.take_urgent")
+		}
+		msgs, err := g.takeUrgent(ctx, nc.id, p.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"messages": msgs}, nil
 	case "ask.redirect":
 		// The explicit wait of a plugin asks through the daemon's waiting
 		// method. The daemon asks here first whether the team lead takes it.
@@ -4118,18 +4132,23 @@ func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Mes
 	g.sendDeliverWith(ctx, nodeID, m, false)
 }
 
-func (g *Gateway) sendDeliverWith(ctx context.Context, nodeID string, m protocol.Message, released bool) {
+// prepareDelivery runs every check a delivery needs and fills the fields the
+// adapter shows. It returns false when the message must not go now. inline is
+// the urgent take of a session's hook (decision 0180): the caller is the
+// recipient's own daemon, so no connection is needed and the busy hold is
+// already cleared.
+func (g *Gateway) prepareDelivery(ctx context.Context, nodeID string, m protocol.Message, released, inline bool) (protocol.Message, *nodeConn, bool) {
 	if allowed, err := g.store.allowNudgeDelivery(m); err != nil || !allowed {
-		return
+		return m, nil, false
 	}
 	var current bool
 	var err error
 	m, current, err = g.store.currentNudge(m)
 	if err != nil || !current {
-		return
+		return m, nil, false
 	}
 	if m.HeldForBusy {
-		return
+		return m, nil, false
 	}
 	// A message for a session that is in a turn waits at the gateway
 	// (decision 0130). Workers are left out: their daemon queues per turn.
@@ -4142,37 +4161,42 @@ func (g *Gateway) sendDeliverWith(ctx context.Context, nodeID string, m protocol
 				// or the 30 minute fallback (decision 0130, fix round).
 				if still, err := g.store.busyHoldEligible(m.To); err == nil && !still {
 					g.releaseBusyHold(ctx, m.To, false)
+				} else if m.Urgent {
+					g.notifyUrgentHeld(ctx, nodeID, m.To)
 				}
-				return
+				return m, nil, false
 			}
 		}
 	}
 	if held, err := g.store.SessionAgentPending(m.To); err != nil || held {
-		return
+		return m, nil, false
 	}
 	if m.From == "agent-net" && strings.HasPrefix(m.IdempotencyKey, "step_") {
 		current, err := g.store.stepMessageCurrent(m.ID)
 		if err != nil || !current {
-			return
+			return m, nil, false
 		}
 	}
 	if needsReminderCheck(m) {
 		ok, err := g.store.reminderEligible(m.ParentID)
 		if err != nil || !ok {
-			return
+			return m, nil, false
 		}
 	}
 	if needsRedirectReminderCheck(m) {
 		ok, err := g.store.redirectReminderEligible(m.ParentID)
 		if err != nil || !ok {
-			return
+			return m, nil, false
 		}
 	}
-	g.mu.Lock()
-	nc := g.conns[nodeID]
-	g.mu.Unlock()
-	if nc == nil {
-		return
+	var nc *nodeConn
+	if !inline {
+		g.mu.Lock()
+		nc = g.conns[nodeID]
+		g.mu.Unlock()
+		if nc == nil {
+			return m, nil, false
+		}
 	}
 	// The gateway, and only the gateway, says whether the recipient is trusted.
 	m.RecipientTrust = false
@@ -4180,13 +4204,13 @@ func (g *Gateway) sendDeliverWith(ctx context.Context, nodeID string, m protocol
 		rule, err := g.store.RequestRule(m.From, m.To)
 		if err != nil {
 			g.logLine("error", "where", "request rule", "err", err)
-			return
+			return m, nil, false
 		}
 		if rule == "ask" && !m.OwnerApproved {
 			if _, err := g.store.db.Exec(`UPDATE messages SET state='held' WHERE id=? AND state IN ('stored','dispatched')`, m.ID); err != nil {
 				g.logLine("error", "where", "hold message", "err", err)
 			}
-			return
+			return m, nil, false
 		}
 		m.RecipientTrust = rule == "auto"
 	} else if a, ok, err := g.store.Agent(m.To); err == nil && ok {
@@ -4218,11 +4242,19 @@ func (g *Gateway) sendDeliverWith(ctx context.Context, nodeID string, m protocol
 	authority, rule, err := g.store.MergeRuleForSession(m.To)
 	if err != nil {
 		g.logLine("error", "where", "recipient merge authority", "err", err)
-		return
+		return m, nil, false
 	}
 	m.RecipientMergeAuthority = authority
 	m.RecipientMergeText = rule
 	m.RecipientMergeTextSet = true
+	return m, nc, true
+}
+
+func (g *Gateway) sendDeliverWith(ctx context.Context, nodeID string, m protocol.Message, released bool) {
+	m, nc, ok := g.prepareDelivery(ctx, nodeID, m, released, false)
+	if !ok {
+		return
+	}
 	frame, err := protocol.EncodeRequest("msg.deliver", protocol.NewID("d"), protocol.MsgDeliver{Message: m})
 	if err != nil {
 		return

@@ -190,7 +190,9 @@ type fakeAdapter struct {
 	mu      sync.Mutex
 	host    Host
 	got     []protocol.Message
-	fail    string
+	// inline holds what a hook collected inside a turn (DeliverInline).
+	inline []protocol.Message
+	fail   string
 	// uncertain makes Deliver report a write that failed after connecting.
 	uncertain string
 	// crash makes Deliver end its goroutine during the write, as if the

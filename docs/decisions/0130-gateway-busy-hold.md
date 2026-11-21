@@ -51,7 +51,8 @@ tasks, reminders) and messages between a worker and its caller in either
 direction are not peer messages: they are never refused and are not counted,
 so a burst of orchestration traffic cannot lock a session out of its own work.
 Any sender may mark a message `urgent`: it goes ahead of older held messages
-but still counts toward the limit. Zero turns the limit off.
+but still counts toward the limit. Zero turns the limit off. Decision 0180 also
+delivers an urgent message to a busy Claude Code session at its next tool call.
 
 **Visibility.** A send result and `agent_message_status` carry
 `queue_position`, `queue_waiting`, `busy_for_seconds` and the one-line

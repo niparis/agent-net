@@ -166,6 +166,11 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 				continue
 			}
 			d.enqueue(p.Message.To, func() { d.onDeliver(ctx, p.Message) })
+		case protocol.FrameUrgentHeld:
+			var p protocol.UrgentHeld
+			if json.Unmarshal(raw, &p) == nil {
+				d.onUrgentHeld(p.SessionID)
+			}
 		case protocol.FrameWaitClear:
 			var p protocol.WaitClear
 			if json.Unmarshal(raw, &p) == nil {

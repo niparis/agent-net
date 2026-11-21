@@ -212,6 +212,7 @@ func Setup(ctx context.Context, o Options) error {
 	r.claudePolicyHook()
 	r.claudeNeedsHook()
 	r.claudeToolDecideHook()
+	r.claudeUrgentHook()
 	r.claudeWorkersMod()
 	r.quotaAXI(ctx)
 	r.recordApplied()

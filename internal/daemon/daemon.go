@@ -369,6 +369,8 @@ type activityUpdate struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
+	urgentHeld          sync.Map       // session ID -> an urgent message is held for it at the gateway (decision 0180)
+	inlineCaptures      sync.Map       // message ID -> *inlineCapture, a hook is collecting this message
 	workerEnvState      workerEnvState // login PATH and system CA bundle, found once
 	ownerPrompts        ownerPrompts
 	turnEnds            turnEndAsks
@@ -779,6 +781,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 		d.cfg.RefreshAgentFiles(d.Logf, d.SettingsSnapshot())
 	}
 	d.adoptLiveClaudeCTO()
+	d.clearUrgentMarkers()
 	d.mcp.start(ctx)
 	ln, err := listenLocal(d, d.cfg.SocketPath)
 	if err != nil {
@@ -1631,6 +1634,10 @@ func (d *Daemon) resolveTo(ctx context.Context, to string) (string, error) {
 // ---- delivery ----
 
 func (d *Daemon) onDeliver(ctx context.Context, m protocol.Message) {
+	if m.Urgent {
+		// The turn-end release of a held urgent message: nothing waits now.
+		d.clearUrgentHeld(m.To)
+	}
 	// The gateway may push right after the sync result, before the handshake
 	// here has recorded session IDs.
 	for i := 0; i < 100 && d.isConnecting() && ctx.Err() == nil; i++ {
@@ -1838,6 +1845,9 @@ func (d *Daemon) deliverTo(ctx context.Context, ls *localSession, m protocol.Mes
 	conn := ls.conn
 	d.mu.Unlock()
 	if conn != nil {
+		if d.capturePluginInline(m) {
+			return Result{Delivered: true, Detail: "shown inside the turn"}
+		}
 		result := conn.push(ctx, m, d.cfg.PluginAckTimeout)
 		if result.Delivered && m.FromHarness == protocol.OwnerHarness {
 			d.setWaiting(ls, nil)
@@ -1868,7 +1878,10 @@ func (d *Daemon) deliverTo(ctx context.Context, ls *localSession, m protocol.Mes
 	if a == nil {
 		return Result{Detail: "no adapter for harness " + info.Harness}
 	}
-	result := a.Deliver(ctx, info, m)
+	result, inline := d.deliverInline(ctx, a, info, m)
+	if !inline {
+		result = a.Deliver(ctx, info, m)
+	}
 	if result.Delivered && m.FromHarness == protocol.OwnerHarness {
 		d.setWaiting(ls, nil)
 	}

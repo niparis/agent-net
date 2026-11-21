@@ -588,3 +588,31 @@ func TestBatchDeliveryRecordsEveryOriginal(t *testing.T) {
 		}
 	}
 }
+
+// A message a hook shows inside a turn has the same text as the inbox frame,
+// is recorded for reply matching, and is not written to the inbox
+// (decision 0180).
+func TestDeliverInlineGivesTheFrameTextAndRecordsTheReply(t *testing.T) {
+	r := newRig(t)
+	eventually(t, "session found", func() bool { return len(r.host.current()) == 1 })
+	m := msg
+	m.Type = protocol.TypeRequest
+	text, res := r.a.DeliverInline(context.Background(), protocol.SessionInfo{NativeID: "sess-1", SessionID: "s_claude"}, m)
+	if !res.Delivered {
+		t.Fatalf("result %+v", res)
+	}
+	if !strings.HasPrefix(text, "<cross-session-message ") || !strings.Contains(text, "do the thing") || !strings.Contains(text, "SendMessage") {
+		t.Fatalf("text = %q, want the cross-session message the inbox frame carries", text)
+	}
+	r.book.mu.Lock()
+	rows := append([]daemon.ClaudeDelivery(nil), r.book.rows...)
+	r.book.mu.Unlock()
+	if len(rows) != 1 || rows[0].MessageID != m.ID {
+		t.Fatalf("recorded %+v, want the message recorded for reply matching", rows)
+	}
+	select {
+	case line := <-r.lines:
+		t.Fatalf("the message was also written to the inbox: %s", line)
+	default:
+	}
+}
