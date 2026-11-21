@@ -41,6 +41,7 @@ if [ "$1" = test ]; then
     [ -z "${AGENT_NET_NO_UNIX_SOCKETS_LOG:-}" ] || printf '%s\n' "$name" >>"$AGENT_NET_NO_UNIX_SOCKETS_LOG"
   done
 fi
+[ -z "${FAKE_GO_TMP_LOG:-}" ] || printf 'TMPDIR=%s GOTMPDIR=%s\n' "${TMPDIR-unset}" "${GOTMPDIR-unset}" >>"$FAKE_GO_TMP_LOG"
 if [ "$1" = test ] && [ -n "${FAKE_GO_PANIC:-}" ]; then
   cat <<'OUT'
 panic: test timed out after 25m0s
@@ -418,10 +419,10 @@ reset_tree
 change_production
 home=$work/home-fallback
 : >"$work/go.log"
-mkdir -p "$home/.local/go/bin"
+mkdir -p "$home/.local/go/bin" "$work/env-tmp"
 cp "$work/bin/go" "$work/bin/gofmt" "$home/.local/go/bin/"
 status=0
-env -i TMPDIR="${TMPDIR:-/tmp}" HOME="$home" GOCACHE="$gocache" PATH="$no_go_dir" FAKE_GO_LOG="$work/go.log" \
+env -i TMPDIR="$work/env-tmp" HOME="$home" GOCACHE="$gocache" PATH="$no_go_dir" FAKE_GO_LOG="$work/go.log" \
   FAKE_GOFMT_LOG="$work/gofmt.log" TEST_CHANGED_GO="$real_go" \
   sh "$script" HEAD >"$work/out" 2>&1 || status=$?
 [ "$status" = 0 ] || fail "a run without go on PATH exited $status: $(cat "$work/out")"
@@ -435,9 +436,9 @@ grep -Fq 'test -count=1 -run ^(TestAlpha|TestBeta)$ -timeout ' "$work/go.log" ||
 # not exist, so a host with Go in /usr/local/go still gets this result.
 reset_tree
 change_production
-mkdir -p "$work/empty-home"
+mkdir -p "$work/empty-home" "$work/env-tmp"
 status=0
-env -i TMPDIR="${TMPDIR:-/tmp}" HOME="$work/empty-home" PATH="$no_go_dir" TEST_CHANGED_GO="$real_go" \
+env -i TMPDIR="$work/env-tmp" HOME="$work/empty-home" PATH="$no_go_dir" TEST_CHANGED_GO="$real_go" \
   TEST_CHANGED_GO_DIRS="$work/no-install-dir" \
   sh "$script" HEAD >"$work/out" 2>&1 || status=$?
 [ "$status" = 2 ] || fail "a run with no go exited $status, want 2: $(cat "$work/out")"
@@ -535,5 +536,52 @@ got=$(gotmp_for "tmpfs 4096 2097152" "$busy_root") || fail "gotmp_default failed
 [ "$got" = /tmp/agent-net-gotmp ] || fail "Go temp folder when the RAM folder cannot be made is $got, want /tmp/agent-net-gotmp"
 got=$(gotmp_for "" "$shm_root" 1) || fail "gotmp_default failed when stat fails"
 [ "$got" = /tmp/agent-net-gotmp ] || fail "Go temp folder when stat fails is $got, want /tmp/agent-net-gotmp"
+
+# The TMPDIR rule (tmp_default) uses the same room test as the Go temp folder,
+# and prints nothing when the RAM folder is not usable.
+tmp_for() {
+  env -i PATH="$statbin:/usr/bin:/bin" GOTMP_SHM_ROOT="$2" FAKE_STAT_OUT="$1" FAKE_STAT_FAIL="${3:-}" \
+    sh -c '. "$1"; tmp_default' sh "$root/scripts/gotmpdir.sh"
+}
+: >"$busy_root/agent-net-tmp"
+for tc in "tmpfs 4096 2097152|$shm_root/agent-net-tmp|8 GiB tmpfs" "tmpfs 4096 1048576|$shm_root/agent-net-tmp|exactly 4 GiB tmpfs"; do
+  out=${tc%%|*}
+  rest=${tc#*|}
+  want=${rest%%|*}
+  name=${rest#*|}
+  got=$(tmp_for "$out" "$shm_root") || fail "tmp_default failed for $name"
+  [ "$got" = "$want" ] || fail "TMPDIR folder for $name is $got, want $want"
+done
+for tc in "tmpfs 4096 1048575|just under 4 GiB tmpfs" "ext4 4096 2097152|8 GiB disk"; do
+  out=${tc%%|*}
+  name=${tc#*|}
+  if got=$(tmp_for "$out" "$shm_root"); then fail "TMPDIR folder for $name is $got, want none"; fi
+done
+if got=$(tmp_for "tmpfs 4096 2097152" "$busy_root"); then fail "TMPDIR folder when the RAM folder cannot be made is $got, want none"; fi
+if got=$(tmp_for "" "$shm_root" 1); then fail "TMPDIR folder when stat fails is $got, want none"; fi
+
+# test-changed.sh sets TMPDIR to the RAM folder when the caller set none, and keeps
+# a TMPDIR the caller set. The fake go logs the TMPDIR and GOTMPDIR of each call.
+reset_tree
+change_production
+: >"$work/go-env.log"
+env -u TMPDIR -u GOTMPDIR PATH="$statbin:$work/bin:/usr/bin:/bin" GOTMP_SHM_ROOT="$shm_root" \
+  FAKE_STAT_OUT="tmpfs 4096 2097152" FAKE_GO_LOG="$work/go.log" FAKE_GO_TMP_LOG="$work/go-env.log" \
+  FAKE_GOFMT_LOG="$work/gofmt.log" TEST_CHANGED_GO="$real_go" \
+  sh "$script" HEAD >"$work/out" 2>&1 || fail "a run with the RAM folders failed: $(cat "$work/out")"
+want="TMPDIR=$shm_root/agent-net-tmp GOTMPDIR=$shm_root/agent-net-gotmp"
+[ "$(sort -u "$work/go-env.log")" = "$want" ] ||
+  fail "go test env with no TMPDIR set is $(sort -u "$work/go-env.log"), want $want"
+mkdir -p "$work/caller-tmp"
+reset_tree
+change_production
+: >"$work/go-env.log"
+env -u GOTMPDIR TMPDIR="$work/caller-tmp" PATH="$statbin:$work/bin:/usr/bin:/bin" GOTMP_SHM_ROOT="$shm_root" \
+  FAKE_STAT_OUT="tmpfs 4096 2097152" FAKE_GO_LOG="$work/go.log" FAKE_GO_TMP_LOG="$work/go-env.log" \
+  FAKE_GOFMT_LOG="$work/gofmt.log" TEST_CHANGED_GO="$real_go" \
+  sh "$script" HEAD >"$work/out" 2>&1 || fail "a run with a caller TMPDIR failed: $(cat "$work/out")"
+want="TMPDIR=$work/caller-tmp GOTMPDIR=$shm_root/agent-net-gotmp"
+[ "$(sort -u "$work/go-env.log")" = "$want" ] ||
+  fail "go test env with a caller TMPDIR is $(sort -u "$work/go-env.log"), want $want"
 
 echo "test-changed-test: ok"

@@ -13,15 +13,114 @@ import (
 // roomy is a /dev/shm tmpfs with more room than the minimum.
 func roomy() shmInfo { return shmInfo{tmpfs: true, free: 8 << 30} }
 
-// useGoTmpFolders points the two Go temp folders at temp folders of the test, so
-// no test makes a folder under the real /dev/shm or /tmp.
+// useGoTmpFolders points the Go temp folders and the RAM TMPDIR at temp folders
+// of the test, so no test makes a folder under the real /dev/shm or /tmp.
 func useGoTmpFolders(t *testing.T) (shm, disk string) {
 	t.Helper()
 	shm, disk = filepath.Join(t.TempDir(), "shm"), filepath.Join(t.TempDir(), "disk")
-	prevShm, prevDisk := gotmpShmDir, gotmpDiskDir
+	prevShm, prevDisk, prevShmTmp := gotmpShmDir, gotmpDiskDir, gotmpShmTmpDir
 	gotmpShmDir, gotmpDiskDir = shm, disk
-	t.Cleanup(func() { gotmpShmDir, gotmpDiskDir = prevShm, prevDisk })
+	gotmpShmTmpDir = filepath.Join(t.TempDir(), "shm-tmp")
+	t.Cleanup(func() { gotmpShmDir, gotmpDiskDir, gotmpShmTmpDir = prevShm, prevDisk, prevShmTmp })
 	return shm, disk
+}
+
+// Pi and OpenCode workers run with the host /dev/shm, so their TMPDIR is the RAM
+// folder when it has room. The sandboxed harnesses keep the TMPDIR they set.
+func TestWorkerToolEnvPicksTheTmpDirPerHarness(t *testing.T) {
+	useGoTmpFolders(t)
+	t.Setenv("AGENT_NET_GOTMPDIR", "")
+	for _, tc := range []struct {
+		name    string
+		harness string
+		shm     shmInfo
+		want    string
+	}{
+		{"pi with room", "pi", roomy(), gotmpShmTmpDir},
+		{"opencode with room", "opencode", roomy(), gotmpShmTmpDir},
+		{"pi without room", "pi", shmInfo{tmpfs: true, free: 1 << 20}, ""},
+		{"claude with room", "claude", roomy(), ""},
+		{"codex with room", "codex", roomy(), ""},
+		{"agy with room", "agy", roomy(), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := commitTestDaemon(t)
+			d.cfg.WorkerGoTmp = ""
+			d.cfg.testShm = func() shmInfo { return tc.shm }
+			d.cfg.HarnessSearch = &harnesses.Options{LoginShellPATH: func(context.Context) string { return "" }}
+			w := envWorker(t, d)
+			w.harness = tc.harness
+			got := d.workerToolEnv(w)["TMPDIR"]
+			if got != tc.want {
+				t.Fatalf("TMPDIR = %q, want %q", got, tc.want)
+			}
+			if tc.want != "" {
+				if fi, err := os.Stat(got); err != nil || !fi.IsDir() {
+					t.Fatalf("TMPDIR folder not made: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// An owner or test that names a Go temp folder keeps the TMPDIR the daemon
+// already had, so no run reaches the real /dev/shm through it.
+func TestWorkerToolEnvLeavesTMPDIRAloneForAnExplicitGoTmp(t *testing.T) {
+	useGoTmpFolders(t)
+	t.Setenv("AGENT_NET_GOTMPDIR", "")
+	d := commitTestDaemon(t)
+	d.cfg.WorkerGoTmp = filepath.Join(t.TempDir(), "named")
+	d.cfg.testShm = func() shmInfo { return roomy() }
+	d.cfg.HarnessSearch = &harnesses.Options{LoginShellPATH: func(context.Context) string { return "" }}
+	w := envWorker(t, d)
+	w.harness = "pi"
+	if got := d.workerToolEnv(w)["TMPDIR"]; got != "" {
+		t.Fatalf("TMPDIR = %q with a named Go temp folder, want none", got)
+	}
+}
+
+// The hourly cleanup removes old run folders from the RAM TMPDIR too, but only
+// when no Go temp folder is named, the same condition that sets it.
+func TestCleanWorkerGoTmpCleansTheRAMTmpDir(t *testing.T) {
+	useGoTmpFolders(t)
+	now := time.Now()
+	oldTime := now.Add(-10 * time.Hour)
+	makeOld := func(root string) string {
+		sub := filepath.Join(root, "run_old")
+		if err := os.MkdirAll(sub, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		file := filepath.Join(sub, "test.bin")
+		if err := os.WriteFile(file, []byte("data"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_ = os.Chtimes(file, oldTime, oldTime)
+		_ = os.Chtimes(sub, oldTime, oldTime)
+		return sub
+	}
+	named := filepath.Join(t.TempDir(), "named")
+	for _, tc := range []struct {
+		name     string
+		explicit string
+		removed  bool
+	}{
+		{"no named folder", "", true},
+		{"named folder", named, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("AGENT_NET_GOTMPDIR", "")
+			sub := makeOld(gotmpShmTmpDir)
+			d := &Daemon{cfg: Config{WorkerGoTmp: tc.explicit, testShm: func() shmInfo { return roomy() }}}
+			d.cleanWorkerGoTmp(now, 6*time.Hour)
+			_, err := os.Stat(sub)
+			if tc.removed && !os.IsNotExist(err) {
+				t.Fatalf("old run folder %s kept: %v", sub, err)
+			}
+			if !tc.removed && err != nil {
+				t.Fatalf("old run folder %s removed with a named Go temp folder: %v", sub, err)
+			}
+		})
+	}
 }
 
 func TestDefaultGoTmpDirUsesRAMOnlyWhenItHasRoom(t *testing.T) {

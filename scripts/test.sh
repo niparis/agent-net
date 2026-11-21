@@ -176,6 +176,14 @@ if [[ -z ${GOTMPDIR:-} ]]; then
   export GOTMPDIR
 fi
 mkdir -p "$GOTMPDIR" || fail "could not make the Go temp folder $GOTMPDIR"
+# The tests write their temp files to TMPDIR, which GOTMPDIR does not cover, so
+# it takes the RAM folder too. A TMPDIR the caller set stays as it is.
+if [[ -z ${TMPDIR:-} ]]; then
+  if tmp_dir=$(tmp_default); then
+    TMPDIR=$tmp_dir
+    export TMPDIR
+  fi
+fi
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/agent-net-test.XXXXXX") || fail "could not create temporary directory"
 cleanup() {

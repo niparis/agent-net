@@ -64,6 +64,16 @@ func (d *Daemon) workerGoTmpFor(w *worker) string {
 	return d.workerGoTmpDir()
 }
 
+// workerRAMTmpDir is the TMPDIR a worker's shell gets when its harness keeps the
+// host /dev/shm: the RAM folder when /dev/shm has room, else "". A named Go temp
+// folder leaves TMPDIR as the daemon had it.
+func (d *Daemon) workerRAMTmpDir() string {
+	if d.explicitGoTmpDir() != "" || !shmHasRoom(d.shmNow()) {
+		return ""
+	}
+	return gotmpShmTmpDir
+}
+
 func ownerGoBuildCacheDir(homeDir string) string {
 	if homeDir == "" {
 		homeDir, _ = os.UserHomeDir()
@@ -288,10 +298,14 @@ func (d *Daemon) cleanWorkerGoTmp(now time.Time, maxAge time.Duration) uint64 {
 		return 0
 	}
 	// Both folders can hold worker test runs: the RAM one for unsandboxed
-	// workers and the disk one for sandboxed workers.
+	// workers and the disk one for sandboxed workers. The RAM TMPDIR folder holds
+	// the temp files of the same runs, unless a Go temp folder is named.
 	dirs := []string{d.workerGoTmpDir()}
 	if sandbox := d.workerSandboxGoTmpDir(); sandbox != dirs[0] {
 		dirs = append(dirs, sandbox)
+	}
+	if d.explicitGoTmpDir() == "" {
+		dirs = append(dirs, gotmpShmTmpDir)
 	}
 	var freed uint64
 	for _, dir := range dirs {

@@ -11,6 +11,9 @@ var (
 	gotmpDiskDir = "/tmp/agent-net-gotmp"
 	// gotmpShmDir is the Go temp folder on /dev/shm, a tmpfs on Linux.
 	gotmpShmDir = "/dev/shm/agent-net-gotmp"
+	// gotmpShmTmpDir is TMPDIR on /dev/shm. Tests write their own temp files there
+	// (t.TempDir, os.CreateTemp, test databases), and Go's GOTMPDIR does not cover them.
+	gotmpShmTmpDir = "/dev/shm/agent-net-tmp"
 )
 
 // gotmpShmMinFree is the free room /dev/shm needs before Go temp files go
@@ -24,10 +27,15 @@ type shmInfo struct {
 	free  uint64 // bytes a user other than root can still write
 }
 
+// shmHasRoom tells whether /dev/shm is a tmpfs with at least gotmpShmMinFree free.
+func shmHasRoom(shm shmInfo) bool {
+	return shm.tmpfs && shm.free >= gotmpShmMinFree
+}
+
 // defaultGoTmpDir is the Go temp folder when the owner names none: the RAM
-// folder when /dev/shm is a tmpfs with at least gotmpShmMinFree free, else the disk folder.
+// folder when /dev/shm has room, else the disk folder.
 func defaultGoTmpDir(shm shmInfo) string {
-	if shm.tmpfs && shm.free >= gotmpShmMinFree {
+	if shmHasRoom(shm) {
 		return gotmpShmDir
 	}
 	return gotmpDiskDir
