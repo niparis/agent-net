@@ -69,6 +69,15 @@ func checkInboxLimit(tx *sql.Tx, p protocol.MsgSend, ownerVoice bool, now int64)
 	if protocol.IsOwner(harness) {
 		return nil
 	}
+	if p.Urgent {
+		top, err := topAgentSenderTx(tx, sender)
+		if err != nil {
+			return err
+		}
+		if top {
+			return nil
+		}
+	}
 	linked, err := workerLinked(tx, sender, recipient)
 	if err != nil {
 		return err
@@ -99,7 +108,40 @@ func checkInboxLimit(tx *sql.Tx, p protocol.MsgSend, ownerVoice bool, now int64)
 	if !oldest.IsZero() {
 		at = oldest.UTC().Format("2006-01-02 15:04 MST")
 	}
+	busy, err := busyForText(tx, recipient, time.Unix(0, now))
+	if err != nil {
+		return err
+	}
+	if busy != "" {
+		return reject("recipient has %d waiting, oldest %s at %s; recipient busy %s; withdraw one or wait", waiting, who, at, busy)
+	}
 	return reject("recipient has %d waiting, oldest %s at %s; withdraw one or wait", waiting, who, at)
+}
+
+// topAgentSenderTx says whether a session is the CTO or the chief of staff.
+// An urgent message from either one is never refused by the inbox limit.
+func topAgentSenderTx(tx *sql.Tx, sender string) (bool, error) {
+	var n int
+	err := tx.QueryRow(`SELECT COUNT(*) FROM owner_settings WHERE key IN ('cto_session',?) AND value=?`, chiefSessionKey, sender).Scan(&n)
+	return n > 0, err
+}
+
+// busyForText is how long a live session has been in its current turn, such as
+// "23m". It is "" when the session is not busy.
+func busyForText(q leadDB, session string, now time.Time) (string, error) {
+	var status string
+	var since int64
+	err := q.QueryRow(`SELECT COALESCE(status,''),COALESCE(busy_since,0) FROM sessions WHERE id=? AND online=1`, session).Scan(&status, &since)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if status != "busy" || since <= 0 {
+		return "", nil
+	}
+	return durationText(now.Sub(time.Unix(0, since))), nil
 }
 
 // workerLinked says whether one end of the message is a worker and the other

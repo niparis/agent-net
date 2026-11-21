@@ -94,6 +94,9 @@ type SessionRow struct {
 	// Waiting is set while the session waits for its user. Status then says
 	// StatusWaitingForUser.
 	Waiting *WaitingRow `json:"waiting,omitempty"`
+	// BusyFor is how long the session's current turn has run, such as "23m".
+	// It is set only while the session is busy.
+	BusyFor string `json:"busy_for,omitempty"`
 	// Tools is "disconnected" when the session has lost its agent-net tools,
 	// so it cannot reply with agent tools. Absent otherwise.
 	Tools string `json:"tools,omitempty"`

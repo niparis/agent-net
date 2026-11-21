@@ -520,3 +520,30 @@ func TestDecodeMachineProcessesBothShapes(t *testing.T) {
 		t.Fatalf("new shape: rows=%+v roster=%+v err=%v", rows, roster, err)
 	}
 }
+
+// A busy session's read says how long its current turn has run, in both the
+// concise and the full read. An idle session has no busy time.
+func TestSessionReadShowsBusyTime(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+	busyStatus(t, s, b, "busy")
+	c.t = c.t.Add(23 * time.Minute)
+	got, err := s.GetSession(protocol.SessionGetRequest{Session: b})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Session.BusyFor != "23m" {
+		t.Fatalf("session get busy_for %q, want 23m", got.Session.BusyFor)
+	}
+	page, err := s.FindSessions(protocol.SessionsFindRequest{Online: "any", Detail: "concise"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	busy := map[string]string{}
+	for _, row := range page.Items {
+		busy[row.ID] = row.BusyFor
+	}
+	if busy[b] != "23m" || busy[a] != "" {
+		t.Fatalf("concise busy_for: %v (busy %s, idle %s)", busy, b, a)
+	}
+}

@@ -4458,7 +4458,7 @@ var agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.
  @STALL@
  @HELD@
  @INSESSION@
- s.limited_until, s.limited_reason, s.turn_error, s.turn_error_at, s.replaced_by
+ s.limited_until, s.limited_reason, s.turn_error, s.turn_error_at, s.replaced_by, s.busy_since
 	FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id@JOINS@`
 
 // agentListTables are the tables agentListSelect and its joins read, with the
@@ -4510,7 +4510,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
 		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName,
-		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.ReportsTo, &a.RepoLead, &a.RepoLeadExplicit, &a.TeamLead, &a.RepoMaxAgents, &a.RepoAgentCount, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.LastCompactedAt, &a.LastCompactedReason, &a.StalledSince, &a.GatewayHeld, &a.InSession, &a.LimitedUntil, &a.LimitedReason, &a.TurnError, &a.TurnErrorAt, &a.ReplacedBy)
+		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.ReportsTo, &a.RepoLead, &a.RepoLeadExplicit, &a.TeamLead, &a.RepoMaxAgents, &a.RepoAgentCount, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.LastCompactedAt, &a.LastCompactedReason, &a.StalledSince, &a.GatewayHeld, &a.InSession, &a.LimitedUntil, &a.LimitedReason, &a.TurnError, &a.TurnErrorAt, &a.ReplacedBy, &a.BusySince)
 	if err != nil {
 		return a, err
 	}

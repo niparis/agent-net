@@ -273,6 +273,9 @@ func sessionRow(a protocol.AgentView, full bool, now time.Time, name func(string
 		row.Status = protocol.StatusWaitingForUser
 		row.Waiting = &protocol.WaitingRow{Kind: w.Kind, Since: rfc3339(w.Since)}
 	}
+	if a.Online && a.Status == "busy" && a.BusySince > 0 {
+		row.BusyFor = durationText(now.Sub(time.Unix(0, a.BusySince)))
+	}
 	if !full {
 		return row
 	}

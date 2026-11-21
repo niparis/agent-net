@@ -417,6 +417,9 @@ type AgentView struct {
 	TurnErrorAt int64  `json:"turn_error_at,omitempty"`
 	// StalledSince is the time of the last observed harness activity during a stall.
 	StalledSince int64 `json:"stalled_since,omitempty"`
+	// BusySince is when the session's current busy stretch began, in Unix
+	// nanoseconds. Zero when the session is not busy.
+	BusySince int64 `json:"busy_since,omitempty"`
 	// ReplacedBy is the session that took over this conversation when a
 	// restart could not keep the session ID. Empty for every normal session.
 	ReplacedBy string `json:"replaced_by,omitempty"`
