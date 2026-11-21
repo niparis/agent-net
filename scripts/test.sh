@@ -177,7 +177,8 @@ if [[ -z ${GOTMPDIR:-} ]]; then
 fi
 mkdir -p "$GOTMPDIR" || fail "could not make the Go temp folder $GOTMPDIR"
 # The tests write their temp files to TMPDIR, which GOTMPDIR does not cover, so
-# it takes the RAM folder too. A TMPDIR the caller set stays as it is.
+# it takes the RAM folder too. A TMPDIR the caller set stays as it is. Both stay
+# on disk where bwrap is installed: the OS sandbox tests cannot see /dev/shm.
 if [[ -z ${TMPDIR:-} ]]; then
   if tmp_dir=$(tmp_default); then
     TMPDIR=$tmp_dir

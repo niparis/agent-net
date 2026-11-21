@@ -170,8 +170,8 @@ fi
 
 # Go writes build and test binaries to GOTMPDIR, and the tests write their temp
 # files to TMPDIR. Both take the RAM folder when the machine has one with room,
-# unless the caller set one (see scripts/gotmpdir.sh). They are set before the
-# first go call, and the work folder below goes in TMPDIR.
+# unless the caller set one or bubblewrap is installed (see scripts/gotmpdir.sh).
+# They are set before the first go call, and the work folder below goes in TMPDIR.
 . "$script_dir/gotmpdir.sh"
 if [ -z "${GOTMPDIR:-}" ]; then
   GOTMPDIR=$(gotmp_default) || fail "could not choose the Go temp folder"
