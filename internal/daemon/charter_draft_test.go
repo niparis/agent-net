@@ -18,6 +18,11 @@ func TestCharterDraftRequestDraftAndAccept(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})
 	repo := newRepo(t, "demo")
+	// The repo's folder is registered, as `agent-net projects add` does. A charter
+	// draft is asked only in that folder (decision 0088).
+	if _, err := g.gw.Store().AddProjects(n.d.NodeID(), protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "demo", Path: repo}}}); err != nil {
+		t.Fatal(err)
+	}
 	agents := filepath.Join(repo, "AGENTS.md")
 	if err := os.WriteFile(agents, []byte("# Project: demo\n\nDemo is a small test repo.\n"), 0o644); err != nil {
 		t.Fatal(err)

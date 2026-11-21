@@ -18,6 +18,11 @@ func TestBarRequestEditAndBriefReachTheDaemon(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})
 	repo := newRepo(t, "demo")
+	// The repo's folder is registered, as `agent-net projects add` does. A charter
+	// draft is asked only in that folder (decision 0088).
+	if _, err := g.gw.Store().AddProjects(n.d.NodeID(), protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "demo", Path: repo}}}); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(repo, "AGENTS.md"), []byte("# Project: demo\n\nPerformance first.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
