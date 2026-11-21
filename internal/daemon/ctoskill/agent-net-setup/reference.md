@@ -350,10 +350,10 @@ Every key in standard.yaml, grouped by the part before its first dot. Each row i
 
 | key | levels | default | values or range | tier | description |
 |---|---|---|---|---|---|
-| `loop.every` | repo | 0s | min 0s | 3 | How often agent-net wakes the repo's lead agent to keep working toward its purpose; 0s means no loop. |
-| `loop.prompt` | repo | empty | - | 3 | The text a loop tick sends after "your purpose is ...", instead of the default sentence; empty means the default. |
-| `loop.mode` | repo | always | always, on_change | 3 | Whether every loop tick is sent (always) or a tick with nothing new is skipped (on_change). |
-| `loop.plan` | repo | empty | - | 3 | A plan file, relative to the session's folder, that each loop tick names; empty means none. |
+| `loop.every` | repo, agent | 0s | min 0s | 3 | How often agent-net wakes the repo's lead agent to keep working toward its purpose; 0s means no loop. |
+| `loop.prompt` | repo, agent | empty | - | 3 | The text a loop tick sends after "your purpose is ...", instead of the default sentence; empty means the default. |
+| `loop.mode` | repo, agent | always | always, on_change | 3 | Whether every loop tick is sent (always) or a tick with nothing new is skipped (on_change). |
+| `loop.plan` | repo, agent | empty | - | 3 | A plan file, relative to the session's folder, that each loop tick names; empty means none. |
 
 ### `merger.*`
 

@@ -672,3 +672,73 @@ func TestLoopPlanFileIsNamedInThePrompt(t *testing.T) {
 		t.Fatalf("messages = %+v", m)
 	}
 }
+
+func TestAgentNodeLoopWakesOnlyLeadSession(t *testing.T) {
+	s, c := newTestStore(t)
+	node, _, err := s.CreateNode("h1", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s1, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "h1", Name: "lead", Repo: protocol.RepoInfo{Root: "/w/homelab", Project: "homelab-agent"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s2, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "h2", Name: "second", Repo: protocol.RepoInfo{Root: "/w/homelab", Project: "homelab-agent"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s3, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "h3", Name: "third", Repo: protocol.RepoInfo{Root: "/w/homelab", Project: "homelab-agent"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES('homelab-lead','homelab-lead','',0,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO charter_values VALUES('agent','homelab-lead','purpose','Migrate PN50',?, 'owner')`, s.now().UnixNano()); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetNodeSetting("homelab-lead", protocol.SettingLoopEvery, "30m", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	loopTicks(t, s) // starts the clock
+	idleSince(t, s, c, s1, time.Minute)
+	idleSince(t, s, c, s2, time.Minute)
+	idleSince(t, s, c, s3, time.Minute)
+
+	// Case 1: no lead session. It wakes nothing and logs why.
+	c.t = c.t.Add(31 * time.Minute)
+	ticks := loopTicks(t, s)
+	if len(ticks) != 1 || ticks[0].Outcome != protocol.LoopSkippedNone || ticks[0].Message != nil {
+		t.Fatalf("ticks with no lead = %+v", ticks)
+	}
+	lines := deskLines(t, s)
+	if !hasLine(lines, "Loop homelab-lead: skipped, no session (no lead session)") {
+		t.Fatalf("desk lines = %v", lines)
+	}
+	if msgs := loopMessages(t, s); len(msgs) != 0 {
+		t.Fatalf("unexpected messages with no lead: %+v", msgs)
+	}
+
+	// Case 2: set lead session to s1.
+	if _, err := s.db.Exec(`UPDATE agents SET lead_session=? WHERE id='homelab-lead'`, s1); err != nil {
+		t.Fatal(err)
+	}
+	idleSince(t, s, c, s1, time.Minute)
+	idleSince(t, s, c, s2, time.Minute)
+	idleSince(t, s, c, s3, time.Minute)
+	c.t = c.t.Add(31 * time.Minute)
+	ticks = loopTicks(t, s)
+	if len(ticks) != 1 || ticks[0].Outcome != protocol.LoopSent {
+		t.Fatalf("ticks with lead = %+v", ticks)
+	}
+	msgs := loopMessages(t, s)
+	if len(msgs) != 1 {
+		t.Fatalf("messages = %+v", msgs)
+	}
+	if msgs[0].To != s1 {
+		t.Fatalf("woken recipient = %q, want %q", msgs[0].To, s1)
+	}
+	if !strings.Contains(msgs[0].Body, "Migrate PN50") {
+		t.Fatalf("message body = %q", msgs[0].Body)
+	}
+}

@@ -52,7 +52,14 @@ func graphKind(tx *sql.Tx, name string) (string, error) {
 			return "", err
 		}
 		if !repo {
-			return "", reject("unknown node %q", name)
+			var agent bool
+			if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM agents WHERE id=? AND tombstone=0)`, name).Scan(&agent); err != nil {
+				return "", err
+			}
+			if !agent {
+				return "", reject("unknown node %q", name)
+			}
+			return "agent", nil
 		}
 	}
 	return "component", nil
@@ -346,8 +353,13 @@ func (s *Store) SetNodeSetting(node, setting, value, actor string, validate ...b
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = graphKind(tx, node); err != nil {
+	nodeKind, err := graphKind(tx, node)
+	if err != nil {
 		return err
+	}
+	targetLevel := "repo"
+	if nodeKind == "agent" {
+		targetLevel = "agent"
 	}
 	if key, moved := deliveryNodeKeys[setting]; moved {
 		storedKey := key
@@ -355,11 +367,11 @@ func (s *Store) SetNodeSetting(node, setting, value, actor string, validate ...b
 			storedKey = canonical
 		}
 		var prior sql.NullString
-		err = tx.QueryRow(`SELECT value FROM setting_values WHERE key=? AND level='repo' AND scope=? AND item=''`, storedKey, node).Scan(&prior)
+		err = tx.QueryRow(`SELECT value FROM setting_values WHERE key=? AND level=? AND scope=? AND item=''`, storedKey, targetLevel, node).Scan(&prior)
 		if err != nil && err != sql.ErrNoRows {
 			return err
 		}
-		change := SettingsChange{Key: key, Level: "repo", Scope: node}
+		change := SettingsChange{Key: key, Level: targetLevel, Scope: node}
 		if prior.Valid {
 			change.Expect = json.RawMessage(prior.String)
 			if storedKey != key {
@@ -379,7 +391,7 @@ func (s *Store) SetNodeSetting(node, setting, value, actor string, validate ...b
 		}
 		if result.changed && actor == "cto" {
 			var old, next string
-			if err = tx.QueryRow(`SELECT COALESCE(old_value,''),COALESCE(new_value,'') FROM setting_history WHERE revision=? AND key=? AND level='repo' AND scope=? ORDER BY seq LIMIT 1`, result.Revision, storedKey, node).Scan(&old, &next); err != nil {
+			if err = tx.QueryRow(`SELECT COALESCE(old_value,''),COALESCE(new_value,'') FROM setting_history WHERE revision=? AND key=? AND level=? AND scope=? ORDER BY seq LIMIT 1`, result.Revision, storedKey, targetLevel, node).Scan(&old, &next); err != nil {
 				return err
 			}
 			if err = graphRecord(tx, "settings_revision", node, fmt.Sprintf("%s@%d", setting, result.Revision), old, next, actor, s.now().UnixNano()); err != nil {
@@ -424,13 +436,36 @@ func (s *Store) NodeSettings(node string) (protocol.NodeSettingsResult, error) {
 		// one setting node_settings_get shows for a Team.
 		var leadMerges string
 		err := s.db.QueryRow(`SELECT lead_merges FROM teams WHERE active=1 AND (id=? OR name=?) ORDER BY id LIMIT 1`, node, node).Scan(&leadMerges)
-		if err == sql.ErrNoRows {
-			return out, reject("unknown node %q", node)
+		if err == nil {
+			out.LeadMerges = protocol.NormalLeadMerges(leadMerges)
+			return out, nil
 		}
+		if err != sql.ErrNoRows {
+			return out, err
+		}
+		var agentExists bool
+		err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM agents WHERE id=? AND tombstone=0)`, node).Scan(&agentExists)
 		if err != nil {
 			return out, err
 		}
-		out.LeadMerges = protocol.NormalLeadMerges(leadMerges)
+		if !agentExists {
+			return out, reject("unknown node %q", node)
+		}
+		explicit, err := s.nodeExplicitSettings(node)
+		if err != nil {
+			return out, err
+		}
+		out.Overrides = explicit
+		var maturity string
+		_ = s.db.QueryRow(`SELECT value FROM charter_values WHERE level='agent' AND scope=? AND attr='maturity'`, node).Scan(&maturity)
+		if maturity == "" {
+			maturity = protocol.MaturityGrowing
+		}
+		out.Maturity = maturity
+		out.Defaults = protocol.DefaultsForMaturity(maturity)
+		out.Effective = protocol.NodeDefaults(maturity, explicit)
+		out.Autonomy = protocol.NodeAutonomy(explicit)
+		out.WakeOnMessage = protocol.NodeWakeOnMessage(explicit)
 		return out, nil
 	}
 	explicit, err := s.nodeExplicitSettings(node)
@@ -1510,7 +1545,7 @@ func (s *Store) graphWith(snapshot *settings.Snapshot) (protocol.Graph, error) {
 		return g, err
 	}
 	for _, v := range snap.Values {
-		if v.Level != "repo" || v.Item != "" {
+		if (v.Level != "repo" && v.Level != "agent") || v.Item != "" {
 			continue
 		}
 		n := byName[v.Scope]

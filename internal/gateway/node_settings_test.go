@@ -156,3 +156,51 @@ func TestNodeSettingsValuesAreClean(t *testing.T) {
 		t.Fatalf("setting names: %v", protocol.NodeSettingNames())
 	}
 }
+
+func TestAgentNodeLoopSettings(t *testing.T) {
+	s, _ := newTestStore(t)
+	if _, err := s.db.Exec(`INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES('homelab-lead','homelab-lead','',0,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	// The CTO sets loop settings without a proposal (advice).
+	if err := s.SetNodeSetting("homelab-lead", protocol.SettingLoopEvery, "30m", "cto"); err != nil {
+		t.Fatalf("SetNodeSetting loop_every by cto: %v", err)
+	}
+	if err := s.SetNodeSetting("homelab-lead", protocol.SettingLoopPrompt, "PN50 migration loop", "cto"); err != nil {
+		t.Fatalf("SetNodeSetting loop_prompt by cto: %v", err)
+	}
+	if err := s.SetNodeSetting("homelab-lead", protocol.SettingLoopMode, protocol.LoopModeOnChange, "cto"); err != nil {
+		t.Fatalf("SetNodeSetting loop_mode by cto: %v", err)
+	}
+	if err := s.SetNodeSetting("homelab-lead", protocol.SettingLoopPlan, "PLAN.md", "cto"); err != nil {
+		t.Fatalf("SetNodeSetting loop_plan by cto: %v", err)
+	}
+	res, err := s.NodeSettings("homelab-lead")
+	if err != nil {
+		t.Fatalf("NodeSettings: %v", err)
+	}
+	if res.Overrides[protocol.SettingLoopEvery] != "30m" {
+		t.Errorf("loop_every = %q, want 30m", res.Overrides[protocol.SettingLoopEvery])
+	}
+	if res.Overrides[protocol.SettingLoopPrompt] != "PN50 migration loop" {
+		t.Errorf("loop_prompt = %q, want PN50 migration loop", res.Overrides[protocol.SettingLoopPrompt])
+	}
+	if res.Overrides[protocol.SettingLoopMode] != protocol.LoopModeOnChange {
+		t.Errorf("loop_mode = %q, want on_change", res.Overrides[protocol.SettingLoopMode])
+	}
+	if res.Overrides[protocol.SettingLoopPlan] != "PLAN.md" {
+		t.Errorf("loop_plan = %q, want PLAN.md", res.Overrides[protocol.SettingLoopPlan])
+	}
+
+	// Clearing loop_every removes the override.
+	if err := s.SetNodeSetting("homelab-lead", protocol.SettingLoopEvery, "", "cto"); err != nil {
+		t.Fatalf("clear loop_every: %v", err)
+	}
+	res, err = s.NodeSettings("homelab-lead")
+	if err != nil {
+		t.Fatalf("NodeSettings after clear: %v", err)
+	}
+	if _, ok := res.Overrides[protocol.SettingLoopEvery]; ok {
+		t.Errorf("loop_every still present after clear: %#v", res.Overrides)
+	}
+}

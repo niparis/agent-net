@@ -110,7 +110,7 @@ func (s *Store) nodeExplicitSettings(node string) (map[string]string, error) {
 	}
 	out := map[string]string{}
 	for _, v := range snap.Values {
-		if v.Level != "repo" || v.Scope != node || v.Item != "" {
+		if (v.Level != "repo" && v.Level != "agent") || v.Scope != node || v.Item != "" {
 			continue
 		}
 		for old, key := range deliveryNodeKeys {
