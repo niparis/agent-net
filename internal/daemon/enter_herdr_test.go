@@ -28,7 +28,7 @@ func hideRealHerdr() {
 		env := raw(pid)
 		keep := false
 		for _, kv := range env {
-			if v, ok := strings.CutPrefix(kv, "HERDR_SOCKET_PATH="); ok && strings.HasPrefix(v, os.TempDir()) {
+			if v, ok := strings.CutPrefix(kv, "HERDR_SOCKET_PATH="); ok && testTempFolder(v) {
 				keep = true
 			}
 		}
@@ -58,7 +58,7 @@ func hideRealHerdr() {
 	}
 	processArgs = func(pid int) []string {
 		args := rawArgs(pid)
-		if len(args) > 0 && filepath.Base(args[0]) == "herdr" && !strings.HasPrefix(args[0], os.TempDir()) {
+		if len(args) > 0 && filepath.Base(args[0]) == "herdr" && !testTempFolder(args[0]) {
 			return nil
 		}
 		if ancestors[pid] && sessionHostCommand(args) {
