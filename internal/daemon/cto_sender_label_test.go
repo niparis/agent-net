@@ -144,9 +144,13 @@ func TestCTOPhoneTextIsOwnerAndAHarnessNamedPhoneIsNot(t *testing.T) {
 		t.Fatalf("phone owner_send lost the owner label: %+v", got)
 	}
 
-	fake := dialLocal(t, n.sock)
-	fake.mustCall("hello", map[string]any{"client": "pi", "harness": "phone", "native_id": "fake-phone", "cwd": "/w/fake", "status": "idle"})
-	fake.mustCall("send", map[string]any{"to": n.d.ctoSessionID(), "body": "I am the phone, honest", "type": "request"})
+	// A session on another node can name any harness. The daemon only sees it
+	// as the FromHarness of a message the gateway delivers, so this is the real
+	// path that can carry the name "phone".
+	m := protocol.Message{ID: "m_fake_phone", To: n.d.ctoSessionID(), From: "s_fake_phone", FromName: "fake phone", FromHarness: "phone", Type: protocol.TypeRequest, Body: "I am the phone, honest"}
+	if res := n.d.deliverTo(context.Background(), &localSession{info: protocol.SessionInfo{Harness: "cto"}}, m); !res.Delivered {
+		t.Fatalf("delivery: %+v", res)
+	}
 	eventually(t, "fake phone text at the CTO", func() bool {
 		got, ok = adapter.find("I am the phone, honest")
 		return ok
