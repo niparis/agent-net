@@ -482,6 +482,68 @@ export const TOOL_CATALOG = [
     "daemon_fields": {}
   },
   {
+    "name": "agent_due",
+    "description": "Record a step you own that falls due later: due (an RFC 3339 time or a duration such as 45m) or after (a reply, a change step or an ask closing). agent-net wakes you when it falls due. If you show no activity for 15 minutes after that, the chief is asked once. Actions: add, list (your open items), done (id).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "add",
+            "list",
+            "done"
+          ],
+          "description": "add records an item, list shows your open items, done closes one."
+        },
+        "what": {
+          "type": "string",
+          "description": "For add: the step in one line. The wake message repeats it."
+        },
+        "due": {
+          "type": "string",
+          "description": "For add without after: an RFC 3339 time, or a duration such as 45m from now."
+        },
+        "after": {
+          "type": "object",
+          "properties": {
+            "reply": {
+              "type": "string",
+              "description": "A message id: due when its conversation gets a reply from the recipient."
+            },
+            "change_step": {
+              "type": "string",
+              "description": "A change id: due when a step of the change moves."
+            },
+            "ask_closed": {
+              "type": "string",
+              "description": "An ask id: due when the ask closes."
+            }
+          },
+          "additionalProperties": false,
+          "description": "For add without due: exactly one key."
+        },
+        "blocker": {
+          "type": "string",
+          "description": "For add: none (default: you are woken), owner (the chief asks the owner, no wake), or a session id (the chief chases that session, no wake)."
+        },
+        "id": {
+          "type": "string",
+          "description": "For done: the item id."
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent"
+    ],
+    "method": "due",
+    "daemon_fields": {}
+  },
+  {
     "name": "agent_file_send",
     "description": "Send files from this session to one peer with a note. Paths must be absolute and within the session project, worktree or /tmp. Workers send files with agent_handback.",
     "inputSchema": {
