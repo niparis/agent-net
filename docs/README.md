@@ -10,6 +10,7 @@
 - [principles.md](principles.md): the product principles that decide unclear design choices.
 - [setup.md](setup.md): install, add a machine, update, remove. The details behind the README quickstart.
 - [reference.md](reference.md): ports, files, environment variables, flags, and what setup changes on your machine.
+- [gateway-data.md](gateway-data.md): each table in the gateway database: what it holds, who writes and reads it, where it shows, and how long rows are kept.
 - [security.md](security.md): the trust model, and what agent-net does not protect against.
 - [troubleshooting.md](troubleshooting.md): first checks and fixes for common problems.
 - [model-choice.md](model-choice.md): the model-selection deep dive: what agent-net decides for each session start, how it decides, what each start checks, and what you can change.
