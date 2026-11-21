@@ -83,6 +83,8 @@ func TestStandingOrdersOldMigration(t *testing.T) {
  ALTER TABLE standing_orders DROP COLUMN ref;
  ALTER TABLE standing_orders DROP COLUMN action;
  ALTER TABLE standing_orders DROP COLUMN category;
+ ALTER TABLE standing_orders DROP COLUMN voided_at;
+ ALTER TABLE standing_orders DROP COLUMN void_reason;
  INSERT INTO standing_orders VALUES('old','legacy workers',1,'owner');`)
 	if err != nil {
 		t.Fatal(err)
