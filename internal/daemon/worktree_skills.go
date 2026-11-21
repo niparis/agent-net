@@ -2,31 +2,15 @@ package daemon
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 )
 
-// copyWorktreeSkills copies only managed or Git-ignored project skills.
+// copyWorktreeSkills copies only Git-ignored project skills: the ones a fresh
+// checkout of the worktree would not bring.
 func (d *Daemon) copyWorktreeSkills(ctx context.Context, source, dest string) error {
-	owned := map[string]bool{}
-	b, err := os.ReadFile(filepath.Join(d.cfg.StateDir, "skill-manifest.json"))
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	if err == nil {
-		var entries []skillManifestEntry
-		if err := json.Unmarshal(b, &entries); err != nil {
-			return err
-		}
-		for _, e := range entries {
-			if e.Owned {
-				owned[filepath.Clean(e.Path)] = true
-			}
-		}
-	}
 	count := 0
 	for _, root := range []string{".claude/skills", ".agents/skills"} {
 		if !safeSkillRoot(source, root) || !safeSkillRoot(dest, root) {
@@ -51,10 +35,8 @@ func (d *Daemon) copyWorktreeSkills(ctx context.Context, source, dest string) er
 			} else if !os.IsNotExist(err) {
 				return err
 			}
-			if !owned[filepath.Clean(src)] {
-				if _, err := gitOut(ctx, source, "check-ignore", "--", rel+"/"); err != nil {
-					continue
-				}
+			if _, err := gitOut(ctx, source, "check-ignore", "--", rel+"/"); err != nil {
+				continue
 			}
 			if err := copySkillTree(src, dst); err != nil {
 				return fmt.Errorf("copy skill %s: %w", rel, err)

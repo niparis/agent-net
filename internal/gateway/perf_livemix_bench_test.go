@@ -55,7 +55,6 @@ func (m *liveMix) handle(b *testing.B, typ string, v any) {
 	if _, err := m.g.handle(context.Background(), m.nc, typ, raw); err != nil {
 		b.Fatalf("%s: %v", typ, err)
 	}
-	m.g.standingWG.Wait()
 	m.spent[typ] += time.Since(start)
 }
 

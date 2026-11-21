@@ -57,8 +57,9 @@ func (s *Store) leadMemberSessions(lead protocol.AgentView) (map[string]bool, er
 	if lead.AgentID == "" {
 		return nil, nil
 	}
-	rows, err := s.db.Query(`SELECT DISTINCT s.id FROM teams t JOIN team_members tm ON tm.team_id=t.id
-		JOIN sessions s ON (tm.member_kind='repo' AND tm.member_id<>'' AND tm.member_id=s.repo_id) OR (tm.member_kind='agent' AND tm.member_id=s.agent_id)
+	rows, err := s.db.Query(`SELECT DISTINCT s.id FROM teams t
+		JOIN sessions s ON (s.repo_id<>'' AND EXISTS(SELECT 1 FROM repos r WHERE r.id=s.repo_id AND r.team_id=t.id))
+		 OR (s.agent_id<>'' AND EXISTS(SELECT 1 FROM agents a WHERE a.id=s.agent_id AND a.team_id=t.id))
 		WHERE t.active=1 AND t.asks_to=? AND t.owner_agent_id=? AND NOT EXISTS(SELECT 1 FROM agents ma WHERE ma.id=s.agent_id AND ma.role='merger')
 		AND t.owner_agent_id IN (SELECT id FROM agents WHERE lead_session=?)
 		AND s.archived_at=0 AND s.worker='' AND s.harness NOT IN ('owner','cto','bot') AND s.id<>?`,

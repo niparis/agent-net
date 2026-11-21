@@ -30,7 +30,7 @@ func cmdSetup(ctx context.Context, args []string) error {
 	noAcceptCodex := fs.Bool("no-accept-codex-tools", false, "register the Codex server without that setting and do not ask")
 	hintHook := fs.Bool("claude-hint-hook", false, "add the Claude Code hook that suggests which session to ask after a failed tool call (only if not asked before)")
 	noHintHook := fs.Bool("no-claude-hint-hook", false, "do not add that hook and do not ask")
-	policyHook := fs.Bool("claude-policy-hook", false, "add the Claude Code hook that applies the delegation policy you set in the TUI (only if not asked before)")
+	policyHook := fs.Bool("claude-policy-hook", false, "add the Claude Code hook that adds the charter of the session's node as context (only if not asked before)")
 	noPolicyHook := fs.Bool("no-claude-policy-hook", false, "do not add that hook and do not ask")
 	needsHook := fs.Bool("claude-needs-hook", false, `add the Claude Code hooks that show a waiting session under "Needs you" in the TUI (only if not asked before)`)
 	noNeedsHook := fs.Bool("no-claude-needs-hook", false, "do not add those hooks and do not ask")

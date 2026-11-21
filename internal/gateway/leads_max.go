@@ -20,7 +20,7 @@ func (s *Store) RepoAgentLimit(repo string) (protocol.RepoAgentLimit, error) {
 			return out, err
 		}
 	}
-	err = s.db.QueryRow(`SELECT COUNT(*) FROM sessions s WHERE s.repo_id=? AND s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','cto','bot') AND s.id<>COALESCE((SELECT value FROM owner_settings WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM project_mergers m WHERE m.session_id=s.id)`, repo).Scan(&out.AgentCount)
+	err = s.db.QueryRow(`SELECT COUNT(*) FROM sessions s WHERE s.repo_id=? AND s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','cto','bot') AND s.id<>COALESCE((SELECT value FROM gateway_state WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM repos m WHERE m.merger_session=s.id)`, repo).Scan(&out.AgentCount)
 	out.OverMax = out.MaxAgents > 0 && out.AgentCount > out.MaxAgents
 	return out, err
 }
@@ -91,14 +91,6 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 	historyAttr := "lead"
 	switch q.Ref.Kind {
 	case "repo":
-		// A lead that was set or cleared is explicit. NULL follows the owner.
-		var explicit bool
-		if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND lead_agent_id IS NOT NULL)`, q.Ref.ID).Scan(&explicit); err != nil {
-			return err
-		}
-		if !explicit {
-			historyAttr = "lead/default"
-		}
 		err = tx.QueryRow(`SELECT `+repoTopAgentExpr+` FROM repos WHERE id=? AND archived=0`, q.Ref.ID).Scan(&old)
 		if err == sql.ErrNoRows {
 			return reject("unknown or archived Repo")
@@ -108,7 +100,7 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 		}
 		if q.Lead != nil {
 			var belongs bool
-			err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND owner_agent_id=? UNION ALL SELECT 1 FROM sessions WHERE repo_id=? AND agent_id=?)`, q.Ref.ID, lead, q.Ref.ID, lead).Scan(&belongs)
+			err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND lead_agent_id=? UNION ALL SELECT 1 FROM sessions WHERE repo_id=? AND agent_id=?)`, q.Ref.ID, lead, q.Ref.ID, lead).Scan(&belongs)
 			if err != nil {
 				return err
 			}
@@ -177,28 +169,6 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 	// it just left.
 	if q.Ref.Kind != "agent" && old.String != "" && old.String != newLead {
 		if err = clearLostLeadSessionTx(tx, old.String); err != nil {
-			return err
-		}
-	}
-	switch q.Ref.Kind {
-	case "repo":
-		if old.String != "" {
-			if err = placeAgentTx(tx, old.String); err != nil {
-				return err
-			}
-		}
-		if err = placeRepoAgentsTx(tx, q.Ref.ID); err != nil {
-			return err
-		}
-	case "team":
-		for _, agent := range []string{old.String, newLead} {
-			if agent != "" {
-				if err = placeAgentTx(tx, agent); err != nil {
-					return err
-				}
-			}
-		}
-		if err = placeTeamMembersTx(tx, q.Ref.ID); err != nil {
 			return err
 		}
 	}

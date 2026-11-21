@@ -117,7 +117,7 @@ func TestCTOSettingsTitle(t *testing.T) {
 		t.Fatalf("title after model change: %d %s", w.Code, w.Body)
 	}
 	var raw string
-	if err := gw.Store().db.QueryRow(`SELECT value FROM owner_settings WHERE key = ?`, "cto_title").Scan(&raw); err != nil || raw != "Atlas" {
+	if err := gw.Store().db.QueryRow(`SELECT value FROM setting_values WHERE key = ?`, ctoTitleKey).Scan(&raw); err != nil || raw != `"Atlas"` {
 		t.Fatalf("cto_title row = %q, %v", raw, err)
 	}
 }

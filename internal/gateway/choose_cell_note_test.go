@@ -43,8 +43,7 @@ func TestAutomaticStartKeepsTheCellNoteWhenTheGateSkipsTheFirstPick(t *testing.T
 			session := fmt.Sprintf("s_%s_%d", strings.ReplaceAll(model, "/", "_"), i)
 			pickerRun(t, s, node, session, "opencode", model, protocol.OutcomeComplete, 0, int64(1000+i))
 			pickerAssessment(t, s, session, d)
-			if _, err := s.db.Exec(`INSERT OR REPLACE INTO worker_usage(session_id,usage,updated_at) VALUES(?,?,0)`,
-				session, fmt.Sprintf(`{"in":%g,"out":%g}`, in, out)); err != nil {
+			if _, err := s.db.Exec(`UPDATE worker_runs SET usage_in=?, usage_out=? WHERE session_id=?`, in, out, session); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -55,7 +54,7 @@ func TestAutomaticStartKeepsTheCellNoteWhenTheGateSkipsTheFirstPick(t *testing.T
 
 	// DeepSeek's provider is under the worker floor, so the gate must skip the
 	// cost rule's pick and take the next candidate.
-	if _, err := s.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`,
+	if _, err := s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0) ON CONFLICT (key,level,scope,item) DO UPDATE SET value=excluded.value`,
 		workerFloorsKey, `{"floors":{"deepseek":20}}`); err != nil {
 		t.Fatal(err)
 	}

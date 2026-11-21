@@ -83,7 +83,7 @@ func TestOwedReplyLimitStartingAfterNudgeHoldsAsk(t *testing.T) {
 
 	// The limit starts at 16 minutes and lasts two hours.
 	until := start.Add(2 * time.Hour)
-	c.t = start.Add(16 * time.Minute)
+	c.set(start.Add(16 * time.Minute))
 	if _, err := s.db.Exec("UPDATE sessions SET limited_until=?, limited_reason='usage limit' WHERE id=?", until.Unix(), b); err != nil {
 		t.Fatal(err)
 	}

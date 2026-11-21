@@ -732,7 +732,6 @@ func (d *Daemon) ctoCatalogMCPServersFind(ctx context.Context, raw json.RawMessa
 		return nil, errors.New(`detail must be concise or full. Example: {"detail":"full"}`)
 	}
 	limit := ctoCatalogLimit(q.Limit)
-	project := d.ctoCatalogProject(ctx)
 	value, err := d.ctoReadConn().dispatch(ctx, "mcp_list", nil)
 	if err != nil {
 		return nil, err
@@ -745,7 +744,7 @@ func (d *Daemon) ctoCatalogMCPServersFind(ctx context.Context, raw json.RawMessa
 	}
 	rows := make([]map[string]any, 0, len(result.Servers))
 	for _, server := range result.Servers {
-		usable := server.Enabled && server.HostOnline && ctoCatalogMCPScopeAllows(server, project)
+		usable := server.Enabled && server.HostOnline
 		if usableOnly && !usable {
 			continue
 		}
@@ -776,40 +775,6 @@ func (d *Daemon) ctoCatalogMCPServersFind(ctx context.Context, raw json.RawMessa
 		out["note"] = "More MCP servers match. Call again with next_cursor for the next page."
 	}
 	return out, nil
-}
-
-func (d *Daemon) ctoCatalogProject(ctx context.Context) string {
-	value, err := d.ctoReadConn().dispatch(ctx, "info", nil)
-	if err != nil {
-		return ""
-	}
-	var info protocol.OperatorInfo
-	if ctoDecode(value, &info) != nil {
-		return ""
-	}
-	id := d.ctoSessionID()
-	for _, session := range info.Sessions {
-		if session.SessionID == id {
-			return session.Repo.Project
-		}
-	}
-	return ""
-}
-
-func ctoCatalogMCPScopeAllows(server protocol.MCPServer, project string) bool {
-	switch server.Scope {
-	case "", "global":
-		return true
-	case "projects":
-		for _, assigned := range server.Projects {
-			if assigned == project {
-				return true
-			}
-		}
-		return false
-	default:
-		return false
-	}
 }
 
 func (d *Daemon) ctoCatalogWorkerProfilesFind(ctx context.Context, raw json.RawMessage) (any, error) {

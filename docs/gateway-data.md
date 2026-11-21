@@ -28,7 +28,7 @@ A message is checked, stored, handed to the receiver's machine, confirmed as del
 1. `sessions` (reads): The gateway checks that the sending session really lives on the machine that sent the request.
 2. `messages` (reads): It looks for an earlier message with the same sender and idempotency key, so a retry never stores the message twice.
 3. `sessions` (reads): It checks that the receiving session exists and follows it to the session that replaced it, if it was replaced.
-4. `owner_settings` (reads): It reads which session is the CTO, because the CTO only accepts replies and requests from lead agents.
+4. `gateway_state` (reads): It reads which session is the CTO, because the CTO only accepts replies and requests from lead agents.
 5. `graph_edges` (reads): For a request, it looks up the owner's rule between the two projects: normal, ask first, or never.
 6. `messages` (reads): It counts the messages already in this conversation to enforce the conversation limit.
 7. `messages` (writes): The new message is saved with state 'stored', its conversation, its expiry time and its sender and receiver.
@@ -51,27 +51,26 @@ The picker reads the machine, quota, past results and prices to choose a model, 
 1. `projects` (reads): The gateway looks up the project folders registered on each machine, to find where the worker can run (project folders seen in sessions are read too).
 2. `nodes` (reads): It reads the machine's state: online, accepts workers, which agent tools are installed, and each tool's models.
 3. `quota_blocks` (reads): It reads quota windows that this machine already learned are used up, so the picker does not choose a provider that is blocked (live quota readings come from memory, not the database).
-4. `owner_settings` (reads): It reads the owner's picker settings: registered worker profiles, model scores, minimum scores per difficulty, allowed and protected providers, floors, and the rotation counter.
+4. `setting_values` (reads): It reads the owner's picker settings: registered worker profiles, model scores, minimum scores per difficulty, allowed and protected providers and floors. It reads the rotation counter from `gateway_state`.
 5. `model_prices` (reads): It reads the price of each model, so the picker can compare the expected cost per accepted result.
 6. `worker_runs` (reads): It reads the track record of past worker runs (complete, partial, failed, fixes needed) per model, which scores each model on tasks of this difficulty.
 7. `worker_assessments` (reads): It reads the difficulty the judge gave to past tasks, to place each past run in the right difficulty bucket.
-8. `worker_usage` (reads): It reads the tokens past runs used, to turn token counts into a cost per run.
+8. `worker_runs` (reads): It reads the tokens past runs used, to turn token counts into a cost per run.
 9. `model_failures` (reads): It reads which models recently failed or lost sign-in on this machine, to skip models that are cooling down.
-10. `owner_settings` (writes): The rotation counter is saved, so the next start spreads work across models instead of always picking the same one.
+10. `gateway_state` (writes): The rotation counter is saved, so the next start spreads work across models instead of always picking the same one.
 11. `worker_starts` (writes): The gateway records the start (reference, machine, who asked, project, harness, permissions, the 'done' list) before it asks the machine to launch.
 12. `worker_assessments` (writes): The judge's difficulty result and the picker's explanation are saved under the new worker session.
 13. `pick_candidates` (writes): One row per candidate model is saved: its score, cost, quota room, chance of being picked, and why it was skipped or chosen.
 14. `events` (writes): The audit log records 'worker.started' with project, harness, model and who started it.
 15. `delivery_changes` (writes): At a complete hand-back, the worker's branch is submitted as a change to deliver (a first revision row is saved with it).
 16. `messages` (writes): The hand-back notice is saved as a reply to the starter's task message, and the task is marked 'replied'. It is delivered to the starter like any message.
-17. `worker_runs` (writes): When the worker stops, its run is saved: model, outcome, seconds, files and lines changed, fixes, and struggle counters. This feeds the track record the picker reads next time.
-18. `worker_usage` (writes): The tokens the worker used are saved with the run, so its cost can be computed later.
+17. `worker_runs` (writes): When the worker stops, its run is saved: model, outcome, seconds, files and lines changed, fixes, struggle counters, the tokens the worker used and their cost at API prices. This feeds the track record the picker reads next time.
 
 ## Journey: A machine connects and reports health
 
 A machine enrolls once with a code, then on each connection proves its token, says hello with its health and tools, syncs its sessions, and is marked silent if it drops without a reason.
 
-1. `enroll_codes` (writes): On first setup, the one-time enrollment code is checked and marked used, so it cannot be used again.
+1. `nodes` (writes): On first setup, the one-time enrollment code is checked and marked used on its invited row, so it cannot be used again.
 2. `nodes` (writes): A new machine row is created with its name, operating system and the hash of its secret token (the token itself is never stored).
 3. `events` (writes): The audit log records 'node.enrolled' with the machine's host name.
 4. `nodes` (reads): On every connection, the gateway checks that the machine was not removed and that its token hash matches.
@@ -82,13 +81,11 @@ A machine enrolls once with a code, then on each connection proves its token, sa
 9. `nodes` (writes): The machine is marked as back: any open outage (dropped, asleep, silent) is cleared.
 10. `events` (writes): The audit log records 'node.connected' with the remote address.
 11. `sessions` (writes): The machine lists its agent sessions. Each is added or updated, and sessions the gateway thought were online but are missing from the list are marked offline.
-12. `inventory_reports` (writes): The machine's scan of skills, MCP servers and other tools is saved as its latest inventory (kept as stale if a scan fails).
-13. `tool_locations` (writes): Each item from the inventory is saved as a location on this machine (tool_identities is updated with it).
-14. `nodes` (writes): When the link drops, the last time a frame arrived is saved, and the time of the drop starts a possible outage (unless the machine announced it was going to sleep).
-15. `events` (writes): The audit log records 'node.disconnected'.
-16. `sessions` (writes): After the offline grace period, every session of that machine is marked offline, and ended workers are marked 'ended'.
-17. `nodes` (writes): If the outage stays unexplained for the silence limit, the machine is marked silent. The once-a-minute check does this.
-18. `cto_intake` (writes): A silent machine is queued for the CTO with the text '<host> went silent ... it may be hung' (it is not sent to the owner).
+12. `nodes` (writes): When the link drops, the last time a frame arrived is saved, and the time of the drop starts a possible outage (unless the machine announced it was going to sleep).
+13. `events` (writes): The audit log records 'node.disconnected'.
+14. `sessions` (writes): After the offline grace period, every session of that machine is marked offline, and ended workers are marked 'ended'.
+15. `nodes` (writes): If the outage stays unexplained for the silence limit, the machine is marked silent. The once-a-minute check does this.
+16. `cto_intake` (writes): A silent machine is queued for the CTO with the text '<host> went silent ... it may be hung' (it is not sent to the owner).
 
 ## Journey: A change from accept to release
 
@@ -101,14 +98,14 @@ An agent hands in a change, the delivery steps open one after another, each step
 5. `delivery_revisions` (writes): The head commit is recorded as revision 1. A new head later adds revision 2, 3 and so on, and starts the steps again.
 6. `delivery_step_tasks` (writes): The first ready step (accept) gets a task row that names its owner. Steps that need an earlier step wait.
 7. `messages` (writes): A notice 'you have a step to claim' is stored for the session that owns the step.
-8. `delivery_step_messages` (writes): The notice is linked to the step task, so it can be cancelled when the step is claimed, finished or replaced.
+8. `delivery_step_tasks` (writes): The notice is saved in the step task, under the session it went to, so it can be cancelled when the step is claimed, finished or replaced.
 9. `desk_log` (writes): A line 'Sent step ... of change ... to a session' is added to the Desk log.
 10. `delivery_step_tasks` (writes): The owner session claims the step (agent_step_claim). The task now shows who works on it, and nobody else can report it.
-11. `delivery_step_tasks` (writes): When the step is reported (agent_step_report), the task is marked completed under the same session.
+11. `delivery_step_tasks` (writes): When the step is reported (agent_step_report), the task is deleted. Its evidence is the record, and the task table holds open work only.
 12. `delivery_evidence` (writes): The result (pass, fail or needs owner), the commit, the fields and who did the work are stored as evidence. Evidence is never edited, a newer report just wins.
 13. `delivery_step_tasks` (writes): The gateway reads all evidence, finds which steps are now ready, and opens the next task (review, test, approve, merge, release, verify in turn).
-14. `project_mergers` (reads): For a step owned by the merger, the gateway looks up which session is the merger for this repo on this machine, and only that session may claim the step.
-15. `delivery_step_delegates` (writes): For an approve step set to delegated, the repo lead and the team lead (found from the repo and team tables) are listed as the sessions allowed to approve. The caller is never its own approver.
+14. `repos` (reads): For a step owned by the merger, the gateway reads the merger session and machine of the repo, and only that session may claim the step.
+15. `delivery_step_tasks` (writes): For an approve step set to delegated, the repo lead and the team lead (found from the repo and team tables) are listed in the task as the agents allowed to approve. The caller is never its own approver.
 16. `delivery_step_inbox` (writes): For an approve step that needs the owner's written approval, an Inbox item is created and linked to the step, revision and commit.
 17. `delivery_changes` (writes): A passing merge report moves the change to merged and stores the merged commit. When every step after merge has passed, the state becomes done (a close report makes it stopped).
 18. `inbox_items` (writes): When the change is done or stopped, the open asks about it are closed so nothing stale stays on the Desk.
@@ -118,7 +115,7 @@ An agent hands in a change, the delivery steps open one after another, each step
 An agent asks the owner a question, it becomes an Inbox item that the chief of staff sorts, the Desk shows it, the owner answers, and the answer goes back to the asker.
 
 1. `sessions` (reads): The gateway checks the asking session is on the calling machine and finds its repo and display name.
-2. `owner_settings` (reads): It reads which session is the chief of staff, then decides if the ask goes to the chief or straight to the owner.
+2. `gateway_state` (reads): It reads which session is the chief of staff, then decides if the ask goes to the chief or straight to the owner.
 3. `inbox_items` (reads): It looks for an open ask, or one closed in the last 10 minutes, that asks the same thing, so a repeat joins it instead of making a duplicate.
 4. `inbox_items` (writes): A new open ask is stored with the question, the options, the recommendation and who handles it next (the chief).
 5. `inbox_items` (reads): Every few seconds the gateway collects the asks waiting for the chief and bundles those that arrived close together.
@@ -144,10 +141,10 @@ A charter attribute or a setting is written with a new revision and a history ro
 3. `charter_values` (writes): The new value is stored for the level (global, team, repo or agent), the scope and the attribute, with time and author. An empty value deletes the row.
 4. `graph_history` (writes): A history row keeps the old value, the new value, the author and the time. Its id is the revision that graph undo and charter history use.
 5. `charter_values` (reads): After the commit every daemon is told to drop its cached charter. The next reader resolves the charter from global, team, repo and agent values, in that order.
-6. `settings_target_identity` (reads): For a CTO settings change that names a repo, team or agent by name, the gateway turns the name into an id and reads the lasting token of that target (it creates the token on first use).
-7. `setting_revision` (reads): The setting write starts by reading the current settings revision number.
+6. `repos` (reads): For a CTO settings change that names a repo, team or agent by name, the gateway turns the name into an id and reads the lasting `settings_token` of that target (it creates the token on first use). The same holds for `agents` and `teams`; the network token is in `gateway_state`.
+7. `setting_history` (reads): The setting write starts by reading the current settings revision number, which is the newest revision of the history.
 8. `setting_values` (reads): It reads all current values. The write is refused if the value the caller expected is no longer the stored one.
-9. `setting_revision` (writes): The settings revision goes up by one. One write, even with many changes, is one revision.
+9. `setting_history` (writes): The settings revision goes up by one. One write, even with many changes, is one revision.
 10. `setting_values` (writes): The new value is stored for its key, level and scope, with the new revision number. A reset deletes the row.
 11. `setting_history` (writes): One history row per changed value keeps the revision, old and new value, author, reason and cause. Undo of a revision reads these rows back.
 12. `setting_values` (reads): After the commit the gateway rebuilds the settings snapshot and pushes it to every connected daemon. Daemons and the TUI read the new snapshot and its revision.
@@ -158,41 +155,18 @@ A charter attribute or a setting is written with a new revision and a history ro
 
 Computers that run the daemon, and how they enrol and report health.
 
-### enroll_codes
-
-- **Holds:** One row per one-time invite code (stored hashed) that lets a new machine join, with its expiry time and the time it was used.
-- **Written by:** `gateway/store.go`
-- **Read by:** `gateway/store.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Forever; an expired or used code stays but is refused.
-
-### inventory_reports
-
-- **Holds:** One row per machine holding the latest report of the tools, skills and MCP servers installed there.
-- **Written by:** `gateway/inventory.go`
-- **Read by:** `gateway/inventory.go`, `gateway/skillarchive_intake.go`, `gateway/tools_assignment.go`
-- **Shown in:** TUI, Tools; CTO op `tools_items`; CTO op `tools_versions`; CTO op `tools_import`; CTO op `tools_export`
-- **Kept:** Replaced on each report.
 
 ### nodes
 
-- **Holds:** One row per machine enrolled in the network: its name, system, hashed access token, agent-net version, last-seen time, which agent programs it can run, plus its health report, Tailscale address, time zone and quiet-hours marks.
+- **Holds:** One row per machine or invite in the network: its name, system, hashed access token, agent-net version, last-seen time, which agent programs it can run, plus its health report, Tailscale address, time zone and quiet-hours marks. Invite rows in 'invited' state hold the hashed invite code, expiry and used time with no access token.
 - **Written by:** `gateway/graph_refs.go`, `gateway/machine_tokens.go`, `gateway/node_fold_migration.go`, `gateway/nodes.go`, `gateway/nodes_sleep.go`, `gateway/store.go`
-- **Read by:** `gateway/apps_public.go`, `gateway/ask_intake.go`, `gateway/delivery_changes.go`, `gateway/graph_refs.go`, `gateway/inventory.go`, `gateway/lead_route.go`, `gateway/machine_tokens.go`, `gateway/mcp_import.go`, `gateway/mcp_store.go`, `gateway/nodes.go` and others
+- **Read by:** `gateway/apps_public.go`, `gateway/ask_intake.go`, `gateway/delivery_changes.go`, `gateway/graph_refs.go`, `gateway/lead_route.go`, `gateway/machine_tokens.go`, `gateway/mcp_store.go`, `gateway/nodes.go` and others
 - **Shown in:** TUI, Sessions; TUI, Quotas; tool `agent_machines_find`; tool `agent_machine_get`; CTO op `machine_remove`; CTO op `machine_rotate`
 - **Kept:** Forever; a removed machine is only marked removed and its token wiped.
 
-### transfer_parts
-
-- **Holds:** One row per received piece of a file transfer: its index, size, checksum and arrival time.
-- **Written by:** `gateway/transfer.go`
-- **Read by:** `gateway/transfer.go`
-- **Shown in:** tool `agent_file_send`
-- **Kept:** For 7 days after upload, deleted with its transfer by the hourly sweep.
-
 ### transfers
 
-- **Holds:** One row per file sent between machines: sender, receiver, file name, size, checksum, part size and number of parts, with an expiry time and a finished time.
+- **Holds:** One row per file sent between machines: sender, receiver, file name, size, checksum, part size and number of parts, with an expiry time, a finished time and the list of received parts.
 - **Written by:** `gateway/transfer.go`
 - **Read by:** `gateway/transfer.go`
 - **Shown in:** tool `agent_file_send`
@@ -200,79 +174,25 @@ Computers that run the daemon, and how they enrol and report health.
 
 ## Sessions
 
-Agent sessions, and the checks and wake-ups that go with them.
-
-### check_answer_counts
-
-- **Holds:** How many answers the idle check got per day, by kind (done, more, blocked).
-- **Written by:** `gateway/check.go`
-- **Read by:** `gateway/check.go`
-- **Shown in:** CTO op `counts`
-- **Kept:** Forever.
-
-### profiles
-
-- **Holds:** One row per session with what it announced about itself: name, function, project, capabilities, current task, expertise and when it started the task.
-- **Written by:** `gateway/cto_session.go`, `gateway/merger.go`, `gateway/session_replace.go`, `gateway/sessionrename.go`, `gateway/store.go`, `gateway/store_record.go`
-- **Read by:** `gateway/ask_intake.go`, `gateway/asks.go`, `gateway/calibration.go`, `gateway/caller_agent.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/cited.go`, `gateway/context_resolver.go`, `gateway/delivery_changes.go`, `gateway/delivery_tasks.go` and others
-- **Shown in:** TUI, Sessions; tool `agent_announce`; tool `agent_sessions_find`; tool `agent_session_get`
-- **Kept:** Deleted with its session (cleanup or the 30 day prune of un-archived offline sessions).
-
-### repo_start_reservations
-
-- **Holds:** One row per short hold on a repo slot while a session is being started, so two launches cannot pass the repo's session cap together.
-- **Written by:** `gateway/session_max.go`, `gateway/store.go`
-- **Read by:** `gateway/session_max.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** For 2 minutes; removed on the next start request or when the session registers.
-
-### session_agent_start_failures
-
-- **Holds:** One row per failed Agent choice for a new session: the machine, reference, project, the Desk item raised and the reason.
-- **Written by:** `gateway/session_start_agent_expiry.go`
-- **Read by:** `gateway/session_start_agent.go`, `gateway/session_start_agent_expiry.go`
-- **Shown in:** TUI, Desk
-- **Kept:** Forever; no code deletes it.
-
-### session_agent_starts
-
-- **Holds:** One row per new session waiting to be bound to an Agent of the org graph, chosen by the owner before the session first registers.
-- **Written by:** `gateway/session_start_agent.go`, `gateway/session_start_agent_expiry.go`
-- **Read by:** `gateway/org_tree.go`, `gateway/session_start_agent.go`, `gateway/session_start_agent_expiry.go`
-- **Shown in:** TUI, Sessions
-- **Kept:** For 2 minutes; deleted when the session registers or the choice expires.
-
-### session_checks
-
-- **Holds:** One row per session holding the state of the idle check loop: whether a check is active or waiting, open work and message counts, the day's check count and the last announce time.
-- **Written by:** `gateway/check.go`
-- **Read by:** `gateway/check.go`, `gateway/notice_lifecycle.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Forever; never deleted, even after the session is removed.
+Agent sessions, with their checks and wake-ups, and the due steps they set.
 
 ### session_dues
 
 - **Holds:** One row per due step a session set with agent_due: the session, what is due, the due time, and whether it is pending, woken or raised to the chief.
 - **Written by:** `gateway/session_due.go`
-- **Read by:** `gateway/session_due.go` (the minute tick)
+- **Read by:** `gateway/session_due.go`
 - **Shown in:** tool `agent_due`; the wake message (idempotency key `due:<id>`); a chief ask after 15 minutes idle
 - **Kept:** Forever; the state moves from pending to woken or raised.
 
-### session_wakes
-
-- **Holds:** One row per session counting automatic wake-ups: the day's count, the no-progress streak, open work, and when and why the last wake failed.
-- **Written by:** `gateway/check.go`, `gateway/loop.go`, `gateway/session_wake.go`, `gateway/side_fold.go`, `gateway/wake_failure.go`
-- **Read by:** `gateway/caller_agent.go`, `gateway/check.go`, `gateway/loop.go`, `gateway/session_wake.go`, `gateway/wake_failure.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Forever; never deleted, even after the session is removed.
-
 ### sessions
 
-- **Holds:** One row per agent session (a coding agent running on a machine, a worker, the CTO or the chief): name, folder, repo, status, online state, model, worker data and archive and pin marks. It also holds the owner's last typed prompt to the session (`owner_prompt`, with its time `owner_prompt_at`).
+- **Holds:** One row per agent session (a coding agent running on a machine, a worker, the CTO or the chief): name, folder, repo, status, online state, model, worker data and archive and pin marks. It also holds the owner's last typed prompt to the session (`owner_prompt`, with its time `owner_prompt_at`), what the session announced (`announced_project`, `capabilities`, `task`, `task_started`, `expertise`, `announced_at`), the idle check state (the `check_` columns), and the automatic wake state (the `wake_` columns: the day's count, the no-progress streak, the last refused wake and the last wake attempt). `name_fixed` is 1 when the owner or the merger set the name, so a new report keeps it. A session's project is its detected repo (`repo_project`), else its announced project. A rate offer made before the session's first run is recorded waits here (`rate_offered_at`, `rate_asked`) and moves to the run.
 - **Written by:** `gateway/apps.go`, `gateway/bot_agent.go`, `gateway/bot_names.go`, `gateway/bot_session.go`, `gateway/busy_hold.go`, `gateway/chief.go`, `gateway/cto_session.go`, `gateway/machine_tokens.go`, `gateway/merger.go`, `gateway/org_tree.go` and others
 - **Read by:** `gateway/ask_holder.go`, `gateway/ask_intake.go`, `gateway/asks.go`, `gateway/asks_to.go`, `gateway/authority.go`, `gateway/automatic_message.go`, `gateway/bot_names.go`, `gateway/bot_session.go`, `gateway/bot_tools.go`, `gateway/busy_hold.go` and others
-- **Shown in:** TUI, Sessions; TUI, Graph; tool `agent_sessions_find`; tool `agent_session_get`; CTO op `session_change`; CTO op `sessions_archive`
+- **Shown in:** TUI, Sessions; TUI, Graph; tool `agent_announce`; tool `agent_sessions_find`; tool `agent_session_get`; CTO op `session_change`; CTO op `sessions_archive`
 - **Kept:** Offline sessions are archived after 7 days and kept; an un-archived offline session unused for 30 days is deleted by the hourly prune; cleaned workers are deleted on request. The owner prompt is cleared at the session's first send, and after 10 minutes at most (hourly prune).
+
+Sessions being started have no row yet. Their two-minute holds (a repo slot under the repo's session cap, and the owner's Agent choice) live in the gateway's memory, with the Agent choices that failed. A gateway restart drops them. The Desk item a failed choice raises keeps its reason.
 
 ## Messages
 
@@ -392,63 +312,35 @@ Owner settings and their history.
 
 ### gateway_state
 
-- **Holds:** A key-value table of what the gateway remembers about itself: graph cutover version and gate, skill archive marks, brief last-sent dates and one-time seed markers.
-- **Written by:** `gateway/gateway_state.go`
-- **Read by:** `gateway/gateway_state.go`, `gateway/store.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Until overwritten; keys are not deleted.
-
-### owner_settings
-
-- **Holds:** A key-value table of owner-level settings and role markers: chief and CTO session ids, CTO title and settings, time zone, worker profiles, providers, floors and rotation, hidden items, integrations, brief and public listener state.
-- **Written by:** `gateway/apps_public.go`, `gateway/brief.go`, `gateway/chief.go`, `gateway/chief_health.go`, `gateway/chief_stuck.go`, `gateway/cto_session.go`, `gateway/cto_settings.go`, `gateway/gateway_state.go`, `gateway/hidden.go`, `gateway/integrations.go` and others
-- **Read by:** `gateway/apps_public.go`, `gateway/ask_intake.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/chief_health.go`, `gateway/chief_stuck.go`, `gateway/cto_lead.go`, `gateway/cto_session.go`, `gateway/cto_settings.go`, `gateway/gateway_state.go` and others
-- **Shown in:** TUI, Settings; TUI, Quotas; tool `agent_settings_read`; tool `agent_worker_profiles_find`; tool `agent_protected_providers_get`; CTO op `chief_set`
-- **Kept:** Until changed; a key is replaced on write and a few keys are deleted when a role is cleared.
+- **Holds:** A key-value table of what the gateway remembers about itself: the CTO and chief of staff session ids, the chief's clear and silence marks, worker rotation, onboarding progress, hidden items, graph cutover version and gate, skill archive marks, brief last-sent dates, the change counter of `worker_runs`, the network settings token, the marks of one-time cleanups that a running gateway still reads the escalation of waiting caller steps (`caller_escalation:<owner>`, with the time of the wake and whether the repo lead was offered the steps) and the nodes that finished a node step of a live change (`step_node:<change>/<node>`, deleted when the change is done or stopped; it keeps that node's sessions from doing the caller's steps of the change).
+- **Written by:** `gateway/caller_agent.go`, `gateway/chief.go`, `gateway/chief_health.go`, `gateway/chief_stuck.go`, `gateway/cto_session.go`, `gateway/gateway_state.go`, `gateway/hidden.go`, `gateway/onboarding.go`, `gateway/settings_targets.go`, `gateway/worker_rotation.go` and others
+- **Read by:** `gateway/ask_intake.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/cto_lead.go`, `gateway/cto_session.go`, `gateway/gateway_state.go`, `gateway/runs_snapshot.go`, `gateway/store.go` and others
+- **Shown in:** TUI, Settings; TUI, Quotas; tool `agent_worker_profiles_find`; CTO op `chief_set`
+- **Kept:** Until overwritten; a key is deleted when a role is cleared. The escalation of an owner is deleted once the owner is live again or has nothing waiting. The `worker_runs_version` key is raised by triggers on `worker_runs`.
 
 ### schema_version
 
 - **Holds:** One row per applied database migration number.
-- **Written by:** `gateway/store.go` (the migration step)
+- **Written by:** `gateway/store.go`
 - **Read by:** `gateway/store.go`, `gateway/store_pool.go`, `gateway/store_upgrade_backup.go`
 - **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
 - **Kept:** Forever; one row added per migration.
 
 ### setting_history
 
-- **Holds:** One row per settings change: revision, key, level, scope, old and new value, who changed it, why and what it undoes.
+- **Holds:** One row per settings change: revision, key, level, scope, old and new value, who changed it, why and what it undoes. The newest revision is the current settings revision. A change that is not a setting (a delivery owner, a maturity) adds a marker row at seq 0.
 - **Written by:** `gateway/delivery_pipeline_settings.go`, `gateway/delivery_settings.go`, `gateway/settings.go`, `gateway/worker_sandbox_settings.go`
 - **Read by:** `gateway/settings.go`, `gateway/store_graph.go`
 - **Shown in:** TUI, Settings; tool `agent_settings_read`; CTO op `settings_change`
 - **Kept:** Forever; no code deletes it.
 
-### setting_revision
-
-- **Holds:** A single row with the current settings revision number, raised on every settings change.
-- **Written by:** `gateway/learned_apply.go`, `gateway/merger.go`, `gateway/settings.go`
-- **Read by:** `gateway/delivery_pipeline_settings.go`, `gateway/delivery_settings.go`, `gateway/learned_apply.go`, `gateway/learned_owner.go`, `gateway/settings.go`, `gateway/store_graph.go`, `gateway/worker_sandbox_settings.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** One row, updated in place.
-
 ### setting_values
 
-- **Holds:** One row per stored setting value, keyed by setting name, level (network, repo, agent and so on), scope and item, with the revision that wrote it.
-- **Written by:** `gateway/delivery_pipeline_settings.go`, `gateway/delivery_settings.go`, `gateway/gateway_state.go`, `gateway/settings.go`, `gateway/store_graph.go`, `gateway/worker_sandbox_settings.go`
+- **Holds:** One row per stored setting value, keyed by setting name, level (network, repo, agent and so on), scope and item, with the revision that wrote it. The owner's own values (integrations, CTO title and settings, worker profiles, model scores, providers, floors, difficulty minimums, time zone and the public listener) are network settings under the key prefix `owner.`; they are not sent to the machines.
+- **Written by:** `gateway/delivery_pipeline_settings.go`, `gateway/delivery_settings.go`, `gateway/gateway_state.go`, `gateway/owner_values.go`, `gateway/settings.go`, `gateway/store_graph.go`, `gateway/worker_sandbox_settings.go`
 - **Read by:** `gateway/cto_graph.go`, `gateway/delivery_pipeline_settings.go`, `gateway/delivery_settings.go`, `gateway/leads_max.go`, `gateway/loop.go`, `gateway/merger.go`, `gateway/session_max.go`, `gateway/settings.go`, `gateway/store.go`, `gateway/store_graph.go` and others
 - **Shown in:** TUI, Settings; tool `agent_settings_read`; CTO op `settings_change`
 - **Kept:** Until the owner changes or unsets it.
-
-### settings_target_identity
-
-- **Holds:** One row per network, repo or agent with a stable token, so a setting stays attached to it after a rename.
-- **Written by:** `gateway/settings_targets.go`
-- **Read by:** `gateway/settings_targets.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Forever; no code deletes it.
-
-## Org graph
-
-Projects, agents, teams, repos, and the rules and charters between them.
 
 ### agent_loops
 
@@ -460,27 +352,19 @@ Projects, agents, teams, repos, and the rules and charters between them.
 
 ### agents
 
-- **Holds:** One agent of the org tree: a named role (coding agent, bot, lead) with the session that currently leads for it, and a tombstone flag when it is retired.
+- **Holds:** One agent of the org tree: a named role (coding agent, bot, lead) with its team (`team_id`), its pinned lead session (`lead_session`), its explicit lead-level grant (`lead_level`), a tombstone flag when it is retired, and its settings token. `agents.lead_session` and `agents.lead_level` are the single source for an agent's lead session and explicit lead-level grant.
 - **Written by:** `gateway/bot_agent.go`, `gateway/bot_names.go`, `gateway/graph_lifecycle.go`, `gateway/lead_session.go`, `gateway/lead_session_migration.go`, `gateway/leads_max.go`, `gateway/org_tree.go`, `gateway/repo_fold_migration.go`, `gateway/session_replace.go`, `gateway/store.go` and others
 - **Read by:** `gateway/agent_scopes.go`, `gateway/asks_to.go`, `gateway/authority.go`, `gateway/bot_agent.go`, `gateway/caller_agent.go`, `gateway/charter_drafts.go`, `gateway/cto_charter_default.go`, `gateway/cto_lead.go`, `gateway/friction.go`, `gateway/graph_lifecycle.go` and others
 - **Shown in:** TUI, Graph; tool `agent_graph_read`; CTO op `agent_create`; CTO op `agent_tombstone`; CTO op `lead_set`
 - **Kept:** Forever (a retired agent is only flagged as tombstoned).
 
-### charter_draft_asks
-
-- **Holds:** A marker that a session was already asked to draft a charter for one level and scope, with the hash of the source text, so it is not asked again.
-- **Written by:** `gateway/charter_drafts.go`
-- **Read by:** `gateway/charter_drafts.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Replaced when the source text changes (one row per level and scope).
-
 ### charter_drafts
 
-- **Holds:** One charter value that a session drafted from the project AGENTS.md and that waits for the owner to accept or reject it.
+- **Holds:** One charter value that a session drafted from the project AGENTS.md (`pending`, `accepted`, `rejected`, `superseded`), or an `asked` marker (`status='asked'`, `source_hash`, `asked_at`) so a session is not asked twice for the same source text.
 - **Written by:** `gateway/charter_drafts.go`
 - **Read by:** `gateway/charter_drafts.go`, `gateway/chief.go`, `gateway/store_inbox.go`
 - **Shown in:** TUI, Graph; TUI, Desk; tool `agent_charter_draft`; CTO op `needs_you`
-- **Kept:** Forever (the status changes to accepted or rejected, the row stays).
+- **Kept:** Forever (the status changes to accepted or rejected, the row stays; the `asked` row is replaced when the source text changes).
 
 ### charter_values
 
@@ -492,8 +376,8 @@ Projects, agents, teams, repos, and the rules and charters between them.
 
 ### graph_edges
 
-- **Holds:** One typed link between two nodes of the org tree (for example reports-to, may-ask, merger or delivery owner), with its mode and rule.
-- **Written by:** `gateway/edge_kinds.go`, `gateway/held.go`, `gateway/merger.go`, `gateway/merger_restore.go`, `gateway/org_tree.go`, `gateway/settings.go`, `gateway/store_graph.go`
+- **Holds:** One typed link between two nodes of the org tree (`depends`, `deploys`, or a `/delivery/*` step owner), with its mode and rule. `reports_to` is computed on read from leadership and team membership. Only an explicit move by the CTO or the owner (`edge_set`) is stored here, and it wins over the computed parent.
+- **Written by:** `gateway/edge_kinds.go`, `gateway/held.go`, `gateway/merger.go`, `gateway/merger_restore.go`, `gateway/settings.go`, `gateway/store_graph.go`
 - **Read by:** `gateway/cto_graph.go`, `gateway/graph_lifecycle.go`, `gateway/graph_refs.go`, `gateway/graph_view.go`, `gateway/graphread.go`, `gateway/held.go`, `gateway/learned.go`, `gateway/learned_apply.go`, `gateway/learned_owner.go`, `gateway/merger.go` and others
 - **Shown in:** TUI, Graph; tool `agent_graph_read`; CTO op `edge_set`; CTO op `edge_remove`; CTO op `merger_set`
 - **Kept:** Until the link is removed or an undo reverts it.
@@ -508,7 +392,7 @@ Projects, agents, teams, repos, and the rules and charters between them.
 
 ### graph_outcomes
 
-- **Holds:** How one request between two nodes ended: a reply with an outcome (accept, reject, escalate or redirect), the reason and recommendation, and whether the owner resolved it.
+- **Holds:** How one request between two nodes ended: a reply with an outcome (accept, reject, escalate or redirect), the reason and recommendation, whether the owner resolved it, and whether it was overruled (`overruled`, `overrule_message_id`).
 - **Written by:** `gateway/asks.go`, `gateway/store.go`, `gateway/store_inbox.go`, `gateway/store_outcome.go`
 - **Read by:** `gateway/asks.go`, `gateway/bot_tools.go`, `gateway/learned.go`, `gateway/owner_answers.go`, `gateway/signal.go`, `gateway/store.go`, `gateway/store_outcome.go`, `gateway/store_record.go`
 - **Shown in:** TUI, Desk; tool `agent_message_reply`; CTO op `outcome_inbox`; CTO op `outcome_overrule`
@@ -530,51 +414,27 @@ Projects, agents, teams, repos, and the rules and charters between them.
 - **Shown in:** TUI, Graph; tool `agent_graph_read`; CTO op `scope_set`; CTO op `scope_remove`
 - **Kept:** Until the owner removes the scope (changes are logged in node_scopes_history).
 
-### outcome_overrules
-
-- **Holds:** A mark that the owner overruled the outcome of one request, pointing at the request and the reply.
-- **Written by:** `gateway/store_outcome.go`
-- **Read by:** `gateway/store.go`
-- **Shown in:** TUI, Desk; CTO op `outcome_overrule`
-- **Kept:** Forever.
-
-### project_display_names
-
-- **Holds:** A friendly name the owner gave to a project, used instead of the folder name.
-- **Written by:** `gateway/project_display.go`
-- **Read by:** `gateway/project_display.go`, `gateway/store.go`
-- **Shown in:** TUI, Graph; TUI, Sessions; CTO op `project_display_set`
-- **Kept:** Until the owner clears the name.
-
 ### projects
 
 - **Holds:** One project folder registered on one machine, with its path, name, git remote and default branch.
 - **Written by:** `gateway/store_projects.go`
-- **Read by:** `gateway/delivery_changes.go`, `gateway/graph_lifecycle.go`, `gateway/graph_view.go`, `gateway/inventory.go`, `gateway/learned.go`, `gateway/mcp_import_apply.go`, `gateway/project_display.go`, `gateway/settings.go`, `gateway/skill_lists.go`, `gateway/skillarchive_intake.go` and others
-- **Shown in:** TUI, Tools; TUI, Graph; tool `agent_projects_find`; tool `agent_project_add`; CTO op `project_add`
+- **Read by:** `gateway/delivery_changes.go`, `gateway/graph_lifecycle.go`, `gateway/graph_view.go`, `gateway/learned.go`, `gateway/project_display.go`, `gateway/settings.go`, `gateway/skill_lists.go`, `gateway/skillarchive_intake.go` and others
+- **Shown in:** TUI, Graph; tool `agent_projects_find`; tool `agent_project_add`; CTO op `project_add`
 - **Kept:** Until the project is removed.
 
 ### repos
 
-- **Holds:** One repo (project) node of the org tree, with its display name, owner agent, lead agent and flags for archived and held back.
-- **Written by:** `gateway/authority.go`, `gateway/graph_lifecycle.go`, `gateway/leads_max.go`, `gateway/repo_fold_migration.go`, `gateway/store.go`, `gateway/store_graph.go`
+- **Holds:** One repo (project) node of the org tree, with its display name, its single lead agent (`lead_agent_id`), its team (`team_id`), flags for archived and held back, and its settings token. `repos.lead_agent_id` is the single source for a repo's lead. It also holds the number the next bar rule will get (`bar_next`, so numbers are never reused), the count of failed merge-queue test runs in a row and the last run (`train_fails`, `train_last_run`), and the merger's machine and session (`merger_node`, `merger_session`). A repo has one merger.
+- **Written by:** `gateway/authority.go`, `gateway/graph_lifecycle.go`, `gateway/intake_feeds.go`, `gateway/leads_max.go`, `gateway/merger.go`, `gateway/merger_restore.go`, `gateway/project_display.go`, `gateway/repo_fold_migration.go`, `gateway/session_replace.go`, `gateway/store.go` and others
 - **Read by:** `gateway/authority.go`, `gateway/charter_levels.go`, `gateway/graph_lifecycle.go`, `gateway/graph_refs.go`, `gateway/intake.go`, `gateway/lead_session.go`, `gateway/lead_session_migration.go`, `gateway/leads_max.go`, `gateway/node_scopes.go`, `gateway/org_read.go` and others
-- **Shown in:** TUI, Graph; tool `agent_graph_read`; CTO op `repo_create`; CTO op `repo_archive`; CTO op `lead_set`
-- **Kept:** Forever (an archived repo is only flagged).
-
-### team_members
-
-- **Holds:** One line saying that an agent or repo belongs to a team (each member is in one team).
-- **Written by:** `gateway/bot_agent.go`, `gateway/bot_names.go`, `gateway/team_history_migration.go`, `gateway/teams.go`
-- **Read by:** `gateway/asks_to.go`, `gateway/authority.go`, `gateway/bot_agent.go`, `gateway/bot_names.go`, `gateway/charter_drafts.go`, `gateway/charter_resolver.go`, `gateway/desk_rules.go`, `gateway/lead_route.go`, `gateway/member_loop.go`, `gateway/node_scopes.go` and others
-- **Shown in:** TUI, Graph; CTO op `team_member_add`; CTO op `team_member_remove`; tool `agent_graph_read`
-- **Kept:** Until the member is removed from the team, or the bot is revoked.
+- **Shown in:** TUI, Graph; TUI, Desk; TUI, Sessions; tool `agent_graph_read`; CTO op `repo_create`; CTO op `repo_archive`; CTO op `lead_set`; CTO op `project_display_set`; CTO op `merger_set`; CTO op `merger_get`; CTO op `merger_restore`
+- **Kept:** Forever (an archived repo is only flagged). A merger is cleared when it is stopped, replaced, or its session is deleted.
 
 ### teams
 
-- **Holds:** One team: a name, purpose, owner, authority mode, held-back text, where asks go and whether the lead merges.
+- **Holds:** One team: a name, purpose, single team lead (`owner_agent_id`), authority mode, held-back text, where asks go, whether the lead merges, and its settings token. `teams.owner_agent_id` is the single source for a team's lead.
 - **Written by:** `gateway/leads_max.go`, `gateway/store_graph.go`, `gateway/teams.go`
-- **Read by:** `gateway/asks_to.go`, `gateway/authority.go`, `gateway/charter_drafts.go`, `gateway/charter_levels.go`, `gateway/charter_resolver.go`, `gateway/cto_lead.go`, `gateway/desk_rules.go`, `gateway/lead_route.go`, `gateway/lead_session.go`, `gateway/lead_session_migration.go` and others
+- **Read by:** `gateway/asks_to.go`, `gateway/authority.go`, `gateway/charter_drafts.go`, `gateway/charter_levels.go`, `gateway/charter_resolver.go`, `gateway/cto_lead.go`, `gateway/desk_rules.go`, `gateway/lead_route.go`, `gateway/lead_session.go` and others
 - **Shown in:** TUI, Graph; CTO op `team_create`; CTO op `team_settings_set`; CTO op `team_history`; tool `agent_graph_read`
 - **Kept:** Forever (an archived team is only marked inactive).
 
@@ -632,7 +492,7 @@ What the owner sees on the Desk: asks, sorts, follow-ups and the log.
 
 ### inbox_items
 
-- **Holds:** One ask: a question or request that waits for the owner (or the chief of staff), with its state, answer, priority and who sorted or routed it.
+- **Holds:** One ask: a question or request that waits for the owner (or the chief of staff), with its state, answer, priority and who sorted or routed it. An ask that holds a worker start with picker overrides also holds the override facts the confirm rule checks.
 - **Written by:** `gateway/agentnet_reply.go`, `gateway/apps_public_asks.go`, `gateway/asks.go`, `gateway/asks_to.go`, `gateway/brief.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/chief_health.go`, `gateway/chief_stuck.go`, `gateway/delivery_approval.go` and others
 - **Read by:** `gateway/agentnet_reply.go`, `gateway/apps_asks.go`, `gateway/apps_public_asks.go`, `gateway/ask_intake.go`, `gateway/asks.go`, `gateway/brief.go`, `gateway/caller_agent.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/chief_health.go` and others
 - **Shown in:** TUI, Desk; tool `agent_owner_ask`; tool `agent_ask_intake`; tool `agent_ask_sort`; CTO op `inbox_list`; CTO op `inbox_answer`
@@ -701,7 +561,7 @@ Standing orders, notes, findings, and what the gateway learns from signals.
 ### standing_orders_fts
 
 - **Holds:** The searchable full text index (FTS5) of standing orders: the text and tags of each row, so notes and judgments can be searched by word.
-- **Written by:** Triggers on `standing_orders` keep it in step. Also `gateway/notes.go` and `gateway/store.go`.
+- **Written by:** `standing_orders`, `gateway/notes.go`, `gateway/store.go`
 - **Read by:** `gateway/standing.go`
 - **Shown in:** tool `agent_owner_judgments_find`; CTO op `cto_standing_orders`
 - **Kept:** Kept in step with standing_orders by triggers (insert, update, delete).
@@ -709,14 +569,6 @@ Standing orders, notes, findings, and what the gateway learns from signals.
 ## Delivery
 
 Changes, steps and merger work, from accept to release.
-
-### caller_step_escalations
-
-- **Holds:** One row per agent owner whose waiting delivery steps were escalated: when its offline session was woken and whether its lead was offered the steps.
-- **Written by:** `gateway/caller_agent.go`
-- **Read by:** `gateway/caller_agent.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Removed once the owner is live again or has nothing waiting, checked on each sweep.
 
 ### delivery_changes
 
@@ -742,45 +594,13 @@ Changes, steps and merger work, from accept to release.
 - **Shown in:** TUI, Desk (Change panel); tool `agent_changes_find`; tool `agent_change_submit`
 - **Kept:** Forever.
 
-### delivery_step_delegates
-
-- **Holds:** One row per machine that a delivery step was handed to, when a rule delegates that step instead of asking the owner.
-- **Written by:** `gateway/delivery_tasks.go`
-- **Read by:** `gateway/delivery_changes.go`, `gateway/delivery_tasks.go`
-- **Shown in:** TUI, Desk (Steps and evidence panel)
-- **Kept:** Until the step task is completed and queued again, then removed.
-
-### delivery_step_messages
-
-- **Holds:** One row per notice message sent to a session telling it to do a delivery step, linking the step to that message.
-- **Written by:** `gateway/delivery_tasks.go`, `gateway/merger.go`, `gateway/session_replace.go`
-- **Read by:** `gateway/delivery_tasks.go`, `gateway/delivery_waiting.go`, `gateway/merger.go`, `gateway/session_replace.go`, `gateway/store_graph.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Until the step is completed, re-queued or its merger task is reset; moved when a session is replaced.
-
 ### delivery_step_tasks
 
-- **Holds:** One row per delivery step of a change that needs someone to do it: who owns it, who claimed it, whether it is done, and when it was last nudged or is waiting.
+- **Holds:** One row per open delivery step of a change that needs someone to do it: who owns it, who claimed it, and when it was last nudged or is waiting. It also holds the notices sent for the step (`notices`, a map from a session to the notice message) and the agents that may approve it when it is delegated (`delegates`).
 - **Written by:** `gateway/delivery_approval.go`, `gateway/delivery_changes.go`, `gateway/delivery_tasks.go`, `gateway/delivery_waiting.go`, `gateway/merger.go`, `gateway/session_replace.go`, `gateway/store_graph.go`
 - **Read by:** `gateway/caller_agent.go`, `gateway/delivery_approval.go`, `gateway/delivery_changes.go`, `gateway/delivery_tasks.go`, `gateway/delivery_waiting.go`, `gateway/graph_lifecycle.go`, `gateway/merger.go`, `gateway/nudge_batch.go`, `gateway/owed_replies.go`, `gateway/session_stall.go` and others
 - **Shown in:** tool `agent_step_claim`; tool `agent_step_report`; TUI, Desk (Steps and evidence panel)
-- **Kept:** A finished task is removed when its step is queued again; otherwise kept.
-
-### merge_train_fails
-
-- **Holds:** One row per project counting how many merge-queue test runs failed in a row on the train tip.
-- **Written by:** `gateway/intake_feeds.go`
-- **Read by:** `gateway/intake_feeds.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Forever, one row per project, overwritten.
-
-### project_bar_next
-
-- **Holds:** One row per project holding the number the next bar rule will get, so numbers are never reused.
-- **Written by:** `gateway/store_bar.go`
-- **Read by:** `gateway/store_bar.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Forever, one row per project.
+- **Kept:** Until the step is reported, closed, retired or its change ends. A done step keeps no task: its row in `delivery_evidence` is the record.
 
 ### project_bar_rules
 
@@ -789,14 +609,6 @@ Changes, steps and merger work, from accept to release.
 - **Read by:** `gateway/store_bar.go`
 - **Shown in:** TUI, Graph (Project rules card); tool `agent_bar_edit`; CTO op `bar_edit`
 - **Kept:** Until the rule is removed with a bar edit.
-
-### project_mergers
-
-- **Holds:** Which session is the merger of a project on a machine.
-- **Written by:** `gateway/merger.go`, `gateway/merger_restore.go`, `gateway/session_replace.go`
-- **Read by:** `gateway/caller_agent.go`, `gateway/cto_session.go`, `gateway/delivery_changes.go`, `gateway/delivery_tasks.go`, `gateway/graph_lifecycle.go`, `gateway/lead_session.go`, `gateway/lead_session_migration.go`, `gateway/leads_max.go`, `gateway/node_scopes.go`, `gateway/org_read.go` and others
-- **Shown in:** TUI, Desk; TUI, Graph; CTO op `merger_set`; CTO op `merger_get`; CTO op `merger_restore`
-- **Kept:** Until the merger is stopped or replaced.
 
 ## Workers and picker
 
@@ -822,49 +634,17 @@ Worker runs, their quality and cost, and the data the picker reads.
 
 - **Holds:** One row per candidate (worker, model and effort) of every automatic worker pick, with the prices, scores and weights the picker read and why it was chosen or left out.
 - **Written by:** `gateway/worker_assessment.go`
-- **Read by:** No reader in the gateway. `tools/pickerreplay` and `research/picker-ml` read the table from the database file.
+- **Read by:** `tools/pickerreplay`, `research/picker-ml`
 - **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
 - **Kept:** Forever.
-
-### project_policies
-
-- **Holds:** The delegation policy the owner set for a project on a machine: how its sessions handle code changes (do it themselves, a subagent or a worker) and which models to use.
-- **Written by:** `gateway/store_policy.go`
-- **Read by:** `gateway/store_graph.go`, `gateway/store_policy.go`, `gateway/worker_sandbox_settings.go`
-- **Shown in:** TUI, Sessions; CTO op `session_policy`; tool `agent_settings_read`
-- **Kept:** Until the owner clears the policy.
 
 ### quota_blocks
 
-- **Holds:** One row per machine, provider and quota window that a worker run reported as used up, with the time it resets.
-- **Written by:** `gateway/store_record.go`
-- **Read by:** `gateway/store_record.go`
+- **Holds:** One row per quota window of a provider. A row with a machine says that a worker run reported the window used up there, and when it resets. A row with no machine says how many tokens the window holds, learned from the last time it ran out.
+- **Written by:** `gateway/quota_burn.go`, `gateway/store_record.go`
+- **Read by:** `gateway/quota_burn.go`, `gateway/store_record.go`
 - **Shown in:** TUI, Quotas (Subscriptions)
-- **Kept:** Rows are not deleted; one row per window, overwritten, and ignored after its reset time.
-
-### quota_budgets
-
-- **Holds:** One row per provider and window length holding the token budget learned from the last time that window ran out.
-- **Written by:** `gateway/quota_burn.go`
-- **Read by:** `gateway/quota_burn.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** One row per provider and window length, replaced by the newest failure.
-
-### start_override_facts
-
-- **Holds:** One row per Desk ask about a model override on a worker start, with the harness, model, effort and family facts that the ask is about.
-- **Written by:** `gateway/start_override.go`
-- **Read by:** `gateway/start_override.go`
-- **Shown in:** TUI, Desk (Needs you)
-- **Kept:** Forever.
-
-### table_versions
-
-- **Holds:** One row per watched table holding a change counter that database triggers raise; today only worker_runs.
-- **Written by:** Triggers on `worker_runs`. No Go code writes it.
-- **Read by:** `gateway/runs_snapshot.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** One row, updated in place by triggers.
+- **Kept:** Rows are not deleted; one row per window, overwritten. A machine row is ignored after its reset time. A learned budget is replaced by the newest failure.
 
 ### worker_assessments
 
@@ -874,41 +654,17 @@ Worker runs, their quality and cost, and the data the picker reads.
 - **Shown in:** TUI, Quotas (Workers log, Difficulty details); tool `agent_workers_find`
 - **Kept:** Forever.
 
-### worker_brief_defects
-
-- **Holds:** One row per defect that was blamed on the brief the caller wrote rather than on the worker, with severity and note.
-- **Written by:** `gateway/brief_check.go`, `gateway/ratings.go`
-- **Read by:** `gateway/ratings.go`, `gateway/scores_weekly.go`, `gateway/worker_log.go`
-- **Shown in:** TUI, Quotas (Workers log); tool `agent_worker_rate`
-- **Kept:** Forever.
-
-### worker_brief_rejections
-
-- **Holds:** One row per time the brief check refused a worker brief from a caller, counting the failures for that task.
-- **Written by:** `gateway/brief_check.go`
-- **Read by:** `gateway/brief_check.go`
-- **Shown in:** tool `agent_worker_start`
-- **Kept:** Forever.
-
 ### worker_defects
 
-- **Holds:** One row per defect found in a worker's result, from a rating or filed automatically (failed verify, failed test, fix of a shipped change), with severity, cause and the change it came from.
+- **Holds:** One row per defect found in a worker's result, from a rating or filed automatically (failed verify, failed test, fix of a shipped change), with severity, cause and the change it came from. Its blame says whether the worker or the brief the caller wrote caused it. A brief defect is charged to the caller and never reaches the picker. The run it names holds the model, harness and difficulty.
 - **Written by:** `gateway/defect_auto.go`, `gateway/ratings.go`, `gateway/side_fold.go`
-- **Read by:** `gateway/defect_auto.go`, `gateway/picker.go`, `gateway/quality_families.go`, `gateway/ratings.go`, `gateway/scores_weekly.go`
-- **Shown in:** tool `agent_worker_rate`; TUI, Quotas (Quality · worker picker)
-- **Kept:** Forever.
-
-### worker_rate_offers
-
-- **Holds:** One row per finished worker for which the caller was offered a chance to rate it, with whether the ask was actually made.
-- **Written by:** `gateway/ratings.go`, `gateway/session_replace.go`
-- **Read by:** `gateway/ratings.go`
-- **Shown in:** tool `agent_worker_rate`
+- **Read by:** `gateway/defect_auto.go`, `gateway/picker.go`, `gateway/quality_families.go`, `gateway/ratings.go`, `gateway/scores_weekly.go`, `gateway/worker_log.go`
+- **Shown in:** tool `agent_worker_rate`; TUI, Quotas (Workers log, Quality · worker picker)
 - **Kept:** Forever.
 
 ### worker_ratings
 
-- **Holds:** One row per rating a caller gave to a worker's result, with a score and note.
+- **Holds:** One row per rating a caller gave to a worker's result, with a score and note. The run it names holds the model, harness and difficulty.
 - **Written by:** `gateway/ratings.go`
 - **Read by:** `gateway/quality.go`, `gateway/quality_families.go`, `gateway/ratings.go`
 - **Shown in:** tool `agent_worker_rate`; TUI, Quotas (Quality · worker picker)
@@ -916,67 +672,35 @@ Worker runs, their quality and cost, and the data the picker reads.
 
 ### worker_runs
 
-- **Holds:** One row per worker run: which machine, harness and model, how it ended, how long it ran, how much rework it needed and how hard it struggled.
-- **Written by:** `gateway/rework_backfill.go`, `gateway/session_replace.go`, `gateway/store_record.go`, `gateway/task_rework_backfill.go`, `gateway/track.go`, `gateway/worker_cause.go`
+- **Holds:** One row per worker run: which machine, harness and model, how it ended, how long it ran, how much rework it needed and how hard it struggled. It also holds the tokens the run's session used by kind and their cost at API prices when the run was recorded, a visual proof report when the worker said it could not give one, and whether the caller was offered a rating (that offer is per session and sits on its first run).
+- **Written by:** `gateway/ratings.go`, `gateway/rework_backfill.go`, `gateway/session_replace.go`, `gateway/store_record.go`, `gateway/task_rework_backfill.go`, `gateway/track.go`, `gateway/worker_cause.go`
 - **Read by:** `gateway/context_resolver.go`, `gateway/delivery_tasks.go`, `gateway/intake_feeds.go`, `gateway/loop.go`, `gateway/member_loop.go`, `gateway/model_health.go`, `gateway/quota_burn.go`, `gateway/ratings.go`, `gateway/rework_backfill.go`, `gateway/runs_snapshot.go` and others
 - **Shown in:** TUI, Quotas (Workers log); tool `agent_workers_find`
 - **Kept:** Forever by default; the gateway flag keep-worker-runs can prune runs older than a set time.
 
 ### worker_starts
 
-- **Holds:** One row per request to start a worker, with the machine, project, harness, session, whether it is open or closed, and the brief's done list. Two columns serve the picker: `brief_hash` (a hash of the project and the problem and task text) and `not_attempted_at` (when a run of the start ended without attempting the task).
-- **Written by:** `gateway/brief_launch.go`, `gateway/session_replace.go`, `gateway/store.go`, `gateway/worker_starts.go`
-- **Read by:** `gateway/brief_launch.go`, `gateway/context_resolver.go`, `gateway/graph_lifecycle.go`, `gateway/track.go`, `gateway/worker_starts.go`
+- **Holds:** One row per request to start a worker, with the machine, project, harness, session, whether it is open or closed, and the brief's done list. A start that the brief check refused is a closed row in state `refused`, with the task key and the failures, so the third attempt of a task can start. Two columns serve the picker: `brief_hash` (a hash of the project and the problem and task text) and `not_attempted_at` (when a run of the start ended without attempting the task).
+- **Written by:** `gateway/brief_check.go`, `gateway/brief_launch.go`, `gateway/session_replace.go`, `gateway/store.go`, `gateway/worker_starts.go`
+- **Read by:** `gateway/brief_check.go`, `gateway/brief_launch.go`, `gateway/context_resolver.go`, `gateway/graph_lifecycle.go`, `gateway/track.go`, `gateway/worker_starts.go`
 - **Shown in:** tool `agent_worker_start`; tool `agent_workers_find`
 - **Kept:** Closed starts are deleted after 30 days, when the next start is recorded.
 
-### worker_usage
+## Skills and shared MCP servers
 
-- **Holds:** One row per worker session holding its token usage, used to work out what the run cost.
-- **Written by:** `gateway/prices.go`
-- **Read by:** `gateway/prices.go`
-- **Shown in:** TUI, Quotas (Workers log)
-- **Kept:** Replaced on each usage report, never deleted.
-
-### worker_visual_proof
-
-- **Holds:** One row per worker run saying whether the worker gave visual proof (a screenshot or similar) or the check was unavailable.
-- **Written by:** `gateway/track.go`
-- **Read by:** `gateway/scores_weekly.go`
-- **Shown in:** TUI, Quotas (Quality · scores over time)
-- **Kept:** Forever.
-
-## Tools and skills
-
-Tools, shared MCP servers, skills, and their versions.
-
-### mcp_imports
-
-- **Holds:** One row per MCP server imported from a machine's own config, keeping the original record.
-- **Written by:** `gateway/mcp_import_apply.go`, `gateway/mcp_scope.go`
-- **Read by:** `gateway/mcp_import.go`
-- **Shown in:** CTO op `mcp_import`; CTO op `mcp_import_candidates`
-- **Kept:** Until the tool is forgotten.
+The skill archive and its lists, and the shared MCP servers.
 
 ### mcp_servers
 
 - **Holds:** One row per shared MCP server: its name, the machine that runs it, its spec, whether it is on, who added it, and its last health and tool list.
-- **Written by:** `gateway/mcp_import_apply.go`, `gateway/mcp_store.go`
-- **Read by:** `gateway/inventory.go`, `gateway/mcp_import.go`, `gateway/mcp_import_apply.go`, `gateway/mcp_scope.go`, `gateway/mcp_store.go`
-- **Shown in:** tool `agent_mcp_servers_find`; tool `agent_mcp_test`; TUI, Tools; CTO op `mcp_change`
+- **Written by:** `gateway/mcp_store.go`
+- **Read by:** `gateway/mcp_store.go`
+- **Shown in:** tool `agent_mcp_servers_find`; tool `agent_mcp_test`; CTO op `mcp_change`
 - **Kept:** Until the server is removed.
-
-### plans
-
-- **Holds:** One row per prepared plan before it is applied: a tool plan, an MCP import plan or a native MCP removal plan (told apart by kind), with the snapshot it was built on and whether it was applied.
-- **Written by:** `gateway/mcp_import_apply.go`, `gateway/mcp_native_remove.go`, `gateway/mcp_scope.go`, `gateway/plan_kinds_migration.go`, `gateway/tools_assignment.go`, `gateway/tools_group.go`
-- **Read by:** `gateway/inventory.go`, `gateway/mcp_import_apply.go`, `gateway/mcp_native_remove.go`, `gateway/tools_assignment.go`, `gateway/tools_feed.go`, `gateway/tools_group.go`, `gateway/tools_plan.go`
-- **Shown in:** CTO op `tools_change`; CTO op `mcp_import`
-- **Kept:** Forever, except tool plans of a tool that is forgotten.
 
 ### skill_archive
 
-- **Holds:** One row per stored version of every skill, with its full text, hash, source, who added it and whether it was removed.
+- **Holds:** One row per stored version of every skill, with its full text, hash, source, who added it, whether it was removed and `in_use`: one version per skill has `in_use` 1, the version a node that follows the latest gets.
 - **Written by:** `gateway/skill_archive_migration.go`, `gateway/skillarchive.go`
 - **Read by:** `gateway/skill_archive_migration.go`, `gateway/skill_lists.go`, `gateway/skillarchive.go`, `gateway/skillarchive_intake.go`, `gateway/skillarchive_read.go`
 - **Shown in:** CTO op `skill_archive`
@@ -990,28 +714,12 @@ Tools, shared MCP servers, skills, and their versions.
 - **Shown in:** CTO op `skill_archive`
 - **Kept:** Until the same skill is added again or a removal is undone.
 
-### skill_archive_changes
+### skill_changes
 
-- **Holds:** One row per change made to the skill archive (add, remove, promote), kept so the change can be undone.
-- **Written by:** `gateway/skillarchive.go`
-- **Read by:** `gateway/skill_archive_migration.go`, `gateway/skillarchive.go`
-- **Shown in:** CTO op `skill_archive`
-- **Kept:** Forever.
-
-### skill_archive_latest
-
-- **Holds:** One row per skill naming the version that is in use now.
-- **Written by:** `gateway/skill_archive_migration.go`, `gateway/skillarchive.go`
-- **Read by:** `gateway/skillarchive.go`
-- **Shown in:** CTO op `skill_archive`
-- **Kept:** One row per skill, replaced when the version in use changes.
-
-### skill_list_changes
-
-- **Holds:** One row per change to the skill lists (what was added, removed or pinned at a level), kept so the change can be undone.
-- **Written by:** `gateway/skill_lists.go`
-- **Read by:** `gateway/skill_lists.go`
-- **Shown in:** CTO op `skills`
+- **Holds:** One row per change to the skill archive (add, remove, promote, undo of those) or to the skill lists (what was added, removed or pinned at a level), told apart by `kind` (`archive` or `list`). It is kept so the change can be undone.
+- **Written by:** `gateway/skillarchive.go`, `gateway/skill_lists.go`
+- **Read by:** `gateway/skill_archive_migration.go`, `gateway/skillarchive.go`, `gateway/skill_lists.go`
+- **Shown in:** CTO op `skill_archive`; CTO op `skills`; Desk undo
 - **Kept:** Forever.
 
 ### skill_node_lists
@@ -1021,76 +729,4 @@ Tools, shared MCP servers, skills, and their versions.
 - **Read by:** `gateway/skill_lists.go`
 - **Shown in:** CTO op `skills`
 - **Kept:** The rows of a level and scope are replaced as a whole on each set or undo.
-
-### skill_versions
-
-- **Holds:** One row per version of a skill imported into the gateway's own copy store, with its hash, git commit, source machine and version number.
-- **Written by:** `gateway/skillstore.go`
-- **Read by:** `gateway/inventory.go`, `gateway/skillarchive.go`, `gateway/skillbackup.go`, `gateway/skillstore.go`, `gateway/tools_assignment.go`, `gateway/tools_plan.go`, `gateway/tools_toggle.go`, `gateway/tools_update.go`
-- **Shown in:** CTO op `tools_versions`; CTO op `tools_export`; CTO op `tools_import`
-- **Kept:** Forever.
-
-### tool_accepted
-
-- **Holds:** One row per tool finding (a difference between machines) that the owner chose to accept as it is.
-- **Written by:** `gateway/tools_accepted.go`
-- **Read by:** `gateway/tools_accepted.go`
-- **Shown in:** CTO op `tools_accepted`; CTO op `tools_accept`; TUI, Tools
-- **Kept:** Until the owner takes the acceptance back.
-
-### tool_audit
-
-- **Holds:** One row per tool plan or apply, including refused ones: who did it, which item, the revision, the targets and the result.
-- **Written by:** `gateway/tools_assignment.go`
-- **Read by:** `gateway/tools_assignment.go`
-- **Shown in:** CTO op `tools_history`
-- **Kept:** Forever.
-
-### tool_identities
-
-- **Holds:** One row per distinct skill, MCP server or other tool by kind, name and content hash.
-- **Written by:** `gateway/inventory.go`, `gateway/mcp_scope.go`, `gateway/tools_folder.go`
-- **Read by:** `gateway/inventory.go`, `gateway/mcp_import_apply.go`, `gateway/mcp_scope.go`, `gateway/skillarchive.go`, `gateway/skillarchive_intake.go`, `gateway/skillstore.go`, `gateway/tools_assignment.go`, `gateway/tools_choose.go`, `gateway/tools_feed.go`, `gateway/tools_plan.go` and others
-- **Shown in:** TUI, Tools; CTO op `tools_items`; CTO op `tools_item`
-- **Kept:** Removed when no machine location, skill version or revision refers to it any more.
-
-### tool_locations
-
-- **Holds:** One row per tool a machine reported in its inventory, with the folder or file where it was seen.
-- **Written by:** `gateway/inventory.go`
-- **Read by:** `gateway/inventory.go`, `gateway/mcp_import.go`, `gateway/skillarchive.go`, `gateway/skillarchive_intake.go`, `gateway/skillstore.go`, `gateway/tools_assignment.go`, `gateway/tools_choose.go`, `gateway/tools_toggle.go`, `gateway/tools_update.go`
-- **Shown in:** TUI, Tools; CTO op `tools_items`; CTO op `inventory_get`
-- **Kept:** Replaced on each inventory report of the machine.
-
-### tool_project_seen
-
-- **Holds:** One row per tool and project pair that the gateway has already seen, so only new projects get the 'new projects' choice.
-- **Written by:** `gateway/tools_toggle.go`
-- **Read by:** `gateway/tools_toggle.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Forever.
-
-### tool_project_settings
-
-- **Holds:** One row per tool holding the owner's choice for new projects: whether the tool is turned on or off there.
-- **Written by:** `gateway/tools_toggle.go`
-- **Read by:** `gateway/tools_toggle.go`
-- **Shown in:** TUI, Tools; CTO op `tools_change`
-- **Kept:** Forever, one row per tool, overwritten.
-
-### tool_results
-
-- **Holds:** One row per target of a tool rollout holding whether it worked, was refused or failed, with the branch and commit it produced.
-- **Written by:** `gateway/mcp_scope.go`, `gateway/tools_feed.go`
-- **Read by:** `gateway/inventory.go`, `gateway/tools_assignment.go`, `gateway/tools_feed.go`
-- **Shown in:** TUI, Tools; CTO op `tools_items`
-- **Kept:** Until the tool is forgotten (an MCP item removed).
-
-### tool_revisions
-
-- **Holds:** One row per assignment revision of a tool: which projects or machines it is turned on for, who set it and when.
-- **Written by:** `gateway/mcp_scope.go`, `gateway/tools_assignment.go`
-- **Read by:** `gateway/inventory.go`, `gateway/mcp_scope.go`, `gateway/tools_assignment.go`, `gateway/tools_feed.go`, `gateway/tools_group.go`, `gateway/tools_toggle.go`
-- **Shown in:** TUI, Tools; CTO op `tools_change`; CTO op `tools_history`
-- **Kept:** Until the tool is forgotten (an MCP item removed).
 

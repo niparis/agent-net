@@ -206,11 +206,9 @@ func TestMCPFeaturesEndToEnd(t *testing.T) {
 	}
 }
 
-// Resources and prompts follow the same access rules as tools: a server
-// scoped to one project is not listed to another project's session, and its
-// reads and prompts are refused at the gateway, whatever the request claims.
-// A disabled server is refused. An offline host is named in the list and in
-// the error, and the other servers still list.
+// Resources and prompts follow the same access rules as tools: every enabled
+// server is listed to every session. A disabled server is refused. An offline
+// host is named in the list and in the error, and the other servers still list.
 func TestMCPFeaturesAccessAndOffline(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
@@ -218,93 +216,42 @@ func TestMCPFeaturesAccessAndOffline(t *testing.T) {
 	work := startNode(t, g, nodeOpts{cmdline: "pi"})
 	other := startNode(t, g, nodeOpts{cmdline: "pi"})
 	root := t.TempDir()
-	repos := map[string]string{}
-	for _, name := range []string{"alpha", "beta"} {
-		dir := filepath.Join(root, name)
-		if err := os.Mkdir(dir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		gitIn(t, dir, "init", "-q", "-b", "main")
-		repos[name] = dir
+	dir := filepath.Join(root, "alpha")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
 	}
+	gitIn(t, dir, "init", "-q", "-b", "main")
 	cli := cliClient(t, work)
-	cli.mustCall("project_add", protocol.ProjectAddRequest{Paths: []string{repos["alpha"], repos["beta"]}})
-	alpha, alphaID := helloPi(t, work, "na", repos["alpha"], false)
-	beta, _ := helloPi(t, work, "nb", repos["beta"], false)
+	cli.mustCall("project_add", protocol.ProjectAddRequest{Paths: []string{dir}})
+	alpha, _ := helloPi(t, work, "na", dir, false)
 
 	cliClient(t, host).mustCall("mcp_add", protocol.MCPAdd{Server: httpSpec("secret", labelledServer(t, "secret").URL)})
 	cliClient(t, other).mustCall("mcp_add", protocol.MCPAdd{Server: httpSpec("open", labelledServer(t, "open").URL)})
 
-	// Assign "secret" to alpha.
-	var page protocol.ToolsPage
-	json.Unmarshal(cli.mustCall("tools_items", map[string]any{"kind": "mcp"}), &page)
-	var item protocol.ToolItem
-	for _, it := range page.Items {
-		if it.Name == "secret" {
-			item = it
-		}
-	}
-	var plan protocol.ToolPlan
-	json.Unmarshal(cli.mustCall("tools_plan", protocol.ToolPlanRequest{Item: item.ID,
-		Target: protocol.ToolAssignment{Scope: "projects", Projects: []string{"alpha"}}}), &plan)
-	cli.mustCall("tools_apply", protocol.ToolPlanID{ID: plan.ID})
-
 	for _, op := range []string{protocol.MCPOpResources, protocol.MCPOpTemplates, protocol.MCPOpPrompts} {
-		if _, ok := featureList(t, alpha, op)["secret"]; !ok {
-			t.Fatalf("%s: alpha does not see secret", op)
-		}
-		got := featureList(t, beta, op)
-		if _, ok := got["secret"]; ok {
-			t.Fatalf("%s: beta sees secret", op)
-		}
-		if _, ok := got["open"]; !ok {
-			t.Fatalf("%s: beta does not see open", op)
+		got := featureList(t, alpha, op)
+		for _, name := range []string{"secret", "open"} {
+			if _, ok := got[name]; !ok {
+				t.Fatalf("%s: a session does not see %s", op, name)
+			}
 		}
 	}
 	if out, err := readResource(t, alpha, "secret", "test://hello"); err != nil || out.Contents[0].Text != "hello from secret" {
-		t.Fatalf("alpha read = %+v, %v", out, err)
-	}
-	if _, err := readResource(t, beta, "secret", "test://hello"); err == nil || !strings.Contains(err.Error(), "not assigned to this project") {
-		t.Fatalf("beta read: %v", err)
-	}
-	if _, err := getPrompt(t, beta, "secret", "greet", map[string]string{"name": "x"}); err == nil || !strings.Contains(err.Error(), "not assigned to this project") {
-		t.Fatalf("beta prompt: %v", err)
-	}
-	// Naming one server in a list gets the same check.
-	if _, err := beta.call("mcp_feature", protocol.MCPFeature{Op: protocol.MCPOpResources, Server: "secret"}); err == nil || !strings.Contains(err.Error(), "not assigned to this project") {
-		t.Fatalf("beta named list: %v", err)
-	}
-	// Claiming alpha's session or the owner does not help.
-	eventually(t, "owner session", func() bool { return work.d.ownerSessionID() != "" })
-	for _, claim := range []map[string]any{{"session_id": alphaID}, {"owner": work.d.ownerSessionID()}, {"project": "alpha"}} {
-		req := map[string]any{"op": protocol.MCPOpRead, "server": "secret", "uri": "test://hello"}
-		for k, v := range claim {
-			req[k] = v
-		}
-		if _, err := beta.call("mcp_feature", req); err == nil || !strings.Contains(err.Error(), "not assigned to this project") {
-			t.Fatalf("claim %v: %v", claim, err)
-		}
-	}
-	// The owner's command line has the owner's authority.
-	if out, err := readResource(t, cli, "secret", "test://hello"); err != nil || out.Contents[0].Text != "hello from secret" {
-		t.Fatalf("owner read = %+v, %v", out, err)
-	}
-	if _, ok := featureList(t, cli, protocol.MCPOpResources)["secret"]; !ok {
-		t.Fatal("the owner's list does not show secret")
+		t.Fatalf("read = %+v, %v", out, err)
 	}
 
 	// Disabled: not listed, and a read says so.
 	cli.mustCall("mcp_enable", protocol.MCPSetEnabled{Name: "open", Enabled: false})
-	if _, ok := featureList(t, beta, protocol.MCPOpResources)["open"]; ok {
+	if _, ok := featureList(t, alpha, protocol.MCPOpResources)["open"]; ok {
 		t.Fatal("a disabled server is listed")
 	}
-	if _, err := readResource(t, beta, "open", "test://hello"); err == nil || !strings.Contains(err.Error(), "disabled") {
+	if _, err := readResource(t, alpha, "open", "test://hello"); err == nil || !strings.Contains(err.Error(), "disabled") {
 		t.Fatalf("disabled read: %v", err)
 	}
 	cli.mustCall("mcp_enable", protocol.MCPSetEnabled{Name: "open", Enabled: true})
 
-	// The host of "secret" goes offline: alpha's list names it with the
-	// reason and still has "open"; a read says the host is offline.
+	// The host of "secret" goes offline: the list names it with the reason and
+	// still has "open"; a read says the host is offline.
 	host.d.Stop()
 	eventually(t, "host offline", func() bool {
 		for _, s := range listServers(t, cli) {

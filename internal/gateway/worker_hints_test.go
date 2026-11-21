@@ -93,7 +93,7 @@ func TestBriefDefectChargedToCallerNotWorker(t *testing.T) {
 		t.Fatalf("brief defect result: %+v", out)
 	}
 	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_brief_defects WHERE worker_session_id=? AND caller=? AND severity=2`, worker, caller).Scan(&n); err != nil {
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_defects WHERE blame='brief' AND session_id=? AND caller=? AND severity=2`, worker, caller).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 1 {
@@ -103,13 +103,13 @@ func TestBriefDefectChargedToCallerNotWorker(t *testing.T) {
 	if err := s.db.QueryRow(`SELECT id FROM worker_runs WHERE session_id=? ORDER BY id DESC LIMIT 1`, worker).Scan(&wantRun); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.db.QueryRow(`SELECT run_id FROM worker_brief_defects WHERE worker_session_id=?`, worker).Scan(&gotRun); err != nil {
+	if err := s.db.QueryRow(`SELECT run_id FROM worker_defects WHERE blame='brief' AND session_id=?`, worker).Scan(&gotRun); err != nil {
 		t.Fatal(err)
 	}
 	if gotRun != wantRun {
 		t.Fatalf("brief defect run = %d, want the worker run %d", gotRun, wantRun)
 	}
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_defects WHERE session_id=?`, worker).Scan(&n); err != nil {
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_defects WHERE blame='worker' AND session_id=?`, worker).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 0 {
@@ -179,7 +179,7 @@ func TestBriefDefectFromLeadChargedToMember(t *testing.T) {
 		t.Fatalf("a team lead was refused: %+v", out)
 	}
 	var caller string
-	if err := r.s.db.QueryRow(`SELECT caller FROM worker_brief_defects WHERE worker_session_id=?`, worker).Scan(&caller); err != nil {
+	if err := r.s.db.QueryRow(`SELECT caller FROM worker_defects WHERE blame='brief' AND session_id=?`, worker).Scan(&caller); err != nil {
 		t.Fatal(err)
 	}
 	if caller != r.member {

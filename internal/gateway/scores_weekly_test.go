@@ -125,12 +125,12 @@ func TestScoresWeeklyReleaseTagsLandInRightWeek(t *testing.T) {
 	}
 
 	// Brief defect in W46
-	if _, err := s.db.Exec(`INSERT INTO worker_brief_defects (worker_session_id, caller, severity, at) VALUES ('s2', 'owner', 2, ?)`, tMon); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO worker_defects (session_id, caller, severity, at, blame) VALUES ('s2', 'owner', 2, ?, 'brief')`, tMon); err != nil {
 		t.Fatal(err)
 	}
 
 	// Late defect in W46
-	if _, err := s.db.Exec(`INSERT INTO worker_defects (session_id, severity, at, moved_at) VALUES ('s2', 1, ?, 0)`, tMon); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO worker_defects (session_id, severity, at) VALUES ('s2', 1, ?)`, tMon); err != nil {
 		t.Fatal(err)
 	}
 
@@ -237,7 +237,7 @@ func TestScoresWeeklyBriefDefectCountsInItsWeek(t *testing.T) {
 	s, _ := newTestStore(t)
 	// Wednesday of the reference week W46.
 	at := time.Date(2026, 11, 11, 10, 30, 0, 0, time.UTC).Unix()
-	if _, err := s.db.Exec(`INSERT INTO worker_brief_defects (worker_session_id, caller, severity, at) VALUES ('s2', 'owner', 2, ?)`, at); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO worker_defects (session_id, caller, severity, at, blame) VALUES ('s2', 'owner', 2, ?, 'brief')`, at); err != nil {
 		t.Fatal(err)
 	}
 

@@ -19,7 +19,7 @@ func (s *Store) RestoreMergerRegistrations(project string, saved []protocol.Merg
 			return reject("invalid merger snapshot")
 		}
 		var valid bool
-		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=? AND s.node_id=? AND `+sessionRepoSQL+`=? AND s.worker='')`, q.SessionID, q.NodeID, project).Scan(&valid); err != nil {
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions s WHERE s.id=? AND s.node_id=? AND `+sessionRepoSQL+`=? AND s.worker='')`, q.SessionID, q.NodeID, project).Scan(&valid); err != nil {
 			return err
 		}
 		if !valid {
@@ -47,7 +47,7 @@ func (s *Store) RestoreMergerRegistrations(project string, saved []protocol.Merg
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM project_mergers WHERE project=?`, project); err != nil {
+	if _, err := tx.Exec(`UPDATE repos SET merger_session='',merger_node='' WHERE id=?`, project); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM graph_edges WHERE target=? AND source IN ('/delivery/merger','/delivery/caller') AND kind<>'accepts'`, project); err != nil {
@@ -59,7 +59,7 @@ func (s *Store) RestoreMergerRegistrations(project string, saved []protocol.Merg
 		}
 	}
 	for _, q := range saved {
-		if _, err := tx.Exec(`INSERT INTO project_mergers(project,node_id,session_id) VALUES(?,?,?)`, project, q.NodeID, q.SessionID); err != nil {
+		if _, err := tx.Exec(`UPDATE repos SET merger_node=?,merger_session=? WHERE id=?`, q.NodeID, q.SessionID, project); err != nil {
 			return err
 		}
 		// A restored merger gets the Agent and edge a started merger has.

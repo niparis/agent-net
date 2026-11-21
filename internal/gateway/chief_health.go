@@ -15,7 +15,7 @@ import (
 // it, the asks that wait for it move to the owner path (the Desk, which the CTO
 // reads and answers, as before the chief existed), and the Desk says why.
 
-// chiefSilentKey is the owner_settings row that holds the time (Unix nanos) a
+// chiefSilentKey is the gateway_state row that holds the time (Unix nanos) a
 // silent chief was marked unavailable. A sort by the chief, or ChiefRetryAfter,
 // ends it.
 const chiefSilentKey = "chief_silent_at"
@@ -97,7 +97,7 @@ func (s *Store) chiefSilent(q askDB, chief string, now time.Time) (bool, error) 
 		return false, err
 	}
 	var markedS string
-	err := q.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, chiefSilentKey).Scan(&markedS)
+	err := q.QueryRow(`SELECT value FROM gateway_state WHERE key=?`, chiefSilentKey).Scan(&markedS)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return false, err
 	}
@@ -107,9 +107,12 @@ func (s *Store) chiefSilent(q askDB, chief string, now time.Time) (bool, error) 
 		if lastSort <= marked && nowN-marked < int64(protocol.ChiefRetryAfter) {
 			return true, nil
 		}
-		if _, err := q.Exec(`DELETE FROM owner_settings WHERE key=?`, chiefSilentKey); err != nil {
+		if _, err := q.Exec(`DELETE FROM gateway_state WHERE key=?`, chiefSilentKey); err != nil {
 			return false, err
 		}
+		// The Inbox screen shows the chief as silent, and its mark can end by
+		// time alone, with no ask or sort write beside it.
+		s.bumpStateTopics(protocol.TopicInbox)
 	}
 	// The oldest ask that was sent to the chief and still waits for it.
 	var oldest sql.NullInt64
@@ -129,9 +132,12 @@ func (s *Store) chiefSilent(q askDB, chief string, now time.Time) (bool, error) 
 	if nowN-anchor < int64(protocol.ChiefSilentAfter) {
 		return false, nil
 	}
-	_, err = q.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?)
-		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, chiefSilentKey, fmt.Sprint(nowN), nowN)
-	return err == nil, err
+	if _, err = q.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES(?,?,?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, chiefSilentKey, fmt.Sprint(nowN), nowN); err != nil {
+		return false, err
+	}
+	s.bumpStateTopics(protocol.TopicInbox)
+	return true, nil
 }
 
 // chiefMissedWakes counts the wakes the chief has missed on one ask, and

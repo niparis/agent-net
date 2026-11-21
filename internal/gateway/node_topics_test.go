@@ -34,23 +34,6 @@ func TestNodeHealthAndInventoryMoveOnlyTheTopicsThatShowThem(t *testing.T) {
 			t.Fatalf("a health report moved the %s topic", topic)
 		}
 	}
-
-	report := protocol.InventoryReport{State: protocol.InventoryOK, Items: []protocol.InventoryItem{{
-		Kind: protocol.InventorySkill, Name: "demo", Hash: "abc", Harness: "claude", Scope: protocol.InventoryUser,
-		Source: "user", Location: "/home/u/.claude/skills/demo", State: protocol.InventoryOK}}}
-	nodesTable := s.readStamp([]string{"nodes"})
-	if err := s.SetInventory(node, report); err != nil {
-		t.Fatal(err)
-	}
-	if s.readStamp([]string{"nodes"}) != nodesTable {
-		t.Fatal("an inventory report moved the nodes table")
-	}
-	afterInventory := g.topicVersions()
-	for _, topic := range []string{protocol.TopicProjects, protocol.TopicUsage} {
-		if afterInventory[topic] != afterHealth[topic] {
-			t.Fatalf("an inventory report moved the %s topic", topic)
-		}
-	}
 }
 
 // The Projects, Usage and Nodes topics name the nodes columns their reads use.

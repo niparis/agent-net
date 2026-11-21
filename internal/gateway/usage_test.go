@@ -24,15 +24,15 @@ func TestSessionCountsSplitOnlineRecentAndOld(t *testing.T) {
 		ids[name] = id
 	}
 	// "old" went offline 3 days ago, "recent" 2 hours ago.
-	clk.t = clk.t.Add(-72 * time.Hour)
+	clk.advance(-72 * time.Hour)
 	if err := s.SetSessionOffline(n, ids["old"]); err != nil {
 		t.Fatal(err)
 	}
-	clk.t = clk.t.Add(70 * time.Hour)
+	clk.advance(70 * time.Hour)
 	if err := s.SetSessionOffline(n, ids["recent"]); err != nil {
 		t.Fatal(err)
 	}
-	clk.t = clk.t.Add(2 * time.Hour)
+	clk.advance(2 * time.Hour)
 	c, err := s.SessionCounts(24 * time.Hour)
 	if err != nil {
 		t.Fatal(err)

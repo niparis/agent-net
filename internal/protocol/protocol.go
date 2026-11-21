@@ -455,9 +455,6 @@ type AgentView struct {
 	// PeerTrust is true when the owner allowed this session to act on
 	// requests from other agents without asking (decision 0012).
 	PeerTrust bool `json:"peer_trust,omitempty"`
-	// Delegation is the effective delegation policy of the session (decision
-	// 0014), nil when it has none. Only the owner sets it.
-	Delegation *DelegationView `json:"delegation,omitempty"`
 	// Waiting is what the session is waiting to hear from its user (decision
 	// 0016), nil when it is not waiting.
 	Waiting *Waiting `json:"waiting,omitempty"`

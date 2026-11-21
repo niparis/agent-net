@@ -12,7 +12,7 @@ import (
 
 func TestMessageRelayExpiryAndUnknown(t *testing.T) {
 	s, clock := newTestStore(t)
-	clock.t = time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC)
+	clock.set(time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC))
 	a, b := twoSessions(t, s)
 	msg, _, err := send(s, a, b, "relay", "")
 	if err != nil {
@@ -23,7 +23,7 @@ func TestMessageRelayExpiryAndUnknown(t *testing.T) {
 	if _, err := g.relayMessageBody(context.Background(), raw); err == nil || !strings.Contains(err.Error(), "offline") {
 		t.Fatalf("unexpired message: %v", err)
 	}
-	clock.t = clock.t.Add(25 * time.Hour)
+	clock.advance(25 * time.Hour)
 	if _, err := g.relayMessageBody(context.Background(), raw); err == nil || !strings.Contains(err.Error(), "unknown message") {
 		t.Fatalf("expired message: %v", err)
 	}

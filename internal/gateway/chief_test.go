@@ -119,7 +119,7 @@ func TestGatewayStartAdoptsAsksForExistingChief(t *testing.T) {
 	}
 	// The setting was already stored when the gateway stopped, so SetChief
 	// does not run this time. Only the start reconcile can adopt the ask.
-	if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?)`, chiefSessionKey, chief, base.UnixNano()); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES(?,?,?)`, chiefSessionKey, chief, base.UnixNano()); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
@@ -282,7 +282,7 @@ func TestChiefSetAdoptsAsksOpenBeforeIt(t *testing.T) {
 	if next := askNext(t, s, answered); next != protocol.AskNextOwner {
 		t.Fatalf("the answered ask is next %q, want owner", next)
 	}
-	c.t = c.t.Add(31 * time.Second)
+	c.advance(31 * time.Second)
 	body, sent := sendDueChief(t, s, c.now())
 	if !sent {
 		t.Fatal("no batch went to the chief for asks opened before it")
@@ -303,7 +303,7 @@ func TestAskSortListsWaitingAsks(t *testing.T) {
 	if _, err := s.db.Exec(`UPDATE inbox_items SET next_who=? WHERE id=?`, protocol.AskNextOwner, onOwner); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(90 * time.Minute)
+	c.advance(90 * time.Minute)
 	res, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{Result: protocol.AskSortList}})
 	if err != nil {
 		t.Fatal(err)
@@ -334,7 +334,7 @@ func TestChiefRoutesAskAndSendsOneTask(t *testing.T) {
 	if _, sent := sendDueChief(t, s, c.now()); sent {
 		t.Fatal("a batch went out before the quiet window")
 	}
-	c.t = c.t.Add(6 * time.Second)
+	c.advance(6 * time.Second)
 	body, sent := sendDueChief(t, s, c.now())
 	if !sent {
 		t.Fatal("no batch after the quiet window")
@@ -359,15 +359,15 @@ func TestChiefRoutesAskAndSendsOneTask(t *testing.T) {
 func TestChiefBurstIsOneMessage(t *testing.T) {
 	s, c, chief, asker, _ := chiefRig(t)
 	ids := []string{chiefAskKind(t, s, asker, "question", "one")}
-	c.t = c.t.Add(time.Second)
+	c.advance(time.Second)
 	ids = append(ids, chiefAskKind(t, s, asker, "approval", "two"))
-	c.t = c.t.Add(time.Second)
+	c.advance(time.Second)
 	ids = append(ids, chiefAskKind(t, s, asker, "feature_idea", "three"))
-	c.t = c.t.Add(3 * time.Second)
+	c.advance(3 * time.Second)
 	if _, sent := sendDueChief(t, s, c.now()); sent {
 		t.Fatal("the burst went out before its quiet window ended")
 	}
-	c.t = c.t.Add(3 * time.Second)
+	c.advance(3 * time.Second)
 	body, sent := sendDueChief(t, s, c.now())
 	if !sent {
 		t.Fatal("the burst did not go out")
@@ -395,7 +395,7 @@ func TestNoLiveChiefKeepsAskWithOwner(t *testing.T) {
 	if next := askNext(t, s, id); next != protocol.AskNextOwner {
 		t.Fatalf("next = %q with the chief offline, want owner", next)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, sent := sendDueChief(t, s, c.now()); sent {
 		t.Fatal("a batch went to an offline chief")
 	}
@@ -415,7 +415,7 @@ func TestChiefOfflineReturnsWaitingAsksToOwner(t *testing.T) {
 	if next := askNext(t, s, id); next != protocol.AskNextChief {
 		t.Fatalf("next = %q right after the chief went offline, want chief", next)
 	}
-	c.t = c.t.Add(2 * protocol.ChiefWakeInterval)
+	c.advance(2 * protocol.ChiefWakeInterval)
 	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}

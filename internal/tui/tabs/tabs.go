@@ -20,9 +20,8 @@ var All = []Tab{
 	{Name: "Graph", Short: "Graph", Key: "2", Action: "graph tab"},
 	{Name: "Quotas", Short: "Quota", Key: "3", Action: "quotas tab"},
 	{Name: "Messages", Short: "Msg", Key: "4", Action: "messages tab"},
-	{Name: "Tools", Short: "Tools", Key: "5", Action: "tools tab"},
-	{Name: "Settings", Short: "Set", Key: "6", Action: "settings tab"},
-	{Name: "Desk", Short: "Desk", Key: "7", Action: "inbox tab"},
+	{Name: "Settings", Short: "Set", Key: "5", Action: "settings tab"},
+	{Name: "Desk", Short: "Desk", Key: "6", Action: "inbox tab"},
 }
 
 // Names returns the full tab names in tab order.

@@ -23,10 +23,10 @@ import (
 // net in chief_health.go, and nothing is deleted. The chief is a standard agent session: the
 // only special code is the routing of asks, the batch message and the sort.
 
-// chiefSessionKey is the owner_settings row that names the chief session.
+// chiefSessionKey is the gateway_state row that names the chief session.
 const chiefSessionKey = "chief_session"
 
-// chiefClearedKey is the owner_settings row that records a deliberate clear:
+// chiefClearedKey is the gateway_state row that records a deliberate clear:
 // when it happened and the chief.model line then. The clear stands while the
 // line is the same, so a start from the list does not undo it (decision 0171).
 const chiefClearedKey = "chief_cleared"
@@ -79,7 +79,7 @@ SELECT 1 /* chief ask adoption time */;
 // chiefSession is the registered chief session id, or "" when there is none.
 func chiefSession(q askDB) (string, error) {
 	var id string
-	err := q.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, chiefSessionKey).Scan(&id)
+	err := q.QueryRow(`SELECT value FROM gateway_state WHERE key=?`, chiefSessionKey).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -264,14 +264,19 @@ func (s *Store) setChiefSession(q protocol.ChiefSetRequest) error {
 			return err
 		}
 		defer tx.Rollback()
-		if _, err = tx.Exec(`DELETE FROM owner_settings WHERE key IN (?,?)`, chiefSessionKey, chiefSilentKey); err != nil {
+		if _, err = tx.Exec(`DELETE FROM gateway_state WHERE key IN (?,?)`, chiefSessionKey, chiefSilentKey); err != nil {
 			return err
 		}
-		if _, err = tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?)
+		if _, err = tx.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES(?,?,?)
 			ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, chiefClearedKey, string(mark), s.now().UnixNano()); err != nil {
 			return err
 		}
-		return tx.Commit()
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		// The Inbox screen shows a clear of the chief.
+		s.bumpStateTopics(protocol.TopicInbox)
+		return nil
 	}
 	if q.SessionID == "" {
 		return nil
@@ -295,10 +300,10 @@ func (s *Store) setChiefSession(q protocol.ChiefSetRequest) error {
 	defer tx.Rollback()
 	now := s.now().UnixNano()
 	var previous string
-	if err = tx.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, chiefSessionKey).Scan(&previous); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if err = tx.QueryRow(`SELECT value FROM gateway_state WHERE key=?`, chiefSessionKey).Scan(&previous); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	if _, err = tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?)
+	if _, err = tx.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES(?,?,?)
 		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, chiefSessionKey, q.SessionID, now); err != nil {
 		return err
 	}
@@ -314,12 +319,12 @@ func (s *Store) setChiefSession(q protocol.ChiefSetRequest) error {
 		return err
 	}
 	// Naming a chief ends a clear.
-	if _, err = tx.Exec(`DELETE FROM owner_settings WHERE key=?`, chiefClearedKey); err != nil {
+	if _, err = tx.Exec(`DELETE FROM gateway_state WHERE key=?`, chiefClearedKey); err != nil {
 		return err
 	}
 	// A new chief starts with a clean record: an earlier silence was another
 	// session's.
-	if _, err = tx.Exec(`DELETE FROM owner_settings WHERE key=?`, chiefSilentKey); err != nil {
+	if _, err = tx.Exec(`DELETE FROM gateway_state WHERE key=?`, chiefSilentKey); err != nil {
 		return err
 	}
 	h, err := s.availableChief(tx, s.now())
@@ -331,7 +336,12 @@ func (s *Store) setChiefSession(q protocol.ChiefSetRequest) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// The Inbox screen shows which session holds the chief.
+	s.bumpStateTopics(protocol.TopicInbox)
+	return nil
 }
 
 // ChiefStatus reads the registered chief and the model it is set to run on.
@@ -359,8 +369,8 @@ func (s *Store) ChiefStatus() (protocol.ChiefStatus, error) {
 		out.ClearedAt, err = s.chiefClearedAt()
 		return out, err
 	}
-	err = s.db.QueryRow(`SELECT COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),s.title,''), s.online=1 AND s.archived_at=0
-		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, id).Scan(&out.Name, &out.Online)
+	err = s.db.QueryRow(`SELECT COALESCE(NULLIF(s.name,''),s.title,''), s.online=1 AND s.archived_at=0
+		FROM sessions s WHERE s.id=?`, id).Scan(&out.Name, &out.Online)
 	if errors.Is(err, sql.ErrNoRows) {
 		out.Down = "session offline"
 		return out, nil
@@ -1904,7 +1914,7 @@ func maskCharterDraft(d protocol.CharterDraft) protocol.CharterDraft {
 // chief.model line differs from the one it was made under.
 func (s *Store) chiefClearedAt() (int64, error) {
 	var raw string
-	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, chiefClearedKey).Scan(&raw)
+	err := s.db.QueryRow(`SELECT value FROM gateway_state WHERE key=?`, chiefClearedKey).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
 	}

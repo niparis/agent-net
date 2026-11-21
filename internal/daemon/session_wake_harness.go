@@ -34,11 +34,17 @@ type wakeCall struct {
 // A session runs one wake at a time. The gateway shows a woken session offline
 // until it registers, so a second wake in that window would start a second
 // copy of the same agent. It joins the first wake instead. A session this
-// daemon already holds live is not woken at all.
+// daemon already holds live is not started again, but it is registered with
+// the gateway again: the gateway asks for a wake only for a session it shows
+// offline, so a live one here means the two disagree (attachLive).
 func (d *Daemon) wakeSession(ctx context.Context, id, token string, autonomy bool) error {
-	if d.sessionByID(id) != nil {
-		d.Logf("session wake: %s is already live; nothing to start", id)
-		return nil
+	if ls := d.sessionByID(id); ls != nil {
+		d.Logf("session wake: %s is already live here; registering it with the gateway again", id)
+		a, err := d.agentView(ctx, id)
+		if err != nil {
+			return fmt.Errorf("cannot read the session at the gateway: %w", err)
+		}
+		return d.attachLive(ctx, a, ls)
 	}
 	d.wakeMu.Lock()
 	if call, ok := d.wakes[id]; ok {
@@ -236,4 +242,78 @@ func (d *Daemon) waitWokenSession(ctx context.Context, harness string, a protoco
 		case <-ticker.C:
 		}
 	}
+}
+
+// attachWait bounds how long attachLive waits for the gateway to show the
+// session online after the registration.
+const attachWait = 15 * time.Second
+
+// attachLive brings a session this daemon holds live, and the gateway shows
+// offline, online at the gateway. It starts nothing. An OpenCode conversation
+// lives in the owner's shared service, so it stays loaded after the owner
+// closes it in agent-net (session_stop), and its plugin stays connected. The
+// gateway keeps a closed session offline and ignores its registration until
+// OpenCode reports newer activity (UpsertSession), so a wake that answered
+// "already live" left the queued messages to expire. Here the close is lifted
+// the way Enter lifts it, and the session is registered with force. It fails,
+// with the reason, when the gateway still shows the session offline.
+func (d *Daemon) attachLive(ctx context.Context, a protocol.AgentView, ls *localSession) error {
+	id := a.SessionID
+	if ls.info.Harness == "opencode" && ls.info.Worker == nil {
+		// A role session must keep its unattended permission whenever it is
+		// brought back, as on every other resume path.
+		if err := d.ensureLiveOpenCodeRole(ctx, a, ls); err != nil {
+			return err
+		}
+		if _, err := d.call(ctx, "session.remove", protocol.SessionRemove{SessionID: id, Reopen: true}); err != nil {
+			return fmt.Errorf("cannot reopen the session at the gateway: %w", err)
+		}
+	}
+	d.pushSession(ls)
+	ctx, cancel := context.WithTimeout(ctx, attachWait)
+	defer cancel()
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if a, err := d.agentView(ctx, id); err == nil && a.Online {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return errors.New("the session is running here, but the gateway still shows it offline after it was registered again")
+		case <-ticker.C:
+		}
+	}
+}
+
+// ensureLiveOpenCodeRole runs the same permission read and patch as a wake or
+// resume does, for a role session the shared service already holds. An
+// ordinary session has nothing to check.
+func (d *Daemon) ensureLiveOpenCodeRole(ctx context.Context, a protocol.AgentView, ls *localSession) error {
+	if d.resumedRole(ctx, a) == "" {
+		return nil
+	}
+	nativeID, cwd := firstNonEmpty(a.NativeID, ls.info.NativeID), firstNonEmpty(a.Cwd, ls.info.Cwd)
+	service, err := d.ownerOpenCodeService()
+	if err != nil {
+		return fmt.Errorf("the OpenCode service is not running on %s", d.cfg.Hostname)
+	}
+	routes, err := d.discoverOpenCodeRoutes(ctx, service.URL, service.Password, "", service.identity)
+	if err != nil {
+		return fmt.Errorf("cannot reach the OpenCode service: %w", err)
+	}
+	api := openCodeWorkerAPI(ctx, service.URL, service.Password)
+	directory := strings.ReplaceAll(url.QueryEscape(cwd), "+", "%20")
+	path, err := routes.Path(opencodeapi.GetSession, nativeID)
+	if err != nil {
+		return err
+	}
+	body, code, err := api(opencodeapi.GetSession.Method(), path, nil, "x-opencode-directory", directory)
+	if err != nil {
+		return errors.New("cannot reach the OpenCode service")
+	}
+	if code != http.StatusOK {
+		return fmt.Errorf("OpenCode refused to load the session (HTTP %d)", code)
+	}
+	return ensureOpenCodeRolePermissions(api, routes, nativeID, directory, body)
 }

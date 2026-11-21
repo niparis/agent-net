@@ -28,7 +28,7 @@ type intakeFolder struct {
 // nothing is written or deleted on a machine.
 func (g *Gateway) skillArchiveIntakeMachines(ctx context.Context, by string) (protocol.SkillArchiveMultiResult, error) {
 	out := protocol.SkillArchiveMultiResult{Skills: []protocol.SkillArchiveAddResult{}, Machines: []protocol.SkillArchiveMachine{}, Skipped: []protocol.SkillArchiveSkipped{}}
-	rows, err := g.store.db.Query(`SELECT id, hostname FROM nodes ORDER BY hostname, id`)
+	rows, err := g.store.db.Query(`SELECT id, hostname FROM nodes WHERE state='enrolled' ORDER BY hostname, id`)
 	if err != nil {
 		return out, err
 	}
@@ -76,25 +76,20 @@ func (g *Gateway) skillArchiveIntakeMachine(ctx context.Context, id, host, by st
 		return err
 	}
 	sources, read, userRead, note := g.sourceFolders(ctx, id, registered)
-	var userFolders []intakeFolder
 	if !userRead {
-		// The daemon does not list the user folders: its last inventory scan is
-		// the list, as it was before the live listing.
-		stored, known, err := g.inventoryFolders(id)
-		if err != nil {
-			return err
+		// Without the live listing there is nothing to read: no stored scan
+		// stands in for it.
+		m.Result, m.Reason = "skipped", "the machine did not list its user skill folders"
+		if note != "" {
+			m.Reason += ": " + note
 		}
-		if !known {
-			m.Result, m.Reason = "skipped", "no inventory report yet"
-			return nil
-		}
-		userFolders = stored
+		return nil
 	}
 	m.Result = "scanned"
 	if note != "" {
 		m.Reason = note
 	}
-	folders := append(userFolders, sources...)
+	folders := sources
 	m.Read = intakeReadLine(folders, registered, read, note == "")
 
 	// A name that a machine stores from one folder is the same skill when
@@ -153,7 +148,7 @@ func (g *Gateway) skillArchiveIntakeMachine(ctx context.Context, id, host, by st
 			skip(f, "removed by "+firstNonEmpty(actor, "owner")+": add it again to bring it back")
 			continue
 		}
-		name, hash, bundle, fetchErr := g.requestSkillBundle(ctx, id, f.name, f.hash, f.location, true)
+		name, hash, bundle, fetchErr := g.requestSkillBundle(ctx, id, f.name, f.location)
 		if fetchErr != nil {
 			skip(f, fetchErr.Error())
 			continue
@@ -225,37 +220,6 @@ func skillContentFromBundle(name string, bundle []byte) (skillArchiveContent, er
 		return skillArchiveContent{}, fmt.Errorf("cannot read skill: %v", err)
 	}
 	return content, nil
-}
-
-// inventoryFolders lists the user skill folders of one machine's last scan,
-// with the plugin marker row left out. known is false when the machine has no
-// report yet. Project folders are not here: the node.skill_sources answer
-// reads them for the registered projects.
-func (g *Gateway) inventoryFolders(id string) (folders []intakeFolder, known bool, err error) {
-	var present int
-	if err = g.store.db.QueryRow(`SELECT COUNT(*) FROM inventory_reports WHERE node_id=?`, id).Scan(&present); err != nil || present == 0 {
-		return nil, false, err
-	}
-	rows, err := g.store.db.Query(`
-		SELECT i.name, i.hash, COALESCE(json_extract(l.observation,'$.location'),''),
-		 COALESCE(json_extract(l.observation,'$.state'),''), COALESCE(json_extract(l.observation,'$.reason'),'')
-		FROM tool_locations l JOIN tool_identities i ON i.id=l.identity_id
-		WHERE l.node_id=? AND i.kind='skill'
-		 AND json_extract(l.observation,'$.scope')='user'
-		 AND COALESCE(json_extract(l.observation,'$.source'),'') NOT IN ('plugin','system')
-		ORDER BY i.name, i.hash, l.ordinal`, id)
-	if err != nil {
-		return nil, true, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		f := intakeFolder{kind: "machine"}
-		if err = rows.Scan(&f.name, &f.hash, &f.location, &f.state, &f.reason); err != nil {
-			return nil, true, err
-		}
-		folders = append(folders, f)
-	}
-	return folders, true, rows.Err()
 }
 
 // registeredProjectEntries lists the projects registered on one machine. The

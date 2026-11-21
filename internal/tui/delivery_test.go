@@ -577,7 +577,7 @@ func TestDeliverySubtabCycle(t *testing.T) {
 	if !m.qualityDetail || m.workersLog {
 		t.Fatal("Quality did not open")
 	}
-	next, cmd := m.Update(tea.KeyPressMsg{Text: "7", Code: '7'})
+	next, cmd := m.Update(tea.KeyPressMsg{Text: "6", Code: '6'})
 	m = next.(Model)
 	if m.tab != inboxTab || cmd == nil {
 		t.Fatal("the Desk did not open and load the changes")
@@ -962,7 +962,7 @@ func TestDeliveryTopLevelAndProjectFilter(t *testing.T) {
 	if got := m.deliveryVisible(); len(got) != 1 || got[0].ID != "ch_a" {
 		t.Fatalf("project filter: %+v", got)
 	}
-	if len(tabNames) != 7 || tabNames[6] != "Desk" {
+	if len(tabNames) != 6 || tabNames[5] != "Desk" {
 		t.Fatalf("tabs: %v", tabNames)
 	}
 }

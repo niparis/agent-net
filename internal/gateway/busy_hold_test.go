@@ -33,7 +33,7 @@ func TestBusySessionHoldsThenDeliversOneBatch(t *testing.T) {
 	busyStatus(t, s, b, "busy")
 	var ids []string
 	for i := 0; i < 3; i++ {
-		c.t = c.t.Add(time.Minute)
+		c.advance(time.Minute)
 		m, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Type: protocol.TypeRequest,
 			Body: "body-" + strconv.Itoa(i), IdempotencyKey: "k-" + strconv.Itoa(i)})
 		if err != nil {
@@ -97,7 +97,7 @@ func TestBusyBatchCarrierKeepsSenderNameAndHarness(t *testing.T) {
 	a, b := twoSessions(t, s)
 	busyStatus(t, s, b, "busy")
 	for i := 0; i < 3; i++ {
-		c.t = c.t.Add(time.Minute)
+		c.advance(time.Minute)
 		m, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Type: protocol.TypeRequest,
 			Body: "body-" + strconv.Itoa(i), IdempotencyKey: "name-" + strconv.Itoa(i)})
 		if err != nil {
@@ -157,11 +157,11 @@ func TestBusyHoldFallbackAfterLimit(t *testing.T) {
 	if !s.HoldForBusy(m) {
 		t.Fatal("not held")
 	}
-	c.t = c.t.Add(BusyHoldLimit - time.Minute)
+	c.advance(BusyHoldLimit - time.Minute)
 	if stuck, err := s.StuckBusySessions(); err != nil || len(stuck) != 0 {
 		t.Fatalf("stuck before the limit = %v, %v", stuck, err)
 	}
-	c.t = c.t.Add(2 * time.Minute)
+	c.advance(2 * time.Minute)
 	stuck, err := s.StuckBusySessions()
 	if err != nil || len(stuck) != 1 || stuck[0] != b {
 		t.Fatalf("stuck after the limit = %v, %v", stuck, err)
@@ -231,7 +231,7 @@ func TestInboxLimitExemptsOwnerAndCTOOwnerVoice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_session',?,0)
+	if _, err := s.db.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES('cto_session',?,0)
 		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, cto); err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +303,7 @@ func TestUrgentJumpsTheBatchButCounts(t *testing.T) {
 	busyStatus(t, s, b, "busy")
 	var ids []string
 	for i := 0; i < 3; i++ {
-		c.t = c.t.Add(time.Minute)
+		c.advance(time.Minute)
 		m, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Type: protocol.TypeRequest,
 			Body: "m", IdempotencyKey: "u-" + strconv.Itoa(i), Urgent: i == 1})
 		if err != nil {
@@ -346,7 +346,7 @@ func TestSendToBusySessionIsHeldAndReportsQueue(t *testing.T) {
 	a, b := twoSessions(t, s)
 	busyStatus(t, s, b, "busy")
 	busySince := c.t
-	c.t = c.t.Add(5 * time.Minute)
+	c.advance(5 * time.Minute)
 	g := &Gateway{store: s, conns: map[string]*nodeConn{}}
 	nodeA := mustNode(t, s, a)
 	sendOne := func(key string) map[string]any {
@@ -415,7 +415,7 @@ func TestBusyReleaseKeepsFilesOutOfTheBatch(t *testing.T) {
 	var fileID string
 	var plainIDs []string
 	for i := 0; i < 3; i++ {
-		c.t = c.t.Add(time.Minute)
+		c.advance(time.Minute)
 		send := protocol.MsgSend{Sender: a, Recipient: b, Type: protocol.TypeRequest,
 			Body: "body-" + strconv.Itoa(i), IdempotencyKey: "k-" + strconv.Itoa(i)}
 		if i == 1 {
@@ -490,7 +490,7 @@ func TestNestedBatchDeliveryClosesEveryOriginal(t *testing.T) {
 	var ids []string
 	hold := func(key string) string {
 		t.Helper()
-		c.t = c.t.Add(time.Minute)
+		c.advance(time.Minute)
 		m, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Type: protocol.TypeRequest, Body: "body-" + key, IdempotencyKey: key})
 		if err != nil || !s.HoldForBusy(m) {
 			t.Fatalf("hold %s: %v", key, err)
@@ -587,7 +587,7 @@ func TestUrgentFromChiefAndCTOPassesFullInbox(t *testing.T) {
 		t.Fatal(err)
 	}
 	for key, session := range map[string]string{chiefSessionKey: chief, "cto_session": cto} {
-		if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,0)
+		if _, err := s.db.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES(?,?,0)
 			ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, session); err != nil {
 			t.Fatal(err)
 		}
@@ -615,7 +615,7 @@ func TestInboxLimitRefusalNamesBusyRecipient(t *testing.T) {
 	s, c := newTestStore(t)
 	a, b := twoSessions(t, s)
 	busyStatus(t, s, b, "busy")
-	c.t = c.t.Add(23 * time.Minute)
+	c.advance(23 * time.Minute)
 	for i := 0; i < DefaultInboxLimit; i++ {
 		if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Type: protocol.TypeNotification,
 			Body: "w", IdempotencyKey: "w-" + strconv.Itoa(i)}); err != nil {

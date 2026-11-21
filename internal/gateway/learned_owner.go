@@ -160,7 +160,7 @@ func (s *Store) decideLearned(id int64, action, actor string) error {
 	}
 	defer tx.Rollback()
 	var settingsRevisionBefore int64
-	if err = tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&settingsRevisionBefore); err != nil {
+	if settingsRevisionBefore, err = settingsRevision(tx); err != nil {
 		return err
 	}
 
@@ -219,7 +219,7 @@ func (s *Store) decideLearned(id int64, action, actor string) error {
 		return err
 	}
 	var settingsRevisionAfter int64
-	if err = tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&settingsRevisionAfter); err != nil {
+	if settingsRevisionAfter, err = settingsRevision(tx); err != nil {
 		return err
 	}
 	if err = tx.Commit(); err != nil {

@@ -1,5 +1,5 @@
  Global keys
-  1-7                    switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings, Desk
+  1-6                    switch tabs: Sessions, Graph, Quotas, Messages, Settings, Desk
   enter                  go into the selected thing
   arrows, j/k            move
   esc                    back; first clears a filter you typed
@@ -14,7 +14,7 @@
  Sessions
   pgup/pgdn              page
   home/g, end            first, last row
-  enter                  open the selected session; details show trust, request rule and delegation policy
+  enter                  open the selected session; details show trust and request rule
   m                      send a message to the session as yourself
   n                      start a session in herdr: project, harness, model, folder and first message (a form)
   x                      stop or remove the selected session
@@ -62,7 +62,6 @@
   E                      global charter
   enter                  open Sessions filtered to this agent's project
   n                      start a new session in this project (the same form, filled from here)
-  t                      open Tools filtered to this node
   a                      toggle autonomy off or wake (wakes on messages)
   L                      cycle the standing loop: off, 1h, 4h, 12h, 24h (wakes the lead on a clock)
   D                      name this project
@@ -135,35 +134,6 @@ Legend ────────────────────────�
   burst                  20 or more messages in one hour and more than 3 times the thread's median hourly count
   links                  PR, ch_ and ask i_ lines show above the conversation; o opens a loaded change or ask
   p / t                  filter by project or team; / searches the text; esc clears the filters
-
- Tools
-  i                      import
-  j/k, down/up           move
-  tab                    switches
-  /                      filter
-  ?                      help
-  q                      quit
-  esc                    back
-  right, enter           skills
-
- project skills
-  i                      import
-  j/k, down/up           move
-  tab                    switches
-  /                      filter
-  ?                      help
-  q                      quit
-  esc                    back
-  left                   projects
-  space                  on/off
-  enter                  on/off or review
-
- Tools
-  tab                    switches
-  t                      show skill cost per project
-  n                      add an MCP server or a skill from a folder
-  enter                  open the actions for the selected tool
-  R                      rescan tool copies
 
  Settings
   tab, ]                 jump to the next section
@@ -273,49 +243,6 @@ Legend ────────────────────────�
   ?                      help
   up/down, j/k           select
   enter                  open the proposal detail
-
- Tools plan
-  enter, y, Y            apply
-  esc, n, N              cancel
-  ?                      help
-  up/down, j/k           scroll
-  d                      use the exact folders
-
- Tools picker
-  esc                    cancel
-  ?                      help
-  up/down, j/k           select
-  space                  tick
-  /                      filter
-  enter                  apply
-
- Tools menu
-  esc                    back
-  ?                      help
-  up/down, j/k           move
-  enter                  choose
-
- Tools add
-  esc                    cancel
-  tab, down              move to the next field
-  shift+tab, up          previous field
-  left/right             choose the machine
-  enter                  add
-  backspace, ctrl+h      delete
-
- discard skill changes
-  y, Y                   discard
-  n, N, esc              keep changes
-
- tools filter
-  enter                  keep filter
-  esc                    clear/back
-  backspace, ctrl+h      delete
-
- tools project costs
-  j/k, down/up           move
-  enter                  open
-  esc                    back
 
  Atlas box
   ctrl+], tab            back to Sessions

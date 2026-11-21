@@ -49,7 +49,7 @@ func TestCTOPresenceReturnsOnHostSync(t *testing.T) {
 }
 
 func TestCTOPresenceCannotMoveIdentity(t *testing.T) {
-	g, host := scopeGateway(t)
+	g, host := mcpGateway(t)
 	other, _, err := g.store.CreateNode("other", "linux")
 	if err != nil {
 		t.Fatal(err)

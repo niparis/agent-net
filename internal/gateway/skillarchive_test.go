@@ -14,7 +14,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/coder/websocket"
 	"github.com/niparis/agent-net/internal/inventory"
@@ -101,7 +100,7 @@ func archiveRepo(t *testing.T) string {
 }
 
 func TestSkillArchiveAddFromFolder(t *testing.T) {
-	g, n, _ := toggleFixture(t)
+	g, n := archiveFixture(t)
 	dir := t.TempDir()
 	folder, hash := archiveSkillFolder(t, filepath.Join(dir, "demo"), "---\ndescription: A demo skill.\n---\nhello\n")
 	addFile(t, folder, "extra.txt", "x")
@@ -109,17 +108,12 @@ func TestSkillArchiveAddFromFolder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bundle, err := inventory.PackSkill(folder)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = g.store.SetInventory(n, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: []protocol.InventoryItem{{Kind: "skill", Name: "demo", Hash: hash, State: "ok", Scope: "user", Location: "/skills/demo"}}}); err != nil {
-		t.Fatal(err)
-	}
-	toggleFakeNode(t, g, n, bundle, nil)
+	archiveFakeNodeSources(t, g, n, map[string][]byte{folder: archiveBundle(t, folder)}, []protocol.SkillSource{
+		{Name: "demo", Hash: hash, Location: folder, Origin: "user", State: protocol.InventoryOK},
+	})
 
 	got := archiveCall[protocol.SkillArchiveAddResult](t, g, protocol.FrameSkillArchiveAdd, protocol.SkillArchiveAdd{
-		Location: protocol.ToolImportLocation{NodeID: n, Location: "/skills/demo"}, By: "cto",
+		Location: protocol.ToolImportLocation{NodeID: n, Location: folder}, By: "cto",
 	})
 	if got.State != "added" || got.Name != "demo" || got.Version != 1 || got.Change == "" {
 		t.Fatalf("add: %+v", got)
@@ -131,7 +125,7 @@ func TestSkillArchiveAddFromFolder(t *testing.T) {
 		t.Errorf("tokens: context %d, size %d", got.ContextTokens, got.SizeTokens)
 	}
 	rows := archiveList(t, g)
-	if len(rows) != 1 || rows[0].Name != "demo" || rows[0].SourceKind != "machine" || rows[0].SourceNode != n || rows[0].SourcePath != "/skills/demo" {
+	if len(rows) != 1 || rows[0].Name != "demo" || rows[0].SourceKind != "machine" || rows[0].SourceNode != n || rows[0].SourcePath != folder {
 		t.Fatalf("list: %+v", rows)
 	}
 }
@@ -223,66 +217,15 @@ func TestSkillArchiveReadOneVersionFiles(t *testing.T) {
 	}
 }
 
-func TestSkillArchiveIntakeFromGitStoreCopiesEveryVersionOnce(t *testing.T) {
-	g := archiveGateway(t)
-	repo, err := openSkillStore(g.opts.DataDir, g.store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for i, body := range []string{"---\ndescription: one.\n---\na\n", "---\ndescription: two.\n---\nb\n"} {
-		dir := t.TempDir()
-		if err = os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(body), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		hash, e := inventory.SkillHash(dir)
-		if e != nil {
-			t.Fatal(e)
-		}
-		bundle, e := inventory.PackSkill(dir)
-		if e != nil {
-			t.Fatal(e)
-		}
-		item := seedIdentity(t, g.store, "skill", "alpha", hash)
-		if _, e = repo.put(item, hash, bundle, "n", "/skills/alpha"); e != nil {
-			t.Fatalf("put %d: %v", i, e)
-		}
-	}
-	first, err := g.intakeSkillGit()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(first.Shared) != 1 || first.Shared[0] != "alpha" {
-		t.Fatalf("two contents under one name must be listed: %+v", first)
-	}
-	rows := archiveList(t, g)
-	if len(rows) != 1 || rows[0].Versions != 2 {
-		t.Fatalf("versions after intake: %+v", rows)
-	}
-	second, err := g.intakeSkillGit()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(second.Shared) != 0 {
-		t.Fatalf("repeat intake reported new shared names: %+v", second)
-	}
-	if rows = archiveList(t, g); rows[0].Versions != 2 {
-		t.Fatalf("repeat intake made a version: %+v", rows)
-	}
-}
-
 func TestSkillArchiveIntakeFromMachines(t *testing.T) {
-	g, n, _ := toggleFixture(t)
+	g, n := archiveFixture(t)
 	dir := t.TempDir()
 	folderA, hashA := archiveSkillFolder(t, filepath.Join(dir, "a"), "---\ndescription: First copy.\n---\nbody\n")
 	folderB, hashB := archiveSkillFolder(t, filepath.Join(dir, "b"), "---\ndescription: Second copy.\n---\nother\n")
-	if err := g.store.SetInventory(n, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: []protocol.InventoryItem{
-		{Kind: "skill", Name: "demo", Hash: hashA, State: "ok", Scope: "user", Location: folderA},
-		{Kind: "skill", Name: "demo", Hash: hashB, State: "ok", Scope: "user", Location: folderB},
-		{Kind: "skill", Name: "only-plugin", Hash: "plugin", State: "ok", Scope: "plugin", Location: "/plugin/x"},
-	}}); err != nil {
-		t.Fatal(err)
-	}
-	archiveFakeNode(t, g, n, map[string][]byte{hashA: archiveBundle(t, folderA), hashB: archiveBundle(t, folderB)})
+	archiveFakeNodeSources(t, g, n, map[string][]byte{folderA: archiveBundle(t, folderA), folderB: archiveBundle(t, folderB)}, []protocol.SkillSource{
+		{Name: "demo", Hash: hashA, Location: folderA, Origin: "user", State: protocol.InventoryOK},
+		{Name: "demo", Hash: hashB, Location: folderB, Origin: "user", State: protocol.InventoryOK},
+	})
 	got := archiveCall[protocol.SkillArchiveMultiResult](t, g, protocol.FrameSkillArchiveIntake, protocol.SkillArchiveIntake{By: "cto"})
 	if len(got.Skills) != 2 || got.Skills[0].Name != "demo" || got.Skills[1].Version != 2 {
 		t.Fatalf("intake: %+v", got)
@@ -297,14 +240,14 @@ func TestSkillArchiveIntakeFromMachines(t *testing.T) {
 
 func archiveBundle(t *testing.T, dir string) []byte {
 	t.Helper()
-	bundle, err := inventory.PackSkill(dir)
+	bundle, err := inventory.PackSkillLimit(dir, inventory.ArchiveLimit)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return bundle
 }
 
-// archiveFakeNode answers node.skill_bundle with the bundle of the asked hash,
+// archiveFakeNode answers node.skill_bundle with the bundle of the asked folder,
 // so one test can serve several distinct skill contents.
 func archiveFakeNode(t *testing.T, g *Gateway, n string, bundles map[string][]byte) {
 	t.Helper()
@@ -317,7 +260,7 @@ func archiveFakeNodeSources(t *testing.T, g *Gateway, n string, bundles map[stri
 	t.Helper()
 	var answer *protocol.SkillSourcesResult
 	if sources != nil {
-		answer = &protocol.SkillSourcesResult{Sources: sources}
+		answer = &protocol.SkillSourcesResult{Sources: sources, UserRead: true}
 	}
 	archiveFakeNodeAnswer(t, g, n, bundles, answer)
 }
@@ -425,8 +368,8 @@ func fakeBundleAnswer(q protocol.SkillBundleRequest, bundles map[string][]byte, 
 		}
 		return protocol.SkillBundle{Data: bundle[start:min(start+protocol.TransferPartSize, len(bundle))]}, nil
 	}
-	bundle, ok := bundles[q.Hash]
-	if !ok && q.Archive {
+	bundle, ok := bundles[q.Location]
+	if !ok {
 		// The daemon packs the folder as it is on disk now, whatever hash the
 		// gateway asked for (decision 0169).
 		packed, err := inventory.PackSkillLimit(q.Location, inventory.ArchiveLimit)
@@ -438,19 +381,13 @@ func fakeBundleAnswer(q protocol.SkillBundleRequest, bundles map[string][]byte, 
 	if !ok {
 		return nil, errors.New("no such bundle")
 	}
-	if !q.Archive {
-		if len(bundle) > inventory.MaxBundleBytes {
-			return nil, errors.New("the skill is larger than the 2 MB import limit")
-		}
-		return protocol.SkillBundle{Data: bundle}, nil
-	}
 	if int64(len(bundle)) > inventory.ArchiveLimit.Bytes {
 		return nil, errors.New("the skill is larger than the 64 MB archive limit")
 	}
 	if len(bundle) <= protocol.TransferPartSize {
 		return protocol.SkillBundle{Data: bundle}, nil
 	}
-	id := "snap-" + q.Hash
+	id := "snap-" + q.Location
 	snapshots[id] = bundle
 	sum := sha256.Sum256(bundle)
 	return protocol.SkillBundle{

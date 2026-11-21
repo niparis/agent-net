@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -32,10 +31,12 @@ func TestSkillArchiveIntakeCopyIsCandidateNotLatest(t *testing.T) {
 	dir := t.TempDir()
 	folderA, hashA := archiveSkillFolder(t, filepath.Join(dir, "a"), "---\ndescription: First copy.\n---\nbody\n")
 	folderB, hashB := archiveSkillFolder(t, filepath.Join(dir, "b"), "---\ndescription: Second copy.\n---\nother\n")
-	id := intakeNode(t, g, "alpha", []protocol.InventoryItem{
+	items := []protocol.InventoryItem{
 		{Kind: "skill", Name: "demo", Hash: hashA, State: "ok", Scope: "user", Location: folderA},
-	})
-	archiveFakeNode(t, g, id, map[string][]byte{hashA: archiveBundle(t, folderA), hashB: archiveBundle(t, folderB)})
+	}
+	id := intakeNode(t, g, "alpha")
+	bundles := map[string][]byte{folderA: archiveBundle(t, folderA), folderB: archiveBundle(t, folderB)}
+	archiveFakeNodeSources(t, g, id, bundles, userSources(items))
 
 	// A new name is latest as soon as intake stores it.
 	first := archiveCall[protocol.SkillArchiveMultiResult](t, g, protocol.FrameSkillArchiveIntake, protocol.SkillArchiveIntake{By: "cto"})
@@ -43,12 +44,8 @@ func TestSkillArchiveIntakeCopyIsCandidateNotLatest(t *testing.T) {
 		t.Fatalf("first intake: %+v", first.Skills)
 	}
 
-	if err := g.store.SetInventory(id, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: []protocol.InventoryItem{
-		{Kind: "skill", Name: "demo", Hash: hashA, State: "ok", Scope: "user", Location: folderA},
-		{Kind: "skill", Name: "demo", Hash: hashB, State: "ok", Scope: "user", Location: folderB},
-	}}); err != nil {
-		t.Fatal(err)
-	}
+	items = append(items, protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: hashB, State: "ok", Scope: "user", Location: folderB})
+	archiveFakeNodeSources(t, g, id, bundles, userSources(items))
 	second := archiveCall[protocol.SkillArchiveMultiResult](t, g, protocol.FrameSkillArchiveIntake, protocol.SkillArchiveIntake{By: "cto"})
 	if len(second.Skills) != 1 || second.Skills[0].State != "added" || second.Skills[0].Version != 2 || second.Skills[0].Latest != 1 {
 		t.Fatalf("second copy: %+v", second.Skills)
@@ -71,16 +68,17 @@ func TestSkillArchiveIntakeProjectCopyIsCandidateNotLatest(t *testing.T) {
 	project := filepath.Join(dir, "wbg")
 	userCopy, userHash := archiveSkillFolder(t, filepath.Join(dir, "user", "graphify"), "---\ndescription: User graphify.\n---\nbody\n")
 	projectCopy, projectHash := archiveSkillFolder(t, filepath.Join(project, ".claude/skills/graphify"), "---\ndescription: Project graphify.\n---\nother\n")
-	id := intakeNode(t, g, "alpha", []protocol.InventoryItem{
+	items := []protocol.InventoryItem{
 		{Kind: "skill", Name: "graphify", Hash: userHash, State: "ok", Scope: "user", Location: userCopy},
-	})
+	}
+	id := intakeNode(t, g, "alpha")
 	if _, err := g.store.AddProjects(id, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "wbg", Path: project}}}); err != nil {
 		t.Fatal(err)
 	}
-	archiveFakeNodeAnswer(t, g, id, map[string][]byte{userHash: archiveBundle(t, userCopy), projectHash: archiveBundle(t, projectCopy)}, &protocol.SkillSourcesResult{
-		Sources: []protocol.SkillSource{
-			{Name: "graphify", Hash: projectHash, Location: projectCopy, Origin: "project wbg", Project: "wbg", State: protocol.InventoryOK},
-		},
+	archiveFakeNodeAnswer(t, g, id, map[string][]byte{userCopy: archiveBundle(t, userCopy), projectCopy: archiveBundle(t, projectCopy)}, &protocol.SkillSourcesResult{
+		UserRead: true,
+		Sources: append(userSources(items),
+			protocol.SkillSource{Name: "graphify", Hash: projectHash, Location: projectCopy, Origin: "project wbg", Project: "wbg", State: protocol.InventoryOK}),
 		ProjectsRead: []string{"wbg"},
 	})
 	got := archiveCall[protocol.SkillArchiveMultiResult](t, g, protocol.FrameSkillArchiveIntake, protocol.SkillArchiveIntake{By: "cto"})
@@ -169,11 +167,16 @@ func TestSkillArchiveLatestMigrationMarksIntakeProjectCopyCandidate(t *testing.T
 			t.Fatal(err)
 		}
 	}
-	if _, err := g.store.db.Exec(`DELETE FROM skill_archive_latest`); err != nil {
+	// The migration fills the old pointer table, and the tools retire migration
+	// turns it into the in_use column the list reads.
+	if _, err := g.store.db.Exec(`CREATE TABLE skill_archive_latest (name TEXT PRIMARY KEY, version INTEGER NOT NULL)`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := g.store.db.Exec(skillArchiveLatestMigration); err != nil {
 		t.Fatalf("migration: %v", err)
+	}
+	if _, err := g.store.db.Exec(toolsRetireMigration); err != nil {
+		t.Fatalf("fold: %v", err)
 	}
 	got := map[string]protocol.ArchivedSkill{}
 	for _, row := range archiveList(t, g) {
@@ -192,10 +195,11 @@ func TestSkillArchiveLatestMigrationMarksIntakeProjectCopyCandidate(t *testing.T
 func TestSkillArchiveIntakeFlagsSkillWithoutDescription(t *testing.T) {
 	g := archiveGateway(t)
 	folder, hash := archiveSkillFolder(t, filepath.Join(t.TempDir(), "bare"), "---\nname: bare\n---\nbody\n")
-	id := intakeNode(t, g, "alpha", []protocol.InventoryItem{
+	items := []protocol.InventoryItem{
 		{Kind: "skill", Name: "bare", Hash: hash, State: "ok", Scope: "user", Location: folder},
-	})
-	archiveFakeNode(t, g, id, map[string][]byte{hash: archiveBundle(t, folder)})
+	}
+	id := intakeNode(t, g, "alpha")
+	archiveFakeNodeSources(t, g, id, map[string][]byte{folder: archiveBundle(t, folder)}, userSources(items))
 	got := archiveCall[protocol.SkillArchiveMultiResult](t, g, protocol.FrameSkillArchiveIntake, protocol.SkillArchiveIntake{By: "cto"})
 	if len(got.Skills) != 1 || !got.Skills[0].NoDescription {
 		t.Fatalf("intake: %+v", got.Skills)

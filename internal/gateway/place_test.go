@@ -376,14 +376,8 @@ func TestRedirectSkipsLeadWhenSenderIsAboveIt(t *testing.T) {
 	if err := r.s.AddArchitect("chiefx", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if parent := reportsTo(t, r.s, "other"); parent != "" {
-		if err := r.s.RemoveEdge(reportsEdge("other", parent), "owner"); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := r.s.SetEdge(reportsEdge("other", "chiefx"), "owner"); err != nil {
-		t.Fatal(err)
-	}
+	teamWrite(t, r.s, protocol.TeamWrite{Action: "create", ID: "t_above", Name: "Above", Owner: &protocol.GraphRef{Kind: "agent", ID: "chiefx"}})
+	teamWrite(t, r.s, protocol.TeamWrite{Action: "membership", ID: "t_above", Member: &protocol.GraphRef{Kind: "agent", ID: "other"}})
 	if _, err := r.s.db.Exec(`UPDATE sessions SET agent_id='chiefx' WHERE id=?`, r.outside); err != nil {
 		t.Fatal(err)
 	}

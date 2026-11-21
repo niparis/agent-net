@@ -129,7 +129,7 @@ func TestMessageToQuotaFailedWorkerRestartsAfterReset(t *testing.T) {
 	if err := quotaResumeSend(t, g, node, owner, worker); err == nil {
 		t.Fatal("accepted before the reset")
 	}
-	c.t = c.t.Add(7*time.Hour + time.Minute)
+	c.advance(7*time.Hour + time.Minute)
 	for len(received) > 0 {
 		<-received
 	}

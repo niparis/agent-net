@@ -155,7 +155,7 @@ func TestHeldRequestIsAnAsk(t *testing.T) {
 	if asks, _ := s.ListAsks(); len(askByKind(asks, "held")) != 1 {
 		t.Fatalf("second held ask missing: %+v", asks)
 	}
-	c.t = c.t.Add(protocol.DefaultTTL + time.Hour)
+	c.advance(protocol.DefaultTTL + time.Hour)
 	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +216,7 @@ func TestWaitingSessionIsAnAsk(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The ask comes once the wait outlived the debounce.
-	c.t = c.t.Add(waitingAskDebounce)
+	c.advance(waitingAskDebounce)
 	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func TestWaitingSessionIsAnAsk(t *testing.T) {
 	if _, err := s.UpsertSession(node, info); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(waitingAskDebounce)
+	c.advance(waitingAskDebounce)
 	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +275,7 @@ func TestClosedWaitingAskIsNotRaisedAgainForTheSameWait(t *testing.T) {
 		}
 		return open, all
 	}
-	c.t = c.t.Add(waitingAskDebounce)
+	c.advance(waitingAskDebounce)
 	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +286,7 @@ func TestClosedWaitingAskIsNotRaisedAgainForTheSameWait(t *testing.T) {
 		t.Fatal(err)
 	}
 	for range 3 {
-		c.t = c.t.Add(time.Minute)
+		c.advance(time.Minute)
 		if err := s.reconcileAsks(); err != nil {
 			t.Fatal(err)
 		}
@@ -303,12 +303,12 @@ func TestClosedWaitingAskIsNotRaisedAgainForTheSameWait(t *testing.T) {
 	if _, err := s.UpsertSession(node, info); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	info.Waiting = &protocol.Waiting{Kind: protocol.WaitingInput, Text: "Delete worktree w_1?"}
 	if _, err := s.UpsertSession(node, info); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(waitingAskDebounce)
+	c.advance(waitingAskDebounce)
 	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}
@@ -554,7 +554,7 @@ func TestLearnedAndDraftAsks(t *testing.T) {
 	if asks, _ := s.ListAsks(); len(asks) != 0 {
 		t.Fatalf("suggestion not ready yet is an ask: %+v", asks)
 	}
-	c.t = c.t.Add(3 * time.Minute)
+	c.advance(3 * time.Minute)
 	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}
@@ -696,7 +696,7 @@ func TestBlockedAskClosesWhenSessionMovesOn(t *testing.T) {
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("check = %+v", got)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	node := mustNode(t, s, b)
 	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: "blocked on the deploy key"}); err != nil {
 		t.Fatal(err)
@@ -705,7 +705,7 @@ func TestBlockedAskClosesWhenSessionMovesOn(t *testing.T) {
 	if chk := askByKind(asks, "check"); len(chk) != 1 || !strings.Contains(chk[0].Question, "the deploy key") {
 		t.Fatalf("blocked ask: %+v", asks)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: b, Task: "fixing the CI config"}); err != nil {
 		t.Fatal(err)
 	}
@@ -741,13 +741,13 @@ func TestAnnounceClosesAskOfEarlierWork(t *testing.T) {
 	sid, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p"})
 	announce := func(task string, w *protocol.Waiting) {
 		t.Helper()
-		c.t = c.t.Add(time.Minute)
+		c.advance(time.Minute)
 		if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: sid, Task: task, Waiting: w}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	announce("build the grant", nil)
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	old, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: sid, Text: "Which region for the new box?"})
 	announce("waiting for the owner", nil) // same turn as the ask: it stays
 	if status, _, _ := askRow(t, s, `id=?`, old.ID); status != "open" {
@@ -772,7 +772,7 @@ func TestAnnounceKeepsAnApprovalOpen(t *testing.T) {
 	sid, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p"})
 	announce := func(task string) {
 		t.Helper()
-		c.t = c.t.Add(time.Minute)
+		c.advance(time.Minute)
 		if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: sid, Task: task}); err != nil {
 			t.Fatal(err)
 		}
@@ -816,10 +816,10 @@ func TestStoppedWithWorkLeftRowClosesOnNewWorkAnnounce(t *testing.T) {
 	node, _, _ := s.CreateNode("box", "linux")
 	sid, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p"})
 	row, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "check", SessionID: sid, Text: "p stopped with work left: x"})
-	if _, err := s.db.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting) VALUES(?,?,1)`, sid, c.t.Unix()); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET check_active=?,check_waiting=1 WHERE id=?`, c.t.Unix(), sid); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: sid, Task: "fixing the CI config"}); err != nil {
 		t.Fatal(err)
 	}
@@ -851,12 +851,12 @@ func TestMovedOnCleanupRunsOnceAndIsConservative(t *testing.T) {
 	stale, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "check", SessionID: check, Text: "stopped with work left: a"})
 	// two: two different approvals open at once, and no later task.
 	first, _ := s.createInboxItem(s.db, protocol.InboxItem{Kind: "approval", SessionID: two, Text: "Create the ops token"})
-	c.t = c.t.Add(2 * time.Minute)
+	c.advance(2 * time.Minute)
 	second, _ := s.createInboxItem(s.db, protocol.InboxItem{Kind: "approval", SessionID: two, Text: "Merge #905"})
 	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: same, Task: "waiting for the owner"}); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(10 * time.Minute)
+	c.advance(10 * time.Minute)
 	for _, id := range []string{moved, check} {
 		if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: id, Task: "next thing"}); err != nil {
 			t.Fatal(err)
@@ -897,7 +897,7 @@ func TestEscalationClosesWhenTheRequestIsAnsweredLater(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, Body: "unclear", ParentID: req.ID, ReplyOutcome: protocol.ReplyOutcome{Outcome: "escalate", Reason: "unclear", Recommendation: "ask owner"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -908,7 +908,7 @@ func TestEscalationClosesWhenTheRequestIsAnsweredLater(t *testing.T) {
 	if n, err := s.reconcileEscalationAsks(s.db); err != nil || n != 0 {
 		t.Fatalf("closed %d before any answer: %v", n, err)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, Body: "done after the owner approved", ParentID: req.ID}); err != nil {
 		t.Fatal(err)
 	}
@@ -982,7 +982,7 @@ func TestWaitingAskEscalatedToOwnerStaysOpenWhenWaitEnds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(waitingAskDebounce)
+	c.advance(waitingAskDebounce)
 	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}

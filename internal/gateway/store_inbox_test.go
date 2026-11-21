@@ -203,7 +203,7 @@ func TestInboxConnectedNoticeExpiresAfterDay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(25 * time.Hour)
+	c.advance(25 * time.Hour)
 	items, err := s.ListInbox()
 	if err != nil {
 		t.Fatal(err)

@@ -236,7 +236,7 @@ func TestOAuthPendingCapsExpiryReuseAndRefusal(t *testing.T) {
 	if w := oauthAuthorize(h, client, nil); w.Code != 429 {
 		t.Fatalf("per-client cap: %d", w.Code)
 	}
-	c.t = c.t.Add(10 * time.Minute)
+	c.advance(10 * time.Minute)
 	if got := oauthStatus(t, h, id); got["status"] != "expired" {
 		t.Fatalf("expired %v", got)
 	}
@@ -267,7 +267,7 @@ func TestOAuthPendingAttempts(t *testing.T) {
 	if _, err := s.PendingByUserCode(code, "two", c.t); err != nil {
 		t.Fatalf("other source: %v", err)
 	}
-	c.t = c.t.Add(10 * time.Minute)
+	c.advance(10 * time.Minute)
 	if _, err := s.PendingByUserCode("WRONGX", "one", c.t); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("limit did not expire: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestOAuthClientLimitCleanup(t *testing.T) {
 	if w.Code != 429 {
 		t.Fatalf("source limit: %d", w.Code)
 	}
-	c.t = c.t.Add(7 * 24 * time.Hour)
+	c.advance(7 * 24 * time.Hour)
 	replacement := oauthRegister(t, h)
 	if replacement == kept {
 		t.Fatal("client ID reused")
@@ -314,7 +314,7 @@ func TestOAuthCodeBindingsAndExpiry(t *testing.T) {
 			t.Fatalf("accepted %v: %d %s", v, w.Code, w.Body.String())
 		}
 	}
-	c.t = c.t.Add(2 * time.Minute)
+	c.advance(2 * time.Minute)
 	if w := oauthToken(h, oauthExchange(code, client, oauthVerifier)); w.Code != 400 || oauthJSON(t, w)["error"] != "invalid_grant" {
 		t.Fatalf("expired code: %d %s", w.Code, w.Body.String())
 	}
@@ -388,12 +388,12 @@ func TestOAuthCompletedCleanup(t *testing.T) {
 	s, c, h := oauthFixture(t)
 	client := oauthRegister(t, h)
 	_, first := oauthPage(t, oauthAuthorize(h, client, nil))
-	c.t = c.t.Add(9 * time.Minute)
+	c.advance(9 * time.Minute)
 	if err := s.ApprovePending(first, "bot", "late approval", c.t); err != nil {
 		t.Fatal(err)
 	}
 	_, second := oauthPage(t, oauthAuthorize(h, client, nil))
-	c.t = c.t.Add(11 * time.Minute)
+	c.advance(11 * time.Minute)
 	if err := s.CleanupOAuth(c.t); err != nil {
 		t.Fatal(err)
 	}

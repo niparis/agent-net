@@ -56,10 +56,8 @@ type checkState struct {
 func (s *Store) readCheckState(id string) (checkState, error) {
 	var st checkState
 	var waiting int
-	err := s.db.QueryRow(`SELECT c.check_active,c.check_waiting,c.check_more,c.check_open,c.check_msgs,c.check_day,c.check_day_count,c.check_task_hash,c.check_announced_at,c.check_fingerprint,
-		COALESCE(w.wake_day,''),COALESCE(w.wake_day_count,0),COALESCE(w.wake_streak,0),
-		COALESCE(w.wake_open,0),COALESCE(w.wake_msgs,0)
-		FROM session_checks c LEFT JOIN session_wakes w ON w.session_id=c.session_id WHERE c.session_id=?`, id).
+	err := s.db.QueryRow(`SELECT check_active,check_waiting,check_more,check_open,check_msgs,check_day,check_day_count,check_task_hash,check_announced_at,check_fingerprint,
+		wake_day,wake_day_count,wake_streak,wake_open,wake_msgs FROM sessions WHERE id=?`, id).
 		Scan(&st.active, &waiting, &st.more, &st.open, &st.msgs, &st.day, &st.count, &st.taskHash, &st.announcedAt, &st.fingerprint,
 			&st.wakeDay, &st.wakeCount, &st.wakeStreak, &st.wakeOpen, &st.wakeMsgs)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -174,7 +172,7 @@ func isWakeMessage(m protocol.Message) bool {
 
 func (s *Store) ctoSessionID() string {
 	var id string
-	if err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key='cto_session'`).Scan(&id); err != nil {
+	if err := s.db.QueryRow(`SELECT value FROM gateway_state WHERE key='cto_session'`).Scan(&id); err != nil {
 		return ""
 	}
 	return id
@@ -343,12 +341,8 @@ func (s *Store) storeCheck(a protocol.AgentView, day string, count, more int, no
 	if err = recordNudgeFire(tx, "idle_check", m.To, m.ID, m.CreatedAt); err != nil {
 		return protocol.Message{}, err
 	}
-	if _, err = tx.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting,check_more,check_day,check_day_count,check_task_hash)
-		VALUES(?,?,1,?,?,?,?)
-		ON CONFLICT(session_id) DO UPDATE SET check_active=excluded.check_active,check_waiting=1,
-		check_more=excluded.check_more,check_day=excluded.check_day,check_day_count=excluded.check_day_count,
-		check_task_hash=excluded.check_task_hash`,
-		a.SessionID, now.Add(idleCheckGrace).Unix(), more, day, count, checkTaskHash(a.Profile.Task)); err != nil {
+	if _, err = tx.Exec(`UPDATE sessions SET check_active=?,check_waiting=1,check_more=?,check_day=?,check_day_count=?,check_task_hash=? WHERE id=?`,
+		now.Add(idleCheckGrace).Unix(), more, day, count, checkTaskHash(a.Profile.Task), a.SessionID); err != nil {
 		return protocol.Message{}, err
 	}
 	s.event(tx, "msg.stored", "", m.From, m.ID, "type=notification by=agent-net check")
@@ -390,7 +384,7 @@ func parseCheckAnswer(task string) (kind, line string) {
 }
 
 func (s *Store) resetCheckProgress(sessionID string) error {
-	_, err := s.db.Exec(`UPDATE session_checks SET check_more=0,check_open=0,check_msgs=0 WHERE session_id=?`, sessionID)
+	_, err := s.db.Exec(`UPDATE sessions SET check_more=0,check_open=0,check_msgs=0 WHERE id=?`, sessionID)
 	return err
 }
 
@@ -402,15 +396,8 @@ func (s *Store) answerCheck(sessionID, task string, reported *protocol.Waiting) 
 	var name, node string
 	var st checkState
 	var waiting int
-	err := s.db.QueryRow(`SELECT COALESCE(c.check_active,0),COALESCE(c.check_waiting,0),
-		COALESCE(c.check_more,0),COALESCE(c.check_open,0),COALESCE(c.check_msgs,0),
-		COALESCE(c.check_day,''),COALESCE(c.check_day_count,0),
-		COALESCE(w.wake_day,''),COALESCE(w.wake_day_count,0),COALESCE(w.wake_streak,0),
-		COALESCE(w.wake_open,0),COALESCE(w.wake_msgs,0),
-		COALESCE(NULLIF(p.name,''),s.name,''),s.node_id
-		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
-		LEFT JOIN session_checks c ON c.session_id=s.id
-		LEFT JOIN session_wakes w ON w.session_id=s.id WHERE s.id=?`, sessionID).
+	err := s.db.QueryRow(`SELECT check_active,check_waiting,check_more,check_open,check_msgs,check_day,check_day_count,
+		wake_day,wake_day_count,wake_streak,wake_open,wake_msgs,name,node_id FROM sessions WHERE id=?`, sessionID).
 		Scan(&st.active, &waiting, &st.more, &st.open, &st.msgs, &st.day, &st.count,
 			&st.wakeDay, &st.wakeCount, &st.wakeStreak, &st.wakeOpen, &st.wakeMsgs, &name, &node)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -441,7 +428,7 @@ func (s *Store) answerCheck(sessionID, task string, reported *protocol.Waiting) 
 		if _, err = s.closeAsks(s.db, `session_id=? AND kind='check' AND from_kind IN ('','session')`, []any{sessionID}, protocol.AskReasonResolved); err != nil {
 			return err
 		}
-		_, err = s.db.Exec(`UPDATE session_checks SET check_waiting=0 WHERE session_id=?`, sessionID)
+		_, err = s.db.Exec(`UPDATE sessions SET check_waiting=0 WHERE id=?`, sessionID)
 		return err
 	}
 	name = protocol.CleanWaitingText(name)
@@ -450,10 +437,7 @@ func (s *Store) answerCheck(sessionID, task string, reported *protocol.Waiting) 
 	}
 	switch kind {
 	case "done":
-		if _, err = s.db.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting,check_more,check_open,check_msgs)
-			VALUES(?,?,0,0,0,0)
-			ON CONFLICT(session_id) DO UPDATE SET check_active=excluded.check_active,check_waiting=0,
-			check_more=0,check_open=0,check_msgs=0,check_task_hash=''`, sessionID, active); err != nil {
+		if _, err = s.db.Exec(`UPDATE sessions SET check_active=?,check_waiting=0,check_more=0,check_open=0,check_msgs=0,check_task_hash='' WHERE id=?`, active, sessionID); err != nil {
 			return err
 		}
 		if _, err = s.db.Exec(`UPDATE inbox_items SET status='closed',answer='done',answered_at=?
@@ -564,20 +548,13 @@ func (s *Store) answerCheck(sessionID, task string, reported *protocol.Waiting) 
 		if autonomy == protocol.AutonomyWake {
 			moreHash = ""
 		}
-		if _, err = tx.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting,check_more,check_open,check_msgs,check_task_hash)
-			VALUES(?,?,0,?,?,?,?)
-			ON CONFLICT(session_id) DO UPDATE SET check_active=excluded.check_active,check_waiting=0,
-			check_more=excluded.check_more,check_open=excluded.check_open,check_msgs=excluded.check_msgs,
-			check_task_hash=excluded.check_task_hash`,
-			sessionID, active, streak, open, msgs, moreHash); err != nil {
+		if _, err = tx.Exec(`UPDATE sessions SET check_active=?,check_waiting=0,check_more=?,check_open=?,check_msgs=?,check_task_hash=? WHERE id=?`,
+			active, streak, open, msgs, moreHash, sessionID); err != nil {
 			return err
 		}
 		if !paused && (wake || st.wakeDay != "") {
-			if _, err = tx.Exec(`INSERT INTO session_wakes(session_id,wake_day,wake_day_count,wake_streak,wake_open,wake_msgs)
-				VALUES(?,?,?,?,?,?)
-				ON CONFLICT(session_id) DO UPDATE SET wake_day=excluded.wake_day,wake_day_count=excluded.wake_day_count,
-				wake_streak=excluded.wake_streak,wake_open=excluded.wake_open,wake_msgs=excluded.wake_msgs`,
-				sessionID, wakeDay, wakeCount, wakeStreak, wakeOpen, wakeMsgs); err != nil {
+			if _, err = tx.Exec(`UPDATE sessions SET wake_day=?,wake_day_count=?,wake_streak=?,wake_open=?,wake_msgs=? WHERE id=?`,
+				wakeDay, wakeCount, wakeStreak, wakeOpen, wakeMsgs, sessionID); err != nil {
 				return err
 			}
 		}
@@ -602,11 +579,8 @@ func (s *Store) answerCheck(sessionID, task string, reported *protocol.Waiting) 
 			}
 		}
 	case "blocked":
-		if _, err = s.db.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting,check_task_hash)
-			VALUES(?,?,0,?)
-			ON CONFLICT(session_id) DO UPDATE SET check_active=excluded.check_active,check_waiting=0,
-			check_task_hash=excluded.check_task_hash`,
-			sessionID, active, checkTaskHash(task)); err != nil {
+		if _, err = s.db.Exec(`UPDATE sessions SET check_active=?,check_waiting=0,check_task_hash=? WHERE id=?`,
+			active, checkTaskHash(task), sessionID); err != nil {
 			return err
 		}
 		// The answer may only repeat the wait that is already on the Desk.
@@ -625,7 +599,7 @@ func (s *Store) answerCheck(sessionID, task string, reported *protocol.Waiting) 
 			}
 		}
 	}
-	return s.bumpCheckAnswer(kind)
+	return nil
 }
 
 // waitHasAsk says whether the wait the answer repeats already has an ask, open
@@ -689,43 +663,13 @@ func (s *Store) checkInboxItem(sessionID, node, text string) error {
 	return err
 }
 
-func (s *Store) bumpCheckAnswer(kind string) error {
-	_, err := s.db.Exec(`INSERT INTO check_answer_counts(day,kind,count) VALUES(?,?,1)
-		ON CONFLICT(day,kind) DO UPDATE SET count=count+1`, s.now().UTC().Format(idleCheckDay), kind)
-	return err
-}
-
 // checkCounts adds the idle check figures to the operator counts.
 func (s *Store) checkCounts(c *protocol.SessionCounts) error {
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE sender='agent-net' AND idem_key LIKE 'check:%'`).
 		Scan(&c.ChecksSent); err != nil {
 		return err
 	}
-	rows, err := s.db.Query(`SELECT kind,SUM(count) FROM check_answer_counts GROUP BY kind`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var kind string
-		var n int
-		if err := rows.Scan(&kind, &n); err != nil {
-			return err
-		}
-		switch kind {
-		case "done":
-			c.CheckAnswersDone = n
-		case "more":
-			c.CheckAnswersMore = n
-		case "blocked":
-			c.CheckAnswersBlocked = n
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	rows.Close()
-	return s.db.QueryRow(`SELECT COALESCE(SUM(wake_day_count),0) FROM session_wakes WHERE wake_day=?`,
+	return s.db.QueryRow(`SELECT COALESCE(SUM(wake_day_count),0) FROM sessions WHERE wake_day=?`,
 		s.now().UTC().Format(idleCheckDay)).Scan(&c.WakeUpsToday)
 }
 
@@ -764,7 +708,6 @@ func (s *Store) recordCheckAnnounce(id string, waiting *protocol.Waiting) error 
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`INSERT INTO session_checks(session_id,check_announced_at,check_fingerprint)
- VALUES(?,?,?) ON CONFLICT(session_id) DO UPDATE SET check_announced_at=excluded.check_announced_at,check_fingerprint=excluded.check_fingerprint`, id, s.now().UnixNano(), checkFingerprint(agents[0], workers))
+	_, err = s.db.Exec(`UPDATE sessions SET check_announced_at=?,check_fingerprint=? WHERE id=?`, s.now().UnixNano(), checkFingerprint(agents[0], workers), id)
 	return err
 }

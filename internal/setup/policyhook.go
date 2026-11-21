@@ -12,12 +12,11 @@ import (
 	"github.com/niparis/agent-net/internal/daemon"
 )
 
-// The Claude Code delegation policy hook (decision 0014). On each prompt,
-// Claude Code runs `agent-net policy-hook`. When the owner set a delegation
-// policy for the session in agent-net, the hook adds the policy as context
-// for that turn. Setup adds it to ~/.claude/settings.json only with the
-// owner's consent, and uninstall removes it, with the subagent files that the
-// daemon wrote for the policy.
+// The Claude Code policy hook (decision 0014). On each prompt, Claude Code runs
+// `agent-net policy-hook`, which adds the charter of the session's node as
+// context for that turn. Setup adds it to ~/.claude/settings.json only with the
+// owner's consent, and uninstall removes it. Uninstall also removes the
+// subagent files that older versions wrote for the delegation policy.
 
 // Values of Options.PolicyHook.
 const (
@@ -189,11 +188,8 @@ func (r *runner) askPolicyHook() (yes, ok bool) {
 	}
 	defer tty.Close()
 	fmt.Fprintln(r.Out, "agent-net can add a second Claude Code hook to ~/.claude/settings.json. On each")
-	fmt.Fprintln(r.Out, "prompt it asks agent-net for the delegation policy that you set for the session")
-	fmt.Fprintln(r.Out, "in the TUI (for example: hand code changes to a subagent or a worker) and the")
-	fmt.Fprintln(r.Out, "charter of the session's node, and adds them as context. When you set a policy")
-	fmt.Fprintln(r.Out, "that names a subagent, agent-net also writes a marked file in ~/.claude/agents/.")
-	fmt.Fprintln(r.Out, "Uninstall removes both. No model is called.")
+	fmt.Fprintln(r.Out, "prompt it asks agent-net for the charter of the session's node and adds it as")
+	fmt.Fprintln(r.Out, "context. Uninstall removes it. No model is called.")
 	fmt.Fprint(r.Out, "Add the hook? [y/N] ")
 	line, _ := bufio.NewReader(tty).ReadString('\n')
 	switch strings.ToLower(strings.TrimSpace(line)) {

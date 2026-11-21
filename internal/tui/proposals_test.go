@@ -87,7 +87,7 @@ func TestProposalExpiredHidden(t *testing.T) {
 	m.usage.at = m.now()
 	updated, _ := m.update(m.fetchCmd()())
 	m = updated.(Model)
-	m = keys(m, "7")
+	m = keys(m, "6")
 	if len(m.proposals) != 1 || !strings.Contains(m.testView(), "CTO proposal") {
 		t.Fatal("open proposal not fetched")
 	}

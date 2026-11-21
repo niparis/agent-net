@@ -36,7 +36,12 @@ func needsReminderCheck(m protocol.Message) bool {
 // another), for an ended or offline worker, for the owner and connected apps
 // (the TUI and the app show the state), or when the notice was stored already.
 // The notice waits in the queue like any message while the sender is offline.
-func (s *Store) undeliveredNotice(tx *sql.Tx, m protocol.Message, reason string, uncertain bool) (protocol.Message, bool, error) {
+//
+// waiting is the early form: the message is still queued, and the notice says
+// why it waits ("is waiting") instead of that it failed. It is also sent for an
+// ended worker, because nothing will wake a worker for a message. The key is
+// the same, so the notice at expiry is not a second one.
+func (s *Store) undeliveredNotice(tx *sql.Tx, m protocol.Message, reason string, uncertain, waiting bool) (protocol.Message, bool, error) {
 	var none protocol.Message
 	if m.From == "agent-net" {
 		return none, false, nil
@@ -56,7 +61,7 @@ func (s *Store) undeliveredNotice(tx *sql.Tx, m protocol.Message, reason string,
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id=? AND worker<>'' AND (worker_run_active=0 OR online=0)`, m.To).Scan(&ended); err != nil {
 		return none, false, err
 	}
-	if ended != 0 {
+	if ended != 0 && !waiting {
 		return none, false, nil
 	}
 	if paused, err := s.nudgePaused(tx, "undelivered", m.From); err != nil {
@@ -65,13 +70,15 @@ func (s *Store) undeliveredNotice(tx *sql.Tx, m protocol.Message, reason string,
 		return none, false, nil
 	}
 	var name string
-	if err = tx.QueryRow(`SELECT COALESCE(NULLIF(p.name,''),NULLIF(r.name,''),?) FROM (SELECT ? AS id) x
-		LEFT JOIN sessions r ON r.id=x.id LEFT JOIN profiles p ON p.session_id=x.id`, m.To, m.To).Scan(&name); err != nil {
+	if err = tx.QueryRow(`SELECT COALESCE((SELECT NULLIF(name,'') FROM sessions WHERE id=?),?)`, m.To, m.To).Scan(&name); err != nil {
 		return none, false, err
 	}
 	verb := "was not delivered"
-	if uncertain {
+	switch {
+	case uncertain:
 		verb = "may not have arrived"
+	case waiting:
+		verb = "is waiting"
 	}
 	body := fmt.Sprintf("[agent-net] message to %s %s: %s.\nMessage %s: \"%s\"\nThis is a notice from agent-net. No reply is needed.",
 		protocol.NeutralizeMarkers(html.EscapeString(protocol.CleanWaitingText(name))), verb,
@@ -114,7 +121,7 @@ func (s *Store) failureNotice(tx *sql.Tx, id, detail string) (protocol.Message, 
 	if reason == "" {
 		reason = "the receiving machine reported a failure"
 	}
-	return s.undeliveredNotice(tx, m, reason, uncertain)
+	return s.undeliveredNotice(tx, m, reason, uncertain, false)
 }
 
 // expiryNotice is the notice for a message that expired before any delivery
@@ -133,7 +140,7 @@ func (s *Store) expiryNotice(tx *sql.Tx, m protocol.Message) (protocol.Message, 
 	if last = strings.TrimSpace(last); last != "" {
 		reason += "; last error: " + last
 	}
-	return s.undeliveredNotice(tx, m, reason, uncertain)
+	return s.undeliveredNotice(tx, m, reason, uncertain, false)
 }
 
 func ttlText(d time.Duration) string {
@@ -164,13 +171,35 @@ func (s *Store) NotDelivered(id, reason string) (notice protocol.Message, notice
 	if reason == "" {
 		reason = "the session ran no turn for it"
 	}
-	if notice, noticed, err = s.undeliveredNotice(tx, m, reason, false); err != nil {
+	if notice, noticed, err = s.undeliveredNotice(tx, m, reason, false, false); err != nil {
 		return protocol.Message{}, false, err
 	}
 	if err = tx.Commit(); err != nil {
 		return protocol.Message{}, false, err
 	}
 	s.Event("msg.not_delivered", "", m.To, id, reason)
+	if noticed {
+		s.logMessage(notice)
+	}
+	return notice, noticed, nil
+}
+
+// WaitingNotice stores the early notice to the sender of a queued message that
+// agent-net will not wake its recipient for: the reason says why it waits. It
+// reports the notice to dispatch. It is stored once per message.
+func (s *Store) WaitingNotice(m protocol.Message, reason string) (protocol.Message, bool, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return protocol.Message{}, false, err
+	}
+	defer tx.Rollback()
+	notice, noticed, err := s.undeliveredNotice(tx, m, reason, false, true)
+	if err != nil {
+		return protocol.Message{}, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return protocol.Message{}, false, err
+	}
 	if noticed {
 		s.logMessage(notice)
 	}

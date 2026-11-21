@@ -34,7 +34,7 @@ func TestNodesInfoCarriesQuotas(t *testing.T) {
 		t.Errorf("percent %v", got)
 	}
 	// A stale report is not offered to agents.
-	c.t = c.t.Add(protocol.UsageStaleSeconds*time.Second + time.Second)
+	c.advance(protocol.UsageStaleSeconds*time.Second + time.Second)
 	info, _ = g.NodesInfo()
 	if len(info.Nodes) != 1 || info.Nodes[0].Quotas != nil {
 		t.Errorf("stale quotas: %+v", info.Nodes[0].Quotas)

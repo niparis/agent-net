@@ -72,7 +72,7 @@ func TestWorkerModelAuthFailure(t *testing.T) {
 			if _, err := g.handleWorker(context.Background(), &nodeConn{id: node}, "worker.stopped", raw); err != nil {
 				t.Fatal(err)
 			}
-			clock.t = clock.t.Add(48 * time.Hour)
+			clock.advance(48 * time.Hour)
 			only := *n
 			only.Harnesses = n.Harnesses[:1]
 			if got, err := harnessChoice(g, &only, "gpt-6.1-sol"); err == nil {
@@ -136,17 +136,17 @@ func TestWorkerModelAuthProviderScope(t *testing.T) {
 	check("other", "opencode", "openai/luna", false)
 	check("node", "codex", "gpt-6.1-sol", false)
 	check("node", "opencode", "openai-codex/sol", false)
-	clock.t = clock.t.Add(time.Second)
+	clock.advance(time.Second)
 	if err := s.RecordModelSuccess("node", "opencode", "openai/luna:high"); err != nil {
 		t.Fatal(err)
 	}
 	check("node", "opencode", "openai/sol", false)
-	clock.t = clock.t.Add(time.Second)
+	clock.advance(time.Second)
 	if err := s.RecordModelFailure("node", "opencode", "openai/sol:medium", "429 rate limit"); err != nil {
 		t.Fatal(err)
 	}
 	check("node", "opencode", "openai/sol", false)
-	clock.t = clock.t.Add(time.Second)
+	clock.advance(time.Second)
 	if err := s.RecordModelFailure("node", "opencode", "openai/sol:medium", "403"); err != nil {
 		t.Fatal(err)
 	}

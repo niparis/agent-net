@@ -95,7 +95,7 @@ func TestPiLegacyHelperLifetime(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			clock.t = clock.t.Add(time.Minute)
+			clock.advance(time.Minute)
 			foreground, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "foreground", PID: 4242, Mode: protocol.ModeForeground})
 			if err != nil {
 				t.Fatal(err)

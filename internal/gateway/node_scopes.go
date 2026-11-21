@@ -233,22 +233,28 @@ func (s *Store) ScopesWithRepos(node string) ([]protocol.Scope, map[string][]str
 			continue
 		}
 		var query string
+		var args []any
 		switch kind {
 		case "team":
-			query = `SELECT member_id FROM team_members WHERE team_id=? AND member_kind='repo'
- UNION SELECT r.id FROM repos r JOIN team_members m ON m.member_kind='agent' AND m.member_id=r.owner_agent_id WHERE m.team_id=?`
+			query = `SELECT id FROM repos WHERE team_id=?
+ UNION SELECT r.id FROM repos r JOIN agents a ON a.id=r.lead_agent_id WHERE a.team_id=?`
+			args = []any{id, id}
 		case "agent":
-			// The cutover step that reads scopes runs on a store from before the
-			// repo fold, so the explicit leads come from that store's layout.
 			rs, err := s.repoLayout()
 			if err != nil {
 				return nil, nil, err
 			}
-			query = `SELECT id FROM repos WHERE owner_agent_id=? UNION ` + rs.explicitLeads()
+			if rs.unified {
+				query = `SELECT id FROM repos WHERE lead_agent_id=?`
+				args = []any{id}
+			} else {
+				query = `SELECT id FROM repos WHERE owner_agent_id=? UNION ` + rs.explicitLeads()
+				args = []any{id, id}
+			}
 		default:
 			continue
 		}
-		rows, err := s.db.Query(query, id, id)
+		rows, err := s.db.Query(query, args...)
 		if err != nil {
 			return nil, nil, err
 		}

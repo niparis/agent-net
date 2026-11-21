@@ -60,7 +60,7 @@ func TestConnectedAppsBlockRemaining(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		_, _ = g.handle(context.Background(), &nodeConn{}, "apps.pending", raw)
 	}
-	c.t = c.t.Add(7 * time.Minute)
+	c.advance(7 * time.Minute)
 	_, err := g.handle(context.Background(), &nodeConn{}, "apps.pending", raw)
 	if err == nil || !strings.Contains(err.Error(), "too many tries: 3 minutes") {
 		t.Fatalf("remaining: %v", err)

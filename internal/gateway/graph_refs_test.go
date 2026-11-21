@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -264,5 +265,18 @@ func TestGraphRefsMigrationReplayIdempotent(t *testing.T) {
 		if err := s.db.QueryRow(`SELECT COUNT(*) FROM graph_history WHERE type='agent_charter' AND node='demo'`).Scan(&count); err != nil || count != 1 {
 			t.Fatalf("replay %d: %d rows, %v", i, count, err)
 		}
+	}
+}
+
+// An unused invite is a nodes row in state 'invited' with no version. It is
+// not a machine, so it must not hold the typed Graph cutover back.
+func TestGraphRefsBlockersIgnoreUnusedInvites(t *testing.T) {
+	s, _ := newTestStore(t)
+	g := &Gateway{store: s}
+	if _, err := s.CreateEnrollCode(10 * time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := g.graphRefsBlockers(context.Background(), s.db, false); err != nil || len(b) != 0 {
+		t.Fatalf("unused invite blocks the cutover: %v: %v", b, err)
 	}
 }

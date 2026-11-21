@@ -385,7 +385,7 @@ func TestPruneKeepsOpenStartsAndCountsFromClosing(t *testing.T) {
 	if err := f.s.closeStart(f.nodeA, "q_old", ""); err != nil {
 		t.Fatal(err)
 	}
-	f.clock.t = f.clock.t.Add(40 * 24 * time.Hour)
+	f.clock.advance(40 * 24 * time.Hour)
 	if err := f.s.closeStart(f.nodeA, "q_slow", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -577,14 +577,14 @@ func TestNotStartedRosterUsesThePickerReasons(t *testing.T) {
 	}
 	// No score matches the deepseek model, so the chooser has nothing to pick.
 	scoresJSON := `[{"match":"gemini-2.5-flash","score":70},{"match":"claude-opus-5-5","score":60}]`
-	if _, err := f.s.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, scoresKey, scoresJSON); err != nil {
+	if _, err := f.s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0) ON CONFLICT (key,level,scope,item) DO UPDATE SET value=excluded.value`, scoresKey, scoresJSON); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.s.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerProvidersKey, `{"providers":["google","deepseek","anthropic"]}`); err != nil {
+	if _, err := f.s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0) ON CONFLICT (key,level,scope,item) DO UPDATE SET value=excluded.value`, workerProvidersKey, `{"providers":["google","deepseek","anthropic"]}`); err != nil {
 		t.Fatal(err)
 	}
 	// Anthropic has 30% left, under the 40% floor. Deepseek has no reading.
-	if _, err := f.s.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"anthropic":40}}`); err != nil {
+	if _, err := f.s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0) ON CONFLICT (key,level,scope,item) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"anthropic":40}}`); err != nil {
 		t.Fatal(err)
 	}
 	quotas := &protocol.Quotas{

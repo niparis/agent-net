@@ -28,11 +28,11 @@ type leadSessionRef struct {
 // worker, not a merger, not archived, and not the owner, CTO or a bot.
 func leadSessionCandidatesQ(q leadDB, agent string) ([]leadSessionRef, error) {
 	rows, err := q.Query(`SELECT s.id,
-		COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),NULLIF(s.title,''),NULLIF(s.repo_project,''),s.id)
-		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
+		COALESCE(NULLIF(s.name,''),NULLIF(s.title,''),NULLIF(s.repo_project,''),s.id)
+		FROM sessions s
 		WHERE s.agent_id=? AND s.worker='' AND s.archived_at=0
 		AND s.harness NOT IN ('owner','cto','bot')
-		AND NOT EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=s.id)
+		AND NOT EXISTS(SELECT 1 FROM repos pm WHERE pm.merger_session=s.id)
 		AND NOT EXISTS(SELECT 1 FROM agents ma WHERE ma.id=s.agent_id AND ma.role='merger')
 		ORDER BY s.last_seen DESC,s.id`, agent)
 	if err != nil {
@@ -127,7 +127,7 @@ func (s *Store) pinOrAskLeadSessionTx(tx *sql.Tx, agent string) error {
 // An open question for the same Agent is refreshed, never repeated.
 func (s *Store) askWhichLeadSessionQ(q askDB, agent string, sessions []leadSessionRef) error {
 	var cto string
-	err := q.QueryRow(`SELECT value FROM owner_settings WHERE key='cto_session'`).Scan(&cto)
+	err := q.QueryRow(`SELECT value FROM gateway_state WHERE key='cto_session'`).Scan(&cto)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}

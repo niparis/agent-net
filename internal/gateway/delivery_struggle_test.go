@@ -114,7 +114,7 @@ func TestAcceptTaskStruggleFallsBackToTheRunRow(t *testing.T) {
 // TestWorkerStoppedCarriesStruggleToTheRun covers the wire bridge: the
 // daemon's worker.stopped frame puts the counts in the run row.
 func TestWorkerStoppedCarriesStruggleToTheRun(t *testing.T) {
-	g, node := scopeGateway(t)
+	g, node := mcpGateway(t)
 	id, err := g.store.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "worker", Status: "busy", Worker: &protocol.WorkerInfo{ID: "w_test"}})
 	if err != nil {
 		t.Fatal(err)

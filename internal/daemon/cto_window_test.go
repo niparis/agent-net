@@ -133,7 +133,7 @@ func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
 }
 
 func TestCTOWindowNonGraphToolsStayProposals(t *testing.T) {
-	for _, name := range strings.Fields("graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change cto_new message") {
+	for _, name := range strings.Fields("graph_change session_change worker_change answer mcp_change mcp_call settings_change project_change cto_new message") {
 		if isCTOGraphTool(name) && name != "graph_change" {
 			t.Fatalf("non graph %s is covered by window", name)
 		}
@@ -144,7 +144,6 @@ func TestCTOWindowNonGraphToolsStayProposals(t *testing.T) {
 		"session_change":  json.RawMessage(`{"action":"rename","session_id":"s","name":"n"}`),
 		"worker_change":   json.RawMessage(`{"action":"stop","session":"s"}`),
 		"answer":          json.RawMessage(`{"kind":"held","message_id":"m","action":"a"}`),
-		"tools_change":    json.RawMessage(`{"action":"undo","item":"i"}`),
 		"mcp_change":      json.RawMessage(`{"action":"test","name":"n"}`),
 		"mcp_call":        json.RawMessage(`{"server":"s","tool":"t"}`),
 		"settings_change": json.RawMessage(`{"area":"notifications","disabled":true}`),

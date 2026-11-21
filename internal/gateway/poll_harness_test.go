@@ -270,7 +270,7 @@ func TestMeasureTUIPolling(t *testing.T) {
 	// online again, as the live gateway has them.
 	g.store.db.Exec(`UPDATE sessions SET online=1 WHERE last_seen > ? AND harness NOT IN ('cto','owner','bot')`, time.Now().Add(-time.Hour).UnixNano())
 	h := &pollHarness{t: t, g: g, calls: map[string]int{}, bytes: map[string]int{}}
-	_ = g.store.db.QueryRow(`SELECT value FROM owner_settings WHERE key='owner_node'`).Scan(&h.node)
+	_ = g.store.db.QueryRow(`SELECT value FROM gateway_state WHERE key='owner_node'`).Scan(&h.node)
 	_ = g.store.db.QueryRow(`SELECT id FROM sessions WHERE harness='owner' AND node_id=? LIMIT 1`, h.node).Scan(&h.owner)
 
 	sock := filepath.Join(dir, "d.sock")

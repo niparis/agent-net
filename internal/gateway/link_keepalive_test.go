@@ -12,7 +12,6 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/niparis/agent-net/internal/linkkeepalive"
-	"github.com/niparis/agent-net/internal/phrasing"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -240,39 +239,6 @@ func TestLinkOfflineGraceQuickRedial(t *testing.T) {
 	g.nodeGone(id, oldTimer)
 	if !sessionOnline(g, id) {
 		t.Fatal("quick redial let the old timer mark the session offline")
-	}
-}
-
-func TestLinkKeepaliveGatewayBusyHandler(t *testing.T) {
-	g, url, id, token := newLinkGateway(t, 70*time.Millisecond)
-	fake := &blockingSummaryWorker{started: make(chan struct{}), release: make(chan struct{})}
-	g.store.phraseCleaner = phrasing.New(fake)
-	t.Cleanup(func() { close(fake.release) })
-	owner, err := g.store.UpsertSession(id, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: "owner", Name: "owner"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var pings atomic.Int32
-	ws := dialLinkPeer(t, url, token, true, &pings)
-	request := map[string]string{"type": "tools.summary", "id": "1", "owner": owner, "a_hash": "a", "b_hash": "b", "a": "first", "b": "second"}
-	raw, err := json.Marshal(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := ws.Write(context.Background(), websocket.MessageText, raw); err != nil {
-		t.Fatal(err)
-	}
-	waitLink(t, "long request to start", func() bool {
-		select {
-		case <-fake.started:
-			return true
-		default:
-			return false
-		}
-	})
-	waitLink(t, "pings during the request", func() bool { return pings.Load() >= 10 || !nodeConnected(g, id) })
-	if !nodeConnected(g, id) || pings.Load() < 10 {
-		t.Fatalf("busy handler closed a responsive link after %d pings", pings.Load())
 	}
 }
 

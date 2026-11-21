@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/niparis/agent-net/internal/inventory"
@@ -53,16 +52,13 @@ func archiveSkillSchema(t *testing.T) (json.RawMessage, *jsonschema.Resolved) {
 // An intake answer must pass the schema the CTO tool checks, and the schema
 // must not drop any field of it.
 func TestSkillArchiveIntakeOutputMatchesCatalogSchema(t *testing.T) {
-	g, n, _ := toggleFixture(t)
+	g, n := archiveFixture(t)
 	dir := t.TempDir()
 	folder, hash := archiveSkillFolder(t, filepath.Join(dir, "a"), "---\ndescription: First copy.\n---\nbody\n")
-	if err := g.store.SetInventory(n, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: []protocol.InventoryItem{
-		{Kind: "skill", Name: "demo", Hash: hash, State: "ok", Scope: "user", Location: folder},
-		{Kind: "skill", Name: "linked", State: "error", Scope: "user", Location: "/x/linked", Reason: "skill root is a symlink: /elsewhere"},
-	}}); err != nil {
-		t.Fatal(err)
-	}
-	archiveFakeNode(t, g, n, map[string][]byte{hash: archiveBundle(t, folder)})
+	archiveFakeNodeSources(t, g, n, map[string][]byte{folder: archiveBundle(t, folder)}, []protocol.SkillSource{
+		{Name: "demo", Hash: hash, Location: folder, Origin: "user", State: protocol.InventoryOK},
+		{Name: "linked", Location: "/x/linked", Origin: "user", State: protocol.InventoryError, Reason: "skill root is a symlink: /elsewhere"},
+	})
 	raw, got := archiveIntakeJSON(t, g)
 	if len(got.Skills) != 1 || got.Skills[0].Source == "" {
 		t.Fatalf("row without a source line: %+v", got.Skills)
@@ -102,35 +98,28 @@ func TestSkillArchiveIntakeReportsEveryMachine(t *testing.T) {
 	if _, err := g.skillArchivePut(skillContentOf(t, "known", folderOld, hashOld), skillArchiveSource{Kind: "machine", Node: "x", Path: "/x"}, "owner", false); err != nil {
 		t.Fatal(err)
 	}
-	node := func(host string, items []protocol.InventoryItem) string {
+	node := func(host string) string {
 		id, _, err := g.store.CreateNode(host, "linux")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if items != nil {
-			if err = g.store.SetInventory(id, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: items}); err != nil {
-				t.Fatal(err)
-			}
-		}
 		return id
 	}
-	alpha := node("alpha", []protocol.InventoryItem{
-		{Kind: "skill", Name: "fine", Hash: hashOK, State: "ok", Scope: "user", Location: folderOK},
-		{Kind: "skill", Name: "known", Hash: hashOld, State: "ok", Scope: "user", Location: folderOld},
-		{Kind: "skill", Name: "vanished", Hash: hashGone, State: "ok", Scope: "user", Location: folderGone},
-		{Kind: "skill", Name: "linked", State: "error", Scope: "user", Location: "/x/linked", Reason: "skill root is a symlink: /elsewhere"},
+	alpha, beta, gamma := node("alpha"), node("beta"), node("gamma")
+	archiveFakeNodeSources(t, g, alpha, map[string][]byte{folderOK: archiveBundle(t, folderOK), folderOld: archiveBundle(t, folderOld)}, []protocol.SkillSource{
+		{Name: "fine", Hash: hashOK, Location: folderOK, Origin: "user", State: protocol.InventoryOK},
+		{Name: "known", Hash: hashOld, Location: folderOld, Origin: "user", State: protocol.InventoryOK},
+		{Name: "vanished", Hash: hashGone, Location: folderGone, Origin: "user", State: protocol.InventoryOK},
+		{Name: "linked", Location: "/x/linked", Origin: "user", State: protocol.InventoryError, Reason: "skill root is a symlink: /elsewhere"},
 	})
-	beta := node("beta", []protocol.InventoryItem{{Kind: "skill", Name: "fine", Hash: hashOK, State: "ok", Scope: "user", Location: folderOK}})
-	gamma := node("gamma", nil)
-	archiveFakeNode(t, g, alpha, map[string][]byte{hashOK: archiveBundle(t, folderOK), hashOld: archiveBundle(t, folderOld)})
 	archiveFakeNode(t, g, gamma, nil)
-	_ = beta // enrolled, inventory known, but no connection
+	_ = beta // enrolled, but no connection
 
 	_, got := archiveIntakeJSON(t, g)
 	want := map[string]protocol.SkillArchiveMachine{
 		"alpha": {Result: "scanned", Found: 4, Added: 1, Existing: 1, Skipped: 2},
 		"beta":  {Result: "offline"},
-		"gamma": {Result: "skipped", Reason: "no inventory report yet"},
+		"gamma": {Result: "skipped", Reason: "the machine did not list its user skill folders: plugin and agent-net skills not read: unknown frame"},
 	}
 	if len(got.Machines) != len(want) {
 		t.Fatalf("machines: %+v", got.Machines)
@@ -164,8 +153,7 @@ func skillContentOf(t *testing.T, name, dir, hash string) skillArchiveContent {
 }
 
 // Plugin skills and the CTO's own skill come from the daemon's
-// node.skill_sources answer, with their own source lines. A daemon that does
-// not know the frame still gets its inventory read, and the report says so.
+// node.skill_sources answer, with their own source lines.
 func TestSkillArchiveIntakeTakesPluginAndAgentNetSkills(t *testing.T) {
 	g := archiveGateway(t)
 	dir := t.TempDir()
@@ -175,10 +163,7 @@ func TestSkillArchiveIntakeTakesPluginAndAgentNetSkills(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = g.store.SetInventory(id, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: []protocol.InventoryItem{}}); err != nil {
-		t.Fatal(err)
-	}
-	archiveFakeNodeSources(t, g, id, map[string][]byte{pluginHash: archiveBundle(t, plugin), ctoHash: archiveBundle(t, cto)}, []protocol.SkillSource{
+	archiveFakeNodeSources(t, g, id, map[string][]byte{plugin: archiveBundle(t, plugin), cto: archiveBundle(t, cto)}, []protocol.SkillSource{
 		{Name: "remotion", Hash: pluginHash, Location: plugin, Origin: "plugin remotion", State: "ok"},
 		{Name: "agent-net-setup", Hash: ctoHash, Location: cto, Origin: "agent-net", State: "ok"},
 		{Name: "broken", Location: "/p/broken", Origin: "plugin typesafe", State: "error", Reason: "invalid skill file"},
@@ -205,16 +190,16 @@ func TestSkillArchiveIntakeTakesPluginAndAgentNetSkills(t *testing.T) {
 	}
 }
 
-func TestSkillArchiveIntakeNamesWhatItCouldNotReadOnAnOldDaemon(t *testing.T) {
-	g, n, _ := toggleFixture(t)
+func TestSkillArchiveIntakeSkipsAMachineThatDoesNotListItsFolders(t *testing.T) {
+	g, n := archiveFixture(t)
 	archiveFakeNode(t, g, n, nil)
 	_, got := archiveIntakeJSON(t, g)
-	if len(got.Machines) != 1 || got.Machines[0].Result != "scanned" || !strings.Contains(got.Machines[0].Reason, "plugin and agent-net skills not read") {
+	if len(got.Machines) != 1 || got.Machines[0].Result != "skipped" || !strings.Contains(got.Machines[0].Reason, "did not list its user skill folders") {
 		t.Fatalf("machine: %+v", got.Machines)
 	}
 }
 
-// The real inventory scan of every harness's user folder and of a registered
+// The real scan of every harness's user folder and of a registered
 // project's folders reaches the archive, and a second intake changes nothing.
 func TestSkillArchiveIntakeTakesUserAndProjectFoldersOfEveryHarness(t *testing.T) {
 	g := archiveGateway(t)
@@ -242,26 +227,28 @@ func TestSkillArchiveIntakeTakesUserAndProjectFoldersOfEveryHarness(t *testing.T
 	}
 	write(home, user)
 	write(project, repo)
-	report := inventory.Scan(inventory.Options{Home: home, CodexHome: filepath.Join(home, ".codex"), Machine: "m", Projects: []protocol.ProjectEntry{{Name: "repo", Path: project}}})
 	id, _, err := g.store.CreateNode("alpha", "linux")
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err = g.store.SetInventory(id, report); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = g.store.AddProjects(id, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "repo", Path: project}}}); err != nil {
 		t.Fatal(err)
 	}
-	// The daemon answers node.skill_sources with the folders of each
-	// registered project. The user folders stay in the inventory report.
+	// The daemon answers node.skill_sources with the user folders and the
+	// folders of each registered project.
 	var sources []protocol.SkillSource
-	for _, it := range report.Items {
-		if it.Scope == protocol.InventoryProject {
-			sources = append(sources, protocol.SkillSource{Name: it.Name, Hash: it.Hash, Location: it.Location, Origin: "project " + it.Project, Project: it.Project, State: it.State, Reason: it.Reason})
+	scan := func(root inventory.SkillRoot, origin string) {
+		for _, it := range inventory.ScanSkillRoot(home, root).Items {
+			sources = append(sources, protocol.SkillSource{Name: it.Name, Hash: it.Hash, Location: it.Location, Origin: origin, Project: root.Project, State: it.State, Reason: it.Reason})
 		}
 	}
-	archiveFakeNodeAnswer(t, g, id, bundles, &protocol.SkillSourcesResult{Sources: sources, ProjectsRead: []string{"repo"}})
+	for _, root := range inventory.UserSkillRoots(home, filepath.Join(home, ".codex")) {
+		scan(root, "user")
+	}
+	for _, root := range inventory.ProjectSkillRoots("repo", project) {
+		scan(root, "project repo")
+	}
+	archiveFakeNodeAnswer(t, g, id, bundles, &protocol.SkillSourcesResult{Sources: sources, ProjectsRead: []string{"repo"}, UserRead: true})
 	_, first := archiveIntakeJSON(t, g)
 	if len(first.Skills) != len(user)+len(repo) {
 		t.Fatalf("added %d skills, want %d: %+v", len(first.Skills), len(user)+len(repo), first.Skills)

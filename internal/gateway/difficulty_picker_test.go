@@ -26,10 +26,10 @@ func TestDifficultyJudgePickerUsesTheFixedListAndProtection(t *testing.T) {
 		}
 	}
 	scores := `[{"match":"claude-test","score":32},{"match":"gemini-test","score":32}]`
-	if _, err := s.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,0)`, scoresKey, scores); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0)`, scoresKey, scores); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,0)`, workerProvidersKey, `{"providers":["anthropic","google"]}`); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0)`, workerProvidersKey, `{"providers":["anthropic","google"]}`); err != nil {
 		t.Fatal(err)
 	}
 	g := &Gateway{store: s, logger: log.New(io.Discard, "", 0), conns: map[string]*nodeConn{node: {id: node}}}
@@ -53,7 +53,7 @@ func TestDifficultyJudgePickerUsesTheFixedListAndProtection(t *testing.T) {
 	if backup["provider"] == first["provider"] || backup["model"] == "" {
 		t.Fatalf("the next candidate %v has the first provider %v", backup, first)
 	}
-	if _, err := s.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,0)`, protectedProvidersKey, `{"protected_providers":["anthropic"]}`); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0)`, protectedProvidersKey, `{"protected_providers":["anthropic"]}`); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 3; i++ {
@@ -99,7 +99,7 @@ func TestDifficultyJudgePickerChecksMachineAvailabilityAndLevel(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := s.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,0)`, scoresKey, `[{"match":"claude-test","score":32},{"match":"gemini-test","score":32}]`); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0)`, scoresKey, `[{"match":"claude-test","score":32},{"match":"gemini-test","score":32}]`); err != nil {
 		t.Fatal(err)
 	}
 	g := &Gateway{store: s, logger: log.New(io.Discard, "", 0), conns: map[string]*nodeConn{node: {id: node}}}
@@ -124,7 +124,7 @@ func TestDifficultyJudgePickerChecksMachineAvailabilityAndLevel(t *testing.T) {
 	}
 	// Decision 0105 replaced the max-or-one-level-below band with the cell rule.
 	// A strong model that is the only one available is used for normal work.
-	if _, err := s.db.Exec(`UPDATE owner_settings SET value=? WHERE key=?`, `[{"match":"claude-test","score":32},{"match":"gemini-test","score":52}]`, scoresKey); err != nil {
+	if _, err := s.db.Exec(`UPDATE setting_values SET value=? WHERE key=?`, `[{"match":"claude-test","score":32},{"match":"gemini-test","score":52}]`, scoresKey); err != nil {
 		t.Fatal(err)
 	}
 	if got := pick(); got.Model != "gemini-test" {

@@ -69,28 +69,27 @@ type ProjectsFindRequest struct {
 // agent_session_get. The required fields are always present; the optional
 // ones are added by detail "full".
 type SessionRow struct {
-	AgentID          string  `json:"agent_id,omitempty"`
-	AgentName        string  `json:"agent_name,omitempty"`
-	RepoLead         bool    `json:"repo_lead,omitempty"`
-	RepoLeadExplicit bool    `json:"repo_lead_explicit,omitempty"`
-	TeamLead         bool    `json:"team_lead,omitempty"`
-	RepoMaxAgents    int     `json:"repo_max_agents,omitempty"`
-	RepoAgentCount   int     `json:"repo_agent_count,omitempty"`
-	RepoOverMax      bool    `json:"repo_over_max,omitempty"`
-	Type             string  `json:"type,omitempty"`
-	ID               string  `json:"id"`
-	Name             string  `json:"name"`
-	Kind             string  `json:"kind"`
-	Machine          string  `json:"machine"`
-	Project          string  `json:"project"`
-	Harness          string  `json:"harness"`
-	Model            string  `json:"model"`
-	Online           bool    `json:"online"`
-	Status           string  `json:"status"`
-	Availability     string  `json:"availability,omitempty"`
-	Task             string  `json:"task"`
-	LastSeen         string  `json:"last_seen"`
-	TaskStarted      *string `json:"task_started"`
+	AgentID        string  `json:"agent_id,omitempty"`
+	AgentName      string  `json:"agent_name,omitempty"`
+	RepoLead       bool    `json:"repo_lead,omitempty"`
+	TeamLead       bool    `json:"team_lead,omitempty"`
+	RepoMaxAgents  int     `json:"repo_max_agents,omitempty"`
+	RepoAgentCount int     `json:"repo_agent_count,omitempty"`
+	RepoOverMax    bool    `json:"repo_over_max,omitempty"`
+	Type           string  `json:"type,omitempty"`
+	ID             string  `json:"id"`
+	Name           string  `json:"name"`
+	Kind           string  `json:"kind"`
+	Machine        string  `json:"machine"`
+	Project        string  `json:"project"`
+	Harness        string  `json:"harness"`
+	Model          string  `json:"model"`
+	Online         bool    `json:"online"`
+	Status         string  `json:"status"`
+	Availability   string  `json:"availability,omitempty"`
+	Task           string  `json:"task"`
+	LastSeen       string  `json:"last_seen"`
+	TaskStarted    *string `json:"task_started"`
 	// Waiting is set while the session waits for its user. Status then says
 	// StatusWaitingForUser.
 	Waiting *WaitingRow `json:"waiting,omitempty"`
@@ -111,7 +110,6 @@ type SessionRow struct {
 	Purpose      string            `json:"purpose,omitempty"`
 	Charter      *ReadCharter      `json:"charter,omitempty"`
 	Rules        map[string]string `json:"rules,omitempty"`
-	Delegation   string            `json:"delegation,omitempty"`
 	Worker       *SessionWorker    `json:"worker,omitempty"`
 	// Loop is the standing loop of the session's node (decision 0094).
 	Loop *LoopView `json:"loop,omitempty"`

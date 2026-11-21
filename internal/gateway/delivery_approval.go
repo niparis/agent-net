@@ -88,23 +88,27 @@ func (s *Store) answerDeliveryApproval(id, answer string, validate ...bool) (pro
 	if want != commit {
 		return item, true, reject("the change has a different commit; dismiss this approval")
 	}
-	var taskOwner, claimed string
-	var completed int
-	err = tx.QueryRow(`SELECT owner_node,claimed_by,completed FROM delivery_step_tasks
+	var taskOwner string
+	err = tx.QueryRow(`SELECT owner_node FROM delivery_step_tasks
 		WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`,
-		c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)).Scan(&taskOwner, &claimed, &completed)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return item, true, err
-	}
-	if err == nil && taskOwner == delegateTaskOwner {
-		if completed != 0 {
-			return item, true, reject("this approval was already reported by a delegate")
-		}
-		if _, err := tx.Exec(`UPDATE delivery_step_tasks SET claimed_by=?,completed=1
-			WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`,
-			protocol.EvidenceByOwner, c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)); err != nil {
+		c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)).Scan(&taskOwner)
+	switch {
+	case err == nil && taskOwner == delegateTaskOwner:
+		if err := endStepTasks(tx, `t.change_id=? AND t.revision=? AND t.step=? AND t.for_step=? AND t.after_merge=?`,
+			c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)); err != nil {
 			return item, true, err
 		}
+	case errors.Is(err, sql.ErrNoRows):
+		// A delegate that reported the step already ended its task.
+		var reported bool
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_evidence WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?)`,
+			c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)).Scan(&reported); err != nil {
+			return item, true, err
+		} else if reported {
+			return item, true, reject("this approval was already reported by a delegate")
+		}
+	case err != nil:
+		return item, true, err
 	}
 	p.Steps = append([]protocol.PipelineStep(nil), p.Steps...)
 	found := false

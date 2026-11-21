@@ -10,7 +10,7 @@ import (
 // tickOwed runs the owed-reply check at a test time.
 func tickOwed(t *testing.T, s *Store, c *clock, at time.Time) {
 	t.Helper()
-	c.t = at
+	c.set(at)
 	if _, err := s.checkOwedReplies(); err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestOwedReplyProgressFollowUpDefersNudgeAndAsk(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c.t = start.Add(time.Minute)
+	c.set(start.Add(time.Minute))
 	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: req.ID, Body: "The release runs about 45 minutes", Progress: true, FollowUpAt: "45m"}); err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestOwedReplyProgressFollowUpStopsAskAfterNudge(t *testing.T) {
 		t.Fatalf("at 15 minutes: %d nudges, want 1", nudges)
 	}
 
-	c.t = start.Add(16 * time.Minute)
+	c.set(start.Add(16 * time.Minute))
 	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: req.ID, Body: "About an hour more", Progress: true, FollowUpAt: "1h"}); err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestOwedReplyProgressWithoutFollowUpDefersByGrace(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c.t = start.Add(time.Minute)
+	c.set(start.Add(time.Minute))
 	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: req.ID, Body: "Still working", Progress: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestOwedReplyProgressGraceSetting(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c.t = start.Add(time.Minute)
+	c.set(start.Add(time.Minute))
 	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: req.ID, Body: "Still working", Progress: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -200,11 +200,11 @@ func TestOwedReplyLatestProgressReplyDecides(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c.t = start.Add(time.Minute)
+	c.set(start.Add(time.Minute))
 	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: req.ID, Body: "Three hours", Progress: true, FollowUpAt: "3h"}); err != nil {
 		t.Fatal(err)
 	}
-	c.t = start.Add(2 * time.Minute)
+	c.set(start.Add(2 * time.Minute))
 	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: req.ID, Body: "Still working, no time", Progress: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -229,12 +229,12 @@ func TestOwedReplyProgressFollowUpIsNotAChiefFollowUp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: req.ID, Body: "About five minutes", Progress: true, FollowUpAt: "5m"}); err != nil {
 		t.Fatal(err)
 	}
 
-	c.t = c.t.Add(10 * time.Minute)
+	c.advance(10 * time.Minute)
 	tickFollowUps(t, s)
 	if got := followUpAsks(t, s); len(got) != 0 {
 		t.Fatalf("progress follow-up raised %d chief asks, want 0: %+v", len(got), got)

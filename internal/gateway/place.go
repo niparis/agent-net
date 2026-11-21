@@ -83,7 +83,7 @@ func (s *Store) placeText(session string) (string, error) {
 		return "", nil
 	}
 	var cto string
-	if err = s.db.QueryRow(`SELECT COALESCE((SELECT value FROM owner_settings WHERE key='cto_session'),'')`).Scan(&cto); err != nil {
+	if err = s.db.QueryRow(`SELECT COALESCE((SELECT value FROM gateway_state WHERE key='cto_session'),'')`).Scan(&cto); err != nil {
 		return "", err
 	}
 	if cto == session {
@@ -227,10 +227,10 @@ func (s *Store) placeText(session string) (string, error) {
 // teamMemberNames lists the repos and agents of a team by display name, except
 // the leader's own.
 func (s *Store) teamMemberNames(team, ownRepo, ownAgent string) ([]string, error) {
-	rows, err := s.db.Query(`SELECT r.display_name FROM team_members tm JOIN repos r ON r.id=tm.member_id
-		WHERE tm.team_id=? AND tm.member_kind='repo' AND tm.member_id<>? AND r.archived=0
-		UNION SELECT a.display_name FROM team_members tm JOIN agents a ON a.id=tm.member_id
-		WHERE tm.team_id=? AND tm.member_kind='agent' AND tm.member_id<>?`, team, ownRepo, team, ownAgent)
+	rows, err := s.db.Query(`SELECT r.display_name FROM repos r
+		WHERE r.team_id=? AND r.id<>? AND r.archived=0
+		UNION SELECT a.display_name FROM agents a
+		WHERE a.team_id=? AND a.id<>?`, team, ownRepo, team, ownAgent)
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +321,7 @@ func stripRoutingNote(body string) string {
 // sessionLabel is the name a session goes by in text, or its ID.
 func sessionLabel(q interface{ QueryRow(string, ...any) *sql.Row }, id string) string {
 	var name string
-	if q.QueryRow(`SELECT COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),s.id) FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, id).Scan(&name) != nil || name == "" {
+	if q.QueryRow(`SELECT COALESCE(NULLIF(s.name,''),s.id) FROM sessions s WHERE s.id=?`, id).Scan(&name) != nil || name == "" {
 		return id
 	}
 	return name

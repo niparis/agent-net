@@ -74,7 +74,6 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("session_replace", "Move an old session's work to the session that replaced it.", map[string]ctoField{"old_session": sid, "new_session": s("Session that replaced it.")})
 	add("session_trust", "Set session peer trust, or trust a project or path folder for Claude Code.", map[string]ctoField{"session_id": sid, "on": b("Enable."), "project": s("Registered project to trust for Claude Code."), "path": s("Existing folder to trust for Claude Code."), "node_id": s("Machine; omit for this machine.")})
 	add("folder_mcp", "Approve or disable the .mcp.json servers Claude Code would load in a project or path folder, so a Claude session start does not stop on the approval prompt.", map[string]ctoField{"project": s("Registered project."), "path": s("Existing folder."), "node_id": s("Machine; omit for this machine."), "mcp_servers": en("Choice.", "approve", "disable")})
-	add("session_policy", "Set policy; read get first.", map[string]ctoField{"session_id": sid, "scope": en("Default session.", "session", "project"), "policy": obj("Policy."), "dry_run": b("Preview.")})
 	add("machine_remove", "Remove a machine and revoke its token. Owner approval required.", map[string]ctoField{"node_id": s("Machine ID.")})
 	add("machine_rotate", "Rotate an online machine token. Offline machines can only be removed. Owner approval required.", map[string]ctoField{"node_id": s("Machine ID.")})
 	add("process_stop", "Stop processes on a machine: SIGTERM, then SIGKILL. No undo. Live Claude and agent-net sessions are refused.", map[string]ctoField{"node_id": s("Machine; required."), "pids": {typ: "array", desc: "Process IDs.", items: map[string]any{"type": "integer"}}})
@@ -96,22 +95,6 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("held_answer", "Answer held request.", map[string]ctoField{"message_id": s("Message ID."), "action": en("a once, A and auto, r once, R and never.", "a", "A", "r", "R")})
 	add("inbox_answer", "Answer inbox item.", map[string]ctoField{"id": s("Inbox ID."), "answer": s("Answer.")})
 	add("outcome_overrule", "Resolve an outcome.", map[string]ctoField{"reply_id": s("Reply ID."), "action": en("Action.", "let_stand", "overrule")})
-
-	add("tools_toggle", "Switch a skill, command or agent on or off for one project.", map[string]ctoField{"item": s("Item ID."), "project": s("Project."), "on": b("On or off.")})
-	add("tools_new_projects", "Set the choice for future projects.", map[string]ctoField{"item": s("Item ID."), "on": b("On or off.")})
-	add("tools_plan", "Plan assignments; repo removal on a local branch.", map[string]ctoField{
-		"item": s("Item ID."), "target": obj("Assignment."),
-		"operation": en("Operation.", "repo_remove"),
-		"project":   s("Project."),
-		"repo_targets": {typ: "array", desc: "Checkouts.", items: map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{
-			"node_id":  map[string]any{"type": "string", "description": "Machine."},
-			"checkout": map[string]any{"type": "string", "description": "Path."},
-		}}},
-	})
-	add("tools_apply", "Apply the plan.", map[string]ctoField{"plan_id": s("Plan ID.")})
-	add("tools_undo", "Undo assignment.", map[string]ctoField{"item": s("Item ID.")})
-	add("mcp_import", "Import a native MCP server.", map[string]ctoField{"candidate": s("Candidate."), "plan_id": s("Plan ID.")})
-	add("mcp_native_remove", "Remove native MCP configuration.", map[string]ctoField{"candidate": s("Candidate."), "plan_id": s("Plan ID."), "undo_plan_id": s("Removal ID.")})
 
 	add("mcp_add", "Add MCP server; no secrets.", map[string]ctoField{"server": obj("Configuration."), "on": s("Host; local default.")})
 	add("mcp_remove", "Remove MCP server.", map[string]ctoField{"name": s("Server name.")})
@@ -168,12 +151,6 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 		spec.fields[field] = f
 		out[tool] = spec
 	}
-	setProperties("tools_plan", "target", map[string]any{"scope": property("string", "Scope.", "global", "projects", "uninstalled"), "projects": stringsArray("Projects."), "machines": stringsArray("All.")})
-	setProperties("session_policy", "policy", map[string]any{
-		"delegate":    property("string", "Mode.", "", "off", "native", "workers"),
-		"coder_model": property("string", "Coder."), "main_model": property("string", "Main."),
-		"workers": property("string", "Sandbox.", "", "sandboxed", "no-network", "read-only"),
-	})
 	setProperties("mcp_add", "server", map[string]any{
 		"name": property("string", "Server name."), "transport": property("string", "Transport.", "stdio", "http", "sse"),
 		"command": property("string", "Command."), "args": stringsArray("No secrets."), "env": stringsArray("Names, not values."),

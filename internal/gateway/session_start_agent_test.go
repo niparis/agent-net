@@ -161,27 +161,13 @@ func TestSessionStartAgentLaunchHold(t *testing.T) {
 	if held, err := s.SessionAgentPending(other); err != nil || !held {
 		t.Fatalf("concurrent candidate escaped: %v %v", held, err)
 	}
-	// Reopening the gateway must retain the hold.
-	if err = s.Close(); err != nil {
-		t.Fatal(err)
-	}
-	reopened, err := OpenStore(s.path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer reopened.Close()
-	reopened.now = s.now
-	s = reopened
-	if held, err := s.SessionAgentPending(id); err != nil || !held {
-		t.Fatalf("restart lost hold: %v %v", held, err)
-	}
 	p.NativeID = "old"
 	if err = s.ReserveSessionAgent(node, p); err == nil {
 		t.Fatal("bound an existing session")
 	}
 	p.NativeID = "new"
 	// Lifecycle rules require detaching an Agent's owned Repo before tombstoning.
-	if _, err = s.db.Exec(`UPDATE repos SET owner_agent_id=NULL WHERE owner_agent_id='chosen'`); err != nil {
+	if _, err = s.db.Exec(`UPDATE repos SET lead_agent_id=NULL WHERE lead_agent_id='chosen'`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = s.db.Exec(`UPDATE agents SET tombstone=1 WHERE id='chosen'`); err != nil {
@@ -243,7 +229,7 @@ func TestSessionStartAgentHoldExpiresAndNextStartWorks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	clock.t = clock.t.Add(sessionAgentStartTimeout)
+	clock.advance(sessionAgentStartTimeout)
 	pending, err := s.Pending(node, false)
 	if err != nil {
 		t.Fatal(err)
@@ -330,7 +316,7 @@ func TestSessionStartAgentFailureCancelsBoundReservation(t *testing.T) {
 	if err = s.ReserveSessionAgent(node, next); err != nil {
 		t.Fatal(err)
 	}
-	clock.t = clock.t.Add(time.Second)
+	clock.advance(time.Second)
 	id, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: p.NativeID, Cwd: p.Cwd, Repo: protocol.RepoInfo{Project: "repo"}})
 	if err != nil {
 		t.Fatal(err)

@@ -163,7 +163,7 @@ func TestPhoneRejectsBotAndExpiredTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Hour)
+	c.advance(time.Hour)
 	if w := phoneRequest(h, "GET", "/", &http.Cookie{Name: "__Host-agent_net_phone", Value: expired}, ""); !phoneCodeRE.Match(w.Body.Bytes()) {
 		t.Fatalf("expired accepted: %d", w.Code)
 	}
@@ -172,7 +172,7 @@ func TestPhoneRejectsBotAndExpiredTokens(t *testing.T) {
 func TestPhoneSlidingRenewal(t *testing.T) {
 	s, c, h, _ := phoneFixture(t)
 	cookie, _, _ := phonePair(t, s, c, h, "owner_app")
-	c.t = c.t.Add(61 * 24 * time.Hour)
+	c.advance(61 * 24 * time.Hour)
 	w := phoneRequest(h, "GET", "/", cookie, "")
 	if w.Code != 200 {
 		t.Fatalf("renewal: %d", w.Code)
@@ -186,7 +186,7 @@ func TestPhoneSlidingRenewal(t *testing.T) {
 	if renewed == nil || renewed.MaxAge != int((90*24*time.Hour).Seconds()) {
 		t.Fatalf("no renewed cookie: %v", w.Result().Cookies())
 	}
-	c.t = c.t.Add(31 * 24 * time.Hour)
+	c.advance(31 * 24 * time.Hour)
 	if w = phoneRequest(h, "GET", "/", renewed, ""); phoneCodeRE.Match(w.Body.Bytes()) {
 		t.Fatal("renewed token expired at original expiry")
 	}
@@ -227,12 +227,12 @@ func TestPhonePendingSharesOAuthLimitAndExpires(t *testing.T) {
 	if _, err := s.newOAuthPending(client, oauthCallback, oauthChallenge(oauthVerifier), "", "", "oauth-source", c.t.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(oauthPendingTTL)
+	c.advance(oauthPendingTTL)
 	p, err := s.newPhonePending("Phone", "source", c.t)
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(oauthPendingTTL)
+	c.advance(oauthPendingTTL)
 	status, token, err := s.redeemPhonePending(p.ID, c.t)
 	if err != nil || status != "expired" || token != "" {
 		t.Fatalf("expired: %q %q %v", status, token, err)

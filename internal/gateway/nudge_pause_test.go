@@ -57,7 +57,7 @@ func TestNudgePauseIdleAgent(t *testing.T) {
 	s, c, chief, target := nudgeSetup(t)
 	nudgeApply(t, s, chief, map[string]any{"kind": "idle_check", "agent": "target-agent name"})
 	for _, id := range []string{chief, target} {
-		if _, err := s.db.Exec(`INSERT INTO profiles(session_id,task,updated_at) VALUES(?,'work',0) ON CONFLICT(session_id) DO UPDATE SET task='work'`, id); err != nil {
+		if _, err := s.db.Exec(`UPDATE sessions SET task='work' WHERE id=?`, id); err != nil {
 			t.Fatal(err)
 		}
 		idleSince(t, s, c, id, 21*time.Minute)
@@ -67,7 +67,7 @@ func TestNudgePauseIdleAgent(t *testing.T) {
 		t.Fatalf("checks=%+v", got)
 	}
 	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM session_checks WHERE session_id=?`, target).Scan(&n); err != nil || n != 0 {
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id=? AND (check_active<>0 OR check_waiting<>0 OR check_day<>'')`, target).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("paused bookkeeping=%d: %v", n, err)
 	}
 }
@@ -81,7 +81,7 @@ func nudgeStepRig(t *testing.T) (*deliveryRig, string) {
 	if _, err := r.s.db.Exec(`INSERT INTO teams(id,name,created_at,updated_at) VALUES('forge','Forge',0,0)`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.s.db.Exec(`INSERT INTO team_members(member_kind,member_id,team_id) VALUES('agent','step-agent','forge')`); err != nil {
+	if _, err := r.s.db.Exec(`UPDATE agents SET team_id='forge' WHERE id='step-agent'`); err != nil {
 		t.Fatal(err)
 	}
 	id := nudgeApply(t, r.s, r.sonnet, map[string]any{"kind": "step_reminder", "team": "Forge"})
@@ -94,7 +94,7 @@ func TestNudgePauseTeamStepReminder(t *testing.T) {
 	if bodies := taskBodies(t, r); len(bodies) != 1 || !strings.HasPrefix(bodies[0], "[agent-net step task]\n") {
 		t.Fatalf("first notice=%v", bodies)
 	}
-	r.clk.t = r.clk.t.Add(7 * time.Hour)
+	r.clk.advance(7 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 	if bodies := taskBodies(t, r); len(bodies) != 1 {
 		t.Fatalf("paused reminders=%v", bodies)
@@ -104,7 +104,7 @@ func TestNudgeResumeNoBacklog(t *testing.T) {
 	r, id := nudgeStepRig(t)
 	r.g.dispatchStepTasks(context.Background())
 	for range 3 {
-		r.clk.t = r.clk.t.Add(3 * time.Hour)
+		r.clk.advance(3 * time.Hour)
 		r.g.dispatchStepTasks(context.Background())
 	}
 	if _, err := nudgeCall(t, r.s, r.sonnet, "nudge.resume", map[string]any{"pause_id": id}); err != nil {
@@ -137,14 +137,14 @@ func TestNudgePauseExpiry(t *testing.T) {
 			if paused, err := s.nudgePaused(s.db, "idle_check", target); err != nil || !paused {
 				t.Fatalf("active pause=%v %v", paused, err)
 			}
-			c.t = c.t.Add(2 * time.Hour)
+			c.advance(2 * time.Hour)
 			if until == "provider_reset" {
 				if _, err := s.db.Exec(`UPDATE sessions SET limited_until=? WHERE id=?`, c.t.Add(-time.Second).Unix(), target); err != nil {
 					t.Fatal(err)
 				}
 			}
 			if until == "cap" {
-				c.t = c.t.Add(7 * 24 * time.Hour)
+				c.advance(7 * 24 * time.Hour)
 			}
 			out, err := nudgeCall(t, s, chief, "nudge.pauses.find", map[string]any{})
 			if err != nil {
@@ -162,7 +162,7 @@ func TestNudgePauseExpiry(t *testing.T) {
 }
 func TestNudgePreviewReadOnly(t *testing.T) {
 	s, c, chief, target := nudgeSetup(t)
-	if _, err := s.db.Exec(`INSERT INTO profiles(session_id,task,updated_at) VALUES(?,'work',0) ON CONFLICT(session_id) DO UPDATE SET task='work'`, target); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET task='work' WHERE id=?`, target); err != nil {
 		t.Fatal(err)
 	}
 	idleSince(t, s, c, target, 21*time.Minute)
@@ -256,7 +256,7 @@ func TestNudgeStepMixedBatch(t *testing.T) {
 	nudgeAgent(t, r.s, r.caller, "mixed-agent")
 	c := mergedChange(t, r, "feature/mixed-pause", true)
 	recentStepMessage(t, r, c.ID, protocol.StepRef{Step: protocol.StepRelease, AfterMerge: true})
-	r.clk.t = r.clk.t.Add(3 * time.Hour)
+	r.clk.advance(3 * time.Hour)
 	nudgeApply(t, r.s, r.sonnet, map[string]any{"kind": "step_reminder", "agent": "mixed-agent"})
 	targets := []nodeTaskTarget{
 		{id: c.ID, revision: c.Revision, ref: protocol.StepRef{Step: protocol.StepRelease, AfterMerge: true}, owner: callerTaskOwner, session: r.caller, isReminder: true},
@@ -336,7 +336,7 @@ func TestNudgeStepExpiredReminderStillPaused(t *testing.T) {
 	if _, err := nudgeCall(t, r.s, r.sonnet, "nudge.resume", map[string]any{"pause_id": id}); err != nil {
 		t.Fatal(err)
 	}
-	r.clk.t = r.clk.t.Add(3 * time.Hour)
+	r.clk.advance(3 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 	if len(taskBodies(t, r)) != 2 {
 		t.Fatal("missing reminder before pause")

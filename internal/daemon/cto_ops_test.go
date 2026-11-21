@@ -88,7 +88,7 @@ func TestCTOOpsListGroupsAndFilter(t *testing.T) {
 			seen[op.Name] = true
 		}
 	}
-	for _, name := range []string{"apps_list", "process_stop", "node_remove", "mcp_import", "gateway_backup", "charter_history", "inbox_list", "session_replace", "step_report"} {
+	for _, name := range []string{"apps_list", "process_stop", "node_remove", "gateway_backup", "charter_history", "inbox_list", "session_replace", "step_report"} {
 		if !seen[name] {
 			t.Errorf("op list misses %s", name)
 		}

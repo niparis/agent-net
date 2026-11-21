@@ -18,6 +18,12 @@ func TestVacuumRunsOnlyAboveTheFreePageThreshold(t *testing.T) {
 	}
 	defer s.Close()
 
+	// Migrations that drop tables leave free pages in a new store. Compact it
+	// first so the test starts from a database with none.
+	if _, err := s.db.Exec(`VACUUM`); err != nil {
+		t.Fatal(err)
+	}
+
 	now := time.Now()
 	if _, _, ran, err := s.MaybeVacuum(now); err != nil {
 		t.Fatal(err)

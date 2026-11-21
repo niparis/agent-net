@@ -28,7 +28,7 @@ func skillBundle(t *testing.T, body string) ([]byte, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bundle, err := inventory.PackSkill(dir)
+	bundle, err := inventory.PackSkillLimit(dir, inventory.ArchiveLimit)
 	if err != nil {
 		t.Fatal(err)
 	}

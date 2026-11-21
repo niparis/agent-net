@@ -10,7 +10,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/niparis/agent-net/internal/protocol"
-	"github.com/niparis/agent-net/internal/toolsdiff"
 )
 
 func TestVisualAuditFixes(t *testing.T) {
@@ -37,44 +36,10 @@ func TestVisualAuditFixes(t *testing.T) {
 		}
 	})
 
-	t.Run("Item2_ToolsOwnerPickerVisibleCountsAgree", func(t *testing.T) {
-		m, _ := newToolsModel(80, 24)
-		m = openTools(m)
-		m = toolFilter(m, "design-taste-frontend")
-		m = pressKey(m, "enter")
-		m = toolChoose(t, m, "Turn on for...")
-		view := m.testView()
-		if strings.Contains(view, "15 of 15 targets shown") && strings.Contains(view, "and 8 more") {
-			t.Errorf("picker counts contradict each other in view:\n%s", view)
-		}
-		if !strings.Contains(view, "1-7 of 15 targets shown") {
-			t.Errorf("expected '1-7 of 15 targets shown', got view:\n%s", view)
-		}
-	})
-
-	t.Run("Item3_ToolsCompareIdentifiesByHarnessAndPath", func(t *testing.T) {
-		m, _ := toolsAtScreen(80, 24)
-		newer := toolsdiff.Copy{Name: "demo", Item: "new", NodeID: toolNodeR, Machine: "research", Location: "/home/test/.claude/skills/demo", Hash: "new", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "new"}}}}
-		older := toolsdiff.Copy{Name: "demo", Item: "old", NodeID: toolNodeR, Machine: "research", Location: "/home/test/.pi/agent/skills/demo", Hash: "old", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "old"}}}}
-		m.tl.cat.Diffs = []toolsdiff.Difference{{Key: "two-copies:demo:research", Kind: toolsdiff.KindTwoCopies, Severity: toolsdiff.SevErr, Name: "demo", Title: "demo has 2 different copies on research", Fix: "compare, then keep one", Action: toolsdiff.Action{Kind: toolsdiff.ActChoose, Name: "demo", Copies: []toolsdiff.Copy{newer, older}}}}
-		m.tl.row = 0
-		m = enterToolsPlan(m)
-		view := ansi.Strip(m.testView())
-		if strings.Contains(view, "a  research's copy") && strings.Contains(view, "b  research's copy") {
-			t.Errorf("both copies labelled 'research's copy':\n%s", view)
-		}
-		if !strings.Contains(view, "claude's copy") || !strings.Contains(view, "pi's copy") {
-			t.Errorf("expected harness labels in view:\n%s", view)
-		}
-		if strings.Count(view, "path") != 1 || !strings.Contains(view, ".claude/skills/demo") {
-			t.Errorf("expected one path row identifying the copy:\n%s", view)
-		}
-	})
-
 	t.Run("Item4_GraphCardRefusalCutoffWithEllipsis", func(t *testing.T) {
 		m := openMap(t, mapModel(80, 24, richGraph()))
 		m.mp.selected = "tenebrae"
-		lines := m.mapFocusView(80, 19)
+		lines := m.mapFocusView(80, 18)
 		plain := ansi.Strip(strings.Join(lines, "\n"))
 		if strings.Contains(plain, "one-off client\nRECENT") {
 			t.Errorf("refusal cutoff has no ellipsis or scroll hint:\n%s", plain)
@@ -209,27 +174,6 @@ func TestVisualAuditFixes(t *testing.T) {
 		}
 		if !strings.Contains(view, "1 other subscription") {
 			t.Errorf("expected singular '1 other subscription':\n%s", view)
-		}
-	})
-
-	t.Run("Item14_ToolsHintLineNoWrapAt80", func(t *testing.T) {
-		m, _ := newToolsModel(80, 24)
-		m = openTools(m)
-		lines := m.toolsKeyLines(80)
-		if len(lines) > 1 {
-			t.Errorf("tools hint line wraps at 80 cols: %v", lines)
-		}
-	})
-
-	t.Run("Item15_ToolsCombinedVersionWarning", func(t *testing.T) {
-		m, _ := newToolsModel(80, 24)
-		m = openTools(m)
-		view := ansi.Strip(m.testView())
-		if strings.Contains(view, "on: v1 on Nicolas-MBP, v3 on research\n│ ! v1 on Nicolas-MBP, v3 on research") {
-			t.Errorf("repeated version mismatch lines:\n%s", view)
-		}
-		if !strings.Contains(view, "! on: v1 on Nicolas-MBP, v3 on research") {
-			t.Errorf("expected combined '! on: ...' line:\n%s", view)
 		}
 	})
 

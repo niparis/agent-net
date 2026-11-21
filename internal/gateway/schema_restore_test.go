@@ -55,14 +55,35 @@ func tablesAtVersion(t *testing.T, version int) map[string]string {
 func restoreDroppedSince(t *testing.T, db repoDB, cur int) {
 	t.Helper()
 	for name, stmt := range tablesAtVersion(t, cur) {
-		var n int
-		if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&n); err != nil {
-			t.Fatal(err)
+		createIfMissing(t, db, name, stmt)
+	}
+}
+
+// restoreTablesAt puts back the named tables that are missing and that existed
+// at schema version v, each with the statement it had there. A test that writes rows into an old
+// table before it rewinds schema_version needs the table first; the rewind
+// itself restores the rest through restoreDroppedSince.
+func restoreTablesAt(t *testing.T, db repoDB, v int, names ...string) {
+	t.Helper()
+	tables := tablesAtVersion(t, v)
+	for _, name := range names {
+		// A table that did not exist at v is created by an older migration
+		// that the replay still runs.
+		if stmt, ok := tables[name]; ok {
+			createIfMissing(t, db, name, stmt)
 		}
-		if n == 0 {
-			if _, err := db.Exec(stmt); err != nil {
-				t.Fatalf("restore %s: %v", name, err)
-			}
+	}
+}
+
+func createIfMissing(t *testing.T, db repoDB, name, stmt string) {
+	t.Helper()
+	var n int
+	if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n == 0 {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("restore %s: %v", name, err)
 		}
 	}
 }

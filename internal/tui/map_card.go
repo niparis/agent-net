@@ -625,9 +625,6 @@ func (m Model) mapFocusView(w, h int) []string {
 			head = append(head, clip("  "+sanitize(agent.Charter.Purpose), w))
 		}
 	}
-	if node.Ref == nil || node.Ref.Kind == "repo" {
-		head = append(head, m.nodeToolsLine(graphRecordID(node)))
-	}
 	if node.Owner != nil {
 		name := m.mp.labels[graphRefKey(node.Owner)]
 		if name == "" {

@@ -20,7 +20,7 @@ func grokUsage(at time.Time, percent float64, resets time.Time) protocol.UsageRe
 // addressed, not wait with a lead that cannot run.
 func TestLeadRouteLeadOutOfQuotaDeliversToMemberAsAddressed(t *testing.T) {
 	r := newLeadRig(t)
-	r.clk.t = time.Date(2026, 11, 18, 2, 0, 0, 0, time.UTC)
+	r.clk.set(time.Date(2026, 11, 18, 2, 0, 0, 0, time.UTC))
 	if _, err := r.s.db.Exec(`UPDATE sessions SET harness='pi', model='xai/grok-4.6' WHERE id=?`, r.lead); err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestLeadRouteLeadOutOfQuotaDeliversToMemberAsAddressed(t *testing.T) {
 // redirected to the lead again.
 func TestLeadRouteLeadQuotaBackRedirectsAgain(t *testing.T) {
 	r := newLeadRig(t)
-	r.clk.t = time.Date(2026, 11, 18, 2, 0, 0, 0, time.UTC)
+	r.clk.set(time.Date(2026, 11, 18, 2, 0, 0, 0, time.UTC))
 	if _, err := r.s.db.Exec(`UPDATE sessions SET harness='pi', model='xai/grok-4.6' WHERE id=?`, r.lead); err != nil {
 		t.Fatal(err)
 	}

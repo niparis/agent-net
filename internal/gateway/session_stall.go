@@ -32,7 +32,7 @@ func announcedDone(task string) bool {
 // 20 minutes or more of that is normal (decision of 2026-11-12).
 const sessionWaitsForOthersSQL = `(EXISTS(SELECT 1 FROM sessions w WHERE w.online=1 AND w.worker<>'' AND json_extract(w.worker,'$.owner')=s.id)
  OR EXISTS(SELECT 1 FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
- WHERE c.caller=s.id AND c.state='open' AND t.completed=0 AND t.claimed_by<>'' AND t.claimed_by<>s.id))`
+ WHERE c.caller=s.id AND c.state='open' AND t.claimed_by<>'' AND t.claimed_by<>s.id))`
 
 // checkSessionStalls runs on the gateway's minute tick. A poll of a harness is
 // not progress: only output, a turn boundary or a delivery acknowledgement is.
@@ -52,11 +52,11 @@ func (s *Store) checkSessionStalls() error {
 	}
 	defer tx.Rollback()
 	rows, err := tx.Query(`SELECT s.id,s.harness,s.status,s.online,s.worker,s.waiting,
- COALESCE(NULLIF(s.repo_project,''),p.project,''),s.harness_activity,COALESCE(p.task,''),
+ COALESCE(NULLIF(s.repo_project,''),s.announced_project),s.harness_activity,s.task,
  COALESCE((SELECT MIN(m.created_at) FROM messages m WHERE m.recipient=s.id AND
  (m.state IN ('stored','dispatched') OR (m.state='failed' AND EXISTS(SELECT 1 FROM delivery_retries r WHERE r.message_id=m.id)))),0),
  ` + sessionWaitsForOthersSQL + `
- FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
+ FROM sessions s
  WHERE s.harness IN ('claude','codex','opencode','pi')`)
 	if err != nil {
 		return err

@@ -55,9 +55,9 @@ func mentionsName(text, name string) bool {
 // its name. The prompt explains at most that first send, so it is cleared
 // either way.
 func (s *Store) signalRequest(tx *sql.Tx, m protocol.Message) error {
-	var prompt, from, to, name, sessionName, project string
+	var prompt, from, to, name string
 	var at int64
-	err := tx.QueryRow(`SELECT a.owner_prompt,a.owner_prompt_at,COALESCE(NULLIF(a.repo_project,''),ap.project,''),COALESCE(NULLIF(b.repo_project,''),bp.project,''),COALESCE(bp.name,''),COALESCE(b.name,''),COALESCE(bp.project,'') FROM sessions a JOIN sessions b ON b.id=? LEFT JOIN profiles ap ON ap.session_id=a.id LEFT JOIN profiles bp ON bp.session_id=b.id WHERE a.id=?`, m.To, m.From).Scan(&prompt, &at, &from, &to, &name, &sessionName, &project)
+	err := tx.QueryRow(`SELECT a.owner_prompt,a.owner_prompt_at,COALESCE(NULLIF(a.repo_project,''),a.announced_project),COALESCE(NULLIF(b.repo_project,''),b.announced_project),b.name FROM sessions a JOIN sessions b ON b.id=? WHERE a.id=?`, m.To, m.From).Scan(&prompt, &at, &from, &to, &name)
 	if err == sql.ErrNoRows || (err == nil && prompt == "") {
 		return nil
 	}
@@ -70,7 +70,7 @@ func (s *Store) signalRequest(tx *sql.Tx, m protocol.Message) error {
 	if m.CreatedAt.UnixNano()-at < 0 || m.CreatedAt.UnixNano()-at > int64(10*time.Minute) {
 		return nil
 	}
-	if !mentionsName(prompt, to) && !mentionsName(prompt, project) && !mentionsName(prompt, name) && !mentionsName(prompt, sessionName) {
+	if !mentionsName(prompt, to) && !mentionsName(prompt, name) {
 		return nil
 	}
 	_, err = tx.Exec(`UPDATE messages SET owner_prompt=? WHERE id=?`, prompt, m.ID)
@@ -83,8 +83,8 @@ func (s *Store) signalRequest(tx *sql.Tx, m protocol.Message) error {
 func (s *Store) Signals() ([]protocol.CharterSignal, error) {
 	since := s.now().Add(-90 * 24 * time.Hour).UnixNano()
 	rows, err := s.db.Query(`SELECT base.src,base.dst,base.mid,base.prompt,COALESCE(o.reply_id,''),COALESCE(o.outcome,''),COALESCE(o.reason,''),COALESCE(o.redirect_to,''),base.at FROM (
-		SELECT COALESCE(NULLIF(a.repo_project,''),ap.project,'') AS src,COALESCE(NULLIF(b.repo_project,''),bp.project,'') AS dst,m.id AS mid,m.owner_prompt AS prompt,m.created_at AS at
-		FROM messages m JOIN sessions a ON a.id=m.sender JOIN sessions b ON b.id=m.recipient LEFT JOIN profiles ap ON ap.session_id=a.id LEFT JOIN profiles bp ON bp.session_id=b.id
+		SELECT COALESCE(NULLIF(a.repo_project,''),a.announced_project) AS src,COALESCE(NULLIF(b.repo_project,''),b.announced_project) AS dst,m.id AS mid,m.owner_prompt AS prompt,m.created_at AS at
+		FROM messages m JOIN sessions a ON a.id=m.sender JOIN sessions b ON b.id=m.recipient
 		WHERE m.owner_prompt<>'' AND m.created_at>=?
 		UNION ALL
 		SELECT o.source,o.target,o.message_id,'',o.at FROM graph_outcomes o

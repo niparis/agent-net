@@ -17,8 +17,7 @@ func setAutonomy(t *testing.T, s *Store, session, value string) {
 	if _, err := s.db.Exec(`UPDATE sessions SET repo_project='proj', repo_root='/w/proj' WHERE id=?`, session); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO profiles(session_id,project,updated_at) VALUES(?,'proj',?)
-		ON CONFLICT(session_id) DO UPDATE SET project='proj'`, session, s.now().UnixNano()); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET announced_project='proj',announced_at=? WHERE id=?`, s.now().UnixNano(), session); err != nil {
 		t.Fatal(err)
 	}
 	// A turn may clear the session's repo fields; keep the test's node alive with
@@ -98,7 +97,7 @@ func TestWakeAutonomySendsOneContinueMessage(t *testing.T) {
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("check = %+v", got)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "more: finish the parser"}); err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +129,7 @@ func TestAutonomyOffLeavesTheNeedsYouRow(t *testing.T) {
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("check = %+v", got)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "more: finish the parser"}); err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +156,7 @@ func TestAutonomyWakeDoesNothingOffline(t *testing.T) {
 	if _, err := s.db.Exec(`UPDATE sessions SET online=0 WHERE id=?`, b); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "more: finish the parser"}); err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +179,7 @@ func TestAutonomyWakeStillLeavesABlockedRow(t *testing.T) {
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("check = %+v", got)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "blocked on the deploy key"}); err != nil {
 		t.Fatal(err)
 	}
@@ -206,26 +205,26 @@ func TestWakeDailyCapIsSeparateFromTheCheckCap(t *testing.T) {
 		if got := checks(t, s); len(got) != 1 {
 			t.Fatalf("check %d = %+v", i+1, got)
 		}
-		c.t = c.t.Add(time.Minute)
+		c.advance(time.Minute)
 		if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: fmt.Sprintf("more: step %d", i+1)}); err != nil {
 			t.Fatal(err)
 		}
 		// A new message is progress, so the wake streak and the check streak reset.
-		c.t = c.t.Add(time.Minute)
+		c.advance(time.Minute)
 		if _, _, err := send(s, a, b, fmt.Sprintf("new-work-%d", i), ""); err != nil {
 			t.Fatal(err)
 		}
-		c.t = c.t.Add(21 * time.Minute)
+		c.advance(21 * time.Minute)
 	}
 	if wakes := wakeMessages(t, s); len(wakes) != 6 {
 		t.Fatalf("wake messages = %d, want 6", len(wakes))
 	}
 	// A seventh "more" answer has progress but must not exceed the wake cap.
 	// Set the check wait directly so the check cap is not involved.
-	if _, err := s.db.Exec(`UPDATE session_checks SET check_waiting=1,check_active=0,check_more=0 WHERE session_id=?`, b); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET check_waiting=1,check_active=0,check_more=0 WHERE id=?`, b); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "more: step 7"}); err != nil {
 		t.Fatal(err)
 	}
@@ -249,20 +248,20 @@ func TestTwoWakeUpsWithoutProgressStopWakingWithOneRow(t *testing.T) {
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("check 1 = %+v", got)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "more: first step"}); err != nil {
 		t.Fatal(err)
 	}
 	// A task change without a fresh announce re-arms the check, while
 	// the open-work and message counters still show no progress.
 	seedCheckTask(t, s, b, "first step, still unfinished")
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	activity(t, s, b, "pi", "nb")
-	c.t = c.t.Add(21 * time.Minute)
+	c.advance(21 * time.Minute)
 	if got := checks(t, s); len(got) != 1 {
 		t.Fatalf("check 2 = %+v", got)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "more: still first step"}); err != nil {
 		t.Fatal(err)
 	}
@@ -275,10 +274,10 @@ func TestTwoWakeUpsWithoutProgressStopWakingWithOneRow(t *testing.T) {
 	}
 	// A third "more" answer with no progress must not wake again or add a row.
 	// Set the check wait directly so the check cap does not decide this.
-	if _, err := s.db.Exec(`UPDATE session_checks SET check_waiting=1,check_active=0,check_more=0 WHERE session_id=?`, b); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET check_waiting=1,check_active=0,check_more=0 WHERE id=?`, b); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "more: still first step"}); err != nil {
 		t.Fatal(err)
 	}
@@ -289,14 +288,14 @@ func TestTwoWakeUpsWithoutProgressStopWakingWithOneRow(t *testing.T) {
 		t.Fatalf("rows = %d, want one: %+v", len(rows), rows)
 	}
 	// Progress allows waking again.
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, _, err := send(s, b, a, "progress", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`UPDATE session_checks SET check_waiting=1,check_active=0,check_more=0 WHERE session_id=?`, b); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET check_waiting=1,check_active=0,check_more=0 WHERE id=?`, b); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "more: second step"}); err != nil {
 		t.Fatal(err)
 	}

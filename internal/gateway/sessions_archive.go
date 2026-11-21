@@ -44,7 +44,7 @@ func (s *Store) ArchiveSessions(q protocol.SessionsArchiveRequest) (protocol.Ses
 	}
 	var args []any
 	if q.Project != nil {
-		where += ` AND CASE WHEN s.no_project<>0 THEN '' ELSE COALESCE(NULLIF(s.repo_project,''),p.project,'') END=?`
+		where += ` AND CASE WHEN s.no_project<>0 THEN '' ELSE COALESCE(NULLIF(s.repo_project,''),s.announced_project) END=?`
 		args = append(args, *q.Project)
 	}
 	rows, err := tx.Query(agentSelect+` WHERE `+where+` AND (n.id IS NOT NULL OR s.harness='bot') ORDER BY s.id`, args...)
@@ -119,7 +119,7 @@ func (s *Store) ArchiveSessions(q protocol.SessionsArchiveRequest) (protocol.Ses
 	}
 	for i := range out.Sessions {
 		a := &out.Sessions[i]
-		if err := tx.QueryRow(`SELECT CASE WHEN s.no_project<>0 THEN '' ELSE COALESCE(NULLIF(s.repo_project,''),p.project,'') END FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, a.SessionID).Scan(&a.Project); err != nil {
+		if err := tx.QueryRow(`SELECT CASE WHEN s.no_project<>0 THEN '' ELSE COALESCE(NULLIF(s.repo_project,''),s.announced_project) END FROM sessions s WHERE s.id=?`, a.SessionID).Scan(&a.Project); err != nil {
 			return out, err
 		}
 	}

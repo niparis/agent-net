@@ -144,7 +144,7 @@ func TestPendingOutcomeSurvivesRetention(t *testing.T) {
 	if _, err = s.db.Exec(`UPDATE sessions SET online=0`); err != nil {
 		t.Fatal(err)
 	}
-	clock.t = clock.t.Add(48 * time.Hour)
+	clock.advance(48 * time.Hour)
 	if _, err = s.Prune(Retention{Messages: 24 * time.Hour, Sessions: 24 * time.Hour}); err != nil {
 		t.Fatal(err)
 	}
@@ -285,12 +285,6 @@ func TestExistingOutcomesMigrateToInbox(t *testing.T) {
 	}
 	if inboxVersion == 0 {
 		t.Fatal("missing inbox migration")
-	}
-	if _, err = s.db.Exec(`DROP TABLE tool_results; DROP TABLE tool_audit; DROP TABLE plans; DROP TABLE tool_revisions; DROP TABLE skill_versions; DROP TABLE tool_locations; DROP TABLE tool_identities`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.db.Exec(`DROP TABLE inventory_reports`); err != nil {
-		t.Fatal(err)
 	}
 	if _, err = s.db.Exec(`DROP TABLE inbox_items`); err != nil {
 		t.Fatal(err)

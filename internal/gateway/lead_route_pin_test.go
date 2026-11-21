@@ -218,7 +218,7 @@ func TestRedirectReminderRespectsPause(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.clk.t = r.clk.t.Add(reminderGrace + time.Minute)
+	r.clk.advance(reminderGrace + time.Minute)
 	if _, err := r.s.remindPendingBefore(r.s.now(), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -235,14 +235,14 @@ func TestRedirectReminderWaitsForGrace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.clk.t = r.clk.t.Add(reminderGrace - time.Minute)
+	r.clk.advance(reminderGrace - time.Minute)
 	if _, err := r.s.remindPendingBefore(r.s.now().Add(nudgeLookahead), nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := redirectReminder(t, r.s, m.ID); len(got) != 0 {
 		t.Fatalf("notice before the grace: %+v", got)
 	}
-	r.clk.t = r.clk.t.Add(2 * time.Minute)
+	r.clk.advance(2 * time.Minute)
 	if _, err := r.s.remindPendingBefore(r.s.now().Add(nudgeLookahead), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestRedirectReminderNotifiesSender(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.clk.t = r.clk.t.Add(reminderGrace + time.Minute)
+	r.clk.advance(reminderGrace + time.Minute)
 	if _, err := r.s.remindPendingBefore(r.s.now(), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +301,7 @@ func TestRedirectReminderNotifiesChiefForOwnerApprovedRequest(t *testing.T) {
 	if _, err := r.s.db.Exec(`UPDATE messages SET owner_approved=1 WHERE id=?`, m.ID); err != nil {
 		t.Fatal(err)
 	}
-	r.clk.t = r.clk.t.Add(reminderGrace + time.Minute)
+	r.clk.advance(reminderGrace + time.Minute)
 	if _, err := r.s.remindPendingBefore(r.s.now(), nil); err != nil {
 		t.Fatal(err)
 	}

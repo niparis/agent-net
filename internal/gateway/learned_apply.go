@@ -63,7 +63,7 @@ func (s *Store) ProcessLearned() error {
 	}
 	defer tx.Rollback()
 	var settingsRevisionBefore int64
-	if err = tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&settingsRevisionBefore); err != nil {
+	if settingsRevisionBefore, err = settingsRevision(tx); err != nil {
 		return err
 	}
 
@@ -197,13 +197,8 @@ func (s *Store) ProcessLearned() error {
 		}
 	}
 	var settingsRevisionAfter int64
-	if err = tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&settingsRevisionAfter); err != nil {
+	if settingsRevisionAfter, err = settingsRevision(tx); err != nil {
 		return err
-	}
-	if settingsRevisionAfter > settingsRevisionBefore+1 {
-		if _, err = tx.Exec(`UPDATE setting_revision SET revision=? WHERE id=1`, settingsRevisionBefore+1); err != nil {
-			return err
-		}
 	}
 	if err = tx.Commit(); err != nil {
 		return err

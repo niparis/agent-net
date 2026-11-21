@@ -69,7 +69,7 @@ func TestSessionAgentOwnerAssignment(t *testing.T) {
 		t.Fatal("agent listed owner choices")
 	}
 	var merger string
-	if err := r.s.db.QueryRow(`SELECT session_id FROM project_mergers WHERE project='demo' AND node_id=?`, r.a).Scan(&merger); err != nil || merger != r.caller {
+	if err := r.s.db.QueryRow(`SELECT session_id FROM `+mergerRowsSQL+` WHERE project='demo' AND node_id=?`, r.a).Scan(&merger); err != nil || merger != r.caller {
 		t.Fatalf("merger changed %q: %v", merger, err)
 	}
 	cto, _, err := r.s.upsertSession(r.s.db, r.a, protocol.SessionInfo{Harness: "cto", NativeID: "cto"}, true)

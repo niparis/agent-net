@@ -13,7 +13,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -154,23 +153,22 @@ type archiveQuerier interface {
 	QueryRow(query string, args ...any) *sql.Row
 }
 
-// archiveLatestOf answers the version a node following latest gets: the one the
-// latest row names when that version is live, else the highest live version.
+// archiveLatestOf answers the version a node following latest gets: the one
+// marked in_use when that version is live, else the highest live version.
 // It is 0 when the name has no live version.
 func archiveLatestOf(q archiveQuerier, name string) (int, error) {
 	var v int
 	err := q.QueryRow(`SELECT COALESCE(
-		(SELECT p.version FROM skill_archive_latest p WHERE p.name=? AND EXISTS(SELECT 1 FROM skill_archive a WHERE a.name=p.name AND a.version=p.version AND a.removed_at=0)),
+		(SELECT version FROM skill_archive WHERE name=? AND in_use=1 AND removed_at=0),
 		(SELECT MAX(version) FROM skill_archive WHERE name=? AND removed_at=0), 0)`, name, name).Scan(&v)
 	return v, err
 }
 
-// archivePointers reads the latest row of every name: the version it names,
-// which may be removed. The list and the lists index apply the live check.
+// archivePointers reads the in_use version of every name, which may be removed. The list and the lists index apply the live check.
 func archivePointers(q interface {
 	Query(query string, args ...any) (*sql.Rows, error)
 }) (map[string]int, error) {
-	rows, err := q.Query(`SELECT name, version FROM skill_archive_latest`)
+	rows, err := q.Query(`SELECT name, version FROM skill_archive WHERE in_use=1`)
 	if err != nil {
 		return nil, err
 	}
@@ -187,9 +185,13 @@ func archivePointers(q interface {
 	return out, rows.Err()
 }
 
-// setArchiveLatest names version as the latest of its name.
+// setArchiveLatest marks version as the one in use of its name. The old mark
+// goes first: one version of a name has in_use 1.
 func setArchiveLatest(tx *sql.Tx, name string, version int) error {
-	_, err := tx.Exec(`INSERT INTO skill_archive_latest(name,version) VALUES(?,?) ON CONFLICT(name) DO UPDATE SET version=excluded.version`, name, version)
+	if _, err := tx.Exec(`UPDATE skill_archive SET in_use=0 WHERE name=? AND in_use=1 AND version<>?`, name, version); err != nil {
+		return err
+	}
+	_, err := tx.Exec(`UPDATE skill_archive SET in_use=1 WHERE name=? AND version=?`, name, version)
 	return err
 }
 
@@ -198,7 +200,7 @@ func setArchiveLatest(tx *sql.Tx, name string, version int) error {
 // earlier latest, the row goes and the highest live version is used.
 func restoreArchiveLatest(tx *sql.Tx, name string, version, previous int) error {
 	var current int
-	err := tx.QueryRow(`SELECT version FROM skill_archive_latest WHERE name=?`, name).Scan(&current)
+	err := tx.QueryRow(`SELECT version FROM skill_archive WHERE name=? AND in_use=1`, name).Scan(&current)
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && current != version) {
 		return nil
 	}
@@ -206,7 +208,7 @@ func restoreArchiveLatest(tx *sql.Tx, name string, version, previous int) error 
 		return err
 	}
 	if previous == 0 {
-		_, err = tx.Exec(`DELETE FROM skill_archive_latest WHERE name=?`, name)
+		_, err = tx.Exec(`UPDATE skill_archive SET in_use=0 WHERE name=? AND version=?`, name, version)
 		return err
 	}
 	return setArchiveLatest(tx, name, previous)
@@ -329,7 +331,7 @@ func (g *Gateway) skillArchivePut(c skillArchiveContent, source skillArchiveSour
 			}
 		}
 		out.Change = protocol.NewID("sc")
-		if _, err = tx.Exec(`INSERT INTO skill_archive_changes(id,action,name,version,versions,restored,actor,at,previous) VALUES(?,?,?,?,?,?,?,?,?)`,
+		if _, err = tx.Exec(`INSERT INTO skill_changes(id,kind,action,name,version,versions,restored,actor,at,previous) VALUES(?,'archive',?,?,?,?,?,?,?,?)`,
 			out.Change, "add", c.Name, out.Version, "[]", restored, by, now, previous); err != nil {
 			return out, err
 		}
@@ -407,7 +409,7 @@ func (g *Gateway) skillArchiveRemove(name string, only int, by string) (protocol
 	if out.Versions, out.Removed, err = archiveCounts(tx, name); err != nil {
 		return out, err
 	}
-	if _, err = tx.Exec(`INSERT INTO skill_archive_changes(id,action,name,version,versions,actor,at) VALUES(?,?,?,?,?,?,?)`,
+	if _, err = tx.Exec(`INSERT INTO skill_changes(id,kind,action,name,version,versions,actor,at) VALUES(?,'archive',?,?,?,?,?,?)`,
 		out.Change, "remove", name, out.Version, string(list), by, now); err != nil {
 		return out, err
 	}
@@ -427,7 +429,7 @@ func (g *Gateway) skillArchiveUndo(change, by string) (protocol.SkillArchiveAddR
 	defer tx.Rollback()
 	var action, name, versions string
 	var version, restored, undone, previous int64
-	if err = tx.QueryRow(`SELECT action,name,version,versions,restored,undone_at,previous FROM skill_archive_changes WHERE id=?`, change).
+	if err = tx.QueryRow(`SELECT action,name,version,versions,restored,undone_at,previous FROM skill_changes WHERE id=? AND kind='archive'`, change).
 		Scan(&action, &name, &version, &versions, &restored, &undone, &previous); err != nil {
 		return out, reject("unknown archive change")
 	}
@@ -472,7 +474,7 @@ func (g *Gateway) skillArchiveUndo(change, by string) (protocol.SkillArchiveAddR
 			return out, err
 		}
 	}
-	if _, err = tx.Exec(`UPDATE skill_archive_changes SET undone_at=? WHERE id=?`, now, change); err != nil {
+	if _, err = tx.Exec(`UPDATE skill_changes SET undone_at=? WHERE id=?`, now, change); err != nil {
 		return out, err
 	}
 	if out.Versions, out.Removed, err = archiveCounts(tx, name); err != nil {
@@ -517,7 +519,7 @@ func (g *Gateway) skillArchivePromote(name string, version int, by string) (prot
 		}
 		out.State = "promoted"
 		out.Change = protocol.NewID("sc")
-		if _, err = tx.Exec(`INSERT INTO skill_archive_changes(id,action,name,version,versions,restored,actor,at,previous) VALUES(?,?,?,?,?,?,?,?,?)`,
+		if _, err = tx.Exec(`INSERT INTO skill_changes(id,kind,action,name,version,versions,restored,actor,at,previous) VALUES(?,'archive',?,?,?,?,?,?,?,?)`,
 			out.Change, "promote", name, version, "[]", 0, by, g.skillArchiveEpoch(), previous); err != nil {
 			return out, err
 		}
@@ -595,7 +597,7 @@ func (g *Gateway) skillArchiveAdd(ctx context.Context, p protocol.SkillArchiveAd
 	if p.Location.NodeID == "" || p.Location.Location == "" {
 		return protocol.SkillArchiveAddResult{}, reject("add needs a machine and a folder")
 	}
-	name, hash, bundle, err := g.fetchSkillBundle(ctx, "", p.Location.NodeID, p.Location.Location, true)
+	name, hash, bundle, err := g.fetchSkillBundle(ctx, p.Location.NodeID, p.Location.Location)
 	if err != nil {
 		return protocol.SkillArchiveAddResult{}, err
 	}
@@ -647,46 +649,36 @@ func (g *Gateway) skillArchiveBundled(p protocol.SkillArchiveBundled, by string)
 	return g.skillArchivePut(content, skillArchiveSource{Kind: "agent-net"}, by, false)
 }
 
-// fetchSkillBundle reads and checks one skill file tree from a machine. The
-// item may be empty: the location alone names it. kinds limits the identity
-// kinds, and defaults to skills.
-func (g *Gateway) fetchSkillBundle(ctx context.Context, item, nodeID, location string, archive bool, kinds ...string) (name, hash string, bundle []byte, err error) {
-	if len(kinds) == 0 {
-		kinds = []string{"skill"}
+// fetchSkillBundle reads one skill folder that a machine lists now. The
+// machine's own listing names the folder and gives its hash, so a path the
+// machine does not list is refused.
+func (g *Gateway) fetchSkillBundle(ctx context.Context, nodeID, location string) (name, hash string, bundle []byte, err error) {
+	registered, err := g.registeredProjectEntries(nodeID)
+	if err != nil {
+		return "", "", nil, err
 	}
-	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(kinds)), ",")
-	kindArgs := make([]any, len(kinds))
-	for i, kind := range kinds {
-		kindArgs[i] = kind
+	folders, _, _, _ := g.sourceFolders(ctx, nodeID, registered)
+	for _, f := range folders {
+		if f.location == location && f.state == protocol.InventoryOK && f.hash != "" {
+			name, hash = f.name, f.hash
+			break
+		}
 	}
-	query := `SELECT i.name,i.hash FROM tool_identities i JOIN tool_locations l ON l.identity_id=i.id
-		WHERE i.kind IN (` + placeholders + `) AND l.node_id=? AND json_extract(l.observation,'$.location')=? AND json_extract(l.observation,'$.state')='ok'`
-	args := append(kindArgs, nodeID, location)
-	if item != "" {
-		query = `SELECT i.name,i.hash FROM tool_identities i JOIN tool_locations l ON l.identity_id=i.id
-			WHERE i.id=? AND i.kind IN (` + placeholders + `) AND l.node_id=? AND json_extract(l.observation,'$.location')=? AND json_extract(l.observation,'$.state')='ok'`
-		args = append([]any{item}, args...)
-	}
-	if err = g.store.db.QueryRow(query+` LIMIT 1`, args...).Scan(&name, &hash); err != nil || hash == "" {
+	if hash == "" {
 		return "", "", nil, reject("skill location is not a current observation")
 	}
-	return g.requestSkillBundle(ctx, nodeID, name, hash, location, archive)
+	return g.requestSkillBundle(ctx, nodeID, name, location)
 }
 
-// requestSkillBundle asks one machine for the folder it listed. An import checks
-// the bytes against the hash it asked for. An archive request gets the archive
-// limit, a bundle over one part comes in parts, and the folder is stored under
-// the hash of the content the machine packed now (decision 0169).
-func (g *Gateway) requestSkillBundle(ctx context.Context, nodeID, name, hash, location string, archive bool) (string, string, []byte, error) {
+// requestSkillBundle asks one machine for the folder it listed. The archive
+// limit applies, a bundle over one part comes in parts, and the folder is
+// stored under the hash of the content the machine packed now (decision 0169).
+func (g *Gateway) requestSkillBundle(ctx context.Context, nodeID, name, location string) (string, string, []byte, error) {
 	host := g.conn(nodeID)
 	if host == nil {
 		return "", "", nil, reject("skill location is offline")
 	}
-	lim := inventory.ImportLimit
-	if archive {
-		lim = inventory.ArchiveLimit
-	}
-	raw, err := host.request(ctx, "node.skill_bundle", protocol.SkillBundleRequest{Name: name, Hash: hash, Location: location, Archive: archive}, 60*time.Second)
+	raw, err := host.request(ctx, "node.skill_bundle", protocol.SkillBundleRequest{Name: name, Location: location}, 60*time.Second)
 	if err != nil {
 		return "", "", nil, reject("cannot obtain skill bundle: %v", err)
 	}
@@ -703,17 +695,14 @@ func (g *Gateway) requestSkillBundle(ctx context.Context, nodeID, name, hash, lo
 		return "", "", nil, errors.New("cannot stage skill bundle")
 	}
 	defer os.RemoveAll(dir)
-	if inventory.UnpackSkillLimit(data, dir, lim) != nil {
+	if inventory.UnpackSkillLimit(data, dir, inventory.ArchiveLimit) != nil {
 		return "", "", nil, reject("invalid or oversized skill bundle")
 	}
 	got, err := inventory.SkillHash(dir)
 	if err != nil {
 		return "", "", nil, reject("cannot verify skill bundle")
 	}
-	if !archive && got != hash {
-		return "", "", nil, reject("skill changed since its inventory scan")
-	}
-	canonical, err := inventory.PackSkillLimit(dir, lim)
+	canonical, err := inventory.PackSkillLimit(dir, inventory.ArchiveLimit)
 	if err != nil {
 		return "", "", nil, reject("cannot verify skill bundle")
 	}
@@ -893,111 +882,4 @@ func firstLine(s string) string {
 		s = s[:i]
 	}
 	return strings.TrimSpace(s)
-}
-
-// archiveNameForItem names a skill version of the old store. The identity row
-// is the normal source; the item id itself is a JSON array of kind, name, hash.
-func (g *Gateway) archiveNameForItem(item string) string {
-	var name string
-	if g.store.db.QueryRow(`SELECT name FROM tool_identities WHERE id=? LIMIT 1`, item).Scan(&name) == nil && name != "" {
-		return name
-	}
-	var parts []string
-	if json.Unmarshal([]byte(item), &parts) == nil && len(parts) > 1 {
-		return parts[1]
-	}
-	return ""
-}
-
-// intakeSkillGit copies every version of the old skills.git into the archive.
-// It is safe to repeat: a known name and hash is unchanged.
-func (g *Gateway) intakeSkillGit() (protocol.SkillArchiveMultiResult, error) {
-	out := protocol.SkillArchiveMultiResult{Skills: []protocol.SkillArchiveAddResult{}}
-	repo, err := g.skillRepository()
-	if err != nil {
-		return out, err
-	}
-	rows, err := g.store.db.Query(`SELECT item, hash, node_id, location FROM skill_versions ORDER BY imported_at, hash`)
-	if err != nil {
-		return out, err
-	}
-	type row struct {
-		item, hash, node, location string
-	}
-	var list []row
-	for rows.Next() {
-		var r row
-		if err = rows.Scan(&r.item, &r.hash, &r.node, &r.location); err != nil {
-			rows.Close()
-			return out, err
-		}
-		list = append(list, r)
-	}
-	rows.Close()
-	if err = rows.Err(); err != nil {
-		return out, err
-	}
-	for _, r := range list {
-		name := g.archiveNameForItem(r.item)
-		if name == "" {
-			continue
-		}
-		bundle, err := repo.read(r.item, r.hash)
-		if err != nil {
-			// A stored row that no longer holds a valid bundle cannot be
-			// copied; the rest of the intake still runs.
-			continue
-		}
-		dir, err := os.MkdirTemp("", "agent-net-archive-intake-")
-		if err != nil {
-			return out, err
-		}
-		content, err := func() (skillArchiveContent, error) {
-			defer os.RemoveAll(dir)
-			if inventory.UnpackSkillLimit(bundle, dir, inventory.ArchiveLimit) != nil {
-				return skillArchiveContent{}, errors.New("invalid bundle")
-			}
-			return skillContentFromDir(name, dir)
-		}()
-		if err != nil {
-			continue
-		}
-		source := skillArchiveSource{Kind: "machine", Node: r.node, Path: r.location}
-		if r.node == "" && r.location == "" {
-			source = skillArchiveSource{Kind: "git_store"}
-		}
-		added, err := g.skillArchivePut(content, source, "intake", false)
-		if err != nil {
-			return out, err
-		}
-		out.Skills = append(out.Skills, added)
-	}
-	if len(out.Skills) > 0 {
-		epoch := g.skillArchiveEpoch()
-		if err = stateSet(g.store.db, skillArchiveStatePrefix+"git_intake_at", strconv.FormatInt(epoch, 10), epoch); err != nil {
-			return out, err
-		}
-	}
-	out.Shared = sharedArchiveNames(out.Skills)
-	return out, nil
-}
-
-// skillArchiveStartIntake runs the copy of the old store once, at gateway
-// start. A marker keeps later starts from repeating the work; a second run
-// would store nothing new anyway.
-func (g *Gateway) skillArchiveStartIntake() {
-	if done, _, err := stateGet(g.store.db, skillArchiveStatePrefix+"git_intake_done"); err == nil && done != "" {
-		return
-	}
-	result, err := g.intakeSkillGit()
-	if err != nil {
-		g.logLine("error", "where", "skill archive intake", "err", err)
-		return
-	}
-	epoch := g.skillArchiveEpoch()
-	if err = stateSet(g.store.db, skillArchiveStatePrefix+"git_intake_done", strconv.FormatInt(epoch, 10), epoch); err != nil {
-		g.logLine("error", "where", "skill archive intake marker", "err", err)
-		return
-	}
-	g.logLine("skill_archive.intake", "skills", len(result.Skills), "shared", strings.Join(result.Shared, ","))
 }

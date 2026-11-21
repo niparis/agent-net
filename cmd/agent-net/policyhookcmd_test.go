@@ -38,7 +38,7 @@ func runPolicyCompact(t *testing.T, input string) (string, []protocol.Compaction
 	return out.String(), compacted
 }
 
-var onePolicy = protocol.PolicyResult{Text: protocol.PolicyLead + "do the code changes yourself."}
+var onePolicy = protocol.PolicyResult{Charter: "[agent-net] Your node's charter for demo, from agent-net: purpose: test."}
 
 func TestPolicyHookOutputSchema(t *testing.T) {
 	in := `{"session_id":"abc","prompt_id":"p1","transcript_path":"/x","cwd":"/w","hook_event_name":"UserPromptSubmit","prompt":"fix it"}`
@@ -54,7 +54,7 @@ func TestPolicyHookOutputSchema(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("not JSON: %q", out)
 	}
-	if got.H["hookEventName"] != "UserPromptSubmit" || got.H["additionalContext"] != onePolicy.Text || len(got.H) != 2 {
+	if got.H["hookEventName"] != "UserPromptSubmit" || got.H["additionalContext"] != onePolicy.Charter || len(got.H) != 2 {
 		t.Fatalf("output: %q", out)
 	}
 	if strings.Count(out, "\n") != 1 {
@@ -72,13 +72,12 @@ func TestPolicyHookIsSilentWithoutAPolicyAndOnEveryProblem(t *testing.T) {
 		res protocol.PolicyResult
 		err error
 	}{
-		"no policy":         {good, protocol.PolicyResult{}, nil},
-		"daemon down":       {good, onePolicy, errors.New("no daemon")},
-		"not json":          {"{", onePolicy, nil},
-		"no session":        {`{"hook_event_name":"UserPromptSubmit"}`, onePolicy, nil},
-		"another event":     {`{"session_id":"abc","hook_event_name":"PostToolUse"}`, onePolicy, nil},
-		"empty input":       {"", onePolicy, nil},
-		"only a main model": {good, protocol.PolicyResult{Main: "x"}, nil},
+		"no policy":     {good, protocol.PolicyResult{}, nil},
+		"daemon down":   {good, onePolicy, errors.New("no daemon")},
+		"not json":      {"{", onePolicy, nil},
+		"no session":    {`{"hook_event_name":"UserPromptSubmit"}`, onePolicy, nil},
+		"another event": {`{"session_id":"abc","hook_event_name":"PostToolUse"}`, onePolicy, nil},
+		"empty input":   {"", onePolicy, nil},
 	} {
 		if out, _ := runPolicyWith(t, c.in, c.res, c.err); out != "" {
 			t.Errorf("%s: printed %q", name, out)
@@ -99,7 +98,7 @@ func TestPolicyHookStopsAfterItsBudget(t *testing.T) {
 	}
 }
 
-func TestPolicyHookCarriesTheCharterEvenWithoutAPolicy(t *testing.T) {
+func TestPolicyHookCarriesTheCharter(t *testing.T) {
 	in := `{"session_id":"abc","hook_event_name":"UserPromptSubmit"}`
 	charter := "[agent-net] Your node's charter for cogforge, from agent-net:\nmaturity: early - speed over safety.\nDecide, do not defer."
 	out, _ := runPolicyWith(t, in, protocol.PolicyResult{Charter: charter}, nil)
@@ -115,9 +114,9 @@ func TestPolicyHookCarriesTheCharterEvenWithoutAPolicy(t *testing.T) {
 	if !strings.Contains(got.H["additionalContext"], charter) {
 		t.Fatalf("charter missing: %q", got.H["additionalContext"])
 	}
-	both, _ := runPolicyWith(t, in, protocol.PolicyResult{Text: onePolicy.Text, Charter: charter}, nil)
-	if !strings.Contains(both, onePolicy.Text) || !strings.Contains(both, "Decide, do not defer") {
-		t.Fatalf("policy and charter not both there: %q", both)
+	both, _ := runPolicyWith(t, in, protocol.PolicyResult{Notice: "tools disconnected", Charter: charter}, nil)
+	if !strings.Contains(both, "tools disconnected") || !strings.Contains(both, "Decide, do not defer") {
+		t.Fatalf("notice and charter not both there: %q", both)
 	}
 }
 

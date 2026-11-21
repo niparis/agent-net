@@ -88,6 +88,7 @@ func downgradeToOldState(t *testing.T, s *Store) {
 			t.Fatalf("%s: %v", q, err)
 		}
 	}
+	restoreSettingsFoldTables(t, s.db)
 	exec(`DROP TABLE gateway_state`)
 	exec(legacyStateTables)
 	exec(`UPDATE graph_ref_gate SET enabled=1, backup='/backups/gateway.db'`)
@@ -126,12 +127,24 @@ func TestGatewayStateMigrationMovesTheOldRows(t *testing.T) {
 	want := map[string]string{
 		"graph_cutover_version": "v9.9.9", "graph_cutover_upgraded_at": "4242",
 		"graph_ref_gate": "1", "graph_ref_backup": "/backups/gateway.db",
-		"skill_archive.git_intake_done": "77", "skill_archive.git_intake_at": "78",
+		// The two skill_archive markers moved here, and the tools retire
+		// migration then dropped them with the copy of skills.git.
 	}
 	for _, key := range markerKeys {
 		want[key] = "v-" + key
 	}
-	if got := stateRows(t, s); !reflect.DeepEqual(got, want) {
+	// The worker tables rework keeps the run version here, from zero.
+	want["worker_runs_version"] = "0"
+	// The settings fold migration moves the role and rotation rows here and
+	// drops the mark that nothing reads.
+	want["worker_rotation"], want["cto_session"] = "{}", "s_cto"
+	delete(want, "graph_ref_backup")
+	got := stateRows(t, s)
+	if got["settings_network_token"] == "" {
+		t.Fatal("the settings fold migration did not keep the network token")
+	}
+	delete(got, "settings_network_token")
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("gateway_state\n got %v\nwant %v", got, want)
 	}
 	var at int64
@@ -143,21 +156,8 @@ func TestGatewayStateMigrationMovesTheOldRows(t *testing.T) {
 			t.Errorf("table %s was not dropped", table)
 		}
 	}
-	rows, err := s.db.Query(`SELECT key FROM owner_settings ORDER BY key`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	var left []string
-	for rows.Next() {
-		var k string
-		if err = rows.Scan(&k); err != nil {
-			t.Fatal(err)
-		}
-		left = append(left, k)
-	}
-	if !reflect.DeepEqual(left, []string{"cto_session", "worker_rotation"}) {
-		t.Fatalf("owner_settings keeps the real settings only: %v", left)
+	if tableExists(t, s, "owner_settings") {
+		t.Fatal("owner_settings was not dropped")
 	}
 	var value string
 	if err = s.db.QueryRow(`SELECT value FROM setting_values WHERE key='node_setting.sandbox' AND level='repo' AND scope='alpha' AND item=''`).Scan(&value); err != nil || value != `"workspace"` {
@@ -216,21 +216,18 @@ func TestGatewayStateMigrationReplaysAfterARewind(t *testing.T) {
 func TestFreshStoreKeepsItsMarkersInGatewayState(t *testing.T) {
 	s, _ := newTestStore(t)
 	state := stateRows(t, s)
-	for _, key := range []string{"front_door_flush_v1", "org_tree_built", "node_scopes_seeded", "cto_legacy_route_start", "owed_replies_live_since", "rework_backfill_done", "task_rework_backfill_done", "graph_ref_gate", "graph_cutover_version"} {
+	for _, key := range []string{"front_door_flush_v1", "org_tree_built", "node_scopes_seeded", "cto_default_charter_v1", "cto_legacy_route_start", "owed_replies_live_since", "rework_backfill_done", "task_rework_backfill_done", "graph_ref_gate", "graph_cutover_version"} {
 		if _, ok := state[key]; !ok {
 			t.Errorf("gateway_state has no %s: %v", key, state)
 		}
 	}
-	for _, key := range markerKeys {
-		var n int
-		if err := s.db.QueryRow(`SELECT COUNT(*) FROM owner_settings WHERE key=?`, key).Scan(&n); err != nil || n != 0 {
-			t.Errorf("owner_settings holds the marker %s: %d %v", key, n, err)
-		}
+	if _, ok := state["graph_ref_backup"]; ok {
+		t.Error("gateway_state keeps graph_ref_backup, which nothing reads")
 	}
 }
 
-// owner_settings is in three topic lists, so a write to it refreshes those
-// screens. A marker is not a setting and no screen shows it.
+// An owner setting is in the topic lists of the screens that show it, so a
+// write to it refreshes those screens. A marker is not a setting and no screen shows it.
 func TestMarkerWriteDoesNotRefreshTheOwnerScreens(t *testing.T) {
 	s, _ := newTestStore(t)
 	topics := []string{protocol.TopicNodes, protocol.TopicWorkers, protocol.TopicInbox}
@@ -253,7 +250,7 @@ func TestMarkerWriteDoesNotRefreshTheOwnerScreens(t *testing.T) {
 			t.Errorf("a marker write moved the %s topic", topic)
 		}
 	}
-	if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('worker_rotation','{}',1)`); err != nil {
+	if err := s.setOwner(workerProvidersKey, map[string]any{}); err != nil {
 		t.Fatal(err)
 	}
 	moved := s.topicVersions()

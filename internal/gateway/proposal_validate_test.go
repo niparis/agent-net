@@ -67,7 +67,7 @@ func proposalSnapshot(t *testing.T, s *Store) map[string][]string {
 }
 
 func TestCTOProposalValidationLeavesDatabaseUnchanged(t *testing.T) {
-	g, node := scopeGateway(t)
+	g, node := mcpGateway(t)
 	st := g.store
 	if err := st.SetNodeHello(node, "test", "1"); err != nil {
 		t.Fatal(err)
@@ -141,7 +141,6 @@ func TestCTOProposalValidationLeavesDatabaseUnchanged(t *testing.T) {
 		{"session_rename", map[string]any{"session_id": a, "name": "planner"}},
 		{"session_rename", map[string]any{"session_id": a, "name": ""}},
 		{"session_trust", map[string]any{"session_id": a, "on": true}},
-		{"session_policy", map[string]any{"session_id": a, "policy": map[string]any{"delegate": "off"}}},
 		{"node_rename", map[string]any{"node_id": node, "name": "name"}},
 		{"project_display_set", map[string]any{"project": "alpha", "name": "name"}},
 		{"project_remove", map[string]any{"name": "alpha"}},
@@ -171,7 +170,7 @@ func TestCTOProposalValidationLeavesDatabaseUnchanged(t *testing.T) {
 		})
 	}
 	t.Run("automatic worker selection", func(t *testing.T) {
-		if _, err := st.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('model_scores',?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, `[{"match":"model","score":23.3,"source":"owner"}]`); err != nil {
+		if _, err := st.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES('owner.model_scores','network','network','',?,0) ON CONFLICT(key,level,scope,item) DO UPDATE SET value=excluded.value`, `[{"match":"model","score":23.3,"source":"owner"}]`); err != nil {
 			t.Fatal(err)
 		}
 		before := proposalSnapshot(t, st)
@@ -187,7 +186,7 @@ func TestCTOProposalValidationLeavesDatabaseUnchanged(t *testing.T) {
 }
 
 func TestCTOProposalValidationTeams(t *testing.T) {
-	g, node := scopeGateway(t)
+	g, node := mcpGateway(t)
 	st := g.store
 	if _, err := st.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)

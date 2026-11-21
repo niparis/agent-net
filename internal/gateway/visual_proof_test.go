@@ -62,8 +62,8 @@ func TestVisualBriefCheckWarnsOnly(t *testing.T) {
 	}
 }
 
-// Version 180 was the last migration shipped before visual proof. Recreate
-// that store without the proof table, then reopen it through the upgrade path.
+// Version 187 was the last migration shipped before visual proof. Rewind a store
+// to it, then reopen it through the upgrade path.
 func TestVisualProofMigrationUpgrade(t *testing.T) {
 	const oldLastVersion = 187
 	path := filepath.Join(t.TempDir(), "gateway.db")
@@ -71,7 +71,7 @@ func TestVisualProofMigrationUpgrade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`DROP TABLE worker_visual_proof; DELETE FROM schema_version WHERE version > ?`, oldLastVersion); err != nil {
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version > ?`, oldLastVersion); err != nil {
 		s.Close()
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestVisualProofMigrationUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	var count int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_visual_proof WHERE unavailable='runtime unavailable'`).Scan(&count); err != nil || count != 1 {
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_runs WHERE proof_unavailable='runtime unavailable'`).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("proof reports = %d, %v", count, err)
 	}
 }

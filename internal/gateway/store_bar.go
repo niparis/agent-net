@@ -208,18 +208,15 @@ func (s *Store) EditBar(session string, q protocol.BarEditRequest) (protocol.Bar
 		}
 	}
 	if len(adds) > 0 {
-		next := 1
-		err = tx.QueryRow(`SELECT next FROM project_bar_next WHERE project=?`, project).Scan(&next)
-		if err != nil && err != sql.ErrNoRows {
+		// bar_next is 0 on a first call and for a bar written before the counter:
+		// start at 1 and go past every rule.
+		var next int
+		if err = tx.QueryRow(`SELECT bar_next FROM repos WHERE id=?`, project).Scan(&next); err != nil && err != sql.ErrNoRows {
 			return res, err
 		}
-		if err == sql.ErrNoRows {
-			// A first call, or a bar written before the counter: go past every rule.
-			for n := range exists {
-				if n >= next {
-					next = n + 1
-				}
-			}
+		next = max(next, 1)
+		for n := range exists {
+			next = max(next, n+1)
 		}
 		for _, text := range adds {
 			if _, err = tx.Exec(`INSERT INTO project_bar_rules(project,n,text,source,created_at) VALUES(?,?,?,?,?)`, project, next, text, source, now); err != nil {
@@ -227,7 +224,7 @@ func (s *Store) EditBar(session string, q protocol.BarEditRequest) (protocol.Bar
 			}
 			next++
 		}
-		if _, err = tx.Exec(`INSERT INTO project_bar_next(project,next) VALUES(?,?) ON CONFLICT(project) DO UPDATE SET next=excluded.next`, project, next); err != nil {
+		if _, err = tx.Exec(`INSERT INTO repos(id,display_name,created_at,updated_at,bar_next) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET bar_next=excluded.bar_next`, project, project, now, now, next); err != nil {
 			return res, err
 		}
 	}

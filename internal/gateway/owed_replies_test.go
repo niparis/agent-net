@@ -27,7 +27,7 @@ func TestOwedReplyNudgeAndAskLifecycle(t *testing.T) {
 	}
 
 	// Advance 15 minutes: idle duration reached.
-	c.t = start.Add(15 * time.Minute)
+	c.set(start.Add(15 * time.Minute))
 	if _, err := s.checkOwedReplies(); err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestOwedReplyNudgeAndAskLifecycle(t *testing.T) {
 	}
 
 	// 10 minutes later (25 minutes total): raise one ask routed to the chief.
-	c.t = start.Add(25 * time.Minute)
+	c.set(start.Add(25 * time.Minute))
 	if _, err := s.checkOwedReplies(); err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestOwedReplyNudgeAndAskLifecycle(t *testing.T) {
 	}
 
 	// A later tick adds nothing more.
-	c.t = start.Add(35 * time.Minute)
+	c.set(start.Add(35 * time.Minute))
 	if _, err := s.checkOwedReplies(); err != nil {
 		t.Fatal(err)
 	}
@@ -260,7 +260,7 @@ func TestOwedReplySkips(t *testing.T) {
 			tc.setup(t, s, c, a, b, req.ID)
 
 			// Advance 15 min
-			c.t = start.Add(15 * time.Minute)
+			c.set(start.Add(15 * time.Minute))
 			if _, err := s.checkOwedReplies(); err != nil {
 				t.Fatal(err)
 			}
@@ -291,7 +291,7 @@ func TestOwedReplyFinalReplyAfterNudgeStopsAsk(t *testing.T) {
 	}
 
 	// 15 min: nudge fires.
-	c.t = start.Add(15 * time.Minute)
+	c.set(start.Add(15 * time.Minute))
 	if _, err := s.checkOwedReplies(); err != nil {
 		t.Fatal(err)
 	}
@@ -301,13 +301,13 @@ func TestOwedReplyFinalReplyAfterNudgeStopsAsk(t *testing.T) {
 	}
 
 	// Recipient sends final reply at 18 minutes.
-	c.t = start.Add(18 * time.Minute)
+	c.set(start.Add(18 * time.Minute))
 	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: req.ID, Body: "Here is the final answer"}); err != nil {
 		t.Fatal(err)
 	}
 
 	// Advance to 25 minutes (10 min after nudge).
-	c.t = start.Add(25 * time.Minute)
+	c.set(start.Add(25 * time.Minute))
 	if _, err := s.checkOwedReplies(); err != nil {
 		t.Fatal(err)
 	}
@@ -347,7 +347,7 @@ func TestOwedReplyRequestCreatedBeforeLiveSinceNeverNudged(t *testing.T) {
 	}
 
 	// Advance clock 20m (past 15m idle threshold for oldReq)
-	c.t = start.Add(20 * time.Minute)
+	c.set(start.Add(20 * time.Minute))
 	nudges, err := s.checkOwedReplies()
 	if err != nil {
 		t.Fatal(err)
@@ -361,7 +361,7 @@ func TestOwedReplyRequestCreatedBeforeLiveSinceNeverNudged(t *testing.T) {
 	}
 
 	// Advance clock past liveSince and create new request
-	c.t = liveSince.Add(time.Minute)
+	c.set(liveSince.Add(time.Minute))
 	newReq, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "New request after live since", Type: protocol.TypeRequest})
 	if err != nil {
 		t.Fatal(err)
@@ -371,7 +371,7 @@ func TestOwedReplyRequestCreatedBeforeLiveSinceNeverNudged(t *testing.T) {
 	}
 
 	// Advance clock 15 min after new request
-	c.t = c.t.Add(15 * time.Minute)
+	c.advance(15 * time.Minute)
 	nudges, err = s.checkOwedReplies()
 	if err != nil {
 		t.Fatal(err)
@@ -399,7 +399,7 @@ func TestOwedReplyReplyInSameConversationNoParentCountsAsFinal(t *testing.T) {
 	}
 
 	// Recipient b replies in the same conversation with no parent_id (e.g. Claude session SendMessage)
-	c.t = start.Add(5 * time.Minute)
+	c.set(start.Add(5 * time.Minute))
 	if _, _, err := s.StoreMessage(protocol.MsgSend{
 		Sender:         b,
 		Recipient:      a,
@@ -411,7 +411,7 @@ func TestOwedReplyReplyInSameConversationNoParentCountsAsFinal(t *testing.T) {
 	}
 
 	// Advance to 15 min
-	c.t = start.Add(15 * time.Minute)
+	c.set(start.Add(15 * time.Minute))
 	nudges, err := s.checkOwedReplies()
 	if err != nil {
 		t.Fatal(err)
@@ -421,7 +421,7 @@ func TestOwedReplyReplyInSameConversationNoParentCountsAsFinal(t *testing.T) {
 	}
 
 	// Also check that if an ask was open, sending a message in the same conversation closes it.
-	c.t = start.Add(20 * time.Minute)
+	c.set(start.Add(20 * time.Minute))
 	req2, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "Second task", Type: protocol.TypeRequest})
 	if err != nil {
 		t.Fatal(err)
@@ -431,13 +431,13 @@ func TestOwedReplyReplyInSameConversationNoParentCountsAsFinal(t *testing.T) {
 	}
 
 	// Advance to nudge time (15m later)
-	c.t = c.t.Add(15 * time.Minute)
+	c.advance(15 * time.Minute)
 	if _, err := s.checkOwedReplies(); err != nil {
 		t.Fatal(err)
 	}
 
 	// Advance to ask time (10m later)
-	c.t = c.t.Add(10 * time.Minute)
+	c.advance(10 * time.Minute)
 	if _, err := s.checkOwedReplies(); err != nil {
 		t.Fatal(err)
 	}
@@ -449,7 +449,7 @@ func TestOwedReplyReplyInSameConversationNoParentCountsAsFinal(t *testing.T) {
 	}
 
 	// Now recipient b sends non-progress reply in same conversation with no parent_id
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, _, err := s.StoreMessage(protocol.MsgSend{
 		Sender:         b,
 		Recipient:      a,
@@ -494,7 +494,7 @@ func TestOwedReplyNudgeDispatchedOnSameTick(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c.t = start.Add(15 * time.Minute)
+	c.set(start.Add(15 * time.Minute))
 	nudges, err := s.checkOwedReplies()
 	if err != nil {
 		t.Fatal(err)

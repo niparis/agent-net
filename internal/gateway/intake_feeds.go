@@ -116,7 +116,7 @@ func (s *Store) trainRunFeed(tx askDB, project string, e protocol.Evidence, now 
 	}
 	switch {
 	case e.Result == protocol.StepResultPass:
-		if _, err := tx.Exec(`UPDATE merge_train_fails SET fails=0,last_run=?,updated_at=? WHERE project=?`, run, now.UnixNano(), project); err != nil {
+		if _, err := tx.Exec(`UPDATE repos SET train_fails=0,train_last_run=? WHERE id=?`, run, project); err != nil {
 			return err
 		}
 		return s.closeIntake(tx, protocol.IntakeMergeQueue, project, intakePassed, now)
@@ -125,7 +125,7 @@ func (s *Store) trainRunFeed(tx askDB, project string, e protocol.Evidence, now 
 	}
 	var fails int
 	var last string
-	err := tx.QueryRow(`SELECT fails,last_run FROM merge_train_fails WHERE project=?`, project).Scan(&fails, &last)
+	err := tx.QueryRow(`SELECT train_fails,train_last_run FROM repos WHERE id=?`, project).Scan(&fails, &last)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
@@ -133,9 +133,9 @@ func (s *Store) trainRunFeed(tx askDB, project string, e protocol.Evidence, now 
 		return nil
 	}
 	fails++
-	if _, err := tx.Exec(`INSERT INTO merge_train_fails(project,fails,last_run,updated_at) VALUES(?,?,?,?)
-		ON CONFLICT(project) DO UPDATE SET fails=excluded.fails,last_run=excluded.last_run,updated_at=excluded.updated_at`,
-		project, fails, run, now.UnixNano()); err != nil {
+	if _, err := tx.Exec(`INSERT INTO repos(id,display_name,created_at,updated_at,train_fails,train_last_run) VALUES(?,?,?,?,?,?)
+		ON CONFLICT(id) DO UPDATE SET train_fails=excluded.train_fails,train_last_run=excluded.train_last_run`,
+		project, project, now.UnixNano(), now.UnixNano(), fails, run); err != nil {
 		return err
 	}
 	if fails < protocol.MergeQueueFailRuns {

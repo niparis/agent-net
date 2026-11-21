@@ -22,10 +22,9 @@ const calibrationWindow = protocol.TrackRecordDays * 24 * time.Hour
 // chooser never reads it.
 // calibrationTables are the tables Calibration reads: the rework tasks (the runs
 // and their assessments), the defects, the ratings, the scores and the callers'
-// names (sessions, profiles, owner_settings) and the table versions the scores
-// depend on. Keep it equal to those queries (see readThrough).
-var calibrationTables = []string{"worker_runs", "worker_assessments", "worker_defects", "worker_ratings", "worker_brief_defects",
-	"sessions", "profiles", "owner_settings", "table_versions"}
+// names (sessions, setting_values). Keep it equal to those queries (see readThrough).
+var calibrationTables = []string{"worker_runs", "worker_assessments", "worker_defects", "worker_ratings",
+	"sessions", "setting_values", "gateway_state.key", "gateway_state.value"}
 
 // Calibration reads the calibration of the worker picks. The read is kept until
 // one of calibrationTables is written, and never past the second it was read in:
@@ -131,8 +130,8 @@ func (s *Store) callerFacts(scores []protocol.ModelScore, callers []string) (nam
 	for i, c := range callers {
 		args[i] = c
 	}
-	rows, err := s.db.Query(`SELECT s.id, COALESCE(NULLIF(p.name,''), s.name, ''), s.model
-		FROM sessions s LEFT JOIN profiles p ON p.session_id = s.id
+	rows, err := s.db.Query(`SELECT s.id, COALESCE(s.name,''), s.model
+		FROM sessions s
 		WHERE s.id IN (?`+strings.Repeat(",?", len(callers)-1)+`)`, args...)
 	if err != nil {
 		return nil, nil, nil, err

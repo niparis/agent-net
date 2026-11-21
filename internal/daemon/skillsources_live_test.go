@@ -27,7 +27,7 @@ func userSourceHashes(t *testing.T, d *Daemon) map[string]string {
 // disk, so an edited folder comes at its new hash and a removed one is not
 // listed (decision 0169, live intake).
 func TestSkillSourcesListsUserFoldersAsTheyAreNow(t *testing.T) {
-	d, home := promptTestDaemon(t)
+	d, home := skillTestDaemon(t)
 	alpha := filepath.Join(home, ".claude/skills/alpha")
 	beta := filepath.Join(home, ".agents/skills/beta")
 	writeSourceSkill(t, alpha, "---\ndescription: Alpha.\n---\nold\n")
@@ -53,14 +53,10 @@ func TestSkillSourcesListsUserFoldersAsTheyAreNow(t *testing.T) {
 // An archive request packs the folder as it is on disk now. The hash the
 // gateway holds may be from an older scan, and the answer is the new content.
 func TestSkillBundleArchivePacksFolderAsItIsNow(t *testing.T) {
-	d, home := promptTestDaemon(t)
+	d, home := skillTestDaemon(t)
 	alpha := filepath.Join(home, ".claude/skills/alpha")
 	writeSourceSkill(t, alpha, "---\ndescription: Alpha.\n---\nold\n")
 	if _, err := d.skillSources(nil); err != nil {
-		t.Fatal(err)
-	}
-	oldHash, err := inventory.SkillHash(alpha)
-	if err != nil {
 		t.Fatal(err)
 	}
 	writeSourceSkill(t, alpha, "---\ndescription: Alpha.\n---\nnew\n")
@@ -68,7 +64,7 @@ func TestSkillBundleArchivePacksFolderAsItIsNow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	answer, err := d.skillBundleAnswer(protocol.SkillBundleRequest{Name: "alpha", Hash: oldHash, Location: alpha, Archive: true})
+	answer, err := d.skillBundleAnswer(protocol.SkillBundleRequest{Name: "alpha", Location: alpha})
 	if err != nil {
 		t.Fatalf("archive pack of an edited folder: %v", err)
 	}
@@ -81,17 +77,13 @@ func TestSkillBundleArchivePacksFolderAsItIsNow(t *testing.T) {
 	}
 }
 
-// The archive packs only folders that the scan or the last skill sources answer
+// The archive packs only folders that the last skill sources answer
 // listed. A folder outside every skill root is refused.
 func TestSkillBundleArchiveRefusesUnlistedFolder(t *testing.T) {
-	d, home := promptTestDaemon(t)
+	d, home := skillTestDaemon(t)
 	loose := filepath.Join(home, "notes/skills/loose")
 	writeSourceSkill(t, loose, "---\ndescription: Loose.\n---\nbody\n")
-	hash, err := inventory.SkillHash(loose)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := d.skillBundleAnswer(protocol.SkillBundleRequest{Name: "loose", Hash: hash, Location: loose, Archive: true}); err == nil {
+	if _, err := d.skillBundleAnswer(protocol.SkillBundleRequest{Name: "loose", Location: loose}); err == nil {
 		t.Fatal("an unlisted folder was packed")
 	}
 }
@@ -99,14 +91,10 @@ func TestSkillBundleArchiveRefusesUnlistedFolder(t *testing.T) {
 // A listed folder that is replaced by a link to another folder is not packed:
 // the archive reads no folder through a link.
 func TestSkillBundleArchiveRefusesFolderReplacedByLink(t *testing.T) {
-	d, home := promptTestDaemon(t)
+	d, home := skillTestDaemon(t)
 	alpha := filepath.Join(home, ".claude/skills/alpha")
 	writeSourceSkill(t, alpha, "---\ndescription: Alpha.\n---\nbody\n")
 	if _, err := d.skillSources(nil); err != nil {
-		t.Fatal(err)
-	}
-	hash, err := inventory.SkillHash(alpha)
-	if err != nil {
 		t.Fatal(err)
 	}
 	elsewhere := filepath.Join(t.TempDir(), "elsewhere")
@@ -117,7 +105,7 @@ func TestSkillBundleArchiveRefusesFolderReplacedByLink(t *testing.T) {
 	if err := os.Symlink(elsewhere, alpha); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.skillBundleAnswer(protocol.SkillBundleRequest{Name: "alpha", Hash: hash, Location: alpha, Archive: true}); err == nil {
+	if _, err := d.skillBundleAnswer(protocol.SkillBundleRequest{Name: "alpha", Location: alpha}); err == nil {
 		t.Fatal("a folder replaced by a link was packed")
 	}
 }
@@ -125,7 +113,7 @@ func TestSkillBundleArchiveRefusesFolderReplacedByLink(t *testing.T) {
 // Codex's built-in skills under skills/.system ship with Codex. They are not
 // archive material, so the skill sources answer does not list them.
 func TestSkillSourcesLeavesOutSystemFolders(t *testing.T) {
-	d, home := promptTestDaemon(t)
+	d, home := skillTestDaemon(t)
 	user := filepath.Join(home, ".codex/skills/mine")
 	system := filepath.Join(home, ".codex/skills/.system/imagegen")
 	agentsSystem := filepath.Join(home, ".agents/skills/.system/openai-docs")

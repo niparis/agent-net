@@ -1,5 +1,7 @@
 # 0027 - Skills and MCP management
 
+> Retired by [0169](0169-skill-archive.md) task 5 (2026-11-21): the Tools rollout, its tab and its tables are removed. This text is history.
+
 **Date:** 2026-10-30
 **Status:** Proposed for owner review
 **Context:** [0001 D2](0001-initial-decisions.md), [0022](0022-component-graph-and-cto.md), [MCP registry](../mcp-registry.md), [reference](../reference.md).

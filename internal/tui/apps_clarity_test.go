@@ -151,31 +151,6 @@ func TestSettingsAppRowKeepsDates(t *testing.T) {
 	}
 }
 
-// The Tools tab shows which bots an MCP server is granted to.
-func TestToolsMCPServerShowsBots(t *testing.T) {
-	m, _ := toolsAtScreen(120, 34)
-	m = rowByName(m, "tenebrae-library")
-	revoked := m.now()
-	m.tl.bots = botsByServer([]connectedApp{
-		{Name: "Trade", Kind: "bot", Grants: []string{"mcp server tenebrae-library"}},
-		{Name: "Grok Bot", Kind: "bot", Grants: []string{"mcp server tenebrae-library", "mcp server notes"}},
-		{Name: "phone", Kind: "owner_app", Grants: []string{"mcp server tenebrae-library"}},
-		{Name: "old", Kind: "bot", Grants: []string{"mcp server tenebrae-library"}, RevokedAt: &revoked},
-	})
-	detail := ansi.Strip(strings.Join(m.toolDetailView(60, 12), "\n"))
-	if !strings.Contains(detail, "bots: Trade, Grok Bot") {
-		t.Fatalf("bots line missing:\n%s", detail)
-	}
-	if strings.Contains(detail, "phone") || strings.Contains(detail, "old") {
-		t.Fatalf("owner app or revoked app listed:\n%s", detail)
-	}
-	m.tl.bots = nil
-	detail = ansi.Strip(strings.Join(m.toolDetailView(60, 12), "\n"))
-	if strings.Contains(detail, "bots:") {
-		t.Fatalf("bots line without grants:\n%s", detail)
-	}
-}
-
 // A bot that acts under names lists them under its row. A bot with no name has
 // no line, and the list reads the gateway's "Names" field.
 func TestConnectedAppNamesLine(t *testing.T) {

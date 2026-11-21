@@ -53,7 +53,6 @@ const usage = `usage: agent-net <command>
   list       list agents on the network
   nodes      list machines with their agent-net version and installed harnesses
              (nodes rename <node-id|name> [new name] sets a display name)
-  tools      show observed skills and MCP servers
   projects   list known projects (registered and seen); add, scan and remove register them
   events     show the gateway's events table (run on the gateway machine)
   tui        live terminal view of every agent session on the network; start sessions, send as yourself, stop workers
@@ -161,8 +160,6 @@ func run(ctx context.Context, argv []string, stderr io.Writer) int {
 		err = cmdList(ctx, args)
 	case "nodes":
 		err = cmdNodes(ctx, args)
-	case "tools":
-		err = cmdTools(ctx, args)
 	case "projects":
 		err = cmdProjects(ctx, args)
 	case "events":
@@ -193,7 +190,7 @@ func run(ctx context.Context, argv []string, stderr io.Writer) int {
 		err = cmdPlaybook(ctx, args)
 	case "hint": // hidden: the Claude Code hook (decision 0013)
 		err = cmdHint(ctx, args)
-	case "policy-hook": // hidden: the Claude Code delegation policy hook (decision 0014)
+	case "policy-hook": // hidden: the Claude Code charter hook (decision 0014)
 		err = cmdPolicyHook(ctx, args)
 	case "needs-hook": // hidden: the Claude Code "needs you" hook (decision 0016)
 		err = cmdNeedsHook(ctx, args)

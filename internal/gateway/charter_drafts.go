@@ -104,7 +104,7 @@ func (s *Store) draftRepoFolder(q draftQuerier, session, repo string) (string, e
 
 func draftAsked(q draftQuerier, level, scope, hash string) (bool, error) {
 	var have string
-	err := q.QueryRow(`SELECT source_hash FROM charter_draft_asks WHERE level=? AND scope=?`, level, scope).Scan(&have)
+	err := q.QueryRow(`SELECT source_hash FROM charter_drafts WHERE level=? AND scope=? AND status='asked' ORDER BY asked_at DESC, id DESC LIMIT 1`, level, scope).Scan(&have)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}
@@ -163,7 +163,10 @@ func (s *Store) charterDraftAskFor(session string, c resolvedContext, hash strin
 	defer tx.Rollback()
 	now := s.now().UnixNano()
 	record := func(level, scope, h string) error {
-		_, err := tx.Exec(`INSERT INTO charter_draft_asks(level,scope,source_hash,asked_at,session_id) VALUES(?,?,?,?,?) ON CONFLICT(level,scope) DO UPDATE SET source_hash=excluded.source_hash,asked_at=excluded.asked_at,session_id=excluded.session_id`, level, scope, h, now, session)
+		if _, err := tx.Exec(`DELETE FROM charter_drafts WHERE level=? AND scope=? AND status='asked'`, level, scope); err != nil {
+			return err
+		}
+		_, err := tx.Exec(`INSERT INTO charter_drafts(level,scope,attr,value,source,source_hash,status,drafted_by,created_at,asked_at) VALUES(?,?,'','','',?,'asked',?,?,?)`, level, scope, h, session, now, now)
 		return err
 	}
 	var text strings.Builder
@@ -283,7 +286,7 @@ func draftLedTeams(q leadDB, session, agent string) ([]draftTeam, error) {
 // draftTeamMembers returns the member names and a hash input that changes when
 // a member's purpose or refuses change.
 func draftTeamMembers(tx *sql.Tx, team string) (names []string, sig string, err error) {
-	rows, err := tx.Query(`SELECT member_kind,member_id FROM team_members WHERE team_id=? ORDER BY member_kind,member_id`, team)
+	rows, err := tx.Query(`SELECT 'agent',id FROM agents WHERE team_id=? UNION ALL SELECT 'repo',id FROM repos WHERE team_id=? ORDER BY 1,2`, team, team)
 	if err != nil {
 		return nil, "", err
 	}

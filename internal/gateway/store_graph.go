@@ -181,33 +181,8 @@ func (s *Store) RemoveArchitect(name, actor string, validate ...bool) error {
 	if err != nil {
 		return err
 	}
-	// Dropping the architect clears this Agent's Repo ownership. Keep the Repos it
-	// owned, so their Agents follow the new owner rule.
-	repoRows, err := tx.Query(`SELECT id FROM repos WHERE owner_agent_id=? ORDER BY id`, name)
-	if err != nil {
-		return err
-	}
-	var ownedRepos []string
-	for repoRows.Next() {
-		var repo string
-		if err = repoRows.Scan(&repo); err != nil {
-			repoRows.Close()
-			return err
-		}
-		ownedRepos = append(ownedRepos, repo)
-	}
-	err = repoRows.Err()
-	repoRows.Close()
-	if err != nil {
-		return err
-	}
 	if err = dropArchitectTx(tx, name, s.now().UnixNano()); err != nil {
 		return err
-	}
-	for _, repo := range ownedRepos {
-		if err = placeRepoAgentsTx(tx, repo); err != nil {
-			return err
-		}
 	}
 	if err = graphRecord(tx, "node", name, "", "architect", "", actor, s.now().UnixNano()); err != nil {
 		return err
@@ -260,7 +235,7 @@ func (s *Store) setCharter(node, attr, value, actor string) error {
 	defer tx.Rollback()
 	var before int64
 	if attr == "maturity" {
-		if err = tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&before); err != nil {
+		if before, err = settingsRevision(tx); err != nil {
 			return err
 		}
 	}
@@ -269,7 +244,7 @@ func (s *Store) setCharter(node, attr, value, actor string) error {
 	}
 	var after int64
 	if attr == "maturity" {
-		if err = tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&after); err != nil {
+		if after, err = settingsRevision(tx); err != nil {
 			return err
 		}
 	}
@@ -715,20 +690,7 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 			if current.String != value {
 				return reject("lead changed since that history entry")
 			}
-			if old != "" {
-				var belongs bool
-				if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND owner_agent_id=? UNION ALL SELECT 1 FROM sessions WHERE repo_id=? AND agent_id=?)`, node, old, node, old).Scan(&belongs); err != nil {
-					return err
-				}
-				if !belongs {
-					return reject("lead Agent has no session in this Repo")
-				}
-			}
-			if attr == "lead/default" {
-				_, err = tx.Exec(`UPDATE repos SET lead_agent_id=NULL WHERE id=?`, node)
-			} else {
-				_, err = tx.Exec(`UPDATE repos SET lead_agent_id=? WHERE id=?`, storedLead(lead), node)
-			}
+			_, err = tx.Exec(`UPDATE repos SET lead_agent_id=? WHERE id=?`, storedLead(lead), node)
 		case "team":
 			err = tx.QueryRow(`SELECT owner_agent_id FROM teams WHERE id=? AND active=1`, node).Scan(&current)
 			if err != nil {
@@ -746,22 +708,6 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 		}
 		if _, err = tx.Exec(`INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor,target_kind) VALUES('lead',?,'lead',?,?,?,?,?)`, node, value, old, now, actor, targetKind); err != nil {
 			return err
-		}
-		// The undo is a lead write too: the tree follows it.
-		switch targetKind {
-		case "repo":
-			if err = placeRepoAgentsTx(tx, node); err != nil {
-				return err
-			}
-		case "team":
-			for _, agent := range []string{current.String, old} {
-				if err = placeAgentTx(tx, agent); err != nil {
-					return err
-				}
-			}
-			if err = placeTeamMembersTx(tx, node); err != nil {
-				return err
-			}
 		}
 		if len(validate) > 0 && validate[0] {
 			return nil
@@ -796,7 +742,7 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 			}
 			if old == "" {
 				var count int
-				if err = tx.QueryRow(`SELECT COUNT(*) FROM team_members WHERE team_id=?`, node).Scan(&count); err != nil {
+				if err = tx.QueryRow(`SELECT (SELECT COUNT(*) FROM agents WHERE team_id=?) + (SELECT COUNT(*) FROM repos WHERE team_id=?)`, node, node).Scan(&count); err != nil {
 					return err
 				}
 				if count != 0 {
@@ -1171,16 +1117,16 @@ func (s *Store) SetDeliveryOwner(q protocol.DeliveryOwnerSetRequest, actor strin
 		return err
 	}
 	_, err = tx.Exec(`UPDATE messages SET state='expired' WHERE state IN ('stored','dispatched') AND id IN
-        (SELECT m.message_id FROM delivery_step_messages m JOIN delivery_step_tasks t ON t.change_id=m.change_id AND t.revision=m.revision AND t.step=m.step AND t.for_step=m.for_step AND t.after_merge=m.after_merge
-        JOIN delivery_changes c ON c.id=t.change_id WHERE c.project=? AND t.step=? AND t.for_step=? AND t.after_merge=? AND t.claimed_by='' AND t.completed=0)`, q.Project, q.Step, q.For, boolInt(q.AfterMerge))
+        (SELECT d.value FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id JOIN json_each(t.notices) d
+        WHERE c.project=? AND t.step=? AND t.for_step=? AND t.after_merge=? AND t.claimed_by='')`, q.Project, q.Step, q.For, boolInt(q.AfterMerge))
 	if err != nil {
 		return err
 	}
 	owner := protocol.DeliveryOwnerFromSource(node)
 	if owner.Kind == protocol.OwnerNode && node != "" {
-		_, err = tx.Exec(`UPDATE delivery_step_tasks SET owner_node=?, urgent=1 WHERE claimed_by='' AND completed=0 AND step=? AND for_step=? AND after_merge=? AND change_id IN (SELECT id FROM delivery_changes WHERE project=?)`, node, q.Step, q.For, boolInt(q.AfterMerge), q.Project)
+		_, err = tx.Exec(`UPDATE delivery_step_tasks SET owner_node=?, urgent=1 WHERE claimed_by='' AND step=? AND for_step=? AND after_merge=? AND change_id IN (SELECT id FROM delivery_changes WHERE project=?)`, node, q.Step, q.For, boolInt(q.AfterMerge), q.Project)
 	} else {
-		_, err = tx.Exec(`UPDATE delivery_step_tasks SET completed=1 WHERE claimed_by='' AND completed=0 AND step=? AND for_step=? AND after_merge=? AND change_id IN (SELECT id FROM delivery_changes WHERE project=?)`, q.Step, q.For, boolInt(q.AfterMerge), q.Project)
+		err = endStepTasks(tx, `t.claimed_by='' AND t.step=? AND t.for_step=? AND t.after_merge=? AND t.change_id IN (SELECT id FROM delivery_changes WHERE project=?)`, q.Step, q.For, boolInt(q.AfterMerge), q.Project)
 	}
 	if err != nil {
 		return err
@@ -1254,8 +1200,6 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 		if err := checkReportsToTarget(tx, e.From, e.To); err != nil {
 			return err
 		}
-		// An explicit edge_set moves the parent; the one-parent rule still
-		// holds for every other writer (checkReportsTo).
 		return moveReportsToTx(tx, e, actor, now)
 	}
 	deliveryEdge := deliveryEdgeStep(e.Kind) != "" && e.Kind != "deploys"
@@ -1407,10 +1351,10 @@ var graphNodesTables = []string{"agents.id", "agents.role", "agents.tombstone", 
 
 // graphTables are the tables graphWith reads, through every function it calls:
 // the nodes, the charters and their levels (charterTables), the settings
-// snapshot, the loops (loopTables), the delegation policies and the edges.
+// snapshot, the loops (loopTables) and the edges.
 // Keep it equal to those queries (see readThrough).
 var graphTables = tableUnion(graphNodesTables, charterTables, settingsTables, loopTables,
-	[]string{"project_policies", "graph_edges", "project_bar_rules"})
+	[]string{"graph_edges", "project_bar_rules"})
 
 // Graph returns explicit and implicit nodes and all edges.
 //
@@ -1580,39 +1524,6 @@ func (s *Store) graphWith(snapshot *settings.Snapshot) (protocol.Graph, error) {
 		}
 	}
 	if err = s.applyLoopsToGraph(&g); err != nil {
-		return g, err
-	}
-	// The owner's delegation policies are rules agents follow, so the public
-	// read shows them read-only. They are stored per machine and project.
-	rows, err = s.db.Query(`SELECT node_id,project,policy FROM project_policies ORDER BY project,node_id`)
-	if err != nil {
-		return g, err
-	}
-	for rows.Next() {
-		var machine, project, raw string
-		if err = rows.Scan(&machine, &project, &raw); err != nil {
-			rows.Close()
-			return g, err
-		}
-		var policy protocol.DelegationPolicy
-		if json.Unmarshal([]byte(raw), &policy) != nil {
-			continue
-		}
-		policy.Workers = "" // legacy worker value is a downgrade backup
-		if n := byLower[strings.ToLower(project)]; n != nil {
-			for _, v := range snap.Values {
-				if v.Key == workerSandboxKey && v.Level == "repo" && v.Scope == n.Name && v.Item == "" {
-					_ = json.Unmarshal(v.Value, &policy.Workers)
-				}
-			}
-			if !policy.Empty() {
-				n.Delegation = append(n.Delegation, protocol.NodeDelegation{Machine: machine, DelegationPolicy: policy})
-			}
-		}
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
 		return g, err
 	}
 	// The org tree (reports_to) is read on its own; the Graph shows it once

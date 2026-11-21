@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/niparis/agent-net/internal/protocol"
-	"github.com/niparis/agent-net/internal/toolsdiff"
 )
 
 func keyEnter() tea.KeyPressMsg { return tea.KeyPressMsg{Code: tea.KeyEnter} }
@@ -370,44 +369,6 @@ func TestResumeConfirmKeys(t *testing.T) {
 			}
 			if strings.Contains(ansi.Strip(m.testView()), confirmHint) {
 				t.Fatal("hint stayed after cancel")
-			}
-		})
-	}
-}
-
-func TestToolsApplyConfirmKeys(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		key  string
-		yes  bool
-	}{
-		{"enter", "enter", true},
-		{"y", "y", true},
-		{"Y", "Y", true},
-		{"esc", "esc", false},
-		{"n", "n", false},
-		{"N", "N", false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			m, src := toolsAtScreen(120, 34)
-			for i, d := range m.shownDiffs() {
-				if d.Kind == toolsdiff.KindDrift {
-					m.tl.row = i
-				}
-			}
-			m = resolveTools(m.openFix())
-			if m.tl.modal == nil {
-				t.Fatal("enter did not open the plan")
-			}
-			m = pressKey(m, tc.key)
-			if tc.yes {
-				if len(src.applied) != 1 {
-					t.Fatalf("applied %v", src.applied)
-				}
-				return
-			}
-			if m.tl.modal != nil || len(src.applied) != 0 {
-				t.Fatalf("cancel: modal %v applied %v", m.tl.modal != nil, src.applied)
 			}
 		})
 	}

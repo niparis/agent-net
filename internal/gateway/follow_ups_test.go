@@ -45,13 +45,13 @@ func TestFollowUpSendWithoutReplyRaisesOneChiefAsk(t *testing.T) {
 	}
 	set := c.t
 
-	c.t = set.Add(44 * time.Minute)
+	c.set(set.Add(44 * time.Minute))
 	tickFollowUps(t, s)
 	if got := followUpAsks(t, s); len(got) != 0 {
 		t.Fatalf("raised before the time: %+v", got)
 	}
 
-	c.t = set.Add(46 * time.Minute)
+	c.set(set.Add(46 * time.Minute))
 	tickFollowUps(t, s)
 	tickFollowUps(t, s)
 	got := followUpAsks(t, s)
@@ -78,11 +78,11 @@ func TestFollowUpSendRepliedBeforeTimeRaisesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(10 * time.Minute)
+	c.advance(10 * time.Minute)
 	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, Body: "done", Type: protocol.TypeReply, ParentID: req.ID}); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Hour)
+	c.advance(time.Hour)
 	tickFollowUps(t, s)
 	if got := followUpAsks(t, s); len(got) != 0 {
 		t.Fatalf("raised after a reply: %+v", got)
@@ -95,11 +95,11 @@ func TestFollowUpSendProgressReplyCountsAsReply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(10 * time.Minute)
+	c.advance(10 * time.Minute)
 	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, Body: "working", Type: protocol.TypeReply, ParentID: req.ID, Progress: true}); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Hour)
+	c.advance(time.Hour)
 	tickFollowUps(t, s)
 	if got := followUpAsks(t, s); len(got) != 0 {
 		t.Fatalf("a reply in the thread, progress or final, is the expected event: %+v", got)
@@ -111,7 +111,7 @@ func TestFollowUpSendWithoutFollowUpAtStoresNothing(t *testing.T) {
 	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "Review ch_1", Type: protocol.TypeRequest}); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(24 * time.Hour)
+	c.advance(24 * time.Hour)
 	tickFollowUps(t, s)
 	var n int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM follow_ups`).Scan(&n); err != nil || n != 0 {
@@ -137,9 +137,9 @@ func TestFollowUpSortChangeMovedRaisesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.clk.t = r.clk.t.Add(10 * time.Minute)
+	r.clk.advance(10 * time.Minute)
 	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: ch.ID, StepRef: stepAccept, Result: protocol.StepResultPass, Commit: commitA})
-	r.clk.t = r.clk.t.Add(time.Hour)
+	r.clk.advance(time.Hour)
 	tickFollowUps(t, r.s)
 	if got := followUpAsks(t, r.s); len(got) != 0 {
 		t.Fatalf("raised although the step moved: %+v", got)
@@ -157,7 +157,7 @@ func TestFollowUpSortChangeNotMovedRaisesOneAsk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.clk.t = set.Add(time.Hour)
+	r.clk.set(set.Add(time.Hour))
 	tickFollowUps(t, r.s)
 	tickFollowUps(t, r.s)
 	got := followUpAsks(t, r.s)
@@ -187,7 +187,7 @@ func TestFollowUpSortUsesTheChangeTheAskIsAbout(t *testing.T) {
 		Ask: item.ID, Result: protocol.AskSortClose, Reason: "wait for it", FollowUpAt: "45m"}}); err != nil {
 		t.Fatal(err)
 	}
-	r.clk.t = r.clk.t.Add(time.Hour)
+	r.clk.advance(time.Hour)
 	tickFollowUps(t, r.s)
 	got := followUpAsks(t, r.s)
 	if len(got) != 1 || !strings.Contains(got[0].text, ch.ID) {
@@ -211,7 +211,7 @@ func TestFollowUpSortWithoutChangeWatchesTheConversation(t *testing.T) {
 		t.Fatal(err)
 	}
 	set := c.t
-	c.t = set.Add(40 * time.Minute)
+	c.set(set.Add(40 * time.Minute))
 	tickFollowUps(t, s)
 	if got := followUpAsks(t, s); len(got) != 1 {
 		t.Fatalf("no later message in the conversation: want 1 ask, got %+v", got)
@@ -233,11 +233,11 @@ func TestFollowUpSortConversationMessageRaisesNothing(t *testing.T) {
 		Ask: item.ID, Result: protocol.AskSortClose, Reason: "bob will answer", FollowUpAt: "30m"}}); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(10 * time.Minute)
+	c.advance(10 * time.Minute)
 	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, Body: "on it", Type: protocol.TypeReply, ParentID: req.ID, Progress: true}); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Hour)
+	c.advance(time.Hour)
 	tickFollowUps(t, s)
 	if got := followUpAsks(t, s); len(got) != 0 {
 		t.Fatalf("raised after a later message: %+v", got)
@@ -255,7 +255,7 @@ func TestFollowUpSortSendStoresFollowUp(t *testing.T) {
 		Ask: item.ID, Result: protocol.AskSortSend, To: b, Reason: "bob owns it", FollowUpAt: "30m"}}); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(40 * time.Minute)
+	c.advance(40 * time.Minute)
 	tickFollowUps(t, s)
 	if got := followUpAsks(t, s); len(got) != 1 {
 		t.Fatalf("want 1 ask, got %+v", got)
@@ -327,7 +327,7 @@ func TestWithdrawEndsThePendingFollowUpOfTheMessage(t *testing.T) {
 	if _, err := s.Withdraw(req.ID, a); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Hour)
+	c.advance(time.Hour)
 	tickFollowUps(t, s)
 	if got := followUpAsks(t, s); len(got) != 0 {
 		t.Fatalf("a withdrawn message raised a follow-up ask: %+v", got)

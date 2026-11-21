@@ -32,11 +32,11 @@ func TestReminderSkipsLimitedSessionUntilReset(t *testing.T) {
 	if err != nil || !ok || v.LimitedUntil != until.Unix() || v.LimitedReason != "ChatGPT usage limit" || !v.Limited(c.t) {
 		t.Fatalf("view = %+v %v %v", v, ok, err)
 	}
-	c.t = c.t.Add(3 * time.Minute)
+	c.advance(3 * time.Minute)
 	if r, err := s.remindPending(); err != nil || len(r) != 0 {
 		t.Fatalf("a limited session got a reminder: %+v %v", r, err)
 	}
-	c.t = until.Add(time.Minute)
+	c.set(until.Add(time.Minute))
 	if r, err := s.remindPending(); err != nil || len(r) != 1 {
 		t.Fatalf("no reminder after the reset: %+v %v", r, err)
 	}
@@ -74,10 +74,10 @@ func TestIdleCheckSkipsLimitedSession(t *testing.T) {
 	if _, err := s.db.Exec("UPDATE sessions SET status='idle', last_active=? WHERE id=?", c.t.UnixNano(), b); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO profiles(session_id,name,function,project,capabilities,task,updated_at,expertise,task_started) VALUES(?,'bob','','','[]','build the thing',?,'',?) ON CONFLICT(session_id) DO UPDATE SET task='build the thing'`, b, c.t.UnixNano(), c.t.UnixNano()); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET name='bob',name_fixed=1,task='build the thing',announced_at=?,task_started=? WHERE id=?`, c.t.UnixNano(), c.t.UnixNano(), b); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(idleCheckAfter + time.Minute)
+	c.advance(idleCheckAfter + time.Minute)
 	until := c.t.Add(time.Hour)
 	if _, err := s.db.Exec(`UPDATE sessions SET limited_until=?,limited_reason='usage limit' WHERE id=?`, until.Unix(), b); err != nil {
 		t.Fatal(err)
@@ -86,7 +86,7 @@ func TestIdleCheckSkipsLimitedSession(t *testing.T) {
 	if err != nil || len(out) != 0 {
 		t.Fatalf("a limited session was checked: %+v %v", out, err)
 	}
-	c.t = until.Add(time.Minute)
+	c.set(until.Add(time.Minute))
 	if _, err := s.db.Exec("UPDATE sessions SET last_seen=?, last_active=? WHERE id=?", c.t.UnixNano(), c.t.Add(-idleCheckAfter-time.Minute).UnixNano(), b); err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestReceiptNamesLimitedRecipient(t *testing.T) {
 	if want := "bob hit its usage limit; it can answer after 13:42 UTC"; route != want {
 		t.Fatalf("route = %q, want %q", route, want)
 	}
-	c.t = until.Add(time.Minute)
+	c.set(until.Add(time.Minute))
 	if _, _, route, err = s.StoreLeadMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "again"}); err != nil || route != "" {
 		t.Fatalf("limit over: route=%q err=%v", route, err)
 	}

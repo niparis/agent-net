@@ -13,7 +13,6 @@ c CTO   Your CTO runs the network for you. Ask it in plain words.
 2 Graph 8 projects seen. None has a charter yet: the CTO drafts
         them with you.
 3 Work  Workers use claude, codex. Your claude plan is protected.
-5 Tools Skills and MCP servers are checked on every machine.
 
 Do this first
 ! Restart 2 pi sessions so they get the agent-net tools.

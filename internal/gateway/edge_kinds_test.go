@@ -49,6 +49,13 @@ func removeEdgeKindsForTest(t *testing.T, s *Store) {
 	if _, err := s.db.Exec(`DROP TRIGGER edge_kinds_insert; DROP TRIGGER edge_history_kinds_insert; DROP TRIGGER merger_removed; DROP TRIGGER merger_replaced;`); err != nil {
 		t.Fatal(err)
 	}
+	// The old merger trigger bumps setting_revision, which the settings fold
+	// dropped. SQLite checks every trigger when a column is dropped below.
+	restoreSettingsFoldTables(t, s.db)
+	// The older trigger text names the tables the step tables rework dropped.
+	restoreTablesAt(t, s.db, migrationVersion(t, stepTablesMarker)-1, stepDroppedTables...)
+	restoreStepTasksCompleted(t, s.db)
+	restoreMergerRows(t, s.db)
 	if _, err := s.db.Exec(mergerLifecycleMigration()); err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +175,7 @@ func TestEdgeKindsMigrationPreservesRouting(t *testing.T) {
 			t.Fatal(err)
 		}
 		var merger string
-		if err := s.db.QueryRow(`SELECT session_id FROM project_mergers WHERE project='demo'`).Scan(&merger); err != nil || merger != r.sonnet {
+		if err := s.db.QueryRow(`SELECT session_id FROM ` + mergerRowsSQL + ` WHERE project='demo'`).Scan(&merger); err != nil || merger != r.sonnet {
 			t.Fatalf("merger %s: %v", merger, err)
 		}
 		if i == 1 {
@@ -176,7 +183,7 @@ func TestEdgeKindsMigrationPreservesRouting(t *testing.T) {
 			if err := s.db.QueryRow(`SELECT count(*) FROM graph_history WHERE type='edge' AND (source_kind='' OR target_kind='')`).Scan(&bad); err != nil || bad != 0 {
 				t.Fatalf("edge history missing kinds: %d %v", bad, err)
 			}
-			if _, err := s.db.Exec(`DELETE FROM project_mergers WHERE project='demo'`); err != nil {
+			if _, err := s.db.Exec(`UPDATE repos SET merger_session='',merger_node='' WHERE id='demo'`); err != nil {
 				t.Fatal(err)
 			}
 			var count int

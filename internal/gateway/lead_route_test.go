@@ -56,7 +56,7 @@ func TestLeadRouteOutsideAndCrew(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_session',?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, cto); err != nil {
+	if _, err = s.db.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES('cto_session',?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, cto); err != nil {
 		t.Fatal(err)
 	}
 	m, _ = send(cto)

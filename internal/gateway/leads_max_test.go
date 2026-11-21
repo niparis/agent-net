@@ -82,7 +82,7 @@ func TestLeadAndMaxSessionViews(t *testing.T) {
 	repo := protocol.GraphRef{Kind: "repo", ID: "demo"}
 	teamWrite(t, s, protocol.TeamWrite{Action: "membership", ID: "alpha", Member: &repo})
 	a, ok, err := s.Agent(sid)
-	if err != nil || !ok || !a.RepoLead || a.RepoLeadExplicit || !a.TeamLead || a.RepoMaxAgents != 3 || a.RepoAgentCount != 1 {
+	if err != nil || !ok || !a.RepoLead || !a.RepoLeadExplicit || !a.TeamLead || a.RepoMaxAgents != 3 || a.RepoAgentCount != 1 {
 		t.Fatalf("session: %+v %v", a, err)
 	}
 	if err := s.SetLead(protocol.LeadSetRequest{Ref: repo, Lead: &lead}, "owner", false); err != nil {

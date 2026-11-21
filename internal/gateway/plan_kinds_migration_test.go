@@ -44,6 +44,11 @@ func equalLines(t *testing.T, what string, got, want []string) {
 func TestPlanAndAttemptTablesMergeWithKinds(t *testing.T) {
 	s, _ := newTestStore(t)
 	rewind := migrationVersion(t, "One table for the plans that change tools") - 1
+	// The tools retire migration drops plans later, so the replay stops at the merge.
+	replayToMerge := func() error {
+		t.Helper()
+		return replayMigrationsUpTo(t, s, rewind+1)
+	}
 	rewindToMerge := func() {
 		t.Helper()
 		if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>?`, rewind); err != nil {
@@ -87,7 +92,7 @@ func TestPlanAndAttemptTablesMergeWithKinds(t *testing.T) {
 	const plansQuery = `SELECT kind||'|'||id||'|'||item||'|'||snapshot||'|'||plan||'|'||applied||'|'||state FROM plans ORDER BY kind,id`
 	const attemptsQuery = `SELECT kind||'|'||source||'|'||at FROM oauth_attempts ORDER BY kind,source,at`
 
-	if err := replayMigrations(t, s); err != nil {
+	if err := replayToMerge(); err != nil {
 		t.Fatal(err)
 	}
 	equalLines(t, "plans after the merge", queryLines(t, s, plansQuery), wantPlans)
@@ -99,7 +104,7 @@ func TestPlanAndAttemptTablesMergeWithKinds(t *testing.T) {
 
 	// Replay: the tables are gone, and the merge must still run without an error or a copy.
 	rewindToMerge()
-	if err := replayMigrations(t, s); err != nil {
+	if err := replayToMerge(); err != nil {
 		t.Fatalf("replay of the merge: %v", err)
 	}
 	equalLines(t, "plans after the replay", queryLines(t, s, plansQuery), wantPlans)

@@ -126,9 +126,6 @@ func refAgents(s *Store, f protocol.QueryAgents) ([]protocol.AgentView, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := s.applyDelegation(out); err != nil {
-		return nil, err
-	}
 	if err := s.applyAgentCharters(out, true); err != nil {
 		return nil, err
 	}
@@ -314,7 +311,7 @@ func TestNodesInfoPreviewFollowsItsInputsAtOnce(t *testing.T) {
 	// A new score: the first model now tops out at trivial work, so the harder
 	// levels no longer allow it by its benchmark.
 	changed("a new score", func() {
-		if _, err := g.store.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, scoresKey,
+		if _, err := g.store.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0) ON CONFLICT (key,level,scope,item) DO UPDATE SET value=excluded.value`, scoresKey,
 			`[{"match":"claude-opus-5-5","score":10},{"match":"gpt-6.1-terra","score":41},{"match":"gpt-6.1-sol","score":41},{"match":"deepseek/deepseek-v4.1-flash","score":60}]`); err != nil {
 			t.Fatal(err)
 		}
@@ -335,7 +332,7 @@ func TestNodesInfoPreviewFollowsItsInputsAtOnce(t *testing.T) {
 		}
 		// The first failures were 10 minutes ago, so the model is cooling
 		// now whatever the new ones are. Move the clock past the cooldown.
-		c.t = c.t.Add(5 * time.Hour)
+		c.advance(5 * time.Hour)
 	})
 }
 
@@ -437,11 +434,6 @@ func agentsFixture(t *testing.T) *Store {
 	send(4, 5, protocol.TypeRequest, "three")
 	send(5, 4, protocol.TypeReply, "answer to three")
 	send(1, 0, protocol.TypeRequest, "four")
-	for _, p := range []struct{ project, policy string }{{"alpha", `{"delegate":"auto","coder_model":"gpt-6.1-terra"}`}, {"beta", `{"delegate":"auto","main_model":"claude-opus-5-5","workers":"sandboxed"}`}} {
-		if _, err := s.db.Exec(`INSERT INTO project_policies(node_id,project,policy,updated_at) VALUES(?,?,?,0)`, node, p.project, p.policy); err != nil {
-			t.Fatal(err)
-		}
-	}
 	return s
 }
 
@@ -467,15 +459,9 @@ func TestAgentsSameAsBefore(t *testing.T) {
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("%+v:\n got %+v\nwant %+v", f, got, want)
 		}
-		pending, delegated := 0, 0
+		pending := 0
 		for _, a := range got {
 			pending += len(a.Pending)
-			if a.Delegation != nil {
-				delegated++
-			}
-		}
-		if f.Harness == "" && f.Project == "" && f.Text == "" && delegated == 0 {
-			t.Fatalf("%+v: the fixture has no delegation", f)
 		}
 		if f.Harness == "" && f.Project == "" && f.Text == "" && pending == 0 {
 			t.Fatalf("%+v: the fixture has no pending requests", f)

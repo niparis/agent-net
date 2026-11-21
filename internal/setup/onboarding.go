@@ -35,7 +35,6 @@ type setupSummary struct {
 	protected      protocol.ProtectedProviders
 	protectedKnown bool
 	workersKnown   bool
-	toolsKnown     bool
 }
 
 type setupPoint struct {
@@ -147,10 +146,6 @@ func (r *runner) readSetupSummary(ctx context.Context, cl *client.Client) setupS
 	summary.protectedKnown = setupCall(ctx, cl, protocol.OpProtectedProvidersGet, nil, &summary.protected)
 	var workers protocol.WorkersResult
 	summary.workersKnown = setupCall(ctx, cl, "workers", protocol.WorkersQuery{}, &workers)
-	var differences struct {
-		ToLookAt int `json:"to_look_at"`
-	}
-	summary.toolsKnown = setupCall(ctx, cl, protocol.OpToolsDifferences, nil, &differences)
 	return summary
 }
 
@@ -215,9 +210,6 @@ func (r *runner) setupPoints(summary setupSummary, host string) []setupPoint {
 		}
 		if point, ok := r.workPoint(summary); ok {
 			points = append(points, point)
-		}
-		if summary.toolsKnown {
-			points = append(points, setupPoint{label: setupLabel("Tools", "Tools"), first: "Skills and MCP servers are checked on every machine."})
 		}
 	} else if r.joining && r.statusClient != nil {
 		if point, ok := r.workPoint(summary); ok {

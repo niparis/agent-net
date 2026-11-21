@@ -27,14 +27,14 @@ func TestLiveAnsweringChiefNeverSendsAskToOwnerByTimer(t *testing.T) {
 	s, c, chief, asker, _ := chiefRig(t)
 	id := chiefAsk(t, s, asker, "Ship it?")
 	setCategory(t, s, id, protocol.CategorySecurity)
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, ok := sendDueChief(t, s, c.t); !ok {
 		t.Fatal("the live chief got no batch")
 	}
 	// Three hours in five-minute steps. The chief's harness shows activity
 	// the whole time, so it is working, not silent.
 	for range 36 {
-		c.t = c.t.Add(5 * time.Minute)
+		c.advance(5 * time.Minute)
 		if _, err := s.db.Exec(`UPDATE sessions SET harness_activity=? WHERE id=?`, c.t.UnixNano(), chief); err != nil {
 			t.Fatal(err)
 		}
@@ -55,7 +55,7 @@ func TestLiveAnsweringChiefNeverSendsAskToOwnerByTimer(t *testing.T) {
 func TestChiefBatchTextHasNoOwnerTimer(t *testing.T) {
 	s, c, _, asker, _ := chiefRig(t)
 	chiefAsk(t, s, asker, "Ship it?")
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	body, ok := sendDueChief(t, s, c.t)
 	if !ok {
 		t.Fatal("no batch")
@@ -87,7 +87,7 @@ func TestDownChiefSafetyNetByCategory(t *testing.T) {
 				{time.Minute, protocol.AskNextOwner, protocol.AskNextOwner}, // two missed wakes
 			}
 			for i, st := range steps {
-				c.t = c.t.Add(st.after)
+				c.advance(st.after)
 				if err := s.reconcileAsks(); err != nil {
 					t.Fatal(err)
 				}
@@ -118,7 +118,7 @@ func TestChiefWithoutQuotaWaitsForMissedWakes(t *testing.T) {
 	if next := askNext(t, s, id); next != protocol.AskNextChief {
 		t.Fatalf("next = %q at once, want chief (no missed wake yet)", next)
 	}
-	c.t = c.t.Add(2 * protocol.ChiefWakeInterval)
+	c.advance(2 * protocol.ChiefWakeInterval)
 	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}
@@ -139,11 +139,11 @@ func TestOfflineWakeableChiefGetsBatchAsWake(t *testing.T) {
 	if _, err := s.db.Exec(`UPDATE sessions SET online=0 WHERE id=?`, chief); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, ok := sendDueChief(t, s, c.t); !ok {
 		t.Fatal("no batch went to the offline, wakeable chief")
 	}
-	c.t = c.t.Add(2 * protocol.ChiefWakeInterval)
+	c.advance(2 * protocol.ChiefWakeInterval)
 	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}
@@ -163,12 +163,12 @@ func TestUnwakeableChiefUsesPresenceAndUnansweredBatches(t *testing.T) {
 	urgent := chiefAsk(t, s, asker, "Is this deploy ok?")
 	setCategory(t, s, urgent, protocol.CategoryMoney)
 	plain := chiefAskKind(t, s, asker, "check", "Which name?")
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, ok := sendDueChief(t, s, c.t); !ok {
 		t.Fatal("the online Pi chief got no batch")
 	}
 	// The batch stays unanswered for one wake interval: the chief is silent.
-	c.t = c.t.Add(protocol.ChiefWakeInterval + time.Second)
+	c.advance(protocol.ChiefWakeInterval + time.Second)
 	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestUnwakeableChiefUsesPresenceAndUnansweredBatches(t *testing.T) {
 	if got := askNext(t, s, plain); got != protocol.AskNextChief {
 		t.Fatalf("normal ask next = %q after one unanswered batch, want chief", got)
 	}
-	c.t = c.t.Add(protocol.ChiefWakeInterval)
+	c.advance(protocol.ChiefWakeInterval)
 	if err := s.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}
@@ -196,11 +196,11 @@ func TestUnwakeableChiefUsesPresenceAndUnansweredBatches(t *testing.T) {
 	if _, err := s2.db.Exec(`UPDATE inbox_items SET next_who=?, chief_at=? WHERE id=?`, protocol.AskNextChief, c2.t.UnixNano(), id); err != nil {
 		t.Fatal(err)
 	}
-	c2.t = c2.t.Add(time.Minute)
+	c2.advance(time.Minute)
 	if _, ok := sendDueChief(t, s2, c2.t); ok {
 		t.Fatal("a batch went to an offline Pi chief, which cannot be woken")
 	}
-	c2.t = c2.t.Add(2 * protocol.ChiefWakeInterval)
+	c2.advance(2 * protocol.ChiefWakeInterval)
 	if err := s2.reconcileAsks(); err != nil {
 		t.Fatal(err)
 	}
@@ -215,16 +215,16 @@ func TestUnwakeableChiefUsesPresenceAndUnansweredBatches(t *testing.T) {
 func TestStuckClaimedAskPingsChiefNotOwner(t *testing.T) {
 	s, c, chief, asker, _ := chiefRig(t)
 	id := chiefAsk(t, s, asker, "Ship it?")
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, ok := sendDueChief(t, s, c.t); !ok {
 		t.Fatal("no batch")
 	}
-	c.t = c.t.Add(testStuckLimit - 2*time.Minute)
+	c.advance(testStuckLimit - 2*time.Minute)
 	msgs, err := s.chiefStuckWork(c.t, testStuckLimit)
 	if err != nil || len(msgs) != 0 {
 		t.Fatalf("before the limit: %d messages, err %v", len(msgs), err)
 	}
-	c.t = c.t.Add(3*time.Minute + time.Hour)
+	c.advance(3*time.Minute + time.Hour)
 	if _, err := s.db.Exec(`UPDATE sessions SET harness_activity=? WHERE id=?`, c.t.UnixNano(), chief); err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func TestStuckClaimedAskPingsChiefNotOwner(t *testing.T) {
 	if again, err := s.chiefStuckWork(c.t.Add(time.Minute), testStuckLimit); err != nil || len(again) != 0 {
 		t.Fatalf("second tick sent %d messages, err %v", len(again), err)
 	}
-	c.t = c.t.Add(testStuckLimit)
+	c.advance(testStuckLimit)
 	if _, err := s.db.Exec(`UPDATE sessions SET harness_activity=? WHERE id=?`, c.t.UnixNano(), chief); err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +258,7 @@ func TestMorningBriefShowsStillOpenAsks(t *testing.T) {
 	setBriefZone(t, s, "Europe/Paris")
 	id := chiefAsk(t, s, other, "Ship it?")
 	// 2026-10-29 09:00 Paris is 08:00 UTC: 20 hours after the ask.
-	c.t = time.Date(2026, 10, 29, 8, 0, 0, 0, time.UTC)
+	c.set(time.Date(2026, 10, 29, 8, 0, 0, 0, time.UTC))
 	if _, err := s.db.Exec(`UPDATE sessions SET harness_activity=? WHERE id=?`, c.t.UnixNano(), chief); err != nil {
 		t.Fatal(err)
 	}
@@ -282,14 +282,14 @@ func TestWithCTOItemIdlePastLimitGoesBackToChief(t *testing.T) {
 	if _, _, state, _, _ := itemRow(t, s, id); state != protocol.DeskWithCTO {
 		t.Fatalf("state = %q, want with_cto", state)
 	}
-	c.t = c.t.Add(testStuckLimit - time.Minute)
+	c.advance(testStuckLimit - time.Minute)
 	if _, err := s.chiefStuckWork(c.t, testStuckLimit); err != nil {
 		t.Fatal(err)
 	}
 	if next := askNext(t, s, id); next != cto {
 		t.Fatalf("next = %q before the limit, want the CTO", next)
 	}
-	c.t = c.t.Add(2 * time.Minute)
+	c.advance(2 * time.Minute)
 	if _, err := s.chiefStuckWork(c.t, testStuckLimit); err != nil {
 		t.Fatal(err)
 	}
@@ -331,7 +331,7 @@ func TestAskMadeWhileWakeableChiefIsDownWaitsForMissedWakes(t *testing.T) {
 			t.Fatalf("next = %q at creation with the chief down but wakeable, want chief", next)
 		}
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, ok := sendDueChief(t, s, c.t); !ok {
 		t.Fatal("no batch went to wake the chief")
 	}
@@ -344,7 +344,7 @@ func TestAskMadeWhileWakeableChiefIsDownWaitsForMissedWakes(t *testing.T) {
 		{protocol.ChiefWakeInterval, protocol.AskNextOwner, protocol.AskNextOwner}, // two missed wakes
 	}
 	for i, st := range steps {
-		c.t = c.t.Add(st.after)
+		c.advance(st.after)
 		if err := s.reconcileAsks(); err != nil {
 			t.Fatal(err)
 		}

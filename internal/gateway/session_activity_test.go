@@ -27,7 +27,7 @@ func TestLastActiveIsStoredAndNotMovedByAReport(t *testing.T) {
 	}
 
 	// A daemon restart re-reports the idle session with no activity time.
-	c.t = c.t.Add(time.Hour)
+	c.advance(time.Hour)
 	if _, err := s.UpsertSession(n, protocol.SessionInfo{Harness: "claude", NativeID: "n1", Status: "idle"}); err != nil {
 		t.Fatal(err)
 	}

@@ -253,7 +253,7 @@ func TestLegacyDaemonQueueMappingAndReconciliation(t *testing.T) {
 	if err := f.s.recordLegacyQueueID(f.nodeA, "q_gw_stale", "q_legacy_stale"); err != nil {
 		t.Fatal(err)
 	}
-	f.clock.t = f.clock.t.Add(25 * time.Hour)
+	f.clock.advance(25 * time.Hour)
 	notices, err := f.s.ExpireStarts(0, 24*time.Hour)
 	if err != nil {
 		t.Fatal(err)
@@ -306,7 +306,7 @@ func TestLegacyStartsVersionExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	f.clock.t = f.clock.t.Add(25 * time.Hour)
+	f.clock.advance(25 * time.Hour)
 	notices, err := f.s.ExpireStarts(0, 24*time.Hour)
 	if err != nil {
 		t.Fatal(err)
@@ -384,7 +384,7 @@ func TestLaunchCallTimeoutLeavesStartUnknownUntilReport(t *testing.T) {
 	if err := f.s.markStartUnknown(f.nodeA, "q_silent"); err != nil {
 		t.Fatal(err)
 	}
-	f.clock.t = f.clock.t.Add(15 * time.Minute)
+	f.clock.advance(15 * time.Minute)
 	notices, err := f.s.ExpireStarts(10*time.Minute, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -424,7 +424,7 @@ func TestExpiredUnknownStartRefusesQueuedStart(t *testing.T) {
 	}
 
 	// Expire the unknown start: it sends one not_started notice.
-	f.clock.t = f.clock.t.Add(15 * time.Minute)
+	f.clock.advance(15 * time.Minute)
 	notices, err := f.s.ExpireStarts(10*time.Minute, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -508,7 +508,7 @@ func TestQueuedStartRaceWithExpireStarts(t *testing.T) {
 	}
 
 	// While relay is in-flight ('starting'), ExpireStarts runs.
-	f.clock.t = f.clock.t.Add(15 * time.Minute)
+	f.clock.advance(15 * time.Minute)
 	notices, err := f.s.ExpireStarts(10*time.Minute, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -637,7 +637,7 @@ func TestReopenStoreResetsStartingStarts(t *testing.T) {
 	}
 
 	// ExpireStarts can now end it with exactly one notice.
-	c.t = c.t.Add(15 * time.Minute)
+	c.advance(15 * time.Minute)
 	notices, err := s2.ExpireStarts(10*time.Minute, 0)
 	if err != nil {
 		t.Fatal(err)

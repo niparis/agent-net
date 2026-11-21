@@ -16,7 +16,7 @@ func ctoSession(t *testing.T, s *Store, node string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_session',?,0)
+	if _, err := s.db.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES('cto_session',?,0)
 		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, id); err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestOwnerWithdrawsAllOlderThan(t *testing.T) {
 	owner := ownerSession(t, s)
 	var ids []string
 	for i := 0; i < 3; i++ {
-		c.t = c.t.Add(time.Minute)
+		c.advance(time.Minute)
 		m, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Type: protocol.TypeNotification,
 			Body: "backlog", IdempotencyKey: "backlog-" + string(rune('a'+i))})
 		if err != nil {
@@ -141,7 +141,7 @@ func TestOwnerWithdrawsAllOlderThan(t *testing.T) {
 		ids = append(ids, m.ID)
 	}
 	// A newer message stays.
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	newer, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Type: protocol.TypeNotification,
 		Body: "newer", IdempotencyKey: "newer"})
 	if err != nil {

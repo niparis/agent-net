@@ -22,7 +22,7 @@ func TestRepoAgentRecordsFollowLegacyCreation(t *testing.T) {
 		t.Fatal(err)
 	}
 	var owner, role string
-	if err = s.db.QueryRow(`SELECT owner_agent_id FROM repos WHERE id='demo'`).Scan(&owner); err != nil || owner != "demo" {
+	if err = s.db.QueryRow(`SELECT lead_agent_id FROM repos WHERE id='demo'`).Scan(&owner); err != nil || owner != "demo" {
 		t.Fatalf("repo owner %q: %v", owner, err)
 	}
 	if err = s.db.QueryRow(`SELECT role FROM agents WHERE id='advisor' AND tombstone=0`).Scan(&role); err != nil || role != "architect" {
@@ -85,6 +85,10 @@ func TestRepoAgentMigrationPreservesGraphAndDelivery(t *testing.T) {
 	mustExec(t, r.s, createGraphNodesSQL)
 	mustExec(t, r.s, `INSERT INTO graph_nodes SELECT id,'architect',created_at FROM agents WHERE role='architect' AND tombstone=0`)
 	mustExec(t, r.s, `INSERT OR IGNORE INTO graph_nodes SELECT DISTINCT c.scope,'component',COALESCE((SELECT created_at FROM repos r WHERE r.id=c.scope),0) FROM charter_values c WHERE c.level='repo'`)
+	// The settings tokens sit on repos, agents and teams. Take them off while
+	// repos still exists: SQLite checks every trigger when a column is dropped,
+	// and the drops below leave triggers that name repos.
+	dropSettingsTokenColumns(t, r.s.db)
 	_, err := r.s.db.Exec(`DROP TRIGGER IF EXISTS session_lifecycle_insert; DROP TRIGGER IF EXISTS session_lifecycle_update; DROP TRIGGER repo_agent_project_insert; DROP TRIGGER repo_agent_project_update; DROP TRIGGER repo_agent_session_insert; DROP TRIGGER repo_agent_session_update; DROP TRIGGER IF EXISTS repo_agent_architect_insert; DROP TRIGGER IF EXISTS repo_agent_architect_delete; DROP TRIGGER IF EXISTS bot_agent_insert; DROP TRIGGER IF EXISTS bot_agent_rename; DROP TRIGGER IF EXISTS bot_agent_revoke; DROP TRIGGER IF EXISTS bot_names_rename; DROP TRIGGER IF EXISTS bot_names_revoke; DROP TABLE repos; DROP TABLE agents; DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "Repo and agent records"))
 	if err != nil {
 		t.Fatal(err)
@@ -132,17 +136,17 @@ func TestRepoAgentMigrationPreservesGraphAndDelivery(t *testing.T) {
 }
 
 // Exclude creation time: backfill records the time of each run.
-func repoAgentTaskSnapshot(t *testing.T, s *Store) [][7]string {
+func repoAgentTaskSnapshot(t *testing.T, s *Store) [][6]string {
 	t.Helper()
-	rows, err := s.db.Query(`SELECT change_id,revision,step,for_step,after_merge,owner_node,completed FROM delivery_step_tasks ORDER BY change_id,revision,step,for_step,after_merge`)
+	rows, err := s.db.Query(`SELECT change_id,revision,step,for_step,after_merge,owner_node FROM delivery_step_tasks ORDER BY change_id,revision,step,for_step,after_merge`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer rows.Close()
-	var out [][7]string
+	var out [][6]string
 	for rows.Next() {
-		var v [7]string
-		if err := rows.Scan(&v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6]); err != nil {
+		var v [6]string
+		if err := rows.Scan(&v[0], &v[1], &v[2], &v[3], &v[4], &v[5]); err != nil {
 			t.Fatal(err)
 		}
 		out = append(out, v)

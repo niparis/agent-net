@@ -21,6 +21,13 @@ import (
 // The SQL below is written for two aliases: c is delivery_changes and s is the
 // session that asks. x is an inner session.
 
+// callerEscalationPrefix starts the gateway_state key of one caller agent (or
+// caller session without an agent) that has steps waiting past the stuck limit
+// and no live session. The value says whether the repo lead may act on the
+// steps ('1') or the agent was only woken ('0'); updated_at is when the wake
+// was tried.
+const callerEscalationPrefix = "caller_escalation:"
+
 const callerEscalationMigration = `
 -- One row per caller agent (or caller session without an agent) that has
 -- steps waiting past the stuck limit and no live session. woken_at is when the
@@ -29,16 +36,23 @@ CREATE TABLE IF NOT EXISTS caller_step_escalations (
  owner_key TEXT PRIMARY KEY, woken_at INTEGER NOT NULL, lead_offered INTEGER NOT NULL DEFAULT 0);
 `
 
+// stepNodePrefix starts the gateway_state key "step_node:<change>/<node>" that
+// says node did a node step of the change. A done step keeps no task, so this
+// key and the open tasks are what ownsOtherStepSQL reads. A slash cannot occur
+// in a node name.
+const stepNodePrefix = "step_node:"
+
 // ownsOtherStepSQL is true when session a owns a step of change c that is not
-// a caller step: it is the project's merger for the change's machine, or the
-// node that owns a node step of the change. Such a session does its own step.
-// It is never handed the caller's steps, and may not act on them, so one
-// session does not accept, test and merge the same change. It uses the same
-// identity checks as the step dispatch.
+// a caller step, done or open: it is the project's merger for the change's
+// machine, or the node that owns a node step of the change. Such a session
+// does its own step. It is never handed the caller's steps, and may not act on
+// them, so one session does not accept, test and merge the same change. It
+// uses the same identity checks as the step dispatch.
 func ownsOtherStepSQL(a string) string {
-	return `(EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.project=c.project AND pm.node_id=c.machine AND pm.session_id=` + a + `.id)
- OR EXISTS(SELECT 1 FROM delivery_step_tasks o WHERE o.change_id=c.id AND o.owner_node NOT LIKE '/%'
- AND o.owner_node=COALESCE(` + a + `.repo_id,NULLIF(` + a + `.repo_project,''),(SELECT pr.project FROM profiles pr WHERE pr.session_id=` + a + `.id),'')))`
+	node := `COALESCE(` + a + `.repo_id,NULLIF(` + a + `.repo_project,''),` + a + `.announced_project)`
+	return `(` + mergerSessionSQL(a) + `
+ OR EXISTS(SELECT 1 FROM delivery_step_tasks o WHERE o.change_id=c.id AND o.owner_node NOT LIKE '/%' AND o.owner_node=` + node + `)
+ OR EXISTS(SELECT 1 FROM gateway_state d WHERE d.key='` + stepNodePrefix + `'||c.id||'/'||` + node + `))`
 }
 
 var (
@@ -61,7 +75,7 @@ var (
 	// repoLeadAgentSQL is the agent that leads the change's repo.
 	repoLeadAgentSQL = `(` + repoTopAgentOfSQL("c.project") + `)`
 	// leadOfferedSQL is true when the owner's steps were offered to the lead.
-	leadOfferedSQL = `EXISTS(SELECT 1 FROM caller_step_escalations e WHERE e.lead_offered=1 AND e.owner_key=` + callerOwnerKeySQL + `)`
+	leadOfferedSQL = `EXISTS(SELECT 1 FROM gateway_state e WHERE e.value='1' AND e.key='` + callerEscalationPrefix + `'||` + callerOwnerKeySQL + `)`
 	// leadSessionSQL is the one live lead session that gets offered steps. A
 	// pinned lead session is the only one.
 	leadSessionSQL = `(SELECT x.id FROM sessions x JOIN agents la ON la.id=x.agent_id WHERE ` + leadOfferedSQL + ` AND x.agent_id=` + repoLeadAgentSQL + ` AND ` + liveSessionSQL + ` AND NOT ` + ownsOtherStepSQL("x") + `
@@ -81,7 +95,7 @@ var (
 func sessionActsForCaller(q deliveryQuerier, c protocol.Change, ref protocol.StepRef, session string) (bool, error) {
 	var claimed string
 	err := q.QueryRow(`SELECT claimed_by FROM delivery_step_tasks
-		WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND completed=0`,
+		WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`,
 		c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)).Scan(&claimed)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return false, err
@@ -107,7 +121,7 @@ type waitingCallerTask struct {
 func (s *Store) unownedCallerTasks(cutoff int64) ([]waitingCallerTask, error) {
 	rows, err := s.db.Query(`SELECT t.change_id,c.title,c.project,c.caller,`+callerOwnerKeySQL+`,t.step,t.for_step,t.after_merge,t.created_at
 		FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
-		WHERE `+s.stepNotWaitingAt()+` AND t.completed=0 AND t.claimed_by='' AND t.owner_node=?
+		WHERE `+s.stepNotWaitingAt()+` AND t.claimed_by='' AND t.owner_node=?
 		AND ((t.after_merge=0 AND c.state='open') OR (t.after_merge=1 AND c.state='merged'))
 		AND c.caller<>'' AND t.created_at<=? AND NOT `+callerOwnerLiveSQL+`
 		ORDER BY t.created_at,t.change_id,t.rowid`, callerTaskOwner, cutoff)
@@ -156,33 +170,31 @@ func (g *Gateway) escalateCallerSteps(ctx context.Context, stuckLimit time.Durat
 		return
 	}
 	for _, key := range keys {
+		var value string
 		var wokenAt int64
-		var offered int
-		err := g.store.db.QueryRow(`SELECT woken_at,lead_offered FROM caller_step_escalations WHERE owner_key=?`, key).Scan(&wokenAt, &offered)
+		err := g.store.db.QueryRow(`SELECT value,updated_at FROM gateway_state WHERE key=?`, callerEscalationPrefix+key).Scan(&value, &wokenAt)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 			g.wakeCallerAgent(ctx, key, groups[key])
 		case err != nil:
 			g.logLine("error", "where", "caller escalation read", "err", err)
-		case offered == 0 && now.Sub(time.Unix(0, wokenAt)) >= wakeTimeout:
-			if _, err := g.store.db.Exec(`UPDATE caller_step_escalations SET lead_offered=1 WHERE owner_key=?`, key); err != nil {
+		case value == "0" && now.Sub(time.Unix(0, wokenAt)) >= wakeTimeout:
+			if err := stateSet(g.store.db, callerEscalationPrefix+key, "1", wokenAt); err != nil {
 				g.logLine("error", "where", "caller escalation offer", "err", err)
 			}
 		}
 	}
 }
 
+// dropCallerEscalations forgets every key but keep: an owner that is live
+// again, or has nothing waiting, starts clean.
 func (s *Store) dropCallerEscalations(keep []string) error {
-	if len(keep) == 0 {
-		_, err := s.db.Exec(`DELETE FROM caller_step_escalations`)
-		return err
-	}
 	marks := strings.TrimSuffix(strings.Repeat("?,", len(keep)), ",")
-	args := make([]any, len(keep))
-	for i, k := range keep {
-		args[i] = k
+	args := []any{callerEscalationPrefix + "*"}
+	for _, k := range keep {
+		args = append(args, callerEscalationPrefix+k)
 	}
-	_, err := s.db.Exec(`DELETE FROM caller_step_escalations WHERE owner_key NOT IN (`+marks+`)`, args...)
+	_, err := s.db.Exec(`DELETE FROM gateway_state WHERE key GLOB ? AND key NOT IN (`+marks+`)`, args...)
 	return err
 }
 
@@ -203,7 +215,7 @@ func (g *Gateway) wakeCallerAgent(ctx context.Context, key string, tasks []waiti
 	if live {
 		// Nobody can be woken, and the live session may not act on the steps,
 		// so the repo lead may act on them at once.
-		if _, err := g.store.db.Exec(`INSERT OR IGNORE INTO caller_step_escalations(owner_key,woken_at,lead_offered) VALUES(?,?,1)`, key, now.UnixNano()); err != nil {
+		if err := stateSet(g.store.db, callerEscalationPrefix+key, "1", now.UnixNano()); err != nil {
 			g.logLine("error", "where", "caller escalation write", "err", err)
 		}
 		return
@@ -211,7 +223,7 @@ func (g *Gateway) wakeCallerAgent(ctx context.Context, key string, tasks []waiti
 	var target string
 	err := g.store.db.QueryRow(`SELECT s.id FROM sessions s JOIN delivery_changes c ON c.id=?
 		WHERE s.online=0 AND s.worker='' AND s.harness IN ('claude','codex','opencode') AND s.archived_at=0 AND s.replaced_by=''
-		AND NOT EXISTS(SELECT 1 FROM session_wakes f WHERE f.session_id=s.id AND f.wake_failed_at>0)
+		AND s.wake_failed_at=0
 		AND (s.id=? OR (s.agent_id=? AND NOT `+ownsOtherStepSQL("s")+`))
 		ORDER BY CASE WHEN s.id=? THEN 0 ELSE 1 END,s.last_seen DESC,s.id LIMIT 1`,
 		tasks[0].changeID, tasks[0].caller, key, tasks[0].caller).Scan(&target)
@@ -237,12 +249,11 @@ func (g *Gateway) wakeCallerAgent(ctx context.Context, key string, tasks []waiti
 		g.store.logMessage(m)
 		started = g.dispatch(ctx, m) || g.wakeInFlight(target)
 	}
-	offered := 0
+	offered := "0"
 	if !started {
-		offered = 1
+		offered = "1"
 	}
-	if _, err := g.store.db.Exec(`INSERT OR IGNORE INTO caller_step_escalations(owner_key,woken_at,lead_offered) VALUES(?,?,?)`,
-		key, now.UnixNano(), offered); err != nil {
+	if err := stateSet(g.store.db, callerEscalationPrefix+key, offered, now.UnixNano()); err != nil {
 		g.logLine("error", "where", "caller escalation write", "err", err)
 	}
 }

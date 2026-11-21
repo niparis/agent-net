@@ -30,7 +30,6 @@ func needsRedirectReminderCheck(m protocol.Message) bool {
 
 // routedRequest is a request lead routing redirected or a lead handed off.
 const routedRequest = ` FROM messages q JOIN sessions src ON src.id=q.sender JOIN sessions dst ON dst.id=q.recipient
- LEFT JOIN profiles sp ON sp.session_id=src.id LEFT JOIN profiles dp ON dp.session_id=dst.id
  WHERE q.type='request' AND q.state IN ('stored','dispatched','delivered')
   AND q.sender<>'agent-net' AND q.expires_at>?
   AND (q.body LIKE 'Redirected to %' OR q.handed_off_by<>'')
@@ -50,8 +49,8 @@ func (s *Store) redirectReminderEligible(id string) (bool, error) {
 func (s *Store) redirectReminders(tx *sql.Tx) ([]protocol.Message, error) {
 	now := s.now()
 	rows, err := tx.Query(`SELECT q.id,q.conversation_id,q.sender,q.recipient,q.created_at,q.owner_approved,
-	 COALESCE(NULLIF(sp.name,''),NULLIF(src.name,''),q.sender),
-	 COALESCE(NULLIF(dp.name,''),NULLIF(dst.name,''),q.recipient),
+	 COALESCE(NULLIF(src.name,''),q.sender),
+	 COALESCE(NULLIF(dst.name,''),q.recipient),
 	 src.harness,q.handed_off_by<>''`+routedRequest+` AND q.created_at>=? AND q.created_at<?`, now.UnixNano(),
 		now.Add(-reminderWindow).UnixNano(), now.Add(-reminderGrace).UnixNano())
 	if err != nil {

@@ -34,25 +34,24 @@ func observedFolder(t *testing.T, sizes ...int64) string {
 	return folder
 }
 
-// observedSkill is observedFolder for a daemon that lists it, as its last scan
-// would, with the folder's real hash.
-func observedSkill(t *testing.T, sizes ...int64) (*Daemon, protocol.SkillBundleRequest) {
+// observedSkill is observedFolder for a daemon that lists it, as its last skill
+// sources answer would, with the folder's real hash.
+func observedSkill(t *testing.T, sizes ...int64) (*Daemon, protocol.SkillBundleRequest, string) {
 	t.Helper()
 	folder := observedFolder(t, sizes...)
 	hash, err := inventory.SkillHash(folder)
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := &Daemon{sourceSkills: map[string]bool{sourceKey("large", hash, folder): true}, sourceLocations: map[string]bool{folder: true}}
-	return d, protocol.SkillBundleRequest{Name: "large", Hash: hash, Location: folder}
+	d := &Daemon{sourceLocations: map[string]bool{folder: true}}
+	return d, protocol.SkillBundleRequest{Name: "large", Location: folder}, hash
 }
 
 // The archive answer of a skill over one part comes in parts, each under one
 // part in size. Joined, the parts are the bundle at the listed hash, and the
 // snapshot is gone after its last part.
 func TestSkillBundleArchiveAnswersInParts(t *testing.T) {
-	d, req := observedSkill(t, 3<<20, 3<<20)
-	req.Archive = true
+	d, req, hash := observedSkill(t, 3<<20, 3<<20)
 	first, err := d.skillBundleAnswer(req)
 	if err != nil {
 		t.Fatal(err)
@@ -82,8 +81,8 @@ func TestSkillBundleArchiveAnswersInParts(t *testing.T) {
 	if err := inventory.UnpackSkillLimit(whole, out, inventory.ArchiveLimit); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := inventory.SkillHash(out); got != req.Hash {
-		t.Fatalf("unpacked hash %s, want %s", got, req.Hash)
+	if got, _ := inventory.SkillHash(out); got != hash {
+		t.Fatalf("unpacked hash %s, want %s", got, hash)
 	}
 	if _, err := d.skillBundleAnswer(protocol.SkillBundleRequest{Snapshot: first.Snapshot, Part: first.Parts - 1}); err == nil {
 		t.Fatal("a snapshot was served after its last part")
@@ -92,8 +91,7 @@ func TestSkillBundleArchiveAnswersInParts(t *testing.T) {
 
 // A small archive skill is one answer, as before, with no snapshot.
 func TestSkillBundleArchiveSmallSkillIsOneAnswer(t *testing.T) {
-	d, req := observedSkill(t, 10)
-	req.Archive = true
+	d, req, _ := observedSkill(t, 10)
 	answer, err := d.skillBundleAnswer(req)
 	if err != nil {
 		t.Fatal(err)
@@ -103,20 +101,23 @@ func TestSkillBundleArchiveSmallSkillIsOneAnswer(t *testing.T) {
 	}
 }
 
-// The import limit still refuses a 6 MB skill and names itself. The archive
-// refuses a skill past 64 MB and names the archive limit.
-func TestSkillBundleLimitsNameTheirLimit(t *testing.T) {
-	d, req := observedSkill(t, 3<<20, 3<<20)
-	if _, err := d.skillBundleAnswer(req); err == nil || !strings.Contains(err.Error(), "2 MB import limit") {
-		t.Fatalf("import limit answer: %v", err)
-	}
-	// Past 64 MB the pack refuses before it reads a byte, so the hash is not
-	// needed: a placeholder keeps the test from hashing 64 MB.
+// A skill past 64 MB is refused with the archive limit in the text. The pack
+// refuses before it reads a byte, so the test does not hash 64 MB.
+func TestSkillBundleRefusesPastTheArchiveLimit(t *testing.T) {
 	folder := observedFolder(t, inventory.MaxArchiveBytes+1)
-	d = &Daemon{sourceSkills: map[string]bool{sourceKey("large", "placeholder", folder): true}, sourceLocations: map[string]bool{folder: true}}
-	req = protocol.SkillBundleRequest{Name: "large", Hash: "placeholder", Location: folder, Archive: true}
+	d := &Daemon{sourceLocations: map[string]bool{folder: true}}
+	req := protocol.SkillBundleRequest{Name: "large", Location: folder}
 	if _, err := d.skillBundleAnswer(req); err == nil || !strings.Contains(err.Error(), "64 MB archive limit") {
 		t.Fatalf("archive limit answer: %v", err)
+	}
+}
+
+// A folder that the last skill sources answer did not list is refused.
+func TestSkillBundleRefusesAnUnlistedFolder(t *testing.T) {
+	d, req, _ := observedSkill(t, 10)
+	d.sourceLocations = map[string]bool{}
+	if _, err := d.skillBundleAnswer(req); err == nil {
+		t.Fatal("an unlisted folder was packed")
 	}
 }
 

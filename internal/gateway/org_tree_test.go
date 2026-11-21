@@ -9,11 +9,10 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// reportsTo is the parent the org tree stores for an Agent, or "".
+// reportsTo is the parent the org tree computes for an Agent, or "".
 func reportsTo(t *testing.T, s *Store, agent string) string {
 	t.Helper()
-	var parent string
-	err := s.db.QueryRow(`SELECT COALESCE((SELECT target FROM graph_edges WHERE source=? AND kind='reports_to'),'')`, agent).Scan(&parent)
+	parent, err := agentParentQ(s.db, agent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +314,7 @@ func TestReplaceSessionMovesTheTreePlaces(t *testing.T) {
 	var lead, owner, place string
 	if err := s.db.QueryRow(`SELECT (SELECT lead_session FROM agents WHERE id='demo-merger'),
 		(SELECT json_extract(worker,'$.owner') FROM sessions WHERE id=?),
-		(SELECT session_id FROM project_mergers WHERE project='demo')`, worker).Scan(&lead, &owner, &place); err != nil {
+		(SELECT session_id FROM `+mergerRowsSQL+` WHERE project='demo')`, worker).Scan(&lead, &owner, &place); err != nil {
 		t.Fatal(err)
 	}
 	if lead != fresh || owner != fresh || place != fresh {
@@ -496,8 +495,8 @@ func orgFixture(t *testing.T) (*Store, map[string]string) {
 		{`UPDATE repos SET lead_agent_id='homelab-agent' WHERE id='homelab-agent'`, nil},
 		{`UPDATE repos SET lead_agent_id='agent-net' WHERE id='agent-net'`, nil},
 		{`UPDATE teams SET lead_session=? WHERE id='ops'`, []any{ids["h2"]}},
-		{`INSERT INTO project_mergers(project,node_id,session_id) VALUES('agent-net',?,?)`, []any{node, ids["merge"]}},
-		{`INSERT INTO owner_settings(key,value,updated_at) VALUES('chief_session',?,0)`, []any{ids["chief-of-staff"]}},
+		{`UPDATE repos SET merger_node=?,merger_session=? WHERE id='agent-net'`, []any{node, ids["merge"]}},
+		{`INSERT INTO gateway_state(key,value,updated_at) VALUES('chief_session',?,0)`, []any{ids["chief-of-staff"]}},
 	} {
 		if _, err := s.db.Exec(q.sql, q.args...); err != nil {
 			t.Fatalf("%s: %v", q.sql, err)
@@ -580,12 +579,6 @@ func TestOrgTreeMigrationBuildsTheTreeFromTodaysData(t *testing.T) {
 func TestOrgTreeMigrationRunsOnce(t *testing.T) {
 	s, _ := orgFixture(t)
 	rewindOrgTree(t, s)
-	if err := s.RemoveEdge(reportsEdge("helper", "agent-net"), "owner"); err != nil {
-		t.Fatal(err)
-	}
-	// The repair migration re-places every Agent, so replaying the migrations
-	// from the build would rebuild the removed edge anyway. Call the hook the
-	// build migration calls, as a second run of that migration would.
 	tx, err := s.db.Begin()
 	if err != nil {
 		t.Fatal(err)
@@ -597,8 +590,9 @@ func TestOrgTreeMigrationRunsOnce(t *testing.T) {
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	if got := reportsTo(t, s, "helper"); got != "" {
-		t.Fatalf("a second build rebuilt a removed edge: helper reports to %q", got)
+	var stored int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM graph_edges WHERE kind='reports_to'`).Scan(&stored); err != nil || stored != 0 {
+		t.Fatalf("stored reports_to=%d err=%v, want 0", stored, err)
 	}
 }
 

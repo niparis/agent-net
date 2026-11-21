@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -133,26 +134,38 @@ func (s *Store) backfillDeliveryTasks() error {
 	return nil
 }
 
-// retireStepMessages removes undelivered notices for obsolete revisions,
-// finished tasks, or sessions that lost a claim. Already delivered notices
-// remain in the conversation; a later claim or report still checks the task.
+const (
+	// noticeLinksSQL lists the notices that open tasks point at: d.key is the
+	// session the notice went to, d.value the message.
+	noticeLinksSQL = `delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id JOIN json_each(t.notices) d`
+	// sessionNoticeSQL is the id of the notice task t sent to session s, or NULL.
+	sessionNoticeSQL = `json_extract(t.notices,'$."'||s.id||'"')`
+	// liveNoticeSQL holds for a link whose task is open on the current revision,
+	// in the phase where it can be reported, and unclaimed or claimed by that
+	// session.
+	liveNoticeSQL = `t.revision=c.revision AND (t.claimed_by='' OR t.claimed_by=d.key) AND ((t.after_merge=0 AND c.state='open') OR (t.after_merge=1 AND c.state='merged'))`
+)
+
+// retireStepMessages removes undelivered notices for obsolete revisions or
+// sessions that lost a claim. Already delivered notices remain in the
+// conversation; a later claim or report still checks the task.
 func retireStepMessages(tx *sql.Tx, change string) error {
 	_, err := tx.Exec(`UPDATE messages SET state='expired' WHERE state IN ('stored','dispatched') AND id IN (
-		SELECT d.message_id FROM delivery_step_messages d
-		JOIN delivery_step_tasks t ON t.change_id=d.change_id AND t.revision=d.revision AND t.step=d.step
-		 AND t.for_step=d.for_step AND t.after_merge=d.after_merge
-		JOIN delivery_changes c ON c.id=t.change_id WHERE d.change_id=? AND
-		 (t.revision<>c.revision OR t.completed=1 OR (t.claimed_by<>'' AND t.claimed_by<>d.session_id)
-		 OR (t.after_merge=0 AND c.state<>'open') OR (t.after_merge=1 AND c.state<>'merged'))
-		 AND NOT EXISTS (
-			SELECT 1 FROM delivery_step_messages d2
-			JOIN delivery_step_tasks t2 ON t2.change_id=d2.change_id AND t2.revision=d2.revision AND t2.step=d2.step
-			 AND t2.for_step=d2.for_step AND t2.after_merge=d2.after_merge
-			JOIN delivery_changes c2 ON c2.id=t2.change_id
-			WHERE d2.message_id=d.message_id
-			 AND t2.revision=c2.revision AND t2.completed=0
-			 AND (t2.claimed_by='' OR t2.claimed_by=d2.session_id)
-			 AND ((t2.after_merge=0 AND c2.state='open') OR (t2.after_merge=1 AND c2.state='merged'))))`, change)
+		SELECT d.value FROM `+noticeLinksSQL+` WHERE t.change_id=? AND NOT (`+liveNoticeSQL+`))
+		AND NOT EXISTS (SELECT 1 FROM `+noticeLinksSQL+` WHERE d.value=messages.id AND `+liveNoticeSQL+`)`, change)
+	return err
+}
+
+// endStepTasks deletes the open tasks that match where, an expression over the
+// table alias t, and expires the undelivered notices that only they pointed
+// at. A task that is done keeps no data: its evidence is the record.
+func endStepTasks(tx *sql.Tx, where string, args ...any) error {
+	if _, err := tx.Exec(`UPDATE messages SET state='expired' WHERE state IN ('stored','dispatched')
+		AND id IN (SELECT d.value FROM delivery_step_tasks t, json_each(t.notices) d WHERE `+where+`)
+		AND id NOT IN (SELECT d.value FROM delivery_step_tasks t, json_each(t.notices) d WHERE NOT (`+where+`))`, append(args, args...)...); err != nil {
+		return err
+	}
+	_, err := tx.Exec(`DELETE FROM delivery_step_tasks AS t WHERE `+where, args...)
 	return err
 }
 
@@ -165,9 +178,9 @@ func retireStepMessages(tx *sql.Tx, change string) error {
 func (s *Store) retireObsoleteStepTasks() error {
 	rows, err := s.db.Query(`SELECT c.id,c.state FROM delivery_changes c
 		WHERE (c.state IN ('done','stopped') AND EXISTS (
-			SELECT 1 FROM delivery_step_tasks t WHERE t.change_id=c.id AND t.completed=0))
+			SELECT 1 FROM delivery_step_tasks t WHERE t.change_id=c.id))
 		OR (c.state='merged' AND EXISTS (
-			SELECT 1 FROM delivery_step_tasks t WHERE t.change_id=c.id AND t.completed=0 AND t.after_merge=0))`)
+			SELECT 1 FROM delivery_step_tasks t WHERE t.change_id=c.id AND t.after_merge=0))`)
 	if err != nil {
 		return err
 	}
@@ -186,9 +199,8 @@ func (s *Store) retireObsoleteStepTasks() error {
 	if err != nil {
 		return err
 	}
-	// A stuck notice is a plain message, not linked through
-	// delivery_step_messages, so it needs its own retirement even when its
-	// task row is already gone.
+	// A stuck notice is a plain message, not linked from a task, so it needs
+	// its own retirement even when its task row is already gone.
 	var stuck int
 	if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM messages WHERE sender='agent-net'
 		AND state IN ('stored','dispatched') AND idem_key LIKE 'delivery:stuck:%')`).Scan(&stuck); err != nil {
@@ -203,8 +215,7 @@ func (s *Store) retireObsoleteStepTasks() error {
 	}
 	defer tx.Rollback()
 	for _, c := range changes {
-		if _, err := tx.Exec(`UPDATE delivery_step_tasks SET completed=1 WHERE change_id=? AND completed=0
-			AND ((after_merge=0 AND ?<>'open') OR (after_merge=1 AND ?<>'merged'))`, c.id, c.state, c.state); err != nil {
+		if err := endStepTasks(tx, `t.change_id=? AND ((t.after_merge=0 AND ?<>'open') OR (t.after_merge=1 AND ?<>'merged'))`, c.id, c.state, c.state); err != nil {
 			return err
 		}
 		if err := retireStepMessages(tx, c.id); err != nil {
@@ -241,14 +252,7 @@ type sqlExecer interface {
 func retireUnlinkedStepMessages(ex sqlExecer) (int64, error) {
 	res, err := ex.Exec(`UPDATE messages SET state='expired'
  WHERE sender='agent-net' AND state IN ('stored','dispatched') AND idem_key GLOB 'step_*'
- AND NOT EXISTS (
-   SELECT 1 FROM delivery_step_messages d
-   JOIN delivery_step_tasks t ON t.change_id=d.change_id AND t.revision=d.revision AND t.step=d.step
-    AND t.for_step=d.for_step AND t.after_merge=d.after_merge
-   JOIN delivery_changes c ON c.id=t.change_id
-   WHERE d.message_id=messages.id AND t.revision=c.revision AND t.completed=0
-    AND (t.claimed_by='' OR t.claimed_by=d.session_id)
-    AND ((t.after_merge=0 AND c.state='open') OR (t.after_merge=1 AND c.state='merged')))`)
+ AND NOT EXISTS (SELECT 1 FROM ` + noticeLinksSQL + ` WHERE d.value=messages.id AND ` + liveNoticeSQL + `)`)
 	if err != nil {
 		return 0, err
 	}
@@ -273,7 +277,7 @@ func retireEmptyNudgeBatches(ex sqlExecer) (int64, error) {
 // change keeps its evidence; only the open tasks end.
 func closeStepTasks(tx *sql.Tx, c protocol.Change) ([]string, error) {
 	rows, err := tx.Query(`SELECT DISTINCT claimed_by FROM delivery_step_tasks
-		WHERE change_id=? AND completed=0 AND claimed_by<>'' ORDER BY claimed_by`, c.ID)
+		WHERE change_id=? AND claimed_by<>'' ORDER BY claimed_by`, c.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -291,7 +295,7 @@ func closeStepTasks(tx *sql.Tx, c protocol.Change) ([]string, error) {
 		return nil, err
 	}
 	rows.Close()
-	if _, err := tx.Exec(`UPDATE delivery_step_tasks SET completed=1 WHERE change_id=? AND completed=0`, c.ID); err != nil {
+	if err := endStepTasks(tx, `t.change_id=?`, c.ID); err != nil {
 		return nil, err
 	}
 	return sessions, nil
@@ -336,14 +340,8 @@ func dismissStepInbox(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, at in
 // revision change from being sent afterwards.
 func (s *Store) stepMessageCurrent(id string) (bool, error) {
 	var current int
-	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_messages d
-		JOIN delivery_step_tasks t ON t.change_id=d.change_id AND t.revision=d.revision AND t.step=d.step
-		 AND t.for_step=d.for_step AND t.after_merge=d.after_merge
-		JOIN delivery_changes c ON c.id=t.change_id JOIN messages m ON m.id=d.message_id
-		WHERE d.message_id=? AND t.revision=c.revision AND t.completed=0
-		 AND (t.claimed_by='' OR t.claimed_by=d.session_id)
-		 AND ((t.after_merge=0 AND c.state='open') OR (t.after_merge=1 AND c.state='merged'))
-		 AND m.state IN ('stored','dispatched','failed'))`, id).Scan(&current)
+	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM `+noticeLinksSQL+` JOIN messages m ON m.id=d.value
+		WHERE d.value=? AND `+liveNoticeSQL+` AND m.state IN ('stored','dispatched','failed'))`, id).Scan(&current)
 	return current != 0, err
 }
 
@@ -390,7 +388,7 @@ func (s *Store) stepResultNoticeTx(tx *sql.Tx, c protocol.Change, e protocol.Evi
 // ready. A later assignment applies when a different step starts.
 func taskOwners(q deliveryQuerier, c protocol.Change, p protocol.Pipeline) (protocol.Pipeline, error) {
 	rows, err := q.Query(`SELECT step,for_step,after_merge,owner_node FROM delivery_step_tasks
-		WHERE change_id=? AND revision=? AND completed=0`, c.ID, c.Revision)
+		WHERE change_id=? AND revision=?`, c.ID, c.Revision)
 	if err != nil {
 		return protocol.Pipeline{}, err
 	}
@@ -548,8 +546,7 @@ func (s *Store) sessionHasRecentStepMessage(session string, recentWindow time.Du
 	cutoff := s.now().Add(-recentWindow).UnixNano()
 	var exists int
 	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM messages m
-		JOIN delivery_step_messages d ON d.message_id=m.id
-		WHERE m.recipient=? AND m.sender='agent-net' AND m.state<>'expired'
+		WHERE m.recipient=? AND m.sender='agent-net' AND m.idem_key GLOB 'step_*' AND m.state<>'expired'
 		AND m.created_at>=?)`, session, cutoff).Scan(&exists)
 	return exists != 0, err
 }
@@ -617,8 +614,8 @@ func (s *Store) stepMessageRecordedAt(t nodeTaskTarget, cutoff int64, at time.Ti
 		}
 	}
 	var recorded int
-	err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id
-		WHERE d.change_id=? AND d.revision=? AND d.step=? AND d.for_step=? AND d.after_merge=? AND d.session_id=?
+	err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_tasks t, json_each(t.notices) d JOIN messages m ON m.id=d.value
+		WHERE t.change_id=? AND t.revision=? AND t.step=? AND t.for_step=? AND t.after_merge=? AND d.key=?
 		AND m.state<>'expired' AND (?=0 OR m.created_at>=?))`,
 		t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge), t.session, cutoff, cutoff).Scan(&recorded)
 	return recorded != 0, err
@@ -764,21 +761,16 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 		candidateCutoff += int64(nudgeLookahead)
 	}
 	rows, err := g.store.db.Query(`SELECT t.change_id,t.revision,t.step,t.for_step,t.after_merge,t.owner_node,s.id,t.urgent,t.created_at,
-		EXISTS(SELECT 1 FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id
-			WHERE d.change_id=t.change_id AND d.revision=t.revision AND d.step=t.step AND d.for_step=t.for_step
-			AND d.after_merge=t.after_merge AND d.session_id=s.id AND m.state<>'expired'),
-        EXISTS(SELECT 1 FROM delivery_step_messages d WHERE d.change_id=t.change_id AND d.revision=t.revision
-        AND d.step=t.step AND d.for_step=t.for_step AND d.after_merge=t.after_merge AND d.session_id=s.id)
+		EXISTS(SELECT 1 FROM messages m WHERE m.id=`+sessionNoticeSQL+` AND m.state<>'expired'),
+		`+sessionNoticeSQL+` IS NOT NULL
 		FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
-		JOIN sessions s ON s.online=1 AND s.worker='' LEFT JOIN profiles p ON p.session_id=s.id
-		WHERE `+g.store.stepNotWaitingAt()+` AND t.completed=0 AND t.claimed_by='' AND c.state IN ('open','merged')
-		AND ((t.owner_node='/merger' AND EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.project=c.project AND pm.node_id=c.machine AND pm.session_id=s.id)) OR (t.owner_node=? AND s.id=`+offeredCallerSessionSQL+`) OR `+sessionRepoSQL+`=t.owner_node OR
-		 (t.owner_node=? AND EXISTS(SELECT 1 FROM delivery_step_delegates a WHERE a.change_id=t.change_id AND a.revision=t.revision
-		 AND a.step=t.step AND a.for_step=t.for_step AND a.after_merge=t.after_merge AND (a.node=`+sessionRepoSQL+` OR a.node='agent:'||COALESCE(s.agent_id,'')))))
+		JOIN sessions s ON s.online=1 AND s.worker=''
+		WHERE `+g.store.stepNotWaitingAt()+` AND t.claimed_by='' AND c.state IN ('open','merged')
+		AND ((t.owner_node='/merger' AND `+mergerSessionSQL("s")+`) OR (t.owner_node=? AND s.id=`+offeredCallerSessionSQL+`) OR `+sessionRepoSQL+`=t.owner_node OR
+		 (t.owner_node=? AND EXISTS(SELECT 1 FROM json_each(t.delegates) a WHERE a.value=`+sessionRepoSQL+` OR a.value='agent:'||COALESCE(s.agent_id,''))))
 		AND s.harness NOT IN ('owner','bot','cto')
-        AND ((t.step='verify' AND t.after_merge=1 AND ?<>0) OR NOT EXISTS (SELECT 1 FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id
-        WHERE d.change_id=t.change_id AND d.revision=t.revision AND d.step=t.step AND d.for_step=t.for_step
-        AND d.after_merge=t.after_merge AND d.session_id=s.id AND m.state<>'expired' AND (?=0 OR m.created_at>=?)))`, callerTaskOwner, delegateTaskOwner, candidateCutoff, candidateCutoff, candidateCutoff)
+        AND ((t.step='verify' AND t.after_merge=1 AND ?<>0) OR NOT EXISTS (SELECT 1 FROM messages m
+        WHERE m.id=`+sessionNoticeSQL+` AND m.state<>'expired' AND (?=0 OR m.created_at>=?)))`, callerTaskOwner, delegateTaskOwner, candidateCutoff, candidateCutoff, candidateCutoff)
 	if err != nil {
 		g.logLine("error", "where", "step task targets", "err", err)
 		return
@@ -1021,7 +1013,7 @@ func (g *Gateway) checkStuckStepTasks(ctx context.Context, stuckLimit time.Durat
 	rows, err := g.store.db.Query(`SELECT t.change_id, t.revision, t.step, t.for_step, t.after_merge, t.owner_node, t.created_at, COALESCE(`+liveCallerSessionSQL+`,c.caller), c.title
 		FROM delivery_step_tasks t
 		JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
-		WHERE `+g.store.stepNotWaitingAt()+` AND t.completed=0 AND t.claimed_by='' AND (t.step<>'verify' OR t.after_merge=0 OR t.stuck_notified=0)
+		WHERE `+g.store.stepNotWaitingAt()+` AND t.claimed_by='' AND (t.step<>'verify' OR t.after_merge=0 OR t.stuck_notified=0)
 		AND ((t.after_merge=0 AND c.state='open') OR (t.after_merge=1 AND c.state='merged'))
 		AND c.caller <> ''
 		AND t.created_at <= ?
@@ -1139,18 +1131,14 @@ func (g *Gateway) checkStuckStepTasks(ctx context.Context, stuckLimit time.Durat
 // a session online, preserving batching across its accumulated ready tasks.
 func (g *Gateway) wakeOfflineStepOwners(ctx context.Context, reminderCutoff int64) {
 	rows, err := g.store.db.Query(`SELECT DISTINCT s.id,
-  EXISTS(SELECT 1 FROM delivery_step_messages d
-   WHERE d.change_id=t.change_id AND d.revision=t.revision AND d.step=t.step AND d.for_step=t.for_step
-   AND d.after_merge=t.after_merge AND d.session_id=s.id),t.change_id,t.owner_node,t.created_at,t.urgent
+  `+sessionNoticeSQL+` IS NOT NULL,t.change_id,t.owner_node,t.created_at,t.urgent
   FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
   JOIN sessions s ON s.online=0 AND s.harness IN ('claude','codex','opencode') AND s.worker=''
-  WHERE `+g.store.stepNotWaitingAt()+` AND t.completed=0 AND t.claimed_by=''
+  WHERE `+g.store.stepNotWaitingAt()+` AND t.claimed_by=''
   AND ((t.after_merge=0 AND c.state='open') OR (t.after_merge=1 AND c.state='merged'))
-  AND ((t.owner_node=? AND s.id=c.caller AND NOT `+callerOwnerLiveSQL+`) OR (t.owner_node=? AND EXISTS
-   (SELECT 1 FROM project_mergers pm WHERE pm.project=c.project AND pm.node_id=c.machine AND pm.session_id=s.id)))
-  AND NOT EXISTS (SELECT 1 FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id
-   WHERE d.change_id=t.change_id AND d.revision=t.revision AND d.step=t.step AND d.for_step=t.for_step
-   AND d.after_merge=t.after_merge AND d.session_id=s.id AND m.state<>'expired' AND (?=0 OR m.created_at>=?))`, callerTaskOwner, mergerTaskOwner, reminderCutoff, reminderCutoff)
+  AND ((t.owner_node=? AND s.id=c.caller AND NOT `+callerOwnerLiveSQL+`) OR (t.owner_node=? AND `+mergerSessionSQL("s")+`))
+  AND NOT EXISTS (SELECT 1 FROM messages m
+   WHERE m.id=`+sessionNoticeSQL+` AND m.state<>'expired' AND (?=0 OR m.created_at>=?))`, callerTaskOwner, mergerTaskOwner, reminderCutoff, reminderCutoff)
 	if err != nil {
 		g.logLine("error", "where", "offline step owners", "err", err)
 		return
@@ -1320,7 +1308,7 @@ func (s *Store) stepTaskDeliverable(t nodeTaskTarget) (bool, error) {
 	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_tasks t
 		JOIN delivery_changes c ON c.id=t.change_id
 		WHERE t.change_id=? AND t.revision=? AND t.step=? AND t.for_step=? AND t.after_merge=?
-		AND t.revision=c.revision AND t.completed=0 AND t.claimed_by='' AND t.owner_node=?
+		AND t.revision=c.revision AND t.claimed_by='' AND t.owner_node=?
 		AND `+s.stepNotWaitingAt()+`
 		AND ((t.after_merge=0 AND c.state='open') OR (t.after_merge=1 AND c.state='merged')))`,
 		t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge), t.owner).Scan(&n)
@@ -1433,9 +1421,9 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 		}
 		if !t.isReminder {
 			var prior bool
-			if err := s.db.QueryRow(`SELECT COALESCE(MAX(m.state<>'expired'),0),COUNT(d.message_id)>0
-                FROM delivery_step_messages d LEFT JOIN messages m ON m.id=d.message_id
-				WHERE d.change_id=? AND d.revision=? AND d.step=? AND d.for_step=? AND d.after_merge=? AND d.session_id=?`,
+			if err := s.db.QueryRow(`SELECT COALESCE(MAX(m.state<>'expired'),0),COUNT(d.value)>0
+                FROM delivery_step_tasks t, json_each(t.notices) d LEFT JOIN messages m ON m.id=d.value
+				WHERE t.change_id=? AND t.revision=? AND t.step=? AND t.for_step=? AND t.after_merge=? AND d.key=?`,
 				t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge), t.session).Scan(&prior, &t.wasNotified); err != nil {
 				return protocol.Message{}, err
 			}
@@ -1674,20 +1662,14 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 	for _, item := range notices {
 		added := false
 		for _, t := range item.targets {
-			// A notice can expire while its task remains unclaimed. Its association
-			// must not prevent a fresh notice when the same session comes back.
-			if _, err := tx.Exec(`DELETE FROM delivery_step_messages WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND session_id=?
-			AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.id=delivery_step_messages.message_id AND m.state<>'expired')`,
-				t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge), t.session); err != nil {
-				return protocol.Message{}, err
-			}
-			res, err := tx.Exec(`INSERT INTO delivery_step_messages(change_id,revision,step,for_step,after_merge,session_id,message_id)
-			SELECT change_id,revision,step,for_step,after_merge,?,? FROM delivery_step_tasks
-			WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND completed=0 AND claimed_by='' AND owner_node=?
+			// A notice can expire while its task remains unclaimed: the new notice
+			// takes the session's place in the map.
+			res, err := tx.Exec(`UPDATE delivery_step_tasks SET notices=json_set(notices,'$."'||?||'"',?),
+			last_notice_at=?,last_notice_due_at=MAX(last_notice_due_at,?)
+			WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND claimed_by='' AND owner_node=?
 			AND EXISTS(SELECT 1 FROM delivery_changes c WHERE c.id=delivery_step_tasks.change_id AND c.revision=delivery_step_tasks.revision
-			AND ((delivery_step_tasks.after_merge=0 AND c.state='open') OR (delivery_step_tasks.after_merge=1 AND c.state='merged')))
-			ON CONFLICT(change_id,revision,step,for_step,after_merge,session_id) DO UPDATE SET message_id=excluded.message_id`,
-				t.session, m.ID, t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge), t.owner)
+			AND ((delivery_step_tasks.after_merge=0 AND c.state='open') OR (delivery_step_tasks.after_merge=1 AND c.state='merged')))`,
+				t.session, m.ID, s.now().UnixNano(), t.noticeDue, t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge), t.owner)
 			if err != nil {
 				return protocol.Message{}, err
 			}
@@ -1695,9 +1677,6 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 				return protocol.Message{}, err
 			} else if n > 0 {
 				added = true
-				if _, err := tx.Exec(`UPDATE delivery_step_tasks SET last_notice_at=?,last_notice_due_at=MAX(last_notice_due_at,?) WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`, s.now().UnixNano(), t.noticeDue, t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge)); err != nil {
-					return protocol.Message{}, err
-				}
 			}
 		}
 		if added {
@@ -1763,12 +1742,16 @@ func (s *Store) queueSteps(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, n
 	}
 	// A step whose phase has ended can no longer be reported: a before-merge
 	// step once the change merged, and any step once it is done or stopped.
-	// Complete it even when it was claimed, so no reminder or notice outlives
-	// the phase it belonged to.
-	if _, err := tx.Exec(`UPDATE delivery_step_tasks SET completed=1 WHERE change_id=? AND revision=? AND completed=0
-		AND ((after_merge=0 AND ?<>'open') OR (after_merge=1 AND ?<>'merged'))`,
+	// End it even when it was claimed, so no reminder or notice outlives the
+	// phase it belonged to.
+	if err := endStepTasks(tx, `t.change_id=? AND t.revision=? AND ((t.after_merge=0 AND ?<>'open') OR (t.after_merge=1 AND ?<>'merged'))`,
 		c.ID, c.Revision, c.State, c.State); err != nil {
 		return err
+	}
+	if c.State == protocol.ChangeDone || c.State == protocol.ChangeStopped {
+		if _, err := tx.Exec(`DELETE FROM gateway_state WHERE key GLOB ?`, stepNodePrefix+c.ID+"/*"); err != nil {
+			return err
+		}
 	}
 	for _, step := range p.Steps {
 		if step.Step == protocol.StepApprove && step.Owner.Kind == protocol.OwnerNone {
@@ -1781,19 +1764,16 @@ func (s *Store) queueSteps(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, n
 	// with their current owner; retired tasks can be queued again when ready.
 	ready := p.NextSteps(c, evidence)
 	args := []any{c.ID, c.Revision}
-	query := `UPDATE delivery_step_tasks SET completed=1 WHERE change_id=? AND revision=? AND claimed_by='' AND completed=0`
+	where := `t.change_id=? AND t.revision=? AND t.claimed_by=''`
 	keep := append([]protocol.StepRef(nil), ready...)
 	for _, ref := range ready {
 		keep = append(keep, stepRun(p, c, evidence, ref)[1:]...)
 	}
 	for _, ref := range keep {
-		query += ` AND NOT (step=? AND for_step=? AND after_merge=?)`
+		where += ` AND NOT (t.step=? AND t.for_step=? AND t.after_merge=?)`
 		args = append(args, ref.Step, ref.For, boolInt(ref.AfterMerge))
 	}
-	if _, err := tx.Exec(query, args...); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(`UPDATE messages SET state='expired' WHERE state IN ('stored','dispatched') AND id IN (SELECT m.message_id FROM delivery_step_messages m JOIN delivery_step_tasks t ON t.change_id=m.change_id AND t.revision=m.revision AND t.step=m.step AND t.for_step=m.for_step AND t.after_merge=m.after_merge WHERE t.change_id=? AND t.revision=? AND t.completed=1 AND t.claimed_by='')`, c.ID, c.Revision); err != nil {
+	if err := endStepTasks(tx, where, args...); err != nil {
 		return err
 	}
 	for _, ref := range p.NextSteps(c, evidence) {
@@ -1803,7 +1783,7 @@ func (s *Store) queueSteps(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, n
 		}
 		if step.Owner.Kind == protocol.OwnerPerson || (step.Owner.Kind == protocol.OwnerDelegate && ref.Step == protocol.StepApprove) {
 			if step.Owner.Kind == protocol.OwnerPerson {
-				if _, err := tx.Exec(`UPDATE delivery_step_tasks SET completed=1 WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND completed=0`,
+				if err := endStepTasks(tx, `t.change_id=? AND t.revision=? AND t.step=? AND t.for_step=? AND t.after_merge=?`,
 					c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)); err != nil {
 					return err
 				}
@@ -1818,30 +1798,18 @@ func (s *Store) queueSteps(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, n
 			}
 			continue
 		}
-		ownerNode := step.Owner.Node
-		if step.Owner.Kind == protocol.OwnerCaller {
-			ownerNode = callerTaskOwner
-		} else if step.Owner.Kind == protocol.OwnerMerger {
-			ownerNode = mergerTaskOwner
-		} else if step.Owner.Kind != protocol.OwnerNode {
+		ownerNode, ok := stepTaskOwner(step)
+		if !ok {
 			continue
-		}
-		var retired int
-		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_tasks WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND completed=1 AND claimed_by='')`, c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)).Scan(&retired); err != nil {
-			return err
-		}
-		if retired != 0 {
-			if err := discardCompletedStepTask(tx, c, ref); err != nil {
-				return err
-			}
 		}
 		if ref.Step == protocol.StepApprove {
 			if err := dismissStepInbox(tx, c, ref, s.now().UnixNano()); err != nil {
 				return err
 			}
-			if err := discardCompletedStepTask(tx, c, ref); err != nil {
-				return err
-			}
+		} else if slices.ContainsFunc(evidence, func(e protocol.Evidence) bool { return e.Revision == c.Revision && e.StepRef == ref }) {
+			// A reported step whose pass did not count (not independent
+			// enough) gets no new task: its reporter may report again.
+			continue
 		}
 		result, err := tx.Exec(`INSERT OR IGNORE INTO delivery_step_tasks
 			(change_id,revision,step,for_step,after_merge,owner_node,created_at) VALUES(?,?,?,?,?,?,?)`,
@@ -1871,32 +1839,53 @@ func (s *Store) queueSteps(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, n
 	return nil
 }
 
-// discardCompletedStepTask removes a retired task so a newly ready step can
-// be queued again. Completed evidence itself is never removed.
-func discardCompletedStepTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef) error {
-	args := []any{c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)}
-	where := `change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`
-	if _, err := tx.Exec(`UPDATE messages SET state='expired' WHERE state IN ('stored','dispatched') AND id IN
-		(SELECT m.message_id FROM delivery_step_messages m JOIN delivery_step_tasks t ON t.change_id=m.change_id AND t.revision=m.revision
-		AND t.step=m.step AND t.for_step=m.for_step AND t.after_merge=m.after_merge
-		WHERE m.change_id=? AND m.revision=? AND m.step=? AND m.for_step=? AND m.after_merge=? AND t.completed=1)`, args...); err != nil {
-		return err
+// stepTaskOwner is the owner a task of step keeps: the caller, the merger or a
+// node. Other owners have no plain task.
+func stepTaskOwner(step protocol.PipelineStep) (string, bool) {
+	switch step.Owner.Kind {
+	case protocol.OwnerCaller:
+		return callerTaskOwner, true
+	case protocol.OwnerMerger:
+		return mergerTaskOwner, true
+	case protocol.OwnerNode:
+		return step.Owner.Node, true
 	}
-	for _, table := range []string{"delivery_step_messages", "delivery_step_delegates"} {
-		if _, err := tx.Exec(`DELETE FROM `+table+` WHERE `+where+` AND EXISTS (SELECT 1 FROM delivery_step_tasks t WHERE
-			t.change_id=`+table+`.change_id AND t.revision=`+table+`.revision AND t.step=`+table+`.step
-			AND t.for_step=`+table+`.for_step AND t.after_merge=`+table+`.after_merge AND t.completed=1)`, args...); err != nil {
-			return err
-		}
+	return "", false
+}
+
+// reopenStepTask queues the task of a step again after it was reported, held
+// by claimedBy. It does nothing while the step has an open task.
+func reopenStepTask(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, ref protocol.StepRef, claimedBy string, now int64) error {
+	step, ok := p.Find(ref)
+	if !ok {
+		return nil
 	}
-	_, err := tx.Exec(`DELETE FROM delivery_step_tasks WHERE `+where+` AND completed=1`, args...)
+	owner, ok := stepTaskOwner(step)
+	if !ok {
+		return nil
+	}
+	_, err := tx.Exec(`INSERT OR IGNORE INTO delivery_step_tasks(change_id,revision,step,for_step,after_merge,owner_node,claimed_by,created_at) VALUES(?,?,?,?,?,?,?,?)`,
+		c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge), owner, claimedBy, now)
 	return err
 }
 
-func (s *Store) queueDelegateTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, now int64) error {
-	if err := discardCompletedStepTask(tx, c, ref); err != nil {
+// missingTaskError says why a step has no open task: its evidence names who
+// reported it, or it never reached its owner.
+func missingTaskError(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, otherwise string) error {
+	var by string
+	err := tx.QueryRow(`SELECT COALESCE(NULLIF(reported_by,''),by_session) FROM delivery_evidence
+		WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? ORDER BY seq DESC LIMIT 1`,
+		c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)).Scan(&by)
+	if err == nil {
+		return reject("%s was already reported by %s", ref, by)
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
+	return reject(otherwise, ref)
+}
+
+func (s *Store) queueDelegateTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, now int64) error {
 	// A previously queued node approval is no longer sufficient for a
 	// delegated rule. Retire its notices before replacing it with delegates.
 	var previous string
@@ -1906,38 +1895,19 @@ func (s *Store) queueDelegateTask(tx *sql.Tx, c protocol.Change, ref protocol.St
 		return err
 	}
 	if previous != "" && previous != delegateTaskOwner {
-		if _, err := tx.Exec(`UPDATE messages SET state='expired' WHERE state IN ('stored','dispatched') AND id IN
-			(SELECT message_id FROM delivery_step_messages WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?)`,
+		if err := endStepTasks(tx, `t.change_id=? AND t.revision=? AND t.step=? AND t.for_step=? AND t.after_merge=?`,
 			c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)); err != nil {
 			return err
 		}
-		for _, table := range []string{"delivery_step_messages", "delivery_step_tasks"} {
-			if _, err := tx.Exec(`DELETE FROM `+table+` WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`,
-				c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)); err != nil {
-				return err
-			}
-		}
-	}
-	result, err := tx.Exec(`INSERT OR IGNORE INTO delivery_step_tasks(change_id,revision,step,for_step,after_merge,owner_node,created_at)
-		VALUES(?,?,?,?,?,?,?)`, c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge), delegateTaskOwner, now)
-	if err != nil {
-		return err
-	}
-	inserted, err := result.RowsAffected()
-	if err != nil || inserted == 0 {
-		return err
 	}
 	delegates, err := delegateAgents(tx, c)
 	if err != nil {
 		return err
 	}
-	for _, node := range delegates {
-		if _, err := tx.Exec(`INSERT INTO delivery_step_delegates(change_id,revision,step,for_step,after_merge,node) VALUES(?,?,?,?,?,?)`,
-			c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge), node); err != nil {
-			return err
-		}
-	}
-	return nil
+	encoded, _ := json.Marshal(delegates)
+	_, err = tx.Exec(`INSERT OR IGNORE INTO delivery_step_tasks(change_id,revision,step,for_step,after_merge,owner_node,created_at,delegates)
+		VALUES(?,?,?,?,?,?,?,?)`, c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge), delegateTaskOwner, now, string(encoded))
+	return err
 }
 
 // delegateAgents lists the agents above the change's repo in the tree: the
@@ -2128,37 +2098,19 @@ func claimNodeTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, session,
 
 func checkNodeTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, session, machine string, complete, claim bool) (found bool, err error) {
 	var owner, claimed string
-	var completed int
-	err = tx.QueryRow(`SELECT owner_node,claimed_by,completed FROM delivery_step_tasks
+	err = tx.QueryRow(`SELECT owner_node,claimed_by FROM delivery_step_tasks
 		WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`,
-		c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)).Scan(&owner, &claimed, &completed)
+		c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)).Scan(&owner, &claimed)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	// A caller step may be reported again after it completed, as it could
-	// before caller steps had tasks: a fail and then a pass of one revision.
-	// Only the caller's actors may, and an open claim still holds.
-	reopened := completed != 0 && owner == callerTaskOwner
-	if completed != 0 && !reopened {
-		var result string
-		err := tx.QueryRow(`SELECT result FROM delivery_evidence WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? ORDER BY seq DESC LIMIT 1`, c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)).Scan(&result)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return true, err
-		}
-		if err == nil && result == string(protocol.StepResultNeedsOwner) && claimed == session {
-			completed = 0
-		}
-	}
-	if completed != 0 && !reopened {
-		return true, reject("%s was already reported by %s", ref, claimed)
-	}
 	var project, worker, harness, node, agent string
 	var online int
 	err = tx.QueryRow(`SELECT `+sessionRepoSQL+`,s.worker,s.online,s.harness,s.node_id,COALESCE(s.agent_id,'')
-		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, session).Scan(&project, &worker, &online, &harness, &node, &agent)
+		FROM sessions s WHERE s.id=?`, session).Scan(&project, &worker, &online, &harness, &node, &agent)
 	if errors.Is(err, sql.ErrNoRows) {
 		return true, reject("unknown session %q", session)
 	}
@@ -2168,7 +2120,7 @@ func checkNodeTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, session,
 	allowedOwner := project == owner
 	if owner == mergerTaskOwner {
 		var n int
-		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM project_mergers WHERE project=? AND node_id=? AND session_id=?)`, c.Project, c.Machine, session).Scan(&n); err != nil {
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND merger_node=? AND merger_session=?)`, c.Project, c.Machine, session).Scan(&n); err != nil {
 			return true, err
 		}
 		allowedOwner = n != 0
@@ -2179,70 +2131,82 @@ func checkNodeTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, session,
 		}
 	}
 	if owner == delegateTaskOwner {
-		var allowed int
-		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_delegates WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND (node=? OR node=?))`,
-			c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge), project, "agent:"+agent).Scan(&allowed); err != nil {
+		allowedOwner, err = delegateMayAct(tx, c, ref, project, agent)
+		if err != nil {
 			return true, err
 		}
-		allowedOwner = allowed != 0
 	}
 	// The CTO is never a step owner, except for the one caller step the caller
 	// named it for: that step is claimed for its session.
 	namedCTO := harness == "cto" && owner == callerTaskOwner && claimed == session
-	if node != machine || !allowedOwner || worker != "" || online == 0 || harness == "owner" || harness == "bot" || (harness == "cto" && !namedCTO) || (claimed != "" && claimed != session && !reopened) {
+	if node != machine || !allowedOwner || worker != "" || online == 0 || harness == "owner" || harness == "bot" || (harness == "cto" && !namedCTO) || (claimed != "" && claimed != session) {
 		return true, reject("%s is owned by node %s", ref, owner)
 	}
-	if !claim || (reopened && !complete) {
-		// A claim never reopens a completed caller step.
+	if !claim {
 		return true, nil
 	}
-	_, err = tx.Exec(`UPDATE delivery_step_tasks SET claimed_by=?,completed=?
+	// A report ends the task: its evidence is the record. A node step also
+	// leaves a mark, so the node stays barred from the caller's steps.
+	if complete {
+		if !strings.HasPrefix(owner, "/") {
+			if err := stateSet(tx, stepNodePrefix+c.ID+"/"+owner, "1", time.Now().UnixNano()); err != nil {
+				return true, err
+			}
+		}
+		return true, endStepTasks(tx, `t.change_id=? AND t.revision=? AND t.step=? AND t.for_step=? AND t.after_merge=?`,
+			c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge))
+	}
+	_, err = tx.Exec(`UPDATE delivery_step_tasks SET claimed_by=?
 		WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`,
-		session, boolInt(complete), c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge))
+		session, c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge))
 	return true, err
+}
+
+// delegateMayAct says whether a session of repo project, or of agent, is one of
+// the delegates of the approval step ref.
+func delegateMayAct(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, project, agent string) (bool, error) {
+	var allowed bool
+	err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_tasks t, json_each(t.delegates) d
+		WHERE t.change_id=? AND t.revision=? AND t.step=? AND t.for_step=? AND t.after_merge=? AND d.value IN (?,?))`,
+		c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge), project, "agent:"+agent).Scan(&allowed)
+	return allowed, err
 }
 
 // claimDirectOwnerApproval records an owner approval reported in the caller's
 // own session, or in a session of an allowed delegate. It is never used for
 // an owner-only written approval.
 func claimDirectOwnerApproval(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, session, machine string) (bool, error) {
-	var owner, claimed string
-	var completed int
-	err := tx.QueryRow(`SELECT owner_node,claimed_by,completed FROM delivery_step_tasks
+	var owner string
+	err := tx.QueryRow(`SELECT owner_node FROM delivery_step_tasks
 		WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`,
-		c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)).Scan(&owner, &claimed, &completed)
+		c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge)).Scan(&owner)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	if owner != delegateTaskOwner || completed != 0 {
+	if owner != delegateTaskOwner {
 		return true, reject("%s is not an open delegated approval", ref)
 	}
 	var project, worker, harness, node, agent string
 	var online int
 	err = tx.QueryRow(`SELECT `+sessionRepoSQL+`,s.worker,s.online,s.harness,s.node_id,COALESCE(s.agent_id,'')
-		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, session).Scan(&project, &worker, &online, &harness, &node, &agent)
+		FROM sessions s WHERE s.id=?`, session).Scan(&project, &worker, &online, &harness, &node, &agent)
 	if err != nil {
 		return true, err
 	}
 	allowed := session == c.Caller
 	if !allowed {
-		var delegate int
-		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_delegates WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND (node=? OR node=?))`,
-			c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge), project, "agent:"+agent).Scan(&delegate)
-		if err != nil {
+		if allowed, err = delegateMayAct(tx, c, ref, project, agent); err != nil {
 			return true, err
 		}
-		allowed = delegate != 0
 	}
 	if !allowed || node != machine || worker != "" || online == 0 || harness == "owner" || harness == "bot" || harness == "cto" {
 		return true, reject("session %s cannot report this delegated owner approval", session)
 	}
-	_, err = tx.Exec(`UPDATE delivery_step_tasks SET claimed_by=?,completed=1 WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`,
-		protocol.EvidenceByOwner, c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge))
-	return true, err
+	return true, endStepTasks(tx, `t.change_id=? AND t.revision=? AND t.step=? AND t.for_step=? AND t.after_merge=?`,
+		c.ID, c.Revision, ref.Step, ref.For, boolInt(ref.AfterMerge))
 }
 
 // ClaimStep reserves a ready node task without recording evidence. The
@@ -2302,12 +2266,15 @@ func (s *Store) ClaimStep(machine string, q protocol.StepClaimRequest) (protocol
 		}
 		return protocol.StepClaimResult{Claimed: true, SessionID: q.Reviewer, Reviewer: q.Reviewer}, nil
 	}
+	if err := reopenReporterTask(tx, c, p, q.StepRef, "", q.SessionID, s.now().Unix()); err != nil {
+		return protocol.StepClaimResult{}, err
+	}
 	found, err := claimNodeTask(tx, c, q.StepRef, q.SessionID, machine, false)
 	if err != nil {
 		return protocol.StepClaimResult{}, err
 	}
 	if !found {
-		return protocol.StepClaimResult{}, reject("no ready node task for %s", q.StepRef)
+		return protocol.StepClaimResult{}, missingTaskError(tx, c, q.StepRef, "no ready node task for %s")
 	}
 	if err := retireStepMessages(tx, c.ID); err != nil {
 		return protocol.StepClaimResult{}, err
@@ -2363,7 +2330,7 @@ func nameStepReviewer(tx *sql.Tx, c protocol.Change, p protocol.Pipeline, machin
 		return reject("reviewer %s acts for the caller of %s: name a session of another agent, so the caller does not pass its own change", q.Reviewer, c.ID)
 	}
 	res, err := tx.Exec(`UPDATE delivery_step_tasks SET claimed_by=?
-		WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND owner_node=? AND completed=0`,
+		WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND owner_node=?`,
 		q.Reviewer, c.ID, c.Revision, q.Step, q.For, boolInt(q.AfterMerge), callerTaskOwner)
 	if err != nil {
 		return err

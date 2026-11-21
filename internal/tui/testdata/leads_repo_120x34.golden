@@ -1,7 +1,6 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 5 nodes, 4 edges                      updated 14:05
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk │ 5 nodes, 4 edges                              updated 14:05
 cogforge  autonomy: off  repo
 agent: api-architect
-Tools: 0 skills, 0 MCP servers · t open
 owner: api-architect
 no purpose set
 ○ no live sessions
@@ -11,7 +10,7 @@ accept, test, review, merge, release, verify: caller
 IN 1                                                         OUT 2
 api-architect ──▶ deploys                                    ──▶ shop depends
                                                              ──▶ Alpha member_of
-Card 1-12/15  ctrl+u/d scroll ──────────────────────────────────────────────────────────────────────────────────────────
+Card 1-13/15  ctrl+u/d scroll ──────────────────────────────────────────────────────────────────────────────────────────
 PLACE ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 team       Alpha   mode charter first
 repo lead  ★ cogforge
@@ -24,6 +23,7 @@ tests_before_merge suite                  default
 merge_authority    full                   default
 worker_sandbox     sandboxed              default
 judge_consumers    charter                default
+deploy_rule        brief                  default
 RECENT  no changes yet
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
@@ -31,4 +31,4 @@ RECENT  no changes yet
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter sessions  t tools  l lead  esc Graph  ctrl+u/ctrl+d scroll  n new  u undo  ? help  q quit
+enter sessions  l lead  esc Graph  ctrl+u/ctrl+d scroll  n new  u undo  ? help  q quit

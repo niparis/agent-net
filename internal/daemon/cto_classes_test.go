@@ -23,7 +23,6 @@ func ctoClassFixture(name string) json.RawMessage {
 		"session_change":  {"action": "rename"},
 		"worker_change":   {"action": "start"},
 		"answer":          {"kind": "held", "action": "a"},
-		"tools_change":    {"action": "plan"},
 		"mcp_change":      {"action": "test"},
 		"settings_change": {"area": "onboarding"},
 		"project_change":  {"action": "add"},

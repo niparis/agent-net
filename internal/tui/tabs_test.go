@@ -44,7 +44,7 @@ func TestTabTableMatchesTabBar(t *testing.T) {
 	}
 	for name, index := range map[string]int{
 		"Sessions": sessionsTab, "Graph": graphTab, "Quotas": quotasTab, "Messages": messagesTab,
-		"Tools": toolsTab, "Settings": settingsTab, "Desk": inboxTab,
+		"Settings": settingsTab, "Desk": inboxTab,
 	} {
 		if tabs.All[index].Name != name {
 			t.Errorf("tab %d is %q, want %q", index, tabs.All[index].Name, name)
@@ -54,7 +54,7 @@ func TestTabTableMatchesTabBar(t *testing.T) {
 
 func TestTabSwitching(t *testing.T) {
 	m := newModel(80, 24)
-	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings") {
+	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk") {
 		t.Fatal(ansi.Strip(m.titleLine(80)))
 	}
 	m = keys(m, "3")
@@ -265,11 +265,11 @@ func TestTabStyleAndTitleSeparator(t *testing.T) {
 		t.Fatal("active tab must be bold with a background")
 	}
 	m := newModel(80, 24)
-	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk") {
+	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk") {
 		t.Fatal(ansi.Strip(m.titleLine(80)))
 	}
 	m.tab = 2
-	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk") {
+	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk") {
 		t.Fatal(ansi.Strip(m.titleLine(80)))
 	}
 }
@@ -1091,8 +1091,8 @@ func TestTabBarKeepsSeparatorWhenInboxHasItemsAt80(t *testing.T) {
 		askFromHeld(protocol.Message{ID: "h2", To: "s_0000000000000002", CreatedAt: t0}),
 	}
 	line := ansi.Strip(m.titleLine(80))
-	// Seven tabs fit by their full names at 80 columns, count and all.
-	for _, want := range []string{"1 Sessions", "2 Graph", "3 Quotas", "4 Messages", "5 Tools", "6 Settings", "7 Desk (2)", "│ 12 online"} {
+	// Six tabs fit by their full names at 80 columns, count and all.
+	for _, want := range []string{"1 Sessions", "2 Graph", "3 Quotas", "4 Messages", "5 Settings", "6 Desk (2)", "│ 12 online"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("80 column tab bar is missing %q: %q", want, line)
 		}
@@ -1148,11 +1148,26 @@ func TestFullTabNamesFitWithCompactStatus(t *testing.T) {
 	for _, width := range []int{80, 100} {
 		line := ansi.Strip(m.titleLine(width))
 		t.Logf("title %d: %s", width, line)
-		if !strings.Contains(line, "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk") {
+		if !strings.Contains(line, "1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk") {
 			t.Errorf("width %d: %s", width, line)
 		}
 		if width > 80 && !strings.Contains(line, "12") {
 			t.Errorf("width %d lost online count: %s", width, line)
+		}
+	}
+}
+
+// The Tools tab is gone (decision 0169, task 5): six tabs, keys 1 to 6, and
+// no key 7 or Tools word in the bar.
+func TestNoToolsTab(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := newModel(size[0], size[1])
+		line := ansi.Strip(m.titleLine(size[0]))
+		if strings.Contains(line, "Tools") || strings.Contains(line, "7 ") {
+			t.Errorf("%dx%d: tab bar still has Tools or a seventh tab: %q", size[0], size[1], line)
+		}
+		if n := keys(m, "7").tab; n != m.tab {
+			t.Errorf("%dx%d: key 7 moved from tab %d to %d", size[0], size[1], m.tab, n)
 		}
 	}
 }

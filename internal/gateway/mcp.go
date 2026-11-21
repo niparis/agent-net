@@ -66,55 +66,6 @@ func (g *Gateway) handleMCP(ctx context.Context, nc *nodeConn, typ string, raw [
 		}
 		return g.mcpAdd(ctx, nc, p)
 
-	case "mcp.import":
-		p, err := decodeOperator[struct {
-			protocol.MCPImportRequest
-			Actor string `json:"actor"`
-			Owner string `json:"owner"`
-		}](raw)
-		if err != nil {
-			return nil, err
-		}
-		if !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		if (p.Candidate == "") == (p.PlanID == "") {
-			return nil, reject("import needs a candidate or a plan_id")
-		}
-		if p.Candidate != "" {
-			return g.planMCPImport(ctx, p.Candidate, p.Actor)
-		}
-		return g.applyMCPImport(ctx, p.PlanID, p.Actor, p.Owner)
-
-	case "mcp.native_remove":
-		p, err := decodeOperator[struct {
-			protocol.MCPNativeRemoveRequest
-			Actor string `json:"actor"`
-			Owner string `json:"owner"`
-		}](raw)
-		if err != nil {
-			return nil, err
-		}
-		if !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		n := 0
-		for _, v := range []string{p.Candidate, p.PlanID, p.UndoPlanID} {
-			if v != "" {
-				n++
-			}
-		}
-		if n != 1 {
-			return nil, reject("native removal needs one of candidate, plan_id or undo_plan_id")
-		}
-		switch {
-		case p.Candidate != "":
-			return g.planMCPNativeRemove(ctx, p.Candidate, p.Actor)
-		case p.PlanID != "":
-			return g.applyMCPNativeRemove(ctx, p.PlanID, p.Actor, p.Owner)
-		}
-		return g.undoMCPNativeRemove(ctx, p.UndoPlanID, p.Actor)
-
 	case "mcp.list":
 		srvs, err := g.mcpList()
 		if err != nil {
@@ -123,15 +74,7 @@ func (g *Gateway) handleMCP(ctx context.Context, nc *nodeConn, typ string, raw [
 		return map[string]any{"servers": srvs}, nil
 
 	case "mcp.catalog":
-		p, err := decode[protocol.MCPCatalog](raw)
-		if err != nil {
-			return nil, reject("bad mcp.catalog")
-		}
-		project, err := g.callerProject(nc, p.SessionID)
-		if err != nil {
-			return nil, err
-		}
-		srvs, err := g.mcpCatalog(project)
+		srvs, err := g.mcpCatalog()
 		if err != nil {
 			return nil, err
 		}
@@ -241,18 +184,26 @@ func (g *Gateway) mcpList() ([]protocol.MCPServer, error) {
 	if err != nil {
 		return nil, err
 	}
-	assigned, err := g.store.MCPAssignments()
+	for i := range srvs {
+		srvs[i].HostOnline = g.conn(srvs[i].NodeID) != nil
+	}
+	return srvs, nil
+}
+
+// mcpCatalog lists the enabled servers with the host state. Tools of a server
+// whose host is offline stay listed: a call says the host is offline.
+func (g *Gateway) mcpCatalog() ([]protocol.MCPServer, error) {
+	srvs, err := g.mcpList()
 	if err != nil {
 		return nil, err
 	}
-	for i := range srvs {
-		srvs[i].HostOnline = g.conn(srvs[i].NodeID) != nil
-		srvs[i].Scope, srvs[i].Projects = "global", nil
-		if a, ok := assigned[srvs[i].Name]; ok {
-			srvs[i].Scope, srvs[i].Projects = a.Scope, a.Projects
+	out := []protocol.MCPServer{}
+	for _, s := range srvs {
+		if s.Enabled {
+			out = append(out, s)
 		}
 	}
-	return srvs, nil
+	return out, nil
 }
 
 func (g *Gateway) mcpAdd(ctx context.Context, nc *nodeConn, p protocol.MCPAdd, validate ...bool) (any, error) {
@@ -345,34 +296,16 @@ func (g *Gateway) mcpTest(ctx context.Context, name string) (any, error) {
 	return map[string]any{"ok": true, "tools": tools}, nil
 }
 
-// mcpAccess returns the named server if the caller may use it now: it exists,
-// the caller is the owner or its project may see it, and it is enabled.
-// Authorize here, on every call, from the gateway's own records: a client
-// that cached the tool earlier gets no more than its project may see now.
-func (g *Gateway) mcpAccess(nc *nodeConn, server, sessionID, owner string) (protocol.MCPServer, error) {
+// mcpAccess returns the named server if it exists and is enabled now. It is
+// checked on every call, so a client that cached a tool earlier gets no more
+// than the registry holds now.
+func (g *Gateway) mcpAccess(server string) (protocol.MCPServer, error) {
 	srv, ok, err := g.store.MCPServer(server)
 	if err != nil {
 		return srv, err
 	}
 	if !ok {
 		return srv, reject("no MCP server named %q", server)
-	}
-	if !g.validToolOwner(nc, owner) {
-		project, err := g.callerProject(nc, sessionID)
-		if err != nil {
-			return srv, err
-		}
-		a, err := g.store.MCPAssignment(server)
-		if err != nil {
-			return srv, err
-		}
-		if !mcpVisible(a, project) {
-			g.store.Event("mcp.refused", nc.id, sessionID, "", server+": not assigned to project "+project)
-			if project == "" {
-				return srv, reject("MCP server %q is not assigned to this project (the session has no project)", server)
-			}
-			return srv, reject("MCP server %q is not assigned to this project", server)
-		}
 	}
 	if !srv.Enabled {
 		return srv, reject("MCP server %q is disabled", server)
@@ -381,7 +314,7 @@ func (g *Gateway) mcpAccess(nc *nodeConn, server, sessionID, owner string) (prot
 }
 
 func (g *Gateway) mcpCall(ctx context.Context, nc *nodeConn, p protocol.MCPCall, validate ...bool) (any, error) {
-	srv, err := g.mcpAccess(nc, p.Server, p.SessionID, p.Owner)
+	srv, err := g.mcpAccess(p.Server)
 	if err != nil {
 		return nil, err
 	}

@@ -51,7 +51,7 @@ func TestMemberWaitingOnItsLeadMakesNoOwnerAskAndOneMessageToTheLead(t *testing.
 				t.Fatalf("messages to the lead = %+v", got)
 			}
 			// The same wait again sends nothing more.
-			c.t = c.t.Add(time.Minute)
+			c.advance(time.Minute)
 			announce(t, s, member, protocol.ProfileAnnounce{Task: "T2b worker running", Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: text}})
 			reportWait(t, s, member, text, c.t)
 			if got := blockedNotices(t, s); len(got) != 1 || openWaitingAsks(t, s) != 0 {

@@ -13,7 +13,7 @@ import (
 // it read, so an empty project is not mistaken for a daemon that does not read
 // projects.
 func TestSkillSourcesReadsRegisteredProjectFolders(t *testing.T) {
-	d, _ := promptTestDaemon(t)
+	d, _ := skillTestDaemon(t)
 	project := t.TempDir()
 	alpha := filepath.Join(project, ".claude/skills/alpha")
 	beta := filepath.Join(project, ".agents/skills/beta")
@@ -30,7 +30,7 @@ func TestSkillSourcesReadsRegisteredProjectFolders(t *testing.T) {
 		if !ok || s.Name != name || s.Origin != "project demo" || s.Project != "demo" || s.State != protocol.InventoryOK || s.Hash == "" {
 			t.Fatalf("source %s = %+v (listed %v)", location, s, ok)
 		}
-		if _, err := d.skillBundleFor(protocol.SkillBundleRequest{Name: s.Name, Hash: s.Hash, Location: location}); err != nil {
+		if _, err := d.skillBundleFor(protocol.SkillBundleRequest{Name: s.Name, Location: location}); err != nil {
 			t.Fatalf("bundle %s: %v", location, err)
 		}
 	}

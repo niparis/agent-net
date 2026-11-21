@@ -36,8 +36,8 @@ func (s *Store) citedNotes(m protocol.Message) ([]string, error) {
 // sessionDisplayName is the profile name, else the session name, else the title.
 func (s *Store) sessionDisplayName(id string) (string, error) {
 	var name, title string
-	err := s.db.QueryRow(`SELECT COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.title,'')
-		FROM sessions s LEFT JOIN profiles p ON p.session_id = s.id WHERE s.id=?`, id).Scan(&name, &title)
+	err := s.db.QueryRow(`SELECT COALESCE(s.name,''), COALESCE(s.title,'')
+		FROM sessions s WHERE s.id=?`, id).Scan(&name, &title)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", nil

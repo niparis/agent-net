@@ -35,17 +35,15 @@ func orgReadRig(t *testing.T) (*Store, map[string]string) {
 		{`UPDATE agents SET lead_session=NULL WHERE id='chief'`, nil},
 		{`UPDATE sessions SET online=0 WHERE id=?`, []any{ids["lead"]}},
 		{`UPDATE sessions SET started_by='agent-net' WHERE id=?`, []any{ids["member-2"]}},
-		{`INSERT INTO profiles(session_id,name,updated_at) VALUES(?,'lead-main',0),(?,'member-main',0)`, []any{ids["lead"], ids["member"]}},
+		{`UPDATE sessions SET name=CASE id WHEN ? THEN 'lead-main' ELSE 'member-main' END,name_fixed=1 WHERE id IN (?,?)`, []any{ids["lead"], ids["lead"], ids["member"]}},
+		{`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('chief_session',?,0)`, []any{ids["chief"]}},
 	} {
 		if _, err := s.db.Exec(q.sql, q.args...); err != nil {
 			t.Fatalf("%s: %v", q.sql, err)
 		}
 	}
-	for _, e := range []protocol.Edge{reportsEdge("lead", protocol.OrgRoot), reportsEdge("member", "lead"), reportsEdge("chief", protocol.OrgRoot)} {
-		if err := s.SetEdge(e, "owner"); err != nil {
-			t.Fatal(err)
-		}
-	}
+	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "t_org", Name: "Org", Owner: &protocol.GraphRef{Kind: "agent", ID: "lead"}})
+	teamWrite(t, s, protocol.TeamWrite{Action: "membership", ID: "t_org", Member: &protocol.GraphRef{Kind: "agent", ID: "member"}})
 	for _, q := range []protocol.ScopeSetRequest{
 		scopeSet("chief", protocol.ScopeAsks, protocol.ScopeOverAll, "sort asks"),
 		scopeSet("lead", protocol.ScopeMerge, "agent:member", ""),
@@ -78,7 +76,7 @@ func TestGraphReadCarriesTheOrgTree(t *testing.T) {
 	}
 	agents := agentNodes(g)
 	lead, member, chief := agents["lead"], agents["member"], agents["chief"]
-	if lead.ReportsTo != protocol.OrgRoot || member.ReportsTo != "lead" || chief.ReportsTo != protocol.OrgRoot || agents["demo"].ReportsTo != "" {
+	if lead.ReportsTo != "cto" || member.ReportsTo != "lead" || chief.ReportsTo != protocol.OrgRoot || agents["demo"].ReportsTo != "" {
 		t.Fatalf("reports_to: lead=%q member=%q chief=%q demo=%q", lead.ReportsTo, member.ReportsTo, chief.ReportsTo, agents["demo"].ReportsTo)
 	}
 	if want := (&protocol.GraphSession{ID: ids["lead"], Name: "lead-main", Online: false, StartedBy: protocol.StartedByOwner}); !reflect.DeepEqual(lead.LeadSession, want) {
@@ -132,7 +130,7 @@ func TestAgentListCarriesTheTreeParent(t *testing.T) {
 		got[a.SessionID] = a.ReportsTo
 	}
 	for session, want := range map[string]string{
-		ids["lead"]:     protocol.OrgRoot,
+		ids["lead"]:     "cto",
 		ids["member"]:   "lead",
 		ids["member-2"]: "lead",
 		ids["chief"]:    protocol.OrgRoot,
@@ -188,7 +186,7 @@ func TestSessionGetShowsWhoTheSessionReportsTo(t *testing.T) {
 	for _, c := range []struct{ session, reportsTo, also string }{
 		{ids["member-2"], "member (lead session member-main)", "chief (asks), cto (admin, permissions), lead (merge)"},
 		{ids["member"], "lead (lead session lead-main)", "chief (asks), cto (admin, permissions), lead (merge)"},
-		{ids["lead"], "owner", "chief (asks), cto (admin, permissions)"},
+		{ids["lead"], "cto", "chief (asks), cto (admin, permissions)"},
 		{ids["chief"], "owner", "cto (admin, permissions)"},
 	} {
 		got, err := s.GetSession(protocol.SessionGetRequest{Session: c.session})

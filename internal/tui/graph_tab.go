@@ -301,11 +301,6 @@ func (m Model) startGraph() (tea.Model, tea.Cmd) {
 	m.smoothCamera()
 	m.graphGeneration++
 	commands := []tea.Cmd{graphTick(m.graphGeneration)}
-	if !m.tl.loaded && !m.tl.loading {
-		model, cmd := m.loadTools()
-		m = model.(Model)
-		commands = append(commands, cmd)
-	}
 	if !m.graphTalkLoading {
 		m.graphTalkLoading = true
 		m.graphTalkPending = nil

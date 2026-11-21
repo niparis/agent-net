@@ -13,6 +13,7 @@ func TestCompactionCacheWindowMigration(t *testing.T) {
 	if _, err := s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES('sessions.idle_compaction_after','network','network','','"45m"',1)`); err != nil {
 		t.Fatal(err)
 	}
+	restoreSettingsFoldTables(t, s.db)
 	if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_settings','{"compaction":{"cache_window_seconds":{"anthropic":600}}}',0) ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
 		t.Fatal(err)
 	}
@@ -47,6 +48,7 @@ func TestSessionCompactionCutoverWithoutRevisionRow(t *testing.T) {
 	// An old database: an old CTO settings row, no revision row and none of
 	// the values this cutover writes, so the checks below prove the cutover
 	// wrote them.
+	restoreSettingsFoldTables(t, s.db)
 	for _, q := range []string{
 		`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_settings','{"compaction":{}}',0) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
 		`DELETE FROM setting_revision`,
@@ -72,12 +74,10 @@ func TestSessionCompactionCutoverWithoutRevisionRow(t *testing.T) {
 	if threshold != 50 {
 		t.Fatalf("CTO threshold=%d, want 50", threshold)
 	}
-	var revision int64
-	if err := s.db.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&revision); err != nil {
-		t.Fatal(err)
-	}
-	if revision != 1 {
-		t.Fatalf("revision=%d, want 1", revision)
+	// The cutover is revision 1, and each replay of the settings fold adds a
+	// revision for the CTO row it moves.
+	if revision, err := settingsRevision(s.db); err != nil || revision < 2 {
+		t.Fatalf("revision=%d %v, want at least 2", revision, err)
 	}
 }
 
@@ -109,9 +109,8 @@ func TestCompactionThresholdTeamAndAgentLevels(t *testing.T) {
 	s, _ := newTestStore(t)
 	for _, q := range []string{
 		`INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES('shop-lead','shop-lead','',0,0,0)`,
-		`INSERT INTO repos(id,display_name,created_at,updated_at,owner_agent_id) VALUES('shop','shop',0,0,'shop-lead')`,
+		`INSERT INTO repos(id,display_name,created_at,updated_at,lead_agent_id,team_id) VALUES('shop','shop',0,0,'shop-lead','forge')`,
 		`INSERT INTO teams(id,name,created_at,updated_at) VALUES('forge','forge',0,0)`,
-		`INSERT INTO team_members(member_kind,member_id,team_id) VALUES('repo','shop','forge')`,
 	} {
 		if _, err := s.db.Exec(q); err != nil {
 			t.Fatal(err)

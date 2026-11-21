@@ -2,7 +2,7 @@
 
 The screens of the TUI and what you can do on each. For what agent-net is and why, read the [README](../README.md).
 
-`agent-net` opens the TUI. It has seven tabs: **1** Sessions, **2** Graph, **3** Quotas, **4** Messages, **5** Tools, **6** Settings, **7** Desk. `?` lists the keys of the screen you are on.
+`agent-net` opens the TUI. It has six tabs: **1** Sessions, **2** Graph, **3** Quotas, **4** Messages, **5** Settings, **6** Desk. `?` lists the keys of the screen you are on.
 
 ## Sessions and messages
 
@@ -13,7 +13,7 @@ Ask an agent things like:
 - "Ask the Pi session on the build VM which port its dev server uses."
 - "Tell the billing and invoices sessions that shared-auth v2.3 renames `user_id` to `account_id`."
 
-The message enters the other session as a new turn, labelled with its sender, and the reply comes back into your conversation. Agents answer each other without waiting for you; they still ask you before risky or out-of-scope work. Per session, the RULE cell sets how requests from other agents are handled (`normal`, `ask` or `auto`), and the DELEGATE cell sets who does the coding: the session itself, a native subagent on a cheaper model, or workers. See [delegation policy](reference.md#delegation-policy).
+The message enters the other session as a new turn, labelled with its sender, and the reply comes back into your conversation. Agents answer each other without waiting for you; they still ask you before risky or out-of-scope work. Per session, the RULE cell sets how requests from other agents are handled (`normal`, `ask` or `auto`).
 
 ## Workers
 
@@ -44,11 +44,11 @@ The CTO is an agent that runs the network for you. Press `c` and ask it in plain
   <img alt="The Desk: items that wait for the owner, grouped by urgency, and changes in flight" src="img/tui/desk.svg" width="900">
 </p>
 
-Everything that waits for you, and every change in flight, is on one screen, the Desk (tab 7): CTO proposals, sessions that ask you a question or stopped with work left, and written approvals. The tab shows the count. Select an item and approve or refuse it there. Press `n` on an item that reached you to mark "didn't need me". Press `m` on a handled item to mark "should have asked me". See [owner inbox](reference.md#owner-inbox-and-written-approvals).
+Everything that waits for you, and every change in flight, is on one screen, the Desk (tab 6): CTO proposals, sessions that ask you a question or stopped with work left, and written approvals. The tab shows the count. Select an item and approve or refuse it there. Press `n` on an item that reached you to mark "didn't need me". Press `m` on a handled item to mark "should have asked me". See [owner inbox](reference.md#owner-inbox-and-written-approvals).
 
 ## Connected apps
 
-Cloud agents (for example Grok Bot) and your phone can use agent-net through MCP over OAuth. The app shows a code; you approve it in the TUI (Settings, tab 6), as a **bot** that acts under its own name with a small set of tools, or as an **owner app** that acts as you. Internet access is off until you turn it on; with Tailscale, agent-net sets up the Funnel route for you, and `agent-net setup --gateway --apps-tailscale-name agent-net` gives it a Tailscale name of its own.
+Cloud agents (for example Grok Bot) and your phone can use agent-net through MCP over OAuth. The app shows a code; you approve it in the TUI (Settings, tab 5), as a **bot** that acts under its own name with a small set of tools, or as an **owner app** that acts as you. Internet access is off until you turn it on; with Tailscale, agent-net sets up the Funnel route for you, and `agent-net setup --gateway --apps-tailscale-name agent-net` gives it a Tailscale name of its own.
 
 <p align="center">
   <img alt="Connected apps: approve this app? Client Cursor, return host www.cursor.com, kind bot or owner app, name" src="img/tui/connected-apps.png" width="900">
@@ -58,7 +58,7 @@ See [connected apps](reference.md#connected-apps).
 
 ## Skills and MCP servers
 
-Tools (tab 5) lists every skill and MCP server found on every machine, including the ones agent-net did not install. Turn one on for every project, for some projects, or for one machine; compare two copies of a skill and keep one; remove or restore. Filter with `node:`, `project:` or `machine:`. Open a node's charter card with Enter, then press t to open Tools filtered to that node. Every change is a plan you can undo. Details: [decision 0027](decisions/0027-skills-and-mcp-management.md).
+Skills are kept in an archive in the gateway. You ask the CTO to add a skill from a machine folder or a Git URL, to set which skills a project, team or agent gets, and to undo a change. A session gets the skills of its node when it starts. The Desk log shows each archive and list change with an undo. Details: [decision 0169](decisions/0169-skill-archive.md).
 
 Add an MCP server once, and sessions on every machine can use its tools. Tokens stay on the machine that hosts it.
 

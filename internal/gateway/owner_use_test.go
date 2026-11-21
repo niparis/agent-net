@@ -23,7 +23,7 @@ func TestOwnerUseAndPinSnapshot(t *testing.T) {
 	if err != nil || !ok || a.OwnerUses != 1 || a.OwnerUsedAt != c.t.Unix() || a.PinnedAt != c.t.Unix() {
 		t.Fatalf("snapshot: %+v %v", a, err)
 	}
-	c.t = c.t.Add(8 * 24 * time.Hour)
+	c.advance(8 * 24 * time.Hour)
 	a, _, _ = s.Agent(id)
 	if a.OwnerUses != 0 {
 		t.Fatalf("score did not decay on read: %+v", a)
@@ -110,9 +110,7 @@ func TestAutoArchiveOwnerUse(t *testing.T) {
 	if err := s.SetSessionPin(ids["pinned"], true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO project_mergers(project,node_id,session_id) VALUES('shop',?,?)`, node, ids["merger"]); err != nil {
-		t.Fatal(err)
-	}
+	registerMerger(t, s.db, "shop", node, ids["merger"])
 	archived, err := s.AutoArchiveSessions()
 	if err != nil {
 		t.Fatal(err)

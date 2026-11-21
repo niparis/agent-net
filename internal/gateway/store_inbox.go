@@ -391,7 +391,7 @@ const inboxColumns = `id,kind,session_id,node,text,recommendation,message_id,con
 // their changes, the names of the askers (agentNames: sessions, nodes, profiles)
 // and the pipeline of a delivery step, which reads the graph and the settings.
 // Keep it equal to those queries (see readThrough).
-var inboxTables = tableUnion([]string{"inbox_items", "delivery_step_inbox", "delivery_changes", "sessions", "nodes.id", "nodes.hostname", "profiles"}, graphTables)
+var inboxTables = tableUnion([]string{"inbox_items", "delivery_step_inbox", "delivery_changes", "sessions", "nodes.id", "nodes.hostname"}, graphTables)
 
 // ListInbox lists the open and recent inbox items. The read is kept until one
 // of inboxTables is written, and never past the second it was read in: the
@@ -750,8 +750,8 @@ func (s *Store) CloseArchivedSessionInbox(node, session string) error {
 // one query: the profile name, else the session name, else the title. It does
 // not build the graph or the settings snapshot.
 func (s *Store) agentNames() (map[string]string, error) {
-	rows, err := s.db.Query(`SELECT s.id, COALESCE(NULLIF(p.name,''), s.name), s.title
-		FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id
+	rows, err := s.db.Query(`SELECT s.id, s.name, s.title
+		FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id
 		WHERE s.archived_at=0 AND (n.id IS NOT NULL OR s.harness='bot')`)
 	if err != nil {
 		return nil, err
@@ -792,22 +792,18 @@ func (s *Store) askArea(tx askDB, item protocol.InboxItem) string {
 	}
 
 	if item.SessionID != "" {
-		var repoProject, profProject, repoID string
-		_ = tx.QueryRow(`SELECT COALESCE(s.repo_project,''), COALESCE(p.project,''), COALESCE(s.repo_id,'')
-			FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, item.SessionID).Scan(&repoProject, &profProject, &repoID)
+		var repoProject, repoID string
+		_ = tx.QueryRow(`SELECT COALESCE(NULLIF(s.repo_project,''),s.announced_project), COALESCE(s.repo_id,'') FROM sessions s WHERE s.id=?`, item.SessionID).Scan(&repoProject, &repoID)
 		if repoProject != "" {
 			return repoProject
-		}
-		if profProject != "" {
-			return profProject
 		}
 		if repoID != "" {
 			return repoID
 		}
 
 		var teamName string
-		_ = tx.QueryRow(`SELECT t.name FROM teams t JOIN team_members tm ON tm.team_id=t.id JOIN sessions s ON s.id=?
-			WHERE t.active=1 AND ((tm.member_kind='repo' AND tm.member_id=s.repo_id AND s.repo_id<>'') OR (tm.member_kind='agent' AND tm.member_id=s.agent_id AND s.agent_id<>'')) LIMIT 1`,
+		_ = tx.QueryRow(`SELECT t.name FROM teams t JOIN sessions s ON s.id=?
+			WHERE t.active=1 AND ((s.repo_id<>'' AND EXISTS(SELECT 1 FROM repos r WHERE r.id=s.repo_id AND r.team_id=t.id)) OR (s.agent_id<>'' AND EXISTS(SELECT 1 FROM agents a WHERE a.id=s.agent_id AND a.team_id=t.id))) LIMIT 1`,
 			item.SessionID).Scan(&teamName)
 		if teamName != "" {
 			return teamName

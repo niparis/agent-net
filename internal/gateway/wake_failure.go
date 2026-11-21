@@ -83,8 +83,7 @@ func (s *Store) failWake(session, attempt, reason string) ([]protocol.Message, e
 	}
 	defer tx.Rollback()
 	now := s.now()
-	if _, err := tx.Exec(`INSERT INTO session_wakes(session_id,wake_failed_at,wake_failed_reason) VALUES(?,?,?)
- ON CONFLICT(session_id) DO UPDATE SET wake_failed_at=excluded.wake_failed_at, wake_failed_reason=excluded.wake_failed_reason`, session, now.UnixNano(), reason); err != nil {
+	if _, err := tx.Exec(`UPDATE sessions SET wake_failed_at=?, wake_failed_reason=? WHERE id=?`, now.UnixNano(), reason, session); err != nil {
 		return nil, err
 	}
 	rows, err := tx.Query(`SELECT DISTINCT sender FROM messages WHERE recipient=? AND state='stored' AND expires_at>?`, session, now.UnixNano())
@@ -149,8 +148,8 @@ func (s *Store) wakeFailureNotice(tx *sql.Tx, to, session, attempt, reason strin
 	if err != nil {
 		return none, false, err
 	}
-	body := fmt.Sprintf("[agent-net] %s is offline and could not be woken: %s.\nYour message to it stays queued and is delivered when it starts again. This is a notice from agent-net. No reply is needed.",
-		protocol.NeutralizeMarkers(name), protocol.NeutralizeMarkers(reason))
+	body := fmt.Sprintf("[agent-net] %s is offline and could not be woken: %s.\nYour message to it stays queued. It is delivered when the session starts again, and agent-net tries to wake it again with the next message sent after %d minutes. This is a notice from agent-net. No reply is needed.",
+		protocol.NeutralizeMarkers(name), protocol.NeutralizeMarkers(reason), int(wakeBackoff.Minutes()))
 	now := s.now()
 	n := protocol.Message{ID: protocol.NewID("m"), ConversationID: protocol.NewID("c"),
 		From: "agent-net", FromName: "agent-net", FromHarness: "agent-net", To: to, Type: protocol.TypeNotification,
@@ -178,8 +177,7 @@ func wakeNoticeName(q interface {
 	QueryRow(query string, args ...any) *sql.Row
 }, session string) (string, error) {
 	var name string
-	err := q.QueryRow(`SELECT COALESCE(NULLIF(p.name,''),NULLIF(r.name,''),?) FROM (SELECT ? AS id) x
-		LEFT JOIN sessions r ON r.id=x.id LEFT JOIN profiles p ON p.session_id=x.id`, session, session).Scan(&name)
+	err := q.QueryRow(`SELECT COALESCE((SELECT NULLIF(name,'') FROM sessions WHERE id=?),?)`, session, session).Scan(&name)
 	return name, err
 }
 
@@ -187,7 +185,7 @@ func wakeNoticeName(q interface {
 // not been cleared by a wake that worked.
 func (s *Store) wakeFailure(session string) (string, bool) {
 	var reason string
-	if err := s.db.QueryRow(`SELECT wake_failed_reason FROM session_wakes WHERE session_id=? AND wake_failed_at>0`, session).Scan(&reason); err != nil {
+	if err := s.db.QueryRow(`SELECT wake_failed_reason FROM sessions WHERE id=? AND wake_failed_at>0`, session).Scan(&reason); err != nil {
 		return "", false
 	}
 	return reason, true
@@ -195,6 +193,6 @@ func (s *Store) wakeFailure(session string) (string, bool) {
 
 // clearWakeFailure forgets a session's failed wake after a wake worked.
 func (s *Store) clearWakeFailure(session string) error {
-	_, err := s.db.Exec(`UPDATE session_wakes SET wake_failed_at=0,wake_failed_reason='' WHERE session_id=? AND wake_failed_at>0`, session)
+	_, err := s.db.Exec(`UPDATE sessions SET wake_failed_at=0,wake_failed_reason='' WHERE id=? AND wake_failed_at>0`, session)
 	return err
 }

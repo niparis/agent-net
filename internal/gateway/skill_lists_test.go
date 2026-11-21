@@ -22,7 +22,7 @@ func seedArchiveSkill(t *testing.T, s *Store, name string, version, tokens int, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	bundle, err := inventory.PackSkill(dir)
+	bundle, err := inventory.PackSkillLimit(dir, inventory.ArchiveLimit)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestSkillListsInheritGlobalTeamRepoAgent(t *testing.T) {
 	if _, err := s.db.Exec(`INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES('ag','Ag','',0,0,0)`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`UPDATE repos SET owner_agent_id='ag' WHERE id='alpha'`); err != nil {
+	if _, err := s.db.Exec(`UPDATE repos SET lead_agent_id='ag' WHERE id='alpha'`); err != nil {
 		t.Fatal(err)
 	}
 	setSkills(t, s, "global", "", []string{"alpha", "beta"}, nil, nil)
@@ -207,7 +207,7 @@ func TestSkillListRestartOfferListsNodeSessions(t *testing.T) {
 // not open any skills item, even when a CTO session is set.
 func TestNewProjectCreatesNoSkillItem(t *testing.T) {
 	s, _ := newTestStore(t)
-	if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_session','s_cto',0)`); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES('cto_session','s_cto',0)`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.AddProjects("n1", protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Path: "/repo/x", Name: "x"}}}); err != nil {

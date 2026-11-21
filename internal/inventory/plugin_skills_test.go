@@ -92,8 +92,8 @@ func TestPluginName(t *testing.T) {
 	}
 }
 
-// OnlyRoot limits the scan to one skill folder and lists nothing else.
-func TestScanOnlyRoot(t *testing.T) {
+// ScanSkillRoot lists the skill folders of one root and nothing else.
+func TestScanSkillRootListsOneRoot(t *testing.T) {
 	home := t.TempDir()
 	root := filepath.Join(home, ".claude/plugins/cache/m/p/1/skills")
 	for rel, body := range map[string]string{".claude/plugins/cache/m/p/1/skills/in-plugin": "a", ".claude/skills/user-skill": "b"} {
@@ -104,7 +104,7 @@ func TestScanOnlyRoot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	report := Scan(Options{Home: home, OnlyRoot: &SkillRoot{Harness: "claude", Base: home, Path: root}})
+	report := ScanSkillRoot(home, SkillRoot{Harness: "claude", Base: home, Path: root})
 	if len(report.Items) != 1 || report.Items[0].Name != "in-plugin" || report.Items[0].Kind != protocol.InventorySkill || report.Items[0].Hash == "" {
 		t.Fatalf("items: %+v", report.Items)
 	}

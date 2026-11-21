@@ -37,7 +37,7 @@ type agyGate struct {
 
 func newAgyGate(t *testing.T) agyGate {
 	t.Helper()
-	g, node := scopeGateway(t)
+	g, node := mcpGateway(t)
 	st := g.store
 	c := &clock{t: time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)}
 	st.now = c.now
@@ -130,13 +130,13 @@ func TestAgyRunBlockEndsWhenFresherReadingShowsWindowOpen(t *testing.T) {
 	}
 	// A reading generated before the failure (12:00) does not end the block,
 	// even when it arrives later.
-	a.clock.t = a.clock.t.Add(2 * time.Minute)
+	a.clock.advance(2 * time.Minute)
 	a.g.usage.set(a.node, a.clock.now(), protocol.UsageReport{Quotas: agyLiveReading(a.clock.now().Add(-7*time.Minute), 40)})
 	if err := a.start(t, "agy", "gemini-4-argon-high"); err == nil {
 		t.Fatal("a reading older than the run's report ended the block")
 	}
 	// A reading generated after the failure shows Argon at 40 percent.
-	a.clock.t = a.clock.t.Add(5 * time.Minute)
+	a.clock.advance(5 * time.Minute)
 	a.g.usage.set(a.node, a.clock.now(), protocol.UsageReport{Quotas: agyLiveReading(a.clock.now(), 40)})
 	if err := a.start(t, "agy", "gemini-4-argon-high"); err != nil {
 		t.Fatalf("argon refused after a fresher reading shows its window open: %v", err)

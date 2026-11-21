@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -18,9 +17,9 @@ func TestApprovedKeyMapContract(t *testing.T) {
 		name   string
 		checks []check
 	}{
-		{"01_refresh", []check{{contextSessions, "R", "refresh"}, {contextMessages, "R", "refresh"}, {contextQuotas, "R", "refresh"}, {contextCard, "R", "refresh"}, {contextTools, "R", "rescan"}, {contextSessions, "r", ""}}},
+		{"01_refresh", []check{{contextSessions, "R", "refresh"}, {contextMessages, "R", "refresh"}, {contextQuotas, "R", "refresh"}, {contextCard, "R", "refresh"}, {contextSessions, "r", ""}}},
 		{"02_graph_aliases", []check{{contextGlobal, "2", "graph tab"}, {contextGlobal, "M", ""}, {contextGlobal, "G", ""}, {contextHelp, "G", actLast}}},
-		{"03_escape_filter", []check{{contextSessions, "esc", "back"}, {contextGraphFind, "esc", "clear or back"}, {contextToolsPicker, "esc", "cancel"}}},
+		{"03_escape_filter", []check{{contextSessions, "esc", "back"}, {contextGraphFind, "esc", "clear or back"}}},
 		{"04_shared_graph_help", []check{{contextGraph, "?", "help"}}},
 		{"05_no_session_e", []check{{contextSessions, "e", ""}}},
 		{"06_view_v", []check{{contextSessions, "v", "cycle view"}, {contextSessions, "A", ""}, {contextSessions, "a", "archive offline"}}},
@@ -37,12 +36,6 @@ func TestApprovedKeyMapContract(t *testing.T) {
 		{"17_graph_links", []check{{contextGraph, ",", "previous link"}, {contextGraph, ".", "next link"}, {contextGraph, "[", ""}, {contextGraph, "]", ""}}},
 		{"18_card_scroll", []check{{contextCard, "ctrl+u", actPageUp}, {contextCard, "ctrl+d", actPageDown}, {contextCard, "[", ""}, {contextCard, "]", ""}}},
 		{"19_card_learned", []check{{contextCard, ",", "previous learned"}, {contextCard, ".", "next learned"}, {contextCard, "u", "undo learned"}, {contextCard, "U", ""}}},
-		{"20_tools_one_list", []check{{contextTools, "]", ""}, {contextTools, "[", ""}, {contextTools, "left", ""}, {contextTools, "right", ""}, {contextTools, "R", "rescan"}, {contextTools, "r", ""}}},
-		{"21_no_tools_hl", []check{{contextTools, "h", ""}, {contextTools, "l", ""}, {contextTools, "v", ""}, {contextTools, "m", ""}}},
-		{"22_tools_view_switch", []check{{contextTools, "1", ""}, {contextTools, "2", ""}, {contextTools, "tab", "skills per agent"}}},
-		{"23_no_accept_key", []check{{contextTools, "a", ""}, {contextTools, "x", ""}, {contextTools, ".", ""}}},
-		{"24_list_details", []check{{contextTools, "enter", "open actions"}}},
-		{"25_picker_space", []check{{contextToolsPicker, " ", "tick"}, {contextToolsPicker, "x", ""}}},
 		{"26_help_close", []check{{contextHelp, "esc", actClose}, {contextHelp, "?", actAllScreens}, {contextHelp, "enter", ""}, {contextHelp, "backspace", ""}}},
 		{"27_notifications", []check{{contextHelp, "N", ""}, {contextHelp, "n", ""}}},
 		{"28_confirm", []check{{contextConfirm, "enter", "yes"}, {contextConfirm, "y", "yes"}, {contextConfirm, "esc", "no"}, {contextConfirm, "n", "no"}}},
@@ -141,20 +134,5 @@ func TestApprovedSessionsAndHeldKeys(t *testing.T) {
 	_, cmd := n.Update(tea.KeyPressMsg{Text: "R", Code: []rune("R")[0]})
 	if cmd != nil && src.answer.MessageID != "" {
 		t.Fatal("R answered held request")
-	}
-}
-
-func TestApprovedToolsModes(t *testing.T) {
-	m, _ := toolsAtScreen(120, 34)
-	m = keys(m, "]", "[", "right", "left")
-	if v := plain(m); !strings.Contains(v, "NAME") || !strings.Contains(v, "STATUS") {
-		t.Fatalf("Tools is not the one list:\n%s", v)
-	}
-	if strings.Contains(plain(m), "Differences") || strings.Contains(plain(m), "By project") {
-		t.Fatalf("the old Tools screens are back:\n%s", plain(m))
-	}
-	m = keys(m, "enter")
-	if m.tl.modal == nil {
-		t.Fatal("enter did not open the selected item")
 	}
 }

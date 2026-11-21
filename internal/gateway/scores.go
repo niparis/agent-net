@@ -1,9 +1,7 @@
 package gateway
 
 import (
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 	"unicode"
@@ -11,22 +9,12 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-const scoresKey = "model_scores"
+const scoresKey = "owner.model_scores"
 
 func (s *Store) scores() ([]protocol.ModelScore, error) {
-	var raw string
-	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key = ?`, scoresKey).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return []protocol.ModelScore{}, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var scores []protocol.ModelScore
-	if err := json.Unmarshal([]byte(raw), &scores); err != nil {
-		return nil, err
-	}
-	return scores, nil
+	scores := []protocol.ModelScore{}
+	_, err := ownerJSON(s.db, scoresKey, &scores)
+	return scores, err
 }
 
 func (g *Gateway) handleScoresGet(w http.ResponseWriter, r *http.Request) {
@@ -65,12 +53,7 @@ func (g *Gateway) handleScoresSet(w http.ResponseWriter, r *http.Request) {
 	if q.Score != nil {
 		out = append(out, protocol.ModelScore{Match: q.Model, Score: *q.Score, Source: "owner"})
 	}
-	raw, err := json.Marshal(out)
-	if err != nil {
-		writeJSON(w, nil, err)
-		return
-	}
-	_, err = g.store.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,?) ON CONFLICT (key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`, scoresKey, string(raw), g.store.now().UnixNano())
+	err = g.store.setOwner(scoresKey, out)
 	if err == nil {
 		err = g.store.refreshQuality()
 		g.store.Event("scores.set", node, "", "", "")
@@ -78,19 +61,11 @@ func (g *Gateway) handleScoresSet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out, err)
 }
 
-const difficultyKey = "difficulty_minimums"
+const difficultyKey = "owner.difficulty_minimums"
 
 func (s *Store) difficultyMinimums() (map[string]float64, error) {
-	var raw string
-	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key = ?`, difficultyKey).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return map[string]float64{}, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var out map[string]float64
-	err = json.Unmarshal([]byte(raw), &out)
+	out := map[string]float64{}
+	_, err := ownerJSON(s.db, difficultyKey, &out)
 	return out, err
 }
 func (g *Gateway) handleDifficulty(w http.ResponseWriter, r *http.Request) {
@@ -115,31 +90,17 @@ func (g *Gateway) handleDifficulty(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	raw, err := json.Marshal(in)
-	if err != nil {
-		writeJSON(w, nil, err)
-		return
-	}
-	_, err = g.store.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,?) ON CONFLICT (key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`, difficultyKey, string(raw), g.store.now().UnixNano())
+	err := g.store.setOwner(difficultyKey, in)
 	if err == nil {
 		g.store.Event("difficulty.set", node, "", "", "")
 	}
 	writeJSON(w, in, err)
 }
 
-const workerProvidersKey = "worker_providers"
+const workerProvidersKey = "owner.worker_providers"
 
-func (s *Store) workerProviders() (protocol.WorkerProviders, error) {
-	var raw string
-	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key = ?`, workerProvidersKey).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return protocol.WorkerProviders{}, nil
-	}
-	if err != nil {
-		return protocol.WorkerProviders{}, err
-	}
-	var out protocol.WorkerProviders
-	err = json.Unmarshal([]byte(raw), &out)
+func (s *Store) workerProviders() (out protocol.WorkerProviders, err error) {
+	_, err = ownerJSON(s.db, workerProvidersKey, &out)
 	return out, err
 }
 func (g *Gateway) handleWorkerProviders(w http.ResponseWriter, r *http.Request) {
@@ -170,32 +131,17 @@ func (g *Gateway) handleWorkerProviders(w http.ResponseWriter, r *http.Request) 
 		seen[p] = true
 		in.Providers[i] = p
 	}
-	raw, err := json.Marshal(in)
-	if err != nil {
-		writeJSON(w, nil, err)
-		return
-	}
-	_, err = g.store.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,?) ON CONFLICT (key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`, workerProvidersKey, string(raw), g.store.now().UnixNano())
+	err := g.store.setOwner(workerProvidersKey, in)
 	if err == nil {
 		g.store.Event("worker_providers.set", node, "", "", "")
 	}
 	writeJSON(w, in, err)
 }
 
-const protectedProvidersKey = "protected_providers"
+const protectedProvidersKey = "owner.protected_providers"
 
-func (s *Store) protectedProviders() (protocol.ProtectedProviders, error) {
-	var raw string
-	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key = ?`, protectedProvidersKey).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return protocol.ProtectedProviders{}, nil
-	}
-	if err != nil {
-		return protocol.ProtectedProviders{}, err
-	}
-	var out protocol.ProtectedProviders
-	err = json.Unmarshal([]byte(raw), &out)
-	out.Configured = true
+func (s *Store) protectedProviders() (out protocol.ProtectedProviders, err error) {
+	out.Configured, err = ownerJSON(s.db, protectedProvidersKey, &out)
 	return out, err
 }
 
@@ -228,32 +174,17 @@ func (g *Gateway) handleProtectedProviders(w http.ResponseWriter, r *http.Reques
 		in.Providers[i] = p
 	}
 	in.Configured = true
-	raw, err := json.Marshal(in)
-	if err != nil {
-		writeJSON(w, nil, err)
-		return
-	}
-	_, err = g.store.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,?) ON CONFLICT (key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`, protectedProvidersKey, string(raw), g.store.now().UnixNano())
+	err := g.store.setOwner(protectedProvidersKey, in)
 	if err == nil {
 		g.store.Event("protected_providers.set", node, "", "", "")
 	}
 	writeJSON(w, in, err)
 }
 
-const workerFloorsKey = "worker_floors"
+const workerFloorsKey = "owner.worker_floors"
 
-func (s *Store) workerFloors() (protocol.WorkerFloors, error) {
-	var raw string
-	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key = ?`, workerFloorsKey).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return protocol.WorkerFloors{}, nil
-	}
-	if err != nil {
-		return protocol.WorkerFloors{}, err
-	}
-	var out protocol.WorkerFloors
-	err = json.Unmarshal([]byte(raw), &out)
-	out.Configured = true
+func (s *Store) workerFloors() (out protocol.WorkerFloors, err error) {
+	out.Configured, err = ownerJSON(s.db, workerFloorsKey, &out)
 	return out, err
 }
 
@@ -292,12 +223,7 @@ func (g *Gateway) handleWorkerFloors(w http.ResponseWriter, r *http.Request) {
 	}
 	in.Floors = cleaned
 	in.Configured = true
-	raw, err := json.Marshal(in)
-	if err != nil {
-		writeJSON(w, nil, err)
-		return
-	}
-	_, err = g.store.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,?) ON CONFLICT (key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`, workerFloorsKey, string(raw), g.store.now().UnixNano())
+	err := g.store.setOwner(workerFloorsKey, in)
 	if err == nil {
 		g.store.Event("worker_floors.set", node, "", "", "")
 	}

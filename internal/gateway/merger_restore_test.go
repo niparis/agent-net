@@ -33,7 +33,7 @@ func TestMergerRestorePreservesRoutingForUndo(t *testing.T) {
 		t.Fatal(err)
 	}
 	var id string
-	if err := r.s.db.QueryRow(`SELECT session_id FROM project_mergers WHERE project='demo' AND node_id=?`, r.a).Scan(&id); err != nil || id != r.sonnet {
+	if err := r.s.db.QueryRow(`SELECT session_id FROM `+mergerRowsSQL+` WHERE project='demo' AND node_id=?`, r.a).Scan(&id); err != nil || id != r.sonnet {
 		t.Fatalf("restore: %q %v", id, err)
 	}
 	if err := r.s.RestoreMergerRegistrations("demo", []protocol.MergerSetRequest{{Project: "other", NodeID: r.a, SessionID: r.sonnet}}); err == nil {

@@ -13,7 +13,7 @@ import (
 func TestHeldRequestShownInInbox(t *testing.T) {
 	m := newModel(120, 30)
 	m.asks = append(m.asks, askFromHeld(protocol.Message{ID: "m_held", FromName: "alice", To: "s_0000000000000002", Body: "please help\nsecond line"}))
-	m = keys(m, "7")
+	m = keys(m, "6")
 	if !strings.Contains(m.testView(), "alice") || !strings.Contains(m.testView(), "held request → strategies") || !strings.Contains(m.testView(), "please help") {
 		t.Fatalf("held request missing: %s", m.testView())
 	}
@@ -52,7 +52,7 @@ func (s *heldTestSource) AnswerHeld(_ context.Context, q protocol.HeldAnswer) er
 func TestHeldAndInboxApprovalBothAppearInInbox(t *testing.T) {
 	m := newModel(120, 30)
 	m.asks = append(askItems([]protocol.InboxItem{{ID: "i_1", Kind: "approval", SessionID: "s_1", Text: "deploy abc", Status: "open"}}), askFromHeld(protocol.Message{ID: "m_held", FromName: "alice", To: "s_2", Body: "please help"}))
-	m = keys(m, "7")
+	m = keys(m, "6")
 	view := m.testView()
 	if !strings.Contains(view, "held request →") || !strings.Contains(view, "deploy abc") || !strings.Contains(view, "Needs you") {
 		t.Fatalf("inbox: %s", view)

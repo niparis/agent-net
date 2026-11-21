@@ -103,7 +103,7 @@ func roFindMCPServers(ctx context.Context, call Caller, in roMCPFindIn) (roMCPFi
 	}
 	rows := make([]roMCPRow, 0, len(servers))
 	for _, server := range servers {
-		usable := server.Enabled && server.HostOnline && roMCPScopeAllows(server, caller.Project)
+		usable := server.Enabled && server.HostOnline
 		if usableOnly && !usable {
 			continue
 		}
@@ -143,24 +143,6 @@ func roLoadMCPServers(ctx context.Context, call Caller) ([]protocol.MCPServer, e
 		return nil, err
 	}
 	return result.Servers, nil
-}
-
-// roMCPScopeAllows says whether the owner assigned this server to the caller's
-// project. An empty scope is the global default.
-func roMCPScopeAllows(server protocol.MCPServer, project string) bool {
-	switch server.Scope {
-	case "", "global":
-		return true
-	case "projects":
-		for _, assigned := range server.Projects {
-			if assigned == project {
-				return true
-			}
-		}
-		return false
-	default:
-		return false
-	}
 }
 
 func roFindWorkerProfiles(ctx context.Context, call Caller, in roProfileFindIn) (roProfileFindOut, error) {

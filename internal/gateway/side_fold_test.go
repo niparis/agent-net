@@ -85,6 +85,10 @@ func oldSideTableLayout(t *testing.T) (path string, friction []int64) {
 	sideFoldExec(t, s, `INSERT INTO friction_status_history(friction_id,status,changed_by,changed_at,link,note) VALUES(?,?,'cto',1,'ch_1','n'),(?,?,'cto',2,'ch_1','n')`,
 		twice, protocol.FrictionRead, twice, protocol.FrictionTriaged)
 
+	// The session tables rework dropped session_wakes after the fold; the
+	// wake rows end up on these sessions.
+	restoreTablesAt(t, s.db, migrationVersion(t, sessionTablesMarker)-1, sessionDroppedTables...)
+	sideFoldExec(t, s, `INSERT INTO sessions(id,node_id,harness,native_id,last_seen) VALUES('s1','n1','claude','w1',1),('s2','n1','claude','w2',1),('s3','n1','claude','w3',1)`)
 	// Drop what the fold added, then bring the old tables back.
 	for _, q := range []string{
 		`DROP INDEX worker_defects_auto_key`,
@@ -182,8 +186,8 @@ func TestSideFoldMigrationKeepsEveryRow(t *testing.T) {
 	})
 
 	t.Run("session wakes", func(t *testing.T) {
-		// s1 keeps its count and gains both marks. s2 and s3 get a row.
-		if n := sideFoldInt(t, s, `SELECT wake_day_count FROM session_wakes WHERE session_id='s1'`); n != 3 {
+		// s1 keeps its count and gains both marks. s2 and s3 get theirs.
+		if n := sideFoldInt(t, s, `SELECT wake_day_count FROM sessions WHERE id='s1'`); n != 3 {
 			t.Errorf("s1 count %d", n)
 		}
 		for _, c := range []struct {
@@ -194,7 +198,7 @@ func TestSideFoldMigrationKeepsEveryRow(t *testing.T) {
 		}{{"s1", 111, "refused", 100}, {"s2", 222, "", 200}, {"s3", 0, "", 300}} {
 			var failed, attempted int64
 			var reason string
-			if err := s.db.QueryRow(`SELECT wake_failed_at,wake_failed_reason,wake_attempted_at FROM session_wakes WHERE session_id=?`, c.session).Scan(&failed, &reason, &attempted); err != nil {
+			if err := s.db.QueryRow(`SELECT wake_failed_at,wake_failed_reason,wake_attempted_at FROM sessions WHERE id=?`, c.session).Scan(&failed, &reason, &attempted); err != nil {
 				t.Fatalf("%s: %v", c.session, err)
 			}
 			if failed != c.failed || reason != c.reason || attempted != c.attempts {
@@ -334,22 +338,22 @@ func TestSideFoldMigrationReplays(t *testing.T) {
 	}
 }
 
-// The wake back-off is the WHERE of the upsert: a second claim inside the
+// The wake back-off is the WHERE of the update: a second claim inside the
 // back-off is refused and leaves the row alone, and a claim after it passes.
 // A session with a wake count keeps the count through claims and failures.
 func TestSideFoldWakeBackoffLivesOnTheWakeRow(t *testing.T) {
 	s, c := newTestStore(t)
-	sideFoldExec(t, s, `INSERT INTO session_wakes(session_id,wake_day,wake_day_count) VALUES('s1','2026-11-20',4)`)
+	sideFoldExec(t, s, `INSERT INTO sessions(id,node_id,harness,native_id,last_seen,wake_day,wake_day_count) VALUES('s1','n1','claude','w1',1,'2026-11-20',4)`)
 	ok, err := s.claimWake("s1")
 	if err != nil || !ok {
 		t.Fatalf("first claim: %v %v", ok, err)
 	}
-	first := sideFoldInt(t, s, `SELECT wake_attempted_at FROM session_wakes WHERE session_id='s1'`)
+	first := sideFoldInt(t, s, `SELECT wake_attempted_at FROM sessions WHERE id='s1'`)
 	c.advance(wakeBackoff - time.Second)
 	if ok, err := s.claimWake("s1"); err != nil || ok {
 		t.Fatalf("a claim inside the back-off: %v %v", ok, err)
 	}
-	if n := sideFoldInt(t, s, `SELECT wake_attempted_at FROM session_wakes WHERE session_id='s1'`); n != first {
+	if n := sideFoldInt(t, s, `SELECT wake_attempted_at FROM sessions WHERE id='s1'`); n != first {
 		t.Errorf("a refused claim moved the attempt time: %d, was %d", n, first)
 	}
 	c.advance(2 * time.Second)
@@ -369,15 +373,14 @@ func TestSideFoldWakeBackoffLivesOnTheWakeRow(t *testing.T) {
 	if _, ok := s.wakeFailure("s1"); ok {
 		t.Error("the failure stands after it was cleared")
 	}
-	if n := sideFoldInt(t, s, `SELECT wake_day_count FROM session_wakes WHERE session_id='s1'`); n != 4 {
+	if n := sideFoldInt(t, s, `SELECT wake_day_count FROM sessions WHERE id='s1'`); n != 4 {
 		t.Errorf("the count changed to %d", n)
 	}
-	if n := sideFoldInt(t, s, `SELECT wake_attempted_at FROM session_wakes WHERE session_id='s1'`); n == 0 {
+	if n := sideFoldInt(t, s, `SELECT wake_attempted_at FROM sessions WHERE id='s1'`); n == 0 {
 		t.Error("the attempt time was lost")
 	}
 	// A wake count written after a claim does not clear the attempt either.
-	sideFoldExec(t, s, `INSERT INTO session_wakes(session_id,wake_day,wake_day_count) VALUES('s1','2026-11-21',1)
-		ON CONFLICT(session_id) DO UPDATE SET wake_day=excluded.wake_day,wake_day_count=excluded.wake_day_count`)
+	sideFoldExec(t, s, `UPDATE sessions SET wake_day='2026-11-21',wake_day_count=1 WHERE id='s1'`)
 	if ok, err := s.claimWake("s1"); err != nil || ok {
 		t.Errorf("a claim right after another: %v %v", ok, err)
 	}

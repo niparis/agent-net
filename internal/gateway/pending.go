@@ -13,7 +13,7 @@ var pendingScopeMax = 32
 
 // pendingTables are the tables applyPending reads. Keep it equal to the query
 // there (see readThrough).
-var pendingTables = []string{"messages", "sessions", "profiles"}
+var pendingTables = []string{"messages", "sessions"}
 
 // applyPending derives current waits from retained messages. Activity clears
 // the sender's wait, but does not discharge the recipient's obligation to reply.
@@ -33,11 +33,11 @@ func (s *Store) applyPending(agents []protocol.AgentView) error {
 		}
 	}
 	rows, err := s.db.Query(`SELECT m.id, m.sender, m.recipient, m.created_at,
- COALESCE(NULLIF(sp.name,''), NULLIF(ss.name,''), m.sender), COALESCE(NULLIF(rp.name,''), NULLIF(rs.name,''), m.recipient),
+ COALESCE(NULLIF(ss.name,''), m.sender), COALESCE(NULLIF(rs.name,''), m.recipient),
  MAX(ss.last_active, ss.harness_activity) <= m.created_at
  AND NOT EXISTS (SELECT 1 FROM messages sent WHERE sent.sender=m.sender AND sent.rowid>m.rowid)
- FROM messages m JOIN sessions ss ON ss.id=m.sender LEFT JOIN profiles sp ON sp.session_id=m.sender
- JOIN sessions rs ON rs.id=m.recipient LEFT JOIN profiles rp ON rp.session_id=m.recipient
+ FROM messages m JOIN sessions ss ON ss.id=m.sender
+ JOIN sessions rs ON rs.id=m.recipient
  WHERE m.type='request' AND m.batch_json='' AND m.created_at >= ? AND m.expires_at > ?`+scope+`
  AND ss.status<>'ended' AND ss.archived_at=0 AND rs.status<>'ended' AND rs.archived_at=0
  AND NOT EXISTS (SELECT 1 FROM messages reply WHERE reply.type IN `+answeredTypesSQL+` AND reply.rowid>m.rowid

@@ -122,7 +122,7 @@ func checkInboxLimit(tx *sql.Tx, p protocol.MsgSend, ownerVoice bool, now int64)
 // An urgent message from either one is never refused by the inbox limit.
 func topAgentSenderTx(tx *sql.Tx, sender string) (bool, error) {
 	var n int
-	err := tx.QueryRow(`SELECT COUNT(*) FROM owner_settings WHERE key IN ('cto_session',?) AND value=?`, chiefSessionKey, sender).Scan(&n)
+	err := tx.QueryRow(`SELECT COUNT(*) FROM gateway_state WHERE key IN ('cto_session',?) AND value=?`, chiefSessionKey, sender).Scan(&n)
 	return n > 0, err
 }
 
@@ -189,8 +189,7 @@ func oldestWaitingTx(tx *sql.Tx, sender, recipient string, now int64) (time.Time
 // invalid value keeps the default.
 func inboxLimitTx(tx *sql.Tx, recipient string) (int, error) {
 	var project, agentID string
-	err := tx.QueryRow(`SELECT COALESCE(NULLIF(repo_project,''),(SELECT project FROM profiles WHERE session_id=sessions.id),''),
-		COALESCE(agent_id,'') FROM sessions WHERE id=?`, recipient).Scan(&project, &agentID)
+	err := tx.QueryRow(`SELECT COALESCE(NULLIF(repo_project,''),announced_project), COALESCE(agent_id,'') FROM sessions WHERE id=?`, recipient).Scan(&project, &agentID)
 	if err != nil {
 		return 0, err
 	}

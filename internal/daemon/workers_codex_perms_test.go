@@ -11,13 +11,11 @@ import (
 )
 
 // setWorkersLevel sets the workers level of the project that repo belongs to,
-// as the owner does in the TUI: through a session of that project, at project
-// scope.
+// as the owner does: the node setting of the project.
 func setWorkersLevel(t *testing.T, w *workerNode, repo, level string) {
 	t.Helper()
-	_, sid := helloPi(t, w.node, "perm-"+level, repo, true)
-	w.cli.mustCall(protocol.OpSessionPolicy, protocol.SessionPolicyRequest{SessionID: sid, Scope: protocol.ScopeProject,
-		Policy: protocol.DelegationPolicy{Workers: level}})
+	helloPi(t, w.node, "perm-"+level, repo, true)
+	w.cli.mustCall("node_settings_set", map[string]any{"node": filepath.Base(repo), "setting": protocol.SettingWorkerSandbox, "value": level})
 }
 
 func anyStrings(v any) []string {
@@ -215,34 +213,23 @@ func TestCodexApprovalStillDeclinedWithTheSandbox(t *testing.T) {
 	eventually(t, "worker cleanup", func() bool { return w.d.workerCount() == 0 })
 }
 
-// Only the owner sets the level: an agent session is refused, and a session
-// scope is refused for everyone because the level belongs to the project.
-func TestWorkersLevelGateAndScope(t *testing.T) {
+// Only the owner sets the level: an agent session is refused, and the default
+// holds.
+func TestWorkersLevelGate(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	agent, sid := helloPi(t, w.node, "agent-1", repo, true)
-	_, err := agent.call(protocol.OpSessionPolicy, protocol.SessionPolicyRequest{SessionID: sid, Scope: protocol.ScopeProject,
-		Policy: protocol.DelegationPolicy{Workers: protocol.WorkersSandboxed}})
+	agent, _ := helloPi(t, w.node, "agent-1", repo, true)
+	_, err := agent.call("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingWorkerSandbox, "value": protocol.WorkersSandboxed})
 	if err == nil || !strings.Contains(err.Error(), "only available to the owner") {
 		t.Errorf("an agent set the workers level: %v", err)
 	}
-	_, err = w.cli.call(protocol.OpSessionPolicy, protocol.SessionPolicyRequest{SessionID: sid, Scope: protocol.ScopeSession,
-		Policy: protocol.DelegationPolicy{Workers: protocol.WorkersReadOnly}})
-	if err == nil || !strings.Contains(err.Error(), "per project") {
-		t.Errorf("session scope: %v", err)
-	}
-	_, err = w.cli.call(protocol.OpSessionPolicy, protocol.SessionPolicyRequest{SessionID: sid, Scope: protocol.ScopeProject,
-		Policy: protocol.DelegationPolicy{Workers: "full-access"}})
-	if err == nil || !strings.Contains(err.Error(), "workers must be") {
-		t.Errorf("unknown level: %v", err)
-	}
-	// Nothing was stored by the refusals: the default holds.
+	// Nothing was stored by the refusal: the default holds.
 	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: "say ok"})
 	if res.Permissions != protocol.WorkersSandboxed {
-		t.Errorf("level after refusals: %q", res.Permissions)
+		t.Errorf("level after the refusal: %q", res.Permissions)
 	}
 	w.waitNotice(t, 1)
 	eventually(t, "the worker ends", func() bool { return w.d.workerCount() == 0 })

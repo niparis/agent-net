@@ -83,7 +83,7 @@ func TestResolverPolicyDeliveryCompatibility(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("agent: %v", err)
 	}
-	want := protocol.PolicyGot{Harness: a.Harness, Delegation: a.Delegation, Project: projectOfSession(a)}
+	want := protocol.PolicyGot{Harness: a.Harness, Project: projectOfSession(a)}
 	got, err := deliveryCall[protocol.PolicyGot](r, r.a, "policy.get", protocol.PolicyGet{SessionID: r.caller})
 	if err != nil {
 		t.Fatal(err)

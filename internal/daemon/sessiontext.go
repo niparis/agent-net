@@ -39,17 +39,17 @@ var operatorMethods = map[string]bool{
 	protocol.OpWorkerLog: true,
 	"apps.public.status": true, "apps.public.on": true, "apps.public.off": true, "apps.public.url": true,
 	"apps.list": true, "apps.pending": true, "apps.approve": true, "apps.refuse": true, "apps.revoke": true, protocol.OpAppsRename: true, protocol.OpAppsGrant: true, protocol.OpAppsUngrant: true,
-	"tools_keep_copy": true, "tools_save_changed": true, "tools_update_plan": true, "tools_update_copies": true, "tools_import_folder": true, "tools_mcp_add": true, "tools_mcp_remove": true, "tools_mcp_test": true, "tools_mcp_list": true,
+	"tools_mcp_add": true, "tools_mcp_remove": true, "tools_mcp_test": true, "tools_mcp_list": true,
 	protocol.OpCTOGraphWindow: true,
 	protocol.OpProposalList:   true, protocol.OpProposalAnswer: true,
-	"notification_settings": true,
-	"inventory_scan":        true, "inventory_get": true, "mcp_import_candidates": true, "mcp_import": true, "mcp_native_remove": true, "mcp_coverage_plan": true, "mcp_coverage_apply": true, "mcp_coverage_undo": true, "tools_items": true, "tools_item": true, "tools_toggle": true, "tools_new_projects": true, "tools_projects": true, "tools_plan": true, "tools_apply": true, "tools_undo": true, "tools_history": true, "tools_accepted": true, "tools_accept": true, "tools_needs": true, "tools_import": true, "tools_read_file": true, protocol.OpSkillArchiveUndo: true, protocol.OpSkillsUndo: true, "tools_summary": true, "tools_skill_details": true, "tools_versions": true, "tools_export": true, protocol.OpToolsDifferences: true, "gateway_backup": true,
+	"notification_settings":     true,
+	protocol.OpSkillArchiveUndo: true, protocol.OpSkillsUndo: true, "gateway_backup": true,
 	protocol.OpSessionStop: true, protocol.OpSessionStart: true, protocol.OpSessionStartGet: true, protocol.OpSessionResume: true,
 	"inbox_list": true, protocol.OpAsksList: true, protocol.OpChiefGet: true, protocol.OpChiefSet: true, protocol.OpAskHistory: true, protocol.OpChiefSorts: true, protocol.OpAskUndo: true, protocol.OpAskMark: true, protocol.OpAskDiscuss: true, protocol.OpDeskLog: true, protocol.OpDeskSettle: true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true, "learned_list": true, "learned_answer": true, "learned_view": true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpConversations:        true,
 	protocol.OpConversationMessages: true,
 	protocol.OpProjectDisplayGet:    true, protocol.OpProjectDisplaySet: true,
-	protocol.OpGraphView: true, protocol.OpGraphTalk: true, protocol.OpSessionTrust: true, protocol.OpFolderTrust: true, protocol.OpFolderMCP: true, protocol.OpProcessStop: true, protocol.OpStandingOrders: true, protocol.OpJudgmentAdd: true, protocol.OpSessionPolicy: true, protocol.OpSessionAgentSet: true, protocol.OpSessionAgentList: true, protocol.OpNotesCopy: true, protocol.OpNotesUncopy: true, protocol.OpSessionRename: true, protocol.OpSessionReplace: true, protocol.OpNodeRename: true, protocol.OpMachineRemove: true, protocol.OpMachineRotate: true,
+	protocol.OpGraphView: true, protocol.OpGraphTalk: true, protocol.OpSessionTrust: true, protocol.OpFolderTrust: true, protocol.OpFolderMCP: true, protocol.OpProcessStop: true, protocol.OpStandingOrders: true, protocol.OpJudgmentAdd: true, protocol.OpSessionAgentSet: true, protocol.OpSessionAgentList: true, protocol.OpNotesCopy: true, protocol.OpNotesUncopy: true, protocol.OpSessionRename: true, protocol.OpSessionReplace: true, protocol.OpNodeRename: true, protocol.OpMachineRemove: true, protocol.OpMachineRotate: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
 	protocol.OpHiddenGet: true, protocol.OpHiddenSet: true, "onboarding_get": true, "onboarding_set": true, "onboarding_restart": true,
 	protocol.OpQualityGet: true, protocol.OpQualitySet: true, protocol.OpTimeZoneGet: true, protocol.OpTimeZoneSet: true, protocol.OpProtectedProvidersGet: true, protocol.OpProtectedProvidersSet: true, protocol.OpWorkerFloorsGet: true, protocol.OpWorkerFloorsSet: true, protocol.OpWorkerProvidersGet: true, protocol.OpWorkerProvidersSet: true, "difficulty_get": true, "difficulty_set": true, protocol.OpDifficultyJudgePick: true, protocol.OpScoresGet: true, protocol.OpScoresSet: true, protocol.OpScoresWeekly: true, protocol.OpWorkerRotationGet: true, protocol.OpPickerGet: true, protocol.OpCTOSettings: true, protocol.OpCTOEnter: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true, protocol.OpCTOGraphHistory: true,
@@ -323,229 +323,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		}
 		disabled, err := d.notificationsDisabled()
 		return map[string]bool{"disabled": disabled}, true, err
-	case "inventory_scan":
-		if d.cfg.InventoryHome == "" {
-			return nil, true, errors.New("inventory scanner is disabled")
-		}
-		res = d.scanTools(ctx)
-	case "inventory_get":
-		res, err = d.call(ctx, "query.inventory", json.RawMessage(raw))
-	case "tools_items":
-		res, err = d.call(ctx, "query.tools_items", json.RawMessage(raw))
-	case "tools_item":
-		var p struct {
-			ID string `json:"id"`
-		}
-		if err = json.Unmarshal(raw, &p); err == nil {
-			res, err = d.call(ctx, "query.tools_item", struct {
-				Item string `json:"item"`
-			}{p.ID})
-		}
-	case "tools_accepted":
-		res, err = d.call(ctx, "query.tools_accepted", struct{}{})
-	case "tools_needs":
-		res, err = d.call(ctx, "query.tools_needs", struct{}{})
-	case protocol.OpToolsDifferences:
-		var p struct {
-			Offset int `json:"offset"`
-			Limit  int `json:"limit"`
-		}
-		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
-			return nil, true, errors.New("bad pagination")
-		}
-		if p.Offset < 0 {
-			return nil, true, errors.New("bad pagination")
-		}
-		res, err = d.toolDifferences(ctx, p.Offset, p.Limit)
-	case "tools_accept":
-		var p protocol.ToolAccept
-		if json.Unmarshal(raw, &p) != nil || p.Key == "" {
-			return nil, true, errors.New("tools_accept needs key")
-		}
-		res, err = d.call(ctx, "tools.accept", struct {
-			protocol.ToolAccept
-			Owner string `json:"owner"`
-		}{p, d.ownerSessionID()})
-	case "mcp_import":
-		actor := proposalActor(ctx)
-		if actor == "" {
-			actor = "owner"
-		}
-		if lc.cto {
-			actor = "cto"
-		}
-		var p protocol.MCPImportRequest
-		if json.Unmarshal(raw, &p) != nil || (p.Candidate == "") == (p.PlanID == "") {
-			return nil, true, errors.New("mcp_import needs a candidate (to plan) or a plan_id (to apply)")
-		}
-		res, err = d.call(withCallWait(ctx, 3*time.Minute), "mcp.import", struct {
-			protocol.MCPImportRequest
-			Actor string `json:"actor"`
-			Owner string `json:"owner"`
-		}{p, actor, d.ownerSessionID()})
-	case "mcp_native_remove":
-		actor := proposalActor(ctx)
-		if actor == "" {
-			actor = "owner"
-		}
-		if lc.cto {
-			actor = "cto"
-		}
-		var p protocol.MCPNativeRemoveRequest
-		if json.Unmarshal(raw, &p) != nil || (p.Candidate == "") == (p.PlanID == "" && p.UndoPlanID == "") {
-			return nil, true, errors.New("mcp_native_remove needs a candidate (to plan), a plan_id (to apply) or an undo_plan_id (to undo)")
-		}
-		res, err = d.call(withCallWait(ctx, 3*time.Minute), "mcp.native_remove", struct {
-			protocol.MCPNativeRemoveRequest
-			Actor string `json:"actor"`
-			Owner string `json:"owner"`
-		}{p, actor, d.ownerSessionID()})
-	case "mcp_import_candidates":
-		res, err = d.call(ctx, "query.mcp_import_candidates", json.RawMessage(raw))
-	case "mcp_coverage_plan":
-		var p protocol.MCPCoverageRequest
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, true, errors.New("bad mcp_coverage_plan")
-		}
-		res = d.mcpCoveragePlan(p)
-	case "mcp_coverage_apply":
-		var p protocol.MCPCoverageApplyRequest
-		if json.Unmarshal(raw, &p) != nil || p.PlanID == "" {
-			return nil, true, errors.New("mcp_coverage_apply needs a plan_id")
-		}
-		res = d.mcpCoverageApply(p.PlanID)
-	case "mcp_coverage_undo":
-		var p protocol.MCPCoverageUndoRequest
-		if json.Unmarshal(raw, &p) != nil || p.PlanID == "" {
-			return nil, true, errors.New("mcp_coverage_undo needs a plan_id")
-		}
-		res = d.mcpCoverageUndo(p.PlanID)
-	case "tools_summary":
-		var p protocol.SkillSummaryRequest
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, true, errors.New("invalid summary request")
-		}
-		p.Owner = d.ownerSessionID()
-		res, err = d.call(withCallWait(ctx, 4*time.Minute), "tools.summary", p)
 	case "tools_mcp_add", "tools_mcp_remove", "tools_mcp_test", "tools_mcp_list":
 		return lc.dispatchMCP(ctx, "cli", strings.TrimPrefix(method, "tools_"), raw)
-	case "tools_keep_copy":
-		var p protocol.ToolCopyChoice
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, true, errors.New("invalid copy choice")
-		}
-		p.Owner = d.ownerSessionID()
-		res, err = d.call(withCallWait(ctx, 3*time.Minute), "tools.keep_copy", p)
-	case "tools_save_changed":
-		var p protocol.ToolSaveChanged
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, true, errors.New("invalid save request")
-		}
-		p.Owner = d.ownerSessionID()
-		res, err = d.call(withCallWait(ctx, 90*time.Second), "tools.save_changed", p)
-	case "tools_update_plan", "tools_update_copies":
-		var p protocol.ToolUpdateRequest
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, true, errors.New("invalid update request")
-		}
-		p.Owner = d.ownerSessionID()
-		res, err = d.call(withCallWait(ctx, 10*time.Minute), "tools."+strings.TrimPrefix(method, "tools_"), p)
-	case "tools_import_folder":
-		var p protocol.ToolFolderImport
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, true, errors.New("invalid folder import")
-		}
-		p.Owner = d.ownerSessionID()
-		res, err = d.call(withCallWait(ctx, 90*time.Second), "tools.import_folder", p)
-	case "tools_read_file":
-		var p protocol.SkillTextRequest
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, true, errors.New("invalid file request")
-		}
-		p.Owner = d.ownerSessionID()
-		res, err = d.call(withCallWait(ctx, 90*time.Second), "tools.read_file", p)
-	case "tools_skill_details":
-		var p protocol.ToolSkillScan
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, true, errors.New("bad tools_skill_details")
-		}
-		p.Owner = d.ownerSessionID()
-		res, err = d.call(withCallWait(ctx, 30*time.Second), "tools.skill_details", p)
-	case "tools_import":
-		res, err = d.call(withCallWait(ctx, 90*time.Second), "tools.import", json.RawMessage(raw))
-	case "tools_versions":
-		res, err = d.call(ctx, "tools.versions", json.RawMessage(raw))
-	case "tools_export":
-		res, err = d.call(ctx, "tools.export", json.RawMessage(raw))
 	case "gateway_backup":
 		res, err = d.call(withCallWait(ctx, 10*time.Minute), "gateway.backup", json.RawMessage(raw))
-	case "tools_toggle", "tools_new_projects", "tools_projects":
-		var p map[string]any
-		if json.Unmarshal(raw, &p) != nil || p == nil {
-			return nil, true, errors.New("invalid skill request")
-		}
-		actor := proposalActor(ctx)
-		if actor == "" {
-			actor = "owner"
-		}
-		if lc.cto {
-			actor = "cto"
-		}
-		p["owner"] = d.ownerSessionID()
-		p["actor"] = actor
-		target := map[string]string{"tools_toggle": "tools.toggle", "tools_new_projects": "tools.new_projects", "tools_projects": "query.tools_projects"}[method]
-		res, err = d.call(withCallWait(ctx, 2*time.Minute), target, p)
-	case "tools_plan":
-		actor := proposalActor(ctx)
-		if actor == "" {
-			actor = "owner"
-		}
-		if lc.cto {
-			actor = "cto"
-		}
-		var p protocol.ToolPlanRequest
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, true, errors.New("bad tools_plan")
-		}
-		res, err = d.call(withCallWait(ctx, 2*time.Minute), "tools.plan", struct {
-			protocol.ToolPlanRequest
-			Actor string `json:"actor"`
-			Owner string `json:"owner"`
-		}{p, actor, d.ownerSessionID()})
-	case "tools_apply":
-		actor := proposalActor(ctx)
-		if actor == "" {
-			actor = "owner"
-		}
-		if lc.cto {
-			actor = "cto"
-		}
-		var p protocol.ToolPlanID
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, true, errors.New("bad tools_apply")
-		}
-		res, err = d.call(withCallWait(ctx, 2*time.Minute), "tools.apply", struct {
-			protocol.ToolPlanID
-			Actor string `json:"actor"`
-			Owner string `json:"owner"`
-		}{p, actor, d.ownerSessionID()})
-	case "tools_undo":
-		actor := proposalActor(ctx)
-		if actor == "" {
-			actor = "owner"
-		}
-		if lc.cto {
-			actor = "cto"
-		}
-		var p protocol.ToolUndoRequest
-		if json.Unmarshal(raw, &p) != nil || p.Item == "" {
-			return nil, true, errors.New("tools_undo needs item")
-		}
-		res, err = d.call(withCallWait(ctx, 2*time.Minute), "tools.undo", struct {
-			protocol.ToolUndoRequest
-			Actor string `json:"actor"`
-			Owner string `json:"owner"`
-		}{p, actor, d.ownerSessionID()})
 	case protocol.OpSkillArchiveUndo:
 		var p struct {
 			Change string `json:"change"`
@@ -562,18 +343,6 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			return nil, true, errors.New("skills_undo needs id")
 		}
 		res, err = d.skillsOwnerUndo(ctx, p.ID)
-	case "tools_history":
-		var p protocol.ToolHistoryRequest
-		if json.Unmarshal(raw, &p) != nil || p.Item == "" {
-			return nil, true, errors.New("tools_history needs item")
-		}
-		res, err = d.call(ctx, "tools.history", struct {
-			protocol.ToolHistoryRequest
-			Owner string `json:"owner"`
-		}{p, d.ownerSessionID()})
-		if err == nil {
-			res = d.withLocalBackups(res, p.Item)
-		}
 	case "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url", "apps.public.restore":
 		res, err = d.call(ctx, method, json.RawMessage(raw))
 	case "apps.list", "apps.pending", "apps.approve", "apps.refuse", "apps.revoke", protocol.OpAppsRename, protocol.OpAppsGrant, protocol.OpAppsUngrant:
@@ -1156,25 +925,6 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if data, err = d.call(ctx, "playbook.set", q); err == nil {
 			res = data
 			d.Logf("playbook.set model=%s harness=%s", q.Model, q.Harness)
-		}
-	case protocol.OpSessionPolicy:
-		// The policy is owner text that goes into the model's context every
-		// turn: only the owner at the keyboard sets it (decision 0014). The
-		// gate above refuses agent sessions, and no agent tool exists for it.
-		var q protocol.SessionPolicyRequest
-		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" {
-			return nil, true, errors.New("session_policy needs session_id")
-		}
-		var data json.RawMessage
-		if data, err = d.call(ctx, "session.policy", q); err == nil {
-			var out protocol.SessionPolicyResult
-			if err = json.Unmarshal(data, &out); err == nil {
-				res = out
-				d.policy.forget(q.SessionID)
-				if out.Saved {
-					d.Logf("session.policy session=%s scope=%s delegate=%s", q.SessionID, q.Scope, q.Policy.Delegate)
-				}
-			}
 		}
 	case protocol.OpCTOGraphHistory:
 		var p struct {

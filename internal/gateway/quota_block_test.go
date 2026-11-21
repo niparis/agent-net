@@ -13,7 +13,7 @@ import (
 // An agy worker that fails with the account's "Individual quota reached"
 // error blocks every agy model on that machine until the reset it names.
 func TestAgyAccountQuotaFailureRefusesNextAgyStart(t *testing.T) {
-	g, node := scopeGateway(t)
+	g, node := mcpGateway(t)
 	st := g.store
 	c := &clock{t: time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)}
 	st.now = c.now
@@ -66,7 +66,7 @@ func TestAgyAccountQuotaFailureRefusesNextAgyStart(t *testing.T) {
 		t.Fatalf("quota reading lacks the block: %+v", q)
 	}
 	// It ends at the reset time.
-	c.t = c.t.Add(160*time.Hour + 24*time.Minute + 5*time.Second)
+	c.advance(160*time.Hour + 24*time.Minute + 5*time.Second)
 	if err := start("agy", "claude-opus-5-5-high"); err != nil {
 		t.Fatalf("start after the reset: %v", err)
 	}

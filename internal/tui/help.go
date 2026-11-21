@@ -82,7 +82,7 @@ func (m Model) hints() []hint {
 			return append(hs, bindingHint(contextApps, "back"))
 		}
 	case m.mapOn && m.focus != focusCTO:
-		hs := []hint{bindingHint(contextCard, "sessions"), bindingHint(contextCard, "node tools")}
+		hs := []hint{bindingHint(contextCard, "sessions")}
 		if node, ok := m.mapNode(m.mp.selected); ok && node.Ref != nil && node.Ref.Kind == "repo" {
 			hs = append(hs, bindingHint(contextCard, "lead"))
 		}
@@ -132,8 +132,6 @@ func (m Model) hints() []hint {
 	case m.tab == graphTab:
 		tabs := hint{key: bindingHint(contextGlobal, "sessions tab").key + "-" + bindingHint(contextGlobal, "inbox tab").key, label: "tabs", prio: 1}
 		return []hint{tabs, cto, bindingHint(contextGraph, "help"), bindingHint(contextGraph, actQuit)}
-	case m.tab == toolsTab:
-		return m.toolsHints()
 	}
 	if _, ok := m.selectedProposal(); ok {
 		return []hint{bindingHint(contextProposal, "detail"), bindingHint(contextProposal, "approve"), bindingHint(contextProposal, "decline"), bindingHint(contextProposal, "approve all"), sessionHelp}
@@ -143,7 +141,7 @@ func (m Model) hints() []hint {
 	}
 	if m.tab == sessionsTab && m.sessionCell > 0 {
 		if a, ok := m.selectedAgent(); ok && !protocol.IsOwner(a.Harness) && a.Harness != "bot" {
-			if m.sessionCell == 3 && canChangeSessionAgent(a) {
+			if m.sessionCell == 2 && canChangeSessionAgent(a) {
 				return []hint{{key: "left/right", label: "cell"}, {key: "space", label: "next agent"}, {key: "esc", label: "name"}, sessionHelp, sessionQuit}
 			}
 			if m.sessionCell == 1 {
@@ -156,7 +154,6 @@ func (m Model) hints() []hint {
 				}
 				return []hint{{key: "left/right", label: "cell"}, {key: "space", label: rule + " -> " + next}, {key: "esc", label: "name"}, sessionHelp, sessionQuit}
 			}
-			return []hint{{key: "left/right", label: "cell"}, {key: "enter", label: "delegation policy"}, {key: "esc", label: "name"}, sessionHelp, sessionQuit}
 		}
 	}
 	pin := bindingHint(contextSessions, "pin")
@@ -192,11 +189,6 @@ func (m Model) helpLine(w int) string {
 	}
 	if m.archive != nil {
 		return clip(m.sessionsArchiveHints(), w)
-	}
-	if m.tab == toolsTab && !m.mapOn && !m.help {
-		if line, ok := m.toolsHelpLine(w); ok {
-			return line
-		}
 	}
 	if line, ok := m.noticeLine(w); ok {
 		return line
@@ -291,8 +283,6 @@ func (m Model) helpLine(w int) string {
 		return clip(m.rename.View()+sDim.Render("   enter saves, empty resets, esc cancels"), w)
 	case modeTrust:
 		return clip(sBold.Render(confirmName("Let ", m.confirmName, " act on peer requests without asking?", w)), w)
-	case modePolicy:
-		return sDim.Render(clip("left/right change  up/down or enter field  enter saves  esc cancels", w))
 	}
 	hs := m.hints()
 	if w <= 80 {
@@ -434,10 +424,6 @@ func (m Model) currentHelpSection() helpSection {
 		return m.helpContextSection(contextCard)
 	case m.tab == graphTab && m.mp.finding:
 		return m.helpContextSection(contextGraphFind)
-	case m.tab == toolsTab && m.tl.modal != nil:
-		return m.toolsHelpSection()
-	case m.tab == toolsTab && !m.tl.allTools:
-		return helpSection{title: "Tools", contexts: []keyContext{m.agentToolsContext()}}
 	}
 	return helpTabSection(m.tab)
 }
@@ -446,28 +432,12 @@ func (m Model) helpContextSection(context keyContext) helpSection {
 	return helpSection{title: m.helpSubsectionTitle(context), contexts: []keyContext{context}}
 }
 
-// toolsHelpSection names the Tools overlay on screen.
-func (m Model) toolsHelpSection() helpSection {
-	md := m.tl.modal
-	context := contextToolsPlan
-	switch {
-	case md.menu != nil:
-		context = contextToolsMenu
-	case md.form != nil:
-		context = contextToolsAdd
-	case md.picker != nil && !md.loading:
-		context = contextToolsPicker
-	}
-	return m.helpContextSection(context)
-}
-
 func helpSections() []helpSection {
 	return []helpSection{
 		{"Sessions", []keyContext{contextSessions}},
 		{"Graph", []keyContext{contextGraph, contextGraphFind, contextCard}},
 		{"Quotas", []keyContext{contextQuotas, contextWorkersLog}},
 		{"Messages", []keyContext{contextMessages}},
-		{"Tools", []keyContext{contextToolsAgents, contextToolsSkills, contextTools}},
 		{"Settings", []keyContext{contextSettings}},
 		{"Desk", []keyContext{contextInbox, contextHeld, contextSuggestion, contextOutcome, contextProposal, contextDelivery}},
 	}
@@ -491,7 +461,6 @@ func (m Model) helpTabSections() []helpSection {
 func (m Model) overlayContexts() []keyContext {
 	return []keyContext{
 		contextBody, contextApps, contextQualityDetails, contextProposalDetail, contextProposalHistory,
-		contextToolsPlan, contextToolsPicker, contextToolsMenu, contextToolsAdd, contextToolsDiscard, contextToolsFilter, contextToolsCosts,
 		contextCTO, contextHelp, contextConfirm, contextForm, contextTeams, contextFinder,
 	}
 }
@@ -537,14 +506,6 @@ func (m Model) helpSubsectionTitle(context keyContext) string {
 		return "Proposal detail"
 	case contextProposalHistory:
 		return "Proposal history"
-	case contextToolsPlan:
-		return "Tools plan"
-	case contextToolsPicker:
-		return "Tools picker"
-	case contextToolsMenu:
-		return "Tools menu"
-	case contextToolsAdd:
-		return "Tools add"
 	case contextCTO:
 		return m.ctoTitle() + " box"
 	case contextHelp:

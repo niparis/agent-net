@@ -45,7 +45,7 @@ func TestMergerRoutingAndRegistration(t *testing.T) {
 	c := r.submit(r.a, r.workerSubmit("feature", commitA)).Change.Change
 	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: stepAccept, Result: protocol.StepResultPass, Commit: commitA})
 	r.g.dispatchStepTasks(context.Background())
-	rows, err := r.s.db.Query(`SELECT session_id FROM delivery_step_messages WHERE change_id=? AND step='test'`, c.ID)
+	rows, err := r.s.db.Query(`SELECT session_id FROM `+stepNoticesSQL+` WHERE change_id=? AND step='test'`, c.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestMergerRoutingAndRegistration(t *testing.T) {
 		t.Fatal(err)
 	}
 	var n int
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM project_mergers`).Scan(&n); err != nil || n != 0 {
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM ` + mergerRowsSQL + ``).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("records=%d err=%v", n, err)
 	}
 }
@@ -188,7 +188,7 @@ func TestMergerLifecycleReassignsEveryPhase(t *testing.T) {
 				}
 				r.g.dispatchStepTasks(context.Background())
 				var messages int
-				if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE change_id=? AND step=? AND after_merge=? AND session_id=?`, c.ID, ref.Step, boolInt(after), next).Scan(&messages); err != nil || messages != 1 {
+				if err := r.s.db.QueryRow(`SELECT count(*) FROM `+stepNoticesSQL+` WHERE change_id=? AND step=? AND after_merge=? AND session_id=?`, c.ID, ref.Step, boolInt(after), next).Scan(&messages); err != nil || messages != 1 {
 					t.Fatalf("new owner notices=%d err=%v", messages, err)
 				}
 				claim.SessionID = next
@@ -315,9 +315,10 @@ func TestMergerConfiguredStopWithoutRegistration(t *testing.T) {
 	}
 }
 
-// Removing one machine's merger stops routing for the whole project, so a
-// registration on another machine must not stay behind without routing.
-func TestMergerStopClearsEveryMachine(t *testing.T) {
+// A repo has one merger. Registering a session on another machine replaces
+// the first one, and ending the registration, by a stop or by deleting its
+// session, leaves no merger behind without routing.
+func TestMergerStopClearsTheRegistration(t *testing.T) {
 	for _, action := range []string{"stop", "delete"} {
 		t.Run(action, func(t *testing.T) {
 			r := newDeliveryRig(t)
@@ -332,29 +333,33 @@ func TestMergerStopClearsEveryMachine(t *testing.T) {
 			if err := r.s.SetMerger(protocol.MergerSetRequest{Project: "demo", NodeID: r.b, SessionID: other}, "owner"); err != nil {
 				t.Fatal(err)
 			}
+			var registered string
+			if err := r.s.db.QueryRow(`SELECT session_id FROM ` + mergerRowsSQL + ` WHERE project='demo'`).Scan(&registered); err != nil || registered != other {
+				t.Fatalf("merger after the second registration = %q, %v; want %q", registered, err, other)
+			}
 			switch action {
 			case "stop":
-				if err := r.s.SetMerger(protocol.MergerSetRequest{Project: "demo", NodeID: r.a, Configure: true}, "owner"); err != nil {
+				if err := r.s.SetMerger(protocol.MergerSetRequest{Project: "demo", NodeID: r.b, Configure: true}, "owner"); err != nil {
 					t.Fatal(err)
 				}
 			case "delete":
-				if _, err := r.s.db.Exec(`DELETE FROM sessions WHERE id=?`, r.sonnet); err != nil {
+				if _, err := r.s.db.Exec(`DELETE FROM sessions WHERE id=?`, other); err != nil {
 					t.Fatal(err)
 				}
 			}
 			var n int
-			if err := r.s.db.QueryRow(`SELECT count(*) FROM project_mergers WHERE project='demo'`).Scan(&n); err != nil {
+			if err := r.s.db.QueryRow(`SELECT count(*) FROM ` + mergerRowsSQL + ` WHERE project='demo'`).Scan(&n); err != nil {
 				t.Fatal(err)
 			}
 			if n != 0 {
 				t.Fatalf("registrations=%d, want 0 after the project's merger was removed", n)
 			}
-			a, _, err := r.s.Agent(other)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if a.Type == "merger" {
-				t.Fatal("other machine's session stayed a merger without routing")
+			for _, id := range []string{r.sonnet, other} {
+				if a, ok, err := r.s.Agent(id); err != nil {
+					t.Fatal(err)
+				} else if ok && a.Type == "merger" {
+					t.Fatalf("session %s stayed a merger without routing", id)
+				}
 			}
 		})
 	}
@@ -388,7 +393,7 @@ func TestMergerPruneNotifiesCaller(t *testing.T) {
 		t.Fatalf("test task owner=%q, want /caller after pruning the merger", owner)
 	}
 	var notices int
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE change_id=? AND revision=? AND step='test' AND session_id=?`, c.ID, c.Revision, r.caller).Scan(&notices); err != nil {
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM `+stepNoticesSQL+` WHERE change_id=? AND revision=? AND step='test' AND session_id=?`, c.ID, c.Revision, r.caller).Scan(&notices); err != nil {
 		t.Fatal(err)
 	}
 	if notices != 1 {

@@ -49,7 +49,7 @@ func TestLearnedRedirectAndWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	learnedOutcome(t, s, a, b, "redirect", "backups belongs to infra", "infra")
-	c.t = c.t.Add(8 * 24 * time.Hour)
+	c.advance(8 * 24 * time.Hour)
 	learnedOutcome(t, s, a, b, "redirect", "backups belongs to infra", "infra")
 	if v := learnedRead(t, s, false); len(v) != 0 {
 		t.Fatalf("old redirect counted: %+v", v)
@@ -91,7 +91,7 @@ func TestLearnedMessageFlow(t *testing.T) {
 		}
 	}
 	deliver(a, b)
-	c.t = c.t.Add(8 * 24 * time.Hour)
+	c.advance(8 * 24 * time.Hour)
 	for i := 0; i < 4; i++ {
 		deliver(a, b)
 	}
@@ -147,7 +147,7 @@ func TestLearnedFlowExistingEdge(t *testing.T) {
 func TestLearnedRefusalWindowAndDistinctRequest(t *testing.T) {
 	s, c, a, b := learnedProjects(t)
 	learnedOutcome(t, s, a, b, "reject", "deployments", "")
-	c.t = c.t.Add(8 * 24 * time.Hour)
+	c.advance(8 * 24 * time.Hour)
 	learnedOutcome(t, s, a, b, "reject", "deployments", "")
 	m, _, err := send(s, a, b, "", "")
 	if err != nil {
@@ -178,7 +178,7 @@ func TestLearnedOutcomeUsesProfileProjects(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := s.db.Exec(`INSERT INTO profiles(session_id,project,updated_at) VALUES(?, 'app', 0),(?, 'ops', 0)`, a, b); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET announced_project=CASE id WHEN ? THEN 'app' ELSE 'ops' END WHERE id IN (?,?)`, a, a, b); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 3; i++ {

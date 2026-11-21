@@ -45,7 +45,7 @@ func snapshotSchemaVersion(t *testing.T, path string) int {
 	return version
 }
 
-// seedGatewayParts adds the CA, the server key and the skill repository to a
+// seedGatewayParts adds the CA and the server key to a
 // data directory, as the first gateway start does. A test that rewinds a store
 // and opens it through the gateway needs them for the automatic upgrade backup.
 func seedGatewayParts(t *testing.T, dir string, s *Store) {
@@ -56,13 +56,10 @@ func seedGatewayParts(t *testing.T, dir string, s *Store) {
 	if _, err := loadOrCreateServerKey(dir); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := openSkillStore(dir, s); err != nil {
-		t.Fatal(err)
-	}
 }
 
 // newGatewayDataDir starts a gateway once so the folder holds a database, a
-// skill repository and the CA like a real machine.
+// CA like a real machine.
 func newGatewayDataDir(t *testing.T, root string) string {
 	t.Helper()
 	dataDir := filepath.Join(root, "gateway")
@@ -105,9 +102,6 @@ func TestGatewayUpgradeWritesBackupBeforeMigrations(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(dir, file)); err != nil {
 			t.Errorf("backup is missing %s: %v", file, err)
 		}
-	}
-	if info, err := os.Stat(filepath.Join(dir, "skills.git")); err != nil || !info.IsDir() {
-		t.Errorf("backup is missing the skill repository: %v", err)
 	}
 	if got := snapshotSchemaVersion(t, filepath.Join(dir, "gateway.db")); got != old {
 		t.Fatalf("backup schema = %d, want the old %d: the snapshot was taken after the migration", got, old)

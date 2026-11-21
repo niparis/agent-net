@@ -3,7 +3,9 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 
@@ -93,7 +95,10 @@ func waitGraphCutoverOn(t *testing.T, g *Gateway) {
 func graphCutoverBackup(t *testing.T, g *Gateway) string {
 	t.Helper()
 	var backup string
-	if err := g.store.db.QueryRow(`SELECT value FROM gateway_state WHERE key='graph_ref_backup'`).Scan(&backup); err != nil {
+	// The settings fold deletes the empty backup row the state migration copied,
+	// so a gateway that has not cut over has no row at all.
+	err := g.store.db.QueryRow(`SELECT value FROM gateway_state WHERE key='graph_ref_backup'`).Scan(&backup)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		t.Fatal(err)
 	}
 	return backup
@@ -270,11 +275,7 @@ func TestGraphCutoverBackupDoesNotBlockHello(t *testing.T) {
 	if err := g.store.SetNodeHello(id, "test-host", "v0.4.145"); err != nil {
 		t.Fatal(err)
 	}
-	repo, err := g.skillRepository()
-	if err != nil {
-		t.Fatal(err)
-	}
-	repo.mu.Lock()
+	g.backupMu.Lock()
 	done := make(chan struct{})
 	go func() { defer close(done); g.checkGraphCutover(context.Background()) }()
 	// Wait until the check is running and has reached the backup.
@@ -296,7 +297,7 @@ func TestGraphCutoverBackupDoesNotBlockHello(t *testing.T) {
 		ws.CloseNow()
 	}
 	cancel()
-	repo.mu.Unlock()
+	g.backupMu.Unlock()
 	<-done
 	if err != nil {
 		t.Fatalf("hello blocked by backup: %v", err)
@@ -344,13 +345,9 @@ func TestGraphCutoverCloseWaitsForTheBackup(t *testing.T) {
 	now := time.Date(2026, 11, 8, 9, 0, 0, 0, time.UTC)
 	g, logs := autoCutoverGateway(t, now)
 	reportGraphNode(t, g, "fixture", "v0.4.145", true)
-	repo, err := g.skillRepository()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The backup takes the skill repository lock. Holding it keeps the cutover
-	// inside its backup until the test releases it.
-	repo.mu.Lock()
+	// The backup takes the backup lock. Holding it keeps the cutover inside its
+	// backup until the test releases it.
+	g.backupMu.Lock()
 	g.triggerGraphCutover(context.Background())
 	waitLink(t, "cutover check running", func() bool {
 		if g.graphCutoverCheckMu.TryLock() {
@@ -365,11 +362,11 @@ func TestGraphCutoverCloseWaitsForTheBackup(t *testing.T) {
 	go func() { defer close(closed); g.Close() }()
 	select {
 	case <-closed:
-		repo.mu.Unlock()
+		g.backupMu.Unlock()
 		t.Fatal("Close returned while the cutover was still in its backup")
 	case <-time.After(200 * time.Millisecond):
 	}
-	repo.mu.Unlock()
+	g.backupMu.Unlock()
 	select {
 	case <-closed:
 	case <-time.After(5 * time.Second):

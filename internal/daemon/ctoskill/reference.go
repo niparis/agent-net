@@ -94,10 +94,7 @@ func Reference() string {
 	w("`reports_to` is the org tree: each Agent has at most one parent, the tree has no cycle, and the top is `%s`. Mergers are agents named `<project>-merger` under the repo's top agent. Lead level comes from a `lead_set` grant, from being a team lead, or from being chief of staff (`%s`). `started_by` says `agent-net` or `owner`.\n\n", protocol.OrgRoot, strings.Join([]string{protocol.LeadLevelGrant, protocol.LeadLevelTeamLead, protocol.LeadLevelChief}, "`, `"))
 
 	w("## Delegation and workers\n\n")
-	w("`session_change` action `policy`, with `scope` `session` or `project`:\n\n")
-	w("- `delegate`: %s, %s or %s (empty means no mode)\n", protocol.DelegateOff, protocol.DelegateNative, protocol.DelegateWorkers)
-	w("- `coder_model` and `main_model`: loose model names, resolved on the machine of the session\n")
-	w("- `workers`: %s\n\n", strings.Join(protocol.WorkersLevels, ", "))
+	w("The permission level of workers started in a project is the repo setting `workers.sandbox_level`: %s.\n\n", strings.Join(protocol.WorkersLevels, ", "))
 	w("A worker start leaves harness, model, provider, effort and machine empty to let the picker choose. Naming one needs the owner's words in `owner_words`, or the start waits for the owner. The difficulty is judged automatically. `isolation` is `%s` or `%s`; `none` is for read-only or non-code work. `fixes` names a shipped change this work fixes with `fixes_severity` from 1 to 4, `continue` names an ended worker to continue, and `base` names the base branch. Worker harnesses: %s.\n\n", protocol.IsolationWorktree, protocol.IsolationNone, strings.Join(protocol.WorkerHarnesses, ", "))
 
 	w("## Worker profiles\n\n")
@@ -121,10 +118,8 @@ func Reference() string {
 	w("\n")
 	w("`harness_updates` is also an integration. Its saved field is inverted (`harness_updates_off`), so an older saved answer defaults to on.\n\n")
 
-	w("## Per-project tools and skills\n\n")
-	w("`tools_change` actions: plan, apply, undo, toggle, native_remove, new_projects, import.\n\n")
-	w("Kinds: %s. Scope is `global` or one or more projects. A project skill tracked by the repository is part of the repo; an untracked project skill is a local copy. `mcp_change` covers shared MCP servers; `tools_change` covers a project's own tools and skills.\n\n", codeList(toolKinds()))
-	w("`skills` actions: set, effective, undo. It stores inherited skill lists on global, team, repo and agent nodes; nothing is delivered to sessions yet. The CTO sets skills when the owner asks.\n\n")
+	w("## Skills\n\n")
+	w("`skill_archive` stores skill versions (add from a machine folder or a Git URL, list, read, remove, undo, intake, promote). `skills` actions: set, effective, undo. It stores inherited skill lists on global, team, repo and agent nodes, and a session gets the skills of its node in its own folder when it starts. The CTO sets skills when the owner asks. `mcp_change` covers shared MCP servers; every registered server is global.\n\n")
 
 	w("## Notes\n\n")
 	w("Scopes: %s. Kinds an agent writes: %s. The owner rule kind is written only by the owner. Limits: %d notes per find, %d titles per scope in a session's start text, %d similar notes on a write, and a note is stale after %d days. Nothing is deleted by age. Write with `agent_note_write` and read with `agent_notes_find`.\n\n", codeList([]string{protocol.NoteScopeAgent, protocol.NoteScopeProject, protocol.NoteScopeOwner}), codeList([]string{protocol.StandingKindFeedback, protocol.StandingKindFact, protocol.StandingKindReference}), protocol.NotesFindMax, protocol.NotesIndexPerScope, protocol.NotesSimilarMax, protocol.NotesStaleDays)
@@ -231,6 +226,9 @@ func writeSettingGroups(w func(string, ...any)) {
 	groups := map[string][]settings.Definition{}
 	var prefixes []string
 	for _, def := range settings.Standard().Definitions {
+		if def.Visibility == "internal" {
+			continue
+		}
 		prefix := keyPrefix(def.Key)
 		if _, ok := groups[prefix]; !ok {
 			prefixes = append(prefixes, prefix)
@@ -425,20 +423,5 @@ func askKinds() []string {
 		protocol.AskKindMachine,
 		protocol.AskKindCTOAlert,
 		protocol.AskKindQuotaStuck,
-	}
-}
-
-// toolKinds are the bundle kinds that travel through the skill store.
-func toolKinds() []string {
-	return []string{
-		protocol.InventorySkill,
-		protocol.InventoryMCP,
-		protocol.InventoryUser,
-		protocol.InventoryProject,
-		protocol.InventoryNative,
-		protocol.InventoryPlugin,
-		protocol.InventoryPackage,
-		protocol.InventorySystem,
-		protocol.InventoryFederation,
 	}
 }

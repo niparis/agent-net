@@ -138,7 +138,7 @@ func TestIntakeDeduplicatesByKindAndSubject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(5 * time.Minute)
+	c.advance(5 * time.Minute)
 	ev.Text = "Paired a phone again"
 	second, err := s.RecordIntake(ev)
 	if err != nil {
@@ -170,7 +170,7 @@ func TestCTOIntakeReadsOpenEntriesNewestFirst(t *testing.T) {
 		if _, err := s.RecordIntake(intakeEvent{Kind: protocol.IntakePhonePaired, Subject: subject, Text: subject}); err != nil {
 			t.Fatal(err)
 		}
-		c.t = c.t.Add(time.Minute)
+		c.advance(time.Minute)
 	}
 	if err := s.CloseIntake(protocol.IntakePhonePaired, "mid", intakeResolved); err != nil {
 		t.Fatal(err)
@@ -190,7 +190,7 @@ func intakeRig(t *testing.T) (*Store, *clock) {
 	t.Helper()
 	s, c := newTestStore(t)
 	if _, err := s.db.Exec(`INSERT INTO agents(id,display_name,created_at,updated_at) VALUES('a-net','agent-net lead',0,0),('a-shop','shop lead',0,0);
-		INSERT INTO repos(id,display_name,created_at,updated_at,owner_agent_id) VALUES('agent-net','agent-net',0,0,'a-net'),('shop','shop',0,0,'a-shop')`); err != nil {
+		INSERT INTO repos(id,display_name,created_at,updated_at,lead_agent_id) VALUES('agent-net','agent-net',0,0,'a-net'),('shop','shop',0,0,'a-shop')`); err != nil {
 		t.Fatal(err)
 	}
 	return s, c
@@ -317,18 +317,18 @@ func reportTwiceOverAnHour(t *testing.T, kind, subject string) {
 	if err := s.ReportIntake(node, r); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(30 * time.Minute)
+	c.advance(30 * time.Minute)
 	if err := s.ReportIntake(node, r); err != nil {
 		t.Fatal(err)
 	}
 	noCTOAlert(t, s)
-	c.t = c.t.Add(31 * time.Minute)
+	c.advance(31 * time.Minute)
 	if err := s.ReportIntake(node, r); err != nil {
 		t.Fatal(err)
 	}
 	requireOneCTOAlert(t, s, kind, "research/"+subject, "agent-net lead", before)
 	// More repeats keep the one alert.
-	c.t = c.t.Add(time.Hour)
+	c.advance(time.Hour)
 	if err := s.ReportIntake(node, r); err != nil {
 		t.Fatal(err)
 	}
@@ -365,7 +365,7 @@ func TestWakeMCPRepairFailureRepeatsOverAnHour(t *testing.T) {
 	if err != nil || e.Count != 1 {
 		t.Fatalf("entry %+v, %v", e, err)
 	}
-	c.t = c.t.Add(61 * time.Minute)
+	c.advance(61 * time.Minute)
 	open("two")
 	requireOneCTOAlert(t, s, protocol.IntakeMCPRepair, "research/agent-net", "agent-net lead", before)
 }
@@ -377,7 +377,7 @@ func TestWakeQuotaRepeatsOverAnHour(t *testing.T) {
 	if _, err := s.RecordIntake(ev); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(61 * time.Minute)
+	c.advance(61 * time.Minute)
 	if _, err := s.RecordIntake(ev); err != nil {
 		t.Fatal(err)
 	}
@@ -463,7 +463,7 @@ func TestDigestKindsNeverWake(t *testing.T) {
 			if _, err := s.RecordIntake(intakeEvent{Kind: kind, Subject: "x", Text: "x"}); err != nil {
 				t.Fatal(err)
 			}
-			c.t = c.t.Add(time.Hour)
+			c.advance(time.Hour)
 		}
 	}
 	noCTOAlert(t, s)
@@ -490,7 +490,7 @@ func TestQuotaExhaustionIsOneThread(t *testing.T) {
 		return e
 	}
 	first := stuck()
-	c.t = c.t.Add(61 * time.Minute)
+	c.advance(61 * time.Minute)
 	second := stuck()
 	if second.ID != first.ID || second.Stuck != first.Stuck || first.Stuck == "" {
 		t.Fatalf("two threads: %+v then %+v", first, second)
@@ -629,7 +629,7 @@ func TestQuotaFailureMidRunJoinsTheProviderThread(t *testing.T) {
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(10 * time.Minute)
+	c.advance(10 * time.Minute)
 	for _, session := range []string{"w1", "w2"} {
 		if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: session, Harness: "opencode", Model: "zai/glm-5",
 			Outcome: protocol.OutcomeFailed, Cause: protocol.CauseQuotaAuth, EndedAt: c.t.Unix()}); err != nil {

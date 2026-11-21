@@ -202,7 +202,7 @@ func (d *Daemon) settingsRevisionHasRule(ctx context.Context, rev int64) (bool, 
 	recipe := settings.Standard()
 	for _, h := range history {
 		def, ok := recipe.Definition(h.Key)
-		if !ok || def.Visibility == "owner" {
+		if !ok || def.OwnerOnly() {
 			return false, fmt.Errorf("owner preference is unavailable to CTO")
 		}
 		hasRule = hasRule || def.Kind != "advice"
@@ -222,7 +222,7 @@ func validateSettingsWrite(q protocol.SettingsWrite) (bool, error) {
 		if !ok {
 			return false, fmt.Errorf("unknown setting %s", c.Key)
 		}
-		if def.Visibility == "owner" {
+		if def.OwnerOnly() {
 			return false, fmt.Errorf("owner preference is unavailable to CTO")
 		}
 		if def.Kind == "rule" {

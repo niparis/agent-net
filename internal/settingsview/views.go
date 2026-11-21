@@ -41,7 +41,7 @@ func ViewsWithTarget(snapshot settings.Snapshot, history []protocol.SettingsHist
 	level, scope := requestedAddress(q, target)
 	out := []protocol.SettingView{}
 	for _, def := range settings.Standard().Definitions {
-		if (q.Key != "" && q.Key != def.Key) || (!owner && def.Visibility == "owner") {
+		if (q.Key != "" && q.Key != def.Key) || def.Visibility == "internal" || (!owner && def.OwnerOnly()) {
 			continue
 		}
 		e, err := snap.Resolve(def.Key, where)

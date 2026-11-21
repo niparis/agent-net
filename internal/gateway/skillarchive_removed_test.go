@@ -5,13 +5,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// removedFixture is one machine whose inventory lists the given folders of one
+// removedFixture is one machine that lists the given folders of one
 // skill name, and an archive that can take them.
 type removedFixture struct {
 	t       *testing.T
@@ -26,11 +25,11 @@ func newRemovedFixture(t *testing.T) *removedFixture {
 	t.Helper()
 	g := archiveGateway(t)
 	f := &removedFixture{t: t, g: g, dir: t.TempDir(), bundles: map[string][]byte{}}
-	f.node = intakeNode(t, g, "alpha", nil)
+	f.node = intakeNode(t, g, "alpha")
 	return f
 }
 
-// folder writes one skill folder, lists it in the machine's inventory and
+// folder writes one skill folder, lists it for the machine and
 // returns its content as the archive reads it.
 func (f *removedFixture) folder(name, key, body string) skillArchiveContent {
 	f.t.Helper()
@@ -43,10 +42,7 @@ func (f *removedFixture) folder(name, key, body string) skillArchiveContent {
 // intake runs one intake over the folders listed so far.
 func (f *removedFixture) intake() protocol.SkillArchiveMultiResult {
 	f.t.Helper()
-	if err := f.g.store.SetInventory(f.node, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: f.items}); err != nil {
-		f.t.Fatal(err)
-	}
-	archiveFakeNode(f.t, f.g, f.node, f.bundles)
+	archiveFakeNodeSources(f.t, f.g, f.node, f.bundles, userSources(f.items))
 	return archiveCall[protocol.SkillArchiveMultiResult](f.t, f.g, protocol.FrameSkillArchiveIntake, protocol.SkillArchiveIntake{By: "cto"})
 }
 
@@ -182,24 +178,6 @@ func TestSkillArchiveVersionNumbersAfterRemoveAndAdd(t *testing.T) {
 	}
 }
 
-// Codex and the agents keep built-in skills in .system folders. A machine whose
-// daemon lists no live folders reports them in its inventory as system items:
-// intake leaves them out.
-func TestSkillArchiveIntakeLeavesSystemItemsOut(t *testing.T) {
-	f := newRemovedFixture(t)
-	f.folder("mine", "claude", "mine")
-	system := f.folder("imagegen", "codex/.system", "built in")
-	for i := range f.items {
-		if f.items[i].Hash == system.Hash {
-			f.items[i].Source = protocol.InventorySystem
-		}
-	}
-	got := f.intake()
-	if len(got.Skills) != 1 || got.Skills[0].Name != "mine" || len(got.Skipped) != 0 {
-		t.Fatalf("intake took a system skill: %+v", got)
-	}
-}
-
 // Each stored skill has two figures: the name and description that every
 // session loads, and the whole bundle that loads only when it is used.
 func TestSkillArchiveListShowsContextAndSizeTokens(t *testing.T) {
@@ -234,7 +212,9 @@ func TestSkillArchiveGuardMigrationBackfills(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := db.Exec(`INSERT INTO skill_archive_changes(id,action,name,actor,at) VALUES('sc_1','remove','gone','cto',6)`); err != nil {
+	// The migration reads the undo log as it was when it ran.
+	if _, err := db.Exec(`CREATE TABLE skill_archive_changes (id TEXT PRIMARY KEY, action TEXT NOT NULL, name TEXT NOT NULL, actor TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL, undone_at INTEGER NOT NULL DEFAULT 0);
+		INSERT INTO skill_archive_changes(id,action,name,actor,at) VALUES('sc_1','remove','gone','cto',6)`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(skillArchiveGuardMigration); err != nil {

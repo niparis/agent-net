@@ -33,7 +33,9 @@ func TestPeerTrustMigratesOnceToWildcardRule(t *testing.T) {
 	if trust == "" {
 		t.Fatal("no trust migration")
 	}
-	if _, err = s.db.Exec(trust); err != nil {
+	// It reads profiles, which a later rework dropped.
+	restoreTablesAt(t, s.db, migrationVersion(t, sessionTablesMarker)-1, "profiles")
+	if _, err = s.db.Exec(trust + `DROP TABLE profiles;`); err != nil {
 		t.Fatal(err)
 	}
 	s.Close()

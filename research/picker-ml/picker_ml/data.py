@@ -170,7 +170,7 @@ def load(path: str) -> tuple[list[Task], dict]:
     # step is skipped: the failed step already counts (decision 0161).
     defects: dict[str, list[Event]] = {}
     for r in q("""SELECT session_id, severity, at FROM worker_defects
-                  WHERE moved_at = 0 AND auto_kind IS NOT 'test'"""):
+                  WHERE blame = 'worker' AND auto_kind IS NOT 'test'"""):
         defects.setdefault(r["session_id"], []).append(Event(r["at"], "defect", r["severity"]))
 
     # Failed accept, review or test steps count against the session that opened
@@ -193,12 +193,11 @@ def load(path: str) -> tuple[list[Task], dict]:
     with_change = {r["s"] for r in q("SELECT DISTINCT json_extract(origin, '$.session_id') s FROM delivery_changes") if r["s"]}
 
     usage: dict[str, dict] = {}
-    for r in q("SELECT session_id, usage FROM worker_usage"):
-        try:
-            t = json.loads(r["usage"])
-        except json.JSONDecodeError:
-            continue
-        if isinstance(t, dict) and any(t.values()):
+    for r in q("""SELECT session_id, MAX(usage_in) AS i, MAX(usage_out) AS o, MAX(usage_reasoning) AS r,
+                      MAX(usage_cache_read) AS cr, MAX(usage_cache_write) AS cw
+               FROM worker_runs WHERE session_id != '' GROUP BY session_id"""):
+        t = {"in": r["i"], "out": r["o"], "reasoning": r["r"], "cache_read": r["cr"], "cache_write": r["cw"]}
+        if any(t.values()):
             usage[r["session_id"]] = t
 
     starts: dict[str, dict] = {}

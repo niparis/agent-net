@@ -156,7 +156,7 @@ func TestBotDeliveryNoteAndUnreadRetention(t *testing.T) {
 	}
 	bot.Close()
 	httpServer.Close()
-	clock.t = clock.t.Add(25 * time.Hour)
+	clock.advance(25 * time.Hour)
 	if _, err := g.store.db.Exec(`UPDATE sessions SET online=0 WHERE id=?`, m.From); err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +235,7 @@ func TestBotSessionSurvivesGatewayRestartAndRevocation(t *testing.T) {
 	if err != nil || !ok || !row.Online {
 		t.Fatalf("recent bot after restart: %+v %v", row, err)
 	}
-	clock.t = clock.t.Add(11 * time.Minute)
+	clock.advance(11 * time.Minute)
 	row, ok, err = g.store.Agent(sid)
 	if err != nil || !ok || row.Online {
 		t.Fatalf("stale bot: %+v %v", row, err)
@@ -386,7 +386,7 @@ func TestAppsAuthenticationAndTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Second)
+	c.advance(time.Second)
 	srv := httptest.NewServer(testAppsHandler(g))
 	defer srv.Close()
 	for _, tc := range []struct {
@@ -523,7 +523,7 @@ func TestBotMessagesAndSessions(t *testing.T) {
 	}
 	s.Close()
 	srv.Close()
-	c.t = c.t.Add(11 * time.Minute)
+	c.advance(11 * time.Minute)
 	row, _, err = g.store.Agent(bot)
 	if err != nil || row.Online {
 		t.Fatalf("bot remains online %+v %v", row, err)

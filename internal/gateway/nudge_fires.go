@@ -45,11 +45,7 @@ CREATE INDEX IF NOT EXISTS delivery_evidence_session ON delivery_evidence(by_ses
 func recordNudgeFire(q askDB, kind, recipient, messageID string, at time.Time) error {
 	_, err := q.Exec(`INSERT OR IGNORE INTO nudge_fires(kind,recipient,agent_id,team_id,message_id,fired_at)
  SELECT ?,s.id,COALESCE(s.agent_id,''),
-  COALESCE((SELECT tm.team_id FROM team_members tm
-   JOIN teams t ON t.id=tm.team_id AND t.active=1
-   WHERE (tm.member_kind='agent' AND tm.member_id=s.agent_id)
-      OR (tm.member_kind='repo' AND tm.member_id=s.repo_id)
-   ORDER BY tm.team_id LIMIT 1),''),
+  COALESCE((SELECT t.id FROM teams t WHERE t.active=1 AND (t.id=(SELECT a.team_id FROM agents a WHERE a.id=s.agent_id) OR t.id=(SELECT r.team_id FROM repos r WHERE r.id=s.repo_id)) ORDER BY t.id LIMIT 1),''),
   ?,?
  FROM sessions s WHERE s.id=?`, kind, messageID, at.UnixNano(), recipient)
 	return err
@@ -113,7 +109,7 @@ func (s *Store) markNudgeFollows(since time.Time) error {
 		var kind string
 		var at int64
 		err := tx.QueryRow(`SELECT kind,at FROM (
- SELECT 'announce' AS kind, updated_at AS at FROM profiles WHERE session_id=?
+ SELECT 'announce' AS kind, announced_at AS at FROM sessions WHERE id=?
  UNION ALL
  SELECT 'message', created_at FROM messages WHERE sender=? AND type<>'ack'
  UNION ALL

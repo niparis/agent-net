@@ -3,7 +3,10 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -29,9 +32,7 @@ func (s *Store) claimWake(session string) (bool, error) {
 		return false, err
 	}
 	defer tx.Rollback()
-	res, err := tx.Exec(`INSERT INTO session_wakes(session_id,wake_attempted_at) VALUES(?,?)
- ON CONFLICT(session_id) DO UPDATE SET wake_attempted_at=excluded.wake_attempted_at
- WHERE session_wakes.wake_attempted_at<=?`, session, now.UnixNano(), now.Add(-wakeBackoff).UnixNano())
+	res, err := tx.Exec(`UPDATE sessions SET wake_attempted_at=? WHERE id=? AND wake_attempted_at<=?`, now.UnixNano(), session, now.Add(-wakeBackoff).UnixNano())
 	if err != nil {
 		return false, err
 	}
@@ -60,8 +61,8 @@ func wakeHarness(h string) bool { return protocol.WakeHarness(h) }
 // and delivers to it directly. A lookup error is false.
 func (s *Store) roleSession(id string) bool {
 	var held bool
-	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM owner_settings WHERE key=? AND value=?)
- OR EXISTS(SELECT 1 FROM project_mergers WHERE session_id=?)`, chiefSessionKey, id, id).Scan(&held)
+	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM gateway_state WHERE key=? AND value=?)
+ OR EXISTS(SELECT 1 FROM repos WHERE merger_session=?)`, chiefSessionKey, id, id).Scan(&held)
 	return err == nil && held
 }
 
@@ -128,6 +129,86 @@ func (g *Gateway) wakeForMessage(ctx context.Context, a protocol.AgentView, m pr
 	return g.wakeSessionAs(ctx, a, isLoopMessage(m), fromMessage)
 }
 
+// waitingReason says why an offline recipient will not be woken for a queued
+// message, so its sender is told at once and not at expiry. It is empty when a
+// wake is under way or can still start (the machine is away, or a wake ran
+// moments ago), because the message then waits for a reason the sender need
+// not act on.
+func (g *Gateway) waitingReason(a protocol.AgentView, m protocol.Message) string {
+	if a.Online || m.State != protocol.StateStored || !m.ExpiresAt.After(g.store.now()) {
+		return ""
+	}
+	switch {
+	case a.Worker != nil:
+		return "it is an ended worker, and a message does not start a worker. It is delivered only if the worker is started again"
+	case a.Harness == "pi" && g.autonomyWake(a):
+		return "it is offline, and Pi sessions are not woken by messages. It is delivered when the session starts again"
+	case !wakeHarness(a.Harness):
+		return ""
+	case !g.wakeAllowed(a, isLoopMessage(m) || g.autonomyWake(a)):
+		return "it is offline, and wake is off for this agent. It is delivered when the session starts again"
+	case g.wakeInFlight(a.SessionID):
+		return ""
+	}
+	if reason, ok := g.store.wakeFailure(a.SessionID); ok {
+		return "it is offline, and its last wake failed: " + strings.TrimSuffix(reason, ".") + ". It is delivered when the session starts again. The next message sent after " + strconv.Itoa(int(wakeBackoff.Minutes())) + " minutes asks for a wake again"
+	}
+	return ""
+}
+
+// tellWaiting gives the sender of m the early notice when waitingReason has one.
+func (g *Gateway) tellWaiting(ctx context.Context, a protocol.AgentView, m protocol.Message) {
+	reason := g.waitingReason(a, m)
+	if reason == "" {
+		return
+	}
+	notice, ok, err := g.store.WaitingNotice(m, reason)
+	if err != nil {
+		g.logLine("error", "where", "waiting notice", "msg", m.ID, "err", err)
+		return
+	}
+	if ok {
+		g.dispatch(ctx, notice)
+	}
+}
+
+// onlineWait is how long a wake that the machine accepted may take to bring the
+// session online (decision 0099). A machine can accept a wake and start
+// nothing, for instance when it holds the session live already, so the
+// gateway checks the result instead of trusting the answer.
+//
+// A cold Claude or Codex start on a loaded machine can take more than 30
+// seconds, so the wait is 2 minutes. A session that comes online later clears
+// the failure this wait records (see upsertSession).
+const onlineWait = 2 * time.Minute
+
+// awaitOnline waits until the session is online, up to the gateway's online
+// wait. It returns an error that says so when it is not. A read error is not a
+// failed wake and returns nil.
+func (g *Gateway) awaitOnline(ctx context.Context, session string) error {
+	wait := g.wakeOnlineWait
+	if wait <= 0 {
+		wait = onlineWait
+	}
+	deadline := time.NewTimer(wait)
+	defer deadline.Stop()
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		a, ok, err := g.store.Agent(session)
+		if err != nil || !ok || a.Online {
+			return nil
+		}
+		select {
+		case <-deadline.C:
+			return fmt.Errorf("the machine accepted the wake, but the session did not come online within %s", wait.Round(time.Second))
+		case <-ctx.Done():
+			return nil
+		case <-tick.C:
+		}
+	}
+}
+
 // isLoopMessage tells whether the reserved sender's message is a standing
 // loop tick. The owner set the loop, so it may wake a session the way an
 // autonomy wake does.
@@ -188,17 +269,24 @@ func (g *Gateway) wakeSessionAs(ctx context.Context, a protocol.AgentView, loop 
 	// still bounds the call. Every caller of dispatch gets this, so none of them
 	// needs its own copy.
 	wctx := context.WithoutCancel(ctx)
-	// The claim is removed when the call returns, on every path after this point.
-	// It is removed after the answer is recorded, so a receipt written while the
-	// claim is set can only say that a wake is under way.
+	// The claim is removed when the machine has answered, on every path after
+	// this point, and not later: a wake is over when the machine answers. The wait
+	// for the session to come online (awaitOnline) runs after the claim is gone,
+	// so it is no wake in flight: a message that arrives meanwhile neither joins
+	// it nor holds it. The claim is removed after the answer is recorded, so a
+	// receipt written while the claim is set can only say that a wake is under way.
 	go func() {
-		defer func() {
-			g.wakeMu.Lock()
-			if g.wakeClaims[a.SessionID].token == token {
-				delete(g.wakeClaims, a.SessionID)
-			}
-			g.wakeMu.Unlock()
-		}()
+		var once sync.Once
+		release := func() {
+			once.Do(func() {
+				g.wakeMu.Lock()
+				if g.wakeClaims[a.SessionID].token == token {
+					delete(g.wakeClaims, a.SessionID)
+				}
+				g.wakeMu.Unlock()
+			})
+		}
+		defer release()
 		cctx, cancel := context.WithTimeout(wctx, wakeTimeout)
 		defer cancel()
 		frame := map[string]string{"session_id": a.SessionID, "token": token}
@@ -216,9 +304,15 @@ func (g *Gateway) wakeSessionAs(ctx context.Context, a protocol.AgentView, loop 
 			g.wakeFailed(wctx, a.SessionID, token, err)
 			return
 		}
+		release()
 		var res protocol.StartedSession
 		if json.Unmarshal(raw, &res) == nil && res.Status == "needs_trust" && res.Path != "" {
 			g.raiseTrustAsk(a.SessionID, a.NodeID, a.Hostname, res.Path, res.Project, a.SessionID, nil)
+		}
+		if err := g.awaitOnline(wctx, a.SessionID); err != nil {
+			g.logLine("error", "where", "session wake", "session", a.SessionID, "err", err)
+			g.wakeFailed(wctx, a.SessionID, token, err)
+			return
 		}
 		if err := g.store.clearWakeFailure(a.SessionID); err != nil {
 			g.logLine("error", "where", "clear session wake failure", "session", a.SessionID, "err", err)
@@ -243,7 +337,7 @@ func (g *Gateway) wakeInFlight(session string) bool {
 func (g *Gateway) wakePending(ctx context.Context, node string) {
 	rows, err := g.store.db.Query(msgSelect+` JOIN sessions r ON r.id=m.recipient
  WHERE r.node_id=? AND r.online=0 AND r.harness IN ('claude','codex','opencode') AND r.worker=''
- AND NOT EXISTS (SELECT 1 FROM session_wakes f WHERE f.session_id=m.recipient AND f.wake_failed_at>0)
+ AND r.wake_failed_at=0
  AND m.state='stored' AND m.expires_at>? ORDER BY m.created_at,m.rowid`, node, g.store.now().UnixNano())
 	if err != nil {
 		g.logLine("error", "where", "wake pending", "err", err)

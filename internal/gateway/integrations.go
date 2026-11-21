@@ -1,9 +1,7 @@
 package gateway
 
 import (
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,33 +14,19 @@ import (
 // has, and the owner's daemon only answers the owner's command line or TUI for
 // the operator methods.
 
-const integrationsKey = "integrations"
+const integrationsKey = "owner.integrations"
 
 // Integrations reads the owner's answers. ok is false when nobody has answered
 // yet.
 func (s *Store) Integrations() (protocol.Integrations, bool, error) {
-	var raw string
-	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key = ?`, integrationsKey).Scan(&raw)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return protocol.Integrations{}, false, nil
-		}
-		return protocol.Integrations{}, false, err
-	}
 	var in protocol.Integrations
-	if err := json.Unmarshal([]byte(raw), &in); err != nil {
-		return protocol.Integrations{}, false, err
-	}
-	return in, true, nil
+	ok, err := ownerJSON(s.db, integrationsKey, &in)
+	return in, ok, err
 }
 
 // SetIntegrations stores the owner's answers for every machine.
 func (s *Store) SetIntegrations(in protocol.Integrations) error {
-	b, _ := json.Marshal(in)
-	_, err := s.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?,?,?)
-		ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-		integrationsKey, string(b), s.now().UnixNano())
-	return err
+	return s.setOwner(integrationsKey, in)
 }
 
 // nodeAuthed returns the node ID of the caller of an HTTP route that uses a

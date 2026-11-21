@@ -81,7 +81,7 @@ func (s *Store) buildPlaceIndex(repos []RepoRecord, agents []AgentRecord, now ti
 	if idx.agentLead, err = orgPairs(s.db, `SELECT id,COALESCE(lead_session,'') FROM agents`); err != nil {
 		return nil, err
 	}
-	if idx.agentParent, err = orgPairs(s.db, `SELECT source,target FROM graph_edges WHERE kind='reports_to'`); err != nil {
+	if idx.agentParent, err = agentParentsQ(s.db); err != nil {
 		return nil, err
 	}
 
@@ -114,7 +114,7 @@ func (s *Store) buildPlaceIndex(repos []RepoRecord, agents []AgentRecord, now ti
 		}
 	}
 
-	rows, err = s.db.Query(`SELECT team_id,member_kind,member_id FROM team_members ORDER BY team_id`)
+	rows, err = s.db.Query(`SELECT team_id,'repo',id FROM repos WHERE team_id<>'' UNION ALL SELECT team_id,'agent',id FROM agents WHERE team_id<>'' ORDER BY 1`)
 	if err != nil {
 		return nil, err
 	}
@@ -160,8 +160,8 @@ func (s *Store) buildPlaceIndex(repos []RepoRecord, agents []AgentRecord, now ti
 	rows.Close()
 
 	rows, err = s.db.Query(`SELECT s.id,COALESCE(s.agent_id,''),COALESCE(s.repo_id,''),s.online,s.worker,s.harness,COALESCE(s.limited_until,0),s.last_seen,
-		COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),NULLIF(s.title,''),NULLIF(s.repo_project,''),NULLIF(p.project,''),'')
-		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
+		COALESCE(NULLIF(s.name,''),NULLIF(s.title,''),NULLIF(s.repo_project,''),s.announced_project)
+		FROM sessions s
 		ORDER BY s.last_seen DESC,s.id`)
 	if err != nil {
 		return nil, err

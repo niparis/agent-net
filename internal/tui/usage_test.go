@@ -157,7 +157,6 @@ func TestGoldenHelp(t *testing.T) {
 	}
 	golden(t, "help_80x24", keys(newModel(80, 24), "?").testView())
 	golden(t, "help_120x40", keys(newModel(120, 40), "?").testView())
-	golden(t, "help_tools_120x40", keys(newModel(120, 40), "5", "?").testView())
 	golden(t, "help_graph_80x24", keys(newModel(80, 24), "2", "?").testView())
 	golden(t, "help_graph_120x40", keys(newModel(120, 40), "2", "?").testView())
 	golden(t, "help_all_120x40", keys(newModel(120, 40), "?", "?").testView())

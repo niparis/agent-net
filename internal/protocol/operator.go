@@ -39,7 +39,6 @@ const (
 	OpConversationMessages = "conversation_messages" // takes QueryConversationMessages, answers ConversationMessagesResult
 	OpMessage              = "message_status"        // takes QueryMessage, answers MessageResult
 	OpWorkers              = "workers"               // takes nothing, answers WorkersResult
-	OpToolsDifferences     = "tools_differences"     // owner-only summary of skill and MCP server differences
 
 	// Owner-only data (decision 0008): CPU and memory, the text of a session,
 	// the session counts. They share one gate with OpSend (decision 0008): the
@@ -54,10 +53,7 @@ const (
 	// OpSessionTrust turns peer trust on or off for a session (decision 0012).
 	// It changes what a session may do on a peer's request, so it is owner
 	// only and no agent tool calls it.
-	OpSessionTrust = "session_trust" // takes SessionTrustRequest, answers SessionTrustResult
-	// OpSessionPolicy sets the delegation policy of a session or its project
-	// (decision 0014). Owner only, no agent tool.
-	OpSessionPolicy    = "session_policy" // takes SessionPolicyRequest, answers SessionPolicyResult
+	OpSessionTrust     = "session_trust" // takes SessionTrustRequest, answers SessionTrustResult
 	OpSessionAgentSet  = "session_agent_set"
 	OpSessionAgentList = "session_agent_list"
 	// OpNotesCopy copies the agent-scope notes of one agent node to another.
@@ -202,8 +198,8 @@ const (
 )
 
 // OperatorMethods lists every operator method, for tests and docs.
-var OperatorMethods = []string{OpWorkerFloorsReset, OpOperatorUndo, OpMergerGet, OpMergerRestore, OpAppsPublicRestore, OpWorkerLog, OpProposalList, OpProposalAnswer, OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpConversations, OpConversationMessages, OpMessage, OpWorkers, OpToolsDifferences,
-	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpFolderTrust, OpFolderMCP, OpProcessStop, OpStandingOrders, OpSessionPolicy, OpSessionAgentSet, OpSessionAgentList, OpNotesCopy, OpNotesUncopy, OpSessionRename, OpNodeRename, OpMachineRemove, OpMachineRotate, OpProjectDisplayGet, OpProjectDisplaySet, OpFrictionFind, OpFrictionMark,
+var OperatorMethods = []string{OpWorkerFloorsReset, OpOperatorUndo, OpMergerGet, OpMergerRestore, OpAppsPublicRestore, OpWorkerLog, OpProposalList, OpProposalAnswer, OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpConversations, OpConversationMessages, OpMessage, OpWorkers,
+	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpFolderTrust, OpFolderMCP, OpProcessStop, OpStandingOrders, OpSessionAgentSet, OpSessionAgentList, OpNotesCopy, OpNotesUncopy, OpSessionRename, OpNodeRename, OpMachineRemove, OpMachineRotate, OpProjectDisplayGet, OpProjectDisplaySet, OpFrictionFind, OpFrictionMark,
 	OpHeldList, OpAsksList, OpChiefGet, OpChiefSet, OpAskHistory, OpChiefSorts, OpAskUndo, OpAskMark, OpAskDiscuss, OpDeskLog, OpDeskSettle, OpNudgeStats, OpHeldAnswer, OpLeadSet, OpTeamWrite, OpTeamHistory, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpDeliveryOwnerSet, OpMergerSet, OpGraphUndo, OpRepoCreate, OpRepoArchive, OpAgentCreate, OpAgentTombstone, OpScopeSet, OpScopeRemove,
 	OpNodeSettingsGet, OpNodeSettingsSet, OpSkillArchiveUndo, OpSkillsUndo, OpQualityGet, OpQualitySet, OpTimeZoneGet, OpTimeZoneSet,
 	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, "onboarding_get", "onboarding_set", "onboarding_restart", OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove, OpWorkerDefect, OpDifficultyJudgePick, OpJudgmentAdd, OpPermissionUndo, OpPermissionApply, OpSignInOpen, OpSignInComplete}

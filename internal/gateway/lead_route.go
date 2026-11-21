@@ -13,7 +13,7 @@ import (
 // authorized. The normal request gate then checks the actual recipient.
 func routeLead(tx *sql.Tx, m *protocol.Message, now time.Time, quota leadQuotaReader) (string, error) {
 	var senderRepo, senderAgent, harness, worker, cto string
-	err := tx.QueryRow(`SELECT COALESCE(repo_id,''),COALESCE(agent_id,''),harness,worker,COALESCE((SELECT value FROM owner_settings WHERE key='cto_session'),'') FROM sessions WHERE id=?`, m.From).Scan(&senderRepo, &senderAgent, &harness, &worker, &cto)
+	err := tx.QueryRow(`SELECT COALESCE(repo_id,''),COALESCE(agent_id,''),harness,worker,COALESCE((SELECT value FROM gateway_state WHERE key='cto_session'),'') FROM sessions WHERE id=?`, m.From).Scan(&senderRepo, &senderAgent, &harness, &worker, &cto)
 	if err != nil {
 		return "", err
 	}
@@ -143,13 +143,17 @@ func routeLead(tx *sql.Tx, m *protocol.Message, now time.Time, quota leadQuotaRe
 	}
 	// The target's repo team is the session context; otherwise use its Agent team.
 	var teamID, teamName, teamLead string
-	err = tx.QueryRow(`SELECT t.id,t.name,COALESCE(t.owner_agent_id,'') FROM teams t JOIN team_members tm ON tm.team_id=t.id WHERE t.active=1 AND ((tm.member_kind='repo' AND tm.member_id=?) OR (tm.member_kind='agent' AND tm.member_id=?)) ORDER BY CASE tm.member_kind WHEN 'repo' THEN 0 ELSE 1 END LIMIT 1`, repo, agent).Scan(&teamID, &teamName, &teamLead)
+	err = tx.QueryRow(`SELECT t.id,t.name,COALESCE(t.owner_agent_id,'') FROM teams t
+		LEFT JOIN repos r ON r.id=? AND r.team_id=t.id
+		LEFT JOIN agents a ON a.id=? AND a.team_id=t.id
+		WHERE t.active=1 AND (r.id IS NOT NULL OR a.id IS NOT NULL)
+		ORDER BY CASE WHEN r.id IS NOT NULL THEN 0 ELSE 1 END LIMIT 1`, repo, agent).Scan(&teamID, &teamName, &teamLead)
 	if err != nil && err != sql.ErrNoRows {
 		return "", err
 	}
 	if err == nil {
 		var inCrew bool
-		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM team_members WHERE team_id=? AND ((member_kind='repo' AND member_id=? AND member_id<>'') OR (member_kind='agent' AND member_id=? AND member_id<>'')))`, teamID, senderRepo, senderAgent).Scan(&inCrew)
+		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND team_id=? AND id<>'' UNION ALL SELECT 1 FROM agents WHERE id=? AND team_id=? AND id<>'')`, senderRepo, teamID, senderAgent, teamID).Scan(&inCrew)
 		if err != nil {
 			return "", err
 		}
@@ -175,8 +179,8 @@ func routeLead(tx *sql.Tx, m *protocol.Message, now time.Time, quota leadQuotaRe
 // queue and the wake on message resumes it, like a send to its ID.
 func (s *Store) resolveSessionName(name string) (string, error) {
 	rows, err := s.db.Query(`SELECT s.id,COALESCE(s.agent_id,''),s.online,s.worker,s.harness,COALESCE(n.hostname,'-'),s.cwd
-		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id LEFT JOIN nodes n ON n.id=s.node_id
-		WHERE COALESCE(NULLIF(p.name,''),s.name)=? AND s.archived_at=0`, name)
+		FROM sessions s LEFT JOIN nodes n ON n.id=s.node_id
+		WHERE s.name=? AND s.archived_at=0`, name)
 	if err != nil {
 		return "", err
 	}
@@ -283,7 +287,7 @@ func validateLeadAddress(tx *sql.Tx, address, recipient string, now time.Time) e
 func limitedNote(tx *sql.Tx, recipient string, now time.Time) (string, error) {
 	var until int64
 	var reason, name string
-	err := tx.QueryRow(`SELECT s.limited_until,s.limited_reason,COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),s.id) FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, recipient).Scan(&until, &reason, &name)
+	err := tx.QueryRow(`SELECT s.limited_until,s.limited_reason,COALESCE(NULLIF(s.name,''),s.id) FROM sessions s WHERE s.id=?`, recipient).Scan(&until, &reason, &name)
 	if err == sql.ErrNoRows {
 		return "", nil
 	}

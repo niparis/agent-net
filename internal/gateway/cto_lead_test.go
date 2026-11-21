@@ -130,11 +130,11 @@ func TestCTOLeadRequestRateHoldReleases(t *testing.T) {
 		t.Fatalf("rate hold became an owner ask: %+v %v", held, err)
 	}
 
-	c.t = c.t.Add(59 * time.Minute)
+	c.advance(59 * time.Minute)
 	if released, err := s.ReleaseCTOHolds(c.now()); err != nil || len(released) != 0 {
 		t.Fatalf("released before the window: %+v %v", released, err)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	released, err := s.ReleaseCTOHolds(c.now())
 	if err != nil || len(released) != 1 || released[0].ID != m.ID {
 		t.Fatalf("released after the window: %+v %v", released, err)

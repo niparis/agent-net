@@ -260,39 +260,6 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 				defer d.wg.Done()
 				d.onProjectsLayout(ctx, l, h.ID)
 			}()
-		case "node.tools_changed":
-			d.toolsFullNext.Store(true)
-			d.wakeTools()
-		case "node.tool_plan_scan":
-			d.wg.Add(1)
-			go func() { defer d.wg.Done(); d.onToolPlanScan(ctx, l, h) }()
-		case "node.tool_skill_scan":
-			d.wg.Add(1)
-			go func() { defer d.wg.Done(); d.onToolSkillScan(ctx, l, h, raw) }()
-		case "node.tool_plan_probes":
-			d.wg.Add(1)
-			go func() { defer d.wg.Done(); d.onToolPlanProbes(ctx, l, h, raw) }()
-		case "node.tool_plan_probe":
-			d.wg.Add(1)
-			go func() { defer d.wg.Done(); d.onToolPlanProbe(ctx, l, h, raw) }()
-		case "node.mcp_import_spec":
-			d.wg.Add(1)
-			go func() { defer d.wg.Done(); d.onMCPImportSpec(ctx, l, h, raw) }()
-		case "node.mcp_native_edit":
-			d.wg.Add(1)
-			go func() { defer d.wg.Done(); d.onMCPNativeEdit(ctx, l, h, raw) }()
-		case "node.skill_text":
-			d.wg.Add(1)
-			go func() { defer d.wg.Done(); d.onSkillText(ctx, l, h, raw) }()
-		case "node.skill_remove_copy":
-			d.wg.Add(1)
-			go func() { defer d.wg.Done(); d.onSkillRemoveCopy(ctx, l, h, raw) }()
-		case "node.skill_update_copy":
-			d.wg.Add(1)
-			go func() { defer d.wg.Done(); d.onSkillUpdateCopy(ctx, l, h, raw) }()
-		case "node.skill_folder":
-			d.wg.Add(1)
-			go func() { defer d.wg.Done(); d.onSkillFolder(ctx, l, h, raw) }()
 		case protocol.FrameNodeSkillSources:
 			d.wg.Add(1)
 			go func() { defer d.wg.Done(); d.onSkillSources(ctx, l, h, raw) }()
@@ -497,7 +464,6 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 		}
 	}
 	d.scheduleCTOPresence()
-	d.wakeToolsPlan()
 	if _, now := d.inventory(); now != gen {
 		// Detection ended while the handshake ran, so hello did not carry it.
 		d.publishHarnesses(rctx)

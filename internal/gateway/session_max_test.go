@@ -152,7 +152,7 @@ func TestMaxCountExcludesWorkerMergerAndCTO(t *testing.T) {
 	if err := r.s.SetMerger(protocol.MergerSetRequest{Project: "demo", NodeID: r.a, SessionID: r.sonnet}, "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_session',?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, r.caller); err != nil {
+	if _, err := r.s.db.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES('cto_session',?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, r.caller); err != nil {
 		t.Fatal(err)
 	}
 	limit, err := r.s.RepoAgentLimit("demo")

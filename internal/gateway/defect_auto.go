@@ -77,7 +77,7 @@ func (s *Store) addAutoDefect(tx *sql.Tx, d autoDefect) (bool, error) {
 		return false, err
 	}
 	now := s.now()
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM worker_defects WHERE session_id=? AND at>=? AND moved_at=0
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM worker_defects WHERE session_id=? AND at>=? AND blame='worker'
 		AND auto_change_id IS NULL`, worker, now.Add(-autoDefectManualWindow).Unix()).Scan(&n); err != nil || n > 0 {
 		return false, err
 	}
@@ -90,10 +90,9 @@ func (s *Store) addAutoDefect(tx *sql.Tx, d autoDefect) (bool, error) {
 		note = autoDefectWhy[d.kind]
 	}
 	_, err = tx.Exec(`INSERT INTO worker_defects
-		(run_id, session_id, caller, rater_model, harness, model, effort, difficulty, severity, note, at, cause, escape_phase,
+		(run_id, session_id, caller, rater_model, severity, note, at, cause, escape_phase,
 		 auto_change_id, auto_kind, auto_revision)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, facts.runID, worker, facts.caller, "", facts.harness,
-		facts.model, facts.effort, facts.difficulty, d.severity, note, now.Unix(),
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, facts.runID, worker, facts.caller, "", d.severity, note, now.Unix(),
 		causeOrUnknown(d.cause), protocol.DefectPhase(d.step, d.severity), d.changeID, d.kind, d.revision)
 	if err != nil {
 		return false, err

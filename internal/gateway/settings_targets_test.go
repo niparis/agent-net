@@ -149,18 +149,18 @@ func TestSettingsTargetSeedsExistingRecords(t *testing.T) {
 		t.Fatal(err)
 	}
 	var network int
-	if err = s.db.QueryRow(`SELECT COUNT(*) FROM settings_target_identity WHERE kind='network' AND id='network' AND token<>''`).Scan(&network); err != nil || network != 1 {
+	if err = s.db.QueryRow(`SELECT COUNT(*) FROM gateway_state WHERE key='` + networkTokenKey + `' AND value<>''`).Scan(&network); err != nil || network != 1 {
 		t.Fatalf("network seed: %d %v", network, err)
 	}
 	for _, r := range repos {
 		var n int
-		if err = s.db.QueryRow(`SELECT COUNT(*) FROM settings_target_identity WHERE kind='repo' AND id=? AND token<>''`, r.ID).Scan(&n); err != nil || n != 1 {
+		if err = s.db.QueryRow(`SELECT COUNT(*) FROM repos WHERE id=? AND settings_token<>''`, r.ID).Scan(&n); err != nil || n != 1 {
 			t.Fatalf("repo seed %s: %d %v", r.ID, n, err)
 		}
 	}
 	for _, a := range agents {
 		var n int
-		if err = s.db.QueryRow(`SELECT COUNT(*) FROM settings_target_identity WHERE kind='agent' AND id=? AND token<>''`, a.ID).Scan(&n); err != nil || n != 1 {
+		if err = s.db.QueryRow(`SELECT COUNT(*) FROM agents WHERE id=? AND settings_token<>''`, a.ID).Scan(&n); err != nil || n != 1 {
 			t.Fatalf("agent seed %s: %d %v", a.ID, n, err)
 		}
 	}

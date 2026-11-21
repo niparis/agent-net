@@ -48,14 +48,14 @@ func backNote(t *testing.T, s *Store, id string) string {
 func TestRoutedAskWithOfflineHolderGoesBackToChief(t *testing.T) {
 	s, c, chief, carol, ask, _ := holderRig(t)
 	setOffline(t, s, carol, c.t)
-	c.t = c.t.Add(testStuckLimit - time.Minute)
+	c.advance(testStuckLimit - time.Minute)
 	if _, err := s.chiefStuckWork(c.t, testStuckLimit); err != nil {
 		t.Fatal(err)
 	}
 	if next := askNext(t, s, ask); next != carol {
 		t.Fatalf("next = %q before the limit, want carol", next)
 	}
-	c.t = c.t.Add(2 * time.Minute)
+	c.advance(2 * time.Minute)
 	if _, err := s.chiefStuckWork(c.t, testStuckLimit); err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestRoutedAskWithReplacedHolderGoesToReplacement(t *testing.T) {
 	if _, err := s.db.Exec(`UPDATE sessions SET replaced_by=? WHERE id=?`, dave, carol); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(testStuckLimit + time.Minute)
+	c.advance(testStuckLimit + time.Minute)
 	if _, err := s.db.Exec(`UPDATE sessions SET online=1, last_seen=? WHERE id=?`, c.t.UnixNano(), dave); err != nil {
 		t.Fatal(err)
 	}

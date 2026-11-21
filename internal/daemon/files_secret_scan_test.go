@@ -9,7 +9,7 @@ import (
 
 // leadRouteLine is line 44 of internal/gateway/lead_route.go: a SQL string with
 // key='cto_session'. The file scan refused it before the fix.
-const leadRouteLine = "	err := tx.QueryRow(`SELECT COALESCE(repo_id,''),COALESCE(agent_id,''),harness,worker,COALESCE((SELECT value FROM owner_settings WHERE key='cto_session'),'') FROM sessions WHERE id=?`, m.From).Scan(&senderRepo, &senderAgent, &harness, &worker, &cto)"
+const leadRouteLine = "	err := tx.QueryRow(`SELECT COALESCE(repo_id,''),COALESCE(agent_id,''),harness,worker,COALESCE((SELECT value FROM gateway_state WHERE key='cto_session'),'') FROM sessions WHERE id=?`, m.From).Scan(&senderRepo, &senderAgent, &harness, &worker, &cto)"
 
 // The file scan sends ordinary code that has key, token or auth names in it,
 // and refuses a real secret with a generic name, a PEM key or a known token.

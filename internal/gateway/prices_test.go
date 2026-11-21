@@ -132,7 +132,8 @@ func TestRunUsageIsKeptAndPricesTheTaskAndTheWorkerLog(t *testing.T) {
 		t.Fatalf("worker log entry: %+v", entry)
 	}
 
-	// Prices double: the table and the log follow.
+	// Prices double: the picker table follows. The log keeps the cost the run
+	// was recorded with.
 	if err := s.ReplacePrices([]protocol.ModelPrice{{ID: "anthropic/claude-opus-5.5", Prompt: 8e-6, Completion: 4e-5, CacheRead: 4e-7, CacheWrite: 1e-5}}); err != nil {
 		t.Fatal(err)
 	}
@@ -144,8 +145,8 @@ func TestRunUsageIsKeptAndPricesTheTaskAndTheWorkerLog(t *testing.T) {
 	for _, e := range log {
 		if e.Status == "done" {
 			seen++
-			if math.Abs(e.Cost-2*want) > 1e-9 {
-				t.Fatalf("worker log cost after the price change: %v", e.Cost)
+			if math.Abs(e.Cost-want) > 1e-9 {
+				t.Fatalf("worker log cost after the price change: %v, want the recorded %v", e.Cost, want)
 			}
 		}
 	}

@@ -157,7 +157,7 @@ func TestWorkerRunGenerationEnd(t *testing.T) {
 	for _, path := range []string{"gateway", "delivery"} {
 		for _, report := range []int{1, 2, 0} {
 			t.Run(fmt.Sprintf("%s/report%d", path, report), func(t *testing.T) {
-				g, node := scopeGateway(t)
+				g, node := mcpGateway(t)
 				in := protocol.SessionInfo{Harness: "opencode", NativeID: "worker", Status: "busy", Worker: &protocol.WorkerInfo{ID: "w_test", RunGeneration: 1}}
 				id, err := g.store.UpsertSession(node, in)
 				if err != nil {

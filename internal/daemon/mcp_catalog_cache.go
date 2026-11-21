@@ -6,15 +6,10 @@ import (
 	"sync"
 )
 
-// mcpCatalogCache keeps the gateway's answer to mcp.catalog for each catalog
-// key, so repeated tool-list reads cost the gateway nothing while the catalog
-// is unchanged.
-//
-// A key is the session's project: sessions of one project see the same
-// catalog, so they share one answer. A session with no project has a key of
-// its own, because the gateway may still give it a project from its profile.
-// The gateway tells the daemon when the catalog changes with mcp.changed, and
-// a new link is a fresh start, so the daemon drops every kept answer then.
+// mcpCatalogCache keeps the gateway's answer to mcp.catalog, so repeated
+// tool-list reads cost the gateway nothing while the catalog is unchanged. The
+// gateway tells the daemon when the catalog changes with mcp.changed, and a new
+// link is a fresh start, so the daemon drops every kept answer then.
 type mcpCatalogCache struct {
 	mu      sync.Mutex
 	gen     uint64

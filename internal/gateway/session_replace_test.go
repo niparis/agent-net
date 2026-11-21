@@ -70,7 +70,7 @@ func TestRestartMovesTheWorkWhenANewConversationGetsANewID(t *testing.T) {
 		t.Fatalf("the open change still names the old caller: %+v %v", ch.Change, err)
 	}
 	var claimed string
-	if err := r.s.db.QueryRow(`SELECT claimed_by FROM delivery_step_tasks WHERE change_id=? AND step='test' AND completed=0`, id).Scan(&claimed); err != nil || claimed != fresh {
+	if err := r.s.db.QueryRow(`SELECT claimed_by FROM delivery_step_tasks WHERE change_id=? AND step='test'`, id).Scan(&claimed); err != nil || claimed != fresh {
 		t.Fatalf("the claimed step still names the old caller: %q %v", claimed, err)
 	}
 	if _, err := r.report(r.a, protocol.StepReportRequest{SessionID: fresh, ChangeID: id, StepRef: testStep,
@@ -160,7 +160,7 @@ func TestOwnerReplaceSessionMovesTheWork(t *testing.T) {
 		t.Fatalf("the open change still names the old caller: %+v %v", ch.Change, err)
 	}
 	var claimed string
-	if err := r.s.db.QueryRow(`SELECT claimed_by FROM delivery_step_tasks WHERE change_id=? AND step='test' AND completed=0`, id).Scan(&claimed); err != nil || claimed != fresh {
+	if err := r.s.db.QueryRow(`SELECT claimed_by FROM delivery_step_tasks WHERE change_id=? AND step='test'`, id).Scan(&claimed); err != nil || claimed != fresh {
 		t.Fatalf("the claimed step still names the old caller: %q %v", claimed, err)
 	}
 	if _, err := r.report(r.a, protocol.StepReportRequest{SessionID: fresh, ChangeID: id, StepRef: testStep,
@@ -227,7 +227,7 @@ func duplicateStepNotices(t *testing.T, r *deliveryRig) (change, fresh, oldNotic
 	notice := func(session string) string {
 		t.Helper()
 		var id string
-		if err := r.s.db.QueryRow(`SELECT message_id FROM delivery_step_messages WHERE change_id=? AND step='accept' AND session_id=?`,
+		if err := r.s.db.QueryRow(`SELECT message_id FROM `+stepNoticesSQL+` WHERE change_id=? AND step='accept' AND session_id=?`,
 			change, session).Scan(&id); err != nil {
 			t.Fatalf("session %s has no accept notice: %v", session, err)
 		}
@@ -260,7 +260,7 @@ func TestReplaceSessionMergesDuplicateStepNotices(t *testing.T) {
 		t.Fatalf("replace: moved=%v err=%v", moved, err)
 	}
 	// Each step keeps one notice, the new session's.
-	rows, err := r.s.db.Query(`SELECT step,session_id,message_id FROM delivery_step_messages WHERE change_id=? ORDER BY step`, change)
+	rows, err := r.s.db.Query(`SELECT step,session_id,message_id FROM `+stepNoticesSQL+` WHERE change_id=? ORDER BY step`, change)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +321,7 @@ func TestReplaceSessionFailureMovesNothing(t *testing.T) {
 		t.Fatalf("a failed replace moved the change: %+v %v", ch.Change, err)
 	}
 	var session, state string
-	if err := r.s.db.QueryRow(`SELECT d.session_id,m.state FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id
+	if err := r.s.db.QueryRow(`SELECT d.session_id,m.state FROM `+stepNoticesSQL+` d JOIN messages m ON m.id=d.message_id
 		WHERE d.message_id=?`, oldNotice).Scan(&session, &state); err != nil || session != r.caller || state == "expired" {
 		t.Fatalf("a failed replace changed the old notice: %q %q %v", session, state, err)
 	}

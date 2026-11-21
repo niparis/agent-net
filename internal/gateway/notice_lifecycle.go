@@ -17,8 +17,8 @@ func (s *Store) retireObsoleteNotices() error {
 	res, err := s.db.Exec(fmt.Sprintf(`UPDATE messages SET state='expired'
  WHERE sender='agent-net' AND state IN ('stored','dispatched') AND
  (idem_key LIKE 'check:%%' AND (NOT EXISTS (
-   SELECT 1 FROM session_checks c WHERE c.session_id=messages.recipient AND c.check_waiting=1
-   AND messages.idem_key='check:' || c.session_id || ':' || c.check_day || ':' || c.check_day_count)
+   SELECT 1 FROM sessions c WHERE c.id=messages.recipient AND c.check_waiting=1
+   AND messages.idem_key='check:' || c.id || ':' || c.check_day || ':' || c.check_day_count)
    OR `+ownerBlockedSQL+`))`, "messages.recipient"))
 	if err != nil {
 		return err

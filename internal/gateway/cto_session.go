@@ -11,7 +11,7 @@ import (
 // owner has not started the CTO yet.
 func (s *Store) CTOSessionID() (string, error) {
 	var id string
-	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key='cto_session'`).Scan(&id)
+	err := s.db.QueryRow(`SELECT value FROM gateway_state WHERE key='cto_session'`).Scan(&id)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", err
 	}
@@ -27,7 +27,7 @@ func (s *Store) RegisterCTOSession(node string) (string, error) {
 	}
 	defer tx.Rollback()
 	var id string
-	err = tx.QueryRow(`SELECT value FROM owner_settings WHERE key='cto_session'`).Scan(&id)
+	err = tx.QueryRow(`SELECT value FROM gateway_state WHERE key='cto_session'`).Scan(&id)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", err
 	}
@@ -41,13 +41,20 @@ func (s *Store) RegisterCTOSession(node string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if _, err = tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_session',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, id, s.now().UnixNano()); err != nil {
+	if _, err = tx.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES('cto_session',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, id, s.now().UnixNano()); err != nil {
 		return "", err
 	}
-	if _, err = tx.Exec(`DELETE FROM profiles WHERE session_id=?`, id); err != nil {
+	if _, err = tx.Exec(`UPDATE sessions SET name_fixed=0, function='', announced_project='', capabilities='[]', task='', expertise='', task_started=0, announced_at=0 WHERE id=?`, id); err != nil {
 		return "", err
 	}
-	return id, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	// The agents list leaves the CTO out of its repo counts and the network map
+	// shows its node. A move to another machine changes neither the session's
+	// graph columns nor the map's own tables.
+	s.bumpStateTopics(protocol.TopicAgents, protocol.TopicGraph)
+	return id, nil
 }
 
 // RoleNetwork reads which role sessions exist, for setup to tell a new
@@ -61,6 +68,6 @@ func (s *Store) RoleNetwork() (protocol.RoleNetwork, error) {
 	if out.ChiefSession, err = chiefSession(s.db); err != nil {
 		return out, err
 	}
-	err = s.db.QueryRow(`SELECT COUNT(*) FROM project_mergers`).Scan(&out.Mergers)
+	err = s.db.QueryRow(`SELECT COUNT(*) FROM repos WHERE merger_session<>''`).Scan(&out.Mergers)
 	return out, err
 }

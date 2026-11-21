@@ -24,7 +24,7 @@ func (s *Store) stepWaiting(t nodeTaskTarget) (bool, string, error) {
 	var reason string
 	var at, until int64
 	var active int
-	err := s.db.QueryRow(`SELECT waiting_reason,waiting_at,waiting_until,NOT (`+s.stepNotWaitingAt()+`) FROM delivery_step_tasks t WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=? AND completed=0`, t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge)).Scan(&reason, &at, &until, &active)
+	err := s.db.QueryRow(`SELECT waiting_reason,waiting_at,waiting_until,NOT (`+s.stepNotWaitingAt()+`) FROM delivery_step_tasks t WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?`, t.id, t.revision, t.ref.Step, t.ref.For, boolInt(t.ref.AfterMerge)).Scan(&reason, &at, &until, &active)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, "", nil
 	}
@@ -92,7 +92,7 @@ func (s *Store) reportStepWaiting(machine string, q protocol.StepReportRequest) 
 		return protocol.StepReportResult{}, err
 	}
 	if !found {
-		return protocol.StepReportResult{}, reject("no ready node task for %s", q.StepRef)
+		return protocol.StepReportResult{}, missingTaskError(tx, c, q.StepRef, "no ready node task for %s")
 	}
 	var until int64
 	if q.Until != "" {
@@ -103,7 +103,7 @@ func (s *Store) reportStepWaiting(machine string, q protocol.StepReportRequest) 
 		return protocol.StepReportResult{}, err
 	}
 	// Retire a queued notice too: a report may arrive during the batch window.
-	if _, err := tx.Exec(`UPDATE messages SET state='expired' WHERE state IN ('stored','dispatched') AND id IN (SELECT message_id FROM delivery_step_messages WHERE change_id=? AND revision=? AND step=? AND for_step=? AND after_merge=?)`, c.ID, c.Revision, q.Step, q.For, boolInt(q.AfterMerge)); err != nil {
+	if _, err := tx.Exec(`UPDATE messages SET state='expired' WHERE state IN ('stored','dispatched') AND id IN (SELECT d.value FROM delivery_step_tasks t, json_each(t.notices) d WHERE t.change_id=? AND t.revision=? AND t.step=? AND t.for_step=? AND t.after_merge=?)`, c.ID, c.Revision, q.Step, q.For, boolInt(q.AfterMerge)); err != nil {
 		return protocol.StepReportResult{}, err
 	}
 	if err := tx.Commit(); err != nil {

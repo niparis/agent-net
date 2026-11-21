@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -67,9 +68,12 @@ func (s *Store) finishedBurnRuns(since time.Time) ([]burnRunRow, error) {
 	return out, rows.Err()
 }
 
-// quotaBudgets reads the learned budgets of one provider.
+// quotaBudgets reads the learned budgets of one provider. They are the rows of
+// quota_blocks with no machine: a budget belongs to the provider's window, not
+// to a machine, and it has no reset time.
+
 func (s *Store) quotaBudgets(provider string) ([]protocol.QuotaBudget, error) {
-	rows, err := s.db.Query(`SELECT window_seconds, tokens FROM quota_budgets WHERE provider = ?`, provider)
+	rows, err := s.db.Query(`SELECT window_seconds, budget_tokens FROM quota_blocks WHERE node_id = '' AND provider = ? AND budget_tokens > 0`, provider)
 	if err != nil {
 		return nil, err
 	}
@@ -104,9 +108,9 @@ func (s *Store) learnQuotaBudget(provider string, failedAt, until time.Time) err
 	if !ok {
 		return nil
 	}
-	_, err = s.db.Exec(`INSERT INTO quota_budgets (provider, window_seconds, tokens, at) VALUES (?, ?, ?, ?)
-		ON CONFLICT (provider, window_seconds) DO UPDATE SET tokens = excluded.tokens, at = excluded.at`,
-		provider, budget.WindowSeconds, budget.Tokens, failedAt.Unix())
+	_, err = s.db.Exec(`INSERT INTO quota_blocks (node_id, provider, window_id, resets_at, at, window_seconds, budget_tokens) VALUES ('', ?, ?, 0, ?, ?, ?)
+		ON CONFLICT (node_id, provider, window_id) DO UPDATE SET budget_tokens = excluded.budget_tokens, at = excluded.at`,
+		provider, "w"+strconv.FormatInt(budget.WindowSeconds, 10), failedAt.Unix(), budget.WindowSeconds, budget.Tokens)
 	return err
 }
 

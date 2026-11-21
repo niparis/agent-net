@@ -135,7 +135,7 @@ func TestAskMarkStoresCorrectionForTheChief(t *testing.T) {
 		t.Fatal("the mark has no log line")
 	}
 
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	chiefAsk(t, s, asker, "Merge PR 3?")
 	body, sent := sendDueChief(t, s, c.now().Add(time.Minute))
 	if !sent || !strings.Contains(body, "Owner corrections") || !strings.Contains(body, "did not need ask "+id) {
@@ -202,7 +202,7 @@ func TestChiefBatchReadsNewestFiveCorrectionsFromJudgments(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	chiefAsk(t, s, asker, "Merge PR 3?")
 	body, sent := sendDueChief(t, s, c.now().Add(time.Minute))
 	if !sent {

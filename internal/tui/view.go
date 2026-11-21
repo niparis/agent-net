@@ -734,3 +734,23 @@ func (m Model) partialLine(w int) string {
 	}
 	return sDim.Render(cell(strings.Join(names, ", ")+" slow or unavailable", w))
 }
+
+// ago is a short age: seconds, minutes or hours.
+func ago(d interface{ Seconds() float64 }) string {
+	s := int(d.Seconds())
+	switch {
+	case s < 60:
+		return fmt.Sprintf("%ds", max(s, 0))
+	case s < 3600:
+		return fmt.Sprintf("%dm", s/60)
+	}
+	return fmt.Sprintf("%dh", s/3600)
+}
+
+// orStr is s cleaned for the screen, or d when s is blank.
+func orStr(s, d string) string {
+	if strings.TrimSpace(s) == "" {
+		return d
+	}
+	return sanitize(s)
+}

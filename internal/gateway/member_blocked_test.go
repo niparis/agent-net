@@ -70,7 +70,7 @@ func TestBlockedMemberAnnounceSendsTheLeadOneMessage(t *testing.T) {
 		}
 	}
 	// The same text again, later, sends nothing.
-	c.t = c.t.Add(time.Hour)
+	c.advance(time.Hour)
 	announce(t, s, member, protocol.ProfileAnnounce{Task: deniedMerge})
 	announce(t, s, member, protocol.ProfileAnnounce{Task: "  " + deniedMerge + "  "})
 	if got := blockedNotices(t, s); len(got) != 1 {

@@ -105,7 +105,7 @@ func (s *Store) graphView(project string, historyPerNode int, all bool) (protoco
 
 // visibleTables are the tables visibleGraph reads: the graph, the nodes it
 // keeps, the sessions that keep a project visible (whole rows: their online flag
-// and last_seen are read), the CTO session (owner_settings) and the agent rows
+// and last_seen are read), the CTO session (gateway_state) and the agent rows
 // that graphContext adds (agentListTables). Keep it equal to those queries (see
 // readThrough).
 var visibleTables = tableUnion(graphTables, agentListTables, []string{"sessions"})

@@ -18,7 +18,7 @@ func TestSkillFolderResolvesSessionAgentWithBundles(t *testing.T) {
 	if _, err := s.db.Exec(`INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES('ag','Ag','',0,0,0)`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`UPDATE repos SET owner_agent_id='ag' WHERE id='alpha'`); err != nil {
+	if _, err := s.db.Exec(`UPDATE repos SET lead_agent_id='ag' WHERE id='alpha'`); err != nil {
 		t.Fatal(err)
 	}
 	setSkills(t, s, "global", "", []string{"beta"}, nil, nil)
@@ -43,7 +43,7 @@ func TestSkillFolderResolvesSessionAgentWithBundles(t *testing.T) {
 			t.Fatalf("%s: bundle: %v", skill.Name, err)
 		}
 		dir := t.TempDir()
-		if err := inventory.UnpackSkill(version.Data, dir); err != nil {
+		if err := inventory.UnpackSkillLimit(version.Data, dir, inventory.ArchiveLimit); err != nil {
 			t.Fatalf("%s: unpack: %v", skill.Name, err)
 		}
 		hash, err := inventory.SkillHash(dir)

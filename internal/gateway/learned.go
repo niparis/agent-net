@@ -241,7 +241,7 @@ func (s *Store) learnOutcome(tx *sql.Tx, replyID string, at int64) error {
 // learnedProjectSessions are the sessions of one project. A session's project
 // is its repo project, or else its profile project (the same rule as
 // sessionIdentityQuery).
-const learnedProjectSessions = `SELECT s.id FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE COALESCE(NULLIF(s.repo_project,''),p.project,'')=?`
+const learnedProjectSessions = `SELECT s.id FROM sessions s WHERE COALESCE(NULLIF(s.repo_project,''),s.announced_project)=?`
 
 // learnedFlowEvidence returns the messages that went between two projects in the
 // seven days up to at, oldest first. Only a message that reached its receiver
@@ -280,7 +280,7 @@ func learnedFlowEvidence(tx *sql.Tx, from, to string, at int64) ([]LearnedEviden
 // link yet. The messages between them are the evidence.
 func (s *Store) learnDelivery(tx *sql.Tx, id string, at int64) error {
 	var from, to string
-	err := tx.QueryRow(`SELECT COALESCE(NULLIF(a.repo_project,''),ap.project,''),COALESCE(NULLIF(b.repo_project,''),bp.project,'') FROM messages m JOIN sessions a ON a.id=m.sender JOIN sessions b ON b.id=m.recipient LEFT JOIN profiles ap ON ap.session_id=a.id LEFT JOIN profiles bp ON bp.session_id=b.id WHERE m.id=?`, id).Scan(&from, &to)
+	err := tx.QueryRow(`SELECT COALESCE(NULLIF(a.repo_project,''),a.announced_project),COALESCE(NULLIF(b.repo_project,''),b.announced_project) FROM messages m JOIN sessions a ON a.id=m.sender JOIN sessions b ON b.id=m.recipient WHERE m.id=?`, id).Scan(&from, &to)
 	if err == sql.ErrNoRows {
 		return nil
 	}

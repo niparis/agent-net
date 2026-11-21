@@ -24,7 +24,7 @@ func eventually(t *testing.T, what string, cond func() bool) {
 // failures counts the recorded wake failures of a session.
 func (p *wakeProbe) failures(id string) int {
 	var n int
-	if err := p.s.db.QueryRow(`SELECT COUNT(*) FROM session_wakes WHERE session_id=? AND wake_failed_at>0`, id).Scan(&n); err != nil {
+	if err := p.s.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id=? AND wake_failed_at>0`, id).Scan(&n); err != nil {
 		return 0
 	}
 	return n
@@ -71,8 +71,9 @@ func TestMessageReceiptSaysWakeIsOff(t *testing.T) {
 			if note := p.g.wakeReceiptNote(m, "", started); note != want {
 				t.Fatalf("note = %q, want %q", note, want)
 			}
-			if n := len(p.notices(t, p.from)); n != 0 {
-				t.Fatalf("sender got %d notices for a message that waits", n)
+			// The sender is also told at once, by one agent-net notice.
+			if n := p.notices(t, p.from); len(n) != 1 || !strings.Contains(n[0], "wake is off for this agent") {
+				t.Fatalf("sender notices = %q, want one about wake being off", n)
 			}
 		})
 	}
@@ -108,17 +109,20 @@ func TestWakeFailureIsKeptAndSenderIsToldOnce(t *testing.T) {
 
 	// The limit has passed, and the gateway restarts with the messages still
 	// queued. Nothing new asks for a wake, so none is made.
-	if _, err := p.s.db.Exec(`UPDATE session_wakes SET wake_attempted_at=0`); err != nil {
+	if _, err := p.s.db.Exec(`UPDATE sessions SET wake_attempted_at=0`); err != nil {
 		t.Fatal(err)
 	}
 	p.g.wakePending(context.Background(), p.node)
 	p.expectNoWake(t)
-	if n := len(p.notices(t, p.from)); n != 1 {
-		t.Fatalf("sender notices = %d, want 1", n)
+	// The sender has the failure notice and the notice for the second message.
+	// The restart adds none.
+	if n := len(p.notices(t, p.from)); n != 2 {
+		t.Fatalf("sender notices = %d, want 2", n)
 	}
 
 	// A new message after the limit asks again, and a wake that works clears the failure.
 	p.setRefusal("")
+	p.bringsSessionsOnline()
 	m, _, err = send(p.s, p.from, id, "third", "")
 	if err != nil {
 		t.Fatal(err)
@@ -140,10 +144,11 @@ func TestReceiptSaysWakingWhenMessageStartsAWake(t *testing.T) {
 
 	// The limit has passed. The machine now accepts the wake, but its answer waits
 	// until the receipt is written.
-	if _, err := p.s.db.Exec(`UPDATE session_wakes SET wake_attempted_at=0`); err != nil {
+	if _, err := p.s.db.Exec(`UPDATE sessions SET wake_attempted_at=0`); err != nil {
 		t.Fatal(err)
 	}
 	p.setRefusal("")
+	p.bringsSessionsOnline()
 	release := p.holdWakes()
 	defer release()
 	m, _, err := send(p.s, p.from, id, "second", "")

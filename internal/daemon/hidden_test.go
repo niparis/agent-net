@@ -30,7 +30,7 @@ func TestHiddenItemsAreOwnerOnlyAndSharedByEveryMachine(t *testing.T) {
 		}
 	}
 	// A CLI launched in an agent session's process tree is refused by the same
-	// owner gate as session_policy.
+	// owner gate as session_trust.
 	n1.d.inSession = func(int) bool { return true }
 	if _, err := cli1.call("hidden_get", nil); err == nil || !strings.Contains(err.Error(), "inside an agent session") {
 		t.Fatalf("in-session CLI gate: %v", err)

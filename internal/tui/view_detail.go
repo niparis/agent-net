@@ -151,7 +151,7 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 	out = append(out, kv("repo", dashIfEmpty(m.agentProjectName(a))))
 	{
 		line := kv("agent", dashIfEmpty(a.AgentName))
-		if m.sessionCell == 3 && a.SessionID == m.selected {
+		if m.sessionCell == 2 && a.SessionID == m.selected {
 			line = sSel.Render(stripStyles(line))
 		}
 		out = append(out, line)
@@ -201,11 +201,6 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 	}
 	out = append(out, kv("trust", m.requestRuleBadge(a)))
 	out = append(out, kv("rule", m.wildcardRule(firstNonEmpty(a.Repo.Project, a.Profile.Project))))
-	delegate := "-"
-	if a.Delegation != nil {
-		delegate = a.Delegation.Delegate
-	}
-	out = append(out, kv("delegate", dashIfEmpty(delegate)))
 	// The authority is the text the session reads in its instructions, so the
 	// pane and the session cannot differ (decision 0166). It is a labelled row
 	// with the value wrapped in its own column.
@@ -230,18 +225,6 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 			note = " (not enforced yet)"
 		}
 		out = append(out, kv("sandbox", a.Worker.Permissions+note))
-	}
-	if a.Delegation != nil {
-		out = append(out, kv("policy", policySummary(a.Delegation)+""))
-		if a.Delegation.Main() != "" {
-			out = append(out, kv("main", a.Delegation.Main()))
-		}
-		if a.Delegation.CoderError != "" {
-			out = append(out, kv("", "coder model: "+a.Delegation.CoderError))
-		}
-		for _, s := range m.policySupport(a, a.Delegation) {
-			out = append(out, kv("", s))
-		}
 	}
 	out = append(out, kv("remote", dashIfEmpty(a.Repo.Remote)))
 	// A linked git worktree (not the main working tree), or a folder inside

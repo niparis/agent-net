@@ -86,15 +86,14 @@ func fixture(t *testing.T) string {
 	defer db.Close()
 	schema := `
 CREATE TABLE worker_runs (id INTEGER PRIMARY KEY, session_id TEXT, task_id TEXT, model TEXT, harness TEXT,
-  outcome TEXT, ended_at INTEGER, fix_count INTEGER);
+  outcome TEXT, ended_at INTEGER, fix_count INTEGER, usage_in REAL, usage_out REAL, usage_reasoning REAL, usage_cache_read REAL, usage_cache_write REAL);
 CREATE TABLE worker_assessments (session_id TEXT, run_id TEXT, started_at INTEGER, assessed_at INTEGER, d REAL,
   label TEXT, confidence TEXT, reasoning REAL, scope REAL, coupling REAL, uncertainty REAL, verification REAL, risk REAL);
-CREATE TABLE worker_defects (id INTEGER PRIMARY KEY, session_id TEXT, severity INTEGER, at INTEGER, moved_at INTEGER, auto_kind TEXT);
+CREATE TABLE worker_defects (id INTEGER PRIMARY KEY, session_id TEXT, severity INTEGER, at INTEGER, blame TEXT, auto_kind TEXT);
 CREATE TABLE delivery_changes (id TEXT, origin TEXT, state TEXT, project TEXT, updated_at INTEGER);
 CREATE TABLE delivery_evidence (change_id TEXT, step TEXT, result TEXT, at INTEGER);
-CREATE TABLE worker_usage (session_id TEXT PRIMARY KEY, usage TEXT, updated_at INTEGER);
 CREATE TABLE worker_starts (session_id TEXT, project TEXT);
-CREATE TABLE owner_settings (key TEXT PRIMARY KEY, value TEXT, updated_at INTEGER);
+CREATE TABLE setting_values (key TEXT NOT NULL, level TEXT NOT NULL, scope TEXT NOT NULL, item TEXT NOT NULL DEFAULT '', value TEXT NOT NULL, revision INTEGER NOT NULL, PRIMARY KEY (key, level, scope, item));
 CREATE TABLE model_prices (id TEXT PRIMARY KEY, prompt REAL, completion REAL, cache_read REAL, cache_write REAL, updated_at INTEGER);
 CREATE TABLE pick_candidates (run_id TEXT, pos INTEGER, name TEXT, harness TEXT, provider TEXT, model TEXT, effort TEXT,
   rule TEXT, bucket_lo REAL, bucket_hi REAL, cell_score REAL, cell_low REAL, cell_high REAL, cell_n INTEGER,
@@ -125,11 +124,10 @@ CREATE TABLE pick_candidates (run_id TEXT, pos INTEGER, name TEXT, harness TEXT,
 		{"s_b3", "big-model", "complete", 1793000005},
 	}
 	for _, task := range tasks {
-		exec(`INSERT INTO worker_runs(session_id,task_id,model,harness,outcome,ended_at,fix_count) VALUES(?,?,?,?,?,?,0)`,
+		exec(`INSERT INTO worker_runs(session_id,task_id,model,harness,outcome,ended_at,fix_count,usage_in,usage_out,usage_reasoning,usage_cache_read,usage_cache_write) VALUES(?,?,?,?,?,?,0,1000000,0,0,0,0)`,
 			task.session, "", task.model, "opencode", task.outcome, task.ended)
 		exec(`INSERT INTO worker_assessments(session_id,run_id,started_at,assessed_at,d,label,confidence,reasoning,scope,coupling,uncertainty,verification,risk)
 			VALUES(?,?,?,?,2.2,'normal','high',3,3,3,3,3,3)`, task.session, "k_"+task.session, task.ended*1e9, task.ended)
-		exec(`INSERT INTO worker_usage(session_id,usage,updated_at) VALUES(?, '{"in":1000000}', 0)`, task.session)
 	}
 	exec(`INSERT INTO model_prices(id,prompt,completion,cache_read,cache_write,updated_at) VALUES('test/deepseek-v4.1-flash',0.000001,0,0,0,0)`)
 	exec(`INSERT INTO model_prices(id,prompt,completion,cache_read,cache_write,updated_at) VALUES('test/big-model',0.000005,0,0,0,0)`)

@@ -49,7 +49,7 @@ func TestAppConsentAskClosesOnRefusalAndExpiry(t *testing.T) {
 			if finish == "refuse" {
 				err = s.RefusePending(id)
 			} else {
-				c.t = c.t.Add(11 * time.Minute)
+				c.advance(11 * time.Minute)
 				err = s.reconcileAsks()
 			}
 			if err != nil {

@@ -66,11 +66,7 @@ The repo lead is the repo's owner agent unless `lead_set` names another. The tea
 
 ## Delegation and workers
 
-`session_change` action `policy`, with `scope` `session` or `project`:
-
-- `delegate`: off, native or workers (empty means no mode)
-- `coder_model` and `main_model`: loose model names, resolved on the machine of the session
-- `workers`: sandboxed, no-network, read-only
+The permission level of workers started in a project is the repo setting `workers.sandbox_level`: sandboxed, no-network, read-only.
 
 A worker start leaves harness, model, provider, effort and machine empty to let the picker choose. Naming one needs the owner's words in `owner_words`, or the start waits for the owner. The difficulty is judged automatically. `isolation` is `worktree` or `none`; `none` is for read-only or non-code work. `fixes` names a shipped change this work fixes with `fixes_severity` from 1 to 4, `continue` names an ended worker to continue, and `base` names the base branch. Worker harnesses: opencode, claude, pi, codex, agy.
 
@@ -99,20 +95,16 @@ Desktop notifications are one owner preference per machine: `notification_settin
 | `claude_peer_messages` | Claude: accept messages from your other agents |
 | `codex_tools` | Codex: call agent-net tools without asking |
 | `claude_hint_hook` | Claude: hint which session to ask after an error |
-| `claude_policy_hook` | Claude: apply the delegation policy you set in the TUI |
+| `claude_policy_hook` | Claude: add your node's charter to each prompt |
 | `claude_needs_hook` | Claude: show "Needs you" in the TUI |
 | `claude_workers_mod` | Claude: show your workers above the prompt |
 | `quota_axi` | Quota: read your subscription quotas with quota-axi |
 
 `harness_updates` is also an integration. Its saved field is inverted (`harness_updates_off`), so an older saved answer defaults to on.
 
-## Per-project tools and skills
+## Skills
 
-`tools_change` actions: plan, apply, undo, toggle, native_remove, new_projects, import.
-
-Kinds: `skill`, `mcp`, `user`, `project`, `native`, `plugin`, `package`, `system`, `agent-net federation`. Scope is `global` or one or more projects. A project skill tracked by the repository is part of the repo; an untracked project skill is a local copy. `mcp_change` covers shared MCP servers; `tools_change` covers a project's own tools and skills.
-
-`skills` actions: set, effective, undo. It stores inherited skill lists on global, team, repo and agent nodes; nothing is delivered to sessions yet. The CTO sets skills when the owner asks.
+`skill_archive` stores skill versions (add from a machine folder or a Git URL, list, read, remove, undo, intake, promote). `skills` actions: set, effective, undo. It stores inherited skill lists on global, team, repo and agent nodes, and a session gets the skills of its node in its own folder when it starts. The CTO sets skills when the owner asks. `mcp_change` covers shared MCP servers; every registered server is global.
 
 ## Notes
 

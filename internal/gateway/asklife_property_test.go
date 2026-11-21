@@ -242,7 +242,7 @@ func (r *lifeRig) apply(e lifeEvent) string {
 	sid := r.sess[i]
 	// Every event happens in a later second than the one before it, so two
 	// events never share a created_at and a wait start stays distinct.
-	r.c.t = r.c.t.Add(time.Duration(1+r.steps%3) * time.Second)
+	r.c.advance(time.Duration(1+r.steps%3) * time.Second)
 	r.before = r.rows()
 	nowNs := r.c.now().UnixNano()
 	r.count(e, i)
@@ -314,8 +314,7 @@ func (r *lifeRig) apply(e lifeEvent) string {
 		r.must(err, "busy")
 
 	case opCheck:
-		_, err := r.s.db.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting) VALUES(?,?,1)
-			ON CONFLICT(session_id) DO UPDATE SET check_waiting=1`, sid, r.c.now().Unix())
+		_, err := r.s.db.Exec(`UPDATE sessions SET check_active=CASE WHEN check_waiting=0 AND check_active=0 THEN ? ELSE check_active END,check_waiting=1 WHERE id=?`, r.c.now().Unix(), sid)
 		r.must(err, "check")
 
 	case opAnnounce:
@@ -331,7 +330,7 @@ func (r *lifeRig) apply(e lifeEvent) string {
 		r.ended[i] = true
 
 	case opTick:
-		r.c.t = r.c.t.Add(lifeSteps[e.Arg%len(lifeSteps)])
+		r.c.advance(lifeSteps[e.Arg%len(lifeSteps)])
 		r.must(r.s.reconcileAsks(), "reconcile")
 
 	default:
@@ -459,7 +458,7 @@ func (r *lifeRig) liveEpoch(i int, text string) *lifeEpoch {
 
 func (r *lifeRig) checkArmed(sid string) bool {
 	var n int
-	err := r.s.db.QueryRow(`SELECT COALESCE((SELECT check_waiting FROM session_checks WHERE session_id=?),0)`, sid).Scan(&n)
+	err := r.s.db.QueryRow(`SELECT COALESCE((SELECT check_waiting FROM sessions WHERE id=?),0)`, sid).Scan(&n)
 	r.must(err, "read check")
 	return n == 1
 }

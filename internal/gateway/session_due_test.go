@@ -54,11 +54,11 @@ func TestDueTimeItemWakesSessionAtDueNotBefore(t *testing.T) {
 	item := dueAdd(t, s, a, protocol.DueArgs{What: "Flip ch_1 after the lead's review", Due: "45m"})
 	set := c.t
 
-	c.t = set.Add(44 * time.Minute)
+	c.set(set.Add(44 * time.Minute))
 	if got := tickDues(t, s); len(got) != 0 {
 		t.Fatalf("woke before the due time: %+v", got)
 	}
-	c.t = set.Add(46 * time.Minute)
+	c.set(set.Add(46 * time.Minute))
 	got := tickDues(t, s)
 	if len(got) != 1 {
 		t.Fatalf("got %d wakes at the due time, want 1: %+v", len(got), got)
@@ -79,7 +79,7 @@ func TestDueAfterReplyWakesOnlyAfterTheReply(t *testing.T) {
 	}
 	item := dueAdd(t, s, a, protocol.DueArgs{What: "Read bob's review", After: &protocol.DueAfter{Reply: req.ID}})
 
-	c.t = c.t.Add(time.Hour)
+	c.advance(time.Hour)
 	if got := tickDues(t, s); len(got) != 0 {
 		t.Fatalf("woke before any reply: %+v", got)
 	}
@@ -95,19 +95,19 @@ func TestDueAfterReplyWakesOnlyAfterTheReply(t *testing.T) {
 func TestDueIdleAfterWakeRaisesOneChiefAsk(t *testing.T) {
 	s, c, _, a, _, _ := followUpRig(t)
 	item := dueAdd(t, s, a, protocol.DueArgs{What: "Flip ch_1", Due: "10m"})
-	c.t = c.t.Add(11 * time.Minute)
+	c.advance(11 * time.Minute)
 	if got := tickDues(t, s); len(got) != 1 {
 		t.Fatalf("got %d wakes, want 1", len(got))
 	}
 	woke := c.t
 
-	c.t = woke.Add(14 * time.Minute)
+	c.set(woke.Add(14 * time.Minute))
 	tickDues(t, s)
 	if got := dueAsks(t, s); len(got) != 0 {
 		t.Fatalf("asked before 15 minutes without activity: %+v", got)
 	}
 
-	c.t = woke.Add(16 * time.Minute)
+	c.set(woke.Add(16 * time.Minute))
 	tickDues(t, s)
 	tickDues(t, s)
 	got := dueAsks(t, s)
@@ -127,14 +127,14 @@ func TestDueIdleAfterWakeRaisesOneChiefAsk(t *testing.T) {
 func TestDueSessionActivityAfterWakeRaisesNoAsk(t *testing.T) {
 	s, c, _, a, b, _ := followUpRig(t)
 	dueAdd(t, s, a, protocol.DueArgs{What: "Flip ch_1", Due: "10m"})
-	c.t = c.t.Add(11 * time.Minute)
+	c.advance(11 * time.Minute)
 	tickDues(t, s)
 
-	c.t = c.t.Add(2 * time.Minute)
+	c.advance(2 * time.Minute)
 	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "Flipping ch_1 now", Type: protocol.TypeRequest}); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(30 * time.Minute)
+	c.advance(30 * time.Minute)
 	tickDues(t, s)
 	tickDues(t, s)
 	if got := dueAsks(t, s); len(got) != 0 {
@@ -145,14 +145,14 @@ func TestDueSessionActivityAfterWakeRaisesNoAsk(t *testing.T) {
 func TestDueDoneBeforeTheAskRaisesNothing(t *testing.T) {
 	s, c, _, a, _, _ := followUpRig(t)
 	item := dueAdd(t, s, a, protocol.DueArgs{What: "Flip ch_1", Due: "10m"})
-	c.t = c.t.Add(11 * time.Minute)
+	c.advance(11 * time.Minute)
 	tickDues(t, s)
 
-	c.t = c.t.Add(3 * time.Minute)
+	c.advance(3 * time.Minute)
 	if _, err := s.SessionDue(a, protocol.DueArgs{Action: protocol.DueActionDone, ID: item.ID}); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(30 * time.Minute)
+	c.advance(30 * time.Minute)
 	tickDues(t, s)
 	if got := dueAsks(t, s); len(got) != 0 {
 		t.Fatalf("asked after the item was done: %+v", got)
@@ -169,7 +169,7 @@ func TestDueDoneBeforeTheAskRaisesNothing(t *testing.T) {
 func TestDueDoneOfAnotherSessionIsRefused(t *testing.T) {
 	s, c, _, a, b, _ := followUpRig(t)
 	item := dueAdd(t, s, a, protocol.DueArgs{What: "Flip ch_1", Due: "10m"})
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	if _, err := s.SessionDue(b, protocol.DueArgs{Action: protocol.DueActionDone, ID: item.ID}); err == nil {
 		t.Fatal("bob closed carol's due item")
 	}
@@ -178,10 +178,10 @@ func TestDueDoneOfAnotherSessionIsRefused(t *testing.T) {
 func TestDueOwnerBlockedRaisesOneChiefAskAndNoWake(t *testing.T) {
 	s, c, _, a, _, _ := followUpRig(t)
 	item := dueAdd(t, s, a, protocol.DueArgs{What: "Decide the merge", Due: "10m", Blocker: protocol.DueBlockerOwner})
-	c.t = c.t.Add(11 * time.Minute)
+	c.advance(11 * time.Minute)
 	wakes := tickDues(t, s)
 	wakes = append(wakes, tickDues(t, s)...)
-	c.t = c.t.Add(time.Hour)
+	c.advance(time.Hour)
 	wakes = append(wakes, tickDues(t, s)...)
 	if len(wakes) != 0 {
 		t.Fatalf("an owner-blocked item woke a session: %+v", wakes)

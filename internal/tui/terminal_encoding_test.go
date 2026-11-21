@@ -143,16 +143,6 @@ func TestShiftTabEncodings(t *testing.T) {
 			}
 		})
 
-		t.Run("worker_form_"+enc.name, func(t *testing.T) {
-			m := newModel(80, 24)
-			m.mode = modePolicy
-			m.pol = policyForm{cur: pfCoder}
-
-			res, _ := runEncodingProgram(t, m, enc.raw)
-			if res.pol.cur == pfCoder {
-				t.Fatalf("%s: Shift+Tab did not move to previous field in worker policy form", enc.name)
-			}
-		})
 	}
 }
 
@@ -167,26 +157,6 @@ func TestSpaceEncodings(t *testing.T) {
 	}
 
 	for _, enc := range encodings {
-		t.Run("tools_picker_"+enc.name, func(t *testing.T) {
-			m := newModel(80, 24)
-			m.tab = toolsTab
-			m.tl.modal = &toolsModal{
-				picker: &projPicker{
-					all: []string{"proj1", "proj2"},
-					sel: map[string]bool{},
-				},
-			}
-
-			if m.tl.modal.picker.sel["proj1"] {
-				t.Fatal("expected proj1 to start unselected")
-			}
-
-			res, _ := runEncodingProgram(t, m, enc.raw)
-			if !res.tl.modal.picker.sel["proj1"] {
-				t.Fatalf("%s: Space did not toggle selection in tools picker", enc.name)
-			}
-		})
-
 		t.Run("session_cell_"+enc.name, func(t *testing.T) {
 			src := &ruleSource{fakeSource: fakeSource{snap: fakeSnapshot()}}
 			m := New(src)
@@ -332,7 +302,7 @@ func TestBracketedPasteEncodings(t *testing.T) {
 	})
 }
 
-// 5. Number keys 1-8 switch tabs in all three encodings
+// 5. Number keys 1-6 switch tabs in all three encodings
 func TestNumberKeysEncodings(t *testing.T) {
 	type keyCase struct {
 		tab    int
@@ -347,9 +317,8 @@ func TestNumberKeysEncodings(t *testing.T) {
 		{graphTab, "2_graph", "2", "\x1b[27;1;50~", "\x1b[50u"},
 		{quotasTab, "3_quotas", "3", "\x1b[27;1;51~", "\x1b[51u"},
 		{messagesTab, "4_messages", "4", "\x1b[27;1;52~", "\x1b[52u"},
-		{toolsTab, "5_tools", "5", "\x1b[27;1;53~", "\x1b[53u"},
-		{settingsTab, "6_settings", "6", "\x1b[27;1;54~", "\x1b[54u"},
-		{inboxTab, "7_desk", "7", "\x1b[27;1;55~", "\x1b[55u"},
+		{settingsTab, "5_settings", "5", "\x1b[27;1;53~", "\x1b[53u"},
+		{inboxTab, "6_desk", "6", "\x1b[27;1;54~", "\x1b[54u"},
 	}
 
 	for _, tc := range cases {

@@ -20,7 +20,7 @@ func TestReplaceMergedDeliveryRetry(t *testing.T) {
 	// Give the old caller its after-merge task and an undelivered notice.
 	r.g.dispatchStepTasks(context.Background())
 	var notice string
-	if err := r.s.db.QueryRow(`SELECT d.message_id FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id
+	if err := r.s.db.QueryRow(`SELECT d.message_id FROM `+stepNoticesSQL+` d JOIN messages m ON m.id=d.message_id
 		WHERE d.change_id=? AND d.session_id=? AND d.after_merge=1 AND m.state IN ('stored','dispatched') LIMIT 1`, c.ID, r.caller).Scan(&notice); err != nil {
 		t.Fatalf("the old caller has no undelivered after-merge notice: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestReplaceMergedDeliveryRetry(t *testing.T) {
 	if _, err := r.s.db.Exec(`UPDATE delivery_step_tasks SET claimed_by=? WHERE change_id=? AND claimed_by=''`, r.caller, c.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.s.db.Exec(`UPDATE delivery_step_messages SET session_id=? WHERE change_id=? AND session_id=?`, r.caller, c.ID, fresh); err != nil {
+	if _, err := r.s.db.Exec(`UPDATE delivery_step_tasks SET notices=json_set(json_remove(notices,'$."'||?||'"'),'$."'||?||'"',json_extract(notices,'$."'||?||'"')) WHERE change_id=?`, fresh, r.caller, fresh, c.ID); err != nil {
 		t.Fatal(err)
 	}
 	// The repair run moves what the first one missed. It reports that it
@@ -61,7 +61,7 @@ func TestReplaceMergedDeliveryRetry(t *testing.T) {
 	if err := r.s.db.QueryRow(`SELECT claimed_by FROM delivery_step_tasks WHERE change_id=? AND claimed_by<>'' LIMIT 1`, c.ID).Scan(&claimed); err != nil || claimed != fresh {
 		t.Fatalf("retry did not move the step claim: %q %v", claimed, err)
 	}
-	if err := r.s.db.QueryRow(`SELECT session_id FROM delivery_step_messages WHERE change_id=? AND message_id=?`, c.ID, notice).Scan(&recipient); err != nil || recipient != fresh {
+	if err := r.s.db.QueryRow(`SELECT session_id FROM `+stepNoticesSQL+` WHERE change_id=? AND message_id=?`, c.ID, notice).Scan(&recipient); err != nil || recipient != fresh {
 		t.Fatalf("retry did not move the step notice: %q %v", recipient, err)
 	}
 	// A third run for the same pair has nothing left to move and leaves the
@@ -109,16 +109,16 @@ func TestDeliveryReminderRetiresObsoleteTasks(t *testing.T) {
 			// a stored step notice.
 			r.g.dispatchStepTasks(context.Background())
 			var pending, notices int
-			if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM delivery_step_tasks WHERE change_id=? AND completed=0`, c.ID).Scan(&pending); err != nil || pending == 0 {
+			if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM delivery_step_tasks WHERE change_id=?`, c.ID).Scan(&pending); err != nil || pending == 0 {
 				t.Fatalf("the change has no pending task to retire: %d %v", pending, err)
 			}
-			if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id
+			if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM `+stepNoticesSQL+` d JOIN messages m ON m.id=d.message_id
 				WHERE d.change_id=? AND m.state IN ('stored','dispatched')`, c.ID).Scan(&notices); err != nil || notices == 0 {
 				t.Fatalf("the change has no stored notice to expire: %d %v", notices, err)
 			}
 			// Past the reminder interval the same task becomes a reminder. It
 			// must not outlive the change either.
-			r.clk.t = r.clk.t.Add(2*time.Hour + time.Minute)
+			r.clk.advance(2*time.Hour + time.Minute)
 			r.g.dispatchStepTasks(context.Background())
 			r.g.flushStepTasks(r.caller)
 			var sent int
@@ -128,7 +128,7 @@ func TestDeliveryReminderRetiresObsoleteTasks(t *testing.T) {
 			}
 			// A stuck notice is a plain message with its own key, so the
 			// change's retirement must reach it too.
-			r.clk.t = r.clk.t.Add(13 * time.Hour)
+			r.clk.advance(13 * time.Hour)
 			r.g.dispatchStepTasks(context.Background())
 			var stuck int
 			if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE sender='agent-net'
@@ -138,15 +138,15 @@ func TestDeliveryReminderRetiresObsoleteTasks(t *testing.T) {
 			if _, err := r.s.db.Exec("UPDATE delivery_changes SET state=? WHERE id=?", state, c.ID); err != nil {
 				t.Fatal(err)
 			}
-			r.clk.t = r.clk.t.Add(3 * time.Hour)
+			r.clk.advance(3 * time.Hour)
 			r.g.dispatchStepTasks(context.Background())
-			if err := r.s.db.QueryRow("SELECT COUNT(*) FROM delivery_step_tasks WHERE change_id=? AND completed=0", c.ID).Scan(&pending); err != nil {
+			if err := r.s.db.QueryRow("SELECT COUNT(*) FROM delivery_step_tasks WHERE change_id=?", c.ID).Scan(&pending); err != nil {
 				t.Fatal(err)
 			}
 			if pending != 0 {
 				t.Fatalf("obsolete pending tasks: %d", pending)
 			}
-			if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM messages m JOIN delivery_step_messages d ON d.message_id=m.id
+			if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM messages m JOIN `+stepNoticesSQL+` d ON d.message_id=m.id
 				WHERE d.change_id=? AND m.state IN ('stored','dispatched')`, c.ID).Scan(&notices); err != nil {
 				t.Fatal(err)
 			}

@@ -80,13 +80,6 @@ func TestCTOLogUndoMachineRename(t *testing.T) {
 	}
 }
 
-func TestCTOLogUndoTools(t *testing.T) {
-	method, args, ok := logUndo(logEntry(1, "x", "tools_undo", `{"item":"tool_test"}`))
-	if !ok || method != "tools_undo" || !strings.Contains(string(args), `"item":"tool_test"`) {
-		t.Fatalf("undo: %q %s %v", method, args, ok)
-	}
-}
-
 func TestCTOLogUndoSkillArchive(t *testing.T) {
 	method, args, ok := logUndo(logEntry(1, "x", protocol.OpSkillArchiveUndo, `{"change":"sc_test"}`))
 	if !ok || method != protocol.OpSkillArchiveUndo || !strings.Contains(string(args), `"change":"sc_test"`) {
@@ -101,28 +94,8 @@ func TestCTOLogUndoSkillsSet(t *testing.T) {
 	}
 }
 
-func TestCTOLogUndoMCPNativeRemove(t *testing.T) {
-	method, args, ok := logUndo(logEntry(1, "x", "mcp_native_remove", `{"undo_plan_id":"plan_test"}`))
-	if !ok || method != "mcp_native_remove" || !strings.Contains(string(args), `"undo_plan_id":"plan_test"`) {
-		t.Fatalf("undo: %q %s %v", method, args, ok)
-	}
-}
-
-func TestCTOLogUndoNativeRefusalRemains(t *testing.T) {
-	src := &ctoUndoRefusedSource{}
-	m := logModel(src, logEntry(3, "CTO removed native MCP", "mcp_native_remove", `{"undo_plan_id":"plan_test"}`))
-	_, cmd := m.Update(tea.KeyPressMsg{Text: "u", Code: 'u'})
-	if cmd == nil {
-		t.Fatal("missing undo command")
-	}
-	msg, ok := cmd().(actionMsg)
-	if !ok || msg.err == nil || !strings.Contains(msg.err.Error(), "changed since apply") || len(src.methods) != 1 {
-		t.Fatalf("a refused undo was marked done: %+v %v", msg, src.methods)
-	}
-}
-
 func TestCTOLogUndoSettings(t *testing.T) {
-	for _, method := range []string{protocol.OpScoresSet, protocol.OpIntegrationsSet, protocol.OpPlaybookSet, "tools_new_projects"} {
+	for _, method := range []string{protocol.OpScoresSet, protocol.OpIntegrationsSet, protocol.OpPlaybookSet} {
 		got, _, ok := logUndo(logEntry(1, "x", method, `{}`))
 		if !ok || got != method {
 			t.Fatalf("%s undo not available", method)

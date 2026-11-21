@@ -124,8 +124,6 @@ func (g *Gateway) validateCTOProposal(ctx context.Context, nc *nodeConn, raw []b
 			return nil, reject("unknown or untrustable session")
 		}
 		return nil, nil
-	case "session_policy":
-		return g.handle(ctx, nc, "session.policy", q.Args)
 	case "held_answer":
 		return st.AnswerHeld(str("message_id"), str("action"), true)
 	case "inbox_answer":
@@ -171,56 +169,7 @@ func (g *Gateway) validateCTOProposal(ctx context.Context, nc *nodeConn, raw []b
 		if err := json.Unmarshal(q.Args, &p); err != nil {
 			return nil, err
 		}
-		p.Owner = q.Owner
-		p.SessionID = ""
 		return g.mcpCall(ctx, nc, p, true)
-	case "tools_toggle":
-		var p protocol.ToolToggleRequest
-		if err := json.Unmarshal(q.Args, &p); err != nil {
-			return nil, err
-		}
-		return g.toggleTool(ctx, p, "owner")
-	case "tools_new_projects":
-		var p protocol.ToolNewProjectsRequest
-		if err := json.Unmarshal(q.Args, &p); err != nil {
-			return nil, err
-		}
-		return g.setToolNewProjects(ctx, p, "owner")
-	case "tools_plan":
-		var p protocol.ToolPlanRequest
-		if err := json.Unmarshal(q.Args, &p); err != nil {
-			return nil, err
-		}
-		return g.planTool(ctx, p, "owner")
-	case "tools_apply":
-		return g.applyTool(ctx, str("plan_id"), "owner")
-	case "tools_undo":
-		return g.undoTool(ctx, str("item"), "owner")
-	case "mcp_import":
-		if (str("candidate") == "") == (str("plan_id") == "") {
-			return nil, reject("import needs a candidate or plan_id")
-		}
-		if str("candidate") != "" {
-			return g.planMCPImport(ctx, str("candidate"), "owner")
-		}
-		return g.applyMCPImport(ctx, str("plan_id"), "owner", q.Owner)
-	case "mcp_native_remove":
-		count := 0
-		for _, key := range []string{"candidate", "plan_id", "undo_plan_id"} {
-			if str(key) != "" {
-				count++
-			}
-		}
-		if count != 1 {
-			return nil, reject("native removal needs one of candidate, plan_id or undo_plan_id")
-		}
-		if str("candidate") != "" {
-			return g.planMCPNativeRemove(ctx, str("candidate"), "owner")
-		}
-		if str("plan_id") != "" {
-			return g.applyMCPNativeRemove(ctx, str("plan_id"), "owner", q.Owner)
-		}
-		return g.undoMCPNativeRemove(ctx, str("undo_plan_id"), "owner")
 	case "playbook_set":
 		var p protocol.PlaybookSetRequest
 		if err := json.Unmarshal(q.Args, &p); err != nil {
@@ -238,7 +187,7 @@ func (g *Gateway) validateCTOProposal(ctx context.Context, nc *nodeConn, raw []b
 				return nil, err
 			}
 			var cto string
-			if err := st.db.QueryRow(`SELECT s.id FROM sessions s JOIN owner_settings o ON o.key='cto_session' AND o.value=s.id WHERE s.node_id=?`, nc.id).Scan(&cto); err != nil {
+			if err := st.db.QueryRow(`SELECT s.id FROM sessions s JOIN gateway_state o ON o.key='cto_session' AND o.value=s.id WHERE s.node_id=?`, nc.id).Scan(&cto); err != nil {
 				return nil, reject("CTO network session is not registered on this node")
 			}
 			if !ok || m.To != cto {

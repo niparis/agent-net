@@ -29,13 +29,8 @@ func TestCTOOperatorActionSchemas(t *testing.T) {
 	}{
 		{"charter_history", `{"node":"architect"}`, true},
 		{"charter_history", `{"node":"architect","bogus":1}`, false},
-		{"tools_export", `{"item":"item-id","version":"hash"}`, true},
-		{"tools_export", `{"item":"item-id"}`, false},
 		{"gateway_backup", `{"path":"/tmp/backup"}`, true},
 		{"gateway_backup", `{}`, false},
-		{"tools_versions", `{"item":"item-id","bogus":1}`, false},
-		{"tools_import", `{"item":"item-id","location":{"node_id":"n_1","location":"/tmp/skill"}}`, true},
-		{"tools_import", `{"item":"item-id"}`, false},
 		{"friction_find", `{"project":"demo","area":"ci","limit":20}`, true},
 		{"friction_find", `{"project":"demo","bogus":1}`, false},
 	}

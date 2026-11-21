@@ -39,10 +39,10 @@ func TestSessionAgentCellAt80AndOwnerChoice(t *testing.T) {
 			m.snap.Agents[i].AgentName = "Home"
 		}
 	}
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 2; i++ {
 		m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyRight})
 	}
-	if m.sessionCell != 3 {
+	if m.sessionCell != 2 {
 		t.Fatalf("cell %d, want agent", m.sessionCell)
 	}
 	view := ansi.Strip(m.testView())

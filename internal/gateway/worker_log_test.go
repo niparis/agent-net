@@ -209,9 +209,9 @@ func TestWorkerLogCountsBriefDefectsOfTheCaller(t *testing.T) {
 	node, _, _ := s.CreateNode("test-machine", "linux")
 	caller := ratingCaller(t, s, node, "caller", "gpt-6.1-sol")
 	worker := ratingRun(t, s, node, caller, "test-model", "normal")
-	if _, err := s.db.Exec(`INSERT INTO worker_brief_defects(run_id,worker_session_id,caller,rater,severity,note,at)
-		VALUES((SELECT id FROM worker_runs WHERE session_id=? ORDER BY id DESC LIMIT 1),?,?,?,?,?,?)`,
-		worker, worker, caller, caller, 2, "the brief named the wrong branch", s.now().Unix()); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO worker_defects(run_id,session_id,caller,severity,note,at,blame)
+		VALUES((SELECT id FROM worker_runs WHERE session_id=? ORDER BY id DESC LIMIT 1),?,?,?,?,?,'brief')`,
+		worker, worker, caller, 2, "the brief named the wrong branch", s.now().Unix()); err != nil {
 		t.Fatal(err)
 	}
 	rows, err := s.WorkerLog(200)

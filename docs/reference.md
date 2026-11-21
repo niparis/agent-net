@@ -84,7 +84,7 @@ no per-machine setup is needed.
 
 ## Working rules and guidance
 
-Settings tab 6 has a Working rules and guidance section. Choose network or a
+Settings tab 5 has a Working rules and guidance section. Choose network or a
 repo, select a setting and press Enter to edit its value as JSON. The row shows
 the effective value and source. The selected row shows its history. Press `u`
 to undo the latest displayed revision and confirm; this undoes the entire batch.
@@ -181,12 +181,12 @@ operations described below also run immediately.
 
 Ordinary agent-shaped CTO reads retain their registered CTO caller identity
 and scope. `settings_change` with `area: operator` is a separate, explicit
-owner-operation path. It can read owner data, including the Inbox, inventory,
+owner-operation path. It can read owner data, including the Inbox,
 settings and other sessions' text. This access is private to the process-verified
 CTO. The CTO must not share owner data with peers unless the owner asks.
 
 Starting or entering the CTO through the owner gate registers one network
-session. The gateway keeps its ID in `owner_settings` as `cto_session`; the
+session. The gateway keeps its ID in `gateway_state` as `cto_session`; the
 hosting daemon keeps that ID in its `cto_network` state table. A later start
 on another machine moves the same session record there. Harness switches and
 new native conversations keep the network ID. Agent lists and `agent_session_get`
@@ -250,7 +250,7 @@ A request with only `harness` switches the active harness without changing
 either model. An empty model selects that harness's default. A request with only
 `title` changes the name on the owner's screens. The title is 1 to 24 printable
 characters, trimmed, and cannot contain `[agent-net` or `<cross-session`. Empty
-stores `CTO`. It is kept in the gateway's `owner_settings` as `cto_title`, not
+stores `CTO`. It is kept as the network setting `owner.cto_title` (with history and undo), not
 in the local daemon state. Agents never see it: agent-net's notes always say
 `CTO`.
 
@@ -526,7 +526,7 @@ names are `overview`, `sessions`, `session`, `proposals`, `feed`, `messages`,
 The parity and canary tests cover ordinary agent-shaped views. Those message
 reads remain limited to the CTO's own conversations and omit waiting-question
 contents. Owner operation reads run through `cto_op` and use the owner handlers,
-including protected-provider settings, Inbox, tool inventory and session text.
+including protected-provider settings, Inbox and session text.
 Ordinary agents do not gain access to these owner handlers.
 The items that wait for the owner are readable through
 `cto_proposals_find` with `kind: "all"`, so the CTO can answer them when the
@@ -551,7 +551,6 @@ action tool per area:
 | `cto_standing_orders` | `action: save` (with `text`), `read` (with `order_id`), `list` or `remove` (with `order_id`). See [standing orders](#standing-orders) |
 | `worker_change` | `action: start` or `stop` |
 | `answer` | `kind: held`, `inbox` or `outcome` |
-| `tools_change` | `action: plan`, `apply`, `undo` or `native_remove`. Import is in `cto_op` as `mcp_import`. |
 | `mcp_change` | `action: add`, `remove`, `test`, `enable` or `app_ask`. Connected app actions are in `cto_op`. |
 | `mcp_call` | one call on a shared MCP server |
 | `settings_change` | `area: values_write`, `values_undo`, `worker_profile_add`, `worker_profile_remove`, `worker_providers`, `protected_providers`, `score`, `integrations`, `notifications`, `cto`, `playbook`, `machine_name`, `invite` or `onboarding`. Machine removal, token rotation, `process_stop` and the owner operations are in `cto_op`. See [CTO process stop](#cto-process-stop) |
@@ -602,7 +601,6 @@ no-op. This is not an arbitrary RPC passthrough. The available families are:
 | Owner operation family | CTO operator methods |
 |---|---|
 | Owner data | `info`, `nodes`, `list`, `projects`, `events`, `message_status`, `workers`, `worker_log`, `sessions_archived`, `project_display_get`, `session_start_get`, `apps.pending`, `inbox_list`, `asks_list`, `desk_log`, `outcome_inbox`, `held_list`, `usage`, `usage_top`, `counts`, `session_text`, `conversations`, `conversation_messages`, `graph_view`, `graph_talk`, `graph_get`, `charter_history`, `edge_history`, `node_settings_get`, `cto_events`, `cto_graph_history`, `team_history`, `sign_in_list` |
-| Inventory and tools | `inventory_get`, `inventory_scan`, `mcp_import_candidates`, `tools_items`, `tools_item`, `tools_projects`, `tools_history`, `tools_accepted`, `tools_needs`, `tools_read_file`, `tools_summary`, `tools_skill_details`, `tools_versions`, `tools_differences`, `tools_update_plan`, `tools_keep_copy`, `tools_save_changed`, `tools_update_copies`, `tools_import_folder`, `tools_accept`, `tools_import`, `tools_export`, `mcp_coverage_plan`, `mcp_coverage_apply`, `mcp_coverage_undo` |
 | Session controls | `session_pin`, `sessions_archive` (including `restore` and `dry_run`), `session_stop`, `session_resume`, `session_agent_list`, `session_agent_set`, `notes_copy`, `notes_uncopy`, `session_enter`, `cto_enter`, `cto_send` |
 | Owner preferences and worker selection | `hidden_get/set`, `onboarding_get/set`, `quality_get/set`, `timezone_get/set`, `worker_floors_get/set/reset`, `difficulty_get/set`, `integrations_get`, `protected_providers_get`, `worker_providers_get`, `scores_get`, `scores_weekly`, `worker_rotation_get`, `difficulty_judge_pick`, `settings_owner_read`, `playbook_get` |
 | Teams, delivery and merger | `team_write`, `delivery_owner_set`, `merger_get`, `merger_set`, `merger_restore`, `edge_set`, `changes_owner_find`, `changes_owner_report`, `worker_defect`, `learned_list`, `learned_view`, `learned_answer` |
@@ -669,12 +667,12 @@ warnings naming them for the owner to resolve. Repos and Agents may share a name
 If discovery finds a tombstoned Agent with the Repo's ID, a new Repo is left
 unowned; discovery does not transfer ownership or revive the Agent.
 
-The retained references include `projects`, `sessions`, `profiles`,
-`project_policies`, `charter_values`,
+The retained references include `projects`, `sessions`,
+`charter_values`,
 `graph_edges`, `graph_history`, `setting_values`, `setting_history`,
 `delivery_changes`, `delivery_revisions`, `delivery_evidence`,
-`delivery_step_tasks`, `delivery_step_messages`, `delivery_step_inbox`,
-`project_mergers`, `worker_starts`, `worker_runs`, `inbox_items`, `desk_log`,
+`delivery_step_tasks`, `delivery_step_inbox`,
+`repos.merger_session`, `worker_starts`, `worker_runs`, `inbox_items`, `desk_log`,
 `learned_suggestions`, `findings`, `playbook` and `repos.owner_agent_id`.
 No ownership, edge, delivery, charter or session is silently moved or deleted.
 
@@ -766,14 +764,8 @@ These actions use owner-only daemon methods. New MCP wrappers are
 Adding and removing a shared MCP server are owner-only: use the TUI, or the CTO
 with `mcp_change`, which runs at once and leaves an Inbox notice with undo. Agent
 sessions can still list and test servers.
-`tools_import_folder` imports a folder on a chosen machine; `tools_keep_copy`
-authorizes the exact observed copies being replaced. Agent clients, including
-an agent running the owner CLI, cannot use them. Existing `tools_plan`,
-`tools_apply`, `tools_import`, `tools_read_file`, MCP import and undo methods
-continue to supply plans, changes and results. No setup files are added.
+No setup files are added.
 
-Graph and its node card show a Tools count. On an agent card, press `t` to open
-tab 5 filtered to `node:NAME` for that node.
 
 Press `2` to open the Graph tab, the network screen. Each node
 is an agent with a lasting identity and charter. The CTO is a fixed node named
@@ -822,7 +814,7 @@ Agent card keys: it explains the edge kinds and their arrow colors, the
 `normal`, `auto`, `ask` and `never` request rules, that a specific edge beats
 the `all projects` wildcard, that an edge never grants deploy or merge
 permission by itself, and what each charter field feeds (the per-turn context,
-a neighbour's 40-character view, a worker's brief, the Tools tab, or the agent
+a neighbour's 40-character view, a worker's brief, or the agent
 lookup). RECENT on the last row lists the newest
 changes. Leaving the card marks its current changes viewed. Esc returns to the
 Graph with the same node selected. Enter on the card's sessions line opens
@@ -830,7 +822,7 @@ Sessions filtered to the agent's project. `c` focuses the CTO box; Esc
 returns to Sessions.
 
 Hidden item preferences are shared by every machine's TUI through the
-gateway's `owner_settings` entry `hidden_items`. On Sessions, `h` hides or
+gateway's `gateway_state` entry `hidden_items`. On Sessions, `h` hides or
 unhides the selected session. The `v` view key includes hidden sessions as dim
 rows tagged `hidden` in its last two views. The title shows `hidden N` while
 preferences exist. On the card, `h` hides or unhides the selected project
@@ -838,7 +830,7 @@ node by name, and `H` includes hidden nodes when finding an agent to inspect or 
 session's preference is dropped after 30 days; project preferences remain
 until unhidden. The owner-only methods are `hidden_get` and `hidden_set`.
 
-The gateway also stores onboarding progress in `owner_settings`. The owner-only
+The gateway also stores onboarding progress in `gateway_state`. The owner-only
 operator methods `onboarding_get`, `onboarding_set`, and `onboarding_restart`
 read, update, and reset it across machines. The CTO proposes a reset with
 `settings_change` area `onboarding`. The TUI shows one tip in the CTO box. `c` focuses
@@ -887,7 +879,7 @@ The owner sees and edits them in the TUI, Settings, section "Standing orders and
 | `agent-net join STRING` | Join this machine to a gateway with a join string. |
 | `agent-net uninstall` | Remove services and integrations. |
 | `agent-net status` | Daemon connection, node ID and local sessions. `--json` for JSON. |
-| `agent-net list` | Sessions on the network, with their PROJECT (found from the session's folder). NAME is the project name (see [session names](#what-each-machine-reports)); duplicates are ` 2`, ` 3` and workers are `<project> worker <n>`. `--all` includes offline ones. A worker end report sets its session status to `ended`; a resume supplies its live status again. `--dormant` includes dormant ones (reachable, but quiet for 24 hours; OpenCode only). `--json` shows them always. `--harness`, `--text` filter. `--wide` adds branch, remote, folder (the session's folder), node and worktree. MODE (`foreground`, `background`, `unknown`, or `-` from an older machine) and MODEL show how the session runs. TRUST is `yes` for a session with [peer trust](#peer-trust-and-hints) on. POLICY is the [delegation policy](#delegation-policy) (`native:deepseek/deepseek-v4.1-flash(project)`), or `-`. `--wide` adds EXPERTISE. `--json`. |
+| `agent-net list` | Sessions on the network, with their PROJECT (found from the session's folder). NAME is the project name (see [session names](#what-each-machine-reports)); duplicates are ` 2`, ` 3` and workers are `<project> worker <n>`. `--all` includes offline ones. A worker end report sets its session status to `ended`; a resume supplies its live status again. `--dormant` includes dormant ones (reachable, but quiet for 24 hours; OpenCode only). `--json` shows them always. `--harness`, `--text` filter. `--wide` adds branch, remote, folder (the session's folder), node and worktree. MODE (`foreground`, `background`, `unknown`, or `-` from an older machine) and MODEL show how the session runs. TRUST is `yes` for a session with [peer trust](#peer-trust-and-hints) on. `--wide` adds EXPERTISE. `--json`. |
 | `agent-net nodes` | Machines with their agent-net version and installed harnesses (HARNESSES column). `--wide` lists each harness with version, path and the model count from the last detection at start (use `agent_machine_get` with `include: ["models"]` for the live list), and one extra row for every other copy of a harness (marked "other copy"); the primary copy is marked when there is more than one. `--json` has everything, including the model lists and each machine's worker `tracks` (see [the playbook and the track record](#the-playbook-and-the-track-record)). |
 | `agent-net nodes rename NODE [NAME]` | Give a machine a display name that every machine shows, or clear it (no `NAME`). `NODE` is a node ID or a name the machine is listed under. Same as the `N` key in the TUI. See [machine names](#machine-names). |
 | `agent-net projects` | Known projects, one per repository per machine: name, machine, path (the main working tree), git remote, SOURCE (`registered`, `seen` or `both`), which harnesses ran there, the linked worktrees where sessions ran, online sessions and last seen. `--name N` shows one project. `--json`. See [the project registry](#the-project-registry). |
@@ -905,8 +897,8 @@ The owner sees and edits them in the TUI, Settings, section "Standing orders and
 | `agent-net playbook set MODEL [--harness H] [--pin\|--unpin] TEXT...` | Write or replace the owner's playbook note for a model, or for a model on one harness (`H` is `opencode`, `claude`, `pi` or `codex`). With no text the note is removed. `--pin` keeps automatic learning from ever changing it. The note appears in the `agent_worker_start` or `agent-net start` result for that model, and has at most 1 KiB. `agent-net playbook get MODEL [--harness H]` prints it; `agent-net playbook pin\|unpin MODEL [--harness H]` pins or unpins the note that is stored. See [the playbook](#the-playbook-and-the-track-record). |
 | `agent-net messages` | Recent messages and their states. `--session ID`, `--limit N` (default 20), `--json`. |
 | `agent-net hint` | Not for you to run: the Claude Code hook that [setup can add](#what-setup-changes-on-your-machine). It reads the hook input on stdin and prints hook JSON only when it has a suggestion. See [peer trust and hints](#peer-trust-and-hints). |
-| `agent-net policy-hook` | Not for you to run: the Claude Code `UserPromptSubmit`, `PostCompact`, `SessionStart` (matcher `compact`) and `Stop` hooks that [setup can add](#what-setup-changes-on-your-machine). It reads the hook input on stdin. On a prompt it prints hook JSON when the session has a delegation policy or its node has a charter. On `Stop` it prints `{"decision":"block","reason":...}` once when the turn ended on a question to the owner that went to the chief (see [owner questions go to the chief](#owner-questions-in-the-chat-and-on-the-route)). The full charter block is sent once per session, again when the charter changes, and again after a compaction. See [delegation policy](#delegation-policy) and [charters](#charters-and-component-relationships). |
-| `agent-net needs-hook` | Not for you to run: the Claude Code `PermissionRequest`, `Notification`, `PreToolUse`, `UserPromptSubmit`, `PostToolUse` and `PostToolUseFailure` hooks that [setup can add](#what-setup-changes-on-your-machine). It tells the local daemon when the session waits for you (a permission, or the question of `AskUserQuestion` and the plan of `ExitPlanMode` at their `PreToolUse`), and clears that when you type a prompt, a tool runs after an approval, or the dialog gets its answer. See [the Desk (tab 7)](#waiting-sessions-on-the-desk-tab-7). |
+| `agent-net policy-hook` | Not for you to run: the Claude Code `UserPromptSubmit`, `PostCompact`, `SessionStart` (matcher `compact`) and `Stop` hooks that [setup can add](#what-setup-changes-on-your-machine). It reads the hook input on stdin. On a prompt it prints hook JSON when the session's node has a charter or a notice is due. On `Stop` it prints `{"decision":"block","reason":...}` once when the turn ended on a question to the owner that went to the chief (see [owner questions go to the chief](#owner-questions-in-the-chat-and-on-the-route)). The full charter block is sent once per session, again when the charter changes, and again after a compaction. See [session context every turn](#session-context-every-turn) and [charters](#charters-and-component-relationships). |
+| `agent-net needs-hook` | Not for you to run: the Claude Code `PermissionRequest`, `Notification`, `PreToolUse`, `UserPromptSubmit`, `PostToolUse` and `PostToolUseFailure` hooks that [setup can add](#what-setup-changes-on-your-machine). It tells the local daemon when the session waits for you (a permission, or the question of `AskUserQuestion` and the plan of `ExitPlanMode` at their `PreToolUse`), and clears that when you type a prompt, a tool runs after an approval, or the dialog gets its answer. See [the Desk (tab 6)](#waiting-sessions-on-the-desk-tab-7). |
 | `agent-net tool-decide` | Not for you to run: the Claude Code `PreToolUse` hook that [setup adds](#what-setup-changes-on-your-machine) for `Bash` and agent-net tools, and the CTO's launch hook on `cto_op`. It asks the daemon with the local method `tool_decide` and prints `permissionDecision: allow` when a delegated scope covers the call. In every other case it prints nothing. It never blocks. See [delegated authority](#delegated-authority). |
 | `agent-net urgent-hook` | Not for you to run: the Claude Code `PostToolUse` and `PostToolUseFailure` hooks that [setup adds](#what-setup-changes-on-your-machine) for every tool. It asks the daemon with the local method `urgent_take` and, when an urgent message waits for the session, prints it as `additionalContext`, so the model reads it before its next step (decision [0180](decisions/0180-urgent-messages-reach-a-busy-session.md)). In every other case it prints nothing. It never blocks or fails a call. |
 | `agent-net cto-hook` | Not for you to run: an old name for `agent-net tool-decide`, kept for a CTO session launched before v0.5.56, whose settings still run it. It does the same and prints the same. It may go once no running CTO can have been launched before v0.5.56. |
@@ -1135,7 +1127,7 @@ machine reconnects first. A reconnect syncs the sessions again.
 | Claude urgent hook record | `~/.config/agent-net/claude-urgent-hook.json` | Whether agent-net added the urgent hooks (and to which settings file). |
 | Claude needs hook record | `~/.config/agent-net/claude-needs-hook.json` | Whether you were asked, and whether agent-net added the hooks (and to which settings file). |
 | Claude peer messages record | `~/.config/agent-net/claude-peer-messages.json` | Whether you were asked, and whether agent-net set Claude Code's `crossSessionInbound` setting. |
-| Claude policy hook record | `~/.config/agent-net/claude-policy-hook.json` | Whether you were asked, and whether agent-net added the delegation policy hook (and to which settings file). |
+| Claude policy hook record | `~/.config/agent-net/claude-policy-hook.json` | Whether you were asked, and whether agent-net added the policy hook (and to which settings file). |
 | Codex tools record | `~/.config/agent-net/codex-tools.json` | Whether you were asked, and whether agent-net set the tool approval mode for its Codex server. |
 | Claude workers plugin record | `~/.config/agent-net/claude-workers-mod.json` | Whether you were asked, whether agent-net installed the plugin, and the marketplace folder. |
 | Integration local answers | `~/.config/agent-net/integrations-local.json` | The per-item `--...` answers this machine made for itself. They win over the network answers. |
@@ -1146,17 +1138,11 @@ machine reconnects first. A reconnect syncs the sessions again.
 | quota-axi private copy | `~/.local/share/agent-net/quota-axi/` | The pinned npm package `quota-axi`, installed by setup or the daemon when the Quota integration is on and you have no quota-axi. The daemon uses it when no usable owner copy is selected. Removed by uninstall and when the item is turned off. |
 | agent-net herdr config | `~/.local/state/agent-net/daemon/herdr/agent-net-config.toml` | A copy of your herdr `config.toml` with `sidebar_start_collapsed = true` and `sidebar_collapsed_mode = "hidden"` in `[ui]`. The daemon writes it each time it starts agent-net's own herdr server, or moves a running one under it, and that server alone reads it through `HERDR_CONFIG_PATH`. Your own config is never changed. Mode 0600. |
 | agent-net herdr server program | `~/.local/state/agent-net/daemon/herdr/herdr-server` | A two-line shell script: it runs herdr with `HERDR_CONFIG_PATH` set to agent-net's herdr config. A live handoff runs it as the new server of agent-net's herdr session, so a server that ran without the config gets it and keeps its panes. Mode 0700. |
-| Skill manifest | `~/.local/state/agent-net/daemon/skill-manifest.json` | Paths, hashes, revisions and ownership of skill, command and agent copies the daemon made (the path is the folder of a skill and the file of a command or agent), and the Git exclude lines it owns. Mode 0600, owned by you. Kept until uninstall, which also releases the owned exclude lines. |
-| Skill copies | The native skill folders of each harness (for example `~/.claude/skills/<name>/`, `~/.agents/skills/<name>/`, and `<checkout>/.agents/skills/<name>/` for a project), and for a command or an agent the file `~/.claude/commands/<name>.md`, `~/.claude/agents/<name>.md`, `<checkout>/.claude/commands/<name>.md` or `<checkout>/.claude/agents/<name>.md` | A skill the owner assigned. Written by the daemon as your user. Uninstall keeps them: they are your skills now, and removing them could lose work. Undo removes the ones the manifest says agent-net made. |
-| Git exclude lines | `<checkout>/.git/info/exclude` (the path from `git rev-parse --git-path info/exclude`, shared by linked worktrees) | One line per project skill copy, added only by the daemon. A skill line ends with a slash (`/.claude/skills/name/`). A command or agent line names the file and has no slash (`/.claude/commands/name.md`), because a slash would match only a folder. Each line is reference-counted in the manifest. Uninstall removes the owned lines and leaves the rest of the file. `.gitignore` and the Git index are never changed. |
-| Temporary files | `~/.local/state/agent-net/daemon/.skill-manifest-*`, `.project-verify-*`, `.project-ignore-*`; `.claude.json.lock` (a folder, next to `~/.claude.json`) and `<config>.agent-net-*` (next to a native MCP file) | Short-lived. The daemon deletes them when the step ends. A crash can leave one: uninstall removes the ones in the state folder. `.claude.json.lock` is Claude Code's own lock folder, taken for the length of one edit. A lock folder untouched for 30 seconds was left by a Claude that crashed, and the daemon removes it; trusting a folder that is already trusted takes no lock. |
-| Skill backups | `~/.local/state/agent-net/daemon/skill-backups/<item hash>/<time>-<id>/` | Exact copy of a skill directory before the daemon removed it. Local only, never uploaded or shown. Folders 0700, files 0600. At most 20 per item and none older than 30 days (pruned after each removal and at daemon start). Uninstall removes them. |
-| MCP config backups | `~/.local/state/agent-net/daemon/mcp-backups/<item hash>/<time>-<id>/` | The whole native MCP config file (`preimage`) as it was before the daemon removed an entry or added one for a project coverage row, and `meta.json` (file path, hashes, entry name). A backup can hold secrets: local only, never uploaded or shown. Folders 0700, files 0600. At most 20 per item and none older than 30 days. Uninstall removes them. |
-| MCP coverage undo record | `~/.local/state/agent-net/daemon/mcp-coverage-undo-<plan id>.json` | The files one applied coverage plan wrote, their before and after hashes, the backup IDs, and whether the file was created. Mode 0600. Removed when the owner undoes the plan. It never holds a declaration or an environment value. Uninstall removes it with the state folder. |
+| Old Tools rollout files | `~/.local/state/agent-net/daemon/skill-manifest.json`, `skill-backups/`, `mcp-backups/`, `skill-journal/`, `mcp-coverage-undo-*.json` and `.skill-manifest-*`, `.project-verify-*`, `.project-ignore-*` | Left by versions before [decision 0169](decisions/0169-skill-archive.md) task 5. Nothing writes them now. Uninstall removes them. Git exclude lines that those versions added to a checkout stay: they only hide a folder. |
+| Temporary files | `.claude.json.lock` (a folder, next to `~/.claude.json`) | Short-lived. `.claude.json.lock` is Claude Code's own lock folder, taken for the length of one edit. A lock folder untouched for 30 seconds was left by a Claude that crashed, and the daemon removes it; trusting a folder that is already trusted takes no lock. |
 | Shared MCP server records | `~/.local/state/agent-net/daemon/mcp-pids/<pid>` | One short file for each stdio server the MCP host started: the pid of the server (also its process group) and its start time. A hosted server runs in its own process group. When the daemon stops, or a server ends or is replaced, the host sends SIGTERM to the group, then SIGKILL after 2 seconds, so programs the server started (uv starts python, npx starts node) end with it. The unit has `KillMode=process`, so systemd would not end them. If the daemon died before it could, the next daemon ends the groups named in these files at start. It checks the start time first and never touches a process it did not start. Uninstall removes the folder with the state folder. |
-| Skill journal | `~/.local/state/agent-net/daemon/skill-journal/*.json` | One small record per skill operation that is running. Written before the first change and deleted when the operation ends. Mode 0600, folder 0700. A record left after a crash is read at the next daemon start. Uninstall removes the folder. |
 | Reply sockets | `<socket directory>/r/<session id>.<conversation id>.sock` and `<socket directory>/r/<session id>.sock` | One per sending session and conversation, used to catch Claude Code's native replies (see [Claude replies](#claude-replies)). The socket of a conversation is closed when its rows leave `daemon.db`. The one per sending session is for messages without a conversation and for frames from an older daemon. Mode 0600. |
-| Gateway data | `~/.local/state/agent-net/gateway/` | `funnel.json` records the port and loopback target managed by agent-net so uninstall can safely remove its Funnel route; it is removed when cleanup succeeds or the port is repurposed. `tailscale-node.json` (mode 0600) holds the `--apps-tailscale-name` choice: the name and, if given, the auth key file path, never the key. `tailscale/` (mode 0700) is the state of agent-net's own Tailscale node, with its private keys; `tailscale/agent-net-owned.json` marks it as agent-net's. `ca.pem`, `ca.key`, `server-key.pem`, `gateway.db` (SQLite, with `-wal` and `-shm` files; it also holds the tools inventory, assignments, plans, audit, MCP registry, the `skill_archive`, `skill_archive_changes`, `skill_archive_latest`, `skill_archive_blocks`, `skill_node_lists`, `skill_list_changes` tables, the `repos` and `agents` identity tables, the `gateway_state` key-value table (the typed Graph gate and cutover time, the skill archive intake marks and the one-time markers of seeds and backfills; no screen refreshes from it), the `setting_revision`, `setting_values` and append-only `setting_history` tables, and the delivery pipeline's `delivery_changes`, `delivery_revisions`, append-only `delivery_evidence`, `delivery_step_tasks`, `delivery_step_messages`, `delivery_step_inbox`, `delivery_step_delegates` tables), `admin.json` (mode 0600: the local admin URL and token) and `skills.git` (mode 0700: the private bare Git repository of imported skills, which can hold secrets from skill files). Uninstall keeps the gateway data, even with `--purge`, apart from the Funnel route record after cleanup and agent-net's own Tailscale node. **Back this folder up** with `agent-net gateway backup --out /absolute/new-directory`; it writes a consistent snapshot while the gateway is running. A backup holds the CA key, so keep it private. Without it every machine has to join again. See [security.md](security.md#what-the-gateway-logs-and-keeps). |
+| Gateway data | `~/.local/state/agent-net/gateway/` | `funnel.json` records the port and loopback target managed by agent-net so uninstall can safely remove its Funnel route; it is removed when cleanup succeeds or the port is repurposed. `tailscale-node.json` (mode 0600) holds the `--apps-tailscale-name` choice: the name and, if given, the auth key file path, never the key. `tailscale/` (mode 0700) is the state of agent-net's own Tailscale node, with its private keys; `tailscale/agent-net-owned.json` marks it as agent-net's. `ca.pem`, `ca.key`, `server-key.pem`, `gateway.db` (SQLite, with `-wal` and `-shm` files; it also holds the MCP registry, the `skill_archive` (with its `in_use` mark of the version a node following latest gets), `skill_archive_blocks`, `skill_node_lists` and `skill_changes` (the undo log of both) tables, the `repos` and `agents` identity tables, the `gateway_state` key-value table (the CTO and chief of staff session ids, worker rotation, onboarding, hidden items, the network settings token, the typed Graph gate and cutover time, the one-time markers of backfills; no screen refreshes from it), the `setting_values` and append-only `setting_history` tables (the newest history revision is the settings revision, and the owner's own values are network settings under the key prefix `owner.`), and the delivery pipeline's `delivery_changes`, `delivery_revisions`, append-only `delivery_evidence`, `delivery_step_tasks` and `delivery_step_inbox` tables), `admin.json` (mode 0600: the local admin URL and token). Uninstall keeps the gateway data, even with `--purge`, apart from the Funnel route record after cleanup and agent-net's own Tailscale node. **Back this folder up** with `agent-net gateway backup --out /absolute/new-directory`; it writes a consistent snapshot while the gateway is running. A backup holds the CA key, so keep it private. Without it every machine has to join again. See [security.md](security.md#what-the-gateway-logs-and-keeps). |
 | Gateway upgrade backups | `~/.local/state/agent-net/gateway-backups/pre-v<version>-<UTC time>/` | Written by the gateway before it migrates an older database, with the same parts as a manual `gateway backup`: the database snapshot, `skills.git`, `ca.pem`, `ca.key` and `server-key.pem`. Holds the CA key, so keep it private. Never deleted automatically. |
 | Gateway transfer parts | `~/.local/state/agent-net/gateway/transfers/<upload id>/` | One file per part of an upload between machines, named by its part number. Folders 0700, files 0600. At most 100 MB per upload and 1 GB staged for each sending machine. A part file is deleted when the receiving machine confirms the whole file, or 7 days after the upload began. A `gateway backup` does not copy parts that are still in flight. Uninstall keeps them with the rest of the gateway data. See [security.md](security.md#files-between-machines). |
 | Received files | `~/.local/state/agent-net/daemon/inbox/<session>/<message>/<name>` | The files that came with a message to a session of this machine (see [Files between machines](#files-between-machines)). Folders 0700, files 0600. The daemon deletes a message's folder 7 days after its last file arrived. Uninstall keeps them with the state folder; `--purge` removes them. |
@@ -1546,7 +1532,7 @@ The daemon owns one more value in the same file: it writes `DISABLE_AUTOUPDATER=
 | | `--no-accept-peer-messages` | off. Do not set it on this machine and do not ask. It wins over the network answer. |
 | | `--accept-codex-tools` | off. Let Codex call the agent-net tools without asking. Sets `default_tools_approval_mode` for agent-net's own Codex server. |
 | | `--no-accept-codex-tools` | off. Register the Codex server without that setting and do not ask. |
-| | `--claude-policy-hook` | off. Add the Claude Code hook that applies the delegation policy you set in the TUI, as a local answer for this machine. It wins over the network answer. |
+| | `--claude-policy-hook` | off. Add the Claude Code hook that adds the charter of the session's node as context, as a local answer for this machine. It wins over the network answer. |
 | | `--no-claude-policy-hook` | off. Do not add that hook on this machine and do not ask. It wins over the network answer. |
 | | `--claude-hint-hook` | off. Add the Claude Code hook that suggests which session to ask after a failed tool call, as a local answer for this machine. It wins over the network answer. |
 | | `--no-claude-hint-hook` | off. Do not add it on this machine and do not ask. It wins over the network answer. |
@@ -1586,7 +1572,7 @@ The name of a machine is the host name its daemon reports in `hello`. On macOS t
 
 Seven items: Claude peer messages, Codex tool approval, the Claude hint hook, the Claude policy hook, the Claude "Needs you" hooks, the Claude workers plugin, and reading subscription quotas with quota-axi. The quota item installs quota-axi when needed; the other six change Claude Code or Codex settings. See [setup.md](setup.md#integrations).
 
-The seven setup integrations ([decision 0021](decisions/0021-network-integrations.md)) are one answer for the whole network. The gateway keeps them in `owner_settings` and serves them to each machine with its node token. The owner answers once, with the one question in `agent-net setup` or with `I` in the TUI. The operator methods are `integrations_get` (answers `{"set": true, "integrations": {...}}`) and `integrations_set` (takes the same `integrations` object, answers it). They are served only to the owner's command line or TUI, like `session_policy`, and refused for an agent client and for a command line inside an agent session's process tree. No MCP, Pi or OpenCode tool sets them.
+The seven setup integrations ([decision 0021](decisions/0021-network-integrations.md)) are one answer for the whole network. The gateway keeps them as the network setting `owner.integrations` and serves them to each machine with its node token. The owner answers once, with the one question in `agent-net setup` or with `I` in the TUI. The operator methods are `integrations_get` (answers `{"set": true, "integrations": {...}}`) and `integrations_set` (takes the same `integrations` object, answers it). They are served only to the owner's command line or TUI, like `session_policy`, and refused for an agent client and for a command line inside an agent session's process tree. No MCP, Pi or OpenCode tool sets them.
 
 The daemon reads the answers at start and every minute. It applies them only when they differ from the answers it last applied (`integrations-applied.json`). A per-item setup flag is kept in `integrations-local.json` on that machine and wins over the network answer. Uninstall still removes the integrations of that machine. Each item is described in [setup.md](setup.md#integrations).
 
@@ -1772,653 +1758,14 @@ A worker model may be a registered profile name, ignoring case. It uses the prof
 
 A model provider that is not a subscription and has no usable quota reading is pay-per-use. This includes OpenRouter and OpenCode Zen (`opencode/`). An explicit worker model never resolves to one from a loose or bare name; write the full provider id, for example `opencode/gpt-6.1-sol`, and the start result says `uses pay-per-use provider (opencode)`. The same rule decides the worker provider defaults (decision [0026](decisions/0026-worker-difficulty-and-scores.md)).
 
-## Tools inventory
+## Skills and shared MCP servers
 
-Tab 5 opens Skills per project: projects on the left, skills, commands and
-agents with checkboxes on the right. Commands (`/name`) and agents (`name
-(agent)`) are switched on and off per project exactly like skills, through the
-same `tools_toggle` and `tools_apply` methods. They are listed after the
-skills. Project and session token counts and costs count skills only. The
-rest of this section says skill for all three kinds. The project list comes from `tools_projects`, which includes
-only projects inside a Git repository. Seen folders without a Git root
-are excluded. Each project keeps its skill count.
-The visible tabs at the top show Skills per project and All
-tools; Tab switches between them. The focused pane has an accent border.
-The selected row has the Sessions highlight and marker. The project keeps
-a dim highlight while focus is on skills.
+The old Tools tab and its rollout are gone ([decision 0169](decisions/0169-skill-archive.md), task 5). Nothing scans a machine every few minutes any more, and nothing copies a skill into a user or project folder.
 
-The information box below the panes follows focus. For a project it shows
-the name, checkout machines, skills on and tokens per session, plus any
-known reason a checkout cannot hold project skills. Reasons reported by a
-gateway plan remain visible here after closing the plan. For a skill it
-shows the name, tokens per session, up to two lines of its front matter
-description, how many projects have it on, its machines, and the standing
-choice for new projects. The count and token total count each name once
-on the machine with the highest total, using the highest cost among its
-copies. Costs are tokens in every session.
-
-Use up/down in either pane, right or Enter to enter skills, and left to
-return to projects. Space or Enter on a skill previews an on/off change
-through `tools_toggle`. Nothing is imported or applied during preview.
-Esc cancels the preview and keeps the pending choice for editing. To review
-several changes together, cancel each preview and select another skill;
-the next preview includes all pending choices for that project. Enter
-with pending choices reopens their review. `d` shows exact folders. Enter
-in the review applies each skill's plan in turn through `tools_apply`.
-The result reports changed targets or `Nothing changed: <reason>` when no
-target changed. Esc with pending changes asks `Discard N changes? y/n`.
-Repo skills stay on in their repo and must be changed there. The gateway
-handles importing an observed skill and preserving other project choices.
-When skills are installed outside agent-net, the view offers `i` to import
-them all in one review. Confirmation saves each distinct version in the store.
-Installed copies and their session availability stay unchanged; no assignment
-or installation is applied. Repo skills are excluded.
-Skills whose inventory manifest file sizes sum above the 2 MB import limit
-show a one-column `×` marker and cannot be toggled here. The state column
-explains the size limit; Space repeats the explanation. These skills still
-show their StartTokens cost because their descriptions load in sessions.
-Each copy is measured separately; no bundle is packed for this check.
-Import all skips those skills and lists
-the skipped count, names, sizes and limit in its review. Missing manifests
-do not prove that a skill fits; the import service still checks the bundle.
-`/` filters skill names. Tab switches between this view and all tools,
-which keeps the action menu, comparison, filters and `n` to add a tool.
-Every Tools screen lists its local actions with one display key per action.
-Aliases still work and are listed in `?` help. The key bar wraps when
-needed and includes navigation, toggles, review, view switching, filtering,
-import, help and quit.
-The list includes `t` for costs and `R` for rescan;
-plans include `d` when exact folders are available.
-
-`agent-net tools` groups the latest observations by kind, name and content
-hash. Each row shows scope, harnesses, machines, the number of same-name
-variants and state, desired assignment and pending application. Scope lists global and project observations;
-unassigned identifies project locations that match neither the registry nor a seen project. Offline
-machines retain their last observations as stale. The daemon scans at startup,
-after reconnecting, after its binary version changes and every five minutes.
-
-An in-home skill folder reached through a skill-entry symlink is recorded at its real path, with the link path in `aliases`. Links outside the home are not followed. A separate content fingerprint ignores executable bits, `.DS_Store`, `Thumbs.db`, and editor swap and backup files when comparing copies. The strict hash used for imports and integrity checks still includes these files and executable bits. Older observations without a content fingerprint are compared using their strict hash.
-
-For each skill, inventory also records a file manifest: relative paths, sizes, per-file fingerprints and the newest modification time. It never contains file contents. Common noise files are excluded. The manifest is limited to 200 files and 64 KiB; total manifests in one report are limited to 1 MiB, alongside the other report limits. A manifest above its per-copy limit is marked too large to compare and has no partial file list. Missing or oversized manifests cannot produce an exact comparison. The comparison shows file additions, removals and changes. File dates do not decide which copy to keep. When all shared files match and one copy contains additional files, it recommends that copy; otherwise it says there is no clear winner. The comparison shows the known users, store match and file modification time, and marks unknown origins and editors. It asks a read-only automatically chosen worker for a summary of the two SKILL.md files, caches successful summaries for the content pair, and shows a fallback when a summary is unavailable. Press `a` or `b` to choose a copy; `enter` does not choose one. Times describe file metadata and do not prove which version the owner intended. The plan compares observed copies; a destination that has changed or conflicts can still refuse application.
-
-**Prompts and agents.** Inventory also reports Claude Code slash commands and subagents as items of kind `prompt` and `agent`. A prompt is one Markdown file in `~/.claude/commands/` or `<checkout>/.claude/commands/`. An agent is one Markdown file in `~/.claude/agents/` or `<checkout>/.claude/agents/`. The item name is the file name without `.md`, and the harness is `claude`. Only the files directly in the folder are read: namespace folders below it, files that are not `.md` and names that start with a dot are ignored. A link to a file inside the home is followed and recorded at the real path with the link in `aliases`. A link outside the home is reported as an error, like a skill. A file is a bundle of one file named `<name>.md`: its hash is the strict hash of a folder that holds only that file, so the same hash, content fingerprint, manifest (one entry), size limit (64 MiB read limit, 2 MiB import limit) and description (front matter `description`) rules apply as for a skill. A skill, a prompt and an agent with the same name are three separate items.
-
-A project skill item has `tracked: true` when `git ls-files` lists files under it in the project checkout. The daemon runs one `git ls-files` per project root in each scan (limited to the four project skill folders and the `.claude/commands` and `.claude/agents` folders, no network) and uses the answer for every skill in that root. A folder that is not a Git repository, or a failed `ls-files`, leaves `tracked` off. A scan from a daemon that is older than this field has no `tracked`, so its project skills show as `local` until it is upgraded.
-
-The owner can request a refresh through `inventory_scan`. `inventory_get`
-returns report pages with an `offset` request field and a `next` cursor.
-`tools_items` returns item pages with optional `kind` (`skill`, `prompt`, `agent`, `mcp`, or `bundles` for the first three), `harness`, `project`,
-`state` and `offset` filters. `tools_item` takes an `id` from that list and
-returns its locations and file-list differences against same-name variants.
-List items carry a `file_count` per location and no file lists. `tools_item`
-carries each file list capped at 500 paths, with `files_more` and an item
-`note` for the rest. A list item that is still too large is trimmed and
-carries a `note`; it never fails the page.
-`tools_items` also takes `name`, a text that the item name must contain (any
-case), and `compact: true`. A compact page returns `rows` and `total` instead
-of items. Each row has `id`, `name`, `kind`, `machines` (how many machines
-hold a copy), `file_count` (the largest count among the copies), `trimmed`
-(true when the description was cut), `description` (one line, at most 80 bytes)
-and `state` when it is not `ok`. Pages hold 25 rows by default and 100 at most,
-set with `limit`. A page also stops before 16 KB of rows, so a long name can
-make it shorter than `limit`. `next_cursor` is the `cursor` for the next page.
-The CTO lists the inventory this way and reads one item in full with
-`tools_item` and its `id`. Without `compact` the answer is the full list, as before.
-The owner-only `tools_skill_details` reads the file manifest of one observed
-copy on one machine, so a comparison does not wait for a whole scan. The
-machine checks that the skill is still observed and that its hash has not
-changed before it reads the files. These methods require the owner connection
-and cannot be called by an agent session. A variant count includes all observed
-versions, even with filters.
-
-When a compare plan opens and one side has no file manifest, the Tools tab asks
-that machine for the one skill and shows `fetching details from <machine>...`
-until the answer arrives. An offline machine shows `<machine> is offline: no
-details` with the version and the last time the gateway saw the copy. A failed
-read names the machine and the reason. A scan that fails for one source keeps
-every other fresh observation and marks only that source stale, so one
-unreadable or linked-out skill no longer hides new file manifests. A scan that
-produces no successful observation at all leaves the previous observations
-marked stale. The inventory is read-only and does not execute skills or servers.
-
-A skill that cannot be hashed safely shows `cannot manage: <reason>` in Tools.
-The reason names the file and rule: more than 64 MiB of total regular file
-data, more than 10,000 entries, an absolute or escaping symlink, a special
-file, an unreadable file, or a file that changes during the scan. For example,
-a 114 MB model file exceeds the 64 MiB scan limit by itself. This is separate
-from the 2 MiB import limit below. An `.env` file alone does not fail discovery;
-recognized secret contents refuse import, and the refusal names the file
-without showing its contents.
-
-A fresh scan with one failed skill blocks plans for that skill name or an
-overlapping source folder, including its aliases. It does not block unrelated
-skills on the same machine. If a whole source root cannot be listed, its
-unknown contents may hide the requested skill, so skill plans stay blocked.
-A missing report, a report older than 15 minutes, a scanner or upload failure,
-a report that exceeds its limits, or a scan with no successful observations
-also blocks plans for that machine. Planning and applying refresh reachable
-machines and require the fresh scan's upload acknowledgement. Conflict lines
-name the machine, skill, project or source folder, and the actual reason.
-
-MCP fingerprints omit
-sensitive descriptor values. Project MCP entries also carry an opaque
-`definition` digest so the same name can be compared across harnesses. It is
-`opaque` when a value cannot be compared safely, and a same-name entry then
-shows a conflict instead of a silent match. Extension-provided MCP servers, package-managed skills, OpenCode custom config
-locations, Pi standalone Markdown skills and session-specific trust overrides need
-manual inspection. A row summarizes observations, not proof that a running session has loaded it.
-
-### Scoped MCP servers
-
-A server in the [MCP registry](mcp-registry.md) is also a tool item of kind
-`mcp`. `tools_items` marks it `federated` and shows its `scope` (`global`,
-`projects` or `uninstalled`), the projects, its `host` and whether the host is
-online. A server added by the owner with `agent-net mcp add` or the TUI, or by
-a CTO `mcp_change` action, starts global. A server that existed
-before scoping keeps that scope: no assignment means global. Agents can list
-and test shared servers but cannot add or remove them.
-
-Assign it the same way as a skill, with the exact item ID from `tools_items`:
-
-```
-agent-net tools plan 'ITEM_ID' project-one project-two
-agent-net tools apply PLAN_ID
-agent-net tools plan 'ITEM_ID' global
-```
-
-The plan has one target, with action `federate`, that names the host machine.
-Nothing is copied to any machine: the gateway enforces the assignment. Apply
-records the revision (with actor and audit event, like any assignment), and it
-is in effect at once. `tools_undo` restores the earlier scope. Only the owner,
-can plan and apply; the CTO runs these calls at once. An agent session cannot.
-The CTO runs `tools_change` with action `plan` or `apply` and reads the owner inventory through `settings_change` area `operator`.
-
-What a session sees:
-
-- `global`: every session, including a session with no project.
-- `projects`: only sessions whose project (the PROJECT column) is in the list.
-  A session with no project does not see it.
-- `uninstalled`: no session. The server keeps running on its host; the owner
-  can still test it and change the scope.
-
-The tool list of a session (the daemon method `mcp_tools`) holds only the
-servers it may use. The gateway reads the project from its own record of the
-session. The daemon keeps the answer for each project and serves it to every
-session of that project, so repeated reads (the harnesses' safety polls) cost
-the gateway nothing. A `mcp.changed` push, or a new gateway link, drops the
-kept answer, so the next read is fresh. Applying or undoing an assignment
-makes the gateway send `mcp.changed` to every daemon, and each daemon sends
-`mcp_changed` to its sessions. Claude Code gets
-`notifications/tools/list_changed` only when its tool list really
-changed. Pi hides removed tools and updates its list from the next prompt.
-Pi and OpenCode plugin connections are tested end to end: after the push, the
-next `mcp_tools` is filtered for the session's project. The shipped OpenCode
-plugin does not read `mcp_tools` yet, so an OpenCode session does not get
-federated tools as tools; its connection gets the push and the filtered list,
-and a stale call is refused at the gateway.
-
-Codex starts one `agent-net mcp --codex` process for all threads of its app
-server, and `tools/list` carries no thread. That process has no project, so it
-lists only `global` servers. A server scoped to projects is not listed to Codex
-at all, even for a thread of an assigned project; to use a server from Codex,
-keep it `global`. The process hears `mcp_changed` at once (the same push as other
-sessions) and updates its list, so an assignment change shows in the next
-`tools/list` that Codex asks for. Whether Codex asks again during a running
-session is Codex's choice and is not tested against the real Codex. A call to a
-tool that is no longer listed fails with `unknown tool`. Removing a server deletes its plans and assignment; adding it
-again starts global.
-
-A call (`mcp_call`) is checked again at the gateway, whatever the client
-cached; see [security](security.md#scoped-mcp-servers). It fails with `MCP
-server "NAME" is not assigned to this project`. If the host machine is offline,
-the call fails with `host NAME offline` and the tools stay listed, marked
-`unavailable: host NAME offline` in their description. The assignment is not
-changed. `agent_mcp_servers_find` and `mcp list` are the registry view of the owner and
-of agents: they show every server and its `scope`.
-
-Resources, resource templates and prompts of the registered servers follow the
-same rules (see [the registry](mcp-registry.md#how-agents-see-resources-and-prompts)).
-A session's `agent-net mcp` lists them with the daemon method `mcp_feature`
-(`op` is `resources/list`, `resources/templates/list`, `resources/read`,
-`prompts/list` or `prompts/get`). Lists hold only the servers the session may
-see now; a server whose host is offline is left out of what the agent sees. A
-resource is `agent-net://SERVER/URI` and a prompt `SERVER__NAME`. A read or
-prompt of a server the session may not use fails with `MCP server "NAME" is not
-assigned to this project`, of a disabled one with `MCP server "NAME" is
-disabled`, and of an offline host with `host NAME offline`. A read or prompt
-over 512 KiB is refused with its size and the limit. When the registry changes,
-or a server reports a changed list, Claude Code gets
-`notifications/resources/list_changed` and `notifications/prompts/list_changed`.
-
-### Project MCP coverage
-
-A project MCP server lives in the project files, not in the registry. The
-inventory reads the project sources: `.mcp.json` (Claude), `.pi/mcp.json` (Pi,
-trusted projects only), `opencode.json` or `opencode.jsonc` (OpenCode), and
-`.codex/config.toml` (Codex, trusted projects only). For each server the daemon
-records which installed harnesses have it in that project, on that machine. A
-server present for some harnesses and missing for others is a difference.
-
-The owner-gated methods are `mcp_coverage_plan`, `mcp_coverage_apply` and
-`mcp_coverage_undo`. `mcp_coverage_plan` takes `project`, `server`, optional
-`checkout`, `source_harness`, `source_path` and `node_id`, and `harnesses` (the
-missing ones). It answers a plan with one target per file, the planned file
-path, the source and the action (`create` or `update`). It re-reads the source
-declaration and every destination; a source path in the request must match a
-source the fresh scan found.
-`mcp_coverage_apply` takes `plan_id`, checks every file still has the planned
-hash, saves each file first, then writes. `mcp_coverage_undo` takes the same
-`plan_id` and restores the files. Both answer `state` (`applied`, `conflict` or
-`failed`) and the targets.
-
-The written entry uses the harness's own shape. Claude and Pi use
-`mcpServers`; OpenCode uses `mcp` with `type: local` and `command` as a list;
-Codex uses `[mcp_servers.<name>]` in TOML. Only the new entry is inserted: the
-rest of the file keeps its bytes. Environment values must be references such as
-`${TOKEN}`; a literal value is refused. A same-name entry is never replaced.
-Pi and Codex project files are read only in a trusted project, and the plan says
-so.
-
-### Importing native MCP servers
-
-An MCP server that a harness has in its own config (`~/.claude.json` and
-`.mcp.json` for Claude Code, `config.toml` for Codex, `opencode.json` for
-OpenCode, `mcp.json` for Pi) can move into the federation. Import is explicit:
-nothing is imported by a scan. See [decision 0027](decisions/0027-skills-and-mcp-management.md).
-
-**Candidates.** `mcp_import_candidates` (owner-only daemon method) lists
-every native entry on every machine. A request takes optional `machine`,
-`harness`, `project`, `class` and `offset`. A page holds at most 30 entries and
-`next` is the next offset. Each entry has a `key`, the machine, harness, scope
-(`user` or `project`), project, file, name, and a `class`:
-
-- `importable`: a stdio, http or sse server that the machine can run, whose
-  secrets are given by environment variable names. The scan cannot know if the
-  command exists; the test at import time finds out.
-- `unsupported`, with a plain `reason`. The reasons are: the entry uses OAuth;
-  it serves resources or prompts only; it hides some tools natively; it sets a
-  working directory; an argument depends on the client's working directory, `~`
-  or variable expansion (the server would need to run on every client); a
-  secret is given as a value (environment value, header value, URL query,
-  argument or URL credential) instead of a variable name; the transport is not
-  stdio, http or sse; the entry is switched off; the name cannot be a server
-  name; or it is agent-net's own server. Extension-provided MCP and entries
-  from a machine that does not judge entries yet are `unsupported` too, so they
-  stay visible. Names and reasons only: no value is ever returned.
-
-An environment value counts as a variable name only when it is empty or a
-plain reference to the same name (`"API_TOKEN": "${API_TOKEN}"`). The
-federation runs the server on its host with the host's own environment.
-
-**Plan and apply.** `mcp_import` (daemon method, owner only; the CTO uses `tools_change` action `import`) takes
-either a `candidate` key and answers a plan, or a `plan_id` and applies it. A
-plan changes nothing. It shows the server that would be registered (command,
-arguments, variable names), the scope, and any conflict (an existing server of
-that name, an offline machine, a changed entry, an unregistered project). A
-plan with a conflict cannot be applied. Apply:
-
-1. registers the server on the machine that has the native entry, disabled, so
-   no session sees it;
-2. runs the same test as `mcp_test`;
-3. compares the tools the server reports with the tools the native entry lists
-   (`enabled_tools` in Codex, `enabledTools` or `allowedTools` elsewhere), when it
-   lists any. A listed tool that is missing, or a server with no tools, fails.
-   When the entry has an allow-list, the federated server gets the same list
-   (`allowed_tools` on the server): the gateway lists and lets through only those
-   tools, even if the server reports more, so a session sees what it saw before.
-   A call to another tool fails with `tool "X" is not exposed by MCP server`, and
-   `mcp test` and health reports never widen the list. When the entry has no
-   allow-list, every tool the server reports is accepted and the import record
-   (`imported.tools`) keeps the list. The record also keeps `allowed_tools`;
-4. enables it. A user-level entry becomes `global` (a per-machine scope cannot be
-   expressed); a project-level entry becomes `projects` with that project.
-
-If the test or the comparison fails, the server is removed again and nothing else
-changed. The answer says `state: failed` and why. A plan applies once.
-
-**What import does not change.** It writes no harness config file. The native
-entry stays, so the server is now defined twice. The federated item shows
-`imported` (where it came from), `native_still_present`, and a conflict that
-names the machine and harness; the native item shows a conflict too. Removing
-the native entry is a later step. Import does not carry resources, prompts,
-OAuth or a hidden-tool list. The audit (`tools_history` of the federated item)
-records the plan, the actor and the result.
-
-### Removing a native MCP entry
-
-After an import both the native entry and the federated server exist. The
-owner may remove the native entry. `mcp_native_remove` (daemon method, owner
-only; the CTO uses `tools_change` action `native_remove`) takes exactly one of
-`candidate`, `plan_id` or `undo_plan_id`.
-
-**Rules.** The plan refuses an entry whose server was not imported from that
-exact entry, is switched off, is not healthy, reports no tools, or whose native
-description no longer matches the federated server. Apply tests the federated
-server again before it touches the file. The agent-net server entry is never
-removed.
-
-**Plan.** `candidate` (a key from `mcp_import_candidates`) answers a plan and
-changes nothing: the file hash, the list of `gaps`, and any conflict. A
-conflict cannot be applied. `gaps` and the `federation_gaps` of each
-importable or imported candidate (and of the `imported` record on the
-federated item) say what the native entry can do that the federation does
-not: resources and prompts (the federation carries tools only), OAuth sign-in,
-and per-client execution (the server runs on one host, not on each client).
-
-**Files that can be edited.** The file must be a known native source that the
-scan saw:
-
-| Harness | File | Where the entry is |
-|---|---|---|
-| Claude Code | `~/.claude.json` | `mcpServers`, and `projects[<path>].mcpServers` for a project-local entry |
-| Claude Code | `<project>/.mcp.json` | `mcpServers` |
-| Codex | `~/.codex/config.toml`, `<project>/.codex/config.toml` | the `[mcp_servers.<name>]` table and its sub-tables |
-| OpenCode | `opencode.json` or `opencode.jsonc` (user and project) | `mcp` |
-| Pi | `~/.pi/agent/mcp.json`, `<project>/.pi/mcp.json` | `mcpServers` |
-
-**Format preservation.** The edit cuts only the bytes of the entry. Other
-keys, their order, comments (JSONC and TOML) and indentation stay as they were.
-The daemon does not re-write the file from parsed data. In JSON it removes the
-member and one comma. In TOML it removes the entry's tables; comment and blank
-lines that follow a table stay with what comes next. Before it writes, it
-parses the old and new text and proves that the new text no longer holds the
-entry and equals the old document in every other value. If the entry is in a
-form the editor does not own (a TOML inline table or dotted key, a duplicate
-key, a file that does not parse), nothing is changed and the plan says to
-remove it by hand. There is no whole-file rewrite fallback. A file that is a
-symlink is not edited. The file mode is kept.
-
-**Committed project files.** If Git tracks the file in a repository (a
-committed `.mcp.json`), it is not edited. The conflict reads "committed in the
-repo: remove it with a commit".
-
-**Apply.** `plan_id` applies a plan once, only on the owner's explicit words
-when the CTO does it. It edits only a file that still has the planned hash;
-otherwise it answers `refused` with "changed since plan". It first saves the
-whole original file in `mcp-backups` (mode 0600), writes a journal record, then
-writes a temporary file beside the original, checks the hash again and renames
-it over. For `~/.claude.json` it takes Claude Code's own `.claude.json.lock`
-directory first. After the rename it reads the file again, checks the bytes
-are exactly the planned result, and checks that the entry is gone. A session
-that is running keeps its native tools until it restarts, so the gateway tells
-it. Each online session of the entry's harness on that machine gets one message
-from the owner session: "the MCP server X moved to agent-net; restart this
-session to drop the old copy". A user-level entry reaches every such session; a
-project-level entry reaches the sessions of its project. Sessions of other
-harnesses and other machines are not told. The message needs no reply, and it
-is sent at most once per session for a plan (undo sends nothing). The result
-lists the session IDs in `notified` and adds a note with the count. A session
-that cannot be reached still gets the stored message when it returns. A failure
-to tell a session does not fail the removal.
-
-**Undo.** `undo_plan_id` restores the original file only if the file still has
-the hash of the edit's result. Otherwise it answers `refused` with "changed
-since apply" and keeps the file: it never overwrites a later edit. Undo is
-recorded in the audit as `mcp_native_undo`. After undo the native entry is back
-and the federated server is still registered, so the same server exists twice;
-the answer says so.
-
-**Audit.** `tools_history` of the native item records `mcp_native_plan`,
-`mcp_native_remove` and `mcp_native_undo` with actor, machine, file path and
-result. It never holds file content.
-
-**Secret sources.** An entry that gives a secret as a plain `${VAR}` reference
-becomes a federated server that records only the variable name. The host reads
-the value from its own environment when it starts the server. The value never
-moves and is never stored in the registry. Only the backup of the original
-file, which stays on that machine, can hold a literal value the file had.
-
-### Desired tool assignments
-
-The owner socket also accepts project switches for skills. `tools_toggle`
-takes `item`, `project` and boolean `on`. It returns the ordinary plan; confirm
-it with `tools_apply`. A switch applies to every content version of that skill
-name across the project's checkouts. Different versions produce one group ID
-with per-identity member plans, snapshots and revisions. Apply checks all
-members before saving their revisions together. Undo accepts the group ID
-or the selected item and reverses every member. The daemon feed stays per
-identity. Placement uses the checkout's own version first, then its machine's
-user copy, and otherwise the newest library version.
-Turning a global skill off in one project moves it to
-copies in every other known project in one plan. The review names the
-user-level folder and says how many projects receive copies before the owner
-confirms, and the plan removes the user-level copy. Turning the last project
-off makes it uninstalled. Switching a skill on in a project where a user-level
-copy already serves every project changes nothing and says so. The owner
-chooses projects only.
-The Skills row checks all versions across the project's known checkouts.
-The information box lists machines whose copies differ.
-
-`tools_new_projects` takes `item` and boolean `on`. It saves the standing
-choice and returns a placement plan to confirm with `tools_apply`. For example,
-turning this choice off for a global skill plans copies in all current projects
-instead of user folders. The default is on for a global skill and off for other
-assignments. Existing off cells stay off when the choice is enabled. When a
-new project is first reported, the gateway adds it to project assignments with
-this choice on. Those automatic plans use actor `standing choice`, the normal
-journal, and the normal apply and undo path. Global assignments need no change.
-
-`tools_projects` returns an array of `ToolProjectState` rows: `item`, `projects`
-(a map from every known project name to on/off), `new_projects`, and `machines`
-(the node IDs with observed copies). Targets use the same registered or seen
-project set as assignments. The daemon checks Git placement before any copy.
-These three socket methods require the owner connection. Their gateway frames
-are `tools.toggle`, `tools.new_projects` and `query.tools_projects`.
-The CTO runs `tools_change` actions `toggle` and `new_projects` at once; each
-leaves an Inbox notice with undo.
-
-A switch on an unmanaged user-folder skill first imports its current content.
-A size, secret or hash refusal also refuses the switch. Import leaves the source
-alone until the plan is applied. Migration limits the assignment to the node
-IDs where that content is found today. It never spreads the skill to a machine
-that did not already have it. Plugin, package and system copies cannot be used
-as the import source for a switch.
-
-The owner can plan a global, project or uninstalled assignment. Use the exact
-item ID from `tools_items`, including its brackets and quotes:
-
-```
-agent-net tools plan 'ITEM_ID' global
-agent-net tools plan 'ITEM_ID' project-one project-two
-agent-net tools plan 'ITEM_ID' uninstalled
-agent-net tools apply PLAN_ID
-agent-net tools history 'ITEM_ID'
-```
-
-`tools_plan` takes `item` and `target`, where `target.scope` is `global`,
-`projects` or `uninstalled`; projects scope also takes a `projects` array.
-`target.machines` is an optional array of machine names or node IDs that limits
-the change to those machines ("global on research only"). It combines with
-every scope. The gateway stores node IDs, sorted and without duplicates, and
-refuses a name that matches no enrolled machine or more than one. Empty or
-missing means every machine, which is what every assignment stored before this
-field existed means. The plan, its targets and its audit events carry the
-machines (`assignment.machines`). A machine that is not named gets no target,
-and a daemon also ignores any target that names another machine. A machine that
-is not named keeps what it has: the new revision does not remove or restore
-anything there. A registry MCP server runs on its host, so `machines` is refused
-for it. `agent-net tools plan ITEM global --on research --on mac` sets it from
-the command line. The last-copy check counts a copy on an unnamed machine as
-staying.
-It refreshes reachable machines and lists the known machines, harnesses,
-project checkouts, sources, destinations, intended actions and conflicts. Offline machines and unsupported
-harnesses are shown as unresolved. A skill that has not been imported and an
-unmanaged destination are conflicts. Review the plan before applying it.
-
-`tools_apply` takes `plan_id`. It refuses an out-of-date plan if its inventory,
-known projects, item version, assignments or inspected paths have changed.
-Applying records a new desired revision and nudges connected daemons. Each
-daemon pulls its own targets again after reconnecting and on the regular scan
-interval. A plan that would remove the last assigned copy of an unimported
-skill is refused; import it first. For global skills the daemon fetches the stored version, verifies its hash
-and installs a missing destination using a temporary directory beside it and an
-atomic no-replace rename. A different existing destination is a conflict.
-Global assignments place copies in `~/.claude/skills` and `~/.agents/skills`,
-and in `~/.gemini/config/skills` when `~/.gemini` already exists. Project
-assignments place copies in `.claude/skills` and `.agents/skills` in each
-known Git checkout: registered ones and ones seen in a session. No
-registration step is needed. OpenCode reads both folders and loads the skill
-once. The machine refuses a checkout that is the home folder, a folder that is
-not a Git working tree, or a worktree of another project, with that reason in
-the plan. A same-named skill in another source that can shadow these copies is
-a conflict. The scanner also observes project `.agent/skills` without managing
-it. Removals move an agent-net-owned verified source to the daemon's local backup
-directory before removing it from the skill location.
-
-**Prompt and agent files.** A prompt or an agent is copied as one file, with the same checks, journal, manifest, backup and undo as a skill. The destination is `~/.claude/commands/<name>.md` or `~/.claude/agents/<name>.md` at user level, and `<checkout>/.claude/commands/<name>.md` or `<checkout>/.claude/agents/<name>.md` for a project. Only the `claude` harness and these two folders are used: no `.agents` folder, no Antigravity folder and no shadow check against other harness folders. The plan target names the folder in `root`, and the daemon refuses any other root for these kinds. The daemon unpacks the stored one-file bundle into a staging folder beside the destination, checks its hash, then moves the file into place with an atomic no-replace rename and removes the staging folder. An existing file with other content is a conflict and is never overwritten. A file with the same content that agent-net did not write is recorded as not owned and is never removed. Removal moves the file to the local backup folder (a copy and delete when the backup is on another filesystem), and undo of a removal puts it back from the backup if the original path is still free.
-It compares the source hash with the planned version and reports a conflict if
-the content changed. Backups retain the original path under a timestamped
-directory. Moves wait for every planned copy
-to succeed before removing an old copy. Results show partial progress while
-targets remain unfinished.
-
-`tools_apply` answers with the new revision and one result per target: `ok`,
-`pending`, `conflict` or `failed`, with a reason when it is not `ok`. The
-gateway waits up to three seconds for connected machines to report, so a
-fast local apply shows its real result. A machine that is offline, or slow,
-stays `pending` and applies when it reports later. `tools_item` shows the
-final results.
-
-#### Journal and crash recovery
-
-Every skill write is journaled: a copy into a skill folder (global or
-project), a removal into backup, a restore, and a move across filesystems.
-The daemon writes the record to `skill-journal` before the first change, updates the
-step after each change, and deletes the record when the operation ends. A Git
-`index.lock` that the daemon creates is recorded first, with a private token
-written inside the lock file.
-
-At each daemon start the daemon reads the leftover records and:
-
-- deletes a staged copy that was never renamed into place;
-- finishes the manifest and exclude update when a source was already moved to
-  backup;
-- finishes a guarded source removal when a cross-filesystem backup was
-  complete;
-- removes an `index.lock` only if it holds the record's token. A lock that
-  someone else made stays;
-- leaves anything whose hash does not match the record alone. It writes a
-  `skill journal conflict` line to the daemon log, keeps the record, and
-  answers `conflict` for that path ("interrupted operation ...") until the
-  owner has looked at it and deleted the record file.
-
-A move to backup tries a rename. When the backup folder is on another
-filesystem (`EXDEV`), the daemon copies the skill to a staging folder in the
-backup folder, checks the hash, renames it into place, and removes the source
-only if its hash still matches. Every step is journaled.
-
-#### Undo
-
-`tools_undo` takes an `item` and reverses the item's newest revision. Undo is
-a new audited desired revision, like an apply: it takes the previous
-assignment (or `uninstalled` when there is none) and a plan that reverses only
-the targets that reported `applied`. Undoing a machine-scoped change therefore
-touches only the machines it changed. It answers with the same per-target
-results as `tools_apply`. Offline machines stay pending and undo when they
-reconnect.
-
-- An installed copy is removed only if it is still the copy agent-net made
-  (owned, same hash). A copy backup is kept. An owned Git exclude line is
-  released when its last reference goes.
-- A removed skill is copied back from the local backup only if the original
-  path is still absent. The backup stays for another undo.
-- If the current content differs ("changed since apply"), that target stops
-  with a `conflict` and the files stay as they are. Undo never overwrites a
-  later edit.
-- Undoing an undo applies the first revision again.
-
-Running sessions may need a reload to see the change.
-
-#### Backup retention
-
-The daemon keeps the newest 20 backups per item and none older than 30 days.
-It prunes after each removal and at start. It never prunes a backup that an
-unfinished journal record names. `tools_history` adds a `backups` list for
-this machine with each backup's `time`, `size` and original path. It never
-returns content.
-
-Before a project copy, the daemon checks for tracked files and Git ignore rules.
-It locks and adds the exact managed directory to the path returned by
-`git rev-parse --git-path info/exclude`. Linked worktrees can share that file;
-the daemon records references to the shared line in its manifest. It does not
-change `.gitignore` or the Git index. It removes an owned line after its last
-reference is removed. Matching foreign copies are left alone.
-
-Daemons report each target as applied, pending, conflict, manual or failed.
-`tools_items` and `tools_item` show the desired revision and reported results.
-A missing report stays pending, including while a machine is offline. The
-daemon records installed paths, hashes and revisions in its owner-only
-`skill-manifest.json` in the daemon state directory. Backups are in
-`skill-backups` and the operation journal is in `skill-journal` under that
-directory. Uninstall removes the manifest, backups, journal,
-and owned Git exclude lines but does not remove installed skills.
-A stored item with no remaining observed locations stays listed as `unobserved`.
-`tools_history` takes `item` and returns plans and apply attempts with their
-actors, targets and results. These methods require an owner connection.
-
-The CTO reads tool inventory through `cto_op` (read methods such as `tools_items`, `tools_item` and `tools_summary`). Plans, apply, undo, import and native removal run at once, and the owner sees an Inbox notice with undo where it is supported. Charter `needs` are advisory text;
-the owner tool list shows them as unverified needs and never turns them into
-assignments.
-
-### Managed skill versions
-
-The owner can import an observed skill, prompt or agent with the `tools_import` operator method. A prompt or an agent is stored as a bundle of one file `<name>.md`, under its own kind: the same name as a skill is a separate item with its own numbers. Reading a stored version (`tools_read_file`) uses the path `<name>.md`. Applying works for the three kinds the same way (see "Prompt and agent files" below).
-Pass `item` as the ID from `tools_items` and `location` as an object with
-`node_id` and `location` from that item's locations. The source machine must be
-online. The gateway copies skill contents as supplied and does not scan them
-for secrets. The owner is responsible for keeping secrets out of skills before
-importing them. Import reads the selected directory and does not change it. The
-gateway rejects an import if its contents no longer match the observed hash.
-The packed bundle must be at most 2 MiB and may contain at most 2,048 entries. A
-larger skill can still appear in inventory but cannot currently be imported.
-
-`tools_versions` takes `item` and returns the saved hashes, Git commits, source
-machine and path, and import times. `tools_export` takes `item` and `version`
-(the content hash) and returns a JSON object with a base64 `data` field holding
-the tar bundle. Export verifies the bundle hash. Import, version listing and
-export require the owner connection. Reimporting the same content hash for an
-item returns the existing version. A saved version remains available when its
-observed locations disappear.
-
-**Version numbers.** Each new content hash that is imported for a skill name gets the next number: v1, v2, and so on. The number is stored with the version (column `number` of `skill_versions`), never changes, and is counted per skill name in import order. An upgrade fills in the numbers of existing versions in import-time order. `tools_versions` returns it as `number`. `tools_items` shows it as `version_no` on an item and on each of its locations; `0` or a missing field means no stored version has this content. The Tools tab writes a stored version as `v3`. A copy of a skill that has stored versions, but whose content is none of them, reads `changed` (it was edited outside agent-net). A skill with no stored version at all shows a short content hash.
-
-**Changed here, save, update.** Copies drift when someone edits a deployed copy. agent-net notices this, can store the edit as the next version, and can then bring the other copies up to date. It never overwrites an edited copy by itself.
-
-- *Noticing.* The daemon's `skill-manifest.json` holds the content hash of each copy the daemon deployed. During every inventory scan the daemon compares that hash with the copy's current hash. The scan already computes the current hash, so this adds one small file read and no extra scan. A copy that differs is marked `changed_here` in its inventory item, together with `deployed_hash` (what the daemon put there). `tools_items` shows both on each location, and `deployed_no`, the store number of `deployed_hash`. Copies the daemon did not make are never marked. In the Tools tab the skill's row reads `changed here on MACHINE` with the `!` mark, and its detail says which copies changed and which version they came from.
-- *Save.* `tools_save_changed` takes the same `item` and `location` as `tools_import`. It refuses a copy that is not marked changed here, then does a normal import, with the same 2 MiB limit, hash check and provenance. The copy becomes the next version (v2 after v1, and so on). Nothing is deployed. In the Tools tab, open the skill's actions and choose `Save the copy on MACHINE as the next version`. The CTO uses the `tools_save_changed` operator method, which runs at once with an Inbox notice.
-- *Update.* `tools_update_plan` takes the `item` of a stored version and lists every other copy of that skill: `update` (an unedited copy of an older stored version, which will be replaced) or `kept`, with the reason (changed here, content that is not a stored version, offline machine). It writes nothing. `tools_update_copies` takes the same `item` and the `copies` (`node_id` and `location`) the owner confirmed. The gateway plans again, refuses the whole request if any named copy is no longer a plain update, and asks each machine to replace its copy. The machine repeats the checks (the copy still has the planned content, is not changed here, and lives in `.claude/skills` or `.agents/skills` under home or a project checkout), backs the old copy up with the same guarded removal that "Remove everywhere" uses, installs the new version with the normal copy code, and moves the backup back if the install fails. A project copy stays out of Git status as before. The result lists each copy as `applied` or `failed` with a reason. In the Tools tab, saving a changed copy ends with this plan, and `Update older copies to vN` in the skill's actions opens it at any time. Enter confirms. The CTO uses `tools_update_plan` (a read) and `tools_update_copies` (runs at once with an Inbox notice).
-- *Never overwritten.* A changed copy that is not saved stays as it is and stays marked. Update lists it as kept and refuses to name it, and the machine refuses it again at the moment of replacing.
-- *Older assignments.* A copy that an older assignment made now holds a newer version. When that assignment is reconciled, it reports the conflict `replaced by a newer version` instead of `destination differs`. Assign the newer version to make the assignment current.
-
-The gateway keeps the private bare Git repository in `skills.git` under its
-data directory. Each imported identity has its own directory in the repository;
-SQLite records the commit, content hash and provenance. Imports do not deploy
-skills to any machine.
-
-To back up a running gateway, connect through an owner daemon and use:
-
-```
-agent-net gateway backup --out /absolute/path/to/new-backup
-```
-
-The path is on the gateway machine and must be a new directory outside its data
-directory. The backup includes a consistent database snapshot, the skill Git
-repository, and the gateway CA and server keys. Keep it private.
-
-The gateway also takes that backup by itself before it migrates an older
-database to a newer release. These automatic backups go to
-`gateway-backups/pre-v<version>-<UTC time>` beside the gateway data directory
-and are never deleted automatically. See [Backup before a gateway
-upgrade](#backup-before-a-gateway-upgrade). To restore on the gateway machine,
-run:
-
-```
-agent-net gateway restore --backup /path/to/backup --to /path/to/new-data
-```
-
-The destination must not exist. Restore checks database integrity, Git objects,
-and every stored skill hash before creating it. Configure the gateway to use the
-new data directory before starting it. It never replaces a live data directory.
+- **Skill archive.** The CTO adds a skill from a folder on an online machine, from a Git URL or from a session, reads the archive and undoes a change with the `skill_archive` tool. Intake asks each online machine for its user, project, plugin and agent-net skill folders at that moment. A machine that does not list its user folders is skipped and the result says so.
+- **Skill lists.** The CTO sets the skills of the global node, a team, a repo or an agent with the `skills` tool. A session gets its node's skills in its own folder when it starts.
+- **Undo.** Every archive and list change is one row of `skill_changes`, told apart by its `kind`. The Desk log shows each with an undo, and undo by id works for both kinds.
+- **Shared MCP servers.** A server is added once and runs on one machine. Every registered server is global: each enabled one is listed to every session, and a call is checked at the gateway against the registry (the server exists and is enabled). A server added before 0169 task 5 that was scoped to some projects is global now, because the only screen that set the scope is gone. The CTO adds, removes, tests and enables servers with `mcp_change`. Agent sessions list and test them with `agent_mcp_servers_find` and `agent_mcp_test`. See [the MCP registry](mcp-registry.md).
 
 ## The project registry
 
@@ -2453,7 +1800,7 @@ On upgrade, the gateway uses stored origin URLs to move old folder-based project
 
 **Project layout scan (`projects_layout`).** The CTO can query `projects_layout` (with optional `machine`) to inspect how repositories are structured across machines without manual configuration. The daemon on each machine scans disk under the user's home folder up to depth 4 for git repositories (folders with a `.git` directory). It is strictly read-only and never registers, writes, or modifies projects. Results are cached per machine for 10 minutes. Folders that hold 2 or more repositories at depth 1 or 2 become roots, categorized as `flat` (repos directly at depth 1) or `grouped` (repos at depth 2 under group folders, with loose depth-1 repos in `projects`). When the home folder directly holds 2 or more repositories, the home folder itself (`~`) acts as a flat root. Repositories not claimed by any root are listed in a per-machine `loose` list. Repositories and groups report newest commit timestamps, and groups report remote owners with project counts. Noise is dropped: the home folder itself as a repository (`~/.git`), git worktrees (a `.git` file), agent-net worker worktrees (`~/.local/state/agent-net/daemon/worktrees`), `.claude/worktrees`, `~/code/isolated-worktrees`, `node_modules`, `vendor`, caches, hidden folders, and temp folders.
 
-**Agent graph read.** `agent_graph_read` (Claude Code, Pi and OpenCode) returns the graph that every agent may read, read-only: every node's charter fields with its maturity, every node's rules with name and value, and every edge with its kind, mode and request rule. The rules are the six node settings resolved against the node's maturity (`tests_before_merge`, `merge_authority`, `worker_sandbox`, `judge_consumers`, `deploy_rule`, `autonomy` (`off` or `wake`)) and the delegation policies the owner set for the node's project on each machine. `node` returns that node's full charter, its rules and the edges that touch it. A name that a repo node and an agent node (or a team) share returns each of them, the repo node first, so the agent's charter is not hidden; `note` names the count and the kinds, and a typed read with `ref` reads one alone. A name that only one node has reads as before. Without `node`, `offset` and `limit` page the list (default 20, at most 50), `total` counts the matching nodes, `next` is the next page offset, and `edge_total` counts the edges. Charters and rules are public; only changes are owner-gated. Secrets and tokens, machine paths and locations, learned-change history with evidence, hidden items and sessions stay hidden. The CTO's `graph` view uses this same read with the CTO caller.
+**Agent graph read.** `agent_graph_read` (Claude Code, Pi and OpenCode) returns the graph that every agent may read, read-only: every node's charter fields with its maturity, every node's rules with name and value, and every edge with its kind, mode and request rule. The rules are the six node settings resolved against the node's maturity (`tests_before_merge`, `merge_authority`, `worker_sandbox`, `judge_consumers`, `deploy_rule`, `autonomy` (`off` or `wake`))  `node` returns that node's full charter, its rules and the edges that touch it. A name that a repo node and an agent node (or a team) share returns each of them, the repo node first, so the agent's charter is not hidden; `note` names the count and the kinds, and a typed read with `ref` reads one alone. A name that only one node has reads as before. Without `node`, `offset` and `limit` page the list (default 20, at most 50), `total` counts the matching nodes, `next` is the next page offset, and `edge_total` counts the edges. Charters and rules are public; only changes are owner-gated. Secrets and tokens, machine paths and locations, learned-change history with evidence, hidden items and sessions stay hidden. The CTO's `graph` view uses this same read with the CTO caller.
 
 **Versions.** A gateway from before this feature answers `unknown frame type` to the new requests, and the daemon turns that into "the gateway is too old for project registration". A daemon from before this feature does not know the new methods, and the CLI says so. An older gateway lists projects without SOURCE, and the CLI shows those rows as `seen`.
 
@@ -2479,7 +1826,7 @@ A worker is an agent session that agent-net starts for you, with nobody watching
 - **Model fields:** `agent_worker_start` and CTO `worker_change` take `harness`, `provider`, `model` and `effort` separately. An agent leaves them empty (see **Overriding the picker** below); the CTO and the owner may set them. `provider` and `effort` are optional. For example, use `harness: "codex", provider: "openai", model: "gpt-6.1-sol", effort: "high"`. Old `provider/model:effort` inputs still work. Explicit fields override embedded values. Codex uses its reasoning effort, Claude uses `--effort`, OpenCode uses its model variant, and Pi uses its thinking level. For agy, the requested effort must exist in the machine's `agy models` inventory; a refusal lists the valid efforts. Results and notices display harness, provider, model and effort in that order.
 - **Who starts one:** you (`agent-net start`), an agent (`agent_worker_start`), or the CTO with `worker_change`, which runs at once. A worker cannot start workers. The harness is `opencode` (the default), `claude`, `pi` or `codex`. A caller can say "implement this with a Claude, Pi or Codex subagent".
 - **Where:** the project is looked up in `agent-net projects` (registered or seen). With no project, the caller's own folder is used: it is found by its repository root path on the caller's machine, not by name; a caller outside a known project falls back to its folder name. `project` may also be an absolute path: it matches the main tree or a listed worktree of a known project (use it when two folders share a name). A name matches a registered folder before seen-only folders of the same name on the same machine; it is ambiguous only between two registered folders, or between seen-only folders with none registered, and the refusal lists the paths. If it is on two machines, name one with `--machine`. The machine must be online, accept workers (not set up with `--no-launch`), and have the harness (`agent-net nodes --wide`). The gateway checks the model against that harness's list on the machine. A harness whose list could not be read passes the name through, and a model the harness does not know then fails at start with the harness's own message. The gateway says which check failed.
-- **Worker permission levels** ([decision 0020](decisions/0020-worker-sandbox.md)). The owner sets a level per project (TUI key `p`, line Workers; the operator method is `session_policy` with `{"policy": {"workers": "read-only"}, "scope": "project"}`, owner only, refused at session scope). The level is stored as `workers.sandbox_level` for the project and applies on every machine. It is sent with each start; `worker_start` answers it as `permissions`, and `list --json` shows it in the worker part of the session. When the project policy sets no level, the node's maturity default applies ([maturity and its defaults](#charters-and-component-relationships)); a node with no maturity keeps `sandboxed`. Today Codex, Antigravity and Claude Code workers enforce permission levels with their own sandboxes. On Linux, Pi and OpenCode workers enforce them in the OS sandbox when it is on for the project (below). Otherwise Pi and OpenCode workers run with the owner's permissions; their recorded level is not enforced yet.
+- **Worker permission levels** ([decision 0020](decisions/0020-worker-sandbox.md)). The owner sets a level per project: the repo setting `workers.sandbox_level` (the node setting `worker_sandbox`), owner only. It applies on every machine. It is sent with each start; `worker_start` answers it as `permissions`, and `list --json` shows it in the worker part of the session. When the project sets no level, the node's maturity default applies ([maturity and its defaults](#charters-and-component-relationships)); a node with no maturity keeps `sandboxed`. Today Codex, Antigravity and Claude Code workers enforce permission levels with their own sandboxes. On Linux, Pi and OpenCode workers enforce them in the OS sandbox when it is on for the project (below). Otherwise Pi and OpenCode workers run with the owner's permissions; their recorded level is not enforced yet.
 
   The levels and what each one allows are in [security.md](security.md#what-a-worker-can-do-the-sandbox-level).
 
@@ -2545,7 +1892,7 @@ A worker is an agent session that agent-net starts for you, with nobody watching
   - **Ceiling rule.** `picker.ceiling_rule` is a network setting and defaults to false. When enabled, a candidate whose benchmark ceiling is below the bucket is allowed only if the low end of its cell is at least the low end of the best proven model's cell in that bucket (3 tasks or more, highest score); otherwise it is left out with `above its benchmark, record not as good as best`, whether it has a record or not. With the setting off, nothing changes (decision [0173](decisions/0173-picker-quality.md)).
   - **Exhausted providers in the pick.** A candidate whose provider has a window that is used up, or over 90 percent used, does not compete: it has no quota pace, it is not the best model that the others are measured against, and it comes last in the order, where the gate refuses it with its own reason. The pace of the others is the tightest window.
   - **Settings.** `picker.bucket_width`, `picker.k`, `picker.allowed_fraction`, `picker.uncertain_boost`, `picker.uncertain_n` (fallback rotation only), `picker.weaker_bias` and `picker.explore_share` are network rules the owner and the CTO can change; a change rebuilds the table.
-  - **Note.** The result's `model_note` follows the judge line with the bucket, the chosen cell, the qualifying set with each candidate's expected cost, the thin cells open to the explore share and what was left out with its reason, for example `difficulty R3 S2 C2 U2 V2 K2 · D 2.65 · normal -> opencode opencode-go/deepseek-v4.1-flash (bucket 2.33-2.67: deepseek 0.76 [0.67-0.84] n42, lowest expected cost; qualifying: deepseek 0.76 [0.67-0.84] n42 $0.06/run, p 0.81, $0.18 expected, sonnet 0.71 [0.60-0.80] n25 $0.61/run, p 0.90, $0.72 expected; thin cells (explore share 0.1): flash n1 (benchmark) est $0.05/run, p 0.60, $0.29 expected; terra:medium 0.27 [0.12-0.41] n6 left out (below 0.9×best); codex on pace (...); deepseek: 4 of the last 10 normal starts)`. `est` marks a cost that is a price times an average run, and `(price unknown)` marks a model that took the middle price. The `rotation weight` shows only for an exploration or fallback pick. A model with no record shows `n0` and `(benchmark)`; one with neither a record nor a benchmark is left out as `no record, no benchmark`. The gateway stores the note with the start, and the worker log shows it. The rotation state is kept per difficulty label in the gateway's `owner_settings` (`worker_rotation`) and survives a restart. An empty roster also fails with registration guidance.
+  - **Note.** The result's `model_note` follows the judge line with the bucket, the chosen cell, the qualifying set with each candidate's expected cost, the thin cells open to the explore share and what was left out with its reason, for example `difficulty R3 S2 C2 U2 V2 K2 · D 2.65 · normal -> opencode opencode-go/deepseek-v4.1-flash (bucket 2.33-2.67: deepseek 0.76 [0.67-0.84] n42, lowest expected cost; qualifying: deepseek 0.76 [0.67-0.84] n42 $0.06/run, p 0.81, $0.18 expected, sonnet 0.71 [0.60-0.80] n25 $0.61/run, p 0.90, $0.72 expected; thin cells (explore share 0.1): flash n1 (benchmark) est $0.05/run, p 0.60, $0.29 expected; terra:medium 0.27 [0.12-0.41] n6 left out (below 0.9×best); codex on pace (...); deepseek: 4 of the last 10 normal starts)`. `est` marks a cost that is a price times an average run, and `(price unknown)` marks a model that took the middle price. The `rotation weight` shows only for an exploration or fallback pick. A model with no record shows `n0` and `(benchmark)`; one with neither a record nor a benchmark is left out as `no record, no benchmark`. The gateway stores the note with the start, and the worker log shows it. The rotation state is kept per difficulty label in the gateway's `gateway_state` (`worker_rotation`) and survives a restart. An empty roster also fails with registration guidance.
   - **Read API.** The owner-only method `picker_get` (gateway `GET /v1/picker`) returns the settings in use, the task count, the mean and variance of all tasks, the buckets (`index`, `lo`, `hi`, `mean`, `n`), every model key with one cell (`score`, `lo`, `hi`, `n`) per bucket, and each registered profile with its benchmark score, level and ceiling. The TUI's regular refresh does not call it.
   - **Weekly scores.** The owner-only method `scores_weekly` (gateway `GET /v1/scores-weekly`) returns one row per ISO week for the last 8 weeks with `runs`, `mean_score` (the task score rule), `early_quit_rate`, `mean_fix_rounds`, `brief_defects`, `defects` (defects found later), `mean_tokens` per run, `causes` (the recorded causes of rework: `machine` for quota/auth, sandbox and harness failures, `work` for a failed test or accept step, `brief` for the caller's own brief defect, and `caught` and `escaped` for the defects found later by phase), and `releases` (agent-net release tags recorded in delivery evidence during that week). The TUI Quality subtab toggles the weekly scores table with `w`; its CAUSE column shows `m` machine, `w` work and `b` brief causes and `c`/`e` for caught and escaped defects, and it is left out on a narrow screen.
   - Unprotected providers come first. It skips exhausted providers and windows above 90 percent, and subtracts five quota-room points per running worker on the provider. For a monthly window, it estimates elapsed time from the preceding calendar-month reset. A missing or stale quota reading is neutral. Explicit model requests override the picker and keep the resolution rules below; `model_note` says when this override was needed.
@@ -2558,10 +1905,10 @@ A worker is an agent session that agent-net starts for you, with nobody watching
 - **Temporary model health.** The gateway counts infrastructure outcomes across machines for each harness and provider-qualified model over the last two hours. Two failures within 15 minutes trigger a 15-minute cooldown; each further failure doubles it, up to two hours from the latest failure. A successful run clears the count. Automatic choice skips cooling models when another adequate model is available, and explains the skip or fallback in `model_note`. Explicit model requests are unchanged. Recorded judge timeouts also feed the signal, and a successful judge assessment clears it.
 
 - **Worker providers.** Automatic selection uses the owner-controlled provider allowlist. When it is unset, Claude and Codex harness models, OpenCode and Pi models from `opencode-go` or `openai`, and providers with a usable quota reading are allowed. Other providers, including OpenRouter and OpenCode Zen, are excluded by default. `agent-net scores providers` displays the setting; `agent-net scores providers codex claude opencode-go` replaces it, and `agent-net scores providers --default` restores the defaults. The CTO can change it on the owner's instruction. An explicit model name keeps the resolution rules below: a loose name only matches subscription-backed models, and a pay-per-use provider is used only when its full provider id is written. The Quotas tab lists registered profiles and marks those excluded by this filter. A recent successful worker adds rotation weight.
-- **Protected providers.** The gateway stores the owner setting `protected_providers` and its `reason` in `owner_settings`. The owner orchestrates with one model of choice, today often Claude on an Anthropic subscription. Workers on that same subscription spend the limit the orchestrator needs to keep working. Automatic choice uses other subscriptions first and uses a protected provider only when no other available profile qualifies under the max-or-one-level-below rule or the others are out of quota. The same difficulty, track record, quota, score and rotation rules choose among the remaining profiles. The result explains protected profiles skipped or used, including the reason for a fallback. An explicitly requested model is not blocked by this setting and the result notes when its provider is protected. Claude harness and unprefixed `claude-*` models map to `anthropic`; Codex `gpt-*` maps to `openai`; OpenCode and Pi model prefixes identify their providers.
+- **Protected providers.** The gateway stores the owner setting `owner.protected_providers` and its `reason` as a network setting, with history and undo. The owner orchestrates with one model of choice, today often Claude on an Anthropic subscription. Workers on that same subscription spend the limit the orchestrator needs to keep working. Automatic choice uses other subscriptions first and uses a protected provider only when no other available profile qualifies under the max-or-one-level-below rule or the others are out of quota. The same difficulty, track record, quota, score and rotation rules choose among the remaining profiles. The result explains protected profiles skipped or used, including the reason for a fallback. An explicitly requested model is not blocked by this setting and the result notes when its provider is protected. Claude harness and unprefixed `claude-*` models map to `anthropic`; Codex `gpt-*` maps to `openai`; OpenCode and Pi model prefixes identify their providers.
 
   In the TUI Quotas tab, select a subscription with up/down and press `p` to protect or unprotect it, then answer `enter: yes · esc: no`: Enter or `y` protects, Esc or `n` leaves it unchanged. Press `s` to show subscriptions that are folded away. The CTO can propose replacing the list and reason; it cannot read them. For scripts, use `agent-net workers protect anthropic` or `agent-net workers unprotect anthropic`. The `protected_providers_get` and `protected_providers_set` operator methods are owner-gated: agent clients and command lines inside an agent session's process tree are refused. The Quotas tab marks protected profiles and subscriptions with a lock. Setup does not protect a provider and does not teach the protect command: the TUI teaches it when the owner starts using workers.
-- **Worker quota floor.** The gateway stores the owner setting `worker_floors` in `owner_settings`, registered as `providers.worker_floor`. The owner can set, per provider, a minimum share of remaining quota (0 to 95 percent in increments of 5, where 0 turns it off) that workers must leave untouched. When a provider's remaining quota in any tracked window (such as a 5-hour, weekly or monthly window) is below its floor, the automatic worker picker excludes that provider's models from automatic picks entirely, not even as a last resort. An exhausted window (100% used) always excludes. The result's `model_note` explains the exclusion: `skipped <name>: <provider> has <N>% left in its <window> window, under your <F>% worker floor`. If the provider has no quota reading, the floor is not applied and `model_note` records `no quota reading, floor not applied`. A reading from another machine of the same network counts when the machine that would run the worker cannot read that provider's login: the subscription belongs to the owner, not the machine. An explicit worker start naming a model on a provider under its floor is refused with that same sentence, unless the caller is the owner's TUI. CTO starts follow the refusal rule. Running workers are not stopped when the floor is crossed; only new starts are affected.
+- **Worker quota floor.** The gateway stores the owner setting `owner.worker_floors` as a network setting, with history and undo. The owner can set, per provider, a minimum share of remaining quota (0 to 95 percent in increments of 5, where 0 turns it off) that workers must leave untouched. When a provider's remaining quota in any tracked window (such as a 5-hour, weekly or monthly window) is below its floor, the automatic worker picker excludes that provider's models from automatic picks entirely, not even as a last resort. An exhausted window (100% used) always excludes. The result's `model_note` explains the exclusion: `skipped <name>: <provider> has <N>% left in its <window> window, under your <F>% worker floor`. If the provider has no quota reading, the floor is not applied and `model_note` records `no quota reading, floor not applied`. A reading from another machine of the same network counts when the machine that would run the worker cannot read that provider's login: the subscription belongs to the owner, not the machine. An explicit worker start naming a model on a provider under its floor is refused with that same sentence, unless the caller is the owner's TUI. CTO starts follow the refusal rule. Running workers are not stopped when the floor is crossed; only new starts are affected.
 
   In the TUI Quotas tab, configured floors appear in a FLOOR column after PLAN. Press `f` to enter a floor for the selected provider (0 to 95 percent, 0 turns it off). When a window is under its provider's floor, its remaining quota is highlighted in warning color and its PACE cell shows `under floor`. The operator methods `worker_floors_get` and `worker_floors_set` are owner-gated.
 - **Scores.** The bundled table contains 85 model and effort scores from [Artificial Analysis](https://artificialanalysis.ai/). An effort suffix selects that effort; for a bare model the medium entry is used when no harness default is known, falling back to a default entry. When a model has no score row at the requested effort, lookup falls back to the same model's score at the nearest known effort (preferring a lower effort, otherwise using the nearest higher effort). It also matches the provider-less base model so provider-prefixed models resolve to the underlying model's capability score (or base model when the exact build snapshot has none). Unknown scores are not candidates for automatic choice. Owner overrides win: `agent-net scores` lists scores, `agent-net scores set <model> <score>` adds an override, and `agent-net scores clear <model>` removes it. The CTO applies an override with `settings_change` area `score` on the owner's instruction. The owner-only `difficulty_get` and `difficulty_set` operator methods read and replace the difficulty minimum overrides.
@@ -2594,7 +1941,7 @@ A worker is an agent session that agent-net starts for you, with nobody watching
 
   `midrun_count` counts caller requests after the first brief when no done, partial, failed, timed out or idle-without-hand-back notice was sent since the previous caller request. It is independent of the existing continue and fix counts. It is stored per run and summed into the quality family row as `midrun`; it has weight zero and is not shown in the panel or included in headache minutes. The daemon retains the count and notice state across restarts and queues.
 
-  At gateway startup, one backfill recovers old continue and fix counts from retained messages, and a second links continuation briefs and counts mid-run requests. Each backfill commits its changes and its `owner_settings` marker (`rework_backfill_done` or `task_rework_backfill_done`) together. The latter matches a continued brief to an earlier brief from the same caller and resolves chains to their root. Expired messages cannot be recovered. The backfill stores counts and IDs, not a copy of the message text.
+  At gateway startup, one backfill recovers old continue and fix counts from retained messages, and a second links continuation briefs and counts mid-run requests. Each backfill commits its changes and its `gateway_state` marker (`rework_backfill_done` or `task_rework_backfill_done`) together. The latter matches a continued brief to an earlier brief from the same caller and resolves chains to their root. Expired messages cannot be recovered. The backfill stores counts and IDs, not a copy of the message text.
 - **The satisfaction ask.** The counters see whether work came back, not how good it was, so agent-net asks the caller now and then. After a worker's final end notice, the gateway asks for every 5th finished worker of each caller, and for the first 3 finished tasks of a model and effort that has fewer than 5 ratings. The ask is one line added to the end notice the caller already gets: `rate worker <session> (<model>, <difficulty>, <run time>) with agent_worker_rate: 1 to 5 for the result, and one line on why`. The caller answers with `agent_worker_rate(worker, score, note)`. The score is 1 to 5 and the note is optional; it is cut to one short line and secrets are masked. A rating is stored with the run's model, harness, effort, difficulty and caller, never with the task text. Only the session that started the worker may rate it, and each worker takes one rating; a second rating, or one for another session's worker, is refused. A missing answer is not a low rating. Ratings appear as a count per model in the gateway's quality analysis and feed the cached analysis described below. The Quality sub-tab of Quotas shows the picker cells, not that table.
 - **A defect found later.** A defect found hours later, after the hand-back or after merge, is not lost. The caller reports it with `agent_worker_rate` and `kind: "defect_found_later"`, the worker's session ID, a severity from 1 to 4 and one line on what is wrong; the owner can report one from the Messages tab, with `f` on a worker conversation, where the prompt asks for the note and then the severity. A defect report has no score, needs no new message to the worker and may be sent more than once: each report is one defect, and each adds its severity in points of rework to that worker's task in the calibration medians. It may follow a rating. The note is cut and masked like a rating note. Only the session that started the worker, or the owner, may report one. The answer returns the new row id in `defect`; the session that filed it can later move that row to a brief defect with `kind: "move_to_brief_defect"` and the same `defect` id (see **A bad brief**).
 
@@ -2837,7 +2184,7 @@ cleaned notices may be unavailable. The log has no row actions.
 
 ### In flight on the Desk
 
-The In flight section of the Desk (tab 7) lists the open changes of the [delivery pipeline](decisions/0057-delivery-pipeline.md)
+The In flight section of the Desk (tab 6) lists the open changes of the [delivery pipeline](decisions/0057-delivery-pipeline.md)
 across all projects, newest first. A change is open while its state is `open`
 (not merged yet) or `merged` (merged, with steps after merge left). The list
 holds at most 300 changes.
@@ -2894,7 +2241,7 @@ the machine that runs it. That covers the Workers log, Messages and message
 bodies, Inbox, Sessions and session details, Graph labels, Quotas reset times,
 the `updated` header, Tools, and CTO proposals and timelines.
 
-The owner setting is `time_zone` in the gateway's `owner_settings` table. It is
+The owner setting is the network setting `owner.time_zone`. It is
 `auto` by default, or an IANA name such as `Europe/Paris`. Each daemon reports
 its own machine's IANA zone in its `hello` (the target of `/etc/localtime` on
 macOS, then `/etc/timezone` or `timedatectl` on Linux, then `TZ`); the gateway
@@ -2923,7 +2270,7 @@ search contains text, the first Esc clears it and the second leaves the field.
 |---|---|
 | Every tab | `1` to `7` switch tabs; `c` opens the CTO; `C` focuses its box; `?` opens help; `/` filters or finds where the screen has a list; Enter goes into the selected thing; arrows and `j`/`k` move; `R` refreshes or rescans; Esc goes back or clears; `q` and Ctrl+C quit. `M` and `G` do not open Graph. |
 | Sessions | Left/right selects NAME, RULE or DELEGATE. Enter on NAME opens the session, Space on RULE cycles normal, ask and auto, and Enter on DELEGATE opens its form. Esc returns to NAME. `m` composes; `n` starts a session; `v` toggles active (the default) and all, which adds offline sessions; `z` collapses or expands the selected tree, and `Z` does the same for all trees; `h` hides or unhides the selected session; `H` shows the hidden sessions, and temp-folder sessions in the all view; `x` stops a worker; `d` shows details; `/` filters. The first group header shows `Inbox: <N> to decide` while anything waits. |
-| Desk (tab 7) | Tab 7 groups waiting items into three boxes: Needs your answer (questions, approvals, held requests and waiting sessions), Proposals (CTO proposals and learned suggestions), and For your information (outcomes and notices). Each box shows its count and appears only when it has items. Each row says who, what it is about in plain words, and its age. A panel shows the selected item in full: its text, session, project, machine, age and the keys that act on it. At 100 columns or wider the panel is on the right; below that it sits under the boxes. The key line follows the selection: the keys for that item, then `↑↓ select` and `? help`. On a held request, `a` approves and `r` refuses. On a learned suggestion, `a` accepts and `r` rejects. On an outcome, `s` lets it stand and `O` overrules it. A CTO proposal uses `a` to approve and `r` to refuse; `A` approves all open proposals. On a question, `t` types a one-line answer. On an approval, a question or a notice, `x` dismisses the item: it is closed without sending an answer, and an item the gateway no longer has leaves the list with the note `already gone`. Enter opens the details or goes into the session. The tab label shows the count of waiting items. |
+| Desk (tab 6) | Tab 7 groups waiting items into three boxes: Needs your answer (questions, approvals, held requests and waiting sessions), Proposals (CTO proposals and learned suggestions), and For your information (outcomes and notices). Each box shows its count and appears only when it has items. Each row says who, what it is about in plain words, and its age. A panel shows the selected item in full: its text, session, project, machine, age and the keys that act on it. At 100 columns or wider the panel is on the right; below that it sits under the boxes. The key line follows the selection: the keys for that item, then `↑↓ select` and `? help`. On a held request, `a` approves and `r` refuses. On a learned suggestion, `a` accepts and `r` rejects. On an outcome, `s` lets it stand and `O` overrules it. A CTO proposal uses `a` to approve and `r` to refuse; `A` approves all open proposals. On a question, `t` types a one-line answer. On an approval, a question or a notice, `x` dismisses the item: it is closed without sending an answer, and an item the gateway no longer has leaves the list with the note `already gone`. Enter opens the details or goes into the session. The tab label shows the count of waiting items. |
 | Messages | Tab and Shift+Tab switch the sub-tabs: Agents, Workers and System. Up/down selects a thread; left/right selects a message (in a stored conversation they scroll it); ctrl+u and ctrl+d scroll the open conversation a page, and the mouse wheel scrolls the list or the conversation, whichever it is over; Enter opens the body; End goes to the latest message; `e` expands or collapses a worker run; `p` and `t` cycle the project and team filters; `/` searches; `o` opens a loaded change or Desk ask; Esc clears the filters. The body closes with Enter or Esc. The legend under the title explains the marks. |
 | Quotas | `p` protects or unprotects; `s` shows other subscriptions; `R` refreshes. In Quality, up/down selects a model, left/right selects a bucket, and `R` reads the picker table again. Enter is unused. |
 | Graph | Arrows select; Shift+arrows pan; `,` and `.` select linked nodes; Enter opens the card; `/` finds a node; `t` cycles the Team filter through all nodes and each active Team, and the key line names the Team shown; `T` opens the Team list. The graph fits itself when the tab opens. `o`, Space and `0` do nothing. |
@@ -2934,7 +2281,7 @@ search contains text, the first Esc clears it and the second leaves the field.
 | Help | Esc closes. `?` switches between this screen and all screens. Enter, Backspace, `N`, `T` and `R` do not act there. `G` goes to the last help line. Help is built from the binding table: the screen you are on first, then Global keys; `?` again shows Global keys, the current tab, the other tabs in tab order, then In overlays. |
 | Confirmations | Enter or `y` says yes; Esc or `n` says no. Every question footer shows all four keys. |
 
-`agent-net tui` has seven tabs: `1` Sessions, `2` Graph, `3` Quotas, `4` Messages, `5` Tools, `6` Settings and `7` Desk. On each tab, `c` opens the CTO session, `C` focuses the CTO box and ctrl+] returns to Sessions. The box is read-only and shows the latest CTO output plus `c: open the <title>` (or `enter: open the <title> · ctrl+]: back` while focused), where `<title>` is the owner's CTO title; replies use Markdown, and pgup/pgdn or ctrl+u/ctrl+d scroll the conversation. Enter opens the full CTO harness UI in the TUI's terminal or herdr pane (ctrl+] returns), `n` starts a new conversation after confirmation, `u` undoes the last graph change, `m` edits the title, harness and model, and Esc skips a tip. Messages shows one row per conversation between two parties, with Agents, Workers and System sub-tabs switched by Tab or Shift+Tab. The tab loads every stored thread as a light row, in the background, so the whole history is there at once; a thread's messages load only when it is opened. The footer counts the threads on the list. Use up/down or the mouse wheel to select a thread, left/right to select a message, ctrl+u/ctrl+d or the wheel over the right pane to scroll it (it keeps its place when new messages arrive), End to go to the thread's latest message, Enter for its full body, `f` on a worker conversation to report a defect found later, `p` and `t` to filter by project or team, `/` to search, and `o` to open a loaded change or Desk ask.
+`agent-net tui` has six tabs: `1` Sessions, `2` Graph, `3` Quotas, `4` Messages, `5` Settings and `6` Desk. On each tab, `c` opens the CTO session, `C` focuses the CTO box and ctrl+] returns to Sessions. The box is read-only and shows the latest CTO output plus `c: open the <title>` (or `enter: open the <title> · ctrl+]: back` while focused), where `<title>` is the owner's CTO title; replies use Markdown, and pgup/pgdn or ctrl+u/ctrl+d scroll the conversation. Enter opens the full CTO harness UI in the TUI's terminal or herdr pane (ctrl+] returns), `n` starts a new conversation after confirmation, `u` undoes the last graph change, `m` edits the title, harness and model, and Esc skips a tip. Messages shows one row per conversation between two parties, with Agents, Workers and System sub-tabs switched by Tab or Shift+Tab. The tab loads every stored thread as a light row, in the background, so the whole history is there at once; a thread's messages load only when it is opened. The footer counts the threads on the list. Use up/down or the mouse wheel to select a thread, left/right to select a message, ctrl+u/ctrl+d or the wheel over the right pane to scroll it (it keeps its place when new messages arrive), End to go to the thread's latest message, Enter for its full body, `f` on a worker conversation to report a defect found later, `p` and `t` to filter by project or team, `/` to search, and `o` to open a loaded change or Desk ask.
 
 The Graph tab keeps its graph, camera, selection and traffic in a headless state. Actions update that state and return effects for the tab to perform. A scene describes what to show independently of the terminal, and a renderer draws it. A Braille renderer is the fallback everywhere. On a terminal that speaks the kitty graphics protocol, the same scene is drawn to an RGBA image with anti-aliased shapes and shown through Unicode placeholder cells; labels stay ordinary terminal text, so they remain crisp and selectable. The renderer and the pixel size of a cell are chosen once at start. `AGENT_NET_GRAPH` is `auto` (the default), `pixel` or `braille`. Auto sends a tiny `a=q` image query followed by a device attributes query to bound the wait, and reads the cell size from the `TIOCGWINSZ` pixel fields or a CSI 16 t reply. It stays on Braille when the terminal does not answer the image query with OK, when the cell size in pixels is unknown, or inside a multiplexer that drops images: `$TMUX`, or herdr, which sets `HERDR_ENV=1`. `pixel` overrides the multiplexer veto, and `braille` always falls back. Each image is transmitted once with `U=1` and only again when its hash changes; the old image is deleted by id first. In pixel mode the scene also carries motion: a comet with a fading tail for each message, a ring when it arrives, the phase of a busy node's slow glow, and the eased camera. Rendering never blocks the UI: `View` and `Update` build only the cheap scene, a scene hash decides whether a frame is needed, and a `tea.Cmd` goroutine rasterizes and PNG-encodes at most one frame at a time. New frames are dropped while one is in flight, and the last finished frame stays on screen. The image is capped at 1600 by 900 pixels and the terminal scales it to the cell area. A 120x34 frame with 20 nodes costs about 90 ms to rasterize, so pixel frames are requested at 8 a second; idle ticks stay at the existing 250 ms and reuse the last frame. Braille keeps its own picture and tick; both views use the same traffic filter and wildcard labels. Zooming past 1.9 times the fitted zoom shows a rounded charter card next to a node; the card box is drawn in the image and its text stays ordinary terminal cells.
 
@@ -2951,10 +2298,10 @@ The Graph tab keeps its graph, camera, selection and traffic in a headless state
 
   The graph uses kitty pixel graphics on a supporting terminal and Braille characters everywhere else; see the paragraph above. In pixel mode node size and dots show its session count and busy sessions, and the ring shows maturity. Rule edges are curved with arrows; labels appear on the selected node's edges and when zoomed in. A dashed ring marks a wildcard rule. A busy node has a green glow. When motion is enabled, each message is a glowing dot with a fading tail, a ring marks its arrival, and camera moves ease over about 300 ms. Past 1.9 times the fitted zoom, a node with a charter shows a small card with its maturity, session count and purpose. Frame rasterization and encoding run off the UI loop, at most 8 times a second, and unchanged frames are reused.
 - **Header.** `12 online · 3 busy · 1 needs you · workers 4 running, 1 queued`: the gateway's online count from `counts`, the sessions that report `busy`, the sessions that wait for you (in the warning colour, and left out when none wait), and the workers with the queued starts from the admission queue. Offline sessions are left out: they are mostly old ghosts. An older gateway has no counts: the header then says `N sessions, M online` and the same figures after it. A warning on the title points to tab 3 when a subscription window is above 80% or exhausted. The Desk tab label also shows the count of waiting items. The header shows the learned count, the text filter (`filter: /cogforge`), and the time of the last refresh.
-- **Desk,** tab 7, is the one place for everything that waits for you and everything in flight (decisions [0016](decisions/0016-needs-you.md) and [0090](decisions/0090-asks-and-the-desk.md)). It replaces the old Inbox and Delivery tabs; there are seven tabs. A title line says `Desk · N need you`, and `log closed (l opens it)` while the log is shut. Three sections follow, and one cursor walks all of them. **Needs you** lists the asks: questions, approvals, held requests, waiting sessions, steps that need you, outcomes, CTO proposals, learned suggestions and charter drafts, sign-in asks, and checks such as "blocked" or "stopped with work left". It is one list from the gateway (`asks_list`), oldest first inside a kind, with what needs an answer first, then what proposes a change, then what only informs. Each row shows who, a short plain-words summary, and its age. **In flight** lists the delivery changes (the old Delivery tab) with the same row look: title, step, who must act, age and the evidence strip. A change that has an open ask shows `asks you: <question>` under its row. **Log** is closed until you press `l`; it lists what the CTO and the gateway did, newest first, and a CTO line that can be undone shows `u undo` when selected (the line then reads `Undone: ...`). A panel shows the selected row in full: on the right at 100 columns or wider, under the sections (at most 8 lines) on a narrower terminal. The keys are the ones of each kind: `a` and `r` approve and refuse (held requests, proposals, approvals), `a` and `r` accept and reject (learned suggestions and drafts), `s` and `O` let stand and overrule (outcomes), `i` opens a sign-in pane, `t` answer, `x` dismiss, Enter for details or to open a session. On a question or approval with options, Enter opens the details; there up and down mark an option and Enter answers the marked one. The digits `1` to `7` always switch tabs, on the list and in the details, and never answer an ask. On a change row: Enter opens the evidence, `y` and `n` report a released change as working or failing, `v` shows or hides the done and stale changes, `R` reloads. A session that waits for you says `<session> waits for you: <question>`; it comes from the same ask list (a worker's or the owner's own wait is not an ask), and the offline, hidden and junk choices of the Sessions tab still apply to it. The tab label and the header show the count of the Needs you list, and the first Sessions group header shows `Desk: <N> to decide`. The empty state says `Nothing is waiting for you.` See [the Desk](#asks-and-the-desk-store-and-log-decision-0090).
+- **Desk,** tab 6, is the one place for everything that waits for you and everything in flight (decisions [0016](decisions/0016-needs-you.md) and [0090](decisions/0090-asks-and-the-desk.md)). It replaces the old Inbox and Delivery tabs; there are seven tabs. A title line says `Desk · N need you`, and `log closed (l opens it)` while the log is shut. Three sections follow, and one cursor walks all of them. **Needs you** lists the asks: questions, approvals, held requests, waiting sessions, steps that need you, outcomes, CTO proposals, learned suggestions and charter drafts, sign-in asks, and checks such as "blocked" or "stopped with work left". It is one list from the gateway (`asks_list`), oldest first inside a kind, with what needs an answer first, then what proposes a change, then what only informs. Each row shows who, a short plain-words summary, and its age. **In flight** lists the delivery changes (the old Delivery tab) with the same row look: title, step, who must act, age and the evidence strip. A change that has an open ask shows `asks you: <question>` under its row. **Log** is closed until you press `l`; it lists what the CTO and the gateway did, newest first, and a CTO line that can be undone shows `u undo` when selected (the line then reads `Undone: ...`). A panel shows the selected row in full: on the right at 100 columns or wider, under the sections (at most 8 lines) on a narrower terminal. The keys are the ones of each kind: `a` and `r` approve and refuse (held requests, proposals, approvals), `a` and `r` accept and reject (learned suggestions and drafts), `s` and `O` let stand and overrule (outcomes), `i` opens a sign-in pane, `t` answer, `x` dismiss, Enter for details or to open a session. On a question or approval with options, Enter opens the details; there up and down mark an option and Enter answers the marked one. The digits `1` to `7` always switch tabs, on the list and in the details, and never answer an ask. On a change row: Enter opens the evidence, `y` and `n` report a released change as working or failing, `v` shows or hides the done and stale changes, `R` reloads. A session that waits for you says `<session> waits for you: <question>`; it comes from the same ask list (a worker's or the owner's own wait is not an ask), and the offline, hidden and junk choices of the Sessions tab still apply to it. The tab label and the header show the count of the Needs you list, and the first Sessions group header shows `Desk: <N> to decide`. The empty state says `Nothing is waiting for you.` See [the Desk](#asks-and-the-desk-store-and-log-decision-0090).
 - **Machines,** one line each: an online dot, name, agent-net version, CPU use as a percentage of the machine's core capacity with a bar, memory used and total with a bar, free space on the filesystem containing the daemon user's home directory, running worker count and memory, and the session or worker with the highest CPU use. Versions are dim, except that an online machine on an older version than the newest online machine is amber. Offline machines show their last known version in dim. The columns stay aligned across rows. When the terminal is narrow, the row keeps its version and omits optional fields in this order: top CPU session, workers, disk. Disk space is sampled once a minute; less than 10G free is red and less than 20G is amber. It does not list installed harnesses. When another machine has a harness that this machine lacks or has at an older version, it shows a dim note such as `no codex` or `old codex`. This machine comes first and is marked `(here)`. The name is the gateway's name for the machine, and `(here)` is matched by node ID, not by hostname. A figure that is missing or older than 45 seconds reads `?`.
-- **Sessions,** grouped as Needs you, Working and Idle: NAME, MACHINE (short host name), PROJECT, MODEL (harness and model, shortened: no provider, no `claude-` prefix), STATUS (`idle`, `wait`, `owes`, `busy`, `shell`, `exited`, `needs you`, `limited` for a session that hit its provider usage limit, `dorm` for dormant, `off` for offline; `shell` comes from Claude Code and means no turn is running but a shell command the session started is still alive, such as a background command; `exited` means the harness process ended, so the session counts as ended and is not Working), TRUST (`-`, `ask` or `auto` for the node wildcard rule, with `+N` for sender-specific edges; always shown), RULE (the request rule: `normal`, `ask` or `auto`), DELEGATE (the [delegation policy](#delegation-policy): `off`, `native` or `workers`, or `-` if unset), CPU, RAM and TASK (the task the session announced; a worker without one shows the first line of its task; otherwise the harness title if it differs from NAME, else blank; a task that names an ended worker session id gets `(worker s_.. ended Nov 9 01:07 UTC)` after it, see [decision 0111](decisions/0111-blocked-members-reach-the-lead.md)). A session that hit its provider usage limit shows `limited` in STATUS and `until HH:MM` at the start of TASK, in your time zone, until the limit ends or the session completes a turn (the [usage limit](#provider-usage-limits) section says how it is found). An idle session with unanswered requests shows `wait` or `owes` in STATUS and the peer and age in TASK. The detail pane lists each peer, time and message ID. Requests older than 24 hours and notifications do not count. The operator counts call includes `pending_stalls`, the number of observed idle periods with an open request for over 20 minutes since gateway start. Sampling runs once a minute. The same loop sends at most one reminder per unanswered request to an online, idle recipient, after both the request and the last reported activity are over two minutes old. A missing activity time prevents a reminder. A session under a provider usage limit (see below) gets no reminder and no idle check until the limit ends. Notifications, held or closed requests, owner conversations, CTO recipients, and edges with `ask` or `never` are excluded. Delivery rechecks these conditions. The notification comes from the reserved `agent-net` sender and asks the recipient to answer the original message with `agent_message_reply`, or say it cannot. A request that needs no answer is closed with `agent_message_reply` and `ack: true`: the gateway records the acknowledgement, delivers nothing to the sender, and the request counts as answered for the reminder, the wait/owes status and the idle check. Closing a request this way never wakes a session and never resumes an ended worker. A `reminded` flag on the request survives a gateway restart. The operator `query.counts` call also returns `pending_reminders` (reminders put into the delivery queue), `pending_answered_after_reminder` (requests answered within 30 minutes of their reminder), and `pending_reminders_offline` (distinct eligible requests skipped while their recipient was offline, since gateway start). The first two counts are derived from retained messages and can decrease when message history is pruned. Offline requests create no notification; they may receive their one reminder after reconnecting. An online, idle session with open work gets at most one idle check per idle period. Open work is a request it owes an answer, a running worker it started, or a non-empty announced task. Workers, the CTO and offline sessions are never checked. The check is a notification from the reserved `agent-net` sender and asks for the next `agent_announce`: `done`, `more` with one line, or `blocked on X`. `done` stops checks until new activity. `more` follows the node's autonomy setting: `off` leaves an Inbox row, `<name> stopped with work left: <line>`; `wake` sends one continue notification, `[agent-net] continue: you said you have work left (<line>). Carry on, then answer the next check.`, and leaves no row. An offline session is not woken. `blocked on X` always leaves a row naming X, whatever the autonomy. Wake-ups have their own daily cap of 6 and stop after two in a row with no new message or change in open work; the second leaves one row, `<name> was woken twice with no progress`. Two `more` answers with no progress stop the checks and leave one row. A session gets at most 6 checks a day. The operator `query.counts` call also returns `checks_sent`, `check_answers_done`, `check_answers_more`, `check_answers_blocked` and `wake_ups_today`. The check count comes from retained messages and can decrease when history is pruned; the answer counts and today's wake count are small stored counters. Whole caller trees take their most urgent live member's group and position: Needs you (a wait or open owner question), Working (any busy member), then Idle. An ended or exited member never lifts a tree. A session that did something in the last hour stays in Working too; after an hour of quiet it moves to Idle. Empty groups are hidden. Idle shows pinned sessions; other idle trees fold into `N more idle · v to show`. Connected bots have their own Bots group at the bottom: a bot has no turns, so it is never Working. Press `v` to show all idle and ended sessions, and `H` to show hidden sessions. `z` toggles the selected tree, including when a child is selected; `Z` toggles all visible trees. Collapse state lasts for the TUI run, and a collapsed task ends with `+N (M busy)`. Within each group, activity bands order root trees by their most urgent live member: busy or needs you, active within 10 minutes, within one hour, within 24 hours, then older or offline. Activity is the last time the session did something (a turn started or ended, a message was sent or received, it announced a task, a wait started, or its harness wrote output), not the last time its daemon reported it. A daemon restart or a re-report does not make an idle session look active. Within a band the most recently active session comes first; ties never use the oldest start. A session entering a band moves to its top; idle margins reduce moves near band boundaries. The order freezes for three seconds after a key press, and selection follows the session. Workers stay under their caller. A merger belongs to its explicit online repo lead, then its starter if known, otherwise it stays at the top level. Trees stay together even when a text filter matches only a child. A session that is idle with no report for more than an hour is dim. Offline sessions are dimmed too. On a narrow terminal TASK, MODEL and PROJECT give way first. TRUST, RULE and DELEGATE stay visible. A tree with more than 20 processes, 200% CPU or 4G of memory shows its numbers in red. A process tree that several sessions share shows `shared` in their rows and has no row of its own. A worker's private OpenCode server is its own tree, so its CPU and memory are on the worker's row. CTO and merger roles appear as dim tags after NAME, and a session whose node has a standing loop gets a dim `↻` after its name. The CTO is a normal row in its urgency group; NAME shows the owner's CTO title, and Enter enters it through `session_enter`, the same plan as Enter in the CTO box.
-- **Selected session.** The first line has the name, harness, status and the session's CPU, RAM and process count. Below, on the left: session and worker IDs and PID, folder, branch, model and mode (these last two moved here from the table), function (the project description from `AGENTS.md`; "none: add a `# Project: <one line>` line to AGENTS.md" when there is none), remote, worktree (when the session runs in a linked worktree), the project source (`seen in a session`, `registered`, or `seen in a session and registered`), task, expertise, a `trust` line when peer trust is on, `policy` and `main` lines when it has a delegation policy (with a note for each part its harness cannot do), and its recent messages. For a worker it starts with who started it and then `context 84k / 1M (8%)  tokens 345k`, with only the parts the harness has reported. On the right: the heaviest 5 processes by CPU and by memory (PID, CPU, RAM, command line with secrets masked), fetched with `usage_top` when the session is selected and again every 5 seconds. Press `d` to replace the session list with these details; press it again to return. The CTO box stays visible.
+- **Sessions,** grouped as Needs you, Working and Idle: NAME, MACHINE (short host name), PROJECT, MODEL (harness and model, shortened: no provider, no `claude-` prefix), STATUS (`idle`, `wait`, `owes`, `busy`, `shell`, `exited`, `needs you`, `limited` for a session that hit its provider usage limit, `dorm` for dormant, `off` for offline; `shell` comes from Claude Code and means no turn is running but a shell command the session started is still alive, such as a background command; `exited` means the harness process ended, so the session counts as ended and is not Working), TRUST (`-`, `ask` or `auto` for the node wildcard rule, with `+N` for sender-specific edges; always shown), RULE (the request rule: `normal`, `ask` or `auto`), CPU, RAM and TASK (the task the session announced; a worker without one shows the first line of its task; otherwise the harness title if it differs from NAME, else blank; a task that names an ended worker session id gets `(worker s_.. ended Nov 9 01:07 UTC)` after it, see [decision 0111](decisions/0111-blocked-members-reach-the-lead.md)). A session that hit its provider usage limit shows `limited` in STATUS and `until HH:MM` at the start of TASK, in your time zone, until the limit ends or the session completes a turn (the [usage limit](#provider-usage-limits) section says how it is found). An idle session with unanswered requests shows `wait` or `owes` in STATUS and the peer and age in TASK. The detail pane lists each peer, time and message ID. Requests older than 24 hours and notifications do not count. The operator counts call includes `pending_stalls`, the number of observed idle periods with an open request for over 20 minutes since gateway start. Sampling runs once a minute. The same loop sends at most one reminder per unanswered request to an online, idle recipient, after both the request and the last reported activity are over two minutes old. A missing activity time prevents a reminder. A session under a provider usage limit (see below) gets no reminder and no idle check until the limit ends. Notifications, held or closed requests, owner conversations, CTO recipients, and edges with `ask` or `never` are excluded. Delivery rechecks these conditions. The notification comes from the reserved `agent-net` sender and asks the recipient to answer the original message with `agent_message_reply`, or say it cannot. A request that needs no answer is closed with `agent_message_reply` and `ack: true`: the gateway records the acknowledgement, delivers nothing to the sender, and the request counts as answered for the reminder, the wait/owes status and the idle check. Closing a request this way never wakes a session and never resumes an ended worker. A `reminded` flag on the request survives a gateway restart. The operator `query.counts` call also returns `pending_reminders` (reminders put into the delivery queue), `pending_answered_after_reminder` (requests answered within 30 minutes of their reminder), and `pending_reminders_offline` (distinct eligible requests skipped while their recipient was offline, since gateway start). The first two counts are derived from retained messages and can decrease when message history is pruned. Offline requests create no notification; they may receive their one reminder after reconnecting. An online, idle session with open work gets at most one idle check per idle period. Open work is a request it owes an answer, a running worker it started, or a non-empty announced task. Workers, the CTO and offline sessions are never checked. The check is a notification from the reserved `agent-net` sender and asks for the next `agent_announce`: `done`, `more` with one line, or `blocked on X`. `done` stops checks until new activity. `more` follows the node's autonomy setting: `off` leaves an Inbox row, `<name> stopped with work left: <line>`; `wake` sends one continue notification, `[agent-net] continue: you said you have work left (<line>). Carry on, then answer the next check.`, and leaves no row. An offline session is not woken. `blocked on X` always leaves a row naming X, whatever the autonomy. Wake-ups have their own daily cap of 6 and stop after two in a row with no new message or change in open work; the second leaves one row, `<name> was woken twice with no progress`. Two `more` answers with no progress stop the checks and leave one row. A session gets at most 6 checks a day. The operator `query.counts` call also returns `checks_sent` and `wake_ups_today`. The check count comes from retained messages and can decrease when history is pruned; today's wake count is a small stored counter. Whole caller trees take their most urgent live member's group and position: Needs you (a wait or open owner question), Working (any busy member), then Idle. An ended or exited member never lifts a tree. A session that did something in the last hour stays in Working too; after an hour of quiet it moves to Idle. Empty groups are hidden. Idle shows pinned sessions; other idle trees fold into `N more idle · v to show`. Connected bots have their own Bots group at the bottom: a bot has no turns, so it is never Working. Press `v` to show all idle and ended sessions, and `H` to show hidden sessions. `z` toggles the selected tree, including when a child is selected; `Z` toggles all visible trees. Collapse state lasts for the TUI run, and a collapsed task ends with `+N (M busy)`. Within each group, activity bands order root trees by their most urgent live member: busy or needs you, active within 10 minutes, within one hour, within 24 hours, then older or offline. Activity is the last time the session did something (a turn started or ended, a message was sent or received, it announced a task, a wait started, or its harness wrote output), not the last time its daemon reported it. A daemon restart or a re-report does not make an idle session look active. Within a band the most recently active session comes first; ties never use the oldest start. A session entering a band moves to its top; idle margins reduce moves near band boundaries. The order freezes for three seconds after a key press, and selection follows the session. Workers stay under their caller. A merger belongs to its explicit online repo lead, then its starter if known, otherwise it stays at the top level. Trees stay together even when a text filter matches only a child. A session that is idle with no report for more than an hour is dim. Offline sessions are dimmed too. On a narrow terminal TASK, MODEL and PROJECT give way first. TRUST, RULE and DELEGATE stay visible. A tree with more than 20 processes, 200% CPU or 4G of memory shows its numbers in red. A process tree that several sessions share shows `shared` in their rows and has no row of its own. A worker's private OpenCode server is its own tree, so its CPU and memory are on the worker's row. CTO and merger roles appear as dim tags after NAME, and a session whose node has a standing loop gets a dim `↻` after its name. The CTO is a normal row in its urgency group; NAME shows the owner's CTO title, and Enter enters it through `session_enter`, the same plan as Enter in the CTO box.
+- **Selected session.** The first line has the name, harness, status and the session's CPU, RAM and process count. Below, on the left: session and worker IDs and PID, folder, branch, model and mode (these last two moved here from the table), function (the project description from `AGENTS.md`; "none: add a `# Project: <one line>` line to AGENTS.md" when there is none), remote, worktree (when the session runs in a linked worktree), the project source (`seen in a session`, `registered`, or `seen in a session and registered`), task, expertise, a `trust` line when peer trust is on, and its recent messages. For a worker it starts with who started it and then `context 84k / 1M (8%)  tokens 345k`, with only the parts the harness has reported. On the right: the heaviest 5 processes by CPU and by memory (PID, CPU, RAM, command line with secrets masked), fetched with `usage_top` when the session is selected and again every 5 seconds. Press `d` to replace the session list with these details; press it again to return. The CTO box stays visible.
 - **Workers** show in the sessions table right under the session that started them, indented with `├─` (or `└─` for the last one), in order of start time, like a sub-agent. A worker's NAME is `<project> worker <n>` (decision [0024](decisions/0024-session-names.md)), and its TASK is its title when it has one, else the first line of its FIRST task, which the daemon records and the gateway passes in the agent list; a later request from its owner does not replace it. When that task is missing, TASK is the harness title, or blank. The full worker ID is on the detail pane's `id` line. A worker on another machine than its caller still sits under the caller and has `@host` after its name. A worker whose caller is not on screen (you started it, or the caller is offline or hidden by the filter) stays in its own machine group with `↳` before the name. Selection keys follow the order on screen. The detail says the worker runs in the background. The title counts them.
 - **Messages** on tab 4 shows threads, one row per unordered pair of parties, not a flat list of messages. A pair is one row even when its messages were stored under several conversation ids. Three sub-tabs sit under the title and switch with Tab and Shift+Tab, the same way as the Quotas sub-tabs. **Agents** holds agent-to-agent threads (including the owner's own threads), **Workers** holds agent-to-worker threads, and **System** holds what agent-net sends by itself. The list panel is narrower than the conversation panel and is titled `Threads`. Each thread row shows the two sides, the latest line, the message count and the state: `waiting` for an unanswered request, `answered` for a reply or an acknowledgement, `gw N` when the recipient holds N messages at the gateway, `failed` or `timed out`. Waiting requests and owner instructions sort first. The conversation panel shows the whole thread in order, across every conversation the pair used, and wraps every body line over as many lines as it needs; no body line is cut with an ellipsis. A heading above the messages names both sides and their types: `session`, `worker`, `app` (a connected bot such as `CTO (Trade)`) or `system`.
 
@@ -3106,7 +2453,7 @@ Intake rules:
 - **Owner-bound items need options.** An item an agent creates with `next_who` owner, and a chief sort with `result: "owner"`, are refused when the kind has no fixed answers (`question`, `feature_idea`, `check`, `waiting`, `session_stall`) and there are no options. The error names `options`. Generated notices (sign-in, machine, brief, permission and the other gateway kinds) are not affected, and an ask that falls to the owner because no chief can work keeps its old path.
 - **Routed items.** Either side of a routed item may close it. The chief may `close` or `merge` any open ask that a session or the CTO holds with `agent_ask_sort`, whoever routed it there: a pipeline route leaves no send row, and the chief still settles it. It never closes an ask the owner holds unless the close cites his words (`owner_words_message`, below). The session that holds it may `close` it with `agent_ask_sort` too (only `close`); a holder that is refused is told to answer the ask, or to ask the chief of staff to close it. The CTO can also use `answer` `dismiss`. A close keeps who closed it and why: the answer is `<closer>: <reason>`, and the `ask_sorts` row names the closer as the sorter. When the holder is offline, the chief may sort the ask again with any result (for example `send` it to another session). Closing it closes its joined rows. The asker of an open item, or a session that relayed it (one that joined it as a repeat), may `withdraw` it with a reason. An `agent_owner_ask` text that starts with `Withdraw i_...` does the same and never opens a new item; a session that neither asked nor relayed the item is refused with a clear reason.
 - **Check items** carry no generated recommendation any more; the chief turns them into a decision or resolves them.
-- **Upgrade (plan step (d)).** On the owner's words ("note that i dont care if the inbox is flushed. Right now it's pretty bad, i only use it when forced."), one migration closes every open item that waits on the owner (`next_who` empty or `owner`), once. Each row is kept: `status` closed, `answer` `flushed_by_front_door`, `answered_at` the time of the flush. A duplicate that joined such an item closes with it. Two kinds stay open because nothing asks them again: a delivery approval (it gates a merge) and a permission ask (it holds a proposal). Items that wait on the chief, the CTO or a lead stay as they are. Nothing is sent to the askers. The Desk log gets one line, `Front door: closed N open Desk items that waited on you (flushed_by_front_door)`, and `owner_settings` keeps the key `front_door_flush_v1` with the count. A store that has that key never flushes again, so a replay of the migrations closes nothing opened after the front door.
+- **Upgrade (plan step (d)).** On the owner's words ("note that i dont care if the inbox is flushed. Right now it's pretty bad, i only use it when forced."), one migration closes every open item that waits on the owner (`next_who` empty or `owner`), once. Each row is kept: `status` closed, `answer` `flushed_by_front_door`, `answered_at` the time of the flush. A duplicate that joined such an item closes with it. Two kinds stay open because nothing asks them again: a delivery approval (it gates a merge) and a permission ask (it holds a proposal). Items that wait on the chief, the CTO or a lead stay as they are. Nothing is sent to the askers. The Desk log gets one line, `Front door: closed N open Desk items that waited on you (flushed_by_front_door)`, and `gateway_state` keeps the key `front_door_flush_v1` with the count. A store that has that key never flushes again, so a replay of the migrations closes nothing opened after the front door.
 
 `agent_ask_sort` has two more results for a held worker start (source key `wstart:<start id>`, decision 0151): `confirm` starts it with the caller's fields and `picker` with the picker's choice. Each needs a `reason`. The ask goes to the chief first, or to the owner when no chief can work. The held start's facts are kept in `start_override_facts` (`ask_id`, `harness`, `model`, `effort`, `level`, `provider`, `caller_family`, `override_family`, `review`); `worker.override_ask` carries them from the daemon.
 
@@ -3520,7 +2867,7 @@ machine that reports its zone later starts the timer. The gateway checks on its 
 sends the chief one message from `agent-net` on the first tick of each
 owner-local date at or after that time: `Daily brief due for <local date>.
 Write it and deliver it with agent_owner_brief.` The wake date is stored in
-`owner_settings` (`chief.brief_last_wake`), so a gateway or daemon restart does
+`gateway_state` (`chief.brief_last_wake`), so a gateway or daemon restart does
 not send twice, and a tick missed while the gateway was down still sends once
 later that day. A wake is not a delivery: the delivered date is stored on its
 own, in `chief.brief_last_sent`, and only a delivered brief sets it. An older
@@ -3552,7 +2899,7 @@ the resolved IANA `time_zone`, `next_run_local`, `next_run_utc`,
 is the owner-local date of the last brief that was actually delivered;
 `last_wake_date` is the date of the last wake, which may have no brief yet. The
 next run follows the local clock across daylight saving time. The last brief id
-is also stored in `owner_settings` (`chief.brief_last_item`).
+is also stored in `gateway_state` (`chief.brief_last_item`).
 
 **`ask_history` `{ask}`** (operator `ask_history`, gateway `ask.history`) returns
 `{"sorts": [...]}`, oldest first. Each sort has `at`, `sorter`, `result`,
@@ -3575,7 +2922,7 @@ The Desk shows what the chief did and lets the owner correct it. Each method is 
 
 The CTO lists have `chief_sorts` (read), and `ask_undo` and `ask_mark` (changes, in the `settings_change` area `operator`).
 
-**The Desk (tab 7).**
+**The Desk (tab 6).**
 
 - The header reads `Desk · chief of staff <name> on` (or `off`, or `no chief of staff`), then `sorted N asks today`. "Today" is the last 24 hours of sorts. When the chief cannot work (see Chief availability), the first part reads `chief of staff offline: <reason>` in red. The phone and web Desk show the same words as one line above the asks, and show nothing when the chief can work.
 - **Needs you** lists only the asks whose `next` is the owner. Each row shows its priority and why_you under it. The tab title (`7 Desk (3)`), the Sessions band and the header count this list. A daily brief shows as one row labelled `Daily brief <date>`; Enter reads it and `x` dismisses it. It offers no other action.
@@ -3603,7 +2950,7 @@ The daemon remembers the questions it sent for each session (the last 16), so a 
 
 When no chief can work, an ask still follows the chief-down path of the Desk.
 
-## Waiting sessions on the Desk (tab 7)
+## Waiting sessions on the Desk (tab 6)
 
 A session can wait for you: it asks permission for a tool, asks a question, or wants your input. The TUI lists those sessions on the Desk (decision [0016](decisions/0016-needs-you.md)). Every machine's TUI sees them, so one screen answers "what needs me" across the network.
 
@@ -3613,7 +2960,7 @@ The daemon stores the question as a `question` waiting state with the options, u
 
 Open the Desk, select a waiting session and press Enter to go into it. On an inbox question, `t` opens a one-line answer box. The first option, if any, is filled in. Enter sends the text as an owner message; Esc cancels. On a question or approval with options, Enter opens the details, up and down mark an option, and Enter answers the marked one. The digits `1` to `7` keep switching tabs there. The wait clears when the owner message is delivered. It also clears when the owner types a Claude Code prompt (with the `needs-hook` installed), a Pi or OpenCode prompt, or a Codex turn starts; when a permission or form settles; when the session becomes busy; or on an announce without `waiting`. A wait that a harness event reported (a permission, a form, a dialog) also ends with the turn: when a session goes from busy to idle, or a plugin says hello again while busy, that wait is dropped. This covers a permission that was denied or interrupted. An explicit `agent_owner_ask` and an announced `waiting` outlive the turn. Dismissing the question or approval on the Desk ends the wait too: the gateway tells the session's machine. If the gateway is down, a queued owner message clears the wait when delivered.
 
-The owner's own prompt in a Claude Code, Pi or Codex session (Codex: a user message with no `clientId`; not a peer message, a reminder or a scheduled turn) also closes that session's open question, approval and `stopped with work left` Inbox items, with the reason `owner_replied`, because the owner answered in the session. An `agent_announce` without `waiting` closes the session's open question items that it raised before its earlier announce, with the reason `moved_on`; an item raised since that announce stays. It never closes an approval: only the owner's answer, the asker's withdraw or the chief's replace-withdraw does. An escalation (a reply with outcome `escalate`) closes, with the reason `answered`, when the session that escalated later sends a plain reply in the same conversation; the outcome is then marked answered too. At the first gateway start after this rule, a one-time cleanup (marker `asks_moved_on_cleanup_v1` in `owner_settings`) closes, with the reason `moved on (cleanup)`, the open approvals and check items that a session left behind: its task started more than 10 minutes after the item. Questions are not part of it; they close by the rules above. Closed items are kept, never deleted.
+The owner's own prompt in a Claude Code, Pi or Codex session (Codex: a user message with no `clientId`; not a peer message, a reminder or a scheduled turn) also closes that session's open question, approval and `stopped with work left` Inbox items, with the reason `owner_replied`, because the owner answered in the session. An `agent_announce` without `waiting` closes the session's open question items that it raised before its earlier announce, with the reason `moved_on`; an item raised since that announce stays. It never closes an approval: only the owner's answer, the asker's withdraw or the chief's replace-withdraw does. An escalation (a reply with outcome `escalate`) closes, with the reason `answered`, when the session that escalated later sends a plain reply in the same conversation; the outcome is then marked answered too. At the first gateway start after this rule, a one-time cleanup (marker `asks_moved_on_cleanup_v1` in `gateway_state`) closes, with the reason `moved on (cleanup)`, the open approvals and check items that a session left behind: its task started more than 10 minutes after the item. Questions are not part of it; they close by the rules above. Closed items are kept, never deleted.
 
 For a new explicit `agent_owner_ask` question, the daemon on each machine with an owner TUI open shows a desktop notification, at most once per session in five minutes. The limit survives a daemon restart. On macOS it uses `osascript`; on Linux it uses `notify-send` when available. Otherwise it does nothing. The notification does not contain the question text. Open `?` help and press `n` to toggle desktop notifications for that machine; the setting is on by default and persists locally. The CTO proposes changing the setting with `settings_change` area `notifications` and `{"disabled": true}` or `{"disabled": false}` on the CTO's machine.
 
@@ -3623,34 +2970,26 @@ The local daemon method is `waiting` (`{"kind", "text"}` or `{"clear": true}`). 
 
 **What agents see.** `agent_sessions_find` and `agent_session_get` show an online session that waits with status `waiting for its user` and a `waiting` object with `kind` (`permission`, `question` or `input`) and `since`. The question is never in an agent read. A request to such a session gets the [waiting notice](#delivery-states) once per sender.
 
-## Delegation policy
+## Session context every turn
 
-Decision: [0014](decisions/0014-delegation-policy.md). Security: [security.md](security.md#delegation-policy).
+Decision: [0014](decisions/0014-delegation-policy.md). The delegation policy of that decision (a per-session or per-project setting that said who does the coding, set with `p` in the TUI, the operator method `session_policy` and the table `project_policies`) was removed on 2026-11-21. The per-turn call stays, because it carries the charter.
 
-A per-session or per-project setting that says who does the coding. Set it with `p` in the TUI. Values: `delegate` (`off`, `native`, `workers`), `coder_model` and `main_model` (loose names, resolved against the model list of the session's machine and harness), scope (`session`, `project`). The session's own value wins over its project's. The operator method is `session_policy` (`{"session_id": "...", "policy": {"delegate": "native", "coder_model": "deepseek 4.1", "main_model": "sol 6.1"}, "scope": "session", "dry_run": false}`), served only to the owner's command line or TUI. It answers `{"session_id", "saved", "effective"}`; `effective` is the policy the session ends up with, with `coder_resolved`, `main_resolved` and the errors of a name that did not resolve. A dry run saves nothing. An empty policy clears the value at that scope. `list --json` has `delegation` (`scope` says where the effective value comes from).
+The local method `policy` (every turn; a session asks for its own, the command line asks by `harness` and `native_id`) answers `{"charter", "notice"}` or an empty object. The daemon asks the gateway (`policy.get`) and caches the answer for 2 seconds. `charter` is the repo charter context of [charters and component relationships](#charters-and-component-relationships). A nonempty agent charter follows as a separately labelled block. For a worker, that block describes its caller agent. `notice` is one line that says the session's agent-net tools are disconnected.
 
-The gateway stores the policy in `sessions.delegation` and the project defaults in `project_policies` (migration 10), and logs a `session.policy` event and line when one is saved. The policy is a rule agents follow, so it is public read-only: `agent_session_get` shows a session's effective policy, and `agent_graph_read` shows the project policies per machine. Only the owner sets or clears it.
+| Harness | Where the text goes |
+|---|---|
+| OpenCode | A system part on every model request of a root session (`context` hook). A subagent's own session gets none. |
+| Claude Code | The `UserPromptSubmit` hook (`agent-net policy-hook`), as `additionalContext`. Every hook answer stays in the transcript, so the full charter block is sent once per session, again when the charter changes (with one line saying so), and again after a compaction. Needs the hook: `agent-net setup --claude-policy-hook`. |
+| Pi | The system prompt, each turn (`before_agent_start`). |
+| Codex | Not applied: the app server takes no text per turn. The charter reaches a Codex session as [owner rules](#owner-rules-reach-every-session) instead. |
 
-**What the session gets.** The local method `policy` (every turn; a session asks for its own, the command line asks by `harness` and `native_id`) answers `{"text", "mode", "agent_id", "coder", "main", "charter"}` or an empty object. The daemon asks the gateway (`policy.get`) and caches the answer for 2 seconds. `charter` is the repo charter context of [charters and component relationships](#charters-and-component-relationships); it is there even when the session has no delegation policy. A nonempty agent charter follows as a separately labelled block. For a worker, that block describes its caller agent. `text` is one line that starts with `[agent-net]`:
-
-- `native`: `[agent-net] Your user's standing policy for this session, set in agent-net: delegate all code changes to the `agent-net-coder-<model>` subagent (model <model>). You plan, write the brief, review its diff and run the tests. Do not edit code yourself unless the subagent fails twice.`
-- `workers`: the same, but to start a worker with `agent_worker_start` with the coder model.
-- `off`: `... do the code changes yourself. Do not start subagents or workers for them.`
-
-| Harness | Where the text goes | `native` | Main model |
-|---|---|---|---|
-| OpenCode | A system part on every model request of a root session (`context` hook). A subagent's own session gets none. | The plugin defines `agent-net-coder-<model>` (mode subagent, the resolved model) at run time. | `session.switchModel`, once per value. |
-| Claude Code | The `UserPromptSubmit` hook (`agent-net policy-hook`), as `additionalContext`. Every hook answer stays in the transcript, so the full charter block is sent once per session, again when the charter changes (with one line saying so), and again after a compaction. The delegation policy line is still sent every turn. Needs the hook: `agent-net setup --claude-policy-hook`. | `~/.claude/agents/agent-net-coder-<model>.md` with a `model:` line, written by the daemon when the hook asks. | Not possible from outside. |
-| Pi | The system prompt, each turn (`before_agent_start`). | Pi has no subagents: the `workers` text is used. | `setModel`, once per value, for an exact `provider/id`. |
-| Codex | The delegation policy is not applied: the app server takes no text per turn. The charter reaches a Codex session as [owner rules](#owner-rules-reach-every-session) instead. | | |
-
-The Claude Code hook output (one line of JSON on stdout, exit 0), only when the session has a policy with text or its node has a charter:
+The Claude Code hook output (one line of JSON on stdout, exit 0), only when the session's node has a charter or a notice is due:
 
 ```
-{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"[agent-net] Your user's standing policy ..."}}
+{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"[agent-net] Your node's charter ..."}}
 ```
 
-With both, the policy text comes first and the charter second, separated by a blank line. The daemon keeps, per session, the hash of the last charter block it sent and a compaction generation. A prompt gets the full block when the hash changes or the generation moved; otherwise the block is left out. `PostCompact` and `SessionStart` with source `compact` start a new generation, because the summary may have dropped the block. The change line before a new text is `[agent-net] The charter changed since it was last sent. The full text follows.` The hook still prints nothing and exits 0 on any problem.
+The daemon keeps, per session, the hash of the last charter block it sent and a compaction generation. A prompt gets the full block when the hash changes or the generation moved; otherwise the block is left out. `PostCompact` and `SessionStart` with source `compact` start a new generation, because the summary may have dropped the block. The change line before a new text is `[agent-net] The charter changed since it was last sent. The full text follows.` The hook still prints nothing and exits 0 on any problem.
 
 ## Charters and component relationships
 
@@ -3725,7 +3064,7 @@ The worker sandbox level from decision 0020 follows the node. The project policy
 
 **Deploys.** On a `deploys` edge the deployer applies the target's deploy rule, not its own. The deployer's per-turn context names each target and its rule, for example `You deploy shop; its maturity critical: ...; ask the owner before deploying`.
 
-**Every turn.** The daemon reads the node of the session's project and puts a short charter text into the same places as the delegation policy: the Claude Code `UserPromptSubmit` hook (`additionalContext`), the OpenCode `context` hook, and the Pi `before_agent_start` system prompt. Codex has no turn context: its app server takes text only when a thread starts or resumes (see [owner rules](#owner-rules-reach-every-session)). The text holds `maturity`, `accepts`, `refuses`, `escalate`, the maturity rules and consumer rule, the edges that matter to the node (what it depends on, what depends on it, and for a deployer each target's deploy rule), and the decide rule. It starts with `[agent-net]`. The daemon caches the policy and its charter context for 2 seconds (a charter change clears the cache at once, see [owner rules](#owner-rules-reach-every-session)), and keeps the last answer for 10 minutes when the gateway is gone. With an older gateway, it reads and caches the graph per node instead.
+**Every turn.** The daemon reads the node of the session's project and puts a short charter text into these places: the Claude Code `UserPromptSubmit` hook (`additionalContext`), the OpenCode `context` hook, and the Pi `before_agent_start` system prompt. Codex has no turn context: its app server takes text only when a thread starts or resumes (see [owner rules](#owner-rules-reach-every-session)). The text holds `maturity`, `accepts`, `refuses`, `escalate`, the maturity rules and consumer rule, the edges that matter to the node (what it depends on, what depends on it, and for a deployer each target's deploy rule), and the decide rule. It starts with `[agent-net]`. The daemon caches the policy and its charter context for 2 seconds (a charter change clears the cache at once, see [owner rules](#owner-rules-reach-every-session)), and keeps the last answer for 10 minutes when the gateway is gone. With an older gateway, it reads and caches the graph per node instead.
 
 **Connected charters.** The per-turn text also describes directly connected nodes with charters, in either edge direction and for any edge kind. Each line has the form `<project>: accepts <short accepts>; refuses <short refuses>; ask it for those`. The project name and each charter value are cut to 40 characters, so a line is at most about 160 characters. There are at most eight lines and the block is at most 1500 bytes. Edges with a non-default request rule come first, then `deploys` and `depends`; ties use the project name. The wildcard source `*`, the node itself and neighbors without a charter are skipped. A node without its own charter can still get these lines. The same lines go into worker briefs, including Codex worker briefs.
 
@@ -3790,7 +3129,7 @@ One case needs text apart from the node: a session whose folder has no node (for
 | Claude Code auto-update setting | If `claude` is found, writes `DISABLE_AUTOUPDATER=1` to the `env` of `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`) with the same merge, drift and invalid-file rules as the mouse setting, so Claude Code's own updater is off ([decision 0139](decisions/0139-agent-net-is-the-only-harness-updater.md)). Every Claude Code process agent-net starts gets the same variable in its environment. | Removes `env.DISABLE_AUTOUPDATER`, only while its value is still `"1"`. Other keys stay. |
 | Claude Code peer messages | If `claude` is found and `crossSessionInbound` is not set in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`), follows the network answer or `--accept-peer-messages` / `--no-accept-peer-messages`. On yes it adds `"crossSessionInbound": "accept"` and keeps every other key (file rewritten with 2-space indent, through a temp file and a rename). Records the answer in `~/.config/agent-net/claude-peer-messages.json`. An existing value is never changed. A file that is not valid JSON is not touched. The daemon and upgrades never change it. | Removes the key, only if agent-net set it and the value is still `"accept"`. Deletes the record. |
 | Claude Code hint hook | If `claude` is found, follows the network answer or `--claude-hint-hook` / `--no-claude-hint-hook`. On yes it adds five entries to `hooks` in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`): `PostToolUseFailure` (all tools), `PostToolUse` with matcher `Bash`, and three `PreToolUse` entries with matcher `Bash` and `if` conditions `Bash(gh pr merge*)`, `Bash(gh pr close*)` and `Bash(gh workflow run*)`, each running `<binary> hint` with a timeout of 2 seconds. Before a merge, close or workflow dispatch in a team that sends blocked steps to its lead, the hint adds one line naming the lead (see [peer trust and hints](#peer-trust-and-hints)). Every other key and every other hook is kept. A later setup run updates the command if the binary moved. Records the answer in `~/.config/agent-net/claude-hint-hook.json`. A file that is not valid JSON is not touched. | Removes our five entries (and an empty `hooks` object), only if agent-net added them. Deletes the record. |
-| Claude Code policy hook | If `claude` is found, follows the network answer or `--claude-policy-hook` / `--no-claude-policy-hook`. On yes it adds four entries to `hooks` in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`), each running `<binary> policy-hook` with a timeout of 3 seconds: `UserPromptSubmit` (all prompts), `PostCompact` (after a compaction), `SessionStart` with matcher `compact` (the same moment on versions that report it there) and `Stop` (a turn end, for [owner questions](#owner-questions-in-the-chat-and-on-the-route)). Every other key and hook is kept. A later setup run updates the command if the binary moved. The daemon does the same at start when the answer is on and agent-net added the hooks, so an upgrade that adds an event reaches the machine; it writes only when the hooks differ. Records the answer in `~/.config/agent-net/claude-policy-hook.json`; the daemon reads it to tell the gateway the hook is installed. When you set a `native` [delegation policy](#delegation-policy) for a Claude Code session, the daemon also writes `~/.claude/agents/agent-net-coder-<model>.md` (a marker comment inside; a file with that name that is not ours is left alone). | Removes our entry (and an empty `hooks` object), only if agent-net added it, deletes the record, and deletes every `agent-net-coder-*.md` file in `~/.claude/agents/` that has our marker. |
+| Claude Code policy hook | If `claude` is found, follows the network answer or `--claude-policy-hook` / `--no-claude-policy-hook`. On yes it adds four entries to `hooks` in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`), each running `<binary> policy-hook` with a timeout of 3 seconds: `UserPromptSubmit` (all prompts), `PostCompact` (after a compaction), `SessionStart` with matcher `compact` (the same moment on versions that report it there) and `Stop` (a turn end, for [owner questions](#owner-questions-in-the-chat-and-on-the-route)). Every other key and hook is kept. A later setup run updates the command if the binary moved. The daemon does the same at start when the answer is on and agent-net added the hooks, so an upgrade that adds an event reaches the machine; it writes only when the hooks differ. Records the answer in `~/.config/agent-net/claude-policy-hook.json`; the daemon reads it to tell the gateway the hook is installed. | Removes our entry (and an empty `hooks` object), only if agent-net added it, deletes the record, and deletes every `agent-net-coder-*.md` file in `~/.claude/agents/` that has our marker (older versions wrote them for the delegation policy). |
 | Claude Code needs hooks | If `claude` is found, follows the network answer or `--claude-needs-hook` / `--no-claude-needs-hook`. On yes it adds six entries to `hooks` in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`), each running `<binary> needs-hook` with a timeout of 2 seconds: `PermissionRequest` (all tools), `Notification` with matcher `agent_needs_input|elicitation_dialog|elicitation_url_dialog`, `PreToolUse` (all tools), `UserPromptSubmit`, and `PostToolUse` and `PostToolUseFailure` with matcher `AskUserQuestion|ExitPlanMode`. It does not match `idle_prompt`, which Claude Code sends after any turn ends and does not mean the owner is needed; `needs-hook` ignores it, so an install with the older matcher keeps working without a setup rerun. Every other key and hook is kept. A later setup run updates the command if the binary moved and the matcher if it changed. The daemon does the same at start when the answer is on and agent-net added the hooks, so an upgrade that adds an event reaches the machine; it writes only when the hooks differ, and never for a binary whose name does not start with `agent-net`. Records the answer in `~/.config/agent-net/claude-needs-hook.json`. A file that is not valid JSON is not touched. | Removes our entries (and an empty `hooks` object), only if agent-net added them. Deletes the record. |
 | Claude Code tool-decide hook | If `claude` is found, always, without a question: it only removes a prompt the owner already delegated and never blocks. Adds one `PreToolUse` entry to `hooks` in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`) with matcher `Bash|mcp__agent-net__.*`, running `<binary> tool-decide` with a timeout of 2 seconds. Every other key and hook is kept. A later setup run updates the command if the binary moved. The daemon does the same at start, so an upgrade reaches a machine set up before, and never for a binary whose name does not start with `agent-net`. Records it in `~/.config/agent-net/claude-tool-decide-hook.json`. A file that is not valid JSON is not touched. | Removes our entry (and an empty `hooks` object), only if agent-net added it. Deletes the record. |
 | Claude Code urgent hook | If `claude` is found, always, without a question: it only shows a message a peer already sent to the session, sooner. Adds one entry each to `PostToolUse` and `PostToolUseFailure` in `hooks` in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`), with no matcher and a timeout of 3 seconds. The command is a short shell line that exits at once unless the `urgent` folder of the daemon's state directory holds a marker, and then runs `<binary> urgent-hook`; an older entry with the bare command is replaced. Every other key and hook is kept. A later setup run updates the command if the binary moved. The daemon does the same at start, never for a binary whose name does not start with `agent-net`. Records it in `~/.config/agent-net/claude-urgent-hook.json`. A file that is not valid JSON is not touched. | Removes our entries (and an empty `hooks` object), only if agent-net added them. Deletes the record. |
@@ -3802,7 +3141,7 @@ One case needs text apart from the node: a session whose folder has no node (for
 | Pi extension | If `~/.pi` exists, writes `~/.pi/agent/extensions/agent-net/index.ts` and its generated `tools.gen.ts` catalog beside it. A symlink to a file agent-net did not write is left alone. A symlink to an older agent-net copy is replaced with a real file holding this version; the old target is kept. | Deletes the plugin and generated catalog in both the folder and old flat layouts. Setup also removes owned files from the old flat layout. After deleting its files, uninstall removes the `agent-net` folder only if it is empty. A foreign file keeps the folder, and uninstall reports that it was kept. A symlink to a file agent-net did not write is left alone. A symlink to an agent-net copy is removed, and its target is kept. |
 | Connected apps Tailscale node | `--apps-tailscale-name` writes `tailscale-node.json` in the gateway data folder. When the owner turns internet access on, the gateway writes the marker `tailscale/agent-net-owned.json` first, then starts the node with its state in `tailscale/`. The node appears as a machine with that name in the tailnet. | When the marker is there, starts the node, logs it out (this removes it from the tailnet) and deletes `tailscale/`. A folder without the marker is left alone. A node that never logged in is just deleted. If the logout fails, reports it and keeps the folder for retry. Deletes `tailscale-node.json`. The gateway does the same cleanup at start after `--apps-tailscale-machine`. |
 | Connected apps Funnel | When enabled, the gateway records the Funnel port and its loopback proxy target in `funnel.json` in the gateway data directory. | Reads Tailscale status and removes the route only when that port still has exactly the recorded target. Leaves a repurposed or shared port alone. Reports a cleanup failure and keeps the record for retry. |
-| Skill and MCP management state | Created by the daemon when the owner applies a tool assignment or removes a native MCP entry. Setup writes none of it. Files and folders are listed in [Files](#files). | Deletes `skill-manifest.json`, `skill-backups`, `mcp-backups`, `skill-journal` and leftover temporary files in the daemon state folder, and releases the Git exclude lines the manifest owns. It keeps installed skill copies and every native MCP config file (including any edit the daemon made): restore those by hand or with `tools_undo` before you uninstall. Backups are deleted because they can hold secrets. The gateway side (`skills.git`, the inventory and audit tables in `gateway.db`) is kept with the gateway data. |
+| Old Tools rollout state | Not written by setup. Versions before decision 0169 task 5 wrote it in the daemon state folder. | Deletes `skill-manifest.json`, `skill-backups`, `mcp-backups`, `skill-journal` and leftover temporary files there. Git exclude lines in checkouts stay. Installed skill copies and native MCP config files are never touched. |
 | Guidance text | Adds a block between `<!-- agent-net:begin -->` and `<!-- agent-net:end -->` to `~/.claude/CLAUDE.md` (if `~/.claude` exists) `~/.pi/agent/AGENTS.md` (if `~/.pi` exists) `~/.config/opencode/AGENTS.md` (if `~/.config/opencode` exists) and `~/.codex/AGENTS.md` (if the Codex home exists). Guidance symlinks are followed, including links into a dotfiles repository. When several paths resolve to the same file, it is updated once; if they use different reply instructions, one block includes instructions for each harness. Text outside the markers is never changed. An older unmarked `## agent-net: working with other agents` section is replaced by the block. | Removes the block. |
 
 The Pi extension, the OpenCode and Antigravity plugins, the Claude workers plugin folder and the guidance blocks are also written by the daemon, on every start, with the same rules as setup (the harness folder must exist, plugin symlinks to foreign files are left alone, guidance follows symlinks and changes only between the markers). The Claude workers folder is refreshed only when setup already wrote it, so the daemon never installs the plugin on its own. It rewrites a file only if it differs from the content embedded in the binary, and logs one line per file it changes (`agent files: pi extension updated`) in the daemon log. A symlink that points at an older agent-net plugin is replaced with a real file, so a stale link cannot keep an outdated extension loaded; the old target is kept and named in the log line. So these files follow the binary after an upgrade or a manual copy, without a setup run. See [upgrade.md](upgrade.md#agent-files-on-a-machine).
@@ -3894,7 +3233,7 @@ The owner can ask the CTO to stop, resume or restart an owner or agent session, 
 A restart, and the owner's resume with Enter, keeps the session ID. A session ID is what its workers, open delivery changes, step claims and queued messages name, so a new ID would leave them behind. The gateway and the daemon keep it in two ways:
 
 - **The same conversation under a new harness handle.** Claude Code can resume a background conversation as a copy with a new native ID. The daemon tells the gateway the new handle (`session.resume_rebind`) while its session discovery is still held, so the record keeps its ID and only its native ID changes. Codex and OpenCode keep the conversation's own ID, so nothing moves.
-- **A new conversation.** When the harness cannot open the old one, a new conversation is a new session. The daemon then calls `session.replace` and the gateway moves, in one transaction: the caller role of the running and queued workers (`sessions.worker`, `worker_starts`, `worker_runs`), the caller of open delivery changes and the steps they claimed (`delivery_changes`, `delivery_step_tasks`, `delivery_step_messages`), undelivered messages and open requests addressed to the old session, its open Inbox items, its agent and repo binding, the repo and team lead places it held, and its name. The daemon moves the caller of its own worker records and its queue as well, because a hand-back and a step task name the caller from there.
+- **A new conversation.** When the harness cannot open the old one, a new conversation is a new session. The daemon then calls `session.replace` and the gateway moves, in one transaction: the caller role of the running and queued workers (`sessions.worker`, `worker_starts`, `worker_runs`), the caller of open delivery changes and the steps they claimed (`delivery_changes`, `delivery_step_tasks`, which holds the step notices), undelivered messages and open requests addressed to the old session, its open Inbox items, its agent and repo binding, the repo and team lead places it held, and its name. The daemon moves the caller of its own worker records and its queue as well, because a hand-back and a step task name the caller from there.
 
 The old record is marked replaced (`sessions.replaced_by`), not renamed to `<name> 2`: it keeps the conversation's name, offline, and the TUI shows `replaced by <new name>` (the STATUS cell says `replaced`). A later discovery report of the old conversation does not rename it. Pi cannot reopen an old session, so `resume` and `restart` refuse a Pi session and no move applies.
 
@@ -4214,8 +3553,9 @@ session says which of three cases applies:
   message or by an earlier one. The receipt does not repeat an earlier failure.
 - `queued; <name> is offline and its last wake failed: <reason>`. No wake is
   under way, and the last wake the machine refused for a reason has not been
-  cleared by a wake that worked. The sender also gets one notice with the same
-  reason.
+  cleared by a wake that worked or by the session coming online. The sender
+  also gets one notice with the same reason. It says that the next message sent
+  after the 10 minute wake backoff asks for a wake again.
 
 What each harness does:
 
@@ -4301,15 +3641,11 @@ Press `a` and enter the code shown in the browser. Use left and right to choose 
 
 **Give a bot a shared MCP server.** Select a bot in Connected apps and press `g`. The picker title names the bot: `MCP servers <name> can call. Enter adds or removes, esc closes.` It lists the shared MCP servers the owner has added (the same ones that `agent-net mcp list` shows). Each line has the server, its host and the number of tools this bot may call through it, for example `[x] ingest-forge  on research · 1 tool`. The count follows the server's allow-list; a server that has not reported its tools shows no count. Move with up and down and press Enter to grant a server to this bot, or to remove the grant. The grant is stored as `mcp server <name>`, and the bot's row shows the server name under `can call:`. Only a bot can be granted a server, and it is per bot and per server: other bots, and the bot's other servers, are not affected. Esc closes the list. A grant for a server that was removed stays in the list, marked `no longer added`, so you can take it away.
 
-The Tools tab shows the other side: the details of a shared MCP server name each bot that is granted it, as `bots: Trade, Grok Bot`. Owner apps and revoked apps are not listed. Nothing is shown when no bot has the server.
-
 The bot then sees the allowed tools of that server in `tools/list` of the public `/mcp`, named `<server>__<tool>` as a session sees them. A server with an allow-list (`allowed_tools`) shows only those tools. A call goes through the same path as a session's call: the gateway sends it to the host daemon of the server, and the host adds the server's headers or environment from its own files. The bot never sees them. A tool of a server that is not granted, or a tool outside the allow-list, is an unknown tool. The call counts against the bot's call limit (60 a minute) like every other bot call; there is no other limit. The owner-only operations are `apps.grant` and `apps.ungrant` (fields `id` and `grant`). Removing the grant takes effect on the bot's next request.
 
 Example: ingest-forge runs an MCP server on the LAN with one tool, `submit_x_post`. On the machine that can reach it (research), run `agent-net mcp add ingest-forge --url https://ingest-forge.local.org/mcp --header-file Authorization=/path/to/file`. Then press `g` on Trade's bot and grant `ingest-forge`. The bot sees one extra tool, `ingest-forge__submit_x_post`, and calls it with the file's header value, which stays on research. If the server had more tools and the entry has an allow-list (see [importing native MCP servers](#importing-native-mcp-servers)), the bot would see only the listed ones.
 
 **A bot is an agent node.** When you approve an app as a bot, the gateway makes one agent node for it with the role `bot` (decision [0092](decisions/0092-bots-as-agents.md)). The node uses the app ID as its agent ID and the app name as its display name, and it follows a rename (`apps.rename`). The bot's session is linked to the node, so its charter and place resolve like an agent's. Revoking the app archives the node (a tombstone, nothing is deleted) and takes it out of its Team. Owner apps get no node. Apps approved before this release get their node at the first gateway start (migration 147). A bot node gives the bot no permission and no tool.
-
-Skill items in `tools_items` and `tools_item` include `description`, `start_tokens` and `full_tokens` when nonempty. The description comes from the newest scanned copy. Token counts are estimates: start is (name length + description length + 20) / 4 rounded up; full is the manifest SKILL.md size / 4 rounded up, or zero when unknown. MCP items omit these fields.
 
 Claude Code and Codex sign-in probes run `claude auth status` and `codex login status` with a five second limit. Only the signed-in state and auth method are kept; account details are discarded. Antigravity's sign-in state comes from its own model list (`agy models`): a list means signed in, and no account detail is kept.
 
@@ -4381,22 +3717,23 @@ When a dispatch pass finds several new tasks for one session, it sends one
 notice listing each change ID, step, after-merge flag, commit and title. Claim
 and report instructions appear once. A single task keeps the detailed notice.
 Each listed task keeps its own notice association, so later tasks get a new
-notice and listed tasks are not sent again until their notice expires.
+notice and listed tasks are not sent again until their notice expires. A task
+lives only while its step is open: when the step is reported or closed, the task
+and its notices are removed, and the step's evidence is the record.
 
-A merger registration maps a project and machine to one session. Only that
-session receives, claims, and reports `@merger` steps for changes on that
-machine. Stopping the merger's harness session or taking it offline keeps
+A merger registration maps a project to one session on one machine. A repo
+has one merger: registering another session replaces the first. Only the
+registered session receives, claims, and reports `@merger` steps for changes
+on its machine. Stopping the merger's harness session or taking it offline keeps
 its registration; tasks wait and Delivery says "waiting for merger". Deleting
 the session record clears the registration. Explicitly stopping routing with
 `merger_stop` or clearing the registration does the same. All of the project's
 `@merger` assignments and unfinished tasks, including after-merge steps, return
 to the caller. Accept keeps its current owner. A stop works even when no
-registration record exists. Stopping the merger stops it for the project on
-every machine: the project's other registrations are removed too, so no merger
-session stays registered without routing. Replacing the registered session
+registration record exists. Replacing the registered session
 keeps `@merger` ownership, releases the old claims and queues notices for the
-new merger. Completed evidence is preserved. Registrations are stored in the
-gateway's `project_mergers` table.
+new merger. Completed evidence is preserved. The registration is stored in the
+`merger_node` and `merger_session` columns of the repo.
 
 The merger reads the project's own instructions and build files, tests the
 changed parts, reads CI results where available, and merges in its own merge
@@ -4473,7 +3810,7 @@ In the same action, `r` shows archived records. Select the records to restore,
 press Enter, then `y`. Archiving hides records from session discovery, counts,
 project observations and Graph reads. It keeps the database rows, names,
 messages, worker runs, delivery changes and history. Retention cleanup does
-not delete archived session rows or profiles. A session that reports online
+not delete archived session rows. A session that reports online
 again automatically leaves the archive.
 
 The CTO can run `sessions_archive`, for example:
@@ -4971,8 +4308,7 @@ carrier never gets a reply reminder. Replying to an original message ID closes
 that request, and an unanswered request keeps its own sender and ID.
 
 Messages agent-net creates by itself use the `agent-net` sender. This includes
-native MCP removal restart notices, asynchronous session start failures and
-background skill summary worker tasks. Restart notices are notifications. Real
+asynchronous session start failures and background skill summary worker tasks. Restart notices are notifications. Real
 owner sends, replies, worker briefs and Desk answers keep the owner sender.
 The reserved sender remains unavailable through public message sends.
 

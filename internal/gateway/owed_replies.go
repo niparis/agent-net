@@ -21,7 +21,7 @@ func (s *Store) initOwedRepliesLiveSince() error {
 
 const dstWaitsForOthersSQL = `(EXISTS(SELECT 1 FROM sessions w WHERE w.online=1 AND w.worker<>'' AND json_extract(w.worker,'$.owner')=dst.id)
  OR EXISTS(SELECT 1 FROM delivery_step_tasks t JOIN delivery_changes c ON c.id=t.change_id AND c.revision=t.revision
- WHERE c.caller=dst.id AND c.state='open' AND t.completed=0 AND t.claimed_by<>'' AND t.claimed_by<>dst.id))`
+ WHERE c.caller=dst.id AND c.state='open' AND t.claimed_by<>'' AND t.claimed_by<>dst.id))`
 
 type owedCandidate struct {
 	reqID          string
@@ -74,7 +74,7 @@ func (s *Store) sessionSenderLead(senderID string) string {
 		return t.leadAgent
 	}
 	var repo string
-	_ = s.db.QueryRow(`SELECT COALESCE(NULLIF(s.repo_project,''),p.project,'') FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id=?`, senderID).Scan(&repo)
+	_ = s.db.QueryRow(`SELECT COALESCE(NULLIF(s.repo_project,''),s.announced_project) FROM sessions s WHERE s.id=?`, senderID).Scan(&repo)
 	if repo != "" {
 		repoLead, _ := repoTopAgentQ(s.db, repo)
 		if repoLead != "" {
@@ -137,13 +137,13 @@ func (s *Store) checkOwedReplies() ([]protocol.Message, error) {
 
 	rows, err := tx.Query(`SELECT q.id, q.conversation_id, q.sender, q.recipient, q.body, q.created_at,
 		dst.status, dst.harness_activity, dst.last_active, dst.created_at, dst.waiting,
-		COALESCE(NULLIF(dst.repo_project,''), dp.project, ''),
-		COALESCE((SELECT tm.team_id FROM team_members tm JOIN teams t ON t.id=tm.team_id AND t.active=1
-			WHERE (tm.member_kind='agent' AND tm.member_id=dst.agent_id) OR (tm.member_kind='repo' AND tm.member_id=dst.repo_id)
-			ORDER BY tm.team_id LIMIT 1), ''),
-		COALESCE(NULLIF(src.repo_project,''), sp.project, ''),
-		COALESCE(NULLIF(sp.name,''), NULLIF(src.name,''), q.sender),
-		COALESCE(NULLIF(dp.name,''), NULLIF(dst.name,''), q.recipient),
+		COALESCE(NULLIF(dst.repo_project,''),dst.announced_project),
+		COALESCE((SELECT t.id FROM teams t WHERE t.active=1
+			AND (t.id=(SELECT a.team_id FROM agents a WHERE a.id=dst.agent_id) OR t.id=(SELECT r.team_id FROM repos r WHERE r.id=dst.repo_id))
+			ORDER BY t.id LIMIT 1), ''),
+		COALESCE(NULLIF(src.repo_project,''),src.announced_project),
+		COALESCE(NULLIF(src.name,''), q.sender),
+		COALESCE(NULLIF(dst.name,''), q.recipient),
 		`+dstWaitsForOthersSQL+`,
 		(SELECT COUNT(*) FROM inbox_items ii WHERE ii.session_id=dst.id AND ii.status='open'),
 		COALESCE((SELECT m.created_at FROM messages m WHERE m.parent_id=q.id AND m.sender='agent-net' AND m.idem_key='owed-nudge:'||q.id LIMIT 1), 0),
@@ -156,8 +156,6 @@ func (s *Store) checkOwedReplies() ([]protocol.Message, error) {
 	FROM messages q
 	JOIN sessions src ON src.id=q.sender
 	JOIN sessions dst ON dst.id=q.recipient
-	LEFT JOIN profiles sp ON sp.session_id=src.id
-	LEFT JOIN profiles dp ON dp.session_id=dst.id
 	WHERE (q.type='request' OR q.is_order=1)
 		AND q.state IN ('stored','dispatched','delivered')
 		AND q.expires_at > ?

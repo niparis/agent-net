@@ -263,7 +263,7 @@ func TestAnsweringAnAskAgainUpdatesItsRow(t *testing.T) {
 	if err := s.recordOwnerAnswer(s.db, item, "no"); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(3600e9)
+	c.advance(3600e9)
 	if err := s.recordOwnerAnswer(s.db, item, "yes, after the tests"); err != nil {
 		t.Fatal(err)
 	}

@@ -267,7 +267,7 @@ func TestFirstSessionPinsTheLeadAgent(t *testing.T) {
 	if err := s.GraphLifecycle("agent.create", protocol.GraphLifecycleRequest{Name: "solo"}, "owner", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO repos(id,display_name,created_at,updated_at,owner_agent_id) VALUES('solo','solo',0,0,'solo')`); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO repos(id,display_name,created_at,updated_at,lead_agent_id) VALUES('solo','solo',0,0,'solo')`); err != nil {
 		t.Fatal(err)
 	}
 	var node string
@@ -356,7 +356,7 @@ func repairFixture(t *testing.T, s *Store) (cto string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_session',?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, cto); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES('cto_session',?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, cto); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UnixNano()
@@ -364,7 +364,7 @@ func repairFixture(t *testing.T, s *Store) (cto string) {
 		if _, err := s.db.Exec(`INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES(?,?,'',?,?,0)`, name, name, now, now); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := s.db.Exec(`INSERT INTO repos(id,display_name,created_at,updated_at,owner_agent_id) VALUES(?,?,?,?,?)`, name, name, now, now, name); err != nil {
+		if _, err := s.db.Exec(`INSERT INTO repos(id,display_name,created_at,updated_at,lead_agent_id) VALUES(?,?,?,?,?)`, name, name, now, now, name); err != nil {
 			t.Fatal(err)
 		}
 	}

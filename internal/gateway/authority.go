@@ -50,8 +50,8 @@ func repoTeam(q leadDB, repo string) (id, name, mode, held string, owner sql.Nul
 	if repo == "" {
 		return "", "", "", "", owner, sql.ErrNoRows
 	}
-	err = q.QueryRow(`SELECT t.id,t.name,t.authority_mode,t.held_back,t.owner_agent_id FROM teams t JOIN team_members tm ON tm.team_id=t.id
-		WHERE t.active=1 AND tm.member_kind='repo' AND tm.member_id=? ORDER BY t.id LIMIT 1`, repo).Scan(&id, &name, &mode, &held, &owner)
+	err = q.QueryRow(`SELECT t.id,t.name,t.authority_mode,t.held_back,t.owner_agent_id FROM teams t JOIN repos r ON r.team_id=t.id
+		WHERE t.active=1 AND r.id=? ORDER BY t.id LIMIT 1`, repo).Scan(&id, &name, &mode, &held, &owner)
 	return
 }
 
@@ -86,11 +86,11 @@ func orderAbove(q leadDB, sender, recipient string, now time.Time) (protocol.Ord
 	}
 	name := sessionLabel(q, sender)
 	var id, teamName, mode, held string
-	err = q.QueryRow(`SELECT t.id,t.name,t.authority_mode,t.held_back FROM teams t JOIN team_members tm ON tm.team_id=t.id
+	err = q.QueryRow(`SELECT t.id,t.name,t.authority_mode,t.held_back FROM teams t
 		LEFT JOIN agents a ON a.id=t.owner_agent_id
 		WHERE t.active=1 AND t.owner_agent_id=? AND a.lead_session=?
-		AND ((tm.member_kind='repo' AND tm.member_id=? AND tm.member_id<>'') OR (tm.member_kind='agent' AND tm.member_id=?))
-		ORDER BY t.id LIMIT 1`, from.agent, sender, to.repo, to.agent).Scan(&id, &teamName, &mode, &held)
+		AND ((?<>'' AND EXISTS(SELECT 1 FROM repos r WHERE r.id=? AND r.team_id=t.id)) OR EXISTS(SELECT 1 FROM agents ag WHERE ag.id=? AND ag.team_id=t.id))
+		ORDER BY t.id LIMIT 1`, from.agent, sender, to.repo, to.repo, to.agent).Scan(&id, &teamName, &mode, &held)
 	if err == nil {
 		repoHeld := ""
 		if to.repo != "" {

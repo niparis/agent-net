@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -27,46 +29,61 @@ func catalogReads(t *testing.T, g *testGateway, node string) int64 {
 	return n
 }
 
-// Sessions of one project share one kept catalog answer, so any number of
-// tool-list reads while the catalog is unchanged costs the gateway one
-// mcp.catalog. A catalog change drops the kept answer, and the next read is
-// fresh.
-func TestMCPCatalogReadsOnePerProject(t *testing.T) {
-	w := newRefreshWorld(t, nodeOpts{cmdline: "pi"})
-	alpha, _ := helloPi(t, w.work, "na", w.repos["alpha"], false)
-	alpha2, _ := helloPi(t, w.work, "nb", w.repos["alpha"], false)
+// catalogNames lists the server names a session's tool-list read returns.
+func catalogNames(t *testing.T, lc *localClient) string {
+	t.Helper()
+	var r struct {
+		Servers []protocol.MCPServer `json:"servers"`
+	}
+	if err := json.Unmarshal(lc.mustCall("mcp_tools", nil), &r); err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, s := range r.Servers {
+		names = append(names, s.Name)
+	}
+	return strings.Join(names, ",")
+}
 
-	before := catalogReads(t, w.g, w.work.d.NodeID())
+// Every session shares one kept catalog answer, so any number of tool-list
+// reads while the catalog is unchanged costs the gateway one mcp.catalog. A
+// catalog change drops the kept answer, and the next read is fresh.
+func TestMCPCatalogIsReadOnceUntilItChanges(t *testing.T) {
+	useHelper(t)
+	g := startGateway(t, t.TempDir(), "")
+	host := startNode(t, g, nodeOpts{cmdline: "pi"})
+	work := startNode(t, g, nodeOpts{cmdline: "pi"})
+	repo := t.TempDir()
+	gitIn(t, repo, "init", "-q", "-b", "main")
+	cliClient(t, host).mustCall("mcp_add", protocol.MCPAdd{Server: stdioSpec("probe")})
+	first, _ := helloPi(t, work, "na", repo, false)
+	second, _ := helloPi(t, work, "nb", repo, false)
+
+	before := catalogReads(t, g, work.d.NodeID())
 	for i := 0; i < 20; i++ {
-		if got := scopedCatalog(t, alpha); got != "probe" {
+		if got := catalogNames(t, first); got != "probe" {
 			t.Fatalf("read %d: %q", i, got)
 		}
-		if i%2 == 0 {
-			if got := scopedCatalog(t, alpha2); got != "probe" {
-				t.Fatalf("second session read %d: %q", i, got)
-			}
+		if got := catalogNames(t, second); got != "probe" {
+			t.Fatalf("second session read %d: %q", i, got)
 		}
 	}
-	if got := catalogReads(t, w.g, w.work.d.NodeID()) - before; got != 1 {
-		t.Fatalf("20 unchanged tool-list reads made %d gateway mcp.catalog calls, want 1", got)
+	if got := catalogReads(t, g, work.d.NodeID()) - before; got != 1 {
+		t.Fatalf("40 unchanged tool-list reads made %d gateway mcp.catalog calls, want 1", got)
 	}
 
-	// Scope probe to another project. The gateway pushes mcp.changed and the
-	// next read must come from the gateway again, not from the kept answer.
-	w.assignProbe(t, "beta")
-	waitPush(t, alpha, "mcp_changed")
-	after := catalogReads(t, w.g, w.work.d.NodeID())
-	if got := scopedCatalog(t, alpha); got != "" {
+	// Disable the server. The gateway pushes mcp.changed and the next read
+	// must come from the gateway again, not from the kept answer.
+	cliClient(t, host).mustCall("mcp_enable", protocol.MCPSetEnabled{Name: "probe", Enabled: false})
+	waitPush(t, first, "mcp_changed")
+	after := catalogReads(t, g, work.d.NodeID())
+	if got := catalogNames(t, first); got != "" {
 		t.Fatalf("catalog after the change: %q, want none", got)
 	}
-	if got := catalogReads(t, w.g, w.work.d.NodeID()) - after; got != 1 {
-		t.Fatalf("the first read after a change made %d gateway mcp.catalog calls, want 1", got)
-	}
-	// The fresh answer is kept again for the other session of the project.
-	if got := scopedCatalog(t, alpha2); got != "" {
+	if got := catalogNames(t, second); got != "" {
 		t.Fatalf("second session after the change: %q, want none", got)
 	}
-	if got := catalogReads(t, w.g, w.work.d.NodeID()) - after; got != 1 {
-		t.Fatalf("the next reads after the change made %d gateway mcp.catalog calls, want 1", got)
+	if got := catalogReads(t, g, work.d.NodeID()) - after; got != 1 {
+		t.Fatalf("the reads after a change made %d gateway mcp.catalog calls, want 1", got)
 	}
 }

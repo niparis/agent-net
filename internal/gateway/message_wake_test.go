@@ -25,6 +25,31 @@ type wakeProbe struct {
 	refusal string
 	// gate, when set, holds the machine's answer to a wake until it is closed.
 	gate chan struct{}
+	// online makes an accepted wake bring the session online, as a real machine does.
+	online bool
+}
+
+// bringsSessionsOnline makes the machine register the session when it accepts a wake.
+func (p *wakeProbe) bringsSessionsOnline() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.online = true
+}
+
+// cameOnline registers the woken session online, if the probe is set to.
+func (p *wakeProbe) cameOnline(session string) error {
+	p.mu.Lock()
+	on := p.online
+	p.mu.Unlock()
+	if !on {
+		return nil
+	}
+	a, ok, err := p.s.Agent(session)
+	if err != nil || !ok {
+		return err
+	}
+	_, err = p.s.UpsertSession(p.node, protocol.SessionInfo{Harness: a.Harness, NativeID: a.NativeID, Cwd: a.Cwd, Mode: a.Mode, Status: "idle"})
+	return err
 }
 
 func (p *wakeProbe) setRefusal(reason string) {
@@ -95,6 +120,7 @@ func newWakeProbeRefusing(t *testing.T, refusal string) *wakeProbe {
 			if reason := p.wakeRefusal(); reason != "" {
 				return errors.New(reason)
 			}
+			return p.cameOnline(m["session_id"])
 		}
 		return nil
 	})
@@ -144,8 +170,8 @@ func (p *wakeProbe) stepMessage(t *testing.T, to string) protocol.Message {
 		VALUES(?, 'proj', 'node1', 'feature', 'head1', 1, '{}', 'open', ?)`, changeID, now.Unix()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.s.db.Exec(`INSERT INTO delivery_step_tasks(change_id, revision, step, for_step, after_merge, owner_node, claimed_by, completed, created_at)
-		VALUES(?, 1, 'test', '', 0, 'node1', '', 0, ?)`, changeID, now.Unix()); err != nil {
+	if _, err := p.s.db.Exec(`INSERT INTO delivery_step_tasks(change_id, revision, step, for_step, after_merge, owner_node, claimed_by, created_at)
+		VALUES(?, 1, 'test', '', 0, 'node1', '', ?)`, changeID, now.Unix()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := p.s.db.Exec(`INSERT INTO messages(id, conversation_id, sender, recipient, type, body, hop, idem_key, created_at, expires_at, state)
@@ -153,10 +179,7 @@ func (p *wakeProbe) stepMessage(t *testing.T, to string) protocol.Message {
 		msgID, to, idemKey, now.UnixNano(), expires.UnixNano()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.s.db.Exec(`INSERT INTO delivery_step_messages(change_id, revision, step, for_step, after_merge, session_id, message_id)
-		VALUES(?, 1, 'test', '', 0, ?, ?)`, changeID, to, msgID); err != nil {
-		t.Fatal(err)
-	}
+	linkStepNotice(t, p.s.db, changeID, 1, "test", "", 0, to, msgID)
 	m, ok, err := p.s.Message(msgID)
 	if err != nil || !ok {
 		t.Fatalf("step message: ok=%v err=%v", ok, err)

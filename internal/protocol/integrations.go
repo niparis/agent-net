@@ -30,7 +30,7 @@ func IntegrationSpecs() []IntegrationSpec {
 		{IntegrationPeerMessages, "Claude: accept messages from your other agents"},
 		{IntegrationCodexTools, "Codex: call agent-net tools without asking"},
 		{IntegrationHintHook, "Claude: hint which session to ask after an error"},
-		{IntegrationPolicyHook, "Claude: apply the delegation policy you set in the TUI"},
+		{IntegrationPolicyHook, "Claude: add your node's charter to each prompt"},
 		{IntegrationNeedsHook, `Claude: show "Needs you" in the TUI`},
 		{IntegrationWorkersMod, "Claude: show your workers above the prompt"},
 		{IntegrationQuotaAXI, "Quota: read your subscription quotas with quota-axi"},

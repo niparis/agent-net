@@ -167,7 +167,7 @@ func (s *Store) applyEffectiveCharters(g *protocol.Graph) error {
 			case "agent":
 				agent = n.Ref.ID
 				// A standalone Agent uses its sole owned Repo when that context is unique.
-				if err := s.db.QueryRow(`SELECT CASE WHEN count(*)=1 THEN min(id) ELSE '' END FROM repos WHERE owner_agent_id=? AND archived=0`, agent).Scan(&repo); err != nil {
+				if err := s.db.QueryRow(`SELECT CASE WHEN count(*)=1 THEN min(id) ELSE '' END FROM repos WHERE lead_agent_id=? AND archived=0`, agent).Scan(&repo); err != nil {
 					return err
 				}
 			case "team":

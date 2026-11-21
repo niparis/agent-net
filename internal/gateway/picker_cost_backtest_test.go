@@ -80,7 +80,7 @@ func TestPickerCostBacktestPricesTasksFromNoticeTokens(t *testing.T) {
 func TestPickerCostBacktestAppliesTheWorkerFloors(t *testing.T) {
 	s, book := backtestFixture(t)
 	raw, _ := json.Marshal(protocol.WorkerFloors{Floors: map[string]int{"opencode": 20, "alibaba": 20}})
-	if _, err := s.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,?) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerFloorsKey, string(raw), 1); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0) ON CONFLICT (key,level,scope,item) DO UPDATE SET value=excluded.value`, workerFloorsKey, string(raw), 1); err != nil {
 		t.Fatal(err)
 	}
 	// The deepseek profile's provider has 14 percent left.

@@ -54,7 +54,7 @@ func agentLeadBases(q leadQueryer) (map[string]string, error) {
 		return nil, err
 	}
 	var chief string
-	err = q.QueryRow(`SELECT COALESCE(s.agent_id,'') FROM owner_settings o JOIN sessions s ON s.id=o.value WHERE o.key=?`, chiefSessionKey).Scan(&chief)
+	err = q.QueryRow(`SELECT COALESCE(s.agent_id,'') FROM gateway_state o JOIN sessions s ON s.id=o.value WHERE o.key=?`, chiefSessionKey).Scan(&chief)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
@@ -195,7 +195,7 @@ func (s *Store) ReleaseCTOHolds(now time.Time) ([]protocol.Message, error) {
 			continue
 		}
 		var agent, cto string
-		err = tx.QueryRow(`SELECT COALESCE(s.agent_id,''),COALESCE((SELECT value FROM owner_settings WHERE key='cto_session'),'')
+		err = tx.QueryRow(`SELECT COALESCE(s.agent_id,''),COALESCE((SELECT value FROM gateway_state WHERE key='cto_session'),'')
 			FROM sessions s WHERE s.id=?`, m.From).Scan(&agent, &cto)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {

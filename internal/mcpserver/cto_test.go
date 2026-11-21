@@ -69,7 +69,7 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 	for _, tl := range list.Tools {
 		tools[tl.Name] = tl
 	}
-	wantTools := []string{"graph_change", "session_change", "worker_change", "answer", "tools_change", "mcp_change", "mcp_call", "settings_change", "project_change", "proposal_ask", "cto_new", "agent_message_send", "agent_owner_ask", "agent_learn", "cto_ui_show", "agent_sessions_find"}
+	wantTools := []string{"graph_change", "session_change", "worker_change", "answer", "mcp_change", "mcp_call", "settings_change", "project_change", "proposal_ask", "cto_new", "agent_message_send", "agent_owner_ask", "agent_learn", "cto_ui_show", "agent_sessions_find"}
 	have := map[string]bool{}
 	for _, name := range wantTools {
 		if tools[name] == nil {
@@ -97,7 +97,6 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 		"session_change": {"action": {"rename", "trust", "mcp_servers", "policy", "session_start", "merger_start", "merger_stop", "stop", "resume", "restart"}, "folder": {"project", "worktree"}, "harness": {"opencode", "claude", "pi", "codex"}},
 		"worker_change":  {"action": {"start", "stop"}, "harness": {"opencode", "claude", "pi", "codex", "agy"}, "isolation": {"worktree", "none"}},
 		"answer":         {"kind": {"held", "inbox", "outcome"}},
-		"tools_change":   {"action": {"plan", "apply", "undo", "native_remove", "toggle", "new_projects"}},
 		"settings_change": {
 			"area": {"values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "invite", "onboarding"},
 		},
@@ -186,17 +185,17 @@ func TestCTOToolsForward(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cs.Close()
-	for _, name := range []string{"graph_change", "session_change", "worker_change", "answer", "tools_change", "mcp_change", "mcp_call", "settings_change", "project_change", "cto_new", "cto_ui_show"} {
+	for _, name := range []string{"graph_change", "session_change", "worker_change", "answer", "mcp_change", "mcp_call", "settings_change", "project_change", "cto_new", "cto_ui_show"} {
 		args := map[string]any{}
 		if field := ctoRoutingField[name]; field != "" {
-			args[field] = map[string]string{"graph_change": "charter_set", "session_change": "rename", "worker_change": "start", "answer": "held", "tools_change": "plan", "mcp_change": "test", "settings_change": "onboarding", "project_change": "add"}[name]
+			args[field] = map[string]string{"graph_change": "charter_set", "session_change": "rename", "worker_change": "start", "answer": "held", "mcp_change": "test", "settings_change": "onboarding", "project_change": "add"}[name]
 		}
 		switch name {
 		case "answer":
 			args["message_id"], args["action"] = "m1", "a"
 		case "mcp_change":
 			args["name"] = "test"
-		case "project_change", "tools_change":
+		case "project_change":
 		case "mcp_call":
 			args["server"], args["tool"], args["arguments"] = "test", "list", map[string]any{}
 		case "cto_ui_show":
@@ -306,45 +305,6 @@ func TestCTOSettingsSchemasDescribeNestedValues(t *testing.T) {
 				t.Error("settings_change.changes lacks nested properties")
 			}
 		}
-	}
-}
-
-func TestCTOSessionPolicyToolDescribesWrite(t *testing.T) {
-	list, err := ctoTestSession(t).ListTools(context.Background(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tool := range list.Tools {
-		if tool.Name == "session_change" {
-			if strings.Contains(strings.ToLower(tool.Description), "read or set") || !strings.Contains(tool.Description, "policy") {
-				t.Fatalf("misleading policy description: %s", tool.Description)
-			}
-			return
-		}
-	}
-	t.Fatal("session_change missing")
-}
-
-func TestCTOToolManagementDescriptions(t *testing.T) {
-	list, err := ctoTestSession(t).ListTools(context.Background(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	found := map[string]*mcp.Tool{}
-	for _, v := range list.Tools {
-		found[v.Name] = v
-	}
-	if found["tools_change"] == nil || found["tools_change"].Description == "" {
-		t.Fatal("missing tools_change")
-	}
-	props, _ := ctoToolSchema(t, found["tools_change"])
-	if !strings.Contains(found["tools_change"].Description, "plan") || !strings.Contains(strings.Join(enumStrings(props["action"]["enum"]), ","), "native_remove") {
-		t.Fatalf("tool actions missing: %s", found["tools_change"].Description)
-	}
-	targets := props["repo_targets"]
-	items, _ := targets["items"].(map[string]any)
-	if items["type"] != "object" {
-		t.Fatalf("repo_targets must contain checkout objects: %+v", targets)
 	}
 }
 

@@ -22,9 +22,7 @@ func TestCTOOnlyAcceptsReplies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec(`INSERT INTO project_mergers(project,node_id,session_id) VALUES(?,?,?)`, "demo", node, merger); err != nil {
-		t.Fatal(err)
-	}
+	registerMerger(t, s.db, "demo", node, merger)
 	for _, sender := range []string{agent, orchestrator, merger} {
 		_, _, err := s.StoreMessage(protocol.MsgSend{Sender: sender, Recipient: cto, Body: "hello"})
 		if err == nil || !strings.Contains(err.Error(), "The CTO only takes replies.") {
@@ -134,7 +132,7 @@ func TestCTOLeadGraphUndo(t *testing.T) {
 	}
 }
 
-func TestCTORepoLeadUndoRestoresDefault(t *testing.T) {
+func TestCTORepoLeadUndoRestoresThePreviousLead(t *testing.T) {
 	s := teamStore(t)
 	repo := protocol.GraphRef{Kind: "repo", ID: "demo"}
 	other := protocol.GraphRef{Kind: "agent", ID: "other"}
@@ -151,9 +149,9 @@ func TestCTORepoLeadUndoRestoresDefault(t *testing.T) {
 	if err = s.GraphUndo(history[0].ID, "owner"); err != nil {
 		t.Fatal(err)
 	}
-	var explicit bool
-	if err = s.db.QueryRow(`SELECT lead_agent_id IS NOT NULL FROM repos WHERE id='demo'`).Scan(&explicit); err != nil || explicit {
-		t.Fatalf("default lead is still an explicit lead: %v %v", explicit, err)
+	var lead string
+	if err = s.db.QueryRow(`SELECT COALESCE(lead_agent_id,'') FROM repos WHERE id='demo'`).Scan(&lead); err != nil || lead != "demo" {
+		t.Fatalf("undo left lead %q, want the previous lead demo: %v", lead, err)
 	}
 }
 

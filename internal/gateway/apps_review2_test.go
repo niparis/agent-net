@@ -263,7 +263,7 @@ func TestReviewExpiredOAuthCodeCannotBeReminted(t *testing.T) {
 		t.Fatal(err)
 	}
 	oauthRedirectCode(t, oauthStatus(t, h, id))
-	c.t = c.t.Add(oauthCodeTTL + time.Second)
+	c.advance(oauthCodeTTL + time.Second)
 	if err := s.CleanupOAuth(c.t); err != nil {
 		t.Fatal(err)
 	}

@@ -332,7 +332,7 @@ func TestSettingsSnapshotConsistentTransaction(t *testing.T) {
 				_, err = tx.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES('workers.auto_continue','network','network','',?,?) ON CONFLICT(key,level,scope,item) DO UPDATE SET value=excluded.value,revision=excluded.revision`, value, i)
 			}
 			if err == nil {
-				_, err = tx.Exec(`UPDATE setting_revision SET revision=? WHERE id=1`, i)
+				_, err = tx.Exec(`INSERT INTO setting_history(revision,seq,key,level,scope,item,old_value,new_value,actor,reason,cause,at) VALUES(?,1,'workers.auto_continue','network','network','',NULL,?,'owner','t','write',0)`, i, value)
 			}
 			if err != nil {
 				tx.Rollback()
@@ -564,9 +564,6 @@ func TestSettingsUndoRemovesLegacyGuidanceMarker(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := s.db.Exec(`INSERT INTO setting_history(revision,seq,key,level,scope,item,old_value,new_value,actor,reason,cause,at) VALUES(1,1,'guidance.intro_text','network','network','',NULL,?,'cto','old write','write',1)`, bad); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.db.Exec(`UPDATE setting_revision SET revision=1 WHERE id=1`); err != nil {
 		t.Fatal(err)
 	}
 	result, err := s.UndoSettings(1, "cto")

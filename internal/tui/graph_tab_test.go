@@ -61,9 +61,8 @@ func TestGraphTabKeys(t *testing.T) {
 	}
 	// Fit happens when the graph loads; 0 is no longer a key.
 	zoomed := m.graphState.Camera.Zoom
-	tools := m.tl.search
 	m = keys(m, "0", "o", " ")
-	if m.graphState.Camera.Zoom != zoomed || m.tab != graphTab || m.tl.search != tools || m.graphState.Orbit || m.graphState.Paused {
+	if m.graphState.Camera.Zoom != zoomed || m.tab != graphTab || m.graphState.Orbit || m.graphState.Paused {
 		t.Fatal("a removed graph key still changed the graph")
 	}
 	m = keys(m, "enter")

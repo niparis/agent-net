@@ -207,8 +207,6 @@ type fakeSource struct {
 	renames          []renameCall
 	projectNames     []renameCall
 	renameErr        error
-	policyFn         func(protocol.SessionPolicyRequest) (protocol.SessionPolicyResult, error)
-	policyErr        error
 	intg             protocol.Integrations
 	intgSet          bool
 	intgGetErr       error
@@ -340,13 +338,6 @@ func (f *fakeSource) SessionText(_ context.Context, q protocol.TextQuery) (proto
 		return protocol.TextPage{}, errors.New("session_text is not available")
 	}
 	return f.textFn(q)
-}
-
-func (f *fakeSource) SetSessionPolicy(_ context.Context, q protocol.SessionPolicyRequest) (protocol.SessionPolicyResult, error) {
-	if f.policyFn != nil {
-		return f.policyFn(q)
-	}
-	return protocol.SessionPolicyResult{SessionID: q.SessionID}, f.policyErr
 }
 
 func (f *fakeSource) Integrations(context.Context) (protocol.IntegrationsResult, error) {
@@ -662,7 +653,7 @@ func TestViewHasEverythingAt80Columns(t *testing.T) {
 	m := keys(quietFixtures(newModel(80, 24)), "down") // tenebrae-53
 	out := m.testView()
 	for _, want := range []string{
-		"Mac", "old-box", "7 Desk", "cpu", "mem", "no claude",
+		"Mac", "old-box", "6 Desk", "cpu", "mem", "no claude",
 		"NAME", "MACHINE", "PROJECT", "MODEL", "STATUS", "CPU", "RAM", "TASK",
 		"tenebrae-53", "busy", "sessions ·", "CTO",
 		"up/down select", "q quit",

@@ -3,6 +3,9 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"slices"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -12,14 +15,28 @@ import (
 // reads used by the screen. Column keys keep session activity from moving graph.
 var topicTables = map[string][]string{
 	protocol.TopicAgents:   agentsTables,
-	protocol.TopicNodes:    tableUnion(nodesTables, calibrationTables, []string{"quota_blocks", "nodes.health_report", "nodes.health_reported_at", "playbook", "owner_settings", "setting_values"}),
-	protocol.TopicWorkers:  tableUnion(workerLogTables, calibrationTables, []string{"worker_starts", "quota_blocks", "owner_settings", "setting_values"}),
+	protocol.TopicNodes:    tableUnion(nodesTables, calibrationTables, []string{"quota_blocks", "nodes.health_report", "nodes.health_reported_at", "playbook", "setting_values"}),
+	protocol.TopicWorkers:  tableUnion(workerLogTables, calibrationTables, []string{"worker_starts", "quota_blocks", "setting_values"}),
 	protocol.TopicGraph:    graphTables,
-	protocol.TopicInbox:    tableUnion(inboxTables, []string{"messages", "ask_sorts", "desk_log", "charter_draft_asks", "owner_settings"}),
-	protocol.TopicChanges:  []string{"delivery_changes", "delivery_revisions", "delivery_evidence", "delivery_step_tasks", "delivery_step_messages", "delivery_step_inbox", "delivery_step_delegates", "events", "messages"},
-	protocol.TopicProjects: tableUnion([]string{"projects", "repos", "project_display_names", "project_mergers", "sessions", "nodes.id", "nodes.hostname"}, graphTables),
+	protocol.TopicInbox:    tableUnion(inboxTables, []string{"messages", "ask_sorts", "desk_log", "charter_drafts", "setting_values"}),
+	protocol.TopicChanges:  []string{"delivery_changes", "delivery_revisions", "delivery_evidence", "delivery_step_tasks", "delivery_step_inbox", "events", "messages"},
+	protocol.TopicProjects: tableUnion([]string{"projects", "repos", "sessions", "nodes.id", "nodes.hostname"}, graphTables),
 	protocol.TopicLearned:  learnedListTables,
 	protocol.TopicUsage:    tableUnion(nodesTables, []string{"sessions", "quota_blocks"}),
+}
+
+// No screen topic follows gateway_state, even if a cached read declares it by
+// table or by column (calibration reads gateway_state.key and .value for the
+// worker_runs_version counter, which moves in the same transaction as the
+// worker_runs write that the topic already follows). A value there that a
+// screen does show moves its topics through bumpStateTopics instead, because
+// most keys of gateway_state are markers that no screen shows.
+func init() {
+	for topic, tables := range topicTables {
+		topicTables[topic] = slices.DeleteFunc(slices.Clone(tables), func(t string) bool {
+			return t == "gateway_state" || strings.HasPrefix(t, "gateway_state.")
+		})
+	}
 }
 
 func (s *Store) topicVersions() map[string]uint64 {
@@ -27,7 +44,24 @@ func (s *Store) topicVersions() map[string]uint64 {
 	for topic, tables := range topicTables {
 		versions[topic] = s.readStamp(tables)
 	}
+	s.stateTopicBumps.Range(func(topic, n any) bool {
+		versions[topic.(string)] += n.(*atomic.Uint64).Load()
+		return true
+	})
 	return versions
+}
+
+// bumpStateTopics moves the topics of the screens that show a gateway_state
+// value the caller just wrote. Call it after the write. A caller inside a
+// transaction may bump before its commit: a rolled back transaction then moves
+// a topic for nothing, which costs a refresh, never a missed change. The count
+// is in memory: the gateway that writes the value also samples the topics, and
+// a restart makes every subscriber subscribe again.
+func (s *Store) bumpStateTopics(topics ...string) {
+	for _, topic := range topics {
+		n, _ := s.stateTopicBumps.LoadOrStore(topic, new(atomic.Uint64))
+		n.(*atomic.Uint64).Add(1)
+	}
 }
 
 func (g *Gateway) topicVersions() map[string]uint64 {

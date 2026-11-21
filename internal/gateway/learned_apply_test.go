@@ -107,7 +107,7 @@ func TestLearnedCriticalAndCap(t *testing.T) {
 	if applied != 3 || major != 1 {
 		t.Fatalf("cap: %+v", v)
 	}
-	c.t = c.t.Add(24*time.Hour + time.Nanosecond)
+	c.advance(24*time.Hour + time.Nanosecond)
 	// A promoted suggestion stays major, even after the rolling window expires.
 	if err := s.ProcessLearned(); err != nil {
 		t.Fatal(err)

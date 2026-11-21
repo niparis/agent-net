@@ -89,7 +89,7 @@ func (r *callerAgentRig) accept(session, change, commit string) (protocol.StepRe
 func (r *callerAgentRig) stepMessageCount(session string) int {
 	r.t.Helper()
 	var n int
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_messages WHERE session_id=?`, session).Scan(&n); err != nil {
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM `+stepNoticesSQL+` WHERE session_id=?`, session).Scan(&n); err != nil {
 		r.t.Fatal(err)
 	}
 	return n
@@ -114,7 +114,7 @@ func TestCallerStepOfferedToLiveSessionOfCallerAgent(t *testing.T) {
 	id := r.submitAs(r.caller, "feature/offered", commitA)
 	r.g.dispatchStepTasks(context.Background())
 	var body string
-	if err := r.s.db.QueryRow(`SELECT m.body FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id WHERE d.session_id=?`, r.second).Scan(&body); err != nil {
+	if err := r.s.db.QueryRow(`SELECT m.body FROM `+stepNoticesSQL+` d JOIN messages m ON m.id=d.message_id WHERE d.session_id=?`, r.second).Scan(&body); err != nil {
 		t.Fatalf("live session of the caller's agent got no task: %v", err)
 	}
 	if !strings.Contains(body, id) {
@@ -124,7 +124,7 @@ func TestCallerStepOfferedToLiveSessionOfCallerAgent(t *testing.T) {
 		t.Fatalf("offline caller session got %d task messages", n)
 	}
 	var wakes int
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM session_wakes WHERE session_id=? AND wake_attempted_at>0`, r.caller).Scan(&wakes); err != nil || wakes != 0 {
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM sessions WHERE id=? AND wake_attempted_at>0`, r.caller).Scan(&wakes); err != nil || wakes != 0 {
 		t.Fatalf("offline caller was woken although its agent has a live session: %d, %v", wakes, err)
 	}
 }
@@ -182,7 +182,7 @@ func TestOfflineCallerAgentWokenOnceWithItsWaitingSteps(t *testing.T) {
 	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE recipient=? AND idem_key LIKE 'delivery:agentwake:%'`, caller).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("agent was woken before the stuck limit: %d, %v", n, err)
 	}
-	r.clk.t = r.clk.t.Add(13 * time.Hour)
+	r.clk.advance(13 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 	if id := r.waitWake(); id != caller {
 		t.Fatalf("woke %s, want %s", id, caller)
@@ -214,7 +214,7 @@ func TestNonWakeableCallerAgentStepsGoToRepoLead(t *testing.T) {
 	caller := r.onlyOfflineSession("pi")
 	// The machine refused to resume the agent's other sessions.
 	for _, id := range []string{r.caller, r.second} {
-		if _, err := r.s.db.Exec(`INSERT INTO session_wakes(session_id,wake_failed_at,wake_failed_reason) VALUES(?,?,'test')`, id, r.clk.t.UnixNano()); err != nil {
+		if _, err := r.s.db.Exec(`UPDATE sessions SET wake_failed_at=?,wake_failed_reason='test' WHERE id=?`, r.clk.t.UnixNano(), id); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -223,10 +223,10 @@ func TestNonWakeableCallerAgentStepsGoToRepoLead(t *testing.T) {
 	if _, err := r.accept(lead, id, commitA); err == nil {
 		t.Fatal("the repo lead acted on a caller step before the offer")
 	}
-	r.clk.t = r.clk.t.Add(13 * time.Hour)
+	r.clk.advance(13 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 	var body string
-	if err := r.s.db.QueryRow(`SELECT m.body FROM delivery_step_messages d JOIN messages m ON m.id=d.message_id WHERE d.session_id=?`, lead).Scan(&body); err != nil || !strings.Contains(body, id) {
+	if err := r.s.db.QueryRow(`SELECT m.body FROM `+stepNoticesSQL+` d JOIN messages m ON m.id=d.message_id WHERE d.session_id=?`, lead).Scan(&body); err != nil || !strings.Contains(body, id) {
 		t.Fatalf("lead was not offered %s: %q, %v", id, body, err)
 	}
 	if res, err := r.accept(lead, id, commitA); err != nil || res.Evidence.By != lead {
@@ -239,7 +239,7 @@ func TestUnansweredWakeFallsBackToRepoLead(t *testing.T) {
 	caller := r.onlyOfflineSession("codex")
 	lead := r.leadOf()
 	id := r.submitAs(caller, "feature/unanswered", commitA)
-	r.clk.t = r.clk.t.Add(13 * time.Hour)
+	r.clk.advance(13 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 	if got := r.waitWake(); got != caller {
 		t.Fatalf("woke %s, want %s", got, caller)
@@ -248,7 +248,7 @@ func TestUnansweredWakeFallsBackToRepoLead(t *testing.T) {
 		t.Fatal("lead was offered the step while the wake was still under way")
 	}
 	// The wake window passes and nobody of the agent is online.
-	r.clk.t = r.clk.t.Add(wakeTimeout + time.Minute)
+	r.clk.advance(wakeTimeout + time.Minute)
 	r.g.dispatchStepTasks(context.Background())
 	if _, err := r.accept(lead, id, commitA); err != nil {
 		t.Fatalf("lead refused after the wake window: %v", err)
@@ -282,12 +282,12 @@ func TestWaitingWorkDeskLineCountsUpdatesAndCloses(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		ids = append(ids, r.submitAs(caller, fmt.Sprintf("feature/desk-%d", i), commits[i]))
 	}
-	r.clk.t = r.clk.t.Add(23 * time.Hour)
+	r.clk.advance(23 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 	if lines := r.deskLines(); len(lines) != 0 {
 		t.Fatalf("a line before 24 hours: %v", lines)
 	}
-	r.clk.t = r.clk.t.Add(2 * time.Hour)
+	r.clk.advance(2 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 	want := "demo: 3 finished changes waiting for accept, oldest 25 hours, lead offline"
 	if lines := r.deskLines(); len(lines) != 1 || lines[0] != want {
@@ -299,7 +299,7 @@ func TestWaitingWorkDeskLineCountsUpdatesAndCloses(t *testing.T) {
 	}
 	// A fourth change updates the same line.
 	ids = append(ids, r.submitAs(caller, "feature/desk-3", commits[3]))
-	r.clk.t = r.clk.t.Add(24 * time.Hour)
+	r.clk.advance(24 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 	want = "demo: 4 finished changes waiting for accept, oldest 2 days, lead offline"
 	var again, text string
@@ -328,7 +328,7 @@ func TestWaitingWorkDeskLineCountsUpdatesAndCloses(t *testing.T) {
 func (r *callerAgentRig) taskOwner(change string, ref protocol.StepRef) string {
 	r.t.Helper()
 	var owner string
-	err := r.s.db.QueryRow(`SELECT owner_node FROM delivery_step_tasks WHERE change_id=? AND step=? AND for_step=? AND after_merge=? AND completed=0`,
+	err := r.s.db.QueryRow(`SELECT owner_node FROM delivery_step_tasks WHERE change_id=? AND step=? AND for_step=? AND after_merge=?`,
 		change, ref.Step, ref.For, boolInt(ref.AfterMerge)).Scan(&owner)
 	if err != nil && err.Error() != "sql: no rows in result set" {
 		r.t.Fatal(err)
@@ -391,7 +391,7 @@ func TestMergerSessionOfCallerAgentNeverGetsCallerSteps(t *testing.T) {
 	}
 	// The agent has an online session (the merger), so nobody is woken: the
 	// task goes to the lead once it waited past the stuck limit.
-	r.clk.t = r.clk.t.Add(13 * time.Hour)
+	r.clk.advance(13 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 	var wakes int
 	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE idem_key LIKE 'delivery:agentwake:%'`).Scan(&wakes); err != nil || wakes != 0 {
@@ -416,11 +416,11 @@ func TestCallerOnlyStepNoticeWaitsForTheReminderInterval(t *testing.T) {
 	if n := r.stepMessageCount(r.caller); n != 0 {
 		t.Fatalf("a young caller step sent %d messages", n)
 	}
-	r.clk.t = r.clk.t.Add(2*time.Hour + time.Minute)
+	r.clk.advance(2*time.Hour + time.Minute)
 	r.g.dispatchStepTasks(context.Background())
 	r.g.flushStepTaskBatches()
 	var n int
-	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM delivery_step_messages WHERE session_id=?`, r.caller).Scan(&n); err != nil || n != 1 {
+	if err := r.s.db.QueryRow(`SELECT count(DISTINCT message_id) FROM `+stepNoticesSQL+` WHERE session_id=?`, r.caller).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("a caller step that waited past the reminder interval sent %d messages, want 1 (%v)", n, err)
 	}
 }
@@ -434,14 +434,73 @@ func TestCallerWakeNotSentWhileASessionOfTheAgentIsOnline(t *testing.T) {
 	if err := r.s.SetSessionOffline(r.a, r.caller); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.s.db.Exec(`INSERT INTO project_mergers(project,node_id,session_id) VALUES('demo',?,?)`, r.a, r.second); err != nil {
-		t.Fatal(err)
-	}
+	registerMerger(t, r.s.db, "demo", r.a, r.second)
 	r.submitAs(r.caller, "feature/online-merger", commitA)
-	r.clk.t = r.clk.t.Add(13 * time.Hour)
+	r.clk.advance(13 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 	var n int
 	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE idem_key LIKE 'delivery:agentwake:%'`).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("woke the agent while its session %s is online: %d wake messages, %v", r.second, n, err)
+	}
+}
+
+// A session of the caller's agent that finished a node step of a change stays
+// barred from the caller's steps of that change, although a finished step
+// leaves no task behind: one session does not review and then accept.
+func TestSessionThatFinishedNodeStepStaysBarredFromCallerSteps(t *testing.T) {
+	r := newCallerAgentRig(t)
+	if err := r.s.AddArchitect("nodeown", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.SetEdge(protocol.Edge{From: "nodeown", To: "demo", Kind: "reviews"}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	q := r.workerSubmit("feature/finished-node-step", commitA)
+	q.SessionID, q.Difficulty = r.caller, "hard"
+	id := r.submit(r.a, q).Change.Change.ID
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: stepAccept, Result: protocol.StepResultPass, Commit: commitA})
+	node, err := r.s.UpsertSession(r.a, protocol.SessionInfo{Harness: "claude", NativeID: "nodeown", Repo: protocol.RepoInfo{Project: "nodeown"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = r.s.db.Exec(`UPDATE sessions SET agent_id='alpha' WHERE id=?`, node); err != nil {
+		t.Fatal(err)
+	}
+	review := protocol.StepRef{Step: protocol.StepReview}
+	acts := func() bool {
+		t.Helper()
+		ok, err := sessionActsForCaller(r.s.db, r.get(id).Change, protocol.StepRef{Step: protocol.StepTest}, node)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	if acts() {
+		t.Fatal("the node's session may act for the caller while its step is open")
+	}
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: node, ChangeID: id, StepRef: review, Result: protocol.StepResultPass, Commit: commitA})
+	var open int
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_tasks WHERE change_id=? AND step='review'`, id).Scan(&open); err != nil || open != 0 {
+		t.Fatalf("a reported step kept %d tasks, %v", open, err)
+	}
+	if acts() {
+		t.Fatal("the node's session may act for the caller after its step finished")
+	}
+}
+
+// A pass that does not count (not independent enough) leaves the step without
+// a task, as before: its reporter may report again, and nobody is notified.
+func TestUncountedPassQueuesNoNewTask(t *testing.T) {
+	r := newDeliveryRig(t)
+	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.pipeline.review.independent", Level: "repo", Scope: "demo", Value: json.RawMessage(`"family"`)}}, "owner", "test"); err != nil {
+		t.Fatal(err)
+	}
+	id := r.submit(r.a, protocol.ChangeSubmitRequest{SessionID: r.caller, Project: "demo", Branch: "agent-net/uncounted", HeadCommit: commitA, Difficulty: "hard",
+		Origin: protocol.ChangeOrigin{Kind: protocol.OriginSession, SessionID: r.caller}}).Change.Change.ID
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: protocol.StepRef{Step: protocol.StepReview},
+		Result: protocol.StepResultPass, Commit: commitA, Fields: map[string]string{protocol.FieldFindingsOpen: "0"}})
+	var tasks int
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_tasks WHERE change_id=? AND step='review'`, id).Scan(&tasks); err != nil || tasks != 0 {
+		t.Fatalf("an uncounted pass left %d review tasks, %v", tasks, err)
 	}
 }

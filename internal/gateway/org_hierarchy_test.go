@@ -123,7 +123,7 @@ func TestAuthorityStaysWithTheDirectLead(t *testing.T) {
 	}
 }
 
-// One Repo lead rule: an explicit lead wins over the Repo owner, and
+// One Repo lead rule: the repo lead column is the only source, and
 // routing, place text and the graph all name the explicit lead Agent.
 func TestOneRepoLeadRuleNamesTheRepoLeadsAgent(t *testing.T) {
 	s := teamStore(t)
@@ -169,8 +169,8 @@ func TestOneRepoLeadRuleNamesTheRepoLeadsAgent(t *testing.T) {
 	if repo.Place == nil || repo.Place.RepoLead != "other" {
 		t.Fatalf("graph repo lead: %+v", repo.Place)
 	}
-	var owner string
-	if err := s.db.QueryRow(`SELECT owner_agent_id FROM repos WHERE id='demo'`).Scan(&owner); err != nil || owner != "demo" {
-		t.Fatalf("repo owner=%q %v", owner, err)
+	var stored string
+	if err := s.db.QueryRow(`SELECT lead_agent_id FROM repos WHERE id='demo'`).Scan(&stored); err != nil || stored != "other" {
+		t.Fatalf("stored repo lead=%q %v", stored, err)
 	}
 }

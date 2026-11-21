@@ -147,7 +147,7 @@ func TestReadCacheForTimedReadsLastOneSecond(t *testing.T) {
 	if loads != 1 {
 		t.Fatalf("%d loads in the same second", loads)
 	}
-	clk.t = clk.t.Add(1100 * time.Millisecond)
+	clk.advance(1100 * time.Millisecond)
 	read()
 	if loads != 2 {
 		t.Fatalf("%d loads after the clock moved a second", loads)
@@ -169,7 +169,7 @@ func TestReadCacheDropsReadsThatSawAWrite(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	read(func() { s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('probe','1',0)`) })
+	read(func() { s.db.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES('probe','1',0)`) })
 	read(nil) // not kept the first time, so it loads again
 	read(nil) // and now it is kept
 	if loads != 2 {
@@ -196,7 +196,7 @@ func TestReadCacheKeepsReadsOnlyAgainstTheirTables(t *testing.T) {
 	probe := func(table string) func() {
 		return func() {
 			// A row that changes: insert one with a fresh key.
-			s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,0)`, table+time.Now().String(), "1")
+			s.db.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES(?,?,0)`, table+time.Now().String(), "1")
 		}
 	}
 	// A write to another table while the read loads: the value is kept.
@@ -208,16 +208,16 @@ func TestReadCacheKeepsReadsOnlyAgainstTheirTables(t *testing.T) {
 	}
 	// A write to its own table while it loads: not kept.
 	loads = 0
-	read([]string{"owner_settings"}, probe("q"))
-	read([]string{"owner_settings"}, nil) // loads again
-	read([]string{"owner_settings"}, nil) // and now it is kept
+	read([]string{"gateway_state"}, probe("q"))
+	read([]string{"gateway_state"}, nil) // loads again
+	read([]string{"gateway_state"}, nil) // and now it is kept
 	if loads != 2 {
 		t.Fatalf("a write to its table during the load: %d loads, want 2", loads)
 	}
 	// After the load, a write to its table makes it load again, a write to
 	// another table does not.
 	probe("r")()
-	read([]string{"owner_settings"}, nil)
+	read([]string{"gateway_state"}, nil)
 	if loads != 3 {
 		t.Fatalf("a write to its table was not seen: %d loads, want 3", loads)
 	}
@@ -225,7 +225,7 @@ func TestReadCacheKeepsReadsOnlyAgainstTheirTables(t *testing.T) {
 	if _, err := s.db.Exec(`INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES('a','b','depends','','')`); err != nil {
 		t.Fatal(err)
 	}
-	read([]string{"owner_settings"}, nil)
+	read([]string{"gateway_state"}, nil)
 	if loads != 3 {
 		t.Fatalf("a write to another table was seen: %d loads, want 3", loads)
 	}

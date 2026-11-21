@@ -178,7 +178,9 @@ func (s *Store) cutoverWorkerSandboxTx(tx *sql.Tx) error {
 		if project != key {
 			continue
 		}
-		var p protocol.DelegationPolicy
+		var p struct {
+			Workers string `json:"workers"`
+		}
 		if json.Unmarshal([]byte(raw), &p) != nil || rank[p.Workers] == 0 {
 			continue
 		}
@@ -450,13 +452,11 @@ func (s *Store) cutoverWorkerSandboxTx(tx *sql.Tx) error {
 	if len(changes) == 0 {
 		return nil
 	}
-	if err = bumpSettingsRevision(tx); err != nil {
+	rev, err := settingsRevision(tx)
+	if err != nil {
 		return err
 	}
-	var rev int64
-	if err = tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&rev); err != nil {
-		return err
-	}
+	rev++
 	for i, c := range changes {
 		b, _ := json.Marshal(c.desired)
 		var old any

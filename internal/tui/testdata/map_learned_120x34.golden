@@ -1,6 +1,5 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 7 nodes, 4 edges                      updated 14:05
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk │ 7 nodes, 4 edges                              updated 14:05
 cogforge  early  autonomy: off  component
-Tools: 0 skills, 0 MCP servers · t open
 Document and evidence API.
 ○ no live sessions
 accept, test, review, merge, release, verify: caller
@@ -24,6 +23,7 @@ judge_consumers    free                   maturity default
 deploy_rule        brief                  maturity default
 autonomy           off                    default
 work_mode          on_request             default
+
 RECENT  2h ago maturity by you (on Mac) · 26h ago purpose by owner
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
@@ -31,4 +31,4 @@ RECENT  2h ago maturity by you (on Mac) · 26h ago purpose by owner
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter sessions  t tools  esc Graph  ctrl+u/ctrl+d scroll  n new  u undo  ? help  q quit
+enter sessions  esc Graph  ctrl+u/ctrl+d scroll  n new  u undo  ? help  q quit

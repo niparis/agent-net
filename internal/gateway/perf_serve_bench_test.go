@@ -97,7 +97,6 @@ func BenchmarkRealHandleSessionSync(b *testing.B) {
 		if _, err := g.handle(ctx, nc, "session.sync", raw); err != nil {
 			b.Fatal(err)
 		}
-		g.standingWG.Wait()
 	}
 }
 
@@ -115,7 +114,6 @@ func BenchmarkRealHandleSessionUpsert(b *testing.B) {
 		if _, err := g.handle(ctx, nc, "session.upsert", raw); err != nil {
 			b.Fatal(err)
 		}
-		g.standingWG.Wait()
 	}
 }
 

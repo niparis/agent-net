@@ -1235,6 +1235,84 @@ settings:
     default: "09:00"
     live: true
 
+  - key: owner.integrations
+    description: "The owner's answers to the setup integration questions, kept once for every machine (decision 0021)."
+    kind: rule
+    type: json
+    levels: [network]
+    default: {}
+    visibility: internal
+  - key: owner.cto_settings
+    description: "The CTO session's model, harness and model list as the owner chose them."
+    kind: rule
+    type: json
+    levels: [network]
+    default: {}
+    visibility: internal
+  - key: owner.cto_title
+    description: "The name the owner uses for the CTO. Empty means the owner was not asked yet."
+    kind: rule
+    type: string
+    levels: [network]
+    default: ""
+    visibility: internal
+  - key: owner.protected_providers
+    description: "Providers whose subscription limit the owner keeps for orchestrating, and the reason."
+    kind: rule
+    type: json
+    levels: [network]
+    default: {}
+    visibility: internal
+  - key: owner.worker_floors
+    description: "The share of each provider's quota that workers must leave untouched."
+    kind: rule
+    type: json
+    levels: [network]
+    default: {}
+    visibility: internal
+  - key: owner.model_scores
+    description: "The owner's score table for worker models, used by the worker picker."
+    kind: rule
+    type: json
+    levels: [network]
+    default: []
+    visibility: internal
+  - key: owner.public
+    description: "The public listener state: on or off, and its URL."
+    kind: rule
+    type: json
+    levels: [network]
+    default: {}
+    visibility: internal
+  - key: owner.worker_profiles
+    description: "The worker profiles the owner registered, as one list."
+    kind: rule
+    type: json
+    levels: [network]
+    default: []
+    visibility: internal
+  - key: owner.worker_providers
+    description: "The providers the worker picker may use."
+    kind: rule
+    type: json
+    levels: [network]
+    default: {}
+    visibility: internal
+  - key: owner.difficulty_minimums
+    description: "The lowest model score allowed for each task difficulty."
+    kind: rule
+    type: json
+    levels: [network]
+    default: {}
+    visibility: internal
+  - key: owner.time_zone
+    description: "The owner's time zone name. Empty means it is not set."
+    kind: rule
+    type: string
+    levels: [network]
+    default: ""
+    visibility: internal
+
 ledger:
   - {row: 1, code: "guidance is always synced at startup"}
   - {row: 2, keys: [guidance.intro_text], step: 4}

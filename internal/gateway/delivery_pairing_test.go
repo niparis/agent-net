@@ -41,7 +41,6 @@ func mergedChange(t *testing.T, r *deliveryRig, branch string, ci bool) protocol
 		sql  string
 		args []any
 	}{
-		{sql: `DELETE FROM delivery_step_messages`},
 		{sql: `DELETE FROM delivery_step_tasks WHERE change_id=?`, args: []any{c.ID}},
 		{sql: `DELETE FROM messages`},
 	} {
@@ -89,7 +88,7 @@ func callerNeedsSharedPipeline(t *testing.T, r *deliveryRig) {
 
 func callerMessages(t *testing.T, r *deliveryRig, change string) []string {
 	t.Helper()
-	rows, err := r.s.db.Query(`SELECT DISTINCT m.body FROM messages m JOIN delivery_step_messages d ON d.message_id=m.id
+	rows, err := r.s.db.Query(`SELECT DISTINCT m.body FROM messages m JOIN `+stepNoticesSQL+` d ON d.message_id=m.id
 		WHERE d.session_id=? AND d.change_id=? ORDER BY m.id`, r.caller, change)
 	if err != nil {
 		t.Fatal(err)
@@ -242,7 +241,7 @@ func TestStepPairSplitOwnersSeparateTasks(t *testing.T) {
 	r.g.flushStepTasks(mergedBy)
 
 	var mergerBody string
-	if err := r.s.db.QueryRow(`SELECT body FROM messages WHERE id IN (SELECT message_id FROM delivery_step_messages WHERE session_id=?) ORDER BY id DESC LIMIT 1`, mergedBy).Scan(&mergerBody); err != nil {
+	if err := r.s.db.QueryRow(`SELECT body FROM messages WHERE id IN (SELECT message_id FROM `+stepNoticesSQL+` WHERE session_id=?) ORDER BY id DESC LIMIT 1`, mergedBy).Scan(&mergerBody); err != nil {
 		t.Fatalf("merge owner got no task message: %v", err)
 	}
 	if !strings.Contains(mergerBody, "step: merge") {
@@ -307,7 +306,7 @@ func TestStepTaskReleaseRequiresPassingTest(t *testing.T) {
 	assertTasks := func(want int) {
 		t.Helper()
 		var got int
-		if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_tasks WHERE change_id=? AND step='release' AND completed=0`, c.ID).Scan(&got); err != nil || got != want {
+		if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_tasks WHERE change_id=? AND step='release'`, c.ID).Scan(&got); err != nil || got != want {
 			t.Fatalf("active release tasks=%d want=%d err=%v", got, want, err)
 		}
 	}
@@ -337,12 +336,12 @@ func TestStepTaskReleaseRequiresPassingTest(t *testing.T) {
 		}
 	}
 	recentStepMessage(t, r, c.ID, releaseRef)
-	if _, err := r.s.db.Exec(`UPDATE messages SET state='dispatched' WHERE id IN (SELECT message_id FROM delivery_step_messages WHERE change_id=? AND step='release')`, c.ID); err != nil {
+	if _, err := r.s.db.Exec(`UPDATE messages SET state='dispatched' WHERE id IN (SELECT message_id FROM `+stepNoticesSQL+` WHERE change_id=? AND step='release')`, c.ID); err != nil {
 		t.Fatal(err)
 	}
 	record(protocol.StepResultFail, 4)
 	var activeMessages int
-	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE state IN ('stored','dispatched') AND id IN (SELECT message_id FROM delivery_step_messages WHERE change_id=? AND step='release')`, c.ID).Scan(&activeMessages); err != nil || activeMessages != 0 {
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM messages WHERE state IN ('stored','dispatched') AND id IN (SELECT message_id FROM `+stepNoticesSQL+` WHERE change_id=? AND step='release')`, c.ID).Scan(&activeMessages); err != nil || activeMessages != 0 {
 		t.Fatalf("active stale release messages=%d err=%v", activeMessages, err)
 	}
 

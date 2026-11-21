@@ -11,7 +11,7 @@ import (
 // ProjectDisplayName reads the optional name while keeping the project identity.
 func (s *Store) ProjectDisplayName(project string) (protocol.ProjectDisplayResult, error) {
 	out := protocol.ProjectDisplayResult{Project: project}
-	err := s.db.QueryRow(`SELECT name FROM project_display_names WHERE project=?`, project).Scan(&out.Name)
+	err := s.db.QueryRow(`SELECT COALESCE(NULLIF(display_name,id),'') FROM repos WHERE id=?`, project).Scan(&out.Name)
 	if err == sql.ErrNoRows {
 		err = nil
 	}
@@ -43,12 +43,12 @@ func (s *Store) SetProjectDisplayName(project, name string, validate ...bool) (p
 	if len(validate) > 0 && validate[0] {
 		return out, nil
 	}
-	var err error
-	if name == "" {
-		_, err = s.db.Exec(`DELETE FROM project_display_names WHERE project=?`, project)
-	} else {
-		_, err = s.db.Exec(`INSERT INTO project_display_names(project,name) VALUES(?,?) ON CONFLICT(project) DO UPDATE SET name=excluded.name`, project, name)
+	stored := name
+	if stored == "" {
+		stored = project
 	}
+	now := s.now().UnixNano()
+	_, err := s.db.Exec(`INSERT INTO repos(id,display_name,created_at,updated_at) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET display_name=excluded.display_name,updated_at=excluded.updated_at`, project, stored, now, now)
 	out.Name = name
 	return out, err
 }

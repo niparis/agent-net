@@ -59,15 +59,26 @@ func (s *Store) refreshDeliveryTasks() {
 		s.logf("delivery task refresh", "err", err)
 	}
 }
+
+// The settings revision is the newest revision in setting_history. A change
+// that is not a setting (a delivery owner, a maturity) bumps it with a marker
+// row at seq 0, which no setting row uses.
 func bumpSettingsRevision(tx *sql.Tx) error {
-	_, err := tx.Exec(`UPDATE setting_revision SET revision=revision+1 WHERE id=1`)
+	_, err := tx.Exec(`INSERT INTO setting_history(revision,seq,key,level,scope,item,old_value,new_value,actor,reason,cause,at)
+		SELECT COALESCE(MAX(revision),0)+1,0,'revision','network','network','',NULL,'"bump"','agent-net','settings revision','cutover',? FROM setting_history`, time.Now().UnixNano())
 	return err
+}
+
+// settingsRevision reads the current settings revision.
+func settingsRevision(q rower) (rev int64, err error) {
+	err = q.QueryRow(`SELECT COALESCE(MAX(revision),0) FROM setting_history`).Scan(&rev)
+	return rev, err
 }
 
 // settingsTables are the tables settingsSnapshotTx reads. Keep it equal to the
 // queries there (see readThrough).
-var settingsTables = []string{"setting_revision", "setting_values", "charter_values", "graph_edges",
-	"repos.id", "repos.owner_agent_id", "teams", "team_members"}
+var settingsTables = []string{"setting_history", "setting_values", "charter_values", "graph_edges",
+	"repos.id", "repos.lead_agent_id", "repos.team_id", "teams", "agents.id", "agents.team_id"}
 
 // SettingsSnapshot reads all settings. The read is kept until one of
 // settingsTables is written, and each caller gets a copy.
@@ -85,16 +96,22 @@ func (s *Store) settingsSnapshotRead() (settings.Snapshot, error) {
 		return settings.Snapshot{}, err
 	}
 	defer tx.Rollback()
-	out, err := settingsSnapshotTx(tx)
+	out, err := s.settingsSnapshotTx(tx)
 	if err != nil {
 		return out, err
 	}
 	err = tx.Commit()
 	return out, err
 }
+
 func settingsSnapshotTx(tx *sql.Tx) (settings.Snapshot, error) {
+	return (&Store{}).settingsSnapshotTx(tx)
+}
+
+func (s *Store) settingsSnapshotTx(tx *sql.Tx) (settings.Snapshot, error) {
 	out := settings.Snapshot{DeliveryCutover: true, DeliveryPipelineCutover: true, WorkerSandboxCutover: true, Recipe: settings.RecipeHash(), Values: []settings.Value{}, Maturity: map[string]string{}}
-	if err := tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&out.Revision); err != nil {
+	var err error
+	if out.Revision, err = settingsRevision(tx); err != nil {
 		return out, err
 	}
 	rows, err := tx.Query(`SELECT key,level,scope,item,value FROM setting_values ORDER BY key,level,scope,item`)
@@ -146,7 +163,15 @@ func settingsSnapshotTx(tx *sql.Tx) (settings.Snapshot, error) {
 	// A reader on a machine has no graph: carry the repo's agent and team so
 	// the team and agent levels resolve without a round trip.
 	out.RepoAgents, out.RepoTeams, out.AgentTeams = map[string]string{}, map[string]string{}, map[string]string{}
-	rows, err = tx.Query(`SELECT id, COALESCE(owner_agent_id,'') FROM repos WHERE COALESCE(owner_agent_id,'')<>'' ORDER BY id`)
+	repoLeadQ := `SELECT id, COALESCE(lead_agent_id,'') FROM repos WHERE COALESCE(lead_agent_id,'')<>'' ORDER BY id`
+	if !s.repoFolded.Load() {
+		rs, err := repoSchemaOf(tx)
+		if err != nil {
+			return settings.Snapshot{}, err
+		}
+		repoLeadQ = `SELECT id, ` + rs.lead("repos.id") + ` FROM repos WHERE ` + rs.lead("repos.id") + `<>'' ORDER BY id`
+	}
+	rows, err = tx.Query(repoLeadQ)
 	if err != nil {
 		return out, err
 	}
@@ -163,7 +188,19 @@ func settingsSnapshotTx(tx *sql.Tx) (settings.Snapshot, error) {
 	if err != nil {
 		return out, err
 	}
-	rows, err = tx.Query(`SELECT tm.member_id, tm.team_id FROM team_members tm JOIN teams t ON t.id=tm.team_id WHERE t.active=1 AND tm.member_kind='repo' ORDER BY tm.member_id, tm.team_id`)
+	repoTeamQ := `SELECT r.id, r.team_id FROM repos r JOIN teams t ON t.id=r.team_id WHERE t.active=1 AND r.team_id<>'' ORDER BY r.id, r.team_id`
+	agentTeamQ := `SELECT a.id, a.team_id FROM agents a JOIN teams t ON t.id=a.team_id WHERE t.active=1 AND a.team_id<>'' ORDER BY a.id, a.team_id`
+	if !s.repoFolded.Load() {
+		hasTM, err := hasTable(tx, "team_members")
+		if err != nil {
+			return out, err
+		}
+		if hasTM {
+			repoTeamQ = `SELECT tm.member_id, tm.team_id FROM team_members tm JOIN teams t ON t.id=tm.team_id WHERE t.active=1 AND tm.member_kind='repo' ORDER BY tm.member_id, tm.team_id`
+			agentTeamQ = `SELECT tm.member_id, tm.team_id FROM team_members tm JOIN teams t ON t.id=tm.team_id WHERE t.active=1 AND tm.member_kind='agent' ORDER BY tm.member_id, tm.team_id`
+		}
+	}
+	rows, err = tx.Query(repoTeamQ)
 	if err != nil {
 		return out, err
 	}
@@ -180,7 +217,7 @@ func settingsSnapshotTx(tx *sql.Tx) (settings.Snapshot, error) {
 	if err != nil {
 		return out, err
 	}
-	rows, err = tx.Query(`SELECT tm.member_id, tm.team_id FROM team_members tm JOIN teams t ON t.id=tm.team_id WHERE t.active=1 AND tm.member_kind='agent' ORDER BY tm.member_id, tm.team_id`)
+	rows, err = tx.Query(agentTeamQ)
 	if err != nil {
 		return out, err
 	}
@@ -718,9 +755,6 @@ func (s *Store) writeSettingsTx(tx *sql.Tx, changes []SettingsChange, actor, rea
 		}
 		return a.scope < b.scope
 	})
-	if err = bumpSettingsRevision(tx); err != nil {
-		return result, err
-	}
 	result.Revision++
 	result.changed = true
 	for i, a := range changed {
@@ -789,7 +823,7 @@ func (s *Store) UndoSettings(revision int64, actor string) (SettingsResult, erro
 		return SettingsResult{}, err
 	}
 	defer tx.Rollback()
-	rows, err := tx.Query(`SELECT key,level,scope,item,old_value,new_value FROM setting_history WHERE revision=? ORDER BY seq DESC`, revision)
+	rows, err := tx.Query(`SELECT key,level,scope,item,old_value,new_value FROM setting_history WHERE revision=? AND seq>0 ORDER BY seq DESC`, revision)
 	if err != nil {
 		return SettingsResult{}, err
 	}
@@ -836,9 +870,6 @@ func (s *Store) UndoSettings(revision int64, actor string) (SettingsResult, erro
 		return result, reject("only the owner may undo delivery owners")
 	}
 	if len(graphUndos) != 0 && !result.changed {
-		if err := bumpSettingsRevision(tx); err != nil {
-			return result, err
-		}
 		result.Revision++
 		result.changed = true
 	}
@@ -929,7 +960,7 @@ func (s *Store) SettingsHistory(key string, revision int64, owner bool) ([]proto
 			return nil, err
 		}
 		def, ok := recipe.Definition(h.Key)
-		if !ok || (!owner && def.Visibility == "owner") {
+		if !ok || (!owner && def.OwnerOnly()) {
 			continue
 		}
 		if old.Valid {

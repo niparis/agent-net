@@ -109,7 +109,8 @@ func (s *Store) skillListRows() (map[string][]skillListRow, error) {
 }
 
 func (s *Store) skillMemberships() (map[string]string, error) {
-	rows, err := s.db.Query(`SELECT m.member_kind, m.member_id, m.team_id FROM team_members m JOIN teams t ON t.id=m.team_id AND t.active=1`)
+	rows, err := s.db.Query(`SELECT 'agent',a.id,a.team_id FROM agents a JOIN teams t ON t.id=a.team_id AND t.active=1
+		UNION ALL SELECT 'repo',r.id,r.team_id FROM repos r JOIN teams t ON t.id=r.team_id AND t.active=1`)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +252,7 @@ func (s *Store) skillRepoID(scope string) (string, error) {
 // path uses the one context it has.
 func (s *Store) skillAgentRepo(agent string) (string, error) {
 	var owned string
-	if err := s.db.QueryRow(`SELECT CASE WHEN count(*)=1 THEN min(id) ELSE '' END FROM repos WHERE owner_agent_id=?
+	if err := s.db.QueryRow(`SELECT CASE WHEN count(*)=1 THEN min(id) ELSE '' END FROM repos WHERE lead_agent_id=?
 		AND archived=0`, agent).Scan(&owned); err != nil {
 		return "", err
 	}
@@ -601,7 +602,7 @@ func (s *Store) SkillListSet(req protocol.SkillSetRequest) (protocol.SkillSetRes
 	beforeJSON, _ := json.Marshal(before)
 	afterJSON, _ := json.Marshal(after)
 	out.Change = protocol.NewID("sl")
-	if _, err = tx.Exec(`INSERT INTO skill_list_changes(id,level,scope,before,after,actor,at) VALUES(?,?,?,?,?,?,?)`,
+	if _, err = tx.Exec(`INSERT INTO skill_changes(id,kind,level,scope,before,after,actor,at) VALUES(?,'list',?,?,?,?,?,?)`,
 		out.Change, level, scope, string(beforeJSON), string(afterJSON), req.By, now); err != nil {
 		return out, err
 	}
@@ -685,7 +686,7 @@ func (s *Store) SkillListUndo(change string) (protocol.SkillSetResult, error) {
 	defer tx.Rollback()
 	var level, scope, beforeJSON string
 	var undone int64
-	if err = tx.QueryRow(`SELECT level, scope, before, undone_at FROM skill_list_changes WHERE id=?`, change).Scan(&level, &scope, &beforeJSON, &undone); err != nil {
+	if err = tx.QueryRow(`SELECT level, scope, before, undone_at FROM skill_changes WHERE id=? AND kind='list'`, change).Scan(&level, &scope, &beforeJSON, &undone); err != nil {
 		return out, reject("unknown skill list change")
 	}
 	if undone != 0 {
@@ -705,7 +706,7 @@ func (s *Store) SkillListUndo(change string) (protocol.SkillSetResult, error) {
 			return out, err
 		}
 	}
-	if _, err = tx.Exec(`UPDATE skill_list_changes SET undone_at=? WHERE id=?`, now, change); err != nil {
+	if _, err = tx.Exec(`UPDATE skill_changes SET undone_at=? WHERE id=?`, now, change); err != nil {
 		return out, err
 	}
 	if err = tx.Commit(); err != nil {
@@ -735,8 +736,7 @@ func (s *Store) SkillListUndo(change string) (protocol.SkillSetResult, error) {
 // run the old set. Nothing restarts here; the CTO acts on this list.
 func (s *Store) skillRestartOffer(level, scope string) protocol.SkillRestartOffer {
 	out := protocol.SkillRestartOffer{Call: "session_change restart"}
-	query := `SELECT s.id, COALESCE(NULLIF(p.name,''), NULLIF(s.name,''), '') FROM sessions s
-		LEFT JOIN profiles p ON p.session_id=s.id
+	query := `SELECT s.id, COALESCE(NULLIF(s.name,''), '') FROM sessions s
 		WHERE s.online=1 AND s.archived_at=0 AND s.harness NOT IN ('owner','cto','bot')`
 	args := []any{}
 	// The sessions of a node and below. A repo includes its sessions; a team
@@ -749,8 +749,8 @@ func (s *Store) skillRestartOffer(level, scope string) protocol.SkillRestartOffe
 		query += ` AND s.agent_id=?`
 		args = append(args, scope)
 	case "team":
-		query += ` AND (s.repo_project IN (SELECT member_id FROM team_members WHERE team_id=? AND member_kind='repo')
-			OR s.agent_id IN (SELECT member_id FROM team_members WHERE team_id=? AND member_kind='agent'))`
+		query += ` AND (s.repo_project IN (SELECT id FROM repos WHERE team_id=?)
+			OR s.agent_id IN (SELECT id FROM agents WHERE team_id=?))`
 		args = append(args, scope, scope)
 	}
 	query += ` ORDER BY s.id`

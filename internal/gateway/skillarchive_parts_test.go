@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -48,18 +47,15 @@ func archiveBundleAt(t *testing.T, folder string) []byte {
 // intact. The machine answers in parts, and no answer is over the link's read
 // limit.
 func TestSkillArchiveAddTakesSkillOverTheImportLimit(t *testing.T) {
-	g, n, _ := toggleFixture(t)
+	g, n := archiveFixture(t)
 	folder, hash := archiveLargeFolder(t, filepath.Join(t.TempDir(), "large"))
 	bundle := archiveBundleAt(t, folder)
 	if len(bundle) <= protocol.TransferPartSize {
 		t.Fatalf("bundle is %d bytes, not over one part", len(bundle))
 	}
-	if err := g.store.SetInventory(n, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: []protocol.InventoryItem{
-		{Kind: "skill", Name: "large", Hash: hash, State: "ok", Scope: "user", Location: folder},
-	}}); err != nil {
-		t.Fatal(err)
-	}
-	frames := archiveFakeNodeAnswer(t, g, n, map[string][]byte{hash: bundle}, nil)
+	frames := archiveFakeNodeAnswer(t, g, n, map[string][]byte{folder: bundle}, &protocol.SkillSourcesResult{UserRead: true, Sources: []protocol.SkillSource{
+		{Name: "large", Hash: hash, Location: folder, Origin: "user", State: protocol.InventoryOK},
+	}})
 
 	got := archiveCall[protocol.SkillArchiveAddResult](t, g, protocol.FrameSkillArchiveAdd, protocol.SkillArchiveAdd{
 		Location: protocol.ToolImportLocation{NodeID: n, Location: folder}, By: "cto",
@@ -89,25 +85,22 @@ func TestSkillArchiveAddTakesSkillOverTheImportLimit(t *testing.T) {
 // Intake takes the 6 MB skill and skips one past the archive limit, with the
 // archive limit in the reason. The other skills are stored as before.
 func TestSkillArchiveIntakeTakesLargeSkillAndSkipsPastTheArchiveLimit(t *testing.T) {
-	g, n, _ := toggleFixture(t)
+	g, n := archiveFixture(t)
 	dir := t.TempDir()
 	large, largeHash := archiveLargeFolder(t, filepath.Join(dir, "large"))
 	small, smallHash := archiveSkillFolder(t, filepath.Join(dir, "small"), "---\ndescription: Small.\n---\nbody\n")
 	const hugeHash = "hugehash"
-	if err := g.store.SetInventory(n, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: []protocol.InventoryItem{
-		{Kind: "skill", Name: "large", Hash: largeHash, State: "ok", Scope: "user", Location: large},
-		{Kind: "skill", Name: "small", Hash: smallHash, State: "ok", Scope: "user", Location: small},
-		{Kind: "skill", Name: "huge", Hash: hugeHash, State: "ok", Scope: "user", Location: "/skills/huge"},
-	}}); err != nil {
-		t.Fatal(err)
-	}
 	// The huge bundle is never unpacked: the machine refuses it first.
 	bundles := map[string][]byte{
-		largeHash: archiveBundleAt(t, large),
-		smallHash: archiveBundleAt(t, small),
-		hugeHash:  make([]byte, inventory.ArchiveLimit.Bytes+1),
+		large:          archiveBundleAt(t, large),
+		small:          archiveBundleAt(t, small),
+		"/skills/huge": make([]byte, inventory.ArchiveLimit.Bytes+1),
 	}
-	frames := archiveFakeNodeAnswer(t, g, n, bundles, nil)
+	frames := archiveFakeNodeAnswer(t, g, n, bundles, &protocol.SkillSourcesResult{UserRead: true, Sources: []protocol.SkillSource{
+		{Name: "large", Hash: largeHash, Location: large, Origin: "user", State: protocol.InventoryOK},
+		{Name: "small", Hash: smallHash, Location: small, Origin: "user", State: protocol.InventoryOK},
+		{Name: "huge", Hash: hugeHash, Location: "/skills/huge", Origin: "user", State: protocol.InventoryOK},
+	}})
 
 	got := archiveCall[protocol.SkillArchiveMultiResult](t, g, protocol.FrameSkillArchiveIntake, protocol.SkillArchiveIntake{By: "cto"})
 	added := map[string]bool{}
@@ -128,7 +121,7 @@ func TestSkillArchiveIntakeTakesLargeSkillAndSkipsPastTheArchiveLimit(t *testing
 // A stored version over one part is served part by part to delivery. The
 // parts join to the bundle, and a version of one part is one answer.
 func TestSkillVersionServesLargeVersionInParts(t *testing.T) {
-	g, _, _ := toggleFixture(t)
+	g, _ := archiveFixture(t)
 	dir := t.TempDir()
 	folder, hash := archiveLargeFolder(t, filepath.Join(dir, "large"))
 	bundle := archiveBundleAt(t, folder)

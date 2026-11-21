@@ -34,13 +34,11 @@ CREATE INDEX IF NOT EXISTS nudge_repo_sessions_limited ON sessions(repo_id,limit
 
 const nudgePausedSQL = `SELECT EXISTS(SELECT 1 FROM nudge_pauses p JOIN sessions dst ON dst.id=?
  WHERE p.ended_at=0 AND p.kind=?
- AND (p.agent_id=dst.agent_id AND p.agent_id<>'' OR p.team_id IN
- (SELECT team_id FROM team_members WHERE (member_kind='agent' AND member_id=dst.agent_id) OR (member_kind='repo' AND member_id=dst.repo_id)))
+ AND (p.agent_id=dst.agent_id AND p.agent_id<>'' OR p.team_id<>'' AND (p.team_id=(SELECT a.team_id FROM agents a WHERE a.id=dst.agent_id) OR p.team_id=(SELECT r.team_id FROM repos r WHERE r.id=dst.repo_id)))
  AND (p.until_at=0 OR p.until_at>?)
  AND (p.provider_reset=0 OR EXISTS(SELECT 1 FROM sessions lim WHERE lim.limited_until>?
- AND lim.agent_id IN (SELECT p.agent_id WHERE p.agent_id<>'' UNION
- SELECT member_id FROM team_members WHERE member_kind='agent' AND team_id=p.team_id)
- OR lim.repo_id IN (SELECT member_id FROM team_members WHERE member_kind='repo' AND team_id=p.team_id) AND lim.limited_until>?)))`
+ AND (lim.agent_id IN (SELECT p.agent_id WHERE p.agent_id<>'' UNION SELECT id FROM agents WHERE team_id=p.team_id AND p.team_id<>'')
+ OR lim.repo_id IN (SELECT id FROM repos WHERE team_id=p.team_id AND p.team_id<>'')) AND lim.limited_until>?)))`
 
 // One indexed lookup per candidate, before its message or bookkeeping exists.
 // Scope follows agent identity and current team membership, across machines.
@@ -60,9 +58,9 @@ func (s *Store) expireNudgePauses(q askDB) error {
  ended_by=CASE WHEN until_at>0 AND until_at<=? THEN CASE WHEN provider_reset=1 THEN 'provider_reset_cap' ELSE 'expired' END ELSE 'provider_reset' END
  WHERE ended_at=0 AND ((until_at>0 AND until_at<=?) OR (provider_reset=1 AND NOT EXISTS
  (SELECT 1 FROM sessions lim WHERE lim.limited_until>? AND
- lim.agent_id IN (SELECT nudge_pauses.agent_id WHERE nudge_pauses.agent_id<>'' UNION
- SELECT member_id FROM team_members WHERE member_kind='agent' AND team_id=nudge_pauses.team_id)
- OR lim.repo_id IN (SELECT member_id FROM team_members WHERE member_kind='repo' AND team_id=nudge_pauses.team_id) AND lim.limited_until>?)))`, now.UnixNano(), now.UnixNano(), now.UnixNano(), now.UnixNano(), now.Unix(), now.Unix())
+ (lim.agent_id IN (SELECT nudge_pauses.agent_id WHERE nudge_pauses.agent_id<>'' UNION
+ SELECT id FROM agents WHERE team_id=nudge_pauses.team_id AND nudge_pauses.team_id<>'')
+ OR lim.repo_id IN (SELECT id FROM repos WHERE team_id=nudge_pauses.team_id AND nudge_pauses.team_id<>'')) AND lim.limited_until>?)))`, now.UnixNano(), now.UnixNano(), now.UnixNano(), now.UnixNano(), now.Unix(), now.Unix())
 	return err
 }
 func nudgeChief(q askDB, node, session string) error {
@@ -144,8 +142,8 @@ func (s *Store) PauseNudge(node string, r protocol.NudgePauseRequest) (protocol.
 	if err != nil {
 		return out, err
 	}
-	scope := `s.agent_id=? AND ?<>'' OR EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id=? AND ((tm.member_kind='agent' AND tm.member_id=s.agent_id) OR (tm.member_kind='repo' AND tm.member_id=s.repo_id)))`
-	rows, err := tx.Query(`SELECT s.id,COALESCE(NULLIF(p.name,''),NULLIF(s.name,''),s.id) FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE `+scope+` ORDER BY s.id`, agent, agent, team)
+	scope := `s.agent_id=? AND ?<>'' OR EXISTS(SELECT 1 FROM teams t WHERE t.id=? AND (t.id=(SELECT a.team_id FROM agents a WHERE a.id=s.agent_id) OR t.id=(SELECT rp.team_id FROM repos rp WHERE rp.id=s.repo_id)))`
+	rows, err := tx.Query(`SELECT s.id,COALESCE(NULLIF(s.name,''),s.id) FROM sessions s WHERE `+scope+` ORDER BY s.id`, agent, agent, team)
 	if err != nil {
 		return out, err
 	}

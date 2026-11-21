@@ -30,7 +30,7 @@ func TestLearnedOwnerReviewAndUndo(t *testing.T) {
 	if err != nil || len(list) != 1 || list[0].Status != "undone" {
 		t.Fatalf("undo %+v %v", list, err)
 	}
-	c.t = c.t.Add(time.Second)
+	c.advance(time.Second)
 	id = insertLearned(t, s, "app", "refuses", "", "add", "other work", "outcome")
 	if err = s.ProcessLearned(); err != nil {
 		t.Fatal(err)
@@ -89,7 +89,7 @@ func TestLearnedViewedTracksApplicationOrder(t *testing.T) {
 	if err := s.MarkLearnedViewed("app", later); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(2 * time.Minute)
+	c.advance(2 * time.Minute)
 	if err := s.ProcessLearned(); err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestLearnedListShowsAReadySuggestionWithoutAWrite(t *testing.T) {
 	if list, err := s.OwnerLearned(); err != nil || len(list) != 0 {
 		t.Fatalf("before the ready time: %+v %v", list, err)
 	}
-	c.t = c.t.Add(3 * time.Minute)
+	c.advance(3 * time.Minute)
 	if list, err := s.OwnerLearned(); err != nil || len(list) != 1 {
 		t.Fatalf("after the ready time, without a write: %+v %v", list, err)
 	}

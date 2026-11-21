@@ -51,7 +51,7 @@ func TestCallerClosesChangeAtMergerStep(t *testing.T) {
 
 	// No step task stays pending, so a reminder has nothing to repeat.
 	var pending int
-	if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM delivery_step_tasks WHERE change_id=? AND completed=0`, id).Scan(&pending); err != nil || pending != 0 {
+	if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM delivery_step_tasks WHERE change_id=?`, id).Scan(&pending); err != nil || pending != 0 {
 		t.Fatalf("pending step tasks after close = %d, %v", pending, err)
 	}
 
@@ -108,7 +108,7 @@ func TestCallerCloseStopsStepReminders(t *testing.T) {
 		return n
 	}
 	afterClose := count()
-	r.clk.t = r.clk.t.Add(13 * time.Hour)
+	r.clk.advance(13 * time.Hour)
 	r.g.dispatchStepTasks(context.Background())
 	if got := count(); got != afterClose {
 		t.Fatalf("messages for the closed change grew from %d to %d after the reminder pass", afterClose, got)

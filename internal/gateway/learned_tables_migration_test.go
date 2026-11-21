@@ -7,11 +7,11 @@ import (
 
 // The learned tables rework (owner review 2026-11-21) moves the facts of six
 // tables into columns and drops the tables. This seeds an older database with
-// one row of each fact, replays the newest migration, and checks where each
-// fact landed.
+// one row of each fact, replays from the version before the rework, and checks
+// where each fact landed.
 func TestLearnedTablesMigrationMovesEachFact(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "old.db")
-	s := migrateOnly(t, path, len(migrations)-1)
+	s := migrateOnly(t, path, migrationVersion(t, learnedTablesMarker)-1)
 	defer s.Close()
 	for _, q := range []string{
 		`INSERT INTO sessions(id,node_id,harness,native_id,last_seen) VALUES('s_owner','n1','claude','native-1',1)`,

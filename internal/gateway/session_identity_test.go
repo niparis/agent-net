@@ -303,23 +303,6 @@ func TestSessionIdentityRepoDrivesSessionFind(t *testing.T) {
 	t.Fatalf("missing session in repo context: %+v", page.Items)
 }
 
-func TestSessionFindKeepsLegacyAnnouncedProjectDisplay(t *testing.T) {
-	r := newDeliveryRig(t)
-	if _, err := r.s.db.Exec(`INSERT INTO profiles(session_id,name,function,project,capabilities,task,updated_at,expertise) VALUES(?,'','','announced','[]','',1,'') ON CONFLICT(session_id) DO UPDATE SET project='announced'`, r.sonnet); err != nil {
-		t.Fatal(err)
-	}
-	page, err := r.s.FindSessions(protocol.SessionsFindRequest{Project: "announced", Online: "any"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, row := range page.Items {
-		if row.ID == r.sonnet && row.Project == "announced" {
-			return
-		}
-	}
-	t.Fatalf("legacy announced project changed: %+v", page.Items)
-}
-
 func TestSessionIdentityMigrationRejectsExistingColumns(t *testing.T) {
 	s, _ := newTestStore(t)
 	version := migrationVersion(t, "Explicit session and run identity")

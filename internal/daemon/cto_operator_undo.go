@@ -27,7 +27,7 @@ func (lc *localConn) operatorUndo(ctx context.Context, raw json.RawMessage) (any
 	if json.Unmarshal(raw, &p) != nil || len(p.Operations) == 0 {
 		return nil, fmt.Errorf("operator_undo needs operations")
 	}
-	allowed := map[string]bool{"onboarding_restart": true, "onboarding_set": true, "graph_undo": true, "settings_undo": true, "session_rename": true, "merger_set": true, "merger_restore": true, "sessions_archive": true, "apps.public.restore": true, "session_resume": true, "session_stop": true, "session_agent_set": true, "notes_uncopy": true, "tools_undo": true, "mcp_coverage_undo": true, "hidden_set": true, "timezone_set": true, "quality_set": true, "difficulty_set": true, "worker_floors_set": true, "worker_floors_reset": true, "session_pin": true, "tools_accept": true}
+	allowed := map[string]bool{"onboarding_restart": true, "onboarding_set": true, "graph_undo": true, "settings_undo": true, "session_rename": true, "merger_set": true, "merger_restore": true, "sessions_archive": true, "apps.public.restore": true, "session_resume": true, "session_stop": true, "session_agent_set": true, "notes_uncopy": true, "hidden_set": true, "timezone_set": true, "quality_set": true, "difficulty_set": true, "worker_floors_set": true, "worker_floors_reset": true, "session_pin": true}
 	// Validate the whole plan before applying its first operation.
 	for _, op := range p.Operations {
 		if !allowed[op.Method] {
@@ -93,30 +93,6 @@ func (d *Daemon) operatorUndoBefore(ctx context.Context, method string, args jso
 		return []ownerUndoCall{{"session_resume", args}}, nil
 	case "session_resume":
 		return []ownerUndoCall{{"session_stop", args}}, nil
-	case "tools_accept":
-		var q protocol.ToolAccept
-		if err := json.Unmarshal(args, &q); err != nil {
-			return nil, err
-		}
-		before, err := call("tools_accepted", json.RawMessage(`{}`))
-		if err != nil {
-			return nil, err
-		}
-		data, err := json.Marshal(before)
-		if err != nil {
-			return nil, err
-		}
-		var keys []string
-		if err := json.Unmarshal(data, &keys); err != nil {
-			return nil, err
-		}
-		q.Accepted = false
-		for _, key := range keys {
-			if key == q.Key {
-				q.Accepted = true
-			}
-		}
-		return []ownerUndoCall{undoCall(method, q)}, nil
 	case "apps.public.url", "apps.public.restore":
 		before, err := call("apps.public.status", json.RawMessage(`{}`))
 		if err != nil {

@@ -11,8 +11,8 @@ import (
 )
 
 // A caller that filed defect_found_later on its own worker by mistake can move
-// that entry to a brief_defect. The worker stops being charged and both rows
-// stay in the history.
+// that entry to a brief_defect. The worker stops being charged and the row stays
+// in the history, blamed on the brief.
 func TestMoveDefectToBriefDefect(t *testing.T) {
 	s, _ := newTestStore(t)
 	node, _, _ := s.CreateNode("mac", "linux")
@@ -43,29 +43,17 @@ func TestMoveDefectToBriefDefect(t *testing.T) {
 		t.Fatalf("move result: %+v", out)
 	}
 
-	var movedAt int64
-	var movedBy string
-	var briefID int64
+	// The move changes the blame of the same row and charges the worker's caller.
+	var blame, chargedTo, note string
 	var severity int
-	var note string
-	if err := s.db.QueryRow(`SELECT moved_at, moved_by, brief_defect_id, severity, note FROM worker_defects WHERE id = ?`,
-		filed.Defect).Scan(&movedAt, &movedBy, &briefID, &severity, &note); err != nil {
+	if err := s.db.QueryRow(`SELECT blame, caller, severity, note FROM worker_defects WHERE id = ?`, filed.Defect).Scan(&blame, &chargedTo, &severity, &note); err != nil {
 		t.Fatal(err)
 	}
-	if movedAt == 0 || movedBy != caller || briefID != out.BriefDefect {
-		t.Fatalf("the original row does not record the move: moved_at %d moved_by %q brief_defect_id %d", movedAt, movedBy, briefID)
+	if blame != "brief" || chargedTo != caller || out.BriefDefect != filed.Defect {
+		t.Fatalf("the row does not record the move: blame %q caller %q brief defect %d", blame, chargedTo, out.BriefDefect)
 	}
 	if severity != 2 || note != "the brief named the wrong branch" {
-		t.Fatalf("the original row was changed: severity %d note %q", severity, note)
-	}
-	var chargedTo, rater, briefNote string
-	var briefSeverity int
-	if err := s.db.QueryRow(`SELECT caller, rater, severity, note FROM worker_brief_defects WHERE id = ?`,
-		out.BriefDefect).Scan(&chargedTo, &rater, &briefSeverity, &briefNote); err != nil {
-		t.Fatal(err)
-	}
-	if chargedTo != caller || rater != caller || briefSeverity != 2 || briefNote != note {
-		t.Fatalf("brief defect row: caller %q rater %q severity %d note %q", chargedTo, rater, briefSeverity, briefNote)
+		t.Fatalf("the row was changed: severity %d note %q", severity, note)
 	}
 
 	if after := s.QualityAnalysis(); !reflect.DeepEqual(before, after) {
@@ -120,7 +108,7 @@ func TestMoveDefectOnlyFilerMayMove(t *testing.T) {
 		t.Fatalf("a peer moved another session's defect: %+v", out)
 	}
 	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_brief_defects WHERE worker_session_id = ?`, wid).Scan(&n); err != nil {
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_defects WHERE session_id = ? AND blame = 'brief'`, wid).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 0 {
@@ -153,7 +141,7 @@ func TestMoveDefectTwiceIsNoOp(t *testing.T) {
 		t.Fatalf("second move: %+v", second)
 	}
 	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_brief_defects WHERE worker_session_id = ?`, wid).Scan(&n); err != nil {
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_defects WHERE session_id = ? AND blame = 'brief'`, wid).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 1 {
@@ -223,12 +211,12 @@ func TestMoveDefectChargesTheBriefingCaller(t *testing.T) {
 	if !out.Accepted {
 		t.Fatalf("owner move refused: %+v", out)
 	}
-	var chargedTo, rater string
-	if err := s.db.QueryRow(`SELECT caller, rater FROM worker_brief_defects WHERE id = ?`, out.BriefDefect).Scan(&chargedTo, &rater); err != nil {
+	var chargedTo string
+	if err := s.db.QueryRow(`SELECT caller FROM worker_defects WHERE id = ?`, out.BriefDefect).Scan(&chargedTo); err != nil {
 		t.Fatal(err)
 	}
-	if chargedTo != caller || rater != owner {
-		t.Fatalf("brief defect charged to %q by %q, want the briefing caller %q by the owner %q", chargedTo, rater, caller, owner)
+	if chargedTo != caller {
+		t.Fatalf("brief defect charged to %q, want the briefing caller %q, not the owner %q", chargedTo, caller, owner)
 	}
 }
 
@@ -253,11 +241,11 @@ func TestMoveDefectWithoutIDWhenOnlyOne(t *testing.T) {
 	if !out.Accepted || out.Defect != filed.Defect || out.BriefDefect == 0 {
 		t.Fatalf("move without an id: %+v", out)
 	}
-	var movedAt int64
-	if err := s.db.QueryRow(`SELECT moved_at FROM worker_defects WHERE id = ?`, filed.Defect).Scan(&movedAt); err != nil {
+	var blame string
+	if err := s.db.QueryRow(`SELECT blame FROM worker_defects WHERE id = ?`, filed.Defect).Scan(&blame); err != nil {
 		t.Fatal(err)
 	}
-	if movedAt == 0 {
+	if blame != "brief" {
 		t.Fatal("the only matching defect was not moved")
 	}
 }
@@ -312,7 +300,7 @@ func TestMoveDefectWithoutIDListsSeveral(t *testing.T) {
 		t.Fatalf("retry with one id: %+v %v", retry, err)
 	}
 	var stillOpen int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_defects WHERE id = ? AND moved_at = 0`, first.Defect).Scan(&stillOpen); err != nil {
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_defects WHERE id = ? AND blame = 'worker'`, first.Defect).Scan(&stillOpen); err != nil {
 		t.Fatal(err)
 	}
 	if stillOpen != 1 {

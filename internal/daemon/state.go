@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS worker_assessment_outbox (run_id TEXT PRIMARY KEY, pa
 CREATE TABLE IF NOT EXISTS start_outcome_outbox (key TEXT PRIMARY KEY, kind TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)), ready INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS worker_idle_notice (worker_id TEXT PRIMARY KEY, since INTEGER NOT NULL, notice_key TEXT NOT NULL, report TEXT NOT NULL DEFAULT '', sent INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS worker_lost_notice (worker_id TEXT PRIMARY KEY, run_generation INTEGER NOT NULL DEFAULT 0, sent INTEGER NOT NULL DEFAULT 0, wip_sha TEXT NOT NULL DEFAULT '', wip_sent INTEGER NOT NULL DEFAULT 0);
-CREATE TABLE IF NOT EXISTS inventory_scan (id INTEGER PRIMARY KEY CHECK(id=1), version TEXT NOT NULL, at INTEGER NOT NULL);
+DROP TABLE IF EXISTS inventory_scan;
 CREATE TABLE IF NOT EXISTS disk_alert (id INTEGER PRIMARY KEY CHECK(id=1), pct REAL NOT NULL, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS session_activity (harness TEXT NOT NULL, native_id TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (harness, native_id));
 CREATE TABLE IF NOT EXISTS cleanup_worktrees (
@@ -425,22 +425,6 @@ func (s *state) setMCPRestarted(native string, at time.Time) error {
 // raise it again.
 func (s *state) setMCPRepairPosted(native string, at time.Time) error {
 	_, err := s.db.Exec(`INSERT INTO mcp_repair(native,posted_at) VALUES(?,?) ON CONFLICT(native) DO UPDATE SET posted_at=excluded.posted_at`, native, at.Unix())
-	return err
-}
-
-// inventoryScanVersion is the agent-net version that produced the last
-// inventory scan on this machine. An upgrade changes it, which forces a fresh
-// scan so new observation fields (such as file manifests) appear.
-func (s *state) inventoryScanVersion() string {
-	var version string
-	if err := s.db.QueryRow(`SELECT version FROM inventory_scan WHERE id=1`).Scan(&version); err != nil {
-		return ""
-	}
-	return version
-}
-
-func (s *state) setInventoryScanVersion(version string) error {
-	_, err := s.db.Exec(`INSERT INTO inventory_scan(id,version,at) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET version=excluded.version, at=excluded.at`, version, time.Now().Unix())
 	return err
 }
 

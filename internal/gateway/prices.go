@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -18,9 +19,8 @@ import (
 
 // API prices and run usage (decision 0161). The picker ranks models by
 // expected cost per accepted result at OpenRouter's public prices. model_prices
-// is the last good copy of that list, and worker_usage keeps the tokens of each
-// worker session by kind, so a run's cost can be computed after the session
-// record is gone.
+// is the last good copy of that list. A run keeps the tokens of its session by
+// kind and its cost in worker_runs, so both outlive the session record.
 const modelPricesMigration = `
 -- API prices and run usage (decision 0161).
 CREATE TABLE IF NOT EXISTS model_prices (
@@ -220,49 +220,49 @@ func (s *Store) RunCost(model string, t protocol.RunTokens) (cost float64, price
 	return p.Cost(t), listed, true
 }
 
-// recordWorkerUsageTx keeps the session's last reported usage with its run. It
-// runs in the transaction that records the run. A daemon that reported no
-// usage by kind still wrote the run's tokens in its notice, and those stand in.
-func recordWorkerUsageTx(tx *sql.Tx, session string, now int64) error {
-	if session == "" {
-		return nil
+// runUsageTx reads the usage of a worker session for the run that ends now:
+// the figures by kind in the session record, else the tokens line of its stored
+// notices. A daemon that reported no usage by kind still wrote the run's tokens
+// in its notice, and those stand in.
+func runUsageTx(tx *sql.Tx, session string) (protocol.RunTokens, error) {
+	var t protocol.RunTokens
+	var raw string
+	err := tx.QueryRow(`SELECT json_extract(w,'$.usage') FROM (SELECT CASE WHEN json_valid(worker) THEN worker ELSE '{}' END AS w FROM sessions WHERE id=?)
+		WHERE json_type(w,'$.usage')='object'`, session).Scan(&raw)
+	if err == nil {
+		_ = json.Unmarshal([]byte(raw), &t)
+		return t, nil
 	}
-	res, err := tx.Exec(`INSERT INTO worker_usage(session_id,usage,updated_at)
-		SELECT id, json_extract(w,'$.usage'), ? FROM (SELECT id, CASE WHEN json_valid(worker) THEN worker ELSE '{}' END AS w FROM sessions WHERE id=?)
-		WHERE json_type(w,'$.usage')='object'
-		ON CONFLICT(session_id) DO UPDATE SET usage=excluded.usage, updated_at=excluded.updated_at`, now, session)
-	if err != nil {
-		return err
+	if !errors.Is(err, sql.ErrNoRows) {
+		return t, err
 	}
-	if n, err := res.RowsAffected(); err != nil || n > 0 {
-		return err
-	}
-	return recordNoticeUsageTx(tx, session, now)
+	return noticeUsageTx(tx, session)
 }
 
-// workerUsage reads the stored usage of the given sessions, or of every session
-// when none is given.
+// workerUsage reads the usage of the given sessions, or of every session when
+// none is given. A session's usage is its running total, which its latest run
+// holds, so the larger count of each kind stands.
 func (s *Store) workerUsage(sessions ...string) (map[string]protocol.RunTokens, error) {
-	query, args := `SELECT session_id, usage FROM worker_usage`, []any(nil)
+	query, args := `SELECT session_id, MAX(usage_in), MAX(usage_out), MAX(usage_reasoning), MAX(usage_cache_read), MAX(usage_cache_write) FROM worker_runs WHERE session_id<>''`, []any(nil)
 	if len(sessions) > 0 {
-		query += ` WHERE session_id IN (?` + strings.Repeat(",?", len(sessions)-1) + `)`
+		query += ` AND session_id IN (?` + strings.Repeat(",?", len(sessions)-1) + `)`
 		for _, id := range sessions {
 			args = append(args, id)
 		}
 	}
-	rows, err := s.db.Query(query, args...)
+	rows, err := s.db.Query(query+` GROUP BY session_id`, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := map[string]protocol.RunTokens{}
 	for rows.Next() {
-		var session, raw string
-		if err := rows.Scan(&session, &raw); err != nil {
+		var session string
+		var t protocol.RunTokens
+		if err := rows.Scan(&session, &t.In, &t.Out, &t.Reasoning, &t.CacheRead, &t.CacheWrite); err != nil {
 			return nil, err
 		}
-		var t protocol.RunTokens
-		if json.Unmarshal([]byte(raw), &t) == nil && !t.Zero() {
+		if !t.Zero() {
 			out[session] = t
 		}
 	}
@@ -310,65 +310,25 @@ func (s *Store) noticeUsage() (map[string]protocol.RunTokens, error) {
 	return out, rows.Err()
 }
 
-// backfillNoticeUsage keeps the tokens of runs that ended before the daemon
-// reported usage by kind, from the "tokens:" line of their stored notices
-// (decision 0161). The gateway runs it when it opens, so the picker table and
-// the worker log can price those runs. A session that has a recorded usage
-// keeps it: a report by kind is always the better figure.
-func (s *Store) backfillNoticeUsage() error {
-	usage, err := s.noticeUsage()
-	if err != nil || len(usage) == 0 {
-		return err
-	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	now := s.now().Unix()
-	for session, t := range usage {
-		raw, err := json.Marshal(t)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`INSERT INTO worker_usage(session_id,usage,updated_at) VALUES(?,?,?)
-			ON CONFLICT(session_id) DO NOTHING`, session, string(raw), now); err != nil {
-			return err
-		}
-	}
-	return tx.Commit()
-}
-
-// recordNoticeUsageTx keeps the tokens of the session's stored notices as its
-// usage. It stands in when a daemon reported no usage by kind, so a run is
-// priced without waiting for the next gateway start.
-func recordNoticeUsageTx(tx *sql.Tx, session string, now int64) error {
+// noticeUsageTx keeps the tokens of the session's stored notices as its usage.
+// It stands in when a daemon reported no usage by kind, so a run is priced
+// without waiting for a later read.
+func noticeUsageTx(tx *sql.Tx, session string) (protocol.RunTokens, error) {
+	var tokens protocol.RunTokens
 	rows, err := tx.Query(`SELECT body FROM messages
 		WHERE body LIKE '[agent-net worker notice]%' AND body LIKE ?`, "%worker: "+session+" (%")
 	if err != nil {
-		return err
+		return tokens, err
 	}
-	var tokens protocol.RunTokens
+	defer rows.Close()
 	for rows.Next() {
 		var body string
 		if err := rows.Scan(&body); err != nil {
-			rows.Close()
-			return err
+			return tokens, err
 		}
 		if _, t, ok := noticeUsageLine(body); ok {
 			tokens = tokens.Max(t)
 		}
 	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil || tokens.Zero() {
-		return err
-	}
-	raw, err := json.Marshal(tokens)
-	if err != nil {
-		return err
-	}
-	_, err = tx.Exec(`INSERT INTO worker_usage(session_id,usage,updated_at) VALUES(?,?,?)
-		ON CONFLICT(session_id) DO UPDATE SET usage=excluded.usage, updated_at=excluded.updated_at`, session, string(raw), now)
-	return err
+	return tokens, rows.Err()
 }

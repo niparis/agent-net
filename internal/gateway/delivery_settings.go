@@ -59,13 +59,11 @@ func (s *Store) cutoverDeliveryTx(tx *sql.Tx) error {
 	if len(all) == 0 {
 		return nil
 	}
-	if err = bumpSettingsRevision(tx); err != nil {
+	rev, err := settingsRevision(tx)
+	if err != nil {
 		return err
 	}
-	var rev int64
-	if err = tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&rev); err != nil {
-		return err
-	}
+	rev++
 	for i, r := range all {
 		key := deliveryNodeKeys[r.key]
 		b, _ := json.Marshal(r.value)
@@ -165,13 +163,11 @@ func (s *Store) removeRepoSettingsTx(tx *sql.Tx, node, actor string) (bool, erro
 	if !actorAllowed(actor, "rule") {
 		return false, reject("%s cannot remove node settings", actor)
 	}
-	if err = bumpSettingsRevision(tx); err != nil {
+	rev, err := settingsRevision(tx)
+	if err != nil {
 		return false, err
 	}
-	var rev int64
-	if err = tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&rev); err != nil {
-		return false, err
-	}
+	rev++
 	for i, r := range all {
 		if _, err = tx.Exec(`DELETE FROM setting_values WHERE key=? AND level='repo' AND scope=? AND item=?`, r.key, node, r.item); err != nil {
 			return false, err
