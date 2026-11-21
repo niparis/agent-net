@@ -1,6 +1,8 @@
 package protocol
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -1546,6 +1548,40 @@ func ModelAuthFailure(detail string) bool {
 		}
 	}
 	return false
+}
+
+// ToolDenialMarker is the text of a failure where the harness refused a tool
+// action in headless mode, so the run ended before it did the task. The
+// daemon writes it into the failure and the gateway reads it back.
+const ToolDenialMarker = "denied a tool action in headless mode"
+
+// HarnessToolDenial tells whether a run failure is a harness tool denial. It
+// is the harness's failure, not a provider's: it must lower that harness and
+// model for the next start, but it is not an infrastructure failure.
+func HarnessToolDenial(detail string) bool {
+	return strings.Contains(detail, ToolDenialMarker)
+}
+
+// WorkerNotAttempted tells whether a run ended without attempting its task: the
+// harness denied a tool action, or the run quit early with no file and no line
+// changed. It is the case where the harness, not the task, is what failed.
+func WorkerNotAttempted(failure string, e *WorkerEvidence) bool {
+	if HarnessToolDenial(failure) {
+		return true
+	}
+	return e != nil && e.EarlyQuit && e.FilesChanged == 0 && e.LinesChanged == 0
+}
+
+// BriefHash identifies one brief across starts: the project and the problem
+// and task text, with case and spacing ignored. The caller is not part of it,
+// so a retry by another agent is the same brief.
+func BriefHash(project string, p WorkerStartRequest) string {
+	norm := func(s string) string { return strings.ToLower(strings.Join(strings.Fields(s), " ")) }
+	if norm(p.Problem) == "" && norm(p.Task) == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(norm(project) + "\x1f" + norm(p.Problem) + "\x1f" + norm(p.Task)))
+	return hex.EncodeToString(sum[:16])
 }
 
 // WorkerRunState announces a new run before its harness registers, or rolls

@@ -261,6 +261,23 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		if p.Model == "" {
 			p.Model = storedModel
 		}
+		if p.Reason == protocol.StopRunFailed && p.Model != "" && protocol.HarnessToolDenial(p.Failure) {
+			// The run ended on a refused tool action, so a retry on the same
+			// harness and model would end the same way. Record it like a
+			// model failure; a path in the denial text must not read as an auth error.
+			if err := g.store.RecordModelFailure(nc.id, p.Harness, p.Model); err != nil {
+				return nil, err
+			}
+		}
+		if p.Reason != protocol.StopRequested && p.Reason != protocol.StopOwnerGone && protocol.WorkerNotAttempted(p.Failure, p.Evidence) {
+			// The harness ended the run without trying the task. A retry of the
+			// same brief leaves this harness out, for every model. A stop the
+			// caller or owner chose reads as an early quit too, but it says
+			// nothing about the harness.
+			if err := g.store.markBriefNotAttempted(p.SessionID); err != nil {
+				return nil, err
+			}
+		}
 		if p.Reason == protocol.StopModelFails && p.Model != "" {
 			var err error
 			if protocol.ModelAuthFailure(p.Failure) {
@@ -870,6 +887,17 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			if _, needs := protocol.BriefNeedsBrowser(p.WorkerStartRequest); needs && p.Harness == "" {
 				candidates, browserNote = filterBrowserCandidates(candidates, node.OS, roster)
 			}
+			// A harness that ended an earlier start of this brief without
+			// trying the task is left out, for every model. A caller who named
+			// the harness is not overridden.
+			var briefHarnessNote string
+			if p.Harness == "" {
+				failedHarnesses, err := g.store.briefFailedHarnesses(protocol.BriefHash(pick.Name, p.WorkerStartRequest))
+				if err != nil {
+					return none, err
+				}
+				candidates, briefHarnessNote = filterBriefFailedHarnesses(candidates, failedHarnesses, roster)
+			}
 			var protectionNote string
 			var chooseErr error
 			chosen, chooseErr = g.Choose(ChooseRequest{
@@ -918,6 +946,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			}
 			if browserNote != "" {
 				automaticNote += "; " + browserNote
+			}
+			if briefHarnessNote != "" {
+				automaticNote += "; " + briefHarnessNote
 			}
 			if protectionNote != "" {
 				automaticNote += "; " + protectionNote
@@ -1103,6 +1134,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	// that arrives at once finds it.
 	startRef := protocol.NewID("q")
 	if err := g.store.trackWorkerStart(startRef, pick.NodeID, p.Owner, pick.Name, p.Harness, perms, p.Done); err != nil {
+		return none, err
+	}
+	if err := g.store.trackBriefLaunch(startRef, protocol.BriefHash(pick.Name, p.WorkerStartRequest)); err != nil {
 		return none, err
 	}
 	// The machine records the assessment it gets here when the worker runs.
