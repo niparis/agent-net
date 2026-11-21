@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -30,8 +29,10 @@ func injectNodeSetting(t *testing.T, gatewayDir, node, setting, value string) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	_, err = db.Exec(`INSERT INTO graph_node_settings(node,setting,value,updated_at,updated_by) VALUES(?,?,?,?,?)
-		ON CONFLICT(node,setting) DO UPDATE SET value=excluded.value`, node, setting, value, time.Now().UnixNano(), "owner")
+	// graph_node_settings folded into setting_values: a name the store does
+	// not know lives at repo level under node_setting.<name>.
+	_, err = db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES(?,'repo',?,'',json_quote(?),0)
+		ON CONFLICT(key,level,scope,item) DO UPDATE SET value=excluded.value`, "node_setting."+setting, node, value)
 	if err != nil {
 		t.Fatal(err)
 	}
