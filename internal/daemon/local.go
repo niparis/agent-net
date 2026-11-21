@@ -146,10 +146,15 @@ func (lc *localConn) writeJSON(v any) error {
 	if err != nil {
 		return err
 	}
+	return lc.writeLine(b)
+}
+
+// writeLine sends one encoded JSON line on the connection.
+func (lc *localConn) writeLine(b []byte) error {
 	lc.wmu.Lock()
 	defer lc.wmu.Unlock()
 	lc.c.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	_, err = lc.c.Write(append(b, '\n'))
+	_, err := lc.c.Write(append(b, '\n'))
 	return err
 }
 
@@ -216,7 +221,7 @@ func (lc *localConn) respond(id json.RawMessage, result any, err error) {
 		}
 		m["result"] = result
 	}
-	writeErr := lc.writeJSON(m)
+	writeErr := lc.writeReply(m)
 	if hookReply != nil {
 		hookReply.confirm(writeErr)
 	}
