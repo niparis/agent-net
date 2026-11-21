@@ -236,6 +236,11 @@ type PolicyRequest struct {
 	// LastMessage is then the turn's final assistant text.
 	Event       string `json:"event,omitempty"`
 	LastMessage string `json:"last_message,omitempty"`
+	// PromptID and TranscriptPath are the Claude Code hook's prompt_id and
+	// transcript_path. The daemon reads the transcript entry of the prompt to
+	// tell whether the owner typed it or a schedule or a peer sent it.
+	PromptID       string `json:"prompt_id,omitempty"`
+	TranscriptPath string `json:"transcript_path,omitempty"`
 }
 
 // PolicyResult answers MethodPolicy. Text is empty when the session has no

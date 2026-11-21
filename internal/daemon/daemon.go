@@ -373,6 +373,7 @@ type Daemon struct {
 	inlineCaptures      sync.Map       // message ID -> *inlineCapture, a hook is collecting this message
 	workerEnvState      workerEnvState // login PATH and system CA bundle, found once
 	ownerPrompts        ownerPrompts
+	claudeChecks        sync.WaitGroup // background checks of Claude prompts that wait for the transcript
 	turnEnds            turnEndAsks
 	ownerPromptClock    func() time.Time // test hook
 	heldMu              sync.Mutex

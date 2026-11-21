@@ -201,7 +201,7 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 	d := lc.d
 	// What the owner types in the CTO's own pane is the words he gives the CTO.
 	if client == "cli" && p.Harness == "claude" && p.Event == "" && isHumanClaudePrompt(p.Prompt) && d.isClaudeCTONative(p.NativeID) {
-		d.rememberCTOOwnerPrompt(p.Prompt)
+		d.whenClaudeOwnerPrompt(ctx, p, func(context.Context) { d.rememberCTOOwnerPrompt(p.Prompt) })
 	}
 	if client == "cli" {
 		d.mu.Lock()
@@ -225,12 +225,12 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 	if d.infoOf(ls).ToolsVersion == protocol.ToolsDisconnected {
 		notice = protocol.ToolsDisconnectedNotice
 	}
-	if client == "cli" && p.Harness == "claude" {
-		if isHumanClaudePrompt(p.Prompt) {
+	if client == "cli" && p.Harness == "claude" && isHumanClaudePrompt(p.Prompt) {
+		d.whenClaudeOwnerPrompt(ctx, p, func(ctx context.Context) {
 			_, _ = d.call(ctx, "signal.prompt", map[string]string{"session_id": sid, "prompt": p.Prompt})
 			d.ownerTyped(ctx, ls, sid, p.Prompt)
 			d.rememberOwnerPrompt(sid, p.Prompt)
-		}
+		})
 	}
 	got, ok := d.policyOf(ctx, sid, d.agentsHashOf(ls))
 	if !ok {
@@ -262,9 +262,11 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 	return res, nil
 }
 
-// isHumanClaudePrompt is true for text the owner typed. Claude delivers peer
-// messages, task notifications, reminders, scheduled turns and autonomous-loop
-// turns through the same prompt hook (see protocol.InjectedClaudePrompt).
+// isHumanClaudePrompt is true for text the owner may have typed. Claude delivers
+// peer messages, task notifications, reminders, scheduled turns and
+// autonomous-loop turns through the same prompt hook. The markers in
+// protocol.InjectedClaudePrompt catch the ones that carry one. A scheduled turn
+// carries none, so whenClaudeOwnerPrompt reads its transcript entry as well.
 func isHumanClaudePrompt(prompt string) bool {
 	return strings.TrimSpace(prompt) != "" && !protocol.InjectedClaudePrompt(prompt)
 }

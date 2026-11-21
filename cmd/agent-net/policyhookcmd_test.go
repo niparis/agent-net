@@ -208,3 +208,13 @@ func TestPolicyHookStopReadsTheTranscript(t *testing.T) {
 		t.Fatalf("asked: %+v", asked)
 	}
 }
+
+// The daemon checks the transcript entry of this prompt to tell whether the
+// owner typed it, so the hook passes the prompt ID and the transcript path on.
+func TestPolicyHookPassesThePromptAndTranscript(t *testing.T) {
+	in := `{"session_id":"abc","prompt_id":"p1","transcript_path":"/home/u/.claude/projects/w/abc.jsonl","hook_event_name":"UserPromptSubmit","prompt":"fix it"}`
+	_, asked := runPolicyWith(t, in, onePolicy, nil)
+	if len(asked) != 1 || asked[0].PromptID != "p1" || asked[0].TranscriptPath != "/home/u/.claude/projects/w/abc.jsonl" {
+		t.Fatalf("asked: %+v", asked)
+	}
+}
