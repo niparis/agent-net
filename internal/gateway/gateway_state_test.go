@@ -116,6 +116,7 @@ func TestGatewayStateMigrationMovesTheOldRows(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	restoreRepoSideTablesAt(t, path)
 	s, err = OpenStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -183,6 +184,7 @@ func TestGatewayStateMigrationReplaysAfterARewind(t *testing.T) {
 	if err = s.Close(); err != nil {
 		t.Fatal(err)
 	}
+	restoreRepoSideTablesAt(t, path)
 	s, err = OpenStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -297,6 +299,7 @@ func TestNodeSettingsAreTheSameAcrossTheMigration(t *testing.T) {
 	if err = s.Close(); err != nil {
 		t.Fatal(err)
 	}
+	restoreRepoSideTablesAt(t, path)
 	s, err = OpenStore(path)
 	if err != nil {
 		t.Fatal(err)

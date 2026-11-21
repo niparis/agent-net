@@ -150,12 +150,13 @@ func foldStore(t *testing.T) (*Store, map[string]string) {
 	return s, legacyNodeKinds(t, s)
 }
 
-func reopen(t testing.TB, s *Store) *Store {
+func reopen(t *testing.T, s *Store) *Store {
 	t.Helper()
 	path := s.path
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
+	restoreRepoSideTablesAt(t, path)
 	s2, err := OpenStore(path)
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
