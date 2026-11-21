@@ -1278,7 +1278,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
-		_, err := st.db.Exec(`DELETE FROM owner_settings WHERE key=?`, workerFloorsKey)
+		err := st.setOwner(workerFloorsKey, nil)
 		if err == nil {
 			st.Event("worker_floors.reset", nc.id, p.Owner, "", "")
 		}
@@ -2026,7 +2026,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("bad CTO presence")
 		}
 		// Only the host of the registered CTO can report its runtime state.
-		_, err := st.db.Exec(`UPDATE sessions SET status=?, last_seen=? WHERE id=? AND node_id=? AND harness='cto' AND id=(SELECT value FROM owner_settings WHERE key='cto_session')`, p.Status, st.now().UnixNano(), p.SessionID, nc.id)
+		_, err := st.db.Exec(`UPDATE sessions SET status=?, last_seen=? WHERE id=? AND node_id=? AND harness='cto' AND id=(SELECT value FROM gateway_state WHERE key='cto_session')`, p.Status, st.now().UnixNano(), p.SessionID, nc.id)
 		return struct{}{}, err
 
 	case "session.sync":

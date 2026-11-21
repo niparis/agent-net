@@ -11,7 +11,7 @@ import (
 // owner has not started the CTO yet.
 func (s *Store) CTOSessionID() (string, error) {
 	var id string
-	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key='cto_session'`).Scan(&id)
+	err := s.db.QueryRow(`SELECT value FROM gateway_state WHERE key='cto_session'`).Scan(&id)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", err
 	}
@@ -27,7 +27,7 @@ func (s *Store) RegisterCTOSession(node string) (string, error) {
 	}
 	defer tx.Rollback()
 	var id string
-	err = tx.QueryRow(`SELECT value FROM owner_settings WHERE key='cto_session'`).Scan(&id)
+	err = tx.QueryRow(`SELECT value FROM gateway_state WHERE key='cto_session'`).Scan(&id)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", err
 	}
@@ -41,7 +41,7 @@ func (s *Store) RegisterCTOSession(node string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if _, err = tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_session',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, id, s.now().UnixNano()); err != nil {
+	if _, err = tx.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES('cto_session',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, id, s.now().UnixNano()); err != nil {
 		return "", err
 	}
 	if _, err = tx.Exec(`DELETE FROM profiles WHERE session_id=?`, id); err != nil {

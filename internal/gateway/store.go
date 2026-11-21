@@ -1330,7 +1330,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -2051,8 +2051,11 @@ func (s *Store) migrate() error {
 			return err
 		}
 		stmt := migrations[i]
-		if strings.Contains(migrations[i], learnedTablesMarker) {
-			for _, col := range learnedTablesColumns {
+		for marker, columns := range map[string][]struct{ table, name, spec string }{learnedTablesMarker: learnedTablesColumns, settingsFoldMarker: settingsFoldColumns} {
+			if !strings.Contains(migrations[i], marker) {
+				continue
+			}
+			for _, col := range columns {
 				var has int
 				err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?`, col.table, col.name).Scan(&has)
 				if err == nil && has == 0 {
@@ -4063,7 +4066,7 @@ func (s *Store) SyncSessions(nodeID string, in []protocol.SessionInfo) ([]protoc
 	// The registered CTO belongs to this node even when its harness is asleep.
 	// A node disconnect marks it offline; its host sync makes it reachable again
 	// without allowing a different node to move the identity.
-	if _, err := tx.Exec(`UPDATE sessions SET online=1, archived_at=0, status=CASE WHEN online=0 THEN 'dormant' ELSE status END, last_seen=? WHERE node_id=? AND harness='cto' AND id=(SELECT value FROM owner_settings WHERE key='cto_session')`, s.now().UnixNano(), nodeID); err != nil {
+	if _, err := tx.Exec(`UPDATE sessions SET online=1, archived_at=0, status=CASE WHEN online=0 THEN 'dormant' ELSE status END, last_seen=? WHERE node_id=? AND harness='cto' AND id=(SELECT value FROM gateway_state WHERE key='cto_session')`, s.now().UnixNano(), nodeID); err != nil {
 		return nil, err
 	}
 	rows, err := tx.Query(`SELECT id FROM sessions WHERE node_id = ? AND online = 1 AND harness <> 'cto'`, nodeID)
@@ -4469,12 +4472,12 @@ var agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.
 // piChildSQL filter. Keep it equal to those queries (see readThrough).
 var agentListTables = []string{"sessions", "nodes.id", "nodes.hostname", "profiles", "apps", "project_display_names", "project_mergers",
 	"worker_assessments", "agents", "graph_edges", "repos", "teams", "team_members", "setting_values", "inbox_items",
-	"owner_settings", "messages"}
+	"messages", "gateway_state"}
 
 const (
 	// agentRepoCountWhere is what makes a session count toward its Repo's
 	// agent limit. x is the session.
-	agentRepoCountWhere = `x.online=1 AND x.worker='' AND x.harness NOT IN ('owner','cto','bot') AND x.id<>COALESCE((SELECT value FROM owner_settings WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=x.id)`
+	agentRepoCountWhere = `x.online=1 AND x.worker='' AND x.harness NOT IN ('owner','cto','bot') AND x.id<>COALESCE((SELECT value FROM gateway_state WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM project_mergers pm WHERE pm.session_id=x.id)`
 
 	// A Repo has one max_agents row, as the key is unique. The stall item is
 	// the newest of the session, and the later row when two are as new, which
@@ -4938,7 +4941,7 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 	}
 	if p.FromCTO {
 		var registered string
-		if err := tx.QueryRow(`SELECT value FROM owner_settings WHERE key = 'cto_session'`).Scan(&registered); err != nil || registered != p.Sender {
+		if err := tx.QueryRow(`SELECT value FROM gateway_state WHERE key = 'cto_session'`).Scan(&registered); err != nil || registered != p.Sender {
 			return msg, false, reject("CTO sender requires the registered CTO session")
 		}
 	} else if p.OwnerApproved {
@@ -5035,7 +5038,7 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		// Route replies to those roots to the registered identity for 30 days
 		// from the gateway upgrade. The parent check above still applies.
 		var legacyCTO string
-		err = tx.QueryRow(`SELECT c.value FROM owner_settings c JOIN gateway_state start ON start.key='cto_legacy_route_start'
+		err = tx.QueryRow(`SELECT c.value FROM gateway_state c JOIN gateway_state start ON start.key='cto_legacy_route_start'
 			JOIN messages root ON root.conversation_id=? AND root.parent_id=''
 			JOIN sessions sender ON sender.id=root.sender
 			WHERE c.key='cto_session' AND root.sender_cto=1 AND sender.harness=? AND root.sender=?
@@ -5169,7 +5172,7 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 	// Apply this after lead and legacy routing, against the actual recipient.
 	// A reply remains permitted throughout a CTO-started conversation.
 	var ctoID string
-	err = tx.QueryRow(`SELECT value FROM owner_settings WHERE key='cto_session'`).Scan(&ctoID)
+	err = tx.QueryRow(`SELECT value FROM gateway_state WHERE key='cto_session'`).Scan(&ctoID)
 	if err != nil && err != sql.ErrNoRows {
 		return msg, false, err
 	}

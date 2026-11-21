@@ -22,7 +22,7 @@ func TestTopicVersionsFollowCommittedTables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('topic-test','one',1)`); err != nil {
+	if _, err = tx.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES('topic-test','repo','x','','1',1)`); err != nil {
 		t.Fatal(err)
 	}
 	during := s.topicVersions()
@@ -35,7 +35,7 @@ func TestTopicVersionsFollowCommittedTables(t *testing.T) {
 	if s.topicVersions()[protocol.TopicAgents] != before[protocol.TopicAgents] {
 		t.Fatal("version moved on rollback")
 	}
-	if _, err = s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('topic-test','two',1)`); err != nil {
+	if _, err = s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES('topic-test','repo','x','','2',1)`); err != nil {
 		t.Fatal(err)
 	}
 	after := s.topicVersions()

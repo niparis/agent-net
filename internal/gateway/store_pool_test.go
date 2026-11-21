@@ -48,7 +48,7 @@ func setOwnerSetting(t testing.TB, q interface {
 	Exec(string, ...any) (sql.Result, error)
 }, key, value string) {
 	t.Helper()
-	if _, err := q.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value); err != nil {
+	if _, err := q.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES(?,?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -58,7 +58,7 @@ func setOwnerSetting(t testing.TB, q interface {
 func readCachedSetting(s *Store, cacheKey string, keys []string, setting string) (string, error) {
 	v, err := s.readThrough(cacheKey, keys, false, func() (any, error) {
 		var value string
-		err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, setting).Scan(&value)
+		err := s.db.QueryRow(`SELECT value FROM gateway_state WHERE key=?`, setting).Scan(&value)
 		if err == sql.ErrNoRows {
 			return "", nil
 		}
@@ -86,8 +86,8 @@ func TestPoolReadsDoNotWaitForTheWriterConnection(t *testing.T) {
 	done := make(chan string, 1)
 	go func() {
 		var v string
-		s.db.QueryRow(`SELECT value FROM owner_settings WHERE key='k'`).Scan(&v)
-		got, _ := readCachedSetting(s, "pool-test", []string{"owner_settings"}, "k")
+		s.db.QueryRow(`SELECT value FROM gateway_state WHERE key='k'`).Scan(&v)
+		got, _ := readCachedSetting(s, "pool-test", []string{"gateway_state"}, "k")
 		done <- v + "/" + got
 	}()
 	select {
@@ -108,10 +108,10 @@ func TestPoolWritesAndTransactionsRunOnTheWriter(t *testing.T) {
 	if r == nil {
 		t.Skip("the read pool is off")
 	}
-	if _, err := r.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('x','y',0)`); err == nil {
+	if _, err := r.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES('x','y',0)`); err == nil {
 		t.Fatal("a pool connection accepted a write")
 	}
-	for _, q := range []string{`INSERT INTO owner_settings(key,value,updated_at) VALUES('x','y',0) RETURNING key`, `PRAGMA user_version`, `WITH a AS (SELECT 1) INSERT INTO owner_settings(key,value,updated_at) SELECT 'z','y',0 FROM a`} {
+	for _, q := range []string{`INSERT INTO gateway_state(key,value,updated_at) VALUES('x','y',0) RETURNING key`, `PRAGMA user_version`, `WITH a AS (SELECT 1) INSERT INTO gateway_state(key,value,updated_at) SELECT 'z','y',0 FROM a`} {
 		if s.db.reader(q) != s.db.w {
 			t.Fatalf("%q is routed to the pool", q)
 		}
@@ -124,17 +124,17 @@ func TestPoolWritesAndTransactionsRunOnTheWriter(t *testing.T) {
 	defer tx.Rollback()
 	setOwnerSetting(t, tx, "t", "in-tx")
 	var v string
-	if err := tx.QueryRow(`SELECT value FROM owner_settings WHERE key='t'`).Scan(&v); err != nil || v != "in-tx" {
+	if err := tx.QueryRow(`SELECT value FROM gateway_state WHERE key='t'`).Scan(&v); err != nil || v != "in-tx" {
 		t.Fatalf("a read inside the transaction gave %q, %v", v, err)
 	}
 	// Outside it, nobody sees the row yet.
-	if err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key='t'`).Scan(&v); err != sql.ErrNoRows {
+	if err := s.db.QueryRow(`SELECT value FROM gateway_state WHERE key='t'`).Scan(&v); err != sql.ErrNoRows {
 		t.Fatalf("an uncommitted row is visible outside its transaction: %q, %v", v, err)
 	}
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key='t'`).Scan(&v); err != nil || v != "in-tx" {
+	if err := s.db.QueryRow(`SELECT value FROM gateway_state WHERE key='t'`).Scan(&v); err != nil || v != "in-tx" {
 		t.Fatalf("a committed row is not visible: %q, %v", v, err)
 	}
 }
@@ -149,7 +149,7 @@ func TestReadPoolOffRunsEverythingOnTheWriter(t *testing.T) {
 		t.Fatal("the pool is open with readPoolMax 0")
 	}
 	setOwnerSetting(t, s.db, "k", "v")
-	if got, err := readCachedSetting(s, "off", []string{"owner_settings"}, "k"); err != nil || got != "v" {
+	if got, err := readCachedSetting(s, "off", []string{"gateway_state"}, "k"); err != nil || got != "v" {
 		t.Fatalf("%q %v", got, err)
 	}
 }
@@ -173,7 +173,7 @@ func TestReadPoolSize(t *testing.T) {
 // commits. A cached read loads while the writer's transaction is open and so
 // gets the old data; the commit must move the stamp, or the old data stays.
 func TestCachedReadIsFreshAfterACommitThatRanDuringItsLoad(t *testing.T) {
-	for _, keys := range [][]string{{"owner_settings"}, {"owner_settings.value"}, nil} {
+	for _, keys := range [][]string{{"gateway_state"}, {"gateway_state.value"}, nil} {
 		name := "any write"
 		if len(keys) > 0 {
 			name = keys[0]
@@ -212,7 +212,7 @@ func TestCachedReadIsKeptAcrossARolledBackTransaction(t *testing.T) {
 	setOwnerSetting(t, s.db, "k", "v1")
 	loads := 0
 	read := func() {
-		v, err := s.readThrough("rollback", []string{"owner_settings"}, false, func() (any, error) {
+		v, err := s.readThrough("rollback", []string{"gateway_state"}, false, func() (any, error) {
 			loads++
 			return "v", nil
 		})
@@ -252,7 +252,7 @@ func TestPoolReadsAfterAWriteSeeItWhileReadersRun(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			keys := [][]string{{"owner_settings"}, {"owner_settings.value"}, nil}[i%3]
+			keys := [][]string{{"gateway_state"}, {"gateway_state.value"}, nil}[i%3]
 			for {
 				select {
 				case <-stop:
@@ -278,7 +278,7 @@ func TestPoolReadsAfterAWriteSeeItWhileReadersRun(t *testing.T) {
 		} else {
 			setOwnerSetting(t, s.db, "n", want)
 		}
-		for _, keys := range [][]string{{"owner_settings"}, {"owner_settings.value"}, nil} {
+		for _, keys := range [][]string{{"gateway_state"}, {"gateway_state.value"}, nil} {
 			got, err := readCachedSetting(s, "stress", keys, "n")
 			if err != nil {
 				t.Fatal(err)
@@ -288,7 +288,7 @@ func TestPoolReadsAfterAWriteSeeItWhileReadersRun(t *testing.T) {
 			}
 		}
 		var direct string
-		if err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key='n'`).Scan(&direct); err != nil || direct != want {
+		if err := s.db.QueryRow(`SELECT value FROM gateway_state WHERE key='n'`).Scan(&direct); err != nil || direct != want {
 			t.Fatalf("round %d: a plain read gave %q, %v", i, direct, err)
 		}
 	}

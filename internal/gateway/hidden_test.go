@@ -109,7 +109,7 @@ func TestRetentionPrunesHiddenSessionPreferencesAfter30Days(t *testing.T) {
 		t.Fatal(err)
 	}
 	var raw string
-	if err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, hiddenItemsKey).Scan(&raw); err != nil {
+	if err := s.db.QueryRow(`SELECT value FROM gateway_state WHERE key=?`, hiddenItemsKey).Scan(&raw); err != nil {
 		t.Fatal(err)
 	}
 	var got protocol.HiddenItems

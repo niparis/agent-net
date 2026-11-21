@@ -207,7 +207,7 @@ func TestSkillListRestartOfferListsNodeSessions(t *testing.T) {
 // not open any skills item, even when a CTO session is set.
 func TestNewProjectCreatesNoSkillItem(t *testing.T) {
 	s, _ := newTestStore(t)
-	if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_session','s_cto',0)`); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES('cto_session','s_cto',0)`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.AddProjects("n1", protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Path: "/repo/x", Name: "x"}}}); err != nil {

@@ -55,7 +55,7 @@ func TestAutomaticStartKeepsTheCellNoteWhenTheGateSkipsTheFirstPick(t *testing.T
 
 	// DeepSeek's provider is under the worker floor, so the gate must skip the
 	// cost rule's pick and take the next candidate.
-	if _, err := s.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`,
+	if _, err := s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0) ON CONFLICT (key,level,scope,item) DO UPDATE SET value=excluded.value`,
 		workerFloorsKey, `{"floors":{"deepseek":20}}`); err != nil {
 		t.Fatal(err)
 	}

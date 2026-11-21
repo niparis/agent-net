@@ -131,6 +131,7 @@ func TestNodeScopesMigrationSeedsTodaysGrants(t *testing.T) {
 	if _, err := s.WriteSettings([]SettingsChange{deployRule}, "owner", "fixture"); err != nil {
 		t.Fatal(err)
 	}
+	restoreSettingsFoldTables(t, s.db)
 	for _, q := range []string{
 		fmt.Sprintf(`INSERT INTO owner_settings(key,value,updated_at) VALUES('chief_session','%s',0)`, ids["chief-of-staff"]),
 		`INSERT INTO standing_orders(id,text,saved_at) VALUES('so_f960d5fd38dcd366','wbgpoc-lead merges its team''s repos',0)`,

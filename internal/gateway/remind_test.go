@@ -41,11 +41,11 @@ func TestRemindEligibility(t *testing.T) {
 			case "held":
 				_, err = s.db.Exec("UPDATE messages SET state='held' WHERE id=?", req.ID)
 			case "cto":
-				_, err = s.db.Exec("INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_session',?,?)", b, c.t.UnixNano())
+				_, err = s.db.Exec("INSERT INTO gateway_state(key,value,updated_at) VALUES('cto_session',?,?)", b, c.t.UnixNano())
 			case "cto sender":
 				_, err = s.db.Exec("UPDATE sessions SET harness='cto' WHERE id=?", a)
 				if err == nil {
-					_, err = s.db.Exec("INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_session',?,?)", a, c.t.UnixNano())
+					_, err = s.db.Exec("INSERT INTO gateway_state(key,value,updated_at) VALUES('cto_session',?,?)", a, c.t.UnixNano())
 				}
 			case "young":
 				c.advance(-2 * time.Minute)

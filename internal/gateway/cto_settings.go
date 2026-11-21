@@ -1,9 +1,7 @@
 package gateway
 
 import (
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"slices"
 	"strings"
@@ -13,21 +11,21 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-const ctoSettingsKey = "cto_settings"
-const ctoTitleKey = "cto_title"
+const ctoSettingsKey = "owner.cto_settings"
+const ctoTitleKey = "owner.cto_title"
 
 // CTOTitle reads the owner-facing CTO name. A missing row means no owner has
 // been asked yet: the title is the default and Set is false.
 func (s *Store) CTOTitle() (protocol.CTOTitle, error) {
-	var raw string
-	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key = ?`, ctoTitleKey).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return protocol.CTOTitle{Title: protocol.DefaultCTOTitle}, nil
-	}
+	var stored string
+	set, err := ownerJSON(s.db, ctoTitleKey, &stored)
 	if err != nil {
 		return protocol.CTOTitle{}, err
 	}
-	title, err := protocol.NormalizeCTOTitle(raw)
+	if !set {
+		return protocol.CTOTitle{Title: protocol.DefaultCTOTitle}, nil
+	}
+	title, err := protocol.NormalizeCTOTitle(stored)
 	if err != nil || title == "" {
 		title = protocol.DefaultCTOTitle
 	}
@@ -44,26 +42,12 @@ func (s *Store) SetCTOTitle(raw string) error {
 	if title == "" {
 		title = protocol.DefaultCTOTitle
 	}
-	_, err = s.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?,?,?)
- ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, ctoTitleKey, title, s.now().UnixNano())
-	return err
+	return s.setOwner(ctoTitleKey, title)
 }
 
 func (s *Store) CTOSettings() (protocol.CTOSettings, error) {
-	var raw string
-	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key = ?`, ctoSettingsKey).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		title, terr := s.CTOTitle()
-		if terr != nil {
-			return protocol.CTOSettings{}, terr
-		}
-		return protocol.CTOSettings{Title: title.Title, Harness: "opencode"}, nil
-	}
-	if err != nil {
-		return protocol.CTOSettings{}, err
-	}
 	var settings protocol.CTOSettings
-	if err = json.Unmarshal([]byte(raw), &settings); err != nil {
+	if _, err := ownerJSON(s.db, ctoSettingsKey, &settings); err != nil {
 		return protocol.CTOSettings{}, err
 	}
 	if settings.Harness == "" {
@@ -83,13 +67,7 @@ func (s *Store) SetCTOSettings(in protocol.CTOSettings) error {
 	if err := s.SetCTOTitle(title); err != nil {
 		return err
 	}
-	b, err := json.Marshal(in)
-	if err != nil {
-		return err
-	}
-	_, err = s.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?,?,?)
- ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, ctoSettingsKey, string(b), s.now().UnixNano())
-	return err
+	return s.setOwner(ctoSettingsKey, in)
 }
 
 func (g *Gateway) handleCTOSettingsGet(w http.ResponseWriter, r *http.Request) {

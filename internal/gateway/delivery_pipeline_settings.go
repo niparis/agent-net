@@ -34,13 +34,11 @@ func (s *Store) cutoverDeliveryPipelineTx(tx *sql.Tx) error {
 	if err != nil || len(all) == 0 {
 		return err
 	}
-	if err := bumpSettingsRevision(tx); err != nil {
+	revision, err := settingsRevision(tx)
+	if err != nil {
 		return err
 	}
-	var revision int64
-	if err := tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&revision); err != nil {
-		return err
-	}
+	revision++
 	seq := 0
 	for _, v := range all {
 		if _, err := tx.Exec(`INSERT OR IGNORE INTO delivery_settings_legacy(key,level,scope,item,value,revision) VALUES(?,?,?,?,?,?)`,

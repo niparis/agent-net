@@ -94,7 +94,7 @@ CREATE TABLE delivery_changes (id TEXT, origin TEXT, state TEXT, project TEXT, u
 CREATE TABLE delivery_evidence (change_id TEXT, step TEXT, result TEXT, at INTEGER);
 CREATE TABLE worker_usage (session_id TEXT PRIMARY KEY, usage TEXT, updated_at INTEGER);
 CREATE TABLE worker_starts (session_id TEXT, project TEXT);
-CREATE TABLE owner_settings (key TEXT PRIMARY KEY, value TEXT, updated_at INTEGER);
+CREATE TABLE setting_values (key TEXT NOT NULL, level TEXT NOT NULL, scope TEXT NOT NULL, item TEXT NOT NULL DEFAULT '', value TEXT NOT NULL, revision INTEGER NOT NULL, PRIMARY KEY (key, level, scope, item));
 CREATE TABLE model_prices (id TEXT PRIMARY KEY, prompt REAL, completion REAL, cache_read REAL, cache_write REAL, updated_at INTEGER);
 CREATE TABLE pick_candidates (run_id TEXT, pos INTEGER, name TEXT, harness TEXT, provider TEXT, model TEXT, effort TEXT,
   rule TEXT, bucket_lo REAL, bucket_hi REAL, cell_score REAL, cell_low REAL, cell_high REAL, cell_n INTEGER,

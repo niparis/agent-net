@@ -26,8 +26,7 @@ func briefRig(t *testing.T) (s *Store, c *clock, chief, other string) {
 
 func setBriefZone(t *testing.T, s *Store, zone string) {
 	t.Helper()
-	if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?)
-		ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`, timeZoneSettingsKey, zone, s.now().UnixNano()); err != nil {
+	if err := s.setOwner(timeZoneSettingsKey, zone); err != nil {
 		t.Fatal(err)
 	}
 }

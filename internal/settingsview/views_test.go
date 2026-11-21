@@ -141,3 +141,20 @@ func TestDeliveryPipelineViewRequiresSuiteAndNewTests(t *testing.T) {
 	}
 	t.Fatalf("view dropped test requirement: %+v", step.Requires)
 }
+
+// The owner's own values are settings with history and undo, but they are not
+// rows of a settings screen, for the owner or for anyone else.
+func TestViewsLeaveOutInternalSettings(t *testing.T) {
+	snap := settings.Snapshot{Values: []settings.Value{{Key: "owner.worker_floors", Level: "network", Scope: "network", Value: json.RawMessage(`{"floors":{}}`)}}}
+	for _, owner := range []bool{true, false} {
+		rows, err := Views(snap, nil, protocol.SettingsReadRequest{}, owner)
+		if err != nil || len(rows) == 0 {
+			t.Fatalf("owner=%v: %d rows, %v", owner, len(rows), err)
+		}
+		for _, row := range rows {
+			if strings.HasPrefix(row.Key, "owner.") {
+				t.Errorf("owner=%v: the screen lists %s", owner, row.Key)
+			}
+		}
+	}
+}

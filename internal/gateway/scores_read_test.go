@@ -16,7 +16,7 @@ func setOwnerScores(t *testing.T, s *Store, scores []protocol.ModelScore) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,?) ON CONFLICT (key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`,
+	if _, err := s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0) ON CONFLICT (key,level,scope,item) DO UPDATE SET value=excluded.value`,
 		scoresKey, string(raw), s.now().UnixNano()); err != nil {
 		t.Fatal(err)
 	}

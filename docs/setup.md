@@ -71,7 +71,7 @@ On the first machine only, setup asks what the CTO should be called:
 What should your CTO be called? [CTO]
 ```
 
-Enter keeps `CTO`. The title is 1 to 24 printable characters, with spaces at the ends removed. It cannot contain `[agent-net` or `<cross-session`, so it cannot look like a note that agent-net writes. The gateway stores it in `owner_settings` as `cto_title`, so every machine shows the same name. Setup does not ask on a joining machine, a rerun, an upgrade, or a run without a terminal. Change it later in the CTO box with `m`, or ask the CTO. The title is for the owner's screens only: agent-net's notes and guidance always say `CTO`, so every agent sees the same fixed words.
+Enter keeps `CTO`. The title is 1 to 24 printable characters, with spaces at the ends removed. It cannot contain `[agent-net` or `<cross-session`, so it cannot look like a note that agent-net writes. The gateway stores it as the network setting `owner.cto_title`, so every machine shows the same name. Setup does not ask on a joining machine, a rerun, an upgrade, or a run without a terminal. Change it later in the CTO box with `m`, or ask the CTO. The title is for the owner's screens only: agent-net's notes and guidance always say `CTO`, so every agent sees the same fixed words.
 
 ### Integrations
 

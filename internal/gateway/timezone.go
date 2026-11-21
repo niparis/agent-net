@@ -1,9 +1,7 @@
 package gateway
 
 import (
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -11,18 +9,18 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-const timeZoneSettingsKey = "time_zone"
+const timeZoneSettingsKey = "owner.time_zone"
 
 // timeZoneSetting reads the owner's display time zone. The default is auto:
 // the zone of the owner's own machine.
 func (s *Store) timeZoneSetting() (protocol.TimeZoneSettings, error) {
 	var name string
-	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key = ?`, timeZoneSettingsKey).Scan(&name)
-	if errors.Is(err, sql.ErrNoRows) {
-		return protocol.TimeZoneSettings{Name: protocol.TimeZoneAuto}, nil
-	}
+	set, err := ownerJSON(s.db, timeZoneSettingsKey, &name)
 	if err != nil {
 		return protocol.TimeZoneSettings{}, err
+	}
+	if !set {
+		return protocol.TimeZoneSettings{Name: protocol.TimeZoneAuto}, nil
 	}
 	clean, err := protocol.NormalizeTimeZone(name)
 	if err != nil {
@@ -96,7 +94,7 @@ func (g *Gateway) handleTimeZoneSettings(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), 400)
 		return
 	}
-	_, err = g.store.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`, timeZoneSettingsKey, name, g.store.now().UnixNano())
+	err = g.store.setOwner(timeZoneSettingsKey, name)
 	if err == nil {
 		g.store.Event("timezone.set", node, "", "", name)
 	}

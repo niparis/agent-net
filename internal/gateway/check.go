@@ -174,7 +174,7 @@ func isWakeMessage(m protocol.Message) bool {
 
 func (s *Store) ctoSessionID() string {
 	var id string
-	if err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key='cto_session'`).Scan(&id); err != nil {
+	if err := s.db.QueryRow(`SELECT value FROM gateway_state WHERE key='cto_session'`).Scan(&id); err != nil {
 		return ""
 	}
 	return id

@@ -567,7 +567,7 @@ Your answers to the integrations question ([decision 0021](decisions/0021-networ
 ## Shared TUI hidden items
 
 The gateway stores session IDs and project node names hidden from the owner's
-TUI in `owner_settings`. This preference changes only what the TUI draws; it
+TUI in `gateway_state`. This preference changes only what the TUI draws; it
 does not restrict what an enrolled machine or agent can read through its normal
 interfaces.
 

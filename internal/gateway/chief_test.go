@@ -119,7 +119,7 @@ func TestGatewayStartAdoptsAsksForExistingChief(t *testing.T) {
 	}
 	// The setting was already stored when the gateway stopped, so SetChief
 	// does not run this time. Only the start reconcile can adopt the ask.
-	if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?)`, chiefSessionKey, chief, base.UnixNano()); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES(?,?,?)`, chiefSessionKey, chief, base.UnixNano()); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {

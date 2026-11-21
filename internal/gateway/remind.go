@@ -25,7 +25,7 @@ const remindableRequest = ` FROM messages q
  AND q.created_at>=? AND (q.created_at<? OR q.reminded=2) AND q.expires_at>?
  AND dst.status='idle' AND dst.last_active>0 AND (dst.last_active<? OR q.reminded=2)
  AND src.harness<>'owner' AND dst.harness NOT IN ('owner','cto')
- AND NOT EXISTS (SELECT 1 FROM owner_settings c WHERE c.key='cto_session' AND c.value=q.recipient)
+ AND NOT EXISTS (SELECT 1 FROM gateway_state c WHERE c.key='cto_session' AND c.value=q.recipient)
  AND NOT EXISTS (SELECT 1 FROM messages r WHERE r.conversation_id=q.conversation_id AND r.type IN ` + answeredTypesSQL + ` AND r.created_at>=q.created_at)
  AND COALESCE((SELECT e.rule FROM graph_edges e
  WHERE e.target=COALESCE(NULLIF(dst.repo_project,''),dp.project,'')

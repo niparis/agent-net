@@ -57,7 +57,7 @@ func (s *Store) frontDoorSession(q askDB, session string) (front bool, typed int
 	}
 	for _, key := range []string{chiefSessionKey, "cto_session"} {
 		var id string
-		if err := q.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, key).Scan(&id); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		if err := q.QueryRow(`SELECT value FROM gateway_state WHERE key=?`, key).Scan(&id); err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return false, 0, err
 		}
 		if id == session {

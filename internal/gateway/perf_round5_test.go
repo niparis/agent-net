@@ -511,7 +511,7 @@ func TestRunsCopyIsReloadedOnlyAfterAWrite(t *testing.T) {
 		t.Fatal("the copy was reloaded with no write")
 	}
 	// A write to another table does not reload it.
-	if _, err := s.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES ('x', '1', 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO gateway_state (key, value, updated_at) VALUES ('x', '1', 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`); err != nil {
 		t.Fatal(err)
 	}
 	if third, _ := s.runsSnapshot(); third != first {
@@ -613,7 +613,7 @@ func listFixture(t *testing.T) (*Store, map[string]string) {
 	if _, err := s.db.Exec(`UPDATE sessions SET online=0 WHERE id=?`, ids["demooff"]); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_session',?,0)`, ids["cto"]); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES('cto_session',?,0)`, ids["cto"]); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.WriteSettings([]SettingsChange{{Key: "max_agents", Level: "repo", Scope: "demo", Value: json.RawMessage(`2`)}}, "owner", "limit"); err != nil {

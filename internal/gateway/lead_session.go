@@ -127,7 +127,7 @@ func (s *Store) pinOrAskLeadSessionTx(tx *sql.Tx, agent string) error {
 // An open question for the same Agent is refreshed, never repeated.
 func (s *Store) askWhichLeadSessionQ(q askDB, agent string, sessions []leadSessionRef) error {
 	var cto string
-	err := q.QueryRow(`SELECT value FROM owner_settings WHERE key='cto_session'`).Scan(&cto)
+	err := q.QueryRow(`SELECT value FROM gateway_state WHERE key='cto_session'`).Scan(&cto)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}

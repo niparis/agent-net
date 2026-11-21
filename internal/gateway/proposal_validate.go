@@ -238,7 +238,7 @@ func (g *Gateway) validateCTOProposal(ctx context.Context, nc *nodeConn, raw []b
 				return nil, err
 			}
 			var cto string
-			if err := st.db.QueryRow(`SELECT s.id FROM sessions s JOIN owner_settings o ON o.key='cto_session' AND o.value=s.id WHERE s.node_id=?`, nc.id).Scan(&cto); err != nil {
+			if err := st.db.QueryRow(`SELECT s.id FROM sessions s JOIN gateway_state o ON o.key='cto_session' AND o.value=s.id WHERE s.node_id=?`, nc.id).Scan(&cto); err != nil {
 				return nil, reject("CTO network session is not registered on this node")
 			}
 			if !ok || m.To != cto {

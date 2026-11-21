@@ -31,7 +31,7 @@ func TestPrecheckRefusesExhaustedNamedModelWithAlternative(t *testing.T) {
 	if err := st.AddWorkerProfile(protocol.WorkerProfile{Name: "opus", Harness: "claude", Model: "claude-opus-5-5"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,0)`, workerProvidersKey, `{"providers":["anthropic","google"]}`); err != nil {
+	if _, err := st.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0)`, workerProvidersKey, `{"providers":["anthropic","google"]}`); err != nil {
 		t.Fatal(err)
 	}
 	owner, err := st.UpsertSession(node, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: "owner"})
@@ -93,10 +93,10 @@ func TestPrecheckDoesNotRefuseOnLevelForAutomaticModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Score 12: the model reaches trivial only, so "normal" has no model.
-	if _, err := st.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,0)`, scoresKey, `[{"match":"claude-opus-5-5","score":12}]`); err != nil {
+	if _, err := st.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0)`, scoresKey, `[{"match":"claude-opus-5-5","score":12}]`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,0)`, workerProvidersKey, `{"providers":["anthropic"]}`); err != nil {
+	if _, err := st.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0)`, workerProvidersKey, `{"providers":["anthropic"]}`); err != nil {
 		t.Fatal(err)
 	}
 	owner, err := st.UpsertSession(node, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: "owner"})

@@ -16,7 +16,7 @@ func ctoSession(t *testing.T, s *Store, node string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_session',?,0)
+	if _, err := s.db.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES('cto_session',?,0)
 		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, id); err != nil {
 		t.Fatal(err)
 	}

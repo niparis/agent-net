@@ -77,7 +77,7 @@ func (g *Gateway) askIntakeList(ctx context.Context, q protocol.AskIntakeRequest
 		FROM sessions s JOIN nodes n ON n.id=s.node_id
 		LEFT JOIN profiles p ON p.session_id=s.id
 		WHERE s.archived_at=0 AND s.harness NOT IN ('owner','cto') AND s.worker=''
-		  AND s.id<>COALESCE((SELECT value FROM owner_settings WHERE key='cto_session'),'')
+		  AND s.id<>COALESCE((SELECT value FROM gateway_state WHERE key='cto_session'),'')
 		  AND (s.online=1 OR s.status='idle') AND s.status<>'busy'
 		ORDER BY s.last_seen DESC,s.id LIMIT ?`, limit)
 	if err != nil {

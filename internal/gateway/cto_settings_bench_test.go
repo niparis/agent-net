@@ -29,7 +29,7 @@ func busyWriter(b *testing.B, s *Store) {
 				if err != nil {
 					return
 				}
-				_, _ = tx.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES ('bench', 'x', 1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`)
+				_, _ = tx.Exec(`INSERT INTO gateway_state (key, value, updated_at) VALUES ('bench', 'x', 1) ON CONFLICT (key) DO UPDATE SET value = excluded.value`)
 				time.Sleep(2 * time.Millisecond)
 				_ = tx.Commit()
 			}

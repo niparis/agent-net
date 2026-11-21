@@ -136,7 +136,7 @@ func TestServeLaneKeepsWriteOrder(t *testing.T) {
 	}
 	// HiddenItems drops sessions that do not exist, so read the stored value.
 	var stored string
-	if err := g.store.db.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, hiddenItemsKey).Scan(&stored); err != nil {
+	if err := g.store.db.QueryRow(`SELECT value FROM gateway_state WHERE key=?`, hiddenItemsKey).Scan(&stored); err != nil {
 		t.Fatal(err)
 	}
 	if want := fmt.Sprintf(`{"sessions":["s_%d"]}`, n-1); stored != want {
@@ -168,7 +168,7 @@ func TestLanePoolReadSeesAWriteOnceItIsAnswered(t *testing.T) {
 			t.Fatalf("write %d was not answered", i)
 		}
 		var stored string
-		if err := g.store.db.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, hiddenItemsKey).Scan(&stored); err != nil {
+		if err := g.store.db.QueryRow(`SELECT value FROM gateway_state WHERE key=?`, hiddenItemsKey).Scan(&stored); err != nil {
 			t.Fatal(err)
 		}
 		if want := fmt.Sprintf(`{"sessions":["s_%d"]}`, i); stored != want {

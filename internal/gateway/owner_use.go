@@ -84,7 +84,7 @@ func (s *Store) AutoArchiveSessions() ([]string, error) {
 	defer tx.Rollback()
 	now := s.now()
 	cutoff := now.Add(-7 * 24 * time.Hour).UnixNano()
-	rows, err := tx.Query(`SELECT s.id,s.cwd,MAX(s.last_active,s.last_seen,s.created_at) FROM sessions s WHERE s.archived_at=0 AND s.online=0 AND s.pinned_at=0 AND s.owner_used_at<? AND s.harness NOT IN ('owner','cto','bot') AND s.id<>COALESCE((SELECT value FROM owner_settings WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM project_mergers WHERE session_id=s.id) ORDER BY s.id`, cutoff)
+	rows, err := tx.Query(`SELECT s.id,s.cwd,MAX(s.last_active,s.last_seen,s.created_at) FROM sessions s WHERE s.archived_at=0 AND s.online=0 AND s.pinned_at=0 AND s.owner_used_at<? AND s.harness NOT IN ('owner','cto','bot') AND s.id<>COALESCE((SELECT value FROM gateway_state WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM project_mergers WHERE session_id=s.id) ORDER BY s.id`, cutoff)
 	if err != nil {
 		return nil, err
 	}

@@ -260,7 +260,7 @@ func (s *Store) setCharter(node, attr, value, actor string) error {
 	defer tx.Rollback()
 	var before int64
 	if attr == "maturity" {
-		if err = tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&before); err != nil {
+		if before, err = settingsRevision(tx); err != nil {
 			return err
 		}
 	}
@@ -269,7 +269,7 @@ func (s *Store) setCharter(node, attr, value, actor string) error {
 	}
 	var after int64
 	if attr == "maturity" {
-		if err = tx.QueryRow(`SELECT revision FROM setting_revision WHERE id=1`).Scan(&after); err != nil {
+		if after, err = settingsRevision(tx); err != nil {
 			return err
 		}
 	}

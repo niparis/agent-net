@@ -39,6 +39,9 @@ func TestReferenceCoversEverySetting(t *testing.T) {
 	tiers := map[int]int{}
 	covered, internal := 0, 0
 	for _, def := range definitions {
+		if def.Visibility == "internal" {
+			continue // an internal setting is on no settings screen and in no reference
+		}
 		tier, ok := TierFor(def.Key)
 		if !ok {
 			t.Errorf("%s has no tier", def.Key)

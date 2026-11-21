@@ -1,9 +1,7 @@
 package gateway
 
 import (
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -95,35 +93,28 @@ func (s *Store) ResolveSettingsTarget(t protocol.SettingsTarget) (protocol.Setti
 	return out, reject("unknown settings target level %q", level)
 }
 
-// targetTokenTx returns the durable token for one typed target, creating it on
-// first use. A rename keeps the row and its token. A delete removes the row, so
-// a recreation gets a fresh random token.
-func targetTokenTx(tx *sql.Tx, kind, id string) (string, error) {
-	var token string
-	err := tx.QueryRow(`SELECT token FROM settings_target_identity WHERE kind=? AND id=?`, kind, id).Scan(&token)
-	if err != nil && err != sql.ErrNoRows {
-		return "", err
-	}
-	if err == nil {
-		return token, nil
-	}
-	token, err = newTargetToken()
-	if err != nil {
-		return "", err
-	}
-	if _, err = tx.Exec(`INSERT OR IGNORE INTO settings_target_identity(kind,id,token) VALUES(?,?,?)`, kind, id, token); err != nil {
-		return "", err
-	}
-	err = tx.QueryRow(`SELECT token FROM settings_target_identity WHERE kind=? AND id=?`, kind, id).Scan(&token)
-	return token, err
-}
+// networkTokenKey is the gateway_state key of the network's token.
+const networkTokenKey = "settings_network_token"
 
-func newTargetToken() (string, error) {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
+// settingsTokenTables names the table whose settings_token column holds the
+// token of each target kind.
+var settingsTokenTables = map[string]string{"repo": "repos", "agent": "agents", "team": "teams"}
+
+// targetTokenTx returns the durable token for one typed target, creating it on
+// first use. A rename keeps the token. A deleted row takes its token with it,
+// and a tombstoned agent loses it (a trigger), so a recreation gets a fresh one.
+func targetTokenTx(tx *sql.Tx, kind, id string) (token string, err error) {
+	table := settingsTokenTables[kind]
+	if table == "" {
+		if _, err = tx.Exec(`INSERT OR IGNORE INTO gateway_state(key,value) VALUES(?,lower(hex(randomblob(16))))`, networkTokenKey); err == nil {
+			err = tx.QueryRow(`SELECT value FROM gateway_state WHERE key=?`, networkTokenKey).Scan(&token)
+		}
+		return token, err
 	}
-	return hex.EncodeToString(b), nil
+	if _, err = tx.Exec(`UPDATE `+table+` SET settings_token=lower(hex(randomblob(16))) WHERE id=? AND settings_token=''`, id); err == nil {
+		err = tx.QueryRow(`SELECT settings_token FROM `+table+` WHERE id=?`, id).Scan(&token)
+	}
+	return token, err
 }
 
 // ambiguousSettingsTargetError names every candidate and never picks one.

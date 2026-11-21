@@ -83,7 +83,7 @@ func (s *Store) placeText(session string) (string, error) {
 		return "", nil
 	}
 	var cto string
-	if err = s.db.QueryRow(`SELECT COALESCE((SELECT value FROM owner_settings WHERE key='cto_session'),'')`).Scan(&cto); err != nil {
+	if err = s.db.QueryRow(`SELECT COALESCE((SELECT value FROM gateway_state WHERE key='cto_session'),'')`).Scan(&cto); err != nil {
 		return "", err
 	}
 	if cto == session {

@@ -327,7 +327,7 @@ func TestPickerAnalysisIsTheReadAPI(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := s.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0)`, scoresKey,
+	if _, err := s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0)`, scoresKey,
 		`[{"match":"gpt-6.1-sol:low","score":45},{"match":"gpt-6.1-terra:high","score":33}]`); err != nil {
 		t.Fatal(err)
 	}

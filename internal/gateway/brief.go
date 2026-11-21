@@ -93,12 +93,6 @@ func briefLastWake(q askDB) (string, error) {
 	return briefState(q, protocol.BriefLastSentKey)
 }
 
-func (s *Store) setOwnerSetting(q askDB, key, value string, now time.Time) error {
-	_, err := q.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,?)
-		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, key, value, now.UnixNano())
-	return err
-}
-
 // briefDue says whether the brief of the current owner-local date is due and
 // has not gone out.
 func briefDue(now time.Time, loc *time.Location, hour, minute int, lastWake string) bool {

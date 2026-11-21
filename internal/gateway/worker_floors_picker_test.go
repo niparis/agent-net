@@ -53,10 +53,10 @@ func setupFloorGateway(t *testing.T) (*Gateway, string, string, string, *clock) 
 		t.Fatal(err)
 	}
 	scoresJSON := `[{"match":"claude-opus-5-5","score":55},{"match":"gpt-6.1-terra","score":52},{"match":"deepseek/deepseek-v4.1-flash","score":45},{"match":"opencode-go/deepseek-v4.1-flash","score":45}]`
-	if _, err := st.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, scoresKey, scoresJSON); err != nil {
+	if _, err := st.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0) ON CONFLICT (key,level,scope,item) DO UPDATE SET value=excluded.value`, scoresKey, scoresJSON); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerProvidersKey, `{"providers":["anthropic","openai","deepseek","opencode-go"]}`); err != nil {
+	if _, err := st.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0) ON CONFLICT (key,level,scope,item) DO UPDATE SET value=excluded.value`, workerProvidersKey, `{"providers":["anthropic","openai","deepseek","opencode-go"]}`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -69,7 +69,7 @@ func TestWorkerFloorPickerUnderFloorExcluded(t *testing.T) {
 
 	// Anthropic has floor 40%. Quota is 30% left in 5h window.
 	// Codex has 80% left in week window.
-	if _, err := g.store.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"anthropic":40}}`); err != nil {
+	if _, err := g.store.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0) ON CONFLICT (key,level,scope,item) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"anthropic":40}}`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -118,7 +118,7 @@ func TestWorkerFloorPickerAboveFloorKept(t *testing.T) {
 	nc := g.conns[node]
 
 	// Anthropic has floor 40%. Quota is 60% left in 5h window.
-	if _, err := g.store.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"anthropic":40}}`); err != nil {
+	if _, err := g.store.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0) ON CONFLICT (key,level,scope,item) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"anthropic":40}}`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -148,7 +148,7 @@ func TestWorkerFloorPickerNoReadingKeptWithNote(t *testing.T) {
 	nc := g.conns[node]
 
 	// Deepseek has floor 30%. Deepseek has no quota reading.
-	if _, err := g.store.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"deepseek":30}}`); err != nil {
+	if _, err := g.store.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0) ON CONFLICT (key,level,scope,item) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"deepseek":30}}`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -173,7 +173,7 @@ func TestWorkerFloorExplicitModelRefused(t *testing.T) {
 	nc := g.conns[node]
 
 	// Anthropic floor 40%, 30% left
-	if _, err := g.store.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"anthropic":40}}`); err != nil {
+	if _, err := g.store.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0) ON CONFLICT (key,level,scope,item) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"anthropic":40}}`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -219,7 +219,7 @@ func TestWorkerFloorOwnerOverride(t *testing.T) {
 	nc := g.conns[node]
 
 	// Anthropic floor 40%, 30% left
-	if _, err := g.store.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"anthropic":40}}`); err != nil {
+	if _, err := g.store.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0) ON CONFLICT (key,level,scope,item) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"anthropic":40}}`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -261,7 +261,7 @@ func TestWorkerFloorPickerReadsMonthlyWindowFromAnotherMachine(t *testing.T) {
 	g, node, owner, _, c := setupFloorGateway(t)
 	nc := g.conns[node]
 
-	if _, err := g.store.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"opencode-go":10,"anthropic":50,"openai":50,"deepseek":50}}`); err != nil {
+	if _, err := g.store.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0) ON CONFLICT (key,level,scope,item) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"opencode-go":10,"anthropic":50,"openai":50,"deepseek":50}}`); err != nil {
 		t.Fatal(err)
 	}
 	// The start machine reads every other subscription but not opencode-go.
@@ -305,7 +305,7 @@ func TestWorkerFloorPickerMonthlyWindowUnderFloorExcluded(t *testing.T) {
 
 	// opencode-go has floor 10%. Quota: rolling 5%, weekly 10%, monthly 99% used (1% left).
 	// deepseek profile is excluded by excluding deepseek provider so only opencode-go candidate is considered.
-	if _, err := g.store.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"opencode-go":10,"deepseek":50}}`); err != nil {
+	if _, err := g.store.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0) ON CONFLICT (key,level,scope,item) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"opencode-go":10,"deepseek":50}}`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -347,7 +347,7 @@ func TestWorkerFloorPickerMonthlyWindowAboveFloorKept(t *testing.T) {
 	nc := g.conns[node]
 
 	// opencode-go has floor 10%. All windows above floor.
-	if _, err := g.store.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"opencode-go":10,"deepseek":50}}`); err != nil {
+	if _, err := g.store.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0) ON CONFLICT (key,level,scope,item) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"opencode-go":10,"deepseek":50}}`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -391,7 +391,7 @@ func TestWorkerPickerMonthlyExhaustedOnAnotherMachineRefused(t *testing.T) {
 
 	// No opencode-go floor. The allowlist leaves only the opencode-go profile,
 	// so the picker has to decide on that provider.
-	if _, err := g.store.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerProvidersKey, `{"providers":["opencode-go"]}`); err != nil {
+	if _, err := g.store.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0) ON CONFLICT (key,level,scope,item) DO UPDATE SET value=excluded.value`, workerProvidersKey, `{"providers":["opencode-go"]}`); err != nil {
 		t.Fatal(err)
 	}
 	// The start machine reports its other subscriptions but cannot read
@@ -434,10 +434,10 @@ func TestWorkerPickerNoOwnReportUsesAnotherMachineFloor(t *testing.T) {
 	nc := g.conns[node]
 
 	// opencode-go floor 10%. The allowlist leaves only that profile.
-	if _, err := g.store.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"opencode-go":10}}`); err != nil {
+	if _, err := g.store.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0) ON CONFLICT (key,level,scope,item) DO UPDATE SET value=excluded.value`, workerFloorsKey, `{"floors":{"opencode-go":10}}`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := g.store.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, workerProvidersKey, `{"providers":["opencode-go"]}`); err != nil {
+	if _, err := g.store.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0) ON CONFLICT (key,level,scope,item) DO UPDATE SET value=excluded.value`, workerProvidersKey, `{"providers":["opencode-go"]}`); err != nil {
 		t.Fatal(err)
 	}
 	// The start machine sends no usage report here. The Mac reads the same

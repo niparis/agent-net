@@ -231,7 +231,7 @@ func TestInboxLimitExemptsOwnerAndCTOOwnerVoice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_session',?,0)
+	if _, err := s.db.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES('cto_session',?,0)
 		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, cto); err != nil {
 		t.Fatal(err)
 	}
@@ -587,7 +587,7 @@ func TestUrgentFromChiefAndCTOPassesFullInbox(t *testing.T) {
 		t.Fatal(err)
 	}
 	for key, session := range map[string]string{chiefSessionKey: chief, "cto_session": cto} {
-		if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,0)
+		if _, err := s.db.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES(?,?,0)
 			ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, session); err != nil {
 			t.Fatal(err)
 		}

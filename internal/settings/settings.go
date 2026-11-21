@@ -121,7 +121,7 @@ func Load(data []byte) (*Recipe, error) {
 		if d.Kind != "rule" && d.Kind != "advice" {
 			return nil, fmt.Errorf("%s: invalid kind", d.Key)
 		}
-		if d.Visibility != "" && d.Visibility != "public" && d.Visibility != "owner" {
+		if d.Visibility != "" && d.Visibility != "public" && d.Visibility != "owner" && d.Visibility != "internal" {
 			return nil, fmt.Errorf("%s: invalid visibility", d.Key)
 		}
 		seen := map[string]bool{}
@@ -258,6 +258,11 @@ func contains(a []string, s string) bool {
 	return false
 }
 
+// OwnerOnly says the owner alone may read and change the setting. An internal
+// setting is owner-only and is not listed on a settings screen: it holds a
+// value the gateway keeps for a feature, such as the worker profiles.
+func (d Definition) OwnerOnly() bool { return d.Visibility == "owner" || d.Visibility == "internal" }
+
 // OwnerScopedText is protected wording whose network and repo values are
 // individually owner-controlled. Text has no automatic strictness ordering.
 func (d Definition) OwnerScopedText() bool {
@@ -311,6 +316,10 @@ func (d Definition) yamlValue(n *yaml.Node) (json.RawMessage, error) {
 			a = append(a, x.Value)
 		}
 		v = a
+	case "json":
+		if err := n.Decode(&v); err != nil {
+			return nil, err
+		}
 	case "map":
 		if n.Kind != yaml.MappingNode {
 			return nil, fmt.Errorf("expected map")
@@ -357,6 +366,14 @@ func (d Definition) codec(raw json.RawMessage, expected bool) (json.RawMessage, 
 	}
 	var value any
 	switch d.Type {
+	case "json":
+		// An internal value that keeps its shape: compacted, never re-encoded,
+		// so its stored bytes stay equal to the bytes a writer names to expect.
+		var b bytes.Buffer
+		if err := json.Compact(&b, raw); err != nil {
+			return nil, err
+		}
+		return b.Bytes(), nil
 	case "bool":
 		var v bool
 		if err := json.Unmarshal(raw, &v); err != nil {

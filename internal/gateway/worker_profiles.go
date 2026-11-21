@@ -2,9 +2,6 @@ package gateway
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -13,19 +10,11 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-const workerProfilesKey = "worker_profiles"
+const workerProfilesKey = "owner.worker_profiles"
 
 func (s *Store) WorkerProfiles() ([]protocol.WorkerProfile, error) {
-	var raw string
-	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key = ?`, workerProfilesKey).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return []protocol.WorkerProfile{}, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var profiles []protocol.WorkerProfile
-	err = json.Unmarshal([]byte(raw), &profiles)
+	profiles := []protocol.WorkerProfile{}
+	_, err := ownerJSON(s.db, workerProfilesKey, &profiles)
 	return profiles, err
 }
 
@@ -214,12 +203,10 @@ func (s *Store) profileSuccessNodes(p protocol.WorkerProfile) (map[string]bool, 
 }
 
 func (s *Store) saveWorkerProfiles(profiles []protocol.WorkerProfile) error {
-	raw, err := json.Marshal(profiles)
-	if err != nil {
-		return err
+	if profiles == nil {
+		profiles = []protocol.WorkerProfile{} // JSON null is not a value
 	}
-	_, err = s.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,?) ON CONFLICT (key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`, workerProfilesKey, string(raw), s.now().UnixNano())
-	if err != nil {
+	if err := s.setOwner(workerProfilesKey, profiles); err != nil {
 		return err
 	}
 	return s.refreshQuality()

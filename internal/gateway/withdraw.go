@@ -134,7 +134,7 @@ func (s *Store) mayWithdrawAny(q interface {
 		return true, nil
 	}
 	var cto string
-	if err := q.QueryRow(`SELECT value FROM owner_settings WHERE key='cto_session'`).Scan(&cto); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if err := q.QueryRow(`SELECT value FROM gateway_state WHERE key='cto_session'`).Scan(&cto); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return false, err
 	}
 	return cto != "" && actor == cto, nil

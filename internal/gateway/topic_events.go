@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -12,14 +13,21 @@ import (
 // reads used by the screen. Column keys keep session activity from moving graph.
 var topicTables = map[string][]string{
 	protocol.TopicAgents:   agentsTables,
-	protocol.TopicNodes:    tableUnion(nodesTables, calibrationTables, []string{"quota_blocks", "nodes.health_report", "nodes.health_reported_at", "playbook", "owner_settings", "setting_values"}),
-	protocol.TopicWorkers:  tableUnion(workerLogTables, calibrationTables, []string{"worker_starts", "quota_blocks", "owner_settings", "setting_values"}),
+	protocol.TopicNodes:    tableUnion(nodesTables, calibrationTables, []string{"quota_blocks", "nodes.health_report", "nodes.health_reported_at", "playbook", "setting_values"}),
+	protocol.TopicWorkers:  tableUnion(workerLogTables, calibrationTables, []string{"worker_starts", "quota_blocks", "setting_values"}),
 	protocol.TopicGraph:    graphTables,
-	protocol.TopicInbox:    tableUnion(inboxTables, []string{"messages", "ask_sorts", "desk_log", "charter_draft_asks", "owner_settings"}),
+	protocol.TopicInbox:    tableUnion(inboxTables, []string{"messages", "ask_sorts", "desk_log", "charter_draft_asks", "setting_values"}),
 	protocol.TopicChanges:  []string{"delivery_changes", "delivery_revisions", "delivery_evidence", "delivery_step_tasks", "delivery_step_messages", "delivery_step_inbox", "delivery_step_delegates", "events", "messages"},
 	protocol.TopicProjects: tableUnion([]string{"projects", "repos", "project_display_names", "project_mergers", "sessions", "nodes.id", "nodes.hostname"}, graphTables),
 	protocol.TopicLearned:  learnedListTables,
 	protocol.TopicUsage:    tableUnion(nodesTables, []string{"sessions", "quota_blocks"}),
+}
+
+// No screen topic follows gateway_state, even if a cached read declares it.
+func init() {
+	for topic, tables := range topicTables {
+		topicTables[topic] = slices.DeleteFunc(slices.Clone(tables), func(t string) bool { return t == "gateway_state" })
+	}
 }
 
 func (s *Store) topicVersions() map[string]uint64 {

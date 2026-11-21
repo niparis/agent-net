@@ -153,7 +153,7 @@ func agentParentTx(tx *sql.Tx, agent string) (string, error) {
 		return protocol.OrgRoot, nil
 	}
 	var chief bool
-	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions WHERE agent_id=? AND id=(SELECT value FROM owner_settings WHERE key='chief_session'))`, agent).Scan(&chief); err != nil {
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions WHERE agent_id=? AND id=(SELECT value FROM gateway_state WHERE key='chief_session'))`, agent).Scan(&chief); err != nil {
 		return "", err
 	}
 	if chief {

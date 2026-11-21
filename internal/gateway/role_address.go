@@ -16,7 +16,7 @@ var roleAddressKeys = map[string]struct {
 	"cto":   {ctoSessionKey, "no CTO session is registered, so the message to \"cto\" has no session"},
 }
 
-// ctoSessionKey is the owner_settings row that names the CTO's network session.
+// ctoSessionKey is the gateway_state row that names the CTO's network session.
 const ctoSessionKey = "cto_session"
 
 // resolveRoleAddress returns the session pinned for a role address. isRole is
@@ -26,7 +26,7 @@ func resolveRoleAddress(q queryer, recipient string) (id string, isRole bool, er
 	if !ok {
 		return "", false, nil
 	}
-	err = q.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, role.key).Scan(&id)
+	err = q.QueryRow(`SELECT value FROM gateway_state WHERE key=?`, role.key).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = nil
 	}

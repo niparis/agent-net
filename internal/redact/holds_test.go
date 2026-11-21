@@ -7,7 +7,7 @@ import (
 
 // leadRouteLine is line 44 of internal/gateway/lead_route.go as it is in the
 // tree. Its SQL has key='cto_session', a plain word in a string, not a secret.
-const leadRouteLine = "	err := tx.QueryRow(`SELECT COALESCE(repo_id,''),COALESCE(agent_id,''),harness,worker,COALESCE((SELECT value FROM owner_settings WHERE key='cto_session'),'') FROM sessions WHERE id=?`, m.From).Scan(&senderRepo, &senderAgent, &harness, &worker, &cto)"
+const leadRouteLine = "	err := tx.QueryRow(`SELECT COALESCE(repo_id,''),COALESCE(agent_id,''),harness,worker,COALESCE((SELECT value FROM gateway_state WHERE key='cto_session'),'') FROM sessions WHERE id=?`, m.From).Scan(&senderRepo, &senderAgent, &harness, &worker, &cto)"
 
 func TestHoldsSecretAllowsOrdinaryCode(t *testing.T) {
 	cases := []struct{ name, in string }{

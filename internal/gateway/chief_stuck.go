@@ -22,7 +22,7 @@ import (
 // the chief reads in its batch. The limit is the stuck-step setting
 // (delivery.step_stuck, 12 hours), not a new number.
 
-// chiefStuckPingPrefix keys the owner_settings rows that remember how many
+// chiefStuckPingPrefix keys the gateway_state rows that remember how many
 // limits an ask has already been pinged for, so a tick pings once per limit.
 const chiefStuckPingPrefix = "chief_stuck_ping:"
 
@@ -115,7 +115,7 @@ func (s *Store) chiefStuckWork(now time.Time, limit time.Duration) ([]protocol.M
 	for _, it := range claimed {
 		keep[chiefStuckPingPrefix+it.id] = true
 	}
-	rows, err := s.db.Query(`SELECT key,value FROM owner_settings WHERE key LIKE ?`, chiefStuckPingPrefix+"%")
+	rows, err := s.db.Query(`SELECT key,value FROM gateway_state WHERE key LIKE ?`, chiefStuckPingPrefix+"%")
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +140,7 @@ func (s *Store) chiefStuckWork(now time.Time, limit time.Duration) ([]protocol.M
 		return nil, err
 	}
 	for _, k := range gone {
-		if _, err := s.db.Exec(`DELETE FROM owner_settings WHERE key=?`, k); err != nil {
+		if _, err := s.db.Exec(`DELETE FROM gateway_state WHERE key=?`, k); err != nil {
 			return nil, err
 		}
 	}
@@ -173,7 +173,7 @@ func (s *Store) chiefStuckWork(now time.Time, limit time.Duration) ([]protocol.M
 		return nil, err
 	}
 	for k, n := range periods {
-		if err := s.setOwnerSetting(tx, k, fmt.Sprint(n), now); err != nil {
+		if err := stateSet(tx, k, fmt.Sprint(n), now.UnixNano()); err != nil {
 			return nil, err
 		}
 	}

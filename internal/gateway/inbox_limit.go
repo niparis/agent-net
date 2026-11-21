@@ -122,7 +122,7 @@ func checkInboxLimit(tx *sql.Tx, p protocol.MsgSend, ownerVoice bool, now int64)
 // An urgent message from either one is never refused by the inbox limit.
 func topAgentSenderTx(tx *sql.Tx, sender string) (bool, error) {
 	var n int
-	err := tx.QueryRow(`SELECT COUNT(*) FROM owner_settings WHERE key IN ('cto_session',?) AND value=?`, chiefSessionKey, sender).Scan(&n)
+	err := tx.QueryRow(`SELECT COUNT(*) FROM gateway_state WHERE key IN ('cto_session',?) AND value=?`, chiefSessionKey, sender).Scan(&n)
 	return n > 0, err
 }
 

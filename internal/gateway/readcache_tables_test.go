@@ -352,7 +352,7 @@ func writeKey(t *testing.T, s *Store, key string, n int) {
 // writeRow is how the tests change a table. A table the generic row does not
 // fit has its own statement here.
 var writeRowSQL = map[string]string{
-	"setting_revision":     `UPDATE setting_revision SET revision=revision+1`,
+	"setting_history":      `INSERT INTO setting_history(revision,seq,key,level,scope,item,old_value,new_value,actor,reason,cause,at) SELECT COALESCE(MAX(revision),0)+1,0,'revision','network','network','',NULL,'"bump"','t','t','cutover',0 FROM setting_history`,
 	"setting_values":       `INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES('probe','repo','probe','','"x"',1)`,
 	"charter_values":       `INSERT INTO charter_values(level,scope,attr,value,updated_at,updated_by) VALUES('global','','probe','x',1,'t')`,
 	"apps":                 `INSERT INTO apps(id,name,kind,client_id,client_name,created_at) VALUES('app_probe','probe','owner_app','c','c',1)`,

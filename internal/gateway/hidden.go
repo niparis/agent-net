@@ -1,9 +1,7 @@
 package gateway
 
 import (
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -27,19 +25,11 @@ func (s *Store) HiddenItems() (protocol.HiddenItems, error) {
 	s.hiddenMu.Lock()
 	defer s.hiddenMu.Unlock()
 
-	var raw string
-	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key = ?`, hiddenItemsKey).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return protocol.HiddenItems{}, nil
-	}
-	if err != nil {
-		return protocol.HiddenItems{}, err
-	}
 	var items protocol.HiddenItems
-	if err := json.Unmarshal([]byte(raw), &items); err != nil {
+	if _, err := stateJSON(s.db, hiddenItemsKey, &items); err != nil {
 		return protocol.HiddenItems{}, err
 	}
-	items, err = cleanHiddenItems(items)
+	items, err := cleanHiddenItems(items)
 	if err != nil {
 		return protocol.HiddenItems{}, err
 	}
@@ -112,10 +102,7 @@ func (s *Store) writeHiddenItems(items protocol.HiddenItems) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?,?,?)
-		ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-		hiddenItemsKey, string(raw), s.now().UnixNano())
-	return err
+	return stateSet(s.db, hiddenItemsKey, string(raw), s.now().UnixNano())
 }
 
 func cleanHiddenItems(items protocol.HiddenItems) (protocol.HiddenItems, error) {

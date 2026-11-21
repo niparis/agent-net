@@ -67,7 +67,7 @@ func (s *Store) ReserveRepoStart(node string, p protocol.RepoStartReservation) (
 		return out, tx.Commit()
 	}
 	var count int
-	err = tx.QueryRow(`SELECT (SELECT COUNT(*) FROM sessions s WHERE s.repo_id=? AND s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','cto','bot') AND s.id<>COALESCE((SELECT value FROM owner_settings WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM project_mergers m WHERE m.session_id=s.id)) + (SELECT COUNT(*) FROM repo_start_reservations r WHERE r.repo_id=? AND NOT EXISTS(SELECT 1 FROM sessions s WHERE s.node_id=r.node_id AND s.harness=r.harness AND s.native_id=r.native_id AND r.native_id<>'' AND s.online=1))`, p.Project, p.Project).Scan(&count)
+	err = tx.QueryRow(`SELECT (SELECT COUNT(*) FROM sessions s WHERE s.repo_id=? AND s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','cto','bot') AND s.id<>COALESCE((SELECT value FROM gateway_state WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM project_mergers m WHERE m.session_id=s.id)) + (SELECT COUNT(*) FROM repo_start_reservations r WHERE r.repo_id=? AND NOT EXISTS(SELECT 1 FROM sessions s WHERE s.node_id=r.node_id AND s.harness=r.harness AND s.native_id=r.native_id AND r.native_id<>'' AND s.online=1))`, p.Project, p.Project).Scan(&count)
 	if err != nil {
 		return out, err
 	}

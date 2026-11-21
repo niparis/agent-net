@@ -37,7 +37,7 @@ func TestMeasureTUIPollingBytes(t *testing.T) {
 	}
 	t.Cleanup(func() { g.store.Close() })
 	owner := ""
-	_ = g.store.db.QueryRow(`SELECT value FROM owner_settings WHERE key='owner_node'`).Scan(&owner)
+	_ = g.store.db.QueryRow(`SELECT value FROM gateway_state WHERE key='owner_node'`).Scan(&owner)
 	nc := &nodeConn{id: owner}
 	versions := g.topicVersions()
 	type call struct {

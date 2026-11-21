@@ -18,6 +18,8 @@ import (
 	"github.com/niparis/agent-net/internal/tsnode"
 )
 
+const publicKey = "owner.public"
+
 // Public access is serialized separately from node connections and HTTP reads.
 func (g *Gateway) publicBase() string {
 	g.publicURLMu.RLock()
@@ -39,17 +41,11 @@ func (g *Gateway) publicRunner() funnel.Runner {
 	return funnel.ExecRunner{}
 }
 func (g *Gateway) savePublic() error {
-	raw, err := json.Marshal(g.public)
-	if err != nil {
-		return err
-	}
-	_, err = g.store.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('public',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`, string(raw), g.store.now().UnixNano())
-	return err
+	return g.store.setOwner(publicKey, g.public)
 }
 func (g *Gateway) restorePublic() error {
 	g.loadTailscaleChoice()
-	var raw string
-	err := g.store.db.QueryRow(`SELECT value FROM owner_settings WHERE key='public'`).Scan(&raw)
+	raw, _, err := ownerRaw(g.store.db, publicKey)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}

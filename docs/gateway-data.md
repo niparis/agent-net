@@ -28,7 +28,7 @@ A message is checked, stored, handed to the receiver's machine, confirmed as del
 1. `sessions` (reads): The gateway checks that the sending session really lives on the machine that sent the request.
 2. `messages` (reads): It looks for an earlier message with the same sender and idempotency key, so a retry never stores the message twice.
 3. `sessions` (reads): It checks that the receiving session exists and follows it to the session that replaced it, if it was replaced.
-4. `owner_settings` (reads): It reads which session is the CTO, because the CTO only accepts replies and requests from lead agents.
+4. `gateway_state` (reads): It reads which session is the CTO, because the CTO only accepts replies and requests from lead agents.
 5. `graph_edges` (reads): For a request, it looks up the owner's rule between the two projects: normal, ask first, or never.
 6. `messages` (reads): It counts the messages already in this conversation to enforce the conversation limit.
 7. `messages` (writes): The new message is saved with state 'stored', its conversation, its expiry time and its sender and receiver.
@@ -51,13 +51,13 @@ The picker reads the machine, quota, past results and prices to choose a model, 
 1. `projects` (reads): The gateway looks up the project folders registered on each machine, to find where the worker can run (project folders seen in sessions are read too).
 2. `nodes` (reads): It reads the machine's state: online, accepts workers, which agent tools are installed, and each tool's models.
 3. `quota_blocks` (reads): It reads quota windows that this machine already learned are used up, so the picker does not choose a provider that is blocked (live quota readings come from memory, not the database).
-4. `owner_settings` (reads): It reads the owner's picker settings: registered worker profiles, model scores, minimum scores per difficulty, allowed and protected providers, floors, and the rotation counter.
+4. `setting_values` (reads): It reads the owner's picker settings: registered worker profiles, model scores, minimum scores per difficulty, allowed and protected providers and floors. It reads the rotation counter from `gateway_state`.
 5. `model_prices` (reads): It reads the price of each model, so the picker can compare the expected cost per accepted result.
 6. `worker_runs` (reads): It reads the track record of past worker runs (complete, partial, failed, fixes needed) per model, which scores each model on tasks of this difficulty.
 7. `worker_assessments` (reads): It reads the difficulty the judge gave to past tasks, to place each past run in the right difficulty bucket.
 8. `worker_usage` (reads): It reads the tokens past runs used, to turn token counts into a cost per run.
 9. `model_failures` (reads): It reads which models recently failed or lost sign-in on this machine, to skip models that are cooling down.
-10. `owner_settings` (writes): The rotation counter is saved, so the next start spreads work across models instead of always picking the same one.
+10. `gateway_state` (writes): The rotation counter is saved, so the next start spreads work across models instead of always picking the same one.
 11. `worker_starts` (writes): The gateway records the start (reference, machine, who asked, project, harness, permissions, the 'done' list) before it asks the machine to launch.
 12. `worker_assessments` (writes): The judge's difficulty result and the picker's explanation are saved under the new worker session.
 13. `pick_candidates` (writes): One row per candidate model is saved: its score, cost, quota room, chance of being picked, and why it was skipped or chosen.
@@ -118,7 +118,7 @@ An agent hands in a change, the delivery steps open one after another, each step
 An agent asks the owner a question, it becomes an Inbox item that the chief of staff sorts, the Desk shows it, the owner answers, and the answer goes back to the asker.
 
 1. `sessions` (reads): The gateway checks the asking session is on the calling machine and finds its repo and display name.
-2. `owner_settings` (reads): It reads which session is the chief of staff, then decides if the ask goes to the chief or straight to the owner.
+2. `gateway_state` (reads): It reads which session is the chief of staff, then decides if the ask goes to the chief or straight to the owner.
 3. `inbox_items` (reads): It looks for an open ask, or one closed in the last 10 minutes, that asks the same thing, so a repeat joins it instead of making a duplicate.
 4. `inbox_items` (writes): A new open ask is stored with the question, the options, the recommendation and who handles it next (the chief).
 5. `inbox_items` (reads): Every few seconds the gateway collects the asks waiting for the chief and bundles those that arrived close together.
@@ -144,10 +144,10 @@ A charter attribute or a setting is written with a new revision and a history ro
 3. `charter_values` (writes): The new value is stored for the level (global, team, repo or agent), the scope and the attribute, with time and author. An empty value deletes the row.
 4. `graph_history` (writes): A history row keeps the old value, the new value, the author and the time. Its id is the revision that graph undo and charter history use.
 5. `charter_values` (reads): After the commit every daemon is told to drop its cached charter. The next reader resolves the charter from global, team, repo and agent values, in that order.
-6. `settings_target_identity` (reads): For a CTO settings change that names a repo, team or agent by name, the gateway turns the name into an id and reads the lasting token of that target (it creates the token on first use).
-7. `setting_revision` (reads): The setting write starts by reading the current settings revision number.
+6. `repos` (reads): For a CTO settings change that names a repo, team or agent by name, the gateway turns the name into an id and reads the lasting `settings_token` of that target (it creates the token on first use). The same holds for `agents` and `teams`; the network token is in `gateway_state`.
+7. `setting_history` (reads): The setting write starts by reading the current settings revision number, which is the newest revision of the history.
 8. `setting_values` (reads): It reads all current values. The write is refused if the value the caller expected is no longer the stored one.
-9. `setting_revision` (writes): The settings revision goes up by one. One write, even with many changes, is one revision.
+9. `setting_history` (writes): The settings revision goes up by one. One write, even with many changes, is one revision.
 10. `setting_values` (writes): The new value is stored for its key, level and scope, with the new revision number. A reset deletes the row.
 11. `setting_history` (writes): One history row per changed value keeps the revision, old and new value, author, reason and cause. Undo of a revision reads these rows back.
 12. `setting_values` (reads): After the commit the gateway rebuilds the settings snapshot and pushes it to every connected daemon. Daemons and the TUI read the new snapshot and its revision.
@@ -392,19 +392,11 @@ Owner settings and their history.
 
 ### gateway_state
 
-- **Holds:** A key-value table of what the gateway remembers about itself: graph cutover version and gate, skill archive marks, brief last-sent dates and one-time seed markers.
-- **Written by:** `gateway/gateway_state.go`
-- **Read by:** `gateway/gateway_state.go`, `gateway/store.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Until overwritten; keys are not deleted.
-
-### owner_settings
-
-- **Holds:** A key-value table of owner-level settings and role markers: chief and CTO session ids, CTO title and settings, time zone, worker profiles, providers, floors and rotation, hidden items, integrations, brief and public listener state.
-- **Written by:** `gateway/apps_public.go`, `gateway/brief.go`, `gateway/chief.go`, `gateway/chief_health.go`, `gateway/chief_stuck.go`, `gateway/cto_session.go`, `gateway/cto_settings.go`, `gateway/gateway_state.go`, `gateway/hidden.go`, `gateway/integrations.go` and others
-- **Read by:** `gateway/apps_public.go`, `gateway/ask_intake.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/chief_health.go`, `gateway/chief_stuck.go`, `gateway/cto_lead.go`, `gateway/cto_session.go`, `gateway/cto_settings.go`, `gateway/gateway_state.go` and others
-- **Shown in:** TUI, Settings; TUI, Quotas; tool `agent_settings_read`; tool `agent_worker_profiles_find`; tool `agent_protected_providers_get`; CTO op `chief_set`
-- **Kept:** Until changed; a key is replaced on write and a few keys are deleted when a role is cleared.
+- **Holds:** A key-value table of what the gateway remembers about itself: the CTO and chief of staff session ids, the chief's clear and silence marks, worker rotation, onboarding progress, hidden items, graph cutover version and gate, skill archive marks, brief last-sent dates, the network settings token and the marks of one-time cleanups that a running gateway still reads.
+- **Written by:** `gateway/chief.go`, `gateway/chief_health.go`, `gateway/chief_stuck.go`, `gateway/cto_session.go`, `gateway/gateway_state.go`, `gateway/hidden.go`, `gateway/onboarding.go`, `gateway/settings_targets.go`, `gateway/worker_rotation.go` and others
+- **Read by:** `gateway/ask_intake.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/cto_lead.go`, `gateway/cto_session.go`, `gateway/gateway_state.go`, `gateway/store.go` and others
+- **Shown in:** TUI, Settings; TUI, Quotas; tool `agent_worker_profiles_find`; CTO op `chief_set`
+- **Kept:** Until overwritten; a key is deleted when a role is cleared.
 
 ### schema_version
 
@@ -416,39 +408,19 @@ Owner settings and their history.
 
 ### setting_history
 
-- **Holds:** One row per settings change: revision, key, level, scope, old and new value, who changed it, why and what it undoes.
+- **Holds:** One row per settings change: revision, key, level, scope, old and new value, who changed it, why and what it undoes. The newest revision is the current settings revision. A change that is not a setting (a delivery owner, a maturity) adds a marker row at seq 0.
 - **Written by:** `gateway/delivery_pipeline_settings.go`, `gateway/delivery_settings.go`, `gateway/settings.go`, `gateway/worker_sandbox_settings.go`
 - **Read by:** `gateway/settings.go`, `gateway/store_graph.go`
 - **Shown in:** TUI, Settings; tool `agent_settings_read`; CTO op `settings_change`
 - **Kept:** Forever; no code deletes it.
 
-### setting_revision
-
-- **Holds:** A single row with the current settings revision number, raised on every settings change.
-- **Written by:** `gateway/learned_apply.go`, `gateway/merger.go`, `gateway/settings.go`
-- **Read by:** `gateway/delivery_pipeline_settings.go`, `gateway/delivery_settings.go`, `gateway/learned_apply.go`, `gateway/learned_owner.go`, `gateway/settings.go`, `gateway/store_graph.go`, `gateway/worker_sandbox_settings.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** One row, updated in place.
-
 ### setting_values
 
-- **Holds:** One row per stored setting value, keyed by setting name, level (network, repo, agent and so on), scope and item, with the revision that wrote it.
-- **Written by:** `gateway/delivery_pipeline_settings.go`, `gateway/delivery_settings.go`, `gateway/gateway_state.go`, `gateway/settings.go`, `gateway/store_graph.go`, `gateway/worker_sandbox_settings.go`
+- **Holds:** One row per stored setting value, keyed by setting name, level (network, repo, agent and so on), scope and item, with the revision that wrote it. The owner's own values (integrations, CTO title and settings, worker profiles, model scores, providers, floors, difficulty minimums, time zone and the public listener) are network settings under the key prefix `owner.`; they are not sent to the machines.
+- **Written by:** `gateway/delivery_pipeline_settings.go`, `gateway/delivery_settings.go`, `gateway/gateway_state.go`, `gateway/owner_values.go`, `gateway/settings.go`, `gateway/store_graph.go`, `gateway/worker_sandbox_settings.go`
 - **Read by:** `gateway/cto_graph.go`, `gateway/delivery_pipeline_settings.go`, `gateway/delivery_settings.go`, `gateway/leads_max.go`, `gateway/loop.go`, `gateway/merger.go`, `gateway/session_max.go`, `gateway/settings.go`, `gateway/store.go`, `gateway/store_graph.go` and others
 - **Shown in:** TUI, Settings; tool `agent_settings_read`; CTO op `settings_change`
 - **Kept:** Until the owner changes or unsets it.
-
-### settings_target_identity
-
-- **Holds:** One row per network, repo or agent with a stable token, so a setting stays attached to it after a rename.
-- **Written by:** `gateway/settings_targets.go`
-- **Read by:** `gateway/settings_targets.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Forever; no code deletes it.
-
-## Org graph
-
-Projects, agents, teams, repos, and the rules and charters between them.
 
 ### agent_loops
 
@@ -460,7 +432,7 @@ Projects, agents, teams, repos, and the rules and charters between them.
 
 ### agents
 
-- **Holds:** One agent of the org tree: a named role (coding agent, bot, lead) with the session that currently leads for it, and a tombstone flag when it is retired.
+- **Holds:** One agent of the org tree: a named role (coding agent, bot, lead) with the session that currently leads for it, a tombstone flag when it is retired, and its settings token.
 - **Written by:** `gateway/bot_agent.go`, `gateway/bot_names.go`, `gateway/graph_lifecycle.go`, `gateway/lead_session.go`, `gateway/lead_session_migration.go`, `gateway/leads_max.go`, `gateway/org_tree.go`, `gateway/repo_fold_migration.go`, `gateway/session_replace.go`, `gateway/store.go` and others
 - **Read by:** `gateway/agent_scopes.go`, `gateway/asks_to.go`, `gateway/authority.go`, `gateway/bot_agent.go`, `gateway/caller_agent.go`, `gateway/charter_drafts.go`, `gateway/cto_charter_default.go`, `gateway/cto_lead.go`, `gateway/friction.go`, `gateway/graph_lifecycle.go` and others
 - **Shown in:** TUI, Graph; tool `agent_graph_read`; CTO op `agent_create`; CTO op `agent_tombstone`; CTO op `lead_set`
@@ -556,7 +528,7 @@ Projects, agents, teams, repos, and the rules and charters between them.
 
 ### repos
 
-- **Holds:** One repo (project) node of the org tree, with its display name, owner agent, lead agent and flags for archived and held back.
+- **Holds:** One repo (project) node of the org tree, with its display name, owner agent, lead agent, flags for archived and held back, and its settings token.
 - **Written by:** `gateway/authority.go`, `gateway/graph_lifecycle.go`, `gateway/leads_max.go`, `gateway/repo_fold_migration.go`, `gateway/store.go`, `gateway/store_graph.go`
 - **Read by:** `gateway/authority.go`, `gateway/charter_levels.go`, `gateway/graph_lifecycle.go`, `gateway/graph_refs.go`, `gateway/intake.go`, `gateway/lead_session.go`, `gateway/lead_session_migration.go`, `gateway/leads_max.go`, `gateway/node_scopes.go`, `gateway/org_read.go` and others
 - **Shown in:** TUI, Graph; tool `agent_graph_read`; CTO op `repo_create`; CTO op `repo_archive`; CTO op `lead_set`
@@ -572,7 +544,7 @@ Projects, agents, teams, repos, and the rules and charters between them.
 
 ### teams
 
-- **Holds:** One team: a name, purpose, owner, authority mode, held-back text, where asks go and whether the lead merges.
+- **Holds:** One team: a name, purpose, owner, authority mode, held-back text, where asks go, whether the lead merges, and its settings token.
 - **Written by:** `gateway/leads_max.go`, `gateway/store_graph.go`, `gateway/teams.go`
 - **Read by:** `gateway/asks_to.go`, `gateway/authority.go`, `gateway/charter_drafts.go`, `gateway/charter_levels.go`, `gateway/charter_resolver.go`, `gateway/cto_lead.go`, `gateway/desk_rules.go`, `gateway/lead_route.go`, `gateway/lead_session.go`, `gateway/lead_session_migration.go` and others
 - **Shown in:** TUI, Graph; CTO op `team_create`; CTO op `team_settings_set`; CTO op `team_history`; tool `agent_graph_read`

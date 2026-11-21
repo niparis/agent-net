@@ -231,6 +231,9 @@ func writeSettingGroups(w func(string, ...any)) {
 	groups := map[string][]settings.Definition{}
 	var prefixes []string
 	for _, def := range settings.Standard().Definitions {
+		if def.Visibility == "internal" {
+			continue
+		}
 		prefix := keyPrefix(def.Key)
 		if _, ok := groups[prefix]; !ok {
 			prefixes = append(prefixes, prefix)

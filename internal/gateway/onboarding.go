@@ -1,9 +1,7 @@
 package gateway
 
 import (
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -11,15 +9,7 @@ import (
 
 func (s *Store) onboarding() (protocol.Onboarding, error) {
 	out := protocol.Onboarding{Steps: map[string]string{}}
-	var raw string
-	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key = ?`, "onboarding").Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return out, nil
-	}
-	if err != nil {
-		return out, err
-	}
-	err = json.Unmarshal([]byte(raw), &out)
+	_, err := stateJSON(s.db, "onboarding", &out)
 	if out.Steps == nil {
 		out.Steps = map[string]string{}
 	}
@@ -58,6 +48,5 @@ func (s *Store) UpdateOnboarding(update protocol.OnboardingUpdate, restart bool)
 	if err != nil {
 		return out, err
 	}
-	_, err = s.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,?) ON CONFLICT (key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`, "onboarding", string(raw), s.now().UnixNano())
-	return out, err
+	return out, stateSet(s.db, "onboarding", string(raw), s.now().UnixNano())
 }

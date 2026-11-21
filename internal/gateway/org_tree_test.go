@@ -497,7 +497,7 @@ func orgFixture(t *testing.T) (*Store, map[string]string) {
 		{`UPDATE repos SET lead_agent_id='agent-net' WHERE id='agent-net'`, nil},
 		{`UPDATE teams SET lead_session=? WHERE id='ops'`, []any{ids["h2"]}},
 		{`INSERT INTO project_mergers(project,node_id,session_id) VALUES('agent-net',?,?)`, []any{node, ids["merge"]}},
-		{`INSERT INTO owner_settings(key,value,updated_at) VALUES('chief_session',?,0)`, []any{ids["chief-of-staff"]}},
+		{`INSERT INTO gateway_state(key,value,updated_at) VALUES('chief_session',?,0)`, []any{ids["chief-of-staff"]}},
 	} {
 		if _, err := s.db.Exec(q.sql, q.args...); err != nil {
 			t.Fatalf("%s: %v", q.sql, err)

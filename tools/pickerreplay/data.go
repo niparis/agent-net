@@ -405,7 +405,7 @@ func (s *Snapshot) readSettings(db *sql.DB) error {
 	s.Scores = protocol.EmbeddedModelScores()
 	s.Minimums = map[string]float64{}
 	var raw string
-	err := db.QueryRow(`SELECT value FROM owner_settings WHERE key = 'model_scores'`).Scan(&raw)
+	err := db.QueryRow(`SELECT value FROM setting_values WHERE key = 'owner.model_scores' AND level = 'network' AND scope = 'network' AND item = ''`).Scan(&raw)
 	if err != nil && err != sql.ErrNoRows {
 		return err
 	}
@@ -417,7 +417,7 @@ func (s *Snapshot) readSettings(db *sql.DB) error {
 		s.Scores = append(extra, s.Scores...)
 	}
 	raw = ""
-	err = db.QueryRow(`SELECT value FROM owner_settings WHERE key = 'difficulty_minimums'`).Scan(&raw)
+	err = db.QueryRow(`SELECT value FROM setting_values WHERE key = 'owner.difficulty_minimums' AND level = 'network' AND scope = 'network' AND item = ''`).Scan(&raw)
 	if err != nil && err != sql.ErrNoRows {
 		return err
 	}
@@ -427,7 +427,7 @@ func (s *Snapshot) readSettings(db *sql.DB) error {
 		}
 	}
 	raw = ""
-	err = db.QueryRow(`SELECT value FROM owner_settings WHERE key = 'worker_profiles'`).Scan(&raw)
+	err = db.QueryRow(`SELECT value FROM setting_values WHERE key = 'owner.worker_profiles' AND level = 'network' AND scope = 'network' AND item = ''`).Scan(&raw)
 	if err != nil && err != sql.ErrNoRows {
 		return err
 	}

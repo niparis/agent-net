@@ -264,6 +264,10 @@ func restoreRepoSideTables(t *testing.T, db repoDB) {
 	if err := db.QueryRow(`SELECT COALESCE(MAX(version),0) FROM schema_version`).Scan(&cur); err != nil {
 		t.Fatal(err)
 	}
+	if cur < migrationVersion(t, settingsFoldMarker) {
+		restoreSettingsFoldTables(t, db)
+		dropSettingsTokenColumns(t, db)
+	}
 	if cur < migrationVersion(t, "Schema reduction part 1: drop the tables") {
 		recreateDeadTablesDB(t, db)
 	}

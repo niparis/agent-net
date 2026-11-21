@@ -3,6 +3,8 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -10,6 +12,7 @@ import (
 )
 
 func (g *Gateway) sendSettingsSnapshot(ctx context.Context, nc *nodeConn, snap settings.Snapshot) {
+	snap.Values = slices.DeleteFunc(slices.Clone(snap.Values), func(v settings.Value) bool { return strings.HasPrefix(v.Key, ownerKeyPrefix) })
 	// Marshal directly: EncodeRequest's map conversion rounds large JSON integers.
 	frame, err := json.Marshal(struct {
 		Type string `json:"type"`

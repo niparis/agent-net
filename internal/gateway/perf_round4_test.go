@@ -314,7 +314,7 @@ func TestNodesInfoPreviewFollowsItsInputsAtOnce(t *testing.T) {
 	// A new score: the first model now tops out at trivial work, so the harder
 	// levels no longer allow it by its benchmark.
 	changed("a new score", func() {
-		if _, err := g.store.db.Exec(`INSERT INTO owner_settings (key, value, updated_at) VALUES (?, ?, 0) ON CONFLICT (key) DO UPDATE SET value=excluded.value`, scoresKey,
+		if _, err := g.store.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0) ON CONFLICT (key,level,scope,item) DO UPDATE SET value=excluded.value`, scoresKey,
 			`[{"match":"claude-opus-5-5","score":10},{"match":"gpt-6.1-terra","score":41},{"match":"gpt-6.1-sol","score":41},{"match":"deepseek/deepseek-v4.1-flash","score":60}]`); err != nil {
 			t.Fatal(err)
 		}
