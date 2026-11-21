@@ -102,7 +102,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_ask_sort",
-    "description": "Chief of staff: sort waiting asks (close, merge, send, owner), withdraw an ask the asker took back or a newer ask replaces, undo its own newest sort, list asks and sort counts, or read an ask with detail full. Result hide (preview, apply, undo) hides sort history reversibly. When a close or send rests on something that has not happened yet, set follow_up_at: you have no timer. Never answer for the owner.",
+    "description": "Chief of staff: sort waiting asks (close, merge, send, owner), withdraw an ask the asker took back or a newer ask replaces, undo its own newest sort, list asks and sort counts, or read an ask with detail full. Result hide (preview, apply, undo) hides sort history reversibly. When a close or send rests on something that has not happened yet, set follow_up_at: you have no timer. Close an owner-held ask with owner_words_message (his message or the CTO's on his word). Never answer for the owner.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -252,6 +252,10 @@ export const TOOL_CATALOG = [
         "change": {
           "type": "string",
           "description": "With follow_up_at: the delivery change whose step you wait for, such as ch_1a2b."
+        },
+        "owner_words_message": {
+          "type": "string",
+          "description": "For close of an ask the owner holds: the id of a message he sent from his own session, or one the CTO sent on his instructions, sent after the ask opened. The close records it, and the Desk log names it. Without it the chief cannot close an ask he holds."
         }
       },
       "required": [],
