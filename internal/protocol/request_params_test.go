@@ -17,6 +17,7 @@ var requestParams = []any{
 	NudgeResumeRequest{},
 	NudgeUndoRequest{},
 	NudgePausesFindRequest{},
+	DueRequest{},
 	ChangeSubmitRequest{},
 	ChangeGetRequest{},
 	ChangeListRequest{},

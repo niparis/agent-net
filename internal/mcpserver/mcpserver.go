@@ -153,6 +153,7 @@ func NewWithInstructions(call Caller, version, instructions string, note ...func
 			return nil, out, err
 		})
 	addRegistryTools(s, run)
+	addDueTool(s, run)
 	addMessageWriteTools(s, run)
 	addWorkerProfileTools(s, run)
 	addReadTools(s, call)

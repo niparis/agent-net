@@ -494,6 +494,11 @@ func EncodeRequest(typ, id string, params any) ([]byte, error) {
 	return EncodeRequestVia(typ, id, "", params)
 }
 
+// FrameFieldNames are the top-level keys that EncodeRequestVia writes itself.
+// A parameter with one of these names is refused. The catalog checks tool
+// arguments against this list.
+var FrameFieldNames = []string{"id", "type", "via"}
+
 // EncodeRequestVia is EncodeRequest with the origin tag of the caller (the
 // Via constants). An empty via adds no field.
 func EncodeRequestVia(typ, id, via string, params any) ([]byte, error) {
@@ -509,15 +514,15 @@ func EncodeRequestVia(typ, id, via string, params any) ([]byte, error) {
 	}
 	// The frame's own id and type would silently replace a parameter of the
 	// same name (an Inbox answer once lost its item id this way).
-	for _, k := range []string{"id", "type"} {
+	for _, k := range FrameFieldNames {
+		if k == "via" && via == "" {
+			continue
+		}
 		if _, ok := m[k]; ok {
 			return nil, fmt.Errorf("request %s: parameter %q clashes with the frame field", typ, k)
 		}
 	}
 	if via != "" {
-		if _, ok := m["via"]; ok {
-			return nil, fmt.Errorf("request %s: parameter %q clashes with the frame field", typ, "via")
-		}
 		m["via"], _ = json.Marshal(via)
 	}
 	m["type"], _ = json.Marshal(typ)
