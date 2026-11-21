@@ -21,6 +21,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/testsock"
 	"github.com/niparis/agent-net/internal/tui"
 )
 
@@ -236,6 +237,7 @@ func cpuSeconds() float64 {
 // AGENT_NET_MEASURE_TAB is the key of the tab ("1" Sessions, "7" Desk). The
 // churn is AGENT_NET_MEASURE_HEARTBEATS and AGENT_NET_MEASURE_EVENTS per second.
 func TestMeasureTUIPolling(t *testing.T) {
+	testsock.Skip(t)
 	src := os.Getenv("AGENT_NET_MEASURE_DB")
 	if src == "" {
 		t.Skip("AGENT_NET_MEASURE_DB is not set")

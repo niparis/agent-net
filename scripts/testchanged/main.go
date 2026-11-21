@@ -11,7 +11,9 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"net"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -62,13 +64,38 @@ func main() {
 			fail(err)
 		}
 		printNames(names)
+	case "unix-socket":
+		// Exit 0 when this process can create a unix socket, 1 when it cannot.
+		// The script runs it once, to learn whether a sandbox blocks sockets.
+		if len(os.Args) != 2 {
+			usage()
+		}
+		if err = probeUnixSocket(); err != nil {
+			fmt.Fprintln(os.Stderr, "testchanged: unix sockets are blocked:", err)
+			os.Exit(1)
+		}
 	default:
 		usage()
 	}
 }
 
+// probeUnixSocket makes one unix socket in a new temporary folder, the way the
+// daemon tests do, and removes it.
+func probeUnixSocket() error {
+	dir, err := os.MkdirTemp("", "tcsock")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+	ln, err := net.Listen("unix", filepath.Join(dir, "p.sock"))
+	if err != nil {
+		return err
+	}
+	return ln.Close()
+}
+
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: testchanged comments-only BASE NEW | changed-tests BASE NEW | names FILE")
+	fmt.Fprintln(os.Stderr, "usage: testchanged comments-only BASE NEW | changed-tests BASE NEW | names FILE | unix-socket")
 	os.Exit(2)
 }
 

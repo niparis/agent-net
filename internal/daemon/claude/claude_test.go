@@ -16,6 +16,7 @@ import (
 
 	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/testsock"
 )
 
 type fakeHost struct {
@@ -74,6 +75,7 @@ type rig struct {
 // is a real unix socket created by the test.
 func newRig(t *testing.T) *rig {
 	t.Helper()
+	testsock.Skip(t)
 	dir := shortDir(t)
 	r := &rig{t: t, sessions: filepath.Join(dir, "sessions"), inboxPath: filepath.Join(dir, "cc.sock"), lines: make(chan string, 8)}
 	os.MkdirAll(r.sessions, 0o700)
@@ -258,6 +260,7 @@ func TestReplyCapture(t *testing.T) {
 }
 
 func TestDeliverFailures(t *testing.T) {
+	testsock.Skip(t)
 	r := newRig(t)
 	eventually(t, "session found", func() bool { return len(r.host.current()) == 1 })
 	ctx := context.Background()
@@ -306,6 +309,7 @@ func TestDeliverFailures(t *testing.T) {
 }
 
 func TestDeliverWriteErrorAfterConnectingIsNotDelivered(t *testing.T) {
+	testsock.Skip(t)
 	r := newRig(t)
 	eventually(t, "session found", func() bool { return len(r.host.current()) == 1 })
 	// An inbox that accepts the connection and closes it at once: the frame,

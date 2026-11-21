@@ -15,6 +15,7 @@ import (
 
 	"github.com/niparis/agent-net/internal/client"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/testsock"
 )
 
 // fakeDaemon speaks the daemon's local protocol (JSON lines) on a Unix socket.
@@ -31,6 +32,7 @@ type fakeDaemon struct {
 
 func startFakeDaemon(t *testing.T, path string, h func(method string, params json.RawMessage) (any, string)) *fakeDaemon {
 	t.Helper()
+	testsock.Skip(t)
 	if path == "" {
 		dir, err := os.MkdirTemp("", "an")
 		if err != nil {

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/niparis/agent-net/internal/testsock"
 )
 
 // logLines collects what a Daemon logs.
@@ -35,6 +37,7 @@ func (l *logLines) all() []string {
 // socket path it dials the fallback path, which has no daemon. The error must
 // name that path and the reason, not only "not reachable".
 func TestDaemonCallNamesTheSocketAndTheReason(t *testing.T) {
+	testsock.Skip(t)
 	socket := filepath.Join(t.TempDir(), "missing", "daemon.sock")
 	d := NewDaemon(socket, map[string]any{"client": "mcp"})
 	t.Cleanup(d.Close)
@@ -49,6 +52,7 @@ func TestDaemonCallNamesTheSocketAndTheReason(t *testing.T) {
 
 // One line per outage on the log, not one per call or per reconnect.
 func TestDaemonLogsOneLineWhenItCannotConnect(t *testing.T) {
+	testsock.Skip(t)
 	socket := filepath.Join(t.TempDir(), "missing", "daemon.sock")
 	var logs logLines
 	d := NewDaemon(socket, map[string]any{"client": "mcp"})
@@ -91,6 +95,7 @@ func TestDaemonLogsARefusedHelloAndReturnsTheRefusal(t *testing.T) {
 // it refuses a peer, and then closes the connection.
 func refuseHellos(t *testing.T, socket, reason string) {
 	t.Helper()
+	testsock.Skip(t)
 	ln, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatal(err)

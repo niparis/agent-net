@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/niparis/agent-net/internal/testsock"
 )
 
 // fakeDaemon speaks just enough of the daemon's local protocol for `agent-net
@@ -31,6 +33,7 @@ type fakeDaemon struct {
 
 func newFakeDaemon(t *testing.T, sock, version string) *fakeDaemon {
 	t.Helper()
+	testsock.Skip(t)
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)

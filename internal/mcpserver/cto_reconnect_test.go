@@ -8,11 +8,14 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/niparis/agent-net/internal/testsock"
 )
 
 // fakeCTODaemon answers hello and cto_tool on a unix socket, like the daemon.
 func fakeCTODaemon(t *testing.T, socket string) net.Listener {
 	t.Helper()
+	testsock.Skip(t)
 	ln, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatal(err)
@@ -72,6 +75,7 @@ func TestCTOChannelReconnectsAfterADaemonRestart(t *testing.T) {
 
 // At start the daemon may be restarting; the channel waits for it briefly.
 func TestCTOChannelWaitsForTheDaemonAtStart(t *testing.T) {
+	testsock.Skip(t)
 	socket := filepath.Join(t.TempDir(), "d.sock")
 	go func() {
 		time.Sleep(300 * time.Millisecond)
@@ -87,6 +91,7 @@ func TestCTOChannelWaitsForTheDaemonAtStart(t *testing.T) {
 }
 
 func TestCTOChannelReportsDaemonVersion(t *testing.T) {
+	testsock.Skip(t)
 	socket := filepath.Join(t.TempDir(), "d.sock")
 	ln, err := net.Listen("unix", socket)
 	if err != nil {

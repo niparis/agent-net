@@ -10,9 +10,12 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/niparis/agent-net/internal/testsock"
 )
 
 func TestAntigravityHook(t *testing.T) {
+	testsock.Skip(t)
 	socket := filepath.Join(t.TempDir(), "socket")
 	var out bytes.Buffer
 	start := time.Now()

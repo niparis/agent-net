@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/niparis/agent-net/internal/testsock"
 )
 
 // silentDaemon is a daemon socket that accepts connections and reads requests,
@@ -27,6 +29,7 @@ type silentDaemon struct {
 
 func newSilentDaemon(t *testing.T, socket string) *silentDaemon {
 	t.Helper()
+	testsock.Skip(t)
 	ln, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatal(err)

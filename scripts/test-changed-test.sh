@@ -34,6 +34,13 @@ mkdir "$work/bin"
 cat >"$work/bin/go" <<'GO'
 #!/bin/sh
 printf '%s\n' "$*" >>"$FAKE_GO_LOG"
+if [ "$1" = test ]; then
+  printf '%s\n' "${AGENT_NET_NO_UNIX_SOCKETS:-unset}" >>"${FAKE_GO_ENV_LOG:-/dev/null}"
+  # A test that needs a unix socket logs its name when it skips itself.
+  for name in ${FAKE_GO_SKIP:-}; do
+    [ -z "${AGENT_NET_NO_UNIX_SOCKETS_LOG:-}" ] || printf '%s\n' "$name" >>"$AGENT_NET_NO_UNIX_SOCKETS_LOG"
+  done
+fi
 if [ "$1" = test ] && [ -n "${FAKE_GO_PANIC:-}" ]; then
   cat <<'OUT'
 panic: test timed out after 25m0s
@@ -414,7 +421,7 @@ home=$work/home-fallback
 mkdir -p "$home/.local/go/bin"
 cp "$work/bin/go" "$work/bin/gofmt" "$home/.local/go/bin/"
 status=0
-env -i HOME="$home" GOCACHE="$gocache" PATH="$no_go_dir" FAKE_GO_LOG="$work/go.log" \
+env -i TMPDIR="${TMPDIR:-/tmp}" HOME="$home" GOCACHE="$gocache" PATH="$no_go_dir" FAKE_GO_LOG="$work/go.log" \
   FAKE_GOFMT_LOG="$work/gofmt.log" TEST_CHANGED_GO="$real_go" \
   sh "$script" HEAD >"$work/out" 2>&1 || status=$?
 [ "$status" = 0 ] || fail "a run without go on PATH exited $status: $(cat "$work/out")"
@@ -430,7 +437,7 @@ reset_tree
 change_production
 mkdir -p "$work/empty-home"
 status=0
-env -i HOME="$work/empty-home" PATH="$no_go_dir" TEST_CHANGED_GO="$real_go" \
+env -i TMPDIR="${TMPDIR:-/tmp}" HOME="$work/empty-home" PATH="$no_go_dir" TEST_CHANGED_GO="$real_go" \
   TEST_CHANGED_GO_DIRS="$work/no-install-dir" \
   sh "$script" HEAD >"$work/out" 2>&1 || status=$?
 [ "$status" = 2 ] || fail "a run with no go exited $status, want 2: $(cat "$work/out")"
@@ -453,5 +460,45 @@ for n in 1 2; do
 done
 leftover=$(ls -A "$work/tmp")
 [ -z "$leftover" ] || fail "runs left temporary directories behind: $leftover"
+
+# Unix sockets. When the probe says they are blocked, the script sets the skip
+# variable for go test, counts the tests that skipped, and still exits 0.
+# TEST_CHANGED_UNIX_SOCKETS stands in for the probe, so this runs the same
+# inside and outside a sandbox.
+reset_tree
+change_production
+: >"$work/env.log"
+FAKE_GO_ENV_LOG="$work/env.log" TEST_CHANGED_UNIX_SOCKETS=ok run_check
+[ "$status" = 0 ] || fail "sockets ok: exited $status: $(cat "$work/out")"
+grep -q 'unix sockets are blocked' "$work/out" && fail "sockets ok: the script reported blocked sockets"
+grep -qx unset "$work/env.log" || fail "sockets ok: go test saw the skip variable: $(cat "$work/env.log")"
+grep -qx 1 "$work/env.log" && fail "sockets ok: go test got the skip variable"
+
+: >"$work/env.log"
+FAKE_GO_ENV_LOG="$work/env.log" FAKE_GO_SKIP="TestSockA TestSockB" TEST_CHANGED_UNIX_SOCKETS=blocked run_check
+[ "$status" = 0 ] || fail "sockets blocked: skipped tests changed the exit code to $status: $(cat "$work/out")"
+grep -qx 1 "$work/env.log" || fail "sockets blocked: go test did not get the skip variable: $(cat "$work/env.log")"
+grep -qx unset "$work/env.log" && fail "sockets blocked: a go test run had no skip variable"
+# Every run lists the same two tests, so they are counted once per package.
+grep -Eq 'unix sockets are blocked in this sandbox: [0-9]+ socket tests skipped; the merge queue CI runs them \(decision 0164\)' "$work/out" ||
+  fail "sockets blocked: no summary line: $(cat "$work/out")"
+grep -q 'skipped: ./internal/fake TestSockA' "$work/out" || fail "sockets blocked: the skipped tests are not listed: $(cat "$work/out")"
+
+# A real failure is still a failure when sockets are blocked.
+FAKE_GO_PANIC=1 FAKE_GO_SKIP=TestSockA TEST_CHANGED_UNIX_SOCKETS=blocked run_check
+[ "$status" != 0 ] || fail "sockets blocked: a failing run exited 0"
+[ "$(tail -n 1 "$work/out")" != "${work}" ] && grep -q 'FAIL \[' "$work/out" || fail "sockets blocked: the failure is missing: $(cat "$work/out")"
+
+# Without the override the script runs the real probe, and its answer matches
+# the helper run by hand.
+if (cd "$root" && "$real_go" run ./scripts/testchanged unix-socket >/dev/null 2>&1); then
+  want=0
+else
+  want=1
+fi
+run_check
+got=0
+grep -q 'unix sockets are blocked' "$work/out" && got=1
+[ "$got" = "$want" ] || fail "the real probe disagrees with the helper (blocked line: $got, helper blocked: $want)"
 
 echo "test-changed-test: ok"

@@ -3,6 +3,8 @@ package main
 import (
 	"reflect"
 	"testing"
+
+	"github.com/niparis/agent-net/internal/testsock"
 )
 
 func TestCommentsOnly(t *testing.T) {
@@ -176,5 +178,14 @@ func (T) TestMethod(t *testing.T) {}
 	}
 	if want := []string{"ExampleBeta", "FuzzGamma", "TestAlpha"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("testNames = %v, want %v", got, want)
+	}
+}
+
+// The probe must say "works" on a machine that allows unix sockets. In a
+// sandbox that blocks them it is the case the script handles, so skip it there.
+func TestProbeUnixSocketWorksWhenAllowed(t *testing.T) {
+	testsock.Skip(t)
+	if err := probeUnixSocket(); err != nil {
+		t.Fatalf("probeUnixSocket() = %v, want nil", err)
 	}
 }

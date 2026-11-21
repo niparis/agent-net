@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/testsock"
 )
 
 // fakeHerdrServer answers herdr API requests on the socket of the fake
@@ -35,6 +36,7 @@ type fakeHerdrServer struct {
 // the daemon in place of the test process's own.
 func startFakeHerdrServer(t *testing.T, log string) *fakeHerdrServer {
 	t.Helper()
+	testsock.Skip(t)
 	f := &fakeHerdrServer{envLog: fakeHerdrEnvLog(log)}
 	socket := fakeOwnHerdrSocket(log)
 	if err := os.MkdirAll(filepath.Dir(socket), 0o700); err != nil {
