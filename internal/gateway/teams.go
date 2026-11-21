@@ -119,9 +119,6 @@ func (s *Store) writeTeamTx(q protocol.TeamWrite, actor string, dryRun bool) err
 				owner = q.Owner.ID
 			}
 			_, err = tx.Exec(`INSERT INTO teams(id,name,purpose,owner_agent_id,created_at,updated_at) VALUES(?,?,?,?,?,?)`, q.ID, q.Name, q.Purpose, owner, now, now)
-			if err == nil && q.Owner != nil {
-				err = placeAgentTx(tx, q.Owner.ID)
-			}
 		case "rename", "purpose", "archive", "mode", "held_back", "asks_to", "lead_merges":
 			var t protocol.Team
 			t, err = scanTeam(tx.QueryRow(`SELECT `+teamColumns+` FROM teams WHERE id=?`, q.ID))
@@ -191,16 +188,13 @@ func (s *Store) writeTeamTx(q protocol.TeamWrite, actor string, dryRun bool) err
 				_, err = tx.Exec(`UPDATE teams SET purpose=?,updated_at=? WHERE id=?`, q.Purpose, now, q.ID)
 			default:
 				var members int
-				if err = tx.QueryRow(`SELECT COUNT(*) FROM team_members WHERE team_id=?`, q.ID).Scan(&members); err != nil {
+				if err = tx.QueryRow(`SELECT (SELECT COUNT(*) FROM agents WHERE team_id=?) + (SELECT COUNT(*) FROM repos WHERE team_id=?)`, q.ID, q.ID).Scan(&members); err != nil {
 					return err
 				}
 				if members != 0 {
 					return reject("remove or move Team members before archiving")
 				}
 				_, err = tx.Exec(`UPDATE teams SET active=0,updated_at=? WHERE id=?`, now, q.ID)
-				if err == nil && t.Owner != nil {
-					err = placeAgentTx(tx, t.Owner.ID)
-				}
 			}
 		default:
 			return reject("unknown Team action %q; use action charter with attr and value for a charter attribute, or graph_change team_charter", q.Action)
@@ -243,7 +237,14 @@ func (s *Store) Team(selector string) (id, name string, err error) {
 
 // MemberTeam returns the current team ID of a member, or "" if none.
 func (s *Store) MemberTeam(ref protocol.GraphRef) (teamID string, err error) {
-	err = s.db.QueryRow(`SELECT team_id FROM team_members WHERE member_kind=? AND member_id=?`, ref.Kind, ref.ID).Scan(&teamID)
+	switch ref.Kind {
+	case "agent":
+		err = s.db.QueryRow(`SELECT team_id FROM agents WHERE id=?`, ref.ID).Scan(&teamID)
+	case "repo":
+		err = s.db.QueryRow(`SELECT team_id FROM repos WHERE id=?`, ref.ID).Scan(&teamID)
+	default:
+		return "", nil
+	}
 	if err == sql.ErrNoRows {
 		return "", nil
 	}
@@ -280,8 +281,12 @@ func writeTeamMember(tx *sql.Tx, q protocol.TeamWrite) (string, error) {
 	if err := liveTeamMember(tx, *q.Member); err != nil {
 		return "", err
 	}
+	table := "agents"
+	if q.Member.Kind == "repo" {
+		table = "repos"
+	}
 	var old string
-	err := tx.QueryRow(`SELECT team_id FROM team_members WHERE member_kind=? AND member_id=?`, q.Member.Kind, q.Member.ID).Scan(&old)
+	err := tx.QueryRow(`SELECT team_id FROM `+table+` WHERE id=?`, q.Member.ID).Scan(&old)
 	if err != nil && err != sql.ErrNoRows {
 		return "", err
 	}
@@ -304,26 +309,8 @@ func writeTeamMember(tx *sql.Tx, q protocol.TeamWrite) (string, error) {
 	if old == q.ID {
 		return old, nil
 	}
-	if q.ID == "" {
-		_, err = tx.Exec(`DELETE FROM team_members WHERE member_kind=? AND member_id=?`, q.Member.Kind, q.Member.ID)
-	} else {
-		_, err = tx.Exec(`INSERT INTO team_members(member_kind,member_id,team_id) VALUES(?,?,?) ON CONFLICT(member_kind,member_id) DO UPDATE SET team_id=excluded.team_id`, q.Member.Kind, q.Member.ID, q.ID)
-	}
-	if err != nil {
-		return old, err
-	}
-	// The moved member's parent follows the old tables in the same transaction.
-	if q.Member.Kind == "agent" {
-		return old, placeAgentTx(tx, q.Member.ID)
-	}
-	var top string
-	if err := tx.QueryRow(repoTopAgentSQL, q.Member.ID).Scan(&top); err != nil && err != sql.ErrNoRows {
-		return old, err
-	}
-	if top == "" {
-		return old, nil
-	}
-	return old, placeAgentTx(tx, top)
+	_, err = tx.Exec(`UPDATE `+table+` SET team_id=? WHERE id=?`, q.ID, q.Member.ID)
+	return old, err
 }
 
 // TeamHistory is owner-only through the operator relay. Retained snapshots
@@ -389,7 +376,7 @@ func (s *Store) teamGraph() (protocol.Graph, error) {
 		}
 		g.Nodes = append(g.Nodes, protocol.Node{Ref: &protocol.GraphRef{Kind: "team", ID: t.ID}, Owner: t.Owner, Lead: lead, Name: t.Name, Kind: "team", Active: &active, Charter: protocol.Charter{Purpose: t.Purpose}, AuthorityMode: t.AuthorityMode, HeldBack: t.HeldBack, AsksTo: t.AsksTo, LeadMerges: protocol.NormalLeadMerges(t.LeadMerges), CreatedAt: t.CreatedAt})
 	}
-	rows, err := s.db.Query(`SELECT member_kind,member_id,team_id FROM team_members ORDER BY member_kind,member_id`)
+	rows, err := s.db.Query(`SELECT 'agent',id,team_id FROM agents WHERE team_id<>'' UNION ALL SELECT 'repo',id,team_id FROM repos WHERE team_id<>'' ORDER BY 1,2`)
 	if err != nil {
 		return g, err
 	}

@@ -1331,7 +1331,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration, workerTablesMigration, machineTablesMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration, workerTablesMigration, machineTablesMigration, orgFoldMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -2890,6 +2890,16 @@ func (s *Store) migrate() error {
 					result, err = tx.Exec(repoLeadFoldRewrite)
 				}
 			}
+		} else if strings.Contains(migrations[i], leadSessionRepairMarker) {
+			var hasOwner bool
+			hasOwner, err = hasColumn(tx, "repos", "owner_agent_id")
+			if err == nil {
+				if hasOwner {
+					result, err = tx.Exec(stmt)
+				} else {
+					result, err = tx.Exec(`SELECT 1`)
+				}
+			}
 		} else {
 			result, err = tx.Exec(stmt)
 		}
@@ -3449,6 +3459,12 @@ func (s *Store) migrate() error {
 				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
 		}
+		if strings.Contains(migrations[i], orgFoldMarker) {
+			if err := foldOrgGraphTx(tx); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+		}
 		if _, err := tx.Exec(`INSERT INTO schema_version (version) VALUES (?)`, i+1); err != nil {
 			tx.Rollback()
 			return err
@@ -3842,7 +3858,7 @@ tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harne
 	// A sync may update the repo context but must not replace a selected agent.
 	_, err = q.Exec(`UPDATE sessions SET
 		repo_id=CASE WHEN harness IN ('cto','owner') THEN NULL ELSE (SELECT id FROM repos WHERE id=COALESCE(NULLIF(repo_project,''),announced_project)) END,
-		agent_id=CASE WHEN harness='cto' THEN 'cto' WHEN harness='owner' OR worker<>'' THEN NULL ELSE COALESCE(agent_id,(SELECT owner_agent_id FROM repos WHERE id=COALESCE(NULLIF(repo_project,''),announced_project))) END
+		agent_id=CASE WHEN harness='cto' THEN 'cto' WHEN harness='owner' OR worker<>'' THEN NULL ELSE COALESCE(agent_id,(SELECT lead_agent_id FROM repos WHERE id=COALESCE(NULLIF(repo_project,''),announced_project))) END
 		WHERE id=?`, id)
 	if err != nil {
 		return "", false, err
@@ -4455,7 +4471,7 @@ var agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.
 	s.name, s.repo_description, s.announced_project,
 	s.capabilities, s.task,
 	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree, s.mode, s.model, s.pid, s.worker, s.repo_description,
-	s.peer_trust, s.expertise, s.title, s.created_at, s.tools_version, s.tools_old, s.waiting, COALESCE((SELECT name FROM project_display_names WHERE project=COALESCE(NULLIF(s.repo_project,''),s.announced_project)),''),
+	s.peer_trust, s.expertise, s.title, s.created_at, s.tools_version, s.tools_old, s.waiting, COALESCE((SELECT NULLIF(r.display_name,r.id) FROM repos r WHERE r.id=COALESCE(NULLIF(s.repo_project,''),s.announced_project)),''),
 	CASE WHEN ` + registeredMergerSQL("s") + ` THEN 'merger' ELSE '' END,
  s.task_started,
  COALESCE((SELECT json_object('run_id',wa.run_id,'session_id',wa.session_id,'started_at',wa.started_at,
@@ -4466,10 +4482,10 @@ var agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.
  'picker_label',wa.picker_label,'picker_note',wa.picker_note,'error',wa.error) FROM worker_assessments wa
  WHERE wa.session_id=s.id ORDER BY wa.started_at DESC, wa.rowid DESC LIMIT 1),''),
  COALESCE(s.repo_id,''), COALESCE(s.agent_id,''), COALESCE((SELECT display_name FROM agents WHERE id=s.agent_id),''),
-  ` + agentParentOfSQL("s.agent_id") + `,
+  '',
  COALESCE((SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id)=s.id AND s.agent_id=(` + repoTopAgentOfSQL("s.repo_id") + `) AND NOT ` + mergerAgentSQL("s") + `,0),
 	EXISTS(SELECT 1 FROM repos rp WHERE rp.id=s.repo_id AND rp.lead_agent_id=s.agent_id AND (SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id)=s.id),
- EXISTS(SELECT 1 FROM teams t JOIN team_members tm ON tm.team_id=t.id WHERE t.active=1 AND t.owner_agent_id=s.agent_id AND (SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id)=s.id AND ((tm.member_kind='repo' AND tm.member_id=s.repo_id) OR (tm.member_kind='agent' AND tm.member_id=s.agent_id))),
+ EXISTS(SELECT 1 FROM teams t WHERE t.active=1 AND t.owner_agent_id=s.agent_id AND (SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id)=s.id AND (EXISTS(SELECT 1 FROM repos r WHERE r.id=s.repo_id AND r.team_id=t.id) OR EXISTS(SELECT 1 FROM agents ag WHERE ag.id=s.agent_id AND ag.team_id=t.id))),
  @MAX@
  @COUNT@
  s.owner_used_at, s.owner_uses, s.pinned_at, s.idle_compacted_at, s.last_compacted_reason,
@@ -4481,8 +4497,8 @@ var agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.
 
 // agentListTables are the tables agentListSelect and its joins read, with the
 // piChildSQL filter. Keep it equal to those queries (see readThrough).
-var agentListTables = []string{"sessions", "nodes.id", "nodes.hostname", "apps", "project_display_names",
-	"worker_assessments", "agents", "graph_edges", "repos", "teams", "team_members", "setting_values", "inbox_items",
+var agentListTables = []string{"sessions", "nodes.id", "nodes.hostname", "apps",
+	"worker_assessments", "agents", "node_scopes", "repos", "teams", "setting_values", "inbox_items",
 	"messages", "gateway_state"}
 
 const (
@@ -4789,6 +4805,17 @@ func (s *Store) agentsBaseOwned(selectSQL string, f protocol.QueryAgents, owners
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	if len(out) > 0 {
+		parents, err := agentParentsQ(s.db)
+		if err != nil {
+			return nil, err
+		}
+		for i := range out {
+			if out[i].AgentID != "" {
+				out[i].ReportsTo = parents[out[i].AgentID]
+			}
+		}
+	}
 	return out, nil
 }
 
@@ -4796,7 +4823,7 @@ func (s *Store) agentsBaseOwned(selectSQL string, f protocol.QueryAgents, owners
 
 const msgSelect = `SELECT m.id, m.conversation_id, m.parent_id, m.sender, m.recipient, m.type, m.body, m.hop,
 	m.idem_key, m.created_at, m.expires_at, m.state, COALESCE((SELECT d.detail FROM deliveries d WHERE d.message_id=m.id AND d.state=m.state ORDER BY d.rowid DESC LIMIT 1),'') || COALESCE((SELECT ' (retry ' || attempts || ' scheduled)' FROM delivery_retries WHERE message_id=m.id AND m.state='failed'),''),
-	COALESCE(s.name,''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto, m.owner_approved, EXISTS(SELECT 1 FROM outcome_overrules oo WHERE oo.message_id=m.id), m.approval_note, substr(m.owner_prompt,1,200),
+	COALESCE(s.name,''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto, m.owner_approved, EXISTS(SELECT 1 FROM graph_outcomes go WHERE go.overrule_message_id=m.id), m.approval_note, substr(m.owner_prompt,1,200),
 	m.files, m.worker_task, m.is_order,
 	m.urgent, m.held_for_busy, m.batch_json, m.batch_id
 	FROM messages m LEFT JOIN sessions s ON s.id = m.sender`

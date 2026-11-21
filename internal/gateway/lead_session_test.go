@@ -364,7 +364,7 @@ func repairFixture(t *testing.T, s *Store) (cto string) {
 		if _, err := s.db.Exec(`INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES(?,?,'',?,?,0)`, name, name, now, now); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := s.db.Exec(`INSERT INTO repos(id,display_name,created_at,updated_at,owner_agent_id) VALUES(?,?,?,?,?)`, name, name, now, now, name); err != nil {
+		if _, err := s.db.Exec(`INSERT INTO repos(id,display_name,created_at,updated_at,lead_agent_id) VALUES(?,?,?,?,?)`, name, name, now, now, name); err != nil {
 			t.Fatal(err)
 		}
 	}

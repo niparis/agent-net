@@ -22,7 +22,7 @@ func benchPlaceStore(b *testing.B) *Store {
 		if _, err := s.db.Exec(`INSERT INTO agents(id,display_name,role,created_at,updated_at) VALUES(?,?,?,?,?)`, agent, agent, "architect", now, now); err != nil {
 			b.Fatal(err)
 		}
-		if _, err := s.db.Exec(`INSERT INTO repos(id,display_name,created_at,updated_at,owner_agent_id) VALUES(?,?,?,?,?)`, repo, repo, now, now, agent); err != nil {
+		if _, err := s.db.Exec(`INSERT INTO repos(id,display_name,created_at,updated_at,lead_agent_id) VALUES(?,?,?,?,?)`, repo, repo, now, now, agent); err != nil {
 			b.Fatal(err)
 		}
 		if _, err := s.db.Exec(`UPDATE repos SET lead_agent_id=? WHERE id=?`, agent, repo); err != nil {
@@ -46,10 +46,10 @@ func benchPlaceStore(b *testing.B) *Store {
 			b.Fatal(err)
 		}
 		for i := t * 10; i < (t+1)*10; i++ {
-			if _, err := s.db.Exec(`INSERT INTO team_members(member_kind,member_id,team_id) VALUES('repo',?,?)`, fmt.Sprintf("repo-%02d", i), id); err != nil {
+			if _, err := s.db.Exec(`UPDATE repos SET team_id=? WHERE id=?`, id, fmt.Sprintf("repo-%02d", i)); err != nil {
 				b.Fatal(err)
 			}
-			if _, err := s.db.Exec(`INSERT INTO team_members(member_kind,member_id,team_id) VALUES('agent',?,?)`, fmt.Sprintf("agent-%02d", i), id); err != nil {
+			if _, err := s.db.Exec(`UPDATE agents SET team_id=? WHERE id=?`, id, fmt.Sprintf("agent-%02d", i)); err != nil {
 				b.Fatal(err)
 			}
 		}

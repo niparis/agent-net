@@ -40,7 +40,7 @@ func putArchitectTx(tx *sql.Tx, name string, now int64) error {
 // dropArchitectTx removes an architect: the repos it owned have no owner, and
 // its agent is tombstoned. The delete trigger of graph_nodes did this.
 func dropArchitectTx(tx *sql.Tx, name string, now int64) error {
-	if _, err := tx.Exec(`UPDATE repos SET owner_agent_id=NULL WHERE owner_agent_id=?`, name); err != nil {
+	if _, err := tx.Exec(`UPDATE repos SET lead_agent_id=NULL WHERE lead_agent_id=?`, name); err != nil {
 		return err
 	}
 	_, err := tx.Exec(`UPDATE agents SET tombstone=1, updated_at=? WHERE id=?`, now, name)

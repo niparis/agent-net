@@ -138,9 +138,9 @@ func (s *Store) checkOwedReplies() ([]protocol.Message, error) {
 	rows, err := tx.Query(`SELECT q.id, q.conversation_id, q.sender, q.recipient, q.body, q.created_at,
 		dst.status, dst.harness_activity, dst.last_active, dst.created_at, dst.waiting,
 		COALESCE(NULLIF(dst.repo_project,''),dst.announced_project),
-		COALESCE((SELECT tm.team_id FROM team_members tm JOIN teams t ON t.id=tm.team_id AND t.active=1
-			WHERE (tm.member_kind='agent' AND tm.member_id=dst.agent_id) OR (tm.member_kind='repo' AND tm.member_id=dst.repo_id)
-			ORDER BY tm.team_id LIMIT 1), ''),
+		COALESCE((SELECT t.id FROM teams t WHERE t.active=1
+			AND (t.id=(SELECT a.team_id FROM agents a WHERE a.id=dst.agent_id) OR t.id=(SELECT r.team_id FROM repos r WHERE r.id=dst.repo_id))
+			ORDER BY t.id LIMIT 1), ''),
 		COALESCE(NULLIF(src.repo_project,''),src.announced_project),
 		COALESCE(NULLIF(src.name,''), q.sender),
 		COALESCE(NULLIF(dst.name,''), q.recipient),

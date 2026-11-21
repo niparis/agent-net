@@ -190,7 +190,7 @@ func intakeRig(t *testing.T) (*Store, *clock) {
 	t.Helper()
 	s, c := newTestStore(t)
 	if _, err := s.db.Exec(`INSERT INTO agents(id,display_name,created_at,updated_at) VALUES('a-net','agent-net lead',0,0),('a-shop','shop lead',0,0);
-		INSERT INTO repos(id,display_name,created_at,updated_at,owner_agent_id) VALUES('agent-net','agent-net',0,0,'a-net'),('shop','shop',0,0,'a-shop')`); err != nil {
+		INSERT INTO repos(id,display_name,created_at,updated_at,lead_agent_id) VALUES('agent-net','agent-net',0,0,'a-net'),('shop','shop',0,0,'a-shop')`); err != nil {
 		t.Fatal(err)
 	}
 	return s, c

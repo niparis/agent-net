@@ -15,6 +15,7 @@ var repoFoldTriggers = []string{
 	"repo_agent_project_insert", "repo_agent_project_update",
 	"repo_agent_session_insert", "repo_agent_session_update",
 	"repo_lead_delete", "repo_lead_tombstone",
+	"repo_live_lead_insert", "repo_live_lead_update",
 }
 
 // beforeRepoFold shapes a store as the gateway before the repo fold left it: the
@@ -24,9 +25,16 @@ func beforeRepoFold(t *testing.T, s *Store) {
 	t.Helper()
 	// The store remembers that it is folded. This shape is not, so say so.
 	s.repoFolded.Store(false)
-	statements := make([]string, 0, len(repoFoldTriggers)+8)
+	statements := make([]string, 0, len(repoFoldTriggers)+10)
 	for _, trigger := range repoFoldTriggers {
 		statements = append(statements, `DROP TRIGGER IF EXISTS `+trigger)
+	}
+	var hasOwner int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('repos') WHERE name='owner_agent_id'`).Scan(&hasOwner); err != nil {
+		t.Fatal(err)
+	}
+	if hasOwner == 0 {
+		statements = append(statements, `ALTER TABLE repos ADD COLUMN owner_agent_id TEXT`)
 	}
 	for _, col := range []string{"archived", "held_back", "lead_agent_id"} {
 		statements = append(statements, `ALTER TABLE repos DROP COLUMN `+col)
@@ -80,8 +88,8 @@ func TestRepoFoldKeepsTheLeadArchiveAndHeldBack(t *testing.T) {
 		}
 	}
 	var owner string
-	if err := s.db.QueryRow(`SELECT owner_agent_id FROM repos WHERE id='demo'`).Scan(&owner); err != nil || owner != "demo" {
-		t.Fatalf("owner of demo = %q (%v), want demo: the fold must not move the owner", owner, err)
+	if err := s.db.QueryRow(`SELECT lead_agent_id FROM repos WHERE id='demo'`).Scan(&owner); err != nil || owner != "other" {
+		t.Fatalf("lead of demo = %q (%v), want other", owner, err)
 	}
 	var archived int
 	if err := s.db.QueryRow(`SELECT archived FROM repos WHERE id='old'`).Scan(&archived); err != nil || archived != 1 {
@@ -110,6 +118,9 @@ func TestRepoFoldKeepsTheLeadArchiveAndHeldBack(t *testing.T) {
 	}
 	if out, err := s.StoredLead(demo); err != nil || out.Agent != "" {
 		t.Fatalf("lead after the clear = %q (%v), want none", out.Agent, err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO sessions(id,node_id,harness,native_id,last_seen,repo_id,agent_id) VALUES('s_demo','n1','claude','demo-nat',0,'demo','demo')`); err != nil {
+		t.Fatal(err)
 	}
 	owned := protocol.GraphRef{Kind: "agent", ID: "demo"}
 	if err := s.SetLead(protocol.LeadSetRequest{Ref: demo, Lead: &owned}, "owner", false); err != nil {
@@ -154,8 +165,8 @@ func TestRepoFoldDiscoveredRepoLeadsAsItsOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	var owner string
-	if err := s.db.QueryRow(`SELECT COALESCE(owner_agent_id,'') FROM repos WHERE id='fresh'`).Scan(&owner); err != nil || owner != "fresh" {
-		t.Fatalf("fresh repo owner=%q (%v), want fresh", owner, err)
+	if err := s.db.QueryRow(`SELECT COALESCE(lead_agent_id,'') FROM repos WHERE id='fresh'`).Scan(&owner); err != nil || owner != "fresh" {
+		t.Fatalf("fresh repo lead=%q (%v), want fresh", owner, err)
 	}
 	if out, err := s.StoredLead(protocol.GraphRef{Kind: "repo", ID: "fresh"}); err != nil || out.Agent != "fresh" {
 		t.Fatalf("lead of the fresh repo = %q (%v), want its owner fresh", out.Agent, err)
@@ -274,6 +285,64 @@ func restoreRepoSideTables(t *testing.T, db repoDB) {
 	if cur < migrationVersion(t, "Schema reduction part 1: drop the tables") {
 		recreateDeadTablesDB(t, db)
 	}
+	if cur < migrationVersion(t, "Team history moves into graph_history") {
+		for _, trig := range []string{"bot_agent_revoke", "bot_names_revoke"} {
+			if _, err := db.Exec(`DROP TRIGGER IF EXISTS ` + trig); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if cur < migrationVersion(t, orgFoldMarker) {
+		var hasOwner int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('repos') WHERE name='owner_agent_id'`).Scan(&hasOwner); err != nil {
+			t.Fatal(err)
+		}
+		if hasOwner == 0 {
+			for _, q := range []string{
+				`DROP TRIGGER IF EXISTS repo_live_lead_insert`,
+				`DROP TRIGGER IF EXISTS repo_live_lead_update`,
+				`ALTER TABLE repos ADD COLUMN owner_agent_id TEXT`,
+				`UPDATE repos SET owner_agent_id=lead_agent_id`,
+			} {
+				if _, err := db.Exec(q); err != nil {
+					t.Fatalf("%s: %v", q, err)
+				}
+			}
+		}
+		restoreTablesAt(t, db, cur, "team_members", "outcome_overrules", "charter_draft_asks", "project_display_names")
+		var hasAgentTeam int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('agents') WHERE name='team_id'`).Scan(&hasAgentTeam); err != nil {
+			t.Fatal(err)
+		}
+		if hasAgentTeam > 0 {
+			for _, q := range []string{
+				`INSERT OR IGNORE INTO team_members(member_kind,member_id,team_id) SELECT 'agent',id,team_id FROM agents WHERE team_id<>''`,
+				`DROP TRIGGER IF EXISTS bot_agent_revoke`,
+				`DROP TRIGGER IF EXISTS bot_names_revoke`,
+				`DROP INDEX IF EXISTS agents_team`,
+				`ALTER TABLE agents DROP COLUMN team_id`,
+			} {
+				if _, err := db.Exec(q); err != nil {
+					t.Fatalf("%s: %v", q, err)
+				}
+			}
+		}
+		var hasRepoTeam int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('repos') WHERE name='team_id'`).Scan(&hasRepoTeam); err != nil {
+			t.Fatal(err)
+		}
+		if hasRepoTeam > 0 {
+			for _, q := range []string{
+				`INSERT OR IGNORE INTO team_members(member_kind,member_id,team_id) SELECT 'repo',id,team_id FROM repos WHERE team_id<>''`,
+				`DROP INDEX IF EXISTS repos_team`,
+				`ALTER TABLE repos DROP COLUMN team_id`,
+			} {
+				if _, err := db.Exec(q); err != nil {
+					t.Fatalf("%s: %v", q, err)
+				}
+			}
+		}
+	}
 	var folded int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('repos') WHERE name='lead_agent_id'`).Scan(&folded); err != nil {
 		t.Fatal(err)
@@ -377,7 +446,7 @@ func TestRepoFoldScopeReadsTheLeadOfAStoreBeforeTheFold(t *testing.T) {
 	s, _ := newTestStore(t)
 	for _, q := range []string{
 		`INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES('demo','demo','',0,0,0),('other','other','',0,0,0)`,
-		`INSERT INTO repos(id,display_name,created_at,updated_at,owner_agent_id) VALUES('demo','demo',0,0,'demo')`,
+		`INSERT INTO repos(id,display_name,created_at,updated_at,lead_agent_id) VALUES('demo','demo',0,0,'demo')`,
 	} {
 		if _, err := s.db.Exec(q); err != nil {
 			t.Fatalf("%s: %v", q, err)

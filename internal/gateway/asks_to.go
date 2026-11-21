@@ -49,9 +49,11 @@ func memberTeamIn(q leadDB, session string) (t memberTeam, ok bool, err error) {
 		return t, false, nil
 	}
 	var teamID, asksTo, leadMerges string
-	err = q.QueryRow(`SELECT t.id,t.name,t.owner_agent_id,t.authority_mode,t.held_back,t.asks_to,t.lead_merges FROM teams t JOIN team_members tm ON tm.team_id=t.id
-		WHERE t.active=1 AND ((tm.member_kind='repo' AND tm.member_id=? AND tm.member_id<>'') OR (tm.member_kind='agent' AND tm.member_id=?))
-		ORDER BY CASE tm.member_kind WHEN 'repo' THEN 0 ELSE 1 END,t.id LIMIT 1`, repo, agent).Scan(&teamID, &t.name, &t.leadAgent, &t.mode, &t.held, &asksTo, &leadMerges)
+	err = q.QueryRow(`SELECT t.id,t.name,t.owner_agent_id,t.authority_mode,t.held_back,t.asks_to,t.lead_merges FROM teams t
+		LEFT JOIN repos r ON r.id=? AND r.team_id=t.id
+		LEFT JOIN agents a ON a.id=? AND a.team_id=t.id
+		WHERE t.active=1 AND (r.id IS NOT NULL OR a.id IS NOT NULL)
+		ORDER BY CASE WHEN r.id IS NOT NULL THEN 0 ELSE 1 END,t.id LIMIT 1`, repo, agent).Scan(&teamID, &t.name, &t.leadAgent, &t.mode, &t.held, &asksTo, &leadMerges)
 	if err == sql.ErrNoRows {
 		return t, false, nil
 	}

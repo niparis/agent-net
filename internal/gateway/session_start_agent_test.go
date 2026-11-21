@@ -167,7 +167,7 @@ func TestSessionStartAgentLaunchHold(t *testing.T) {
 	}
 	p.NativeID = "new"
 	// Lifecycle rules require detaching an Agent's owned Repo before tombstoning.
-	if _, err = s.db.Exec(`UPDATE repos SET owner_agent_id=NULL WHERE owner_agent_id='chosen'`); err != nil {
+	if _, err = s.db.Exec(`UPDATE repos SET lead_agent_id=NULL WHERE lead_agent_id='chosen'`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = s.db.Exec(`UPDATE agents SET tombstone=1 WHERE id='chosen'`); err != nil {

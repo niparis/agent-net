@@ -69,7 +69,7 @@ func TestGraphReadWithoutAlsoStaysOneNode(t *testing.T) {
 // A name that only one node has reads as before.
 func TestGraphReadUniqueNameIsUnchanged(t *testing.T) {
 	s := sameNameStore(t)
-	for _, q := range []string{`UPDATE repos SET owner_agent_id=NULL WHERE id='solo'`, `UPDATE agents SET tombstone=1 WHERE id='solo'`} {
+	for _, q := range []string{`UPDATE repos SET lead_agent_id=NULL WHERE id='solo'`, `UPDATE agents SET tombstone=1 WHERE id='solo'`} {
 		if _, err := s.db.Exec(q); err != nil {
 			t.Fatal(err)
 		}

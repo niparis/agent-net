@@ -321,7 +321,7 @@ func TestNudgeStatsAggregatePerKindAgentAndTeam(t *testing.T) {
 		if _, err := s.db.Exec(`INSERT OR IGNORE INTO teams(id,name,created_at,updated_at) VALUES(?,?,0,0)`, x.team, x.team); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := s.db.Exec(`INSERT OR IGNORE INTO team_members(team_id,member_kind,member_id) VALUES(?,'agent',?)`, x.team, x.agent); err != nil {
+		if _, err := s.db.Exec(`UPDATE agents SET team_id=? WHERE id=?`, x.team, x.agent); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -336,7 +336,7 @@ func TestNudgeStatsAggregatePerKindAgentAndTeam(t *testing.T) {
 		{"reply_reminder", a, "m4", false},
 	} {
 		if _, err := s.db.Exec(`INSERT INTO nudge_fires(kind,recipient,agent_id,team_id,message_id,fired_at,followed_at,followed_kind)
- SELECT ?,id,COALESCE(agent_id,''),COALESCE((SELECT tm.team_id FROM team_members tm WHERE (tm.member_kind='agent' AND tm.member_id=sessions.agent_id) ORDER BY tm.team_id LIMIT 1),''),?,?,?,?
+ SELECT ?,id,COALESCE(agent_id,''),COALESCE((SELECT a.team_id FROM agents a WHERE a.id=sessions.agent_id),''),?,?,?,?
  FROM sessions WHERE id=?`, x.kind, x.message, at, map[bool]int64{true: at + int64(time.Minute), false: 0}[x.followed], map[bool]string{true: "tool_call", false: ""}[x.followed], x.recipient); err != nil {
 			t.Fatal(err)
 		}

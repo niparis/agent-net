@@ -322,7 +322,7 @@ func TestCharterDraftIsAskedOnlyInTheRepoFolder(t *testing.T) {
 	}
 	// A draft asked before this fix left a row for the umbrella. It must not
 	// block the ask to the repo session.
-	if _, err := s.db.Exec(`INSERT INTO charter_draft_asks(level,scope,source_hash,asked_at,session_id) VALUES('repo','demo','h-umbrella',0,?)`, umbrella); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO charter_drafts(level,scope,attr,value,source,source_hash,status,drafted_by,created_at,asked_at) VALUES('repo','demo','','','','h-umbrella','asked',?,0,0)`, umbrella); err != nil {
 		t.Fatal(err)
 	}
 	if text := mustAsk(t, s, umbrella, "h-umbrella-2"); text != "" {

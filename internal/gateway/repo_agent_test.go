@@ -22,7 +22,7 @@ func TestRepoAgentRecordsFollowLegacyCreation(t *testing.T) {
 		t.Fatal(err)
 	}
 	var owner, role string
-	if err = s.db.QueryRow(`SELECT owner_agent_id FROM repos WHERE id='demo'`).Scan(&owner); err != nil || owner != "demo" {
+	if err = s.db.QueryRow(`SELECT lead_agent_id FROM repos WHERE id='demo'`).Scan(&owner); err != nil || owner != "demo" {
 		t.Fatalf("repo owner %q: %v", owner, err)
 	}
 	if err = s.db.QueryRow(`SELECT role FROM agents WHERE id='advisor' AND tombstone=0`).Scan(&role); err != nil || role != "architect" {

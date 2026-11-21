@@ -222,7 +222,7 @@ func (s *Store) bindStartedAgent(tx *sql.Tx, node string, p protocol.SessionAgen
 	}
 	// Release unrelated new sessions to their ordinary Repo-owner default. The
 	// selected session already has its explicit Agent, or a native reservation.
-	if _, err = tx.Exec(`UPDATE sessions SET agent_id=(SELECT owner_agent_id FROM repos WHERE id=sessions.repo_id) WHERE node_id=? AND harness=? AND worker='' AND agent_id IS NULL`, node, p.Harness); err != nil {
+	if _, err = tx.Exec(`UPDATE sessions SET agent_id=(SELECT lead_agent_id FROM repos WHERE id=sessions.repo_id) WHERE node_id=? AND harness=? AND worker='' AND agent_id IS NULL`, node, p.Harness); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -257,7 +257,7 @@ func (s *Store) ExpireSessionAgentStarts() ([]string, error) {
 // held get their Repo-owner default, and a Desk item keeps the reason.
 func (s *Store) failAgentStart(tx *sql.Tx, a *agentStart, reason string) error {
 	held, args := s.heldSQL("sessions")
-	if _, err := tx.Exec(`UPDATE sessions SET agent_id=(SELECT owner_agent_id FROM repos WHERE id=sessions.repo_id) WHERE node_id=? AND harness=? AND worker='' AND agent_id IS NULL AND NOT `+held, append([]any{a.node, a.harness}, args...)...); err != nil {
+	if _, err := tx.Exec(`UPDATE sessions SET agent_id=(SELECT lead_agent_id FROM repos WHERE id=sessions.repo_id) WHERE node_id=? AND harness=? AND worker='' AND agent_id IS NULL AND NOT `+held, append([]any{a.node, a.harness}, args...)...); err != nil {
 		return err
 	}
 	var id string
@@ -290,7 +290,7 @@ func (s *Store) agentChoiceFailureText(q queryer, ref, harness, project, id stri
 		}
 	}
 	var name string
-	if err := q.QueryRow(`SELECT COALESCE(a.display_name,r.owner_agent_id,'unassigned Agent') FROM repos r LEFT JOIN agents a ON a.id=r.owner_agent_id WHERE r.id=?`, project).Scan(&name); err == nil && name != "" {
+	if err := q.QueryRow(`SELECT COALESCE(a.display_name,r.lead_agent_id,'unassigned Agent') FROM repos r LEFT JOIN agents a ON a.id=r.lead_agent_id WHERE r.id=?`, project).Scan(&name); err == nil && name != "" {
 		agent = name
 	}
 	return fmt.Sprintf("Agent choice for %s failed; %s uses the default %s", ref, label, agent)
@@ -312,7 +312,7 @@ func (s *Store) noteLateAgentNative(tx *sql.Tx, node string, p protocol.SessionA
 	}
 	held, args := s.heldSQL("sessions")
 	if err == nil {
-		_, err = tx.Exec(`UPDATE sessions SET agent_id=(SELECT owner_agent_id FROM repos WHERE id=sessions.repo_id) WHERE id=? AND worker='' AND agent_id IS NULL AND NOT `+held, append([]any{id}, args...)...)
+		_, err = tx.Exec(`UPDATE sessions SET agent_id=(SELECT lead_agent_id FROM repos WHERE id=sessions.repo_id) WHERE id=? AND worker='' AND agent_id IS NULL AND NOT `+held, append([]any{id}, args...)...)
 	}
 	if err != nil {
 		return err

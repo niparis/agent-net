@@ -361,27 +361,19 @@ Owner settings and their history.
 
 ### agents
 
-- **Holds:** One agent of the org tree: a named role (coding agent, bot, lead) with the session that currently leads for it, a tombstone flag when it is retired, and its settings token.
+- **Holds:** One agent of the org tree: a named role (coding agent, bot, lead) with its team (`team_id`), its pinned lead session (`lead_session`), its explicit lead-level grant (`lead_level`), a tombstone flag when it is retired, and its settings token. `agents.lead_session` and `agents.lead_level` are the single source for an agent's lead session and explicit lead-level grant.
 - **Written by:** `gateway/bot_agent.go`, `gateway/bot_names.go`, `gateway/graph_lifecycle.go`, `gateway/lead_session.go`, `gateway/lead_session_migration.go`, `gateway/leads_max.go`, `gateway/org_tree.go`, `gateway/repo_fold_migration.go`, `gateway/session_replace.go`, `gateway/store.go` and others
 - **Read by:** `gateway/agent_scopes.go`, `gateway/asks_to.go`, `gateway/authority.go`, `gateway/bot_agent.go`, `gateway/caller_agent.go`, `gateway/charter_drafts.go`, `gateway/cto_charter_default.go`, `gateway/cto_lead.go`, `gateway/friction.go`, `gateway/graph_lifecycle.go` and others
 - **Shown in:** TUI, Graph; tool `agent_graph_read`; CTO op `agent_create`; CTO op `agent_tombstone`; CTO op `lead_set`
 - **Kept:** Forever (a retired agent is only flagged as tombstoned).
 
-### charter_draft_asks
-
-- **Holds:** A marker that a session was already asked to draft a charter for one level and scope, with the hash of the source text, so it is not asked again.
-- **Written by:** `gateway/charter_drafts.go`
-- **Read by:** `gateway/charter_drafts.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Replaced when the source text changes (one row per level and scope).
-
 ### charter_drafts
 
-- **Holds:** One charter value that a session drafted from the project AGENTS.md and that waits for the owner to accept or reject it.
+- **Holds:** One charter value that a session drafted from the project AGENTS.md (`pending`, `accepted`, `rejected`, `superseded`), or an `asked` marker (`status='asked'`, `source_hash`, `asked_at`) so a session is not asked twice for the same source text.
 - **Written by:** `gateway/charter_drafts.go`
 - **Read by:** `gateway/charter_drafts.go`, `gateway/chief.go`, `gateway/store_inbox.go`
 - **Shown in:** TUI, Graph; TUI, Desk; tool `agent_charter_draft`; CTO op `needs_you`
-- **Kept:** Forever (the status changes to accepted or rejected, the row stays).
+- **Kept:** Forever (the status changes to accepted or rejected, the row stays; the `asked` row is replaced when the source text changes).
 
 ### charter_values
 
@@ -393,8 +385,8 @@ Owner settings and their history.
 
 ### graph_edges
 
-- **Holds:** One typed link between two nodes of the org tree (for example reports-to, may-ask, merger or delivery owner), with its mode and rule.
-- **Written by:** `gateway/edge_kinds.go`, `gateway/held.go`, `gateway/merger.go`, `gateway/merger_restore.go`, `gateway/org_tree.go`, `gateway/settings.go`, `gateway/store_graph.go`
+- **Holds:** One typed link between two nodes of the org tree (`depends`, `deploys`, or a `/delivery/*` step owner), with its mode and rule. `reports_to` is computed on read from leadership and team membership and is not stored here.
+- **Written by:** `gateway/edge_kinds.go`, `gateway/held.go`, `gateway/merger.go`, `gateway/merger_restore.go`, `gateway/settings.go`, `gateway/store_graph.go`
 - **Read by:** `gateway/cto_graph.go`, `gateway/graph_lifecycle.go`, `gateway/graph_refs.go`, `gateway/graph_view.go`, `gateway/graphread.go`, `gateway/held.go`, `gateway/learned.go`, `gateway/learned_apply.go`, `gateway/learned_owner.go`, `gateway/merger.go` and others
 - **Shown in:** TUI, Graph; tool `agent_graph_read`; CTO op `edge_set`; CTO op `edge_remove`; CTO op `merger_set`
 - **Kept:** Until the link is removed or an undo reverts it.
@@ -409,7 +401,7 @@ Owner settings and their history.
 
 ### graph_outcomes
 
-- **Holds:** How one request between two nodes ended: a reply with an outcome (accept, reject, escalate or redirect), the reason and recommendation, and whether the owner resolved it.
+- **Holds:** How one request between two nodes ended: a reply with an outcome (accept, reject, escalate or redirect), the reason and recommendation, whether the owner resolved it, and whether it was overruled (`overruled`, `overrule_message_id`).
 - **Written by:** `gateway/asks.go`, `gateway/store.go`, `gateway/store_inbox.go`, `gateway/store_outcome.go`
 - **Read by:** `gateway/asks.go`, `gateway/bot_tools.go`, `gateway/learned.go`, `gateway/owner_answers.go`, `gateway/signal.go`, `gateway/store.go`, `gateway/store_outcome.go`, `gateway/store_record.go`
 - **Shown in:** TUI, Desk; tool `agent_message_reply`; CTO op `outcome_inbox`; CTO op `outcome_overrule`
@@ -431,51 +423,27 @@ Owner settings and their history.
 - **Shown in:** TUI, Graph; tool `agent_graph_read`; CTO op `scope_set`; CTO op `scope_remove`
 - **Kept:** Until the owner removes the scope (changes are logged in node_scopes_history).
 
-### outcome_overrules
-
-- **Holds:** A mark that the owner overruled the outcome of one request, pointing at the request and the reply.
-- **Written by:** `gateway/store_outcome.go`
-- **Read by:** `gateway/store.go`
-- **Shown in:** TUI, Desk; CTO op `outcome_overrule`
-- **Kept:** Forever.
-
-### project_display_names
-
-- **Holds:** A friendly name the owner gave to a project, used instead of the folder name.
-- **Written by:** `gateway/project_display.go`
-- **Read by:** `gateway/project_display.go`, `gateway/store.go`
-- **Shown in:** TUI, Graph; TUI, Sessions; CTO op `project_display_set`
-- **Kept:** Until the owner clears the name.
-
 ### projects
 
 - **Holds:** One project folder registered on one machine, with its path, name, git remote and default branch.
 - **Written by:** `gateway/store_projects.go`
-- **Read by:** `gateway/delivery_changes.go`, `gateway/graph_lifecycle.go`, `gateway/graph_view.go`, `gateway/inventory.go`, `gateway/learned.go`, `gateway/mcp_import_apply.go`, `gateway/project_display.go`, `gateway/settings.go`, `gateway/skill_lists.go`, `gateway/skillarchive_intake.go` and others
+- **Read by:** `gateway/delivery_changes.go`, `gateway/graph_lifecycle.go`, `gateway/graph_view.go`, `gateway/inventory.go`, `gateway/learned.go`, `gateway/mcp_import_apply.go`, `gateway/settings.go`, `gateway/skill_lists.go`, `gateway/skillarchive_intake.go` and others
 - **Shown in:** TUI, Tools; TUI, Graph; tool `agent_projects_find`; tool `agent_project_add`; CTO op `project_add`
 - **Kept:** Until the project is removed.
 
 ### repos
 
-- **Holds:** One repo (project) node of the org tree, with its display name, owner agent, lead agent, flags for archived and held back, and its settings token. It also holds the number the next bar rule will get (`bar_next`, so numbers are never reused), the count of failed merge-queue test runs in a row and the last run (`train_fails`, `train_last_run`), and the merger's machine and session (`merger_node`, `merger_session`). A repo has one merger.
-- **Written by:** `gateway/authority.go`, `gateway/graph_lifecycle.go`, `gateway/intake_feeds.go`, `gateway/leads_max.go`, `gateway/merger.go`, `gateway/merger_restore.go`, `gateway/repo_fold_migration.go`, `gateway/session_replace.go`, `gateway/store.go`, `gateway/store_bar.go` and others
+- **Holds:** One repo (project) node of the org tree, with its display name, its single lead agent (`lead_agent_id`), its team (`team_id`), flags for archived and held back, and its settings token. `repos.lead_agent_id` is the single source for a repo's lead. It also holds the number the next bar rule will get (`bar_next`, so numbers are never reused), the count of failed merge-queue test runs in a row and the last run (`train_fails`, `train_last_run`), and the merger's machine and session (`merger_node`, `merger_session`). A repo has one merger.
+- **Written by:** `gateway/authority.go`, `gateway/graph_lifecycle.go`, `gateway/intake_feeds.go`, `gateway/leads_max.go`, `gateway/merger.go`, `gateway/merger_restore.go`, `gateway/project_display.go`, `gateway/repo_fold_migration.go`, `gateway/session_replace.go`, `gateway/store.go` and others
 - **Read by:** `gateway/authority.go`, `gateway/charter_levels.go`, `gateway/graph_lifecycle.go`, `gateway/graph_refs.go`, `gateway/intake.go`, `gateway/lead_session.go`, `gateway/lead_session_migration.go`, `gateway/leads_max.go`, `gateway/node_scopes.go`, `gateway/org_read.go` and others
-- **Shown in:** TUI, Graph; TUI, Desk; tool `agent_graph_read`; CTO op `repo_create`; CTO op `repo_archive`; CTO op `lead_set`; CTO op `merger_set`; CTO op `merger_get`; CTO op `merger_restore`
+- **Shown in:** TUI, Graph; TUI, Desk; TUI, Sessions; tool `agent_graph_read`; CTO op `repo_create`; CTO op `repo_archive`; CTO op `lead_set`; CTO op `project_display_set`; CTO op `merger_set`; CTO op `merger_get`; CTO op `merger_restore`
 - **Kept:** Forever (an archived repo is only flagged). A merger is cleared when it is stopped, replaced, or its session is deleted.
-
-### team_members
-
-- **Holds:** One line saying that an agent or repo belongs to a team (each member is in one team).
-- **Written by:** `gateway/bot_agent.go`, `gateway/bot_names.go`, `gateway/team_history_migration.go`, `gateway/teams.go`
-- **Read by:** `gateway/asks_to.go`, `gateway/authority.go`, `gateway/bot_agent.go`, `gateway/bot_names.go`, `gateway/charter_drafts.go`, `gateway/charter_resolver.go`, `gateway/desk_rules.go`, `gateway/lead_route.go`, `gateway/member_loop.go`, `gateway/node_scopes.go` and others
-- **Shown in:** TUI, Graph; CTO op `team_member_add`; CTO op `team_member_remove`; tool `agent_graph_read`
-- **Kept:** Until the member is removed from the team, or the bot is revoked.
 
 ### teams
 
-- **Holds:** One team: a name, purpose, owner, authority mode, held-back text, where asks go, whether the lead merges, and its settings token.
+- **Holds:** One team: a name, purpose, single team lead (`owner_agent_id`), authority mode, held-back text, where asks go, whether the lead merges, and its settings token. `teams.owner_agent_id` is the single source for a team's lead.
 - **Written by:** `gateway/leads_max.go`, `gateway/store_graph.go`, `gateway/teams.go`
-- **Read by:** `gateway/asks_to.go`, `gateway/authority.go`, `gateway/charter_drafts.go`, `gateway/charter_levels.go`, `gateway/charter_resolver.go`, `gateway/cto_lead.go`, `gateway/desk_rules.go`, `gateway/lead_route.go`, `gateway/lead_session.go`, `gateway/lead_session_migration.go` and others
+- **Read by:** `gateway/asks_to.go`, `gateway/authority.go`, `gateway/charter_drafts.go`, `gateway/charter_levels.go`, `gateway/charter_resolver.go`, `gateway/cto_lead.go`, `gateway/desk_rules.go`, `gateway/lead_route.go`, `gateway/lead_session.go` and others
 - **Shown in:** TUI, Graph; CTO op `team_create`; CTO op `team_settings_set`; CTO op `team_history`; tool `agent_graph_read`
 - **Kept:** Forever (an archived team is only marked inactive).
 

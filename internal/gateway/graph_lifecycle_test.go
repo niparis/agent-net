@@ -141,7 +141,8 @@ func TestGraphLifecycleMigrationDuplicates(t *testing.T) {
 	s, _ := newTestStore(t)
 	_, err := s.db.Exec(`DROP TRIGGER IF EXISTS repos_unique_name_insert; DROP TRIGGER IF EXISTS repos_unique_name_update;
  DROP TRIGGER IF EXISTS agents_unique_name_insert; DROP TRIGGER IF EXISTS agents_unique_name_update;
- DROP TRIGGER repo_live_owner_insert; DROP TRIGGER repo_live_owner_update; DROP TRIGGER agent_owned_tombstone;
+ DROP TRIGGER IF EXISTS repo_live_owner_insert; DROP TRIGGER IF EXISTS repo_live_owner_update; DROP TRIGGER IF EXISTS agent_owned_tombstone;
+ DROP TRIGGER IF EXISTS repo_live_lead_insert; DROP TRIGGER IF EXISTS repo_live_lead_update;
  DROP TRIGGER IF EXISTS session_lifecycle_insert; DROP TRIGGER IF EXISTS session_lifecycle_update;
  DROP TABLE IF EXISTS archived_repos; DELETE FROM schema_version WHERE version>=121;
  INSERT INTO agents(id,display_name,created_at,updated_at) VALUES('a1','Duplicate',0,0),('a2','duplicate',0,0);
@@ -433,7 +434,7 @@ func TestGraphLifecycleAutomaticRegistrationTombstonedOwner(t *testing.T) {
 			}
 			var owner *string
 			var tombstone bool
-			if err = s.db.QueryRow(`SELECT owner_agent_id FROM repos WHERE id='former'`).Scan(&owner); err != nil {
+			if err = s.db.QueryRow(`SELECT lead_agent_id FROM repos WHERE id='former'`).Scan(&owner); err != nil {
 				t.Fatal(err)
 			}
 			if err = s.db.QueryRow(`SELECT tombstone FROM agents WHERE id='former'`).Scan(&tombstone); err != nil {
@@ -442,10 +443,10 @@ func TestGraphLifecycleAutomaticRegistrationTombstonedOwner(t *testing.T) {
 			if owner != nil || !tombstone {
 				t.Fatalf("repo owner %v, tombstone %v", owner, tombstone)
 			}
-			if _, err = s.db.Exec(`INSERT INTO repos(id,display_name,created_at,updated_at,owner_agent_id) VALUES('bad','bad',0,0,'former')`); err == nil {
+			if _, err = s.db.Exec(`INSERT INTO repos(id,display_name,created_at,updated_at,lead_agent_id) VALUES('bad','bad',0,0,'former')`); err == nil {
 				t.Fatal("tombstoned agent assigned on insert")
 			}
-			if _, err = s.db.Exec(`UPDATE repos SET owner_agent_id='former' WHERE id='former'`); err == nil {
+			if _, err = s.db.Exec(`UPDATE repos SET lead_agent_id='former' WHERE id='former'`); err == nil {
 				t.Fatal("tombstoned agent assigned on update")
 			}
 		})

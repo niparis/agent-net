@@ -21,7 +21,7 @@ type leadDB interface {
 // repeats the rule. The alias is not repos: inside the subquery "repos.id" must
 // name the outer Repo, not the inner one.
 func repoTopAgentOfSQL(repo string) string {
-	return `COALESCE((SELECT CASE WHEN lr.lead_agent_id IS NULL THEN lr.owner_agent_id ELSE NULLIF(lr.lead_agent_id,'') END FROM repos lr WHERE lr.id=` + repo + `),'')`
+	return `COALESCE((SELECT lead_agent_id FROM repos lr WHERE lr.id=` + repo + `),'')`
 }
 
 var (
@@ -30,15 +30,16 @@ var (
 )
 
 // repoSchema is the Repo layout of one store. A store from before the repo fold
-// keeps a Repo's lead in repo_leads and its archive flag in archived_repos. The
-// shipped migration steps that place Agents or check scopes run on such a store,
-// so they ask this which columns exist. Runtime readers use the columns directly.
-type repoSchema struct{ folded, mergers bool }
+// keeps a Repo's lead in repo_leads and its archive flag in archived_repos; one
+// from before the org fold keeps owner_agent_id too. The shipped migration steps
+// that place Agents or check scopes run on such a store, so they ask this which
+// columns exist. Runtime readers use the columns directly.
+type repoSchema struct{ folded, mergers, unified bool }
 
 func repoSchemaOf(q leadDB) (repoSchema, error) {
-	var folded, mergers int
-	err := q.QueryRow(`SELECT COUNT(*) FILTER (WHERE name='lead_agent_id'), COUNT(*) FILTER (WHERE name='merger_session') FROM pragma_table_info('repos')`).Scan(&folded, &mergers)
-	return repoSchema{folded: folded > 0, mergers: mergers > 0}, err
+	var hasLead, hasMerger, hasOwner int
+	err := q.QueryRow(`SELECT COUNT(*) FILTER (WHERE name='lead_agent_id'), COUNT(*) FILTER (WHERE name='merger_session'), COUNT(*) FILTER (WHERE name='owner_agent_id') FROM pragma_table_info('repos')`).Scan(&hasLead, &hasMerger, &hasOwner)
+	return repoSchema{folded: hasLead > 0, mergers: hasMerger > 0, unified: hasLead > 0 && hasOwner == 0}, err
 }
 
 // repoTopAgentTx is the lead of one Repo in the layout of this store. It
@@ -55,8 +56,11 @@ func repoTopAgentTx(tx *sql.Tx, repo string) (string, error) {
 
 // lead is repoTopAgentOfSQL for this store's layout.
 func (r repoSchema) lead(repo string) string {
-	if r.folded {
+	if r.unified {
 		return repoTopAgentOfSQL(repo)
+	}
+	if r.folded {
+		return `COALESCE((SELECT CASE WHEN lr.lead_agent_id IS NULL THEN lr.owner_agent_id ELSE NULLIF(lr.lead_agent_id,'') END FROM repos lr WHERE lr.id=` + repo + `),'')`
 	}
 	return `COALESCE((SELECT CASE WHEN rl.repo_id IS NULL THEN ro.owner_agent_id ELSE rl.agent_id END
 		FROM repos ro LEFT JOIN repo_leads rl ON rl.repo_id=ro.id WHERE ro.id=` + repo + `),'')`
@@ -66,7 +70,7 @@ func (r repoSchema) lead(repo string) string {
 // columns exist, so a reader that runs later does not ask the schema.
 func (s *Store) repoLayout() (repoSchema, error) {
 	if s.repoFolded.Load() {
-		return repoSchema{folded: true, mergers: true}, nil
+		return repoSchema{folded: true, mergers: true, unified: true}, nil
 	}
 	return repoSchemaOf(s.db)
 }
@@ -150,13 +154,16 @@ func agentNameQ(q leadDB, agent string) (string, error) {
 	return name, err
 }
 
-// agentParentOfSQL is the tree parent of the Agent named by a SQL expression.
-func agentParentOfSQL(agent string) string {
-	return `COALESCE((SELECT target FROM graph_edges WHERE source=` + agent + ` AND kind='reports_to'),'')`
-}
-
+// agentParentQ computes the tree parent of one Agent.
 func agentParentQ(q leadDB, agent string) (string, error) {
-	return orgValue(q, `SELECT `+agentParentOfSQL("?"), agent)
+	if agent == "" {
+		return "", nil
+	}
+	parents, err := agentParentsQ(q)
+	if err != nil {
+		return "", err
+	}
+	return parents[agent], nil
 }
 
 // agentParentLabelQ names the parent the tree stores for one Agent.
@@ -420,8 +427,11 @@ func leadAddressSessionQ(q leadDB, kind, name string, now time.Time) (string, er
 }
 
 // storedLead is the lead_agent_id value of a lead write. A cleared lead (nil)
-// is an empty string, which is not NULL: NULL means the lead follows the owner.
-func storedLead(lead any) string {
+// is stored as NULL.
+func storedLead(lead any) any {
 	s, _ := lead.(string)
+	if s == "" {
+		return nil
+	}
 	return s
 }

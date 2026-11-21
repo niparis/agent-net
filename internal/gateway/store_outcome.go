@@ -81,14 +81,15 @@ func (s *Store) ResolveOutcome(replyID, owner, action string, validate ...bool) 
 	if err != nil {
 		return result, err
 	}
+	overruled := 0
+	overruleMsg := ""
 	if action == "overrule" {
-		if _, err = tx.Exec(`INSERT INTO outcome_overrules(message_id,reply_id) VALUES(?,?)`, result.ID, replyID); err != nil {
-			return result, err
-		}
+		overruled = 1
+		overruleMsg = result.ID
 	}
 	s.event(tx, "msg.stored", "", owner, result.ID, "")
 
-	if _, err = tx.Exec(`UPDATE graph_outcomes SET resolution=? WHERE reply_id=?`, action, replyID); err != nil {
+	if _, err = tx.Exec(`UPDATE graph_outcomes SET resolution=?,overruled=?,overrule_message_id=? WHERE reply_id=?`, action, overruled, overruleMsg, replyID); err != nil {
 		return result, err
 	}
 	asks, err := scanInboxRows(tx.Query(`SELECT `+inboxColumns+` FROM inbox_items WHERE message_id=? AND kind IN ('rejection','escalation') AND status='open'`, replyID))

@@ -109,9 +109,8 @@ func TestCompactionThresholdTeamAndAgentLevels(t *testing.T) {
 	s, _ := newTestStore(t)
 	for _, q := range []string{
 		`INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES('shop-lead','shop-lead','',0,0,0)`,
-		`INSERT INTO repos(id,display_name,created_at,updated_at,owner_agent_id) VALUES('shop','shop',0,0,'shop-lead')`,
+		`INSERT INTO repos(id,display_name,created_at,updated_at,lead_agent_id,team_id) VALUES('shop','shop',0,0,'shop-lead','forge')`,
 		`INSERT INTO teams(id,name,created_at,updated_at) VALUES('forge','forge',0,0)`,
-		`INSERT INTO team_members(member_kind,member_id,team_id) VALUES('repo','shop','forge')`,
 	} {
 		if _, err := s.db.Exec(q); err != nil {
 			t.Fatal(err)

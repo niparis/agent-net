@@ -18,7 +18,7 @@ func oldCharterStore(t *testing.T) string {
 	defer old.Close()
 	for _, q := range []string{
 		`INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES('demo','demo','',1,1,0)`,
-		`INSERT INTO repos(id,display_name,created_at,updated_at,owner_agent_id) VALUES('demo','demo',1,1,'demo')`,
+		`INSERT INTO repos(id,display_name,created_at,updated_at,lead_agent_id) VALUES('demo','demo',1,1,'demo')`,
 		`INSERT INTO charter_values VALUES('global','','rules','global taste',1,'owner')`,
 		`INSERT INTO charter_values VALUES('global','','refuses','secrets',1,'owner')`,
 		`INSERT INTO graph_charter VALUES('demo','refuses','production',2,'owner')`,

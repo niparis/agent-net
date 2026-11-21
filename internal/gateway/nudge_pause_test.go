@@ -81,7 +81,7 @@ func nudgeStepRig(t *testing.T) (*deliveryRig, string) {
 	if _, err := r.s.db.Exec(`INSERT INTO teams(id,name,created_at,updated_at) VALUES('forge','Forge',0,0)`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.s.db.Exec(`INSERT INTO team_members(member_kind,member_id,team_id) VALUES('agent','step-agent','forge')`); err != nil {
+	if _, err := r.s.db.Exec(`UPDATE agents SET team_id='forge' WHERE id='step-agent'`); err != nil {
 		t.Fatal(err)
 	}
 	id := nudgeApply(t, r.s, r.sonnet, map[string]any{"kind": "step_reminder", "team": "Forge"})

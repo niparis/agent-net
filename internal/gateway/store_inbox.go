@@ -802,8 +802,8 @@ func (s *Store) askArea(tx askDB, item protocol.InboxItem) string {
 		}
 
 		var teamName string
-		_ = tx.QueryRow(`SELECT t.name FROM teams t JOIN team_members tm ON tm.team_id=t.id JOIN sessions s ON s.id=?
-			WHERE t.active=1 AND ((tm.member_kind='repo' AND tm.member_id=s.repo_id AND s.repo_id<>'') OR (tm.member_kind='agent' AND tm.member_id=s.agent_id AND s.agent_id<>'')) LIMIT 1`,
+		_ = tx.QueryRow(`SELECT t.name FROM teams t JOIN sessions s ON s.id=?
+			WHERE t.active=1 AND ((s.repo_id<>'' AND EXISTS(SELECT 1 FROM repos r WHERE r.id=s.repo_id AND r.team_id=t.id)) OR (s.agent_id<>'' AND EXISTS(SELECT 1 FROM agents a WHERE a.id=s.agent_id AND a.team_id=t.id))) LIMIT 1`,
 			item.SessionID).Scan(&teamName)
 		if teamName != "" {
 			return teamName

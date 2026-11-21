@@ -181,33 +181,8 @@ func (s *Store) RemoveArchitect(name, actor string, validate ...bool) error {
 	if err != nil {
 		return err
 	}
-	// Dropping the architect clears this Agent's Repo ownership. Keep the Repos it
-	// owned, so their Agents follow the new owner rule.
-	repoRows, err := tx.Query(`SELECT id FROM repos WHERE owner_agent_id=? ORDER BY id`, name)
-	if err != nil {
-		return err
-	}
-	var ownedRepos []string
-	for repoRows.Next() {
-		var repo string
-		if err = repoRows.Scan(&repo); err != nil {
-			repoRows.Close()
-			return err
-		}
-		ownedRepos = append(ownedRepos, repo)
-	}
-	err = repoRows.Err()
-	repoRows.Close()
-	if err != nil {
-		return err
-	}
 	if err = dropArchitectTx(tx, name, s.now().UnixNano()); err != nil {
 		return err
-	}
-	for _, repo := range ownedRepos {
-		if err = placeRepoAgentsTx(tx, repo); err != nil {
-			return err
-		}
 	}
 	if err = graphRecord(tx, "node", name, "", "architect", "", actor, s.now().UnixNano()); err != nil {
 		return err
@@ -717,18 +692,14 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 			}
 			if old != "" {
 				var belongs bool
-				if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND owner_agent_id=? UNION ALL SELECT 1 FROM sessions WHERE repo_id=? AND agent_id=?)`, node, old, node, old).Scan(&belongs); err != nil {
+				if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND lead_agent_id=? UNION ALL SELECT 1 FROM sessions WHERE repo_id=? AND agent_id=?)`, node, old, node, old).Scan(&belongs); err != nil {
 					return err
 				}
 				if !belongs {
 					return reject("lead Agent has no session in this Repo")
 				}
 			}
-			if attr == "lead/default" {
-				_, err = tx.Exec(`UPDATE repos SET lead_agent_id=NULL WHERE id=?`, node)
-			} else {
-				_, err = tx.Exec(`UPDATE repos SET lead_agent_id=? WHERE id=?`, storedLead(lead), node)
-			}
+			_, err = tx.Exec(`UPDATE repos SET lead_agent_id=? WHERE id=?`, storedLead(lead), node)
 		case "team":
 			err = tx.QueryRow(`SELECT owner_agent_id FROM teams WHERE id=? AND active=1`, node).Scan(&current)
 			if err != nil {
@@ -746,22 +717,6 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 		}
 		if _, err = tx.Exec(`INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor,target_kind) VALUES('lead',?,'lead',?,?,?,?,?)`, node, value, old, now, actor, targetKind); err != nil {
 			return err
-		}
-		// The undo is a lead write too: the tree follows it.
-		switch targetKind {
-		case "repo":
-			if err = placeRepoAgentsTx(tx, node); err != nil {
-				return err
-			}
-		case "team":
-			for _, agent := range []string{current.String, old} {
-				if err = placeAgentTx(tx, agent); err != nil {
-					return err
-				}
-			}
-			if err = placeTeamMembersTx(tx, node); err != nil {
-				return err
-			}
 		}
 		if len(validate) > 0 && validate[0] {
 			return nil
@@ -796,7 +751,7 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 			}
 			if old == "" {
 				var count int
-				if err = tx.QueryRow(`SELECT COUNT(*) FROM team_members WHERE team_id=?`, node).Scan(&count); err != nil {
+				if err = tx.QueryRow(`SELECT (SELECT COUNT(*) FROM agents WHERE team_id=?) + (SELECT COUNT(*) FROM repos WHERE team_id=?)`, node, node).Scan(&count); err != nil {
 					return err
 				}
 				if count != 0 {
@@ -957,16 +912,8 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 		if old == "" {
 			_, err = tx.Exec(`DELETE FROM graph_edges WHERE source=? AND target=? AND kind=?`, e.From, e.To, e.Kind)
 		} else {
-			moved := e
 			if err = json.Unmarshal([]byte(old), &e); err != nil {
 				return err
-			}
-			// Undoing a parent move drops the new parent, then restores the
-			// old one, so the one-parent rule below sees a free slot.
-			if e.Kind == protocol.EdgeReportsTo && e.To != moved.To {
-				if _, err = tx.Exec(`DELETE FROM graph_edges WHERE source=? AND target=? AND kind=?`, moved.From, moved.To, moved.Kind); err != nil {
-					return err
-				}
 			}
 			if deliveryEdgeStep(e.Kind) != "" && e.Kind != "deploys" {
 				var count int
@@ -978,9 +925,7 @@ func (s *Store) graphUndo(id int64, actor string, validate ...bool) error {
 				}
 			}
 			if e.Kind == protocol.EdgeReportsTo {
-				if err = checkReportsTo(tx, e.From, e.To); err != nil {
-					return err
-				}
+				return reject("reports_to is computed from team membership, repo leads and roles")
 			}
 			owner := protocol.DeliveryOwnerFromSource(e.From)
 			if owner.Kind != protocol.OwnerNode {
@@ -1248,15 +1193,7 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 		return reject("invalid edge rule")
 	}
 	if e.Kind == protocol.EdgeReportsTo {
-		if e.Mode != "" {
-			return reject("an edge has no mode")
-		}
-		if err := checkReportsToTarget(tx, e.From, e.To); err != nil {
-			return err
-		}
-		// An explicit edge_set moves the parent; the one-parent rule still
-		// holds for every other writer (checkReportsTo).
-		return moveReportsToTx(tx, e, actor, now)
+		return reject("reports_to is computed from team membership, repo leads and roles; use lead_set or team_member_add")
 	}
 	deliveryEdge := deliveryEdgeStep(e.Kind) != "" && e.Kind != "deploys"
 	if e.Kind != "depends" && e.Kind != "deploys" && !deliveryEdge {

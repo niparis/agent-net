@@ -59,19 +59,19 @@ func restoreDroppedSince(t *testing.T, db repoDB, cur int) {
 	}
 }
 
-// restoreTablesAt puts back the named tables that are missing, each with the
-// statement it had at schema version v. A test that writes rows into an old
+// restoreTablesAt puts back the named tables that are missing and that existed
+// at schema version v, each with the statement it had there. A test that writes rows into an old
 // table before it rewinds schema_version needs the table first; the rewind
 // itself restores the rest through restoreDroppedSince.
 func restoreTablesAt(t *testing.T, db repoDB, v int, names ...string) {
 	t.Helper()
 	tables := tablesAtVersion(t, v)
 	for _, name := range names {
-		stmt, ok := tables[name]
-		if !ok {
-			t.Fatalf("%s does not exist at schema version %d", name, v)
+		// A table that did not exist at v is created by an older migration
+		// that the replay still runs.
+		if stmt, ok := tables[name]; ok {
+			createIfMissing(t, db, name, stmt)
 		}
-		createIfMissing(t, db, name, stmt)
 	}
 }
 

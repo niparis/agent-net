@@ -16,7 +16,7 @@ type AgentRecord struct {
 
 // RepoAgents returns all repos and agents, including tombstones.
 func (s *Store) RepoAgents() ([]RepoRecord, []AgentRecord, error) {
-	rows, err := s.db.Query(`SELECT id,display_name,owner_agent_id,created_at,updated_at,archived<>0 FROM repos ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id,display_name,lead_agent_id,created_at,updated_at,archived<>0 FROM repos ORDER BY id`)
 	if err != nil {
 		return nil, nil, err
 	}

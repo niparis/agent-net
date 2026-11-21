@@ -350,7 +350,6 @@ var writeRowSQL = map[string]string{
 	"charter_values":  `INSERT INTO charter_values(level,scope,attr,value,updated_at,updated_by) VALUES('global','','probe','x',1,'t')`,
 	"apps":            `INSERT INTO apps(id,name,kind,client_id,client_name,created_at) VALUES('app_probe','probe','owner_app','c','c',1)`,
 	"teams":           `INSERT INTO teams(id,name,created_at,updated_at) VALUES('t_probe','probe',1,1)`,
-	"team_members":    `INSERT INTO team_members(member_kind,member_id,team_id) VALUES('repo','probe','t_probe')`,
 }
 
 // writeColumnSQL is how the tests change a column the generic update cannot.
@@ -358,6 +357,8 @@ var writeRowSQL = map[string]string{
 // tombstoned agent cannot own one afterwards, so a new row stands in.
 var writeColumnSQL = map[string]string{
 	"agents.tombstone": `INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES('probe_tombstone','probe','',1,1,1)`,
+	"agents.team_id":   `INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone,team_id) VALUES('probe_team','probe','',1,1,0,'t_probe')`,
+	"repos.team_id":    `INSERT INTO repos(id,display_name,created_at,updated_at,team_id) VALUES('probe_team_repo','probe',1,1,'t_probe')`,
 }
 
 func writeTo(t *testing.T, s *Store, table string, n int) {

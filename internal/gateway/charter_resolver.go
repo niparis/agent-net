@@ -43,7 +43,7 @@ type charterResolver struct {
 // charterTables are the tables the resolver reads: the charter values of each
 // level, the teams a node belongs to, and the repo and agent charters. Keep it
 // equal to the queries in this file (see readThrough).
-var charterTables = []string{"charter_values", "teams", "team_members"}
+var charterTables = []string{"charter_values", "teams", "agents.team_id", "repos.team_id"}
 
 func (s *Store) newCharterResolver() *charterResolver {
 	return &charterResolver{
@@ -85,7 +85,8 @@ func (r *charterResolver) loadMemberships() error {
 	if r.membershipsLoaded {
 		return nil
 	}
-	rows, err := r.store.db.Query(`SELECT m.member_kind,m.member_id,m.team_id FROM team_members m JOIN teams t ON t.id=m.team_id AND t.active=1`)
+	rows, err := r.store.db.Query(`SELECT 'agent',a.id,a.team_id FROM agents a JOIN teams t ON t.id=a.team_id AND t.active=1
+		UNION ALL SELECT 'repo',rp.id,rp.team_id FROM repos rp JOIN teams t ON t.id=rp.team_id AND t.active=1`)
 	if err != nil {
 		return err
 	}

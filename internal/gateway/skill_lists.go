@@ -109,7 +109,8 @@ func (s *Store) skillListRows() (map[string][]skillListRow, error) {
 }
 
 func (s *Store) skillMemberships() (map[string]string, error) {
-	rows, err := s.db.Query(`SELECT m.member_kind, m.member_id, m.team_id FROM team_members m JOIN teams t ON t.id=m.team_id AND t.active=1`)
+	rows, err := s.db.Query(`SELECT 'agent',a.id,a.team_id FROM agents a JOIN teams t ON t.id=a.team_id AND t.active=1
+		UNION ALL SELECT 'repo',r.id,r.team_id FROM repos r JOIN teams t ON t.id=r.team_id AND t.active=1`)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +252,7 @@ func (s *Store) skillRepoID(scope string) (string, error) {
 // path uses the one context it has.
 func (s *Store) skillAgentRepo(agent string) (string, error) {
 	var owned string
-	if err := s.db.QueryRow(`SELECT CASE WHEN count(*)=1 THEN min(id) ELSE '' END FROM repos WHERE owner_agent_id=?
+	if err := s.db.QueryRow(`SELECT CASE WHEN count(*)=1 THEN min(id) ELSE '' END FROM repos WHERE lead_agent_id=?
 		AND archived=0`, agent).Scan(&owned); err != nil {
 		return "", err
 	}
@@ -748,8 +749,8 @@ func (s *Store) skillRestartOffer(level, scope string) protocol.SkillRestartOffe
 		query += ` AND s.agent_id=?`
 		args = append(args, scope)
 	case "team":
-		query += ` AND (s.repo_project IN (SELECT member_id FROM team_members WHERE team_id=? AND member_kind='repo')
-			OR s.agent_id IN (SELECT member_id FROM team_members WHERE team_id=? AND member_kind='agent'))`
+		query += ` AND (s.repo_project IN (SELECT id FROM repos WHERE team_id=?)
+			OR s.agent_id IN (SELECT id FROM agents WHERE team_id=?))`
 		args = append(args, scope, scope)
 	}
 	query += ` ORDER BY s.id`

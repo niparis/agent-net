@@ -337,7 +337,7 @@ func TestGraphNodesFoldKeepsNodeRemoveThroughTypedRefs(t *testing.T) {
 func TestGraphNodesAreTheReposWithACharterOrAnEdge(t *testing.T) {
 	s, _ := newTestStore(t)
 	mustExec(t, s, `INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone) VALUES('a','a','',1,1,0),('b','b','',1,1,0),('c','c','',1,1,0)`)
-	mustExec(t, s, `INSERT INTO repos(id,display_name,created_at,updated_at,owner_agent_id) VALUES('a','a',11,1,'a'),('b','b',12,1,'b'),('c','c',13,1,'c')`)
+	mustExec(t, s, `INSERT INTO repos(id,display_name,created_at,updated_at,lead_agent_id) VALUES('a','a',11,1,'a'),('b','b',12,1,'b'),('c','c',13,1,'c')`)
 	mustExec(t, s, `INSERT INTO charter_values VALUES('repo','a','purpose','x',1,'owner')`)
 	mustExec(t, s, `INSERT INTO graph_edges(source,target,kind,mode,rule) VALUES('b','a','depends','','normal')`)
 	nodes, err := s.graphNodes()
