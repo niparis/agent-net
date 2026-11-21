@@ -615,7 +615,7 @@ func TestInboxLimitRefusalNamesBusyRecipient(t *testing.T) {
 	s, c := newTestStore(t)
 	a, b := twoSessions(t, s)
 	busyStatus(t, s, b, "busy")
-	c.t = c.t.Add(23 * time.Minute)
+	c.advance(23 * time.Minute)
 	for i := 0; i < DefaultInboxLimit; i++ {
 		if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Type: protocol.TypeNotification,
 			Body: "w", IdempotencyKey: "w-" + strconv.Itoa(i)}); err != nil {

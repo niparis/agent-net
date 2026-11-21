@@ -706,7 +706,7 @@ func TestAgentNodeLoopWakesOnlyLeadSession(t *testing.T) {
 	idleSince(t, s, c, s3, time.Minute)
 
 	// Case 1: no lead session. It wakes nothing and logs why.
-	c.t = c.t.Add(31 * time.Minute)
+	c.advance(31 * time.Minute)
 	ticks := loopTicks(t, s)
 	if len(ticks) != 1 || ticks[0].Outcome != protocol.LoopSkippedNone || ticks[0].Message != nil {
 		t.Fatalf("ticks with no lead = %+v", ticks)
@@ -726,7 +726,7 @@ func TestAgentNodeLoopWakesOnlyLeadSession(t *testing.T) {
 	idleSince(t, s, c, s1, time.Minute)
 	idleSince(t, s, c, s2, time.Minute)
 	idleSince(t, s, c, s3, time.Minute)
-	c.t = c.t.Add(31 * time.Minute)
+	c.advance(31 * time.Minute)
 	ticks = loopTicks(t, s)
 	if len(ticks) != 1 || ticks[0].Outcome != protocol.LoopSent {
 		t.Fatalf("ticks with lead = %+v", ticks)

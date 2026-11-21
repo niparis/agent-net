@@ -327,7 +327,7 @@ func TestWithdrawEndsThePendingFollowUpOfTheMessage(t *testing.T) {
 	if _, err := s.Withdraw(req.ID, a); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Hour)
+	c.advance(time.Hour)
 	tickFollowUps(t, s)
 	if got := followUpAsks(t, s); len(got) != 0 {
 		t.Fatalf("a withdrawn message raised a follow-up ask: %+v", got)

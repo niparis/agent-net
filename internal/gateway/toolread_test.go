@@ -527,7 +527,7 @@ func TestSessionReadShowsBusyTime(t *testing.T) {
 	s, c := newTestStore(t)
 	a, b := twoSessions(t, s)
 	busyStatus(t, s, b, "busy")
-	c.t = c.t.Add(23 * time.Minute)
+	c.advance(23 * time.Minute)
 	got, err := s.GetSession(protocol.SessionGetRequest{Session: b})
 	if err != nil {
 		t.Fatal(err)
