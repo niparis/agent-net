@@ -33,6 +33,10 @@ const (
 type ownerPrompts struct {
 	mu sync.Mutex
 	by map[string][]ownerPrompt
+	// sweepMu serialises the transcript sweeps and guards scanned, the byte
+	// offset each transcript was read up to (queued_owner_prompts.go).
+	sweepMu sync.Mutex
+	scanned map[string]int64
 }
 
 type ownerPrompt struct {
@@ -50,6 +54,12 @@ func (d *Daemon) ownerPromptNow() time.Time {
 // rememberOwnerPrompt keeps a prompt the owner typed in a session. The caller
 // has already dropped the turns a harness injects itself.
 func (d *Daemon) rememberOwnerPrompt(session, text string) {
+	d.rememberOwnerPromptAt(session, text, d.ownerPromptNow())
+}
+
+// rememberOwnerPromptAt is rememberOwnerPrompt for a prompt typed at a known
+// time, such as one read back from a transcript.
+func (d *Daemon) rememberOwnerPromptAt(session, text string, at time.Time) {
 	text = strings.ToValidUTF8(strings.TrimSpace(text), "")
 	if session == "" || text == "" {
 		return
@@ -70,7 +80,7 @@ func (d *Daemon) rememberOwnerPrompt(session, text string) {
 			d.ownerPrompts.by[id] = fresh
 		}
 	}
-	list := append(d.ownerPrompts.by[session], ownerPrompt{at: now, text: text})
+	list := append(d.ownerPrompts.by[session], ownerPrompt{at: at, text: text})
 	if len(list) > maxOwnerPromptsPerSession {
 		list = list[len(list)-maxOwnerPromptsPerSession:]
 	}
@@ -90,6 +100,9 @@ func freshPrompts(list []ownerPrompt, now time.Time) []ownerPrompt {
 // ownerWordsMatch tells whether the quote is in what the owner typed in the
 // session in the last ownerPromptWindow, ignoring case and white space.
 func (d *Daemon) ownerWordsMatch(session, quote string) bool {
+	// Text typed while a Claude turn runs fires no prompt hook: read it from
+	// the transcript now, when it is needed.
+	d.sweepQueuedOwnerPrompts(session)
 	now := d.ownerPromptNow()
 	d.ownerPrompts.mu.Lock()
 	var texts []string
