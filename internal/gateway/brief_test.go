@@ -559,3 +559,60 @@ func TestOwnerBriefGatewayFrames(t *testing.T) {
 		t.Fatal("a brief was delivered from another node")
 	}
 }
+
+// A new brief closes the open briefs of older dates from the same chief, so the
+// Desk keeps one brief per day. The closes are the gateway's, not the owner's.
+// The two older briefs are open at once, as the owner's Desk held them before
+// this rule: the second delivery closes the first, so the test reopens it.
+func TestOwnerBriefClosesOlderOpenBriefs(t *testing.T) {
+	s, c, chief, _ := briefRig(t)
+	var older []string
+	for _, date := range []string{"2026-11-15", "2026-11-18"} {
+		r, err := s.putOwnerBrief(chief, protocol.OwnerBriefArgs{Body: "Brief for " + date, Date: date}, c.t)
+		if err != nil {
+			t.Fatal(err)
+		}
+		older = append(older, r.ItemID)
+	}
+	if _, err := s.db.Exec(`UPDATE inbox_items SET status='open', answer='', answered_at=0 WHERE id=?`, older[0]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.putOwnerBrief(chief, protocol.OwnerBriefArgs{Body: "Brief for today.", Date: "2026-11-21"}, c.t.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range older {
+		var status, answer string
+		if err := s.db.QueryRow(`SELECT status, answer FROM inbox_items WHERE id=?`, id).Scan(&status, &answer); err != nil {
+			t.Fatal(err)
+		}
+		if status != "closed" || answer != "replaced by the brief of 2026-11-21" {
+			t.Errorf("brief %s status=%q answer=%q, want closed and replaced by the brief of 2026-11-21", id, status, answer)
+		}
+	}
+	var open int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE kind=? AND status='open'`, protocol.AskKindBrief).Scan(&open); err != nil {
+		t.Fatal(err)
+	}
+	if open != 1 {
+		t.Fatalf("open briefs = %d, want only the one for 2026-11-21", open)
+	}
+}
+
+// A brief for an earlier date does not close a newer brief that is still open.
+func TestOwnerBriefLeavesANewerBriefOpen(t *testing.T) {
+	s, c, chief, _ := briefRig(t)
+	newer, err := s.putOwnerBrief(chief, protocol.OwnerBriefArgs{Body: "Brief for the 21st.", Date: "2026-11-21"}, c.t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.putOwnerBrief(chief, protocol.OwnerBriefArgs{Body: "A late brief for the 15th.", Date: "2026-11-15"}, c.t.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	var status string
+	if err := s.db.QueryRow(`SELECT status FROM inbox_items WHERE id=?`, newer.ItemID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "open" {
+		t.Fatalf("the newer brief is %q, want open", status)
+	}
+}
