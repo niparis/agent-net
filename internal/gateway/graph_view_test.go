@@ -181,7 +181,7 @@ func TestGraphTalkVoice(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := s.db.Exec(`INSERT INTO charter_signals(message_id,source,target,prompt,at) VALUES ('0','cogforge','tenebrae','owner prompt',?)`, now); err != nil {
+	if _, err := s.db.Exec(`UPDATE messages SET owner_prompt='owner prompt' WHERE id='0'`); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"0", "1", "2", "3"} {

@@ -300,7 +300,7 @@ hidden-items preferences. What stays hidden, and why:
 | `locations` (machine and path) and `sessions` | A machine path and a session list are not a rule. They name your folders and the processes that happen to be open, so they stay owner-only. |
 | Any setting name that is not one of the six above | An old or broken writer may have stored anything under an unknown name, including a path or a secret. The public read never reads it. |
 | A secret or token in a known setting | `ValidateNodeSetting` allows only the listed values, so a secret fails validation and `NodeDefaults` falls back to the maturity default. A hand-written invalid value is never returned. |
-| Learned-change history and evidence excerpts | The history can quote owner prompts, peer messages and reply outcomes. Those are evidence, not a rule. |
+| Learned-change history and evidence excerpts | The history can quote peer messages and reply outcomes. Those are evidence, not a rule. |
 | Hidden items | The owner's per-machine display preferences. They say what you do not want to see, not what an agent must do. |
 
 The public read projects the graph onto those fields: it never copies

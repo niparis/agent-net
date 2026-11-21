@@ -369,18 +369,6 @@ type FrictionView struct {
 	ChangedAt int64  `json:"changed_at,omitempty"`
 	Link      string `json:"link,omitempty"`
 	Note      string `json:"note,omitempty"`
-	// History is the status changes of the report, oldest first. The read sends
-	// it only when it asks for one report by id.
-	History []FrictionStatusChange `json:"history,omitempty"`
-}
-
-// FrictionStatusChange is one mark a report received.
-type FrictionStatusChange struct {
-	Status    string `json:"status"`
-	ChangedBy string `json:"changed_by"`
-	ChangedAt int64  `json:"changed_at"`
-	Link      string `json:"link,omitempty"`
-	Note      string `json:"note,omitempty"`
 }
 
 // FrictionProjectCount is how many reports a project has in the read window,

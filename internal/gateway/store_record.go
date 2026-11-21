@@ -350,7 +350,7 @@ func (s *Store) feedEventsBefore(afterID, beforeID int64, limit int) ([]protocol
 	}
 	args = append(args, limit)
 	rows, err := s.db.Query(`SELECT e.id, e.at, e.kind, e.node_id, COALESCE(n.hostname,''), e.session_id, e.message_id, e.detail,
-		COALESCE(m.sender,''), COALESCE(m.recipient,''), COALESCE(m.type,''), COALESCE(m.parent_id,''), COALESCE(m.sender_cto,0), COALESCE(m.conversation_id,''), COALESCE(m.owner_approved,0), COALESCE(src.harness,'') = 'owner' OR EXISTS(SELECT 1 FROM charter_signals cs WHERE cs.message_id=m.id AND cs.prompt <> ''), COALESCE(src.harness,'') = 'owner', COALESCE(dst.harness,'') = 'owner'
+		COALESCE(m.sender,''), COALESCE(m.recipient,''), COALESCE(m.type,''), COALESCE(m.parent_id,''), COALESCE(m.sender_cto,0), COALESCE(m.conversation_id,''), COALESCE(m.owner_approved,0), COALESCE(src.harness,'') = 'owner' OR COALESCE(m.owner_prompt,'') <> '', COALESCE(src.harness,'') = 'owner', COALESCE(dst.harness,'') = 'owner'
 		FROM events e LEFT JOIN nodes n ON n.id = e.node_id LEFT JOIN messages m ON m.id = e.message_id AND e.message_id != '' LEFT JOIN sessions src ON src.id=m.sender LEFT JOIN sessions dst ON dst.id=m.recipient
 		WHERE `+where+` ORDER BY e.id `+order+` LIMIT ?`, args...)
 	if err != nil {
@@ -489,13 +489,10 @@ func (s *Store) Prune(r Retention) (PruneResult, error) {
 			return res, err
 		}
 	}
-	if _, err := s.db.Exec(`DELETE FROM charter_signals WHERE at < ?`, now.Add(-90*24*time.Hour).UnixNano()); err != nil {
+	if _, err := s.db.Exec(`UPDATE messages SET owner_prompt='' WHERE owner_prompt<>'' AND created_at < ?`, now.Add(-90*24*time.Hour).UnixNano()); err != nil {
 		return res, err
 	}
-	if _, err := s.db.Exec(`DELETE FROM signal_prompts WHERE at < ?`, now.Add(-10*time.Minute).UnixNano()); err != nil {
-		return res, err
-	}
-	if _, err := s.db.Exec(`DELETE FROM learned_message_flow WHERE at < ?`, now.Add(-7*24*time.Hour).UnixNano()); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET owner_prompt='', owner_prompt_at=0 WHERE owner_prompt<>'' AND owner_prompt_at < ?`, now.Add(-10*time.Minute).UnixNano()); err != nil {
 		return res, err
 	}
 	// A finding that was never promoted goes stale after 90 days.

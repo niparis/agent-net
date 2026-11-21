@@ -32,13 +32,13 @@ A message is checked, stored, handed to the receiver's machine, confirmed as del
 5. `graph_edges` (reads): For a request, it looks up the owner's rule between the two projects: normal, ask first, or never.
 6. `messages` (reads): It counts the messages already in this conversation to enforce the conversation limit.
 7. `messages` (writes): The new message is saved with state 'stored', its conversation, its expiry time and its sender and receiver.
-8. `signal_prompts` (writes): If the owner's last prompt to the sender explains this first request, that prompt is taken and removed so it can be learned from once.
+8. `messages` (writes): If the owner's last prompt to the sender explains this first request, the message keeps that prompt. The sender's copy is cleared either way, so the prompt is used once.
 9. `events` (writes): The audit log records 'msg.stored' with the type, receiver and size (never the text).
 10. `messages` (writes): Just before sending to the receiver's machine, the message state moves from 'stored' to 'dispatched'.
 11. `events` (writes): The audit log records 'msg.dispatched' for the receiver.
 12. `deliveries` (writes): The receiver's daemon reports back, and the gateway keeps that report as one delivery row.
 13. `messages` (writes): The message state moves to 'delivered' (it stays 'replied' or 'failed' if it already was).
-14. `learned_message_flow` (writes): The first delivery between two different projects is remembered as a short excerpt, as evidence that the projects talk.
+14. `messages` (reads): When a message is delivered between two projects that have no link yet, the gateway reads the messages those projects exchanged in the last 7 days, as evidence that they talk.
 15. `events` (writes): The audit log records 'msg.delivered' for the receiver.
 16. `messages` (writes): The receiver's reply is saved as a new message in the same conversation, and in the same transaction the original request is marked 'replied'.
 17. `delivery_retries` (writes): Any pending retry for the answered request is deleted, because it no longer needs delivering.
@@ -268,11 +268,11 @@ Agent sessions, and the checks and wake-ups that go with them.
 
 ### sessions
 
-- **Holds:** One row per agent session (a coding agent running on a machine, a worker, the CTO or the chief): name, folder, repo, status, online state, model, worker data and archive and pin marks.
+- **Holds:** One row per agent session (a coding agent running on a machine, a worker, the CTO or the chief): name, folder, repo, status, online state, model, worker data and archive and pin marks. It also holds the owner's last typed prompt to the session (`owner_prompt`, with its time `owner_prompt_at`).
 - **Written by:** `gateway/apps.go`, `gateway/bot_agent.go`, `gateway/bot_names.go`, `gateway/bot_session.go`, `gateway/busy_hold.go`, `gateway/chief.go`, `gateway/cto_session.go`, `gateway/machine_tokens.go`, `gateway/merger.go`, `gateway/org_tree.go` and others
 - **Read by:** `gateway/ask_holder.go`, `gateway/ask_intake.go`, `gateway/asks.go`, `gateway/asks_to.go`, `gateway/authority.go`, `gateway/automatic_message.go`, `gateway/bot_names.go`, `gateway/bot_session.go`, `gateway/bot_tools.go`, `gateway/busy_hold.go` and others
 - **Shown in:** TUI, Sessions; TUI, Graph; tool `agent_sessions_find`; tool `agent_session_get`; CTO op `session_change`; CTO op `sessions_archive`
-- **Kept:** Offline sessions are archived after 7 days and kept; an un-archived offline session unused for 30 days is deleted by the hourly prune; cleaned workers are deleted on request.
+- **Kept:** Offline sessions are archived after 7 days and kept; an un-archived offline session unused for 30 days is deleted by the hourly prune; cleaned workers are deleted on request. The owner prompt is cleared at the session's first send, and after 10 minutes at most (hourly prune).
 
 ## Messages
 
@@ -304,11 +304,11 @@ Messages between sessions, their delivery records, and automatic nudges.
 
 ### messages
 
-- **Holds:** One row per message between sessions, the owner and bots: sender, recipient, type, body, thread, state, expiry, urgency, hold and handoff data and attached file ids.
+- **Holds:** One row per message between sessions, the owner and bots: sender, recipient, type, body, thread, state, expiry, urgency, hold and handoff data and attached file ids. A request that carries the owner's prompt keeps that prompt (`owner_prompt`).
 - **Written by:** `gateway/agentnet_reply.go`, `gateway/automatic_message.go`, `gateway/bot_tools.go`, `gateway/busy_hold.go`, `gateway/caller_agent.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/cto_lead.go`, `gateway/delivery_reconcile.go`, `gateway/delivery_tasks.go` and others
 - **Read by:** `gateway/ask_holder.go`, `gateway/asks.go`, `gateway/brief_check.go`, `gateway/busy_hold.go`, `gateway/check.go`, `gateway/cto_lead.go`, `gateway/delivery_tasks.go`, `gateway/follow_ups.go`, `gateway/graph_talk.go`, `gateway/held.go` and others
 - **Shown in:** TUI, Messages; TUI, Desk; tool `agent_message_send`; tool `agent_message_reply`; tool `agent_messages_find`; tool `agent_message_get`; tool `agent_message_withdraw`; tool `agent_message_handoff`
-- **Kept:** Forever by default (the gateway flag --keep-messages is 0); when set, older rows go on the hourly prune except bot mail not yet read and rows behind open reject or escalate outcomes.
+- **Kept:** Forever by default (the gateway flag --keep-messages is 0); when set, older rows go on the hourly prune except bot mail not yet read and rows behind open reject or escalate outcomes. The owner prompt on a message is cleared after 90 days (hourly prune).
 
 ### nudge_fires
 
@@ -650,14 +650,6 @@ What the owner sees on the Desk: asks, sorts, follow-ups and the log.
 
 Standing orders, notes, findings, and what the gateway learns from signals.
 
-### charter_signals
-
-- **Holds:** One message between two projects that counts as evidence of how they work together, with the owner prompt that caused it when there was one.
-- **Written by:** `gateway/signal.go`, `gateway/store_record.go`
-- **Read by:** `gateway/graph_talk.go`, `gateway/signal.go`, `gateway/store.go`, `gateway/store_record.go`
-- **Shown in:** TUI, Messages; TUI, Graph; CTO op `graph_talk`
-- **Kept:** For 90 days, pruned hourly.
-
 ### findings
 
 - **Holds:** One finding reported about a model or a harness. Enough findings promote a playbook note.
@@ -668,51 +660,19 @@ Standing orders, notes, findings, and what the gateway learns from signals.
 
 ### friction
 
-- **Holds:** One friction report: a line from a worker or agent saying what slowed it down, with project, area, model and change.
+- **Holds:** One friction report: a line from a worker or agent saying what slowed it down, with project, area, model and change. It also holds the read status of the report (new, read, triaged, fixed, wontfix, infra) with who set it, when, and the link and note of that mark. Only the latest mark is kept.
 - **Written by:** `gateway/friction.go`
 - **Read by:** `gateway/friction.go`
 - **Shown in:** TUI, Quotas; tool `agent_friction_mark`; CTO op `friction_find`; CTO op `friction_mark`
 - **Kept:** Forever.
 
-### friction_status_history
-
-- **Holds:** Every status change of a friction report (read, triaged, fixed, wontfix, infra) with who changed it, when and a note or link.
-- **Written by:** `gateway/friction.go`, `gateway/side_fold.go`
-- **Read by:** `gateway/friction.go`, `gateway/side_fold.go`
-- **Shown in:** CTO op `friction_find`; CTO op `friction_mark`; tool `agent_friction_mark`
-- **Kept:** Forever.
-
-### learned_message_flow
-
-- **Holds:** A short excerpt of a recent message between two nodes, kept so the learning step can look for phrases that suggest a charter or link change.
-- **Written by:** `gateway/learned.go`, `gateway/store_record.go`
-- **Read by:** `gateway/learned.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** For 7 days, pruned hourly.
-
-### learned_phrase_runs
-
-- **Holds:** The times of recent phrase checks, used to limit how often the learning step runs.
-- **Written by:** `gateway/learned_phrase.go`
-- **Read by:** `gateway/learned_phrase.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** For 1 hour, trimmed at every use.
-
 ### learned_suggestions
 
-- **Holds:** One suggestion the system learned from message traffic: a change to a charter field or to a link, with its evidence and status (new, accepted, rejected).
-- **Written by:** `gateway/learned.go`, `gateway/learned_apply.go`, `gateway/learned_owner.go`, `gateway/learned_phrase.go`, `gateway/side_fold.go`, `gateway/store_graph.go`
-- **Read by:** `gateway/asks.go`, `gateway/chief.go`, `gateway/learned.go`, `gateway/learned_apply.go`, `gateway/learned_owner.go`, `gateway/learned_phrase.go`, `gateway/store_inbox.go`
+- **Holds:** One suggestion the system learned from message traffic: a change to a charter field or to a link, with its evidence and status (new, accepted, rejected). For an applied change, `learned_seen` says whether the owner has seen it.
+- **Written by:** `gateway/learned.go`, `gateway/learned_apply.go`, `gateway/learned_owner.go`, `gateway/side_fold.go`, `gateway/store_graph.go`
+- **Read by:** `gateway/asks.go`, `gateway/chief.go`, `gateway/learned.go`, `gateway/learned_apply.go`, `gateway/learned_owner.go`, `gateway/store_inbox.go`
 - **Shown in:** TUI, Desk; TUI, Graph; CTO op `learned_list`; CTO op `learned_answer`; CTO op `learned_view`
 - **Kept:** Forever (status changes, rows stay).
-
-### learned_views
-
-- **Holds:** The id of the last suggestion each node has been shown, so only new ones count as new.
-- **Written by:** `gateway/learned_owner.go`
-- **Read by:** `gateway/learned_owner.go`
-- **Shown in:** CTO op `learned_view`
-- **Kept:** Replaced on each view (one row per node).
 
 ### playbook
 
@@ -721,14 +681,6 @@ Standing orders, notes, findings, and what the gateway learns from signals.
 - **Read by:** `gateway/learn.go`, `gateway/track.go`
 - **Shown in:** tool `agent_machine_get`; tool `agent_worker_start`; CTO op `playbook_get`; CTO op `playbook_set`; TUI, Graph
 - **Kept:** Until the owner clears the note; automatic notes are flagged stale after 60 days.
-
-### signal_prompts
-
-- **Holds:** One row per session holding the owner's last typed prompt, used to explain the first message the session sends so the system can learn which agent the owner meant.
-- **Written by:** `gateway/signal.go`, `gateway/store_record.go`
-- **Read by:** `gateway/signal.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** For 10 minutes, pruned hourly; also deleted at the session's first send.
 
 ### standing_order_history
 

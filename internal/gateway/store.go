@@ -1330,7 +1330,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -2051,6 +2051,19 @@ func (s *Store) migrate() error {
 			return err
 		}
 		stmt := migrations[i]
+		if strings.Contains(migrations[i], learnedTablesMarker) {
+			for _, col := range learnedTablesColumns {
+				var has int
+				err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?`, col.table, col.name).Scan(&has)
+				if err == nil && has == 0 {
+					_, err = tx.Exec(`ALTER TABLE ` + col.table + ` ADD COLUMN ` + col.name + ` ` + col.spec)
+				}
+				if err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+			}
+		}
 		if strings.Contains(migrations[i], graphNodesFoldMarker) {
 			if err := s.foldGraphNodesTx(tx); err != nil {
 				tx.Rollback()
@@ -4773,7 +4786,7 @@ func (s *Store) agentsBaseOwned(selectSQL string, f protocol.QueryAgents, owners
 
 const msgSelect = `SELECT m.id, m.conversation_id, m.parent_id, m.sender, m.recipient, m.type, m.body, m.hop,
 	m.idem_key, m.created_at, m.expires_at, m.state, COALESCE((SELECT d.detail FROM deliveries d WHERE d.message_id=m.id AND d.state=m.state ORDER BY d.rowid DESC LIMIT 1),'') || COALESCE((SELECT ' (retry ' || attempts || ' scheduled)' FROM delivery_retries WHERE message_id=m.id AND m.state='failed'),''),
-	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto, m.owner_approved, EXISTS(SELECT 1 FROM outcome_overrules oo WHERE oo.message_id=m.id), m.approval_note, COALESCE((SELECT substr(cs.prompt,1,200) FROM charter_signals cs WHERE cs.message_id=m.id),''),
+	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto, m.owner_approved, EXISTS(SELECT 1 FROM outcome_overrules oo WHERE oo.message_id=m.id), m.approval_note, substr(m.owner_prompt,1,200),
 	m.files, m.worker_task, m.is_order,
 	m.urgent, m.held_for_busy, m.batch_json, m.batch_id
 	FROM messages m LEFT JOIN sessions s ON s.id = m.sender LEFT JOIN profiles p ON p.session_id = m.sender`
@@ -5315,7 +5328,7 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		if _, err := tx.Exec(`INSERT INTO graph_outcomes(source,target,message_id,reply_id,outcome,reason,redirect_to,recommendation,at) VALUES(?,?,?,?,?,?,?,?,?)`, from, to, p.ParentID, m.ID, p.Outcome, p.Reason, p.RedirectTo, p.Recommendation, now.UnixNano()); err != nil {
 			return msg, false, err
 		}
-		if err := s.signalOutcome(tx, m, p); err != nil {
+		if err := s.learnOutcome(tx, m.ID, m.CreatedAt.UnixNano()); err != nil {
 			return msg, false, err
 		}
 		if p.Outcome == "reject" || p.Outcome == "escalate" {
@@ -5825,8 +5838,8 @@ func conversationsPageSQL(normalWhere, systemWhere, cursor string, limit int) (s
 	),
 	cited AS MATERIALIZED (
 		SELECT DISTINCT b.pair_gid AS gid
-		FROM charter_signals cs2 CROSS JOIN messages b ON b.id = cs2.message_id
-		WHERE cs2.prompt <> '' AND b.pair_gid IN (SELECT gid FROM page) AND ` + systemWhere + `
+		FROM messages b
+		WHERE b.owner_prompt <> '' AND b.pair_gid IN (SELECT gid FROM page) AND ` + systemWhere + `
 	),
 	sys AS MATERIALIZED (
 		SELECT p.gid,
@@ -5842,7 +5855,7 @@ func conversationsPageSQL(normalWhere, systemWhere, cursor string, limit int) (s
 	SELECT p.gid, p.last_at, m.id, m.sender, m.recipient, m.body, m.state, m.sender_cto, m.type, t.n,
 		COALESCE(NULLIF(fp.name,''), fs.name, ''),
 		COALESCE(NULLIF(rp.name,''), rs.name, ''),
-		EXISTS(SELECT 1 FROM charter_signals cs WHERE cs.message_id = m.id),
+		m.owner_prompt <> '',
 		COALESCE(fs.harness, ''), COALESCE(rs.harness, ''),
 		CASE WHEN t.direct_owner <> 0 OR c.gid IS NOT NULL THEN 1 ELSE 0 END, t.blocked, t.system,
 		COALESCE(s.body, ''), COALESCE(s.recipient, ''), p.total
@@ -5902,7 +5915,7 @@ func conversationsWorkerPageSQL(cursor string, limit int) (string, []any) {
 	SELECT p.gid, p.last_at, m.id, m.sender, m.recipient, m.body, m.state, m.sender_cto, m.type, p.n,
 		COALESCE(NULLIF(fp.name,''), fs.name, ''),
 		COALESCE(NULLIF(rp.name,''), rs.name, ''),
-		EXISTS(SELECT 1 FROM charter_signals cs WHERE cs.message_id = m.id),
+		m.owner_prompt <> '',
 		COALESCE(fs.harness, ''), COALESCE(rs.harness, ''), 0,
 		CASE WHEN p.blocked <> 0 THEN 1 ELSE 0 END, 0, '', '', p.total
 	FROM latest p
@@ -6016,7 +6029,7 @@ func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.Conve
 func (s *Store) conversationsVersion() uint64 {
 	stamp := s.readStamp([]string{
 		"messages", "sessions.name", "sessions.harness", "sessions.worker",
-		"profiles.name", "charter_signals",
+		"profiles.name",
 	})
 	return uint64(s.convEpoch)<<32 | uint64(uint32(stamp))
 }

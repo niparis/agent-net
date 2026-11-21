@@ -18,10 +18,9 @@ func reportFriction(t *testing.T, s *Store, project, session, area, text string)
 	}
 }
 
-// Decision 0175: a mark sets the status of a report and keeps every earlier
-// mark. The current link and note are the last mark's; a mark without them
-// clears them, and the history still shows what they were.
-func TestFrictionMarkSetsStatusAndKeepsHistory(t *testing.T) {
+// Decision 0175: a mark sets the status of a report. The link and note are the
+// last mark's: a mark without them clears them.
+func TestFrictionMarkSetsStatus(t *testing.T) {
 	s, c := newTestStore(t)
 	reportFriction(t, s, "demo", "s_1", protocol.FrictionCI, "the suite flaked")
 	c.advance(time.Minute)
@@ -50,15 +49,6 @@ func TestFrictionMarkSetsStatusAndKeepsHistory(t *testing.T) {
 	e := got.Entries[0]
 	if e.Status != protocol.FrictionFixed || e.ChangedBy != "owner" || e.Link != "" || e.Note != "" {
 		t.Fatalf("current state after the second mark: %+v", e)
-	}
-	if len(e.History) != 2 {
-		t.Fatalf("history: %+v", e.History)
-	}
-	if h := e.History[0]; h.Status != protocol.FrictionRead || h.ChangedBy != "cto" || h.Link != "ch_1234" || h.Note != "seen" {
-		t.Fatalf("first mark in history: %+v", h)
-	}
-	if h := e.History[1]; h.Status != protocol.FrictionFixed || h.ChangedBy != "owner" {
-		t.Fatalf("second mark in history: %+v", h)
 	}
 	if got.Unread != 0 {
 		t.Fatalf("unread after a mark: %d", got.Unread)

@@ -125,39 +125,6 @@ func TestLearnedCriticalAndCap(t *testing.T) {
 		t.Fatalf("rolling cap: %+v", v)
 	}
 }
-func TestLearnedRejectedNeverOfferedAgain(t *testing.T) {
-	s, _, a, b := learnedProjects(t)
-	if err := s.RememberOwnerPrompt(a, "ops: backups are his job"); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := send(s, a, b, "", ""); err != nil {
-		t.Fatal(err)
-	}
-	v := learnedRead(t, s, false)
-	p := learnedFind(v, "ops", "accepts", "backups")
-	if p == nil {
-		t.Fatal(v)
-	}
-	if err := s.RejectLearnedSuggestion(p.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := send(s, a, b, "", ""); err != nil {
-		t.Fatal(err)
-	}
-	v = learnedRead(t, s, false)
-	count := 0
-	for _, x := range v {
-		if x.Node == "ops" && x.Field == "accepts" && x.Phrase == "backups" {
-			count++
-			if x.Status != "rejected" {
-				t.Fatalf("reoffered: %+v", v)
-			}
-		}
-	}
-	if count != 1 {
-		t.Fatalf("reoffered: %+v", v)
-	}
-}
 func TestLearnedApplyRollback(t *testing.T) {
 	s, _, _, _ := learnedProjects(t)
 	insertLearned(t, s, "app", "rules", "", "add", "ops for backups", "owner")
@@ -215,29 +182,6 @@ func TestLearnedRejectionAlsoSuppressesPendingSamePhrase(t *testing.T) {
 	}
 }
 
-func TestLearnedOwnerAndMajorApply(t *testing.T) {
-	s, c, a, b := learnedProjects(t)
-	if err := s.RememberOwnerPrompt(a, "ops: backups are his job"); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := send(s, a, b, "", ""); err != nil {
-		t.Fatal(err)
-	}
-	insertLearned(t, s, "app", "refuses", "", "add", "deployments", "outcome")
-	c.t = c.t.Add(2 * time.Minute)
-	if err := s.ProcessLearned(); err != nil {
-		t.Fatal(err)
-	}
-	v := learnedRead(t, s, false)
-	for _, x := range v {
-		if x.Field == "refuses" && (x.Status != "pending" || x.Severity != "major") {
-			t.Fatalf("major: %+v", x)
-		}
-		if (x.Field == "rules" || x.Field == "accepts") && x.Status != "applied" {
-			t.Fatalf("owner additions: %+v", x)
-		}
-	}
-}
 func TestLearnedRunLearningProcessesOnStartup(t *testing.T) {
 	s, _, _, _ := learnedProjects(t)
 	insertLearned(t, s, "app", "rules", "", "add", "ops for backups", "owner")

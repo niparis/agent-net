@@ -24,9 +24,6 @@ func (s *Store) LearnedSuggestions(readyOnly bool) ([]LearnedSuggestion, error) 
 		query += ` AND status='pending' AND ready_at<=?`
 		args = append(args, s.now().UnixNano())
 	}
-	if s.phraseCleaner != nil {
-		query += ` AND NOT (status='pending' AND field IN ('accepts','rules') AND origin='owner' AND raw_phrase IS NULL)`
-	}
 	query += ` ORDER BY id`
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
@@ -48,8 +45,6 @@ func (s *Store) LearnedSuggestions(readyOnly bool) ([]LearnedSuggestion, error) 
 	return out, rows.Err()
 }
 
-var learnedOwnerJob = regexp.MustCompile(`(?i)\b(?:all\s+)?(?:this\s+)?([^.!?;]{1,100}?)\s+(?:is|are)\s+(?:his|its)(?:\s+job)?\b`)
-var learnedBelongs = regexp.MustCompile(`(?i)(?:^|[.!?;:\n])\s*(?:all\s+)?(?:this\s+)?([^.!?;:]{1,100}?)\s+(?:belongs|goes|should go|is handled)\s+(?:in|to|by|with)\s+([^.!?;:\n]+)`)
 var learnedRedirect = regexp.MustCompile(`(?i)^(.{1,100}?)\s+(?:belongs|goes|should go|is handled)\s+(?:in|to|by|with)\b`)
 
 func learnedPhrase(s string) string {
@@ -176,55 +171,6 @@ func learnedAdd(tx *sql.Tx, at int64, node, field, edgeKind, phrase, severity, o
 	return err
 }
 
-func (s *Store) learnOwner(tx *sql.Tx, from, to, id, prompt string, at int64) error {
-	if err := learnedTouch(tx, at, from, to); err != nil {
-		return err
-	}
-	var target, phrase string
-	if m := learnedBelongs.FindStringSubmatch(prompt); len(m) > 0 {
-		phrase = learnedPhrase(m[1])
-		name := strings.TrimSpace(m[2])
-		// The named target must be an exact known graph name, not a guess based on
-		// the message recipient.
-		rows, err := tx.Query(`SELECT id FROM agents WHERE role='architect' AND tombstone=0 UNION SELECT scope FROM charter_values WHERE level='repo' UNION SELECT repo_project FROM sessions WHERE archived_at=0 AND repo_project<>'' UNION SELECT name FROM projects`)
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var candidate string
-			if err = rows.Scan(&candidate); err != nil {
-				rows.Close()
-				return err
-			}
-			if strings.EqualFold(candidate, name) {
-				target = candidate
-			}
-		}
-		err = rows.Err()
-		rows.Close()
-		if err != nil {
-			return err
-		}
-	} else if m := learnedOwnerJob.FindStringSubmatch(prompt); len(m) > 0 && mentionsName(prompt, to) {
-		target = to
-		phrase = learnedPhrase(m[1])
-	}
-	if target == "" || phrase == "" {
-		return nil
-	}
-	if err := learnedTouch(tx, at, target); err != nil {
-		return err
-	}
-	ev := []LearnedEvidence{{ID: id, Excerpt: prompt}}
-	if err := learnedAdd(tx, at, target, "accepts", "", phrase, "minor", "owner", ev); err != nil {
-		return err
-	}
-	if target == from {
-		return nil
-	}
-	return learnedAdd(tx, at, from, "rules", "", target+" for "+phrase, "minor", "owner", ev)
-}
-
 func (s *Store) learnOutcome(tx *sql.Tx, replyID string, at int64) error {
 	var from, to, outcome, reason, redirect string
 	if err := tx.QueryRow(`SELECT source,target,outcome,reason,redirect_to FROM graph_outcomes WHERE reply_id=?`, replyID).Scan(&from, &to, &outcome, &reason, &redirect); err != nil {
@@ -292,9 +238,49 @@ func (s *Store) learnOutcome(tx *sql.Tx, replyID string, at int64) error {
 	return learnedAdd(tx, at, to, "edge", "depends", redirect, "minor", "outcome", ev)
 }
 
+// learnedProjectSessions are the sessions of one project. A session's project
+// is its repo project, or else its profile project (the same rule as
+// sessionIdentityQuery).
+const learnedProjectSessions = `SELECT s.id FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE COALESCE(NULLIF(s.repo_project,''),p.project,'')=?`
+
+// learnedFlowEvidence returns the messages that went between two projects in the
+// seven days up to at, oldest first. Only a message that reached its receiver
+// counts. Its excerpt is the first 300 characters of its body.
+func learnedFlowEvidence(tx *sql.Tx, from, to string, at int64) ([]LearnedEvidence, error) {
+	// One branch per direction. Each starts from the sender index, so its cost
+	// follows the traffic of the two projects, not of the whole week.
+	const delivered = `m.state IN ('delivered','replied','acknowledged') AND m.created_at>=? AND m.created_at<=?`
+	rows, err := tx.Query(`WITH f(id) AS MATERIALIZED (`+learnedProjectSessions+`), t(id) AS MATERIALIZED (`+learnedProjectSessions+`)
+		SELECT id,excerpt FROM (
+			SELECT m.id AS id, m.created_at AS at, substr(m.body,1,300) AS excerpt FROM messages m
+			WHERE m.sender IN (SELECT id FROM f) AND m.recipient IN (SELECT id FROM t) AND `+delivered+`
+			UNION ALL
+			SELECT m.id, m.created_at, substr(m.body,1,300) FROM messages m
+			WHERE m.sender IN (SELECT id FROM t) AND m.recipient IN (SELECT id FROM f) AND `+delivered+`
+		) ORDER BY at, id`,
+		from, to, at-int64(7*24*time.Hour), at, at-int64(7*24*time.Hour), at)
+	if err != nil {
+		return nil, err
+	}
+	var ev []LearnedEvidence
+	for rows.Next() {
+		var e LearnedEvidence
+		if err = rows.Scan(&e.ID, &e.Excerpt); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ev = append(ev, e)
+	}
+	err = rows.Err()
+	rows.Close()
+	return ev, err
+}
+
+// learnDelivery looks for a link between two projects that talk and have no
+// link yet. The messages between them are the evidence.
 func (s *Store) learnDelivery(tx *sql.Tx, id string, at int64) error {
-	var from, to, body string
-	err := tx.QueryRow(`SELECT COALESCE(NULLIF(a.repo_project,''),ap.project,''),COALESCE(NULLIF(b.repo_project,''),bp.project,''),m.body FROM messages m JOIN sessions a ON a.id=m.sender JOIN sessions b ON b.id=m.recipient LEFT JOIN profiles ap ON ap.session_id=a.id LEFT JOIN profiles bp ON bp.session_id=b.id WHERE m.id=?`, id).Scan(&from, &to, &body)
+	var from, to string
+	err := tx.QueryRow(`SELECT COALESCE(NULLIF(a.repo_project,''),ap.project,''),COALESCE(NULLIF(b.repo_project,''),bp.project,'') FROM messages m JOIN sessions a ON a.id=m.sender JOIN sessions b ON b.id=m.recipient LEFT JOIN profiles ap ON ap.session_id=a.id LEFT JOIN profiles bp ON bp.session_id=b.id WHERE m.id=?`, id).Scan(&from, &to)
 	if err == sql.ErrNoRows {
 		return nil
 	}
@@ -303,14 +289,6 @@ func (s *Store) learnDelivery(tx *sql.Tx, id string, at int64) error {
 	}
 	if from == "" || to == "" || from == to {
 		return nil
-	}
-	res, err := tx.Exec(`INSERT OR IGNORE INTO learned_message_flow(message_id,source,target,excerpt,at) VALUES(?,?,?,?,?)`, id, from, to, learnedExcerpt(body), at)
-	if err != nil {
-		return err
-	}
-	n, err := res.RowsAffected()
-	if err != nil || n == 0 {
-		return err
 	}
 	if err = learnedTouch(tx, at, from, to); err != nil {
 		return err
@@ -322,21 +300,7 @@ func (s *Store) learnDelivery(tx *sql.Tx, id string, at int64) error {
 	if connected != 0 {
 		return nil
 	}
-	rows, err := tx.Query(`SELECT message_id,excerpt FROM learned_message_flow WHERE ((source=? AND target=?) OR (source=? AND target=?)) AND at>=? AND at<=? ORDER BY at,message_id`, from, to, to, from, at-int64(7*24*time.Hour), at)
-	if err != nil {
-		return err
-	}
-	var ev []LearnedEvidence
-	for rows.Next() {
-		var e LearnedEvidence
-		if err = rows.Scan(&e.ID, &e.Excerpt); err != nil {
-			rows.Close()
-			return err
-		}
-		ev = append(ev, e)
-	}
-	err = rows.Err()
-	rows.Close()
+	ev, err := learnedFlowEvidence(tx, from, to, at)
 	if err != nil {
 		return err
 	}

@@ -28,7 +28,7 @@ func TestFrictionMarkByLeadSessionOnly(t *testing.T) {
 	if _, err := s.MarkFrictionAsLead(leads["other"], mark); err == nil || !strings.Contains(err.Error(), "only a lead session") {
 		t.Fatalf("a session that is not a lead: %v", err)
 	}
-	if got, err := s.FrictionFind(protocol.FrictionQuery{ID: id}); err != nil || got.Entries[0].Status != protocol.FrictionNew || len(got.Entries[0].History) != 0 {
+	if got, err := s.FrictionFind(protocol.FrictionQuery{ID: id}); err != nil || got.Entries[0].Status != protocol.FrictionNew {
 		t.Fatalf("a refused mark wrote: %+v %v", got.Entries, err)
 	}
 	res, err := s.MarkFrictionAsLead(leads["demo"], mark)

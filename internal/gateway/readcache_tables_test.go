@@ -87,7 +87,7 @@ func richReadStore(t *testing.T) *Store {
 		t.Fatal(err)
 	}
 	// Learned suggestions: one linked to a charter change and viewed, one
-	// pending draft. The phrase cleaner is on, as in production.
+	// pending draft. The summary cleaner is on, as in production.
 	id := insertLearned(t, s, "cogforge", "purpose", "", "add", "learn things", "outcome")
 	// Ready and major: the list reads the history and the view of it.
 	if _, err := s.db.Exec(`UPDATE learned_suggestions SET severity='major', ready_at=1 WHERE id=?`, id); err != nil {
@@ -100,7 +100,7 @@ func richReadStore(t *testing.T) *Store {
 	if _, err := s.db.Exec(`UPDATE learned_suggestions SET history_id=? WHERE id=?`, hist, id); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO learned_views(node,last_seen_id) VALUES('cogforge',?)`, id); err != nil {
+	if _, err := s.db.Exec(`UPDATE learned_suggestions SET learned_seen=1 WHERE id=?`, id); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.db.Exec(`INSERT INTO charter_drafts(level,scope,attr,value,source,status,drafted_by,created_at) VALUES('repo','cogforge','maturity','draft','outcome','pending','lead',1)`); err != nil {

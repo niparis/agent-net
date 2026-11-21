@@ -79,11 +79,11 @@ func oldSideTableLayout(t *testing.T) (path string, friction []int64) {
 	// Entries come newest first.
 	twice, orphan, never := found.Entries[2].ID, found.Entries[1].ID, found.Entries[0].ID
 	friction = []int64{twice, orphan, never}
-	for _, status := range []string{protocol.FrictionRead, protocol.FrictionTriaged} {
-		if _, err := s.MarkFriction("cto", protocol.FrictionMarkRequest{IDs: []int64{twice}, Status: status, Link: "ch_1", Note: "n"}); err != nil {
-			t.Fatal(err)
-		}
-	}
+	// The old release kept every mark in friction_status_history. The migration
+	// drops that table, so the layout makes it again and writes the two marks.
+	sideFoldExec(t, s, `CREATE TABLE friction_status_history (id INTEGER PRIMARY KEY AUTOINCREMENT, friction_id INTEGER NOT NULL, status TEXT NOT NULL, changed_by TEXT NOT NULL DEFAULT '', changed_at INTEGER NOT NULL, link TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '')`)
+	sideFoldExec(t, s, `INSERT INTO friction_status_history(friction_id,status,changed_by,changed_at,link,note) VALUES(?,?,'cto',1,'ch_1','n'),(?,?,'cto',2,'ch_1','n')`,
+		twice, protocol.FrictionRead, twice, protocol.FrictionTriaged)
 
 	// Drop what the fold added, then bring the old tables back.
 	for _, q := range []string{
@@ -267,7 +267,7 @@ func TestSideFoldMigrationKeepsEveryRow(t *testing.T) {
 		if err != nil || len(got.Entries) != 1 {
 			t.Fatalf("find: %+v %v", got, err)
 		}
-		if e := got.Entries[0]; e.Status != protocol.FrictionTriaged || e.ChangedBy != "cto" || e.Link != "ch_1" || len(e.History) != 2 {
+		if e := got.Entries[0]; e.Status != protocol.FrictionTriaged || e.ChangedBy != "cto" || e.Link != "ch_1" {
 			t.Errorf("a report marked twice: %+v", e)
 		}
 		got, err = s.FrictionFind(protocol.FrictionQuery{ID: orphan})
@@ -275,11 +275,11 @@ func TestSideFoldMigrationKeepsEveryRow(t *testing.T) {
 			t.Fatalf("find: %+v %v", got, err)
 		}
 		// The status table said fixed. The history now says it too.
-		if e := got.Entries[0]; e.Status != protocol.FrictionFixed || e.ChangedBy != "owner" || e.ChangedAt != 999 || e.Link != "ch_2" || e.Note != "by hand" || len(e.History) != 1 {
+		if e := got.Entries[0]; e.Status != protocol.FrictionFixed || e.ChangedBy != "owner" || e.ChangedAt != 999 || e.Link != "ch_2" || e.Note != "by hand" {
 			t.Errorf("a status row with no history: %+v", e)
 		}
 		got, err = s.FrictionFind(protocol.FrictionQuery{ID: never})
-		if err != nil || len(got.Entries) != 1 || got.Entries[0].Status != protocol.FrictionNew || len(got.Entries[0].History) != 0 {
+		if err != nil || len(got.Entries) != 1 || got.Entries[0].Status != protocol.FrictionNew {
 			t.Errorf("a report nobody marked: %+v %v", got, err)
 		}
 		all, err := s.FrictionFind(protocol.FrictionQuery{})
@@ -311,7 +311,7 @@ func TestSideFoldMigrationReplays(t *testing.T) {
 	// An older migration made the side tables again, empty.
 	sideFoldExec(t, s, `CREATE TABLE IF NOT EXISTS learned_suggestion_details (suggestion_id INTEGER PRIMARY KEY, origin TEXT NOT NULL DEFAULT '', history_id INTEGER NOT NULL DEFAULT 0)`)
 	sideFoldExec(t, s, `CREATE TABLE IF NOT EXISTS friction_status (friction_id INTEGER PRIMARY KEY, status TEXT NOT NULL, changed_by TEXT NOT NULL DEFAULT '', changed_at INTEGER NOT NULL, link TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '')`)
-	history := sideFoldInt(t, s, `SELECT COUNT(*) FROM friction_status_history`)
+	sideFoldExec(t, s, `CREATE TABLE IF NOT EXISTS friction_status_history (id INTEGER PRIMARY KEY AUTOINCREMENT, friction_id INTEGER NOT NULL, status TEXT NOT NULL, changed_by TEXT NOT NULL DEFAULT '', changed_at INTEGER NOT NULL, link TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '')`)
 	sideFoldExec(t, s, `DELETE FROM schema_version WHERE version >= ?`, sideFoldMigrationIndex(t))
 	restoreRepoSideTables(t, s.db)
 	if err := s.Close(); err != nil {
@@ -325,8 +325,12 @@ func TestSideFoldMigrationReplays(t *testing.T) {
 	if n := sideFoldInt(t, s, `SELECT history_id FROM learned_suggestions WHERE id=1`); n != 7 {
 		t.Errorf("history id %d after a replay", n)
 	}
-	if n := sideFoldInt(t, s, `SELECT COUNT(*) FROM friction_status_history`); n != history {
-		t.Errorf("history rows %d, want %d", n, history)
+	// The replay keeps each report's status: the fold and the copy do not undo it.
+	for status, want := range map[string]int{protocol.FrictionTriaged: 1, protocol.FrictionFixed: 1} {
+		got, err := s.FrictionFind(protocol.FrictionQuery{Status: status})
+		if err != nil || len(got.Entries) != want {
+			t.Errorf("reports marked %s after a replay: %+v %v", status, got.Entries, err)
+		}
 	}
 }
 

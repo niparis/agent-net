@@ -38,6 +38,8 @@ CREATE INDEX IF NOT EXISTS friction_area ON friction(area, created_at DESC);
 // friction_status_history keeps every mark, oldest first, and the current mark
 // of a report is its latest row. A report with no row is new. The table
 // friction_status that held the current mark was dropped, as a copy of it.
+// learnedTablesMigration later moved each report's latest mark onto the
+// friction row and dropped friction_status_history.
 const frictionStatusMigration = `
 -- Friction read status (decision 0175): the current mark of a report.
 CREATE TABLE IF NOT EXISTS friction_status (
@@ -63,7 +65,8 @@ CREATE INDEX IF NOT EXISTS friction_status_history_report ON friction_status_his
 
 // frictionIndexMigration covers the main page read and the project, area and
 // status counts of FrictionFind, so a read walks an index instead of scanning
-// the friction table or joining friction_status_history twice per row.
+// the friction table or joining friction_status_history twice per row. The
+// index was later rebuilt with the status columns (learnedTablesMigration).
 const frictionIndexMigration = `
 -- Covering indexes for friction_find (decision 0179).
 CREATE INDEX IF NOT EXISTS friction_read ON friction(id DESC, project, area, created_at, session, change_id, harness, model, text);
@@ -82,17 +85,13 @@ const frictionDefaultLimit = 20
 // frictionSampleLimit bounds the ids a mark reply names. The count is exact.
 const frictionSampleLimit = 20
 
-// frictionFrom joins each report to its current mark: its latest history row.
-// A report with no mark reads as new.
-const frictionFrom = " FROM friction f LEFT JOIN friction_status_history st ON st.id=(SELECT MAX(id) FROM friction_status_history WHERE friction_id=f.id)"
-
-// frictionStatusSQL reads the current status of report f from the covering
-// index on friction_status_history. A report with no mark reads as new.
-const frictionStatusSQL = "COALESCE((SELECT status FROM friction_status_history WHERE friction_id=f.id ORDER BY id DESC LIMIT 1),'new')"
+// frictionFrom is the table a read walks. The status of a report is on its own
+// row (decision 0175).
+const frictionFrom = " FROM friction f"
 
 // frictionCols are the columns a read returns, in the order it scans them.
 const frictionCols = "f.id,f.project,f.session,f.change_id,f.harness,f.model,f.area,f.text,f.created_at," +
-	"COALESCE(st.status,'new'),COALESCE(st.changed_by,''),COALESCE(st.changed_at,0),COALESCE(st.link,''),COALESCE(st.note,'')"
+	"f.status,f.status_by,f.status_at,f.status_link,f.status_note"
 
 // ReportFriction stores one hand-back's list. It returns how many rows it
 // stored; a report with no entries stores nothing and is fine.
@@ -149,7 +148,7 @@ func frictionFilter(project, area, status, text string, since, id int64) (string
 		args = append(args, area)
 	}
 	if status != "" {
-		where += " AND " + frictionStatusSQL + "=?"
+		where += " AND f.status=?"
 		args = append(args, status)
 	}
 	if text != "" {
@@ -275,22 +274,15 @@ func (s *Store) FrictionFind(q protocol.FrictionQuery) (protocol.FrictionFindRes
 	if more {
 		out.NextCursor = strconv.FormatInt(out.Entries[len(out.Entries)-1].ID, 10)
 	}
-	if q.ID > 0 && len(out.Entries) == 1 {
-		history, err := s.frictionHistory(out.Entries[0].ID)
-		if err != nil {
-			return out, err
-		}
-		out.Entries[0].History = history
-	}
 	return out, nil
 }
 
 // frictionCounts fills the totals and the per-project counts of the WHERE
 // clause. It reads no page, so a reader can count without paging. When status
-// is already fixed by where, unread follows from the count without a second
-// history lookup per row.
+// is already fixed by where, unread follows from the count without a per-row
+// check.
 func (s *Store) frictionCounts(out *protocol.FrictionFindResult, where string, args []any, status string) error {
-	unreadExpr := `SUM(CASE WHEN ` + frictionStatusSQL + `='new' THEN 1 ELSE 0 END)`
+	unreadExpr := `SUM(CASE WHEN f.status='new' THEN 1 ELSE 0 END)`
 	if status == protocol.FrictionNew {
 		unreadExpr = `COUNT(*)`
 	} else if status != "" {
@@ -324,28 +316,9 @@ func (s *Store) frictionCounts(out *protocol.FrictionFindResult, where string, a
 	return nil
 }
 
-// frictionHistory returns every mark a report received, oldest first.
-func (s *Store) frictionHistory(id int64) ([]protocol.FrictionStatusChange, error) {
-	rows, err := s.db.Query(`SELECT status,changed_by,changed_at,link,note FROM friction_status_history WHERE friction_id=? ORDER BY id`, id)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []protocol.FrictionStatusChange
-	for rows.Next() {
-		var c protocol.FrictionStatusChange
-		if err := rows.Scan(&c.Status, &c.ChangedBy, &c.ChangedAt, &c.Link, &c.Note); err != nil {
-			return nil, err
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
-}
-
-// MarkFriction sets the read status of the reports the request picks, and
-// writes one history row for each. actor is who made the mark: "owner" or
-// "cto". A dry run counts the matches and writes nothing. An id that names no
-// report matches nothing.
+// MarkFriction sets the read status of the reports the request picks. actor is
+// who made the mark: "owner" or "cto". A dry run counts the matches and writes
+// nothing. An id that names no report matches nothing.
 func (s *Store) MarkFriction(actor string, q protocol.FrictionMarkRequest) (protocol.FrictionMarkResult, error) {
 	out := protocol.FrictionMarkResult{Status: q.Status, DryRun: q.DryRun, SampleIDs: []int64{}}
 	if err := q.Validate(); err != nil {
@@ -374,8 +347,8 @@ func (s *Store) MarkFriction(actor string, q protocol.FrictionMarkRequest) (prot
 	}
 	defer tx.Rollback()
 	for _, id := range ids {
-		if _, err := tx.Exec(`INSERT INTO friction_status_history(friction_id,status,changed_by,changed_at,link,note) VALUES(?,?,?,?,?,?)`,
-			id, q.Status, actor, at, link, note); err != nil {
+		if _, err := tx.Exec(`UPDATE friction SET status=?,status_by=?,status_at=?,status_link=?,status_note=? WHERE id=?`,
+			q.Status, actor, at, link, note, id); err != nil {
 			return out, err
 		}
 	}
