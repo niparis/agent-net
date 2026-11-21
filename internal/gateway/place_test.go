@@ -3,6 +3,7 @@ package gateway
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -364,5 +365,64 @@ func TestHandoffReplyThreadedByConversation(t *testing.T) {
 	cp, ok, err := r.s.HandoffCopy(reply.ID)
 	if err != nil || !ok || cp.To != r.lead || !strings.Contains(cp.Body, "done") {
 		t.Fatalf("lead copy: %+v %v %v", cp, ok, err)
+	}
+}
+
+// A sender above the lead in the org tree is inside the chain of command, so a
+// request it sends to a member stays with that member. A sender outside the
+// chain is still redirected to the lead.
+func TestRedirectSkipsLeadWhenSenderIsAboveIt(t *testing.T) {
+	r := newPlaceRig(t)
+	if err := r.s.AddArchitect("chiefx", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if parent := reportsTo(t, r.s, "other"); parent != "" {
+		if err := r.s.RemoveEdge(reportsEdge("other", parent), "owner"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := r.s.SetEdge(reportsEdge("other", "chiefx"), "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.s.db.Exec(`UPDATE sessions SET agent_id='chiefx' WHERE id=?`, r.outside); err != nil {
+		t.Fatal(err)
+	}
+	m, _, route, err := r.s.StoreLeadMessage(protocol.MsgSend{Sender: r.outside, Recipient: r.member, Body: "from above"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.To != r.member || route != "" || m.Body != "from above" {
+		t.Fatalf("sender above the lead was redirected: to %s, note %q, body %q", m.To, route, m.Body)
+	}
+
+	if _, err := r.s.db.Exec(`UPDATE sessions SET agent_id='' WHERE id=?`, r.outside); err != nil {
+		t.Fatal(err)
+	}
+	m, _, route, err = r.s.StoreLeadMessage(protocol.MsgSend{Sender: r.outside, Recipient: r.member, Body: "from outside"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.To != r.lead || !strings.HasPrefix(route, "Redirected to other") {
+		t.Fatalf("sender outside the chain was not redirected: to %s, note %q", m.To, route)
+	}
+}
+
+// The redirect note says how long the lead it sends to has been busy.
+func TestRedirectNoteNamesBusyLead(t *testing.T) {
+	r := newPlaceRig(t)
+	if _, err := r.s.db.Exec(`UPDATE sessions SET name='ingest-forge' WHERE id=?`, r.member); err != nil {
+		t.Fatal(err)
+	}
+	since := r.s.now().Add(-23 * time.Minute).UnixNano()
+	if _, err := r.s.db.Exec(`UPDATE sessions SET status='busy', busy_since=? WHERE id=?`, since, r.lead); err != nil {
+		t.Fatal(err)
+	}
+	m, _, route, err := r.s.StoreLeadMessage(protocol.MsgSend{Sender: r.outside, Recipient: r.member, Body: "please ingest"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Redirected to other (lead of Alpha, busy 23m); originally sent to ingest-forge."
+	if route != want || m.To != r.lead {
+		t.Fatalf("note %q to %s, want %q to %s", route, m.To, want, r.lead)
 	}
 }

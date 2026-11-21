@@ -52,6 +52,19 @@ func checkReportsToTarget(tx *sql.Tx, from, to string) error {
 	return nil
 }
 
+// agentAboveTx says whether one Agent is above another in the org tree: its
+// parent, or a parent of its parent, and so on. An Agent is not above itself.
+func agentAboveTx(tx *sql.Tx, above, agent string) (bool, error) {
+	if above == "" || agent == "" {
+		return false, nil
+	}
+	var found bool
+	err := tx.QueryRow(`WITH RECURSIVE up(id) AS (SELECT target FROM graph_edges WHERE source=? AND kind='reports_to'
+		UNION SELECT e.target FROM graph_edges e JOIN up ON e.source=up.id WHERE e.kind='reports_to')
+		SELECT EXISTS(SELECT 1 FROM up WHERE id=?)`, agent, above).Scan(&found)
+	return found, err
+}
+
 // checkReportsTo holds the three rules of the tree: one parent per Agent, no
 // cycle, and a merger is never a lead. The parent is a live Agent or the root.
 func checkReportsTo(tx *sql.Tx, from, to string) error {

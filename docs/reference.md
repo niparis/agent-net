@@ -1283,7 +1283,7 @@ reports busy is sent anyway, and the gateway logs `msg.released_stuck`.
 recipient) caps how many undelivered peer messages may wait for one session. A
 message already in a batch counts once, as the batch. At the limit a send is
 refused with `recipient has N waiting, oldest from you at <time>; withdraw one
-or wait`. The text says `from anyone` when the oldest waiting message came from another sender. The owner's messages and the CTO's messages with `as_owner: true` are
+or wait`. When the recipient is busy, the refusal also says how long its turn has run: `recipient has 5 waiting, oldest from you at <time>; recipient busy 23m; withdraw one or wait`. The text says `from anyone` when the oldest waiting message came from another sender. The owner's messages and the CTO's messages with `as_owner: true` are
 exempt. So are three kinds of traffic that are not peer messages: a reply to
 the recipient's own request, agent-net's own notices (step tasks, reminders,
 not-started notices), and messages between a worker and the caller that started
@@ -1291,11 +1291,12 @@ it, in either direction (the task, the caller's follow-ups, and worker notices
 such as done or started). Exempt traffic is never refused and does not count
 toward the limit, but it still takes the busy hold and the batch. Any sender
 may set `urgent`: it goes ahead of older held messages and still counts toward
-the limit. A value of 0 turns the limit off.
+the limit. An urgent message from the CTO or the chief of staff is never refused
+by the limit, though it still counts. A value of 0 turns the limit off.
 
 The send result and `agent_message_status` carry `queue_position` (1 is next),
 `queue_waiting`, `busy_for_seconds` and a one-line `queue` receipt such as
-`queued behind 2, session busy for 6 min`. In the TUI the STATUS cell adds
+`queued behind 2, session busy for 6 min`. A session read (`agent_session_get`, and each row of `agent_sessions_find`) carries `busy_for`, such as `23m`, while the session's current turn has run; it is absent when the session is not busy. In the TUI the STATUS cell adds
 `gw N · in M`: N held at the gateway, M dispatched but not yet delivered to
 the harness.
 
@@ -4541,7 +4542,7 @@ until explicitly set or cleared. When `lead_set` on a Repo changes the owner, it
 session recorded there. A Team lead can be an Agent or a session.
 
 For messages from outside the recipient's Repo or Team crew, the gateway picks a lead in this order. First the Repo lead: a message to the Repo lead's own session stays with that session, and a message to any other session of a Repo that has a Repo lead goes to that Repo lead. Otherwise the Team lead, which does not take a message addressed to a Repo lead. A lead is its lead session: a redirect goes to the Agent's pinned `lead_session` when online, and when offline it is queued or woken for that same session, never for another member. Only the pinned session leads: another session of the same Agent is an ordinary member and is told which session leads it. With no `lead_session`, nothing leads, the request is delivered as addressed, and the receipt says the lead has no lead session. A pinned lead session whose model has no quota left takes no request either: the request is delivered as addressed, and the receipt says the lead has no quota until the window resets. The quota is the reading the picker uses, checked on each gateway tick. A message addressed to the lead session itself never leaves it, even when the session now belongs to another Agent node than the one that pins it. The gateway adds a note to the message and receipt.
-When the lead Agent has several live sessions and no pinned one, a session under a provider usage limit comes last, so another live session of the same Agent gets the message; if all are limited the usual order applies. A session that waits for its user never receives a redirect: another live session of the lead is picked, and otherwise the message stays with the addressed session and the receipt says the lead is waiting. The owner and CTO are exempt, as are workers messaging their caller. If there is
+When the lead Agent has several live sessions and no pinned one, a session under a provider usage limit comes last, so another live session of the same Agent gets the message; if all are limited the usual order applies. A session that waits for its user never receives a redirect: another live session of the lead is picked, and otherwise the message stays with the addressed session and the receipt says the lead is waiting. The owner and CTO are exempt, as are workers messaging their caller. A sender above the lead in the org tree (its parent, or a parent of that parent, and so on) is inside the chain of command, so its request to a member stays with that member and is not redirected. When the lead is busy, the note says so: `Redirected to <lead> (lead of <scope>, busy 23m); originally sent to <member>.` If there is
 no lead or no live lead session, the original target receives the message and
 the receipt says why. A reply is never redirected: it goes to the session that
 sent the message it answers. Use `repo:<name>` or `team:<name>` to address a

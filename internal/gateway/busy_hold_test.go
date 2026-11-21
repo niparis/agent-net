@@ -564,3 +564,67 @@ func TestNestedBatchRepairMigration(t *testing.T) {
 		t.Fatalf("stuck member is %q, want delivered", m.State)
 	}
 }
+
+// An urgent message from the owner's chief of staff or from the CTO passes a
+// full inbox. A normal message from the chief is still refused, and so is an
+// urgent one from an ordinary session.
+func TestUrgentFromChiefAndCTOPassesFullInbox(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+	for i := 0; i < DefaultInboxLimit; i++ {
+		if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Type: protocol.TypeNotification,
+			Body: "w", IdempotencyKey: "w-" + strconv.Itoa(i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	node := mustNode(t, s, a)
+	chief, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "chief", Name: "chief"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cto, _, err := s.upsertSession(s.db, node, protocol.SessionInfo{Harness: "cto", NativeID: "cto", Name: "CTO"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, session := range map[string]string{chiefSessionKey: chief, "cto_session": cto} {
+		if _, err := s.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES(?,?,0)
+			ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, session); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: chief, Recipient: b, Type: protocol.TypeRequest,
+		Body: "chief urgent", IdempotencyKey: "chief-urgent", Urgent: true}); err != nil {
+		t.Fatalf("the chief's urgent message was refused: %v", err)
+	}
+	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: cto, Recipient: b, Type: protocol.TypeRequest,
+		Body: "cto urgent", IdempotencyKey: "cto-urgent", Urgent: true}); err != nil {
+		t.Fatalf("the CTO's urgent message was refused: %v", err)
+	}
+	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: chief, Recipient: b, Type: protocol.TypeRequest,
+		Body: "chief normal", IdempotencyKey: "chief-normal"}); err == nil {
+		t.Fatal("the chief's normal message skipped the full inbox")
+	}
+	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Type: protocol.TypeRequest,
+		Body: "ordinary urgent", IdempotencyKey: "ordinary-urgent", Urgent: true}); err == nil {
+		t.Fatal("an ordinary session's urgent message skipped the full inbox")
+	}
+}
+
+// The refusal says how long a busy recipient has run its current turn.
+func TestInboxLimitRefusalNamesBusyRecipient(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+	busyStatus(t, s, b, "busy")
+	c.t = c.t.Add(23 * time.Minute)
+	for i := 0; i < DefaultInboxLimit; i++ {
+		if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Type: protocol.TypeNotification,
+			Body: "w", IdempotencyKey: "w-" + strconv.Itoa(i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Type: protocol.TypeNotification,
+		Body: "over", IdempotencyKey: "over"})
+	if err == nil || !strings.Contains(err.Error(), "recipient busy 23m") {
+		t.Fatalf("refusal does not name the busy time: %v", err)
+	}
+}

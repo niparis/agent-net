@@ -82,6 +82,13 @@ func routeLead(tx *sql.Tx, m *protocol.Message, now time.Time, quota leadQuotaRe
 		} else if same {
 			return "", false, nil
 		}
+		// A sender above the lead in the org tree is inside the chain of
+		// command, so its request to a member stays with that member.
+		if above, err := agentAboveTx(tx, senderAgent, lead); err != nil {
+			return "", false, err
+		} else if above {
+			return "", true, nil
+		}
 		pick, ready, err := redirectLeadSessionQ(tx, lead, inRepo, now, quota)
 		if err != nil {
 			return "", false, err
@@ -101,7 +108,15 @@ func routeLead(tx *sql.Tx, m *protocol.Message, now time.Time, quota leadQuotaRe
 		if pick.id == m.From || pick.id == m.To {
 			return "", true, nil
 		}
-		note := fmt.Sprintf("Redirected to %s (lead of %s); originally sent to %s.", pick.name, scope, targetName)
+		where := scope
+		busy, err := busyForText(tx, pick.id, now)
+		if err != nil {
+			return "", true, err
+		}
+		if busy != "" {
+			where += ", busy " + busy
+		}
+		note := fmt.Sprintf("Redirected to %s (lead of %s); originally sent to %s.", pick.name, where, targetName)
 		// The sender's receipt keeps the short note. The lead's copy also says
 		// what to do with the request. A fallback session is not the pinned
 		// lead, so it is not told that it leads the scope.
