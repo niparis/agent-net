@@ -463,6 +463,9 @@ func compactBoundaryAfter(path string, offset int64) bool {
 // One line, no newlines: the text is typed into the terminal as one command.
 const compactInstructions = "Keep: the current task and its goal; open questions to the owner and to other agents; every agent-net ID (sessions s_, workers, changes ch_, messages, asks); branches, worktree paths and full commit shas; decisions made; the next step."
 
+// compactEnterGap is the pause between the typed command and its Enter key.
+const compactEnterGap = 300 * time.Millisecond
+
 func (a *Adapter) compactSession(ctx context.Context, f found, path string) (result error) {
 	fi, err := os.Stat(path)
 	if err != nil {
@@ -549,9 +552,20 @@ func (a *Adapter) compactSession(ctx context.Context, f found, path string) (res
 	if err != nil || json.Unmarshal(raw, &sf) != nil || !betweenTurns(sf.Status) || sf.SessionID != f.info.NativeID || sf.JobID != f.job {
 		return fmt.Errorf("session changed before compact")
 	}
-	// Bracketed paste wraps the typed command so Claude Code's terminal paste
-	// sanitizer does not strip the trailing \r as an invisible character.
-	if _, err := terminal.Write([]byte("\x1b[200~/compact " + compactInstructions + "\x1b[201~\r")); err != nil {
+	// The command is typed as keys, as the owner types it. With bracketed paste
+	// around it, the CTO got "\/compact" and the command did not run (transcript,
+	// 2026-11-21). Enter follows alone after a short gap: a carriage return in the
+	// same write as the text was dropped, which is why paste markers were added
+	// (e2e42999e2).
+	if _, err := terminal.Write([]byte("/compact " + compactInstructions)); err != nil {
+		return err
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(compactEnterGap):
+	}
+	if _, err := terminal.Write([]byte("\r")); err != nil {
 		return err
 	}
 	timeout := a.compactTimeout
