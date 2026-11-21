@@ -84,7 +84,8 @@ INSERT OR IGNORE INTO graph_edges(source,target,kind,mode,rule,source_kind,targe
 SELECT '/delivery/caller',target,kind,mode,rule,'special','repo' FROM graph_edges
 WHERE source='/delivery/merger' AND target=OLD.id AND kind<>'accepts';
 DELETE FROM graph_edges WHERE source='/delivery/merger' AND target=OLD.id AND kind<>'accepts';
-UPDATE setting_revision SET revision=revision+1 WHERE id=1;
+INSERT INTO setting_history(revision,seq,key,level,scope,item,old_value,new_value,actor,reason,cause,at)
+ SELECT COALESCE(MAX(revision),0)+1,0,'revision','network','network','',NULL,'"bump"','agent-net','settings revision','cutover',0 FROM setting_history;
 END;
 CREATE TRIGGER merger_replaced AFTER UPDATE OF merger_session ON repos
 WHEN OLD.merger_session<>'' AND NEW.merger_session<>'' AND OLD.merger_session<>NEW.merger_session BEGIN
