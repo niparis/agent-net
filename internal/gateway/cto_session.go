@@ -47,7 +47,14 @@ func (s *Store) RegisterCTOSession(node string) (string, error) {
 	if _, err = tx.Exec(`UPDATE sessions SET name_fixed=0, function='', announced_project='', capabilities='[]', task='', expertise='', task_started=0, announced_at=0 WHERE id=?`, id); err != nil {
 		return "", err
 	}
-	return id, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	// The agents list leaves the CTO out of its repo counts and the network map
+	// shows its node. A move to another machine changes neither the session's
+	// graph columns nor the map's own tables.
+	s.bumpStateTopics(protocol.TopicAgents, protocol.TopicGraph)
+	return id, nil
 }
 
 // RoleNetwork reads which role sessions exist, for setup to tell a new

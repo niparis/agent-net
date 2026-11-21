@@ -48,5 +48,10 @@ func (s *Store) UpdateOnboarding(update protocol.OnboardingUpdate, restart bool)
 	if err != nil {
 		return out, err
 	}
-	return out, stateSet(s.db, "onboarding", string(raw), s.now().UnixNano())
+	if err := stateSet(s.db, "onboarding", string(raw), s.now().UnixNano()); err != nil {
+		return out, err
+	}
+	// The setup overlay is read with the Inbox and Workers screens.
+	s.bumpStateTopics(protocol.TopicInbox, protocol.TopicWorkers)
+	return out, nil
 }

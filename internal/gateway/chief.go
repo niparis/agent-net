@@ -271,7 +271,12 @@ func (s *Store) setChiefSession(q protocol.ChiefSetRequest) error {
 			ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, chiefClearedKey, string(mark), s.now().UnixNano()); err != nil {
 			return err
 		}
-		return tx.Commit()
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		// The Inbox screen shows a clear of the chief.
+		s.bumpStateTopics(protocol.TopicInbox)
+		return nil
 	}
 	if q.SessionID == "" {
 		return nil
@@ -331,7 +336,12 @@ func (s *Store) setChiefSession(q protocol.ChiefSetRequest) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// The Inbox screen shows which session holds the chief.
+	s.bumpStateTopics(protocol.TopicInbox)
+	return nil
 }
 
 // ChiefStatus reads the registered chief and the model it is set to run on.

@@ -110,6 +110,9 @@ func (s *Store) chiefSilent(q askDB, chief string, now time.Time) (bool, error) 
 		if _, err := q.Exec(`DELETE FROM gateway_state WHERE key=?`, chiefSilentKey); err != nil {
 			return false, err
 		}
+		// The Inbox screen shows the chief as silent, and its mark can end by
+		// time alone, with no ask or sort write beside it.
+		s.bumpStateTopics(protocol.TopicInbox)
 	}
 	// The oldest ask that was sent to the chief and still waits for it.
 	var oldest sql.NullInt64
@@ -129,9 +132,12 @@ func (s *Store) chiefSilent(q askDB, chief string, now time.Time) (bool, error) 
 	if nowN-anchor < int64(protocol.ChiefSilentAfter) {
 		return false, nil
 	}
-	_, err = q.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES(?,?,?)
-		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, chiefSilentKey, fmt.Sprint(nowN), nowN)
-	return err == nil, err
+	if _, err = q.Exec(`INSERT INTO gateway_state(key,value,updated_at) VALUES(?,?,?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, chiefSilentKey, fmt.Sprint(nowN), nowN); err != nil {
+		return false, err
+	}
+	s.bumpStateTopics(protocol.TopicInbox)
+	return true, nil
 }
 
 // chiefMissedWakes counts the wakes the chief has missed on one ask, and

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -27,7 +28,9 @@ var topicTables = map[string][]string{
 // No screen topic follows gateway_state, even if a cached read declares it by
 // table or by column (calibration reads gateway_state.key and .value for the
 // worker_runs_version counter, which moves in the same transaction as the
-// worker_runs write that the topic already follows).
+// worker_runs write that the topic already follows). A value there that a
+// screen does show moves its topics through bumpStateTopics instead, because
+// most keys of gateway_state are markers that no screen shows.
 func init() {
 	for topic, tables := range topicTables {
 		topicTables[topic] = slices.DeleteFunc(slices.Clone(tables), func(t string) bool {
@@ -41,7 +44,24 @@ func (s *Store) topicVersions() map[string]uint64 {
 	for topic, tables := range topicTables {
 		versions[topic] = s.readStamp(tables)
 	}
+	s.stateTopicBumps.Range(func(topic, n any) bool {
+		versions[topic.(string)] += n.(*atomic.Uint64).Load()
+		return true
+	})
 	return versions
+}
+
+// bumpStateTopics moves the topics of the screens that show a gateway_state
+// value the caller just wrote. Call it after the write. A caller inside a
+// transaction may bump before its commit: a rolled back transaction then moves
+// a topic for nothing, which costs a refresh, never a missed change. The count
+// is in memory: the gateway that writes the value also samples the topics, and
+// a restart makes every subscriber subscribe again.
+func (s *Store) bumpStateTopics(topics ...string) {
+	for _, topic := range topics {
+		n, _ := s.stateTopicBumps.LoadOrStore(topic, new(atomic.Uint64))
+		n.(*atomic.Uint64).Add(1)
+	}
 }
 
 func (g *Gateway) topicVersions() map[string]uint64 {

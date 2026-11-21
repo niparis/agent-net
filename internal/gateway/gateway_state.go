@@ -10,7 +10,8 @@ import (
 // marks, and the one-time markers of the seeds and backfills. They are not
 // owner settings. owner_settings is in three screen topics, so a marker write
 // used to refresh the Nodes, Workers and Inbox screens for nothing. gateway_state
-// is in no topic list: add it to one only when a screen shows one of its keys.
+// is in no topic list: a value here that a screen shows moves its topics with
+// bumpStateTopics (see topic_events.go) when it is written.
 //
 // The migration copies the one-row tables graph_cutover_state, graph_ref_gate
 // and skill_archive_meta, and the 12 marker rows of owner_settings, then drops
