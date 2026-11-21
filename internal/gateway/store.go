@@ -1331,7 +1331,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration, workerTablesMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration, workerTablesMigration, machineTablesMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -2068,6 +2068,19 @@ func (s *Store) migrate() error {
 			if err := workerTablesPrepare(tx); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+		}
+		if strings.Contains(migrations[i], machineTablesMarker) {
+			for _, col := range machineTablesColumns {
+				var has int
+				err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?`, col.table, col.name).Scan(&has)
+				if err == nil && has == 0 {
+					_, err = tx.Exec(`ALTER TABLE ` + col.table + ` ADD COLUMN ` + col.name + ` ` + col.spec)
+				}
+				if err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
 			}
 		}
 		if strings.Contains(migrations[i], graphNodesFoldMarker) {
@@ -3504,7 +3517,7 @@ func (s *Store) Events(kind string) ([]string, error) {
 
 const codeAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
 
-// CreateEnrollCode makes a one-time code, stored hashed.
+// CreateEnrollCode makes a one-time code, stored hashed in an invited node row.
 func (s *Store) CreateEnrollCode(ttl time.Duration) (string, error) {
 	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
@@ -3514,8 +3527,10 @@ func (s *Store) CreateEnrollCode(ttl time.Duration) (string, error) {
 	for i := range b {
 		code[i] = codeAlphabet[int(b[i])%32]
 	}
-	_, err := s.db.Exec(`INSERT INTO enroll_codes (code_hash, expires_at) VALUES (?,?)`,
-		hashHex(string(code)), s.now().Add(ttl).UnixNano())
+	id := protocol.NewID("n")
+	_, err := s.db.Exec(`INSERT INTO nodes (id, hostname, reported_hostname, os, token_hash, created_at, state, code_hash, expires_at, used_at)
+		VALUES (?, '', '', '', ?, ?, 'invited', ?, ?, 0)`,
+		id, "invited:"+id, s.now().UnixNano(), hashHex(string(code)), s.now().Add(ttl).UnixNano())
 	return string(code), err
 }
 
@@ -3524,7 +3539,7 @@ func (s *Store) CreateEnrollCode(ttl time.Duration) (string, error) {
 func (s *Store) EnrollCodeValid(code string) (bool, error) {
 	code = strings.ToUpper(strings.TrimSpace(code))
 	var n int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM enroll_codes WHERE code_hash = ? AND used_at IS NULL AND expires_at > ?`,
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM nodes WHERE code_hash = ? AND state = 'invited' AND used_at = 0 AND expires_at > ?`,
 		hashHex(code), s.now().UnixNano()).Scan(&n)
 	return n == 1, err
 }
@@ -3533,7 +3548,7 @@ func (s *Store) EnrollCodeValid(code string) (bool, error) {
 func (s *Store) ConsumeEnrollCode(code string) (bool, error) {
 	code = strings.ToUpper(strings.TrimSpace(code))
 	now := s.now().UnixNano()
-	res, err := s.db.Exec(`UPDATE enroll_codes SET used_at = ? WHERE code_hash = ? AND used_at IS NULL AND expires_at > ?`,
+	res, err := s.db.Exec(`UPDATE nodes SET used_at = ? WHERE code_hash = ? AND state = 'invited' AND used_at = 0 AND expires_at > ?`,
 		now, hashHex(code), now)
 	if err != nil {
 		return false, err
@@ -3559,7 +3574,7 @@ func (s *Store) NodeByToken(token string) (nodeID string, ok bool, err error) {
 	// token (all the HTTP reads of a daemon) then waited behind each write.
 	hash := hashHex(token)
 	var pending string
-	err = s.db.QueryRow(`SELECT id,pending_token_hash FROM nodes WHERE removed=0 AND (token_hash=? OR pending_token_hash=?)`, hash, hash).Scan(&nodeID, &pending)
+	err = s.db.QueryRow(`SELECT id,pending_token_hash FROM nodes WHERE removed=0 AND state='enrolled' AND (token_hash=? OR pending_token_hash=?)`, hash, hash).Scan(&nodeID, &pending)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}

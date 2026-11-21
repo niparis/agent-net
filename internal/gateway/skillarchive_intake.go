@@ -28,7 +28,7 @@ type intakeFolder struct {
 // nothing is written or deleted on a machine.
 func (g *Gateway) skillArchiveIntakeMachines(ctx context.Context, by string) (protocol.SkillArchiveMultiResult, error) {
 	out := protocol.SkillArchiveMultiResult{Skills: []protocol.SkillArchiveAddResult{}, Machines: []protocol.SkillArchiveMachine{}, Skipped: []protocol.SkillArchiveSkipped{}}
-	rows, err := g.store.db.Query(`SELECT id, hostname FROM nodes ORDER BY hostname, id`)
+	rows, err := g.store.db.Query(`SELECT id, hostname FROM nodes WHERE state='enrolled' ORDER BY hostname, id`)
 	if err != nil {
 		return out, err
 	}

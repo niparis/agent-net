@@ -4,11 +4,12 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -91,7 +92,7 @@ func (s *Store) beginTransfer(sender string, p protocol.TransferBegin, now time.
 	}
 	defer tx.Rollback()
 	var enrolled int
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM nodes WHERE id = ? AND removed = 0`, p.Receiver).Scan(&enrolled); err != nil {
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM nodes WHERE id = ? AND removed = 0 AND state = 'enrolled'`, p.Receiver).Scan(&enrolled); err != nil {
 		return transferRow{}, err
 	}
 	if enrolled == 0 {
@@ -147,32 +148,52 @@ func (s *Store) transferState(row transferRow) (protocol.TransferState, error) {
 	}, nil
 }
 
+type transferPartRecord struct {
+	Idx  int    `json:"idx"`
+	Size int64  `json:"size"`
+	SHA  string `json:"sha256,omitempty"`
+	At   int64  `json:"at,omitempty"`
+}
+
 // transferHave lists the stored part indexes and their total size.
 func (s *Store) transferHave(id string) ([]int, int64, error) {
-	rows, err := s.db.Query(`SELECT idx, size FROM transfer_parts WHERE id = ? ORDER BY idx`, id)
-	if err != nil {
+	var raw string
+	if err := s.db.QueryRow(`SELECT parts_received FROM transfers WHERE id = ?`, id).Scan(&raw); err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
-	have := []int{}
+	var parts []transferPartRecord
+	_ = json.Unmarshal([]byte(raw), &parts)
+	have := make([]int, len(parts))
 	var received int64
-	for rows.Next() {
-		var idx int
-		var size int64
-		if err := rows.Scan(&idx, &size); err != nil {
-			return nil, 0, err
-		}
-		have = append(have, idx)
-		received += size
+	for i, p := range parts {
+		have[i] = p.Idx
+		received += p.Size
 	}
-	return have, received, rows.Err()
+	return have, received, nil
 }
 
 // saveTransferPart records a part that is already on disk.
 func (s *Store) saveTransferPart(id string, index int, size int64, sha string, now time.Time) error {
-	_, err := s.db.Exec(`INSERT INTO transfer_parts (id, idx, size, sha256, at) VALUES (?,?,?,?,?)
-		ON CONFLICT(id, idx) DO UPDATE SET size = excluded.size, sha256 = excluded.sha256, at = excluded.at`,
-		id, index, size, sha, now.UnixNano())
+	var raw string
+	if err := s.db.QueryRow(`SELECT parts_received FROM transfers WHERE id = ?`, id).Scan(&raw); err != nil {
+		return err
+	}
+	var parts []transferPartRecord
+	_ = json.Unmarshal([]byte(raw), &parts)
+	updated := false
+	for i := range parts {
+		if parts[i].Idx == index {
+			parts[i].Size, parts[i].SHA, parts[i].At = size, sha, now.UnixNano()
+			updated = true
+			break
+		}
+	}
+	if !updated {
+		parts = append(parts, transferPartRecord{Idx: index, Size: size, SHA: sha, At: now.UnixNano()})
+		sort.Slice(parts, func(i, j int) bool { return parts[i].Idx < parts[j].Idx })
+	}
+	b, _ := json.Marshal(parts)
+	_, err := s.db.Exec(`UPDATE transfers SET parts_received = ? WHERE id = ?`, string(b), id)
 	return err
 }
 
@@ -182,21 +203,10 @@ func (s *Store) finishTransfer(id string, now time.Time) error {
 	return err
 }
 
-// deleteTransferRows removes the bookkeeping of one upload. The files are
-// removed by the gateway around it.
+// deleteTransferRows removes the bookkeeping of one upload.
 func (s *Store) deleteTransferRows(id string) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if _, err := tx.Exec(`DELETE FROM transfer_parts WHERE id = ?`, id); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(`DELETE FROM transfers WHERE id = ?`, id); err != nil {
-		return err
-	}
-	return tx.Commit()
+	_, err := s.db.Exec(`DELETE FROM transfers WHERE id = ?`, id)
+	return err
 }
 
 // expiredTransfers lists the uploads whose retention has passed.
@@ -290,10 +300,7 @@ func (g *Gateway) handleTransfer(nc *nodeConn, typ string, raw []byte) (any, err
 		if err != nil {
 			return nil, err
 		}
-		if err := g.removeTransferFiles(row.id); err != nil {
-			return nil, err
-		}
-		if err := g.store.deleteTransferRows(row.id); err != nil {
+		if err := g.purgeTransfer(row.id); err != nil {
 			return nil, err
 		}
 		g.logLine("transfer.confirmed", "upload", row.id, "from", row.sender, "to", nc.id, "bytes", row.size)
@@ -307,37 +314,29 @@ func (g *Gateway) handleTransfer(nc *nodeConn, typ string, raw []byte) (any, err
 func (g *Gateway) findTransfers(nodeID string, names []string) (protocol.TransferFound, error) {
 	out := protocol.TransferFound{Uploads: []protocol.TransferState{}}
 	args := []any{nodeID}
-	marks := make([]string, 0, len(names))
-	for _, n := range names {
+	marks := make([]string, len(names))
+	for i, n := range names {
 		args = append(args, n)
-		marks = append(marks, "?")
+		marks[i] = "?"
 	}
 	rows, err := g.store.db.Query(`SELECT `+transferColumns+` FROM transfers
 		WHERE receiver = ? AND finished_at <> 0 AND name IN (`+strings.Join(marks, ",")+`) ORDER BY created_at`, args...)
 	if err != nil {
 		return out, err
 	}
-	var found []transferRow
+	defer rows.Close()
 	for rows.Next() {
 		row, err := scanTransfer(rows)
 		if err != nil {
-			rows.Close()
 			return out, err
 		}
-		found = append(found, row)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return out, err
-	}
-	for _, row := range found {
 		st, err := g.store.transferState(row)
 		if err != nil {
 			return out, err
 		}
 		out.Uploads = append(out.Uploads, st)
 	}
-	return out, nil
+	return out, rows.Err()
 }
 
 // transferOf loads one upload and checks that this machine may act on it. The
@@ -353,11 +352,12 @@ func (g *Gateway) transferOf(nodeID, id string, sender bool) (transferRow, error
 	if err != nil {
 		return transferRow{}, err
 	}
-	if sender && row.sender != nodeID {
-		return transferRow{}, reject("only the sending machine may do that")
-	}
-	if !sender && row.receiver != nodeID {
-		return transferRow{}, reject("only the receiving machine may do that")
+	if (sender && row.sender != nodeID) || (!sender && row.receiver != nodeID) {
+		role := "receiving"
+		if sender {
+			role = "sending"
+		}
+		return transferRow{}, reject("only the %s machine may do that", role)
 	}
 	return row, nil
 }
@@ -424,12 +424,7 @@ func (g *Gateway) finishTransfer(nodeID, id string) (any, error) {
 			// A part matched its own checksum, so the declared whole hash or
 			// one part from another upload is wrong. Drop it all rather than
 			// keep bytes nobody can use.
-			if err := g.removeTransferFiles(row.id); err != nil {
-				return nil, err
-			}
-			if err := g.store.deleteTransferRows(row.id); err != nil {
-				return nil, err
-			}
+			_ = g.purgeTransfer(row.id)
 			return nil, reject("the whole sha256 hash does not match; the upload was dropped")
 		}
 		if err := g.store.finishTransfer(row.id, g.store.now()); err != nil {
@@ -474,18 +469,11 @@ func (g *Gateway) getTransferPart(nodeID string, p protocol.TransferGet) (any, e
 func (g *Gateway) hashTransfer(row transferRow) (string, error) {
 	h := sha256.New()
 	for i := 0; i < row.parts; i++ {
-		f, err := os.Open(g.transferPartPath(row.id, i))
+		b, err := os.ReadFile(g.transferPartPath(row.id, i))
 		if err != nil {
 			return "", err
 		}
-		_, copyErr := io.Copy(h, f)
-		closeErr := f.Close()
-		if copyErr != nil {
-			return "", copyErr
-		}
-		if closeErr != nil {
-			return "", closeErr
-		}
+		h.Write(b)
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
@@ -520,6 +508,11 @@ func (g *Gateway) removeTransferFiles(id string) error {
 	return nil
 }
 
+func (g *Gateway) purgeTransfer(id string) error {
+	_ = g.removeTransferFiles(id)
+	return g.store.deleteTransferRows(id)
+}
+
 // sweepTransfers deletes the uploads whose retention passed. A removal that
 // fails keeps the row, so the next sweep tries again and the bytes stay
 // counted against the sender's cap.
@@ -529,10 +522,7 @@ func (g *Gateway) sweepTransfers() error {
 		return err
 	}
 	for _, row := range rows {
-		if err := g.removeTransferFiles(row.id); err != nil {
-			return err
-		}
-		if err := g.store.deleteTransferRows(row.id); err != nil {
+		if err := g.purgeTransfer(row.id); err != nil {
 			return err
 		}
 		g.logLine("transfer.expired", "upload", row.id, "from", row.sender, "to", row.receiver, "bytes", row.size)

@@ -144,14 +144,14 @@ func (s *Store) SetNodeTailscaleIP(nodeID, ip string) error {
 // nodesTables are the node columns Nodes reads. Keep it equal to the query there
 // (see readThrough). A health or inventory report is not in it, so it does not
 // refresh the topics that list machines.
-var nodesTables = []string{"nodes.id", "nodes.hostname", "nodes.os", "nodes.version", "nodes.seen_at", "nodes.removed",
+var nodesTables = []string{"nodes.id", "nodes.hostname", "nodes.os", "nodes.version", "nodes.seen_at", "nodes.removed", "nodes.state",
 	"nodes.harnesses", "nodes.launch", "nodes.display_name", "nodes.reported_hostname",
 	"nodes.time_zone", "nodes.tailscale_ip", "nodes.silence_dropped_at", "nodes.silence_asleep_from", "nodes.silence_asleep_to", "nodes.silence_silent_at"}
 
 func (s *Store) Nodes() ([]protocol.NodeView, error) {
 	rows, err := s.db.Query(`SELECT n.id, n.hostname, n.os, n.version, n.seen_at, n.harnesses, n.launch, n.display_name, n.reported_hostname, n.time_zone, n.tailscale_ip,
  n.silence_dropped_at, n.silence_asleep_from, n.silence_asleep_to, n.silence_silent_at
-FROM nodes n WHERE n.seen_at > 0 AND n.removed=0 ORDER BY n.hostname, n.id`)
+FROM nodes n WHERE n.state='enrolled' AND n.seen_at > 0 AND n.removed=0 ORDER BY n.hostname, n.id`)
 	if err != nil {
 		return nil, err
 	}

@@ -70,7 +70,7 @@ The picker reads the machine, quota, past results and prices to choose a model, 
 
 A machine enrolls once with a code, then on each connection proves its token, says hello with its health and tools, syncs its sessions, and is marked silent if it drops without a reason.
 
-1. `enroll_codes` (writes): On first setup, the one-time enrollment code is checked and marked used, so it cannot be used again.
+1. `nodes` (writes): On first setup, the one-time enrollment code is checked and marked used on its invited row, so it cannot be used again.
 2. `nodes` (writes): A new machine row is created with its name, operating system and the hash of its secret token (the token itself is never stored).
 3. `events` (writes): The audit log records 'node.enrolled' with the machine's host name.
 4. `nodes` (reads): On every connection, the gateway checks that the machine was not removed and that its token hash matches.
@@ -157,14 +157,6 @@ A charter attribute or a setting is written with a new revision and a history ro
 
 Computers that run the daemon, and how they enrol and report health.
 
-### enroll_codes
-
-- **Holds:** One row per one-time invite code (stored hashed) that lets a new machine join, with its expiry time and the time it was used.
-- **Written by:** `gateway/store.go`
-- **Read by:** `gateway/store.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Forever; an expired or used code stays but is refused.
-
 ### inventory_reports
 
 - **Holds:** One row per machine holding the latest report of the tools, skills and MCP servers installed there.
@@ -175,23 +167,15 @@ Computers that run the daemon, and how they enrol and report health.
 
 ### nodes
 
-- **Holds:** One row per machine enrolled in the network: its name, system, hashed access token, agent-net version, last-seen time, which agent programs it can run, plus its health report, Tailscale address, time zone and quiet-hours marks.
+- **Holds:** One row per machine or invite in the network: its name, system, hashed access token, agent-net version, last-seen time, which agent programs it can run, plus its health report, Tailscale address, time zone and quiet-hours marks. Invite rows in 'invited' state hold the hashed invite code, expiry and used time with no access token.
 - **Written by:** `gateway/graph_refs.go`, `gateway/machine_tokens.go`, `gateway/node_fold_migration.go`, `gateway/nodes.go`, `gateway/nodes_sleep.go`, `gateway/store.go`
 - **Read by:** `gateway/apps_public.go`, `gateway/ask_intake.go`, `gateway/delivery_changes.go`, `gateway/graph_refs.go`, `gateway/inventory.go`, `gateway/lead_route.go`, `gateway/machine_tokens.go`, `gateway/mcp_import.go`, `gateway/mcp_store.go`, `gateway/nodes.go` and others
 - **Shown in:** TUI, Sessions; TUI, Quotas; tool `agent_machines_find`; tool `agent_machine_get`; CTO op `machine_remove`; CTO op `machine_rotate`
 - **Kept:** Forever; a removed machine is only marked removed and its token wiped.
 
-### transfer_parts
-
-- **Holds:** One row per received piece of a file transfer: its index, size, checksum and arrival time.
-- **Written by:** `gateway/transfer.go`
-- **Read by:** `gateway/transfer.go`
-- **Shown in:** tool `agent_file_send`
-- **Kept:** For 7 days after upload, deleted with its transfer by the hourly sweep.
-
 ### transfers
 
-- **Holds:** One row per file sent between machines: sender, receiver, file name, size, checksum, part size and number of parts, with an expiry time and a finished time.
+- **Holds:** One row per file sent between machines: sender, receiver, file name, size, checksum, part size and number of parts, with an expiry time, a finished time and the list of received parts.
 - **Written by:** `gateway/transfer.go`
 - **Read by:** `gateway/transfer.go`
 - **Shown in:** tool `agent_file_send`

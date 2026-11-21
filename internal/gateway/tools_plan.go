@@ -780,7 +780,7 @@ func (s *Store) resolveMachines(names []string) ([]string, error) {
 
 // toolPlanNodes also includes enrolled nodes that have never reported a hello.
 func (s *Store) toolPlanNodes() ([]protocol.NodeView, error) {
-	rows, err := s.db.Query(`SELECT id,hostname,harnesses FROM nodes ORDER BY hostname,id`)
+	rows, err := s.db.Query(`SELECT id,hostname,harnesses FROM nodes WHERE state='enrolled' ORDER BY hostname,id`)
 	if err != nil {
 		return nil, err
 	}
