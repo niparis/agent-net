@@ -72,7 +72,7 @@ func upgradeSeeded(t *testing.T) (*Store, string, string, string, int) {
 	s := migrateOnly(t, filepath.Join(t.TempDir(), "old.db"), idx-1)
 	t.Cleanup(func() { s.Close() })
 	alpha, beta, gamma := seedNodeSideTables(t, s)
-	if err := s.migrate(); err != nil {
+	if err := replayMigrations(t, s); err != nil {
 		t.Fatal(err)
 	}
 	return s, alpha, beta, gamma, idx

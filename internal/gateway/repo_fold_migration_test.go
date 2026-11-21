@@ -267,9 +267,6 @@ func restoreRepoSideTables(t *testing.T, db repoDB) {
 	if cur < migrationVersion(t, "Schema reduction part 1: drop the tables") {
 		recreateDeadTablesDB(t, db)
 	}
-	if cur < migrationVersion(t, learnedTablesMarker) {
-		recreateLearnedDroppedTables(t, db)
-	}
 	var folded int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('repos') WHERE name='lead_agent_id'`).Scan(&folded); err != nil {
 		t.Fatal(err)
@@ -347,6 +344,8 @@ func restoreRepoSideTables(t *testing.T, db repoDB) {
 	if cur >= migrationVersion(t, "CREATE TABLE graph_nodes (") && cur < migrationVersion(t, graphNodesFoldMarker) {
 		restoreGraphNodesForReplay(t, db)
 	}
+	// Last, so the steps above rebuild the tables they know, with their rows.
+	restoreDroppedSince(t, db, cur)
 }
 
 // A scope over an Agent reads the Repos the Agent leads. The worker sandbox

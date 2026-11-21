@@ -24,12 +24,6 @@ var learnedTablesColumns = []struct{ table, name, spec string }{
 // go with friction_status_history.
 const learnedTablesMigration = `
 -- learned tables rework: copy each fact into its column, then drop the six tables.
--- A replay after a rewind can find a source table gone. An empty table copies
--- nothing, so the copy then does nothing.
-CREATE TABLE IF NOT EXISTS charter_signals (message_id TEXT PRIMARY KEY, source TEXT NOT NULL, target TEXT NOT NULL, prompt TEXT NOT NULL, at INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS signal_prompts (session_id TEXT PRIMARY KEY, prompt TEXT NOT NULL, at INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS learned_views (node TEXT PRIMARY KEY, last_seen_id INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS friction_status_history (id INTEGER PRIMARY KEY AUTOINCREMENT, friction_id INTEGER NOT NULL, status TEXT NOT NULL, changed_by TEXT NOT NULL DEFAULT '', changed_at INTEGER NOT NULL, link TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '');
 UPDATE messages SET owner_prompt = (SELECT cs.prompt FROM charter_signals cs WHERE cs.message_id = messages.id)
  WHERE EXISTS (SELECT 1 FROM charter_signals cs WHERE cs.message_id = messages.id AND cs.prompt <> '');
 UPDATE sessions SET owner_prompt = (SELECT sp.prompt FROM signal_prompts sp WHERE sp.session_id = sessions.id),
