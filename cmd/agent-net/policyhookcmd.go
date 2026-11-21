@@ -22,6 +22,7 @@ type policyHookInput struct {
 	EventName string `json:"hook_event_name"`
 	Source    string `json:"source"` // SessionStart: startup, resume, clear, compact, fork
 	Prompt    string `json:"prompt"`
+	PromptID  string `json:"prompt_id"`
 	// Stop: the turn's final text.
 	LastMessage    string `json:"last_assistant_message"`
 	TranscriptPath string `json:"transcript_path"`
@@ -71,7 +72,7 @@ func runPolicyHook(ctx context.Context, stdin io.Reader, stdout io.Writer,
 	if r := []rune(in.Prompt); len(r) > 300 {
 		in.Prompt = string(r[:300])
 	}
-	res, err := ask(ctx, protocol.PolicyRequest{Harness: "claude", NativeID: in.SessionID, Prompt: in.Prompt})
+	res, err := ask(ctx, protocol.PolicyRequest{Harness: "claude", NativeID: in.SessionID, Prompt: in.Prompt, PromptID: in.PromptID, TranscriptPath: in.TranscriptPath})
 	if err != nil || (res.Text == "" && res.Charter == "" && res.Notice == "") {
 		return
 	}

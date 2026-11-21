@@ -371,6 +371,7 @@ func key(harness, nativeID string) string { return harness + "/" + nativeID }
 type Daemon struct {
 	workerEnvState      workerEnvState // login PATH and system CA bundle, found once
 	ownerPrompts        ownerPrompts
+	claudeChecks        sync.WaitGroup // background checks of Claude prompts that wait for the transcript
 	turnEnds            turnEndAsks
 	ownerPromptClock    func() time.Time // test hook
 	heldMu              sync.Mutex
