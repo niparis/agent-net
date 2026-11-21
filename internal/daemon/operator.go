@@ -547,6 +547,15 @@ func (d *Daemon) runWorkerStartCall(ctx context.Context, caller string, p protoc
 		// An older gateway still reads Difficulty; give it the judge's label.
 		frame.Difficulty = frame.Level
 	}
+	if ctx.Value(withdrawableKey{}) != nil {
+		// The caller may withdraw a confirmed start until the gateway has it.
+		// From there the call must end by itself: a cancel in flight would
+		// leave a worker that nobody knows about.
+		if err := ctx.Err(); err != nil {
+			return nil, errStartWithdrawn
+		}
+		ctx = context.WithoutCancel(ctx)
+	}
 	cctx := withCallWait(ctx, d.workerSettings("").StartTimeout+40e9)
 	var data json.RawMessage
 	end := ph.begin("gateway")

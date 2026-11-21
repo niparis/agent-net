@@ -140,6 +140,10 @@ func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string
 		}
 		var out protocol.AskSortResult
 		err := d.deliveryCall(ctx, protocol.FrameAskSort, protocol.AskSortRequest{SessionID: sid, AskSortArgs: a}, &out)
+		if err == nil && out.StartID != "" {
+			// The ask held a worker start: the withdraw stops it here, where it waits.
+			out.Note = d.withdrawnStartNote(ctx, sid, out.StartID)
+		}
 		return out, true, err
 	case protocol.OpFrictionMarkLead:
 		if info.Worker != nil {

@@ -36,3 +36,16 @@ The owner does not want these asks.
 - The rule that an agent cannot pick its own model without someone else
   agreeing still holds; that someone is now the CTO or the chief.
 - 0141's line "The CTO may answer picker but not confirm" no longer applies.
+
+## Withdraw after a confirm
+
+The caller may withdraw the ask of a held start at any time, also after a
+confirm. A confirm and a withdraw can race, so:
+
+- A withdraw cancels a start that was confirmed but has not begun: held,
+  in the judge, or waiting in the machine queue. The caller hears "withdrawn;
+  the start was cancelled before it ran".
+- When the worker already runs, the withdraw says "already started as
+  <worker session>; stop it with agent_worker_stop". It does not stop the worker.
+- A confirm or picker answer to a withdrawn ask is refused with that reason.
+  An answer already on its way starts nothing.

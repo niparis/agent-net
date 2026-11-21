@@ -101,6 +101,20 @@ func (s *Store) startOverrideRef(id string) string {
 	return ref
 }
 
+// withdrawnStartRefusal is the refusal of an answer to a held start whose ask
+// is closed. The caller's withdraw is the usual cause, and it cancels the start
+// on the caller's machine, so an answer cannot bring it back.
+func withdrawnStartRefusal(q askDB, id string) error {
+	var n int
+	if err := q.QueryRow(`SELECT COUNT(*) FROM ask_sorts WHERE ask_id=? AND result=?`, id, protocol.AskSortWithdraw).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return reject("ask %s was withdrawn by its caller, so its start was cancelled and will not run. The caller can start it again", id)
+	}
+	return reject("ask %s is closed, so its start will not run. The caller can start it again", id)
+}
+
 // startAnswerCheck refuses an answer that is not one of the three a held start
 // takes. The text is matched whole, never by a word inside it: an answer that
 // names two options chooses neither.
@@ -116,13 +130,19 @@ func startAnswerCheck(answer string) error {
 // answerStartAsk answers an open ask that holds a start. handled is false for
 // any other ask. The CTO may confirm under the confirm rule (decision 0151).
 func (s *Store) answerStartAsk(id, answer, actor string, validate ...bool) (item protocol.InboxItem, handled bool, err error) {
-	var ref string
-	err = s.db.QueryRow(`SELECT source_ref FROM inbox_items WHERE id=? AND status='open' AND source_ref LIKE ?`, id, protocol.StartOverrideRefPrefix+"%").Scan(&ref)
+	var ref, status string
+	err = s.db.QueryRow(`SELECT source_ref, status FROM inbox_items WHERE id=? AND source_ref LIKE ?`, id, protocol.StartOverrideRefPrefix+"%").Scan(&ref, &status)
 	if errors.Is(err, sql.ErrNoRows) {
 		return item, false, nil
 	}
 	if err != nil {
 		return item, true, err
+	}
+	if status == "closed" {
+		return item, true, withdrawnStartRefusal(s.db, id)
+	}
+	if status != "open" {
+		return item, false, nil
 	}
 	answer = strings.TrimSpace(answer)
 	if answer == "" || len(answer) > protocol.MaxBodyBytes {
