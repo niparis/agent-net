@@ -1196,11 +1196,14 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			return nil, true, err
 		}
 		// The CTO can reach this call itself through the operator tool. Its own
-		// text is never the owner's words.
+		// text is never the owner's words: it is neither remembered as them nor
+		// labelled as them.
 		if proposalActor(ctx) == "" {
 			d.rememberCTOOwnerPrompt(q.Text)
+			res, err = d.ctoSendTracked(ctx, q.Text, "owner")
+		} else {
+			res, err = d.ctoSendTriggered(ctx, q.Text, "", "cto")
 		}
-		res, err = d.ctoSendTracked(ctx, q.Text, "owner")
 	case protocol.OpCTONew:
 		res, err = d.ctoNew(ctx)
 	case protocol.OpCTOEvents:

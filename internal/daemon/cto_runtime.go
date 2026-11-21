@@ -205,6 +205,28 @@ func ctoMessageTrigger(harness string) string {
 	}
 }
 
+// ctoSenderLabel says how a text reaches the CTO. Only the owner's own words
+// (trigger "owner", which only the owner's local client can set) carry the
+// owner label and the owner trailer: the empty label. Every other sender gets a
+// label that names agent-net's own framing, so a peer reply, a bot, the phone
+// or an agent-net notice can never pass as the owner (docs/security.md).
+func ctoSenderLabel(trigger string) string {
+	switch trigger {
+	case "owner":
+		return ""
+	case "agent":
+		return "message from another agent, not the owner"
+	case "bot":
+		return "message from a bot, not the owner"
+	case "phone":
+		return "message from the phone app, not the owner"
+	case "cto":
+		return "the CTO's own instruction, not the owner"
+	default:
+		return "agent-net notice, not the owner"
+	}
+}
+
 func (d *Daemon) ctoSendTriggered(ctx context.Context, text, sender, trigger string) (any, error) {
 	if err := d.ctoDispatchMu.lock(ctx); err != nil {
 		return nil, err
@@ -223,7 +245,12 @@ func (d *Daemon) ctoSendTriggered(ctx context.Context, text, sender, trigger str
 			return nil, err
 		}
 	}
-	out, err := h.send(ctx, d, text)
+	var out any
+	if label := ctoSenderLabel(trigger); label == "" {
+		out, err = h.send(ctx, d, text)
+	} else {
+		out, err = h.sendSystem(ctx, d, label, text)
+	}
 	if err == nil && sender != "" {
 		err = d.st.recordCTODelivery(sender, time.Now())
 	}
