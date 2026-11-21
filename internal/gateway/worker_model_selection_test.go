@@ -182,3 +182,37 @@ func TestWorkerAgyEffortInventory(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+// A run that ends because the harness denied a tool action is the harness's
+// failure, not a provider failure. It still has to lower that harness and
+// model for the next start, or the picker sends the retry to the same place.
+func TestWorkerStoppedToolDenialRecordsFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name, reason, failure string
+		want                  bool
+	}{
+		{"agy denial", protocol.StopRunFailed, "Antigravity denied a tool action in headless mode: ReadFile path=/tmp/inputs/plan.md", true},
+		{"other run failure", protocol.StopRunFailed, "the harness reported a failed run with no error text", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _ := newTestStore(t)
+			g := &Gateway{store: s, logger: log.New(io.Discard, "", 0)}
+			node, _, _ := s.CreateNode("host", "linux")
+			sid, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "agy", NativeID: "worker", Model: "gemini-3.8-flash-medium", Worker: &protocol.WorkerInfo{ID: "w_test"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, _ := json.Marshal(map[string]any{"session_id": sid, "harness": "agy", "model": "gemini-3.8-flash-medium", "reason": tc.reason, "failure": tc.failure})
+			if _, err := g.handleWorker(context.Background(), &nodeConn{id: node}, "worker.stopped", raw); err != nil {
+				t.Fatal(err)
+			}
+			failed, err := s.FailedModels(node, "agy")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, got := failed["gemini-3.8-flash-medium"]; got != tc.want {
+				t.Fatalf("recorded failure = %v, want %v (%v)", got, tc.want, failed)
+			}
+		})
+	}
+}

@@ -341,7 +341,7 @@ func (c *agyConn) eventAt(line []byte, offset int64) {
 			}
 			c.failure = cleanFailure("Antigravity result " + r.Status + " " + r.Finished + ": " + detail)
 		} else if len(r.Denied) > 0 {
-			c.failure = cleanFailure("Antigravity denied a tool action in headless mode: " + agyDeniedText(r.Denied))
+			c.failure = cleanFailure("Antigravity " + protocol.ToolDenialMarker + ": " + agyDeniedText(r.Denied))
 		}
 		usage, handback, failure := c.usage, c.handback, c.failure
 		if handback != nil {

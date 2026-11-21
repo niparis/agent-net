@@ -261,6 +261,14 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		if p.Model == "" {
 			p.Model = storedModel
 		}
+		if p.Reason == protocol.StopRunFailed && p.Model != "" && protocol.HarnessToolDenial(p.Failure) {
+			// The run ended on a refused tool action, so a retry on the same
+			// harness and model would end the same way. Record it like a
+			// model failure; a path in the denial text must not read as an auth error.
+			if err := g.store.RecordModelFailure(nc.id, p.Harness, p.Model); err != nil {
+				return nil, err
+			}
+		}
 		if p.Reason == protocol.StopModelFails && p.Model != "" {
 			var err error
 			if protocol.ModelAuthFailure(p.Failure) {

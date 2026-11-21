@@ -1520,6 +1520,18 @@ func ModelAuthFailure(detail string) bool {
 	return false
 }
 
+// ToolDenialMarker is the text of a failure where the harness refused a tool
+// action in headless mode, so the run ended before it did the task. The
+// daemon writes it into the failure and the gateway reads it back.
+const ToolDenialMarker = "denied a tool action in headless mode"
+
+// HarnessToolDenial tells whether a run failure is a harness tool denial. It
+// is the harness's failure, not a provider's: it must lower that harness and
+// model for the next start, but it is not an infrastructure failure.
+func HarnessToolDenial(detail string) bool {
+	return strings.Contains(detail, ToolDenialMarker)
+}
+
 // WorkerRunState announces a new run before its harness registers, or rolls
 // back that same run when starting it fails.
 type WorkerRunState struct {
