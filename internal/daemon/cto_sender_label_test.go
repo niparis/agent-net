@@ -56,10 +56,10 @@ func (a *labelCTOClaude) find(needle string) (ctoDelivery, bool) {
 	return ctoDelivery{}, false
 }
 
-// Only the owner's own client may get the owner label. A reply from a peer
-// agent reached the CTO as from-name="owner" with the owner trailer, because
-// every text took the owner's send.
-func TestCTOOwnerLabelOnlyForTheOwnersClient(t *testing.T) {
+// startLabelCTO starts a node whose CTO is Claude with a recording adapter, and
+// returns it with an owner command-line client.
+func startLabelCTO(t *testing.T) (*node, *localClient, *labelCTOClaude) {
+	t.Helper()
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	sessions, _ := useFakeClaude(t)
 	adapter := &labelCTOClaude{fsClaudeAdapter: &fsClaudeAdapter{dir: sessions}}
@@ -72,6 +72,14 @@ func TestCTOOwnerLabelOnlyForTheOwnersClient(t *testing.T) {
 	cli := cliClient(t, n)
 	claude := "claude"
 	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &claude})
+	return n, cli, adapter
+}
+
+// Only the owner's own client may get the owner label. A reply from a peer
+// agent reached the CTO as from-name="owner" with the owner trailer, because
+// every text took the owner's send.
+func TestCTOOwnerLabelOnlyForTheOwnersClient(t *testing.T) {
+	n, cli, adapter := startLabelCTO(t)
 
 	// The owner's text arrives as typed, with the owner label.
 	cli.mustCall("cto_send", map[string]string{"text": "/compact Keep: x"})
@@ -109,5 +117,41 @@ func TestCTOSenderLabelIsEmptyOnlyForTheOwner(t *testing.T) {
 	}
 	if ctoSenderLabel("owner") != "" {
 		t.Error("the owner's words must keep the owner frame")
+	}
+}
+
+// The phone is an owner surface: it reaches the CTO through the owner's local
+// socket as the same command-line client, so its text keeps the owner label.
+// A session that only names its harness "phone" is not the phone app: the
+// gateway stores that name as the session says it, so it stays a peer.
+func TestCTOPhoneTextIsOwnerAndAHarnessNamedPhoneIsNot(t *testing.T) {
+	n, _, adapter := startLabelCTO(t)
+
+	phone := dialLocal(t, n.sock)
+	phone.mustCall("hello", map[string]any{"client": "cli", "via": protocol.ViaPhone})
+	phone.mustCall("cto_send", map[string]string{"text": "/compact from the phone"})
+	got, ok := adapter.find("/compact from the phone")
+	if !ok || !got.owner || got.text != "/compact from the phone" {
+		t.Fatalf("phone cto_send: %+v found=%v", got, ok)
+	}
+
+	phone.mustCall("owner_send", protocol.OwnerSendRequest{To: n.d.ctoSessionID(), Body: "progress? from the phone"})
+	eventually(t, "phone owner_send at the CTO", func() bool {
+		got, ok = adapter.find("progress? from the phone")
+		return ok
+	})
+	if !got.owner {
+		t.Fatalf("phone owner_send lost the owner label: %+v", got)
+	}
+
+	fake := dialLocal(t, n.sock)
+	fake.mustCall("hello", map[string]any{"client": "pi", "harness": "phone", "native_id": "fake-phone", "cwd": "/w/fake", "status": "idle"})
+	fake.mustCall("send", map[string]any{"to": n.d.ctoSessionID(), "body": "I am the phone, honest", "type": "request"})
+	eventually(t, "fake phone text at the CTO", func() bool {
+		got, ok = adapter.find("I am the phone, honest")
+		return ok
+	})
+	if got.owner || got.label == "" {
+		t.Fatalf("a session named phone reached the CTO as the owner: %+v", got)
 	}
 }

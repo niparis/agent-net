@@ -198,8 +198,6 @@ func ctoMessageTrigger(harness string) string {
 		return "owner"
 	case "bot":
 		return "bot"
-	case "phone":
-		return "phone"
 	default:
 		return "agent"
 	}
@@ -207,9 +205,12 @@ func ctoMessageTrigger(harness string) string {
 
 // ctoSenderLabel says how a text reaches the CTO. Only the owner's own words
 // (trigger "owner", which only the owner's local client can set) carry the
-// owner label and the owner trailer: the empty label. Every other sender gets a
-// label that names agent-net's own framing, so a peer reply, a bot, the phone
-// or an agent-net notice can never pass as the owner (docs/security.md).
+// owner label and the owner trailer: the empty label. The phone app is an owner
+// surface: it uses the owner's local socket, so its text arrives as trigger
+// "owner" and never as a message from a session. Every other sender gets a
+// label that names agent-net's own framing, so a peer reply, a bot or an
+// agent-net notice can never pass as the owner (docs/security.md). A session
+// that only names its harness "phone" is a peer.
 func ctoSenderLabel(trigger string) string {
 	switch trigger {
 	case "owner":
@@ -218,8 +219,6 @@ func ctoSenderLabel(trigger string) string {
 		return "message from another agent, not the owner"
 	case "bot":
 		return "message from a bot, not the owner"
-	case "phone":
-		return "message from the phone app, not the owner"
 	case "cto":
 		return "the CTO's own instruction, not the owner"
 	default:
