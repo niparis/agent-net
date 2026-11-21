@@ -269,6 +269,13 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 				return nil, err
 			}
 		}
+		if protocol.WorkerNotAttempted(p.Failure, p.Evidence) {
+			// The harness ended the run without trying the task. A retry of the
+			// same brief leaves this harness out, for every model.
+			if err := g.store.markBriefNotAttempted(p.SessionID); err != nil {
+				return nil, err
+			}
+		}
 		if p.Reason == protocol.StopModelFails && p.Model != "" {
 			var err error
 			if protocol.ModelAuthFailure(p.Failure) {
@@ -878,6 +885,17 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			if _, needs := protocol.BriefNeedsBrowser(p.WorkerStartRequest); needs && p.Harness == "" {
 				candidates, browserNote = filterBrowserCandidates(candidates, node.OS, roster)
 			}
+			// A harness that ended an earlier start of this brief without
+			// trying the task is left out, for every model. A caller who named
+			// the harness is not overridden.
+			var briefHarnessNote string
+			if p.Harness == "" {
+				failedHarnesses, err := g.store.briefFailedHarnesses(protocol.BriefHash(pick.Name, p.WorkerStartRequest))
+				if err != nil {
+					return none, err
+				}
+				candidates, briefHarnessNote = filterBriefFailedHarnesses(candidates, failedHarnesses, roster)
+			}
 			var protectionNote string
 			var chooseErr error
 			chosen, chooseErr = g.Choose(ChooseRequest{
@@ -926,6 +944,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			}
 			if browserNote != "" {
 				automaticNote += "; " + browserNote
+			}
+			if briefHarnessNote != "" {
+				automaticNote += "; " + briefHarnessNote
 			}
 			if protectionNote != "" {
 				automaticNote += "; " + protectionNote
@@ -1111,6 +1132,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	// that arrives at once finds it.
 	startRef := protocol.NewID("q")
 	if err := g.store.trackWorkerStart(startRef, pick.NodeID, p.Owner, pick.Name, p.Harness, perms, p.Done); err != nil {
+		return none, err
+	}
+	if err := g.store.trackBriefLaunch(startRef, protocol.BriefHash(pick.Name, p.WorkerStartRequest)); err != nil {
 		return none, err
 	}
 	// The machine records the assessment it gets here when the worker runs.

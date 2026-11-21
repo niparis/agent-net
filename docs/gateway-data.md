@@ -972,9 +972,9 @@ Worker runs, their quality and cost, and the data the picker reads.
 
 ### worker_starts
 
-- **Holds:** One row per request to start a worker, with the machine, project, harness, session, whether it is open or closed, and the brief's done list.
-- **Written by:** `gateway/session_replace.go`, `gateway/store.go`, `gateway/worker_starts.go`
-- **Read by:** `gateway/context_resolver.go`, `gateway/graph_lifecycle.go`, `gateway/track.go`, `gateway/worker_starts.go`
+- **Holds:** One row per request to start a worker, with the machine, project, harness, session, whether it is open or closed, and the brief's done list. Two columns serve the picker: `brief_hash` (a hash of the project and the problem and task text) and `not_attempted_at` (when a run of the start ended without attempting the task).
+- **Written by:** `gateway/brief_launch.go`, `gateway/session_replace.go`, `gateway/store.go`, `gateway/worker_starts.go`
+- **Read by:** `gateway/brief_launch.go`, `gateway/context_resolver.go`, `gateway/graph_lifecycle.go`, `gateway/track.go`, `gateway/worker_starts.go`
 - **Shown in:** tool `agent_worker_start`; tool `agent_workers_find`
 - **Kept:** Closed starts are deleted after 30 days, when the next start is recorded.
 
