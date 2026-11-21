@@ -110,7 +110,26 @@ func exists(path string) bool {
 	return err == nil
 }
 
-// Copy describes one discovered executable, including copies that cannot run.
+// inDiscoveryRoot is always true outside tests. In a test it keeps copies on
+// the real machine out of discovery. t.TempDir() puts folders under GOTMPDIR
+// when that is set, which is not os.TempDir(), so both are allowed.
+func inDiscoveryRoot(p string) bool {
+	if testDiscoveryRoot == "" {
+		return true
+	}
+	roots := []string{testDiscoveryRoot}
+	if g := os.Getenv("GOTMPDIR"); g != "" {
+		roots = append(roots, filepath.Clean(g))
+	}
+	for _, r := range roots {
+		if p == r || strings.HasPrefix(p, r+string(os.PathSeparator)) {
+			return true
+		}
+	}
+	return false
+}
+
+// testDiscoveryRoot confines discovery to a temporary test tree when set.
 var testDiscoveryRoot string
 
 // SetDiscoveryRootForTesting confines candidates to a temporary test tree.
@@ -120,6 +139,7 @@ func SetDiscoveryRootForTesting(root string) func() {
 	return func() { testDiscoveryRoot = old }
 }
 
+// Copy describes one discovered executable, including copies that cannot run.
 type Copy struct {
 	Path    string
 	Version string
@@ -251,7 +271,7 @@ func Discover(configured string) []Copy {
 			return
 		}
 		p, err := filepath.Abs(p)
-		if err != nil || seen[p] || !usable(p) || (testDiscoveryRoot != "" && p != testDiscoveryRoot && !strings.HasPrefix(p, testDiscoveryRoot+string(os.PathSeparator))) {
+		if err != nil || seen[p] || !usable(p) || !inDiscoveryRoot(p) {
 			return
 		}
 		seen[p] = true

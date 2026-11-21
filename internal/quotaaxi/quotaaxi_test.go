@@ -926,3 +926,60 @@ func TestDiscoverIncludesProcessAndLoginPaths(t *testing.T) {
 		}
 	}
 }
+
+// go test puts t.TempDir() under GOTMPDIR, which differs from os.TempDir()
+// when workers set it. A fake quota-axi there must still be found, and one
+// outside both temp roots must stay hidden.
+func TestDiscoveryRootAcceptsGoTmpDir(t *testing.T) {
+	tempRoot, goTmp, outside := t.TempDir(), t.TempDir(), t.TempDir()
+	t.Cleanup(SetDiscoveryRootForTesting(filepath.Join(tempRoot, "only-here")))
+	t.Setenv("GOTMPDIR", goTmp)
+	nodeDir := t.TempDir()
+	fakeNode(t, nodeDir, "22.19.0")
+	t.Setenv("PATH", nodeDir)
+	script := "#!/bin/sh\necho 0.1.69\n"
+	write := func(dir string) string {
+		p := filepath.Join(dir, "quota-axi")
+		if err := os.WriteFile(p, []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	inGoTmp, out := write(goTmp), write(outside)
+	if got := Discover(inGoTmp); len(got) != 1 || got[0].Path != inGoTmp || !got[0].Runs {
+		t.Fatalf("copy under GOTMPDIR was not found: %+v", got)
+	}
+	if got := Discover(out); len(got) != 0 {
+		t.Fatalf("copy outside the temp roots was found: %+v", got)
+	}
+}
+
+// The failed-install marker lives under the data folder. A marker in the
+// default home path must not be read once XDG_DATA_HOME points elsewhere.
+func TestFailureMarkerFollowsDataFolderNotDefaultHome(t *testing.T) {
+	home, data := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	realLooking := RecordPath()
+	if want := filepath.Join(home, ".local", "share", "agent-net", "quota-axi", "install.json"); realLooking != want {
+		t.Fatalf("default marker path %q, want %q", realLooking, want)
+	}
+	if err := os.MkdirAll(filepath.Dir(realLooking), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	today := time.Now().Format("2006-01-02")
+	if err := os.WriteFile(realLooking, []byte("{\"failed_day\":\""+today+"\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !failedToday(time.Now()) {
+		t.Fatal("setup check: the marker in the default path was not read")
+	}
+	t.Setenv("XDG_DATA_HOME", data)
+	if failedToday(time.Now()) {
+		t.Fatal("a marker in the default home path was read although XDG_DATA_HOME points elsewhere")
+	}
+	recordFailure(time.Now())
+	if _, err := os.Stat(filepath.Join(data, "agent-net", "quota-axi", "install.json")); err != nil {
+		t.Fatalf("marker not written under XDG_DATA_HOME: %v", err)
+	}
+}
