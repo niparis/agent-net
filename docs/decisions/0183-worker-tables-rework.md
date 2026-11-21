@@ -1,4 +1,4 @@
-# 0181 - Worker and picker tables rework
+# 0183 - Worker and picker tables rework
 
 Date: 2026-11-21
 
