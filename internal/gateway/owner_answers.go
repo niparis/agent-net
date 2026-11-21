@@ -100,6 +100,11 @@ func (s *Store) recordOwnerWords(q askDB, item protocol.InboxItem, words string)
 // the words or the area changed. The triggers of standing_orders keep the
 // search index and the history in step.
 func upsertAnswerJudgment(q askDB, area string, item protocol.InboxItem, words string, savedAt int64, idPrefix string) error {
+	// A slash command is never the owner's decision: an idle session's
+	// "/compact ..." line once landed here as an answer.
+	if isSlashCommand(words) {
+		return nil
+	}
 	text := "Q: " + strings.TrimSpace(item.Text) + " / A: " + strings.TrimSpace(words)
 	var id, oldText string
 	err := q.QueryRow(`SELECT id,text FROM standing_orders WHERE kind=? AND ref=? ORDER BY rowid LIMIT 1`, protocol.StandingKindAnswer, item.ID).Scan(&id, &oldText)
@@ -114,7 +119,8 @@ func upsertAnswerJudgment(q askDB, area string, item protocol.InboxItem, words s
 	if oldText == text {
 		return nil
 	}
-	_, err = q.Exec(`UPDATE standing_orders SET text=?,area=?,saved_at=?,updated_at=? WHERE id=?`, text, area, savedAt, savedAt, id)
+	// New words replace the old ones, so a voided row is the owner's again.
+	_, err = q.Exec(`UPDATE standing_orders SET text=?,area=?,saved_at=?,updated_at=?,voided_at=0,void_reason='' WHERE id=?`, text, area, savedAt, savedAt, id)
 	return err
 }
 

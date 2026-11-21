@@ -15,7 +15,7 @@ import (
 
 // StandingOrders lists the owner's standing orders and rules, oldest first.
 func (s *Store) StandingOrders() ([]protocol.StandingOrder, error) {
-	rows, err := s.db.Query(`SELECT id,text,saved_at,source,tags,pinned,updated_at,kind,area,ref FROM standing_orders WHERE kind IN ('order','rule') ORDER BY saved_at, id`)
+	rows, err := s.db.Query(`SELECT id,text,saved_at,source,tags,pinned,updated_at,kind,area,ref FROM standing_orders WHERE kind IN ('order','rule') AND voided_at=0 ORDER BY saved_at, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +143,7 @@ func (s *Store) SearchStandingOrders(q protocol.StandingOrdersRequest) ([]protoc
 	rows, err := s.db.Query(`SELECT o.id,o.text,o.saved_at,o.source,o.tags,o.pinned,o.updated_at,snippet(standing_orders_fts,0,'[',']','...',24),o.kind,o.area,o.ref
  FROM standing_orders_fts JOIN standing_orders o ON o.rowid=standing_orders_fts.rowid
  WHERE standing_orders_fts MATCH ? AND (?='' OR EXISTS(SELECT 1 FROM json_each(o.tags) WHERE value=?))
- AND (?='' OR o.source=?) AND o.saved_at>=? AND o.kind IN ('order','rule') ORDER BY bm25(standing_orders_fts),o.id LIMIT 20`, ftsMatch(q.Query), q.Tag, q.Tag, q.Source, q.Source, q.SavedSince)
+ AND (?='' OR o.source=?) AND o.saved_at>=? AND o.kind IN ('order','rule') AND o.voided_at=0 ORDER BY bm25(standing_orders_fts),o.id LIMIT 20`, ftsMatch(q.Query), q.Tag, q.Tag, q.Source, q.Source, q.SavedSince)
 	if err != nil {
 		return nil, err
 	}
@@ -194,6 +194,9 @@ func addJudgment(db execer, now time.Time, q protocol.JudgmentAddRequest) (proto
 	text, err := protocol.CleanStandingText(q.Text)
 	if err != nil {
 		return protocol.StandingOrder{}, err
+	}
+	if q.Kind == protocol.StandingKindAnswer && isSlashCommand(text) {
+		return protocol.StandingOrder{}, errors.New("a slash command is not the owner's decision and is not stored as one")
 	}
 	// A scoped rule (decision 0150) holds only where its area and action say.
 	if q.Action != "" {
@@ -270,14 +273,14 @@ func (s *Store) FindJudgments(q protocol.JudgmentsFindRequest) ([]protocol.Stand
  WHERE standing_orders_fts MATCH ?
    AND (?='' OR o.area=?)
    AND (?='' OR o.kind=?)
-   AND (?='' OR o.ref=?)`+noteFilter+`
+   AND (?='' OR o.ref=?) AND o.voided_at=0`+noteFilter+`
  ORDER BY bm25(standing_orders_fts), o.id LIMIT ? OFFSET ?`, match, area, area, kind, kind, q.Ref, q.Ref, notes, stale, cutoff, limit, offset)
 	} else {
 		rows, err = s.db.Query(fmt.Sprintf(`SELECT `+cols, `''`)+`
  FROM standing_orders o
  WHERE (?='' OR o.area=?)
    AND (?='' OR o.kind=?)
-   AND (?='' OR o.ref=?)`+noteFilter+`
+   AND (?='' OR o.ref=?) AND o.voided_at=0`+noteFilter+`
  ORDER BY o.pinned DESC, o.saved_at DESC, o.rowid DESC LIMIT ? OFFSET ?`, area, area, kind, kind, q.Ref, q.Ref, notes, stale, cutoff, limit, offset)
 	}
 	if err != nil {

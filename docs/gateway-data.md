@@ -740,7 +740,7 @@ Standing orders, notes, findings, and what the gateway learns from signals.
 
 ### standing_orders
 
-- **Holds:** One lasting text kept by the gateway: an owner standing order or rule, an owner judgment (answer or correction), or a named note written by an agent, with its tags and use count.
+- **Holds:** One lasting text kept by the gateway: an owner standing order or rule, an owner judgment (answer or correction), or a named note written by an agent, with its tags and use count. A judgment can be voided (`voided_at`, `void_reason`): the row stays, with the reason, and no judgment search, list or brief shows it.
 - **Written by:** `gateway/chief.go`, `gateway/notes.go`, `gateway/notes_copy.go`, `gateway/owner_answers.go`, `gateway/standing.go`, `gateway/store.go`
 - **Read by:** `gateway/brief.go`, `gateway/chief.go`, `gateway/desk_rules.go`, `gateway/node_scopes.go`, `gateway/notes.go`, `gateway/notes_copy.go`, `gateway/owner_answers.go`, `gateway/standing.go`, `gateway/store.go`
 - **Shown in:** TUI, Settings; tool `agent_note_write`; tool `agent_notes_find`; tool `agent_owner_judgment_record`; tool `agent_owner_judgments_find`; CTO op `cto_standing_orders`
