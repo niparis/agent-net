@@ -100,9 +100,11 @@ func TestClaudeMCPInheritLeavesTheExcludeAloneWhenTheFileIsIgnored(t *testing.T)
 	gitIn(t, repo, "commit", "-q", "-m", "ignore")
 	commitMCPJSON(t, repo, map[string]any{"a": map[string]any{"command": "x"}})
 	writeSettingsLocal(t, repo, `{"enabledMcpjsonServers":["a"]}`)
+	// Creating the worktree writes its own sandbox placeholder lines, so the
+	// snapshot is taken after that: only the settings line is under test.
+	wt := inheritWorktree(t, d, repo)
 	exclude := filepath.Join(repo, ".git", "info", "exclude")
 	before, _ := os.ReadFile(exclude)
-	wt := inheritWorktree(t, d, repo)
 	if _, err := claudeMCPInherit(repo, wt); err != nil {
 		t.Fatal(err)
 	}

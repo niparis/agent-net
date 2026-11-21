@@ -289,6 +289,9 @@ func (d *Daemon) createWorktree(ctx context.Context, w *worker, requestedBase ..
 	if err := setWorktreeUpstream(ctx, main, branch); err != nil {
 		d.Logf("worker %s: branch upstream: %v", w.id, err) // the worker can still push with an explicit branch
 	}
+	if err := hideSandboxPlaceholders(dir); err != nil {
+		d.Logf("worker %s: sandbox placeholders: %v", w.id, err) // the leftover commit still skips them
+	}
 	if err := d.copyWorktreeSkills(ctx, main, dir); err != nil {
 		_, _ = gitOut(ctx, main, "worktree", "remove", "--force", dir)
 		return err
@@ -1850,6 +1853,9 @@ func stageWorkerLeftovers(ctx context.Context, dir string) (string, error) {
 		}
 		if err != nil {
 			return "", err
+		}
+		if isUntrackedSandboxPlaceholder(ctx, dir, path, info) {
+			continue
 		}
 		skip := path == "agent-net" || strings.HasSuffix(path, ".test") || strings.HasSuffix(path, ".exe") || info.Size() > 5_000_000
 		if info.Mode().IsRegular() && !skip {
