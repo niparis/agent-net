@@ -139,36 +139,6 @@ func BenchmarkRealWorkerLog(b *testing.B) {
 	}
 }
 
-func BenchmarkRealToolProjectStates(b *testing.B) {
-	g := benchRealGateway(b)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		if _, err := g.store.ToolProjectStates(); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkRealSkillItems(b *testing.B) {
-	g := benchRealGateway(b)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		if _, err := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true }); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkRealAddNewSkillProjects(b *testing.B) {
-	g := benchRealGateway(b)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		if err := g.addNewSkillProjects(context.Background()); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
 func BenchmarkRealSessionUpsert(b *testing.B) {
 	g := benchRealGateway(b)
 	all, err := g.store.Agents(protocol.QueryAgents{OnlineOnly: true})
@@ -187,7 +157,6 @@ func BenchmarkRealSessionUpsert(b *testing.B) {
 		if _, err := g.handle(ctx, nc, "session.upsert", raw); err != nil {
 			b.Fatal(err)
 		}
-		g.standingWG.Wait()
 	}
 }
 

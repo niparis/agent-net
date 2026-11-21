@@ -150,14 +150,6 @@ func assertNodeSideValues(t *testing.T, s *Store, alpha, beta string) {
 	if want := []string{"upgrade required: machine beta-host has not reported typed Graph support", "upgrade required: machine gamma-host has not reported typed Graph support"}; !reflect.DeepEqual(blockers, want) {
 		t.Fatalf("graph blockers = %q, want %q", blockers, want)
 	}
-
-	reports, err := s.Inventories()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(reports) != 1 || reports[0].NodeID != alpha || len(reports[0].Items) != 1 || reports[0].Items[0].Name != "demo" {
-		t.Fatalf("inventories = %+v, want one report of alpha with the demo skill", reports)
-	}
 }
 
 func TestNodeSideTablesFoldIntoTheNodesRowOnUpgrade(t *testing.T) {

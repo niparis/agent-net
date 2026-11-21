@@ -3,6 +3,8 @@ package gateway
 import (
 	"strconv"
 	"strings"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // Enrolled daemons supply actors after their owner gate has checked approval.
@@ -18,8 +20,12 @@ func validChangeActor(actor string) bool {
 	return err == nil && n > 0
 }
 
-// Only gateway-internal skill plans can use the standing choice actor.
-// Incoming requests still require validChangeActor.
-func validToolChangeActor(actor string) bool {
-	return actor == "standing choice" || validChangeActor(actor)
+// validToolOwner says the owner's agent id belongs to an online owner session
+// on the node that sent the frame.
+func (g *Gateway) validToolOwner(nc *nodeConn, id string) bool {
+	if id == "" {
+		return false
+	}
+	a, ok, err := g.store.Agent(id)
+	return err == nil && ok && a.NodeID == nc.id && a.Harness == protocol.OwnerHarness && a.Online
 }

@@ -43,7 +43,7 @@ func TestSkillFolderResolvesSessionAgentWithBundles(t *testing.T) {
 			t.Fatalf("%s: bundle: %v", skill.Name, err)
 		}
 		dir := t.TempDir()
-		if err := inventory.UnpackSkill(version.Data, dir); err != nil {
+		if err := inventory.UnpackSkillLimit(version.Data, dir, inventory.ArchiveLimit); err != nil {
 			t.Fatalf("%s: unpack: %v", skill.Name, err)
 		}
 		hash, err := inventory.SkillHash(dir)

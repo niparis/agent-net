@@ -20,7 +20,6 @@ type fetchCountSource struct {
 	inbox      []protocol.InboxItem
 	proposals  []protocol.CTOProposal
 	onboarding protocol.Onboarding
-	toolsCall  int
 }
 
 func (f *fetchCountSource) Call(_ context.Context, method string, _ any) (json.RawMessage, error) {
@@ -41,14 +40,6 @@ func (f *fetchCountSource) Call(_ context.Context, method string, _ any) (json.R
 		return json.Marshal(protocol.FrictionFindResult{})
 	}
 	return nil, nil
-}
-
-func (f *fetchCountSource) ToolsDifferences(context.Context) (int, error) {
-	f.mu.Lock()
-	f.toolsCall++
-	f.mu.Unlock()
-	f.countCall("tools_differences")
-	return 0, nil
 }
 
 func (f *fetchCountSource) Snapshot(ctx context.Context) (Snapshot, error) {
@@ -240,31 +231,6 @@ func TestFetchPicksUpANewWaitingSession(t *testing.T) {
 	m = refreshTimes(m, 1)
 	if src.count(protocol.OpAsksList) != 1 {
 		t.Fatalf("inbox not fetched after a wait appeared: %v", src.calls)
-	}
-}
-
-// Tool differences only feed the last onboarding lesson. Once that lesson is
-// done, the screen stops asking.
-func TestFetchStopsAskingForToolDifferencesAfterTheLesson(t *testing.T) {
-	snap := fakeSnapshot()
-	snap.Nodes = append(snap.Nodes, protocol.NodeView{NodeID: "n_other", Hostname: "other", Online: true})
-	snap.ProposalCount = 0
-	src := &fetchCountSource{fakeSource: &fakeSource{snap: snap}}
-	src.onboarding.Steps = map[string]string{"see": "done"}
-	m := New(src)
-	m.loc, m.now = time.UTC, func() time.Time { return t0 }
-	m.onboardingLoaded = true
-	m.onboarding.Steps = map[string]string{"see": "done"}
-	m = refreshTimes(m, 1)
-	if src.toolsCall != 1 {
-		t.Fatalf("first refresh asked %d times, want 1", src.toolsCall)
-	}
-	src.toolsCall = 0
-	src.onboarding.Steps["tools"] = "done"
-	m.now = func() time.Time { return t0.Add(usageEvery) }
-	m = refreshTimes(m, 1)
-	if src.toolsCall != 0 {
-		t.Fatalf("asked %d times after the lesson was done", src.toolsCall)
 	}
 }
 

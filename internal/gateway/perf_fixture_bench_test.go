@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -76,15 +75,6 @@ func newBenchFixtureChanges(b testing.TB, changes int) *benchFixture {
 			b.Fatalf("change %d: %v", i, err)
 		}
 	}
-	for n := 0; n < 5; n++ {
-		var items []protocol.InventoryItem
-		for k := 0; k < 20; k++ {
-			items = append(items, protocol.InventoryItem{Kind: "skill", Name: fmt.Sprintf("skill%02d", k), Hash: fmt.Sprintf("h%02d", k), State: "ok", Scope: "user", Location: fmt.Sprintf("/skills/skill%02d", k)})
-		}
-		if err := s.SetInventory(f.nodes[n], protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: items}); err != nil {
-			b.Fatal(err)
-		}
-	}
 	return f
 }
 
@@ -97,7 +87,6 @@ func (f *benchFixture) handle(b *testing.B, node, typ string, v any) {
 	if _, err := f.g.handle(context.Background(), f.g.conns[node], typ, raw); err != nil {
 		b.Fatal(err)
 	}
-	f.g.standingWG.Wait()
 }
 
 func BenchmarkFixturePolicyGet(b *testing.B) {

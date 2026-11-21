@@ -179,9 +179,6 @@ func (m Model) renderView() string {
 		return strings.Join(lines, "\n")
 	}
 	keyRows := 1
-	if m.tab == toolsTab && !m.help && !m.mapOn && m.focus != focusCTO {
-		keyRows = len(m.toolsKeyLines(w))
-	}
 	var out []string
 	add := func(s string) { out = append(out, s) }
 
@@ -228,8 +225,6 @@ func (m Model) renderView() string {
 			out = append(out, m.mapView(w, contentHeight-1)...)
 		case m.tab == graphTab:
 			out = append(out, m.graphView(w, contentHeight)...)
-		case m.tab == toolsTab:
-			out = append(out, m.toolsView(w, contentHeight)...)
 		case m.tab == messagesTab:
 			out = append(out, m.messagesView(w, contentHeight)...)
 		case m.tab == quotasTab:
@@ -344,9 +339,8 @@ const (
 	graphTab    = 1
 	quotasTab   = 2
 	messagesTab = 3
-	toolsTab    = 4
-	settingsTab = 5
-	inboxTab    = 6 // the Desk (decision 0090); the Delivery tab is part of it
+	settingsTab = 4
+	inboxTab    = 5 // the Desk (decision 0090); the Delivery tab is part of it
 )
 
 func (m Model) composeView(w, room int) []string {

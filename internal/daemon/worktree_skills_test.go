@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,7 +13,7 @@ func TestWorkerWorktreeSkills(t *testing.T) {
 	t.Parallel()
 	d := commitTestDaemon(t)
 	repo := newRepo(t, "skills")
-	var entries []skillManifestEntry
+	var owned []string
 	for _, root := range []string{".claude/skills", ".agents/skills"} {
 		p := filepath.Join(repo, root, "owned")
 		if err := os.MkdirAll(p, 0755); err != nil {
@@ -23,7 +22,7 @@ func TestWorkerWorktreeSkills(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(p, "SKILL.md"), []byte("skill"), 0640); err != nil {
 			t.Fatal(err)
 		}
-		entries = append(entries, skillManifestEntry{Path: p, Owned: true})
+		owned = append(owned, p)
 	}
 	p := filepath.Join(repo, ".agents/skills/manual")
 	if err := os.MkdirAll(p, 0755); err != nil {
@@ -39,11 +38,7 @@ func TestWorkerWorktreeSkills(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(ignored, "SKILL.md"), []byte("ignored"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(filepath.Join(ignored, "SKILL.md"), filepath.Join(entries[0].Path, "link")); err != nil {
-		t.Fatal(err)
-	}
-	b, _ := json.Marshal(entries)
-	if err := os.WriteFile(filepath.Join(d.cfg.StateDir, "skill-manifest.json"), b, 0600); err != nil {
+	if err := os.Symlink(filepath.Join(ignored, "SKILL.md"), filepath.Join(owned[0], "link")); err != nil {
 		t.Fatal(err)
 	}
 	gitWithEnv(t, repo, nil, "config", "core.excludesfile", "/dev/null")
@@ -55,8 +50,8 @@ func TestWorkerWorktreeSkills(t *testing.T) {
 	if err := d.createWorktree(context.Background(), w); err != nil {
 		t.Fatal(err)
 	}
-	for _, e := range entries {
-		rel, _ := filepath.Rel(repo, e.Path)
+	for _, path := range owned {
+		rel, _ := filepath.Rel(repo, path)
 		if _, err := os.Stat(filepath.Join(w.worktree, rel, "SKILL.md")); err != nil {
 			t.Fatal(err)
 		}

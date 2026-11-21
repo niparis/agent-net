@@ -18,7 +18,6 @@ func TestHelpShowsTheCurrentScreenFirst(t *testing.T) {
 		keys []string
 	}{
 		{"Sessions", sessionsTab, []string{"?"}},
-		{"Tools", toolsTab, []string{"5", "?"}},
 		{"Graph", graphTab, []string{"2", "?"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -124,23 +123,6 @@ func TestQualityDetailsHelpShowsItsOwnSection(t *testing.T) {
 	}
 	if !strings.Contains(body, "\n Global keys\n") {
 		t.Fatalf("Quality details help lacks Global keys:\n%s", body)
-	}
-}
-
-func TestToolsMenuHelpShowsItsOwnSection(t *testing.T) {
-	m := keys(newModel(120, 40), "5")
-	m.tl.modal = &toolsModal{menu: &toolMenu{}}
-	m = keys(m, "?")
-	view := ansi.Strip(m.testView())
-	if !strings.Contains(view, "Keys · Tools menu") {
-		t.Fatalf("help title does not name the Tools menu:\n%s", view)
-	}
-	body := helpText(m)
-	if !strings.HasPrefix(body, " Tools menu\n") {
-		t.Fatalf("Tools menu is not the first section:\n%s", body)
-	}
-	if strings.Contains(body, "\n Tools\n") {
-		t.Fatalf("Tools menu help also shows the Tools tab section:\n%s", body)
 	}
 }
 

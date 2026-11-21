@@ -1,5 +1,7 @@
 # 0043 - Tools uses one list and scoped action menus
 
+> Retired by [0169](0169-skill-archive.md) task 5 (2026-11-21): the Tools rollout, its tab and its tables are removed. This text is history.
+
 **Date:** 2026-11-01
 **Status:** Accepted by the owner
 

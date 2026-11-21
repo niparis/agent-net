@@ -240,7 +240,7 @@ func TestWorkerSessionKeepsReworkCounters(t *testing.T) {
 func TestWorkerStoppedClearsBusySessionStatus(t *testing.T) {
 	for _, reason := range []string{protocol.StopHandback, protocol.StopRequested, protocol.StopRunFailed, protocol.StopMaxAge, protocol.StopLost, protocol.StopStartFails} {
 		t.Run(reason, func(t *testing.T) {
-			g, node := scopeGateway(t)
+			g, node := mcpGateway(t)
 			in := protocol.SessionInfo{Harness: "opencode", NativeID: "worker", Status: "busy", Worker: &protocol.WorkerInfo{ID: "w_test"}}
 			id, err := g.store.UpsertSession(node, in)
 			if err != nil {

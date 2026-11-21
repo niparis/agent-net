@@ -45,8 +45,6 @@ func skillHashRoot(dir *os.Root) (string, error) { return SkillHashRoot(dir) }
 // SkillHashRoot hashes a skill through an already opened directory.
 func SkillHashRoot(dir *os.Root) (string, error) { return hashSkillRoot(dir, false) }
 
-func skillContentFingerprintRoot(dir *os.Root) (string, error) { return hashSkillRoot(dir, true) }
-
 func hashSkillRoot(dir *os.Root, contentOnly bool) (string, error) {
 	var paths []string
 	err := fs.WalkDir(dir.FS(), ".", func(path string, entry fs.DirEntry, err error) error {
@@ -137,33 +135,6 @@ func hashSkillRoot(dir *os.Root, contentOnly bool) (string, error) {
 		}
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
-// skillFilesRoot lists paths without reading or following their contents.
-func skillFilesRoot(dir *os.Root) ([]string, error) {
-	var paths []string
-	err := fs.WalkDir(dir.FS(), ".", func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return skillReadError(path, err)
-		}
-		if path == "." {
-			return nil
-		}
-		if skillNoise(filepath.Base(path)) {
-			if entry.IsDir() {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		if len(paths) >= maxFiles {
-			return fmt.Errorf("skill exceeds file count limit")
-		}
-		if !entry.IsDir() {
-			paths = append(paths, path)
-		}
-		return nil
-	})
-	return paths, err
 }
 
 func skillNoise(name string) bool {

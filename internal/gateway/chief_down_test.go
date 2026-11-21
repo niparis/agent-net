@@ -277,7 +277,7 @@ func TestChiefOfflineStatusReasons(t *testing.T) {
 // machine (the picker's data). A used-up weekly window makes the chief
 // unavailable, and the asks that waited for it move to the owner path.
 func TestFlushChiefReadsMachineQuotaAndMovesAsks(t *testing.T) {
-	g, node := scopeGateway(t)
+	g, node := mcpGateway(t)
 	st := g.store
 	c := &clock{t: time.Date(2026, 11, 9, 21, 0, 0, 0, time.UTC)}
 	st.now = c.now

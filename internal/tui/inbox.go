@@ -17,7 +17,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// The Inbox tab (tab 7) is one place for everything that waits for the owner.
+// The Inbox tab (tab 6) is one place for everything that waits for the owner.
 // It holds every kind the Needs you rows and the old inbox overlay held, with
 // the same keys and the same operations.
 

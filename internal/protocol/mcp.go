@@ -81,13 +81,6 @@ type MCPServer struct {
 	HealthAt     int64     `json:"health_at,omitempty"`
 	HostOnline   bool      `json:"host_online"`
 	Tools        []MCPTool `json:"tools,omitempty"`
-
-	// Scope says which sessions can see and call the server: "global" (every
-	// session, also when no assignment exists), "projects" (sessions of the
-	// listed Projects) or "uninstalled" (no session). The gateway fills these
-	// from the owner's assignment; they are never stored in the spec.
-	Scope    string   `json:"scope,omitempty"`
-	Projects []string `json:"projects,omitempty"`
 }
 
 // ToolAllowed reports whether the gateway exposes the tool: always when the
@@ -267,21 +260,12 @@ type (
 		Detail string    `json:"detail,omitempty"`
 		Tools  []MCPTool `json:"tools,omitempty"`
 	}
-	// MCPCall is a tool call from a session's daemon. SessionID names the
-	// calling session; the gateway checks that it lives on the calling node
-	// and takes its project from its own record. There is no project field:
-	// a project in the request is never read. Owner is the owner session ID
-	// for the command line (operator authority), checked like tools.plan.
+	// MCPCall is a tool call from a session's daemon. Every registered server
+	// is global, so the call names no session and no project.
 	MCPCall struct {
 		Server    string          `json:"server"`
 		Tool      string          `json:"tool"`
 		Arguments json.RawMessage `json:"arguments,omitempty"`
-		SessionID string          `json:"session_id,omitempty"`
-		Owner     string          `json:"owner,omitempty"`
-	}
-	// MCPCatalog asks for the enabled servers one session may see.
-	MCPCatalog struct {
-		SessionID string `json:"session_id,omitempty"`
 	}
 	// MCPInvoke is a call forwarded to the hosting node.
 	MCPInvoke struct {
@@ -294,8 +278,8 @@ type (
 
 // Resources and prompts of registered servers. A session lists and reads them
 // through its daemon, the gateway checks access as for a tool call, and the
-// hosting daemon asks the server. Lists go to every server the caller may see;
-// a read or a prompt goes to one.
+// hosting daemon asks the server. Lists go to every enabled server; a read or a
+// prompt goes to one.
 const (
 	MCPOpResources = "resources/list"
 	MCPOpTemplates = "resources/templates/list"
@@ -335,17 +319,14 @@ func MCPListOp(op string) bool {
 type (
 	// MCPFeature asks for the resources or prompts of registered servers.
 	// Server names one server; for a list it may be empty, which means every
-	// server the caller may see. URI is the server's own resource URI (read),
-	// Name and Arguments the server's own prompt (get). SessionID and Owner
-	// are set by the daemon, as for MCPCall.
+	// enabled server. URI is the server's own resource URI (read), Name and
+	// Arguments the server's own prompt (get).
 	MCPFeature struct {
 		Op        string            `json:"op"`
 		Server    string            `json:"server,omitempty"`
 		URI       string            `json:"uri,omitempty"`
 		Name      string            `json:"name,omitempty"`
 		Arguments map[string]string `json:"arguments,omitempty"`
-		SessionID string            `json:"session_id,omitempty"`
-		Owner     string            `json:"owner,omitempty"`
 	}
 	// MCPFeatureInvoke is an MCPFeature for one server, forwarded to its host.
 	MCPFeatureInvoke struct {

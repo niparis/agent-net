@@ -96,22 +96,6 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("inbox_answer", "Answer inbox item.", map[string]ctoField{"id": s("Inbox ID."), "answer": s("Answer.")})
 	add("outcome_overrule", "Resolve an outcome.", map[string]ctoField{"reply_id": s("Reply ID."), "action": en("Action.", "let_stand", "overrule")})
 
-	add("tools_toggle", "Switch a skill, command or agent on or off for one project.", map[string]ctoField{"item": s("Item ID."), "project": s("Project."), "on": b("On or off.")})
-	add("tools_new_projects", "Set the choice for future projects.", map[string]ctoField{"item": s("Item ID."), "on": b("On or off.")})
-	add("tools_plan", "Plan assignments; repo removal on a local branch.", map[string]ctoField{
-		"item": s("Item ID."), "target": obj("Assignment."),
-		"operation": en("Operation.", "repo_remove"),
-		"project":   s("Project."),
-		"repo_targets": {typ: "array", desc: "Checkouts.", items: map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{
-			"node_id":  map[string]any{"type": "string", "description": "Machine."},
-			"checkout": map[string]any{"type": "string", "description": "Path."},
-		}}},
-	})
-	add("tools_apply", "Apply the plan.", map[string]ctoField{"plan_id": s("Plan ID.")})
-	add("tools_undo", "Undo assignment.", map[string]ctoField{"item": s("Item ID.")})
-	add("mcp_import", "Import a native MCP server.", map[string]ctoField{"candidate": s("Candidate."), "plan_id": s("Plan ID.")})
-	add("mcp_native_remove", "Remove native MCP configuration.", map[string]ctoField{"candidate": s("Candidate."), "plan_id": s("Plan ID."), "undo_plan_id": s("Removal ID.")})
-
 	add("mcp_add", "Add MCP server; no secrets.", map[string]ctoField{"server": obj("Configuration."), "on": s("Host; local default.")})
 	add("mcp_remove", "Remove MCP server.", map[string]ctoField{"name": s("Server name.")})
 	add("mcp_test", "Test MCP server.", map[string]ctoField{"name": s("Server name.")})
@@ -167,7 +151,6 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 		spec.fields[field] = f
 		out[tool] = spec
 	}
-	setProperties("tools_plan", "target", map[string]any{"scope": property("string", "Scope.", "global", "projects", "uninstalled"), "projects": stringsArray("Projects."), "machines": stringsArray("All.")})
 	setProperties("mcp_add", "server", map[string]any{
 		"name": property("string", "Server name."), "transport": property("string", "Transport.", "stdio", "http", "sse"),
 		"command": property("string", "Command."), "args": stringsArray("No secrets."), "env": stringsArray("Names, not values."),

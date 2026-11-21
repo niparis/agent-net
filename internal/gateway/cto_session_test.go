@@ -61,7 +61,7 @@ func TestCTONetworkSession(t *testing.T) {
 }
 
 func TestCTORegistrationRequiresOwnerAuthority(t *testing.T) {
-	g, node := scopeGateway(t)
+	g, node := mcpGateway(t)
 	owner, err := g.store.UpsertSession(node, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: protocol.OwnerNativeID})
 	if err != nil {
 		t.Fatal(err)

@@ -1,5 +1,7 @@
 # 0064 - Partial skill inventory and tool plans
 
+> Retired by [0169](0169-skill-archive.md) task 5 (2026-11-21): the Tools rollout, its tab and its tables are removed. This text is history.
+
 **Date:** 2026-11-04
 **Context:** [0027](0027-skills-and-mcp-management.md),
 [0048](0048-skills-on-off-per-project.md).

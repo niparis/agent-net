@@ -43,8 +43,6 @@ const (
 	// graphCutoverUpgradedKey the time (Unix nanos) it first did.
 	graphCutoverVersionKey  = "graph_cutover_version"
 	graphCutoverUpgradedKey = "graph_cutover_upgraded_at"
-	// skillArchiveStatePrefix keeps the old skill_archive_meta keys apart.
-	skillArchiveStatePrefix = "skill_archive."
 )
 
 // graphRefGateSQL is a scalar subquery for SQL that tests the gate: '1' when on.

@@ -1,6 +1,5 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 7 nodes, 7 edges                                                                                            updated 14:05
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk │ 7 nodes, 7 edges                                                                                                    updated 14:05
 tenebrae  mature  autonomy: wake  component
-Tools: 0 skills, 0 MCP servers · t open
 Research platform that turns papers, figures and strategies into a searchable library for the trading desk, with citations kept for every claim.
 ● 1 session, 1 busy
 accept, test, review, merge, release, verify: caller
@@ -34,6 +33,7 @@ work_mode          on_request             default
 
 
 
+
 RECENT  3h ago maturity by trading-architect
 ╭─CTO────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                                                                                            │
@@ -42,4 +42,4 @@ RECENT  3h ago maturity by trading-architect
 │                                                                                                                                                                                            │
 │ c: open the CTO                                                                                                                                                                            │
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter sessions  t tools  esc Graph  ctrl+u/ctrl+d scroll  n new  u undo  ? help  q quit
+enter sessions  esc Graph  ctrl+u/ctrl+d scroll  n new  u undo  ? help  q quit

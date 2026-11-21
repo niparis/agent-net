@@ -92,7 +92,7 @@ Turn all on? [Y/n/c]
 
 Enter or `y` turns all seven on. `n` turns all seven off. `c` asks one line per item, `<item>? [Y/n]`. `--all` and `--none` answer without a question. The per-item flags below override one item and are a local answer for this machine.
 
-The first machine that answers stores the answers on the gateway as your network settings. Setup on any other machine applies them without asking and prints `integrations: 7 of 7 on (your network settings)`. A new or upgraded machine gets them with no step: its daemon applies them at start. A change made in the TUI reaches every machine at its next daemon start, or within a minute. In Settings (tab 6), Enter on the integrations row opens "Integrations (all machines)": space toggles an item, Enter saves for every machine, Esc cancels.
+The first machine that answers stores the answers on the gateway as your network settings. Setup on any other machine applies them without asking and prints `integrations: 7 of 7 on (your network settings)`. A new or upgraded machine gets them with no step: its daemon applies them at start. A change made in the TUI reaches every machine at its next daemon start, or within a minute. In Settings (tab 5), Enter on the integrations row opens "Integrations (all machines)": space toggles an item, Enter saves for every machine, Esc cancels.
 
 Each item, what it changes, and how to turn it off:
 
@@ -104,7 +104,7 @@ Each item, what it changes, and how to turn it off:
 
 **Claude: add your node's charter to each prompt.** A second hook, `agent-net policy-hook`, runs on each prompt. It asks agent-net for the charter of the session's node and adds it as context. No model is called. It adds one `UserPromptSubmit` entry with a 3 second timeout and keeps every other hook. `--claude-policy-hook` and `--no-claude-policy-hook` are the per-item flags. Uninstall removes the hook, and the marked subagent files that older versions wrote.
 
-**Claude: show "Needs you" in the TUI.** Hooks tell the local daemon when a Claude Code session waits for your permission or input, so it appears on the Desk (tab 7) with what it asks, including the question of an `AskUserQuestion` dialog. A prompt or the answer to the dialog clears that. They add `PermissionRequest`, `Notification` (agent needs input and elicitation waits), `PreToolUse`, `UserPromptSubmit`, and `PostToolUse` and `PostToolUseFailure` for `AskUserQuestion` and `ExitPlanMode`, each with a 2 second timeout, and keep every other hook. The daemon brings them up to date at start after an upgrade. Only the local daemon is called. No model is called. Without the hooks the Inbox still shows a waiting Claude Code session, because Claude Code writes that state into its session file. `--claude-needs-hook` and `--no-claude-needs-hook` are the per-item flags. Uninstall removes only our entries.
+**Claude: show "Needs you" in the TUI.** Hooks tell the local daemon when a Claude Code session waits for your permission or input, so it appears on the Desk (tab 6) with what it asks, including the question of an `AskUserQuestion` dialog. A prompt or the answer to the dialog clears that. They add `PermissionRequest`, `Notification` (agent needs input and elicitation waits), `PreToolUse`, `UserPromptSubmit`, and `PostToolUse` and `PostToolUseFailure` for `AskUserQuestion` and `ExitPlanMode`, each with a 2 second timeout, and keep every other hook. The daemon brings them up to date at start after an upgrade. Only the local daemon is called. No model is called. Without the hooks the Inbox still shows a waiting Claude Code session, because Claude Code writes that state into its session file. `--claude-needs-hook` and `--no-claude-needs-hook` are the per-item flags. Uninstall removes only our entries.
 
 **Claude: show your workers above the prompt.** Setup installs the `agent-net-workers` Claude Code plugin from a local marketplace, `~/.local/share/agent-net/claude-plugins`. In every Claude Code session on this machine it shows the workers that session started in a band above the prompt and on the status line, and a line when a worker ends. Each worker takes one row: a state symbol (`●` running, `✓` done, `✗` failed, stopped or timed out, `◌` queued), the worker's title, the harness and full model name, the run time, and the context percent while it runs or the end state once it has ended. Columns align across the visible workers. The title uses the remaining width and ends with an ellipsis when cut; a narrow pane drops the context column before the run time, and the model is never shortened. The row omits session IDs and token counts. Setup runs `claude plugin marketplace add` and `claude plugin install agent-net-workers@agent-net -s user`. A later setup run, the daemon at start, and an upgrade rewrite the folder when the files differ from the binary. After an upgrade, sessions that were already open need `/reload-plugins`. `--claude-workers-mod` and `--no-claude-workers-mod` are the per-item flags. If the `claude` command is missing or fails, the step says so and setup continues. Uninstall runs the matching `claude plugin` commands and deletes the folder.
 
@@ -139,13 +139,13 @@ Start a Pi session on one machine and a Claude Code session on another. Ask one 
 
 In the TUI, press `2` for Graph. Find an agent with `/`, then
 press Enter for its charter card. Esc returns to the Graph with the same node
-selected. The tabs are 1 Sessions, 2 Graph, 3 Quotas, 4 Messages, 5 Tools, 6 Settings and 7 Desk.
+selected. The tabs are 1 Sessions, 2 Graph, 3 Quotas, 4 Messages, 5 Settings and 6 Desk.
 
 ## Phone app
 
 Run the gateway and its joined daemon under the same user on the gateway host.
 Expose the connected apps listener over HTTPS and set its public URL. Open that
-URL on the phone, then enter its code under Settings (tab 6) > Connected apps > a
+URL on the phone, then enter its code under Settings (tab 5) > Connected apps > a
 in the TUI. Approve the owner app and its name. In Safari, use Share, then Add to
 Home Screen. The page is the web console: Desk and Sessions, with the keys `1` to
 `6` on a desk. To sign out a phone, revoke it under Connected apps. See the
@@ -162,7 +162,7 @@ agent-net uninstall          # services, Claude MCP entry, the crossSessionInbou
 agent-net uninstall --purge  # also ~/.config/agent-net and the daemon state
 ```
 
-The binary and the gateway data are kept. So are skills the owner assigned to a machine and any native MCP file the daemon edited: undo those first if you want them back. See [what setup changes](reference.md#what-setup-changes-on-your-machine).
+The binary and the gateway data are kept. Uninstall removes the skill backups, journal and manifest that older versions left in the state folder. Git exclude lines that older versions added to a checkout stay: they only hide a folder. See [what setup changes](reference.md#what-setup-changes-on-your-machine).
 
 ## Options and tests
 

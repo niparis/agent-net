@@ -97,17 +97,6 @@ func TestInvitedRowInvisibleToMachineListsAndReads(t *testing.T) {
 		t.Fatalf("Nodes = %+v; want only %s", nodes, nodeID)
 	}
 
-	// Check toolPlanNodes(): must only return worker-alpha
-	planNodes, err := s.toolPlanNodes()
-	if err != nil {
-		t.Fatalf("toolPlanNodes: %v", err)
-	}
-	for _, pn := range planNodes {
-		if pn.NodeID == inviteID {
-			t.Fatalf("toolPlanNodes returned invited node %s", inviteID)
-		}
-	}
-
 	// Check Gateway.FindMachines: must not contain invited row
 	page, err := g.FindMachines(protocol.MachinesFindRequest{})
 	if err != nil {

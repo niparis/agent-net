@@ -43,16 +43,6 @@ const (
 	contextGraphFind       keyContext = "Graph find"
 	contextTeams           keyContext = "Teams"
 	contextCard            keyContext = "agent card"
-	contextToolsFilter     keyContext = "tools filter"
-	contextToolsCosts      keyContext = "tools project costs"
-	contextToolsAgents     keyContext = "skills per project"
-	contextToolsSkills     keyContext = "project skills"
-	contextToolsDiscard    keyContext = "discard skill changes"
-	contextTools           keyContext = "Tools"
-	contextToolsPlan       keyContext = "tools plan"
-	contextToolsPicker     keyContext = "tools picker"
-	contextToolsMenu       keyContext = "tools menu"
-	contextToolsAdd        keyContext = "tools add"
 	contextCTO             keyContext = "CTO box"
 	contextHelp            keyContext = "help"
 	contextConfirm         keyContext = "confirmations"
@@ -64,8 +54,7 @@ var allKeyContexts = []keyContext{
 	contextGlobal, contextWorkersLog, contextDelivery, contextSessions, contextHeld, contextSuggestion, contextOutcome,
 	contextProposal, contextProposalDetail, contextProposalHistory, contextMessages, contextBody, contextInbox,
 	contextSettings, contextApps, contextQuotas, contextQualityDetails, contextGraph, contextGraphFind, contextCard, contextTeams,
-	contextTools, contextToolsFilter, contextToolsCosts, contextToolsAgents, contextToolsSkills, contextToolsDiscard, contextToolsPlan,
-	contextToolsPicker, contextToolsMenu, contextToolsAdd, contextCTO, contextHelp, contextConfirm, contextForm, contextFinder,
+	contextCTO, contextHelp, contextConfirm, contextForm, contextFinder,
 }
 
 func bind(context keyContext, keys string, action actionID, label string, priority int) keyBinding {
@@ -87,7 +76,7 @@ func withLocal(b keyBinding) keyBinding {
 // globalHelpRows is the fixed Global keys list. It is written once here and
 // never built by joining other contexts' labels.
 var globalHelpRows = []struct{ keys, help string }{
-	{"1-7", "switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings, Desk"},
+	{"1-6", "switch tabs: Sessions, Graph, Quotas, Messages, Settings, Desk"},
 	{"enter", "go into the selected thing"},
 	{"arrows, j/k", "move"},
 	{"esc", "back; first clears a filter you typed"},
@@ -103,7 +92,7 @@ var globalHelpRows = []struct{ keys, help string }{
 // globalSameKeys are the keys the Global list describes. A tab section hides
 // one unless the binding is marked local and so means something different.
 var globalSameKeys = []string{
-	"1", "2", "3", "4", "5", "6", "7", "enter", "up", "down", "left", "right", "j", "k",
+	"1", "2", "3", "4", "5", "6", "enter", "up", "down", "left", "right", "j", "k",
 	"esc", "/", "R", "c", "C", "?", "q", "ctrl+c", "ctrl+p",
 }
 
@@ -149,9 +138,8 @@ var keyBindings = []keyBinding{
 	bind(contextGlobal, "2", "graph tab", "Graph", -1),
 	bind(contextGlobal, "3", "quotas tab", "Quotas", -1),
 	bind(contextGlobal, "4", "messages tab", "Messages", -1),
-	bind(contextGlobal, "5", "tools tab", "Tools", -1),
-	bind(contextGlobal, "6", "settings tab", "Settings", -1),
-	bind(contextGlobal, "7", "inbox tab", "Desk", -1),
+	bind(contextGlobal, "5", "settings tab", "Settings", -1),
+	bind(contextGlobal, "6", "inbox tab", "Desk", -1),
 	withHelp(bind(contextGlobal, tabs.CTOKey, "open CTO", "open CTO", -1), "open the CTO session"),
 	withHelp(bind(contextGlobal, "C", "focus CTO", "focus CTO box", -1), "focus the CTO box for its own keys: enter opens the full CTO, ctrl+] returns, esc skips a tip"),
 	withHelp(bind(contextGlobal, "ctrl+p", "find session", "find session", -1), "find a session by name, project, folder, machine or task"),
@@ -348,7 +336,6 @@ var keyBindings = []keyBinding{
 	bind(contextCard, "esc", "back", "Graph", 0),
 	withLocal(withHelp(bind(contextCard, "enter", "sessions", "sessions", 1), "open Sessions filtered to this agent's project")),
 	withHelp(bind(contextCard, "n", "new session", "new", 1), "start a new session in this project (the same form, filled from here)"),
-	withHelp(bind(contextCard, "t", "node tools", "tools", 1), "open Tools filtered to this node"),
 	withHelp(bind(contextCard, "a", "autonomy", "autonomy", -1), "toggle autonomy off or wake (wakes on messages)"),
 	withHelp(bind(contextCard, "L", "loop", "loop", -1), "cycle the standing loop: off, 1h, 4h, 12h, 24h (wakes the lead on a clock)"),
 	withHelp(bind(contextCard, "D", "rename project", "name project", -1), "name this project"),
@@ -364,71 +351,6 @@ var keyBindings = []keyBinding{
 	withHelp(bind(contextCard, "ctrl+d|pgdown", actPageDown, "scroll", 1), "scroll the card: charter, rules and learned changes"),
 	withHelp(bind(contextCard, "ctrl+u|pgup", actPageUp, "scroll", 1), "scroll the card: charter, rules and learned changes"),
 	bind(contextCard, "R", "refresh", "refresh", -1),
-	bind(contextToolsFilter, "enter", "keep", "keep filter", 0),
-	bind(contextToolsFilter, "esc", "clear filter", "clear/back", 0),
-	bind(contextToolsFilter, "backspace|ctrl+h", "delete text", "delete", 0),
-	bind(contextToolsCosts, "j|down", actDown, "move", 0),
-	bind(contextToolsCosts, "k|up", actUp, "move", 0),
-	bind(contextToolsCosts, "enter", "open", "open", 0),
-	bind(contextToolsCosts, "esc", "back", "back", 0),
-	withLocal(bind(contextToolsAgents, "i", "import all", "import", 0)),
-	withLocal(bind(contextToolsSkills, "i", "import all", "import", 0)),
-	withLocal(bind(contextToolsAgents, "j|down", actDown, "move", 0)),
-	withLocal(bind(contextToolsAgents, "k|up", actUp, "move", 0)),
-	withLocal(bind(contextToolsAgents, "tab", "all tools", "switches", 0)),
-	withLocal(bind(contextToolsAgents, "/", "filter", "filter", 0)),
-	withLocal(bind(contextToolsAgents, "?", "help", "help", 0)),
-	withLocal(bind(contextToolsAgents, "q", actQuit, "quit", 0)),
-	withLocal(bind(contextToolsAgents, "esc", "back", "back", 0)),
-	withLocal(bind(contextToolsSkills, "j|down", actDown, "move", 0)),
-	withLocal(bind(contextToolsSkills, "k|up", actUp, "move", 0)),
-	withLocal(bind(contextToolsSkills, "tab", "all tools", "switches", 0)),
-	withLocal(bind(contextToolsSkills, "/", "filter", "filter", 0)),
-	withLocal(bind(contextToolsSkills, "?", "help", "help", 0)),
-	withLocal(bind(contextToolsSkills, "q", actQuit, "quit", 0)),
-	withLocal(bind(contextToolsSkills, "esc", "back", "back", 0)),
-	withLocal(bind(contextToolsAgents, "right|enter", "skills", "skills", 0)),
-	withLocal(bind(contextToolsSkills, "left", "agents", "projects", 0)),
-	withLocal(bind(contextToolsSkills, "space", "toggle", "on/off", 0)),
-	withLocal(bind(contextToolsSkills, "enter", "review", "on/off or review", 0)),
-	withLocal(bind(contextToolsDiscard, "y|Y", "discard", "discard", 0)),
-	withLocal(bind(contextToolsDiscard, "n|N|esc", "keep", "keep changes", 0)),
-	bind(contextTools, "tab", "skills per agent", "switches", 0),
-	bind(contextTools, "q", actQuit, "quit", 0),
-	bind(contextTools, "?", "help", "help", 1),
-	bind(contextTools, "j|down", actDown, "move", 0),
-	bind(contextTools, "k|up", actUp, "move", 0),
-	bind(contextTools, "/", "filter", "filter", 0),
-	withHelp(bind(contextTools, "t", "project costs", "costs", 0), "show skill cost per project"),
-	bind(contextTools, "esc", "clear filter", "clear", 1),
-	withHelp(bind(contextTools, "n", "add", "add", 0), "add an MCP server or a skill from a folder"),
-	withLocal(withHelp(bind(contextTools, "enter", "open actions", "actions", 0), "open the actions for the selected tool")),
-	withLocal(withHelp(bind(contextTools, "R", "rescan", "rescan", -1), "rescan tool copies")),
-	bind(contextToolsPlan, "enter|y|Y", "apply", "apply", 1),
-	bind(contextToolsPlan, "esc|n|N", "cancel", "cancel", 1),
-	bind(contextToolsPlan, "?", "help", "help", 1),
-	bind(contextToolsPlan, "up|k", actUp, "scroll", 1),
-	bind(contextToolsPlan, "down|j", actDown, "scroll", 1),
-	withHelp(bind(contextToolsPlan, "d", "exact folders", "folders", -1), "use the exact folders"),
-	bind(contextToolsPicker, "esc", "cancel", "cancel", 1),
-	bind(contextToolsPicker, "?", "help", "help", 1),
-	bind(contextToolsPicker, "up|k", actUp, "select", 1),
-	bind(contextToolsPicker, "down|j", actDown, "select", 1),
-	bind(contextToolsPicker, "space", "tick", "tick", 1),
-	bind(contextToolsPicker, "/", "filter", "filter", 1),
-	bind(contextToolsPicker, "enter", "apply", "apply", 1),
-	bind(contextToolsMenu, "esc", "back", "back", 1),
-	bind(contextToolsMenu, "?", "help", "help", 1),
-	bind(contextToolsMenu, "up|k", actUp, "move", 1),
-	bind(contextToolsMenu, "down|j", actDown, "move", 1),
-	bind(contextToolsMenu, "enter", "choose", "choose", 1),
-	bind(contextToolsAdd, "esc", "cancel", "cancel", 1),
-	withHelp(bind(contextToolsAdd, "tab|down", "next field", "field", 1), "move to the next field"),
-	withHelp(bind(contextToolsAdd, "shift+tab|up", "previous field", "field", 1), "previous field"),
-	withHelp(bind(contextToolsAdd, "left", "previous machine", "machine", 1), "choose the machine"),
-	withHelp(bind(contextToolsAdd, "right", "next machine", "machine", 1), "choose the machine"),
-	bind(contextToolsAdd, "enter", "add", "add", 1),
-	bind(contextToolsAdd, "backspace|ctrl+h", "delete text", "delete", -1),
 	withHelp(bind(contextCTO, "ctrl+]|tab", "back", "back", 1), "back to Sessions"),
 	bind(contextCTO, "?", "help", "help", 1),
 	bind(contextCTO, "esc", "skip tip", "skip tip", -1),

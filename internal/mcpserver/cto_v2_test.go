@@ -343,8 +343,6 @@ func TestCTOChangePart2CatalogAndActionValidation(t *testing.T) {
 	cases := []struct{ name, raw, want string }{
 		{"answer", `{"kind":"held","message_id":"m1","action":"a","id":"other"}`, `id`},
 		{"answer", `{"kind":"held","message_id":"m1"}`, `action`},
-		{"tools_change", `{"action":"apply"}`, `plan_id`},
-		{"tools_change", `{"action":"native_remove"}`, `selector`},
 		{"mcp_change", `{"action":"add"}`, `server`},
 		{"settings_change", `{"area":"notifications"}`, `disabled`},
 		{"project_change", `{"action":"create"}`, `path`},
@@ -371,7 +369,7 @@ func TestCTOChangePart2RoutesAndOutputs(t *testing.T) {
 			name string
 			args json.RawMessage
 		}{method, b})
-		return json.RawMessage(`"proposal test-id is in the owner's Inbox (tab 7 of the TUI); the owner decides there"`), nil
+		return json.RawMessage(`"proposal test-id is in the owner's Inbox (tab 6 of the TUI); the owner decides there"`), nil
 	}, "test")
 	ss, err := srv.Connect(ctx, st, nil)
 	if err != nil {
@@ -385,7 +383,6 @@ func TestCTOChangePart2RoutesAndOutputs(t *testing.T) {
 	defer cs.Close()
 	cases := []struct{ name, raw string }{
 		{"answer", `{"kind":"held","message_id":"m","action":"a"}`}, {"answer", `{"kind":"inbox","id":"i","answer":"yes"}`}, {"answer", `{"kind":"outcome","reply_id":"m","action":"overrule"}`},
-		{"tools_change", `{"action":"plan","item":"i","target":{"scope":"global"}}`}, {"tools_change", `{"action":"apply","plan_id":"p"}`}, {"tools_change", `{"action":"undo","item":"i"}`}, {"tools_change", `{"action":"native_remove","undo_plan_id":"p"}`},
 		{"mcp_change", `{"action":"add","server":{"name":"s","transport":"stdio","command":"/bin/true"}}`}, {"mcp_change", `{"action":"remove","name":"s"}`}, {"mcp_change", `{"action":"test","name":"s"}`}, {"mcp_change", `{"action":"enable","name":"s","enabled":true}`},
 		{"settings_change", `{"area":"worker_profile_add","name":"p","harness":"anything","model":"m"}`}, {"settings_change", `{"area":"worker_profile_remove","name":"p"}`}, {"settings_change", `{"area":"worker_providers","providers":["p"]}`}, {"settings_change", `{"area":"protected_providers","protected_providers":["p"]}`}, {"settings_change", `{"area":"score","model":"m","score":50}`}, {"settings_change", `{"area":"integrations","peer_messages":true}`}, {"settings_change", `{"area":"notifications","disabled":true}`}, {"settings_change", `{"area":"cto","title":"CTO"}`}, {"settings_change", `{"area":"playbook","note":"hello"}`}, {"settings_change", `{"area":"machine_name","name":"desk"}`}, {"settings_change", `{"area":"invite"}`}, {"settings_change", `{"area":"onboarding"}`},
 		{"project_change", `{"action":"add","paths":["/tmp/project"]}`}, {"project_change", `{"action":"remove","name":"p"}`}, {"project_change", `{"action":"display","project":"p","name":"P"}`}, {"project_change", `{"action":"create","path":"~/project"}`},

@@ -1,5 +1,7 @@
 # 0048 - Skills: on or off per project
 
+> Retired by [0169](0169-skill-archive.md) task 5 (2026-11-21): the Tools rollout, its tab and its tables are removed. This text is history.
+
 **Date:** 2026-11-03
 **Status:** Accepted by the owner; build started
 **Replaces:** the skill parts of [0027](0027-skills-and-mcp-management.md) listed under "What changes". MCP management in 0027 is unchanged.

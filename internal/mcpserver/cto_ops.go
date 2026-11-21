@@ -38,7 +38,7 @@ type CTOOp struct {
 	Method string
 }
 
-var ctoOpGroupOrder = []string{"Connected apps", "Machines", "Sessions", "Graph", "Delivery", "Tools", "Owner reads", "Owner changes"}
+var ctoOpGroupOrder = []string{"Connected apps", "Machines", "Sessions", "Graph", "Delivery", "Owner reads", "Owner changes"}
 
 // ctoOwnerOpTypes is the argument schema of owner operations that moved to the
 // op tier with a strict contract. Every other owner operation keeps the free
@@ -54,12 +54,8 @@ var ctoOwnerOpTypes = map[string]reflect.Type{
 		FromAgent string `json:"from_agent"`
 		ToAgent   string `json:"to_agent"`
 	}{}),
-	"tools_export":     reflect.TypeOf(protocol.ToolVersionRequest{}),
-	"tools_import":     reflect.TypeOf(protocol.ToolImport{}),
-	"tools_versions":   reflect.TypeOf(protocol.ToolVersionRequest{}),
 	"bar_edit":         reflect.TypeOf(protocol.BarEditRequest{}),
 	"edge_set":         reflect.TypeOf(protocol.Edge{}),
-	"tools_items":      reflect.TypeOf(protocol.ToolsFilter{}),
 	"permission_apply": reflect.TypeOf(protocol.PermissionOwnerApplyRequest{}),
 	"permission_undo":  reflect.TypeOf(protocol.PermissionUndoRequest{}),
 	"friction_find":    reflect.TypeOf(protocol.FrictionQuery{}),
@@ -72,11 +68,7 @@ var ctoOwnerOpExamples = map[string]string{
 	"gateway_backup":    `{"path":"/tmp/agent-net-backup"}`,
 	"notes_copy":        `{"from_agent":"agent-net","to_agent":"agent-net-lead"}`,
 	"session_agent_set": `{"session_id":"s_1234","agent":"agent-net-lead","copy_notes":true}`,
-	"tools_export":      `{"item":"skill-id","version":"version-hash"}`,
-	"tools_import":      `{"item":"skill-id","location":{"node_id":"node-id","location":"/home/owner/skill"}}`,
-	"tools_versions":    `{"item":"skill-id"}`,
 	"bar_edit":          `{"project":"demo","add":["Performance first."]}`,
-	"tools_items":       `{"compact":true,"name":"wiki","limit":50}`,
 	"permission_apply":  `{"rules":["Bash(gh pr merge:*)"],"targets":["demo"],"owner_words":"let demo merge its PRs"}`,
 	"permission_undo":   `{"id":"pp_1"}`,
 	"friction_find":     `{"project":"demo","area":"ci","limit":20}`,
@@ -89,7 +81,6 @@ var ctoOwnerOpPurposes = map[string]string{
 	"bar_edit":          "Add, edit or remove the short rules that workers and reviewers check a project's diffs against. Name the project.",
 	"notes_copy":        "Copy the agent-scope notes of one agent node to another (from_agent, to_agent, both agent ids). It only adds: the first agent keeps all its notes, and a note whose name the second agent already has is kept as it is. Returns copied_notes (the new note ids) and kept_notes (names it skipped). Undo removes only the copies it made.",
 	"session_agent_set": "Move a lasting agent session to another agent node (session_id, agent). Notes belong to the agent node, so the moved session stops seeing the old agent's notes. Set copy_notes true to copy the old agent's agent-scope notes to the new agent first: it keeps the new agent's own notes of the same name and leaves the old agent's notes in place. Undo moves the session back and removes only the notes the call copied.",
-	"tools_items":       "List skills and MCP servers. With compact true, one short row per item: id, name, kind, machines, file_count, trimmed and a one-line description, paged by limit and cursor. Read one item in full with tools_item and its id.",
 	"permission_apply":  "When the owner tells you in this chat to grant a Claude Code permission rule or folder trust, apply it now with his words quoted in owner_words; do not file a Desk proposal. Give rules and targets (registered repo names) as agent_permission_propose takes them, kind trust with machine and folders, or id alone to approve a pp_ proposal that waits on the Desk. Returns the stored record: each target's status, the rules added and the file written. Undo with permission_undo.",
 	"learned_answer":    "Decide a learned suggestion (suggestion_id, action accept or reject), or a charter draft with suggestion_id as minus its draft number. Read drafts with cto_proposals_find kind draft. Accept on a draft writes the value and returns the stored row with history_id; undo it with graph_change action undo on that id. Reject writes nothing.",
 	"permission_undo":   "Remove exactly the rules or trust one permission approval added, by its pp_ id.",
@@ -106,9 +97,6 @@ func ownerOpSchema(method string) map[string]any {
 			if err == nil {
 				var out map[string]any
 				if json.Unmarshal(raw, &out) == nil {
-					if method == "tools_export" {
-						out["required"] = []string{"item", "version"}
-					}
 					if method == "bar_edit" {
 						out["required"] = []string{"project"}
 					}
@@ -201,8 +189,6 @@ var ctoMovedOps = []CTOOp{
 	mergedOp("node_remove", "Graph", "Remove an edgeless architect; owner approval, or at once with his words in owner_words.", "graph_change", "node_remove", "node_remove", []string{"name"}, true, `{"name":"old-node","reason":"retired"}`),
 	mergedOp("repo_archive", "Graph", "Deactivate a typed repo identity; owner approval, or at once with his words in owner_words.", "graph_change", "repo_archive", "repo_archive", []string{"ref"}, true, `{"ref":{"kind":"repo","id":"old-repo"},"reason":"retired"}`),
 	mergedOp("agent_tombstone", "Graph", "Deactivate a typed agent identity; owner approval, or at once with his words in owner_words.", "graph_change", "agent_tombstone", "agent_tombstone", []string{"ref"}, true, `{"ref":{"kind":"agent","id":"old-agent"},"reason":"retired"}`),
-
-	mergedOp("mcp_import", "Tools", "Import a native MCP server, by candidate or by plan.", "tools_change", "import", "mcp_import", nil, false, `{"candidate":"mcp-candidate"}`),
 }
 
 // ctoStepReportOp reports one delivery step as the CTO itself. It is not a
@@ -315,16 +301,6 @@ func ValidateCTOOpArgs(op CTOOp, raw json.RawMessage) error {
 		return strings.TrimSpace(text)
 	}
 	switch op.Name {
-	case "mcp_import":
-		selected := 0
-		for _, key := range []string{"candidate", "plan_id"} {
-			if stringField(key) != "" {
-				selected++
-			}
-		}
-		if selected != 1 {
-			return ctoOpSchemaError(op, fmt.Errorf("needs exactly one of candidate or plan_id"))
-		}
 	case "process_stop":
 		pids, _ := fields["pids"].([]any)
 		if stringField("node_id") == "" || len(pids) == 0 {
@@ -477,7 +453,7 @@ func ctoOpNormalizesResult(op CTOOp) bool {
 		return true
 	}
 	switch op.Tool {
-	case "graph_change", "session_change", "worker_change", "answer", "tools_change", "mcp_change", "settings_change", "project_change", "mcp_call", "proposal_ask", "cto_new", "sessions_archive":
+	case "graph_change", "session_change", "worker_change", "answer", "mcp_change", "settings_change", "project_change", "mcp_call", "proposal_ask", "cto_new", "sessions_archive":
 		return true
 	}
 	return false

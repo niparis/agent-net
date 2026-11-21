@@ -78,29 +78,6 @@ func TestV2TextInputSpaceAndShiftTab(t *testing.T) {
 	}
 }
 
-func TestV2CtrlHDeletesFromToolsFilters(t *testing.T) {
-	key := tea.KeyPressMsg{Code: 'h', Mod: tea.ModCtrl}
-	m := newModel(80, 24)
-	m.tl.searching, m.tl.search = true, "abc"
-	next, _ := m.toolsSearchKey(key)
-	m = next.(Model)
-	if m.tl.search != "ab" {
-		t.Fatalf("tools search: %q", m.tl.search)
-	}
-	m.tl.agentSearching, m.tl.agentFilter = true, "abc"
-	next, _ = m.agentToolsKey(key)
-	m = next.(Model)
-	if m.tl.agentFilter != "ab" {
-		t.Fatalf("skills filter: %q", m.tl.agentFilter)
-	}
-	m.tl.modal = &toolsModal{picker: &projPicker{filtering: true, filter: "abc"}}
-	next, _ = m.pickerKey(key)
-	m = next.(Model)
-	if m.tl.modal.picker.filter != "ab" {
-		t.Fatalf("picker filter: %q", m.tl.modal.picker.filter)
-	}
-}
-
 func TestV2InputPromptKeepsTerminalDefaultColor(t *testing.T) {
 	m := selectID(newModel(80, 24), workerID)
 	next, _ := m.Update(tea.KeyPressMsg{Code: 'm', Text: "m"})
@@ -169,47 +146,5 @@ func TestV2PasteUsesOnlyTheActiveEditor(t *testing.T) {
 	m = next.(Model)
 	if m.filter != "" {
 		t.Errorf("paste changed hidden filter: %q", m.filter)
-	}
-
-	m = newModel(80, 24)
-	m.tab = toolsTab
-	m.tl.searching, m.tl.search = true, "keep"
-	m.tl.modal = &toolsModal{}
-	next, _ = m.Update(tea.PasteMsg{Content: "hidden"})
-	m = next.(Model)
-	if m.tl.search != "keep" {
-		t.Errorf("paste changed filter behind modal: %q", m.tl.search)
-	}
-}
-
-func TestV2PasteIntoToolsEditors(t *testing.T) {
-	m := newModel(80, 24)
-	m.tab, m.tl.allTools, m.tl.searching = toolsTab, true, true
-	next, _ := m.Update(tea.PasteMsg{Content: "hello q"})
-	m = next.(Model)
-	if m.tl.search != "hello q" || m.quitting {
-		t.Errorf("tools search: %q", m.tl.search)
-	}
-
-	m = newModel(80, 24)
-	m.tab, m.tl.agentSearching = toolsTab, true
-	next, _ = m.Update(tea.PasteMsg{Content: "skills"})
-	m = next.(Model)
-	if m.tl.agentFilter != "skills" {
-		t.Errorf("skills search: %q", m.tl.agentFilter)
-	}
-
-	m.tl.modal = &toolsModal{picker: &projPicker{filtering: true}}
-	next, _ = m.Update(tea.PasteMsg{Content: "project"})
-	m = next.(Model)
-	if m.tl.modal.picker.filter != "project" || m.tl.agentFilter != "skills" {
-		t.Errorf("picker: %+v", m.tl.modal.picker)
-	}
-
-	m.tl.modal = &toolsModal{form: &toolAddForm{values: []string{""}}}
-	next, _ = m.Update(tea.PasteMsg{Content: "a path"})
-	m = next.(Model)
-	if m.tl.modal.form.values[0] != "a path" {
-		t.Errorf("form: %+v", m.tl.modal.form.values)
 	}
 }

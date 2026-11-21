@@ -89,10 +89,6 @@ func (s *Store) addMCPServer(srv protocol.MCPServer, enabled bool) error {
 		}
 		return err
 	}
-	// A new server is a tool item with no assignment, which means global.
-	if err = ensureMCPItemTx(tx, srv.Name); err != nil {
-		return err
-	}
 	if err = tx.Commit(); err != nil {
 		return err
 	}
@@ -135,9 +131,6 @@ func (s *Store) RemoveMCPServer(name, byNode, bySession string) (bool, error) {
 		return false, err
 	}
 	defer tx.Rollback()
-	if err = forgetMCPItemTx(tx, name); err != nil {
-		return false, err
-	}
 	res, err := tx.Exec(`DELETE FROM mcp_servers WHERE name = ?`, name)
 	if err != nil {
 		return false, err

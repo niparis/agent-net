@@ -9,22 +9,18 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// sourceKey names one listed source folder. node.skill_bundle serves only
-// folders the last node.skill_sources answer listed, with the hash it gave.
-func sourceKey(name, hash, location string) string { return name + "\x00" + hash + "\x00" + location }
-
 // skillSources lists the skill folders as they are on disk now: the user-level
 // folders, Claude Code plugin skills (read only, they
 // stay owned by the plugin), the CTO's own skill that this daemon wrote, and the
 // skill folders of each project the gateway names. read lists the projects whose
 // folders were read. Nothing is written or changed. The scans run without a
-// lock; only the served-folder sets are swapped under it.
+// lock; only the served-folder set is swapped under it.
 func (d *Daemon) skillSources(projects []protocol.ProjectEntry) ([]protocol.SkillSource, []string) {
 	home := d.cfg.InventoryHome
 	var out []protocol.SkillSource
 	var read []string
 	add := func(root inventory.SkillRoot, origin string) {
-		for _, it := range inventory.Scan(inventory.Options{Home: home, OnlyRoot: &root}).Items {
+		for _, it := range inventory.ScanSkillRoot(home, root).Items {
 			if it.Kind != protocol.InventorySkill {
 				continue
 			}
@@ -51,20 +47,15 @@ func (d *Daemon) skillSources(projects []protocol.ProjectEntry) ([]protocol.Skil
 		}
 		read = append(read, p.Name)
 	}
-	served := map[string]bool{}
 	locations := map[string]bool{}
 	for _, s := range out {
-		if s.State == protocol.InventoryOK && s.Hash != "" {
-			served[sourceKey(s.Name, s.Hash, s.Location)] = true
-		}
 		if s.State == protocol.InventoryOK {
 			locations[s.Location] = true
 		}
 	}
-	d.toolsMu.Lock()
-	d.sourceSkills = served
+	d.sourceMu.Lock()
 	d.sourceLocations = locations
-	d.toolsMu.Unlock()
+	d.sourceMu.Unlock()
 	return out, read
 }
 

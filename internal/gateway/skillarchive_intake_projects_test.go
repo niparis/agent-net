@@ -3,22 +3,28 @@ package gateway
 import (
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// intakeNode enrolls one machine with an inventory report of the given items.
-func intakeNode(t *testing.T, g *Gateway, host string, items []protocol.InventoryItem) string {
+// intakeNode enrolls one machine.
+func intakeNode(t *testing.T, g *Gateway, host string) string {
 	t.Helper()
 	id, _, err := g.store.CreateNode(host, "linux")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = g.store.SetInventory(id, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: items}); err != nil {
-		t.Fatal(err)
-	}
 	return id
+}
+
+// userSources is what a daemon lists for its user skill folders, from the
+// folders a test describes.
+func userSources(items []protocol.InventoryItem) []protocol.SkillSource {
+	out := make([]protocol.SkillSource, 0, len(items))
+	for _, it := range items {
+		out = append(out, protocol.SkillSource{Name: it.Name, Hash: it.Hash, Location: it.Location, Origin: "user", State: it.State, Reason: it.Reason})
+	}
+	return out
 }
 
 // A registered project's skill folders reach the archive through the
@@ -29,11 +35,12 @@ func TestSkillArchiveIntakeReadsRegisteredProjectFolders(t *testing.T) {
 	project := filepath.Join(dir, "demo")
 	alpha, alphaHash := archiveSkillFolder(t, filepath.Join(project, ".claude/skills/alpha"), "---\ndescription: Alpha.\n---\nbody\n")
 	beta, betaHash := archiveSkillFolder(t, filepath.Join(project, ".agents/skills/beta"), "---\ndescription: Beta.\n---\nbody\n")
-	id := intakeNode(t, g, "alpha", nil)
+	id := intakeNode(t, g, "alpha")
 	if _, err := g.store.AddProjects(id, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "demo", Path: project}}}); err != nil {
 		t.Fatal(err)
 	}
-	archiveFakeNodeAnswer(t, g, id, map[string][]byte{alphaHash: archiveBundle(t, alpha), betaHash: archiveBundle(t, beta)}, &protocol.SkillSourcesResult{
+	archiveFakeNodeAnswer(t, g, id, map[string][]byte{alpha: archiveBundle(t, alpha), beta: archiveBundle(t, beta)}, &protocol.SkillSourcesResult{
+		UserRead: true,
 		Sources: []protocol.SkillSource{
 			{Name: "alpha", Hash: alphaHash, Location: alpha, Origin: "project demo", Project: "demo", State: protocol.InventoryOK},
 			{Name: "beta", Hash: betaHash, Location: beta, Origin: "project demo", Project: "demo", State: protocol.InventoryOK},
@@ -69,13 +76,14 @@ func TestSkillArchiveIntakeGroupsSkippedFoldersByName(t *testing.T) {
 	g := archiveGateway(t)
 	dir := t.TempDir()
 	folder, hash := archiveSkillFolder(t, filepath.Join(dir, "fine"), "---\ndescription: Fine.\n---\nbody\n")
-	id := intakeNode(t, g, "alpha", []protocol.InventoryItem{
+	items := []protocol.InventoryItem{
 		{Kind: "skill", Name: "fine", Hash: hash, State: "ok", Scope: "user", Location: folder},
 		{Kind: "skill", Name: "graphify", State: "error", Scope: "user", Location: "/home/a/.claude/skills/graphify", Reason: "invalid skill file"},
 		{Kind: "skill", Name: "graphify", State: "error", Scope: "user", Location: "/home/a/.agents/skills/graphify", Reason: "invalid skill file"},
 		{Kind: "skill", Name: "grill-me", State: "error", Scope: "user", Location: "/home/a/.agents/skills/grill-me", Reason: "cannot read source"},
-	})
-	archiveFakeNode(t, g, id, map[string][]byte{hash: archiveBundle(t, folder)})
+	}
+	id := intakeNode(t, g, "alpha")
+	archiveFakeNodeSources(t, g, id, map[string][]byte{folder: archiveBundle(t, folder)}, userSources(items))
 	_, got := archiveIntakeJSON(t, g)
 	if len(got.Skipped) != 2 {
 		t.Fatalf("skipped rows: %+v", got.Skipped)
@@ -99,11 +107,12 @@ func TestSkillArchiveIntakeFoldsLinkedCopyOfStoredSkill(t *testing.T) {
 	g := archiveGateway(t)
 	dir := t.TempDir()
 	folder, hash := archiveSkillFolder(t, filepath.Join(dir, "graphify"), "---\ndescription: Graph.\n---\nbody\n")
-	id := intakeNode(t, g, "alpha", []protocol.InventoryItem{
+	items := []protocol.InventoryItem{
 		{Kind: "skill", Name: "graphify", Hash: hash, State: "ok", Scope: "user", Location: folder},
 		{Kind: "skill", Name: "graphify", State: "error", Scope: "user", Location: "/home/a/.claude/skills/graphify", Reason: "skill root is a symlink: " + folder},
-	})
-	archiveFakeNode(t, g, id, map[string][]byte{hash: archiveBundle(t, folder)})
+	}
+	id := intakeNode(t, g, "alpha")
+	archiveFakeNodeSources(t, g, id, map[string][]byte{folder: archiveBundle(t, folder)}, userSources(items))
 	_, got := archiveIntakeJSON(t, g)
 	if len(got.Skipped) != 0 {
 		t.Fatalf("skipped rows for a linked copy: %+v", got.Skipped)
@@ -120,14 +129,16 @@ func TestSkillArchiveIntakeSaysWhichFoldersWereRead(t *testing.T) {
 	dir := t.TempDir()
 	user, userHash := archiveSkillFolder(t, filepath.Join(dir, "user"), "---\ndescription: User.\n---\nbody\n")
 	plugin, pluginHash := archiveSkillFolder(t, filepath.Join(dir, "plugin"), "---\ndescription: Plugin.\n---\nbody\n")
-	id := intakeNode(t, g, "alpha", []protocol.InventoryItem{
+	items := []protocol.InventoryItem{
 		{Kind: "skill", Name: "user", Hash: userHash, State: "ok", Scope: "user", Location: user},
-	})
+	}
+	id := intakeNode(t, g, "alpha")
 	if _, err := g.store.AddProjects(id, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "demo", Path: filepath.Join(dir, "demo")}}}); err != nil {
 		t.Fatal(err)
 	}
-	archiveFakeNodeAnswer(t, g, id, map[string][]byte{userHash: archiveBundle(t, user), pluginHash: archiveBundle(t, plugin)}, &protocol.SkillSourcesResult{
-		Sources: []protocol.SkillSource{{Name: "remotion", Hash: pluginHash, Location: plugin, Origin: "plugin remotion", State: protocol.InventoryOK}},
+	archiveFakeNodeAnswer(t, g, id, map[string][]byte{user: archiveBundle(t, user), plugin: archiveBundle(t, plugin)}, &protocol.SkillSourcesResult{
+		UserRead: true,
+		Sources:  append(userSources(items), protocol.SkillSource{Name: "remotion", Hash: pluginHash, Location: plugin, Origin: "plugin remotion", State: protocol.InventoryOK}),
 	})
 	_, got := archiveIntakeJSON(t, g)
 	m := got.Machines[0]

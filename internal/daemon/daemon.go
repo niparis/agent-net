@@ -405,49 +405,35 @@ type Daemon struct {
 	notifySend          func()
 	// mouseMu guards mouseNotices, the last report of each Claude mouse
 	// problem (claude_mouse.go), when the daemon has no state database.
-	mouseMu          sync.Mutex
-	mouseNotices     map[string]time.Time
-	toolsMu          sync.Mutex
-	toolsReport      protocol.InventoryReport
-	sourceSkills     map[string]bool // folders the last node.skill_sources listed; toolsMu guards it
-	skillSnapshots   skillSnapshots  // archive bundles the gateway reads in parts (decision 0169)
-	sourceLocations  map[string]bool // folders the last node.skill_sources listed, any hash; toolsMu guards it
-	toolsWake        chan struct{}
-	toolsFullNext    atomic.Bool // the next reconcile checks every target, see tools_pass.go
-	toolsScanNext    atomic.Bool // the next tools wake scans the disk, see wakeTools
-	inventorySent    atomic.Bool // the gateway holds the newest scan
-	toolsPass        toolsPassState
-	outboxWake       chan struct{} // a queued message wakes the link's outbox loop
-	skillConflicts   map[string]string
-	toolsPlanKeyOnce sync.Once
-	toolsPlanKey     [32]byte
-	toolsPlanKeyErr  error
-	toolsLogMu       sync.Mutex
-	toolsConflictLog map[toolConflictKey]time.Time
-	toolsSummaryAt   time.Time
-	ctoDispatchMu    ctoDispatchLock
-	ctoHandovers     []*ctoHandoverFlight // model layer handovers in flight; guarded by cto.mu
-	ctoPresenceMu    sync.Mutex
-	ctoEnterMu       sync.Mutex
-	ctoEntering      *ctoEnterCall
-	herdrOpenMu      sync.Mutex
-	herdrOpened      map[string]herdrOpenedPane
-	herdrOwnMu       sync.Mutex
-	herdrOwnSocket   string // agent-net's herdr server, once herdr named it
-	herdrOwnConfPID  int    // the server process known to run with agent-net's config
-	herdrOwnNotePID  int    // the server process the owner was told about
-	signIn           signInState
-	cto              ctoRuntime
-	claudeCTO        claudeCTOState
-	codexCTO         codexCTOState
-	ctoTranscript    ctoTranscriptCache // the parsed CTO transcript, for the owner timeline
-	layoutMu         sync.Mutex
-	layoutCache      *protocol.MachineLayout
-	layoutTime       time.Time
-	cfg              Config
-	log              *log.Logger
-	st               *state
-	client           *http.Client
+	mouseMu         sync.Mutex
+	mouseNotices    map[string]time.Time
+	skillSnapshots  skillSnapshots // archive bundles the gateway reads in parts (decision 0169)
+	sourceMu        sync.Mutex
+	sourceLocations map[string]bool // folders the last node.skill_sources listed; sourceMu guards it
+	outboxWake      chan struct{}   // a queued message wakes the link's outbox loop
+	ctoDispatchMu   ctoDispatchLock
+	ctoHandovers    []*ctoHandoverFlight // model layer handovers in flight; guarded by cto.mu
+	ctoPresenceMu   sync.Mutex
+	ctoEnterMu      sync.Mutex
+	ctoEntering     *ctoEnterCall
+	herdrOpenMu     sync.Mutex
+	herdrOpened     map[string]herdrOpenedPane
+	herdrOwnMu      sync.Mutex
+	herdrOwnSocket  string // agent-net's herdr server, once herdr named it
+	herdrOwnConfPID int    // the server process known to run with agent-net's config
+	herdrOwnNotePID int    // the server process the owner was told about
+	signIn          signInState
+	cto             ctoRuntime
+	claudeCTO       claudeCTOState
+	codexCTO        codexCTOState
+	ctoTranscript   ctoTranscriptCache // the parsed CTO transcript, for the owner timeline
+	layoutMu        sync.Mutex
+	layoutCache     *protocol.MachineLayout
+	layoutTime      time.Time
+	cfg             Config
+	log             *log.Logger
+	st              *state
+	client          *http.Client
 	// ctoNow and ctoCompactEvery are replaced in tests with a fake clock and
 	// no background loop.
 	ctoNow func() time.Time
@@ -736,7 +722,7 @@ func New(cfg Config) (*Daemon, error) {
 	}
 	d := &Daemon{startedAt: time.Now(), cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{}, activity: activity, adopted: make(chan struct{}),
 		autoCompact: map[string]*autoCompactState{}, autoCompactEvery: time.Minute,
-		intgWake: make(chan struct{}, 1), toolsWake: make(chan struct{}, 1), outboxWake: make(chan struct{}, 1),
+		intgWake: make(chan struct{}, 1), outboxWake: make(chan struct{}, 1),
 		mcpHello: map[string]time.Time{}, mcpRepair: repairs, qGone: map[string]time.Time{}, workers: map[string]*worker{}, recent: map[string]recentWorker{}, launchers: map[string]launcher{"opencode": opencodeLauncher{}, "claude": claudeLauncher{},
 			"pi": piLauncher{}, "codex": codexLauncher{}, "agy": agyLauncher{}},
 		adapters: map[string]Adapter{}, inflight: map[string]chan struct{}{}, lanes: map[string]*lane{}, cmdline: procCmdline, exe: procExe,
@@ -845,10 +831,6 @@ func (d *Daemon) Start(ctx context.Context) error {
 	go func() { defer d.wg.Done(); d.harnessLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.harnessUpdateLoop(ctx) }()
-	if d.cfg.InventoryHome != "" {
-		d.wg.Add(1)
-		go func() { defer d.wg.Done(); d.toolsLoop(ctx) }()
-	}
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.deliveryReconcileLoop(ctx) }()
 	d.wg.Add(1)

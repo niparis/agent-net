@@ -33,10 +33,6 @@ const (
 	panelSelectedCell    = "Selected cell"
 	panelThreads         = "Threads"
 	panelConversation    = "Conversation"
-	panelTools           = "Tools"
-	panelProjectInfo     = "Project information"
-	panelSkillInfo       = "Skill information"
-	panelSkillCost       = "Skill cost per project · tokens in every session"
 	panelConnectedApps   = "Connected apps"
 	panelIntegrations    = "Integrations"
 	panelIntegrationsAll = "Integrations (all machines)"
@@ -96,11 +92,6 @@ var panelTable = []panelSpec{
 
 	{tab: messagesTab, title: panelThreads},
 	{tab: messagesTab, title: panelConversation},
-
-	{tab: toolsTab, title: panelTools, note: "with the search and the tool count"},
-	{tab: toolsTab, view: contextToolsAgents, title: panelProjectInfo},
-	{tab: toolsTab, view: contextToolsAgents, title: panelSkillInfo},
-	{tab: toolsTab, view: contextToolsCosts, title: panelSkillCost},
 
 	{tab: settingsTab, title: panelConnectedApps, view: contextApps},
 	{tab: settingsTab, title: panelIntegrationsAll, note: "opened from the Integrations row"},

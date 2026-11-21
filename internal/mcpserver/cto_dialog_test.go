@@ -257,7 +257,7 @@ func TestCTOProposalAskDialog(t *testing.T) {
 					"kind":        "proposal",
 					"proposal_id": "p_15",
 					"message":     storedMessage,
-					"text":        "proposal p_15 is in the owner's Inbox (tab 7 of the TUI); the owner decides there. You will get a note with the outcome.",
+					"text":        "proposal p_15 is in the owner's Inbox (tab 6 of the TUI); the owner decides there. You will get a note with the outcome.",
 				})
 				return b, nil
 			}, "test")

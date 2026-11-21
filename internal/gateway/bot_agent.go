@@ -120,7 +120,6 @@ func (s *Store) addBotGraph(g *protocol.Graph, byRef map[protocol.GraphRef]*prot
 		return err
 	}
 	var servers map[string]protocol.MCPServer
-	var assigned map[string]protocol.ToolAssignment
 	for _, b := range bots {
 		n := byRef[protocol.GraphRef{Kind: "agent", ID: b.id}]
 		for _, grant := range b.grants {
@@ -138,20 +137,11 @@ func (s *Store) addBotGraph(g *protocol.Graph, byRef map[protocol.GraphRef]*prot
 				for _, srv := range list {
 					servers[srv.Name] = srv
 				}
-				if assigned, err = s.MCPAssignments(); err != nil {
-					return err
-				}
 			}
 			if srv, found := servers[name]; !found || !srv.Enabled {
 				continue
 			}
-			repo := ""
-			if a := assigned[name]; a.Scope == "projects" && len(a.Projects) == 1 {
-				repo = a.Projects[0]
-			}
-			if byRef[protocol.GraphRef{Kind: "repo", ID: repo}] == nil {
-				repo = name
-			}
+			repo := name
 			if byRef[protocol.GraphRef{Kind: "repo", ID: repo}] == nil {
 				continue
 			}

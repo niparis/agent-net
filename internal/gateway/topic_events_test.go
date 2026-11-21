@@ -171,10 +171,6 @@ func TestTopicEventsFollowNodeConnections(t *testing.T) {
 		if err != nil || len(servers) != 1 || servers[0].HostOnline != want {
 			t.Fatalf("MCP online want %t: %+v %v", want, servers, err)
 		}
-		items, err := g.store.ToolsItems(protocol.ToolsFilter{Kind: "mcp"}, func(id string) bool { return g.conn(id) != nil })
-		if err != nil || len(items) != 1 || items[0].HostOnline != want {
-			t.Fatalf("tool online want %t: %+v %v", want, items, err)
-		}
 	}
 	target := connectTarget()
 	checkMCP(true)

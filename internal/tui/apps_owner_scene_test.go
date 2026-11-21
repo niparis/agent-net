@@ -35,17 +35,3 @@ func TestConnectedAppOwnerScenes(t *testing.T) {
 		golden(t, fmt.Sprintf("connected_apps_owner_picker_%d", w), m.testView())
 	}
 }
-
-// The Tools tab shows the bots granted the selected MCP server.
-func TestConnectedAppOwnerToolsScene(t *testing.T) {
-	for _, w := range []int{120, 80} {
-		h := 34
-		if w == 80 {
-			h = 24
-		}
-		m, _ := toolsAtScreen(w, h)
-		m = rowByName(m, "tenebrae-library")
-		m.tl.bots = botsByServer(ownerAppsModel(w, h).apps.apps)
-		golden(t, fmt.Sprintf("tools_mcp_bots_%d", w), m.testView())
-	}
-}

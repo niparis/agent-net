@@ -67,7 +67,7 @@ func onboardingRun(m Model, cmd tea.Cmd) Model {
 	return next.(Model)
 }
 func TestOnboardingTriggersAdvance(t *testing.T) {
-	steps := []string{"see", "see-machine", "talk", "cto", "map", "work-worker", "work-protect", "tools"}
+	steps := []string{"see", "see-machine", "talk", "cto", "map", "work-worker", "work-protect"}
 	for i, step := range steps {
 		t.Run(step, func(t *testing.T) {
 			m, src := onboardingModel()
@@ -78,7 +78,6 @@ func TestOnboardingTriggersAdvance(t *testing.T) {
 				}
 				src.progress.Steps[previous] = "done"
 			}
-			m.onboardingToolsKnown, m.onboardingToolsCount = true, 1
 			m.usage.have = true
 			m.usage.raw = Usage{NodeID: "n_mac", Local: &protocol.UsageReport{Quotas: &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "claude", Windows: []protocol.QuotaWindow{{ID: "week"}}}}}}}
 			if step == "see-machine" {
@@ -109,8 +108,6 @@ func TestOnboardingTriggersAdvance(t *testing.T) {
 				msg = fetchedMsg{snap: m.snap, events: []protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "worker.started"}}}}
 			case "work-protect":
 				msg = actionMsg{onboarding: "work-protect"}
-			case "tools":
-				msg = toolsModalMsg{onboarding: true}
 			}
 			next, cmd := m.Update(msg)
 			m = onboardingRun(next.(Model), cmd)
@@ -162,7 +159,7 @@ func TestOnboardingSkipAndRestart(t *testing.T) {
 	}
 	next, cmd = m.key(tea.KeyPressMsg{Code: tea.KeySpace})
 	m = onboardingRun(next.(Model), cmd)
-	if !m.onboarding.Disabled || strings.Contains(strings.Join(m.ctoView(120, 6), "\n"), "1/7") {
+	if !m.onboarding.Disabled || strings.Contains(strings.Join(m.ctoView(120, 6), "\n"), "1/6") {
 		t.Fatal("tips not hidden")
 	}
 	m.settingsRow++
@@ -183,7 +180,7 @@ func TestOnboardingSkipAndRestart(t *testing.T) {
 	}
 	next, cmd = m.key(tea.KeyPressMsg{Code: tea.KeySpace})
 	m = onboardingRun(next.(Model), cmd)
-	if m.onboarding.Disabled || !strings.Contains(strings.Join(m.ctoView(120, 6), "\n"), "1/7") {
+	if m.onboarding.Disabled || !strings.Contains(strings.Join(m.ctoView(120, 6), "\n"), "1/6") {
 		t.Fatal("tips did not turn on")
 	}
 }

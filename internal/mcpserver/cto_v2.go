@@ -16,13 +16,12 @@ var ctoV2Tools = map[string]bool{
 	"sessions_archive": true,
 	"graph_change":     true, "session_change": true, "worker_change": true,
 	"cto_ui_show": true, "cto_placement_memory": true, "cto_standing_orders": true, "cto_proposals_find": true, "proposal_ask": true,
-	"answer": true, "tools_change": true, "mcp_change": true,
+	"answer": true, "mcp_change": true,
 	"settings_change": true, "project_change": true, "mcp_call": true, "cto_new": true,
 }
 
 var ctoActionRoutes = map[string]map[string]string{
 	"answer":          {"held": "held_answer", "inbox": "inbox_answer", "outcome": "outcome_overrule"},
-	"tools_change":    {"toggle": "tools_toggle", "new_projects": "tools_new_projects", "plan": "tools_plan", "apply": "tools_apply", "undo": "tools_undo", "native_remove": "mcp_native_remove"},
 	"mcp_change":      {"add": "mcp_add", "remove": "mcp_remove", "test": "mcp_test", "enable": "mcp_enable", "app_ask": "apps.ask"},
 	"settings_change": {"values_write": "settings_values_write", "values_undo": "settings_values_undo", "worker_profile_add": "worker_profile_add", "worker_profile_remove": "worker_profile_remove", "worker_providers": "worker_providers_set", "protected_providers": "protected_providers_set", "score": "score_set", "integrations": "integrations_set", "notifications": "notification_settings", "cto": "cto_settings", "playbook": "playbook_set", "machine_name": "node_rename", "invite": "invite", "onboarding": "onboarding_restart"},
 	"project_change":  {"add": "project_add", "remove": "project_remove", "display": "project_display_set", "create": "project_create"},
@@ -132,8 +131,6 @@ func actionExample(tool string) string {
 		return `{"action":"start","project":"example","task":"Describe the work"}`
 	case "answer":
 		return `{"kind":"held","message_id":"message-id","action":"a"}`
-	case "tools_change":
-		return `{"action":"apply","plan_id":"plan-id"}`
 	case "mcp_change":
 		return `{"action":"add","server":{"name":"example","transport":"stdio","command":"/path/to/server"}}`
 	case "settings_change":
@@ -205,37 +202,6 @@ func validateCTOActionRequired(tool, action string, args map[string]any) error {
 			required = []string{"id", "answer"}
 		case "outcome":
 			required = []string{"reply_id", "action"}
-		}
-	case "tools_change":
-		switch action {
-		case "toggle":
-			required = []string{"item", "project", "on"}
-		case "new_projects":
-			required = []string{"item", "on"}
-		case "apply":
-			required = []string{"plan_id"}
-		case "undo":
-			required = []string{"item"}
-		case "import":
-			n := 0
-			for _, k := range []string{"candidate", "plan_id"} {
-				if nonempty(args[k]) {
-					n++
-				}
-			}
-			if n != 1 {
-				return fmt.Errorf("import needs exactly one of candidate or plan_id; example: %s", example)
-			}
-		case "native_remove":
-			n := 0
-			for _, k := range []string{"candidate", "plan_id", "undo_plan_id"} {
-				if nonempty(args[k]) {
-					n++
-				}
-			}
-			if n != 1 {
-				return fmt.Errorf("native_remove needs exactly one selector; example: %s", example)
-			}
 		}
 	case "mcp_change":
 		switch action {
@@ -319,17 +285,6 @@ func actionExampleFor(tool, action string) string {
 		case "outcome":
 			return `{"kind":"outcome","reply_id":"message-id","action":"let_stand"}`
 		}
-	case "tools_change":
-		switch action {
-		case "apply":
-			return `{"action":"apply","plan_id":"plan-id"}`
-		case "undo":
-			return `{"action":"undo","item":"item-id"}`
-		case "import":
-			return `{"action":"import","candidate":"candidate-id"}`
-		case "native_remove":
-			return `{"action":"native_remove","candidate":"candidate-id"}`
-		}
 	case "session_change":
 		if action == "trust" {
 			return `{"action":"trust","project":"example","node_id":"machine-id"}`
@@ -362,7 +317,7 @@ func addCTOV2Tools(s *mcp.Server, call Caller, addTool ctoToolAdder) {
 		name := entry.Name
 		addTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			args := req.Params.Arguments
-			if name == "graph_change" || name == "session_change" || name == "worker_change" || name == "answer" || name == "tools_change" || name == "mcp_change" || name == "settings_change" || name == "project_change" {
+			if name == "graph_change" || name == "session_change" || name == "worker_change" || name == "answer" || name == "mcp_change" || name == "settings_change" || name == "project_change" {
 				if err := ValidateCTOActionSchema(name, args); err != nil {
 					return v2Error(err), nil
 				}
@@ -410,7 +365,7 @@ func addCTOV2Tools(s *mcp.Server, call Caller, addTool ctoToolAdder) {
 			if json.Unmarshal(raw, &value) != nil {
 				value = string(raw)
 			}
-			if name == "sessions_archive" || name == "answer" || name == "tools_change" || name == "mcp_change" || name == "settings_change" || name == "project_change" || name == "mcp_call" || name == "proposal_ask" || name == "cto_new" || name == "graph_change" || name == "session_change" || name == "worker_change" {
+			if name == "sessions_archive" || name == "answer" || name == "mcp_change" || name == "settings_change" || name == "project_change" || name == "mcp_call" || name == "proposal_ask" || name == "cto_new" || name == "graph_change" || name == "session_change" || name == "worker_change" {
 				value = normalizeCTOProposalResult(value)
 			}
 			if name == "cto_ui_show" {

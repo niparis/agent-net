@@ -21,9 +21,9 @@ func TestSettingsTabAndRemovedKeys(t *testing.T) {
 			t.Errorf("%s still acts", key)
 		}
 	}
-	m = keys(m, "6")
-	if m.tab != 5 {
-		t.Fatalf("6: tab = %d", m.tab)
+	m = keys(m, "5")
+	if m.tab != settingsTab {
+		t.Fatalf("5: tab = %d", m.tab)
 	}
 	view := ansi.Strip(m.testView())
 	for _, want := range []string{"Connected apps", "Integrations", "Machines", "Notifications"} {
@@ -62,7 +62,7 @@ func TestSettingsSessionCells(t *testing.T) {
 
 func TestSettingsOtherRoutesAndViewIndicators(t *testing.T) {
 	m := newModel(120, 34)
-	m = keys(m, "6")
+	m = keys(m, "5")
 	result := appsResult{op: "apps.public.status", raw: json.RawMessage(`{"on":true,"url":"https://example.test","other_routes":[8443,10000]}`)}
 	m, _ = m.onAppsResult(result)
 	view := ansi.Strip(m.testView())
@@ -100,7 +100,7 @@ func TestSettingsActionsUseExistingOperations(t *testing.T) {
 	f := &connectedAppsFake{result: `{"apps":[]}`}
 	m := newModel(120, 34)
 	m.src = f
-	m, cmd := press(m, keyRunes("6"))
+	m, cmd := press(m, keyRunes("5"))
 	if m.tab != settingsTab || cmd == nil {
 		t.Fatal("opening Settings did not load apps")
 	}

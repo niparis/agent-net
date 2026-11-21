@@ -176,11 +176,6 @@ func (d *Daemon) executeCTOOperator(ctx context.Context, raw json.RawMessage) (a
 			if len(ids) > 0 {
 				plan = append(plan, undoCall("sessions_archive", protocol.SessionsArchiveRequest{IDs: ids, Restore: !q.Restore}))
 			}
-		case "mcp_coverage_apply":
-			var applied protocol.MCPCoverageResult
-			if json.Unmarshal(data, &applied) == nil && applied.PlanID != "" {
-				plan = append(plan, undoCall("mcp_coverage_undo", protocol.MCPCoverageUndoRequest{PlanID: applied.PlanID}))
-			}
 		case "learned_answer":
 			var request struct {
 				ID     int64  `json:"suggestion_id"`

@@ -831,8 +831,8 @@ func TestCTOEventsCapMergedTimelineToLatestEntries(t *testing.T) {
 	}
 }
 
-func TestCTOBriefToolsWorkflow(t *testing.T) {
-	for _, want := range []string{"inspect the inventory with cto_op", "Tools plans, apply, undo and native removal apply at once", "cto_ops_list lists them and cto_op runs one"} {
+func TestCTOBriefRareOpsWorkflow(t *testing.T) {
+	for _, want := range []string{"rare ops", "cto_ops_list lists them and cto_op runs one"} {
 		if !strings.Contains(ctoBrief, want) {
 			t.Errorf("CTO brief lacks %q", want)
 		}

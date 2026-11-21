@@ -45,8 +45,6 @@ func (m Model) paste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
 			}
 		case m.tab == graphTab && m.mp.finding:
 			m.mp.findQuery += sanitize(msg.Content)
-		case m.tab == toolsTab && !m.mapOn && m.tl.capturing():
-			return m.pasteTools(msg)
 		case m.mapOn:
 		case m.filtering:
 			m.input, cmd = m.input.Update(msg)
@@ -74,31 +72,4 @@ func (m Model) pasteApps(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	f.input, cmd = f.input.Update(msg)
 	return m, cmd
-}
-
-func (m Model) pasteTools(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
-	t := &m.tl
-	text := sanitize(msg.Content)
-	if md := t.modal; md != nil {
-		switch {
-		case md.menu != nil:
-		case md.form != nil:
-			f := md.form
-			if f.field < len(f.values) {
-				f.values[f.field] += text
-			}
-		case md.picker != nil && !md.loading && md.picker.filtering:
-			md.picker.filter += text
-			md.picker.cur = 0
-			pickerFoot(md, md.picker)
-		}
-	} else if !t.allTools && t.agentSearching {
-		t.agentFilter += text
-		t.skillRow = 0
-	} else if t.allTools && !t.projectsOpen && t.searching {
-		t.search += text
-		t.row, t.scroll = 0, 0
-		m.toolsClamp()
-	}
-	return m, nil
 }

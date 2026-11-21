@@ -96,12 +96,9 @@ func TestCTOReadCanary(t *testing.T) {
 	// Approved calls retain their complete results for the owner only. Use the
 	// real runner for both sensitive result types and check every delivered note.
 	runner := proposalRunner{state: w.d.st, now: time.Now, validate: func(context.Context, proposalCall) error { return nil }, run: func(_ context.Context, call proposalCall, _ string) (json.RawMessage, error) {
-		if call.Tool == "tools_plan" {
-			return json.RawMessage(`{"files":["/private/TOOL_PLAN_PATH_CANARY"]}`), nil
-		}
 		return json.RawMessage(`{"body":"MCP_RESULT_CANARY"}`), nil
 	}}
-	for _, tool := range []string{"tools_plan", "mcp_call"} {
+	for _, tool := range []string{"mcp_call"} {
 		pid, err := runner.propose(context.Background(), proposalCall{Tool: tool, Args: json.RawMessage(`{}`)}, "")
 		if err != nil {
 			t.Fatal(err)

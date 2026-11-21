@@ -12,9 +12,8 @@ Use these names for screens, panels, keys and tools. The owner may say "the Fric
 | `2` | Graph | `graph tab` |
 | `3` | Quotas | `quotas tab` |
 | `4` | Messages | `messages tab` |
-| `5` | Tools | `tools tab` |
-| `6` | Settings | `settings tab` |
-| `7` | Desk | `inbox tab` |
+| `5` | Settings | `settings tab` |
+| `6` | Desk | `inbox tab` |
 
 The key `c` opens the CTO session from any tab. The CTO is not a tab.
 
@@ -113,7 +112,6 @@ Key `2` opens it.
 | E | global charter |
 | enter | open Sessions filtered to this agent's project |
 | n | start a new session in this project (the same form, filled from here) |
-| t | open Tools filtered to this node |
 | a | toggle autonomy off or wake (wakes on messages) |
 | L | cycle the standing loop: off, 1h, 4h, 12h, 24h (wakes the lead on a clock) |
 | D | name this project |
@@ -192,60 +190,9 @@ Key `4` opens it.
 | x | stop the selected worker or session |
 | d | show or hide details |
 
-## 5. Tools
+## 5. Settings
 
 Key `5` opens it.
-
-### Panels
-
-- `Tools` (with the search and the tool count)
-- `Project information`, in skills per project
-- `Skill information`, in skills per project
-- `Skill cost per project · tokens in every session`, in tools project costs
-
-### Keys
-
-#### skills per project
-
-| keys | what it does |
-|---|---|
-| i | import |
-| j/k, down/up | move |
-| tab | switches |
-| / | filter |
-| ? | help |
-| q | quit |
-| esc | back |
-| right, enter | skills |
-
-#### project skills
-
-| keys | what it does |
-|---|---|
-| i | import |
-| j/k, down/up | move |
-| tab | switches |
-| / | filter |
-| ? | help |
-| q | quit |
-| esc | back |
-| left | projects |
-| space | on/off |
-| enter | on/off or review |
-
-#### Tools
-
-| keys | what it does |
-|---|---|
-| tab | switches |
-| t | show skill cost per project |
-| n | add an MCP server or a skill from a folder |
-| enter | open the actions for the selected tool |
-| R | rescan tool copies |
-
-## 6. Settings
-
-Key `6` opens it.
 
 ### Panels
 
@@ -277,9 +224,9 @@ Key `6` opens it.
 | n | rename the selected app |
 | r | rotate the selected online machine token |
 
-## 7. Desk
+## 6. Desk
 
-Key `7` opens it.
+Key `6` opens it.
 
 ### Panels
 
@@ -358,7 +305,7 @@ Key `7` opens it.
 
 | keys | what it does |
 |---|---|
-| 1-7 | switch tabs: Sessions, Graph, Quotas, Messages, Tools, Settings, Desk |
+| 1-6 | switch tabs: Sessions, Graph, Quotas, Messages, Settings, Desk |
 | enter | go into the selected thing |
 | arrows, j/k | move |
 | esc | back; first clears a filter you typed |
@@ -431,70 +378,6 @@ These open over any tab. Each has its own keys.
 | ? | help |
 | up/down, j/k | select |
 | enter | open the proposal detail |
-
-### Tools plan
-
-| keys | what it does |
-|---|---|
-| enter, y, Y | apply |
-| esc, n, N | cancel |
-| ? | help |
-| up/down, j/k | scroll |
-| d | use the exact folders |
-
-### Tools picker
-
-| keys | what it does |
-|---|---|
-| esc | cancel |
-| ? | help |
-| up/down, j/k | select |
-| space | tick |
-| / | filter |
-| enter | apply |
-
-### Tools menu
-
-| keys | what it does |
-|---|---|
-| esc | back |
-| ? | help |
-| up/down, j/k | move |
-| enter | choose |
-
-### Tools add
-
-| keys | what it does |
-|---|---|
-| esc | cancel |
-| tab, down | move to the next field |
-| shift+tab, up | previous field |
-| left/right | choose the machine |
-| enter | add |
-| backspace, ctrl+h | delete |
-
-### discard skill changes
-
-| keys | what it does |
-|---|---|
-| y, Y | discard |
-| n, N, esc | keep changes |
-
-### tools filter
-
-| keys | what it does |
-|---|---|
-| enter | keep filter |
-| esc | clear/back |
-| backspace, ctrl+h | delete |
-
-### tools project costs
-
-| keys | what it does |
-|---|---|
-| j/k, down/up | move |
-| enter | open |
-| esc | back |
 
 ### CTO box
 
@@ -641,5 +524,4 @@ Tools are listed by the roles that may call them. Actions are the values of the 
 | `settings_change` | cto | Change settings values or undo a revision at once. Machine removal, token rotation, process stop and the owner operations are rare ops in cto_op. | - |
 | `skill_archive` | cto | The skill archive: list (latest version and candidates), read a version (SKILL.md and the file list; file and offset read one page of a file; after pages the list), add from a machine folder or Git URL, promote, remove, undo, or intake every enrolled machine's skills (the answer lists each skill not stored). An intake copy of a name with a version is a candidate; promote chooses. A removal stays out of intake until an explicit add. Sessions get their node's skills at start. | `list`, `read`, `add`, `add_git`, `remove`, `undo`, `intake`, `promote` |
 | `skills` | cto | Skills on graph nodes: set the add, remove and pin lists of a global, team, repo or agent node with undo, read each node's effective list, or undo a set. The CTO sets skills when the owner asks; agent-net never starts it. | `set`, `effective`, `undo` |
-| `tools_change` | cto | Change tools, skills, commands, agents: plan, apply, undo, remove a native tool. Import is a rare op in cto_op. | `plan`, `apply`, `undo`, `native_remove`, `toggle`, `new_projects` |
 | `worker_change` | cto | Start or stop a worker with a complete brief. | `start`, `stop` |

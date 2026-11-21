@@ -13,7 +13,7 @@ import (
 // An agy worker that fails with the account's "Individual quota reached"
 // error blocks every agy model on that machine until the reset it names.
 func TestAgyAccountQuotaFailureRefusesNextAgyStart(t *testing.T) {
-	g, node := scopeGateway(t)
+	g, node := mcpGateway(t)
 	st := g.store
 	c := &clock{t: time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)}
 	st.now = c.now

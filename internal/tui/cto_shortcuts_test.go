@@ -156,11 +156,6 @@ func TestCTOCompactSettingsAndTextInputs(t *testing.T) {
 	if !m.mp.finding || m.mp.findQuery != "c" {
 		t.Fatalf("c did not stay in Graph search: %q", m.mp.findQuery)
 	}
-	m, _ = toolsAtScreen(80, 24)
-	m = keys(m, "/", "c")
-	if !m.tl.searching || m.tl.search != "c" {
-		t.Fatalf("c did not stay in Tools search: %q", m.tl.search)
-	}
 
 	src := &fakeCTOSource{fakeSource: &fakeSource{}}
 	m = keys(New(src), "C", "m")

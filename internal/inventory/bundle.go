@@ -13,13 +13,6 @@ import (
 	"strings"
 )
 
-// MaxBundleBytes is the packed size that copies or imports one skill allow
-// (decision 0048). It keeps one frame of the link under the 4 MB read limit.
-const MaxBundleBytes = 2 << 20
-
-// MaxBundleEntries also bounds import extraction work.
-const MaxBundleEntries = 2048
-
 // MaxArchiveBytes is the packed size one skill may have in the skill archive
 // (decision 0169). It is the scan's 64 MiB of file data, with the tar headers
 // counted too. The archive moves a skill in parts, so this can be more than a
@@ -38,16 +31,8 @@ type BundleLimit struct {
 	Entries int
 }
 
-// ImportLimit is what copying or importing one skill allows (decision 0048).
-var ImportLimit = BundleLimit{Bytes: MaxBundleBytes, Entries: MaxBundleEntries}
-
 // ArchiveLimit is what one skill in the skill archive allows (decision 0169).
 var ArchiveLimit = BundleLimit{Bytes: MaxArchiveBytes, Entries: MaxArchiveEntries}
-
-// PackSkill reads a bounded snapshot without following links out of root.
-func PackSkill(root string) ([]byte, error) {
-	return PackSkillLimit(root, ImportLimit)
-}
 
 // PackSkillLimit is PackSkill with the given limit.
 func PackSkillLimit(root string, lim BundleLimit) ([]byte, error) {
@@ -64,11 +49,6 @@ func PackSkillLimit(root string, lim BundleLimit) ([]byte, error) {
 	}
 	defer dir.Close()
 	return PackSkillRootLimit(dir, lim)
-}
-
-// PackSkillRoot packs a skill through an already opened directory.
-func PackSkillRoot(dir *os.Root) ([]byte, error) {
-	return PackSkillRootLimit(dir, ImportLimit)
 }
 
 // PackSkillRootLimit is PackSkillRoot with the given limit.
@@ -162,12 +142,6 @@ func PackSkillRootLimit(dir *os.Root, lim BundleLimit) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-// UnpackSkill accepts only relative paths, regular files, directories and safe links.
-// The destination must be a new empty private directory.
-func UnpackSkill(data []byte, dest string) error {
-	return UnpackSkillLimit(data, dest, ImportLimit)
-}
-
 // UnpackSkillLimit is UnpackSkill with the given limit.
 func UnpackSkillLimit(data []byte, dest string, lim BundleLimit) error {
 	if int64(len(data)) > lim.Bytes {
@@ -179,11 +153,6 @@ func UnpackSkillLimit(data []byte, dest string, lim BundleLimit) error {
 	}
 	defer root.Close()
 	return UnpackSkillRootLimit(data, root, lim)
-}
-
-// UnpackSkillRoot extracts into an already opened empty private directory.
-func UnpackSkillRoot(data []byte, root *os.Root) error {
-	return UnpackSkillRootLimit(data, root, ImportLimit)
 }
 
 // UnpackSkillRootLimit is UnpackSkillRoot with the given limit.

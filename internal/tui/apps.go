@@ -617,23 +617,6 @@ func allowedToolCount(s protocol.MCPServer) int {
 	return n
 }
 
-// botsByServer maps each shared MCP server to the labels of the active bots
-// granted it. An owner app and a revoked app are left out.
-func botsByServer(apps []connectedApp) map[string][]string {
-	out := map[string][]string{}
-	for _, a := range apps {
-		if a.Kind != "bot" || a.RevokedAt != nil {
-			continue
-		}
-		for _, g := range a.Grants {
-			if name, ok := protocol.ParseMCPServerGrant(g); ok {
-				out[name] = append(out[name], a.Name)
-			}
-		}
-	}
-	return out
-}
-
 // appsGrantLines draws the grant picker of the selected bot: the shared MCP
 // servers, each marked when the bot may use it, with its host and the number
 // of tools the bot may call through it.
@@ -648,7 +631,7 @@ func (m Model) appsGrantLines(w int, indent string) []string {
 		return append(out, indent+"  Loading...")
 	}
 	if len(f.servers) == 0 {
-		out = append(out, clip(indent+"  No shared MCP servers yet. Add one in Tools.", w))
+		out = append(out, clip(indent+"  No shared MCP servers yet. Ask the CTO to add one.", w))
 	}
 	for i, s := range f.servers {
 		mark := "[ ]"
@@ -664,7 +647,7 @@ func (m Model) appsGrantLines(w int, indent string) []string {
 				facts = append(facts, "on "+sanitize(s.host))
 			}
 			if s.reported {
-				facts = append(facts, nounCount(s.tools, "tool", "tools"))
+				facts = append(facts, plural(s.tools, "tool"))
 			}
 		}
 		if len(facts) > 0 {

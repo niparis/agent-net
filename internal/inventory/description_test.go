@@ -1,8 +1,6 @@
 package inventory
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -31,28 +29,4 @@ func TestSkillDescriptionWordBoundary(t *testing.T) {
 			t.Fatalf("got %d characters, want %d", len(got), len(want))
 		}
 	}
-}
-
-func TestPiStandaloneDescription(t *testing.T) {
-	home := t.TempDir()
-	dir := filepath.Join(home, ".pi", "agent")
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "demo.md"), []byte("---\ndescription: Standalone skill\n---\nbody"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"skills":["demo.md"]}`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	report := Scan(Options{Home: home})
-	for _, item := range report.Items {
-		if item.Harness == "pi" && item.Name == "demo" {
-			if item.Description != "Standalone skill" || item.Manifest == nil {
-				t.Fatalf("%+v", item)
-			}
-			return
-		}
-	}
-	t.Fatal("missing standalone skill")
 }

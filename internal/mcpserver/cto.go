@@ -99,7 +99,6 @@ var ctoRoutingField = map[string]string{
 	"session_change":  "action",
 	"worker_change":   "action",
 	"answer":          "kind",
-	"tools_change":    "action",
 	"mcp_change":      "action",
 	"settings_change": "area",
 	"project_change":  "action",
@@ -189,21 +188,6 @@ var ctoTools = map[string]ctoToolDef{
 			"answer":     {typ: "string", desc: "Answer."},
 			"reply_id":   {typ: "string", desc: "Outcome reply."},
 			"action":     {typ: "string", desc: "Held: a, A, r, R. Outcome: let_stand, overrule.", enum: []string{"a", "A", "r", "R", "let_stand", "overrule"}},
-		},
-	},
-	"tools_change": {
-		desc: "Change tools: toggle, new_projects, plan, apply, undo, import or native_remove.",
-		fields: map[string]ctoField{
-			"action":       {typ: "string", enum: []string{"plan", "apply", "undo", "import", "native_remove", "toggle", "new_projects"}},
-			"item":         {typ: "string", desc: "Item ID."},
-			"on":           {typ: "boolean", desc: "On or off."},
-			"target":       {typ: "object", desc: "Assignment."},
-			"operation":    {typ: "string", desc: "Operation.", enum: []string{"repo_remove"}},
-			"project":      {typ: "string", desc: "Project."},
-			"repo_targets": {typ: "array", desc: "Checkouts."},
-			"plan_id":      {typ: "string", desc: "Plan ID."},
-			"candidate":    {typ: "string", desc: "Candidate."},
-			"undo_plan_id": {typ: "string", desc: "Removal ID."},
 		},
 	},
 	"mcp_change": {
@@ -316,7 +300,7 @@ var ctoOwnerWordsTools = map[string]bool{"graph_change": true, "session_change":
 // Schema metadata only. The daemon owns the authoritative class table.
 var ctoProposalReasons = func() map[string]bool {
 	out := map[string]bool{}
-	for _, name := range strings.Fields("message graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change cto_new sessions_archive") {
+	for _, name := range strings.Fields("message graph_change session_change worker_change answer mcp_change mcp_call settings_change project_change cto_new sessions_archive") {
 		out[name] = true
 	}
 	return out

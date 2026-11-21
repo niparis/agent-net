@@ -261,25 +261,17 @@ func TestBotCallsEdgeIsDerivedFromGrants(t *testing.T) {
 	}
 }
 
-func TestBotCallsEdgeFindsTheProjectOfTheServer(t *testing.T) {
+func TestBotCallsEdgeFindsTheRepoNamedLikeTheServer(t *testing.T) {
 	s, app := botAgentFixture(t)
 	_, node := graphSessions(t, s, "library")
-	if err := s.AddMCPServer(mcpSpec("tenebrae-library", node)); err != nil {
+	if err := s.AddMCPServer(mcpSpec("library", node)); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.AddMCPServer(mcpSpec("stray", node)); err != nil {
 		t.Fatal(err)
 	}
-	// The assignment names one project for the first server; the second has
-	// neither an assignment nor a repo of its name.
-	id, _, err := s.MCPItemID("tenebrae-library")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.AssignTool(id, protocol.ToolAssignment{Scope: "projects", Projects: []string{"library"}}, "owner", "test"); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"tenebrae-library", "stray"} {
+	// The first server has a repo of its name; the second has none.
+	for _, name := range []string{"library", "stray"} {
 		if err := s.SetAppGrant(app.ID, protocol.MCPServerGrant(name), true); err != nil {
 			t.Fatal(err)
 		}

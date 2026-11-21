@@ -14,7 +14,7 @@ import (
 // can name. It is the shared setup of the role tests.
 func roleGateway(t *testing.T) (*Gateway, string) {
 	t.Helper()
-	g, node := scopeGateway(t)
+	g, node := mcpGateway(t)
 	st := g.store
 	if err := st.SetNodeHello(node, "role-box", "1"); err != nil {
 		t.Fatal(err)

@@ -602,7 +602,7 @@ func (s *Store) SkillListSet(req protocol.SkillSetRequest) (protocol.SkillSetRes
 	beforeJSON, _ := json.Marshal(before)
 	afterJSON, _ := json.Marshal(after)
 	out.Change = protocol.NewID("sl")
-	if _, err = tx.Exec(`INSERT INTO skill_list_changes(id,level,scope,before,after,actor,at) VALUES(?,?,?,?,?,?,?)`,
+	if _, err = tx.Exec(`INSERT INTO skill_changes(id,kind,level,scope,before,after,actor,at) VALUES(?,'list',?,?,?,?,?,?)`,
 		out.Change, level, scope, string(beforeJSON), string(afterJSON), req.By, now); err != nil {
 		return out, err
 	}
@@ -686,7 +686,7 @@ func (s *Store) SkillListUndo(change string) (protocol.SkillSetResult, error) {
 	defer tx.Rollback()
 	var level, scope, beforeJSON string
 	var undone int64
-	if err = tx.QueryRow(`SELECT level, scope, before, undone_at FROM skill_list_changes WHERE id=?`, change).Scan(&level, &scope, &beforeJSON, &undone); err != nil {
+	if err = tx.QueryRow(`SELECT level, scope, before, undone_at FROM skill_changes WHERE id=? AND kind='list'`, change).Scan(&level, &scope, &beforeJSON, &undone); err != nil {
 		return out, reject("unknown skill list change")
 	}
 	if undone != 0 {
@@ -706,7 +706,7 @@ func (s *Store) SkillListUndo(change string) (protocol.SkillSetResult, error) {
 			return out, err
 		}
 	}
-	if _, err = tx.Exec(`UPDATE skill_list_changes SET undone_at=? WHERE id=?`, now, change); err != nil {
+	if _, err = tx.Exec(`UPDATE skill_changes SET undone_at=? WHERE id=?`, now, change); err != nil {
 		return out, err
 	}
 	if err = tx.Commit(); err != nil {

@@ -14,7 +14,7 @@ import (
 )
 
 func TestConnectedAppsSettingsEntry(t *testing.T) {
-	m := keys(newModel(120, 34), "6")
+	m := keys(newModel(120, 34), "5")
 	if !strings.Contains(m.testView(), "Connected apps") {
 		t.Fatal("Connected apps missing from settings")
 	}

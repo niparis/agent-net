@@ -127,7 +127,8 @@ func TestGatewayStateMigrationMovesTheOldRows(t *testing.T) {
 	want := map[string]string{
 		"graph_cutover_version": "v9.9.9", "graph_cutover_upgraded_at": "4242",
 		"graph_ref_gate": "1", "graph_ref_backup": "/backups/gateway.db",
-		"skill_archive.git_intake_done": "77", "skill_archive.git_intake_at": "78",
+		// The two skill_archive markers moved here, and the tools retire
+		// migration then dropped them with the copy of skills.git.
 	}
 	for _, key := range markerKeys {
 		want[key] = "v-" + key

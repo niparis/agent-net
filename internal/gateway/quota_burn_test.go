@@ -13,7 +13,7 @@ import (
 // burnGateway is a gateway with a fixed clock and one machine.
 func burnGateway(t *testing.T) (*Gateway, string, *clock) {
 	t.Helper()
-	g, node := scopeGateway(t)
+	g, node := mcpGateway(t)
 	c := &clock{t: time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)}
 	g.store.now = c.now
 	return g, node, c

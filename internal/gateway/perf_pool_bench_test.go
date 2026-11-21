@@ -151,7 +151,6 @@ func BenchmarkRealPoolLatency(b *testing.B) {
 	close(stop)
 	wg.Wait()
 	b.StopTimer()
-	g.standingWG.Wait()
 
 	report := func(name string, ds []time.Duration) {
 		if len(ds) == 0 {

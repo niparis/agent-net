@@ -94,8 +94,6 @@ func fakeSetupDaemon(t *testing.T, fixture setupDaemonFixture) {
 						result = fixture.protected
 					case "workers":
 						result = fixture.workers
-					case protocol.OpToolsDifferences:
-						result = map[string]any{"differences": []any{}, "to_look_at": 0}
 					case "role_setup":
 						if fixture.roleCalls != nil {
 							*fixture.roleCalls++

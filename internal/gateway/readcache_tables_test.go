@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/niparis/agent-net/internal/phrasing"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/sqlitecache"
 )
@@ -99,7 +98,6 @@ func richReadStore(t *testing.T) *Store {
 	if _, err := s.db.Exec(`INSERT INTO charter_drafts(level,scope,attr,value,source,status,drafted_by,created_at) VALUES('repo','cogforge','maturity','draft','outcome','pending','lead',1)`); err != nil {
 		t.Fatal(err)
 	}
-	s.phraseCleaner = phrasing.New(nil)
 	// A finished run, so the worker log looks up its assessment and notice.
 	if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: oc1, Harness: "opencode", Model: "p/m",
 		Outcome: protocol.OutcomeComplete, EndedAt: s.now().Unix(), Caller: oc2, Difficulty: "hard"}); err != nil {

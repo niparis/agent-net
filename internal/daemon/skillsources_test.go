@@ -19,11 +19,10 @@ func writeSourceSkill(t *testing.T, dir, body string) {
 	}
 }
 
-// The archive intake asks for the skill folders the inventory scan does not
-// list: plugin skills and the CTO's own skill. Each one is then served by
-// node.skill_bundle, and nothing else is.
+// The archive intake asks for the skill folders of the machine, plugin skills
+// included. Each one is then served by node.skill_bundle, and nothing else is.
 func TestSkillSourcesListPluginSkills(t *testing.T) {
-	d, home := promptTestDaemon(t)
+	d, home := skillTestDaemon(t)
 	plugin := filepath.Join(home, ".claude/plugins/cache/market/remotion/1.0.0/skills/remotion")
 	market := filepath.Join(home, ".claude/plugins/marketplaces/anthropic-skills/skills/docx")
 	offered := filepath.Join(home, ".claude/plugins/marketplaces/big-market/plugins/never-installed/skills/unused")
@@ -53,12 +52,12 @@ func TestSkillSourcesListPluginSkills(t *testing.T) {
 		if !ok || s.Name != want.name || s.Origin != want.origin || s.State != protocol.InventoryOK || s.Hash == "" {
 			t.Fatalf("source %s = %+v (listed %v)", location, s, ok)
 		}
-		bundle, err := d.skillBundleFor(protocol.SkillBundleRequest{Name: s.Name, Hash: s.Hash, Location: location})
+		bundle, err := d.skillBundleFor(protocol.SkillBundleRequest{Name: s.Name, Location: location})
 		if err != nil {
 			t.Fatalf("bundle %s: %v", location, err)
 		}
 		dir := t.TempDir()
-		if err = inventory.UnpackSkill(bundle, dir); err != nil {
+		if err = inventory.UnpackSkillLimit(bundle, dir, inventory.ArchiveLimit); err != nil {
 			t.Fatal(err)
 		}
 		if hash, err := inventory.SkillHash(dir); err != nil || hash != s.Hash {
@@ -78,17 +77,21 @@ func TestSkillSourcesListPluginSkills(t *testing.T) {
 	if s := got[broken]; s.State != protocol.InventoryError || s.Reason == "" || s.Origin != "plugin typesafe" {
 		t.Fatalf("unreadable plugin skill: %+v", s)
 	}
-	if _, err := d.skillBundleFor(protocol.SkillBundleRequest{Name: "remotion", Hash: "stale", Location: plugin}); err == nil {
-		t.Fatal("a changed hash was served")
-	}
-	if _, err := d.skillBundleFor(protocol.SkillBundleRequest{Name: "x", Hash: "x", Location: home}); err == nil {
+	if _, err := d.skillBundleFor(protocol.SkillBundleRequest{Name: "x", Location: home}); err == nil {
 		t.Fatal("an unlisted folder was served")
 	}
 }
 
 func TestSkillSourcesWithoutPluginsIsEmpty(t *testing.T) {
-	d, _ := promptTestDaemon(t)
+	d, _ := skillTestDaemon(t)
 	if got, _ := d.skillSources(nil); len(got) != 0 {
 		t.Fatalf("sources: %+v", got)
 	}
+}
+
+// skillTestDaemon is a daemon with an empty home and state folder.
+func skillTestDaemon(t *testing.T) (*Daemon, string) {
+	t.Helper()
+	home, state := t.TempDir(), t.TempDir()
+	return &Daemon{cfg: Config{InventoryHome: home, StateDir: state}}, home
 }

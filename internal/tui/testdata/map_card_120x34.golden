@@ -1,6 +1,5 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 7 nodes, 7 edges                      updated 14:05
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk │ 7 nodes, 7 edges                              updated 14:05
 tenebrae  mature  autonomy: wake  component
-Tools: 0 skills, 0 MCP servers · t open
 Research platform that turns papers, figures and strategies into a searchable library for the trading desk, with
 citations kept for every claim.
 ● 1 session, 1 busy
@@ -10,7 +9,7 @@ IN 3                                                         OUT 2
 all projects ──▶ depends                                     ──▶ cogforge depends ask
 homelab ──▶ deploys auto                                     ──▶ homelab depends ask
 wbg-architect ──▶ deploys
-Card 1-13/16  ctrl+u/d scroll ──────────────────────────────────────────────────────────────────────────────────────────
+Card 1-14/16  ctrl+u/d scroll ──────────────────────────────────────────────────────────────────────────────────────────
 Charter ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 accepts          New document sources, retrieval fixes, and schema changes that keep old ids working.
 refuses          Anything that writes to the trading accounts; one-off client reports.
@@ -24,6 +23,7 @@ tests_before_merge suite-new-tests        maturity default
 merge_authority    delegated              maturity default
 worker_sandbox     sandboxed              maturity default
 judge_consumers    strict                 maturity default
+deploy_rule        owner                  owner override
 RECENT  3h ago maturity by trading-architect
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
@@ -31,4 +31,4 @@ RECENT  3h ago maturity by trading-architect
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter sessions  t tools  esc Graph  ctrl+u/ctrl+d scroll  n new  u undo  ? help  q quit
+enter sessions  esc Graph  ctrl+u/ctrl+d scroll  n new  u undo  ? help  q quit

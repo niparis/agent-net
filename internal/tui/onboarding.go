@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
@@ -80,55 +79,45 @@ func (m Model) onboardingStep() onboardingStep {
 	}
 	if !done("see") {
 		if name == "" {
-			return onboardingStep{"see", "1/7 See", "No agents yet. Start an agent in a project: it appears here."}
+			return onboardingStep{"see", "1/6 See", "No agents yet. Start an agent in a project: it appears here."}
 		}
 		for _, a := range online {
 			if a.Waiting != nil {
-				return onboardingStep{"see", "1/7 See", sanitize(firstNonEmpty(a.Profile.Name, firstNonEmpty(a.Title, a.SessionID))) + " waits for you. Enter opens the session."}
+				return onboardingStep{"see", "1/6 See", sanitize(firstNonEmpty(a.Profile.Name, firstNonEmpty(a.Title, a.SessionID))) + " waits for you. Enter opens the session."}
 			}
 		}
-		return onboardingStep{"see", "1/7 See", "All your agents, live. Enter opens " + name + "."}
+		return onboardingStep{"see", "1/6 See", "All your agents, live. Enter opens " + name + "."}
 	}
 	if !done("see-machine") && len(m.snap.Nodes) == 1 {
-		return onboardingStep{"see-machine", "1/7 See", `Ask the CTO to add a machine: "add a machine".`}
+		return onboardingStep{"see-machine", "1/6 See", `Ask the CTO to add a machine: "add a machine".`}
 	}
 	if !done("talk") {
-		return onboardingStep{"talk", "2/7 Talk", "Agents ask each other. Open Messages or send a message with m."}
+		return onboardingStep{"talk", "2/6 Talk", "Agents ask each other. Open Messages or send a message with m."}
 	}
 	if !done("cto") {
-		return onboardingStep{"cto", "3/7 CTO", `Ask the CTO in plain words: "what is going on?"`}
+		return onboardingStep{"cto", "3/6 CTO", `Ask the CTO in plain words: "what is going on?"`}
 	}
 	if !done("map") {
 		for _, a := range online {
 			project := firstNonEmpty(a.ProjectDisplayName, firstNonEmpty(a.Repo.Project, a.Profile.Project))
 			if project != "" && (a.Charter.Purpose == "" || a.Charter.PurposeFallback) && a.Charter.Maturity == "" && a.Charter.Accepts == "" && a.Charter.Refuses == "" && a.Charter.FeatureRequests == "" {
-				return onboardingStep{"map", "4/7 Graph", "Ask the CTO to draft a charter for " + sanitize(project) + "."}
+				return onboardingStep{"map", "4/6 Graph", "Ask the CTO to draft a charter for " + sanitize(project) + "."}
 			}
 		}
 	}
 	if !done("work-worker") {
-		return onboardingStep{"work-worker", "5/7 Work", `Ask an agent to use a worker, or press n to start a new session.`}
+		return onboardingStep{"work-worker", "5/6 Work", `Ask an agent to use a worker, or press n to start a new session.`}
 	}
 	if !done("work-protect") && !m.snap.ProtectedProviders.Configured {
 		relevant := m.quotaRelevantProviders()
 		for _, row := range m.quotaRows() {
 			p := row.provider
 			if relevant[p.Provider] && !quotaNotSetUp(p) && p.Error == "" && !p.NeedsAttention {
-				return onboardingStep{"work-protect", "6/7 Work", "Protect " + sanitize(p.Provider) + " limits for your main sessions: 3, then p."}
+				return onboardingStep{"work-protect", "6/6 Work", "Protect " + sanitize(p.Provider) + " limits for your main sessions: 3, then p."}
 			}
 		}
 	}
-	if !done("tools") && len(m.snap.Nodes) > 1 && m.onboardingToolsKnown && m.onboardingToolsCount > 0 {
-		return onboardingStep{"tools", "7/7 Tools", fmt.Sprintf("Your machines differ in %d tools. Press 5 to review them.", m.onboardingToolsCount)}
-	}
 	return onboardingStep{}
-}
-
-// onboardingWantsTools says whether the tool-difference lesson can still
-// appear. Until it is done, the count is worth asking for; after that the
-// question only costs a gateway call on every refresh.
-func (m Model) onboardingWantsTools() bool {
-	return m.onboardingLoaded && !m.onboarding.Disabled && m.onboarding.Steps["tools"] == ""
 }
 
 func (m Model) onboardingLine(w int) string {
@@ -226,8 +215,6 @@ func (m Model) onboardingAfterFetch(before string, events []protocol.FeedEvent) 
 		return m.onboardingDone("map")
 	case before == "work-worker" && worker:
 		return m.onboardingDone("work-worker")
-	case before == "tools" && m.onboardingToolsKnown && m.onboardingToolsCount == 0:
-		return m.onboardingDone("tools")
 	case before == "work-protect" && m.snap.ProtectedProviders.Configured:
 		return m.onboardingDone("work-protect")
 	}

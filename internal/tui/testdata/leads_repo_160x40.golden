@@ -1,7 +1,6 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 5 nodes, 4 edges                                                              updated 14:05
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk │ 5 nodes, 4 edges                                                                      updated 14:05
 cogforge  autonomy: off  repo
 agent: api-architect
-Tools: 0 skills, 0 MCP servers · t open
 owner: api-architect
 no purpose set
 ○ no live sessions
@@ -29,6 +28,7 @@ autonomy           off                    default
 work_mode          on_request             default
 
 
+
 RECENT  no changes yet
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                                                              │
@@ -37,4 +37,4 @@ RECENT  no changes yet
 │                                                                                                                                                              │
 │ c: open the CTO                                                                                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter sessions  t tools  l lead  esc Graph  ctrl+u/ctrl+d scroll  n new  u undo  ? help  q quit
+enter sessions  l lead  esc Graph  ctrl+u/ctrl+d scroll  n new  u undo  ? help  q quit

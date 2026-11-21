@@ -133,14 +133,11 @@ func (s *Store) resolvePermissionTargets(names []string) ([]protocol.PermissionT
 
 // resolveTrustMachine turns the caller's machine name or node ID into one node.
 func (s *Store) resolveTrustMachine(machine string) (nodeID, hostname string, err error) {
-	nodes, err := s.resolveMachines([]string{strings.TrimSpace(machine)})
+	id, err := s.NodeByHostOrID(strings.TrimSpace(machine))
 	if err != nil {
 		return "", "", err
 	}
-	if len(nodes) != 1 {
-		return "", "", reject("machine %q does not name one enrolled machine", machine)
-	}
-	return nodes[0], s.hostname(nodes[0]), nil
+	return id, s.hostname(id), nil
 }
 
 // trustTargets makes one target per folder on the chosen machine.

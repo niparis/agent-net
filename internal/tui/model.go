@@ -95,8 +95,6 @@ type Model struct {
 	onboardingCTOLast                   string
 	onboardingCTOLoaded                 bool
 	onboardingSawNoAgents               bool
-	onboardingToolsCount                int
-	onboardingToolsKnown                bool
 	src                                 Source
 	// loc and now are replaced in tests.
 	loc  *time.Location
@@ -302,8 +300,6 @@ type Model struct {
 	teamForm    teamForm
 	teamUndo    *teamUndoStep
 	charterForm charterForm
-	// tl is the Tools tab (tools.go).
-	tl toolsState
 	// help shows the key overlay; expand gives the detail pane the room of
 	// the message feed.
 	help       bool
@@ -399,18 +395,16 @@ type fetchedMsg struct {
 	hiddenErr  error
 	// picker is read only when the Quality subtab opens or on R. It changes
 	// on writes, not on every refresh.
-	pickerAsked          bool
-	picker               protocol.PickerAnalysis
-	pickerErr            error
-	weeklyAsked          bool
-	weekly               []protocol.ScoresWeeklyRow
-	weeklyErr            error
-	onboarding           protocol.Onboarding
-	onboardingErr        error
-	onboardingAsked      bool
-	onboardingRevision   int
-	onboardingToolsCount int
-	onboardingToolsKnown bool
+	pickerAsked        bool
+	picker             protocol.PickerAnalysis
+	pickerErr          error
+	weeklyAsked        bool
+	weekly             []protocol.ScoresWeeklyRow
+	weeklyErr          error
+	onboarding         protocol.Onboarding
+	onboardingErr      error
+	onboardingAsked    bool
+	onboardingRevision int
 	// friction is asked for only on the Work tab, at most once a minute.
 	frictionAsked bool
 	friction      protocol.FrictionFindResult
@@ -557,7 +551,6 @@ func (m Model) fetchCmd() tea.Cmd {
 	askUsage := full && m.usageDue() || topics[protocol.TopicUsage]
 	askCounts := askUsage && !m.usage.noCounts
 	askU := askUsage && m.usage.unavailable == ""
-	askTools := m.onboardingWantsTools()
 	inboxOnScreen := m.tab == inboxTab || m.focus == focusCTO
 	inboxSeen, inboxAt, proposalsAt := m.inboxSeen, m.inboxAt, m.proposalsAt
 	deskLogOpen := m.deskLogOpen
@@ -662,16 +655,6 @@ func (m Model) fetchCmd() tea.Cmd {
 				raw, res.onboardingErr = caller.Call(ctx, "onboarding_get", nil)
 				if res.onboardingErr == nil {
 					res.onboardingErr = json.Unmarshal(raw, &res.onboarding)
-				}
-			})
-		}
-		if d, ok := src.(interface {
-			ToolsDifferences(context.Context) (int, error)
-		}); ok && askUsage && askTools && len(res.snap.Nodes) > 1 {
-			group(func(ctx context.Context) {
-				count, err := d.ToolsDifferences(ctx)
-				if err == nil {
-					res.onboardingToolsCount, res.onboardingToolsKnown = count, true
 				}
 			})
 		}
@@ -1341,9 +1324,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.convAsked {
 			m.applyConversationPage(conversationPageMsg{page: msg.convPage, err: msg.convErr, first: true})
 		}
-		if msg.onboardingToolsKnown {
-			m.onboardingToolsCount, m.onboardingToolsKnown = msg.onboardingToolsCount, true
-		}
 		if msg.err == nil && msg.snap.Connected {
 			return m.onboardingAfterFetch(before, msg.events)
 		}
@@ -1378,19 +1358,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case mapMsg:
 		m.applyMap(msg)
 		return m, nil
-
-	case toolsMsg:
-		m.applyTools(msg)
-		return m, nil
-
-	case toolsModalMsg:
-		next, cmd := m.onToolsModal(msg)
-		if msg.onboarding {
-			var save tea.Cmd
-			next, save = next.onboardingComplete("tools")
-			return next, tea.Batch(cmd, save)
-		}
-		return next, cmd
 
 	case enterMsg:
 		return m.onEnter(msg)
@@ -1902,9 +1869,6 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.tab == graphTab && m.mp.finding {
 		return m.graphKey(k)
 	}
-	if m.tab == toolsTab && !m.mapOn && m.tl.capturing() {
-		return m.toolsKey(k)
-	}
 	// c selects the CTO session's row and opens it in one key; C focuses the box for its own keys
 	// (new conversation, undo, settings, scrolling).
 	if keyAction(contextGlobal, k.String()) == "open CTO" && !m.filtering {
@@ -1933,8 +1897,6 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		switch keyAction(contextGlobal, k.String()) {
 		case "graph tab":
 			return m.startGraph()
-		case "tools tab":
-			return m.startTools()
 		case "sessions tab", "quotas tab", "messages tab", "settings tab":
 			m.mapOn = false
 		}
@@ -2032,9 +1994,6 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.tab == graphTab {
 		return m.graphKey(k)
-	}
-	if m.tab == toolsTab {
-		return m.toolsKey(k)
 	}
 	if m.tab == settingsTab {
 		return m.settingsKey(k)
@@ -3104,13 +3063,6 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 		m.focus = focusFeed
 	case "quotas":
 		m.tab = quotasTab
-	case "tools":
-		m.tab = toolsTab
-		if !m.tl.loading {
-			var model tea.Model
-			model, cmd = m.loadTools()
-			m = model.(Model)
-		}
 	case "graph", "map":
 		m.tab = graphTab
 		m.mapOn = false

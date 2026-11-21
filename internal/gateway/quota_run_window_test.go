@@ -37,7 +37,7 @@ type agyGate struct {
 
 func newAgyGate(t *testing.T) agyGate {
 	t.Helper()
-	g, node := scopeGateway(t)
+	g, node := mcpGateway(t)
 	st := g.store
 	c := &clock{t: time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)}
 	st.now = c.now

@@ -51,7 +51,7 @@ func TestVisualProofCTOPermissionGrant(t *testing.T) {
 			if err := os.MkdirAll(dir, 0o700); err != nil {
 				t.Fatal(err)
 			}
-			capture := fmt.Sprintf("build: %s\nstep: open the Desk log after the CTO applied a permission at %dx%d\naction: open tab 7, show the log, select the grant line; then press u\nexpected: the grant line with the owner's words and an undo; u calls %s\nerrors: none\n\n%s\n",
+			capture := fmt.Sprintf("build: %s\nstep: open the Desk log after the CTO applied a permission at %dx%d\naction: open tab 6, show the log, select the grant line; then press u\nexpected: the grant line with the owner's words and an undo; u calls %s\nerrors: none\n\n%s\n",
 				os.Getenv("AGENT_NET_PROOF_BUILD"), size[0], size[1], protocol.OpPermissionUndo, frame)
 			if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("cto-permission-%dx%d.txt", size[0], size[1])), []byte(capture), 0o600); err != nil {
 				t.Fatal(err)

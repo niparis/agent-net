@@ -283,7 +283,7 @@ func roReadFixture() *roFakeDaemon {
 		EdgeTotal: 1,
 	}
 	f.servers = []protocol.MCPServer{
-		{Name: "files", Hostname: "nas", Enabled: true, Health: "ok", HostOnline: true, Scope: "global", Tools: []protocol.MCPTool{{Name: "read"}, {Name: "write"}}},
+		{Name: "files", Hostname: "nas", Enabled: true, Health: "ok", HostOnline: true, Tools: []protocol.MCPTool{{Name: "read"}, {Name: "write"}}},
 		{Name: "off", Hostname: "nas", Enabled: false, Health: "off", HostOnline: false, Tools: []protocol.MCPTool{{Name: "x"}}},
 	}
 	available := true

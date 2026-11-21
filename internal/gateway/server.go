@@ -26,7 +26,6 @@ import (
 	delegated "github.com/niparis/agent-net/internal/authority"
 	"github.com/niparis/agent-net/internal/funnel"
 	"github.com/niparis/agent-net/internal/linkkeepalive"
-	"github.com/niparis/agent-net/internal/phrasing"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/ratelimit"
 	"github.com/niparis/agent-net/internal/tsnode"
@@ -120,23 +119,10 @@ type Gateway struct {
 	store    *Store
 	// modelMu guards modelCache, the short-lived live model reads that keep a
 	// burst of MachineGet calls from running a harness each time.
-	modelMu         sync.Mutex
-	modelCache      map[string]gatewayModelCacheEntry
-	skillsMu        sync.Mutex
-	skillProjectsMu sync.Mutex
-	// standing* run addNewSkillProjects in the background, one run at a time.
-	standingMu      sync.Mutex
-	standingRunning bool
-	standingPending bool
-	standingStopped bool
-	standingCancel  context.CancelFunc
-	standingCtx     context.Context
-	standingWG      sync.WaitGroup
-	// onStandingPlan is a test hook, called before each standing-choice plan.
-	onStandingPlan func(item string, projects []string)
-	// importMu serializes MCP imports, so two applies cannot race on a name.
-	importMu         sync.Mutex
-	skills           *skillStore
+	modelMu    sync.Mutex
+	modelCache map[string]gatewayModelCacheEntry
+	// backupMu runs one gateway backup at a time.
+	backupMu         sync.Mutex
 	ca               *authority
 	cert             tls.Certificate
 	fp               string
@@ -145,11 +131,6 @@ type Gateway struct {
 	stepDispatchRuns atomic.Int64
 	// chiefStuckAt is when the claim-age rules last ran (chief_stuck.go).
 	chiefStuckAt atomic.Int64
-	// skillScans counts the full reads of all skills by the standing choice.
-	skillScans atomic.Int64
-	// skillSettled is the skill inputs fingerprint at which the standing
-	// choice had nothing left to do. See skillInputsOf.
-	skillSettled atomic.Pointer[skillInputs]
 	// adminToken guards /v1/admin. It is new on every start and is written
 	// to admin.json in the data dir, which only the local user can read.
 	adminToken string
@@ -410,14 +391,6 @@ func New(opts Options) (*Gateway, error) {
 		stepTaskQuietWindow: opts.StepTaskQuietWindow, stepTaskRecentWindow: opts.StepTaskRecentWindow, stepTaskBatchCap: opts.StepTaskBatchCap}
 	store.settingsHook = func() { g.goBackground(g.settingsChanged) }
 	store.charterHook = func() { g.goBackground(g.charterChanged) }
-	store.phraseCleaner = phrasing.New(summaryWorker{g})
-	skills, err := openSkillStore(opts.DataDir, store)
-	if err != nil {
-		store.Close()
-		return nil, err
-	}
-	g.skills = skills
-	g.skillArchiveStartIntake()
 	store.logf = g.logLine
 	for _, merge := range store.identityMerges {
 		g.logLine("project.identity_merge", "from", merge[0], "to", merge[1])
@@ -445,7 +418,6 @@ func (g *Gateway) TLSConfig() *tls.Config {
 
 // Close drops every node connection and closes the database.
 func (g *Gateway) Close() error {
-	g.stopStandingChoices()
 	// The database and the connections are still open here, so a broadcast that
 	// is running finishes or stops on its cancelled context.
 	g.stopBackground()
@@ -955,7 +927,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			nc.answer(h)
 			continue
 		}
-		if h.Type == "owner.ui.request" || h.Type == "machine.rotate" || h.Type == "machine.remove" || h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "tools.new_projects" || h.Type == "tools.toggle" || h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "tools.save_changed" || h.Type == "tools.update_plan" || h.Type == "tools.update_copies" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" || h.Type == "tools.summary" || h.Type == protocol.FrameSkillArchiveAdd || h.Type == protocol.FrameSkillArchiveBundled || h.Type == protocol.FrameSkillArchiveAddGit || h.Type == protocol.FrameSkillArchiveRemove || h.Type == protocol.FrameSkillArchiveList || h.Type == protocol.FrameSkillArchiveRead || h.Type == protocol.FrameSkillArchiveUndo || h.Type == protocol.FrameSkillArchiveIntake || h.Type == protocol.FrameSkillsSet || h.Type == protocol.FrameSkillsEffective || h.Type == protocol.FrameSkillsUndo || h.Type == protocol.FrameSkillsFolder || h.Type == protocol.FrameSkillsVersion {
+		if h.Type == "owner.ui.request" || h.Type == "machine.rotate" || h.Type == "machine.remove" || h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "cto.proposal.validate" || h.Type == "gateway.backup" || h.Type == protocol.FrameSkillArchiveAdd || h.Type == protocol.FrameSkillArchiveBundled || h.Type == protocol.FrameSkillArchiveAddGit || h.Type == protocol.FrameSkillArchiveRemove || h.Type == protocol.FrameSkillArchiveList || h.Type == protocol.FrameSkillArchiveRead || h.Type == protocol.FrameSkillArchiveUndo || h.Type == protocol.FrameSkillArchiveIntake || h.Type == protocol.FrameSkillsSet || h.Type == protocol.FrameSkillsEffective || h.Type == protocol.FrameSkillsUndo || h.Type == protocol.FrameSkillsFolder || h.Type == protocol.FrameSkillsVersion {
 			go g.answer(ctx, nc, h, raw)
 			continue
 		}
@@ -1252,22 +1224,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	if strings.HasPrefix(typ, "xfer.") {
 		return g.handleTransfer(nc, typ, raw)
 	}
-	if (typ == "session.sync" || typ == "session.upsert" || typ == "project.add") && !g.skillInputsSettled() {
-		// Freeze defaults before discovery so existing off cells stay off.
-		// Only a skill without its settings has defaults to freeze. When no
-		// skill, project or mark changed since the choice last had nothing to
-		// do, there is nothing to freeze and nothing to discover.
-		missing, err := st.skillSettingsMissing()
-		if err != nil {
-			return nil, err
-		}
-		if missing {
-			if _, err := st.ToolProjectStates(); err != nil {
-				return nil, err
-			}
-		}
-		defer g.scheduleNewSkillProjects()
-	}
 	switch typ {
 	case "owner.ui.request":
 		return g.requestOwnerUI(ctx, nc, raw)
@@ -1449,13 +1405,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return res, nil
 
-	case "node.inventory":
-		p, err := decode[protocol.InventoryReport](raw)
-		if err != nil || (p.State != protocol.InventoryOK && p.State != protocol.InventoryError) || len(p.Items) > 10000 {
-			return nil, reject("bad node.inventory")
-		}
-		return nil, st.SetInventory(nc.id, p)
-
 	case "gateway.backup":
 		p, err := decodeOperator[struct {
 			Path string `json:"path"`
@@ -1470,222 +1419,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		return map[string]bool{"ok": true}, nil
-
-	case "tools.toggle":
-		p, err := decodeOperator[struct {
-			protocol.ToolToggleRequest
-			Actor string `json:"actor"`
-			Owner string `json:"owner"`
-		}](raw)
-		if err != nil {
-			return nil, err
-		}
-		if !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		return g.toggleTool(ctx, p.ToolToggleRequest, p.Actor)
-	case "tools.new_projects":
-		p, err := decodeOperator[struct {
-			protocol.ToolNewProjectsRequest
-			Actor string `json:"actor"`
-			Owner string `json:"owner"`
-		}](raw)
-		if err != nil {
-			return nil, err
-		}
-		if !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		return g.setToolNewProjects(ctx, p.ToolNewProjectsRequest, p.Actor)
-	case "query.tools_projects":
-		p, err := decodeOperator[struct {
-			Actor string `json:"actor"`
-			Owner string `json:"owner"`
-		}](raw)
-		if err != nil {
-			return nil, err
-		}
-		if !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		return st.ToolProjectStates()
-	case "tools.plan":
-		p, err := decodeOperator[struct {
-			protocol.ToolPlanRequest
-			Actor string `json:"actor"`
-			Owner string `json:"owner"`
-		}](raw)
-		if err != nil {
-			return nil, err
-		}
-		if !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		return g.planTool(ctx, p.ToolPlanRequest, p.Actor)
-	case "tools.skill_details":
-		p, err := decodeOperator[protocol.ToolSkillScan](raw)
-		if err != nil {
-			return nil, err
-		}
-		if !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		return g.toolSkillDetails(ctx, p)
-	case "tools.report":
-		p, err := decode[protocol.ToolResult](raw)
-		if err != nil {
-			return nil, reject("bad tool result")
-		}
-		return nil, st.ReportToolResult(nc.id, p)
-
-	case "tools.targets":
-		return st.ToolTargets(nc.id)
-
-	case "tools.apply":
-		p, err := decodeOperator[struct {
-			protocol.ToolPlanID
-			Actor string `json:"actor"`
-			Owner string `json:"owner"`
-		}](raw)
-		if err != nil {
-			return nil, err
-		}
-		if !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		return g.applyTool(ctx, p.ID, p.Actor)
-	case "tools.undo":
-		p, err := decodeOperator[struct {
-			protocol.ToolUndoRequest
-			Actor string `json:"actor"`
-			Owner string `json:"owner"`
-		}](raw)
-		if err != nil {
-			return nil, err
-		}
-		if !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		if p.Item == "" {
-			return nil, reject("undo needs an item")
-		}
-		return g.undoTool(ctx, p.Item, p.Actor)
-	case "query.tools_needs":
-		// Retain the old read method for clients predating the removed needs field.
-		return []protocol.ToolNeed{}, nil
-	case "query.tools_accepted":
-		keys, err := st.ToolsAccepted()
-		if err != nil {
-			return nil, err
-		}
-		return keys, nil
-	case "tools.accept":
-		p, err := decodeOperator[struct {
-			protocol.ToolAccept
-			Owner string `json:"owner"`
-		}](raw)
-		if err != nil {
-			return nil, err
-		}
-		if !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		if p.Key == "" || len(p.Key) > 512 {
-			return nil, reject("accept needs a key")
-		}
-		return nil, st.SetToolAccepted(p.Key, p.Accepted)
-	case "tools.history":
-		p, err := decodeOperator[struct {
-			protocol.ToolHistoryRequest
-			Owner string `json:"owner"`
-		}](raw)
-		if err != nil {
-			return nil, err
-		}
-		if !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		if p.Item == "" {
-			return nil, reject("history needs an item")
-		}
-		events, err := st.ToolHistory(p.Item)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"events": events}, nil
-	case "tools.summary":
-		p, err := decodeOperator[protocol.SkillSummaryRequest](raw)
-		if err != nil {
-			return nil, err
-		}
-		if !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		summary, err := st.phraseCleaner.Summarize(ctx, p.AHash, p.BHash, p.A, p.B)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]string{"summary": summary}, nil
-	case "tools.read_file":
-		p, err := decodeOperator[protocol.SkillTextRequest](raw)
-		if err != nil {
-			return nil, err
-		}
-		if !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		return g.readSkillText(ctx, p)
-	case "tools.keep_copy":
-		p, err := decodeOperator[protocol.ToolCopyChoice](raw)
-		if err != nil {
-			return nil, err
-		}
-		if !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		return g.keepSkillCopy(ctx, p)
-	case "tools.save_changed":
-		p, err := decodeOperator[protocol.ToolSaveChanged](raw)
-		if err != nil {
-			return nil, err
-		}
-		if !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		return g.saveChangedCopy(ctx, p)
-	case "tools.update_plan":
-		p, err := decodeOperator[protocol.ToolUpdateRequest](raw)
-		if err != nil {
-			return nil, err
-		}
-		if !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		return g.skillUpdatePlan(p.Item)
-	case "tools.update_copies":
-		p, err := decodeOperator[protocol.ToolUpdateRequest](raw)
-		if err != nil {
-			return nil, err
-		}
-		if !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		return g.updateSkillCopies(ctx, p)
-	case "tools.import_folder":
-		p, err := decodeOperator[protocol.ToolFolderImport](raw)
-		if err != nil {
-			return nil, err
-		}
-		if !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		return g.importSkillFolder(ctx, p)
-	case "tools.import":
-		p, err := decodeOperator[protocol.ToolImport](raw)
-		if err != nil {
-			return nil, err
-		}
-		return g.importSkill(ctx, p)
 
 	case protocol.FrameSkillArchiveAdd:
 		p, err := decodeOperator[protocol.SkillArchiveAdd](raw)
@@ -1818,93 +1551,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("owner authority required")
 		}
 		return g.store.SkillVersion(p.Name, p.Version, p.Part)
-
-	case "tools.versions":
-		p, err := decodeOperator[protocol.ToolVersionRequest](raw)
-		if err != nil {
-			return nil, err
-		}
-		if p.Item == "" {
-			return nil, reject("versions needs an item")
-		}
-		return g.skillVersions(p.Item)
-	case "tools.export":
-		p, err := decodeOperator[protocol.ToolVersionRequest](raw)
-		if err != nil {
-			return nil, err
-		}
-		if p.Item == "" || p.Version == "" {
-			return nil, reject("export needs an item and version")
-		}
-		return g.exportSkill(p.Item, p.Version)
-
-	case "query.inventory":
-		p, err := decodeOperator[struct {
-			Offset int `json:"offset"`
-		}](raw)
-		if err != nil {
-			return nil, err
-		}
-		reports, err := st.Inventories()
-		if err != nil {
-			return nil, err
-		}
-		for i := range reports {
-			if g.conn(reports[i].NodeID) == nil {
-				markInventoryOffline(&reports[i])
-			}
-		}
-		return inventoryPage(reports, p.Offset)
-
-	case "query.mcp_import_candidates":
-		p, err := decodeOperator[protocol.MCPImportCandidatesRequest](raw)
-		if err != nil {
-			return nil, err
-		}
-		if p.Offset < 0 {
-			return nil, reject("bad query.mcp_import_candidates")
-		}
-		return g.mcpImportCandidates(p)
-
-	case "query.tools_items":
-		p, err := decodeOperator[protocol.ToolsFilter](raw)
-		if err != nil {
-			return nil, err
-		}
-		if p.Offset < 0 {
-			return nil, reject("bad query.tools_items")
-		}
-		items, err := st.ToolsItems(p, func(id string) bool { return g.conn(id) != nil })
-		if err != nil {
-			return nil, err
-		}
-		items = toolsNamed(items, p.Name)
-		if p.Compact {
-			return toolRowsPage(items, p)
-		}
-		return toolsPage(items, p.Offset, g.opts.ToolsPageSize)
-	case "query.tools_item":
-		p, err := decodeOperator[struct {
-			Item string `json:"item"`
-		}](raw)
-		if err != nil {
-			return nil, err
-		}
-		if p.Item == "" {
-			return nil, reject("bad query.tools_item")
-		}
-		detail, err := st.ToolsItem(p.Item, func(id string) bool { return g.conn(id) != nil })
-		if err != nil {
-			return nil, err
-		}
-		data, err := json.Marshal(detail)
-		if err != nil {
-			return nil, err
-		}
-		if len(data) > 3<<20 {
-			return nil, reject("tool detail exceeds response limit")
-		}
-		return detail, nil
 
 	case "node.harnesses":
 		p, err := decode[protocol.NodeHarnesses](raw)

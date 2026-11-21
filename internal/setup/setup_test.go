@@ -511,27 +511,10 @@ func TestUninstallStopsTheWorkersThatKeepRunning(t *testing.T) {
 	}
 }
 
-func TestUninstallRemovesSkillManifest(t *testing.T) {
-	f := newFixture(t)
-	state := filepath.Join(f.home, "state")
-	t.Setenv("AGENT_NET_STATE_DIR", state)
-	if err := os.MkdirAll(state, 0700); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(state, "skill-manifest.json")
-	if err := os.WriteFile(path, []byte("[]"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	var out bytes.Buffer
-	if err := Uninstall(Options{Out: &out, Exe: "/x"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("manifest remains: %v", err)
-	}
-}
-
-func TestUninstallRemovesSkillBackupsAndOwnedExclude(t *testing.T) {
+// The old Tools rollout is gone, so uninstall only removes the files it left in
+// the state folder. A Git exclude line it added to a checkout stays: it only
+// hides a folder.
+func TestUninstallRemovesLeftoverSkillState(t *testing.T) {
 	f := newFixture(t)
 	state := filepath.Join(f.home, "state")
 	t.Setenv("AGENT_NET_STATE_DIR", state)
@@ -542,29 +525,25 @@ func TestUninstallRemovesSkillBackupsAndOwnedExclude(t *testing.T) {
 	if err := os.WriteFile(exclude, []byte("# mine\n/.agents/skills/demo/\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	for _, dir := range []string{"skill-backups", "mcp-backups"} {
+	for _, dir := range []string{"skill-backups", "mcp-backups", "skill-journal"} {
 		if err := os.MkdirAll(filepath.Join(state, dir, "fixture"), 0700); err != nil {
 			t.Fatal(err)
 		}
 	}
-	manifest, err := json.Marshal([]map[string]any{{"item": "i", "path": filepath.Join(f.home, "repo", ".agents", "skills", "demo"), "exclude": exclude, "exclude_line": "/.agents/skills/demo/", "exclude_owned": true}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = os.WriteFile(filepath.Join(state, "skill-manifest.json"), manifest, 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(state, "skill-manifest.json"), []byte("[]"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err = Uninstall(Options{Out: &out, NoService: true}); err != nil {
+	if err := Uninstall(Options{Out: &out, NoService: true}); err != nil {
 		t.Fatalf("uninstall: %v %s", err, out.String())
 	}
-	for _, dir := range []string{"skill-backups", "mcp-backups"} {
-		if _, err = os.Stat(filepath.Join(state, dir)); !os.IsNotExist(err) {
-			t.Fatalf("%s remain: %v", dir, err)
+	for _, name := range []string{"skill-backups", "mcp-backups", "skill-journal", "skill-manifest.json"} {
+		if _, err := os.Stat(filepath.Join(state, name)); !os.IsNotExist(err) {
+			t.Fatalf("%s remains: %v", name, err)
 		}
 	}
 	b, err := os.ReadFile(exclude)
-	if err != nil || string(b) != "# mine\n" {
+	if err != nil || string(b) != "# mine\n/.agents/skills/demo/\n" {
 		t.Fatalf("exclude: %q %v", b, err)
 	}
 }

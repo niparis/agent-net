@@ -130,3 +130,12 @@ A done step keeps no task. The column `completed` is gone, and a task is deleted
 The graph edge `/delivery/merger merges <repo>` stays. It says that the repo routes its merge step to the merger. It does not say who the merger is: `repos.merger_session` is the only place for that. The trigger that ends a registration moves the edge back to the caller.
 
 A session that owns a node step of a change may not do the caller's steps of that change. This check read the tasks of the change, done ones included. It now reads open tasks, so a session that already finished its node step may act for the caller afterwards.
+
+## Update 2026-11-21: tools retire
+
+The owner reviewed the tools, skills and MCP tables and said to execute the plan. [Decision 0169](0169-skill-archive.md) task 5 retires the old Tools rollout. One appended migration drops twelve tables (`tool_identities`, `tool_locations`, `tool_revisions`, `tool_results`, `tool_audit`, `tool_project_settings`, `tool_project_seen`, `tool_accepted`, `plans`, `skill_versions`, `mcp_imports`, `inventory_reports`) and folds two more:
+
+- `skill_archive_latest` is the column `in_use` of `skill_archive`. This replaces "What stays, on purpose" for that table: the pointer is now a column, and it is still not always the highest version.
+- `skill_archive_changes` and `skill_list_changes` are one table, `skill_changes`, with a `kind` column. This replaces the line that kept them apart. Undo by id still works for both kinds.
+
+This change drops 15 tables and adds one, so the schema has 14 fewer tables.

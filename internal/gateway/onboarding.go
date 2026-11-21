@@ -38,7 +38,7 @@ func (s *Store) UpdateOnboarding(update protocol.OnboardingUpdate, restart bool)
 		}
 		out.Disabled = *update.Disabled
 	} else {
-		valid := map[string]bool{"see": true, "see-machine": true, "talk": true, "cto": true, "map": true, "work-worker": true, "work-protect": true, "tools": true}
+		valid := map[string]bool{"see": true, "see-machine": true, "talk": true, "cto": true, "map": true, "work-worker": true, "work-protect": true}
 		if !valid[update.Step] || (update.State != "done" && update.State != "skipped") {
 			return out, fmt.Errorf("invalid onboarding step or state")
 		}

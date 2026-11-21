@@ -102,13 +102,9 @@ Desktop notifications are one owner preference per machine: `notification_settin
 
 `harness_updates` is also an integration. Its saved field is inverted (`harness_updates_off`), so an older saved answer defaults to on.
 
-## Per-project tools and skills
+## Skills
 
-`tools_change` actions: plan, apply, undo, toggle, native_remove, new_projects, import.
-
-Kinds: `skill`, `mcp`, `user`, `project`, `native`, `plugin`, `package`, `system`, `agent-net federation`. Scope is `global` or one or more projects. A project skill tracked by the repository is part of the repo; an untracked project skill is a local copy. `mcp_change` covers shared MCP servers; `tools_change` covers a project's own tools and skills.
-
-`skills` actions: set, effective, undo. It stores inherited skill lists on global, team, repo and agent nodes; nothing is delivered to sessions yet. The CTO sets skills when the owner asks.
+`skill_archive` stores skill versions (add from a machine folder or a Git URL, list, read, remove, undo, intake, promote). `skills` actions: set, effective, undo. It stores inherited skill lists on global, team, repo and agent nodes, and a session gets the skills of its node in its own folder when it starts. The CTO sets skills when the owner asks. `mcp_change` covers shared MCP servers; every registered server is global.
 
 ## Notes
 

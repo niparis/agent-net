@@ -14,7 +14,7 @@ import (
 // by "worker.precheck" at once, with the reason and the picker's own choice,
 // before the caller's daemon runs the difficulty judge.
 func TestPrecheckRefusesExhaustedNamedModelWithAlternative(t *testing.T) {
-	g, node := scopeGateway(t)
+	g, node := mcpGateway(t)
 	st := g.store
 	c := &clock{t: time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)}
 	st.now = c.now
@@ -77,7 +77,7 @@ func TestPrecheckRefusesExhaustedNamedModelWithAlternative(t *testing.T) {
 // a level: a named harness with an automatic model passes when only a lower,
 // judged level would qualify.
 func TestPrecheckDoesNotRefuseOnLevelForAutomaticModel(t *testing.T) {
-	g, node := scopeGateway(t)
+	g, node := mcpGateway(t)
 	st := g.store
 	if err := st.SetNodeHello(node, "nas", "1"); err != nil {
 		t.Fatal(err)

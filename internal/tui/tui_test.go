@@ -653,7 +653,7 @@ func TestViewHasEverythingAt80Columns(t *testing.T) {
 	m := keys(quietFixtures(newModel(80, 24)), "down") // tenebrae-53
 	out := m.testView()
 	for _, want := range []string{
-		"Mac", "old-box", "7 Desk", "cpu", "mem", "no claude",
+		"Mac", "old-box", "6 Desk", "cpu", "mem", "no claude",
 		"NAME", "MACHINE", "PROJECT", "MODEL", "STATUS", "CPU", "RAM", "TASK",
 		"tenebrae-53", "busy", "sessions ·", "CTO",
 		"up/down select", "q quit",

@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -15,13 +14,8 @@ import (
 // holds is older, and the folder was edited after it, so the add takes the
 // edited content under its own hash.
 func TestSkillArchiveAddStoresFolderAsItIsNow(t *testing.T) {
-	g, n, _ := toggleFixture(t)
+	g, n := archiveFixture(t)
 	folder, oldHash := archiveSkillFolder(t, filepath.Join(t.TempDir(), "demo"), "---\ndescription: Demo.\n---\nold body\n")
-	if err := g.store.SetInventory(n, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: []protocol.InventoryItem{
-		{Kind: "skill", Name: "demo", Hash: oldHash, State: "ok", Scope: "user", Location: folder},
-	}}); err != nil {
-		t.Fatal(err)
-	}
 	if err := os.WriteFile(filepath.Join(folder, "SKILL.md"), []byte("---\ndescription: Demo.\n---\nnew body\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +23,8 @@ func TestSkillArchiveAddStoresFolderAsItIsNow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	archiveFakeNode(t, g, n, nil)
+	// The machine lists the folder under the hash it had before the edit.
+	archiveFakeNodeSources(t, g, n, nil, []protocol.SkillSource{{Name: "demo", Hash: oldHash, Location: folder, Origin: "user", State: protocol.InventoryOK}})
 
 	got := archiveCall[protocol.SkillArchiveAddResult](t, g, protocol.FrameSkillArchiveAdd, protocol.SkillArchiveAdd{
 		Location: protocol.ToolImportLocation{NodeID: n, Location: folder}, By: "cto",
@@ -51,24 +46,18 @@ func TestSkillArchiveAddStoresFolderAsItIsNow(t *testing.T) {
 	}
 }
 
-// Intake takes the user folders from the live skill sources answer, not from
-// the last inventory scan. An edited folder is stored at its new hash, and a
-// folder the scan still lists but the machine no longer has is not listed.
+// Intake takes the user folders from the live skill sources answer. An edited
+// folder is stored at its new hash, and a folder the machine no longer lists is
+// not read.
 func TestSkillArchiveIntakeReadsUserFoldersLive(t *testing.T) {
-	g, n, _ := toggleFixture(t)
+	g, n := archiveFixture(t)
 	dir := t.TempDir()
-	edited, oldHash := archiveSkillFolder(t, filepath.Join(dir, "edited"), "---\ndescription: Edited.\n---\nold body\n")
+	edited, _ := archiveSkillFolder(t, filepath.Join(dir, "edited"), "---\ndescription: Edited.\n---\nold body\n")
 	if err := os.WriteFile(filepath.Join(edited, "SKILL.md"), []byte("---\ndescription: Edited.\n---\nnew body\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	newHash, err := inventory.SkillHash(edited)
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := g.store.SetInventory(n, protocol.InventoryReport{State: "ok", ScannedAt: time.Now(), Items: []protocol.InventoryItem{
-		{Kind: "skill", Name: "edited", Hash: oldHash, State: "ok", Scope: "user", Location: edited},
-		{Kind: "skill", Name: "removed", Hash: "removedhash", State: "ok", Scope: "user", Location: filepath.Join(dir, "removed")},
-	}}); err != nil {
 		t.Fatal(err)
 	}
 	archiveFakeNodeAnswer(t, g, n, nil, &protocol.SkillSourcesResult{UserRead: true, Sources: []protocol.SkillSource{

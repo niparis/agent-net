@@ -1,8 +1,7 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 1 nodes
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk │ 1 nodes, 1 edges
 shop  autonomy: off  repo
 agent: shop
   Own the shop and review changes.
-Tools: 0 skills, 0 MCP servers · t open
 owner: shop
 Build and ship the shop.
 ○ no live sessions
@@ -11,14 +10,15 @@ test, review, merge, release, verify: caller
 
 IN 1                                     OUT 0
 shop ──▶ accepts
-Card 1-4/15  ctrl+u/d scroll ───────────────────────────────────────────────────
+Card 1-5/15  ctrl+u/d scroll ───────────────────────────────────────────────────
 PLACE ──────────────────────────────────────────────────────────────────────────
 team       answers to owner
 repo lead  ★ shop
 held back  nothing beyond the always list
+
 RECENT  no changes yet
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-enter sessions  t tools  l lead  esc Graph  ctrl+u/ctrl+d scroll  ? help  q quit
+enter sessions  l lead  esc Graph  ctrl+u/ctrl+d scroll  n new  ? help  q quit

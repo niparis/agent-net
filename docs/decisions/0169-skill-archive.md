@@ -265,3 +265,43 @@ The `skills` tool keeps `set`, `effective` and `undo`. The `skill_suggestions`
 table stays in the database, unused. The text above that describes suggest is
 history. The per-project tool toggle and its standing choice for new projects
 (`tools_new_projects`) is a different feature and is unchanged.
+
+## Note 2026-11-21: task 5 is done
+
+Task 5 retired the old Tools rollout. The owner reviewed the gateway tables on
+2026-11-21 and said to execute the plan. The old rollout last ran on
+2026-11-17. Of its 1,327 results, 846 were conflicts. It is now removed (branch
+`agent-net/w_3054ffa47b186538`, part of the schema reduction of
+[0179](0179-gateway-schema-reduction.md)).
+
+- Removed tables: `tool_identities`, `tool_locations`, `tool_revisions`,
+  `tool_results`, `tool_audit`, `tool_project_settings`, `tool_project_seen`,
+  `tool_accepted`, `plans`, `skill_versions`, `mcp_imports` and
+  `inventory_reports`. One appended migration drops them. Nothing is copied:
+  the archive already holds the skills.
+- Removed code: the gateway `tools.*` frames and their plans, applies and
+  undo, the skills.git store (its skills were copied into the archive when the
+  gateway first started after 0169), the daemon rollout, journal and native
+  MCP install code, the periodic skill scan, the Tools tab (the tabs are now
+  Sessions, Graph, Quotas, Messages, Settings and Desk, keys 1 to 6) and the
+  CTO tools `tools_change`, `tools_items`, `tools_item`, `tools_history`,
+  `tools_versions`, `tools_export`, `tools_import`, `tools_accept`,
+  `tools_accepted`, `tools_differences`, `mcp_import` and
+  `mcp_import_candidates`. The one-time "machines differ in tools" lesson of
+  the onboarding is gone with it.
+- Kept: the archive and its CTO tool, the skill lists and their `skills` tool,
+  the per-session skills folder, the Desk undo for both, the shared MCP
+  registry (`mcp_servers`, `agent_mcp_servers_find`, `agent_mcp_test` and the
+  CTO `mcp_change`).
+- A shared MCP server is no longer scoped to projects. The scope lived in the
+  Tools revisions, and the only way to set it was the Tools tab. Every
+  registered server is global now.
+- `skill_archive_latest` is the column `in_use` of `skill_archive`: one row
+  per name has `in_use=1`. The two undo logs `skill_archive_changes` and
+  `skill_list_changes` are one table, `skill_changes`, with a `kind` column
+  (`archive` or `list`). Undo by id works for both kinds, and the Desk shows
+  the same undo items.
+- The archive intake no longer falls back to a stored scan for a machine that
+  does not list its user folders. It skips that machine and says why.
+- The gateway backup no longer holds `skills.git`. An older `skills.git`
+  folder in the gateway data folder can be deleted by hand.

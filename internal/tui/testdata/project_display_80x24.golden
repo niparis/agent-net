@@ -1,6 +1,5 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 7 nodes
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk │ 7 nodes, 4 edges
 Evidence API  early  autonomy: off  component
-Tools: 0 skills, 0 MCP servers · t open
 Document and evidence API.
 ○ no live sessions
 accept, test, review, merge, release, verify: caller
@@ -8,7 +7,7 @@ accept, test, review, merge, release, verify: caller
 IN 2                                     OUT 1
 tenebrae ──▶ depends ask                 ──▶ shop depends auto
 trading-architect ──▶ deploys
-Card 1-7/12  ctrl+u/d scroll ───────────────────────────────────────────────────
+Card 1-8/12  ctrl+u/d scroll ───────────────────────────────────────────────────
 Charter ────────────────────────────────────────────────────────────────────────
 accepts          Generic endpoints and bug fixes.
 refuses          Client-specific endpoints.
@@ -16,9 +15,10 @@ escalate         Breaking API changes.
 Rules ──────────────────────────────────────────────────────────────────────────
 tests_before_merge optional               maturity default
 merge_authority    full                   maturity default
+worker_sandbox     sandboxed              maturity default
 RECENT  2h ago maturity by you (on Mac) · 26h ago purpose by owner
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-enter sessions  t tools  esc Graph  ctrl+u/ctrl+d scroll  n new  ? help  q quit
+enter sessions  esc Graph  ctrl+u/ctrl+d scroll  n new  u undo  ? help  q quit

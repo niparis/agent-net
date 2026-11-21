@@ -13,7 +13,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// The Desk (tab 7, decision 0090) is one list in three sections: Needs you
+// The Desk (tab 6, decision 0090) is one list in three sections: Needs you
 // (the asks), In flight (the delivery changes) and Log (the event log, closed
 // until the owner opens it). One cursor walks all three.
 
@@ -669,7 +669,7 @@ func logUndo(e protocol.DeskLogEntry) (string, json.RawMessage, bool) {
 		return e.Options[0], raw, json.Valid(raw)
 	}
 	switch e.Options[0] {
-	case "apps.rename", "apps.grant", "apps.ungrant", "apps.public.on", "apps.public.off", "graph_undo", "settings_undo", "session_rename", "session_trust", "node_rename", "project_display_set", "worker_profile_add", "worker_profile_remove", "worker_providers_set", "protected_providers_set", "scores_set", "integrations_set", "playbook_set", "mcp_remove", "mcp_enable", "mcp_native_remove", "tools_undo", "tools_new_projects", "sessions_archive", "folder_trust", "folder_mcp", "standing_orders", "session_resume", "skill_archive_undo", "skills_undo":
+	case "apps.rename", "apps.grant", "apps.ungrant", "apps.public.on", "apps.public.off", "graph_undo", "settings_undo", "session_rename", "session_trust", "node_rename", "project_display_set", "worker_profile_add", "worker_profile_remove", "worker_providers_set", "protected_providers_set", "scores_set", "integrations_set", "playbook_set", "mcp_remove", "mcp_enable", "sessions_archive", "folder_trust", "folder_mcp", "standing_orders", "session_resume", "skill_archive_undo", "skills_undo":
 	default:
 		return "", nil, false
 	}
@@ -698,19 +698,8 @@ func (m Model) deskUndo(e protocol.DeskLogEntry) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 		defer cancel()
-		result, err := c.Call(ctx, op, args)
-		if err != nil {
+		if _, err := c.Call(ctx, op, args); err != nil {
 			return actionMsg{err: err}
-		}
-		if op == "mcp_native_remove" {
-			var restored protocol.MCPNativeRemoveResult
-			if json.Unmarshal(result, &restored) != nil || restored.State != protocol.MCPNativeRestored {
-				reason := restored.Reason
-				if reason == "" {
-					reason = "native MCP configuration was not restored"
-				}
-				return actionMsg{err: fmt.Errorf("undo: %s", reason)}
-			}
 		}
 		if _, err := c.Call(ctx, protocol.OpDeskSettle, map[string]int64{"id": e.ID}); err != nil {
 			return actionMsg{err: err}

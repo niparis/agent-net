@@ -144,8 +144,6 @@ func (m Model) mapKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		m.fail("Select a repo first.")
 		return m, nil
-	case "node tools":
-		return m.startNodeTools(m.mp.selected)
 	case "autonomy":
 		return m.toggleAutonomy()
 	case "loop":

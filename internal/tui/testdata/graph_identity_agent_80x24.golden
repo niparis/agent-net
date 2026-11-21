@@ -1,4 +1,4 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 1 nodes
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk │ 1 nodes, 1 edges
 shop  architect  agent
 Own the shop and review changes.
 ○ no live sessions
@@ -21,4 +21,4 @@ RECENT  no changes yet
 │                                                                              │
 │ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-enter sessions  t tools  esc Graph  ctrl+u/ctrl+d scroll  n new  ? help  q quit
+enter sessions  esc Graph  ctrl+u/ctrl+d scroll  n new  u undo  ? help  q quit

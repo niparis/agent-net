@@ -18,7 +18,6 @@ var ctoProposalFixtures = map[string]string{
 	"session_change":   `{"action":"rename","session_id":"s_test","name":"planner"}`,
 	"worker_change":    `{"action":"start","project":"project","task":"test","harness":"claude","touches":["tests"]}`,
 	"answer":           `{"kind":"held","message_id":"m_test","action":"a"}`,
-	"tools_change":     `{"action":"plan","item":"item","target":{"scope":"global"}}`,
 	"mcp_change":       `{"action":"add","server":{"name":"test","transport":"stdio","command":"/bin/true"}}`,
 	"mcp_call":         `{"server":"test","tool":"send","arguments":{"body":"stored"}}`,
 	"settings_change":  `{"area":"cto","title":"CTO"}`,
@@ -142,11 +141,6 @@ func TestCTOChangeParity(t *testing.T) {
 		"held_answer":             {"answer", `{"kind":"held","message_id":"m_test","action":"a"}`},
 		"inbox_answer":            {"answer", `{"kind":"inbox","id":"i_test","answer":"yes"}`},
 		"outcome_overrule":        {"answer", `{"kind":"outcome","reply_id":"m_test","action":"let_stand"}`},
-		"tools_plan":              {"tools_change", `{"action":"plan","item":"item","target":{"scope":"global"}}`},
-		"tools_apply":             {"tools_change", `{"action":"apply","plan_id":"plan"}`},
-		"tools_undo":              {"tools_change", `{"action":"undo","item":"item"}`},
-		"mcp_import":              {"tools_change", `{"action":"import","candidate":"candidate"}`},
-		"mcp_native_remove":       {"tools_change", `{"action":"native_remove","candidate":"candidate"}`},
 		"mcp_add":                 {"mcp_change", `{"action":"add","server":{"name":"test","transport":"stdio","command":"/bin/true"}}`},
 		"mcp_remove":              {"mcp_change", `{"action":"remove","name":"test"}`},
 		"mcp_test":                {"mcp_change", `{"action":"test","name":"test"}`},
@@ -204,7 +198,7 @@ func TestCTOChangeParity(t *testing.T) {
 }
 
 func TestCTOChangeUnknownActionFailsClosed(t *testing.T) {
-	for _, name := range []string{"message", "ui", "graph_change", "session_change", "worker_change", "answer", "tools_change", "mcp_change", "settings_change", "project_change"} {
+	for _, name := range []string{"message", "ui", "graph_change", "session_change", "worker_change", "answer", "mcp_change", "settings_change", "project_change"} {
 		field := ctoActionField[name]
 		if _, err := ctoClass(name, json.RawMessage(`{"`+field+`":"unknown"}`)); err == nil {
 			t.Errorf("%s accepted unknown %s", name, field)

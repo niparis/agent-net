@@ -122,9 +122,8 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 	var previousIntegrations protocol.IntegrationsResult
 	var previousScores []protocol.ModelScore
 	var previousPlaybook protocol.PlaybookGetResult
-	var previousToolProjects protocol.ToolProjectState
 	var oldProfiles []protocol.WorkerProfile
-	var haveProviders, haveProfiles, haveIntegrations, haveScores, havePlaybook, haveToolProjects bool
+	var haveProviders, haveProfiles, haveIntegrations, haveScores, havePlaybook bool
 	switch concrete {
 	case "protected_providers_set":
 		previousProtected, err = d.protectedProviders(ctx, nil)
@@ -147,21 +146,6 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 		}
 		if previousPlaybook.Note != nil && !strings.EqualFold(previousPlaybook.Note.Harness, q.Harness) {
 			previousPlaybook.Note = nil
-		}
-	case "tools_new_projects":
-		var q protocol.ToolNewProjectsRequest
-		_ = json.Unmarshal(args, &q)
-		before, e := d.call(ctx, "query.tools_projects", map[string]string{"owner": d.ownerSessionID()})
-		if e == nil {
-			var states []protocol.ToolProjectState
-			if json.Unmarshal(before, &states) == nil {
-				for _, state := range states {
-					if state.Item == q.Item {
-						previousToolProjects, haveToolProjects = state, true
-						break
-					}
-				}
-			}
 		}
 	case "worker_profile_add", "worker_profile_remove":
 		list, e := d.call(ctx, "worker.profile.list", protocol.WorkerProfileFrame{Requester: d.ownerSessionID()})
@@ -460,15 +444,6 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 				options = []string{protocol.OpPlaybookSet, string(undo)}
 			}
 		}
-	case concrete == "tools_new_projects":
-		if haveToolProjects {
-			var q protocol.ToolNewProjectsRequest
-			_ = json.Unmarshal(args, &q)
-			diff = fmt.Sprintf("new projects: %t -> %t", previousToolProjects.NewProjects, q.On)
-			q.On = previousToolProjects.NewProjects
-			undo, _ := json.Marshal(q)
-			options = []string{"tools_new_projects", string(undo)}
-		}
 	case concrete == "worker_profile_add" || concrete == "worker_profile_remove":
 		var q protocol.WorkerProfileRequest
 		_ = json.Unmarshal(args, &q)
@@ -496,47 +471,6 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 			options = []string{protocol.OpWorkerProfileRemove, string(undo)}
 		}
 
-	case concrete == "tools_apply" || concrete == "tools_undo":
-		b, _ := json.Marshal(result)
-		var applied protocol.ToolApplyResult
-		if json.Unmarshal(b, &applied) == nil && applied.Item != "" {
-			text += " " + cleanLine(applied.Item)
-			var target string
-			if concrete == "tools_apply" {
-				var q protocol.ToolPlanID
-				_ = json.Unmarshal(args, &q)
-				target = applied.Item
-				// Group plans return the last member's revision. Their undo
-				// takes the group plan ID rather than a member ID.
-				if applied.Source != "plan:"+q.ID {
-					target = q.ID
-				}
-			} else {
-				var q protocol.ToolUndoRequest
-				_ = json.Unmarshal(args, &q)
-				if q.Item == applied.Item {
-					target = q.Item
-				}
-			}
-			if target != "" {
-				undo, _ := json.Marshal(protocol.ToolUndoRequest{Item: target})
-				options = []string{"tools_undo", string(undo)}
-			}
-			var lines []string
-			for _, t := range applied.Targets {
-				lines = append(lines, fmt.Sprintf("%s: %s (%s)", t.Machine, t.Action, t.State))
-			}
-			diff = strings.Join(lines, "\n")
-		}
-	case concrete == "mcp_native_remove":
-		b, _ := json.Marshal(result)
-		var removed protocol.MCPNativeRemoveResult
-		if json.Unmarshal(b, &removed) == nil && removed.State == protocol.MCPNativeRemoved && removed.PlanID != "" {
-			undo, _ := json.Marshal(protocol.MCPNativeRemoveRequest{UndoPlanID: removed.PlanID})
-			options = []string{"mcp_native_remove", string(undo)}
-			text += " " + cleanLine(removed.Server)
-			diff = "removed native configuration for " + removed.Server
-		}
 	case concrete == "mcp_add":
 		var q struct {
 			Server struct {

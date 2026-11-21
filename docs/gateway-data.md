@@ -81,13 +81,11 @@ A machine enrolls once with a code, then on each connection proves its token, sa
 9. `nodes` (writes): The machine is marked as back: any open outage (dropped, asleep, silent) is cleared.
 10. `events` (writes): The audit log records 'node.connected' with the remote address.
 11. `sessions` (writes): The machine lists its agent sessions. Each is added or updated, and sessions the gateway thought were online but are missing from the list are marked offline.
-12. `inventory_reports` (writes): The machine's scan of skills, MCP servers and other tools is saved as its latest inventory (kept as stale if a scan fails).
-13. `tool_locations` (writes): Each item from the inventory is saved as a location on this machine (tool_identities is updated with it).
-14. `nodes` (writes): When the link drops, the last time a frame arrived is saved, and the time of the drop starts a possible outage (unless the machine announced it was going to sleep).
-15. `events` (writes): The audit log records 'node.disconnected'.
-16. `sessions` (writes): After the offline grace period, every session of that machine is marked offline, and ended workers are marked 'ended'.
-17. `nodes` (writes): If the outage stays unexplained for the silence limit, the machine is marked silent. The once-a-minute check does this.
-18. `cto_intake` (writes): A silent machine is queued for the CTO with the text '<host> went silent ... it may be hung' (it is not sent to the owner).
+12. `nodes` (writes): When the link drops, the last time a frame arrived is saved, and the time of the drop starts a possible outage (unless the machine announced it was going to sleep).
+13. `events` (writes): The audit log records 'node.disconnected'.
+14. `sessions` (writes): After the offline grace period, every session of that machine is marked offline, and ended workers are marked 'ended'.
+15. `nodes` (writes): If the outage stays unexplained for the silence limit, the machine is marked silent. The once-a-minute check does this.
+16. `cto_intake` (writes): A silent machine is queued for the CTO with the text '<host> went silent ... it may be hung' (it is not sent to the owner).
 
 ## Journey: A change from accept to release
 
@@ -157,19 +155,12 @@ A charter attribute or a setting is written with a new revision and a history ro
 
 Computers that run the daemon, and how they enrol and report health.
 
-### inventory_reports
-
-- **Holds:** One row per machine holding the latest report of the tools, skills and MCP servers installed there.
-- **Written by:** `gateway/inventory.go`
-- **Read by:** `gateway/inventory.go`, `gateway/skillarchive_intake.go`, `gateway/tools_assignment.go`
-- **Shown in:** TUI, Tools; CTO op `tools_items`; CTO op `tools_versions`; CTO op `tools_import`; CTO op `tools_export`
-- **Kept:** Replaced on each report.
 
 ### nodes
 
 - **Holds:** One row per machine or invite in the network: its name, system, hashed access token, agent-net version, last-seen time, which agent programs it can run, plus its health report, Tailscale address, time zone and quiet-hours marks. Invite rows in 'invited' state hold the hashed invite code, expiry and used time with no access token.
 - **Written by:** `gateway/graph_refs.go`, `gateway/machine_tokens.go`, `gateway/node_fold_migration.go`, `gateway/nodes.go`, `gateway/nodes_sleep.go`, `gateway/store.go`
-- **Read by:** `gateway/apps_public.go`, `gateway/ask_intake.go`, `gateway/delivery_changes.go`, `gateway/graph_refs.go`, `gateway/inventory.go`, `gateway/lead_route.go`, `gateway/machine_tokens.go`, `gateway/mcp_import.go`, `gateway/mcp_store.go`, `gateway/nodes.go` and others
+- **Read by:** `gateway/apps_public.go`, `gateway/ask_intake.go`, `gateway/delivery_changes.go`, `gateway/graph_refs.go`, `gateway/lead_route.go`, `gateway/machine_tokens.go`, `gateway/mcp_store.go`, `gateway/nodes.go` and others
 - **Shown in:** TUI, Sessions; TUI, Quotas; tool `agent_machines_find`; tool `agent_machine_get`; CTO op `machine_remove`; CTO op `machine_rotate`
 - **Kept:** Forever; a removed machine is only marked removed and its token wiped.
 
@@ -189,7 +180,7 @@ Agent sessions, with their checks and wake-ups, and the due steps they set.
 
 - **Holds:** One row per due step a session set with agent_due: the session, what is due, the due time, and whether it is pending, woken or raised to the chief.
 - **Written by:** `gateway/session_due.go`
-- **Read by:** `gateway/session_due.go` (the minute tick)
+- **Read by:** `gateway/session_due.go`
 - **Shown in:** tool `agent_due`; the wake message (idempotency key `due:<id>`); a chief ask after 15 minutes idle
 - **Kept:** Forever; the state moves from pending to woken or raised.
 
@@ -330,7 +321,7 @@ Owner settings and their history.
 ### schema_version
 
 - **Holds:** One row per applied database migration number.
-- **Written by:** `gateway/store.go` (the migration step)
+- **Written by:** `gateway/store.go`
 - **Read by:** `gateway/store.go`, `gateway/store_pool.go`, `gateway/store_upgrade_backup.go`
 - **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
 - **Kept:** Forever; one row added per migration.
@@ -427,8 +418,8 @@ Owner settings and their history.
 
 - **Holds:** One project folder registered on one machine, with its path, name, git remote and default branch.
 - **Written by:** `gateway/store_projects.go`
-- **Read by:** `gateway/delivery_changes.go`, `gateway/graph_lifecycle.go`, `gateway/graph_view.go`, `gateway/inventory.go`, `gateway/learned.go`, `gateway/mcp_import_apply.go`, `gateway/settings.go`, `gateway/skill_lists.go`, `gateway/skillarchive_intake.go` and others
-- **Shown in:** TUI, Tools; TUI, Graph; tool `agent_projects_find`; tool `agent_project_add`; CTO op `project_add`
+- **Read by:** `gateway/delivery_changes.go`, `gateway/graph_lifecycle.go`, `gateway/graph_view.go`, `gateway/learned.go`, `gateway/project_display.go`, `gateway/settings.go`, `gateway/skill_lists.go`, `gateway/skillarchive_intake.go` and others
+- **Shown in:** TUI, Graph; tool `agent_projects_find`; tool `agent_project_add`; CTO op `project_add`
 - **Kept:** Until the project is removed.
 
 ### repos
@@ -570,7 +561,7 @@ Standing orders, notes, findings, and what the gateway learns from signals.
 ### standing_orders_fts
 
 - **Holds:** The searchable full text index (FTS5) of standing orders: the text and tags of each row, so notes and judgments can be searched by word.
-- **Written by:** Triggers on `standing_orders` keep it in step. Also `gateway/notes.go` and `gateway/store.go`.
+- **Written by:** `standing_orders`, `gateway/notes.go`, `gateway/store.go`
 - **Read by:** `gateway/standing.go`
 - **Shown in:** tool `agent_owner_judgments_find`; CTO op `cto_standing_orders`
 - **Kept:** Kept in step with standing_orders by triggers (insert, update, delete).
@@ -643,7 +634,7 @@ Worker runs, their quality and cost, and the data the picker reads.
 
 - **Holds:** One row per candidate (worker, model and effort) of every automatic worker pick, with the prices, scores and weights the picker read and why it was chosen or left out.
 - **Written by:** `gateway/worker_assessment.go`
-- **Read by:** No reader in the gateway. `tools/pickerreplay` and `research/picker-ml` read the table from the database file.
+- **Read by:** `tools/pickerreplay`, `research/picker-ml`
 - **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
 - **Kept:** Forever.
 
@@ -695,37 +686,21 @@ Worker runs, their quality and cost, and the data the picker reads.
 - **Shown in:** tool `agent_worker_start`; tool `agent_workers_find`
 - **Kept:** Closed starts are deleted after 30 days, when the next start is recorded.
 
-## Tools and skills
+## Skills and shared MCP servers
 
-Tools, shared MCP servers, skills, and their versions.
-
-### mcp_imports
-
-- **Holds:** One row per MCP server imported from a machine's own config, keeping the original record.
-- **Written by:** `gateway/mcp_import_apply.go`, `gateway/mcp_scope.go`
-- **Read by:** `gateway/mcp_import.go`
-- **Shown in:** CTO op `mcp_import`; CTO op `mcp_import_candidates`
-- **Kept:** Until the tool is forgotten.
+The skill archive and its lists, and the shared MCP servers.
 
 ### mcp_servers
 
 - **Holds:** One row per shared MCP server: its name, the machine that runs it, its spec, whether it is on, who added it, and its last health and tool list.
-- **Written by:** `gateway/mcp_import_apply.go`, `gateway/mcp_store.go`
-- **Read by:** `gateway/inventory.go`, `gateway/mcp_import.go`, `gateway/mcp_import_apply.go`, `gateway/mcp_scope.go`, `gateway/mcp_store.go`
-- **Shown in:** tool `agent_mcp_servers_find`; tool `agent_mcp_test`; TUI, Tools; CTO op `mcp_change`
+- **Written by:** `gateway/mcp_store.go`
+- **Read by:** `gateway/mcp_store.go`
+- **Shown in:** tool `agent_mcp_servers_find`; tool `agent_mcp_test`; CTO op `mcp_change`
 - **Kept:** Until the server is removed.
-
-### plans
-
-- **Holds:** One row per prepared plan before it is applied: a tool plan, an MCP import plan or a native MCP removal plan (told apart by kind), with the snapshot it was built on and whether it was applied.
-- **Written by:** `gateway/mcp_import_apply.go`, `gateway/mcp_native_remove.go`, `gateway/mcp_scope.go`, `gateway/plan_kinds_migration.go`, `gateway/tools_assignment.go`, `gateway/tools_group.go`
-- **Read by:** `gateway/inventory.go`, `gateway/mcp_import_apply.go`, `gateway/mcp_native_remove.go`, `gateway/tools_assignment.go`, `gateway/tools_feed.go`, `gateway/tools_group.go`, `gateway/tools_plan.go`
-- **Shown in:** CTO op `tools_change`; CTO op `mcp_import`
-- **Kept:** Forever, except tool plans of a tool that is forgotten.
 
 ### skill_archive
 
-- **Holds:** One row per stored version of every skill, with its full text, hash, source, who added it and whether it was removed.
+- **Holds:** One row per stored version of every skill, with its full text, hash, source, who added it, whether it was removed and `in_use`: one version per skill has `in_use` 1, the version a node that follows the latest gets.
 - **Written by:** `gateway/skill_archive_migration.go`, `gateway/skillarchive.go`
 - **Read by:** `gateway/skill_archive_migration.go`, `gateway/skill_lists.go`, `gateway/skillarchive.go`, `gateway/skillarchive_intake.go`, `gateway/skillarchive_read.go`
 - **Shown in:** CTO op `skill_archive`
@@ -739,28 +714,12 @@ Tools, shared MCP servers, skills, and their versions.
 - **Shown in:** CTO op `skill_archive`
 - **Kept:** Until the same skill is added again or a removal is undone.
 
-### skill_archive_changes
+### skill_changes
 
-- **Holds:** One row per change made to the skill archive (add, remove, promote), kept so the change can be undone.
-- **Written by:** `gateway/skillarchive.go`
-- **Read by:** `gateway/skill_archive_migration.go`, `gateway/skillarchive.go`
-- **Shown in:** CTO op `skill_archive`
-- **Kept:** Forever.
-
-### skill_archive_latest
-
-- **Holds:** One row per skill naming the version that is in use now.
-- **Written by:** `gateway/skill_archive_migration.go`, `gateway/skillarchive.go`
-- **Read by:** `gateway/skillarchive.go`
-- **Shown in:** CTO op `skill_archive`
-- **Kept:** One row per skill, replaced when the version in use changes.
-
-### skill_list_changes
-
-- **Holds:** One row per change to the skill lists (what was added, removed or pinned at a level), kept so the change can be undone.
-- **Written by:** `gateway/skill_lists.go`
-- **Read by:** `gateway/skill_lists.go`
-- **Shown in:** CTO op `skills`
+- **Holds:** One row per change to the skill archive (add, remove, promote, undo of those) or to the skill lists (what was added, removed or pinned at a level), told apart by `kind` (`archive` or `list`). It is kept so the change can be undone.
+- **Written by:** `gateway/skillarchive.go`, `gateway/skill_lists.go`
+- **Read by:** `gateway/skill_archive_migration.go`, `gateway/skillarchive.go`, `gateway/skill_lists.go`
+- **Shown in:** CTO op `skill_archive`; CTO op `skills`; Desk undo
 - **Kept:** Forever.
 
 ### skill_node_lists
@@ -770,76 +729,4 @@ Tools, shared MCP servers, skills, and their versions.
 - **Read by:** `gateway/skill_lists.go`
 - **Shown in:** CTO op `skills`
 - **Kept:** The rows of a level and scope are replaced as a whole on each set or undo.
-
-### skill_versions
-
-- **Holds:** One row per version of a skill imported into the gateway's own copy store, with its hash, git commit, source machine and version number.
-- **Written by:** `gateway/skillstore.go`
-- **Read by:** `gateway/inventory.go`, `gateway/skillarchive.go`, `gateway/skillbackup.go`, `gateway/skillstore.go`, `gateway/tools_assignment.go`, `gateway/tools_plan.go`, `gateway/tools_toggle.go`, `gateway/tools_update.go`
-- **Shown in:** CTO op `tools_versions`; CTO op `tools_export`; CTO op `tools_import`
-- **Kept:** Forever.
-
-### tool_accepted
-
-- **Holds:** One row per tool finding (a difference between machines) that the owner chose to accept as it is.
-- **Written by:** `gateway/tools_accepted.go`
-- **Read by:** `gateway/tools_accepted.go`
-- **Shown in:** CTO op `tools_accepted`; CTO op `tools_accept`; TUI, Tools
-- **Kept:** Until the owner takes the acceptance back.
-
-### tool_audit
-
-- **Holds:** One row per tool plan or apply, including refused ones: who did it, which item, the revision, the targets and the result.
-- **Written by:** `gateway/tools_assignment.go`
-- **Read by:** `gateway/tools_assignment.go`
-- **Shown in:** CTO op `tools_history`
-- **Kept:** Forever.
-
-### tool_identities
-
-- **Holds:** One row per distinct skill, MCP server or other tool by kind, name and content hash.
-- **Written by:** `gateway/inventory.go`, `gateway/mcp_scope.go`, `gateway/tools_folder.go`
-- **Read by:** `gateway/inventory.go`, `gateway/mcp_import_apply.go`, `gateway/mcp_scope.go`, `gateway/skillarchive.go`, `gateway/skillarchive_intake.go`, `gateway/skillstore.go`, `gateway/tools_assignment.go`, `gateway/tools_choose.go`, `gateway/tools_feed.go`, `gateway/tools_plan.go` and others
-- **Shown in:** TUI, Tools; CTO op `tools_items`; CTO op `tools_item`
-- **Kept:** Removed when no machine location, skill version or revision refers to it any more.
-
-### tool_locations
-
-- **Holds:** One row per tool a machine reported in its inventory, with the folder or file where it was seen.
-- **Written by:** `gateway/inventory.go`
-- **Read by:** `gateway/inventory.go`, `gateway/mcp_import.go`, `gateway/skillarchive.go`, `gateway/skillarchive_intake.go`, `gateway/skillstore.go`, `gateway/tools_assignment.go`, `gateway/tools_choose.go`, `gateway/tools_toggle.go`, `gateway/tools_update.go`
-- **Shown in:** TUI, Tools; CTO op `tools_items`; CTO op `inventory_get`
-- **Kept:** Replaced on each inventory report of the machine.
-
-### tool_project_seen
-
-- **Holds:** One row per tool and project pair that the gateway has already seen, so only new projects get the 'new projects' choice.
-- **Written by:** `gateway/tools_toggle.go`
-- **Read by:** `gateway/tools_toggle.go`
-- **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
-- **Kept:** Forever.
-
-### tool_project_settings
-
-- **Holds:** One row per tool holding the owner's choice for new projects: whether the tool is turned on or off there.
-- **Written by:** `gateway/tools_toggle.go`
-- **Read by:** `gateway/tools_toggle.go`
-- **Shown in:** TUI, Tools; CTO op `tools_change`
-- **Kept:** Forever, one row per tool, overwritten.
-
-### tool_results
-
-- **Holds:** One row per target of a tool rollout holding whether it worked, was refused or failed, with the branch and commit it produced.
-- **Written by:** `gateway/mcp_scope.go`, `gateway/tools_feed.go`
-- **Read by:** `gateway/inventory.go`, `gateway/tools_assignment.go`, `gateway/tools_feed.go`
-- **Shown in:** TUI, Tools; CTO op `tools_items`
-- **Kept:** Until the tool is forgotten (an MCP item removed).
-
-### tool_revisions
-
-- **Holds:** One row per assignment revision of a tool: which projects or machines it is turned on for, who set it and when.
-- **Written by:** `gateway/mcp_scope.go`, `gateway/tools_assignment.go`
-- **Read by:** `gateway/inventory.go`, `gateway/mcp_scope.go`, `gateway/tools_assignment.go`, `gateway/tools_feed.go`, `gateway/tools_group.go`, `gateway/tools_toggle.go`
-- **Shown in:** TUI, Tools; CTO op `tools_change`; CTO op `tools_history`
-- **Kept:** Until the tool is forgotten (an MCP item removed).
 

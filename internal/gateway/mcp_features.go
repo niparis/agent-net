@@ -10,10 +10,9 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// Resources and prompts of registered servers (mcp.feature). The access rules
-// are those of a tool call: the caller is the owner, or a session whose
-// project may see the server now, and the server is enabled. A list without a
-// server goes to every server the caller may see, at the same time; a host
+// Resources and prompts of registered servers (mcp.feature). The access rule
+// is that of a tool call: the server exists and is enabled. A list without a
+// server goes to every enabled server, at the same time; a host
 // that is offline or fails is named in the answer, and the other servers still
 // list. A read or a prompt goes to the one server it names.
 
@@ -22,7 +21,7 @@ func (g *Gateway) mcpFeature(ctx context.Context, nc *nodeConn, p protocol.MCPFe
 		return nil, reject("%v", err)
 	}
 	if !protocol.MCPListOp(p.Op) {
-		srv, err := g.mcpAccess(nc, p.Server, p.SessionID, p.Owner)
+		srv, err := g.mcpAccess(p.Server)
 		if err != nil {
 			return nil, err
 		}
@@ -41,28 +40,15 @@ func (g *Gateway) mcpFeature(ctx context.Context, nc *nodeConn, p protocol.MCPFe
 
 	var srvs []protocol.MCPServer
 	if p.Server != "" {
-		srv, err := g.mcpAccess(nc, p.Server, p.SessionID, p.Owner)
+		srv, err := g.mcpAccess(p.Server)
 		if err != nil {
 			return nil, err
 		}
 		srv.HostOnline = g.conn(srv.NodeID) != nil
 		srvs = []protocol.MCPServer{srv}
-	} else if g.validToolOwner(nc, p.Owner) {
-		all, err := g.mcpList()
-		if err != nil {
-			return nil, err
-		}
-		for _, s := range all {
-			if s.Enabled {
-				srvs = append(srvs, s)
-			}
-		}
 	} else {
-		project, err := g.callerProject(nc, p.SessionID)
-		if err != nil {
-			return nil, err
-		}
-		if srvs, err = g.mcpCatalog(project); err != nil {
+		var err error
+		if srvs, err = g.mcpCatalog(); err != nil {
 			return nil, err
 		}
 	}

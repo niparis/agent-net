@@ -67,7 +67,7 @@ func proposalSnapshot(t *testing.T, s *Store) map[string][]string {
 }
 
 func TestCTOProposalValidationLeavesDatabaseUnchanged(t *testing.T) {
-	g, node := scopeGateway(t)
+	g, node := mcpGateway(t)
 	st := g.store
 	if err := st.SetNodeHello(node, "test", "1"); err != nil {
 		t.Fatal(err)
@@ -186,7 +186,7 @@ func TestCTOProposalValidationLeavesDatabaseUnchanged(t *testing.T) {
 }
 
 func TestCTOProposalValidationTeams(t *testing.T) {
-	g, node := scopeGateway(t)
+	g, node := mcpGateway(t)
 	st := g.store
 	if _, err := st.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_ref_gate','1',0)`); err != nil {
 		t.Fatal(err)

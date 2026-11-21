@@ -1,6 +1,5 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Tools 6 Settings 7 Desk │ 7 nodes, 4 edges                      updated 14:05
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk │ 7 nodes, 4 edges                              updated 14:05
 tenebrae  mature  autonomy: off  component
-Tools: 0 skills, 0 MCP servers · t open
 Research library for the trading desk.
 ● 1 session, 1 busy
 accept, test, review, merge, release, verify: caller
@@ -24,6 +23,7 @@ work_mode          on_request             default
 
 
 
+
 RECENT  3h ago maturity by trading-architect
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
@@ -31,4 +31,4 @@ RECENT  3h ago maturity by trading-architect
 │                                                                                                                      │
 │ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter sessions  t tools  esc Graph  ctrl+u/ctrl+d scroll  n new  u undo  ? help  q quit
+enter sessions  esc Graph  ctrl+u/ctrl+d scroll  n new  u undo  ? help  q quit

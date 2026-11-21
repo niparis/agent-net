@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -47,17 +46,6 @@ func TestApproved01RefreshOnEveryScreen(t *testing.T) {
 	}
 	if _, cmd := pressRune(card, "r"); cmd != nil {
 		t.Fatal("r still refreshes the agent card")
-	}
-
-	tools, src := toolsAtScreen(120, 34)
-	if _, cmd := pressRune(tools, "R"); cmd == nil {
-		t.Fatal("R did not rescan Tools")
-	}
-	if _, cmd := pressRune(tools, "r"); cmd != nil {
-		t.Fatal("r still rescans Tools")
-	}
-	if src.rescans != 0 {
-		t.Fatalf("rescan ran too early: %d", src.rescans)
 	}
 }
 
@@ -221,41 +209,6 @@ func TestApproved19CardCommaSelectsThePreviousLearnedChange(t *testing.T) {
 	m = keys(m, ",")
 	if m.mp.learnedIndex != 0 {
 		t.Fatalf("comma selected index %d", m.mp.learnedIndex)
-	}
-}
-
-func TestApproved24EnterOpensTheListItemActions(t *testing.T) {
-	m, _ := toolsAtScreen(120, 34)
-	m = keys(m, "]")
-	if plain(m) == "" {
-		t.Fatal("] left a blank screen")
-	}
-	m = keys(m, "enter")
-	if m.tl.modal == nil || m.tl.modal.menu == nil {
-		t.Fatal("enter did not open the selected item's actions")
-	}
-	if strings.Contains(plain(m), "details below") {
-		t.Fatal("the details below message is back")
-	}
-}
-
-func TestApproved25PickerTicksWithSpaceOnly(t *testing.T) {
-	m, _ := newToolsModel(120, 34)
-	m = openTools(m)
-	m = rowByName(m, "found-skill-10")
-	m = pressKey(m, "enter")
-	m = toolChoose(t, m, "Turn on for...")
-	p := m.tl.modal.picker
-	if p == nil {
-		t.Fatal("turn on did not open the project picker")
-	}
-	m = pressKey(m, "x")
-	if len(p.sel) != 0 {
-		t.Fatalf("x ticked %v", p.sel)
-	}
-	m = pressKey(m, " ")
-	if len(p.sel) != 1 {
-		t.Fatalf("space ticked %v", p.sel)
 	}
 }
 
