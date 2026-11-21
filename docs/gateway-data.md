@@ -250,6 +250,14 @@ Agent sessions, and the checks and wake-ups that go with them.
 - **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
 - **Kept:** Forever; never deleted, even after the session is removed.
 
+### session_dues
+
+- **Holds:** One row per due step a session set with agent_due: the session, what is due, the due time, and whether it is pending, woken or raised to the chief.
+- **Written by:** `gateway/session_due.go`
+- **Read by:** `gateway/session_due.go` (the minute tick)
+- **Shown in:** tool `agent_due`; the wake message (idempotency key `due:<id>`); a chief ask after 15 minutes idle
+- **Kept:** Forever; the state moves from pending to woken or raised.
+
 ### session_wakes
 
 - **Holds:** One row per session counting automatic wake-ups: the day's count, the no-progress streak, open work, and when and why the last wake failed.
