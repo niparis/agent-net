@@ -145,7 +145,7 @@ A deploy step runs only when the deploy rule is not `brief`; with `brief` the ca
 
 ## Edges
 
-Stored kinds for `edge_set`: depends, deploys, accepts, reviews, tests, tests_after_merge, approves, approves_deploy, merges, releases, delivery_deploys, verifies. A `depends` edge goes from consumer to provider, and `*` is allowed as the consumer. A `deploys` edge goes from deployer to app. The delivery kinds go from the step owner node to the repo. `reports_to` is the org tree edge and `member_of` is team membership; neither is set with `edge_set`.
+Stored kinds for `edge_set`: depends, deploys, accepts, reviews, tests, tests_after_merge, approves, approves_deploy, merges, releases, delivery_deploys, verifies, reports_to. A `depends` edge goes from consumer to provider, and `*` is allowed as the consumer. A `deploys` edge goes from deployer to app. The delivery kinds go from the step owner node to the repo. `reports_to` is the org tree edge. `member_of` is team membership and is not set with `edge_set`.
 
 Rules: normal delivers with ordinary peer guidance; auto delivers with peer trust; ask holds for the owner; never refuses.
 

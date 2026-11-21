@@ -35,6 +35,87 @@ func TestCTOOperatorActionsClassified(t *testing.T) {
 	}
 }
 
+func TestCTOOperatorEdgeSetReportsTo(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	ctx := context.Background()
+	if err := n.d.registerCTOSession(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := n.d.call(ctx, "hello", map[string]any{"hostname": "fixture", "version": "v0.4.145", "graph_refs": true}); err != nil {
+		t.Fatal(err)
+	}
+	waitGraphCutover(t, g)
+	cli := cliClient(t, n)
+	for _, name := range []string{"child", "parent1", "parent2"} {
+		cli.mustCall("agent_create", protocol.GraphLifecycleRequest{Name: name})
+	}
+
+	// 1. CTO edge_set op moves child's parent to parent1.
+	opArgs := map[string]any{
+		"method": "edge_set",
+		"args": map[string]any{
+			"from": "child",
+			"to":   "parent1",
+			"kind": "reports_to",
+		},
+	}
+	raw, _ := json.Marshal(opArgs)
+	if _, err := n.d.runCTOTool(ctx, "cto_op", raw); err != nil {
+		t.Fatalf("cto_op edge_set: %v", err)
+	}
+	if _, err := g.gw.Store().StoredEdge(protocol.Edge{From: "child", To: "parent1", Kind: "reports_to"}); err != nil {
+		t.Fatalf("child reports_to parent1 not stored: %v", err)
+	}
+
+	// 2. Tree rules refuse a second parent: child already reports to parent1.
+	secondParentArgs := map[string]any{
+		"method": "edge_set",
+		"args": map[string]any{
+			"from": "child",
+			"to":   "parent2",
+			"kind": "reports_to",
+		},
+	}
+	rawSecond, _ := json.Marshal(secondParentArgs)
+	if _, err := n.d.runCTOTool(ctx, "cto_op", rawSecond); err == nil || !strings.Contains(err.Error(), "already reports to") {
+		t.Fatalf("second parent should be refused: %v", err)
+	}
+
+	// 3. Tree rules refuse a cycle: parent1 cannot report to child.
+	cycleArgs := map[string]any{
+		"method": "edge_set",
+		"args": map[string]any{
+			"from": "parent1",
+			"to":   "child",
+			"kind": "reports_to",
+		},
+	}
+	rawCycle, _ := json.Marshal(cycleArgs)
+	if _, err := n.d.runCTOTool(ctx, "cto_op", rawCycle); err == nil || !strings.Contains(err.Error(), "cycle") {
+		t.Fatalf("cycle should be refused: %v", err)
+	}
+
+	// 4. Undo restores the old parent (child has no reports_to edge).
+	items, err := inboxAndLog(g.gw.Store())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var notice *protocol.InboxItem
+	for i := range items {
+		if strings.Contains(items[i].Text, "edge_set") || strings.Contains(items[i].Text, "child") {
+			notice = &items[i]
+		}
+	}
+	if notice == nil || len(notice.Options) != 2 {
+		t.Fatalf("notice with undo missing: %+v", items)
+	}
+	cli.mustCall(notice.Options[0], json.RawMessage(notice.Options[1]))
+	if _, err := g.gw.Store().StoredEdge(protocol.Edge{From: "child", To: "parent1", Kind: "reports_to"}); err == nil {
+		t.Fatal("after undo child still reports to parent1, want no edge")
+	}
+}
+
 func TestCTOOperatorSettingsUndo(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})

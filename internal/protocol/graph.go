@@ -176,7 +176,7 @@ const EdgeReportsTo = "reports_to"
 
 // EdgeKinds are the stored edge kinds edge_set accepts. The delivery kinds
 // assign a delivery step owner; depends and deploys are dependencies.
-var EdgeKinds = []string{"depends", "deploys", "accepts", "reviews", "tests", "tests_after_merge", "approves", "approves_deploy", "merges", "releases", "delivery_deploys", "verifies"}
+var EdgeKinds = []string{"depends", "deploys", "accepts", "reviews", "tests", "tests_after_merge", "approves", "approves_deploy", "merges", "releases", "delivery_deploys", "verifies", EdgeReportsTo}
 
 // EdgeRules are the request rules of an edge, in display order.
 var EdgeRules = []string{"normal", "auto", "ask", "never"}

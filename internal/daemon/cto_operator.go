@@ -65,7 +65,7 @@ func (d *Daemon) executeCTOOperator(ctx context.Context, raw json.RawMessage) (a
 		}
 		return result, err
 	}
-	graphChange := p.Method == "team_write" || p.Method == "delivery_owner_set" || p.Method == "merger_set"
+	graphChange := p.Method == "team_write" || p.Method == "delivery_owner_set" || p.Method == "merger_set" || p.Method == "edge_set"
 	if graphChange {
 		d.ctoGraph.mu.Lock()
 		defer d.ctoGraph.mu.Unlock()

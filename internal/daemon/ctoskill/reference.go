@@ -154,7 +154,7 @@ func Reference() string {
 	w("A deploy step runs only when the deploy rule is not `brief`; with `brief` the caller deploys as briefed. Step reminders wait `%s` and a stuck step is reported after `%s`.\n\n", settingDefault("delivery.step_reminder"), settingDefault("delivery.step_stuck"))
 
 	w("## Edges\n\n")
-	w("Stored kinds for `edge_set`: %s. A `depends` edge goes from consumer to provider, and `*` is allowed as the consumer. A `deploys` edge goes from deployer to app. The delivery kinds go from the step owner node to the repo. `%s` is the org tree edge and `member_of` is team membership; neither is set with `edge_set`.\n\n", strings.Join(protocol.EdgeKinds, ", "), protocol.EdgeReportsTo)
+	w("Stored kinds for `edge_set`: %s. A `depends` edge goes from consumer to provider, and `*` is allowed as the consumer. A `deploys` edge goes from deployer to app. The delivery kinds go from the step owner node to the repo. `%s` is the org tree edge. `member_of` is team membership and is not set with `edge_set`.\n\n", strings.Join(protocol.EdgeKinds, ", "), protocol.EdgeReportsTo)
 	w("Rules: %s.\n\n", protocol.EdgeRulesText())
 
 	w("## Scopes\n\n")

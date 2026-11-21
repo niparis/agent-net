@@ -161,6 +161,25 @@ func TestRepoOwnerChangeMovesRepoAgents(t *testing.T) {
 	}
 }
 
+func TestLeadSetOwnerChangeMovesMerger(t *testing.T) {
+	s, _ := mergerRig(t)
+	lead2Session := agentSession(t, s, "demo", "lead2")
+	if got := reportsTo(t, s, "demo-merger"); got != "demo" {
+		t.Fatalf("before change demo-merger reports to %q, want demo", got)
+	}
+	// No owner change: demo is still repo top agent.
+	demoSession := sessionID(t, s, "n-demo")
+	leadSession(t, s, protocol.GraphRef{Kind: "repo", ID: "demo"}, demoSession)
+	if got := reportsTo(t, s, "demo-merger"); got != "demo" {
+		t.Fatalf("without owner change demo-merger reports to %q, want demo", got)
+	}
+	// Owner change: demo repo top agent becomes lead2.
+	leadSession(t, s, protocol.GraphRef{Kind: "repo", ID: "demo"}, lead2Session)
+	if got := reportsTo(t, s, "demo-merger"); got != "lead2" {
+		t.Fatalf("after owner change demo-merger reports to %q, want lead2", got)
+	}
+}
+
 // A restored merger gets its role and edge back, as a started merger has them.
 func TestMergerRestoreRebindsItsAgent(t *testing.T) {
 	s, merger := mergerRig(t)
