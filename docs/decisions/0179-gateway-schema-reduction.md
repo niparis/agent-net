@@ -105,3 +105,28 @@ One migration (`foldSideTablesTx`, `internal/gateway/side_fold.go`) folds all se
 | `friction_status` | dropped; the current mark is the latest row of `friction_status_history` |
 
 Tables after the reduction, with what each holds and who uses it: [gateway-data.md](../gateway-data.md).
+
+## Step tables result
+
+On 2026-11-21 the owner reviewed the delivery step tables and approved one more rework (his words: "perfect. Can we refactor delivery steps in // with learning ?"). Four entities stay: the change (`delivery_changes`), its revision (`delivery_revisions`), the step report (`delivery_evidence`) and the project bar (`project_bar_rules`). The open work queue `delivery_step_tasks` stays too, and it holds open work only. One migration (`step_tables_migration.go`) copies each fact into its column, deletes the done tasks and drops six tables.
+
+| Dropped table | Now |
+|---|---|
+| `delivery_step_messages` | column `notices` of `delivery_step_tasks`: a JSON map from a session to the notice sent to it. A task can have several live notices at once, because a task owned by a repo is sent to every online session of that repo, so one column for one notice is not enough. |
+| `delivery_step_delegates` | column `delegates` of `delivery_step_tasks`: a JSON list of the nodes that may approve a delegated step |
+| `caller_step_escalations` | keys `caller_escalation:<owner>` in `gateway_state`: the value says whether the repo lead was offered the steps, and `updated_at` is when the owner was woken. This took less code than columns on `agents` and on `sessions`, because the owner key is an agent or, with no agent, a session. |
+| `project_bar_next` | column `bar_next` of `repos` |
+| `merge_train_fails` | columns `train_fails` and `train_last_run` of `repos` |
+| `project_mergers` | columns `merger_node` and `merger_session` of `repos`. A repo has one merger: registering a session on another machine replaces the first one. The two triggers that return the merger's work now sit on `repos`. |
+
+A done step keeps no task. The column `completed` is gone, and a task is deleted when its step is reported, closed or retired. Its notices expire with it, unless another open task of the same message still points at them. The delivery evidence of the step is the record. These readers of done tasks moved to the evidence:
+
+- A second report of a step by another session is refused with "already reported by": the reporter is read from the newest evidence of the step.
+- A session that reported a step may report it again, or take it again after `needs_owner`: its task is queued again from the pipeline, claimed by that session, when its own newest evidence allows it. The same holds for the merger that confirms a merge the daemon saw from git.
+- A delegated approval that a delegate reported is refused when the owner answers it later: the evidence of the step says it was reported.
+- A step notice counts as recent activity of a session from the message itself, not from a link to a task.
+- The list of changes, the Desk Steps panel, stuck notices and the merger reset read open tasks only. They never read done tasks.
+
+The graph edge `/delivery/merger merges <repo>` stays. It says that the repo routes its merge step to the merger. It does not say who the merger is: `repos.merger_session` is the only place for that. The trigger that ends a registration moves the edge back to the caller.
+
+A session that owns a node step of a change may not do the caller's steps of that change. This check read the tasks of the change, done ones included. It now reads open tasks, so a session that already finished its node step may act for the caller afterwards.
