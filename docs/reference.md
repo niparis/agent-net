@@ -1683,7 +1683,7 @@ A harness can be installed more than once, for example OpenCode v1 from its inst
 `agent_machine_get` also returns `health`: the daemon's last restart time and
 uptime, process PATH, the paths found on that PATH for herdr, claude, codex,
 opencode, pi, git, gh and ssh, and free bytes on the state directory's
-filesystem. Missing helpers say `not found`; a disk read failure omits the byte
+filesystem. On Linux it also lists `bwrap` and `socat`, which Claude Code's worker sandbox needs, looked up on the worker PATH. Missing helpers say `not found`; a disk read failure omits the byte
 count. The machine version is in `machine.version`. Health travels with hello
 and harness inventory; `reported_at` identifies the latest sample. Offline
 uptime is as of that sample. Older daemons show `not reported`.

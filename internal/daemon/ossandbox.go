@@ -160,7 +160,9 @@ func OSSandboxCheck() (string, error) {
 }
 
 // osSandboxChoice applies osSandboxDecide with this daemon's settings.
-// recorded is true for a worker that already ran in the wrapper.
+// recorded is true for a worker that already ran in the wrapper. A Claude
+// worker has no wrapper of its own; its mark says when Claude Code's sandbox
+// lacks a tool here (claude_sandbox.go).
 func (d *Daemon) osSandboxChoice(project, harness, level string, recorded bool) (string, error) {
 	ready := osSandboxReady
 	if d.cfg.testOSSandboxReady != nil {
@@ -170,7 +172,11 @@ func (d *Daemon) osSandboxChoice(project, harness, level string, recorded bool) 
 	if recorded {
 		mode = osSandboxExplicit
 	}
-	return osSandboxDecide(mode, harness, level, ready)
+	name, err := osSandboxDecide(mode, harness, level, ready)
+	if err != nil || name != "" || harness != "claude" {
+		return name, err
+	}
+	return d.claudeSandboxState(), nil
 }
 
 // readOSSandboxMarker returns the wrapper recorded in a worker's folder.

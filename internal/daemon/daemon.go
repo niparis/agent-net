@@ -370,6 +370,7 @@ func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
 	workerEnvState      workerEnvState // login PATH and system CA bundle, found once
+	claudeSandboxLog    sync.Once      // the Claude sandbox gap is logged once per start
 	ownerPrompts        ownerPrompts
 	turnEnds            turnEndAsks
 	ownerPromptClock    func() time.Time // test hook

@@ -75,3 +75,30 @@ func TestWorkerEnforcedLine(t *testing.T) {
 		t.Errorf("no-network: %q", got)
 	}
 }
+
+// A Claude worker on a Linux machine without socat (or bwrap) runs its shell
+// commands with no OS sandbox. Its notice and its brief must say so, and
+// nothing enforces the level for it.
+func TestWorkerPermissionsLineSaysClaudeIsNotSandboxed(t *testing.T) {
+	missing := OSSandboxNoneClaude([]string{"socat"})
+	if got := WorkerPermissionsLine(WorkersSandboxed, "claude", missing); got != "permissions: NOT sandboxed: Claude sandbox needs socat, install it on the worker's machine" {
+		t.Fatalf("notice: %q", got)
+	}
+	both := OSSandboxNoneClaude([]string{"bwrap", "socat"})
+	if got := WorkerPermissionsLine(WorkersSandboxed, "claude", both); !strings.Contains(got, "Claude sandbox needs bwrap and socat, install it") {
+		t.Fatalf("notice with both missing: %q", got)
+	}
+	if got := WorkerEnforcer(WorkersSandboxed, "claude", missing); got != "" {
+		t.Errorf("enforcer of a Claude worker without its sandbox: %q", got)
+	}
+	if got := WorkerEnforcer(WorkersSandboxed, "claude", ""); got != "claude" {
+		t.Errorf("enforcer of a Claude worker with its sandbox: %q", got)
+	}
+	if got := OSSandboxWrapper(missing); got != "" {
+		t.Errorf("wrapper of a Claude worker without its sandbox: %q", got)
+	}
+	body := WorkerTaskBodyOS("claude", "say ok", "/wt", "agent-net/w_1", "", "", WorkersSandboxed, missing, settings.Snapshot{}, "")
+	if !strings.Contains(body, "\n- permissions: NOT sandboxed: Claude sandbox needs socat, install it on the worker's machine") {
+		t.Fatalf("brief:\n%s", body)
+	}
+}

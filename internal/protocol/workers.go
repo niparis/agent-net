@@ -910,10 +910,33 @@ func WorkerPermissionsText(level, harness string) string {
 // older Mac daemon.
 const OSSandboxNoneMacOS = "none:macos"
 
+// osSandboxClaudeMissingPrefix starts the os_sandbox value of a Claude worker
+// on a Linux machine that lacks a tool of Claude Code's sandbox.
+const osSandboxClaudeMissingPrefix = "none:claude-missing:"
+
+// OSSandboxNoneClaude is the os_sandbox value of a Claude worker whose machine
+// lacks the tools that Claude Code's Linux sandbox needs (bwrap and socat).
+// Claude Code then runs the worker's shell commands with no OS sandbox.
+func OSSandboxNoneClaude(missing []string) string {
+	return osSandboxClaudeMissingPrefix + strings.Join(missing, ",")
+}
+
+// ClaudeSandboxMissing names the tools that a Claude worker's shell sandbox
+// lacks, such as "socat" or "bwrap and socat". It is "" when the worker has
+// its sandbox.
+func ClaudeSandboxMissing(osSandbox string) string {
+	list, ok := strings.CutPrefix(osSandbox, osSandboxClaudeMissingPrefix)
+	if !ok || list == "" {
+		return ""
+	}
+	return strings.Join(strings.Split(list, ","), " and ")
+}
+
 // OSSandboxWrapper is the wrapper a worker really runs in ("bubblewrap"), or
-// "" for none, including OSSandboxNoneMacOS.
+// "" for none. Every "none:" value (OSSandboxNoneMacOS and the Claude markers)
+// means no wrapper.
 func OSSandboxWrapper(osSandbox string) string {
-	if osSandbox == OSSandboxNoneMacOS {
+	if strings.HasPrefix(osSandbox, "none:") {
 		return ""
 	}
 	return osSandbox
@@ -927,6 +950,8 @@ func WorkerEnforcer(level, harness, osSandbox string) string {
 	switch {
 	case OSSandboxWrapper(osSandbox) != "":
 		return osSandbox
+	case harness == "claude" && ClaudeSandboxMissing(osSandbox) != "":
+		return ""
 	case harness == "codex", harness == "claude", harness == "agy" && WorkerPermissionsOrDefault(level) != WorkersNoNetwork:
 		return harness
 	}
@@ -987,6 +1012,9 @@ func WorkerEnforcedLine(level string) string {
 // has no OS sandbox says that node.json turned it off. A harness that does
 // not enforce the level otherwise has the names of the harnesses that do.
 func WorkerPermissionsLine(level, harness, osSandbox string) string {
+	if missing := ClaudeSandboxMissing(osSandbox); missing != "" {
+		return "permissions: NOT sandboxed: Claude sandbox needs " + missing + ", install it on the worker's machine"
+	}
 	level = WorkerPermissionsOrDefault(level)
 	detail := "writes only in its worktree, network on"
 	switch level {

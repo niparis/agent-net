@@ -3,6 +3,7 @@ package daemon
 import (
 	"os"
 	"os/exec"
+	"runtime"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -17,6 +18,17 @@ func (d *Daemon) machineHealth() *protocol.MachineHealth {
 			path = "not found"
 		}
 		h.Helpers[name] = path
+	}
+	if runtime.GOOS == "linux" {
+		// Claude Code's sandbox needs these on the worker PATH (claude_sandbox.go).
+		search := d.workerSearchPATH()
+		for _, name := range claudeSandboxTools {
+			path := findExecutable(name, search)
+			if path == "" {
+				path = "not found"
+			}
+			h.Helpers[name] = path
+		}
 	}
 	if free, ok := diskFree(d.cfg.StateDir); ok {
 		h.StateFreeBytes = &free
