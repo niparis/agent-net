@@ -164,6 +164,10 @@ type AskSortArgs struct {
 	// already names it.
 	FollowUpAt string `json:"follow_up_at,omitempty"`
 	Change     string `json:"change,omitempty"`
+	// OwnerWordsMessage, on close, names the message that carries the owner's
+	// words: one from his own session, or from the CTO on his instructions.
+	// The chief may close an ask he holds only with it.
+	OwnerWordsMessage string `json:"owner_words_message,omitempty"`
 }
 
 // Validate checks a sort before the gateway looks at the ask. A full read is
@@ -228,6 +232,9 @@ func (a AskSortArgs) Validate() error {
 	}
 	if a.ReplacedBy != "" && a.ReplacedBy == a.Ask {
 		return errors.New("replaced_by must name another open ask")
+	}
+	if strings.TrimSpace(a.OwnerWordsMessage) != "" && a.Result != AskSortClose {
+		return errors.New("owner_words_message applies only to close")
 	}
 	if (a.Rule != "") != (a.Action != "") {
 		return errors.New("rule and action go together: the rule id and the action the ask is about")
@@ -378,6 +385,8 @@ type AskSort struct {
 	PrevStatus     string    `json:"prev_status"`
 	PrevAnswer     string    `json:"prev_answer,omitempty"`
 	PrevAnsweredAt time.Time `json:"prev_answered_at,omitempty"`
+	// OwnerMessage is the message of the owner's words a close rested on.
+	OwnerMessage string `json:"owner_message,omitempty"`
 }
 
 // AskHistoryRequest asks for the sort history of one ask.

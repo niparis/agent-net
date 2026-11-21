@@ -34,6 +34,9 @@ func TestAskSortSchemaMatchesProtocolResults(t *testing.T) {
 			if result == protocol.AskSortWithdraw {
 				args.ReplacedBy = "ask_newer"
 			}
+			if result == protocol.AskSortClose {
+				args.OwnerWordsMessage = "m_owner"
+			}
 			if result == "hide" {
 				args.Mode = "preview"
 			}

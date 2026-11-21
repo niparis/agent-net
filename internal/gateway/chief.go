@@ -862,6 +862,14 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 		}
 		return out, none, tx.Commit()
 	}
+	// A close may cite the owner's words. The citation is checked here, for any
+	// sorter, so the close always records a message that is his word.
+	ownerWords := strings.TrimSpace(q.OwnerWordsMessage)
+	if ownerWords != "" {
+		if err := ownerWordsCheck(tx, q.Ask, ownerWords); err != nil {
+			return out, none, err
+		}
+	}
 	sorter, sorterName, source := chief, "chief", "chief"
 	switch {
 	case selfWithdraw:
@@ -918,7 +926,8 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 		}
 	}
 	rec := protocol.AskSort{Ask: q.Ask, At: now, Sorter: sorter, Result: q.Result, Into: q.Into, To: q.To, Reason: reason,
-		Priority: q.Priority, WhyYou: strings.TrimSpace(q.WhyYou), PrevNext: a.next, PrevStatus: a.status, PrevAnswer: a.answer}
+		Priority: q.Priority, WhyYou: strings.TrimSpace(q.WhyYou), PrevNext: a.next, PrevStatus: a.status, PrevAnswer: a.answer,
+		OwnerMessage: ownerWords}
 	if a.answeredAt != 0 {
 		rec.PrevAnsweredAt = time.Unix(0, a.answeredAt).UTC()
 	}
@@ -946,7 +955,10 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 		} else {
 			logText = "Chief closed ask: " + text
 		}
-		if _, err := tx.Exec(`UPDATE inbox_items SET status='closed', answer=?, answered_at=? WHERE id=?`, sorterName+": "+reason, now.UnixNano(), q.Ask); err != nil {
+		if ownerWords != "" {
+			logText += " (on the owner's words in " + ownerWords + ")"
+		}
+		if _, err := tx.Exec(`UPDATE inbox_items SET status='closed', answer=?, answered_at=? WHERE id=?`, closeAnswer(sorterName, reason, ownerWords), now.UnixNano(), q.Ask); err != nil {
 			return out, none, err
 		}
 		// When the chief closes an ask that holds merged asks, the chief's
@@ -1141,6 +1153,11 @@ func chiefMaySort(tx *sql.Tx, q protocol.AskSortRequest, a askSortRow) error {
 		return nil
 	}
 	if a.next == "" || a.next == protocol.AskNextOwner {
+		// The owner holds the ask. Only a close that cites his words settles it.
+		// SortAskWith checked the citation before this call.
+		if a.next == protocol.AskNextOwner && q.Result == protocol.AskSortClose && strings.TrimSpace(q.OwnerWordsMessage) != "" {
+			return nil
+		}
 		return refuse
 	}
 	if closing {
@@ -1203,9 +1220,9 @@ func (s *Store) commitSort(tx *sql.Tx, rec protocol.AskSort, now time.Time, logT
 	if !rec.PrevAnsweredAt.IsZero() {
 		answered = rec.PrevAnsweredAt.UnixNano()
 	}
-	if _, err := tx.Exec(`INSERT INTO ask_sorts(ask_id,at,sorter,result,into_id,to_id,reason,priority,why_you,prev_next,prev_status,prev_answer,prev_answered_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, rec.Ask, now.UnixNano(), rec.Sorter, rec.Result, rec.Into, rec.To, rec.Reason, rec.Priority, rec.WhyYou,
-		rec.PrevNext, rec.PrevStatus, rec.PrevAnswer, answered); err != nil {
+	if _, err := tx.Exec(`INSERT INTO ask_sorts(ask_id,at,sorter,result,into_id,to_id,reason,priority,why_you,prev_next,prev_status,prev_answer,prev_answered_at,owner_message)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, rec.Ask, now.UnixNano(), rec.Sorter, rec.Result, rec.Into, rec.To, rec.Reason, rec.Priority, rec.WhyYou,
+		rec.PrevNext, rec.PrevStatus, rec.PrevAnswer, answered, rec.OwnerMessage); err != nil {
 		return err
 	}
 	return s.deskLog(tx, source, a.aboutKind, a.aboutID, logText, rec.Reason, nil)
@@ -1213,7 +1230,7 @@ func (s *Store) commitSort(tx *sql.Tx, rec protocol.AskSort, now time.Time, logT
 
 // AskSortHistory returns the sorts of one ask, oldest first.
 func (s *Store) AskSortHistory(askID string) ([]protocol.AskSort, error) {
-	rows, err := s.db.Query(`SELECT id,ask_id,at,sorter,result,into_id,to_id,reason,priority,why_you,prev_next,prev_status,prev_answer,prev_answered_at
+	rows, err := s.db.Query(`SELECT id,ask_id,at,sorter,result,into_id,to_id,reason,priority,why_you,prev_next,prev_status,prev_answer,prev_answered_at,owner_message
 		FROM ask_sorts WHERE ask_id=? ORDER BY id`, askID)
 	if err != nil {
 		return nil, err
@@ -1223,7 +1240,7 @@ func (s *Store) AskSortHistory(askID string) ([]protocol.AskSort, error) {
 	for rows.Next() {
 		var r protocol.AskSort
 		var at, answered int64
-		if err := rows.Scan(&r.ID, &r.Ask, &at, &r.Sorter, &r.Result, &r.Into, &r.To, &r.Reason, &r.Priority, &r.WhyYou, &r.PrevNext, &r.PrevStatus, &r.PrevAnswer, &answered); err != nil {
+		if err := rows.Scan(&r.ID, &r.Ask, &at, &r.Sorter, &r.Result, &r.Into, &r.To, &r.Reason, &r.Priority, &r.WhyYou, &r.PrevNext, &r.PrevStatus, &r.PrevAnswer, &answered, &r.OwnerMessage); err != nil {
 			return nil, err
 		}
 		r.At = time.Unix(0, at).UTC()
@@ -1296,10 +1313,10 @@ func (s *Store) undoAsk(tx *sql.Tx, id, actor string, chiefOnly bool, now time.T
 	var out protocol.AskSortResult
 	var last protocol.AskSort
 	var at, answered int64
-	err := tx.QueryRow(`SELECT id,at,sorter,result,into_id,to_id,reason,priority,why_you,prev_next,prev_status,prev_answer,prev_answered_at
+	err := tx.QueryRow(`SELECT id,at,sorter,result,into_id,to_id,reason,priority,why_you,prev_next,prev_status,prev_answer,prev_answered_at,owner_message
 		FROM ask_sorts WHERE ask_id=? ORDER BY id DESC LIMIT 1`, id).
 		Scan(&last.ID, &at, &last.Sorter, &last.Result, &last.Into, &last.To, &last.Reason, &last.Priority, &last.WhyYou,
-			&last.PrevNext, &last.PrevStatus, &last.PrevAnswer, &answered)
+			&last.PrevNext, &last.PrevStatus, &last.PrevAnswer, &answered, &last.OwnerMessage)
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, reject("ask %s has no chief sort to undo", id)
 	}
@@ -1325,7 +1342,7 @@ func (s *Store) undoAsk(tx *sql.Tx, id, actor string, chiefOnly bool, now time.T
 	changed := false
 	switch last.Result {
 	case protocol.AskSortClose, protocol.AskSortMerge:
-		changed = status != "closed" || nowAnswered != at || answer != "chief: "+last.Reason
+		changed = status != "closed" || nowAnswered != at || answer != closeAnswer("chief", last.Reason, last.OwnerMessage)
 	case protocol.AskSortSend:
 		changed = next != last.To || status != "open"
 	case protocol.AskSortOwner:
