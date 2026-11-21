@@ -208,3 +208,28 @@ func TestWakeFailureNoticeSaysNextMessageAsksAgain(t *testing.T) {
 		t.Fatal("no failure notice")
 	}
 }
+
+// The wait for a session to come online is no wake in flight. A wake is over
+// when the machine answers, so a second message during the wait neither joins
+// the wake nor starts another, and its sender hears nothing yet: no failure is
+// recorded until the wait ends.
+func TestOnlineWaitIsNotAWakeInFlight(t *testing.T) {
+	p := newWakeProbe(t)
+	p.g.wakeOnlineWait = time.Minute
+	id := p.closedOpenCode(t)
+	p.message(t, id)
+	p.expectWake(t, id)
+	eventually(t, "wake over once the machine answered", func() bool { return !p.g.wakeInFlight(id) })
+	m := p.message(t, id)
+	a, ok, err := p.s.Agent(id)
+	if err != nil || !ok {
+		t.Fatalf("agent: %v %v", ok, err)
+	}
+	if reason := p.g.waitingReason(a, m); reason != "" {
+		t.Fatalf("waitingReason during the online wait = %q, want none", reason)
+	}
+	p.expectNoWake(t)
+	if n := p.failures(id); n != 0 {
+		t.Fatalf("wake failures = %d, want 0 while the session may still come online", n)
+	}
+}

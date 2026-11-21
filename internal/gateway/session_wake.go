@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -270,17 +271,24 @@ func (g *Gateway) wakeSessionAs(ctx context.Context, a protocol.AgentView, loop 
 	// still bounds the call. Every caller of dispatch gets this, so none of them
 	// needs its own copy.
 	wctx := context.WithoutCancel(ctx)
-	// The claim is removed when the call returns, on every path after this point.
-	// It is removed after the answer is recorded, so a receipt written while the
-	// claim is set can only say that a wake is under way.
+	// The claim is removed when the machine has answered, on every path after
+	// this point, and not later: a wake is over when the machine answers. The wait
+	// for the session to come online (awaitOnline) runs after the claim is gone,
+	// so it is no wake in flight: a message that arrives meanwhile neither joins
+	// it nor holds it. The claim is removed after the answer is recorded, so a
+	// receipt written while the claim is set can only say that a wake is under way.
 	go func() {
-		defer func() {
-			g.wakeMu.Lock()
-			if g.wakeClaims[a.SessionID].token == token {
-				delete(g.wakeClaims, a.SessionID)
-			}
-			g.wakeMu.Unlock()
-		}()
+		var once sync.Once
+		release := func() {
+			once.Do(func() {
+				g.wakeMu.Lock()
+				if g.wakeClaims[a.SessionID].token == token {
+					delete(g.wakeClaims, a.SessionID)
+				}
+				g.wakeMu.Unlock()
+			})
+		}
+		defer release()
 		cctx, cancel := context.WithTimeout(wctx, wakeTimeout)
 		defer cancel()
 		frame := map[string]string{"session_id": a.SessionID, "token": token}
@@ -298,6 +306,7 @@ func (g *Gateway) wakeSessionAs(ctx context.Context, a protocol.AgentView, loop 
 			g.wakeFailed(wctx, a.SessionID, token, err)
 			return
 		}
+		release()
 		var res protocol.StartedSession
 		if json.Unmarshal(raw, &res) == nil && res.Status == "needs_trust" && res.Path != "" {
 			g.raiseTrustAsk(a.SessionID, a.NodeID, a.Hostname, res.Path, res.Project, a.SessionID, nil)
