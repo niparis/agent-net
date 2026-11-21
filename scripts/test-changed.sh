@@ -43,6 +43,14 @@
 # It also runs gofmt -l on the changed files and go vet on the changed packages,
 # and exits non-zero if a run or a check fails.
 #
+# Unix sockets: a sandbox such as Claude Code's can block them, and then every
+# test that starts a daemon on a socket fails with "operation not permitted".
+# The script probes once, and when sockets are blocked it sets
+# AGENT_NET_NO_UNIX_SOCKETS=1 so those tests skip themselves (internal/testsock),
+# and its summary counts them. The merge queue's CI runs them. Outside such a
+# sandbox nothing changes. TEST_CHANGED_UNIX_SOCKETS=ok|blocked replaces the
+# probe, for scripts/test-changed-test.sh.
+#
 # The rule checker (tools/rulecheck, its own Go module) checks three rules on the
 # changed packages: no test sleeps over 2 seconds (B4), no em dash in production
 # strings (B9), and no lock held across a gateway call beyond lockcall.baseline
@@ -172,6 +180,23 @@ printf 'build: scripts/testchanged\n'
 ( cd "$script_dir/.." && "$helper_go" build -o "$work/testchanged" ./scripts/testchanged ) ||
   fail "could not build scripts/testchanged with $helper_go"
 helper=$work/testchanged
+
+# One probe tells whether this sandbox blocks unix sockets. The Go helper makes
+# a socket the way the daemon tests do.
+unix_sockets=${TEST_CHANGED_UNIX_SOCKETS:-}
+case $unix_sockets in
+  ok|blocked) ;;
+  *)
+    if "$helper" unix-socket >/dev/null 2>&1; then
+      unix_sockets=ok
+    else
+      unix_sockets=blocked
+    fi
+    ;;
+esac
+if [ "$unix_sockets" = blocked ]; then
+  printf 'unix sockets are blocked in this sandbox: tests that need them skip themselves; the merge queue CI runs them (decision 0164)\n'
+fi
 
 # base_go_file writes the file's base version to $work/base.go. It returns 1
 # when the base does not hold the path, which means the file is new.
@@ -509,6 +534,10 @@ go_test() {
   export AGENT_NET_GATEWAY_DATA="$run_root/gateway"
   export AGENT_NET_CLAUDE_SESSIONS_DIR="$run_root/claude-sessions"
   mkdir -p "$run_root"
+  if [ "$unix_sockets" = blocked ]; then
+    export AGENT_NET_NO_UNIX_SOCKETS=1
+    export AGENT_NET_NO_UNIX_SOCKETS_LOG="$run_root/skipped-sockets"
+  fi
   if [ "$have_runner" = 1 ]; then
     agent-net test-run -- go test "$@"
   else
@@ -532,6 +561,8 @@ while read -r mode pkg pattern rule; do
   pkg_arg="./${pkg#"$module/"}"
   set -- "$@" "$pkg_arg"
   printf 'running %s/%s [%s] %s\n' "$index" "$total" "$rule" "$(describe_run "$mode" "$pkg" "$pattern")"
+  mkdir -p "$run_root"
+  printf '%s\n' "$pkg_arg" >"$run_root/pkg"
   start=$(date +%s)
   if go_test "$@" >"$work/output-$index" 2>&1; then
     status=0
@@ -561,6 +592,19 @@ while read -r mode pkg pattern rule; do
     printf '%s\t%s\t%s\n' "$pkg_display" "$rule" "$reason" >>"$work/failed"
   fi
 done <"$work/runs"
+
+# The skipped socket tests, counted from the log each run's tests wrote. This
+# line comes before the failed runs, which stay the last thing printed.
+if [ "$unix_sockets" = blocked ]; then
+  : >"$work/skipped-sockets"
+  for log in "$work"/run-*/skipped-sockets; do
+    [ -f "$log" ] || continue
+    sed "s|^|$(cat "$(dirname "$log")/pkg") |" "$log" >>"$work/skipped-sockets"
+  done
+  sort -u "$work/skipped-sockets" -o "$work/skipped-sockets"
+  printf 'unix sockets are blocked in this sandbox: %s socket tests skipped; the merge queue CI runs them (decision 0164)\n' "$(grep -c . "$work/skipped-sockets" | tr -d ' ')"
+  sed 's/^/  skipped: /' "$work/skipped-sockets"
+fi
 
 # The summary is the last thing printed, so the tail of the output that the
 # daemon keeps still names the failed runs.

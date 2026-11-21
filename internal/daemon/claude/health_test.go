@@ -9,9 +9,11 @@ import (
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/testsock"
 )
 
 func TestDeliveryHealth(t *testing.T) {
+	testsock.Skip(t)
 	if got := deliveryHealth(nil); got != "unknown" {
 		t.Fatal(got)
 	}
@@ -45,6 +47,7 @@ func TestDeliveryHealth(t *testing.T) {
 }
 
 func TestClaudeDeliveryHealthSessionFiles(t *testing.T) {
+	testsock.Skip(t)
 	dir := t.TempDir()
 	t.Setenv("AGENT_NET_CLAUDE_SESSIONS_DIR", dir)
 	a := New(Config{})

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/testsock"
 )
 
 func TestCTOReplyReachesConversationAndOwner(t *testing.T) {
@@ -54,6 +55,7 @@ func TestCTOReplyReachesConversationAndOwner(t *testing.T) {
 var TestClaudeAdapterFactory func(string, string) Adapter
 
 func TestCTORelayReplyReachesConversationAndOwner(t *testing.T) {
+	testsock.Skip(t)
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	dir := shortDir(t)
 	sessions, replies := filepath.Join(dir, "sessions"), filepath.Join(dir, "r")

@@ -10,6 +10,7 @@ import (
 
 	"github.com/niparis/agent-net/internal/agentfiles"
 	"github.com/niparis/agent-net/internal/daemon"
+	"github.com/niparis/agent-net/internal/testsock"
 )
 
 // TestMain keeps even tests that forget a fixture away from the user's setup.
@@ -23,6 +24,11 @@ func TestMain(m *testing.M) {
 		defer os.RemoveAll(root)
 		for _, item := range os.Environ() {
 			key, _, _ := strings.Cut(item, "=")
+			// The sandbox probe of scripts/test-changed.sh reaches the tests
+			// through these two, and they point at no real setup.
+			if key == testsock.Env || key == testsock.LogEnv {
+				continue
+			}
 			if strings.HasPrefix(key, "XDG_") || strings.HasPrefix(key, "AGENT_NET_") {
 				if err := os.Unsetenv(key); err != nil {
 					fmt.Fprintln(os.Stderr, err)

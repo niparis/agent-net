@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/testsock"
 )
 
 // claudePeer is a fake Claude Code session on a node with the real Claude
@@ -26,6 +27,7 @@ type claudePeer struct {
 
 func newClaudePeer(t *testing.T) *claudePeer {
 	t.Helper()
+	testsock.Skip(t)
 	dir := shortDir(t)
 	p := &claudePeer{t: t, sessions: filepath.Join(dir, "sessions"), replies: filepath.Join(dir, "r"),
 		inbox: filepath.Join(dir, "claude.sock"), frames: make(chan string, 8)}

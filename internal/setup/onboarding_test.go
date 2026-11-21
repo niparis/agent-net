@@ -18,6 +18,7 @@ import (
 	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/quotaaxi"
+	"github.com/niparis/agent-net/internal/testsock"
 	"github.com/niparis/agent-net/internal/tui/tabs"
 )
 
@@ -40,6 +41,7 @@ type setupDaemonFixture struct {
 
 func fakeSetupDaemon(t *testing.T, fixture setupDaemonFixture) {
 	t.Helper()
+	testsock.Skip(t)
 	sock := filepath.Join(t.TempDir(), "daemon.sock")
 	listener, err := net.Listen("unix", sock)
 	if err != nil {

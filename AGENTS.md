@@ -46,6 +46,8 @@ and the contract set always runs. List what it ran, with the production and test
 line counts, in your hand-back. The merge queue's CI is the single test gate;
 the full packages run there (decision 0164).
 
+If the sandbox blocks unix sockets (Claude Code's does on Linux), the script notices and the tests that need a socket skip themselves with a clear reason. It counts them in its summary and still exits 0 when nothing else failed. The merge queue's CI runs them. A new test helper that opens a unix socket must call `testsock.Skip(t)` (`internal/testsock`).
+
 If you change guidance text, also run go test ./internal/guidance ./internal/agentfiles (both have golden fixtures; use -update). If you change tool, guidance or catalog text, run `go generate ./internal/daemon/ctoskill ./internal/featuremap` to refresh the generated CTO reference and feature map.
 
 CI runs `gofmt`, `go vet`, the daemon, gateway, setup, tui and command shards (`scripts/test.sh --package daemon|gateway|setup|tui|agent-net --shard-index I --shard-count N`; N is 5 for daemon and 4 for the others), the other Go packages in one job, `sh -n install.sh` and `sh scripts/test-changed-test.sh`. All must pass. Tests use localhost only. No test may sleep for more than 2 seconds: use a polling helper with a timeout.

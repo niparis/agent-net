@@ -23,6 +23,7 @@ import (
 	"github.com/niparis/agent-net/internal/gateway"
 	"github.com/niparis/agent-net/internal/harnesses"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/testsock"
 )
 
 // testScale is the factor for every wait that is not a negative check. It is 3
@@ -296,6 +297,7 @@ type nodeOpts struct {
 }
 
 func shortDir(t *testing.T) string {
+	testsock.Skip(t)
 	d, err := os.MkdirTemp("", "an")
 	if err != nil {
 		t.Fatal(err)

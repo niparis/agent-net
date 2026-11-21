@@ -13,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/niparis/agent-net/internal/testsock"
 )
 
 func TestAgentFileSendForwardsAndValidates(t *testing.T) {
@@ -51,6 +53,7 @@ func TestAgentFileSendDaemonError(t *testing.T) {
 // A send may have reached the daemon before the socket breaks. Retrying it
 // blindly would store another message and transfer a second set of files.
 func TestAgentFileSendConnectionLossDoesNotRetry(t *testing.T) {
+	testsock.Skip(t)
 	socket := filepath.Join(t.TempDir(), "daemon.sock")
 	ln, err := net.Listen("unix", socket)
 	if err != nil {

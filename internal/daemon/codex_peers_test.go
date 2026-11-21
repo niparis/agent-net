@@ -19,6 +19,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/testsock"
 )
 
 const envFakeCodexShim = "FAKE_CODEX_SHIM"
@@ -100,6 +101,7 @@ func startFakeSharedStopped(t *testing.T) (f *fakeShared, target string) {
 }
 
 func (f *fakeShared) serve(sock string) {
+	testsock.Skip(f.t)
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		f.t.Fatal(err)
@@ -728,6 +730,7 @@ func TestCodexHelloDiscoversNewThread(t *testing.T) {
 // A terminal may call its first tool just after starting the shared server,
 // before the adapter's next connection attempt.
 func TestCodexHelloWaitsForServer(t *testing.T) {
+	testsock.Skip(t)
 	g := startGateway(t, t.TempDir(), "")
 	home := shortDir(t)
 	n := startNode(t, g, nodeOpts{cfg: func(c *Config) {
@@ -798,6 +801,7 @@ func TestCodexHelloPeerChecks(t *testing.T) {
 }
 
 func TestCodexDiscoveryWaitsForServer(t *testing.T) {
+	testsock.Skip(t)
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	home := shortDir(t)

@@ -9,12 +9,15 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/niparis/agent-net/internal/testsock"
 )
 
 // A daemon that refuses a request and hangs up at once must not look like an
 // outage. The reply was read from the connection, so it wins over the close.
 // This is what a refused hello does: the daemon answers and returns.
 func TestCallReturnsAReplyReadBeforeTheClose(t *testing.T) {
+	testsock.Skip(t)
 	socket := filepath.Join(t.TempDir(), "d.sock")
 	ln, err := net.Listen("unix", socket)
 	if err != nil {
