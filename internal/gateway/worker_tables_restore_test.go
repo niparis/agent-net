@@ -29,6 +29,18 @@ func recreateWorkerDroppedColumns(t *testing.T, db repoDB) {
 	}
 }
 
+// dropWorkerVersionTriggers removes the triggers that count worker_runs changes
+// in gateway_state. Versions before the rework have no such triggers, and a
+// replay that drops gateway_state or a column checks every trigger.
+func dropWorkerVersionTriggers(t *testing.T, db repoDB) {
+	t.Helper()
+	for _, name := range []string{"worker_runs_version_insert", "worker_runs_version_update", "worker_runs_version_delete"} {
+		if _, err := db.Exec(`DROP TRIGGER IF EXISTS ` + name); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // legacyPolicyDB makes sure project_policies exists on s and returns its
 // handle, for the tests that seed the rows an older version kept there.
 func legacyPolicyDB(t *testing.T, s *Store) *storeDB {

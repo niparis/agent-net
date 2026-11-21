@@ -100,9 +100,10 @@ CREATE TABLE worker_starts_new (
  created_at INTEGER NOT NULL, closed_at INTEGER NOT NULL DEFAULT 0,
  legacy_ref TEXT NOT NULL DEFAULT '', launch_state TEXT NOT NULL DEFAULT '',
  caller_agent_id TEXT REFERENCES agents(id), done TEXT NOT NULL DEFAULT '[]',
+ brief_hash TEXT NOT NULL DEFAULT '', not_attempted_at INTEGER NOT NULL DEFAULT 0,
  task_key TEXT NOT NULL DEFAULT '', failures TEXT NOT NULL DEFAULT '');
-INSERT INTO worker_starts_new(ref,node_id,owner,project,harness,permissions,session_id,state,created_at,closed_at,legacy_ref,launch_state,caller_agent_id,done)
- SELECT ref,node_id,owner,project,harness,permissions,session_id,state,created_at,closed_at,legacy_ref,launch_state,caller_agent_id,done FROM worker_starts;
+INSERT INTO worker_starts_new(ref,node_id,owner,project,harness,permissions,session_id,state,created_at,closed_at,legacy_ref,launch_state,caller_agent_id,done,brief_hash,not_attempted_at)
+ SELECT ref,node_id,owner,project,harness,permissions,session_id,state,created_at,closed_at,legacy_ref,launch_state,caller_agent_id,done,brief_hash,not_attempted_at FROM worker_starts;
 DROP TABLE worker_starts;
 ALTER TABLE worker_starts_new RENAME TO worker_starts;
 CREATE INDEX IF NOT EXISTS worker_starts_legacy_ref ON worker_starts(legacy_ref) WHERE legacy_ref <> '';
