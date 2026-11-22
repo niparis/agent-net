@@ -187,19 +187,6 @@ func TestSessionRelayRefusesAnOfflineMachine(t *testing.T) {
 	}
 }
 
-func TestSessionRelayRefusesAnOldMachine(t *testing.T) {
-	t.Parallel()
-	g := startGateway(t, t.TempDir(), "")
-	a := startWorkerNode(t, g, shortSet, nil)
-	b := startWorkerNode(t, g, shortSet, func(c *Config) { c.Version = "0.4.45" })
-	repo := newRepo(t, "homelab")
-	b.register(t, repo)
-	_, err := a.cli.call("session_start", protocol.SessionStartRequest{Project: "homelab", Harness: "claude", NodeID: b.d.NodeID()})
-	if err == nil || !strings.Contains(err.Error(), "older agent-net") || !strings.Contains(err.Error(), b.d.cfg.Hostname) {
-		t.Fatalf("old machine: %v", err)
-	}
-}
-
 // Codex has no background start: on another machine the plan must run ssh to
 // that machine, in the owner's terminal, not a local Codex.
 func TestSessionStartRelaysCodexThroughSSH(t *testing.T) {

@@ -48,13 +48,6 @@ func (g *Gateway) handleProcessStopRelay(ctx context.Context, nc *nodeConn, raw 
 	if target == nil {
 		return nil, reject("machine %s is offline", firstNonEmpty(host, nodeID))
 	}
-	version, err := g.store.NodeVersion(nodeID)
-	if err != nil {
-		version = ""
-	}
-	if !sessionRelaySupported(version) {
-		return nil, reject("machine %s runs an older agent-net: upgrade it there", firstNonEmpty(host, nodeID))
-	}
 	frame := protocol.SessionOwnerProcessStop{Owner: relay.Owner, FromNode: nc.id, ProcessStopRequest: relay.ProcessStopRequest}
 	frame.NodeID = nodeID
 	cctx, cancel := context.WithTimeout(ctx, sessionRelayWait)

@@ -620,11 +620,12 @@ review requirement. A missing diff at hand-back or session submission requires
 review. Sensitive names in directory components also require review, with
 case-insensitive matching. These rules apply to pipeline evidence; git itself still allows direct merges.
 
-A new daemon checks merge ancestry in the target repository before reporting a
-merge pass. It sends an optional `merge_contains_head` result for the exact
-reported head and merged commit. A negative result is refused by the gateway
-before evidence is stored. Missing commits, non-commit objects and failed git
-checks count as negative. Daemons must send proof. The gateway reads their version from the authenticated machine's hello. A positive result cannot bypass required steps or a head change.
+The daemon checks merge ancestry in the target repository before reporting a
+merge pass. It sends a `merge_contains_head` result for the exact reported head
+and merged commit. A negative or missing result is refused by the gateway before
+evidence is stored. Missing commits, non-commit objects and failed git checks
+count as negative. A positive result cannot bypass required steps or a head
+change.
 
 - **A machine speaks only for its own sessions.** A submit names a session on the sending machine, or the hand-back of a worker on that machine which the session started. A session submits only its own work. A step report comes from a session on the sending machine. `done_by` names a worker that session started, or `owner` for a direct owner approval of a delegated step.
 - **The owner reads every change.** The TUI reads changes with the daemon method `changes_owner_find`, which is read only and follows the same gate as the other owner reads: only the owner's command line or TUI, not an agent connection and not a command line that runs inside an agent session. Agents keep `changes_find`, and a TUI connection cannot call it or the write methods.

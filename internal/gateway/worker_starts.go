@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -29,43 +28,6 @@ type workerStart struct {
 // closedStartKeep is how long a closed start stays, counted from the day it
 // closed. An open start is never removed: it may still be reported.
 const closedStartKeep = 30 * 24 * time.Hour
-
-// workerStartMinVersion is the first release that tracks worker starts.
-const workerStartMinVersion = "0.4.127"
-
-// workerStartBindingMinVersion is the first release that binds worker starts to sessions via StartRef.
-const workerStartBindingMinVersion = "0.4.131"
-
-func daemonVersionGTE(version, minVersion string) bool {
-	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
-	if version == "" {
-		return false
-	}
-	if version == "dev" {
-		return true
-	}
-	have, ok := parseReleaseVersion(version)
-	if !ok {
-		return false
-	}
-	want, _ := parseReleaseVersion(minVersion)
-	for i := range want {
-		if have[i] != want[i] {
-			return have[i] > want[i]
-		}
-	}
-	return true
-}
-
-// daemonTracksStarts tells whether a daemon version tracks start references.
-func daemonTracksStarts(version string) bool {
-	return daemonVersionGTE(version, workerStartMinVersion)
-}
-
-// daemonTracksBinding tells whether a daemon version binds worker starts to sessions via StartRef.
-func daemonTracksBinding(version string) bool {
-	return daemonVersionGTE(version, workerStartBindingMinVersion)
-}
 
 // TrackWorkerStart records a start that the gateway handed to a machine.
 func (s *Store) TrackWorkerStart(ref, nodeID, owner, project, harness, permissions string) error {
@@ -123,15 +85,6 @@ func (s *Store) startSession(nodeID, ref, sessionID string) error {
 	return err
 }
 
-// recordLegacyQueueID maps the gateway's StartRef to the legacy queue ID an older daemon returned.
-func (s *Store) recordLegacyQueueID(nodeID, ref, legacyRef string) error {
-	if ref == "" || legacyRef == "" {
-		return nil
-	}
-	_, err := s.db.Exec(`UPDATE worker_starts SET legacy_ref=? WHERE ref=? AND node_id=?`, legacyRef, ref, nodeID)
-	return err
-}
-
 // markStartUnknown marks an open start as unknown when its launch call timed out
 // or disconnected. It stays open until a started or not-started report arrives.
 func (s *Store) markStartUnknown(nodeID, ref string) error {
@@ -150,22 +103,13 @@ func (s *Store) markStartUnknown(nodeID, ref string) error {
 // that is bound to this worker session. A start whose state is not open is refused.
 // If the start is already closed with the same session, it returns alreadyClosed=true.
 func (s *Store) verifyStart(nodeID, ref, owner, sessionID string) (bool, error) {
-	v, _ := s.NodeVersion(nodeID)
-	tracksStarts := daemonTracksStarts(v)
-	tracksBinding := daemonTracksBinding(v)
 	if ref == "" {
-		if tracksStarts {
-			return false, reject("start reference required")
-		}
-		return false, nil
+		return false, reject("start reference required")
 	}
 	var rn, ro, rs, rstate string
 	err := s.db.QueryRow(`SELECT node_id, owner, session_id, state FROM worker_starts WHERE ref=? OR (legacy_ref=? AND legacy_ref<>'')`, ref, ref).Scan(&rn, &ro, &rs, &rstate)
 	if errors.Is(err, sql.ErrNoRows) {
-		if tracksStarts {
-			return false, reject("start %s is not tracked", ref)
-		}
-		return false, nil
+		return false, reject("start %s is not tracked", ref)
 	}
 	if err != nil {
 		return false, err
@@ -182,7 +126,7 @@ func (s *Store) verifyStart(nodeID, ref, owner, sessionID string) (bool, error) 
 	if rstate != "open" {
 		return false, reject("start %s is not open", ref)
 	}
-	if (rs != "" && rs != sessionID) || (tracksBinding && rs == "") {
+	if rs != sessionID {
 		return false, reject("start %s does not belong to that machine, owner and worker", ref)
 	}
 	return false, nil
@@ -226,14 +170,6 @@ func (s *Store) claimStart(nodeID, ref string) (bool, error) {
 		return false, err
 	}
 	if n == 0 {
-		v, _ := s.NodeVersion(nodeID)
-		if !daemonTracksStarts(v) {
-			var exists int
-			_ = s.db.QueryRow(`SELECT COUNT(*) FROM worker_starts WHERE (ref=? OR (legacy_ref=? AND legacy_ref<>'')) AND node_id=?`, ref, ref, nodeID).Scan(&exists)
-			if exists == 0 {
-				return true, nil
-			}
-		}
 		return false, nil
 	}
 	return true, nil
@@ -258,21 +194,6 @@ func (s *Store) closeStart(nodeID, ref, sessionID string) error {
 	_, err := s.db.Exec(`UPDATE worker_starts SET state='closed', closed_at=?, session_id=CASE WHEN session_id='' THEN ? ELSE session_id END
 		WHERE (ref=? OR (legacy_ref=? AND legacy_ref<>'')) AND node_id=? AND (state='open' OR state='starting')`, s.now().UnixNano(), sessionID, ref, ref, nodeID)
 	return err
-}
-
-// closeLegacyStart reconciles and closes the oldest open start for a legacy daemon
-// that sent worker.queued_start without a Ref.
-func (s *Store) closeLegacyStart(nodeID, owner, project, sessionID string) (string, error) {
-	var ref string
-	err := s.db.QueryRow(`SELECT ref FROM worker_starts WHERE node_id=? AND owner=? AND project=? AND state='open' ORDER BY created_at ASC LIMIT 1`,
-		nodeID, owner, project).Scan(&ref)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	return ref, s.closeStart(nodeID, ref, sessionID)
 }
 
 // abandonStart ends an open start that will never be a worker and needs no
@@ -420,22 +341,22 @@ func (s *Store) ExpireStarts(unknownTimeout, legacyTimeout time.Duration) ([]pro
 
 	// 2. Unmatched legacy starts
 	legacyCutoff := now.Add(-legacyTimeout).UnixNano()
-	rows, err = s.db.Query(`SELECT ws.ref, ws.node_id, ws.legacy_ref, COALESCE(n.version, '') FROM worker_starts ws LEFT JOIN nodes n ON n.id = ws.node_id WHERE ws.state='open' AND ws.created_at < ?`, legacyCutoff)
+	rows, err = s.db.Query(`SELECT ref, node_id, legacy_ref FROM worker_starts WHERE state='open' AND created_at < ?`, legacyCutoff)
 	if err != nil {
 		return notices, err
 	}
-	type legacyTarget struct{ ref, nodeID, legacyRef, version string }
+	type legacyTarget struct{ ref, nodeID, legacyRef string }
 	var candidates []legacyTarget
 	for rows.Next() {
 		var lt legacyTarget
-		if err := rows.Scan(&lt.ref, &lt.nodeID, &lt.legacyRef, &lt.version); err == nil {
+		if err := rows.Scan(&lt.ref, &lt.nodeID, &lt.legacyRef); err == nil {
 			candidates = append(candidates, lt)
 		}
 	}
 	rows.Close()
 
 	for _, c := range candidates {
-		if c.legacyRef != "" || !daemonTracksStarts(c.version) {
+		if c.legacyRef != "" {
 			_ = s.abandonStart(c.nodeID, c.ref)
 		}
 	}

@@ -198,7 +198,7 @@ func fakeSlowNode(t *testing.T, g *Gateway, nodeID, hostname string) {
 	}()
 }
 
-func TestGatewayProjectsLayoutSlowAndOldNodes(t *testing.T) {
+func TestGatewayProjectsLayoutSlowAndOfflineNodes(t *testing.T) {
 	s, _ := newTestStore(t)
 
 	// 1. Modern fast node
@@ -207,15 +207,6 @@ func TestGatewayProjectsLayoutSlowAndOldNodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := s.SetNodeHello(idFast, "box-fast", "v0.4.133"); err != nil {
-		t.Fatal(err)
-	}
-
-	// 2. Old node (below 0.4.132)
-	idOld, _, err := s.CreateNode("box-old", "linux")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.SetNodeHello(idOld, "box-old", "v0.4.132"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -248,9 +239,6 @@ func TestGatewayProjectsLayoutSlowAndOldNodes(t *testing.T) {
 	}
 	fakeConnectedNode(t, g, idFast, "box-fast", layoutFast)
 
-	// Connect old node as well (it should be skipped by version without being called)
-	fakeConnectedNode(t, g, idOld, "box-old", protocol.MachineLayout{Machine: "box-old"})
-
 	// Connect slow node
 	fakeSlowNode(t, g, idSlow, "box-slow")
 
@@ -265,13 +253,12 @@ func TestGatewayProjectsLayoutSlowAndOldNodes(t *testing.T) {
 		t.Fatalf("Machines = %+v, want only box-fast", res.Machines)
 	}
 
-	if len(res.Skipped) != 3 {
-		t.Fatalf("Skipped count = %d, want 3: %+v", len(res.Skipped), res.Skipped)
+	if len(res.Skipped) != 2 {
+		t.Fatalf("Skipped count = %d, want 2: %+v", len(res.Skipped), res.Skipped)
 	}
 
 	wantSkipped := map[string]string{
 		"box-offline": "offline",
-		"box-old":     "old version",
 		"box-slow":    "timeout",
 	}
 	for _, sk := range res.Skipped {
