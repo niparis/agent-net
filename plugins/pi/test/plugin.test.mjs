@@ -377,7 +377,7 @@ await test("agent_owner_ask passes replaces for an approval", async () => {
   await p.fire("session_shutdown", {});
 });
 
-await test("the four read tools send the tool input to their own daemon method", async () => {
+await test("the read tools send the tool input to their own daemon method", async () => {
   const p = makePi();
   extension(p.api);
   const n = hellos.length;
@@ -387,7 +387,7 @@ await test("the four read tools send the tool input to their own daemon method",
   // (no online_only, no renamed fields).
   const cases = [
     ["agent_messages_find", "messages_find", { conversation: "c_1", with: "bob", direction: "in", since: "2026-01-01T00:00:00Z", limit: 5, cursor: "cur" }],
-    ["agent_message_get", "message_get", { message: "m_1", max_bytes: 256, body_cursor: "b", file: "a.md", file_cursor: "f" }],
+    ["agent_messages_find", "messages_find", { message: "m_1", max_bytes: 256, body_cursor: "b", file: "a.md", file_cursor: "f" }],
     ["agent_workers_find", "workers_find", { started_by: "anyone", state: "any", project: "alpha", machine: "mac", limit: 3 }],
     ["agent_mcp_servers_find", "servers_find", { usable_only: false, limit: 2 }],
   ];
@@ -499,22 +499,21 @@ await test("tool results end with the reminder until the session has announced",
   await p.fire("session_shutdown", {});
 });
 
-await test("agent_sessions_find and agent_session_get show public charter fields", async () => {
+await test("agent_sessions_find shows public charter fields for a list and one session", async () => {
   const p = makePi();
   extension(p.api);
   const row = { id: "s_x", name: "s_x", kind: "agent", machine: "mac", project: "p", harness: "pi", model: "m",
     online: true, status: "idle", task: "t", function: "housing work", last_seen: "2026-01-01T12:00:00Z", task_started: null,
     purpose: "description", charter: { purpose: "description", purpose_fallback: true, accepts: ["bugs"], refuses: ["special cases"], feature_requests: "ask first" } };
-  replies.sessions_find = { items: [row], total: 1 };
-  replies.session_get = { session: row };
+  replies.sessions_find = { items: [row], total: 1, session: row };
   const n = hellos.length;
   await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
   await until("hello", () => hellos.length === n + 1);
-  for (const [name, args] of [["agent_sessions_find", { detail: "full" }], ["agent_session_get", { session: "s_x" }]]) {
-    const text = (await p.tools.get(name).execute("id", args)).content[0].text;
-    for (const want of ["description", "purpose_fallback", "bugs", "special cases", "ask first", "housing work"]) if (!text.includes(want)) throw new Error(name + " missing " + want + ": " + text);
+  for (const args of [{ detail: "full" }, { session: "s_x" }]) {
+    const text = (await p.tools.get("agent_sessions_find").execute("id", args)).content[0].text;
+    for (const want of ["description", "purpose_fallback", "bugs", "special cases", "ask first", "housing work"]) if (!text.includes(want)) throw new Error("agent_sessions_find missing " + want + ": " + text);
   }
-  delete replies.sessions_find; delete replies.session_get;
+  delete replies.sessions_find;
   await p.fire("session_shutdown", {});
 });
 
@@ -542,20 +541,21 @@ await test("agent_graph_read reads every charter and edge from the public graph"
   await p.fire("session_shutdown", {});
 });
 
-await test("agent_session_get shows the session's node rules and delegation policy", async () => {
+await test("agent_sessions_find shows the session's node rules", async () => {
   const p = makePi();
   extension(p.api);
-  replies.session_get = { session: { id: "s_1", name: "x", kind: "agent", machine: "mac", project: "p", harness: "pi", model: "m",
+  const row = { id: "s_1", name: "x", kind: "agent", machine: "mac", project: "p", harness: "pi", model: "m",
     online: true, status: "idle", task: "t", last_seen: "2026-01-01T12:00:00Z", task_started: null,
-    purpose: "Sells things", rules: { deploy_rule: "owner" }, delegation: "workers read-only" } };
+    purpose: "Sells things", rules: { deploy_rule: "owner" } };
+  replies.sessions_find = { items: [row], total: 1, session: row };
   const start = hellos.length;
   await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
   await until("hello", () => hellos.length === start + 1);
-  const text = (await p.tools.get("agent_session_get").execute("id", { session: "s_1" })).content[0].text;
-  for (const want of ["deploy_rule", "owner", "workers read-only"]) {
+  const text = (await p.tools.get("agent_sessions_find").execute("id", { session: "s_1" })).content[0].text;
+  for (const want of ["deploy_rule", "owner"]) {
     if (!text.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(text));
   }
-  delete replies.session_get;
+  delete replies.sessions_find;
   await p.fire("session_shutdown", {});
 });
 
