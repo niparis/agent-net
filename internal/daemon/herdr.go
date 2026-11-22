@@ -1,8 +1,10 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -79,9 +81,16 @@ func findHerdrPane(pid int) (herdrPane, bool) {
 // findHerdrServer finds a Herdr server in pid's parent chain when the process
 // environments do not expose Herdr's pane variables.
 func findHerdrServer(pid int) (herdrPane, bool) {
+	h, _, ok := findHerdrServerProcess(pid)
+	return h, ok
+}
+
+// findHerdrServerProcess finds the herdr server above pid and its own pid. A
+// live server with a missing socket file is still found this way.
+func findHerdrServerProcess(pid int) (herdrPane, int, bool) {
 	for p, depth := pid, 0; p > 1 && depth < 64; depth++ {
 		if h, ok := herdrServerArgs(processArgs(p)); ok {
-			return h, true
+			return h, p, true
 		}
 		parent, err := processParentPID(p)
 		if err != nil {
@@ -89,29 +98,36 @@ func findHerdrServer(pid int) (herdrPane, bool) {
 		}
 		p = parent
 	}
-	return herdrPane{}, false
+	return herdrPane{}, 0, false
 }
 
 func herdrServerArgs(args []string) (herdrPane, bool) {
-	if len(args) < 2 || args[1] != "server" || filepath.Base(args[0]) != "herdr" {
+	if len(args) < 2 || filepath.Base(args[0]) != "herdr" {
 		return herdrPane{}, false
 	}
 	h := herdrPane{bin: args[0]}
-	for i := 2; i < len(args); i++ {
+	server := false
+	for i := 1; i < len(args); i++ {
 		a := args[i]
-		if strings.HasPrefix(a, "--socket=") {
+		switch {
+		case a == "server":
+			server = true
+		case strings.HasPrefix(a, "--socket="):
 			h.socket = strings.TrimPrefix(a, "--socket=")
-		} else if strings.HasPrefix(a, "--socket-path=") {
+		case strings.HasPrefix(a, "--socket-path="):
 			h.socket = strings.TrimPrefix(a, "--socket-path=")
-		} else if (a == "--socket" || a == "--socket-path" || a == "-S") && i+1 < len(args) {
+		case (a == "--socket" || a == "--socket-path" || a == "-S") && i+1 < len(args):
 			i++
 			h.socket = args[i]
-		} else if a == "--session" && i+1 < len(args) {
+		case a == "--session" && i+1 < len(args):
 			i++
 			h.session = args[i]
-		} else if strings.HasPrefix(a, "--session=") {
+		case strings.HasPrefix(a, "--session="):
 			h.session = strings.TrimPrefix(a, "--session=")
 		}
+	}
+	if !server {
+		return herdrPane{}, false
 	}
 	if h.socket != "" && !filepath.IsAbs(h.socket) {
 		h.socket = ""
@@ -155,14 +171,19 @@ func herdrSocketCandidates(h herdrPane) []string {
 	return out
 }
 
-func (d *Daemon) herdrPanesFromServer(bin string, h herdrPane) ([]herdrPaneInfo, string, bool) {
+func (d *Daemon) herdrPanesFromServer(bin string, h herdrPane) ([]herdrPaneInfo, string, error) {
+	var lastErr error
 	for _, socket := range herdrSocketCandidates(h) {
 		panes, err := d.herdrPanes(bin, socket)
 		if err == nil {
-			return panes, socket, true
+			return panes, socket, nil
 		}
+		lastErr = err
 	}
-	return nil, "", false
+	if lastErr == nil {
+		lastErr = errors.New("no herdr socket to ask")
+	}
+	return nil, "", lastErr
 }
 
 // herdrBinary honors an explicit pane hint, then uses the harness search.
@@ -180,6 +201,8 @@ func isExecutable(p string) bool {
 }
 
 // herdrRun runs a herdr command against one server and returns its output.
+// A failure keeps herdr's own message, which is what the owner needs to read in
+// an Enter note, instead of only the exit status.
 func (d *Daemon) herdrRun(bin, socket string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
@@ -189,9 +212,14 @@ func (d *Daemon) herdrRun(bin, socket string, args ...string) ([]byte, error) {
 		env = append(env, "HERDR_SOCKET_PATH="+socket)
 	}
 	cmd.Env = env
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
 		d.invalidateBinary("herdr", bin)
+		if text := strings.TrimSpace(stderr.String()); text != "" {
+			return out, fmt.Errorf("%w: %s", err, text)
+		}
 	}
 	return out, err
 }
@@ -330,16 +358,16 @@ func (d *Daemon) herdrPlan(info protocol.SessionInfo, q protocol.EnterRequest, p
 	}
 	var panes []herdrPaneInfo
 	if fromServer {
-		var ok bool
-		panes, h.socket, ok = d.herdrPanesFromServer(bin, h)
-		if !ok {
-			return note("%s has a herdr server above its process, but no candidate herdr socket answers: open its window on %s", name, where)
+		var err error
+		panes, h.socket, err = d.herdrPanesFromServer(bin, h)
+		if err != nil {
+			return d.herdrNoServerNote(plan.Host, name, where, info.PID, h, bin, err), true
 		}
 	} else {
 		var err error
 		panes, err = d.herdrPanes(bin, h.socket)
 		if err != nil {
-			return note("%s runs in herdr, but the herdr server does not answer: open its window on %s", name, where)
+			return d.herdrNoServerNote(plan.Host, name, where, info.PID, h, bin, err), true
 		}
 	}
 	// The pane in the environment is the one the process started in. A moved
@@ -399,6 +427,43 @@ func (d *Daemon) herdrPlan(info protocol.SessionInfo, q protocol.EnterRequest, p
 	return out, true
 }
 
+// herdrNoServerNote is the note for a session whose herdr server does not
+// answer. It carries herdr's own error. A herdr server that is alive while its
+// socket file is gone cannot be reached again; when it is agent-net's own
+// server, agent-net starts a new one so later views work, and the note says to
+// restart the session.
+func (d *Daemon) herdrNoServerNote(host, name, where string, pid int, h herdrPane, bin string, cause error) protocol.EnterPlan {
+	server, serverPID, found := findHerdrServerProcess(pid)
+	socket := firstNonEmpty(h.socket, server.socket)
+	if socket == "" {
+		if candidates := herdrSocketCandidates(server); len(candidates) > 0 {
+			socket = candidates[0]
+		}
+	}
+	at := firstNonEmpty(socket, "its socket")
+	if found && socket != "" && !fileExists(socket) && d.herdrIsAgentNet(bin, socket, server) {
+		_, err := d.agentNetHerdr(bin)
+		if err != nil {
+			d.herdrLogf("agent-net's herdr server (pid %d) lost its socket %s: %v; starting a new server failed: %v", serverPID, socket, cause, err)
+			return protocol.EnterPlan{Host: host, Note: fmt.Sprintf("agent-net's herdr server lost its socket (%v), and a new one failed: %v. Open its window on %s.", cause, err, where)}
+		}
+		d.herdrLogf("agent-net's herdr server (pid %d) lost its socket %s: %v; started a new server", serverPID, socket, cause)
+		return protocol.EnterPlan{Host: host, Note: fmt.Sprintf("agent-net's herdr server lost its socket (%v); a new one started. Restart %s.", cause, name)}
+	}
+	return protocol.EnterPlan{Host: host, Note: fmt.Sprintf("Herdr: %v. %s's herdr server does not answer at %s. Open its window on %s.", cause, name, at, where)}
+}
+
+// herdrIsAgentNet says whether a server with socket belongs to agent-net's own
+// herdr session, so the daemon may replace it. The owner's server is never
+// restarted (decision 0154).
+func (d *Daemon) herdrIsAgentNet(bin, socket string, server herdrPane) bool {
+	if d.isAgentNetHerdr(bin, socket) || server.session == agentNetHerdrSession {
+		return true
+	}
+	dir := filepath.Dir(socket)
+	return filepath.Base(dir) == agentNetHerdrSession && filepath.Base(filepath.Dir(dir)) == "sessions"
+}
+
 // AttachClientsViewing says, for each `claude attach` client pid, whether the
 // owner is looking at it (idle compaction, decision 0078). A client is viewed
 // when it runs outside herdr, or in a herdr pane that herdr reports as focused.
@@ -451,7 +516,9 @@ func (d *Daemon) AttachClientsViewing(pids []int) map[int]bool {
 			if bin := d.herdrBinary(h.bin); bin != "" {
 				sv.bin, sv.socket = bin, h.socket
 				if fromServer {
-					sv.panes, sv.socket, sv.ok = d.herdrPanesFromServer(bin, h)
+					var err error
+					sv.panes, sv.socket, err = d.herdrPanesFromServer(bin, h)
+					sv.ok = err == nil
 				} else if panes, err := d.herdrPanes(bin, h.socket); err == nil {
 					sv.panes, sv.ok = panes, true
 				}

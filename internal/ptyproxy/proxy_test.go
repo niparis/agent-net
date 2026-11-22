@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
 	"sync"
 	"syscall"
@@ -57,6 +58,132 @@ func TestProxy(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("proxy did not return")
 	}
+}
+
+// ctrl+] must end everything the entered command started, not only the
+// command itself. A herdr --remote client forks its terminal client and keeps
+// ssh below it; a client left behind holds the remote view and an ssh master
+// open after the owner is back in agent-net.
+// grandchildHold keeps the write end of the grandchild's blocking pipe open,
+// so the garbage collector cannot close it and end the grandchild early.
+var grandchildHold *os.File
+
+func TestProxyEscapeEndsChildProcessGroup(t *testing.T) {
+	if os.Getenv("PTY_PROXY_GROUP_GRANDCHILD") == "1" {
+		// A herdr client ignores a hangup while its terminal client runs. The
+		// grandchild does the same, so only a signal to the whole group ends it.
+		signal.Ignore(syscall.SIGHUP)
+		if ready := os.NewFile(3, "ready"); ready != nil {
+			_, _ = ready.Write([]byte("x"))
+			_ = ready.Close()
+		}
+		// Block on a pipe this process keeps open, so the closed terminal does
+		// not end it either. Only the group signal does.
+		hold, keep, err := os.Pipe()
+		if err != nil {
+			os.Exit(3)
+		}
+		grandchildHold = keep
+		_, _ = io.Copy(io.Discard, hold)
+		return
+	}
+	if os.Getenv("PTY_PROXY_GROUP_CHILD") == "1" {
+		readyRead, readyWrite, err := os.Pipe()
+		if err != nil {
+			os.Exit(3)
+		}
+		grandchild := exec.Command(os.Args[0], "-test.run=^TestProxyEscapeEndsChildProcessGroup$")
+		grandchild.Env = append(os.Environ(), "PTY_PROXY_GROUP_GRANDCHILD=1", "GORACE=atexit_sleep_ms=0")
+		grandchild.ExtraFiles = []*os.File{readyWrite}
+		if err := grandchild.Start(); err != nil {
+			os.Exit(3)
+		}
+		_ = readyWrite.Close()
+		one := make([]byte, 1)
+		if _, err := readyRead.Read(one); err != nil {
+			os.Exit(3)
+		}
+		_, _ = fmt.Fprintf(os.Stdout, "grandchild %d\nready\n", grandchild.Process.Pid)
+		_, _ = io.Copy(io.Discard, os.Stdin)
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestProxyEscapeEndsChildProcessGroup$")
+	cmd.Env = append(os.Environ(), "PTY_PROXY_GROUP_CHILD=1", "GORACE=atexit_sleep_ms=0")
+	input, keys := io.Pipe()
+	defer input.Close()
+	defer keys.Close()
+	output, screen := io.Pipe()
+	defer output.Close()
+	defer screen.Close()
+	p := New(cmd)
+	p.SetStdin(input)
+	p.SetStdout(screen)
+	done := make(chan error, 1)
+	go func() { done <- p.Run() }()
+	grandchild := waitForGrandchild(t, output, done)
+	go func() { _, _ = io.Copy(io.Discard, output) }()
+	_, _ = keys.Write([]byte{0x1d})
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("proxy did not return")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for processAlive(grandchild) {
+		if time.Now().After(deadline) {
+			t.Fatalf("grandchild %d outlived ctrl+]", grandchild)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// waitForGrandchild reads the child's first line, which names the process it
+// started, and then its ready line. It fails if the child never got that far.
+func waitForGrandchild(t *testing.T, screen io.Reader, done <-chan error) int {
+	t.Helper()
+	result := make(chan int, 1)
+	go func() {
+		line := make([]byte, 0, 64)
+		b := make([]byte, 1)
+		for !strings.Contains(string(line), "ready") {
+			if _, err := screen.Read(b); err != nil {
+				result <- 0
+				return
+			}
+			line = append(line, b[0])
+		}
+		var pid int
+		at := strings.LastIndex(string(line), "grandchild ")
+		if at < 0 {
+			result <- 0
+			return
+		}
+		if _, err := fmt.Sscanf(string(line[at:]), "grandchild %d", &pid); err != nil {
+			result <- 0
+			return
+		}
+		result <- pid
+	}()
+	select {
+	case pid := <-result:
+		if pid <= 1 {
+			t.Fatalf("no grandchild in the child's output")
+		}
+		return pid
+	case err := <-done:
+		t.Fatalf("proxy returned before its child was ready: %v", err)
+		return 0
+	}
+}
+
+// processAlive says whether pid still exists. A zombie counts as alive only
+// until its new parent reaps it.
+func processAlive(pid int) bool {
+	err := syscall.Kill(pid, 0)
+	return err == nil || err == syscall.EPERM
 }
 
 func TestTitleRestored(t *testing.T) {

@@ -176,9 +176,9 @@ func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.Sess
 		}
 		var panes []herdrPaneInfo
 		if fromServer {
-			var ok bool
-			panes, h.socket, ok = d.herdrPanesFromServer(bin, h)
-			if !ok {
+			var err error
+			panes, h.socket, err = d.herdrPanesFromServer(bin, h)
+			if err != nil {
 				return terminalStop()
 			}
 		} else {
