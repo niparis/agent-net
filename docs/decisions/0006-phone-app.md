@@ -20,7 +20,7 @@ The gateway serves a small web app that can be added to the phone's home screen.
 
 A native app is not planned.
 
-Connected apps pairing replaced the Tailscale login and separate phone listener. See [the connected apps design](../design/remote-mcp.md).
+Connected apps pairing replaced the Tailscale login and separate phone listener. See [the connected apps design](../archive/remote-mcp.md).
 
 ## P3 - Reached through Tailscale only
 

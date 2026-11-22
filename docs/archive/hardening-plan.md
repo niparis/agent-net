@@ -128,7 +128,7 @@ Scheduled backups were dropped: the owner keeps backups outside agent-net. The m
 
 ### W7. A sandbox for every worker
 
-Linux built for Pi and OpenCode workers (bubblewrap), optional, switched on per project in `node.json`. Claude workers are refused while the switch is on; macOS is designed, not built. See [worker-os-sandbox.md](worker-os-sandbox.md).
+Linux built for Pi and OpenCode workers (bubblewrap), optional, switched on per project in `node.json`. Claude workers are refused while the switch is on; macOS is designed, not built. See [worker-os-sandbox.md](../design/worker-os-sandbox.md).
 
 - **D. Design note:**
   - Linux options: bubblewrap, Landlock;

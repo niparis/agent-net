@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-28
 **Status:** Accepted by the owner
-**Context:** [brief.md](../brief.md), [review.md](../review.md)
+**Context:** [brief.md](../archive/brief.md), [review.md](../archive/review.md)
 
 ## D0 - Do not use Reason Network
 

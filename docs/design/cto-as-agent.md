@@ -142,7 +142,7 @@ always session rename, trust and policy, worker start and stop, answers to held 
 - Delivery adapters write the note after the body and neutralize agent-net markers in the body, as today. A peer cannot fake either note.
 - Replies to either kind go to the CTO session through normal delivery.
 
-The owner's words grant of the authority draft (`docs/design/authority-draft.md` on branch `agent-net/w_86b4f47321975151`) is a separate, later topic. This design adds no `owner_instruction` field to CTO sends.
+The owner's words grant of the authority draft (`docs/archive/authority-draft.md` on branch `agent-net/w_86b4f47321975151`) is a separate, later topic. This design adds no `owner_instruction` field to CTO sends.
 
 ## 6. Reads: the gap option A leaves, and the rule
 

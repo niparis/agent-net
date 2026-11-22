@@ -106,7 +106,7 @@ scripts/dev/difficulty-backtest.sh --project /path/to/repo --dry-run
 
 ## capability-backtest.py
 
-Shows what the model capability plan (`docs/design/model-capability.md`) would
+Shows what the model capability plan (`docs/archive/model-capability.md`) would
 pick with today's data: each model's capability C and the odds for sample D
 values, next to today's picker. It reads a copy of the gateway database and
 never the live one.
@@ -118,7 +118,7 @@ python3 scripts/dev/capability-backtest.py /tmp/gw/gateway.db
 
 ## worker-data-review.py
 
-Prints every table in `docs/design/model-capability-review.md`: outcomes by
+Prints every table in `docs/archive/model-capability-review.md`: outcomes by
 model, effort and harness, outcomes by level and by D bucket, the judge's
 correlations with outcomes, the level cut-off windows, the review results, the
 picker counts and the stored plan rebuilt on today's data.

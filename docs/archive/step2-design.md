@@ -1,6 +1,6 @@
 # Step 2 design: gateway core, Claude and Pi
 
-**Date:** 2026-10-28. **Inputs:** [decisions](decisions/0001-initial-decisions.md).
+**Date:** 2026-10-28. **Inputs:** [decisions](../decisions/0001-initial-decisions.md).
 **Exit criterion:** a Claude session and a Pi session discover each other, exchange a request and a reply in their running sessions, and keep accepted messages through a gateway restart. In step 2 both run on this VM, with a real gateway, a real daemon and a real join over HTTP(S).
 
 ## 1. Layout

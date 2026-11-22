@@ -29,21 +29,19 @@
 - [lessons.md](lessons.md): engineering lessons from the build, one short rule each, with what happened and where to read more.
 - [../RELEASING.md](../RELEASING.md): cut a release and update machines.
 - [roadmap.md](roadmap.md): work the owner wants that has not started yet.
-- [design/onboarding.md](design/onboarding.md): onboarding design.
 - [design/start-sessions.md](design/start-sessions.md): proposed owner session starts.
 - [design/tool-redesign.md](design/tool-redesign.md): the agent and CTO tool redesign: contracts, owner decisions and the task list.
-- [design/repo-agent-split.md](design/repo-agent-split.md): design for separating repo and agent identity, ownership and free-text roles.
 - [design/keys-audit.md](design/keys-audit.md): every TUI key, where the meanings collide, and a proposed consistent key map.
 - [design/ask-wait-lifecycle.md](design/ask-wait-lifecycle.md): the state chart of an ask and of a session wait, and the two property tests that check it.
-- [design/model-capability.md](design/model-capability.md): plan, on hold: the picker matches model capability C to task difficulty D, and review time is measured.
 - [design/owner-front-door-plan.md](design/owner-front-door-plan.md): design approved 2026-11-12; the chief of staff and ask intake are built: the chief as the owner's front door, the Desk as his decision queue, and the CTO intake (decisions 0150 to 0152).
 
 ## Design history
 
 These files record how the project was planned and built. They are kept for context. They are not kept up to date, and parts of them are out of date (names, ports, plans that changed). For how things work now, use the pages above and the code.
 
-- [brief.md](brief.md): the original brief.
-- [review.md](review.md): review of the brief and the build order.
+- [archive/](archive/): early briefs, reviews and design proposals, kept for context. The design proposals cover modularity, settings layers, org and team records, TUI options and model capability.
+- [archive/brief.md](archive/brief.md): the original brief.
+- [archive/review.md](archive/review.md): review of the brief and the build order.
 - [decisions/](decisions/): decisions taken, one file each. [0003](decisions/0003-gateway-record-and-inventory.md) covers the gateway log, repo info, harness inventory and retention. [0005](decisions/0005-registered-projects.md) covers registered projects. [0004](decisions/0004-tui-and-event-feed.md) covers the TUI, session mode and model, and the event feed.
 - [0177](decisions/0177-owed-replies.md): open requests and orders with no final reply get one automatic reminder nudge to the recipient after an idle duration, then one ask routed to the chief of staff.
 - [0178](decisions/0178-gateway-network.md): proposed, not scheduled. A network of gateways: each owner keeps one gateway, gateways link through a separate listener, only messages cross, repos are private, shared or public.
@@ -99,4 +97,4 @@ These files record how the project was planned and built. They are kept for cont
 - [0122](decisions/0122-web-console.md): the web console replaces the phone app: Desk and Sessions first, read and answer only. The design mockup is [design/web-console-mockup.html](design/web-console-mockup.html).
 - [0141](decisions/0141-picker-override-needs-a-human.md): an agent cannot override the worker picker without a human: the owner's words or his confirmation on the Desk.
 - [0166](decisions/0166-delegated-authority-table.md): the owner delegates authority by scope; one never list, one scope table, a `tool_decide` method that answers allow or no decision, and a Claude hook and charter text built from it.
-- [step2-design.md](step2-design.md): protocol and message design for the gateway, daemon and Claude and Pi adapters. Still a good description of the wire protocol.
+- [archive/step2-design.md](archive/step2-design.md): protocol and message design for the gateway, daemon and Claude and Pi adapters. Still a good description of the wire protocol.

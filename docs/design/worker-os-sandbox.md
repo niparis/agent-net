@@ -1,6 +1,6 @@
 # OS sandbox for workers (W7)
 
-Status: built for Pi and OpenCode workers on Linux ([decision 0059](../decisions/0059-worker-os-sandbox.md)), and on by default on Linux and macOS since 2026-11-17 ([decision 0171](../decisions/0171-session-harness-switch.md), phase 4b). A project turns it off with `workers.os_sandbox_off` in node.json. Claude workers are refused only for a project listed in `workers.os_sandbox` (see below). The macOS profile is built from the same policy (`internal/daemon/ossandbox_seatbelt.go`); it is unit tested and passed its real check on a Mac (macOS 26.5.1, 2026-11-17). Plan: [hardening-plan.md](hardening-plan.md) W7. Earlier research: [worker-sandbox.md](worker-sandbox.md). Levels: [decision 0020](../decisions/0020-worker-sandbox.md).
+Status: built for Pi and OpenCode workers on Linux ([decision 0059](../decisions/0059-worker-os-sandbox.md)), and on by default on Linux and macOS since 2026-11-17 ([decision 0171](../decisions/0171-session-harness-switch.md), phase 4b). A project turns it off with `workers.os_sandbox_off` in node.json. Claude workers are refused only for a project listed in `workers.os_sandbox` (see below). The macOS profile is built from the same policy (`internal/daemon/ossandbox_seatbelt.go`); it is unit tested and passed its real check on a Mac (macOS 26.5.1, 2026-11-17). Plan: [hardening-plan.md](../archive/hardening-plan.md) W7. Earlier research: [worker-sandbox.md](../archive/worker-sandbox.md). Levels: [decision 0020](../decisions/0020-worker-sandbox.md).
 
 ## What it is
 
@@ -64,7 +64,7 @@ Both were checked with the real harness inside this policy, with a temporary hom
 | `no-network` | start refused (below) | | |
 | `read-only` | read-only | writable | on |
 
-`read-only` keeps the harness's private state writable. Without it the harness cannot start. This is the clarification that [worker-sandbox.md](worker-sandbox.md) asked the owner to accept: no writes to the project or to shared host files.
+`read-only` keeps the harness's private state writable. Without it the harness cannot start. This is the clarification that [worker-sandbox.md](../archive/worker-sandbox.md) asked the owner to accept: no writes to the project or to shared host files.
 
 `no-network` is refused for a wrapped harness. The wrapper covers the whole harness, so a private network namespace also cuts the harness's own connection to its model, and the worker could do nothing. A model relay is a separate design. Use a Codex worker for `no-network`, whose sandbox covers commands only, or turn the switch off for that project.
 

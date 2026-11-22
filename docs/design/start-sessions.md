@@ -27,7 +27,7 @@ starting one. This design adds that step and the last one, ending.
 - Read README, `docs/reference.md` (Workers, the TUI screen, Enter a session,
   Needs you, the CTO), decisions 0002, 0005, 0022, 0024, 0031 to 0035,
   `docs/design/keys-audit.md`, `docs/design/cto-as-agent.md` and
-  `docs/design/onboarding.md` (branch `agent-net/w_7348270c5e5ea122`).
+  `docs/archive/onboarding.md` (branch `agent-net/w_7348270c5e5ea122`).
 - Read the launch code: `internal/daemon/workers.go`, `worker_claude.go`,
   `worker_opencode.go`, `worker_codex.go`, `worker_pi.go`, `enter.go`,
   `herdr.go`, `codex_peers.go`, and the start form in `internal/tui/forms.go`.

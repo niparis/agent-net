@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-04
 **Status:** The pipeline settings, shorthand cutover, owner controls, node task queue and Inbox approvals are built. See [Checked against the code](#checked-against-the-code) for implementation details.
-**Context:** [modularity.md](modularity.md) (objective, recipes, the "merge gate" gap), [settings-layer.md](settings-layer.md) (settings, levels, rules and advice).
+**Context:** [modularity.md](../archive/modularity.md) (objective, recipes, the "merge gate" gap), [settings-layer.md](../archive/settings-layer.md) (settings, levels, rules and advice).
 
 ## The problem
 

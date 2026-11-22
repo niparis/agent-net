@@ -12,7 +12,7 @@ may change advice alone. Every rule change needs the owner.
 
 This extends [modularity.md](modularity.md), "How a recipe is changed", and
 [settings-layer.md](settings-layer.md). It uses the proposal runner,
-[approval dialog](cto-approve-in-chat.md), and Inbox. It does not add a second
+[approval dialog](../design/cto-approve-in-chat.md), and Inbox. It does not add a second
 approval system or a recipe import format.
 
 The first release supports network, repo, and agent targets. The teams design

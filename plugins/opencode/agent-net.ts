@@ -1,5 +1,5 @@
 // agent-net plugin for OpenCode v2. A client of the agent-net daemon's local Unix socket.
-// Protocol: docs/step2-design.md section 6 (JSON lines, request/response by id, pushes without id).
+// Protocol: docs/archive/step2-design.md section 6 (JSON lines, request/response by id, pushes without id).
 //
 // OpenCode runs one shared background service that hosts every session, so one
 // plugin instance serves many sessions. The plugin keeps one daemon connection
