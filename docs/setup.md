@@ -41,6 +41,7 @@ integrations:         7 of 7 on (your network settings)
 claude code           ok
 claude peer messages  accept (set by agent-net)
 claude workers mod    on (plugin agent-net-workers@agent-net, user scope)
+herdr                 ok (found /home/you/.local/bin/herdr)
 pi extension          ok
 claude guidance       updated
 agent guidance        ok
@@ -53,6 +54,7 @@ Steps that do not apply say `skipped (reason)`. Setup:
 - writes and starts the daemon service (systemd user unit on Linux, launchd agent on macOS),
 - registers the MCP server with Claude Code (`claude mcp add -s user agent-net`) if `claude` is found,
 - asks one question for the seven integrations, or applies the answers your network already has (see [Integrations](#integrations)),
+- checks for herdr and installs it with its official installer when it is missing, unless `--no-herdr` is given (see [Herdr](#herdr)),
 - asks for the CTO title on the first machine only (see [CTO title](#cto-title)),
 - registers the MCP server `agent-net` (`agent-net mcp --codex`) in `~/.codex/config.toml` if Codex is found (see [codex.md](codex.md)),
 - writes the Pi extension to `~/.pi/agent/extensions/agent-net/index.ts` if `~/.pi` exists (a symlink to an older agent-net copy is replaced; any other symlink is left alone),
@@ -72,6 +74,14 @@ What should your CTO be called? [CTO]
 ```
 
 Enter keeps `CTO`. The title is 1 to 24 printable characters, with spaces at the ends removed. It cannot contain `[agent-net` or `<cross-session`, so it cannot look like a note that agent-net writes. The gateway stores it as the network setting `owner.cto_title`, so every machine shows the same name. Setup does not ask on a joining machine, a rerun, an upgrade, or a run without a terminal. Change it later in the CTO box with `m`, or ask the CTO. The title is for the owner's screens only: agent-net's notes and guidance always say `CTO`, so every agent sees the same fixed words.
+
+### Herdr
+
+[Herdr](https://herdr.dev/tui/docs/install/) is how you open and work in agent sessions, and Pi sessions need it. You do not install it by hand on a new machine. Setup uses the same lookup as the daemon: the path in `node.json` `harness_paths.herdr`, `PATH`, `~/.local/bin` and the login shell's `PATH`. If it finds herdr, it prints `herdr ok (found <path>)`.
+
+If herdr is missing, setup runs herdr's official installer, `curl -fsSL https://herdr.dev/install.sh | sh`. That installs a user-level binary in `~/.local/bin` on Linux and macOS, for amd64 and arm64, and needs no sudo. Setup then prints `herdr installed (<version>, <path>)`. If the download or the installer fails, setup prints `herdr failed (<reason>; install it from https://herdr.dev/tui/docs/install/)` and goes on with the other steps. Install herdr yourself and run setup again.
+
+`--no-herdr` skips the check and the install on a machine where you do not want herdr. `agent-net uninstall` keeps herdr: it is your tool, not agent-net's.
 
 ### Integrations
 

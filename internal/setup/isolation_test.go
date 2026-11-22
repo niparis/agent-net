@@ -1,6 +1,8 @@
 package setup
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +14,14 @@ import (
 	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/testsock"
 )
+
+// TestMain replaces herdr's lookup and installer so a setup test that is not
+// about herdr never runs the real installer or reaches the network. The herdr
+// tests replace both with what they need.
+func testHerdrLookup(string) (string, error) { return "/test/herdr", nil }
+func testHerdrInstall(context.Context) error {
+	return errors.New("herdr installer called in a test")
+}
 
 // TestMain keeps even tests that forget a fixture away from the user's setup.
 func TestMain(m *testing.M) {
@@ -78,6 +88,7 @@ func TestMain(m *testing.M) {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
+		findHerdr, installHerdr = testHerdrLookup, testHerdrInstall
 		return m.Run()
 	}()
 	os.Exit(code)
@@ -85,7 +96,7 @@ func TestMain(m *testing.M) {
 
 // realHarnessPrograms are the programs setup would start or look for. Tests
 // that need one put a fake on PATH themselves.
-var realHarnessPrograms = []string{"claude", "codex", "pi", "opencode", "agy", "gemini", "tailscale", "quota-axi"}
+var realHarnessPrograms = []string{"claude", "codex", "pi", "opencode", "agy", "gemini", "tailscale", "quota-axi", "herdr"}
 
 // pathWithoutRealHarnesses returns PATH with the real harnesses hidden. A
 // folder that holds one is replaced by a folder of links to its other

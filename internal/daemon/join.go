@@ -46,6 +46,10 @@ type NodeConfig struct {
 	// QuotaAXI is an absolute path to quota-axi, when it is not on PATH or in
 	// ~/.local/bin (decision 0022). Edited by hand.
 	QuotaAXI string `json:"quota_axi,omitempty"`
+	// HarnessPaths overrides where a harness binary is, by harness name. Herdr
+	// uses "herdr" here before its own search (docs/reference.md). Edited by
+	// hand.
+	HarnessPaths map[string]string `json:"harness_paths,omitempty"`
 	// Workers sets the worker limits and timeouts. Absent fields take the
 	// defaults of decision 0002.
 	Workers *NodeWorkers `json:"workers,omitempty"`
@@ -360,6 +364,7 @@ func Join(ctx context.Context, joinString, dir string) (NodeConfig, error) {
 	nc := NodeConfig{GatewayURL: url, NodeID: out.NodeID, Token: out.Token, CASHA256: fp}
 	nc.NoLaunch, nc.NoAutoUpgrade, nc.Workers, nc.Hostname = old.NoLaunch, old.NoAutoUpgrade, old.Workers, old.Hostname
 	nc.EnterSSH, nc.EnterSSHHosts = old.EnterSSH, old.EnterSSHHosts
+	nc.HarnessPaths = old.HarnessPaths
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nc, err
 	}

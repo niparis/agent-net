@@ -36,6 +36,8 @@ Sessions that were already open when you installed agent-net can receive message
 
 The daemon resolves Herdr using the harness search, including your login shell PATH. The login shell's Herdr takes precedence over a stale `~/.local/bin/herdr`. Check the daemon log for `herdr binary:` and `other installation:` to see which copy it uses.
 
+`agent-net setup` checks for Herdr and installs it with its official installer when it is missing, unless you pass `--no-herdr`. A setup line `herdr failed (...)` names the reason; install Herdr by hand from [the install page](https://herdr.dev/tui/docs/install/) and run setup again.
+
 A `herdr not found (looked in: ...)` error lists the search folders. Put Herdr on your login shell PATH or set `harness_paths.herdr` in `node.json` to its absolute executable path. A `herdr at <path> failed: <error>` message names the binary and command failure; check that copy with `<path> --version` and `<path> pane list`.
 
 Run `agent-net setup` to refresh the daemon service environment. On macOS setup reloads the LaunchAgent with `bootout` and `bootstrap`. A kickstart restart alone keeps the environment of the already loaded job, even when the plist contains a newer PATH. Upgrade startup also repairs missing settings and reloads a daemon whose running PATH differs from its plist. On Linux it runs `systemctl --user daemon-reload` and queues a daemon restart when the environment needs to take effect.

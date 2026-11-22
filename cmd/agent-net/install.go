@@ -39,6 +39,7 @@ func cmdSetup(ctx context.Context, args []string) error {
 	quotaOnly := fs.Bool("quota", false, "check quota provider logins")
 	quotaAXI := fs.Bool("quota-axi", false, "read your subscription quotas with quota-axi (agent-net installs it when needed)")
 	noQuotaAXI := fs.Bool("no-quota-axi", false, "do not read subscription quotas and do not ask")
+	noHerdr := fs.Bool("no-herdr", false, "do not check for or install herdr on this machine")
 	tsName := fs.String("apps-tailscale-name", "", "give connected apps agent-net's own Tailscale node with this name, for example agent-net (with --gateway; kept by later setups)")
 	tsKeyFile := fs.String("apps-tailscale-authkey-file", "", "absolute path of a file with a Tailscale auth key for that node's first login (with --apps-tailscale-name); without it the TUI shows a login link")
 	tsMachine := fs.Bool("apps-tailscale-machine", false, "go back to the machine's own Tailscale node for connected apps (with --gateway)")
@@ -119,7 +120,7 @@ func cmdSetup(ctx context.Context, args []string) error {
 		peer = setup.PeerMessagesNo
 	}
 	return setup.Setup(ctx, setup.Options{QuotaOnly: *quotaOnly, All: allAnswer, PeerMessages: peer, CodexTools: codex, HintHook: hint, PolicyHook: policy, NeedsHook: needs, WorkersMod: workers, QuotaAXI: quota, Join: *join, Gateway: *gw, NoService: *noService, NoAutoUpgrade: *noAuto, AutoUpgrade: *auto, NoLaunch: *noLaunch, Launch: *launch, Data: *data, Dist: *dist, Port: *port,
-		TailscaleName: *tsName, TailscaleAuthKeyFile: *tsKeyFile, TailscaleMachine: *tsMachine})
+		TailscaleName: *tsName, TailscaleAuthKeyFile: *tsKeyFile, TailscaleMachine: *tsMachine, NoHerdr: *noHerdr})
 }
 
 // checkTailscaleFlags rejects flag mixes that would save half a choice.
