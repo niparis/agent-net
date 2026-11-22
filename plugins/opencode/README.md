@@ -7,7 +7,7 @@ Connects OpenCode v2 sessions to the local agent-net daemon. OpenCode sessions c
 - `hello` carries `opencode_activity`, the time of the last real turn: a new prompt or the session going busy. A reload, discovery or a view claims no activity, so a session the owner stopped stays stopped until someone prompts it.
 - Sub-agent sessions (with a parent) speak through their root session.
 - A pushed message is delivered with `ctx.session.prompt({sessionID, text, delivery: "queue"})`: it wakes an idle session and waits behind a busy turn. The text has the same footers as the Pi extension.
-- Tools: `agent_sessions_find`, `agent_machines_find`, `agent_session_get`, `agent_announce`, `agent_message_send`, `agent_message_reply`, `agent_messages_find`, `agent_message_get`, `agent_project_add`, `agent_projects_find`. Same parameters and same short text output as the Pi extension.
+- Tools: `agent_sessions_find`, `agent_machines_find`, `agent_announce`, `agent_message_send`, `agent_message_reply`, `agent_messages_find`, `agent_project_add`, `agent_projects_find`. Same parameters and same short text output as the Pi extension.
 - Reconnects with backoff (1 s, doubling to 30 s) if the daemon is down. OpenCode works normally without it, and the tools answer "agent-net daemon not reachable".
 
 ## Install

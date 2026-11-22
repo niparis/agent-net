@@ -988,7 +988,7 @@ const TOOLS: ToolDef[] = [
     name: "agent_announce",
     description:
       "Tell the network what you are working on now, so other agents can find you with agent_sessions_find. " +
-      `REQUIRED: ${ANNOUNCE_RULE} The task shows in agent_sessions_find and agent_session_get. ` +
+      `REQUIRED: ${ANNOUNCE_RULE} The task shows in agent_sessions_find. ` +
       "Also fill expertise once: what you can answer about (services, repos, machines, logs you can see), so others ask you instead of guessing. " +
       "Function is ignored.",
     properties: {

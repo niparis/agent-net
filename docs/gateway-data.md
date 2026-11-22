@@ -11,6 +11,8 @@ The tables are the ones the schema has after the reduction in [decision 0179](de
 - **Shown in** names the TUI screen, the agent tool (`tool`), or the CTO operation (`CTO op`, an operation of the CTO tool) that shows or changes the rows.
 - **Kept** says how long rows stay, and what removes them.
 
+Bots keep three read tools that agents no longer have: `agent_session_get`, `agent_machine_get` and `agent_message_get`. The names on this page are the agent tools, so a row lists the find tool even where a bot reads the same row with the get tool.
+
 Rows are not counted here. Counts change with use.
 
 ## How this page stays current
@@ -161,7 +163,7 @@ Computers that run the daemon, and how they enrol and report health.
 - **Holds:** One row per machine or invite in the network: its name, system, hashed access token, agent-net version, last-seen time, which agent programs it can run, plus its health report, Tailscale address, time zone and quiet-hours marks. Invite rows in 'invited' state hold the hashed invite code, expiry and used time with no access token.
 - **Written by:** `gateway/graph_refs.go`, `gateway/machine_tokens.go`, `gateway/node_fold_migration.go`, `gateway/nodes.go`, `gateway/nodes_sleep.go`, `gateway/store.go`
 - **Read by:** `gateway/apps_public.go`, `gateway/ask_intake.go`, `gateway/delivery_changes.go`, `gateway/graph_refs.go`, `gateway/lead_route.go`, `gateway/machine_tokens.go`, `gateway/mcp_store.go`, `gateway/nodes.go` and others
-- **Shown in:** TUI, Sessions; TUI, Quotas; tool `agent_machines_find`; tool `agent_machine_get`; CTO op `machine_remove`; CTO op `machine_rotate`
+- **Shown in:** TUI, Sessions; TUI, Quotas; tool `agent_machines_find`; CTO op `machine_remove`; CTO op `machine_rotate`
 - **Kept:** Forever; a removed machine is only marked removed and its token wiped.
 
 ### transfers
@@ -189,7 +191,7 @@ Agent sessions, with their checks and wake-ups, and the due steps they set.
 - **Holds:** One row per agent session (a coding agent running on a machine, a worker, the CTO or the chief): name, folder, repo, status, online state, model, worker data and archive and pin marks. It also holds the owner's last typed prompt to the session (`owner_prompt`, with its time `owner_prompt_at`), what the session announced (`announced_project`, `capabilities`, `task`, `task_started`, `expertise`, `announced_at`), the idle check state (the `check_` columns), and the automatic wake state (the `wake_` columns: the day's count, the no-progress streak, the last refused wake and the last wake attempt). `name_fixed` is 1 when the owner or the merger set the name, so a new report keeps it. A session's project is its detected repo (`repo_project`), else its announced project. A rate offer made before the session's first run is recorded waits here (`rate_offered_at`, `rate_asked`) and moves to the run.
 - **Written by:** `gateway/apps.go`, `gateway/bot_agent.go`, `gateway/bot_names.go`, `gateway/bot_session.go`, `gateway/busy_hold.go`, `gateway/chief.go`, `gateway/cto_session.go`, `gateway/machine_tokens.go`, `gateway/merger.go`, `gateway/org_tree.go` and others
 - **Read by:** `gateway/ask_holder.go`, `gateway/ask_intake.go`, `gateway/asks.go`, `gateway/asks_to.go`, `gateway/authority.go`, `gateway/automatic_message.go`, `gateway/bot_names.go`, `gateway/bot_session.go`, `gateway/bot_tools.go`, `gateway/busy_hold.go` and others
-- **Shown in:** TUI, Sessions; TUI, Graph; tool `agent_announce`; tool `agent_sessions_find`; tool `agent_session_get`; CTO op `session_change`; CTO op `sessions_archive`
+- **Shown in:** TUI, Sessions; TUI, Graph; tool `agent_announce`; tool `agent_sessions_find`; CTO op `session_change`; CTO op `sessions_archive`
 - **Kept:** Offline sessions are archived after 7 days and kept; an un-archived offline session unused for 30 days is deleted by the hourly prune; cleaned workers are deleted on request. The owner prompt is cleared at the session's first send, and after 10 minutes at most (hourly prune).
 
 Sessions being started have no row yet. Their two-minute holds (a repo slot under the repo's session cap, and the owner's Agent choice) live in the gateway's memory, with the Agent choices that failed. A gateway restart drops them. The Desk item a failed choice raises keeps its reason.
@@ -203,7 +205,7 @@ Messages between sessions, their delivery records, and automatic nudges.
 - **Holds:** One row per delivery state change of a message (stored, delivered, failed and so on) with detail text and time.
 - **Written by:** `gateway/store.go`, `gateway/store_record.go`
 - **Read by:** `gateway/store.go`, `gateway/undelivered.go`
-- **Shown in:** TUI, Messages; tool `agent_message_get`
+- **Shown in:** TUI, Messages; tool `agent_messages_find`
 - **Kept:** Forever by default (--keep-messages is 0); when set, deleted with their messages by the hourly prune.
 
 ### delivery_retries
@@ -227,7 +229,7 @@ Messages between sessions, their delivery records, and automatic nudges.
 - **Holds:** One row per message between sessions, the owner and bots: sender, recipient, type, body, thread, state, expiry, urgency, hold and handoff data and attached file ids. A request that carries the owner's prompt keeps that prompt (`owner_prompt`).
 - **Written by:** `gateway/agentnet_reply.go`, `gateway/automatic_message.go`, `gateway/bot_tools.go`, `gateway/busy_hold.go`, `gateway/caller_agent.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/cto_lead.go`, `gateway/delivery_reconcile.go`, `gateway/delivery_tasks.go` and others
 - **Read by:** `gateway/ask_holder.go`, `gateway/asks.go`, `gateway/brief_check.go`, `gateway/busy_hold.go`, `gateway/check.go`, `gateway/cto_lead.go`, `gateway/delivery_tasks.go`, `gateway/follow_ups.go`, `gateway/graph_talk.go`, `gateway/held.go` and others
-- **Shown in:** TUI, Messages; TUI, Desk; tool `agent_message_send`; tool `agent_message_reply`; tool `agent_messages_find`; tool `agent_message_get`; tool `agent_message_withdraw`; tool `agent_message_handoff`
+- **Shown in:** TUI, Messages; TUI, Desk; tool `agent_message_send`; tool `agent_message_reply`; tool `agent_messages_find`; tool `agent_message_withdraw`; tool `agent_message_handoff`
 - **Kept:** Forever by default (the gateway flag --keep-messages is 0); when set, older rows go on the hourly prune except bot mail not yet read and rows behind open reject or escalate outcomes. The owner prompt on a message is cleared after 90 days (hourly prune).
 
 ### nudge_fires
@@ -499,7 +501,7 @@ Standing orders, notes, findings, and what the gateway learns from signals.
 - **Holds:** One note about a model or a harness (written by the owner or promoted from findings), shown to workers that start with that model.
 - **Written by:** `gateway/learn.go`, `gateway/track.go`
 - **Read by:** `gateway/learn.go`, `gateway/track.go`
-- **Shown in:** tool `agent_machine_get`; tool `agent_worker_start`; CTO op `playbook_get`; CTO op `playbook_set`; TUI, Graph
+- **Shown in:** tool `agent_machines_find`; tool `agent_worker_start`; CTO op `playbook_get`; CTO op `playbook_set`; TUI, Graph
 - **Kept:** Until the owner clears the note; automatic notes are flagged stale after 60 days.
 
 ### standing_order_history
