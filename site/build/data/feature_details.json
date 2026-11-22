@@ -1,0 +1,480 @@
+{
+"Machine membership": {
+ "lines": [
+  "Adds a machine to the network and removes it again. Example: you run agent-net invite on the gateway machine and paste the printed curl line on the new machine.",
+  "The invite is an 8-character code, stored only as a SHA-256 hash. It works once and for 10 minutes. The line pins the gateway public key, so curl -k is safe.",
+  "At join the machine gets a node ID and a 32-byte token. The gateway stores only the token hash. Enroll attempts are rate limited (10 per IP and 60 in total per 10 minutes).",
+  "The daemon keeps the token in node.json, trusts only the gateway CA (fingerprint checked at join) and holds one WebSocket link to the gateway. Ping every 20 s, link closed after 45 s of silence, then it reconnects with backoff.",
+  "Removing a machine revokes its token and marks its sessions offline. Rotating a token needs the machine online: the new token is sent over the link, saved atomically with mode 0600, and the old one dies when the daemon confirms. A machine cannot remove itself."
+ ],
+ "files": ["internal/gateway/invite.go", "internal/gateway/machine_tokens.go", "internal/daemon/join.go"],
+ "decisions": ["0050"],
+ "correction": ""
+},
+"Install and upgrade": {
+ "lines": [
+  "Installs agent-net on a new machine and keeps every machine on the release the gateway serves.",
+  "The gateway serves the install script (/install/CODE), binaries (/install/bin/OS/ARCH), the version and the signed checksums. Release checksums are verified with an Ed25519 key built into the binary.",
+  "After each handshake the daemon asks if the gateway serves a newer release. If so it waits a random time up to 10 s (so machines do not all download together), installs and restarts. A failed version is not retried for 1 hour.",
+  "Automatic upgrades only go forward. A manual or pushed downgrade needs --force.",
+  "Before a gateway upgrade that changes the database, the gateway makes a backup (see Backups)."
+ ],
+ "files": ["internal/gateway/install.go", "internal/daemon/autoupgrade.go", "internal/upgrade/auto.go"],
+ "decisions": ["0061"],
+ "correction": ""
+},
+"Backups": {
+ "lines": [
+  "Protects the gateway data before a schema change. The same backup is available by hand with agent-net gateway backup.",
+  "When the gateway opens a data directory whose schema is older than its migrations, it first writes a snapshot: a consistent database copy, the skill Git repo, the CA key and the server key.",
+  "Folder name: gateway-backups/pre-v<version>-<UTC time> beside the data directory. One log line gives the folder and size.",
+  "If the backup fails, the gateway logs the reason and exits without migrating, so the older release can still open the data. A fresh data directory gets no backup.",
+  "Automatic backups are never deleted by agent-net. Removing them is the owner's call."
+ ],
+ "files": ["internal/gateway/store_upgrade_backup.go", "internal/gateway/backup.go"],
+ "decisions": [],
+ "correction": ""
+},
+"Machine health and usage": {
+ "lines": [
+  "Shows how each machine is doing. Example: the TUI header shows CPU and memory, and a machine row reads online, asleep since T, or silent since T.",
+  "Each daemon samples CPU, memory, load and processes every 5 s, keeps 5 minutes, and reports a summary to the gateway every 10 s. The gateway keeps only the newest report per machine, in memory.",
+  "The daemon also reports health facts: where helpers like herdr, claude, codex, git, gh are found, its PATH and restart time.",
+  "Sleep is found by a jump of the wall clock against the monotonic clock, then the exact span is read from the OS (pmset on macOS, journal on Linux). A machine silent for 15 minutes without a sleep report raises a CTO intake entry, not an owner ask.",
+  "The process list (agent_machine_get with processes) is read on request, with command lines redacted."
+ ],
+ "files": ["internal/daemon/machine_health.go", "internal/daemon/usage.go", "internal/daemon/sleep.go", "internal/gateway/nodes_sleep.go"],
+ "decisions": ["0152"],
+ "correction": ""
+},
+"Logs and errors": {
+ "lines": [
+  "Lets the CTO and agents read machine logs, and counts failures the screens see.",
+  "agent_machine_log reads the daemon or gateway log of one online machine (journalctl on Linux, log files on macOS). Lines are redacted before filtering; a private key block is masked even across lines.",
+  "The gateway writes one line per event: ts=... event=... key=value. Message bodies are never logged.",
+  "When the TUI or web console has a request fail or time out on its side, it reports it. The daemon writes one log line and sends a client.error frame. The gateway counts per method and origin, in memory only, and shows it in agent_machine_get.",
+  "Every error the TUI shows must reach the daemon log (decision 0168)."
+ ],
+ "files": ["internal/daemon/machine_log.go", "internal/daemon/client_error.go", "internal/gateway/client_errors.go"],
+ "decisions": ["0168"],
+ "correction": ""
+},
+"Screen refresh topics": {
+ "lines": [
+  "Tells the TUI and web console which lists changed, so they read a list only when needed instead of polling every second.",
+  "The gateway keeps a version counter per topic (agents, nodes, workers, graph, inbox, changes, projects, learned, usage). Each topic declares the tables it depends on. A write to one of them moves the topic version.",
+  "One sampler per subscribed connection sends only the latest {topic, version} for changed topics. A safety refresh runs every 30 s. If the subscription breaks, the TUI goes back to 1-second polling.",
+  "Rule: when you write a value a screen shows and it lives in gateway_state, call bumpStateTopics after the write.",
+  "No deltas are sent: the client re-reads a snapshot."
+ ],
+ "files": ["internal/gateway/topic_events.go", "internal/daemon/topics.go"],
+ "decisions": ["0120", "0143"],
+ "correction": "Not gateway only: the daemon runs a topicHub (internal/daemon/topics.go) that subscribes to the gateway link and fans the versions out to each local client (the TUI). So the daemon part is not empty."
+},
+"Session directory": {
+ "lines": [
+  "The list of every agent session on every machine. Example: agent-net list, the Sessions tab.",
+  "Each daemon finds the sessions on its machine and reports them (session.sync / upsert) with project, folder, branch, git remote (secrets stripped) and a status of idle or busy. A temp folder session gets no project. AGENT_NET_IGNORE=1 hides a session.",
+  "Name = project name plus a number (agent-net, agent-net 2). Only the owner renames a session; an announce cannot. A worker is named <project> worker <n>.",
+  "The gateway keeps offline sessions for 30 days. Hide, pin and archive are owner actions; archive keeps history joins, and a live registration clears the archive flag.",
+  "The task line comes from agent_announce. FUNCTION comes from the first paragraph of AGENTS.md or CLAUDE.md."
+ ],
+ "files": ["internal/gateway/session_agent.go", "internal/gateway/sessionrename.go", "internal/gateway/sessions_archive.go", "internal/daemon/inventory.go"],
+ "decisions": ["0024", "0033", "0071"],
+ "correction": ""
+},
+"Agent program adapters": {
+ "lines": [
+  "One adapter per agent program (harness), so the rest of agent-net does not care which one a session runs.",
+  "Claude Code: sessions run as claude --bg background jobs; messages go in through an inbox socket and replies are matched with a claude_deliveries table. View: claude attach.",
+  "OpenCode: sessions live in the owner's opencode service (or a worker's private opencode serve), started over HTTP. The daemon reads OpenCode's OpenAPI document to pick routes by what it advertises, not by version.",
+  "Codex: the shared Codex app server (thread/start, codex resume --remote for the view). Pi and Antigravity (agy) run in their own herdr pane; the daemon types into the agy pane.",
+  "Pi is refused as a role (CTO, chief) until it can be woken and resumed."
+ ],
+ "files": ["internal/daemon/claude/claude.go", "internal/daemon/codex_shared.go", "internal/daemon/opencode_routes.go", "internal/daemon/antigravity.go"],
+ "decisions": ["0075", "0149", "0049", "0171"],
+ "correction": ""
+},
+"Start, stop and resume a session": {
+ "lines": [
+  "Starts a new session, stops one, or resumes an old conversation. Example: n in the TUI Sessions tab, or the CTO's session_change tool.",
+  "The gateway relays the request to the machine that holds (or will hold) the session. Since decision 0149 every session is a background process owned by the daemon, and a start needs no terminal. Viewing is a separate step.",
+  "An explicit Agent selection is checked at the gateway. The new session has no final Agent until the harness returns its native ID (one unresolved launch per machine and harness).",
+  "A Claude session started by hand in a terminal can be moved to the background; the agent-net session ID stays.",
+  "Stopping a Claude background session also ends its stopped process tree (decision 0109)."
+ ],
+ "files": ["internal/daemon/session_start.go", "internal/daemon/session_stop.go", "internal/gateway/session_start_agent.go"],
+ "decisions": ["0149", "0067", "0095", "0137"],
+ "correction": ""
+},
+"Open a session in herdr": {
+ "lines": [
+  "Lets the owner look into a running session. Enter in the TUI asks the daemon for one view plan and runs it.",
+  "Another machine, when this machine has herdr: run herdr --remote <target>. This is the only path that carries the clipboard, so image paste depends on it. Never fall back to ssh while a local herdr exists.",
+  "A TUI in herdr opens a pane or tab in that herdr. A TUI outside herdr, for a session on this machine, hands over its terminal; ctrl+] returns.",
+  "The owner's own herdr is read-only: agent-net only lists panes there and attaches. It makes tabs only in its own agent-net herdr.",
+  "Workers never open a view on their own. The tests are in internal/daemon/enter_herdr_test.go."
+ ],
+ "files": ["internal/daemon/enter.go", "internal/daemon/herdr_open.go", "internal/daemon/enter_herdr_test.go"],
+ "decisions": ["0046", "0066", "0142", "0154"],
+ "correction": "Small gateway part: for a session on another machine the gateway relays query.session_enter to the machine that holds it. The TUI also runs the plan (it hands over its terminal). The daemon builds the plan."
+},
+"Stall and wake": {
+ "lines": [
+  "Notices a busy session that stopped making progress, and wakes sleeping sessions when a message is waiting.",
+  "Stall: sessions.stall_timeout (default 20 minutes, network or repo level). With no harness progress the owner sees a warning. For a busy Claude session, CPU use in its process tree counts as progress. It never stops or restarts the session. Sessions waiting for the owner or for their own workers are skipped.",
+  "Wake: a queued message asks the machine to wake a Claude background session (state done, same folder) only if its autonomy is wake. At most one attempt per 10 minutes. A failed wake is recorded with its reason and the sender gets one notice.",
+  "agent_due lets a session set a time or event to be woken; the minute tick wakes it, and if it shows no activity within 15 minutes the chief gets one ask.",
+  "Idle compaction: a background Claude session idle 50 minutes with 200k tokens of context is compacted."
+ ],
+ "files": ["internal/gateway/session_stall.go", "internal/gateway/session_wake.go", "internal/gateway/session_due.go", "internal/daemon/session_wake.go"],
+ "decisions": ["0065", "0099", "0078", "0177"],
+ "correction": ""
+},
+"The CTO session": {
+ "lines": [
+  "A normal agent session the owner talks to as chief technical officer. It changes settings, graph, workers and sessions through its own tools.",
+  "Since decision 0035 the CTO is a standard agent on the network (one network identity pinned at the gateway). It can run on Claude Code, Codex or OpenCode (decision 0171). Its model list is the setting cto.models; the first entry that can run now is used.",
+  "Most changes run at once with an audit line and an undo. Only node removal, agent tombstone, repo archive, machine removal and token rotation need the owner's approval.",
+  "Memory is gateway notes only (agent cto, no project). A default charter ships with every gateway (decision 0159).",
+  "The CTO has no file tools; it reads attachments through agent_message_get."
+ ],
+ "files": ["internal/gateway/cto_session.go", "internal/gateway/cto_settings.go", "internal/daemon/cto.go", "internal/daemon/cto_tools.go"],
+ "decisions": ["0035", "0157", "0159", "0171"],
+ "correction": ""
+},
+"MCP server for sessions": {
+ "lines": [
+  "The agent-net tools every session calls: send message, find sessions, start worker, hand back, step report, notes, and more.",
+  "agent-net mcp is a stdio MCP server. Each tool is a thin call to the local daemon socket; the daemon talks to the gateway.",
+  "The tool list comes from one generated catalog (internal/toolcatalog). Pi and OpenCode get the same tools from generated plugin files, not through MCP.",
+  "The server instructions tell the model to call agent_announce at session start with its task in one line.",
+  "Caller identity is checked by the daemon, not trusted from the tool arguments."
+ ],
+ "files": ["internal/mcpserver/mcpserver.go", "internal/toolcatalog/catalog.go", "plugins/pi"],
+ "decisions": ["0043", "0176"],
+ "correction": ""
+},
+"Message routing": {
+ "lines": [
+  "Carries messages between sessions on any machines. Example: agent_message_send to an exact session name, or to the role address chief or cto.",
+  "The gateway stores each message and sends it to the machine that holds the recipient. Limits: body 64 KiB, 20 sends per minute, 24 hour expiry, max 50 messages per conversation.",
+  "A message to a busy session is held at the gateway and sent as one batch, newest first, when the turn ends. After 30 minutes it goes anyway. An urgent message is fetched by the session at its next tool call (Claude hook, Pi and OpenCode plugin).",
+  "At most 5 messages wait for one recipient (messages.inbox_limit); owner messages, replies, notices skip it. A sender can withdraw an undelivered message.",
+  "On the machine the adapter writes it into the agent program and records a receipt (injecting, delivered, failed, unconfirmed) so a crash never injects twice. Claude replies are matched back to the request."
+ ],
+ "files": ["internal/gateway/busy_hold.go", "internal/gateway/role_address.go", "internal/daemon/messages_write.go", "internal/gateway/urgent_take.go"],
+ "decisions": ["0130", "0180", "0053", "0171"],
+ "correction": ""
+},
+"Outbox": {
+ "lines": [
+  "Keeps a send from being lost when the gateway cannot be reached.",
+  "In the daemon, send tries msg.send first (90 s wait). On an unreachable gateway it saves the message in an outbox table of daemon.db with an idempotency key, and tells the sender queued: true. A loop flushes it in order after reconnect.",
+  "Not queued: a message with files (needs a live link) and CTO messages (the flag could be dropped by an older gateway).",
+  "Hand-backs also survive: a complete worker hand-back is saved (worker_pending_handback) and replayed after the next connect. There are also outboxes for worker assessments and start outcomes.",
+  "Mode 0600, in ~/.local/state/agent-net/daemon/daemon.db."
+ ],
+ "files": ["internal/daemon/daemon.go", "internal/daemon/state.go", "internal/daemon/handback_replay.go"],
+ "decisions": [],
+ "correction": ""
+},
+"Owed replies": {
+ "lines": [
+  "Stops a request from sitting unanswered. Example: a lead sends an order, the worker replies 'progress' and then goes quiet.",
+  "A reply with progress: true keeps the request open. A final reply closes it. ack: true closes it with no message.",
+  "An open request whose recipient has been idle 15 minutes (messages.owed_reply_nudge_after) gets one reminder. If there is still no final reply after 10 more minutes (owed_reply_ask_after) one ask goes to the chief of staff.",
+  "A progress reply pauses the chase for 2 hours (owed_reply_progress_grace), or until its follow_up_at. Busy sessions and sessions waiting on the owner or on their workers are skipped.",
+  "Related: follow_up_at on a send or a chief sort raises one chief ask if the expected event did not happen."
+ ],
+ "files": ["internal/gateway/owed_replies.go", "internal/gateway/follow_ups.go"],
+ "decisions": ["0177"],
+ "correction": ""
+},
+"Nudges and loops": {
+ "lines": [
+  "Automatic reminders the gateway sends, such as 'is your task done?', and the standing loop that wakes a lead on a clock.",
+  "Twelve kinds exist (idle_check, autonomy_continue, reply_reminder, loop_tick, step_reminder, stuck_step, undelivered, waiting_notice, wake_failed, member_blocked, redirect_reminder, owed_reply). The chief can pause one kind for one team or agent; a paused kind sends nothing and queues nothing. Pauses are logged and undoable.",
+  "Every nudge is logged in nudge_fires. Work counts as followed if the recipient makes a tool call, announce, step report or non-ack message within 30 minutes. The chief reads the useful rate per kind to decide what to pause.",
+  "Loop: loop.every (for example 4h) and loop.prompt on a repo; the TUI L key cycles off, 1h, 4h, 12h, 24h. loop_mode on_change skips a tick when nothing changed. The check is plain queries, no model call."
+ ],
+ "files": ["internal/gateway/nudge_pause.go", "internal/gateway/nudge_fires.go", "internal/gateway/loop.go", "internal/gateway/lead_remind.go"],
+ "decisions": ["0094", "0131", "0134"],
+ "correction": "The gateway builds and queues the reminder; delivery uses the normal message path. The daemon's own part is small: it reports tool calls (tool_touch.go) so the gateway can see whether work followed."
+},
+"File sending": {
+ "lines": [
+  "Moves files between sessions on different machines. Example: agent_file_send(to, paths, note), or a worker hand-back with files.",
+  "The message carries a manifest (id, name, size, SHA-256). Limits: 100 MB per file, 10 files per message, 100 MB per upload, 1 GB staged per sending machine.",
+  "Same tailnet (and receiver not on macOS): Taildrop. Otherwise the gateway carries the bytes in parts and keeps them 7 days. Same machine: a local folder.",
+  "The sender daemon checks paths (project, worktree or /tmp, no credential folders), copies the file and runs a secret scan. The receiver checks the hash before delivering the message.",
+  "A message with files needs a live link and is never put in the outbox."
+ ],
+ "files": ["internal/daemon/files_send.go", "internal/daemon/files_receive.go", "internal/gateway/transfer.go"],
+ "decisions": ["0054", "0125"],
+ "correction": ""
+},
+"Org graph": {
+ "lines": [
+  "One stored picture of who is who: teams, repos, agents, and who reports to whom. The Graph tab and the Sessions tree are two views of it.",
+  "Teams, Repos and Agents are tables. Each repo has one lead column (repos.lead_agent_id), each team one lead (teams.owner_agent_id). reports_to is computed when read, not stored, so a lead change moves the tree at once (decision 0184).",
+  "A lead is any node others report to. A worker sits under the session that started it; the merger under the repo lead. The CTO and chief sit beside the owner.",
+  "A repo can cap live sessions with max_agents (0 = no limit).",
+  "A bot app gets its own agent node so it can sit in a team."
+ ],
+ "files": ["internal/gateway/org_tree.go", "internal/gateway/store_graph.go", "internal/gateway/teams.go"],
+ "decisions": ["0160", "0184", "0076", "0092"],
+ "correction": ""
+},
+"Charters": {
+ "lines": [
+  "A charter says what an agent, repo or team is for. Example: purpose, accepts, refuses, escalate, maturity, work_mode.",
+  "Levels: global, team, repo, agent. An empty field inherits down that order; the nearest value wins. Refuses is the union of all levels, so safety limits are inherited.",
+  "A charter can be drafted from AGENTS.md; the owner accepts or rejects the draft.",
+  "work_mode workers_code means the session designs and reviews while workers write all code. Default is on_request.",
+  "Every session gets its charter text each turn through context.get. Charters and rules are readable by every agent; only changes are gated."
+ ],
+ "files": ["internal/gateway/charter_resolver.go", "internal/gateway/charter_levels.go", "internal/gateway/charter_drafts.go"],
+ "decisions": ["0086", "0088", "0098", "0041"],
+ "correction": ""
+},
+"Authority and permissions": {
+ "lines": [
+  "Decides what an agent may do without asking the owner. Example: a lead with merge scope can run gh pr merge without a prompt.",
+  "A scope is a kind (asks, admin, merge, release, deploy, review, permissions) over all, a team, a repo or an agent. The table of what each kind allows is data in internal/authority/table.go.",
+  "The daemon answers tool_decide from the scopes. It answers allow or no decision, never block. A command in the never list (delete data, spend money, use secrets) or a compound command is always no decision.",
+  "agent_permission_propose asks the owner to add exact Claude Code allow rules to a repo. Only the owner's answer makes the gateway tell the daemon to write them into <repo>/.claude/settings.local.json.",
+  "Money, secrets and destruction stay with the owner at every level."
+ ],
+ "files": ["internal/authority/table.go", "internal/gateway/permissions.go", "internal/daemon/tool_decide.go", "internal/daemon/permission_apply.go"],
+ "decisions": ["0089", "0127", "0166"],
+ "correction": ""
+},
+"Settings": {
+ "lines": [
+  "One store for every setting (about 150 keys), with a revision, history and undo. Example: sessions.stall_timeout, delivery.ci_mode.",
+  "The list of keys, types and defaults is the embedded recipe standard.yaml. Levels are network, team, repo, agent (a few also run). A setting is a rule or advice.",
+  "The gateway sends settings.sync to daemons with the revision, stored values and repo facts. A daemon saves the last valid snapshot in daemon.db and uses it offline.",
+  "The owner's own settings (integrations, CTO title, worker profiles, time zone) are network settings with the owner. prefix and an internal flag: owner-only and not sent to machines (decision 0182).",
+  "Edit in TUI Settings (Enter, JSON), or through the CTO."
+ ],
+ "files": ["internal/settings/settings.go", "internal/settings/standard.yaml", "internal/gateway/settings_sync.go"],
+ "decisions": ["0182"],
+ "correction": ""
+},
+"The Desk and the chief of staff": {
+ "lines": [
+  "One queue of everything that waits on a person, plus a chief of staff session that sorts it so the owner sees less.",
+  "Every ask is a row of inbox_items with from, about, question, options, recommendation, and next (who must act: chief, CTO, lead or owner). The TUI Desk tab (key 6) shows it.",
+  "The chief is an ordinary agent session named in a setting; its model list is chief.model. It can close, merge, send on or answer an ask (agent_ask_sort) but never answers for the owner on money, secrets, security or irreversible acts.",
+  "Held worker starts that override the picker go to the chief first. The chief may confirm only if quota, provider and tier checks pass.",
+  "Automatic system problems go to the CTO intake queue, not the owner (decision 0152)."
+ ],
+ "files": ["internal/gateway/asks.go", "internal/gateway/chief.go", "internal/gateway/store_inbox.go"],
+ "decisions": ["0090", "0114", "0150", "0151", "0152"],
+ "correction": ""
+},
+"Owner judgments": {
+ "lines": [
+  "The owner's past decisions, stored so agents stop asking the same question. Query it with agent_owner_judgments_find.",
+  "One table, standing_orders with full-text search and history. Kinds: order, rule, answer, correction. Gateway notes also use it.",
+  "When the owner answers, approves or refuses an ask, an answer row is added automatically as Q: ... / A: ... with the repo or team area.",
+  "On the Desk, w answers an ask and keeps it as a standing rule for an exact action and area. A rule applies only on an exact match and can be undone from its Log line.",
+  "Owner rules reach every session through the charter text each turn (decision 0106)."
+ ],
+ "files": ["internal/gateway/standing.go", "internal/gateway/desk_rules.go", "internal/gateway/owner_answers.go"],
+ "decisions": ["0113", "0106", "0087"],
+ "correction": ""
+},
+"CTO proposals": {
+ "lines": [
+  "The owner's approval step for the few CTO changes that are not immediate. Example: machine_remove, machine_rotate, repo archive, merger_start.",
+  "The CTO calls a proposal tool. The daemon validates the exact call, stores it, and shows it on the Desk. If the harness supports form dialogs the owner can accept or decline in the CTO chat.",
+  "On approval the daemon runs the stored call once, with the actor owner (CTO proposal p_N). proposal_ask reopens the dialog for an open proposal.",
+  "If the owner's own words in the CTO chat ask for the change (owner_words), it passes without a proposal (decision 0165).",
+  "Permission proposals from ordinary agents are a separate store and ask (see Authority and permissions)."
+ ],
+ "files": ["internal/daemon/proposals.go", "internal/daemon/proposals_tools.go", "internal/gateway/proposal_validate.go"],
+ "decisions": ["0047", "0080", "0165"],
+ "correction": "The CTO proposals themselves are stored in the daemon (cto_proposals table in daemon state), not at the gateway. The gateway only validates them (proposal_validate.go) and takes the actor. The gateway does store permission_proposals, which is a different thing."
+},
+"Worker starts": {
+ "lines": [
+  "Starts a worker: a short-lived agent session that does one task. Example: agent_worker_start with problem, done and scope fields.",
+  "The brief is named fields (problem, done, optional evidence, hypothesis, scope, task notes). The daemon builds one fixed text from them, so every worker sees the same shape.",
+  "The daemon makes a git worktree and branch, launches the harness, then sends a started or not-started notice. The result is status starting while checkout runs in the background; the background timeout is 10 minutes.",
+  "The gateway records the start and chooses the model; a started worker always ends with a notice, even if the daemon restarts (start outcome outbox).",
+  "A worker cannot start workers. An agent that sets harness, provider, model, effort or machine is held until a human confirms or a scope allows it."
+ ],
+ "files": ["internal/daemon/workers.go", "internal/daemon/worker_start_async.go", "internal/gateway/worker_starts.go", "internal/gateway/workers.go"],
+ "decisions": ["0002", "0146", "0141", "0151", "0149"],
+ "correction": ""
+},
+"Brief check and difficulty": {
+ "lines": [
+  "Before a worker starts, a small judge model scores the brief, and the gateway refuses overlapping briefs.",
+  "Judge: six scores 1-5 (reasoning, scope, coupling, uncertainty, verification, risk) give a weighted D from 1 to 5 and a level: trivial, simple, normal, hard, very_complex. A 5 in any dimension makes it at least hard.",
+  "If the judge fails, times out or is unsure, the level is normal and the start goes on. If the first judge fails, one more judge on another provider is tried. The judge default is OpenCode with a DeepSeek model.",
+  "Brief check: only overlap is refused (a file also named by a running worker's brief or an open change), unless the brief says overlap ok: <reason>. A third attempt starts anyway. The six old format rules were retired (decision 0145)."
+ ],
+ "files": ["internal/daemon/difficulty_assessor.go", "internal/difficulty/difficulty.go", "internal/gateway/brief_check.go"],
+ "decisions": ["0026", "0135", "0145", "0146"],
+ "correction": "The check that exists today (overlap) runs in the gateway (brief_check.go). The daemon has no brief lint beyond one log line (worker_brief_lint.go). The daemon only runs the difficulty judge. The gateway part is more than 'stores the result'."
+},
+"Model picker": {
+ "lines": [
+  "Chooses harness, provider, model and effort for a start. Rule: lowest expected cost of one clean result among models with a proven record at this difficulty.",
+  "expected = run cost + (1 - p) x rescue, at OpenRouter prices. A model needs at least 3 tasks in the difficulty bucket (a third of a point wide) to be ranked by cost. About 1 pick in 10 (picker.explore_share) tries a thin candidate.",
+  "With no proven candidate, a weighted draw uses quota pace over expected cost (decision 0181).",
+  "One path for every start (decision 0162): ranker, modifiers, then a gate. The gate's locked checks are installed, signed in, provider not blocked or exhausted. Optional checks (worker floor, 90% block, burn hold) are fixed per caller in internal/model/policy.go.",
+  "CTO, chief and merger use ordered lists (cto.models, chief.model, merger.models); the first entry that can run now wins."
+ ],
+ "files": ["internal/gateway/picker.go", "internal/model/policy.go", "internal/protocol/picker_choose.go", "docs/model-choice.md"],
+ "decisions": ["0105", "0161", "0162", "0173", "0181"],
+ "correction": "Mostly gateway, but the CTO's model list is also local daemon state, and the daemon resolves an entry with no model to the harness live default. Decision 0173 (quality score redesign) is only proposed."
+},
+"Quotas": {
+ "lines": [
+  "Reads how much of each provider subscription is left, and keeps workers from using it all.",
+  "The daemon runs quota-axi (pinned 0.1.69, installed privately) at start and every 5 minutes, with a 90 s limit. It keeps one row per provider window: percent used, reset time and pace.",
+  "The gateway keeps the newest reading in memory and blocks a provider when it is exhausted, above 90 percent in any window, or below the owner's worker floor (0 to 95 percent per provider).",
+  "Burn hold: before an automatic start the picker projects the burn of running workers; if one more worker would use more than is left before reset, the provider is skipped (decision 0144).",
+  "A worker failing on a usage limit (agy, Codex) blocks that window or provider on that machine until the reset time."
+ ],
+ "files": ["internal/daemon/quota.go", "internal/gateway/quota_burn.go", "internal/protocol/quota.go"],
+ "decisions": ["0022", "0025", "0074", "0144"],
+ "correction": ""
+},
+"Ratings, costs and runs": {
+ "lines": [
+  "The track record that feeds the picker. Each finished worker run is stored with outcome, fix rounds, failed steps, defects and whether it merged.",
+  "Cost: tokens by kind are recorded on the run and priced at API prices from model_prices (OpenRouter list, fetched once a day). Run time, tokens and cost show in the TUI worker log.",
+  "Defects are recorded automatically: a failed verify after merge (severity 3), a failed test before merge (severity 1, once per revision), a fix of a shipped change. Others are filed by hand with agent_worker_rate.",
+  "Caller ratings are stored but the picker does not read them. Runs that were stopped or ended on infrastructure do not count.",
+  "Since decision 0183, runs, usage and defects sit on fewer tables (mostly worker_runs)."
+ ],
+ "files": ["internal/gateway/ratings.go", "internal/gateway/defect_auto.go", "internal/gateway/prices.go", "internal/gateway/task_runs.go"],
+ "decisions": ["0103", "0105", "0161", "0183"],
+ "correction": ""
+},
+"Worker sandbox": {
+ "lines": [
+  "Limits what an unattended worker can write or reach, so nobody has to approve each command.",
+  "The owner sets a level per project (repo setting workers.sandbox_level, default sandboxed): writes limited to the worktree, temp folders and the git folders a commit needs. Other levels cover read-only and no-network.",
+  "Codex gets approval never plus its sandbox. Claude gets the level in its --settings (writes outside the worktree blocked, Claude's Bash sandbox on).",
+  "Pi and OpenCode workers run inside bubblewrap on Linux and Seatbelt on macOS. This is on by default; workers.os_sandbox_off in node.json turns it off per project. It fails closed: if the wrapper cannot run, the start is refused.",
+  "Reads are not limited: a sandboxed worker can read what your user can read."
+ ],
+ "files": ["internal/daemon/ossandbox.go", "internal/daemon/ossandbox_seatbelt.go", "internal/daemon/worker_codex_sandbox.go", "internal/gateway/worker_sandbox_settings.go"],
+ "decisions": ["0020", "0059"],
+ "correction": ""
+},
+"Friction reports": {
+ "lines": [
+  "Workers tell what slowed them down. Example: friction: [{area: ci, text: 'suite takes 40 minutes'}] on agent_handback or agent_step_report.",
+  "Areas: tooling, permissions, brief, review, ci, environment, skill. One line, at most 200 characters. An empty list is normal. Reports never score a worker.",
+  "The daemon passes them at hand-back; the gateway stores them in the friction table after masking secrets.",
+  "Each report has a state: new, read, triaged, fixed, wontfix, infra. The owner, the CTO and the pinned lead of an agent set it (friction_mark, agent_friction_mark). friction_find pages 20 at a time, max 200.",
+  "The weekly digest is a design (decision 0170, T2), not built."
+ ],
+ "files": ["internal/gateway/friction.go", "internal/daemon/delivery_tools.go"],
+ "decisions": ["0170", "0175"],
+ "correction": "The weekly digest in the gateway part was not found in code. friction.go only has a digest_id column 'until a T2 digest'. Decision 0170 T2 describes it, but only collection and read-state are built."
+},
+"Changes and steps": {
+ "lines": [
+  "The delivery record: a change is a project, branch and head commit, with a step trail. Git holds the work; agent-net does not build a CI runner or review UI.",
+  "Steps: accept, review, test, approve, merge, release, deploy, verify. Each step has an owner (caller, a node, github, owner, delegate or none). A merge pass is refused until its required steps pass.",
+  "A complete worker hand-back creates the change and revision 1. Tools: agent_change_submit, agent_step_claim, agent_step_report, agent_changes_find.",
+  "Review is required from difficulty hard, judge risk 4 or 5, or a diff touching sensitive paths (migrations, auth/token/security paths, install.sh, workflows).",
+  "Caller steps belong to the caller's agent, so any live session of it can act (decision 0148). The caller may name one reviewer session."
+ ],
+ "files": ["internal/gateway/delivery_changes.go", "internal/gateway/delivery_tasks.go", "internal/gateway/delivery_approval.go"],
+ "decisions": ["0057", "0081", "0148", "0155"],
+ "correction": ""
+},
+"Merge modules": {
+ "lines": [
+  "A merger is a separate session that tests and merges for one project. Example: ask the CTO to set up a merger for a project.",
+  "The CTO or owner runs session_change merger_start. The daemon starts a session in its own detached worktree under the daemon state folder, with the shared worker Go cache. It runs as its own Agent <project>-merger under the repo lead.",
+  "The gateway stores the (project, machine) to session record and routes test and merge step tasks only to it. Offline mergers leave tasks queued.",
+  "Settings: delivery.ci_mode per_change (default) or train (CI once per merge train), merger.test_timeout, merger.models.",
+  "The merger prompt is fixed text in MergerFirstMessage. The merge queue's CI is the single test gate (decision 0164)."
+ ],
+ "files": ["internal/daemon/merger.go", "internal/gateway/merger.go", "internal/delivery/merge.go"],
+ "decisions": ["0063", "0077", "0164"],
+ "correction": "I found no 'merge queue is on' switch. The daemon starts the merger when the CTO or owner runs merger_start; delivery.ci_mode (per_change or train) is the closest setting."
+},
+"The bar": {
+ "lines": [
+  "A short numbered list of quality rules per project (B1, B2, ...). Example: 'migrations are append-only'.",
+  "Stored in project_bar_rules. A rule is one line, at most 400 characters. Numbers are never reused after a removal. Source is seeded, lead or owner.",
+  "It shows in the worker brief header, every accept and review task, and the repo node in agent_graph_read.",
+  "Only the project lead, the owner and the CTO write it (agent_bar_edit); workers and other sessions only read. It is advice, not a gate.",
+  "A project with no bar asks its lead to draft one from AGENTS.md. Decision 0147 also plans growth from review findings; I found no code for that part."
+ ],
+ "files": ["internal/gateway/store_bar.go", "internal/gateway/delivery_tasks.go"],
+ "decisions": ["0147"],
+ "correction": ""
+},
+"Test slot": {
+ "lines": [
+  "Keeps a merger from running two big test suites at once on one machine. Example: agent-net test-run -- go test ./...",
+  "The merger runs every local suite through agent-net test-run, which asks the daemon for the slot. One suite per machine; the next waits in a queue and is told its place.",
+  "A running suite counts as load like a worker, so admission starts fewer workers. Parallelism is the free cores under the CPU target, at least 1.",
+  "The slot lives on the client connection: if the suite exits, crashes or is killed, the slot frees.",
+  "Since decision 0164 the daemon no longer runs a pre-hand-back test; CI is the single gate."
+ ],
+ "files": ["internal/daemon/testslot.go", "internal/daemon/admission.go"],
+ "decisions": ["0018", "0164"],
+ "correction": ""
+},
+"Connected apps and sign-in": {
+ "lines": [
+  "Lets outside apps and your phone use agent-net. Examples: a paired browser or phone, a bot app that calls shared MCP servers, OAuth sign-in.",
+  "Pairing: a code approved in the TUI, or automatic for a browser signed in to Tailscale as the machine owner. Cookie lasts 90 days. The web console (Desk, Sessions, Graph, Changes, Messages, Workers) runs on the same listener, through Tailscale Funnel for internet access.",
+  "OAuth: access token 1 hour, refresh token 90 days; reuse of a refresh token revokes the family. Revoking an app removes its tokens.",
+  "A bot app gets its own agent node so it can join a team (decision 0092).",
+  "Sign-in asks (decision 0132): the owner sees a one-click prompt to log a CLI in on the right machine. The command comes only from an allowlist."
+ ],
+ "files": ["internal/gateway/apps.go", "internal/gateway/oauth.go", "internal/gateway/phone_pairing.go", "internal/phone/app.go"],
+ "decisions": ["0006", "0092", "0122", "0123", "0132", "0186"],
+ "correction": "Not gateway only: sign-in asks are raised by the daemon (internal/daemon/signin.go) when quota-axi reports a login error, and the login runs in a pane on that machine. The web console also uses the gateway host's daemon socket."
+},
+"Shared MCP servers": {
+ "lines": [
+  "A registry of MCP servers every session can use. Example: a knowledge or ingest server added once.",
+  "A server is added once and runs on one machine. Every registered server is global: each enabled one is listed to every session.",
+  "The gateway never talks to an MCP server. It asks the hosting node's daemon to probe, list tools, and invoke (mcp.probe, mcp.invoke) and tells it what to run (mcp.sync). Each call is checked at the gateway against the registry.",
+  "The CTO adds, removes, tests and enables servers (mcp_change). Agents list and test them with agent_mcp_servers_find and agent_mcp_test.",
+  "Bot apps get a per-app list of servers they may use."
+ ],
+ "files": ["internal/gateway/mcp.go", "internal/daemon/mcphost.go", "internal/daemon/mcpgroup.go"],
+ "decisions": ["0027", "0092"],
+ "correction": "The daemon part is not 'wires the servers into each session'. The hosting daemon runs and proxies the server, and calls go session to gateway (access check) to host daemon. Sessions see the tools through agent-net, not by config copied into each session."
+},
+"Notes (shared agent memory)": {
+ "lines": [
+  "Named memory kept at the gateway, so it works the same for every agent program and survives restarts, machines and a program switch.",
+  "A note is a row in standing_orders with a name. Scopes: agent (default), project, owner. Only the owner and CTO write owner scope. Kinds: feedback, fact (default), reference.",
+  "Tools: agent_note_write and agent_notes_find (up to 20 notes, best 3 matches counted as used). Stale after 30 days without use, flagged but never deleted.",
+  "At session start context.get adds a block of titles and one-line descriptions, at most 8 per scope, most used first. Bodies are not in it.",
+  "The CTO and chief keep notes only at the gateway (no harness memory)."
+ ],
+ "files": ["internal/gateway/notes.go", "internal/daemon/notes.go"],
+ "decisions": ["0158", "0171"],
+ "correction": ""
+},
+"Skills": {
+ "lines": [
+  "A gateway archive of skill versions, and lists saying which skills each node gets.",
+  "The CTO adds a skill from a folder on an online machine, a Git URL or a session (skill_archive). Same content is one version; changed content is a new version. Limit 64 MiB packed, 10,000 entries per skill. Each add and remove has an undo.",
+  "The CTO sets skill lists for the global node, a team, a repo or an agent. A session's node is resolved agent, repo, team, global.",
+  "At start the daemon builds a folder <state>/skills/<hash>/ from the archive bundles (content hash checked) and passes it to the harness: --plugin-dir for Claude, --skill for Pi, config key for OpenCode, extra roots for a Codex worker. agy gets nothing.",
+  "Nothing is written into a project, worktree or user skill folder."
+ ],
+ "files": ["internal/gateway/skillarchive.go", "internal/gateway/skill_lists.go", "internal/daemon/skills_folder.go"],
+ "decisions": ["0169", "0048"],
+ "correction": "The daemon does not install skills in each worktree. It writes one folder under its own state directory and hands that folder to the harness (decision 0169 task 4). Only worktree_skills.go copies Git-ignored project skills into a worker worktree."
+}
+}

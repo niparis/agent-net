@@ -1,0 +1,262 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Gateway Tables</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Fraunces:opsz,wght@9..144,600&display=swap">
+<style>
+/* Layout: a field guide. Summary band, then the area map that every other view lights up, then journeys, explorer and the reduction ledger. */
+:root{
+  --bg:#f6f7f4; --panel:#ffffff; --fg:#1d231f; --muted:#5d6760; --line:#d9ded8;
+  --accent:#1f6f5c; --accent-soft:#d6ebe4; --hot:#c4542b; --hot-soft:#f6ddd2;
+  --gone:#8a8f8b; --gone-soft:#ecedea;
+  --display:"Fraunces",Georgia,serif; --body:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121614; --panel:#1a201d; --fg:#e4e9e5; --muted:#9aa59e; --line:#2c3530;
+  --accent:#5cc2a6; --accent-soft:#1f3a33; --hot:#ef8a62; --hot-soft:#3d241a; --gone:#7d857f; --gone-soft:#232a26; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121614; --panel:#1a201d; --fg:#e4e9e5; --muted:#9aa59e; --line:#2c3530;
+  --accent:#5cc2a6; --accent-soft:#1f3a33; --hot:#ef8a62; --hot-soft:#3d241a; --gone:#7d857f; --gone-soft:#232a26; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.5}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 64px;display:grid;gap:40px}
+h1{font-family:var(--display);font-weight:600;font-size:clamp(28px,4vw,40px);margin:0;text-wrap:balance}
+h2{font-family:var(--display);font-weight:600;font-size:22px;margin:0 0 4px;text-wrap:balance}
+.lede{color:var(--muted);max-width:68ch;margin:6px 0 0}
+.label{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.mono{font-family:var(--mono);font-size:13px}
+.num{font-variant-numeric:tabular-nums}
+.stats{display:flex;flex-wrap:wrap;gap:12px 28px;margin-top:18px}
+.stat b{display:block;font-family:var(--display);font-size:28px;font-weight:600}
+section > .head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 16px;margin-bottom:14px}
+/* Area map */
+.map{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.area{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;display:grid;gap:8px;align-content:start;min-width:0}
+.area h3{margin:0;font-size:14px;font-weight:600;display:flex;justify-content:space-between;gap:8px}
+.area h3 span{color:var(--muted);font-weight:400}
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.chip{font-family:var(--mono);font-size:11.5px;border:1px solid var(--line);border-radius:4px;padding:1px 6px;cursor:pointer;background:transparent;color:var(--fg);line-height:1.6}
+.chip.core{border-color:var(--accent);font-weight:500}
+.chip:hover,.chip:focus-visible{background:var(--accent-soft);outline:none}
+.chip.lit{background:var(--hot);border-color:var(--hot);color:#fff}
+.chip.dim{opacity:.35}
+.chip .w{font-size:10px;margin-left:4px;opacity:.8}
+/* Journeys */
+.jtabs{display:flex;flex-wrap:wrap;gap:6px}
+.jtab{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:999px;padding:5px 12px;cursor:pointer}
+.jtab[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+.steps{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:6px;counter-reset:s}
+.steps li{display:grid;grid-template-columns:28px 64px minmax(0,220px) minmax(0,1fr);gap:10px;align-items:baseline;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 10px;counter-increment:s}
+.steps li::before{content:counter(s);font-family:var(--mono);color:var(--muted);font-size:12px}
+.rw{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.rw.write{color:var(--hot)} .rw.read{color:var(--accent)}
+@media (max-width:640px){.steps li{grid-template-columns:24px 52px minmax(0,1fr)}.steps li .what{grid-column:2/-1}}
+/* Explorer */
+.explorer{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);gap:16px}
+@media (max-width:760px){.explorer{grid-template-columns:minmax(0,1fr)}}
+.search{width:100%;box-sizing:border-box;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg)}
+.tlist{list-style:none;margin:8px 0 0;padding:0;max-height:520px;overflow:auto;border:1px solid var(--line);border-radius:6px;background:var(--panel)}
+.tlist button{all:unset;box-sizing:border-box;display:flex;justify-content:space-between;gap:8px;width:100%;padding:6px 10px;cursor:pointer;font-family:var(--mono);font-size:12.5px;border-bottom:1px solid var(--line)}
+.tlist button:hover,.tlist button:focus-visible,.tlist button[aria-current="true"]{background:var(--accent-soft)}
+.detail{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;display:grid;gap:12px;min-width:0;align-content:start}
+.detail h3{margin:0;font-family:var(--mono);font-size:18px;word-break:break-word}
+.kv{display:grid;grid-template-columns:120px minmax(0,1fr);gap:6px 12px}
+@media (max-width:520px){.kv{grid-template-columns:minmax(0,1fr)}}
+.kv dt{color:var(--muted);font-size:13px} .kv dd{margin:0;min-width:0;word-break:break-word}
+.cols{font-family:var(--mono);font-size:12px;color:var(--muted)}
+/* Reduction */
+.ledger{width:100%;border-collapse:collapse;font-size:13.5px}
+.ledger-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.ledger th,.ledger td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+.ledger th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.tag{display:inline-block;font-size:11px;border-radius:4px;padding:0 6px;font-family:var(--mono)}
+.tag.drop{background:var(--hot-soft);color:var(--hot)} .tag.merge{background:var(--accent-soft);color:var(--accent)} .tag.keep{background:var(--gone-soft);color:var(--muted)}
+.note{color:var(--muted);font-size:13px}
+@media (prefers-reduced-motion:no-preference){.chip,.jtab{transition:background .15s,opacity .15s}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="label">agent-net gateway · gateway.db</div>
+    <h1>Gateway Tables</h1>
+    <p class="lede" id="lede"></p>
+    <div class="stats" id="stats"></div>
+  </header>
+
+  <section aria-labelledby="map-h">
+    <div class="head"><div><h2 id="map-h">Where the data lives</h2><p class="lede">Eleven areas. Each chip is a table; a bold outline marks the tables most of the system depends on. Click a chip to read about it, or pick a journey below to see which tables it touches.</p></div></div>
+    <div class="map" id="map"></div>
+  </section>
+
+  <section aria-labelledby="j-h">
+    <div class="head"><div><h2 id="j-h">Journeys</h2><p class="lede">An everyday action, step by step, with each table it reads or writes. The same tables light up in the map above.</p></div></div>
+    <div class="jtabs" id="jtabs" role="group" aria-label="Journeys"></div>
+    <p class="lede" id="jsum"></p><ol class="steps" id="steps"></ol><p class="note" id="jnote" style="max-width:80ch"></p>
+  </section>
+
+  <section aria-labelledby="t-h">
+    <div class="head"><div><h2 id="t-h">MCP tools and the tables they touch</h2><p class="lede">Every tool agent-net serves to agents, the CTO and connected bots. Pick a tool to see what it reads and writes, lit up in the map above. Or pick a table to see every tool that reaches it.</p></div></div>
+    <div class="explorer">
+      <div>
+        <label class="label" for="tq">Find a tool</label>
+        <input id="tq" class="search" type="search" placeholder="agent_message_send, cto_op…" autocomplete="off">
+        <div class="jtabs" id="twho" role="group" aria-label="Who uses the tool" style="margin-top:8px"></div>
+        <ul class="tlist" id="toollist"></ul>
+      </div>
+      <div class="detail" id="tooldetail" aria-live="polite"></div>
+    </div>
+    <div id="servers" style="margin-top:22px"></div>
+  </section>
+
+  <section aria-labelledby="x-h">
+    <div class="head"><div><h2 id="x-h">Every table</h2><p class="lede">Search by table, column or what it holds.</p></div></div>
+    <div class="explorer">
+      <div>
+        <label class="label" for="q">Search</label>
+        <input id="q" class="search" type="search" placeholder="messages, lead_agent_id, quota…" autocomplete="off">
+        <ul class="tlist" id="tlist"></ul>
+      </div>
+      <div class="detail" id="detail" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="r-h">
+    <div class="head"><div><h2 id="r-h">What the reduction removed</h2><p class="lede" id="rlede"></p></div></div>
+    <div class="ledger-wrap"><table class="ledger"><thead><tr><th>Table</th><th>Part</th><th>What happened</th><th>Where the data went</th></tr></thead><tbody id="ledger"></tbody></table></div>
+  </section>
+</div>
+
+<script>
+const DATA = /*DATA*/null;
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const AREAS = {
+  'machines':'Machines','sessions':'Sessions','messages':'Messages and events','org-graph':'Org graph and charters',
+  'desk':'Desk and owner memory','learning':'Learning','delivery':'Delivery steps','workers-picker':'Workers and picker',
+  'settings':'Settings','tools-skills':'Tools, skills and MCP','apps-oauth':'Apps and sign-in'
+};
+const T = DATA.tables, byName = Object.fromEntries(T.map(t => [t.name, t]));
+const fmt = n => n == null ? '?' : Number(n).toLocaleString('en');
+const totalCols = T.reduce((a, t) => a + (t.columns || []).length, 0);
+const totalRows = T.reduce((a, t) => a + (Number(t.rows_live) || 0), 0);
+const removed = (DATA.reduction?.removed || []).length;
+const KEPT = DATA.reduction?.kept_on_purpose || [];
+$('#lede').textContent = `Every table the gateway keeps in SQLite, what it holds, who writes and reads it, and how everyday actions move through it. Counts are from the live database${DATA.meta ? ' (' + DATA.meta.generated + ', on the release candidate; recounted after install)' : ''}.`;
+$('#stats').innerHTML = [
+  [T.length, 'tables now'], [totalCols, 'columns'], [fmt(totalRows), 'rows'],
+  [removed, 'tables removed by decision 0179'], [T.filter(t => t.core).length, 'core tables'], [(DATA.tools && DATA.tools.tools || []).length, 'MCP tools mapped']
+].map(([v, l]) => `<div class="stat"><b class="num">${typeof v === 'number' ? fmt(v) : v}</b><span class="label">${l}</span></div>`).join('');
+
+// Area map
+const areas = Object.keys(AREAS).map(k => ({k, tables: T.filter(t => t.area === k).sort((a, b) => (b.core - a.core) || a.name.localeCompare(b.name))})).filter(a => a.tables.length);
+$('#map').innerHTML = areas.map(a => `<div class="area"><h3>${AREAS[a.k]} <span class="num">${a.tables.length}</span></h3><div class="chips">${
+  a.tables.map(t => `<button class="chip${t.core ? ' core' : ''}" data-t="${esc(t.name)}" title="${esc(t.holds)}">${esc(t.name)}<span class="w num">${fmt(t.rows_live)}</span></button>`).join('')
+}</div></div>`).join('');
+$('#map').addEventListener('click', e => { const b = e.target.closest('.chip'); if (b) { show(b.dataset.t); $('#detail').scrollIntoView({behavior: 'smooth', block: 'nearest'}); } });
+
+// Journeys
+const J = DATA.journeys || [];
+function light(names) {
+  document.querySelectorAll('.chip').forEach(c => {
+    c.classList.toggle('lit', names.has(c.dataset.t));
+    c.classList.toggle('dim', names.size > 0 && !names.has(c.dataset.t));
+  });
+}
+function pick(i) {
+  document.querySelectorAll('.jtab').forEach((b, j) => b.setAttribute('aria-pressed', String(i === j)));
+  const j = J[i];
+  if (!j) { $('#steps').innerHTML = ''; $('#jsum').textContent = ''; $('#jnote').textContent = ''; light(new Set()); return; }
+  $('#jsum').textContent = j.summary || ''; $('#jnote').textContent = j.notes || '';
+  $('#steps').innerHTML = j.steps.map(s => `<li><span class="rw ${s.op}">${s.op}</span><span class="mono"><button class="chip" data-t="${esc(s.table)}">${esc(s.table)}</button></span><span class="what">${esc(s.what)}</span></li>`).join('');
+  light(new Set(j.steps.map(s => s.table)));
+  try { localStorage.setItem('gt-journey', String(i)); } catch (_) {}
+}
+$('#jtabs').innerHTML = J.map((j, i) => `<button class="jtab" aria-pressed="false" data-i="${i}">${esc(j.title)}</button>`).join('') + `<button class="jtab" aria-pressed="false" data-i="-1">Clear</button>`;
+$('#jtabs').addEventListener('click', e => { const b = e.target.closest('.jtab'); if (b) pick(Number(b.dataset.i)); });
+$('#steps').addEventListener('click', e => { const b = e.target.closest('.chip'); if (b) show(b.dataset.t); });
+let start = 0; try { const v = localStorage.getItem('gt-journey'); if (v !== null) start = Number(v); } catch (_) {}
+pick(J[start] ? start : 0);
+
+// Explorer
+function list(q) {
+  q = q.trim().toLowerCase();
+  const hits = T.filter(t => !q || t.name.includes(q) || (t.holds || '').toLowerCase().includes(q) || (t.columns || []).some(c => c.includes(q)))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  $('#tlist').innerHTML = hits.map(t => `<li><button data-t="${esc(t.name)}"><span>${esc(t.name)}</span><span class="num note">${fmt(t.rows_live)}</span></button></li>`).join('') || '<li class="note" style="padding:10px">No table matches.</li>';
+}
+var show = function (name) {
+  const t = byName[name]; if (!t) return;
+  document.querySelectorAll('#tlist button').forEach(b => b.setAttribute('aria-current', String(b.dataset.t === name)));
+  const inJ = J.filter(j => j.steps.some(s => s.table === name)).map(j => j.title);
+  const li = a => (a && a.length) ? a.map(x => `<div class="mono">${esc(x)}</div>`).join('') : '<span class="note">none</span>';
+  $('#detail').innerHTML = `<div class="label">${esc(AREAS[t.area] || t.area)}${t.core ? ' · core' : ''}</div>
+    <h3>${esc(t.name)}</h3><p style="margin:0">${esc(t.holds)}</p>
+    <dl class="kv">
+      <dt>Rows now</dt><dd class="num">${fmt(t.rows_live)}</dd>
+      <dt>Kept</dt><dd>${esc(t.kept_how_long || '?')}</dd>
+      <dt>Shown in</dt><dd>${li(t.shown_in)}</dd>
+      <dt>Written by</dt><dd>${li(t.writers)}</dd>
+      <dt>Read by</dt><dd>${li(t.readers)}</dd>
+      <dt>Journeys</dt><dd>${inJ.length ? esc(inJ.join(', ')) : '<span class="note">none</span>'}</dd>
+      <dt>Columns</dt><dd class="cols">${esc((t.columns || []).join(', '))}</dd>
+    </dl>`;
+};
+$('#q').addEventListener('input', e => list(e.target.value));
+$('#tlist').addEventListener('click', e => { const b = e.target.closest('button'); if (b) show(b.dataset.t); });
+list('');
+show((T.find(t => t.core) || T[0]).name);
+
+// MCP tools
+const TOOLS = (DATA.tools && DATA.tools.tools) || [];
+const COMMON = (DATA.tools && DATA.tools.common_reads) || [];
+let who = 'all';
+function toolList() {
+  const q = $('#tq').value.trim().toLowerCase();
+  const hits = TOOLS.filter(t => (who === 'all' || t.who === who) && (!q || t.name.toLowerCase().includes(q) || (t.does || '').toLowerCase().includes(q)
+    || [...(t.reads || []), ...(t.writes || [])].some(x => x.includes(q)))).sort((a, b) => a.name.localeCompare(b.name));
+  $('#toollist').innerHTML = hits.map(t => `<li><button data-tool="${esc(t.name)}"><span>${esc(t.name)}</span><span class="note">${esc(t.who)}</span></button></li>`).join('') || '<li class="note" style="padding:10px">No tool matches.</li>';
+}
+function showTool(name) {
+  const t = TOOLS.find(x => x.name === name); if (!t) return;
+  document.querySelectorAll('#toollist button').forEach(b => b.setAttribute('aria-current', String(b.dataset.tool === name)));
+  const chips = (a, op) => (a && a.length) ? `<div class="chips">${a.map(x => `<button class="chip" data-t="${esc(x)}"><span class="rw ${op}">${op === 'write' ? 'W' : 'R'}</span> ${esc(x)}</button>`).join('')}</div>` : '<span class="note">none</span>';
+  $('#tooldetail').innerHTML = `<div class="label">${esc(t.who)} tool</div><h3>${esc(t.name)}</h3><p style="margin:0">${esc(t.does)}</p>
+    <dl class="kv"><dt>Writes</dt><dd>${chips(t.writes, 'write')}</dd><dt>Reads</dt><dd>${chips(t.reads, 'read')}</dd>${t.uses_common_reads ? `<dt>Also reads</dt><dd class="note">the ${COMMON.length} common tables every settings and graph lookup reads (${esc(COMMON.join(', '))})</dd>` : ''}${t.note ? `<dt>Note</dt><dd class="note">${esc(t.note)}</dd>` : ''}</dl>`;
+  document.querySelectorAll('.jtab').forEach(b => b.setAttribute('aria-pressed', 'false'));
+  $('#steps').innerHTML = '';
+  light(new Set([...(t.reads || []), ...(t.writes || [])]));
+}
+if (!TOOLS.length) { const ex = $('#t-h').closest('section').querySelector('.explorer'); ex.hidden = true; ex.insertAdjacentHTML('afterend', '<p class="note">The tool-to-table map is being traced in the code and is added in the next update of this page.</p>'); }
+const whos = ['all', ...new Set(TOOLS.map(t => t.who))];
+$('#twho').innerHTML = whos.map(w => `<button class="jtab" aria-pressed="${w === 'all'}" data-w="${esc(w)}">${w === 'all' ? 'All' : esc(w)} <span class="num">${w === 'all' ? TOOLS.length : TOOLS.filter(t => t.who === w).length}</span></button>`).join('');
+$('#twho').addEventListener('click', e => { const b = e.target.closest('.jtab'); if (!b) return; who = b.dataset.w; document.querySelectorAll('#twho .jtab').forEach(x => x.setAttribute('aria-pressed', String(x === b))); toolList(); });
+$('#tq').addEventListener('input', toolList);
+$('#toollist').addEventListener('click', e => { const b = e.target.closest('button'); if (b) showTool(b.dataset.tool); });
+$('#tooldetail').addEventListener('click', e => { const b = e.target.closest('.chip'); if (b) show(b.dataset.t); });
+toolList();
+if (TOOLS.length) showTool(TOOLS.find(t => t.name === 'agent_message_send')?.name || TOOLS[0].name);
+// Tools per table, shown in the table detail
+const toolsFor = name => TOOLS.filter(t => (t.reads || []).includes(name) || (t.writes || []).includes(name));
+const _show = show;
+show = function (name) {
+  _show(name);
+  const ts = toolsFor(name);
+  const dl = $('#detail .kv');
+  if (dl) dl.insertAdjacentHTML('beforeend', `<dt>MCP tools</dt><dd>${ts.length ? ts.map(t => `<div class="mono">${esc(t.name)} <span class="note">${(t.writes || []).includes(name) ? 'writes' : 'reads'}</span></div>`).join('') : '<span class="note">none</span>'}</dd>`);
+};
+show((T.find(t => t.core) || T[0]).name);
+// Shared MCP servers
+const MS = DATA.mcp_servers || {};
+const S = [...(MS.shared || []).map(x => ({...x, kind: 'shared'})), ...(MS.machine_only || []).map(x => ({...x, kind: 'machine only'}))];
+const gt = v => Array.isArray(v) ? v.join(', ') : (v || 'no gateway table');
+if (S.length) $('#servers').innerHTML = `<div class="label" style="margin-bottom:8px">MCP servers</div><div class="ledger-wrap"><table class="ledger"><thead><tr><th>Server</th><th>Kind</th><th>What it is</th><th>Used by</th><th>Gateway tables</th></tr></thead><tbody>${
+  S.map(s => `<tr><td class="mono">${esc(s.name)}</td><td><span class="tag ${s.kind === 'shared' ? 'merge' : 'keep'}">${esc(s.kind)}</span></td><td>${esc(s.what)}</td><td>${esc(Array.isArray(s.used_by) ? s.used_by.join(', ') : (s.used_by || ''))}</td><td class="mono">${esc(gt(s.gateway_tables))}</td></tr>`).join('')}</tbody></table></div>${MS.imports ? `<p class="note">${esc(MS.imports)}</p>` : ''}`;
+
+// Reduction ledger
+const R = DATA.reduction || {};
+$('#rlede').textContent = `Decision 0179 removed ${removed} tables, added ${(R.new_tables || []).length} (${(R.new_tables || []).map(n => n.name || n).join(', ')}) and kept ${KEPT.length} on purpose. Each row says where the data went.`;
+$('#ledger').innerHTML = [
+  ...(R.removed || []).map(r => `<tr><td class="mono">${esc(r.name)}</td><td class="num">${esc(r.part)}</td><td><span class="tag ${r.how === 'dropped' ? 'drop' : 'merge'}">${esc(r.how)}</span>${r.into ? ' <span class="mono">' + esc(r.into) + '</span>' : ''}</td><td>${esc(r.where_data_went)}</td></tr>`),
+  ...KEPT.map(r => `<tr><td class="mono">${esc(r.name)}</td><td class="num">${esc(r.part ?? '')}</td><td><span class="tag keep">kept</span></td><td>${esc(r.reason)}</td></tr>`)
+].join('');
+</script>
+
+</body></html>

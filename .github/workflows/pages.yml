@@ -7,12 +7,12 @@ name: pages
 on:
   release:
     types: [published]
-  # The architecture guide and its pages deploy as soon as they change on main.
+  # The pages under site/ deploy as soon as they change on main.
   # Every run rebuilds the whole site, so the installer is always included.
   push:
     branches: [main]
     paths:
-      - 'docs/site/**'
+      - 'site/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -71,14 +71,12 @@ jobs:
           sh -n release/install.sh
       - name: Build site
         run: |
-          mkdir -p site
-          cp release/install.sh site/install
-          cp release/install.sh site/install.sh
-          mkdir -p site/architecture
-          cp docs/site/architecture.html site/architecture/index.html
-          cp -r docs/site/gateway-network site/architecture/gateway-network
-          touch site/.nojekyll
-          cat > site/index.html <<'EOF'
+          mkdir -p _site
+          cp -r site/pages/. _site/
+          cp release/install.sh _site/install
+          cp release/install.sh _site/install.sh
+          touch _site/.nojekyll
+          cat > _site/index.html <<'EOF'
           <!doctype html>
           <meta charset="utf-8">
           <title>agent-net</title>
@@ -88,6 +86,6 @@ jobs:
       - uses: actions/configure-pages@v5.0.0
       - uses: actions/upload-pages-artifact@v3.0.1
         with:
-          path: site
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4.0.5
