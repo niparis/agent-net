@@ -24,7 +24,7 @@ The TUI opens on the Sessions tab: your machine and the agent sessions running o
 
 Ask the CTO: *"Add my laptop."* It prints one install line, valid for 10 minutes and one machine. Paste it in a shell on that machine. The new machine shows up in the Sessions tab, and its sessions can now talk to every other session.
 
-Repeat for each machine. Then tell the CTO where workers should run by default, for example *"Run workers on the Linux box, not on my laptop."*
+A common setup is your laptop plus a VM that does the heavy work. Add the VM the same way, and make it the default home for workers: *"Add a VM, and run workers there by default."* Your laptop then stays free, and workers keep running when it sleeps.
 
 ## 4. Bring in your projects
 
