@@ -2,6 +2,17 @@
   "input": {
     "type": "object",
     "properties": {
+      "id": {
+        "type": "string",
+        "description": "Judgment ID: read one judgment."
+      },
+      "ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Judgment IDs: read judgments by ID."
+      },
       "query": {
         "type": "string",
         "description": "Text or keywords to search across owner judgments."

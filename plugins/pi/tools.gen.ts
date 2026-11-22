@@ -1797,10 +1797,21 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_owner_judgments_find",
-    "description": "Search the owner's past decisions, standing orders, rules, answers and corrections. Ranked for a query, else newest first. marks: true returns only the Desk marks with their asks; offset pages. Agent notes show only with kind feedback, fact or reference (see agent_notes_find to read yours).",
+    "description": "Search the owner's past decisions, standing orders, rules, answers and corrections by text, id or ids. Ranked for a query, else newest first. marks: true returns only the Desk marks with their asks; offset pages. Agent notes show only with kind feedback, fact or reference (see agent_notes_find to read yours).",
     "inputSchema": {
       "type": "object",
       "properties": {
+        "id": {
+          "type": "string",
+          "description": "Judgment ID: read one judgment."
+        },
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Judgment IDs: read judgments by ID."
+        },
         "query": {
           "type": "string",
           "description": "Text or keywords to search across owner judgments."
@@ -1852,7 +1863,9 @@ export const TOOL_CATALOG = [
       "worker"
     ],
     "method": "judgments_find",
-    "daemon_fields": {}
+    "daemon_fields": {
+      "id": "judgment_id"
+    }
   },
   {
     "name": "agent_permission_propose",
