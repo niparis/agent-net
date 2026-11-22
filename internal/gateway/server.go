@@ -694,8 +694,6 @@ func (g *Gateway) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST /v1/enroll", g.handleEnroll)
 	mux.HandleFunc("GET /v1/node", g.handleNode)
-	mux.HandleFunc("GET /v1/quality-settings", g.handleQualitySettings)
-	mux.HandleFunc("PUT /v1/quality-settings", g.handleQualitySettings)
 	mux.HandleFunc("GET /v1/timezone-settings", g.handleTimeZoneSettings)
 	mux.HandleFunc("PUT /v1/timezone-settings", g.handleTimeZoneSettings)
 	mux.HandleFunc("GET /v1/protected-providers", g.handleProtectedProviders)

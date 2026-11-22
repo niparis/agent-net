@@ -8,9 +8,9 @@ tasks per effect. Effort effects sum to zero within each model. The gateway
 rebuilds the cached analysis at startup and when ratings, runs, profiles or
 score overrides change, including run retention. No request or TUI redraw
 fits data. Quotas shows effects, counts and predictions at normal difficulty.
-Rotation weighting is owner controlled through
-`agent-net scores quality on|off`, defaults to off, and needs at least 5
-ratings. Its multiplier is
+Rotation weighting was owner controlled through
+`agent-net scores quality on|off`, defaulted to off, and needed at least 5
+ratings. The always-disabled path was removed on 2026-11-22. Its multiplier is
 `1 + (prediction - average) / 4`, bounded to 0.5 through 1.5. Weak ratings
 count half; models without a strong rating cannot get a prediction above
 the fitted average. Residuals over 0.75 points with at least 5 ratings flag a

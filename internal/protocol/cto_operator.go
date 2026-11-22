@@ -16,14 +16,14 @@ const (
 const CTOOperatorReads = `info nodes list projects events message_status workers project_display_get sessions_archived worker_log apps.pending
 merger_get session_start_get inbox_list asks_list chief_get chief_sorts ask_history desk_log outcome_inbox learned_list learned_view
 usage usage_top session_text counts conversations conversation_messages graph_view graph_talk
-session_agent_list integrations_get hidden_get onboarding_get quality_get timezone_get
+session_agent_list integrations_get hidden_get onboarding_get timezone_get
 protected_providers_get worker_floors_get worker_providers_get difficulty_get scores_get scores_weekly
 worker_rotation_get difficulty_judge_pick cto_events cto_graph_history held_list team_history
 graph_get charter_history edge_history node_settings_get settings_owner_read changes_owner_find playbook_get picker_get
 sign_in_list nudge_stats friction_find`
 
 const CTOOperatorChanges = `operator_undo sessions_archive cto_enter cto_send session_enter apps.public.restore session_pin apps.refuse apps.public.url gateway_backup
-session_stop session_resume session_agent_set notes_copy notes_uncopy learned_answer hidden_set onboarding_set quality_set timezone_set
+session_stop session_resume session_agent_set notes_copy notes_uncopy learned_answer hidden_set onboarding_set timezone_set
 worker_floors_set worker_floors_reset difficulty_set team_write delivery_owner_set merger_set merger_restore chief_set ask_undo ask_mark changes_owner_report worker_defect sign_in_raise bar_edit
 permission_apply permission_undo friction_mark edge_set`
 

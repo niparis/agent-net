@@ -115,13 +115,3 @@ func DefectMinutes(severity int) float64 {
 		return 0
 	}
 }
-
-const OpQualityGet = "quality_get"
-const OpQualitySet = "quality_set"
-
-// QualitySettings is unused. Quality weighting is off for good: the cell picker
-// (decision 0105) replaced it. The operation stays so older clients keep working,
-// and always answers disabled.
-type QualitySettings struct {
-	Enabled bool `json:"enabled"`
-}

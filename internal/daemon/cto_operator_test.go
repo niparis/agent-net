@@ -140,7 +140,6 @@ func TestCTOOperatorSettingsUndo(t *testing.T) {
 	}{
 		{"hidden_set", "hidden_get", map[string]any{"sessions": []string{"fixture"}}},
 		{"timezone_set", "timezone_get", map[string]any{"name": "Europe/Paris"}},
-		{"quality_set", "quality_get", map[string]any{"enabled": true}},
 		{"difficulty_set", "difficulty_get", map[string]any{"hard": 77}},
 		{"onboarding_set", "onboarding_get", map[string]any{"step": "see", "state": "done"}},
 		{"worker_floors_set", "worker_floors_get", map[string]any{"floors": map[string]float64{"anthropic": 20}}},
