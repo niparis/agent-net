@@ -68,6 +68,6 @@ rep('.rel{font-size:13px;color:var(--muted)}', '.rel{font-size:13px;color:var(--
     '.mdt table{border-collapse:collapse;width:100%;font-size:14px}\n.mdt th,.mdt td{text-align:left;vertical-align:top;padding:8px 12px;border-bottom:1px solid var(--line)}\n'
     '.mdt th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}\n.qs.rd{max-width:none}\n.qs.rd p,.qs.rd ul,.qs.rd ol{max-width:80ch}\n.qs.rd i{color:inherit}\n'
     'details.howto .qs{margin-top:10px}')
-assert '—' not in overview_add + runs_add
+assert '\u2014' not in overview_add + runs_add
 open(H + 'tpl_model.html', 'w').write(s)
 print('readme bits added')

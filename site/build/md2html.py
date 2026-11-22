@@ -132,5 +132,5 @@ def render(md, skip_title=True, base=None):
     if out and out[-1].startswith('<tr'):
         out.append('</table></div>')
     body = '\n'.join(out)
-    assert '—' not in body
+    assert '\u2014' not in body
     return body

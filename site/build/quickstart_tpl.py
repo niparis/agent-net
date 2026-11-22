@@ -12,7 +12,7 @@ import sys
 sys.path.insert(0, H)
 from md2html import render  # noqa: E402
 body = render(md)
-assert '—' not in body
+assert '\u2014' not in body
 
 s = open(H + 'tpl_model.html').read()
 
