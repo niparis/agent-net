@@ -319,6 +319,12 @@ func (d *Daemon) ctoCatalogWorkersFind(ctx context.Context, raw json.RawMessage)
 
 func (d *Daemon) ctoCatalogMessagesFind(ctx context.Context, raw json.RawMessage) (any, error) {
 	var q struct {
+		ID           string `json:"id"`
+		Message      string `json:"message"`
+		BodyCursor   string `json:"body_cursor"`
+		MaxBytes     int    `json:"max_bytes"`
+		File         string `json:"file"`
+		FileCursor   string `json:"file_cursor"`
 		Conversation string `json:"conversation"`
 		With         string `json:"with"`
 		Direction    string `json:"direction"`
@@ -329,6 +335,50 @@ func (d *Daemon) ctoCatalogMessagesFind(ctx context.Context, raw json.RawMessage
 	}
 	if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &q) != nil {
 		return nil, errors.New("bad agent_messages_find arguments")
+	}
+	if q.Message == "" && q.ID != "" {
+		q.Message = q.ID
+	}
+	if q.Message != "" {
+		getRaw, _ := json.Marshal(map[string]any{
+			"message":     q.Message,
+			"body_cursor": q.BodyCursor,
+			"max_bytes":   q.MaxBytes,
+			"file":        q.File,
+			"file_cursor": q.FileCursor,
+		})
+		res, err := d.ctoCatalogMessageGet(ctx, getRaw)
+		if err != nil {
+			return nil, err
+		}
+		getOut, ok := res.(map[string]any)
+		if !ok {
+			return res, nil
+		}
+		msg, _ := getOut["message"].(map[string]any)
+		item := map[string]any{
+			"id":              msg["id"],
+			"conversation":    msg["conversation"],
+			"from":            msg["from"],
+			"to":              msg["to"],
+			"type":            msg["type"],
+			"state":           msg["state"],
+			"delivery_detail": msg["delivery_detail"],
+			"time":            msg["time"],
+			"ago":             msg["ago"],
+			"text":            msg["text"],
+			"truncated":       msg["truncated"],
+			"outcome":         msg["outcome"],
+			"reason":          msg["reason"],
+		}
+		out := map[string]any{
+			"items": []any{item},
+			"total": 1,
+		}
+		for k, v := range getOut {
+			out[k] = v
+		}
+		return out, nil
 	}
 	if q.Direction == "" {
 		q.Direction = "any"

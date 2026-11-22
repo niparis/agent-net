@@ -283,16 +283,16 @@ func TestMessageGetSameForMCPAndPlugins(t *testing.T) {
 	if long == "" {
 		t.Fatal("no long message")
 	}
-	whole := sameRead(t, r, "agent_message_get", map[string]any{"message": long, "max_bytes": 16384})
+	whole := sameRead(t, r, "agent_messages_find", map[string]any{"message": long, "max_bytes": 16384})
 	if whole["body_truncated"] != false {
 		t.Fatalf("whole body: %v", whole)
 	}
-	first := sameRead(t, r, "agent_message_get", map[string]any{"message": long, "max_bytes": 256})
+	first := sameRead(t, r, "agent_messages_find", map[string]any{"message": long, "max_bytes": 256})
 	cursor, _ := first["next_body_cursor"].(string)
 	if first["body_truncated"] != true || cursor == "" {
 		t.Fatalf("first chunk: %v", first)
 	}
-	second := sameRead(t, r, "agent_message_get", map[string]any{"message": long, "max_bytes": 256, "body_cursor": cursor})
+	second := sameRead(t, r, "agent_messages_find", map[string]any{"message": long, "max_bytes": 256, "body_cursor": cursor})
 	if second["message"].(map[string]any)["body"] == first["message"].(map[string]any)["body"] {
 		t.Fatalf("the second chunk repeats the first: %v", second)
 	}

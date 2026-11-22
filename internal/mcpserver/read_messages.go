@@ -17,6 +17,12 @@ import (
 )
 
 type roMessagesFindIn struct {
+	ID           string `json:"id"`
+	Message      string `json:"message"`
+	BodyCursor   string `json:"body_cursor"`
+	MaxBytes     int    `json:"max_bytes"`
+	File         string `json:"file"`
+	FileCursor   string `json:"file_cursor"`
 	Conversation string `json:"conversation"`
 	With         string `json:"with"`
 	Direction    string `json:"direction"`
@@ -44,10 +50,15 @@ type roMessageRow struct {
 }
 
 type roMessagesFindOut struct {
-	Items      []roMessageRow `json:"items"`
-	Total      int            `json:"total"`
-	NextCursor string         `json:"next_cursor,omitempty"`
-	Note       string         `json:"note,omitempty"`
+	Items          []roMessageRow   `json:"items"`
+	Total          int              `json:"total"`
+	NextCursor     string           `json:"next_cursor,omitempty"`
+	Note           string           `json:"note,omitempty"`
+	Message        *roMessageDetail `json:"message,omitempty"`
+	NextBodyCursor string           `json:"next_body_cursor,omitempty"`
+	BodyTruncated  bool             `json:"body_truncated"`
+	Files          []roFileInfo     `json:"files,omitempty"`
+	File           *roFileChunk     `json:"file,omitempty"`
 }
 
 // roMessageDetail is the message_get row. The output schema requires the
@@ -117,6 +128,44 @@ func addMessageReadTools(s *mcp.Server, call Caller) {
 }
 
 func roFindMessages(ctx context.Context, call Caller, in roMessagesFindIn) (roMessagesFindOut, error) {
+	if in.Message == "" && in.ID != "" {
+		in.Message = in.ID
+	}
+	if in.Message != "" {
+		getOut, err := roGetMessage(ctx, call, roMessageGetIn{
+			Message:    in.Message,
+			BodyCursor: in.BodyCursor,
+			MaxBytes:   in.MaxBytes,
+			File:       in.File,
+			FileCursor: in.FileCursor,
+		})
+		if err != nil {
+			return roMessagesFindOut{}, err
+		}
+		return roMessagesFindOut{
+			Items: []roMessageRow{{
+				ID:             getOut.Message.ID,
+				Conversation:   getOut.Message.Conversation,
+				From:           getOut.Message.From,
+				To:             getOut.Message.To,
+				Type:           getOut.Message.Type,
+				State:          getOut.Message.State,
+				DeliveryDetail: getOut.Message.DeliveryDetail,
+				Time:           getOut.Message.Time,
+				Ago:            getOut.Message.Ago,
+				Text:           getOut.Message.Text,
+				Truncated:      getOut.Message.Truncated,
+				Outcome:        getOut.Message.Outcome,
+				Reason:         getOut.Message.Reason,
+			}},
+			Total:          1,
+			Message:        &getOut.Message,
+			NextBodyCursor: getOut.NextBodyCursor,
+			BodyTruncated:  getOut.BodyTruncated,
+			Files:          getOut.Files,
+			File:           getOut.File,
+		}, nil
+	}
 	direction := in.Direction
 	if direction == "" {
 		direction = "any"

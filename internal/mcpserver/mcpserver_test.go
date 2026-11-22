@@ -74,7 +74,7 @@ func TestToolsForwardToDaemon(t *testing.T) {
 		have[tl.Name] = true
 	}
 	want := []string{"agent_announce", "agent_owner_ask", "agent_sessions_find", "agent_learn", "agent_note_write", "agent_notes_find",
-		"agent_graph_read", "agent_machines_find", "agent_messages_find", "agent_message_get",
+		"agent_graph_read", "agent_machines_find", "agent_messages_find",
 		"agent_message_send", "agent_message_reply", "agent_message_handoff", "agent_permission_propose",
 		"agent_projects_find", "agent_project_add",
 		"agent_worker_start", "agent_worker_stop",
@@ -116,8 +116,6 @@ func TestToolsForwardToDaemon(t *testing.T) {
 		{"agent_message_send", "send", map[string]any{"to": "s_x", "body": "hi"}},
 		{"agent_message_reply", "reply", map[string]any{"message": "m_1", "body": "b"}},
 		{"agent_messages_find", "messages_find", map[string]any{"limit": 5}},
-		{"agent_message_get", "message_get", map[string]any{"message": "m_1"}},
-		{"agent_session_get", "session_get", map[string]any{"session": "s_1"}},
 		{"agent_announce", "announce", map[string]any{"task": "t"}},
 		{"agent_machines_find", "machines_find", map[string]any{}},
 		{"agent_project_add", "project_add", map[string]any{"paths": []string{"~/code/a"}}},

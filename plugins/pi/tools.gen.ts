@@ -1124,48 +1124,6 @@ export const TOOL_CATALOG = [
     }
   },
   {
-    "name": "agent_message_get",
-    "description": "Read one message's full body, delivery state and outcome. Long bodies come in chunks: follow next_body_cursor until it is absent. Attachments are in files: pass file to read one as text, then follow next_file_cursor. A binary file gives name, size and type only.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "message": {
-          "type": "string",
-          "description": "Message ID."
-        },
-        "body_cursor": {
-          "type": "string",
-          "description": "Cursor from the previous body chunk."
-        },
-        "max_bytes": {
-          "type": "integer",
-          "minimum": 256,
-          "maximum": 16384,
-          "default": 8192,
-          "description": "Maximum UTF-8 bytes per chunk."
-        },
-        "file": {
-          "type": "string",
-          "description": "Attachment to read as text."
-        },
-        "file_cursor": {
-          "type": "string",
-          "description": "Cursor from the previous file page."
-        }
-      },
-      "required": [
-        "message"
-      ],
-      "additionalProperties": false
-    },
-    "roles": [
-      "agent",
-      "worker"
-    ],
-    "method": "message_get",
-    "daemon_fields": {}
-  },
-  {
     "name": "agent_message_handoff",
     "description": "Hand a request you received as a team or repo lead to a member. The member gets the original message with the original sender kept, answers the asker directly, and you get a copy of the reply. Use it when the request is the member's to answer; otherwise answer it yourself with agent_message_reply.",
     "inputSchema": {
@@ -1387,10 +1345,37 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_messages_find",
-    "description": "Find messages by conversation, peer, direction or time. Rows hold a preview; use agent_message_get for the body.",
+    "description": "Find messages by conversation, peer, direction or time, or read one message's full body and delivery state by message or id.",
     "inputSchema": {
       "type": "object",
       "properties": {
+        "id": {
+          "type": "string",
+          "description": "Message ID: read one message in full detail."
+        },
+        "message": {
+          "type": "string",
+          "description": "Message ID: read one message in full detail."
+        },
+        "body_cursor": {
+          "type": "string",
+          "description": "Cursor from the previous body chunk."
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 256,
+          "maximum": 16384,
+          "default": 8192,
+          "description": "Maximum UTF-8 bytes per chunk."
+        },
+        "file": {
+          "type": "string",
+          "description": "Attachment to read as text."
+        },
+        "file_cursor": {
+          "type": "string",
+          "description": "Cursor from the previous file page."
+        },
         "conversation": {
           "type": "string",
           "description": "Conversation ID."
@@ -1443,7 +1428,9 @@ export const TOOL_CATALOG = [
       "worker"
     ],
     "method": "messages_find",
-    "daemon_fields": {}
+    "daemon_fields": {
+      "id": "message"
+    }
   },
   {
     "name": "agent_note_write",

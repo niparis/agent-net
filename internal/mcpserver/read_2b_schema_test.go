@@ -30,7 +30,6 @@ func TestReadToolsUseTheCatalogAndValidateTheirOutput(t *testing.T) {
 	}
 	calls := map[string]map[string]any{
 		"agent_messages_find":        {},
-		"agent_message_get":          {"message": "m_59"},
 		"agent_workers_find":         {},
 		"agent_graph_read":           {},
 		"agent_mcp_servers_find":     {},
