@@ -26,6 +26,7 @@
 ## Work on it
 
 - [../AGENTS.md](../AGENTS.md): build, test, layout and conventions.
+- [lessons.md](lessons.md): engineering lessons from the build, one short rule each, with what happened and where to read more.
 - [../RELEASING.md](../RELEASING.md): cut a release and update machines.
 - [roadmap.md](roadmap.md): work the owner wants that has not started yet.
 - [design/onboarding.md](design/onboarding.md): onboarding design.
