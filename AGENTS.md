@@ -104,7 +104,7 @@ Short rules from the build. Each links to the full lesson, with what happened an
 - [docs/README.md](docs/README.md) is the index.
 - Product principles: `docs/principles.md`. Read them before a design choice, and add to them when the owner sets a new one.
 - Current docs: `docs/setup.md`, `docs/reference.md`, `docs/security.md`, `docs/troubleshooting.md`.
-- Design history (decisions and early plans, not kept up to date): `docs/brief.md`, `docs/review.md`, `docs/decisions/`, `docs/spike/`, `docs/step2-*.md`. Read `docs/decisions/` before you change an architectural choice, and add a new numbered file there when you make one.
+- Design history (decisions and early plans, not kept up to date): `docs/brief.md`, `docs/review.md`, `docs/decisions/`, `docs/step2-design.md`. Read `docs/decisions/` before you change an architectural choice, and add a new numbered file there when you make one.
 - Releasing: [RELEASING.md](RELEASING.md).
 
 ## Screen previews

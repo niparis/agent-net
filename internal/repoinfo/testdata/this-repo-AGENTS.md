@@ -49,5 +49,5 @@ CI runs `gofmt`, `go vet`, `go test -race` and `sh -n install.sh`. All must pass
 
 - [docs/README.md](docs/README.md) is the index.
 - Current docs: `docs/setup.md`, `docs/reference.md`, `docs/security.md`, `docs/troubleshooting.md`.
-- Design history (decisions and early plans, not kept up to date): `docs/brief.md`, `docs/review.md`, `docs/decisions/`, `docs/spike/`, `docs/step2-*.md`. Read `docs/decisions/` before you change an architectural choice, and add a new numbered file there when you make one.
+- Design history (decisions and early plans, not kept up to date): `docs/brief.md`, `docs/review.md`, `docs/decisions/`, `docs/step2-design.md`. Read `docs/decisions/` before you change an architectural choice, and add a new numbered file there when you make one.
 - Releasing: [RELEASING.md](RELEASING.md).
