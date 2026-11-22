@@ -7,6 +7,13 @@ name: pages
 on:
   release:
     types: [published]
+  # The architecture guide and its pages deploy as soon as they change on main.
+  # Every run rebuilds the whole site, so the installer is always included.
+  push:
+    branches: [main]
+    paths:
+      - 'docs/site/**'
+      - '.github/workflows/pages.yml'
   workflow_dispatch:
 
 permissions:
