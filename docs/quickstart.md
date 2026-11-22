@@ -64,22 +64,9 @@ The way to work with a lead is to design with it, not to pass it a one-line orde
 
 From there the lead works on its own. It splits the plan into tasks and starts **workers**: short-lived sessions that each do one task in their own branch and sandbox, then hand back. agent-net picks the agent program, model and machine for each worker. The lead reviews what comes back, and each change goes through its steps (accept, review, test, merge, release, verify) until it ships. You get short outcomes, and you come back to the lead when a real decision is needed.
 
-## 6. Day to day: what people ask the CTO
+## 6. Day to day with the CTO
 
-The CTO changes how the network is set up. Typical asks:
-
-- *"Start a new project for the mobile app: a repo, a lead and a charter."*
-- *"The blog lead should also own the docs site, and it must never touch the database schema."* (changes a charter)
-- *"Let the shop lead merge and release on its own once the tests pass."* (changes who may merge)
-- *"Move the blog into the web team."*
-- *"Where are we on the checkout rework? Just a status, no more work."*
-- *"Add Gemini Neon as a new worker profile, and advise me on the right effort level."* (registers a new kind of worker that the picker can then choose)
-- *"Use a cheaper model for the blog lead."*
-- *"Keep workers off my personal subscription."*
-- *"The build on the Linux box is broken. Get it fixed by whoever owns that machine."*
-- *"Clean up the stray and duplicate sessions."*
-- *"Stand the blog team down for now"*, then later *"restart it"*.
-- *"Why did that release fail? I want the cause, not a workaround."*
+The CTO changes how the network is set up: new projects, leads, teams, charters, who may merge, worker profiles, models and settings. Ask it in plain words. (Real examples from daily use will be added here.)
 
 ## 7. What stays with you
 
