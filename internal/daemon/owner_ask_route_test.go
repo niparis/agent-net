@@ -9,7 +9,7 @@ import (
 )
 
 // agent_owner_ask is one daemon method for every harness. The daemon, not the
-// harness, picks the ask kind (decision in one place, principle 19): a
+// harness, picks the ask kind (decision in one place, principle 18): a
 // question is a Desk ask, not an explicit wait.
 func TestOwnerAskRoutesByKind(t *testing.T) {
 	t.Parallel()

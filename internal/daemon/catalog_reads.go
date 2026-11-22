@@ -11,7 +11,7 @@ import (
 // dispatchCatalogRead serves the four read tools that filter, page or fetch:
 // messages_find, message_get, workers_find and servers_find. The input is
 // the tool input and the answer is the tool output, so the MCP server and the
-// native plugins get one answer (principle 19). The reads go through this
+// native plugins get one answer (principle 18). The reads go through this
 // connection's own methods, so the bound session decides what they may see.
 func (lc *localConn) dispatchCatalogRead(ctx context.Context, method string, raw json.RawMessage) (res any, handled bool, err error) {
 	switch method {

@@ -5,7 +5,7 @@ Date: 2026-11-20
 Claude Code and Codex reach agent-net through the MCP server. Pi and OpenCode
 send the generated catalog straight to the daemon. Until now some tools did
 more work in the MCP server than in the daemon, so the two paths gave different
-answers ([principle 19](../principles.md): each decision is made in one place).
+answers ([principle 18](../principles.md): each decision is made in one place).
 
 ## What was different
 
