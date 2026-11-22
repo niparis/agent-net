@@ -12,7 +12,6 @@ var daemonFields = map[string]map[string]string{
 	"agent_messages_find":        {"id": "message"},
 	"agent_notes_find":           {"id": "note_id"},
 	"agent_owner_judgments_find": {"id": "judgment_id"},
-	"agent_worker_profiles_find": {"id": "name"},
 	"agent_due":                  {"id": "due_id"},
 	"agent_message_reply":        {"message": "message_id"},
 	"agent_message_withdraw":     {"message": "message_id"},

@@ -26,7 +26,6 @@ func TestReadToolsForwardOneCallToTheCatalogMethod(t *testing.T) {
 		answer              string
 	}{
 		{"agent_messages_find", "with", "bob", `{"items":[],"total":0}`},
-		{"agent_message_get", "message", "m_1", `{"message":{"id":"m_1","conversation":"c","from":{"id":"a","name":"a"},"to":{"id":"b","name":"b"},"type":"request","state":"delivered","time":"","text":"","truncated":false,"body":"","outcome":"","reason":""},"body_truncated":false}`},
 		{"agent_workers_find", "project", "alpha", `{"items":[],"total":0}`},
 		{"agent_mcp_servers_find", "limit", "7", `{"items":[],"total":0}`},
 	}

@@ -13,7 +13,7 @@ import (
 func TestCTOOutputFromNewerDaemon(t *testing.T) {
 	// Model an MCP binary whose embedded machine schema predates health.
 	for i := range toolcatalog.Tools {
-		if toolcatalog.Tools[i].Name != "agent_machine_get" {
+		if toolcatalog.Tools[i].Name != "agent_machines_find" {
 			continue
 		}
 		old := toolcatalog.Tools[i].OutputSchema
@@ -29,7 +29,7 @@ func TestCTOOutputFromNewerDaemon(t *testing.T) {
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()
 	srv := NewCTO(func(context.Context, string, any) (json.RawMessage, error) {
-		return json.RawMessage(`{"machine":{"id":"m1","name":"test","online":true,"version":"v1.0.0","harnesses":[{"name":"test","version":"1","new":1}],"sessions_online":0,"workers_running":0,"new":2},"models":{"items":[{"harness":"test","id":"m","new":3}],"total":1,"new":4},"health":{"status":"ok"}}`), nil
+		return json.RawMessage(`{"items":[{"id":"m1","name":"test","online":true,"version":"v1.0.0","harnesses":[{"name":"test","version":"1","new":1}],"sessions_online":0,"workers_running":0,"new":2}],"total":1,"machine":{"id":"m1","name":"test","online":true,"version":"v1.0.0","harnesses":[{"name":"test","version":"1","new":1}],"sessions_online":0,"workers_running":0,"new":2},"models":{"items":[{"harness":"test","id":"m","new":3}],"total":1,"new":4},"health":{"status":"ok"}}`), nil
 	}, "v0.4.149")
 	ss, err := srv.Connect(ctx, st, nil)
 	if err != nil {
@@ -41,7 +41,7 @@ func TestCTOOutputFromNewerDaemon(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cs.Close()
-	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_machine_get", Arguments: map[string]any{"machine": "test"}})
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_machines_find", Arguments: map[string]any{"machine": "test"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestCTOUpgradeHintOnce(t *testing.T) {
 	}
 	defer cs.Close()
 	for i := 0; i < 2; i++ {
-		res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_machine_get", Arguments: map[string]any{"machine": "test"}})
+		res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_machines_find", Arguments: map[string]any{"machine": "test"}})
 		if err != nil {
 			t.Fatal(err)
 		}

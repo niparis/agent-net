@@ -83,7 +83,6 @@ type NoteWriteResult struct {
 // NotesFindRequest is agent_notes_find. Text matches names, descriptions and
 // bodies; empty text lists the most used. Scope narrows to one scope.
 type NotesFindRequest struct {
-	ID     string   `json:"id,omitempty"`
 	NoteID string   `json:"note_id,omitempty"`
 	IDs    []string `json:"ids,omitempty"`
 	Name   string   `json:"name,omitempty"`

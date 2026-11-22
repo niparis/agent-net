@@ -235,11 +235,7 @@ func TestOwnerJudgmentsFind(t *testing.T) {
 		}
 	}
 
-	// 5. Find by ID, JudgmentID, and IDs.
-	byID, err := s.FindJudgments(protocol.JudgmentsFindRequest{ID: all[0].ID})
-	if err != nil || len(byID) != 1 || byID[0].ID != all[0].ID {
-		t.Fatalf("expected 1 hit by ID, got %+v (err %v)", byID, err)
-	}
+	// 5. Find by JudgmentID, and IDs.
 	byJudgmentID, err := s.FindJudgments(protocol.JudgmentsFindRequest{JudgmentID: all[1].ID})
 	if err != nil || len(byJudgmentID) != 1 || byJudgmentID[0].ID != all[1].ID {
 		t.Fatalf("expected 1 hit by JudgmentID, got %+v (err %v)", byJudgmentID, err)

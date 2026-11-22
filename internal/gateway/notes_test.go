@@ -330,15 +330,9 @@ func TestNotesFindByIDAndName(t *testing.T) {
 	n1 := noteWrite(t, s, demo, protocol.NoteWriteRequest{Name: "alpha-note", Description: "first", Body: "body one", Scope: "project"})
 	n2 := noteWrite(t, s, demo, protocol.NoteWriteRequest{Name: "beta-note", Description: "second", Body: "body two", Scope: "project"})
 
-	// By ID
-	res, err := s.FindNotes(demo, protocol.NotesFindRequest{ID: n1.ID})
+	// By NoteID
+	res, err := s.FindNotes(demo, protocol.NotesFindRequest{NoteID: n1.ID})
 	if err != nil || res.Total != 1 || res.Notes[0].ID != n1.ID {
-		t.Fatalf("find by ID: got %+v err %v", res, err)
-	}
-
-	// By NoteID alias
-	res, err = s.FindNotes(demo, protocol.NotesFindRequest{NoteID: n2.ID})
-	if err != nil || res.Total != 1 || res.Notes[0].ID != n2.ID {
 		t.Fatalf("find by NoteID: got %+v err %v", res, err)
 	}
 

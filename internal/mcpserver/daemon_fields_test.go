@@ -22,9 +22,9 @@ var daemonFieldSamples = map[string]map[string]any{
 	"agent_step_claim":    {"change": "CHANGE", "step": "test", "commit": sampleCommit},
 	"agent_step_report":   {"change": "CHANGE", "step": "test", "result": "pass", "commit": sampleCommit},
 	"agent_note_write":    {"name": "NAME", "description": "DESC", "body": "BODY"},
-	"agent_messages_find": {"since": "2026-01-01T12:00:00Z", "conversation": "CONV", "with": "WITH"},
-	"agent_sessions_find": {"kind": []any{"agent"}, "text": "TEXT", "project": "PROJ"},
-	"agent_machine_get":   {"machine": "MACH", "include": []any{"models"}},
+	"agent_messages_find": {"since": "2026-01-01T12:00:00Z", "conversation": "CONV", "with": "WITH", "id": "ID"},
+	"agent_sessions_find": {"kind": []any{"agent"}, "text": "TEXT", "project": "PROJ", "id": "ID"},
+	"agent_machines_find": {"id": "ID"},
 }
 
 const sampleCommit = "0123456789012345678901234567890123456789"
@@ -139,6 +139,11 @@ func daemonFieldInput(t *testing.T, tool toolcatalog.PluginTool) (map[string]any
 		// A cursor is opaque, and continue excludes task in worker_start.
 		if _, ok := input[name]; ok || name == "cursor" || name == "continue" {
 			continue
+		}
+		if target := toolcatalog.DaemonField(tool.Name, "id"); target != "" && target != "id" && name == target {
+			if _, ok := input["id"]; ok {
+				continue
+			}
 		}
 		switch {
 		case len(prop.Enum) > 0:

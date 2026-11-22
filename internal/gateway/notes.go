@@ -305,12 +305,9 @@ func (s *Store) findNotes(session string, q protocol.NotesFindRequest, now time.
 			res.StaleCount++
 		}
 	}
-	if q.NoteID != "" && q.ID == "" {
-		q.ID = q.NoteID
-	}
 	idFilter := map[string]bool{}
-	if q.ID != "" {
-		idFilter[q.ID] = true
+	if q.NoteID != "" {
+		idFilter[q.NoteID] = true
 	}
 	for _, id := range q.IDs {
 		if id != "" {

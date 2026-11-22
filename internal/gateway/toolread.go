@@ -305,9 +305,6 @@ func charterList(value string) []string {
 
 // FindSessions answers agent_sessions_find.
 func (s *Store) FindSessions(p protocol.SessionsFindRequest) (protocol.SessionsPage, error) {
-	if p.Session == "" && p.ID != "" {
-		p.Session = p.ID
-	}
 	if p.Session != "" {
 		res, err := s.GetSession(protocol.SessionGetRequest{Session: p.Session, Caller: p.Caller})
 		if err != nil {
@@ -541,9 +538,6 @@ func machineStateName(n protocol.NodeView, online bool) string {
 
 // FindMachines answers agent_machines_find.
 func (g *Gateway) FindMachines(p protocol.MachinesFindRequest) (protocol.MachinesPage, error) {
-	if p.Machine == "" && p.ID != "" {
-		p.Machine = p.ID
-	}
 	if p.Machine != "" {
 		if len(p.Include) > 1 {
 			return protocol.MachinesPage{}, fmt.Errorf("machine_get takes at most one include category, because the cursor pages that category. Example: {\"machine\":\"research\",\"include\":[\"models\"]}")

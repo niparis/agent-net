@@ -251,12 +251,6 @@ func TestFindSessionsFullDetail(t *testing.T) {
 		t.Fatalf("sessions find by session: %+v %v", bySession, err)
 	}
 	checkOutput(t, "agent_sessions_find", bySession)
-
-	byID, err := s.FindSessions(protocol.SessionsFindRequest{ID: ids["s01"]})
-	if err != nil || len(byID.Items) != 1 || byID.Session == nil || byID.Session.Folder != "/work/s01" {
-		t.Fatalf("sessions find by id: %+v %v", byID, err)
-	}
-	checkOutput(t, "agent_sessions_find", byID)
 }
 
 func TestSessionReadCarriesLegacyCharter(t *testing.T) {
@@ -416,12 +410,6 @@ func TestFindMachinesAndMachineGet(t *testing.T) {
 		t.Fatalf("find machines by machine: %+v %v", oneFind, err)
 	}
 	checkOutput(t, "agent_machines_find", oneFind)
-
-	oneFindID, err := g.FindMachines(protocol.MachinesFindRequest{ID: "research"})
-	if err != nil || oneFindID.Machine == nil || len(oneFindID.Items) != 1 {
-		t.Fatalf("find machines by id: %+v %v", oneFindID, err)
-	}
-	checkOutput(t, "agent_machines_find", oneFindID)
 
 	if _, err := g.MachineGet(context.Background(), protocol.MachineGetRequest{Machine: "research", Include: []string{"models", "quotas"}}); err == nil ||
 		!strings.Contains(err.Error(), "one") {

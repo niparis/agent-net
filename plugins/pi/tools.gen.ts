@@ -2591,9 +2591,7 @@ export const TOOL_CATALOG = [
       "agent"
     ],
     "method": "worker_profiles",
-    "daemon_fields": {
-      "id": "name"
-    }
+    "daemon_fields": {}
   },
   {
     "name": "agent_worker_rate",

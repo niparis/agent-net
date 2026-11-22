@@ -196,22 +196,22 @@ func TestReadToolsForwardFilters(t *testing.T) {
 	}
 
 	calls = nil
-	res, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_machine_get", Arguments: map[string]any{
+	res, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_machines_find", Arguments: map[string]any{
 		"machine": "research", "include": []string{"track_record"}, "harness": "claude", "model_filter": "terra", "limit": 5,
 	}})
 	if err != nil || res.IsError {
-		t.Fatalf("agent_machine_get: %v %+v", err, res)
+		t.Fatalf("agent_machines_find: %v %+v", err, res)
 	}
 	p = calls[0].params
-	if calls[0].method != "machine_get" || p["machine"] != "research" || p["model_filter"] != "terra" {
-		t.Fatalf("machine_get params: %+v", calls[0])
+	if calls[0].method != "machines_find" || p["machine"] != "research" || p["model_filter"] != "terra" {
+		t.Fatalf("machines_find params: %+v", calls[0])
 	}
 }
 
 func TestMachineGetTwoCategoriesRefused(t *testing.T) {
 	var calls []call
 	cs := connect(t, readToolCaller(t, &calls))
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_machine_get", Arguments: map[string]any{
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_machines_find", Arguments: map[string]any{
 		"machine": "research", "include": []string{"models", "quotas"},
 	}})
 	if err != nil {

@@ -262,12 +262,9 @@ func (s *Store) FindJudgments(q protocol.JudgmentsFindRequest) ([]protocol.Stand
 		notes, stale = 1, 1
 		cutoff = time.Now().Add(-time.Duration(protocol.NotesStaleDays) * 24 * time.Hour).Unix()
 	}
-	if q.JudgmentID != "" && q.ID == "" {
-		q.ID = q.JudgmentID
-	}
 	idFilter := map[string]bool{}
-	if q.ID != "" {
-		idFilter[q.ID] = true
+	if q.JudgmentID != "" {
+		idFilter[q.JudgmentID] = true
 	}
 	for _, id := range q.IDs {
 		if id != "" {

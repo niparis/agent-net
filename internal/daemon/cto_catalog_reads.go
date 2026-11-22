@@ -357,19 +357,25 @@ func (d *Daemon) ctoCatalogMessagesFind(ctx context.Context, raw json.RawMessage
 		}
 		msg, _ := getOut["message"].(map[string]any)
 		item := map[string]any{
-			"id":              msg["id"],
-			"conversation":    msg["conversation"],
-			"from":            msg["from"],
-			"to":              msg["to"],
-			"type":            msg["type"],
-			"state":           msg["state"],
-			"delivery_detail": msg["delivery_detail"],
-			"time":            msg["time"],
-			"ago":             msg["ago"],
-			"text":            msg["text"],
-			"truncated":       msg["truncated"],
-			"outcome":         msg["outcome"],
-			"reason":          msg["reason"],
+			"id":           msg["id"],
+			"conversation": msg["conversation"],
+			"from":         msg["from"],
+			"to":           msg["to"],
+			"type":         msg["type"],
+			"state":        msg["state"],
+			"time":         msg["time"],
+			"ago":          msg["ago"],
+			"text":         msg["text"],
+			"truncated":    msg["truncated"],
+		}
+		if s, ok := msg["delivery_detail"].(string); ok && s != "" {
+			item["delivery_detail"] = s
+		}
+		if s, ok := msg["outcome"].(string); ok && s != "" {
+			item["outcome"] = s
+		}
+		if s, ok := msg["reason"].(string); ok && s != "" {
+			item["reason"] = s
 		}
 		out := map[string]any{
 			"items": []any{item},
