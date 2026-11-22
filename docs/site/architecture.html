@@ -236,6 +236,7 @@ details.howto p{margin:6px 0 0;color:var(--muted);font-size:14px}
     <button class="tab" role="tab" id="t-model" aria-controls="tab-model" aria-selected="false">Data model</button>
     <button class="tab" role="tab" id="t-proposals" aria-controls="tab-proposals" aria-selected="false">Proposals</button>
     <button class="tab" role="tab" id="t-gwnet" aria-controls="tab-gwnet" aria-selected="false">Gateway network</button>
+    <button class="tab" role="tab" id="t-arch" aria-controls="tab-arch" aria-selected="false">Conductor arch</button>
   </div>
   <div class="tabpane" id="tab-overview" role="tabpanel" aria-labelledby="t-overview">
     <section aria-labelledby="ov-h"><div class="head"><div><h2 id="ov-h">What agent-net is</h2><p class="lede">agent-net connects AI coding agents (Claude Code, Codex, OpenCode, Pi, agy) running on several machines, so they work as one team for one person, the owner. You talk to one assistant, the CTO, and it runs the network for you: machines, projects, leads, workers and settings. The agents plan, build, review and ship; you decide what only you can decide.</p><p class="lede">This page has seven tabs: <b>Overview</b> (this one: what it is and who does the work), <b>Quick start</b> (your first day), <b>How it runs</b> (the programs and how they talk), <b>Features</b> (everything it does), <b>Principles</b> (the rules it is built on), <b>Data model</b> (how it is recorded) and <b>Proposals</b> (ideas not built yet).</p></div></div></section>
@@ -472,6 +473,704 @@ details.howto p{margin:6px 0 0;color:var(--muted);font-size:14px}
     <div class="ledger-wrap"><table class="ledger"><thead><tr><th>Table</th><th>Part</th><th>What happened</th><th>Where the data went</th></tr></thead><tbody id="ledger"></tbody></table></div>
   </section>
   </div>
+  <div class="tabpane" id="tab-arch" role="tabpanel" aria-labelledby="t-arch" hidden>
+    <iframe id="arch-frame" title="Conductor architecture" style="width:100%;height:900px;border:0;display:block" srcdoc="&lt;!doctype html&gt;&lt;html lang=&quot;en&quot;&gt;&lt;head&gt;&lt;meta charset=&quot;utf-8&quot;&gt;&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width,initial-scale=1&quot;&gt;&lt;title&gt;Conductor Architecture&lt;/title&gt;
+&lt;meta name=&quot;claude:viewport-fit-sides&quot; content=&quot;cover&quot;&gt;
+&lt;link rel=&quot;preconnect&quot; href=&quot;https://fonts.googleapis.com&quot;&gt;
+&lt;link rel=&quot;preconnect&quot; href=&quot;https://fonts.gstatic.com&quot; crossorigin&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans+Condensed:wght@500;600;700&amp;family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&amp;display=swap&quot;&gt;
+&lt;style&gt;
+/* Layout: an engineering schematic. One wide component diagram, then six numbered briefing sections. */
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --ink: #16212c;
+  --muted: #56636f;
+  --line: #c9d1d9;
+  --core: #16212c;        /* fixed by design */
+  --swap: #0e7c7b;        /* swappable module */
+  --swap-soft: #e3f2f1;
+  --config: #a8660b;      /* configuration */
+  --config-soft: #f8eedd;
+  --plan: #5b4fc4;        /* planned */
+  --plan-soft: #ecebfa;
+  --warn: #b4372b;
+  --warn-soft: #f9e6e3;
+  --node-fill: #16212c;
+  --node-text: #ffffff;
+  --display: &quot;IBM Plex Sans Condensed&quot;, &quot;Arial Narrow&quot;, system-ui, sans-serif;
+  --body: &quot;IBM Plex Sans&quot;, system-ui, -apple-system, &quot;Segoe UI&quot;, sans-serif;
+  --mono: &quot;IBM Plex Mono&quot;, ui-monospace, &quot;SFMono-Regular&quot;, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme=&quot;light&quot;]) {
+    --bg: #0f151b; --surface: #161e26; --ink: #e4e9ee; --muted: #9aa7b3; --line: #2c3946;
+    --core: #e4e9ee; --swap: #4fc1bd; --swap-soft: #12302f; --config: #e0a54a; --config-soft: #33270f;
+    --plan: #a59bff; --plan-soft: #24213f; --warn: #f08a7e; --warn-soft: #3a1c19;
+    --node-fill: #e4e9ee; --node-text: #0f151b; color-scheme: dark;
+  }
+}
+:root[data-theme=&quot;dark&quot;] {
+  --bg: #0f151b; --surface: #161e26; --ink: #e4e9ee; --muted: #9aa7b3; --line: #2c3946;
+  --core: #e4e9ee; --swap: #4fc1bd; --swap-soft: #12302f; --config: #e0a54a; --config-soft: #33270f;
+  --plan: #a59bff; --plan-soft: #24213f; --warn: #f08a7e; --warn-soft: #3a1c19;
+  --node-fill: #e4e9ee; --node-text: #0f151b; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15.5px; line-height: 1.6;
+}
+.wrap {
+  max-width: 1180px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 72px;
+  display: grid; gap: 56px;
+}
+header { display: grid; gap: 14px; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--display); font-weight: 700; font-size: clamp(34px, 5vw, 52px); line-height: 1.05; margin: 0; text-wrap: balance; letter-spacing: -.01em; }
+h2 { font-family: var(--display); font-weight: 600; font-size: clamp(24px, 3vw, 31px); line-height: 1.15; margin: 0; text-wrap: balance; }
+h3 { font-family: var(--display); font-weight: 600; font-size: 19px; margin: 0; }
+p { margin: 0; max-width: 68ch; }
+.lede { font-size: 18px; color: var(--muted); max-width: 70ch; }
+.meta { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+section { display: grid; gap: 20px; }
+.sec-head { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 22px; }
+.sec-num { font-family: var(--mono); font-size: 13px; color: var(--swap); letter-spacing: .06em; }
+.figure { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; }
+.figure svg { display: block; width: 100%; min-width: 940px; height: auto; }
+.figure.small svg { min-width: 760px; }
+.caption { font-size: 13.5px; color: var(--muted); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+.grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.card p, .card li { font-size: 14.5px; }
+ul.clean, ol.clean { margin: 0; padding-left: 1.15em; display: grid; gap: 7px; }
+.chip { display: inline-block; font-family: var(--mono); font-size: 11.5px; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; line-height: 1.6; }
+.chip.core { color: var(--core); }
+.chip.swap { color: var(--swap); background: var(--swap-soft); }
+.chip.config { color: var(--config); background: var(--config-soft); }
+.chip.plan { color: var(--plan); background: var(--plan-soft); border-style: dashed; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.legend { display: flex; flex-wrap: wrap; gap: 10px 18px; font-size: 13px; color: var(--muted); align-items: center; }
+code { font-family: var(--mono); font-size: .9em; }
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 14px; }
+th, td { text-align: left; vertical-align: top; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+th { font-family: var(--display); font-weight: 600; font-size: 14.5px; background: var(--bg); }
+tr:last-child td { border-bottom: 0; }
+td:first-child { font-weight: 600; white-space: nowrap; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 2px; }
+.stat b { font-family: var(--display); font-size: 34px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 13px; color: var(--muted); }
+.stat.swap b { color: var(--swap); } .stat.config b { color: var(--config); } .stat.plan b { color: var(--plan); } .stat.core b { color: var(--core); }
+.callout { background: var(--warn-soft); border: 1px solid var(--warn); border-radius: 10px; padding: 16px 18px; display: grid; gap: 8px; }
+.callout h3 { color: var(--warn); }
+.layers { display: grid; gap: 10px; counter-reset: layer; }
+.layer { display: grid; grid-template-columns: 52px 1fr; gap: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; align-items: start; }
+.layer .n { font-family: var(--display); font-weight: 700; font-size: 24px; color: var(--swap); line-height: 1.1; }
+.layer div:last-child { display: grid; gap: 4px; min-width: 0; }
+.layer p { font-size: 14.5px; }
+.flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.flow .step { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font-size: 14px; }
+.flow .arrow { color: var(--muted); font-family: var(--mono); }
+a { color: var(--swap); }
+footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 18px; }
+
+/* SVG styling through tokens */
+svg text { font-family: var(--body); fill: var(--ink); }
+.t-title { font-family: var(--display); font-weight: 600; font-size: 16px; }
+.t-sub { font-size: 12.5px; fill: var(--muted); }
+.t-col { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; fill: var(--muted); }
+.t-edge { font-family: var(--mono); font-size: 11.5px; fill: var(--muted); }
+.t-node { font-family: var(--display); font-weight: 600; font-size: 14px; }
+.t-node-inv { font-family: var(--display); font-weight: 600; font-size: 14px; fill: var(--node-text); }
+.t-tag { font-family: var(--mono); font-size: 10.5px; }
+.b-core { fill: var(--surface); stroke: var(--core); stroke-width: 1.6; }
+.b-swap { fill: var(--swap-soft); stroke: var(--swap); stroke-width: 1.4; }
+.b-config { fill: var(--config-soft); stroke: var(--config); stroke-width: 1.4; }
+.b-plan { fill: var(--plan-soft); stroke: var(--plan); stroke-width: 1.4; stroke-dasharray: 5 4; }
+.b-frame { fill: none; stroke: var(--line); stroke-width: 1.2; }
+.b-inner { fill: var(--bg); stroke: var(--line); stroke-width: 1; }
+.n-auth { fill: var(--node-fill); stroke: var(--node-fill); }
+.n-plain { fill: var(--surface); stroke: var(--ink); stroke-width: 1.3; }
+.n-client { fill: var(--swap-soft); stroke: var(--swap); stroke-width: 1.3; }
+.edge { fill: none; stroke: var(--muted); stroke-width: 1.4; }
+.edge-swap { fill: none; stroke: var(--swap); stroke-width: 1.4; }
+.c-swap { fill: var(--swap); } .c-config { fill: var(--config); } .c-plan { fill: var(--plan); } .c-core { fill: var(--core); } .c-muted { fill: var(--muted); }
+.arrowhead { fill: var(--muted); }
+table.matrix { min-width: 1240px; font-size: 13.5px; }
+table.matrix td:first-child { white-space: normal; min-width: 150px; }
+table.matrix td:nth-child(6) { color: var(--swap); font-weight: 500; }
+table.matrix td.decide { min-width: 120px; background: var(--plan-soft); }
+table.matrix tr.group td { font-family: var(--mono); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); background: var(--bg); font-weight: 500; }
+@media (max-width: 520px) { .layer { grid-template-columns: 1fr; gap: 4px; } }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+&lt;/style&gt;
+
+&lt;div class=&quot;wrap&quot;&gt;
+  &lt;header&gt;
+    &lt;div class=&quot;eyebrow&quot;&gt;Product architecture · briefing · 2026-11-18&lt;/div&gt;
+    &lt;h1&gt;Conductor: a tracker-driven control plane for coding agents&lt;/h1&gt;
+    &lt;p class=&quot;lede&quot;&gt;Work enters as tracker items. Triage routes each item to one fixed workflow made of agent nodes. Agents do the work on execution hosts. The conductor keeps the authority, the state and the human&#x27;s attention budget.&lt;/p&gt;
+    &lt;p class=&quot;meta&quot;&gt;Source: agentic-conductor main @ 6a194119. Items marked &lt;span class=&quot;chip plan&quot;&gt;planned&lt;/span&gt; come from the workflow model decided on 2026-11-18 (idea 94e48da4). Everything else runs today.&lt;/p&gt;
+  &lt;/header&gt;
+
+  &lt;!-- MAIN COMPONENT DIAGRAM --&gt;
+  &lt;section aria-labelledby=&quot;h-map&quot;&gt;
+    &lt;div class=&quot;sec-head&quot;&gt;
+      &lt;h2 id=&quot;h-map&quot;&gt;Component map&lt;/h2&gt;
+      &lt;p&gt;Four columns, left to right: where work comes from, where state lives, what decides, and where agents run. The border shows which parts are fixed by design and which can be swapped.&lt;/p&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;legend&quot;&gt;
+      &lt;span class=&quot;chip core&quot;&gt;fixed by design&lt;/span&gt;
+      &lt;span class=&quot;chip swap&quot;&gt;swappable module&lt;/span&gt;
+      &lt;span class=&quot;chip config&quot;&gt;configuration&lt;/span&gt;
+      &lt;span class=&quot;chip plan&quot;&gt;planned&lt;/span&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;figure&quot;&gt;
+      &lt;svg viewBox=&quot;0 0 1200 780&quot; role=&quot;img&quot; aria-labelledby=&quot;map-title&quot;&gt;
+        &lt;title id=&quot;map-title&quot;&gt;Conductor component map: inputs, tracker and Postgres, daemon, execution hosts, and the operator console&lt;/title&gt;
+        &lt;defs&gt;
+          &lt;marker id=&quot;ah&quot; viewBox=&quot;0 0 10 10&quot; refX=&quot;9&quot; refY=&quot;5&quot; markerWidth=&quot;7&quot; markerHeight=&quot;7&quot; orient=&quot;auto-start-reverse&quot;&gt;&lt;path d=&quot;M0,0 L10,5 L0,10 z&quot; class=&quot;arrowhead&quot;/&gt;&lt;/marker&gt;
+          &lt;marker id=&quot;ahs&quot; viewBox=&quot;0 0 10 10&quot; refX=&quot;9&quot; refY=&quot;5&quot; markerWidth=&quot;7&quot; markerHeight=&quot;7&quot; orient=&quot;auto-start-reverse&quot;&gt;&lt;path d=&quot;M0,0 L10,5 L0,10 z&quot; class=&quot;c-swap&quot;/&gt;&lt;/marker&gt;
+        &lt;/defs&gt;
+
+        &lt;text x=&quot;20&quot; y=&quot;34&quot; class=&quot;t-col&quot;&gt;INPUTS&lt;/text&gt;
+        &lt;text x=&quot;262&quot; y=&quot;34&quot; class=&quot;t-col&quot;&gt;TRACKER &amp;amp; STATE&lt;/text&gt;
+        &lt;text x=&quot;552&quot; y=&quot;34&quot; class=&quot;t-col&quot;&gt;DAEMON · CONTROL PLANE&lt;/text&gt;
+        &lt;text x=&quot;932&quot; y=&quot;34&quot; class=&quot;t-col&quot;&gt;EXECUTION&lt;/text&gt;
+
+        &lt;!-- Inputs --&gt;
+        &lt;rect x=&quot;20&quot; y=&quot;52&quot; width=&quot;200&quot; height=&quot;88&quot; rx=&quot;8&quot; class=&quot;b-core&quot;/&gt;
+        &lt;text x=&quot;34&quot; y=&quot;78&quot; class=&quot;t-title&quot;&gt;Operator&lt;/text&gt;
+        &lt;text x=&quot;34&quot; y=&quot;98&quot; class=&quot;t-sub&quot;&gt;designs, answers gates,&lt;/text&gt;
+        &lt;text x=&quot;34&quot; y=&quot;115&quot; class=&quot;t-sub&quot;&gt;approves, merges flagged PRs&lt;/text&gt;
+
+        &lt;rect x=&quot;20&quot; y=&quot;160&quot; width=&quot;200&quot; height=&quot;80&quot; rx=&quot;8&quot; class=&quot;b-core&quot;/&gt;
+        &lt;text x=&quot;34&quot; y=&quot;186&quot; class=&quot;t-title&quot;&gt;Ideas &amp;amp; intake&lt;/text&gt;
+        &lt;text x=&quot;34&quot; y=&quot;206&quot; class=&quot;t-sub&quot;&gt;a person or a run files work;&lt;/text&gt;
+        &lt;text x=&quot;34&quot; y=&quot;223&quot; class=&quot;t-sub&quot;&gt;nothing skips triage&lt;/text&gt;
+
+        &lt;rect x=&quot;20&quot; y=&quot;260&quot; width=&quot;200&quot; height=&quot;80&quot; rx=&quot;8&quot; class=&quot;b-swap&quot;/&gt;
+        &lt;text x=&quot;34&quot; y=&quot;286&quot; class=&quot;t-title&quot;&gt;Alerts&lt;/text&gt;
+        &lt;text x=&quot;34&quot; y=&quot;306&quot; class=&quot;t-sub&quot;&gt;Grafana → reactor files&lt;/text&gt;
+        &lt;text x=&quot;34&quot; y=&quot;323&quot; class=&quot;t-sub&quot;&gt;recovery tickets&lt;/text&gt;
+
+        &lt;rect x=&quot;20&quot; y=&quot;360&quot; width=&quot;200&quot; height=&quot;130&quot; rx=&quot;8&quot; class=&quot;b-core&quot;/&gt;
+        &lt;text x=&quot;34&quot; y=&quot;386&quot; class=&quot;t-title&quot;&gt;Owner agents&lt;/text&gt;
+        &lt;text x=&quot;34&quot; y=&quot;406&quot; class=&quot;t-sub&quot;&gt;idea owner · epic owner ·&lt;/text&gt;
+        &lt;text x=&quot;34&quot; y=&quot;423&quot; class=&quot;t-sub&quot;&gt;Conductor chat&lt;/text&gt;
+        &lt;text x=&quot;34&quot; y=&quot;446&quot; class=&quot;t-sub&quot;&gt;absorb routine events,&lt;/text&gt;
+        &lt;text x=&quot;34&quot; y=&quot;463&quot; class=&quot;t-sub&quot;&gt;raise only real decisions&lt;/text&gt;
+
+        &lt;!-- Tracker --&gt;
+        &lt;rect x=&quot;260&quot; y=&quot;52&quot; width=&quot;250&quot; height=&quot;290&quot; rx=&quot;8&quot; class=&quot;b-swap&quot;/&gt;
+        &lt;text x=&quot;276&quot; y=&quot;80&quot; class=&quot;t-title&quot;&gt;Tracker&lt;/text&gt;
+        &lt;rect x=&quot;402&quot; y=&quot;64&quot; width=&quot;94&quot; height=&quot;22&quot; rx=&quot;11&quot; class=&quot;b-swap&quot;/&gt;
+        &lt;text x=&quot;449&quot; y=&quot;79&quot; text-anchor=&quot;middle&quot; class=&quot;t-tag c-swap&quot;&gt;native | Plane&lt;/text&gt;
+        &lt;rect x=&quot;276&quot; y=&quot;98&quot; width=&quot;218&quot; height=&quot;52&quot; rx=&quot;6&quot; class=&quot;b-inner&quot;/&gt;
+        &lt;text x=&quot;288&quot; y=&quot;119&quot; class=&quot;t-node&quot;&gt;Items&lt;/text&gt;
+        &lt;text x=&quot;288&quot; y=&quot;139&quot; class=&quot;t-sub&quot;&gt;idea → epic → feature → task&lt;/text&gt;
+        &lt;rect x=&quot;276&quot; y=&quot;160&quot; width=&quot;218&quot; height=&quot;52&quot; rx=&quot;6&quot; class=&quot;b-inner&quot;/&gt;
+        &lt;text x=&quot;288&quot; y=&quot;181&quot; class=&quot;t-node&quot;&gt;Gates&lt;/text&gt;
+        &lt;text x=&quot;288&quot; y=&quot;201&quot; class=&quot;t-sub&quot;&gt;question · approval · decision&lt;/text&gt;
+        &lt;rect x=&quot;276&quot; y=&quot;222&quot; width=&quot;218&quot; height=&quot;52&quot; rx=&quot;6&quot; class=&quot;b-inner&quot;/&gt;
+        &lt;text x=&quot;288&quot; y=&quot;243&quot; class=&quot;t-node&quot;&gt;Events + change feed&lt;/text&gt;
+        &lt;text x=&quot;288&quot; y=&quot;263&quot; class=&quot;t-sub&quot;&gt;every write, in order&lt;/text&gt;
+        &lt;rect x=&quot;276&quot; y=&quot;284&quot; width=&quot;218&quot; height=&quot;44&quot; rx=&quot;6&quot; class=&quot;b-inner&quot;/&gt;
+        &lt;text x=&quot;288&quot; y=&quot;311&quot; class=&quot;t-node&quot;&gt;Lease = the lock on an item&lt;/text&gt;
+
+        &lt;!-- Postgres --&gt;
+        &lt;rect x=&quot;260&quot; y=&quot;362&quot; width=&quot;250&quot; height=&quot;128&quot; rx=&quot;8&quot; class=&quot;b-core&quot;/&gt;
+        &lt;text x=&quot;276&quot; y=&quot;389&quot; class=&quot;t-title&quot;&gt;Postgres · source of truth&lt;/text&gt;
+        &lt;text x=&quot;276&quot; y=&quot;411&quot; class=&quot;t-sub&quot;&gt;runs · attempts · process registry&lt;/text&gt;
+        &lt;text x=&quot;276&quot; y=&quot;429&quot; class=&quot;t-sub&quot;&gt;item path through its workflow&lt;/text&gt;
+        &lt;text x=&quot;276&quot; y=&quot;447&quot; class=&quot;t-sub&quot;&gt;usage and cost per node&lt;/text&gt;
+        &lt;text x=&quot;276&quot; y=&quot;470&quot; class=&quot;t-sub&quot;&gt;restart rebuilds memory from here&lt;/text&gt;
+
+        &lt;!-- Daemon --&gt;
+        &lt;rect x=&quot;550&quot; y=&quot;52&quot; width=&quot;340&quot; height=&quot;438&quot; rx=&quot;8&quot; class=&quot;b-frame&quot;/&gt;
+        &lt;text x=&quot;566&quot; y=&quot;78&quot; class=&quot;t-sub&quot;&gt;one tick: reconcile first, then dispatch&lt;/text&gt;
+
+        &lt;rect x=&quot;566&quot; y=&quot;90&quot; width=&quot;308&quot; height=&quot;54&quot; rx=&quot;6&quot; class=&quot;b-core&quot;/&gt;
+        &lt;text x=&quot;580&quot; y=&quot;112&quot; class=&quot;t-node&quot;&gt;Triage&lt;/text&gt;
+        &lt;text x=&quot;580&quot; y=&quot;131&quot; class=&quot;t-sub&quot;&gt;routes each item to one workflow&lt;/text&gt;
+        &lt;rect x=&quot;790&quot; y=&quot;100&quot; width=&quot;72&quot; height=&quot;20&quot; rx=&quot;10&quot; class=&quot;b-plan&quot;/&gt;
+        &lt;text x=&quot;826&quot; y=&quot;114&quot; text-anchor=&quot;middle&quot; class=&quot;t-tag c-plan&quot;&gt;in front&lt;/text&gt;
+
+        &lt;rect x=&quot;566&quot; y=&quot;156&quot; width=&quot;308&quot; height=&quot;96&quot; rx=&quot;6&quot; class=&quot;b-config&quot;/&gt;
+        &lt;text x=&quot;580&quot; y=&quot;178&quot; class=&quot;t-node&quot;&gt;Workflow registry&lt;/text&gt;
+        &lt;text x=&quot;580&quot; y=&quot;198&quot; class=&quot;t-sub&quot;&gt;global, shipped · project, config repo&lt;/text&gt;
+        &lt;text x=&quot;580&quot; y=&quot;216&quot; class=&quot;t-sub&quot;&gt;load checks refuse a bad workflow&lt;/text&gt;
+        &lt;rect x=&quot;580&quot; y=&quot;226&quot; width=&quot;96&quot; height=&quot;20&quot; rx=&quot;10&quot; class=&quot;b-config&quot;/&gt;
+        &lt;text x=&quot;628&quot; y=&quot;240&quot; text-anchor=&quot;middle&quot; class=&quot;t-tag c-config&quot;&gt;kind: dag&lt;/text&gt;
+        &lt;rect x=&quot;684&quot; y=&quot;226&quot; width=&quot;140&quot; height=&quot;20&quot; rx=&quot;10&quot; class=&quot;b-plan&quot;/&gt;
+        &lt;text x=&quot;754&quot; y=&quot;240&quot; text-anchor=&quot;middle&quot; class=&quot;t-tag c-plan&quot;&gt;kind: dynamic, later&lt;/text&gt;
+
+        &lt;rect x=&quot;566&quot; y=&quot;264&quot; width=&quot;308&quot; height=&quot;76&quot; rx=&quot;6&quot; class=&quot;b-swap&quot;/&gt;
+        &lt;text x=&quot;580&quot; y=&quot;286&quot; class=&quot;t-node&quot;&gt;Agent nodes&lt;/text&gt;
+        &lt;text x=&quot;580&quot; y=&quot;306&quot; class=&quot;t-sub&quot;&gt;plan · builder ⇄ coder · operate&lt;/text&gt;
+        &lt;text x=&quot;580&quot; y=&quot;324&quot; class=&quot;t-sub&quot;&gt;agent, model, effort per node&lt;/text&gt;
+
+        &lt;rect x=&quot;566&quot; y=&quot;352&quot; width=&quot;308&quot; height=&quot;58&quot; rx=&quot;6&quot; class=&quot;b-core&quot;/&gt;
+        &lt;text x=&quot;580&quot; y=&quot;375&quot; class=&quot;t-node&quot;&gt;Merge gate · two keys&lt;/text&gt;
+        &lt;text x=&quot;580&quot; y=&quot;395&quot; class=&quot;t-sub&quot;&gt;gate decision AND agent &quot;merge&quot;&lt;/text&gt;
+
+        &lt;rect x=&quot;566&quot; y=&quot;422&quot; width=&quot;308&quot; height=&quot;54&quot; rx=&quot;6&quot; class=&quot;b-core&quot;/&gt;
+        &lt;text x=&quot;580&quot; y=&quot;444&quot; class=&quot;t-node&quot;&gt;Wake poller&lt;/text&gt;
+        &lt;text x=&quot;580&quot; y=&quot;463&quot; class=&quot;t-sub&quot;&gt;change feed → owner wake events&lt;/text&gt;
+
+        &lt;!-- Execution --&gt;
+        &lt;rect x=&quot;930&quot; y=&quot;52&quot; width=&quot;250&quot; height=&quot;246&quot; rx=&quot;8&quot; class=&quot;b-core&quot;/&gt;
+        &lt;text x=&quot;946&quot; y=&quot;80&quot; class=&quot;t-title&quot;&gt;hostd · execution host&lt;/text&gt;
+        &lt;text x=&quot;946&quot; y=&quot;101&quot; class=&quot;t-sub&quot;&gt;prepare_workspace · launch · terminate&lt;/text&gt;
+        &lt;rect x=&quot;946&quot; y=&quot;114&quot; width=&quot;218&quot; height=&quot;52&quot; rx=&quot;6&quot; class=&quot;b-swap&quot;/&gt;
+        &lt;text x=&quot;958&quot; y=&quot;135&quot; class=&quot;t-node&quot;&gt;Agent runtimes&lt;/text&gt;
+        &lt;text x=&quot;958&quot; y=&quot;155&quot; class=&quot;t-sub&quot;&gt;Claude Code · OpenCode&lt;/text&gt;
+        &lt;rect x=&quot;946&quot; y=&quot;176&quot; width=&quot;218&quot; height=&quot;52&quot; rx=&quot;6&quot; class=&quot;b-inner&quot;/&gt;
+        &lt;text x=&quot;958&quot; y=&quot;197&quot; class=&quot;t-node&quot;&gt;Run tools (MCP)&lt;/text&gt;
+        &lt;text x=&quot;958&quot; y=&quot;217&quot; class=&quot;t-sub&quot;&gt;report_outcome · tracker reads&lt;/text&gt;
+        &lt;rect x=&quot;946&quot; y=&quot;238&quot; width=&quot;218&quot; height=&quot;46&quot; rx=&quot;6&quot; class=&quot;b-inner&quot;/&gt;
+        &lt;text x=&quot;958&quot; y=&quot;259&quot; class=&quot;t-node&quot;&gt;One worktree per run&lt;/text&gt;
+        &lt;text x=&quot;958&quot; y=&quot;277&quot; class=&quot;t-sub&quot;&gt;outside the repo checkout&lt;/text&gt;
+
+        &lt;rect x=&quot;930&quot; y=&quot;314&quot; width=&quot;250&quot; height=&quot;56&quot; rx=&quot;8&quot; class=&quot;b-swap&quot;/&gt;
+        &lt;text x=&quot;946&quot; y=&quot;337&quot; class=&quot;t-title&quot;&gt;GitHub + CI&lt;/text&gt;
+        &lt;text x=&quot;946&quot; y=&quot;356&quot; class=&quot;t-sub&quot;&gt;branches, PRs, checks&lt;/text&gt;
+
+        &lt;rect x=&quot;930&quot; y=&quot;382&quot; width=&quot;250&quot; height=&quot;44&quot; rx=&quot;8&quot; class=&quot;b-swap&quot;/&gt;
+        &lt;text x=&quot;946&quot; y=&quot;409&quot; class=&quot;t-title&quot;&gt;pi review bot &lt;tspan class=&quot;t-sub&quot;&gt;· advisory&lt;/tspan&gt;&lt;/text&gt;
+
+        &lt;rect x=&quot;930&quot; y=&quot;438&quot; width=&quot;250&quot; height=&quot;52&quot; rx=&quot;8&quot; class=&quot;b-config&quot;/&gt;
+        &lt;text x=&quot;946&quot; y=&quot;460&quot; class=&quot;t-title&quot;&gt;Context &amp;amp; definitions&lt;/text&gt;
+        &lt;text x=&quot;946&quot; y=&quot;479&quot; class=&quot;t-sub&quot;&gt;Beacon contexts · config repo&lt;/text&gt;
+
+        &lt;!-- Edges --&gt;
+        &lt;path d=&quot;M220,96 H258&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah)&quot;/&gt;
+        &lt;path d=&quot;M220,200 H258&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah)&quot;/&gt;
+        &lt;path d=&quot;M220,300 H258&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah)&quot;/&gt;
+        &lt;path d=&quot;M220,400 L258,338&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah)&quot;/&gt;
+        &lt;path d=&quot;M510,150 H548&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah)&quot;/&gt;
+        &lt;text x=&quot;514&quot; y=&quot;143&quot; class=&quot;t-edge&quot;&gt;feed&lt;/text&gt;
+        &lt;path d=&quot;M548,430 H512&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah)&quot;/&gt;
+        &lt;path d=&quot;M890,170 H928&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah)&quot;/&gt;
+        &lt;text x=&quot;893&quot; y=&quot;162&quot; class=&quot;t-edge&quot;&gt;HTTP&lt;/text&gt;
+        &lt;path d=&quot;M1055,298 V312&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah)&quot;/&gt;
+        &lt;path d=&quot;M890,381 C908,381 908,350 928,346&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah)&quot;/&gt;
+        &lt;text x=&quot;893&quot; y=&quot;400&quot; class=&quot;t-edge&quot;&gt;merge&lt;/text&gt;
+        &lt;path d=&quot;M566,476 V510 H120 V492&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah)&quot;/&gt;
+        &lt;text x=&quot;330&quot; y=&quot;526&quot; class=&quot;t-edge&quot;&gt;wake: gate, escalation, failure, stall, merged, scheduled check&lt;/text&gt;
+        &lt;path d=&quot;M930,272 C900,272 900,500 600,500 C540,500 530,480 512,476&quot; class=&quot;edge-swap&quot; marker-end=&quot;url(#ahs)&quot;/&gt;
+        &lt;text x=&quot;640&quot; y=&quot;516&quot; class=&quot;t-edge&quot;&gt;hostd records outcomes and heartbeats&lt;/text&gt;
+
+        &lt;!-- Console --&gt;
+        &lt;rect x=&quot;20&quot; y=&quot;552&quot; width=&quot;1160&quot; height=&quot;120&quot; rx=&quot;8&quot; class=&quot;b-core&quot;/&gt;
+        &lt;text x=&quot;36&quot; y=&quot;580&quot; class=&quot;t-title&quot;&gt;Operator console&lt;/text&gt;
+        &lt;text x=&quot;36&quot; y=&quot;600&quot; class=&quot;t-sub&quot;&gt;reads the tracker, Postgres and hostd through the control API&lt;/text&gt;
+        &lt;g&gt;
+          &lt;rect x=&quot;36&quot; y=&quot;616&quot; width=&quot;232&quot; height=&quot;40&quot; rx=&quot;6&quot; class=&quot;b-inner&quot;/&gt;
+          &lt;text x=&quot;48&quot; y=&quot;633&quot; class=&quot;t-node&quot;&gt;Attention&lt;/text&gt;
+          &lt;text x=&quot;48&quot; y=&quot;649&quot; class=&quot;t-sub&quot;&gt;Inbox · Overview&lt;/text&gt;
+          &lt;rect x=&quot;280&quot; y=&quot;616&quot; width=&quot;280&quot; height=&quot;40&quot; rx=&quot;6&quot; class=&quot;b-inner&quot;/&gt;
+          &lt;text x=&quot;292&quot; y=&quot;633&quot; class=&quot;t-node&quot;&gt;Shape&lt;/text&gt;
+          &lt;text x=&quot;292&quot; y=&quot;649&quot; class=&quot;t-sub&quot;&gt;Ideas · Roadmap · epic and Conductor chat&lt;/text&gt;
+          &lt;rect x=&quot;572&quot; y=&quot;616&quot; width=&quot;300&quot; height=&quot;40&quot; rx=&quot;6&quot; class=&quot;b-inner&quot;/&gt;
+          &lt;text x=&quot;584&quot; y=&quot;633&quot; class=&quot;t-node&quot;&gt;Flow&lt;/text&gt;
+          &lt;text x=&quot;584&quot; y=&quot;649&quot; class=&quot;t-sub&quot;&gt;Triage · Plan · Runs · Delivery · Releases&lt;/text&gt;
+          &lt;rect x=&quot;884&quot; y=&quot;616&quot; width=&quot;280&quot; height=&quot;40&quot; rx=&quot;6&quot; class=&quot;b-inner&quot;/&gt;
+          &lt;text x=&quot;896&quot; y=&quot;633&quot; class=&quot;t-node&quot;&gt;System&lt;/text&gt;
+          &lt;text x=&quot;896&quot; y=&quot;649&quot; class=&quot;t-sub&quot;&gt;Workflows · Usage · Health&lt;/text&gt;
+        &lt;/g&gt;
+        &lt;text x=&quot;20&quot; y=&quot;712&quot; class=&quot;t-sub&quot;&gt;Postgres is authoritative. The tracker owns item state and the lease. The daemon is the only scheduler and never touches a file or a process.&lt;/text&gt;
+        &lt;text x=&quot;20&quot; y=&quot;732&quot; class=&quot;t-sub&quot;&gt;hostd spawns agents, watches them and writes their outcomes. A merge needs both keys: the daemon&#x27;s gate decision and the agent&#x27;s reported recommendation.&lt;/text&gt;
+      &lt;/svg&gt;
+    &lt;/div&gt;
+  &lt;/section&gt;
+
+  &lt;!-- 1. STRUCTURED FIRST --&gt;
+  &lt;section aria-labelledby=&quot;h-1&quot;&gt;
+    &lt;div class=&quot;sec-head&quot;&gt;
+      &lt;span class=&quot;sec-num&quot;&gt;01&lt;/span&gt;
+      &lt;h2 id=&quot;h-1&quot;&gt;Why we started with structured workflows&lt;/h2&gt;
+      &lt;p&gt;A workflow is a fixed graph of agent nodes with verdict-labelled edges. The structure is what lets the conductor give agents real authority, such as merging to main or acting in production, without a human watching each step.&lt;/p&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;figure small&quot;&gt;
+      &lt;svg viewBox=&quot;0 0 1040 360&quot; role=&quot;img&quot; aria-labelledby=&quot;wf-title&quot;&gt;
+        &lt;title id=&quot;wf-title&quot;&gt;Triage routes an item to one of four workflows: code-change, code-change without plan, ops-fix, and the project workflow airflow-recovery&lt;/title&gt;
+        &lt;defs&gt;
+          &lt;marker id=&quot;ah2&quot; viewBox=&quot;0 0 10 10&quot; refX=&quot;9&quot; refY=&quot;5&quot; markerWidth=&quot;7&quot; markerHeight=&quot;7&quot; orient=&quot;auto-start-reverse&quot;&gt;&lt;path d=&quot;M0,0 L10,5 L0,10 z&quot; class=&quot;arrowhead&quot;/&gt;&lt;/marker&gt;
+        &lt;/defs&gt;
+        &lt;rect x=&quot;20&quot; y=&quot;158&quot; width=&quot;124&quot; height=&quot;56&quot; rx=&quot;8&quot; class=&quot;n-auth&quot;/&gt;
+        &lt;text x=&quot;82&quot; y=&quot;183&quot; text-anchor=&quot;middle&quot; class=&quot;t-node-inv&quot;&gt;Triage&lt;/text&gt;
+        &lt;text x=&quot;82&quot; y=&quot;201&quot; text-anchor=&quot;middle&quot; class=&quot;t-tag&quot; style=&quot;fill:var(--node-text)&quot;&gt;authority: route&lt;/text&gt;
+
+        &lt;text x=&quot;190&quot; y=&quot;32&quot; class=&quot;t-edge&quot;&gt;code-change · global&lt;/text&gt;
+        &lt;rect x=&quot;190&quot; y=&quot;42&quot; width=&quot;120&quot; height=&quot;46&quot; rx=&quot;8&quot; class=&quot;n-plain&quot;/&gt;&lt;text x=&quot;250&quot; y=&quot;70&quot; text-anchor=&quot;middle&quot; class=&quot;t-node&quot;&gt;plan&lt;/text&gt;
+        &lt;rect x=&quot;360&quot; y=&quot;42&quot; width=&quot;120&quot; height=&quot;46&quot; rx=&quot;8&quot; class=&quot;n-client&quot;/&gt;&lt;text x=&quot;420&quot; y=&quot;70&quot; text-anchor=&quot;middle&quot; class=&quot;t-node&quot;&gt;builder&lt;/text&gt;
+        &lt;rect x=&quot;530&quot; y=&quot;42&quot; width=&quot;120&quot; height=&quot;46&quot; rx=&quot;8&quot; class=&quot;n-client&quot;/&gt;&lt;text x=&quot;590&quot; y=&quot;70&quot; text-anchor=&quot;middle&quot; class=&quot;t-node&quot;&gt;coder&lt;/text&gt;
+        &lt;rect x=&quot;700&quot; y=&quot;42&quot; width=&quot;140&quot; height=&quot;46&quot; rx=&quot;8&quot; class=&quot;n-auth&quot;/&gt;&lt;text x=&quot;770&quot; y=&quot;64&quot; text-anchor=&quot;middle&quot; class=&quot;t-node-inv&quot;&gt;review &amp;amp; merge&lt;/text&gt;&lt;text x=&quot;770&quot; y=&quot;80&quot; text-anchor=&quot;middle&quot; class=&quot;t-tag&quot; style=&quot;fill:var(--node-text)&quot;&gt;authority: merge&lt;/text&gt;
+        &lt;rect x=&quot;890&quot; y=&quot;42&quot; width=&quot;120&quot; height=&quot;46&quot; rx=&quot;8&quot; class=&quot;n-plain&quot;/&gt;&lt;text x=&quot;950&quot; y=&quot;70&quot; text-anchor=&quot;middle&quot; class=&quot;t-node&quot;&gt;release&lt;/text&gt;
+        &lt;path d=&quot;M310,65 H358&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah2)&quot;/&gt;
+        &lt;path d=&quot;M480,58 H528&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah2)&quot;/&gt;
+        &lt;path d=&quot;M530,74 H482&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah2)&quot;/&gt;
+        &lt;text x=&quot;505&quot; y=&quot;104&quot; text-anchor=&quot;middle&quot; class=&quot;t-edge&quot;&gt;rounds, capped&lt;/text&gt;
+        &lt;path d=&quot;M650,65 H698&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah2)&quot;/&gt;
+        &lt;path d=&quot;M840,65 H888&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah2)&quot;/&gt;
+        &lt;path d=&quot;M400,42 C400,14 270,14 260,40&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah2)&quot;/&gt;
+        &lt;text x=&quot;330&quot; y=&quot;16&quot; text-anchor=&quot;middle&quot; class=&quot;t-edge&quot;&gt;replan, cap 3&lt;/text&gt;
+
+        &lt;text x=&quot;360&quot; y=&quot;128&quot; class=&quot;t-edge&quot;&gt;code-change without plan · global&lt;/text&gt;
+        &lt;rect x=&quot;360&quot; y=&quot;138&quot; width=&quot;120&quot; height=&quot;46&quot; rx=&quot;8&quot; class=&quot;n-client&quot;/&gt;&lt;text x=&quot;420&quot; y=&quot;166&quot; text-anchor=&quot;middle&quot; class=&quot;t-node&quot;&gt;builder&lt;/text&gt;
+        &lt;rect x=&quot;530&quot; y=&quot;138&quot; width=&quot;120&quot; height=&quot;46&quot; rx=&quot;8&quot; class=&quot;n-client&quot;/&gt;&lt;text x=&quot;590&quot; y=&quot;166&quot; text-anchor=&quot;middle&quot; class=&quot;t-node&quot;&gt;coder&lt;/text&gt;
+        &lt;rect x=&quot;700&quot; y=&quot;138&quot; width=&quot;140&quot; height=&quot;46&quot; rx=&quot;8&quot; class=&quot;n-auth&quot;/&gt;&lt;text x=&quot;770&quot; y=&quot;160&quot; text-anchor=&quot;middle&quot; class=&quot;t-node-inv&quot;&gt;review &amp;amp; merge&lt;/text&gt;&lt;text x=&quot;770&quot; y=&quot;176&quot; text-anchor=&quot;middle&quot; class=&quot;t-tag&quot; style=&quot;fill:var(--node-text)&quot;&gt;authority: merge&lt;/text&gt;
+        &lt;rect x=&quot;890&quot; y=&quot;138&quot; width=&quot;120&quot; height=&quot;46&quot; rx=&quot;8&quot; class=&quot;n-plain&quot;/&gt;&lt;text x=&quot;950&quot; y=&quot;166&quot; text-anchor=&quot;middle&quot; class=&quot;t-node&quot;&gt;release&lt;/text&gt;
+        &lt;path d=&quot;M480,154 H528&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah2)&quot;/&gt;
+        &lt;path d=&quot;M530,170 H482&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah2)&quot;/&gt;
+        &lt;path d=&quot;M650,161 H698&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah2)&quot;/&gt;
+        &lt;path d=&quot;M840,161 H888&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah2)&quot;/&gt;
+
+        &lt;text x=&quot;360&quot; y=&quot;222&quot; class=&quot;t-edge&quot;&gt;ops-fix · global&lt;/text&gt;
+        &lt;rect x=&quot;360&quot; y=&quot;232&quot; width=&quot;160&quot; height=&quot;46&quot; rx=&quot;8&quot; class=&quot;n-auth&quot;/&gt;&lt;text x=&quot;440&quot; y=&quot;254&quot; text-anchor=&quot;middle&quot; class=&quot;t-node-inv&quot;&gt;operate&lt;/text&gt;&lt;text x=&quot;440&quot; y=&quot;270&quot; text-anchor=&quot;middle&quot; class=&quot;t-tag&quot; style=&quot;fill:var(--node-text)&quot;&gt;authority: production, secrets&lt;/text&gt;
+        &lt;text x=&quot;540&quot; y=&quot;260&quot; class=&quot;t-edge&quot;&gt;→ done&lt;/text&gt;
+
+        &lt;text x=&quot;360&quot; y=&quot;308&quot; class=&quot;t-edge&quot;&gt;airflow-recovery · project workflow&lt;/text&gt;
+        &lt;rect x=&quot;360&quot; y=&quot;318&quot; width=&quot;220&quot; height=&quot;38&quot; rx=&quot;8&quot; class=&quot;n-auth&quot;/&gt;&lt;text x=&quot;470&quot; y=&quot;342&quot; text-anchor=&quot;middle&quot; class=&quot;t-node-inv&quot;&gt;operate · Airflow profile&lt;/text&gt;
+        &lt;text x=&quot;600&quot; y=&quot;342&quot; class=&quot;t-edge&quot;&gt;→ done&lt;/text&gt;
+
+        &lt;path d=&quot;M144,178 C170,178 165,65 188,65&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah2)&quot;/&gt;
+        &lt;path d=&quot;M144,184 C240,184 250,161 358,161&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah2)&quot;/&gt;
+        &lt;path d=&quot;M144,192 C240,192 250,255 358,255&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah2)&quot;/&gt;
+        &lt;path d=&quot;M144,200 C200,200 230,337 358,337&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah2)&quot;/&gt;
+      &lt;/svg&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;legend&quot;&gt;
+      &lt;span&gt;&lt;svg width=&quot;14&quot; height=&quot;12&quot; aria-hidden=&quot;true&quot;&gt;&lt;rect width=&quot;14&quot; height=&quot;12&quot; rx=&quot;3&quot; class=&quot;n-auth&quot;/&gt;&lt;/svg&gt; holds authority, server agent&lt;/span&gt;
+      &lt;span&gt;&lt;svg width=&quot;14&quot; height=&quot;12&quot; aria-hidden=&quot;true&quot;&gt;&lt;rect x=&quot;1&quot; y=&quot;1&quot; width=&quot;12&quot; height=&quot;10&quot; rx=&quot;3&quot; class=&quot;n-client&quot;/&gt;&lt;/svg&gt; client agent, replaceable from the config repo&lt;/span&gt;
+      &lt;span&gt;&lt;svg width=&quot;14&quot; height=&quot;12&quot; aria-hidden=&quot;true&quot;&gt;&lt;rect x=&quot;1&quot; y=&quot;1&quot; width=&quot;12&quot; height=&quot;10&quot; rx=&quot;3&quot; class=&quot;n-plain&quot;/&gt;&lt;/svg&gt; no authority&lt;/span&gt;
+      &lt;span class=&quot;chip plan&quot;&gt;triage in front, builder ⇄ coder as nodes: planned&lt;/span&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;grid2&quot;&gt;
+      &lt;div class=&quot;card&quot;&gt;
+        &lt;h3&gt;Authority is checked before anything runs&lt;/h3&gt;
+        &lt;p&gt;Only fixed server nodes hold authority: route, merge, production approval, production actions and secrets. The load check refuses a workflow in which a pull request can finish without reaching a merge node, or an ops request without reaching production approval. A dynamic team can only check this after the fact.&lt;/p&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;card&quot;&gt;
+        &lt;h3&gt;Cost and loops have a ceiling&lt;/h3&gt;
+        &lt;p&gt;A loop exists only where a back-edge is declared, and every back-edge has a cap, for example replan at most 3 times. An agent cannot start an open-ended conversation with another agent and keep it going.&lt;/p&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;card&quot;&gt;
+        &lt;h3&gt;Deterministic parts are testable without an LLM&lt;/h3&gt;
+        &lt;p&gt;Poll, lease, dispatch, reap, retry and gate all run against fakes in the integration tier: a fake tracker, a fake agent and a stub GitHub. A wrong route is a bug in code, which a test can reproduce, not a judgement made by a model.&lt;/p&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;card&quot;&gt;
+        &lt;h3&gt;The human approves a shape once&lt;/h3&gt;
+        &lt;p&gt;The operator reviews a workflow once, and every item on it then follows that path. The console shows each item&#x27;s path through its workflow, so &quot;what happened and why&quot; is a read, not an investigation.&lt;/p&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+    &lt;p&gt;The trade-off is deliberate. A swarm such as agent-net adds no limit the owner did not ask for, because the owner is near the loop. Conductor runs unattended, so it starts with limits on and lets the operator relax them. Dynamic workflows are not ruled out: the workflow model keeps a &lt;code&gt;kind&lt;/code&gt; field, &lt;code&gt;dag&lt;/code&gt; today, and a dynamic kind can be added later behind the same triage, tracker and merge gate.&lt;/p&gt;
+  &lt;/section&gt;
+
+  &lt;!-- 2. VS DYNAMIC --&gt;
+  &lt;section aria-labelledby=&quot;h-2&quot;&gt;
+    &lt;div class=&quot;sec-head&quot;&gt;
+      &lt;span class=&quot;sec-num&quot;&gt;02&lt;/span&gt;
+      &lt;h2 id=&quot;h-2&quot;&gt;Conductor, agent-net and OpenRig: three ways of working&lt;/h2&gt;
+      &lt;p&gt;agent-net is a supervised swarm. It joins the coding-agent sessions you already run, across five harnesses and several machines. Each session owns a project, and sessions message each other where their work meets. OpenRig runs a team of agents in fixed seats, coordinated by a lead agent, inside one rig on tmux. Conductor starts every run from a tracker item and moves it along a fixed workflow. The difference that matters most is who owns a run: a live session in agent-net, a seat in the rig in OpenRig, a work item in conductor.&lt;/p&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;tablewrap&quot;&gt;
+      &lt;table style=&quot;min-width:980px&quot;&gt;
+        &lt;thead&gt;&lt;tr&gt;&lt;th&gt;&lt;/th&gt;&lt;th&gt;Conductor&lt;/th&gt;&lt;th&gt;agent-net&lt;/th&gt;&lt;th&gt;OpenRig&lt;/th&gt;&lt;/tr&gt;&lt;/thead&gt;
+        &lt;tbody&gt;
+          &lt;tr&gt;&lt;td&gt;Where work starts&lt;/td&gt;&lt;td&gt;A tracker item, through intake and triage. No session needs to be open&lt;/td&gt;&lt;td&gt;A live agent or owner session asks for it. Workers belong to the session that started them&lt;/td&gt;&lt;td&gt;The owner sets a goal for the rig. Tasks go into its internal queue&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Who decides the next step&lt;/td&gt;&lt;td&gt;The workflow&#x27;s edge for the verdict the node reported&lt;/td&gt;&lt;td&gt;The sessions, within charters, teams, leads and rules between projects&lt;/td&gt;&lt;td&gt;The lead agent and the seats, guided by a culture file&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Agent-to-agent talk&lt;/td&gt;&lt;td&gt;None. Nodes hand off through recorded verdicts and artifacts such as a branch or a PR&lt;/td&gt;&lt;td&gt;Messages between sessions, delivered as a new turn, also across machines&lt;/td&gt;&lt;td&gt;Send, broadcast and chatrooms between seats&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Merge and production&lt;/td&gt;&lt;td&gt;Enforced in code: the two-key merge and fixed approval nodes, checked at load time&lt;/td&gt;&lt;td&gt;Delivery steps with owners: accept, test, merge, release, verify. Its own inventory lists the merge gate as prompt text today&lt;/td&gt;&lt;td&gt;Reviewer seats check the candidate. Permission policy per seat. No documented merge model&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Model choice&lt;/td&gt;&lt;td&gt;Set per agent node in config&lt;/td&gt;&lt;td&gt;A judge rates each brief&#x27;s difficulty, and a picker learns which model does well at each level&lt;/td&gt;&lt;td&gt;Set per seat in the spec&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Human attention&lt;/td&gt;&lt;td&gt;One Inbox of gates, owner agents and written decision rules&lt;/td&gt;&lt;td&gt;One Desk, a chief of staff, and a memory of your past answers&lt;/td&gt;&lt;td&gt;The owner watches and reviews. Lifecycle commands ask first&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Limits&lt;/td&gt;&lt;td&gt;Caps and gates on by default, because runs are unattended&lt;/td&gt;&lt;td&gt;&quot;No limits you did not ask for&quot;&lt;/td&gt;&lt;td&gt;Default team policy, no global bypass&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Tracker&lt;/td&gt;&lt;td&gt;Its own native tracker, or Plane&lt;/td&gt;&lt;td&gt;No external tracker. Changes in flight and their steps&lt;/td&gt;&lt;td&gt;Internal queue only&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Runs on&lt;/td&gt;&lt;td&gt;Daemon, hostd and Postgres. Claude Code and OpenCode&lt;/td&gt;&lt;td&gt;One Go binary: a gateway with SQLite, and a daemon per machine. Five harnesses&lt;/td&gt;&lt;td&gt;A local daemon, CLI, TUI and MCP server on tmux and SQLite. Claude Code, Codex and Pi&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Best for&lt;/td&gt;&lt;td&gt;A queue of planned tickets across many repos, delivered unattended with merge and production rights&lt;/td&gt;&lt;td&gt;Interactive and background sessions that depend on each other, with the owner near the loop&lt;/td&gt;&lt;td&gt;One open-ended problem that a fixed team explores together on one machine&lt;/td&gt;&lt;/tr&gt;
+        &lt;/tbody&gt;
+      &lt;/table&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;grid2&quot;&gt;
+      &lt;div class=&quot;card&quot;&gt;
+        &lt;h3&gt;What conductor offers that a session swarm does not&lt;/h3&gt;
+        &lt;ul class=&quot;clean&quot;&gt;
+          &lt;li&gt;Intake and triage. Every piece of work enters one way and gets one route, with no session open.&lt;/li&gt;
+          &lt;li&gt;A tracker of record, with gates as first-class objects, across every board.&lt;/li&gt;
+          &lt;li&gt;Authority enforced in code. A configuration cannot widen it, and a prompt cannot talk around it.&lt;/li&gt;
+          &lt;li&gt;Unattended recovery. Leases, reconcile on every tick, and a restart that keeps live runs.&lt;/li&gt;
+          &lt;li&gt;Accounting. Cost and usage per run and per agent node, and releases tracked per repo.&lt;/li&gt;
+        &lt;/ul&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;card&quot;&gt;
+        &lt;h3&gt;What conductor can learn from agent-net&lt;/h3&gt;
+        &lt;ul class=&quot;clean&quot;&gt;
+          &lt;li&gt;Model choice by difficulty and track record, instead of a fixed model per node.&lt;/li&gt;
+          &lt;li&gt;A memory of the owner&#x27;s answers (&quot;didn&#x27;t need me&quot;, &quot;should have asked me&quot;), so the same question is not asked twice.&lt;/li&gt;
+          &lt;li&gt;A CTO agent that changes the setup in plain words. Conductor&#x27;s planned workflow manager plays the same part.&lt;/li&gt;
+          &lt;li&gt;Joining interactive sessions. Conductor runs headless only.&lt;/li&gt;
+        &lt;/ul&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;card&quot;&gt;
+      &lt;h3&gt;How the two meet&lt;/h3&gt;
+      &lt;p&gt;agent-net&#x27;s modularity plan sets this test of success: &quot;the owner&#x27;s way and a friend&#x27;s way (Conductor) can both be written as recipes for the same binary&quot;. Its inventory lists 149 built-in opinions, and names the 10 that block the Conductor way. The first is that every run must come from a live session. The others: merge authority written as advice, and hand-back reports sent to a caller instead of a tracker item. Conductor&#x27;s workflow model approaches from the other side: its &lt;code&gt;kind&lt;/code&gt; field leaves room for a dynamic, session-driven workflow behind the same triage, tracker and merge gate. Both teams reach the same seam: &lt;b&gt;a work item that owns a run&lt;/b&gt;.&lt;/p&gt;
+      &lt;div class=&quot;chips&quot;&gt;&lt;span class=&quot;chip plan&quot;&gt;conductor: kind: dynamic, reserved&lt;/span&gt;&lt;span class=&quot;chip plan&quot;&gt;agent-net: recipes, draft&lt;/span&gt;&lt;/div&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;card&quot;&gt;
+      &lt;h3&gt;Proposal: conductor as the outer shell, agent-net as a workflow kind&lt;/h3&gt;
+      &lt;p&gt;For tracked work that runs unattended, the stricter system should wrap the looser one. Enforcement cannot be added from inside a node, but a dynamic team can run inside one. Triage routes an item to a &lt;code&gt;kind: dynamic&lt;/code&gt; workflow. An agent-net team works it with messages, workers and its model picker, then hands back a verdict, a branch and its cost. The review-and-merge node and production approval still decide. Interactive sessions stay in agent-net, and a session files tracked work into conductor&#x27;s intake.&lt;/p&gt;
+      &lt;div class=&quot;flow&quot;&gt;
+        &lt;span class=&quot;step&quot;&gt;agent-net session files an item&lt;/span&gt;&lt;span class=&quot;arrow&quot;&gt;→&lt;/span&gt;
+        &lt;span class=&quot;step&quot;&gt;Conductor triage&lt;/span&gt;&lt;span class=&quot;arrow&quot;&gt;→&lt;/span&gt;
+        &lt;span class=&quot;step&quot;&gt;kind: dynamic, run by agent-net&lt;/span&gt;&lt;span class=&quot;arrow&quot;&gt;→&lt;/span&gt;
+        &lt;span class=&quot;step&quot;&gt;verdict, branch, cost&lt;/span&gt;&lt;span class=&quot;arrow&quot;&gt;→&lt;/span&gt;
+        &lt;span class=&quot;step&quot;&gt;review &amp;amp; merge · approval&lt;/span&gt;
+      &lt;/div&gt;
+      &lt;p class=&quot;caption&quot;&gt;The contract a dynamic kind must meet: start from an item, report a verdict through &lt;code&gt;report_outcome&lt;/code&gt;, produce a branch or a PR, report cost and heartbeats, stop on terminate, and stay inside a time and cost budget. It holds no merge or production authority. One owner of each machine must also be chosen: hostd, or the agent-net daemon.&lt;/p&gt;
+      &lt;div class=&quot;chips&quot;&gt;&lt;span class=&quot;chip plan&quot;&gt;proposal&lt;/span&gt;&lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/section&gt;
+
+  &lt;!-- 3. TRACKER &amp; WAKE --&gt;
+  &lt;section aria-labelledby=&quot;h-3&quot;&gt;
+    &lt;div class=&quot;sec-head&quot;&gt;
+      &lt;span class=&quot;sec-num&quot;&gt;03&lt;/span&gt;
+      &lt;h2 id=&quot;h-3&quot;&gt;The tracker and wake calls&lt;/h2&gt;
+      &lt;p&gt;The tracker is the system of record, and every agent reads and writes through it. Agents do not poll for work and do not wait on each other. The tracker&#x27;s change feed wakes the right agent when something it owns changes.&lt;/p&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;grid2&quot;&gt;
+      &lt;div class=&quot;card&quot;&gt;
+        &lt;h3&gt;What the tracker holds&lt;/h3&gt;
+        &lt;ul class=&quot;clean&quot;&gt;
+          &lt;li&gt;&lt;b&gt;Ideas&lt;/b&gt;: parked, shaping, proposed, accepted. An owner agent turns an accepted idea into an epic with features and tasks.&lt;/li&gt;
+          &lt;li&gt;&lt;b&gt;Epics, features and tasks&lt;/b&gt;. A feature that has tasks only groups them and never runs itself.&lt;/li&gt;
+          &lt;li&gt;&lt;b&gt;Gates&lt;/b&gt;: question, approval and decision, with options and a recommended choice. A gate closes when it is answered, or it is retracted when its condition clears.&lt;/li&gt;
+          &lt;li&gt;&lt;b&gt;Events&lt;/b&gt;: notes, claims, outcomes and links, in one ordered change feed.&lt;/li&gt;
+          &lt;li&gt;&lt;b&gt;The lease&lt;/b&gt;: a claim on an item that has a time limit. It is the distributed lock, and the daemon is the only writer of scheduling state.&lt;/li&gt;
+        &lt;/ul&gt;
+        &lt;div class=&quot;chips&quot;&gt;&lt;span class=&quot;chip swap&quot;&gt;adapter: native tracker&lt;/span&gt;&lt;span class=&quot;chip swap&quot;&gt;adapter: Plane&lt;/span&gt;&lt;/div&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;card&quot;&gt;
+        &lt;h3&gt;How a wake works&lt;/h3&gt;
+        &lt;div class=&quot;flow&quot;&gt;
+          &lt;span class=&quot;step&quot;&gt;Tracker write&lt;/span&gt;&lt;span class=&quot;arrow&quot;&gt;→&lt;/span&gt;
+          &lt;span class=&quot;step&quot;&gt;Change feed row&lt;/span&gt;&lt;span class=&quot;arrow&quot;&gt;→&lt;/span&gt;
+          &lt;span class=&quot;step&quot;&gt;Wake poller maps it to the epic that owns the item&lt;/span&gt;&lt;span class=&quot;arrow&quot;&gt;→&lt;/span&gt;
+          &lt;span class=&quot;step&quot;&gt;Epic owner gets one turn&lt;/span&gt;&lt;span class=&quot;arrow&quot;&gt;→&lt;/span&gt;
+          &lt;span class=&quot;step&quot;&gt;It acts, or opens a gate for the operator&lt;/span&gt;
+        &lt;/div&gt;
+        &lt;p&gt;Wake triggers:&lt;/p&gt;
+        &lt;div class=&quot;chips&quot;&gt;
+          &lt;span class=&quot;chip core&quot;&gt;gate opened&lt;/span&gt;&lt;span class=&quot;chip core&quot;&gt;escalation&lt;/span&gt;&lt;span class=&quot;chip core&quot;&gt;run failed&lt;/span&gt;&lt;span class=&quot;chip core&quot;&gt;run unreported&lt;/span&gt;&lt;span class=&quot;chip core&quot;&gt;stall&lt;/span&gt;&lt;span class=&quot;chip core&quot;&gt;held by a blocker&lt;/span&gt;&lt;span class=&quot;chip core&quot;&gt;PR merged&lt;/span&gt;&lt;span class=&quot;chip config&quot;&gt;scheduled check, interval set by the operator&lt;/span&gt;
+        &lt;/div&gt;
+        &lt;p class=&quot;caption&quot;&gt;An epic with Auto-start on wakes before anyone has chatted with it. With Auto-start off, it wakes only for escalations and gates on its own items. The daemon&#x27;s own loop reads candidates from the same tracker on every tick.&lt;/p&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/section&gt;
+
+  &lt;!-- 4. CONSOLE --&gt;
+  &lt;section aria-labelledby=&quot;h-4&quot;&gt;
+    &lt;div class=&quot;sec-head&quot;&gt;
+      &lt;span class=&quot;sec-num&quot;&gt;04&lt;/span&gt;
+      &lt;h2 id=&quot;h-4&quot;&gt;Operator console and chats&lt;/h2&gt;
+      &lt;p&gt;One web console covers every board. It has two parts: pages to read, sorted by what the operator needs to do, and chats that drive the work from an idea to a shipped release.&lt;/p&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;grid3&quot;&gt;
+      &lt;div class=&quot;card&quot;&gt;&lt;h3&gt;Attention&lt;/h3&gt;&lt;p&gt;&lt;b&gt;Inbox&lt;/b&gt;: every open gate and escalation, with its options and a recommended choice. Answer, approve, deny or retract it there. &lt;b&gt;Overview&lt;/b&gt;: what runs now and what waits.&lt;/p&gt;&lt;/div&gt;
+      &lt;div class=&quot;card&quot;&gt;&lt;h3&gt;Shape&lt;/h3&gt;&lt;p&gt;&lt;b&gt;Ideas&lt;/b&gt; with a capture chat. &lt;b&gt;Roadmap&lt;/b&gt; lanes for each epic. &lt;b&gt;Epic chat&lt;/b&gt; with the epic owner. The &lt;b&gt;Conductor chat&lt;/b&gt; for questions that span boards.&lt;/p&gt;&lt;/div&gt;
+      &lt;div class=&quot;card&quot;&gt;&lt;h3&gt;Flow&lt;/h3&gt;&lt;p&gt;&lt;b&gt;Triage&lt;/b&gt; and &lt;b&gt;Plan&lt;/b&gt; show routing and planning decisions. &lt;b&gt;Runs&lt;/b&gt; show each item&#x27;s path and transcript. &lt;b&gt;Delivery&lt;/b&gt; tracks PRs. &lt;b&gt;Releases&lt;/b&gt; track tags and deploys per repo.&lt;/p&gt;&lt;/div&gt;
+      &lt;div class=&quot;card&quot;&gt;&lt;h3&gt;System&lt;/h3&gt;&lt;p&gt;&lt;b&gt;Workflows&lt;/b&gt; shows each workflow&#x27;s diagram and YAML. &lt;b&gt;Usage&lt;/b&gt; shows cost per run, project and node. &lt;b&gt;Health&lt;/b&gt; shows hosts, handshake, disk and fences.&lt;/p&gt;&lt;/div&gt;
+    &lt;/div&gt;
+    &lt;h3&gt;Drive it by chat&lt;/h3&gt;
+    &lt;p&gt;The operator can run the whole flow from chats. Each chat talks to an owner agent that holds one scope and carries it forward between turns.&lt;/p&gt;
+    &lt;div class=&quot;figure small&quot;&gt;
+      &lt;svg viewBox=&quot;0 0 1040 250&quot; role=&quot;img&quot; aria-labelledby=&quot;chat-title&quot;&gt;
+        &lt;title id=&quot;chat-title&quot;&gt;The chat chain: New idea chat, idea chat, epic chat, and the Conductor chat across boards, all proposing changes that the operator approves&lt;/title&gt;
+        &lt;defs&gt;
+          &lt;marker id=&quot;ah3&quot; viewBox=&quot;0 0 10 10&quot; refX=&quot;9&quot; refY=&quot;5&quot; markerWidth=&quot;7&quot; markerHeight=&quot;7&quot; orient=&quot;auto-start-reverse&quot;&gt;&lt;path d=&quot;M0,0 L10,5 L0,10 z&quot; class=&quot;arrowhead&quot;/&gt;&lt;/marker&gt;
+        &lt;/defs&gt;
+        &lt;rect x=&quot;20&quot; y=&quot;30&quot; width=&quot;210&quot; height=&quot;104&quot; rx=&quot;8&quot; class=&quot;b-core&quot;/&gt;
+        &lt;text x=&quot;34&quot; y=&quot;56&quot; class=&quot;t-title&quot;&gt;New idea chat&lt;/text&gt;
+        &lt;text x=&quot;34&quot; y=&quot;78&quot; class=&quot;t-sub&quot;&gt;capture a thought, find&lt;/text&gt;
+        &lt;text x=&quot;34&quot; y=&quot;95&quot; class=&quot;t-sub&quot;&gt;duplicates, file it parked&lt;/text&gt;
+        &lt;text x=&quot;34&quot; y=&quot;122&quot; class=&quot;t-tag c-muted&quot;&gt;idea owner&lt;/text&gt;
+
+        &lt;rect x=&quot;270&quot; y=&quot;30&quot; width=&quot;230&quot; height=&quot;104&quot; rx=&quot;8&quot; class=&quot;b-core&quot;/&gt;
+        &lt;text x=&quot;284&quot; y=&quot;56&quot; class=&quot;t-title&quot;&gt;Idea chat&lt;/text&gt;
+        &lt;text x=&quot;284&quot; y=&quot;78&quot; class=&quot;t-sub&quot;&gt;grill the open choices, then&lt;/text&gt;
+        &lt;text x=&quot;284&quot; y=&quot;95&quot; class=&quot;t-sub&quot;&gt;propose the epic, features, tasks&lt;/text&gt;
+        &lt;text x=&quot;284&quot; y=&quot;122&quot; class=&quot;t-tag c-muted&quot;&gt;idea owner&lt;/text&gt;
+
+        &lt;rect x=&quot;540&quot; y=&quot;30&quot; width=&quot;250&quot; height=&quot;104&quot; rx=&quot;8&quot; class=&quot;b-core&quot;/&gt;
+        &lt;text x=&quot;554&quot; y=&quot;56&quot; class=&quot;t-title&quot;&gt;Epic chat · delivery&lt;/text&gt;
+        &lt;text x=&quot;554&quot; y=&quot;78&quot; class=&quot;t-sub&quot;&gt;rank, start and stop runs, replan,&lt;/text&gt;
+        &lt;text x=&quot;554&quot; y=&quot;95&quot; class=&quot;t-sub&quot;&gt;answer escalations, wakes on events&lt;/text&gt;
+        &lt;text x=&quot;554&quot; y=&quot;122&quot; class=&quot;t-tag c-muted&quot;&gt;epic owner&lt;/text&gt;
+
+        &lt;rect x=&quot;830&quot; y=&quot;30&quot; width=&quot;190&quot; height=&quot;104&quot; rx=&quot;8&quot; class=&quot;b-core&quot;/&gt;
+        &lt;text x=&quot;844&quot; y=&quot;56&quot; class=&quot;t-title&quot;&gt;Shipped&lt;/text&gt;
+        &lt;text x=&quot;844&quot; y=&quot;78&quot; class=&quot;t-sub&quot;&gt;PRs merged, releases&lt;/text&gt;
+        &lt;text x=&quot;844&quot; y=&quot;95&quot; class=&quot;t-sub&quot;&gt;tracked, epic closes&lt;/text&gt;
+
+        &lt;path d=&quot;M230,82 H268&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah3)&quot;/&gt;
+        &lt;path d=&quot;M500,82 H538&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah3)&quot;/&gt;
+        &lt;path d=&quot;M790,82 H828&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah3)&quot;/&gt;
+
+        &lt;rect x=&quot;20&quot; y=&quot;170&quot; width=&quot;770&quot; height=&quot;60&quot; rx=&quot;8&quot; class=&quot;b-swap&quot;/&gt;
+        &lt;text x=&quot;34&quot; y=&quot;195&quot; class=&quot;t-title&quot;&gt;Conductor chat · across every board&lt;/text&gt;
+        &lt;text x=&quot;34&quot; y=&quot;216&quot; class=&quot;t-sub&quot;&gt;roadmap, open gates on all boards, parked ideas, rank and priority, check schedules&lt;/text&gt;
+        &lt;path d=&quot;M405,170 V136&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah3)&quot;/&gt;
+        &lt;path d=&quot;M665,170 V136&quot; class=&quot;edge&quot; marker-end=&quot;url(#ah3)&quot;/&gt;
+        &lt;text x=&quot;830&quot; y=&quot;194&quot; class=&quot;t-sub&quot;&gt;every change: the agent&lt;/text&gt;
+        &lt;text x=&quot;830&quot; y=&quot;211&quot; class=&quot;t-sub&quot;&gt;proposes, the operator&lt;/text&gt;
+        &lt;text x=&quot;830&quot; y=&quot;228&quot; class=&quot;t-sub&quot;&gt;approves, then it applies&lt;/text&gt;
+      &lt;/svg&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;grid2&quot;&gt;
+      &lt;div class=&quot;card&quot;&gt;
+        &lt;h3&gt;The operator keeps the pen&lt;/h3&gt;
+        &lt;p&gt;Chat agents never change the plan on their own. Their tools come in pairs: &lt;code&gt;propose_items&lt;/code&gt;, &lt;code&gt;propose_rank&lt;/code&gt; and &lt;code&gt;propose_shape&lt;/code&gt; post a card, and the matching &lt;code&gt;apply_*&lt;/code&gt; or &lt;code&gt;apply_approval&lt;/code&gt; runs only after the operator approves it. Starting or stopping a run is a request the operator approves. Escalations, failures, stalls and merges wake the epic owner, so the chat is current when the operator returns.&lt;/p&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;card&quot;&gt;
+        &lt;h3&gt;Compared with agent-net&#x27;s CTO&lt;/h3&gt;
+        &lt;p&gt;Both put one chat in front of the system, so the operator drives it in plain words. agent-net&#x27;s CTO changes the setup: machines, charters, rules, workers. Conductor&#x27;s chats drive the work: ideas, epics, runs and gates. Changing the setup itself, meaning workflows and agents, is the job of the planned workflow manager.&lt;/p&gt;
+        &lt;div class=&quot;chips&quot;&gt;&lt;span class=&quot;chip core&quot;&gt;idea, epic and Conductor chats: running&lt;/span&gt;&lt;span class=&quot;chip plan&quot;&gt;workflow manager: planned&lt;/span&gt;&lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+    &lt;p class=&quot;caption&quot;&gt;Every chat in the console behaves the same way, and a feature added to one chat is added to all of them: the Inbox ticket chat, idea chats, epic chats and the Conductor chat. The chat and theme components are shared with a second product through one component registry.&lt;/p&gt;
+  &lt;/section&gt;
+
+  &lt;!-- 5. HUMAN ATTENTION --&gt;
+  &lt;section aria-labelledby=&quot;h-5&quot;&gt;
+    &lt;div class=&quot;sec-head&quot;&gt;
+      &lt;span class=&quot;sec-num&quot;&gt;05&lt;/span&gt;
+      &lt;h2 id=&quot;h-5&quot;&gt;Human attention: the scarce resource&lt;/h2&gt;
+      &lt;p&gt;The design spends the operator&#x27;s attention in two places only: before dispatch, when the operator shapes the work, and at a gate, when an agent cannot decide. Each layer below removes a class of interruptions. agent-net reaches the same principle, &quot;your attention is the scarce resource&quot;, and solves it after the fact with a chief of staff and a memory. Conductor moves most of the questions to before the build.&lt;/p&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;layers&quot;&gt;
+      &lt;div class=&quot;layer&quot;&gt;&lt;span class=&quot;n&quot;&gt;1&lt;/span&gt;&lt;div&gt;&lt;h3&gt;Decide before you build&lt;/h3&gt;&lt;p&gt;The operator designs in an idea grill. Every open choice is tagged by class: an agent can decide A-class choices, and H-class choices go to the human. H-class choices are made before any code is written, never discovered in review.&lt;/p&gt;&lt;/div&gt;&lt;/div&gt;
+      &lt;div class=&quot;layer&quot;&gt;&lt;span class=&quot;n&quot;&gt;2&lt;/span&gt;&lt;div&gt;&lt;h3&gt;Written decision rules&lt;/h3&gt;&lt;p&gt;Rules such as &quot;one ticket is one change&quot; or &quot;reuse before you add&quot; turn recurring questions into choices an agent can decide. The agent cites the rule instead of asking.&lt;/p&gt;&lt;/div&gt;&lt;/div&gt;
+      &lt;div class=&quot;layer&quot;&gt;&lt;span class=&quot;n&quot;&gt;3&lt;/span&gt;&lt;div&gt;&lt;h3&gt;One Inbox, with a proposal attached&lt;/h3&gt;&lt;p&gt;Every gate arrives with options, a recommended choice and the evidence. The operator answers in one place, for every board.&lt;/p&gt;&lt;/div&gt;&lt;/div&gt;
+      &lt;div class=&quot;layer&quot;&gt;&lt;span class=&quot;n&quot;&gt;4&lt;/span&gt;&lt;div&gt;&lt;h3&gt;Owner agents absorb routine events&lt;/h3&gt;&lt;p&gt;The epic owner takes failures, stalls, merges and blockers first. It acts on them itself, and opens a gate only for a real decision.&lt;/p&gt;&lt;/div&gt;&lt;/div&gt;
+      &lt;div class=&quot;layer&quot;&gt;&lt;span class=&quot;n&quot;&gt;5&lt;/span&gt;&lt;div&gt;&lt;h3&gt;Merge without a human by default&lt;/h3&gt;&lt;p&gt;CI green, the review bot clean and both merge keys turn means the PR merges. A human merge is opt-in for each change.&lt;/p&gt;&lt;/div&gt;&lt;/div&gt;
+      &lt;div class=&quot;layer&quot;&gt;&lt;span class=&quot;n&quot;&gt;6&lt;/span&gt;&lt;div&gt;&lt;h3&gt;Escalations clear themselves&lt;/h3&gt;&lt;p&gt;When the condition behind an escalation goes away, the conductor retracts it. The operator never has to clean up a stale alert.&lt;/p&gt;&lt;/div&gt;&lt;/div&gt;
+      &lt;div class=&quot;layer&quot;&gt;&lt;span class=&quot;n&quot;&gt;7&lt;/span&gt;&lt;div&gt;&lt;h3&gt;Few units to approve&lt;/h3&gt;&lt;p&gt;A feature is one outcome that the operator approves or denies. Repo legs, fixes and ops steps are its tasks, so they never become separate approvals.&lt;/p&gt;&lt;/div&gt;&lt;/div&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;callout&quot;&gt;
+      &lt;h3&gt;Where it still leaks, a real case from 2026-11-18&lt;/h3&gt;
+      &lt;p&gt;A follow-up task reopened a finished feature. The daemon re-ran the feature 35 times, each run finding the work already merged. The epic chat posted the same request to the operator 35 times. Two fixes are filed: a feature with tasks is never dispatched (HARN-1488), and an old merge no longer retracts a new escalation (HARN-1485). The lesson: attention needs guards in code, not only good prompts.&lt;/p&gt;
+    &lt;/div&gt;
+  &lt;/section&gt;
+
+  &lt;!-- 6. MODULARITY --&gt;
+  &lt;section aria-labelledby=&quot;h-6&quot;&gt;
+    &lt;div class=&quot;sec-head&quot;&gt;
+      &lt;span class=&quot;sec-num&quot;&gt;06&lt;/span&gt;
+      &lt;h2 id=&quot;h-6&quot;&gt;Modularity: what can be swapped&lt;/h2&gt;
+      &lt;p&gt;Conductor is a fixed core with ports around it. Some ports already have two or more working adapters. Others have one adapter behind a defined interface. Six parts are fixed on purpose, because the safety model depends on them.&lt;/p&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;stats&quot;&gt;
+      &lt;div class=&quot;stat swap&quot;&gt;&lt;b&gt;6&lt;/b&gt;&lt;span&gt;modules with two or more working options today&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;stat config&quot;&gt;&lt;b&gt;8&lt;/b&gt;&lt;span&gt;ports with one adapter, ready for a second&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;stat plan&quot;&gt;&lt;b&gt;5&lt;/b&gt;&lt;span&gt;planned modules&lt;/span&gt;&lt;/div&gt;
+      &lt;div class=&quot;stat core&quot;&gt;&lt;b&gt;6&lt;/b&gt;&lt;span&gt;parts fixed by design&lt;/span&gt;&lt;/div&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;tablewrap&quot;&gt;
+      &lt;table&gt;
+        &lt;thead&gt;&lt;tr&gt;&lt;th&gt;Module&lt;/th&gt;&lt;th&gt;Options&lt;/th&gt;&lt;th&gt;Seam&lt;/th&gt;&lt;th&gt;Status&lt;/th&gt;&lt;/tr&gt;&lt;/thead&gt;
+        &lt;tbody&gt;
+          &lt;tr&gt;&lt;td&gt;Tracker&lt;/td&gt;&lt;td&gt;Native tracker · Plane&lt;/td&gt;&lt;td&gt;&lt;code&gt;Tracker&lt;/code&gt; protocol, per-board router&lt;/td&gt;&lt;td&gt;&lt;span class=&quot;chip swap&quot;&gt;2+ options&lt;/span&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Coding runtime&lt;/td&gt;&lt;td&gt;Claude Code · OpenCode&lt;/td&gt;&lt;td&gt;&lt;code&gt;DelegateRuntime&lt;/code&gt; protocol&lt;/td&gt;&lt;td&gt;&lt;span class=&quot;chip swap&quot;&gt;2+ options&lt;/span&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Model and effort&lt;/td&gt;&lt;td&gt;Any model, per agent node&lt;/td&gt;&lt;td&gt;Node config&lt;/td&gt;&lt;td&gt;&lt;span class=&quot;chip swap&quot;&gt;2+ options&lt;/span&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Execution host&lt;/td&gt;&lt;td&gt;Same host as the daemon · a remote machine&lt;/td&gt;&lt;td&gt;hostd&#x27;s three HTTP commands, plus a config handshake&lt;/td&gt;&lt;td&gt;&lt;span class=&quot;chip swap&quot;&gt;2+ options&lt;/span&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Deployment&lt;/td&gt;&lt;td&gt;Daemon in a container or native · database in compose or external&lt;/td&gt;&lt;td&gt;&lt;code&gt;make&lt;/code&gt; switches&lt;/td&gt;&lt;td&gt;&lt;span class=&quot;chip swap&quot;&gt;2+ options&lt;/span&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Agent definitions&lt;/td&gt;&lt;td&gt;Shipped in the package · config folder&lt;/td&gt;&lt;td&gt;Definition loader, hash recorded per run&lt;/td&gt;&lt;td&gt;&lt;span class=&quot;chip swap&quot;&gt;2+ options&lt;/span&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Code host&lt;/td&gt;&lt;td&gt;GitHub&lt;/td&gt;&lt;td&gt;&lt;code&gt;MergeClient&lt;/code&gt;, &lt;code&gt;RepoSearchProvider&lt;/code&gt;&lt;/td&gt;&lt;td&gt;&lt;span class=&quot;chip config&quot;&gt;1 adapter&lt;/span&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;PR review bot&lt;/td&gt;&lt;td&gt;pi.dev, advisory&lt;/td&gt;&lt;td&gt;Comment contract that the agent reads&lt;/td&gt;&lt;td&gt;&lt;span class=&quot;chip config&quot;&gt;1 adapter&lt;/span&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Context supply&lt;/td&gt;&lt;td&gt;Beacon, optional&lt;/td&gt;&lt;td&gt;Overlay paths, read at the run&#x27;s warehouse SHA&lt;/td&gt;&lt;td&gt;&lt;span class=&quot;chip config&quot;&gt;1 adapter&lt;/span&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Completion effects&lt;/td&gt;&lt;td&gt;Merge a PR · complete a task recovery&lt;/td&gt;&lt;td&gt;Effect registry&lt;/td&gt;&lt;td&gt;&lt;span class=&quot;chip config&quot;&gt;1 adapter each&lt;/span&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Event sources&lt;/td&gt;&lt;td&gt;Grafana alerts → Airflow handler&lt;/td&gt;&lt;td&gt;Reactor &lt;code&gt;Source&lt;/code&gt; and &lt;code&gt;Handler&lt;/code&gt;&lt;/td&gt;&lt;td&gt;&lt;span class=&quot;chip config&quot;&gt;1 adapter&lt;/span&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Chat backend&lt;/td&gt;&lt;td&gt;Claude Code turns on hostd&lt;/td&gt;&lt;td&gt;&lt;code&gt;ChatBackend&lt;/code&gt; protocol&lt;/td&gt;&lt;td&gt;&lt;span class=&quot;chip config&quot;&gt;1 adapter&lt;/span&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Run archive&lt;/td&gt;&lt;td&gt;S3-compatible storage&lt;/td&gt;&lt;td&gt;Archive storage port&lt;/td&gt;&lt;td&gt;&lt;span class=&quot;chip config&quot;&gt;1 adapter&lt;/span&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Console components&lt;/td&gt;&lt;td&gt;Shared component registry, also used by a second app&lt;/td&gt;&lt;td&gt;Opt-in props, off by default&lt;/td&gt;&lt;td&gt;&lt;span class=&quot;chip config&quot;&gt;1 adapter&lt;/span&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Workflow kinds&lt;/td&gt;&lt;td&gt;&lt;code&gt;dag&lt;/code&gt; · dynamic&lt;/td&gt;&lt;td&gt;&lt;code&gt;kind&lt;/code&gt; on the workflow&lt;/td&gt;&lt;td&gt;&lt;span class=&quot;chip plan&quot;&gt;planned&lt;/span&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Global and project workflows&lt;/td&gt;&lt;td&gt;Shipped · config repo, replacing by name&lt;/td&gt;&lt;td&gt;Workflow registry&lt;/td&gt;&lt;td&gt;&lt;span class=&quot;chip plan&quot;&gt;planned&lt;/span&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Shipped agents with overrides&lt;/td&gt;&lt;td&gt;builder, coder · config repo versions&lt;/td&gt;&lt;td&gt;Agent registry&lt;/td&gt;&lt;td&gt;&lt;span class=&quot;chip plan&quot;&gt;planned&lt;/span&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Many hosts&lt;/td&gt;&lt;td&gt;Least-loaded placement across machines&lt;/td&gt;&lt;td&gt;Host registry and heartbeat&lt;/td&gt;&lt;td&gt;&lt;span class=&quot;chip plan&quot;&gt;planned&lt;/span&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;Workflow manager&lt;/td&gt;&lt;td&gt;A chat agent that changes workflows through PRs&lt;/td&gt;&lt;td&gt;Config repo PRs&lt;/td&gt;&lt;td&gt;&lt;span class=&quot;chip plan&quot;&gt;planned&lt;/span&gt;&lt;/td&gt;&lt;/tr&gt;
+        &lt;/tbody&gt;
+      &lt;/table&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;card&quot;&gt;
+      &lt;h3&gt;Fixed by design&lt;/h3&gt;
+      &lt;div class=&quot;chips&quot;&gt;
+        &lt;span class=&quot;chip core&quot;&gt;Postgres is the source of truth&lt;/span&gt;
+        &lt;span class=&quot;chip core&quot;&gt;the daemon is the only scheduler; the lease is the lock&lt;/span&gt;
+        &lt;span class=&quot;chip core&quot;&gt;server nodes hold all authority&lt;/span&gt;
+        &lt;span class=&quot;chip core&quot;&gt;two-key merge&lt;/span&gt;
+        &lt;span class=&quot;chip core&quot;&gt;report_outcome verdict contract&lt;/span&gt;
+        &lt;span class=&quot;chip core&quot;&gt;hostd&#x27;s three-command API&lt;/span&gt;
+      &lt;/div&gt;
+      &lt;p&gt;These are fixed because they make unattended runs safe. A dynamic engine plugs in as a workflow kind and keeps all six. agent-net&#x27;s modularity plan draws the same line in its own words: mechanisms stay in code, a way of working becomes data, and a rule that must always hold is enforced, never left as advice.&lt;/p&gt;
+    &lt;/div&gt;
+  &lt;/section&gt;
+
+
+  &lt;!-- 7. MERGE MATRIX --&gt;
+  &lt;section aria-labelledby=&quot;h-7&quot;&gt;
+    &lt;div class=&quot;sec-head&quot;&gt;
+      &lt;span class=&quot;sec-num&quot;&gt;07&lt;/span&gt;
+      &lt;h2 id=&quot;h-7&quot;&gt;Merging the three: component by component&lt;/h2&gt;
+      &lt;p&gt;One row per component: what each system has, the trade-off, and a first lean. The Decision column is empty on purpose. We fill it in as we debate each row. OpenRig cells come from its README only, and &quot;none documented&quot; means a feature is not confirmed, not that it is absent.&lt;/p&gt;
+    &lt;/div&gt;
+    &lt;div class=&quot;tablewrap&quot;&gt;
+      &lt;table class=&quot;matrix&quot;&gt;
+        &lt;thead&gt;&lt;tr&gt;&lt;th&gt;Component&lt;/th&gt;&lt;th&gt;Conductor&lt;/th&gt;&lt;th&gt;agent-net&lt;/th&gt;&lt;th&gt;OpenRig&lt;/th&gt;&lt;th&gt;Trade-off&lt;/th&gt;&lt;th&gt;First lean&lt;/th&gt;&lt;th&gt;Decision&lt;/th&gt;&lt;/tr&gt;&lt;/thead&gt;
+        &lt;tbody&gt;
+          &lt;tr class=&quot;group&quot;&gt;&lt;td colspan=&quot;7&quot;&gt;Work and routing&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;&lt;b&gt;K1&lt;/b&gt; Intake&lt;/td&gt;&lt;td&gt;Tracker item through intake and triage&lt;/td&gt;&lt;td&gt;A live session asks&lt;/td&gt;&lt;td&gt;Goal for the rig, internal queue&lt;/td&gt;&lt;td&gt;Audit trail and unattended runs vs no friction&lt;/td&gt;&lt;td&gt;Both doors: sessions file into intake&lt;/td&gt;&lt;td class=&quot;decide&quot;&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;&lt;b&gt;K2&lt;/b&gt; System of record&lt;/td&gt;&lt;td&gt;Native tracker or Plane: ideas, epics, features, tasks, gates, change feed&lt;/td&gt;&lt;td&gt;None. Changes in flight and the Desk log&lt;/td&gt;&lt;td&gt;Queue only&lt;/td&gt;&lt;td&gt;Weight vs visibility across boards&lt;/td&gt;&lt;td&gt;Conductor&lt;/td&gt;&lt;td class=&quot;decide&quot;&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;&lt;b&gt;K3&lt;/b&gt; Control model&lt;/td&gt;&lt;td&gt;Fixed workflows, verdict edges, capped loops&lt;/td&gt;&lt;td&gt;Sessions decide within charters and rules&lt;/td&gt;&lt;td&gt;Lead agent and a culture file&lt;/td&gt;&lt;td&gt;Predictable and testable vs adaptive&lt;/td&gt;&lt;td&gt;Conductor&amp;#x27;s graph, plus a dynamic kind&lt;/td&gt;&lt;td class=&quot;decide&quot;&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;&lt;b&gt;K4&lt;/b&gt; Agent topology&lt;/td&gt;&lt;td&gt;Agent nodes per workflow; server and client agents&lt;/td&gt;&lt;td&gt;One session per project, with leads, teams and workers&lt;/td&gt;&lt;td&gt;Pods and persistent seats&lt;/td&gt;&lt;td&gt;Agents per task vs long-lived owners&lt;/td&gt;&lt;td&gt;Open: debate first&lt;/td&gt;&lt;td class=&quot;decide&quot;&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;&lt;b&gt;K5&lt;/b&gt; Agent-to-agent talk&lt;/td&gt;&lt;td&gt;None. Verdicts and artifacts&lt;/td&gt;&lt;td&gt;Messages across machines, wake on message&lt;/td&gt;&lt;td&gt;Send, broadcast, chatrooms&lt;/td&gt;&lt;td&gt;Isolation and low token cost vs coordination&lt;/td&gt;&lt;td&gt;Only inside a dynamic kind&lt;/td&gt;&lt;td class=&quot;decide&quot;&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr class=&quot;group&quot;&gt;&lt;td colspan=&quot;7&quot;&gt;Doing the work&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;&lt;b&gt;K6&lt;/b&gt; Implementation leg&lt;/td&gt;&lt;td&gt;Builder, then coder, in a worktree&lt;/td&gt;&lt;td&gt;Workers in own worktree; report diff and cost; rated&lt;/td&gt;&lt;td&gt;Seats do the work&lt;/td&gt;&lt;td&gt;Close to equal&lt;/td&gt;&lt;td&gt;Either; take agent-net&amp;#x27;s report-and-rate loop&lt;/td&gt;&lt;td class=&quot;decide&quot;&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;&lt;b&gt;K7&lt;/b&gt; Model choice&lt;/td&gt;&lt;td&gt;Fixed per node&lt;/td&gt;&lt;td&gt;Difficulty judge, learned picker, subscription pacing, playbook notes&lt;/td&gt;&lt;td&gt;Fixed per seat&lt;/td&gt;&lt;td&gt;Predictable vs cheaper and self-improving&lt;/td&gt;&lt;td&gt;agent-net&lt;/td&gt;&lt;td class=&quot;decide&quot;&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;&lt;b&gt;K8&lt;/b&gt; Authority and merge&lt;/td&gt;&lt;td&gt;Enforced server nodes, two-key merge, production approval&lt;/td&gt;&lt;td&gt;Delivery steps with owners; merge gate is advice today; Desk for money, secrets, irreversible&lt;/td&gt;&lt;td&gt;Reviewer seats, policy per seat&lt;/td&gt;&lt;td&gt;Safe unattended vs flexible&lt;/td&gt;&lt;td&gt;Conductor&lt;/td&gt;&lt;td class=&quot;decide&quot;&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;&lt;b&gt;K9&lt;/b&gt; Production ops&lt;/td&gt;&lt;td&gt;Operate workflow, profiles, secrets per domain, alert-filed tickets&lt;/td&gt;&lt;td&gt;Operator agent deploys on a quoted approval&lt;/td&gt;&lt;td&gt;None documented&lt;/td&gt;&lt;td&gt;Enforced vs trusted&lt;/td&gt;&lt;td&gt;Conductor&lt;/td&gt;&lt;td class=&quot;decide&quot;&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr class=&quot;group&quot;&gt;&lt;td colspan=&quot;7&quot;&gt;The human&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;&lt;b&gt;K10&lt;/b&gt; Attention surface&lt;/td&gt;&lt;td&gt;Inbox gates with options and a recommended choice; written decision rules&lt;/td&gt;&lt;td&gt;Desk, chief of staff, memory of the owner&amp;#x27;s answers&lt;/td&gt;&lt;td&gt;The owner watches&lt;/td&gt;&lt;td&gt;Questions before the build vs filtering after&lt;/td&gt;&lt;td&gt;Both: add agent-net&amp;#x27;s memory to Conductor&lt;/td&gt;&lt;td class=&quot;decide&quot;&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;&lt;b&gt;K11&lt;/b&gt; Chat front door&lt;/td&gt;&lt;td&gt;Idea, epic and Conductor chats; propose, approve, apply&lt;/td&gt;&lt;td&gt;CTO for the setup; chief of staff&lt;/td&gt;&lt;td&gt;Lead or kernel operator&lt;/td&gt;&lt;td&gt;Scoped depth vs one place to talk&lt;/td&gt;&lt;td&gt;One front door over scoped owners&lt;/td&gt;&lt;td class=&quot;decide&quot;&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;&lt;b&gt;K12&lt;/b&gt; Interactive sessions&lt;/td&gt;&lt;td&gt;None. Headless runs only&lt;/td&gt;&lt;td&gt;Joins terminal sessions; open live, also on a phone&lt;/td&gt;&lt;td&gt;tmux panes&lt;/td&gt;&lt;td&gt;Near-the-loop work vs unattended only&lt;/td&gt;&lt;td&gt;agent-net, if near-the-loop work is in scope&lt;/td&gt;&lt;td class=&quot;decide&quot;&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;&lt;b&gt;K13&lt;/b&gt; UI&lt;/td&gt;&lt;td&gt;Web console, 13 pages, and chats&lt;/td&gt;&lt;td&gt;TUI, web console, phone&lt;/td&gt;&lt;td&gt;TUI&lt;/td&gt;&lt;td&gt;Breadth vs reach&lt;/td&gt;&lt;td&gt;Conductor&amp;#x27;s console, plus a phone view&lt;/td&gt;&lt;td class=&quot;decide&quot;&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr class=&quot;group&quot;&gt;&lt;td colspan=&quot;7&quot;&gt;Runtime&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;&lt;b&gt;K14&lt;/b&gt; Wake and scheduling&lt;/td&gt;&lt;td&gt;Change feed to wake events, scheduled checks, Auto-start&lt;/td&gt;&lt;td&gt;Wake on message; standing loops that pause after 2 ticks with no progress&lt;/td&gt;&lt;td&gt;Snapshot and restore&lt;/td&gt;&lt;td&gt;Event-driven vs clock-driven&lt;/td&gt;&lt;td&gt;Conductor, plus agent-net&amp;#x27;s no-progress pause&lt;/td&gt;&lt;td class=&quot;decide&quot;&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;&lt;b&gt;K15&lt;/b&gt; State and recovery&lt;/td&gt;&lt;td&gt;Postgres authoritative, leases, restart adopts live runs&lt;/td&gt;&lt;td&gt;Gateway SQLite; daemons queue while the gateway is down&lt;/td&gt;&lt;td&gt;SQLite and snapshots&lt;/td&gt;&lt;td&gt;Robustness vs one-binary install&lt;/td&gt;&lt;td&gt;Conductor&lt;/td&gt;&lt;td class=&quot;decide&quot;&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;&lt;b&gt;K16&lt;/b&gt; Machines&lt;/td&gt;&lt;td&gt;hostd per host; one remote today, many planned&lt;/td&gt;&lt;td&gt;Gateway plus daemon per machine, one-line join, Tailscale, CPU and RAM admission&lt;/td&gt;&lt;td&gt;One machine&lt;/td&gt;&lt;td&gt;Built vs planned&lt;/td&gt;&lt;td&gt;agent-net&amp;#x27;s mechanics&lt;/td&gt;&lt;td class=&quot;decide&quot;&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;&lt;b&gt;K17&lt;/b&gt; Harnesses&lt;/td&gt;&lt;td&gt;Claude Code, OpenCode, pi reviewer&lt;/td&gt;&lt;td&gt;Claude Code, Codex, OpenCode, Pi, Antigravity&lt;/td&gt;&lt;td&gt;Claude Code, Codex, Pi&lt;/td&gt;&lt;td&gt;Two vs five&lt;/td&gt;&lt;td&gt;agent-net&amp;#x27;s adapters&lt;/td&gt;&lt;td class=&quot;decide&quot;&gt;&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr class=&quot;group&quot;&gt;&lt;td colspan=&quot;7&quot;&gt;Configuration and learning&lt;/td&gt;&lt;/tr&gt;
+          &lt;tr&gt;&lt;td&gt;&lt;b&gt;K18&lt;/b&gt; Config, context, skills, learning&lt;/td&gt;&lt;td&gt;Workflow YAML; shipped and config-repo agents; Beacon contexts; eval harness&lt;/td&gt;&lt;td&gt;Charters, rules, recipes (draft); versioned skills and shared MCP servers; learns from outcomes&lt;/td&gt;&lt;td&gt;RigSpec, AgentSpec, culture file&lt;/td&gt;&lt;td&gt;Reviewed by PR vs live and learning&lt;/td&gt;&lt;td&gt;Split: Conductor for workflows and authority, agent-net for skills and learning&lt;/td&gt;&lt;td class=&quot;decide&quot;&gt;&lt;/td&gt;&lt;/tr&gt;
+        &lt;/tbody&gt;
+      &lt;/table&gt;
+    &lt;/div&gt;
+    &lt;p class=&quot;caption&quot;&gt;Suggested order: start with K4, agent topology. Its answer shapes K5, K11 and K12.&lt;/p&gt;
+  &lt;/section&gt;
+
+  &lt;footer&gt;
+    &lt;span&gt;agent-net facts come from its README, docs/principles.md, docs/design/modularity.md and docs/design/modularity-inventory.md: &lt;a href=&quot;https://github.com/niparis/agent-net&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;github.com/niparis/agent-net&lt;/a&gt;, read on 2026-11-18.&lt;/span&gt;
+    &lt;span&gt;OpenRig facts come from its public README: &lt;a href=&quot;https://github.com/mvschwarz/openrig&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;github.com/mvschwarz/openrig&lt;/a&gt;.&lt;/span&gt;
+    &lt;span&gt;Conductor facts come from agentic-conductor main @ 6a194119 and the HARN board, read on 2026-11-18.&lt;/span&gt;
+  &lt;/footer&gt;
+&lt;/div&gt;
+&lt;/html&gt;"></iframe>
+  </div>
   <div class="tabpane" id="tab-gwnet" role="tabpanel" aria-labelledby="t-gwnet" hidden>
     <section aria-labelledby="gw-h"><div class="head"><div><h2 id="gw-h">A network of gateways (proposed)</h2><p class="lede">Decision 0178, proposed and not scheduled: how agent-net could go from one owner with one gateway to many owners whose gateways talk to each other. <a href="gateway-network/index.html" target="_blank" rel="noopener">Open it on its own page</a>.</p></div></div><iframe id="gw-frame" src="gateway-network/index.html" title="A network of gateways" loading="lazy" style="width:100%;height:1200px;border:0;display:block"></iframe></section>
   </div>
@@ -626,7 +1325,7 @@ pick(J[start] ? start : 0);
 
 // Data model tab
 const M = DATA.model, EN = Object.fromEntries(M.entities.map(e => [e.id, e]));
-const TABS = ['overview', 'quick', 'runs', 'features', 'principles', 'model', 'proposals', 'gwnet'];
+const TABS = ['overview', 'quick', 'runs', 'features', 'principles', 'model', 'proposals', 'arch', 'gwnet'];
 function setTab(which) {
   if (which === 'tables') which = 'model';
   if (!TABS.includes(which)) which = 'overview';
@@ -634,6 +1333,7 @@ function setTab(which) {
     $('#t-' + t).setAttribute('aria-selected', String(t === which));
     $('#tab-' + t).hidden = t !== which;
   }
+  if (which === 'arch') fitArch();
   if (which === 'gwnet') fitGw();
   try { localStorage.setItem('gt-tab4', which); } catch (_) {}
 }
@@ -642,6 +1342,11 @@ function fitGw() {
   try { const d = f.contentDocument; if (d && d.documentElement && d.documentElement.scrollHeight > 200) f.style.height = d.documentElement.scrollHeight + 'px'; } catch (_) {}
 }
 { const f = document.getElementById('gw-frame'); f.addEventListener('load', fitGw); window.addEventListener('resize', fitGw); }
+function fitArch() {
+  const f = document.getElementById('arch-frame');
+  try { const d = f.contentDocument; if (d && d.documentElement) f.style.height = d.documentElement.scrollHeight + 'px'; } catch (_) {}
+}
+{ const f = document.getElementById('arch-frame'); f.addEventListener('load', fitArch); window.addEventListener('resize', fitArch); }
 for (const t of TABS) $('#t-' + t).addEventListener('click', () => setTab(t));
 let firstTab = 'overview'; try { firstTab = localStorage.getItem('gt-tab4') || 'overview'; } catch (_) {}
 setTab(firstTab);
