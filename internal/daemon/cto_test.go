@@ -592,7 +592,7 @@ func testCTOToolsThroughFakeOpenCode(t *testing.T) {
 	call("graph_change", map[string]any{"action": "edge_remove", "from": "architecture", "to": "component", "kind": "depends"})
 	call("graph_change", map[string]any{"action": "undo"})
 	call("graph_change", map[string]any{"action": "edge_remove", "from": "architecture", "to": "component", "kind": "depends"})
-	call("cto_op", map[string]any{"method": "node_remove", "args": map[string]any{"name": "component"}})
+	call("graph_change", map[string]any{"action": "node_remove", "name": "component"})
 	call("agent_machines_find", map[string]any{})
 	call("agent_projects_find", map[string]any{})
 	call("graph_change", map[string]any{"action": "settings_set", "node": "architecture", "setting": "merge_authority", "value": "ask"})

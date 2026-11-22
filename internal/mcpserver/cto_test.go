@@ -91,14 +91,14 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 	}
 	wantEnums := map[string]map[string][]string{
 		"graph_change": {
-			"action": {"charter_set", "node_add", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "agent_create", "team_create", "team_rename", "team_purpose", "team_charter", "team_archive", "team_member_add", "team_member_remove", "lead_set", "scope_set", "scope_remove"},
+			"action": {"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "repo_archive", "agent_create", "agent_tombstone", "team_create", "team_rename", "team_purpose", "team_charter", "team_archive", "team_member_add", "team_member_remove", "lead_set", "scope_set", "scope_remove"},
 			"rule":   {"normal", "auto", "ask", "never"},
 		},
-		"session_change": {"action": {"rename", "trust", "mcp_servers", "policy", "session_start", "merger_start", "merger_stop", "stop", "resume", "restart"}, "folder": {"project", "worktree"}, "harness": {"opencode", "claude", "pi", "codex"}},
+		"session_change": {"action": {"rename", "replace", "trust", "mcp_servers", "policy", "session_start", "merger_start", "merger_stop", "stop", "resume", "restart"}, "folder": {"project", "worktree"}, "harness": {"opencode", "claude", "pi", "codex"}},
 		"worker_change":  {"action": {"start", "stop"}, "harness": {"opencode", "claude", "pi", "codex", "agy"}, "isolation": {"worktree", "none"}},
 		"answer":         {"kind": {"held", "inbox", "outcome"}},
 		"settings_change": {
-			"area": {"values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "invite", "onboarding"},
+			"area": {"values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding", "process_stop"},
 		},
 		"project_change": {"action": {"add", "remove", "display", "create"}},
 		"cto_ui_show":    {"tab": {"sessions", "messages", "quotas", "graph", "tools"}},

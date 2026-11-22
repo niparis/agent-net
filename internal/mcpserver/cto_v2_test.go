@@ -494,59 +494,44 @@ func TestCTOSessionChangeMCPServersAction(t *testing.T) {
 }
 
 func TestCTOV2ProcessStopNeedsAMachineAndPids(t *testing.T) {
-	op, ok := CTOOpByName("process_stop")
-	if !ok {
-		t.Fatal("process_stop is not an op")
-	}
 	for _, args := range []string{
-		`{"node_id":"n_1","pids":[1234,5678]}`,
+		`{"area":"process_stop","node_id":"n_1","pids":[1234,5678]}`,
 	} {
-		if err := ValidateCTOOpArgs(op, json.RawMessage(args)); err != nil {
+		if err := ValidateCTOActionSchema("settings_change", json.RawMessage(args)); err != nil {
 			t.Errorf("%s: %v", args, err)
 		}
 	}
 	for _, args := range []string{
-		`{"pids":[42]}`,
-		`{"node_id":"","pids":[42]}`,
-		`{"node_id":"n_1"}`,
-		`{"node_id":"n_1","pids":[]}`,
-		`{"node_id":"n_1","pids":["42"]}`,
-		`{"node_id":"n_1","pids":[1.5]}`,
-		`{"node_id":"n_1","pids":[42],"signal":"KILL"}`,
-		`{"node_id":"n_1","pids":[42],"reason":"orphans after a restart"}`,
+		`{"area":"process_stop","pids":[42]}`,
+		`{"area":"process_stop","node_id":"","pids":[42]}`,
+		`{"area":"process_stop","node_id":"n_1"}`,
+		`{"area":"process_stop","node_id":"n_1","pids":[]}`,
+		`{"area":"process_stop","node_id":"n_1","pids":["42"]}`,
+		`{"area":"process_stop","node_id":"n_1","pids":[1.5]}`,
+		`{"area":"process_stop","node_id":"n_1","pids":[42],"signal":"KILL"}`,
 	} {
-		if err := ValidateCTOOpArgs(op, json.RawMessage(args)); err == nil {
+		if err := ValidateCTOActionSchema("settings_change", json.RawMessage(args)); err == nil {
 			t.Errorf("%s should be refused", args)
 		}
 	}
 }
 
 // The CTO may quote the owner's words on a change (decision 0165): the five
-// ops that wait for an owner proposal and the merged tools whose actions the
+// actions that wait for an owner proposal and the merged tools whose actions the
 // words let run without one all accept owner_words.
 func TestCTOAcceptsOwnerWords(t *testing.T) {
 	for _, tc := range []struct{ tool, args string }{
 		{"graph_change", `{"action":"charter_set","node":"n","attr":"purpose","value":"x","owner_words":"set it"}`},
 		{"session_change", `{"action":"session_start","project":"p","owner_words":"start it"}`},
 		{"mcp_change", `{"action":"app_ask","code":"ABC234","owner_words":"connect it"}`},
+		{"graph_change", `{"action":"node_remove","name":"old","owner_words":"remove old"}`},
+		{"graph_change", `{"action":"repo_archive","ref":{"kind":"repo","id":"old"},"owner_words":"archive old"}`},
+		{"graph_change", `{"action":"agent_tombstone","ref":{"kind":"agent","id":"old"},"owner_words":"retire old"}`},
+		{"settings_change", `{"area":"machine_remove","node_id":"n_1","owner_words":"remove it"}`},
+		{"settings_change", `{"area":"machine_rotate","node_id":"n_1","owner_words":"rotate it"}`},
 	} {
 		if err := ValidateCTOActionSchema(tc.tool, json.RawMessage(tc.args)); err != nil {
 			t.Errorf("%s %s: %v", tc.tool, tc.args, err)
-		}
-	}
-	for _, tc := range []struct{ method, args string }{
-		{"node_remove", `{"name":"old","owner_words":"remove old"}`},
-		{"repo_archive", `{"ref":{"kind":"repo","id":"old"},"owner_words":"archive old"}`},
-		{"agent_tombstone", `{"ref":{"kind":"agent","id":"old"},"owner_words":"retire old"}`},
-		{"machine_remove", `{"node_id":"n_1","owner_words":"remove it"}`},
-		{"machine_rotate", `{"node_id":"n_1","owner_words":"rotate it"}`},
-	} {
-		op, ok := CTOOpByName(tc.method)
-		if !ok {
-			t.Fatalf("no op %s", tc.method)
-		}
-		if err := ValidateCTOOpArgs(op, json.RawMessage(tc.args)); err != nil {
-			t.Errorf("%s %s: %v", tc.method, tc.args, err)
 		}
 	}
 }
