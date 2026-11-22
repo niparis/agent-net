@@ -4,13 +4,6 @@ Your first day with agent-net, step by step.
 
 One idea runs through all of it: **you talk to the CTO, and the CTO runs the network.** The CTO is your main assistant session. It adds machines, sets up projects, starts and stops sessions, changes settings and answers "where are we?". You use the TUI to watch, to open a session when you want to look inside it, and to answer what is waiting for you on the Desk.
 
-## 0. What you need
-
-- A Linux or macOS machine that is on most of the time. It becomes the **gateway**, the one place where all shared data lives.
-- At least one agent program, installed and signed in: Claude Code, Codex, OpenCode or Pi.
-- [herdr](https://herdr.dev/tui/docs/install/), to open sessions in panes and tabs. Without it, a session opens in the TUI's own terminal.
-- Node 22.19 or newer, so agent-net can read your subscription quotas. Everything else works without it.
-
 ## 1. Install on your main machine
 
 ```sh
