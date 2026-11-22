@@ -54,28 +54,31 @@ Tell the CTO which repositories you work on, and how you want them run. Each ask
 
 If you already have a mess of sessions and repos, ask the CTO to reorganize it: *"Look at my sessions and propose a team structure."* **Why:** the same setup, built from what you already run.
 
-## 5. Give work to a lead
+## 5. Design the work with the lead
 
-Ask a lead for something real, through the CTO (*"Tell the shop lead to fix the checkout bug"*) or by opening the lead's session with Enter on the Sessions tab and asking it directly.
+The way to work with a lead is to design with it, not to pass it a one-line order. Open the lead's session (Enter on the Sessions tab) and think the work through together:
 
-The lead starts one or more **workers**: short-lived sessions that do one task in their own branch and sandbox, then hand back. agent-net picks the agent program, model and machine for each worker. The lead reviews the result, and the change goes through its steps (accept, review, test, merge, release, verify) until it ships.
+- Say what you want and why. The lead knows its repo: it reads the code, proposes a plan, points out what will break and asks what it needs to know.
+- Push back and refine until the plan is right. A good lead writes the plan down in the repo, so it survives a restart and other agents can read it.
+- Agree on what "done" means, then let it run.
 
-You see the outcome as a short report. If you want the details, open the session.
+From there the lead works on its own. It splits the plan into tasks and starts **workers**: short-lived sessions that each do one task in their own branch and sandbox, then hand back. agent-net picks the agent program, model and machine for each worker. The lead reviews what comes back, and each change goes through its steps (accept, review, test, merge, release, verify) until it ships. You get short outcomes, and you come back to the lead when a real decision is needed.
 
 ## 6. Day to day: what people ask the CTO
 
+The CTO changes how the network is set up. Typical asks:
+
+- *"Start a new project for the mobile app: a repo, a lead and a charter."*
+- *"The blog lead should also own the docs site, and it must never touch the database schema."* (changes a charter)
+- *"Let the shop lead merge and release on its own once the tests pass."* (changes who may merge)
+- *"Move the blog into the web team."*
 - *"Where are we on the checkout rework? Just a status, no more work."*
-- *"Go"*, or *"yes to all"*, to move a plan to its next step.
-- *"Change the plan: keep the cache in the shop repo, and update the plan doc."*
 - *"Use a cheaper model for the blog lead."*
 - *"Keep workers off my personal subscription."*
-- *"Merge PR 42."*
 - *"The build on the Linux box is broken. Get it fixed by whoever owns that machine."*
-- *"The blog session is down. Make sure it gets my message."*
 - *"Clean up the stray and duplicate sessions."*
 - *"Stand the blog team down for now"*, then later *"restart it"*.
 - *"Why did that release fail? I want the cause, not a workaround."*
-- *"Tell the shop lead its last report was too long."*
 
 ## 7. What stays with you
 
