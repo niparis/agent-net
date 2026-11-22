@@ -209,6 +209,8 @@ To add a machine, press `c` to open the CTO and ask it to add one. Paste the lin
 
 Then open a new agent session and ask: *"Who's on the agent net?"*
 
+A step-by-step first day, built around talking to the CTO, is in [docs/quickstart.md](docs/quickstart.md).
+
 Install details and options: [docs/setup.md](docs/setup.md). On a Mac, ask the CTO for the Tailscale install line: [docs/troubleshooting.md](docs/troubleshooting.md). A guided tour of every screen is in [docs/tour.md](docs/tour.md), and the principles behind these choices are in [docs/principles.md](docs/principles.md).
 
 ## Why not just …
