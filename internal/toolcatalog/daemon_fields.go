@@ -7,17 +7,17 @@ package toolcatalog
 // The MCP test in internal/mcpserver fails when the MCP server and this table
 // disagree.
 var daemonFields = map[string]map[string]string{
-	"agent_sessions_find":    {"id": "session"},
-	"agent_machines_find":    {"id": "machine"},
+	"agent_sessions_find":        {"id": "session"},
+	"agent_machines_find":        {"id": "machine"},
 	"agent_messages_find":        {"id": "message"},
 	"agent_notes_find":           {"id": "note_id"},
 	"agent_owner_judgments_find": {"id": "judgment_id"},
 	"agent_worker_profiles_find": {"id": "name"},
 	"agent_due":                  {"id": "due_id"},
-	"agent_message_reply":    {"message": "message_id"},
-	"agent_message_withdraw": {"message": "message_id"},
-	"agent_mcp_test":         {"server": "name"},
-	"agent_worker_stop":      {"worker": "session"},
+	"agent_message_reply":        {"message": "message_id"},
+	"agent_message_withdraw":     {"message": "message_id"},
+	"agent_mcp_test":             {"server": "name"},
+	"agent_worker_stop":          {"worker": "session"},
 }
 
 // DaemonField returns the name the daemon method gets for one catalog input

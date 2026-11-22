@@ -138,12 +138,12 @@ type JudgmentsFindRequest struct {
 	JudgmentID string   `json:"judgment_id,omitempty"`
 	IDs        []string `json:"ids,omitempty"`
 	Query      string   `json:"query,omitempty"`
-	Area   string `json:"area,omitempty"`
-	Kind   string `json:"kind,omitempty"`
-	Ref    string `json:"ref,omitempty"`
-	Limit  int    `json:"limit,omitempty"`
-	Offset int    `json:"offset,omitempty"`
-	Marks  bool   `json:"marks,omitempty"`
+	Area       string   `json:"area,omitempty"`
+	Kind       string   `json:"kind,omitempty"`
+	Ref        string   `json:"ref,omitempty"`
+	Limit      int      `json:"limit,omitempty"`
+	Offset     int      `json:"offset,omitempty"`
+	Marks      bool     `json:"marks,omitempty"`
 	// Stale lists only gateway notes that nobody read or wrote for 30 days.
 	Stale bool `json:"stale,omitempty"`
 }
