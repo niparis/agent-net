@@ -245,6 +245,18 @@ func TestFindSessionsFullDetail(t *testing.T) {
 	if byName.Session.Worker.Caller.ID != ids["s01"] || byName.Session.Worker.Difficulty != "hard" {
 		t.Fatalf("worker facts: %+v", byName.Session.Worker)
 	}
+
+	bySession, err := s.FindSessions(protocol.SessionsFindRequest{Session: ids["s01"]})
+	if err != nil || len(bySession.Items) != 1 || bySession.Session == nil || bySession.Session.Folder != "/work/s01" {
+		t.Fatalf("sessions find by session: %+v %v", bySession, err)
+	}
+	checkOutput(t, "agent_sessions_find", bySession)
+
+	byID, err := s.FindSessions(protocol.SessionsFindRequest{ID: ids["s01"]})
+	if err != nil || len(byID.Items) != 1 || byID.Session == nil || byID.Session.Folder != "/work/s01" {
+		t.Fatalf("sessions find by id: %+v %v", byID, err)
+	}
+	checkOutput(t, "agent_sessions_find", byID)
 }
 
 func TestSessionReadCarriesLegacyCharter(t *testing.T) {

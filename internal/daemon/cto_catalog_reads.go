@@ -21,9 +21,9 @@ import (
 
 func (d *Daemon) readCTOCatalogTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
 	switch name {
-	case "agent_sessions_find", "agent_session_get", "agent_machines_find", "agent_machine_get", "agent_machine_log", "agent_projects_find", "agent_owner_judgments_find", "projects_layout":
+	case "agent_sessions_find", "agent_machines_find", "agent_machine_get", "agent_machine_log", "agent_projects_find", "agent_owner_judgments_find", "projects_layout":
 		method := map[string]string{
-			"agent_sessions_find": "sessions_find", "agent_session_get": "session_get",
+			"agent_sessions_find": "sessions_find",
 			"agent_machines_find": "machines_find", "agent_machine_get": "machine_get", "agent_machine_log": "machine_log",
 			"agent_projects_find": "projects_find", "agent_owner_judgments_find": "judgments_find", "projects_layout": "projects_layout",
 		}[name]

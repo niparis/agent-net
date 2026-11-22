@@ -13,6 +13,8 @@ type SessionMatch struct {
 // SessionsFindRequest is agent_sessions_find. Caller is the session that made
 // the call; the daemon sets it and the gateway binds the cursor to it.
 type SessionsFindRequest struct {
+	ID       string         `json:"id,omitempty"`
+	Session  string         `json:"session,omitempty"`
 	Machine  string         `json:"machine,omitempty"`
 	Project  string         `json:"project,omitempty"`
 	Harness  string         `json:"harness,omitempty"`
@@ -167,6 +169,7 @@ type SessionsPage struct {
 	Total      int          `json:"total"`
 	NextCursor string       `json:"next_cursor,omitempty"`
 	Note       string       `json:"note,omitempty"`
+	Session    *SessionRow  `json:"session,omitempty"`
 }
 
 // SessionGetResult answers agent_session_get.

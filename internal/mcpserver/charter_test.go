@@ -30,7 +30,7 @@ func TestAgentSessionsCarryCharter(t *testing.T) {
 		args map[string]any
 	}{
 		{"agent_sessions_find", map[string]any{"detail": "full"}},
-		{"agent_session_get", map[string]any{"session": "s_test"}},
+		{"agent_sessions_find", map[string]any{"session": "s_test"}},
 	} {
 		r, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: c.name, Arguments: c.args})
 		if err != nil || r.IsError {

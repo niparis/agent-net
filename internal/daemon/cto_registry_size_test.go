@@ -84,7 +84,7 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 		"cto_proposals_find":  {},
 		"cto_intake_find":     {},
 		"cto_ops_list":        {},
-		"agent_sessions_find": {}, "agent_session_get": {"session": ids[0]},
+		"agent_sessions_find": {},
 		"agent_machines_find": {}, "agent_machine_get": {"machine": "box-00"}, "agent_machine_log": {"machine": w.cfg.Hostname, "log": "daemon"},
 		"agent_projects_find": {}, "agent_workers_find": {},
 		"agent_messages_find": {}, "agent_message_get": {"message": ctoMessage.ID},

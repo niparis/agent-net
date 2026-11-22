@@ -305,6 +305,20 @@ func charterList(value string) []string {
 
 // FindSessions answers agent_sessions_find.
 func (s *Store) FindSessions(p protocol.SessionsFindRequest) (protocol.SessionsPage, error) {
+	if p.Session == "" && p.ID != "" {
+		p.Session = p.ID
+	}
+	if p.Session != "" {
+		res, err := s.GetSession(protocol.SessionGetRequest{Session: p.Session, Caller: p.Caller})
+		if err != nil {
+			return protocol.SessionsPage{}, err
+		}
+		return protocol.SessionsPage{
+			Items:   []protocol.SessionRow{res.Session},
+			Total:   1,
+			Session: &res.Session,
+		}, nil
+	}
 	kinds, err := checkKinds(p.Kind)
 	if err != nil {
 		return protocol.SessionsPage{}, err

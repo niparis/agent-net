@@ -36,12 +36,12 @@ func TestGraphReadKeepsTheOrgTree(t *testing.T) {
 	}
 }
 
-// agent_session_get keeps the two org lines through the output schema.
+// agent_sessions_find with session keeps the two org lines through the output schema.
 func TestSessionGetKeepsTheOrgLines(t *testing.T) {
 	cs := connect(t, func(_ context.Context, method string, _ any) (json.RawMessage, error) {
-		return json.RawMessage(`{"session":{"id":"s_1","name":"s01","kind":"agent","machine":"research","project":"housing","harness":"claude","model":"standard","online":true,"status":"idle","task":"","last_seen":"2026-01-01T12:00:00Z","task_started":null,"reports_to":"lead (lead session main)","also_answers_to":"chief (asks)"}}`), nil
+		return json.RawMessage(`{"items":[{"id":"s_1","name":"s01","kind":"agent","machine":"research","project":"housing","harness":"claude","model":"standard","online":true,"status":"idle","task":"","last_seen":"2026-01-01T12:00:00Z","task_started":null,"reports_to":"lead (lead session main)","also_answers_to":"chief (asks)"}],"total":1,"session":{"id":"s_1","name":"s01","kind":"agent","machine":"research","project":"housing","harness":"claude","model":"standard","online":true,"status":"idle","task":"","last_seen":"2026-01-01T12:00:00Z","task_started":null,"reports_to":"lead (lead session main)","also_answers_to":"chief (asks)"}}`), nil
 	})
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_session_get", Arguments: map[string]any{"session": "s_1"}})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_sessions_find", Arguments: map[string]any{"session": "s_1"}})
 	if err != nil || res.IsError {
 		t.Fatalf("%+v %v", res, err)
 	}

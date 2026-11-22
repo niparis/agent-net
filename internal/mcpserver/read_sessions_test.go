@@ -93,7 +93,7 @@ func TestReadToolsRegisteredFromCatalog(t *testing.T) {
 	for _, tool := range tools.Tools {
 		byName[tool.Name] = tool
 	}
-	for _, name := range []string{"agent_sessions_find", "agent_session_get", "agent_machines_find", "agent_machine_get", "agent_machine_log", "agent_projects_find"} {
+	for _, name := range []string{"agent_sessions_find", "agent_machines_find", "agent_machine_get", "agent_machine_log", "agent_projects_find"} {
 		entry := catalogToolT(t, name)
 		got, ok := byName[name]
 		if !ok {
@@ -122,7 +122,6 @@ func TestReadToolResultsMatchCatalogSchema(t *testing.T) {
 		args         map[string]any
 	}{
 		{"agent_sessions_find", "sessions_find", map[string]any{"machine": "research"}},
-		{"agent_session_get", "session_get", map[string]any{"session": "s01"}},
 		{"agent_machines_find", "machines_find", map[string]any{"online": "any"}},
 		{"agent_machine_get", "machine_get", map[string]any{"machine": "research", "include": []string{"models"}}},
 		{"agent_machine_log", "machine_log", map[string]any{"machine": "research", "log": "daemon"}},
@@ -237,7 +236,6 @@ func TestCTOAvailabilityMatchesSessionOutputSchemas(t *testing.T) {
 		output any
 	}{
 		{"agent_sessions_find", map[string]any{"items": []any{session}, "total": 1}},
-		{"agent_session_get", map[string]any{"session": session}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := resolvedSchema(t, catalogToolT(t, tc.name).OutputSchema).Validate(tc.output); err != nil {

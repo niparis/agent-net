@@ -6,8 +6,8 @@ package toolcatalog
 
 // Tools is the one catalog every server filters by role.
 var Tools = []Tool{
-	toolEntry("agent_sessions_find", "Find sessions by machine, project, harness, model, kind, online state or text. Use agent_session_get for one.", []Role{RoleAgent, RoleWorker, RoleCTO, RoleBot}, Hints{ReadOnly: true, Idempotent: true}, true, false),
-	toolEntry("agent_session_get", "Read one session's profile: folder, branch, charter, rules, delegation, worker facts. Use agent_sessions_find when the ID or name is unknown.", []Role{RoleAgent, RoleWorker, RoleCTO, RoleBot}, Hints{ReadOnly: true, Idempotent: true}, false, false),
+	toolEntry("agent_sessions_find", "Find sessions by machine, project, harness, model, kind, online state or text, or read one session in full by id or session.", []Role{RoleAgent, RoleWorker, RoleCTO, RoleBot}, Hints{ReadOnly: true, Idempotent: true}, true, false),
+	toolEntry("agent_session_get", "Read one session's profile: folder, branch, charter, rules, delegation, worker facts. Use agent_sessions_find when the ID or name is unknown.", []Role{RoleBot}, Hints{ReadOnly: true, Idempotent: true}, false, false),
 	toolEntry("agent_machines_find", "List machines with online state and versions. Use agent_machine_get for one machine's models, quotas, track record or playbook.", []Role{RoleAgent, RoleWorker, RoleCTO, RoleBot}, Hints{ReadOnly: true, Idempotent: true}, false, false),
 	toolEntry("agent_machine_log", "Read a machine's redacted daemon or gateway log for a time window, with an optional text filter. At most 1000 lines and 256 KB.", []Role{RoleAgent, RoleWorker, RoleCTO}, Hints{ReadOnly: true, Idempotent: true}, false, false),
 	toolEntry("agent_machine_get", "Read a machine's health, load, CPU and busiest processes, or one detail category: processes, models, quotas, track record or playbook. Processes accepts sort rss (default) or cpu and reports stop refusals. Pages long lists.", []Role{RoleAgent, RoleWorker, RoleCTO, RoleBot}, Hints{ReadOnly: true, Idempotent: true}, false, false),

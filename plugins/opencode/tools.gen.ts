@@ -2016,34 +2016,19 @@ export const TOOL_CATALOG = [
     "daemon_fields": {}
   },
   {
-    "name": "agent_session_get",
-    "description": "Read one session's profile: folder, branch, charter, rules, delegation, worker facts. Use agent_sessions_find when the ID or name is unknown.",
+    "name": "agent_sessions_find",
+    "description": "Find sessions by machine, project, harness, model, kind, online state or text, or read one session in full by id or session.",
     "inputSchema": {
       "type": "object",
       "properties": {
+        "id": {
+          "type": "string",
+          "description": "Session ID or exact name: read one session in full detail."
+        },
         "session": {
           "type": "string",
-          "description": "Session ID or exact name."
-        }
-      },
-      "required": [
-        "session"
-      ],
-      "additionalProperties": false
-    },
-    "roles": [
-      "agent",
-      "worker"
-    ],
-    "method": "session_get",
-    "daemon_fields": {}
-  },
-  {
-    "name": "agent_sessions_find",
-    "description": "Find sessions by machine, project, harness, model, kind, online state or text. Use agent_session_get for one.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
+          "description": "Session ID or exact name: read one session in full detail."
+        },
         "machine": {
           "type": "string",
           "description": "Machine."
@@ -2154,7 +2139,9 @@ export const TOOL_CATALOG = [
       "worker"
     ],
     "method": "sessions_find",
-    "daemon_fields": {}
+    "daemon_fields": {
+      "id": "session"
+    }
   },
   {
     "name": "agent_settings_read",
