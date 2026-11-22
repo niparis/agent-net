@@ -2,7 +2,7 @@
 
 Your first day with agent-net, step by step.
 
-One idea runs through all of it: **you talk to the CTO, and the CTO runs the network.** The CTO is your main assistant session. It adds machines, sets up projects, starts and stops sessions, changes settings and answers "where are we?". You use the TUI to watch, to open a session when you want to look inside it, and to answer what is waiting for you on the Desk.
+One idea runs through all of it: **you talk to the CTO, and the CTO runs the network.** The CTO is your main assistant session. It adds machines, sets up projects, starts and stops sessions, changes settings and answers "where are we?". You use the TUI to watch, and to open a session when you want to look inside it.
 
 ## 1. Install on your main machine
 
@@ -72,7 +72,6 @@ You see the outcome as a short report. If you want the details, open the session
 
 Some things only you can do, and agent-net asks you for them:
 
-- **The Desk** (tab 6): the questions the chief of staff could not answer from your past decisions. Your answers are remembered, so the same question does not come back.
 - Browser and OAuth sign-ins, passwords and `sudo` prompts.
 - Physical work on a machine, and network approvals such as a Tailscale route.
 - Deleting data, spending money and secrets. These always wait for your own words.
