@@ -87,11 +87,6 @@ func (d *Daemon) charterContext(ctx context.Context, project string) string {
 	return protocol.NodeContextWithSettings(g, project, d.SettingsSnapshot())
 }
 
-func (d *Daemon) sessionCharterContext(ctx context.Context, sid, project string) string {
-	charter, _ := d.sessionContext(ctx, sid, project)
-	return charter
-}
-
 // sessionContext is the charter text of a session and, beside it, the titles
 // of its notes. When the gateway cannot answer, the charter comes from the
 // graph and there are no notes.

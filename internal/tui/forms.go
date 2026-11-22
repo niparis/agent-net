@@ -444,17 +444,6 @@ func (m Model) stopCmd(id, name string) tea.Cmd {
 
 // ---- machine name ----
 
-// startRename opens the name prompt for the machine of the selected session
-// (decision 0015). The name is kept on the gateway, so every machine sees it.
-func (m Model) startRename() (Model, tea.Cmd) {
-	a, ok := m.selectedAgent()
-	if !ok {
-		m.fail("Nothing is selected: pick a session on the machine first.")
-		return m, nil
-	}
-	return m.startRenameMachine(a.NodeID, a.Hostname)
-}
-
 func (m Model) startRenameMachine(id, host string) (Model, tea.Cmd) {
 	shown, set := host, false
 	for _, n := range m.snap.Nodes {

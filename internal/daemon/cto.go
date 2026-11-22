@@ -127,7 +127,6 @@ func (c *ctoRuntime) stopLocked() {
 	c.compact.reset("")
 	c.compact.mu.Unlock()
 }
-func (c *ctoRuntime) stop() { c.mu.Lock(); defer c.mu.Unlock(); c.stopLocked() }
 
 func (c *ctoRuntime) api(ctx context.Context, method, path string, body any) ([]byte, error) {
 	return c.apiTo(ctx, c.base, c.password, method, path, body)
@@ -624,19 +623,6 @@ func (d *Daemon) ctoNowTime() time.Time {
 		return d.ctoNow()
 	}
 	return time.Now()
-}
-
-// ctoCompactionSetting reads one session setting for the CTO's agent.
-func (d *Daemon) ctoCompactionSetting(key string) settings.Effective {
-	e, _ := d.SettingsSnapshot().Resolve(key, settings.Where{Agent: "cto"})
-	return e
-}
-
-// openCodeSessionBusy says whether OpenCode is running a turn for the conversation.
-// The second result is false when the answer is unknown, and the caller must
-// not compact on a guess.
-func openCodeSessionBusy(ctx context.Context, base, password, session string) (bool, bool) {
-	return (*Daemon)(nil).openCodeSessionBusy(ctx, base, password, "", "", session)
 }
 
 func (d *Daemon) openCodeSessionBusy(ctx context.Context, base, password, version, identity, session string) (bool, bool) {

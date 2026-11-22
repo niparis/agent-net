@@ -12,10 +12,6 @@ import (
 // worker. It is delivered through the normal queue and is not a reminder.
 const notStartedKeyPrefix = "notstarted:"
 
-func isNotStartedNotice(m protocol.Message) bool {
-	return m.From == "agent-net" && strings.HasPrefix(m.IdempotencyKey, notStartedKeyPrefix)
-}
-
 // maxNotStartedReason bounds the machine's words in a not-started notice.
 const maxNotStartedReason = 300
 

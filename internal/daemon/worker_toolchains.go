@@ -101,28 +101,6 @@ func (d *Daemon) workerToolchainDirs(ctx context.Context, dir string, env []stri
 	return dirs
 }
 
-// workerToolchainPATH is the PATH addition a worker's own shell gets. The
-// daemon service starts with a minimal PATH that can lack the owner's Go (the
-// tarball lives in ~/.local/go/bin), so a command the daemon runs on a worker's
-// behalf must be told where the worker finds go and gofmt.
-func (d *Daemon) workerToolchainPATH(ctx context.Context, dir string, env []string) string {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	bin, goroot, _ := d.workerGoEnv(ctx, dir, env)
-	var dirs []string
-	if bin != "" {
-		dirs = append(dirs, filepath.Dir(bin))
-	}
-	if goroot != "" && filepath.IsAbs(goroot) {
-		// gofmt sits in GOROOT/bin, which differs from the go binary's folder
-		// when go is a wrapper or a distribution package.
-		if info, err := os.Stat(filepath.Join(goroot, "bin")); err == nil && info.IsDir() {
-			dirs = append(dirs, filepath.Join(goroot, "bin"))
-		}
-	}
-	return strings.Join(dirs, string(os.PathListSeparator))
-}
-
 // workerGoEnv finds go the way a worker does and asks it where its files are.
 // An empty bin means go was not found; an empty goroot means the probe failed.
 func (d *Daemon) workerGoEnv(ctx context.Context, dir string, env []string) (bin, goroot, modcache string) {

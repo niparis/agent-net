@@ -132,7 +132,6 @@ type judgeSpec struct{ harness, model string }
 func (j judgeSpec) name() string { return judgeName(j.harness, j.model) }
 
 type judgeOutcome struct {
-	retry        bool
 	scores       difficulty.Scores
 	insufficient []string
 	runErr       error

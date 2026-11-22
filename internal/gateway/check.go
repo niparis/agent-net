@@ -164,12 +164,6 @@ func wakeBody(line string) string {
 	return wakeReplyPrefix + protocol.NeutralizeMarkers(line) + "). Carry on, then answer the next check."
 }
 
-// isWakeMessage tells whether the reserved sender's message is an autonomy
-// wake, which is delivered through the normal queue but is not a reminder.
-func isWakeMessage(m protocol.Message) bool {
-	return m.From == "agent-net" && strings.HasPrefix(m.IdempotencyKey, "wake:")
-}
-
 func (s *Store) ctoSessionID() string {
 	var id string
 	if err := s.db.QueryRow(`SELECT value FROM gateway_state WHERE key='cto_session'`).Scan(&id); err != nil {

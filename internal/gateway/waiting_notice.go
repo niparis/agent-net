@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"html"
-	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -22,12 +21,6 @@ import (
 // and the sender, so each sender gets at most one notice per waiting period,
 // also across gateway restarts.
 const waitingKeyPrefix = "waiting:"
-
-// isWaitingNotice tells whether the reserved sender's message is a waiting
-// notice. It is delivered through the normal queue and is not a reminder.
-func isWaitingNotice(m protocol.Message) bool {
-	return m.From == "agent-net" && strings.HasPrefix(m.IdempotencyKey, waitingKeyPrefix)
-}
 
 // sessionWait returns the wait of an online session that is not a worker, and
 // the session's display name. It returns nil when the session does not wait.

@@ -164,13 +164,6 @@ func (d *Daemon) acquireTestSlot(lc *localConn, cwd string) protocol.TestSlotRes
 	return d.acquireTestSlotWith(lc, cwd, false)
 }
 
-// acquireTestSlotNoGap admits an in-process suite that follows a run rather
-// than starting one, so workers.start_gap does not hold it; its slot still
-// counts as load for later worker starts.
-func (d *Daemon) acquireTestSlotNoGap(lc *localConn, cwd string) protocol.TestSlotResult {
-	return d.acquireTestSlotWith(lc, cwd, true)
-}
-
 func (d *Daemon) acquireTestSlotWith(lc *localConn, cwd string, noStartGap bool) protocol.TestSlotResult {
 	host := d.hostName()
 	repo := ""

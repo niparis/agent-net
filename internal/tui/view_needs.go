@@ -13,12 +13,6 @@ import (
 // Waiting sessions and their names, shared by the Inbox tab and the sessions
 // table. The Inbox replaced the old "Needs you" section and inbox overlay.
 
-const appNoticePrefix = "app-notice:"
-
-func isAppApprovalNotice(item protocol.InboxItem) bool {
-	return item.Kind == "check" && item.Node == "apps" && (strings.HasPrefix(item.Text, "Connected: ") || strings.HasPrefix(item.Text, "New app approved: "))
-}
-
 func appApprovalNoticeText(text string) string {
 	if strings.HasPrefix(text, "New app approved: ") {
 		text = "Connected: " + strings.TrimPrefix(text, "New app approved: ") + ". If this was not you, revoke it in Settings."
@@ -28,63 +22,6 @@ func appApprovalNoticeText(text string) string {
 
 // sNeeds is the warning colour of a wait.
 var sNeeds = lipgloss.NewStyle().Foreground(roleWarning)
-
-// learnedQuestion describes the change in the words the owner can recognize.
-func learnedQuestion(v protocol.LearnedSuggestion) string {
-	if v.Origin == "draft" {
-		return sanitize(fmt.Sprintf("%s: set %s to «%s»? Drafted from %s.", v.Node, v.Field, v.NewValue, v.By))
-	}
-	phrase := v.Phrase
-	if v.Origin == "owner" && v.RawPhrase != "" {
-		phrase = v.RawPhrase
-	}
-	var question string
-	if v.Field == "edge" {
-		verb := "add"
-		if v.Kind == "remove" {
-			verb = "remove"
-		}
-		question = fmt.Sprintf("%s: %s a %s edge %s → %s?", v.Node, verb, v.EdgeKind, v.Node, v.Phrase)
-	} else {
-		switch v.Kind {
-		case "remove":
-			question = fmt.Sprintf("%s: remove «%s» from %s?", v.Node, phrase, v.Field)
-		case "narrow":
-			question = fmt.Sprintf("%s: change %s to «%s»?", v.Node, v.Field, phrase)
-		default:
-			question = fmt.Sprintf("%s: add «%s» to %s?", v.Node, phrase, v.Field)
-		}
-	}
-	if len(v.Evidence) > 0 && v.Evidence[0].Excerpt != "" {
-		question += " because " + v.Evidence[0].Excerpt
-	}
-	return sanitize(question)
-}
-
-// needsText is what the session asks, on one line.
-func needsText(w *protocol.Waiting) string {
-	text := sanitize(w.Text)
-	switch w.Kind {
-	case "held":
-		return "a approve  A always  r reject  R never"
-	case "learned":
-		return text
-	case protocol.WaitingPermission:
-		if text == "" {
-			return "permission"
-		}
-		return "permission: " + text
-	case protocol.WaitingQuestion:
-		if text == "" {
-			return "question"
-		}
-		return `"` + text + `"`
-	}
-	if text == "" {
-		return "input"
-	}
-	return `"` + text + `"`
-}
 
 // needsAge says how long the wait has been there, in one short cell.
 func needsAge(now time.Time, since int64) string {
@@ -162,12 +99,4 @@ func (m Model) statusCell(a protocol.AgentView) string {
 		return "dormant"
 	}
 	return statusShort(a.Status)
-}
-
-// statusCellStyle colours a session's STATUS cell.
-func (m Model) statusCellStyle(a protocol.AgentView) lipgloss.Style {
-	if a.StalledSince > 0 || (a.Online && a.Waiting != nil) {
-		return sNeeds
-	}
-	return statusStyle(a.Status)
 }

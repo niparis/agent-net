@@ -37,11 +37,6 @@ type PickerVerdict struct {
 	Reason  string
 }
 
-// pickerBucket is the index of the bucket a D falls in, for a given width.
-func pickerBucket(d float64, s PickerSettings) int {
-	return max(0, int(math.Floor((d-PickerDStart)/s.BucketWidth+pickerEdgeTolerance)))
-}
-
 // PickerBucketVerdicts applies the cell rule to one bucket. facts are the
 // candidates, bucketLo is the bottom of the bucket, bucketMean is the mean task
 // score over all models in the bucket, bucket is the bucket index and s the

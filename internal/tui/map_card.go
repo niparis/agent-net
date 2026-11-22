@@ -15,15 +15,6 @@ import (
 // wildcardNode is the edge end that stands for every project.
 const wildcardNode = "*"
 
-// displayNode is the name the map shows for a node name. The wildcard is not a
-// project, so it reads "all projects".
-func displayNode(name string) string {
-	if name == wildcardNode {
-		return "all projects"
-	}
-	return sanitize(name)
-}
-
 // edgeKindStyle colors an edge by its kind. The map and the graph share it.
 func edgeKindStyle(kind string) lipgloss.Style {
 	switch kind {

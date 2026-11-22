@@ -978,12 +978,6 @@ func EnsureChoice(ctx context.Context, dir, configured string, logf func(string,
 	return err
 }
 
-// EnsureAsync runs Ensure in the background, so a daemon start never waits
-// for npm.
-func EnsureAsync(logf func(format string, args ...any)) {
-	go func() { _ = Ensure(context.Background(), logf) }()
-}
-
 // Remove deletes the private copy and its record. removed is true when a
 // folder was there.
 func Remove() (removed bool, err error) {

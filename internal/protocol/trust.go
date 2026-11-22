@@ -71,8 +71,6 @@ func authorityNote(trusted, worker bool, rule string) string {
 	return PeerCheckNote
 }
 
-var markerRE = markers.Pattern
-
 // NeutralizeMarkers breaks the "[agent-net" marker in a message body, so a
 // sender cannot write a line that looks like agent-net's own framing (for
 // example a forged "message from your user" or a forged trust note). It puts a

@@ -104,17 +104,6 @@ func ProposalNames() []string {
 	return out
 }
 
-// IrreversibleNames lists the actions that cannot be undone, in list order.
-func IrreversibleNames() []string {
-	var out []string
-	for _, a := range ownerActions {
-		if a.Irreversible {
-			out = append(out, a.Name)
-		}
-	}
-	return out
-}
-
 // OwnerActionNames lists every owner-only action, sorted.
 func OwnerActionNames() []string {
 	out := make([]string, 0, len(ownerActions))

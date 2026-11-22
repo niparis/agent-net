@@ -42,18 +42,6 @@ func repoSchemaOf(q leadDB) (repoSchema, error) {
 	return repoSchema{folded: hasLead > 0, mergers: hasMerger > 0, unified: hasLead > 0 && hasOwner == 0}, err
 }
 
-// repoTopAgentTx is the lead of one Repo in the layout of this store. It
-// returns sql.ErrNoRows when there is no such Repo.
-func repoTopAgentTx(tx *sql.Tx, repo string) (string, error) {
-	rs, err := repoSchemaOf(tx)
-	if err != nil {
-		return "", err
-	}
-	var top string
-	err = tx.QueryRow(`SELECT `+rs.lead("repos.id")+` FROM repos WHERE id=?`, repo).Scan(&top)
-	return top, err
-}
-
 // lead is repoTopAgentOfSQL for this store's layout.
 func (r repoSchema) lead(repo string) string {
 	if r.unified {
@@ -91,15 +79,6 @@ func (r repoSchema) live() string {
 		return `archived=0`
 	}
 	return `NOT EXISTS(SELECT 1 FROM archived_repos ar WHERE ar.repo_id=repos.id)`
-}
-
-// mergerSessions lists the (project, session_id) pairs of the registered
-// mergers in the layout of this store.
-func (r repoSchema) mergerSessions() string {
-	if r.mergers {
-		return `SELECT id AS project, merger_session AS session_id FROM repos WHERE merger_session<>''`
-	}
-	return `SELECT project, session_id FROM project_mergers`
 }
 
 // mergerAgentSQL is true when the session alias runs as a merger Agent.

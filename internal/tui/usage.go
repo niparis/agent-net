@@ -115,21 +115,6 @@ func sharedTree(t protocol.TreeUsage) bool {
 	return t.Shared && len(t.Sessions) > 1
 }
 
-// sharedService returns the shared OpenCode service of a machine, if it has
-// one. Its figures go in the machine heading, not on a session row.
-func (m Model) sharedService(nodeID string) (protocol.TreeUsage, usageState) {
-	n, st := m.nodeUsage(nodeID)
-	if st != usageOK {
-		return protocol.TreeUsage{}, st
-	}
-	for _, t := range n.Usage.Trees {
-		if sharedTree(t) {
-			return t, usageOK
-		}
-	}
-	return protocol.TreeUsage{}, usageNone
-}
-
 // heavy tells whether a tree is worth a warning.
 func heavy(t protocol.TreeUsage) bool {
 	return t.Procs > HeavyProcs || t.CPU >= HeavyCPU || t.RSS >= HeavyRSS

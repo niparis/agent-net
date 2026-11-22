@@ -16,13 +16,6 @@ import (
 // notice, also across gateway restarts.
 const undeliveredKeyPrefix = "undelivered:"
 
-// isUndeliveredNotice tells whether the reserved sender's message is a notice
-// about a failed message. It is delivered through the normal queue and is not
-// a reminder.
-func isUndeliveredNotice(m protocol.Message) bool {
-	return m.From == "agent-net" && strings.HasPrefix(m.IdempotencyKey, undeliveredKeyPrefix)
-}
-
 // needsReminderCheck tells whether a message is a reminder from agent-net,
 // which is only delivered while the request it is about is still open.
 func needsReminderCheck(m protocol.Message) bool {

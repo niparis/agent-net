@@ -37,16 +37,6 @@ const (
 	DefectEscaped = "escaped"
 )
 
-// ValidWorkerCause reports whether c is one of the stored causes.
-func ValidWorkerCause(c string) bool {
-	switch c {
-	case "", CauseUnknown, CauseQuotaAuth, CauseSandbox, CauseHarness,
-		CauseTestFailure, CauseAcceptFinding, CauseBriefDefect:
-		return true
-	}
-	return false
-}
-
 // SandboxDenial recognizes a write or command refused by a sandbox. It reads
 // the provider or harness error text, not a tool transcript.
 func SandboxDenial(detail string) bool {

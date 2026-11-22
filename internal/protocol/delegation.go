@@ -16,16 +16,6 @@ const (
 // WorkersLevels lists the levels in the order a form shows them.
 var WorkersLevels = []string{WorkersSandboxed, WorkersNoNetwork, WorkersReadOnly}
 
-// ValidWorkerPermissions tells whether s is a level.
-func ValidWorkerPermissions(s string) bool {
-	for _, l := range WorkersLevels {
-		if l == s {
-			return true
-		}
-	}
-	return false
-}
-
 // WorkerPermissionsOrDefault maps "" (unset, or an older record) to the default.
 func WorkerPermissionsOrDefault(s string) string {
 	if s == "" {

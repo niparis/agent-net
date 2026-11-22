@@ -74,12 +74,6 @@ func validThreadID(s string) bool {
 	return true
 }
 
-// threadFromMeta puts the thread of a tool call in its context. The value is
-// read from the request's _meta, which Codex sets for every MCP tool call.
-func threadFromMeta() mcp.Middleware {
-	return metadataThread("threadId")
-}
-
 func metadataThread(key string) mcp.Middleware {
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {

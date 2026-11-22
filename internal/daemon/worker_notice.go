@@ -1276,11 +1276,6 @@ func (d *Daemon) handback(ctx context.Context, sessionID string, req protocol.Wo
 	return d.handbackFlow(ctx, w, req, "", "", "", true, nil)
 }
 
-// handbackTo is handback to another session than the owner (see sendNoticeTo).
-func (d *Daemon) handbackTo(ctx context.Context, w *worker, req protocol.WorkerHandbackRequest, to, replyTo string) (*protocol.WorkerHandbackResult, error) {
-	return d.handbackToNote(ctx, w, req, to, replyTo, "", true)
-}
-
 func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.WorkerHandbackRequest, to, replyTo, sandboxNote string, end bool) (*protocol.WorkerHandbackResult, error) {
 	return d.handbackToNoteWithFiles(ctx, w, req, to, replyTo, sandboxNote, end, nil)
 }
