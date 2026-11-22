@@ -1,9 +1,23 @@
 package daemon
 
 import (
+	"slices"
+	"strings"
 	"testing"
 	"time"
 )
+
+// The darwin table read passes psTableFormat to ps and parsePSLine reads its
+// output, so the column list and the parser must agree. Only the darwin build
+// uses the constant, and a cleanup that runs a dead-code tool on Linux alone
+// must not remove it.
+func TestPSTableFormatMatchesParser(t *testing.T) {
+	want := []string{"pid", "ppid", "uid", "stat", "lstart", "rss", "command"}
+	got := strings.Split(strings.TrimSuffix(psTableFormat, "="), "=,")
+	if !slices.Equal(got, want) {
+		t.Fatalf("ps columns %q, want %q", got, want)
+	}
+}
 
 func TestParsePSLineReadsOneProcess(t *testing.T) {
 	line := "  4242     1   501 Ss   Tue Nov 11 04:51:02 2026   12345 /Applications/Codex.app/Contents/MacOS/Codex --type=renderer  --x"

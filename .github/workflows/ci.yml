@@ -53,6 +53,15 @@ jobs:
             exit 1
           fi
       - run: go vet ./...
+      # This runner is Linux, so a file behind //go:build darwin is never
+      # compiled here. Build and vet for both macOS architectures as the
+      # release does, so a darwin-only break fails CI, not the release build.
+      - name: darwin build and vet
+        run: |
+          for arch in arm64 amd64; do
+            GOOS=darwin GOARCH="$arch" go build ./...
+          done
+          GOOS=darwin GOARCH=arm64 go vet ./...
       # The rule checker is its own module, so it adds nothing to the agent-net
       # module graph. Its tests check the checker itself, and the checker then
       # runs on the repository: no long test sleep (B4), no em dash in production
