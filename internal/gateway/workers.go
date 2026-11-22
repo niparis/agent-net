@@ -379,38 +379,26 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		if alreadyClosed {
 			return nil, nil
 		}
-		if p.Ref != "" {
-			won, err := g.store.claimStart(nc.id, p.Ref)
-			if err != nil {
-				return nil, err
-			}
-			if !won {
-				return nil, reject("start %s is not open", p.Ref)
-			}
-			claimed := true
-			defer func() {
-				if claimed {
-					_ = g.store.unclaimStart(nc.id, p.Ref)
-				}
-			}()
-			if err := g.relayQueuedTask(ctx, nc, p); err != nil {
-				return nil, err
-			}
-			claimed = false
-		} else {
-			if err := g.relayQueuedTask(ctx, nc, p); err != nil {
-				return nil, err
-			}
+		won, err := g.store.claimStart(nc.id, p.Ref)
+		if err != nil {
+			return nil, err
 		}
+		if !won {
+			return nil, reject("start %s is not open", p.Ref)
+		}
+		claimed := true
+		defer func() {
+			if claimed {
+				_ = g.store.unclaimStart(nc.id, p.Ref)
+			}
+		}()
+		if err := g.relayQueuedTask(ctx, nc, p); err != nil {
+			return nil, err
+		}
+		claimed = false
 		// The task was sent: the start is closed, and no one can say it never began.
-		if p.Ref != "" {
-			if err := g.store.closeStart(nc.id, p.Ref, p.SessionID); err != nil {
-				g.logLine("error", "where", "close start", "err", err)
-			}
-		} else {
-			if _, err := g.store.closeLegacyStart(nc.id, p.Owner, p.Project, p.SessionID); err != nil {
-				g.logLine("error", "where", "close legacy start", "err", err)
-			}
+		if err := g.store.closeStart(nc.id, p.Ref, p.SessionID); err != nil {
+			g.logLine("error", "where", "close start", "err", err)
 		}
 		g.store.Event("worker.started", nc.id, p.SessionID, "", strings.TrimPrefix(pairs("project", p.Project, "harness", p.Harness, "owner", p.Owner, "branch", p.Branch), " "))
 		return nil, nil
@@ -529,21 +517,6 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	p.Continue, p.Title = strings.TrimSpace(p.Continue), strings.TrimSpace(p.Title)
 	if err := protocol.ValidWorkerTitle(p.Title); err != nil {
 		return none, reject("%v", err)
-	}
-	// Difficulty and touches are still accepted from older callers, but the
-	// level comes from the judge. Validate the fields so a malformed old
-	// request fails the same way, and ignore their values.
-	if p.Difficulty != "" {
-		if _, err := protocol.DifficultyFit(0, p.Difficulty, nil); err != nil {
-			return none, reject("%v", err)
-		}
-	}
-	for _, touch := range p.Touches {
-		switch touch {
-		case "db", "hot-path", "ui", "docs", "tests", "config", "other":
-		default:
-			return none, reject("unknown touches value %q", touch)
-		}
 	}
 	level := protocol.WorkerLevel(p.Assessment)
 	if p.Assessment == nil && p.Level != "" {
@@ -1154,7 +1127,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	for {
 		raw, err = launchWorker(cctx, target, granted, protocol.WorkerLaunch{StartRef: startRef, Project: pick.Name, Path: pick.Path,
 			Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, Owner: p.Owner, OwnerName: g.store.displayName(p.Owner), Task: p.BriefText(), Title: p.Title, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly, Automatic: automatic,
-			DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches, Assessment: launchAssessment, AutoContinue: p.AutoContinue, MCPServers: p.MCPServers, Fixes: p.Fixes,
+			DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Assessment: launchAssessment, AutoContinue: p.AutoContinue, MCPServers: p.MCPServers, Fixes: p.Fixes,
 			Why: choice.Why, NotFamily: p.NotFamily})
 		if err == nil || errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
 			break
@@ -1212,9 +1185,6 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		hint = g.store.WorkerStartHint(pick.Name, p.Title, p.BriefText(), p.Fixes)
 	}
 	if err == nil && launched.Queued && launched.QueueID != "" {
-		if launched.QueueID != startRef {
-			_ = g.store.recordLegacyQueueID(pick.NodeID, startRef, launched.QueueID)
-		}
 		g.store.Event("worker.queued", pick.NodeID, p.Owner, "",
 			strings.TrimPrefix(pairs("project", pick.Name, "harness", p.Harness, "model", p.Model, "owner", p.Owner,
 				"queue", launched.QueueID, "position", fmt.Sprint(launched.Position)), " "))
@@ -1796,7 +1766,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 		return none, err
 	}
 	raw, err := target.call(cctx, "worker.continue", protocol.WorkerContinue{StartRef: startRef, Session: old.SessionID, Requester: p.Owner, FromCTO: p.FromCTO, TaskID: taskID,
-		Harness: p.Harness, Model: p.Model, Task: p.BriefText(), Title: p.Title, Touches: p.Touches,
+		Harness: p.Harness, Model: p.Model, Task: p.BriefText(), Title: p.Title,
 		Assessment: old.Worker.Assessment})
 	if err != nil {
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {

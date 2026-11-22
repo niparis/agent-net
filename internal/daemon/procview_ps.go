@@ -6,11 +6,6 @@ import (
 	"time"
 )
 
-// psTableFormat is the ps column list that parsePSLine reads: the process ID,
-// parent, effective user, state, the five words of the start time, the
-// resident set size in kilobytes, and the rest of the line as the command.
-const psTableFormat = "pid=,ppid=,uid=,stat=,lstart=,rss=,command="
-
 // psStartLayout is the lstart column of ps, as time.Parse reads it.
 const psStartLayout = "Mon Jan _2 15:04:05 2006"
 

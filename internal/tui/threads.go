@@ -22,16 +22,6 @@ const (
 	messageSystem
 )
 
-func (s messageSubtab) name() string {
-	switch s {
-	case messageWorkers:
-		return "Workers"
-	case messageSystem:
-		return "System"
-	}
-	return "Agents"
-}
-
 // systemKind names what agent-net sent by itself. The order is the order of
 // the inventory; the screen groups by kind and recipient, never by message.
 type systemKind int

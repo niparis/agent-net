@@ -2,7 +2,7 @@
 
 Date: 2026-11-04
 
-Amends [0020](0020-worker-sandbox.md), which left the other harnesses for later. Design: [worker-os-sandbox.md](../design/worker-os-sandbox.md). Plan: [hardening-plan.md](../design/hardening-plan.md) W7.
+Amends [0020](0020-worker-sandbox.md), which left the other harnesses for later. Design: [worker-os-sandbox.md](../design/worker-os-sandbox.md). Plan: [hardening-plan.md](../archive/hardening-plan.md) W7.
 
 ## Decision
 

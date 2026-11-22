@@ -411,7 +411,7 @@ func New(opts Options) (*Gateway, error) {
 func (g *Gateway) Store() *Store       { return g.store }
 func (g *Gateway) Fingerprint() string { return g.fp }
 func (g *Gateway) Pin() string         { return g.pin }
-func (g *Gateway) CAPEM() []byte       { return g.ca.certPEM }
+
 func (g *Gateway) TLSConfig() *tls.Config {
 	return &tls.Config{Certificates: []tls.Certificate{g.cert}, MinVersion: tls.VersionTLS12}
 }
@@ -694,8 +694,6 @@ func (g *Gateway) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST /v1/enroll", g.handleEnroll)
 	mux.HandleFunc("GET /v1/node", g.handleNode)
-	mux.HandleFunc("GET /v1/quality-settings", g.handleQualitySettings)
-	mux.HandleFunc("PUT /v1/quality-settings", g.handleQualitySettings)
 	mux.HandleFunc("GET /v1/timezone-settings", g.handleTimeZoneSettings)
 	mux.HandleFunc("PUT /v1/timezone-settings", g.handleTimeZoneSettings)
 	mux.HandleFunc("GET /v1/protected-providers", g.handleProtectedProviders)

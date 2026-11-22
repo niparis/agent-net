@@ -790,7 +790,7 @@ func TestWorkerEndsWhenItsOwnerIsGone(t *testing.T) {
 	w.register(t, repo)
 	// The owner is an agent session (Pi) that starts the worker itself.
 	pi, piID := helloPi(t, w.node, "owner-pi", "/work/pi", true)
-	res := mustWorker(t, pi.mustCall("worker_start", protocol.WorkerStartRequest{Model: "fake/m1", Touches: []string{"other"}, Project: "shop", Harness: "opencode", Task: "x", Isolation: protocol.IsolationNone}))
+	res := mustWorker(t, pi.mustCall("worker_start", protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x", Isolation: protocol.IsolationNone}))
 	if res.Task == nil || res.Task.From != piID {
 		t.Fatalf("the task is not from the calling session: %+v", res.Task)
 	}
@@ -875,7 +875,7 @@ func TestWorkerCannotStartWorkers(t *testing.T) {
 	// The gateway refuses it too, if a daemon let it through.
 	wk := w.workerSession(t, res.SessionID)
 	_, err := w.d.call(context.Background(), "worker.start", protocol.WorkerStartFrame{
-		WorkerStartRequest: protocol.WorkerStartRequest{Model: "fake/m1", Touches: []string{"other"}, Project: "shop", Harness: "opencode", Task: "x"}, Owner: wk})
+		WorkerStartRequest: protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"}, Owner: wk})
 	if err == nil || !strings.Contains(err.Error(), "a worker cannot start workers") {
 		t.Fatalf("the gateway let a worker start a worker: %v", err)
 	}
@@ -1177,7 +1177,7 @@ func TestAgentStopsOnlyItsOwnWorkers(t *testing.T) {
 	w.register(t, repo)
 	mine, mineID := helloPi(t, w.node, "pi-a", "/work/a", true)
 	other, _ := helloPi(t, w.node, "pi-b", "/work/b", true)
-	res := mustWorker(t, mine.mustCall("worker_start", protocol.WorkerStartRequest{Model: "fake/m1", Touches: []string{"other"}, Project: "shop", Harness: "opencode", Task: "x"}))
+	res := mustWorker(t, mine.mustCall("worker_start", protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"}))
 	if res.Status == "starting" {
 		eventually(t, "the worker receives its task", func() bool {
 			for _, m := range w.messagesOf(t, mineID) {

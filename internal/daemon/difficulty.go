@@ -58,16 +58,6 @@ func (d *Daemon) pickDifficultyJudge(ctx context.Context, exclude string) (proto
 	return out, err
 }
 
-func judgeBrief(profile difficulty.Profile) string {
-	raw, _ := json.Marshal(profile)
-	return "AGENT_NET_DIFFICULTY_KIND=judge\n" +
-		"[difficulty judge] Score the evidence profile. Do not inspect a repository.\n\n" +
-		"Rubric:\n" + difficulty.RubricText() + "\n\n" +
-		"Evidence profile:\n" + string(raw) + "\n\n" +
-		"Score each dimension 1 to 5 with one line of reason, as JSON; or INSUFFICIENT_EVIDENCE with the dimensions and what to inspect.\n" +
-		`Reply like {"reasoning":3,"scope":3,"coupling":3,"uncertainty":3,"verification":3,"risk":3,"reasons":{"reasoning":"...","scope":"...","coupling":"...","uncertainty":"...","verification":"...","risk":"..."}}.` + "\n"
-}
-
 func judgeBriefForTask(task string) string {
 	return "AGENT_NET_DIFFICULTY_KIND=judge\n" + difficulty.RubricText() + `
 

@@ -47,9 +47,6 @@ type workersView struct {
 // workerLevels are the picker's five difficulty columns, left to right.
 var workerLevels = []string{"trivial", "simple", "normal", "hard", "very_complex"}
 
-// workerLevelLetters are the table headings of those levels.
-var workerLevelLetters = []string{"T", "S", "N", "H", "V"}
-
 func (a *app) workers(ctx context.Context, snap operator.Snapshot) *workersView {
 	v := &workersView{}
 	v.Quotas, v.QuotaAge, v.QuotaNote = a.subscriptions(ctx, snap)

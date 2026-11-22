@@ -36,7 +36,8 @@ func TestInboxMergeApprovalRequiresReady(t *testing.T) {
 	if _, err := r.report(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: stepAccept, Result: protocol.StepResultFail, Commit: commitA, Note: "found a bug"}); err != nil {
 		t.Fatalf("accept fail: %v", err)
 	}
-	if _, err := r.report(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: protocol.StepRef{Step: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitA, Fields: map[string]string{protocol.FieldMergedCommit: commitMerged}}); err == nil {
+	yes := true
+	if _, err := r.report(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: protocol.StepRef{Step: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitA, Fields: map[string]string{protocol.FieldMergedCommit: commitMerged}, MergeContainsHead: &yes}); err == nil {
 		t.Fatal("step report merged although the pipeline says it is not ready")
 	}
 	answer := "approve " + string(mustJSON(t, map[string]string{protocol.FieldMergedCommit: commitMerged}))

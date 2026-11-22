@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -14,45 +13,9 @@ import (
 )
 
 const (
-	projectsLayoutMinVersion       = "0.4.133"
 	gatewayLayoutOverallTimeout    = 15 * time.Second
 	gatewayLayoutPerMachineTimeout = 8 * time.Second
 )
-
-func daemonSupportsProjectsLayout(version string) bool {
-	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
-	if version == "" {
-		return false
-	}
-	if version == "dev" {
-		return true
-	}
-	if i := strings.IndexAny(version, "-+"); i >= 0 {
-		version = version[:i]
-	}
-	parts := strings.Split(version, ".")
-	if len(parts) == 0 || len(parts) > 3 {
-		return false
-	}
-	var have [3]int
-	for i, p := range parts {
-		n, err := strconv.Atoi(p)
-		if err != nil {
-			return false
-		}
-		have[i] = n
-	}
-	want, ok := parseReleaseVersion(projectsLayoutMinVersion)
-	if !ok {
-		return false
-	}
-	for i := range want {
-		if have[i] != want[i] {
-			return have[i] > want[i]
-		}
-	}
-	return true
-}
 
 // ProjectsLayout asks online machines for their layout and merges the results.
 func (g *Gateway) ProjectsLayout(ctx context.Context, p protocol.ProjectsLayoutRequest) (protocol.ProjectsLayoutResult, error) {
@@ -103,10 +66,6 @@ func (g *Gateway) ProjectsLayout(ctx context.Context, p protocol.ProjectsLayoutR
 		nc := g.conns[n.NodeID]
 		if nc == nil {
 			skipped = append(skipped, protocol.SkippedMachine{Machine: n.Hostname, Reason: "offline"})
-			continue
-		}
-		if !daemonSupportsProjectsLayout(n.Version) {
-			skipped = append(skipped, protocol.SkippedMachine{Machine: n.Hostname, Reason: "old version"})
 			continue
 		}
 		targets = append(targets, target{machine: n.Hostname, conn: nc})

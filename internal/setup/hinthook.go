@@ -103,12 +103,6 @@ func groupsOf(raw json.RawMessage) ([]json.RawMessage, error) {
 	return gs, nil
 }
 
-// groupIsOurs reports whether every hook in the group is ours, and whether
-// any is. A group with no hooks is nobody's.
-func groupHasHint(g json.RawMessage) (all, some bool, hooks []json.RawMessage) {
-	return groupHas(g, isHintCommand)
-}
-
 func groupHas(g json.RawMessage, ours func(string) bool) (all, some bool, hooks []json.RawMessage) {
 	var m hookGroup
 	if json.Unmarshal(g, &m) != nil {

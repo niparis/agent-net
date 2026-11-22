@@ -115,8 +115,8 @@ func deliveryLegend(w int) []string {
 // deliveryColumns is the layout of the list for one width. The title is the
 // main column; the branch, head and revision live in the detail view.
 type deliveryColumns struct {
-	title, repo, step, status, age, progress int
-	spaced                                   bool
+	title, repo, status, progress int
+	spaced                        bool
 }
 
 const (

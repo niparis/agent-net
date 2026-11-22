@@ -201,7 +201,7 @@ const (
 var OperatorMethods = []string{OpWorkerFloorsReset, OpOperatorUndo, OpMergerGet, OpMergerRestore, OpAppsPublicRestore, OpWorkerLog, OpProposalList, OpProposalAnswer, OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpConversations, OpConversationMessages, OpMessage, OpWorkers,
 	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpFolderTrust, OpFolderMCP, OpProcessStop, OpStandingOrders, OpSessionAgentSet, OpSessionAgentList, OpNotesCopy, OpNotesUncopy, OpSessionRename, OpNodeRename, OpMachineRemove, OpMachineRotate, OpProjectDisplayGet, OpProjectDisplaySet, OpFrictionFind, OpFrictionMark,
 	OpHeldList, OpAsksList, OpChiefGet, OpChiefSet, OpAskHistory, OpChiefSorts, OpAskUndo, OpAskMark, OpAskDiscuss, OpDeskLog, OpDeskSettle, OpNudgeStats, OpHeldAnswer, OpLeadSet, OpTeamWrite, OpTeamHistory, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpDeliveryOwnerSet, OpMergerSet, OpGraphUndo, OpRepoCreate, OpRepoArchive, OpAgentCreate, OpAgentTombstone, OpScopeSet, OpScopeRemove,
-	OpNodeSettingsGet, OpNodeSettingsSet, OpSkillArchiveUndo, OpSkillsUndo, OpQualityGet, OpQualitySet, OpTimeZoneGet, OpTimeZoneSet,
+	OpNodeSettingsGet, OpNodeSettingsSet, OpSkillArchiveUndo, OpSkillsUndo, OpTimeZoneGet, OpTimeZoneSet,
 	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, "onboarding_get", "onboarding_set", "onboarding_restart", OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove, OpWorkerDefect, OpDifficultyJudgePick, OpJudgmentAdd, OpPermissionUndo, OpPermissionApply, OpSignInOpen, OpSignInComplete}
 
 // HiddenItems is the owner's shared TUI visibility preference. Session IDs
@@ -421,9 +421,6 @@ type WorkerStartRequest struct {
 	NotFamily []string `json:"not_family,omitempty"`
 	Provider  string   `json:"provider,omitempty"`
 	Effort    string   `json:"effort,omitempty"`
-	// Difficulty selects the minimum score for automatic model choice.
-	Difficulty string   `json:"difficulty,omitempty"`
-	Touches    []string `json:"touches,omitempty"`
 	// Title is one short line naming the worker, at most 60 characters and
 	// with no newlines. Empty means the gateway derives it from Task.
 	Title string `json:"title,omitempty"`

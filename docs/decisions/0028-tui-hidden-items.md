@@ -1,7 +1,7 @@
 # 0028 - Shared TUI hidden items
 
 **Date:** 2026-10-31
-**Status:** Accepted
+**Status:** Built. The preference now lives in `gateway_state`, not `owner_settings` ([0182](0182-one-settings-system.md)).
 **Context:** [0004 TUI and event feed](0004-tui-and-event-feed.md), [0022 component graph](0022-component-graph-and-cto.md), [reference](../reference.md#the-tui-screen), [security](../security.md#shared-tui-hidden-items).
 
 ## Decision

@@ -37,8 +37,6 @@ const (
 	// quotaTimeout bounds one run. A provider that answers slowly must not
 	// hold the loop.
 	quotaTimeout = 90 * time.Second
-	// quotaCommand is the name of the CLI.
-	quotaCommand = "quota-axi"
 )
 
 // quotaArgs are the only arguments agent-net passes. --full is never used:

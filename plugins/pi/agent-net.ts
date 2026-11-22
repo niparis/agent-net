@@ -1,5 +1,5 @@
 // agent-net extension for Pi. A client of the agent-net daemon's local Unix socket.
-// Protocol: docs/step2-design.md section 6 (JSON lines, request/response by id, pushes without id).
+// Protocol: docs/archive/step2-design.md section 6 (JSON lines, request/response by id, pushes without id).
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { TOOL_CATALOG } from "./tools.gen.js";

@@ -23,7 +23,7 @@ func TestQueuedCrossMachineStartPassesRecheck(t *testing.T) {
 	pi, _ := helloPi(t, ownerNode.node, "caller", "/work/caller", true)
 
 	queued := startFrom(t, pi, protocol.WorkerStartRequest{Model: "auto", Project: "shop", Harness: "opencode",
-		Difficulty: "very_complex", Touches: []string{"db"}, Task: "queued across machines"})
+		Task: "queued across machines"})
 	if queued.Status != "queued" || queued.NodeID != starter.cfg.NodeID {
 		t.Fatalf("the start did not wait in the other machine's queue: %+v", queued)
 	}

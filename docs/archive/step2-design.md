@@ -1,6 +1,6 @@
 # Step 2 design: gateway core, Claude and Pi
 
-**Date:** 2026-10-28. **Inputs:** [decisions](decisions/0001-initial-decisions.md), [spike results](spike/README.md).
+**Date:** 2026-10-28. **Inputs:** [decisions](../decisions/0001-initial-decisions.md).
 **Exit criterion:** a Claude session and a Pi session discover each other, exchange a request and a reply in their running sessions, and keep accepted messages through a gateway restart. In step 2 both run on this VM, with a real gateway, a real daemon and a real join over HTTP(S).
 
 ## 1. Layout
@@ -16,7 +16,7 @@ internal/mcpserver/            `agent-net mcp`: stdio MCP server that proxies to
 plugins/pi/agent-net.ts        Pi extension (TypeScript), client of the daemon local socket
 ```
 
-Dependencies: `github.com/modelcontextprotocol/go-sdk` (v1.7.0+), `modernc.org/sqlite`, and one WebSocket library (`github.com/coder/websocket`). Nothing else without a reason. The `spike/` directory stays as reference and is not imported.
+Dependencies: `github.com/modelcontextprotocol/go-sdk` (v1.7.0+), `modernc.org/sqlite`, and one WebSocket library (`github.com/coder/websocket`). Nothing else without a reason.
 
 ## 2. Identity
 
@@ -154,7 +154,7 @@ Clients without a bound session (`agent-net status/list/messages` on the CLI) sa
 
 ## 7. Claude adapter (`internal/daemon/claude`)
 
-Ports the spike ([spike/claude.md](spike/claude.md)). Credit OCS (MIT) in the file header for the frame format.
+Ports the spike. Credit OCS (MIT) in the file header for the frame format.
 
 - **Discovery:** poll `~/.claude/sessions/*.json` every second (override the dir with `AGENT_NET_CLAUDE_SESSIONS_DIR` for tests). The PID must be alive and the filename PID must match the content. Status comes from the file. Report adds, changes and removals to the daemon as `session.upsert` / `session.remove`.
 - **Delivery:** connect to `messagingSocketPath`, after checking it is a real socket owned by our uid and not a symlink. Write one `user` frame:
@@ -187,7 +187,7 @@ Tool descriptions must say plainly that peer messages are requests from other ag
 
 ## 9. Pi extension (`plugins/pi/agent-net.ts`)
 
-Ports [spike/pi/agent-net-spike.ts](../spike/pi/agent-net-spike.ts), but as a **client** of the daemon socket. It does not listen itself.
+Ports the Pi extension spike, but as a **client** of the daemon socket. It does not listen itself.
 
 - On `session_start`: connect to the daemon socket and send `hello` with `{client:"pi", harness:"pi", native_id: ctx.sessionManager.getSessionId(), cwd: ctx.cwd, status:"idle"}`. Reconnect with backoff if the daemon is down. Pi must keep working without it.
 - `agent_start` / `agent_settled` send `status` `busy` / `idle`.

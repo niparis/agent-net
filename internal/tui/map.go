@@ -352,8 +352,6 @@ func (m *Model) mapEnsureSelection() {
 	m.mp.selected = choice
 }
 
-func (m Model) mapSelectedName() string { return m.mp.selected }
-
 func (m Model) mapNode(name string) (protocol.Node, bool) {
 	for _, n := range m.mp.nodes {
 		if n.Name == name {

@@ -113,14 +113,3 @@ func nextFilterValue(values []string, current string) string {
 	}
 	return ""
 }
-
-// messageFilterName is the filter the l key selected.
-func (m Model) messageFilterName() string {
-	switch {
-	case m.messageShowEvents:
-		return "with system events"
-	case m.hideWorkerThreads:
-		return "without worker threads"
-	}
-	return "all"
-}

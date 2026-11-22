@@ -296,15 +296,6 @@ func hasDeliveryStep(steps []protocol.StepStatus, name string) bool {
 	return false
 }
 
-func hasStep(steps []protocol.StepStatus, name string) bool {
-	for _, st := range steps {
-		if st.Step == name {
-			return true
-		}
-	}
-	return false
-}
-
 // currentStep prioritizes owner intervention and failed work over ready steps.
 // A failure sends the revision back to its author even when accept is ready.
 func currentStep(v protocol.ChangeView) (protocol.StepRef, protocol.StepOwner, string, bool) {

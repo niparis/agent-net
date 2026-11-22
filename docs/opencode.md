@@ -1,6 +1,6 @@
 # OpenCode
 
-OpenCode v2 sessions join the network through a plugin, `plugins/opencode/agent-net.ts`. The spike that led here is in [spike/opencode.md](spike/opencode.md).
+OpenCode v2 sessions join the network through a plugin, `plugins/opencode/agent-net.ts`.
 
 ## How it works
 

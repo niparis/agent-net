@@ -219,7 +219,7 @@ func TestCTOV2EveryActionValidates(t *testing.T) {
 		{"graph_change", `{"action":"charter_set"}`}, {"graph_change", `{"action":"node_add"}`}, {"graph_change", `{"action":"edge_set"}`}, {"graph_change", `{"action":"edge_remove"}`}, {"graph_change", `{"action":"settings_set"}`}, {"graph_change", `{"action":"undo"}`},
 		{"graph_change", `{"action":"team_create","name":"team"}`}, {"graph_change", `{"action":"team_rename","team":"team","name":"new"}`}, {"graph_change", `{"action":"team_purpose","team":"team","purpose":"new purpose"}`}, {"graph_change", `{"action":"team_archive","team":"team"}`}, {"graph_change", `{"action":"team_member_add","team":"team","member":{"kind":"agent","id":"a"}}`}, {"graph_change", `{"action":"team_member_remove","team":"team","member":{"kind":"agent","id":"a"}}`},
 		{"session_change", `{"action":"rename"}`}, {"session_change", `{"action":"trust","session_id":"s_1","on":true}`}, {"session_change", `{"action":"trust","project":"example","node_id":"n_1"}`}, {"session_change", `{"action":"trust","path":"~/code/example"}`}, {"session_change", `{"action":"session_start","project":"example","trust":true}`}, {"session_change", `{"action":"session_start","project":"example"}`},
-		{"worker_change", `{"action":"start","project":"example","task":"work","touches":["docs"]}`}, {"worker_change", `{"action":"stop"}`},
+		{"worker_change", `{"action":"start","project":"example","task":"work"}`}, {"worker_change", `{"action":"stop"}`},
 	}
 	for _, tc := range cases {
 		if err := ValidateCTOActionSchema(tc.tool, json.RawMessage(tc.args)); err != nil {
@@ -285,7 +285,7 @@ func TestCTOV2ActionArgumentsReachExistingHandler(t *testing.T) {
 		{"graph_change", map[string]any{"action": "team_member_remove", "team": "t", "member": map[string]any{"kind": "agent", "id": "a"}}},
 		{"session_change", map[string]any{"action": "rename", "session_id": "s", "name": "x"}}, {"session_change", map[string]any{"action": "trust", "session_id": "s", "on": true}},
 		{"session_change", map[string]any{"action": "session_start", "project": "p"}},
-		{"worker_change", map[string]any{"action": "start", "project": "p", "task": "t", "touches": []string{"docs"}}}, {"worker_change", map[string]any{"action": "stop", "session": "w"}},
+		{"worker_change", map[string]any{"action": "start", "project": "p", "task": "t"}}, {"worker_change", map[string]any{"action": "stop", "session": "w"}},
 	}
 	for _, tc := range cases {
 		out, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: tc.tool, Arguments: tc.args})
@@ -302,9 +302,6 @@ func TestCTOV2ActionArgumentsReachExistingHandler(t *testing.T) {
 		}
 		for k, v := range tc.args {
 			if !reflect.DeepEqual(calls[i].args[k], v) { // JSON normalizes integer/slice values.
-				if k == "touches" {
-					continue
-				}
 				t.Errorf("route %d argument %s = %v, want %v", i, k, calls[i].args[k], v)
 			}
 		}

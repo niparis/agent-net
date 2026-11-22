@@ -57,14 +57,7 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 			// older caller's mistake is not silently changed.
 			return nil, errors.New(`set exactly one of task or continue, for example {"continue":"s_..."}`)
 		}
-		touches, _ := a["touches"].([]any)
-		var areas []string
-		for _, v := range touches {
-			if x, ok := v.(string); ok {
-				areas = append(areas, x)
-			}
-		}
-		in := startIn{Touches: areas, Project: str("project"), Task: task, Title: str("title"), Harness: str("harness"), Difficulty: str("difficulty"), Model: str("model"), Provider: str("provider"), Effort: str("effort"), Machine: str("machine"), Isolation: str("isolation"), Base: str("base"), MCPServers: str("mcp_servers"), Continue: continuation,
+		in := startIn{Project: str("project"), Task: task, Title: str("title"), Harness: str("harness"), Model: str("model"), Provider: str("provider"), Effort: str("effort"), Machine: str("machine"), Isolation: str("isolation"), Base: str("base"), MCPServers: str("mcp_servers"), Continue: continuation,
 			Problem: str("problem"), Evidence: stringSlice(a["evidence"]), Done: stringSlice(a["done"]), Hypothesis: str("hypothesis"), Scope: str("scope")}
 		if v, ok := a["auto_continue"].(bool); ok {
 			in.AutoContinue = &v
@@ -72,7 +65,7 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		if in.Harness == "" && in.Model != "" && in.Model != "auto" {
 			in.Harness = "opencode"
 		}
-		m, err := workerStartCall(ctx, run, protocol.WorkerStartRequest{NotFamily: stringSlice(a["not_family"]), Project: in.Project, Machine: in.Machine, Harness: in.Harness, Model: in.Model, Provider: in.Provider, Effort: in.Effort, Difficulty: in.Difficulty, Touches: in.Touches, Task: in.Task, Problem: in.Problem, Evidence: in.Evidence, Done: in.Done, Hypothesis: in.Hypothesis, Scope: in.Scope, Title: in.Title, Isolation: in.Isolation, Base: in.Base, MCPServers: in.MCPServers, Mode: str("mode"), Fixes: str("fixes"), FixesSeverity: integer("fixes_severity"), Continue: in.Continue, AutoContinue: in.AutoContinue, OwnerWords: str("owner_words"), Reason: str("reason")})
+		m, err := workerStartCall(ctx, run, protocol.WorkerStartRequest{NotFamily: stringSlice(a["not_family"]), Project: in.Project, Machine: in.Machine, Harness: in.Harness, Model: in.Model, Provider: in.Provider, Effort: in.Effort, Task: in.Task, Problem: in.Problem, Evidence: in.Evidence, Done: in.Done, Hypothesis: in.Hypothesis, Scope: in.Scope, Title: in.Title, Isolation: in.Isolation, Base: in.Base, MCPServers: in.MCPServers, Mode: str("mode"), Fixes: str("fixes"), FixesSeverity: integer("fixes_severity"), Continue: in.Continue, AutoContinue: in.AutoContinue, OwnerWords: str("owner_words"), Reason: str("reason")})
 		if err != nil {
 			return nil, err
 		}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"image/color"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,12 +40,6 @@ func (g inboxGroup) box() inboxBox { return inboxBoxAnswer }
 type inboxBox int
 
 const inboxBoxAnswer inboxBox = 0
-
-var inboxBoxOrder = []inboxBox{inboxBoxAnswer}
-
-func (b inboxBox) title() string { return panelNeedsYou }
-
-func (b inboxBox) color() color.Color { return roleWarning }
 
 // inboxRow is one ask. kind names the row's actions, not its group: held,
 // outcome, learned, proposal, approval, question, step, notice or waiting (a
@@ -1061,11 +1054,6 @@ func hintParts(hs []hint) []string {
 		parts = append(parts, h.key, h.label)
 	}
 	return parts
-}
-
-func centerText(s string, w int) string {
-	s = sanitize(s)
-	return strings.Repeat(" ", max((w-ansi.StringWidth(s))/2, 0)) + s
 }
 
 func (m Model) inboxDetailLines(row inboxRow) []string {

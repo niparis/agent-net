@@ -201,7 +201,7 @@ schemas and caller-scoped reads remain unchanged. The CTO must keep these
 results private unless the owner asks it to share them.
 
 New mutation powers include session pinning, stop/resume, archive/restore and
-agent binding; hidden-session, quality, timezone, onboarding, worker-floor and
+agent binding; hidden-session, timezone, onboarding, worker-floor and
 difficulty preferences; Team authority modes and held back text, delivery-owner
 assignments and merger set/clear; tool copy/import/export, accepted versions and
 MCP coverage plans/apply/undo; gateway backups, learned-suggestion answers,
@@ -523,7 +523,7 @@ only after the turn has started. See
 - The message arrives as a user turn, in a `<cross-session-message>` block with the sender's name and ID. The sender's name is cut to letters, digits, `_`, `.` and `-` (40 characters at most). If the message body contains the wrapper tags, they are broken up, so a message cannot close the block early and fake a second one. The marker `[agent-net` is broken up in the body too, so a body cannot imitate agent-net's own details.
 - The agent-net details (sender, message ID, session ID) follow the body, as plain text in the same turn.
 - Claude's answer comes back on a reply socket (mode 0600, in the daemon's socket folder) for one sender and conversation. The daemon forwards it only when it comes from the inbox address of a Claude session it knows. A reply threaded to a conversation without a parent message is stored by the gateway only when the recipient has written to the sender in that conversation, so a session cannot post into a conversation it is not part of. See [Claude replies](reference.md#claude-replies). An owner message with a conversation ID is stored only when the conversation exists and the recipient is one of its sides; the sender is always the owner session of the daemon, never a parameter.
-- Claude Code treats the message as a request from another session. In our tests Claude asks its user before acting on a peer message that is outside the current task (see [step 2 results](step2-e2e.md)). Claude Code's own permission rules still apply to everything the agent does next.
+- Claude Code treats the message as a request from another session. In our tests Claude asks its user before acting on a peer message that is outside the current task. Claude Code's own permission rules still apply to everything the agent does next.
 
 ### Who gets the owner label in the CTO's Claude session
 
@@ -620,11 +620,12 @@ review requirement. A missing diff at hand-back or session submission requires
 review. Sensitive names in directory components also require review, with
 case-insensitive matching. These rules apply to pipeline evidence; git itself still allows direct merges.
 
-A new daemon checks merge ancestry in the target repository before reporting a
-merge pass. It sends an optional `merge_contains_head` result for the exact
-reported head and merged commit. A negative result is refused by the gateway
-before evidence is stored. Missing commits, non-commit objects and failed git
-checks count as negative. Daemons must send proof. The gateway reads their version from the authenticated machine's hello. A positive result cannot bypass required steps or a head change.
+The daemon checks merge ancestry in the target repository before reporting a
+merge pass. It sends a `merge_contains_head` result for the exact reported head
+and merged commit. A negative or missing result is refused by the gateway before
+evidence is stored. Missing commits, non-commit objects and failed git checks
+count as negative. A positive result cannot bypass required steps or a head
+change.
 
 - **A machine speaks only for its own sessions.** A submit names a session on the sending machine, or the hand-back of a worker on that machine which the session started. A session submits only its own work. A step report comes from a session on the sending machine. `done_by` names a worker that session started, or `owner` for a direct owner approval of a delegated step.
 - **The owner reads every change.** The TUI reads changes with the daemon method `changes_owner_find`, which is read only and follows the same gate as the other owner reads: only the owner's command line or TUI, not an agent connection and not a command line that runs inside an agent session. Agents keep `changes_find`, and a TUI connection cannot call it or the write methods.
@@ -1150,7 +1151,7 @@ The local method `charter_text` and the gateway frame `charter.global` give a se
 
 `agent_worker_rate` with `kind: "defect_found_later"` is the same check with a few differences. It needs a stored finished run, so a worker that has not handed back is refused. It has no score, no once-per-worker limit, and a required `severity` from 1 to 4: every accepted report is one defect and adds that many points of rework to the task. A severity outside 1 to 4 is refused before anything is stored. The caller check is the same stored caller; the owner is also accepted, identified by the owner pseudo-session's harness on the session the gateway stored, never by a flag in the request. The owner has a separate operator call, `worker_defect`, which is refused for agent sessions and for the command line running inside one; it fills the same `defect_found_later` frame. The note is cut and masked exactly like a rating note. Defects add to the calibration medians and to the read-only counts in the Quotas tab, and they change no model choice or rotation weight.
 
-`agent_worker_rate` with `kind: "move_to_brief_defect"` reclassifies one stored `worker_defects` row. The gateway reads the row by the `defect` id, then checks that the worker matches and that the session stored as the row's filer is the caller. When no id is given it reads the caller's own unmoved, non-automatic rows on that worker: one is moved, none is refused, and several are refused with each id, severity, UTC date and the first 60 characters of its note. Only that filer may move a row; the owner is not accepted unless the owner filed it. A row that agent-net recorded by itself has no filer and is refused. A row already moved is a no-op. The original row is never deleted: it gets `moved_at`, `moved_by` and `brief_defect_id`, and its severity is left out of the picker, the calibration and the quality fit. The new `worker_brief_defects` row is charged to the caller stored on the worker's run, not to the session that moved it, and the note and severity are copied unchanged.
+`agent_worker_rate` with `kind: "move_to_brief_defect"` reclassifies one stored `worker_defects` row. The gateway reads the row by the `defect` id, then checks that the worker matches and that the session stored as the row's filer is the caller. When no id is given it reads the caller's own unmoved, non-automatic rows on that worker: one is moved, none is refused, and several are refused with each id, severity, UTC date and the first 60 characters of its note. Only that filer may move a row; the owner is not accepted unless the owner filed it. A row that agent-net recorded by itself has no filer and is refused. A row already moved is a no-op. The original row is never deleted: it gets `moved_at`, `moved_by` and `brief_defect_id`, and its severity is left out of the picker, the calibration and the quality fit. The new `worker_defects` row with blame `brief` is charged to the caller stored on the worker's run, not to the session that moved it, and the note and severity are copied unchanged.
 
 ## Written approvals and the inbox
 
@@ -1481,7 +1482,7 @@ rare.
 
 
 
-Quality weighting is gone from the picker (decision 0105). The live setting for the reweighted rule is `picker.quality_v2` (default off). The methods `quality_get` and `quality_set` remain owner only on the local socket for older clients: `quality_set` changes nothing and `quality_get` always answers disabled. The picker reads its own
+Quality weighting is gone from the picker (decision 0105). The live setting for the reweighted rule is `picker.quality_v2` (default off). The always-disabled `quality_get` and `quality_set` methods were removed on 2026-11-22. The picker reads its own
 table of task results (`picker_get`, owner only on the local socket). That table
 only decides which allowed profiles rotate. It cannot bypass protected
 providers, worker floors or quota exclusions, and an explicit model request

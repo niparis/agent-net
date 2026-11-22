@@ -104,7 +104,7 @@ func TestContinueEndedWorker(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	long := "write half.txt " + strings.Repeat("detail line that is long. ", 40) + "\nsecond line of the task"
-	old := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: long, Isolation: protocol.IsolationWorktree, Touches: []string{"ui", "tests"}})
+	old := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: long, Isolation: protocol.IsolationWorktree})
 
 	if _, err := w.startDefault(protocol.WorkerStartRequest{Continue: old.SessionID}); err == nil || !strings.Contains(err.Error(), "still running") {
 		t.Errorf("continue of a running worker: %v", err)
@@ -132,8 +132,8 @@ func TestContinueEndedWorker(t *testing.T) {
 		for _, row := range rows {
 			if row.SessionID == res.SessionID {
 				found = true
-				if row.Touches != "ui,tests" {
-					t.Errorf("continued touches = %q", row.Touches)
+				if row.Touches != "" {
+					t.Errorf("continued touches = %q, want none", row.Touches)
 				}
 			}
 		}

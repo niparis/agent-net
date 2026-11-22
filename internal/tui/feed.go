@@ -316,18 +316,6 @@ func (m Model) localEnd(it *feedItem) bool {
 	return m.localSession(it.From) || m.localSession(it.To)
 }
 
-// feedConvID returns the session of this machine whose conversation a feed
-// line opens. The recipient comes first: it is the one that answers.
-func (m Model) feedConvID(it *feedItem) string {
-	for _, id := range []string{it.To, it.From} {
-		a, ok := m.agentByID(id)
-		if ok && a.NodeID == m.snap.NodeID && !protocol.IsOwner(a.Harness) {
-			return id
-		}
-	}
-	return ""
-}
-
 // ---- what the feed shows ----
 
 // feedShows tells whether a line passes the lifecycle filter. New sessions are

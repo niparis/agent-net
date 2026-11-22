@@ -13,7 +13,6 @@ import (
 
 	"github.com/niparis/agent-net/internal/authority"
 	"github.com/niparis/agent-net/internal/mcpserver"
-	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // ctoOpGate returns the owner-gate class of one op: direct, proposal or
@@ -119,17 +118,4 @@ func ctoOpCall(raw json.RawMessage) (mcpserver.CTOOp, string, json.RawMessage, e
 // ctoOpsGroupNames keeps the group order used by a test that checks the list.
 func ctoOpsGroupNames() []string {
 	return mcpserver.CTOOpGroups()
-}
-
-// ctoOwnerOpClass classifies an owner operation method. Only reads and changes
-// are allowed, and both are direct.
-func ctoOwnerOpClass(method string) (ctoToolClass, bool) {
-	read, ok := protocol.CTOOperatorMethods()[method]
-	if !ok {
-		return "", false
-	}
-	if read {
-		return ctoRead, true
-	}
-	return ctoMinor, true
 }

@@ -7,7 +7,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/toolcatalog"
@@ -116,17 +115,4 @@ func replyCall(ctx context.Context, run func(context.Context, string, any) (any,
 		"idempotency_key": protocol.NewID("k"),
 	}
 	return opResult(run(ctx, "reply", params))
-}
-
-// decodeAny is the old tools' pass-through decode: it returns the daemon's
-// answer as it came, so an alias keeps the old result shape exactly.
-func decodeAny(raw json.RawMessage) (any, error) {
-	if len(raw) == 0 || string(raw) == "null" {
-		return map[string]any{}, nil
-	}
-	var out any
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, err
-	}
-	return out, nil
 }

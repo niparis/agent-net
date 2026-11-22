@@ -544,8 +544,6 @@ func (d *Daemon) runWorkerStartCall(ctx context.Context, caller string, p protoc
 		frame.Assessment = d.assessWorkerStart(ctx, d.judgeDir(callerPath, p.Project), p.BriefText())
 		end()
 		frame.Level = protocol.WorkerLevel(frame.Assessment)
-		// An older gateway still reads Difficulty; give it the judge's label.
-		frame.Difficulty = frame.Level
 	}
 	if ctx.Value(withdrawableKey{}) != nil {
 		// The caller may withdraw a confirmed start until the gateway has it.

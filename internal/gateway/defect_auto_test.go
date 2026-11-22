@@ -74,7 +74,12 @@ func (r *deliveryRig) report1(ref protocol.StepRef, id, commit, result string, f
 	if other := reportBy[r]; other != "" {
 		by = other
 	}
-	r.mustReport(r.a, protocol.StepReportRequest{SessionID: by, ChangeID: id, StepRef: ref, Result: result, Commit: commit, Fields: fields, Note: note})
+	q := protocol.StepReportRequest{SessionID: by, ChangeID: id, StepRef: ref, Result: result, Commit: commit, Fields: fields, Note: note}
+	if ref.Step == protocol.StepMerge && result == protocol.StepResultPass {
+		yes := true
+		q.MergeContainsHead = &yes
+	}
+	r.mustReport(r.a, q)
 }
 
 // shipToVerify takes a change through merge and release, up to its verify.

@@ -176,21 +176,3 @@ func TestWorkerTaskMigrationKeepsOldBriefs(t *testing.T) {
 		t.Fatalf("old brief = %+v, found %v, error %v", got, ok, err)
 	}
 }
-
-func TestWorkerLegacyRelayFailureClosesSyntheticStart(t *testing.T) {
-	f := newStartsFixture(t)
-	worker, err := f.s.UpsertSession(f.nodeA, protocol.SessionInfo{Harness: "codex", NativeID: "w1", Worker: &protocol.WorkerInfo{ID: "w_1", Owner: f.b}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "")); err == nil {
-		t.Fatal("relay without owner connection succeeded")
-	}
-	var open, abandoned int
-	if err = f.s.db.QueryRow(`SELECT COUNT(*) FILTER (WHERE state='open'), COUNT(*) FILTER (WHERE state='not_started') FROM worker_starts`).Scan(&open, &abandoned); err != nil {
-		t.Fatal(err)
-	}
-	if open != 0 || abandoned != 1 {
-		t.Fatalf("synthetic starts: open=%d abandoned=%d", open, abandoned)
-	}
-}

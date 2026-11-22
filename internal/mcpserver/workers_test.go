@@ -66,9 +66,9 @@ func TestWorkerToolsForwardToDaemon(t *testing.T) {
 		args         map[string]any
 		check        func(map[string]any) bool
 	}{
-		{"agent_worker_start", "worker_start", map[string]any{"project": "shop", "task": "do it", "model": "a/b", "difficulty": "hard", "touches": []string{"db", "tests"}, "isolation": "worktree"},
+		{"agent_worker_start", "worker_start", map[string]any{"project": "shop", "task": "do it", "model": "a/b", "isolation": "worktree"},
 			func(p map[string]any) bool {
-				return len(p["touches"].([]any)) == 2 && p["project"] == "shop" && p["harness"] == "opencode" && p["model"] == "a/b" && p["difficulty"] == "hard" && p["isolation"] == "worktree" && p["task"] == "do it"
+				return p["project"] == "shop" && p["harness"] == "opencode" && p["model"] == "a/b" && p["isolation"] == "worktree" && p["task"] == "do it"
 			}},
 		{"agent_worker_stop", "worker_stop", map[string]any{"worker": "s_w1"}, func(p map[string]any) bool { return p["session"] == "s_w1" }},
 		{"agent_learn", "agent_learn", map[string]any{"subject_kind": "model_harness", "subject": "terra@pi",
@@ -137,15 +137,12 @@ func TestWorkerProfilesListToolReturnsRoster(t *testing.T) {
 	}
 }
 
-func TestStartWithoutTouches(t *testing.T) {
+func TestStartSendsProviderAndEffort(t *testing.T) {
 	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
 		if method == "worker_start" {
 			p := params.(protocol.WorkerStartRequest)
 			if p.Provider != "vendor" || p.Effort != "high" {
 				t.Fatalf("fields dropped: %+v", p)
-			}
-			if len(p.Touches) != 0 {
-				t.Fatalf("touches was sent: %+v", p)
 			}
 			return json.RawMessage(`{"status":"starting","session_id":"s_w","harness":"opencode","model":"a/x","project":"p"}`), nil
 		}

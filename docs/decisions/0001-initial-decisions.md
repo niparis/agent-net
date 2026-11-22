@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-28
 **Status:** Accepted by the owner
-**Context:** [brief.md](../brief.md), [review.md](../review.md)
+**Context:** [brief.md](../archive/brief.md), [review.md](../archive/review.md)
 
 ## D0 - Do not use Reason Network
 
@@ -48,4 +48,4 @@ One Go binary, `agent-net`, with subcommands: `gateway`, `daemon` (one per machi
 
 ## D10 - Codex Desktop deferred
 
-Owner decision, 2026-10-28: skip Codex Desktop for now. v1 supports the Codex CLI only, through the shared app-server daemon and `codex queue` (see [spike/codex.md](../spike/codex.md)). Desktop comes back after step 5, probably through the OCS Desktop IPC path.
+Owner decision, 2026-10-28: skip Codex Desktop for now. v1 supports the Codex CLI only, through the shared app-server daemon and `codex queue` (see the step 1 spike results, now removed). Desktop comes back after step 5, probably through the OCS Desktop IPC path.

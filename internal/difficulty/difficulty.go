@@ -34,13 +34,6 @@ var Rubric = []DimensionRubric{
 	{"Risk", "Data changes, security, compatibility, reversibility", [3]string{"Easily reversed", "Real side effects", "Severe or irreversible"}, [3]string{"display or text only, undone by the next release", "a database migration or a change every worker start goes through", "a public endpoint that hands out credentials"}},
 }
 
-var analyzerRules = []string{
-	"Count distinct changes, not files. 20 files changed by one known pattern is scope 2, not 5.",
-	"Count real coupling, not technologies. Touching the database, the API and the UI is not coupling by itself.",
-	"Every claim has evidence: a file and line range, or what was inspected when it claims something is absent. Facts and guesses are marked apart.",
-	"A confidence for the whole profile. Poor inspection gives low confidence, not high uncertainty.",
-}
-
 // RubricText returns the rubric as plain text for a judge prompt.
 func RubricText() string {
 	var b strings.Builder
@@ -51,9 +44,6 @@ func RubricText() string {
 	}
 	return strings.TrimSpace(b.String())
 }
-
-// AnalyzerRules returns the analyzer's rules as plain text.
-func AnalyzerRules() string { return strings.Join(analyzerRules, "\n") }
 
 type ReasoningProfile struct {
 	ClosestPattern string   `json:"closest_pattern"`

@@ -3,7 +3,7 @@
 Date: 2026-11-06
 Status: Built, first step only.
 
-Follow [Teams and relationships](../design/teams-relationships.md), including
+Follow [Teams and relationships](../archive/teams-relationships.md), including
 its changes after review. Teams are durable typed identities. They introduce
 no settings inheritance, relationship rules or delivery defaults in this step.
 

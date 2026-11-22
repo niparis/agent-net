@@ -71,7 +71,7 @@ func TestBriefLintFlagsPathsOutsideTheWorktree(t *testing.T) {
 	wantChecks(t, LintBrief(outside, BriefLintFacts{}), BriefCheckPath, BriefCheckPath)
 
 	inside := realBrief()
-	inside.Evidence = []string{"Read AGENTS.md and docs/brief.md first.", "The URL https://example.com/a/b is fine.", "The system tool /usr/bin/git is fine."}
+	inside.Evidence = []string{"Read AGENTS.md and docs/archive/brief.md first.", "The URL https://example.com/a/b is fine.", "The system tool /usr/bin/git is fine."}
 	wantChecks(t, LintBrief(inside, BriefLintFacts{}))
 }
 

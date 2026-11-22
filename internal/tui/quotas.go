@@ -572,26 +572,6 @@ func workerPreviewHeader(width int) string {
 	return strings.Join(cells, " ")
 }
 
-// shortWorkerModel keeps a short model name within w columns without cutting a
-// word: it drops the effort suffix or a trailing whole segment first.
-func shortWorkerModel(model string, w int) string {
-	s := shortModel(model)
-	if ansi.StringWidth(s) <= w {
-		return s
-	}
-	if i := strings.LastIndexByte(s, ':'); i > 0 && ansi.StringWidth(s[:i]) <= w {
-		return s[:i]
-	}
-	for i := len(s) - 1; i > 0; i-- {
-		if s[i] == '-' || s[i] == '.' || s[i] == '_' || s[i] == ':' || s[i] == '/' {
-			if ansi.StringWidth(s[:i])+1 <= w {
-				return s[:i] + "…"
-			}
-		}
-	}
-	return cell(s, w)
-}
-
 func (m Model) quotaModelsView(w int) []string {
 	rows, levels := m.quotaModels(), workerForecastLevels
 	preview := m.localPickerPreview()
@@ -790,19 +770,6 @@ func workerUsageShort(r quotaModel) string {
 		usage += fmt.Sprintf("·%d infra", r.infraRuns)
 	}
 	return usage
-}
-
-func naturalList(items []string) string {
-	switch len(items) {
-	case 0:
-		return "none"
-	case 1:
-		return items[0]
-	case 2:
-		return items[0] + " and " + items[1]
-	default:
-		return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
-	}
 }
 
 func (m Model) providerProtected(provider string) bool {

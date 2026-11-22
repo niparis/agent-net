@@ -300,24 +300,6 @@ func numberOf(s string) string {
 	return ""
 }
 
-func harnessList(hs []protocol.HarnessInfo) string {
-	if hs == nil {
-		return "harnesses unknown"
-	}
-	if len(hs) == 0 {
-		return "no harnesses"
-	}
-	var parts []string
-	for _, h := range hs {
-		if v := numberOf(h.Version); v != "" {
-			parts = append(parts, h.Name+" "+v)
-		} else {
-			parts = append(parts, h.Name)
-		}
-	}
-	return strings.Join(parts, "  ")
-}
-
 // ---- view ----
 
 func section(title string, w int) string {
@@ -447,14 +429,6 @@ func (m Model) who(id string) string {
 }
 
 // ---- feed ----
-
-func (m Model) feedHeading(w int) string {
-	title := "Messages (live)"
-	if m.focus == focusFeed {
-		title = "Messages (live, enter opens the conversation)"
-	}
-	return section(title, w)
-}
 
 // feedWindow returns the first drawn line to show: the newest lines fill the
 // pane, unless the cursor (feed focus) is further back.

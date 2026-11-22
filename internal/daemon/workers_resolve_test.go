@@ -63,7 +63,7 @@ func TestWorkerSeenOnlyFoldersStayAmbiguous(t *testing.T) {
 func TestWorkerEmptyProjectUsesTheCallersFolderExactly(t *testing.T) {
 	t.Parallel()
 	_, _, r2, pi, piID := twoShops(t)
-	res := mustWorker(t, pi.mustCall("worker_start", protocol.WorkerStartRequest{Model: "fake/m1", Touches: []string{"other"}, Harness: "opencode", Task: "x", Isolation: protocol.IsolationNone}))
+	res := mustWorker(t, pi.mustCall("worker_start", protocol.WorkerStartRequest{Model: "fake/m1", Harness: "opencode", Task: "x", Isolation: protocol.IsolationNone}))
 	if res.Path != r2 || res.Task == nil || res.Task.From != piID {
 		t.Errorf("worker for the caller's folder: %+v", res)
 	}

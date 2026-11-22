@@ -1,7 +1,7 @@
 # Product principles
 
 The rules agent-net is built on. When a design choice is unclear, these decide
-it. They are kept up to date; the early brief ([brief.md](brief.md)) is history.
+it. They are kept up to date; the early brief ([brief.md](archive/brief.md)) is history.
 Where a principle is a goal that the product does not fully meet yet, it says so.
 
 ## The network

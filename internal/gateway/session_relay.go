@@ -20,9 +20,6 @@ const (
 	// sessionRelayWait is how long the gateway waits for the other machine to
 	// answer a start, resume, stop or status question.
 	sessionRelayWait = 60 * time.Second
-	// sessionRelayMinVersion is the first agent-net that answers the
-	// session.owner_* frames. "dev" builds are new enough.
-	sessionRelayMinVersion = "0.4.46"
 )
 
 func firstNonEmpty(values ...string) string {
@@ -114,14 +111,6 @@ func (g *Gateway) handleSessionRelay(ctx context.Context, nc *nodeConn, typ stri
 	if relay.AgentID != "" && !target.sessionAgents.Load() {
 		return nil, reject("target daemon does not support Agent selection; upgrade it before starting this session")
 	}
-	version, err := g.store.NodeVersion(nodeID)
-	if err != nil {
-		version = ""
-	}
-	if !sessionRelaySupported(version) {
-		return nil, reject("machine %s runs an older agent-net: upgrade it there", firstNonEmpty(host, nodeID))
-	}
-
 	frame := protocol.SessionOwnerRequest{Owner: relay.Owner, FromNode: nc.id,
 		SessionStartRequest: relay.SessionStartRequest, SessionID: sessionID, StartID: relay.StartID}
 	frameType := map[string]string{
@@ -236,27 +225,6 @@ func (g *Gateway) sessionStartNode(p protocol.SessionStartRequest) (string, erro
 	return "", reject("project %q is on more than one machine: name the machine", name)
 }
 
-// sessionRelaySupported tells whether a machine's agent-net answers the
-// session owner frames. A version older than the first release with them is
-// refused, and so is a version this code cannot read.
-func sessionRelaySupported(version string) bool {
-	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
-	if version == "dev" {
-		return true
-	}
-	have, ok := parseReleaseVersion(version)
-	if !ok {
-		return false
-	}
-	want, _ := parseReleaseVersion(sessionRelayMinVersion)
-	for i := range want {
-		if have[i] != want[i] {
-			return have[i] > want[i]
-		}
-	}
-	return true
-}
-
 func parseReleaseVersion(v string) ([3]int, bool) {
 	var out [3]int
 	if i := strings.IndexAny(v, "-+"); i >= 0 {
@@ -303,13 +271,6 @@ func (g *Gateway) folderRelayTarget(nc *nodeConn, ownerID, node, what string) (t
 	g.mu.Unlock()
 	if target == nil {
 		return nil, "", "", reject("machine %s is offline", firstNonEmpty(host, nodeID))
-	}
-	version, err := g.store.NodeVersion(nodeID)
-	if err != nil {
-		version = ""
-	}
-	if !sessionRelaySupported(version) {
-		return nil, "", "", reject("machine %s runs an older agent-net: upgrade it there", firstNonEmpty(host, nodeID))
 	}
 	return target, nodeID, host, nil
 }

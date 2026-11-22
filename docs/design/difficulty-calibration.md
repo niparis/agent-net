@@ -8,9 +8,9 @@ tasks per effect. Effort effects sum to zero within each model. The gateway
 rebuilds the cached analysis at startup and when ratings, runs, profiles or
 score overrides change, including run retention. No request or TUI redraw
 fits data. Quotas shows effects, counts and predictions at normal difficulty.
-Rotation weighting is owner controlled through
-`agent-net scores quality on|off`, defaults to off, and needs at least 5
-ratings. Its multiplier is
+Rotation weighting was owner controlled through
+`agent-net scores quality on|off`, defaulted to off, and needed at least 5
+ratings. The always-disabled path was removed on 2026-11-22. Its multiplier is
 `1 + (prediction - average) / 4`, bounded to 0.5 through 1.5. Weak ratings
 count half; models without a strong rating cannot get a prediction above
 the fitted average. Residuals over 0.75 points with at least 5 ratings flag a
@@ -365,4 +365,4 @@ few days before part 3 starts steering.
    first. Recommendation: yes; it is small, and plain medians per
    combination would stay empty for weeks.
 
-Worker starts require a nonempty `touches` list: `db`, `hot-path`, `ui`, `docs`, `tests`, `config` or `other`. A continued start inherits the old list when omitted. When it includes `db` (schema, migrations or stored data) or `hot-path` (code run on every request, refresh, redraw or message), automatic choice uses the next difficulty level, capped at `very_complex`. The requested difficulty remains the calibration input; the worker and run also store the effective level and touched areas. Work touching only `docs` and `tests` lowers the difficulty one level, floored at `trivial`; `db` or `hot-path` takes precedence. `ui`, `config` and `other` leave it unchanged. The quality panel also groups task follow-ups, late defects and headache by touched area, filtered by the selected agent.
+Worker starts no longer take a `touches` list. The difficulty judge decides the level from the brief. Older runs keep the touches they recorded, so the quality panel still groups that history by touched area, filtered by the selected agent.

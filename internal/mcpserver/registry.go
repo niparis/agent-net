@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -16,10 +15,6 @@ import (
 // The MCP registry tools: the test tool, and the registered servers' tools,
 // added and removed at run time as `<server>__<tool>`. The SDK sends
 // notifications/tools/list_changed to the client on every change.
-
-const (
-	appliesToAll = "This change applies to every agent on every machine."
-)
 
 type mcpNameIn struct {
 	Name string `json:"name" jsonschema:"the server name from agent_mcp_servers_find"`
@@ -34,57 +29,6 @@ func addRegistryTools(s *mcp.Server, run func(context.Context, string, any) (any
 			out, err := run(ctx, "mcp_test", in)
 			return nil, out, err
 		})
-}
-
-// summarize shortens registry answers for a model: tool names instead of
-// schemas, and a reminder that changes are global.
-func summarize(out any, verb string) any {
-	raw, _ := json.Marshal(out)
-	var r struct {
-		Server  *protocol.MCPServer  `json:"server"`
-		Servers []protocol.MCPServer `json:"servers"`
-	}
-	if json.Unmarshal(raw, &r) != nil {
-		return out
-	}
-	view := func(s protocol.MCPServer) map[string]any {
-		names := make([]string, 0, len(s.Tools))
-		for _, t := range s.Tools {
-			names = append(names, s.Name+"__"+t.Name)
-		}
-		m := map[string]any{"name": s.Name, "host": s.Hostname, "transport": s.Transport, "enabled": s.Enabled,
-			"health": s.Health, "host_online": s.HostOnline, "tools": names,
-			"added_by": fmt.Sprintf("node %s, session %s, %s", s.AddedByNode, s.AddedBySession, s.AddedByHarness)}
-		if s.HealthDetail != "" {
-			m["health_detail"] = s.HealthDetail
-		}
-		if s.Transport == protocol.MCPStdio {
-			m["command"] = strings.Join(append([]string{s.Command}, s.Args...), " ")
-			if len(s.Env) > 0 {
-				m["env"] = s.Env
-			}
-		} else {
-			m["url"] = s.URL
-			var hs []string
-			for _, h := range s.Headers {
-				if h.Env != "" {
-					hs = append(hs, h.Name+" from env "+h.Env)
-				} else {
-					hs = append(hs, h.Name+" from file "+h.File)
-				}
-			}
-			m["headers"] = hs
-		}
-		return m
-	}
-	if r.Server != nil {
-		return map[string]any{verb: view(*r.Server), "note": appliesToAll}
-	}
-	list := make([]map[string]any, 0, len(r.Servers))
-	for _, s := range r.Servers {
-		list = append(list, view(s))
-	}
-	return map[string]any{"servers": list}
 }
 
 // ---- dynamic tools ----

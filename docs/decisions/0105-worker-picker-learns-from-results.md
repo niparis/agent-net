@@ -7,6 +7,7 @@ Part 2 is the Quality subtab of Quotas. Amends [0026](0026-worker-difficulty-and
 The number was the next free one on main when this was written. The merger may
 renumber the file. The code and settings name this decision as "decision 0105";
 if the file is renumbered, change those mentions too.
+Changed by [0112](0112-remove-the-overqualified-rule.md) (the overqualified rule is gone) and [0161](0161-pick-by-cost-per-accepted-result.md) (cost per accepted result replaces the 0.9 x best rule). The unused `quality_get` and `quality_set` path described below was removed on 2026-11-22.
 
 ## Context
 

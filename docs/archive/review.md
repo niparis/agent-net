@@ -87,8 +87,8 @@ The 2026-07-28 MCP revision is stateless, which makes a stdio shim even more nat
 
 | Step | What | Exit criterion |
 |---|---|---|
-| **0. Decisions** | Done: [docs/decisions/0001-initial-decisions.md](decisions/0001-initial-decisions.md). | Recorded. |
-| **1. Spike** | Throwaway scripts, no gateway. Claude: post to the inbox socket from a foreign process (idle, busy, bypass mode). Pi: extension injecting from a local socket. Codex CLI: `codex queue` and the daemon control socket (idle, busy). Codex Desktop: same daemon or not. OpenCode: `session.prompt`. Stdio MCP process: can it identify its parent session? | One page per harness in `docs/spike/`: works / does not work / caveats. |
+| **0. Decisions** | Done: [docs/decisions/0001-initial-decisions.md](../decisions/0001-initial-decisions.md). | Recorded. |
+| **1. Spike** | Throwaway scripts, no gateway. Claude: post to the inbox socket from a foreign process (idle, busy, bypass mode). Pi: extension injecting from a local socket. Codex CLI: `codex queue` and the daemon control socket (idle, busy). Codex Desktop: same daemon or not. OpenCode: `session.prompt`. Stdio MCP process: can it identify its parent session? | One page per harness: works / does not work / caveats. |
 | **2. Gateway core + Claude and Pi** | Gateway (FastAPI, SQLite, store before ack, idempotency keys), LAN node enrollment, `agent-netd`, stdio MCP process, Claude and Pi adapters. This VM <-> MacBook. | Claude here and Pi on the Mac discover each other, exchange a request and a reply in their running sessions, and keep accepted messages through a gateway restart. |
 | **3. Reliability** | Reconnect, expiry, rate limits, hop budget, `agent-net` CLI for inspecting messages. | The brief's Phase 2 exit criterion, tested by killing processes. |
 | **4. Skills registry** | Gateway module: Git-backed store, search, publish with approval, versions, rollback. `agent-netd` syncs into each harness's skill folder, with atomic switch. OpenCode HTTP catalog. | A skill published on one machine is found, installed and used on the other with no manual copying. Rollback works. |

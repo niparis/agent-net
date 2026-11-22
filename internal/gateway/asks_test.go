@@ -370,9 +370,10 @@ func TestHeldAskStaysWhenSenderEnds(t *testing.T) {
 func TestStepNeedsOwnerAskAboutChange(t *testing.T) {
 	r := newDeliveryRig(t)
 	id := r.submit(r.a, r.workerSubmit("agent-net/w_1", commitA)).Change.Change.ID
+	yes := true
 	pass := func(ref protocol.StepRef, commit string, fields map[string]string) {
 		t.Helper()
-		r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: ref, Result: protocol.StepResultPass, Commit: commit, Fields: fields})
+		r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: ref, Result: protocol.StepResultPass, Commit: commit, Fields: fields, MergeContainsHead: &yes})
 	}
 	pass(stepAccept, commitA, nil)
 	pass(protocol.StepRef{Step: protocol.StepTest}, commitA, map[string]string{protocol.FieldSuite: protocol.SuiteChanged})

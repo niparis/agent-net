@@ -16,13 +16,13 @@ func TestMergeDaemonAncestryProof(t *testing.T) {
 		proof    *bool
 		accepted bool
 	}{
-		{name: "older daemon", version: "0.4.129", accepted: true},
-		{name: "release without proof", version: "0.4.130", accepted: true},
+		{name: "older daemon", version: "0.4.129", refusal: "merge_contains_head"},
+		{name: "release without proof", version: "0.4.130", refusal: "merge_contains_head"},
 		{name: "first proof daemon", version: "0.4.131", refusal: "merge_contains_head"},
 		{name: "newer daemon", version: "v0.4.132", refusal: "merge_contains_head"},
 		{name: "newer minor", version: "0.5.0", refusal: "merge_contains_head"},
 		{name: "dev daemon", version: "dev", refusal: "merge_contains_head"},
-		{name: "unknown old version", version: "", accepted: true},
+		{name: "unknown version", version: "", refusal: "merge_contains_head"},
 		{name: "contains head", version: "0.4.131", proof: &yes, accepted: true},
 		{name: "does not contain head", version: "0.4.131", proof: &no, refusal: "exists and contains change head"},
 	} {

@@ -158,14 +158,6 @@ type WorkerContinued struct {
 	Assessment *WorkerAssessment `json:"assessment,omitempty"`
 }
 
-// ContinueIntro starts the task of a worker that continues an ended one.
-// where says what the earlier worker left: "branch" (its unfinished changes
-// are the last commit in the new worktree), "folder" (it worked in the project
-// folder) or "" (nothing).
-func ContinueIntro(reason, where string) string {
-	return ContinueIntroWithSettings(reason, where, settings.Snapshot{}, "")
-}
-
 func ContinueIntroWithSettings(reason, where string, snap settings.Snapshot, repo string) string {
 	at := settings.Where{Repo: repo}
 	head := snap.String("workers.continue_intro", at) + " (" + NeutralizeMarkers(reason) + "). "
@@ -369,8 +361,8 @@ type (
 		// start keeps its model unless the gate refuses it now (decision 0162).
 		Recheck string `json:"recheck,omitempty"`
 		// Level is an internal caller's fixed level, used when there is no
-		// assessment (for example the read-only phrasing worker). A caller's
-		// Difficulty field is ignored.
+		// assessment (for example the read-only phrasing worker). A caller
+		// sends no difficulty; the judge sets the label.
 		Level string `json:"level,omitempty"`
 		// Precheck is set by the gateway for "worker.precheck": the checks that
 		// need no judge run, nothing starts. A caller never sets it.

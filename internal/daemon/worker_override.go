@@ -216,7 +216,7 @@ func isReviewTask(p protocol.WorkerStartRequest) bool {
 // provider is resolved the way the start resolves it; a fact that stays
 // unknown is left empty, and the rule then sends the ask to the CTO.
 func (d *Daemon) overrideFacts(caller string, p protocol.WorkerStartRequest) protocol.OverrideFacts {
-	f := protocol.OverrideFacts{Harness: strings.TrimSpace(p.Harness), Effort: strings.TrimSpace(p.Effort), Level: strings.TrimSpace(p.Difficulty),
+	f := protocol.OverrideFacts{Harness: strings.TrimSpace(p.Harness), Effort: strings.TrimSpace(p.Effort), Level: "",
 		Provider: protocol.OverrideProvider(p), Review: isReviewTask(p)}
 	if model := strings.TrimSpace(p.Model); model != "" && model != "auto" {
 		f.Model = model

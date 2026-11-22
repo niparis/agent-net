@@ -1,4 +1,4 @@
-"""Worker data review: every table in docs/design/model-capability-review.md.
+"""Worker data review: every table in docs/archive/model-capability-review.md.
 
 Reads a copy of the gateway database, read only, and prints the tables as
 Markdown. Standard library only.

@@ -67,7 +67,7 @@ func TestWorkerJudgeLabelDecidesLevel(t *testing.T) {
 	w.register(t, newRepo(t, "shop"))
 	setJudgeScores(t, w, map[string]float64{"fake/m1": 12, "fake/m2": 51})
 
-	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Model: "auto", Difficulty: "very_complex", Touches: []string{"db"}, Task: "x"})
+	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Model: "auto", Task: "x"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestWorkerJudgeFailureStartsNormal(t *testing.T) {
 	w.register(t, newRepo(t, "shop"))
 	setJudgeScores(t, w, map[string]float64{"fake/m1": 32.5, "fake/m2": 51})
 
-	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Model: "auto", Difficulty: "very_complex", Touches: []string{"db"}, Task: "x"})
+	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Model: "auto", Task: "x"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestWorkerExplicitModelRecordsAssessment(t *testing.T) {
 	w.register(t, newRepo(t, "shop"))
 	setJudgeScores(t, w, map[string]float64{"fake/m1": 51})
 
-	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Model: "fake/m1", Difficulty: "very_complex", Touches: []string{"db"}, Task: "x"})
+	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Model: "fake/m1", Task: "x"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestWorkerQueuedStartKeepsJudgeLabel(t *testing.T) {
 	setJudgeScores(t, w, map[string]float64{"fake/m1": 12})
 	pi, _ := helloPi(t, w.node, "caller", "/work/caller", true)
 
-	res := startFrom(t, pi, protocol.WorkerStartRequest{Model: "auto", Project: "shop", Harness: "opencode", Difficulty: "very_complex", Touches: []string{"db"}, Task: "queued"})
+	res := startFrom(t, pi, protocol.WorkerStartRequest{Model: "auto", Project: "shop", Harness: "opencode", Task: "queued"})
 	if res.Status != "queued" {
 		t.Fatalf("not queued: %+v", res)
 	}
@@ -255,29 +255,6 @@ func TestQueuedStartKeepsPickerNote(t *testing.T) {
 	}
 	if q.PickerLabel == "" || q.PickerLabel != d.PickerLabel {
 		t.Fatalf("queued label %q, direct label %q", q.PickerLabel, d.PickerLabel)
-	}
-}
-
-func TestWorkerTouchesDoNotChangeLevel(t *testing.T) {
-	for _, touches := range [][]string{{"db"}, {"hot-path"}, {"docs", "tests"}} {
-		t.Run(strings.Join(touches, "+"), func(t *testing.T) {
-			setupShadowJudge(t, normalJudgeReply, false)
-			g := startGateway(t, t.TempDir(), "")
-			w := startWorkerNode(t, g, shortSet, withDifficulty(nil))
-			w.register(t, newRepo(t, "shop"))
-			setJudgeScores(t, w, map[string]float64{"fake/m1": 32.5, "fake/m2": 51})
-
-			res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Model: "auto", Difficulty: "very_complex", Touches: touches, Task: "x"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if res.Model != "fake/m1" || !strings.Contains(res.ModelNote, "normal -> ") || strings.Contains(res.ModelNote, "touches") {
-				t.Fatalf("touches %v changed the level: %+v", touches, res)
-			}
-			if row := reworkRow(t, w, res.SessionID); row.DifficultyUsed != "normal" {
-				t.Fatalf("touches %v changed the record: %+v", touches, row)
-			}
-		})
 	}
 }
 

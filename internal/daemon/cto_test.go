@@ -637,7 +637,7 @@ func testCTOToolsThroughFakeOpenCode(t *testing.T) {
 	}
 	call("agent_sessions_find", map[string]any{"session": target})
 	call("agent_learn", map[string]any{"subject_kind": "model", "subject": "fake/m1", "finding": "Needs clear tasks", "evidence": []string{"two runs"}})
-	call("worker_change", map[string]any{"action": "start", "project": "shop", "harness": "opencode", "model": "fake/m1", "task": "test", "touches": []string{"tests"}})
+	call("worker_change", map[string]any{"action": "start", "project": "shop", "harness": "opencode", "model": "fake/m1", "task": "test"})
 	eventually(t, "approved worker task comes from the owner", func() bool {
 		workers := w.workers(t)
 		if len(workers) != 1 {

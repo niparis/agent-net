@@ -48,7 +48,6 @@ type loopRow struct {
 	counted     bool
 	paused      int
 	lastResult  string
-	ask         bool
 }
 
 // Why a loop is paused. A cap pause ends with the day; the other waits for

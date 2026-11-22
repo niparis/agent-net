@@ -1,7 +1,7 @@
 # 0132 - Sign-in asks open a CLI login in herdr
 
 **Date:** 2026-11-11
-**Status:** Accepted.
+**Status:** Accepted. [0174](0174-sign-in-on-the-browser-machine.md) replaces the remote pane path for new clicks.
 
 ## Context
 
