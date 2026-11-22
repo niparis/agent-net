@@ -62,7 +62,7 @@ func (s *Store) deskLog(q askDB, source, aboutKind, aboutID, text, detail string
 	}
 	// Keep the log short: a few hundred inserts at most between two prunes.
 	if id, err := res.LastInsertId(); err == nil && id%200 == 0 {
-		_, err = q.Exec(`DELETE FROM desk_log WHERE id<=?`, id-deskLogKeep)
+		_, err = q.Exec(`DELETE FROM desk_log WHERE id<=? AND NOT (about_kind='hide_receipt' AND options<>'[]')`, id-deskLogKeep)
 		return err
 	}
 	return nil
@@ -107,36 +107,49 @@ func (s *Store) DeskLog(limit int) ([]protocol.DeskLogEntry, error) {
 	return out, rows.Err()
 }
 
+func deskState(status, owner, next string) string {
+	switch status {
+	case "open":
+		if owner == protocol.DeskOwnerCTO && next != protocol.AskNextChief {
+			return protocol.DeskWithCTO
+		}
+		if next == "" || next == protocol.AskNextOwner {
+			return protocol.DeskReady
+		}
+		return protocol.DeskVerifying
+	case "answered", "approved", "refused":
+		return protocol.DeskAnswered
+	case protocol.DeskCarriedOut:
+		return protocol.DeskCarriedOut
+	default:
+		return protocol.DeskClosed
+	}
+}
+
 const askSelect = `SELECT i.id,i.kind,i.session_id,i.node,i.text,i.recommendation,i.message_id,i.conversation_id,i.created_at,i.status,i.answer,i.answered_at,i.options,
  COALESCE(NULLIF(i.asker_name,''), CASE WHEN s.archived_at=0 THEN COALESCE(NULLIF(s.name,''),s.title,'') ELSE '' END, ''),
- i.change_title,i.from_kind,i.source_ref,i.about_kind,i.about_id,i.next_who,i.why_you,i.detail,i.priority,i.owner,i.state,i.category,
- COALESCE(d.change_id,''),COALESCE(d.step,''),COALESCE(d.for_step,''),COALESCE(d.after_merge,0),COALESCE(d.commit_hash,''),COALESCE(c.project,''),COALESCE(c.title,'')
+ i.change_title,i.from_kind,i.source_ref,i.about_kind,i.about_id,i.next_who,i.why_you,i.detail,i.priority,i.owner,i.category,
+ COALESCE(c.project,''),COALESCE(c.title,'')
  FROM inbox_items i LEFT JOIN sessions s ON s.id=i.session_id
- LEFT JOIN delivery_step_inbox d ON d.item_id=i.id LEFT JOIN delivery_changes c ON c.id=d.change_id`
+ LEFT JOIN delivery_changes c ON i.about_kind='step' AND c.id=substr(i.about_id,1,instr(i.about_id,':')-1)`
 
 // ListAsks returns every open ask, oldest first, in one query. The Desk reads
 // this one list instead of building rows from the Inbox, held requests,
 // outcomes, learned suggestions and sessions.
 func (s *Store) ListAsks() ([]protocol.Ask, error) {
-	rows, err := s.db.Query(askSelect + ` WHERE i.status='open' ORDER BY i.created_at,i.id`)
+	rows, err := s.db.Query(askSelect + ` WHERE i.status='open' AND i.kind<>'cto_intake' ORDER BY i.created_at,i.id`)
 	if err != nil {
 		return nil, err
 	}
-	type step struct {
-		project string
-		ask     int
-	}
-	var steps []step
+	var steps []deliveryLink
 	asks := []protocol.Ask{}
 	for rows.Next() {
 		var a protocol.Ask
 		var created, answered int64
-		var options, status, changeID, changeTitle, project string
-		var after int
-		var d protocol.InboxDelivery
+		var options, status, changeTitle, project string
 		if err := rows.Scan(&a.ID, &a.Kind, &a.FromSession, &a.Node, &a.Question, &a.Recommendation, &a.MessageID, &a.ConversationID, &created, &status, &a.Answer, &answered, &options,
-			&a.From, &changeTitle, &a.FromKind, &a.Ref, &a.AboutKind, &a.AboutID, &a.Next, &a.WhyYou, &a.Detail, &a.Priority, &a.Owner, &a.DeskState, &a.Category,
-			&changeID, &d.Step, &d.For, &after, &d.Commit, &project, &a.AboutTitle); err != nil {
+			&a.From, &changeTitle, &a.FromKind, &a.Ref, &a.AboutKind, &a.AboutID, &a.Next, &a.WhyYou, &a.Detail, &a.Priority, &a.Owner, &a.Category,
+			&project, &a.AboutTitle); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -148,6 +161,7 @@ func (s *Store) ListAsks() ([]protocol.Ask, error) {
 		if answered != 0 {
 			a.ClosedAt = time.Unix(0, answered).UTC()
 		}
+		a.DeskState = deskState(status, a.Owner, a.Next)
 		a.State = protocol.AskStateOpen
 		if a.Next != "" && a.Next != protocol.AskNextOwner {
 			a.State = protocol.AskWithSomeone
@@ -158,14 +172,17 @@ func (s *Store) ListAsks() ([]protocol.Ask, error) {
 		if a.FromKind == protocol.AskFromSession && (a.From == "" || strings.HasPrefix(a.From, "s_")) {
 			a.From = "an agent"
 		}
-		if changeID != "" {
-			d.ChangeID, d.AfterMerge = changeID, after != 0
-			a.Delivery = &d
-			a.AboutKind, a.AboutID = protocol.AskAboutChange, changeID
-			if a.AboutTitle == "" {
-				a.AboutTitle = changeTitle
+		if a.AboutKind == protocol.AskAboutStep {
+			if changeID, _, ref, commit, ok := parseStepAboutID(a.AboutID); ok {
+				a.Delivery = &protocol.InboxDelivery{ChangeID: changeID, StepRef: ref, Commit: commit}
+				a.AboutKind, a.AboutID = protocol.AskAboutChange, changeID
+				if a.AboutTitle == "" {
+					a.AboutTitle = changeTitle
+				}
+				if project != "" {
+					steps = append(steps, deliveryLink{a.Delivery, project})
+				}
 			}
-			steps = append(steps, step{project, len(asks)})
 		}
 		if a.AboutTitle == "" {
 			a.AboutTitle = changeTitle
@@ -177,18 +194,7 @@ func (s *Store) ListAsks() ([]protocol.Ask, error) {
 	if err != nil {
 		return nil, err
 	}
-	pipelines := map[string]protocol.Pipeline{}
-	for _, st := range steps {
-		p, ok := pipelines[st.project]
-		if !ok {
-			if p, err = s.deliveryPipeline(st.project); err != nil {
-				return nil, err
-			}
-			pipelines[st.project] = p
-		}
-		asks[st.ask].Delivery.ReportFields = p.ReportFields(asks[st.ask].Delivery.StepRef)
-	}
-	return asks, nil
+	return asks, s.fillDeliveryReportFields(steps)
 }
 
 // closeSettlesDecision reports whether reason represents an outcome where the
@@ -451,7 +457,7 @@ func (s *Store) closeWaitingAsk(q askDB, ref string) error {
 			if detail != "" {
 				newDetail = detail + "\n" + note
 			}
-			if _, err := q.Exec(`UPDATE inbox_items SET detail=?, back_note=? WHERE id=?`, newDetail, note, id); err != nil {
+			if _, err := q.Exec(`UPDATE inbox_items SET detail=? WHERE id=?`, newDetail, id); err != nil {
 				return err
 			}
 		}
@@ -530,8 +536,8 @@ func (s *Store) syncWaitingAsk(q askDB, session, waiting string) error {
 // ask made in the same second belongs to it). Without this the minute
 // reconcile opened a fresh copy every minute after each close.
 func waitAlreadySettled(q askDB, ref string, w protocol.Waiting) (bool, error) {
-	rows, err := q.Query(`SELECT status,text FROM inbox_items WHERE source_ref=? AND created_at>=? AND status<>?`,
-		ref, w.Since*int64(time.Second), protocol.ItemStatusJoined)
+	rows, err := q.Query(`SELECT status,text FROM inbox_items WHERE source_ref=? AND created_at>=?`,
+		ref, w.Since*int64(time.Second))
 	if err != nil {
 		return false, err
 	}

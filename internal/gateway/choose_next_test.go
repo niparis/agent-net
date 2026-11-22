@@ -36,9 +36,7 @@ func TestLaunchFailureTriesTheNextCandidateInTheSameList(t *testing.T) {
 		t.Fatal(err)
 	}
 	nc := &nodeConn{id: node, ws: <-accepted, dead: make(chan struct{}), cancel: cancel}
-	g.mu.Lock()
-	g.conns[node] = nc
-	g.mu.Unlock()
+	setTestConn(t, g, node, nc)
 
 	var mu sync.Mutex
 	var launched []protocol.WorkerLaunch

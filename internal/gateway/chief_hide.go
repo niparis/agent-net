@@ -89,7 +89,7 @@ func (s *Store) hideApply(tx *sql.Tx, f hideFilter, token string) (hideResult, e
 	if err != nil {
 		return out, err
 	}
-	if _, err = tx.Exec(`INSERT INTO ask_sort_hide_receipts(id,ids) VALUES(?,?)`, out.Receipt, string(ids)); err != nil {
+	if err := s.deskLog(tx, "chief", "hide_receipt", out.Receipt, fmt.Sprintf("Hidden %d ask sort(s)", len(out.IDs)), string(ids), []string{"hide_undo"}); err != nil {
 		return out, err
 	}
 	for _, id := range out.IDs {
@@ -102,8 +102,9 @@ func (s *Store) hideApply(tx *sql.Tx, f hideFilter, token string) (hideResult, e
 
 func (s *Store) hideUndo(tx *sql.Tx, receipt string) (hideResult, error) {
 	out := hideResult{Receipt: receipt}
+	var logID int64
 	var ids string
-	if err := tx.QueryRow(`SELECT ids FROM ask_sort_hide_receipts WHERE id=? AND undone=0`, receipt).Scan(&ids); err != nil {
+	if err := tx.QueryRow(`SELECT id, detail FROM desk_log WHERE about_kind='hide_receipt' AND about_id=? AND options<>'[]' ORDER BY id DESC LIMIT 1`, receipt).Scan(&logID, &ids); err != nil {
 		return out, fmt.Errorf("unknown or already undone receipt")
 	}
 	if err := json.Unmarshal([]byte(ids), &out.IDs); err != nil {
@@ -124,6 +125,6 @@ func (s *Store) hideUndo(tx *sql.Tx, receipt string) (hideResult, error) {
 		out.After += int(n)
 	}
 	out.After += out.Before
-	_, err := tx.Exec(`UPDATE ask_sort_hide_receipts SET undone=1 WHERE id=?`, receipt)
+	_, err := tx.Exec(`UPDATE desk_log SET options='[]', text='Undone: '||text WHERE id=?`, logID)
 	return out, err
 }

@@ -184,9 +184,7 @@ func TestAppsEndToEnd(t *testing.T) {
 	defer wsClient.CloseNow()
 	ws := <-connections
 	defer ws.CloseNow()
-	g.mu.Lock()
-	g.conns[node] = &nodeConn{id: node, ws: ws, cancel: func() {}}
-	g.mu.Unlock()
+	setTestConn(t, g, node, &nodeConn{id: node, ws: ws, cancel: func() {}})
 	sent := botCall(t, bot, "agent_message_send", map[string]any{"to": local, "body": "hello"})
 	msgID := sent["sent"].([]any)[0].(map[string]any)["message_id"].(string)
 	_, raw, err := wsClient.Read(ctx)

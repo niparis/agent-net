@@ -41,12 +41,10 @@ type InboxItem struct {
 	WhyYou    string `json:"why_you,omitempty"`
 	Detail    string `json:"detail,omitempty"`
 	// Desk item shape (decision 0150). Owner is chief or cto, State one of the
-	// Desk states, Category one of the item categories. DupOf names the open
-	// item a duplicate joined.
+	// Desk states, Category one of the item categories.
 	Owner    string `json:"owner,omitempty"`
 	State    string `json:"state,omitempty"`
 	Category string `json:"category,omitempty"`
-	DupOf    string `json:"dup_of,omitempty"`
 }
 
 // InboxDelivery links a step task to its exact revision and commit.

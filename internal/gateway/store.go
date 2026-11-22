@@ -100,9 +100,12 @@ type Store struct {
 	holds      startHolds
 	lastVacuum time.Time
 
-	mu      sync.Mutex
-	buckets map[string]*bucket
-	learnMu sync.Mutex
+	// bucketMu guards buckets. It is a leaf lock: nothing waits for the
+	// database while it is held, so allow can run inside a message
+	// transaction without a lock-order cycle with the writer.
+	bucketMu sync.Mutex
+	buckets  map[string]*bucket
+	learnMu  sync.Mutex
 	// hiddenMu serializes reads that prune expired session entries with writes.
 	hiddenMu sync.Mutex
 
@@ -1332,7 +1335,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration, workerTablesMigration, machineTablesMigration, orgFoldMigration, toolsRetireMigration, oauthClientsMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration, workerTablesMigration, machineTablesMigration, orgFoldMigration, toolsRetireMigration, oauthClientsMigration, deskTablesMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -2049,7 +2052,7 @@ func (s *Store) migrate() error {
 			return err
 		}
 		stmt := migrations[i]
-		for marker, cols := range map[string][]migrationColumn{learnedTablesMarker: learnedTablesColumns, settingsFoldMarker: settingsFoldColumns, sessionTablesMarker: sessionTablesColumns, stepTablesMarker: stepTablesColumns, toolsRetireMarker: toolsRetireColumns, oauthClientsMarker: oauthClientsColumns} {
+		for marker, cols := range map[string][]migrationColumn{learnedTablesMarker: learnedTablesColumns, settingsFoldMarker: settingsFoldColumns, sessionTablesMarker: sessionTablesColumns, stepTablesMarker: stepTablesColumns, toolsRetireMarker: toolsRetireColumns, oauthClientsMarker: oauthClientsColumns, deskTablesMarker: deskTablesColumns} {
 			if !strings.Contains(migrations[i], marker) {
 				continue
 			}
@@ -2900,6 +2903,10 @@ func (s *Store) migrate() error {
 				} else {
 					result, err = tx.Exec(`SELECT 1`)
 				}
+			}
+		} else if strings.Contains(migrations[i], deskTablesMarker) {
+			if err = migrateDeskTablesTx(tx); err == nil {
+				result, err = tx.Exec(`SELECT 1`)
 			}
 		} else {
 			result, err = tx.Exec(stmt)
@@ -4878,8 +4885,8 @@ func (s *Store) Message(id string) (protocol.Message, bool, error) {
 }
 
 func (s *Store) allow(sender string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.bucketMu.Lock()
+	defer s.bucketMu.Unlock()
 	now := s.now()
 	b := s.buckets[sender]
 	if b == nil {

@@ -4,17 +4,51 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+func stepAboutPrefix(changeID string, revision int, ref protocol.StepRef) string {
+	return fmt.Sprintf("%s:%d:%s:%s:%d:", changeID, revision, ref.Step, ref.For, boolInt(ref.AfterMerge))
+}
+
+func stepAboutID(changeID string, revision int, ref protocol.StepRef, commit string) string {
+	return stepAboutPrefix(changeID, revision, ref) + commit
+}
+
+func parseStepAboutID(aboutID string) (changeID string, revision int, ref protocol.StepRef, commit string, ok bool) {
+	parts := strings.SplitN(aboutID, ":", 6)
+	if len(parts) != 6 || parts[0] == "" {
+		return "", 0, ref, "", false
+	}
+	rev, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return "", 0, ref, "", false
+	}
+	return parts[0], rev, protocol.StepRef{Step: parts[2], For: parts[3], AfterMerge: parts[4] != "" && parts[4] != "0"}, parts[5], true
+}
+
 // answerDeliveryApproval records an inbox answer as evidence for the exact
 // revision and commit that produced the item. Ordinary inbox items use the
 // existing AnswerInbox path.
 func (s *Store) answerDeliveryApproval(id, answer string, validate ...bool) (protocol.InboxItem, bool, error) {
+	var aboutKind, aboutID string
+	err := s.db.QueryRow(`SELECT about_kind,about_id FROM inbox_items WHERE id=?`, id).Scan(&aboutKind, &aboutID)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && aboutKind != protocol.AskAboutStep) {
+		return protocol.InboxItem{}, false, nil
+	}
+	if err != nil {
+		return protocol.InboxItem{}, true, err
+	}
+	changeID, revision, ref, commit, ok := parseStepAboutID(aboutID)
+	if !ok {
+		return protocol.InboxItem{}, false, nil
+	}
 	var project string
-	err := s.db.QueryRow(`SELECT c.project FROM delivery_step_inbox d JOIN delivery_changes c ON c.id=d.change_id WHERE d.item_id=?`, id).Scan(&project)
+	err = s.db.QueryRow(`SELECT project FROM delivery_changes WHERE id=?`, changeID).Scan(&project)
 	if errors.Is(err, sql.ErrNoRows) {
 		return protocol.InboxItem{}, false, nil
 	}
@@ -65,15 +99,6 @@ func (s *Store) answerDeliveryApproval(id, answer string, validate ...bool) (pro
 	} else if answer != "approve" && answer != "refuse" {
 		return item, true, reject("delivery approval needs approve, refuse or dismiss")
 	}
-	var changeID, commit string
-	var revision, after int
-	var ref protocol.StepRef
-	err = tx.QueryRow(`SELECT change_id,revision,step,for_step,after_merge,commit_hash FROM delivery_step_inbox WHERE item_id=?`, id).
-		Scan(&changeID, &revision, &ref.Step, &ref.For, &after, &commit)
-	if err != nil {
-		return item, true, err
-	}
-	ref.AfterMerge = after != 0
 	c, ok, err := queryChange(tx, `id=?`, changeID)
 	if err != nil {
 		return item, true, err

@@ -181,9 +181,7 @@ func connectTestNode(t *testing.T, g *Gateway, nodeID string) (*websocket.Conn, 
 	cancelCtx, cancel := context.WithCancel(ctx)
 	t.Cleanup(cancel)
 	nc := &nodeConn{id: nodeID, ws: ws, dead: make(chan struct{}), cancel: cancel}
-	g.mu.Lock()
-	g.conns[nodeID] = nc
-	g.mu.Unlock()
+	setTestConn(t, g, nodeID, nc)
 
 	received := make(chan []byte, 100)
 	go func() {

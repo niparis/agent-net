@@ -39,8 +39,7 @@ func setupFloorGateway(t *testing.T) (*Gateway, string, string, string, *clock) 
 		t.Fatal(err)
 	}
 	nc := &nodeConn{id: node}
-	g.conns[node] = nc
-	t.Cleanup(func() { delete(g.conns, node) })
+	setTestConn(t, g, node, nc)
 
 	// Register profiles
 	profiles := []protocol.WorkerProfile{

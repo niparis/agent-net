@@ -71,6 +71,8 @@ func (s *Store) recordSortFollowUp(tx *sql.Tx, q protocol.AskSortRequest, a askS
 	change := q.Change
 	if change == "" && a.aboutKind == protocol.AskAboutChange {
 		change = a.aboutID
+	} else if change == "" && a.aboutKind == protocol.AskAboutStep {
+		change, _, _, _, _ = parseStepAboutID(a.aboutID)
 	}
 	switch {
 	case change != "":

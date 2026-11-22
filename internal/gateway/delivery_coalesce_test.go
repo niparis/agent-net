@@ -169,7 +169,7 @@ func TestCoalesceWakeOnDemandOnceForRetiredOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r.g.conns = map[string]*nodeConn{}
+	resetTestConns(r.g)
 	wakes := make(chan string, 10)
 	fakeOwnerNode(t, r.g, r.a, func(h protocol.Header, raw []byte) error {
 		if h.Type == protocol.FrameSessionWake {

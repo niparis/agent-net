@@ -12,7 +12,7 @@ import (
 // a registered row, and drops oauth_clients and app_refresh_budget.
 func TestOAuthClientsMigrationMovesEachClient(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "old.db")
-	s := migrateOnly(t, path, len(migrations)-1)
+	s := migrateOnly(t, path, migrationVersion(t, oauthClientsMarker)-1)
 	defer s.Close()
 	for _, q := range []string{
 		`INSERT INTO oauth_clients(client_id,client_name,redirect_uris,grant_types,response_types,token_endpoint_auth_method,created_at,source) VALUES

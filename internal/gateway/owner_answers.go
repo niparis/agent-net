@@ -132,7 +132,7 @@ const answerBackfillLimit = 500
 // runs it at start. It is safe to run again: a row that already says the same
 // is left alone, and a mark of the same ask is not an answer.
 func (s *Store) BackfillAnswerJudgments() error {
-	items, err := scanInboxRows(s.db.Query(`SELECT `+inboxColumns+` FROM inbox_items WHERE status IN ('answered','approved','refused') AND answer<>''
+	items, err := scanInboxRows(s.db.Query(`SELECT `+inboxColumns+` FROM inbox_items WHERE status IN ('answered','approved','refused','carried_out') AND answer<>''
 		ORDER BY COALESCE(NULLIF(answered_at,0),created_at) DESC LIMIT ?`, answerBackfillLimit))
 	if err != nil {
 		return err

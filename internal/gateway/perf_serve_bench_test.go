@@ -18,7 +18,7 @@ func benchOnlineNode(b *testing.B, g *Gateway) (string, []protocol.AgentView, []
 	b.Helper()
 	// The nodes have no websocket here. Treat them as offline, so a handler
 	// that would send a frame to one only stores it.
-	g.conns = map[string]*nodeConn{}
+	resetTestConns(g)
 	all, err := g.store.Agents(protocol.QueryAgents{OnlineOnly: true})
 	if err != nil || len(all) == 0 {
 		b.Skip("no online agents")

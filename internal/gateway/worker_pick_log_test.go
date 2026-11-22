@@ -35,9 +35,7 @@ func TestWorkerPickLogLineWritten(t *testing.T) {
 	}
 	ws := <-accepted
 	nc := &nodeConn{id: node, ws: ws, dead: make(chan struct{}), cancel: cancel}
-	g.mu.Lock()
-	g.conns[node] = nc
-	g.mu.Unlock()
+	setTestConn(t, g, node, nc)
 
 	go func() {
 		for {

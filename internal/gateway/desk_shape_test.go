@@ -38,10 +38,11 @@ func carolSession(t *testing.T, s *Store, node string) string {
 // itemRow reads the Desk fields of one item.
 func itemRow(t *testing.T, s *Store, id string) (status, owner, state, category, dupOf string) {
 	t.Helper()
-	if err := s.db.QueryRow(`SELECT status,owner,state,category,dup_of FROM inbox_items WHERE id=?`, id).Scan(&status, &owner, &state, &category, &dupOf); err != nil {
+	var next string
+	if err := s.db.QueryRow(`SELECT status,owner,next_who,category FROM inbox_items WHERE id=?`, id).Scan(&status, &owner, &next, &category); err != nil {
 		t.Fatal(err)
 	}
-	return
+	return status, owner, deskState(status, owner, next), category, ""
 }
 
 func trySort(s *Store, node, chief string, a protocol.AskSortArgs) (protocol.AskSortResult, error) {
@@ -126,12 +127,12 @@ func TestDuplicateBySourceJoinsOpenItem(t *testing.T) {
 	if second.ID != first.ID {
 		t.Fatalf("duplicate by source made item %s, want it to join %s", second.ID, first.ID)
 	}
-	var joined int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE dup_of=? AND session_id=? AND status=?`, first.ID, other, protocol.ItemStatusJoined).Scan(&joined); err != nil {
+	joined, err := joinedAskers(s.db, first.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if joined != 1 {
-		t.Fatalf("joined rows for the second asker = %d, want 1", joined)
+	if len(joined) != 1 || joined[0] != other {
+		t.Fatalf("joined askers = %v, want [%s]", joined, other)
 	}
 }
 
@@ -181,12 +182,8 @@ func TestEveryJoinedAskerGetsTheAnswer(t *testing.T) {
 			t.Fatalf("asker %s got %d answers, want 1", who, n)
 		}
 	}
-	var open int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE dup_of=? AND status<>'answered'`, first.ID).Scan(&open); err != nil {
-		t.Fatal(err)
-	}
-	if open != 0 {
-		t.Fatalf("%d joined rows not answered", open)
+	if status, _, _, _, _ := itemRow(t, s, first.ID); status != "answered" {
+		t.Fatalf("item status %q, want answered", status)
 	}
 }
 
@@ -211,12 +208,8 @@ func TestChiefClosesAskRoutedToCTOAndItsDuplicates(t *testing.T) {
 	if _, err := trySort(s, node, chief, protocol.AskSortArgs{Ask: item.ID, Result: protocol.AskSortClose, Reason: "settled in chat"}); err != nil {
 		t.Fatalf("chief close of an ask it routed to the CTO: %v", err)
 	}
-	var open int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE (id=? OR dup_of=?) AND status NOT IN ('closed')`, item.ID, item.ID).Scan(&open); err != nil {
-		t.Fatal(err)
-	}
-	if open != 0 {
-		t.Fatalf("%d of the item and its duplicates are not closed", open)
+	if status, _, _, _, _ := itemRow(t, s, item.ID); status != "closed" {
+		t.Fatalf("item status %q, want closed", status)
 	}
 }
 
@@ -230,9 +223,8 @@ func TestCTOClosesRoutedAskAndItsDuplicates(t *testing.T) {
 	if _, err := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: other, Node: "demo", Text: "Raise the quota floor?", Options: []string{"yes", "no"}, SourceRef: "quota:1"}); err != nil {
 		t.Fatal(err)
 	}
-	var joined int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE dup_of=? AND status=?`, item.ID, protocol.ItemStatusJoined).Scan(&joined); err != nil || joined != 1 {
-		t.Fatalf("joined duplicates before the close = %d (%v), want 1", joined, err)
+	if joined, err := joinedAskers(s.db, item.ID); err != nil || len(joined) != 1 {
+		t.Fatalf("joined askers before the close = %v (%v), want 1", joined, err)
 	}
 	if _, err := trySort(s, node, chief, protocol.AskSortArgs{Ask: item.ID, Result: protocol.AskSortSend, To: cto, Reason: "quota is the CTO's"}); err != nil {
 		t.Fatal(err)
@@ -240,11 +232,8 @@ func TestCTOClosesRoutedAskAndItsDuplicates(t *testing.T) {
 	if _, err := s.AnswerInboxAs(item.ID, "dismiss", "cto"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE dup_of=? AND status<>'closed'`, item.ID).Scan(&joined); err != nil {
-		t.Fatal(err)
-	}
-	if joined != 0 {
-		t.Fatalf("%d duplicates not closed after the CTO closed the item", joined)
+	if status, _, _, _, _ := itemRow(t, s, item.ID); status != "dismissed" {
+		t.Fatalf("status after CTO dismiss = %q, want dismissed", status)
 	}
 }
 
@@ -610,12 +599,8 @@ func TestChiefReportsAnswerCarriedOut(t *testing.T) {
 	if _, err := trySort(s, node, chief, protocol.AskSortArgs{Ask: item.ID, Result: protocol.AskSortDone, Reason: "the key is rotated on every machine"}); err != nil {
 		t.Fatal(err)
 	}
-	var notCarried int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE (id=? OR dup_of=?) AND state<>?`, item.ID, item.ID, protocol.DeskCarriedOut).Scan(&notCarried); err != nil {
-		t.Fatal(err)
-	}
-	if notCarried != 0 {
-		t.Fatalf("%d of the item and its joined rows are not carried_out", notCarried)
+	if status, _, state, _, _ := itemRow(t, s, item.ID); status != protocol.DeskCarriedOut || state != protocol.DeskCarriedOut {
+		t.Fatalf("item status %q state %q, want carried_out", status, state)
 	}
 	for _, who := range []string{asker, other} {
 		got := false

@@ -18,7 +18,7 @@ import (
 func TestWakeOfflineMergerTaskBatched(t *testing.T) {
 	r := newDeliveryRig(t)
 	r.g.logger = log.New(io.Discard, "", 0)
-	r.g.conns = map[string]*nodeConn{}
+	resetTestConns(r.g)
 	wakes := make(chan string, 10)
 	deliveries := make(chan protocol.Message, 10)
 	fakeOwnerNode(t, r.g, r.a, func(h protocol.Header, raw []byte) error {
@@ -109,7 +109,7 @@ func TestWakeOfflineCallerTaskBatched(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.g.logger = log.New(io.Discard, "", 0)
-	r.g.conns = map[string]*nodeConn{}
+	resetTestConns(r.g)
 	wakes := make(chan string, 4)
 	deliveries := make(chan protocol.Message, 4)
 	fakeOwnerNode(t, r.g, r.a, func(h protocol.Header, raw []byte) error {
@@ -179,7 +179,7 @@ func TestWakeOfflineCallerTaskBatched(t *testing.T) {
 func TestWakeNodeOwnedTaskLeavesOfflineSessionsAsleep(t *testing.T) {
 	r := newDeliveryRig(t)
 	r.g.logger = log.New(io.Discard, "", 0)
-	r.g.conns = map[string]*nodeConn{}
+	resetTestConns(r.g)
 	fakeOwnerNode(t, r.g, r.b, func(h protocol.Header, raw []byte) error { return nil })
 	if err := r.s.AddArchitect("reviewer", "owner"); err != nil {
 		t.Fatal(err)

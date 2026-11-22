@@ -57,7 +57,7 @@ func TestReadyStepWakesOfflineCodexAndOpenCodeMerger(t *testing.T) {
 		t.Run(harness, func(t *testing.T) {
 			r := newDeliveryRig(t)
 			r.g.logger = log.New(io.Discard, "", 0)
-			r.g.conns = map[string]*nodeConn{}
+			resetTestConns(r.g)
 			wakes := make(chan map[string]string, 10)
 			fakeOwnerNode(t, r.g, r.a, func(h protocol.Header, raw []byte) error {
 				if h.Type == protocol.FrameSessionWake {

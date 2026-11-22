@@ -74,19 +74,15 @@ func TestCharterWriteSkipsConnectionsWithoutWebsocket(t *testing.T) {
 	}
 	defer gw.Close()
 	serverWS, clientWS := wsPair(t)
-	gw.mu.Lock()
 	for _, id := range []string{"fake-a", "fake-b", "fake-c"} {
-		gw.conns[id] = &nodeConn{id: id}
+		setTestConn(t, gw, id, &nodeConn{id: id})
 	}
-	gw.conns["live"] = &nodeConn{id: "live", ws: serverWS, cancel: func() {}}
-	gw.mu.Unlock()
+	setTestConn(t, gw, "live", &nodeConn{id: "live", ws: serverWS, cancel: func() {}})
 	// Close closes every websocket in the table, so the fakes leave it first.
 	defer func() {
-		gw.mu.Lock()
 		for _, id := range []string{"fake-a", "fake-b", "fake-c"} {
-			delete(gw.conns, id)
+			removeTestConn(gw, id)
 		}
-		gw.mu.Unlock()
 	}()
 
 	setLevel(t, gw.store, protocol.CharterSetRequest{Level: "global", Attr: "rules", Value: "report late defects"})
@@ -104,15 +100,9 @@ func TestOtherBroadcastsSkipConnectionsWithoutWebsocket(t *testing.T) {
 	}
 	defer gw.Close()
 	serverWS, clientWS := wsPair(t)
-	gw.mu.Lock()
-	gw.conns["fake"] = &nodeConn{id: "fake"}
-	gw.conns["live"] = &nodeConn{id: "live", ws: serverWS, cancel: func() {}}
-	gw.mu.Unlock()
-	defer func() {
-		gw.mu.Lock()
-		delete(gw.conns, "fake")
-		gw.mu.Unlock()
-	}()
+	setTestConn(t, gw, "fake", &nodeConn{id: "fake"})
+	setTestConn(t, gw, "live", &nodeConn{id: "live", ws: serverWS, cancel: func() {}})
+	defer removeTestConn(gw, "fake")
 
 	gw.settingsChanged(t.Context())
 	if got := readFrameType(t, clientWS); got != "settings.sync" {
@@ -141,9 +131,7 @@ func TestCharterBroadcastStopsWithTheGateway(t *testing.T) {
 		t.Fatal(err)
 	}
 	serverWS, clientWS := wsPair(t)
-	gw.mu.Lock()
-	gw.conns["live"] = &nodeConn{id: "live", ws: serverWS, cancel: func() {}}
-	gw.mu.Unlock()
+	setTestConn(t, gw, "live", &nodeConn{id: "live", ws: serverWS, cancel: func() {}})
 	setLevel(t, gw.store, protocol.CharterSetRequest{Level: "global", Attr: "rules", Value: "report late defects"})
 	readFrameType(t, clientWS)
 	if err := gw.Close(); err != nil {

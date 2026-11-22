@@ -35,19 +35,36 @@ func (s *Store) chiefStuckLimit() time.Duration {
 	return limit
 }
 
+// backNoteFromDetail returns the newest return note recorded in an ask's detail.
+func backNoteFromDetail(detail string) string {
+	var found string
+	for _, line := range strings.Split(detail, "\n") {
+		if rest, ok := strings.CutPrefix(line, "Why it is back: "); ok {
+			found = rest
+		} else if strings.HasPrefix(line, "back from ") {
+			found = line
+		}
+	}
+	return found
+}
+
 // stuckItem is an open Desk item that has not moved for the stuck-work limit.
 type stuckItem struct {
-	id, text, aboutKind, aboutID, state, next string
-	idle                                      time.Duration
+	id, text, aboutKind, aboutID, next string
+	idle                               time.Duration
 }
 
 // stuckItems lists the open items in one Desk state whose last move is older
 // than limit. The last move is the newest of its creation, the time it started
 // waiting for the chief and its newest sort.
 func (s *Store) stuckItems(now time.Time, limit time.Duration, state string) ([]stuckItem, error) {
-	rows, err := s.db.Query(`SELECT id,text,about_kind,about_id,state,next_who,
+	cond := `next_who NOT IN ('','owner','cto') AND NOT EXISTS (SELECT 1 FROM sessions x WHERE x.id=inbox_items.next_who AND x.harness='cto')`
+	if state == protocol.DeskWithCTO {
+		cond = `EXISTS (SELECT 1 FROM sessions x WHERE x.id=inbox_items.next_who AND x.harness='cto')`
+	}
+	rows, err := s.db.Query(`SELECT id,text,about_kind,about_id,next_who,
 		MAX(created_at, chief_at, COALESCE((SELECT MAX(at) FROM ask_sorts WHERE ask_id=inbox_items.id),0)) AS moved
-		FROM inbox_items WHERE status='open' AND state=? AND moved<=? ORDER BY moved,id`, state, now.Add(-limit).UnixNano())
+		FROM inbox_items WHERE status='open' AND `+cond+` AND moved<=? ORDER BY moved,id`, now.Add(-limit).UnixNano())
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +73,7 @@ func (s *Store) stuckItems(now time.Time, limit time.Duration, state string) ([]
 	for rows.Next() {
 		var it stuckItem
 		var moved int64
-		if err := rows.Scan(&it.id, &it.text, &it.aboutKind, &it.aboutID, &it.state, &it.next, &moved); err != nil {
+		if err := rows.Scan(&it.id, &it.text, &it.aboutKind, &it.aboutID, &it.next, &moved); err != nil {
 			return nil, err
 		}
 		it.idle = now.Sub(time.Unix(0, moved))
@@ -197,7 +214,7 @@ func (s *Store) returnIdleCTOItems(now time.Time, limit time.Duration) error {
 	}
 	for _, it := range items {
 		note := fmt.Sprintf("back from %s: no move for %d h", sessionLabel(s.db, it.next), int(it.idle/time.Hour))
-		if err := s.giveBackToChief(it, protocol.DeskWithCTO, note, now); err != nil {
+		if err := s.giveBackToChief(it, note, now); err != nil {
 			return err
 		}
 	}
@@ -205,11 +222,13 @@ func (s *Store) returnIdleCTOItems(now time.Time, limit time.Duration) error {
 }
 
 // giveBackToChief puts one routed ask back in the chief's batch with the note
-// that says why, and logs one Desk line. An ask that moved since it was read
-// (state differs) is left alone.
-func (s *Store) giveBackToChief(it stuckItem, state, note string, now time.Time) error {
-	res, err := s.db.Exec(`UPDATE inbox_items SET next_who=?, chief_at=?, chief_sent_at=0, back_note=? WHERE id=? AND state=? AND next_who=?`,
-		protocol.AskNextChief, now.UnixNano(), note, it.id, state, it.next)
+// that says why, and logs one Desk line.
+func (s *Store) giveBackToChief(it stuckItem, note string, now time.Time) error {
+	line := "Why it is back: " + note
+	res, err := s.db.Exec(`UPDATE inbox_items SET next_who=?, chief_at=?, chief_sent_at=0,
+		detail=CASE WHEN detail='' THEN ? ELSE detail||char(10)||? END
+		WHERE id=? AND status='open' AND next_who=?`,
+		protocol.AskNextChief, now.UnixNano(), line, line, it.id, it.next)
 	if err != nil {
 		return err
 	}
@@ -264,7 +283,7 @@ func (s *Store) returnOfflineHolderAsks(now time.Time, limit time.Duration) ([]p
 			return nil, err
 		}
 		if to == "" {
-			if err := s.giveBackToChief(h.stuckItem, protocol.DeskVerifying, note, now); err != nil {
+			if err := s.giveBackToChief(h.stuckItem, note, now); err != nil {
 				return nil, err
 			}
 			continue
@@ -307,8 +326,11 @@ func (s *Store) giveToReplacement(it stuckItem, to, note string, now time.Time) 
 		return none, false, err
 	}
 	defer tx.Rollback()
-	res, err := tx.Exec(`UPDATE inbox_items SET next_who=?, back_note=? WHERE id=? AND state=? AND next_who=?`,
-		to, note, it.id, protocol.DeskVerifying, it.next)
+	line := "Why it is back: " + note
+	res, err := tx.Exec(`UPDATE inbox_items SET next_who=?,
+		detail=CASE WHEN detail='' THEN ? ELSE detail||char(10)||? END
+		WHERE id=? AND status='open' AND next_who=?`,
+		to, line, line, it.id, it.next)
 	if err != nil {
 		return none, false, err
 	}

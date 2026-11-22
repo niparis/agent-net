@@ -23,7 +23,7 @@ func newReplaceRedirectRig(t *testing.T) *replaceRedirectRig {
 	t.Helper()
 	r := &replaceRedirectRig{deliveryRig: newDeliveryRig(t), delivered: make(chan protocol.Message, 16)}
 	r.g.logger = log.New(io.Discard, "", 0)
-	r.g.conns = map[string]*nodeConn{}
+	resetTestConns(r.g)
 	fakeOwnerNode(t, r.g, r.a, func(h protocol.Header, raw []byte) error {
 		if h.Type == "msg.deliver" {
 			var p protocol.MsgDeliver

@@ -460,19 +460,19 @@ func (s *Store) chiefBatchDue(now time.Time) (*chiefBatch, error) {
 			return nil, err
 		}
 	}
-	rows, err := s.db.Query(`SELECT id,kind,session_id,from_kind,about_kind,about_id,text,recommendation,options,back_note,created_at
+	rows, err := s.db.Query(`SELECT id,kind,session_id,from_kind,about_kind,about_id,text,recommendation,options,detail,created_at
 		FROM inbox_items WHERE status='open' AND next_who=? AND chief_sent_at=0 ORDER BY created_at,id LIMIT ?`, protocol.AskNextChief, protocol.ChiefBatchCap)
 	if err != nil {
 		return nil, err
 	}
 	type pending struct {
-		id, kind, session, fromKind, aboutKind, aboutID, text, rec, options, back string
-		created                                                                   int64
+		id, kind, session, fromKind, aboutKind, aboutID, text, rec, options, detail string
+		created                                                                     int64
 	}
 	var list []pending
 	for rows.Next() {
 		var p pending
-		if err := rows.Scan(&p.id, &p.kind, &p.session, &p.fromKind, &p.aboutKind, &p.aboutID, &p.text, &p.rec, &p.options, &p.back, &p.created); err != nil {
+		if err := rows.Scan(&p.id, &p.kind, &p.session, &p.fromKind, &p.aboutKind, &p.aboutID, &p.text, &p.rec, &p.options, &p.detail, &p.created); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -502,8 +502,8 @@ func (s *Store) chiefBatchDue(now time.Time) (*chiefBatch, error) {
 			fmt.Fprintf(&b, ", about %s %s", p.aboutKind, p.aboutID)
 		}
 		fmt.Fprintf(&b, "\nQuestion: %s", p.text)
-		if p.back != "" {
-			fmt.Fprintf(&b, "\nWhy it is back: %s", p.back)
+		if back := backNoteFromDetail(p.detail); back != "" {
+			fmt.Fprintf(&b, "\nWhy it is back: %s", back)
 		}
 		if p.options != "" && p.options != "[]" {
 			fmt.Fprintf(&b, "\nOptions: %s", p.options)
@@ -1114,9 +1114,8 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 // joinedRelay says whether session joined ask as a repeat, which makes it the
 // session that relayed the ask and so one that may take it back.
 func joinedRelay(q askDB, ask, session string) (bool, error) {
-	var n int
-	err := q.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE dup_of=? AND session_id=?`, ask, session).Scan(&n)
-	return n > 0, err
+	joined, err := joinedAskers(q, ask)
+	return slices.Contains(joined, session), err
 }
 
 // replacementCheck checks the newer ask the chief names when it withdraws an
@@ -1195,21 +1194,16 @@ func chiefMaySort(tx *sql.Tx, q protocol.AskSortRequest, a askSortRow) error {
 }
 
 // carriedOut records that the answer of an answered ask was carried out
-// (decision 0150). The ask and its joined rows move to carried_out, and every
-// asker gets a message; the gateway sends the messages on.
+// (decision 0150). Every asker gets a message; the gateway sends them on.
 func (s *Store) carriedOut(tx *sql.Tx, chief, ask, reason string, a askSortRow) (protocol.AskSortResult, error) {
 	var out protocol.AskSortResult
+	if a.status == protocol.DeskCarriedOut {
+		return out, reject("ask %s is already carried out", ask)
+	}
 	if a.status != "answered" && a.status != "approved" && a.status != "refused" {
 		return out, reject("ask %s is not answered, so its answer cannot be carried out yet", ask)
 	}
-	var state string
-	if err := tx.QueryRow(`SELECT state FROM inbox_items WHERE id=?`, ask).Scan(&state); err != nil {
-		return out, err
-	}
-	if state == protocol.DeskCarriedOut {
-		return out, reject("ask %s is already carried out", ask)
-	}
-	if _, err := tx.Exec(`UPDATE inbox_items SET state=? WHERE id=? OR dup_of=?`, protocol.DeskCarriedOut, ask, ask); err != nil {
+	if _, err := tx.Exec(`UPDATE inbox_items SET status=? WHERE id=?`, protocol.DeskCarriedOut, ask); err != nil {
 		return out, err
 	}
 	joined, err := joinedAskers(tx, ask)
@@ -1230,12 +1224,8 @@ func (s *Store) carriedOut(tx *sql.Tx, chief, ask, reason string, a askSortRow) 
 	return protocol.AskSortResult{Ask: ask, Result: protocol.AskSortDone, State: protocol.DeskCarriedOut}, nil
 }
 
-// commitSort writes the history row and the log line of one sort. A sort
-// answers the note of a return, so the note goes.
+// commitSort writes the history row and the log line of one sort.
 func (s *Store) commitSort(tx *sql.Tx, rec protocol.AskSort, now time.Time, logText string, a askSortRow, source string) error {
-	if _, err := tx.Exec(`UPDATE inbox_items SET back_note='' WHERE id=? AND back_note<>''`, rec.Ask); err != nil {
-		return err
-	}
 	var answered int64
 	if !rec.PrevAnsweredAt.IsZero() {
 		answered = rec.PrevAnsweredAt.UnixNano()
@@ -1656,7 +1646,7 @@ func askFullState(status, next string) string {
 			return protocol.AskWithSomeone
 		}
 		return protocol.AskStateOpen
-	case "answered", "approved", "refused":
+	case "answered", "approved", "refused", protocol.DeskCarriedOut:
 		return protocol.AskAnswered
 	default:
 		return protocol.AskClosed
@@ -1687,18 +1677,15 @@ func (s *Store) askFullCharter(ref string) ([]protocol.CharterDraftField, error)
 // its own transaction.
 func askCharterFields(q askDB, ref string) ([]protocol.CharterDraftField, error) {
 	const columns = `SELECT id,level,scope,attr,value,source,status,drafted_by,created_at FROM charter_drafts`
-	var rows *sql.Rows
-	var err error
 	switch {
 	case strings.HasPrefix(ref, legacyDraftRefPrefix):
-		id, parseErr := sourceRefID(ref, legacyDraftRefPrefix)
-		if parseErr != nil {
+		id, err := sourceRefID(ref, legacyDraftRefPrefix)
+		if err != nil {
 			return nil, nil
 		}
-		rows, err = q.Query(columns+` WHERE id=?`, id)
+		return charterRows(q, columns+` WHERE id=?`, id)
 	case strings.HasPrefix(ref, draftGroupRefPrefix):
-		key := strings.TrimPrefix(ref, draftGroupRefPrefix)
-		level, scope, ok := strings.Cut(key, ":")
+		level, scope, ok := strings.Cut(strings.TrimPrefix(ref, draftGroupRefPrefix), ":")
 		if !ok || scope == "" {
 			return nil, nil
 		}
@@ -1714,27 +1701,10 @@ func askCharterFields(q askDB, ref string) ([]protocol.CharterDraftField, error)
 	default:
 		return nil, nil
 	}
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []protocol.CharterDraftField{}
-	for rows.Next() {
-		var d protocol.CharterDraftField
-		var created int64
-		if err := rows.Scan(&d.ID, &d.Level, &d.Scope, &d.Attr, &d.Value, &d.Source, &d.Status, &d.DraftedBy, &created); err != nil {
-			return nil, err
-		}
-		d.CreatedAt = time.Unix(0, created).UTC()
-		maskDraftField(&d)
-		out = append(out, d)
-	}
-	return out, rows.Err()
 }
 
-// charterRows reads charter draft fields with a query of the same shape.
-func charterRows(q askDB, query, scope string) ([]protocol.CharterDraftField, error) {
-	rows, err := q.Query(query, scope)
+func charterRows(q askDB, query string, arg any) ([]protocol.CharterDraftField, error) {
+	rows, err := q.Query(query, arg)
 	if err != nil {
 		return nil, err
 	}

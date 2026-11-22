@@ -126,8 +126,7 @@ func TestCTOProposalValidationLeavesDatabaseUnchanged(t *testing.T) {
 			at:     time.Now(),
 		},
 	}
-	g.conns[node] = nc
-	t.Cleanup(func() { delete(g.conns, node) })
+	setTestConn(t, g, node, nc)
 	tests := []struct {
 		name string
 		args any
@@ -197,8 +196,7 @@ func TestCTOProposalValidationTeams(t *testing.T) {
 		t.Fatal(err)
 	}
 	nc := &nodeConn{id: node}
-	g.conns[node] = nc
-	t.Cleanup(func() { delete(g.conns, node) })
+	setTestConn(t, g, node, nc)
 
 	// Add an agent to be a member
 	if _, err := st.db.Exec(`INSERT INTO agents(id, display_name, created_at, updated_at) VALUES('agent-1', 'Agent 1', 1, 1)`); err != nil {

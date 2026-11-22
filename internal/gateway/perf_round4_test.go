@@ -575,7 +575,7 @@ func realCopy(t *testing.T) *Gateway {
 		t.Fatal(err)
 	}
 	for _, n := range nodes {
-		g.conns[n.NodeID] = &nodeConn{id: n.NodeID}
+		setTestConn(t, g, n.NodeID, &nodeConn{id: n.NodeID})
 	}
 	return g
 }

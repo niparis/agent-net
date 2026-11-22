@@ -91,13 +91,24 @@ jobs:
         shard: [0, 1, 2, 3]
         # The daemon tests need five shards to stay under ten minutes. The first
         # entry adds the count to its four jobs, the second adds the fifth job.
-        # Every other package runs four shards.
+        # The gateway tests replay migrations and need six shards to stay inside
+        # the 30 minute timeout on a slow runner (decision 0164). The first entry
+        # adds the count to its four jobs, the next two add the fifth and sixth.
+        # The other packages run four shards.
         include:
           - package: daemon
             shards: 5
           - package: daemon
             shard: 4
             shards: 5
+          - package: gateway
+            shards: 6
+          - package: gateway
+            shard: 4
+            shards: 6
+          - package: gateway
+            shard: 5
+            shards: 6
     steps:
       - uses: actions/checkout@v4.2.2
       - name: Go toolchain location

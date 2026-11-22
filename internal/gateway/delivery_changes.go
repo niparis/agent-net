@@ -558,7 +558,8 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 			return protocol.ChangeSubmitResult{}, err
 		}
 	}
-	if _, err := tx.Exec(`UPDATE inbox_items SET status='dismissed', answered_at=? WHERE status='open' AND id IN (SELECT item_id FROM delivery_step_inbox WHERE change_id=? AND revision<>?)`, s.now().UnixNano(), c.ID, c.Revision); err != nil {
+	if _, err := tx.Exec(`UPDATE inbox_items SET status='dismissed', answered_at=? WHERE status='open' AND about_kind=? AND about_id LIKE ? AND about_id NOT LIKE ?`,
+		s.now().UnixNano(), protocol.AskAboutStep, c.ID+":%", c.ID+":"+strconv.Itoa(c.Revision)+":%"); err != nil {
 		return protocol.ChangeSubmitResult{}, err
 	}
 	if _, err := s.closeAsks(tx, `about_kind='change' AND about_id=? AND kind='step' AND source_ref NOT LIKE ?`,
@@ -836,7 +837,8 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 		if err := s.closeChangeAsks(tx, c.ID, protocol.AskReasonChangeDone); err != nil {
 			return protocol.StepReportResult{}, err
 		}
-		if _, err := tx.Exec(`UPDATE inbox_items SET status='dismissed', answered_at=? WHERE status='open' AND id IN (SELECT item_id FROM delivery_step_inbox WHERE change_id=?)`, s.now().UnixNano(), c.ID); err != nil {
+		if _, err := tx.Exec(`UPDATE inbox_items SET status='dismissed', answered_at=? WHERE status='open' AND about_kind=? AND about_id LIKE ?`,
+			s.now().UnixNano(), protocol.AskAboutStep, c.ID+":%"); err != nil {
 			return protocol.StepReportResult{}, err
 		}
 		if closedSessions, err = closeStepTasks(tx, c); err != nil {
@@ -1125,9 +1127,8 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 		}
 		if st.Owner.Kind == protocol.OwnerPerson || (st.Owner.Kind == protocol.OwnerDelegate && st.Step == protocol.StepApprove) {
 			var open int
-			err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM delivery_step_inbox d JOIN inbox_items i ON i.id=d.item_id
-				WHERE d.change_id=? AND d.revision=? AND d.step=? AND d.for_step=? AND d.after_merge=? AND i.status='open')`,
-				c.ID, c.Revision, st.Step, st.For, boolInt(st.AfterMerge)).Scan(&open)
+			err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM inbox_items WHERE about_kind=? AND about_id LIKE ? AND status='open')`,
+				protocol.AskAboutStep, stepAboutPrefix(c.ID, c.Revision, st.StepRef)+"%").Scan(&open)
 			if err != nil {
 				return protocol.ChangeView{}, err
 			}

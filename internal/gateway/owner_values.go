@@ -52,28 +52,38 @@ func (s *Store) setOwner(key string, v any) error {
 		return err
 	}
 	defer tx.Rollback()
-	c := SettingsChange{Key: key, Level: "network", Scope: "network", Delete: v == nil}
-	old, had, err := ownerRaw(tx, key)
-	if err != nil || (v == nil && !had) {
-		return err
-	}
-	if had {
-		c.Expect = json.RawMessage(old)
-	}
-	if v != nil {
-		if c.Value, err = json.Marshal(v); err != nil {
-			return err
-		}
-	}
-	res, err := s.writeSettingsTx(tx, []SettingsChange{c}, "owner", "owner setting", "write", nil)
+	changed, err := s.setOwnerTx(tx, key, v)
 	if err != nil {
 		return err
 	}
 	if err = tx.Commit(); err != nil {
 		return err
 	}
-	if res.changed {
+	if changed {
 		s.settingsNotify()
 	}
 	return nil
+}
+
+// setOwnerTx writes an owner value inside tx and says whether it changed. The
+// caller commits, then runs settingsNotify when it changed.
+func (s *Store) setOwnerTx(tx *sql.Tx, key string, v any) (bool, error) {
+	c := SettingsChange{Key: key, Level: "network", Scope: "network", Delete: v == nil}
+	old, had, err := ownerRaw(tx, key)
+	if err != nil || (v == nil && !had) {
+		return false, err
+	}
+	if had {
+		c.Expect = json.RawMessage(old)
+	}
+	if v != nil {
+		if c.Value, err = json.Marshal(v); err != nil {
+			return false, err
+		}
+	}
+	res, err := s.writeSettingsTx(tx, []SettingsChange{c}, "owner", "owner setting", "write", nil)
+	if err != nil {
+		return false, err
+	}
+	return res.changed, nil
 }

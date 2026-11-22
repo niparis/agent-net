@@ -332,7 +332,7 @@ func TestFindMachinesAndMachineGet(t *testing.T) {
 	g := &Gateway{store: s, conns: map[string]*nodeConn{}}
 	for _, n := range nodes {
 		if n.Hostname != "desk" {
-			g.conns[n.NodeID] = &nodeConn{id: n.NodeID}
+			setTestConn(t, g, n.NodeID, &nodeConn{id: n.NodeID})
 		}
 	}
 
@@ -376,12 +376,7 @@ func TestFindMachinesAndMachineGet(t *testing.T) {
 		"opencode": {"opencode/x"},
 	})
 	nc.id = research.NodeID
-	g.mu.Lock()
-	if g.conns == nil {
-		g.conns = map[string]*nodeConn{}
-	}
-	g.conns[research.NodeID] = nc
-	g.mu.Unlock()
+	setTestConn(t, g, research.NodeID, nc)
 
 	one, err := g.MachineGet(context.Background(), protocol.MachineGetRequest{Machine: "research", Include: []string{"models"}, Limit: 2})
 	if err != nil {
@@ -490,7 +485,7 @@ func TestReadToolAnswerSize(t *testing.T) {
 	}
 	g := &Gateway{store: s, conns: map[string]*nodeConn{}}
 	for _, n := range nodes {
-		g.conns[n] = &nodeConn{id: n}
+		setTestConn(t, g, n, &nodeConn{id: n})
 	}
 	machines, err := g.FindMachines(protocol.MachinesFindRequest{})
 	if err != nil {

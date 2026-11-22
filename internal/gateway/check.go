@@ -630,9 +630,9 @@ func waitHasAsk(q askDB, sessionID string, reported *protocol.Waiting) (bool, er
 		return false, nil
 	}
 	var text string
-	err := q.QueryRow(`SELECT text FROM inbox_items WHERE source_ref=? AND kind=? AND status<>?
+	err := q.QueryRow(`SELECT text FROM inbox_items WHERE source_ref=? AND kind=?
 		ORDER BY created_at DESC, rowid DESC LIMIT 1`,
-		"waiting:"+sessionID, protocol.AskKindWaiting, protocol.ItemStatusJoined).Scan(&text)
+		"waiting:"+sessionID, protocol.AskKindWaiting).Scan(&text)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}

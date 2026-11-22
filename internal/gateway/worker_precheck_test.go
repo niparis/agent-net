@@ -39,8 +39,7 @@ func TestPrecheckRefusesExhaustedNamedModelWithAlternative(t *testing.T) {
 		t.Fatal(err)
 	}
 	nc := &nodeConn{id: node}
-	g.conns[node] = nc
-	t.Cleanup(func() { delete(g.conns, node) })
+	setTestConn(t, g, node, nc)
 	if err := st.RecordQuotaBlock(node, protocol.QuotaBlock{Provider: "agy", Until: c.t.Add(48 * time.Hour)}, "Individual quota reached"); err != nil {
 		t.Fatal(err)
 	}
@@ -104,8 +103,7 @@ func TestPrecheckDoesNotRefuseOnLevelForAutomaticModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	nc := &nodeConn{id: node}
-	g.conns[node] = nc
-	t.Cleanup(func() { delete(g.conns, node) })
+	setTestConn(t, g, node, nc)
 	frame := func(level string) []byte {
 		raw, _ := json.Marshal(protocol.WorkerStartFrame{Owner: owner, Level: level,
 			WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: gatewayBrief("internal/gateway/worker_precheck_test.go"), Harness: "claude"}})
