@@ -380,3 +380,20 @@ func TestSettingsUndoSelectedRevision(t *testing.T) {
 		t.Fatalf("undo %+v", src.undo)
 	}
 }
+
+func TestSettingsDoesNotWarnAboutOldDaemons(t *testing.T) {
+	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
+		m := newModel(size.w, size.h)
+		m.tab = settingsTab
+		m.snap.Nodes = []protocol.NodeView{
+			{Hostname: "old", Version: "v0.4.10", Online: true},
+			{Hostname: "unknown", Version: "dev", Online: true},
+		}
+		m = selectSettingsKind(m, "setting-repo")
+		view := ansi.Strip(strings.Join(m.settingsView(size.w, size.h), "\n"))
+		if strings.Contains(view, "old daemons") || strings.Contains(view, "Settings sync support unknown") {
+			t.Fatalf("%dx%d still names old daemons:\n%s", size.w, size.h, view)
+		}
+		t.Logf("--- %dx%d ---\n%s", size.w, size.h, view)
+	}
+}
