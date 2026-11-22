@@ -541,6 +541,40 @@ func machineStateName(n protocol.NodeView, online bool) string {
 
 // FindMachines answers agent_machines_find.
 func (g *Gateway) FindMachines(p protocol.MachinesFindRequest) (protocol.MachinesPage, error) {
+	if p.Machine == "" && p.ID != "" {
+		p.Machine = p.ID
+	}
+	if p.Machine != "" {
+		if len(p.Include) > 1 {
+			return protocol.MachinesPage{}, fmt.Errorf("machine_get takes at most one include category, because the cursor pages that category. Example: {\"machine\":\"research\",\"include\":[\"models\"]}")
+		}
+		res, err := g.MachineGet(context.Background(), protocol.MachineGetRequest{
+			Machine:     p.Machine,
+			Sort:        p.Sort,
+			Include:     p.Include,
+			Harness:     p.Harness,
+			ModelFilter: p.ModelFilter,
+			Limit:       p.Limit,
+			Cursor:      p.Cursor,
+			Caller:      p.Caller,
+		})
+		if err != nil {
+			return protocol.MachinesPage{}, err
+		}
+		return protocol.MachinesPage{
+			Items:       []protocol.MachineRow{res.Machine},
+			Total:       1,
+			Machine:     &res.Machine,
+			Health:      &res.Health,
+			Usage:       res.Usage,
+			Requests:    res.Requests,
+			Processes:   res.Processes,
+			Models:      res.Models,
+			Quotas:      res.Quotas,
+			TrackRecord: res.TrackRecord,
+			Playbook:    res.Playbook,
+		}, nil
+	}
 	online, err := checkOnline(p.Online, "any")
 	if err != nil {
 		return protocol.MachinesPage{}, err

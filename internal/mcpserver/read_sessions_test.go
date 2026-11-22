@@ -93,7 +93,7 @@ func TestReadToolsRegisteredFromCatalog(t *testing.T) {
 	for _, tool := range tools.Tools {
 		byName[tool.Name] = tool
 	}
-	for _, name := range []string{"agent_sessions_find", "agent_machines_find", "agent_machine_get", "agent_machine_log", "agent_projects_find"} {
+	for _, name := range []string{"agent_sessions_find", "agent_machines_find", "agent_machine_log", "agent_projects_find"} {
 		entry := catalogToolT(t, name)
 		got, ok := byName[name]
 		if !ok {
@@ -123,7 +123,6 @@ func TestReadToolResultsMatchCatalogSchema(t *testing.T) {
 	}{
 		{"agent_sessions_find", "sessions_find", map[string]any{"machine": "research"}},
 		{"agent_machines_find", "machines_find", map[string]any{"online": "any"}},
-		{"agent_machine_get", "machine_get", map[string]any{"machine": "research", "include": []string{"models"}}},
 		{"agent_machine_log", "machine_log", map[string]any{"machine": "research", "log": "daemon"}},
 		{"agent_projects_find", "projects_find", map[string]any{"name": "housing"}},
 	}

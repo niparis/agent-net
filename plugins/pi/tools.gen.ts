@@ -914,78 +914,6 @@ export const TOOL_CATALOG = [
     "daemon_fields": {}
   },
   {
-    "name": "agent_machine_get",
-    "description": "Read a machine's health, load, CPU and busiest processes, or one detail category: processes, models, quotas, track record or playbook. Processes accepts sort rss (default) or cpu and reports stop refusals. Pages long lists.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "machine": {
-          "type": "string",
-          "description": "Machine name or ID."
-        },
-        "include": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "enum": [
-              "models",
-              "quotas",
-              "track_record",
-              "playbook",
-              "processes"
-            ]
-          },
-          "description": "Requested categories of machine details.",
-          "default": [],
-          "maxItems": 1
-        },
-        "harness": {
-          "type": "string",
-          "enum": [
-            "claude",
-            "codex",
-            "opencode",
-            "pi"
-          ],
-          "description": "Harness name."
-        },
-        "model_filter": {
-          "type": "string",
-          "description": "Model ID substring."
-        },
-        "limit": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 100,
-          "default": 25,
-          "description": "Maximum rows in this page, from 1 to 100."
-        },
-        "cursor": {
-          "type": "string",
-          "description": "Cursor from the previous page."
-        },
-        "sort": {
-          "type": "string",
-          "enum": [
-            "rss",
-            "cpu"
-          ],
-          "description": "Process order, default rss. Used with include processes."
-        }
-      },
-      "required": [
-        "machine"
-      ],
-      "additionalProperties": false
-    },
-    "roles": [
-      "agent",
-      "worker"
-    ],
-    "method": "machine_get",
-    "daemon_fields": {}
-  },
-  {
     "name": "agent_machine_log",
     "description": "Read a machine's redacted daemon or gateway log for a time window, with an optional text filter. At most 1000 lines and 256 KB.",
     "inputSchema": {
@@ -1036,10 +964,56 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_machines_find",
-    "description": "List machines with online state and versions. Use agent_machine_get for one machine's models, quotas, track record or playbook.",
+    "description": "List machines with online state and versions, or read one machine's details by machine or id.",
     "inputSchema": {
       "type": "object",
       "properties": {
+        "id": {
+          "type": "string",
+          "description": "Machine name or ID: alias for machine."
+        },
+        "machine": {
+          "type": "string",
+          "description": "Machine name or ID: read one machine's details."
+        },
+        "include": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "models",
+              "quotas",
+              "track_record",
+              "playbook",
+              "processes"
+            ]
+          },
+          "description": "Requested categories of machine details.",
+          "default": [],
+          "maxItems": 1
+        },
+        "harness": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex",
+            "opencode",
+            "pi"
+          ],
+          "description": "Harness name."
+        },
+        "model_filter": {
+          "type": "string",
+          "description": "Model ID substring."
+        },
+        "sort": {
+          "type": "string",
+          "enum": [
+            "rss",
+            "cpu"
+          ],
+          "description": "Process order, default rss. Used with include processes."
+        },
         "online": {
           "type": "string",
           "enum": [
@@ -1079,7 +1053,9 @@ export const TOOL_CATALOG = [
       "worker"
     ],
     "method": "machines_find",
-    "daemon_fields": {}
+    "daemon_fields": {
+      "id": "machine"
+    }
   },
   {
     "name": "agent_mcp_servers_find",

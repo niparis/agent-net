@@ -37,11 +37,17 @@ type SessionGetRequest struct {
 
 // MachinesFindRequest is agent_machines_find.
 type MachinesFindRequest struct {
-	Online string `json:"online,omitempty"`
-	Limit  int    `json:"limit,omitempty"`
-	Cursor string `json:"cursor,omitempty"`
-	Detail string `json:"detail,omitempty"`
-	Caller string `json:"caller,omitempty"`
+	ID          string   `json:"id,omitempty"`
+	Machine     string   `json:"machine,omitempty"`
+	Include     []string `json:"include,omitempty"`
+	Harness     string   `json:"harness,omitempty"`
+	ModelFilter string   `json:"model_filter,omitempty"`
+	Sort        string   `json:"sort,omitempty"`
+	Online      string   `json:"online,omitempty"`
+	Limit       int      `json:"limit,omitempty"`
+	Cursor      string   `json:"cursor,omitempty"`
+	Detail      string   `json:"detail,omitempty"`
+	Caller      string   `json:"caller,omitempty"`
 }
 
 // MachineGetRequest is agent_machine_get. Include holds at most one category.
@@ -206,10 +212,19 @@ type HarnessRow struct {
 
 // MachinesPage answers agent_machines_find.
 type MachinesPage struct {
-	Items      []MachineRow `json:"items"`
-	Total      int          `json:"total"`
-	NextCursor string       `json:"next_cursor,omitempty"`
-	Note       string       `json:"note,omitempty"`
+	Items       []MachineRow         `json:"items"`
+	Total       int                  `json:"total"`
+	NextCursor  string               `json:"next_cursor,omitempty"`
+	Note        string               `json:"note,omitempty"`
+	Machine     *MachineRow          `json:"machine,omitempty"`
+	Health      *MachineHealth       `json:"health,omitempty"`
+	Usage       *MachineUsageNow     `json:"usage,omitempty"`
+	Requests    *GatewayRequests     `json:"requests,omitempty"`
+	Processes   *MachineProcessPage  `json:"processes,omitempty"`
+	Models      *MachineModelPage    `json:"models,omitempty"`
+	Quotas      *MachineQuotaPage    `json:"quotas,omitempty"`
+	TrackRecord *MachineTrackPage    `json:"track_record,omitempty"`
+	Playbook    *MachinePlaybookPage `json:"playbook,omitempty"`
 }
 
 // MachineModelRow is one model in the models category of agent_machine_get.

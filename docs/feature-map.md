@@ -472,9 +472,9 @@ Tools are listed by the roles that may call them. Actions are the values of the 
 | `agent_graph_read` | agent, worker, cto, bot | Read the graph: nodes with charters and rules, and their edges. Give node for one node and its edges; a shared name returns every node. | - |
 | `agent_handback` | worker | Workers only: end your task with your report and status. This is how the caller gets your result. | - |
 | `agent_learn` | agent, worker, cto | Record a finding about a model, harness, project or machine, with evidence. Findings feed the playbook; they change nothing directly. | - |
-| `agent_machine_get` | agent, worker, cto, bot | Read a machine's health, load, CPU and busiest processes, or one detail category: processes, models, quotas, track record or playbook. Processes accepts sort rss (default) or cpu and reports stop refusals. Pages long lists. | - |
+| `agent_machine_get` | bot | Read a machine's health, load, CPU and busiest processes, or one detail category: processes, models, quotas, track record or playbook. Processes accepts sort rss (default) or cpu and reports stop refusals. Pages long lists. | - |
 | `agent_machine_log` | agent, worker, cto | Read a machine's redacted daemon or gateway log for a time window, with an optional text filter. At most 1000 lines and 256 KB. | - |
-| `agent_machines_find` | agent, worker, cto, bot | List machines with online state and versions. Use agent_machine_get for one machine's models, quotas, track record or playbook. | - |
+| `agent_machines_find` | agent, worker, cto, bot | List machines with online state and versions, or read one machine's details by machine or id. | - |
 | `agent_mcp_servers_find` | agent, worker, cto | List the shared MCP servers, their health and tools, and whether you may use them. Read-only. | - |
 | `agent_mcp_test` | agent | Test that a shared MCP server answers. Does not change it. | - |
 | `agent_message_get` | agent, worker, cto, bot | Read one message's full body, delivery state and outcome. Long bodies come in chunks: follow next_body_cursor until it is absent. Attachments are in files: pass file to read one as text, then follow next_file_cursor. A binary file gives name, size and type only. | - |

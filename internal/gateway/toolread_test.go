@@ -411,6 +411,18 @@ func TestFindMachinesAndMachineGet(t *testing.T) {
 		seen[key] = true
 	}
 
+	oneFind, err := g.FindMachines(protocol.MachinesFindRequest{Machine: "research", Include: []string{"models"}, Limit: 2})
+	if err != nil || oneFind.Models == nil || len(oneFind.Models.Items) != 2 || oneFind.Machine == nil || len(oneFind.Items) != 1 {
+		t.Fatalf("find machines by machine: %+v %v", oneFind, err)
+	}
+	checkOutput(t, "agent_machines_find", oneFind)
+
+	oneFindID, err := g.FindMachines(protocol.MachinesFindRequest{ID: "research"})
+	if err != nil || oneFindID.Machine == nil || len(oneFindID.Items) != 1 {
+		t.Fatalf("find machines by id: %+v %v", oneFindID, err)
+	}
+	checkOutput(t, "agent_machines_find", oneFindID)
+
 	if _, err := g.MachineGet(context.Background(), protocol.MachineGetRequest{Machine: "research", Include: []string{"models", "quotas"}}); err == nil ||
 		!strings.Contains(err.Error(), "one") {
 		t.Fatalf("two include categories: %v", err)

@@ -17,7 +17,7 @@ var wantCTOReads = map[string]string{
 	"cto_proposals_find":  "own proposals,asks.list,permission.get",
 	"cto_intake_find":     protocol.FrameIntakeFind,
 	"agent_sessions_find": "sessions_find",
-	"agent_machines_find": "machines_find", "agent_machine_get": "machine_get", "agent_machine_log": "machine_log",
+	"agent_machines_find": "machines_find", "agent_machine_log": "machine_log",
 	"agent_projects_find": "projects_find", "agent_workers_find": "list,get",
 	"agent_messages_find": "messages", "agent_message_get": "messages,message_status,message_file",
 	"agent_graph_read": "agent_graph", "agent_settings_read": "settings_read", "agent_mcp_servers_find": "mcp_list",
@@ -130,8 +130,6 @@ func TestCTOReadCanary(t *testing.T) {
 			cases = []map[string]any{{}, {"session": id}}
 		case "agent_machine_log":
 			cases = []map[string]any{{"machine": w.cfg.Hostname, "log": "daemon"}}
-		case "agent_machine_get":
-			cases = []map[string]any{{"machine": w.cfg.Hostname}}
 		case "agent_message_get":
 			cases = []map[string]any{{"message": held.ID}}
 		case "agent_messages_find":
