@@ -134,13 +134,15 @@ type JudgmentAddRequest struct {
 // Marks keeps only the owner's Desk marks (kind correction, area chief), with
 // the ask and the chief's disposition on each row. Offset continues a page.
 type JudgmentsFindRequest struct {
-	Query  string `json:"query,omitempty"`
-	Area   string `json:"area,omitempty"`
-	Kind   string `json:"kind,omitempty"`
-	Ref    string `json:"ref,omitempty"`
-	Limit  int    `json:"limit,omitempty"`
-	Offset int    `json:"offset,omitempty"`
-	Marks  bool   `json:"marks,omitempty"`
+	JudgmentID string   `json:"judgment_id,omitempty"`
+	IDs        []string `json:"ids,omitempty"`
+	Query      string   `json:"query,omitempty"`
+	Area       string   `json:"area,omitempty"`
+	Kind       string   `json:"kind,omitempty"`
+	Ref        string   `json:"ref,omitempty"`
+	Limit      int      `json:"limit,omitempty"`
+	Offset     int      `json:"offset,omitempty"`
+	Marks      bool     `json:"marks,omitempty"`
 	// Stale lists only gateway notes that nobody read or wrote for 30 days.
 	Stale bool `json:"stale,omitempty"`
 }

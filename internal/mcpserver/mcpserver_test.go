@@ -73,15 +73,20 @@ func TestToolsForwardToDaemon(t *testing.T) {
 	for _, tl := range tools.Tools {
 		have[tl.Name] = true
 	}
-	want := []string{"agent_announce", "agent_owner_ask", "agent_session_get", "agent_sessions_find", "agent_learn", "agent_note_write", "agent_notes_find",
-		"agent_graph_read", "agent_machines_find", "agent_machine_get", "agent_messages_find", "agent_message_get",
+	want := []string{"agent_announce", "agent_owner_ask", "agent_sessions_find", "agent_learn", "agent_note_write", "agent_notes_find",
+		"agent_graph_read", "agent_machines_find", "agent_messages_find",
 		"agent_message_send", "agent_message_reply", "agent_message_handoff", "agent_permission_propose",
 		"agent_projects_find", "agent_project_add",
-		"agent_protected_providers_get", "agent_protected_providers_set", "agent_worker_start", "agent_worker_stop",
+		"agent_worker_start", "agent_worker_stop",
 		"agent_worker_rate", "agent_worker_profiles_find", "agent_worker_profile_add", "agent_worker_profile_remove"}
 	for _, name := range want {
 		if !have[name] {
 			t.Errorf("tool %s is not listed", name)
+		}
+	}
+	for _, name := range []string{"agent_protected_providers_get", "agent_protected_providers_set"} {
+		if have[name] {
+			t.Errorf("tool %s is listed for ordinary agents", name)
 		}
 	}
 	for _, name := range []string{"agent_list", "agent_get", "agent_nodes", "agent_project_list", "agent_messages",
@@ -111,8 +116,6 @@ func TestToolsForwardToDaemon(t *testing.T) {
 		{"agent_message_send", "send", map[string]any{"to": "s_x", "body": "hi"}},
 		{"agent_message_reply", "reply", map[string]any{"message": "m_1", "body": "b"}},
 		{"agent_messages_find", "messages_find", map[string]any{"limit": 5}},
-		{"agent_message_get", "message_get", map[string]any{"message": "m_1"}},
-		{"agent_session_get", "session_get", map[string]any{"session": "s_1"}},
 		{"agent_announce", "announce", map[string]any{"task": "t"}},
 		{"agent_machines_find", "machines_find", map[string]any{}},
 		{"agent_project_add", "project_add", map[string]any{"paths": []string{"~/code/a"}}},
@@ -176,10 +179,22 @@ func TestReplyOutcomeForwarded(t *testing.T) {
 
 func TestProtectedProvidersForwardOwnerGate(t *testing.T) {
 	var methods []string
-	cs := connect(t, func(_ context.Context, method string, _ any) (json.RawMessage, error) {
+	st, ct := mcp.NewInMemoryTransports()
+	srv := NewCTO(func(_ context.Context, method string, _ any) (json.RawMessage, error) {
 		methods = append(methods, method)
 		return nil, errors.New("owner only")
-	})
+	}, "test")
+	ctx := context.Background()
+	ss, err := srv.Connect(ctx, st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ss.Close() })
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cs.Close() })
 	for _, name := range []string{"agent_protected_providers_get", "agent_protected_providers_set"} {
 		args := map[string]any{}
 		if strings.HasSuffix(name, "_set") {
@@ -191,7 +206,7 @@ func TestProtectedProvidersForwardOwnerGate(t *testing.T) {
 			t.Fatalf("%s: %v %+v", name, err, result)
 		}
 	}
-	if strings.Join(methods, ",") != "protected_providers_get,protected_providers_set" {
+	if strings.Join(methods, ",") != "agent_protected_providers_get,agent_protected_providers_set" {
 		t.Fatalf("calls: %v", methods)
 	}
 }

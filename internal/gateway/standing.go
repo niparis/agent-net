@@ -262,12 +262,34 @@ func (s *Store) FindJudgments(q protocol.JudgmentsFindRequest) ([]protocol.Stand
 		notes, stale = 1, 1
 		cutoff = time.Now().Add(-time.Duration(protocol.NotesStaleDays) * 24 * time.Hour).Unix()
 	}
+	idFilter := map[string]bool{}
+	if q.JudgmentID != "" {
+		idFilter[q.JudgmentID] = true
+	}
+	for _, id := range q.IDs {
+		if id != "" {
+			idFilter[id] = true
+		}
+	}
 	const cols = `o.id,o.text,o.saved_at,o.source,o.tags,o.pinned,o.updated_at,%s,o.kind,o.area,o.ref,o.action,o.category,o.scope,o.scope_ref,o.name,o.description,o.used_at,o.uses`
 	const noteFilter = ` AND (o.name='' OR ?=1) AND (?=0 OR (o.name<>'' AND MAX(o.used_at,o.saved_at,o.updated_at)<?))`
 	var rows *sql.Rows
 	var err error
-	match := ftsMatch(q.Query)
-	if match != "" {
+	if len(idFilter) > 0 {
+		var placeholders []string
+		var args []any
+		for id := range idFilter {
+			placeholders = append(placeholders, "?")
+			args = append(args, id)
+		}
+		inClause := strings.Join(placeholders, ",")
+		query := fmt.Sprintf(`SELECT `+cols+`
+ FROM standing_orders o
+ WHERE o.id IN (%s) AND o.voided_at=0
+ ORDER BY o.pinned DESC, o.saved_at DESC, o.rowid DESC LIMIT ? OFFSET ?`, `''`, inClause)
+		args = append(args, limit, offset)
+		rows, err = s.db.Query(query, args...)
+	} else if match := ftsMatch(q.Query); match != "" {
 		rows, err = s.db.Query(fmt.Sprintf(`SELECT `+cols, `snippet(standing_orders_fts,0,'[',']','...',24)`)+`
  FROM standing_orders_fts JOIN standing_orders o ON o.rowid=standing_orders_fts.rowid
  WHERE standing_orders_fts MATCH ?

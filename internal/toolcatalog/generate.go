@@ -36,7 +36,7 @@ var pluginMethods = map[string]string{
 	"agent_projects_find": "projects_find", "agent_workers_find": protocol.MethodWorkersFind,
 	"agent_messages_find": protocol.MethodMessagesFind, "agent_message_get": protocol.MethodMessageGet,
 	"agent_graph_read": "agent_graph", "agent_settings_read": "settings_read", "agent_mcp_servers_find": protocol.MethodMCPServersFind,
-	"agent_worker_profiles_find": "worker_profiles", "agent_message_send": "send",
+	"agent_worker_profiles_find": "worker_profiles", "agent_worker_profile_add": protocol.OpWorkerProfileAdd, "agent_worker_profile_remove": protocol.OpWorkerProfileRemove, "agent_message_send": "send",
 	"agent_file_send":        "file_send",
 	"agent_message_withdraw": "withdraw",
 	"agent_message_reply":    "reply", "agent_message_handoff": "handoff", "agent_announce": "announce",

@@ -592,7 +592,7 @@ func testCTOToolsThroughFakeOpenCode(t *testing.T) {
 	call("graph_change", map[string]any{"action": "edge_remove", "from": "architecture", "to": "component", "kind": "depends"})
 	call("graph_change", map[string]any{"action": "undo"})
 	call("graph_change", map[string]any{"action": "edge_remove", "from": "architecture", "to": "component", "kind": "depends"})
-	call("cto_op", map[string]any{"method": "node_remove", "args": map[string]any{"name": "component"}})
+	call("graph_change", map[string]any{"action": "node_remove", "name": "component"})
 	call("agent_machines_find", map[string]any{})
 	call("agent_projects_find", map[string]any{})
 	call("graph_change", map[string]any{"action": "settings_set", "node": "architecture", "setting": "merge_authority", "value": "ask"})
@@ -635,7 +635,7 @@ func testCTOToolsThroughFakeOpenCode(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("CTO reply not delivered")
 	}
-	call("agent_session_get", map[string]any{"session": target})
+	call("agent_sessions_find", map[string]any{"session": target})
 	call("agent_learn", map[string]any{"subject_kind": "model", "subject": "fake/m1", "finding": "Needs clear tasks", "evidence": []string{"two runs"}})
 	call("worker_change", map[string]any{"action": "start", "project": "shop", "harness": "opencode", "model": "fake/m1", "task": "test", "touches": []string{"tests"}})
 	eventually(t, "approved worker task comes from the owner", func() bool {

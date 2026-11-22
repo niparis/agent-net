@@ -1,0 +1,1 @@
+{"input":{"type":"object","properties":{"name":{"type":"string","description":"Name of the registered worker profile to remove."}},"required":["name"],"additionalProperties":false},"output":{"type":"object","properties":{"removed":{"type":"boolean"}},"required":["removed"],"additionalProperties":false}}

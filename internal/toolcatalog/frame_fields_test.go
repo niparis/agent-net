@@ -16,8 +16,9 @@ import (
 // pause_id), so the clash cannot happen. Any other such argument must be
 // mapped in daemonFields.
 var nestedFrameArgs = map[string][]string{
-	"agent_message_send": {"type"},
-	"agent_nudge_resume": {"id"},
+	"agent_message_send":         {"type"},
+	"agent_nudge_resume":         {"id"},
+	"agent_worker_profiles_find": {"id"},
 }
 
 // TestAgentArgumentsAvoidFrameFieldNames fails on an agent or worker argument

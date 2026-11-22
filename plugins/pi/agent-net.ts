@@ -1079,7 +1079,7 @@ export default function (pi: ExtensionAPI) {
     "agent_announce",
     "Announce your task",
     `Tell the network what you are working on now, so other agents can find you with agent_sessions_find. REQUIRED: ${ANNOUNCE_RULE} ` +
-      "The task shows in agent_sessions_find and agent_session_get. Also fill expertise once: what you can answer about (services, repos, machines, logs you can see), so others ask you instead of guessing. " +
+      "The task shows in agent_sessions_find. Also fill expertise once: what you can answer about (services, repos, machines, logs you can see), so others ask you instead of guessing. " +
       "Function is ignored.",
     Type.Object({
       task: Type.String({ description: "Your current task, in one short line" }),
@@ -1199,69 +1199,6 @@ export default function (pi: ExtensionAPI) {
     );
   }
 
-  defineTool(
-    "agent_mcp_add",
-    "Add MCP server",
-    "Register an MCP server so that EVERY agent session on EVERY machine can use its tools, named <server>__<tool>. " +
-      "A stdio server (command, args) runs on THIS machine. A remote server (url) is reached from this machine. " +
-      "The server is connected and its tools listed before it is saved; the result names the tools. Ask your user before adding a server." +
-      SECRETS,
-    Type.Object({
-      name: Type.String({ description: "Server name: lowercase letters, numbers and hyphens, at most 24 characters" }),
-      command: Type.Optional(Type.String({ description: "Stdio server: the program to run on this machine" })),
-      args: Type.Optional(Type.Array(Type.String(), { description: "Stdio server: arguments (stored in the registry and shown to everyone: no secrets)" })),
-      env: Type.Optional(Type.Array(Type.String(), { description: "Stdio server: NAMES of environment variables to pass to the process, read on this machine" })),
-      url: Type.Optional(Type.String({ description: "Remote server: its MCP endpoint URL" })),
-      transport: Type.Optional(Type.String({ description: "Remote server: http (streamable HTTP, default) or sse" })),
-      headers: Type.Optional(
-        Type.Array(
-          Type.Object({
-            name: Type.String({ description: "Header name, for example Authorization" }),
-            env: Type.Optional(Type.String({ description: "NAME of an environment variable on this machine that holds the value" })),
-            file: Type.Optional(Type.String({ description: "PATH of a file on this machine that holds the value" })),
-          }),
-          { description: "Remote server: headers to send, each with the value's source" },
-        ),
-      ),
-      timeout_seconds: Type.Optional(Type.Number({ description: "Per-call timeout in seconds (default 60, at most 600)" })),
-    }),
-    "mcp_add",
-    (r) => `Added.\n${formatMcpServer(r.server ?? {})}\n${EVERYWHERE}`,
-    (p: any) => {
-      const server: Record<string, unknown> = { name: p.name, timeout_sec: p.timeout_seconds };
-      if (p.url) {
-        server.transport = p.transport || "http";
-        server.url = p.url;
-        server.headers = p.headers;
-      } else {
-        server.transport = "stdio";
-        server.command = p.command;
-        server.args = p.args;
-        server.env = p.env;
-      }
-      return { server };
-    },
-  );
-
-
-  defineTool(
-    "agent_mcp_test",
-    "Test MCP server",
-    "Check a registered MCP server now: its host connects, lists the tools and reports health.",
-    Type.Object({ name: Type.String({ description: "The server name from agent_mcp_servers_find" }) }),
-    "mcp_test",
-    (r) => (r.ok ? `Healthy. Tools: ${(r.tools ?? []).map((t: any) => t.name).join(", ") || "-"}` : `Failed: ${r.detail}`),
-  );
-
-  defineTool(
-    "agent_mcp_remove",
-    "Remove MCP server",
-    "Remove a registered MCP server. Its tools disappear for every agent on every machine. Ask your user first.",
-    Type.Object({ name: Type.String({ description: "The server name from agent_mcp_servers_find" }) }),
-    "mcp_remove",
-    (r) => `Removed ${r.removed ?? "the server"}. ${EVERYWHERE}`,
-  );
-
   const PROJECT_NOTE = "Registered projects are the folders where workers may start sessions on this machine.";
 
   defineTool(
@@ -1293,14 +1230,6 @@ export default function (pi: ExtensionAPI) {
     "A worker is an agent session that agent-net starts for you with nobody watching it. It uses the project's own permission settings. " +
     "It ends on its own after 60 minutes without messages, after 4 hours, or when you end. Only start one when your user asks.";
 
-
-  defineTool("agent_worker_profile_add", "Register worker profile", "Register a worker profile when the owner asks. Reusing a profile name replaces its model or effort. The model must be available on an installed harness.", Type.Object({
-    name: Type.Optional(Type.String({ description: "Optional profile name. Reuse an existing name to replace its model or effort." })),
-    harness: Type.String({ description: "Installed worker harness." }),
-    model: Type.String({ description: "Model ID or loose name." }),
-    effort: Type.Optional(Type.String({ description: "Optional reasoning effort." })),
-  }), "worker_profile_add");
-  defineTool("agent_worker_profile_remove", "Remove worker profile", "Remove a worker profile when the owner asks.", Type.Object({ name: Type.String({ description: "Registered profile name." }) }), "worker_profile_remove");
 
   defineTool(
     "agent_handback",

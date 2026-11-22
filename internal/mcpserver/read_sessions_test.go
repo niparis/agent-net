@@ -93,7 +93,7 @@ func TestReadToolsRegisteredFromCatalog(t *testing.T) {
 	for _, tool := range tools.Tools {
 		byName[tool.Name] = tool
 	}
-	for _, name := range []string{"agent_sessions_find", "agent_session_get", "agent_machines_find", "agent_machine_get", "agent_machine_log", "agent_projects_find"} {
+	for _, name := range []string{"agent_sessions_find", "agent_machines_find", "agent_machine_log", "agent_projects_find"} {
 		entry := catalogToolT(t, name)
 		got, ok := byName[name]
 		if !ok {
@@ -122,9 +122,7 @@ func TestReadToolResultsMatchCatalogSchema(t *testing.T) {
 		args         map[string]any
 	}{
 		{"agent_sessions_find", "sessions_find", map[string]any{"machine": "research"}},
-		{"agent_session_get", "session_get", map[string]any{"session": "s01"}},
 		{"agent_machines_find", "machines_find", map[string]any{"online": "any"}},
-		{"agent_machine_get", "machine_get", map[string]any{"machine": "research", "include": []string{"models"}}},
 		{"agent_machine_log", "machine_log", map[string]any{"machine": "research", "log": "daemon"}},
 		{"agent_projects_find", "projects_find", map[string]any{"name": "housing"}},
 	}
@@ -198,22 +196,22 @@ func TestReadToolsForwardFilters(t *testing.T) {
 	}
 
 	calls = nil
-	res, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_machine_get", Arguments: map[string]any{
+	res, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_machines_find", Arguments: map[string]any{
 		"machine": "research", "include": []string{"track_record"}, "harness": "claude", "model_filter": "terra", "limit": 5,
 	}})
 	if err != nil || res.IsError {
-		t.Fatalf("agent_machine_get: %v %+v", err, res)
+		t.Fatalf("agent_machines_find: %v %+v", err, res)
 	}
 	p = calls[0].params
-	if calls[0].method != "machine_get" || p["machine"] != "research" || p["model_filter"] != "terra" {
-		t.Fatalf("machine_get params: %+v", calls[0])
+	if calls[0].method != "machines_find" || p["machine"] != "research" || p["model_filter"] != "terra" {
+		t.Fatalf("machines_find params: %+v", calls[0])
 	}
 }
 
 func TestMachineGetTwoCategoriesRefused(t *testing.T) {
 	var calls []call
 	cs := connect(t, readToolCaller(t, &calls))
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_machine_get", Arguments: map[string]any{
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_machines_find", Arguments: map[string]any{
 		"machine": "research", "include": []string{"models", "quotas"},
 	}})
 	if err != nil {
@@ -237,7 +235,6 @@ func TestCTOAvailabilityMatchesSessionOutputSchemas(t *testing.T) {
 		output any
 	}{
 		{"agent_sessions_find", map[string]any{"items": []any{session}, "total": 1}},
-		{"agent_session_get", map[string]any{"session": session}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := resolvedSchema(t, catalogToolT(t, tc.name).OutputSchema).Validate(tc.output); err != nil {

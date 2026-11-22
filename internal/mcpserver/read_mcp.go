@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -38,6 +39,8 @@ type roMCPFindOut struct {
 }
 
 type roProfileFindIn struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
 	Limit  int    `json:"limit"`
 	Cursor string `json:"cursor"`
 	Detail string `json:"detail"`
@@ -153,7 +156,14 @@ func roFindWorkerProfiles(ctx context.Context, call Caller, in roProfileFindIn) 
 	if err != nil {
 		return roProfileFindOut{}, err
 	}
-	filters := roFilterKey(struct{ Detail string }{in.Detail})
+	targetName := in.Name
+	if targetName == "" && in.ID != "" {
+		targetName = in.ID
+	}
+	filters := roFilterKey(struct {
+		Name   string
+		Detail string
+	}{targetName, in.Detail})
 	after, err := roDecodeCursor(in.Cursor, "agent_worker_profiles_find", roCursorCaller(ctx), filters)
 	if err != nil {
 		return roProfileFindOut{}, err
@@ -164,6 +174,9 @@ func roFindWorkerProfiles(ctx context.Context, call Caller, in roProfileFindIn) 
 	}
 	rows := make([]roProfileRow, 0, len(profiles))
 	for _, profile := range profiles {
+		if targetName != "" && !strings.EqualFold(profile.Name, targetName) {
+			continue
+		}
 		var on []string
 		for _, machine := range profile.MachineAvailability {
 			if machine.Available {

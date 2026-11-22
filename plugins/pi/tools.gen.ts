@@ -914,78 +914,6 @@ export const TOOL_CATALOG = [
     "daemon_fields": {}
   },
   {
-    "name": "agent_machine_get",
-    "description": "Read a machine's health, load, CPU and busiest processes, or one detail category: processes, models, quotas, track record or playbook. Processes accepts sort rss (default) or cpu and reports stop refusals. Pages long lists.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "machine": {
-          "type": "string",
-          "description": "Machine name or ID."
-        },
-        "include": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "enum": [
-              "models",
-              "quotas",
-              "track_record",
-              "playbook",
-              "processes"
-            ]
-          },
-          "description": "Requested categories of machine details.",
-          "default": [],
-          "maxItems": 1
-        },
-        "harness": {
-          "type": "string",
-          "enum": [
-            "claude",
-            "codex",
-            "opencode",
-            "pi"
-          ],
-          "description": "Harness name."
-        },
-        "model_filter": {
-          "type": "string",
-          "description": "Model ID substring."
-        },
-        "limit": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 100,
-          "default": 25,
-          "description": "Maximum rows in this page, from 1 to 100."
-        },
-        "cursor": {
-          "type": "string",
-          "description": "Cursor from the previous page."
-        },
-        "sort": {
-          "type": "string",
-          "enum": [
-            "rss",
-            "cpu"
-          ],
-          "description": "Process order, default rss. Used with include processes."
-        }
-      },
-      "required": [
-        "machine"
-      ],
-      "additionalProperties": false
-    },
-    "roles": [
-      "agent",
-      "worker"
-    ],
-    "method": "machine_get",
-    "daemon_fields": {}
-  },
-  {
     "name": "agent_machine_log",
     "description": "Read a machine's redacted daemon or gateway log for a time window, with an optional text filter. At most 1000 lines and 256 KB.",
     "inputSchema": {
@@ -1036,10 +964,56 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_machines_find",
-    "description": "List machines with online state and versions. Use agent_machine_get for one machine's models, quotas, track record or playbook.",
+    "description": "List machines with online state and versions, or read one machine's details by machine or id.",
     "inputSchema": {
       "type": "object",
       "properties": {
+        "id": {
+          "type": "string",
+          "description": "Machine name or ID: alias for machine."
+        },
+        "machine": {
+          "type": "string",
+          "description": "Machine name or ID: read one machine's details."
+        },
+        "include": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "models",
+              "quotas",
+              "track_record",
+              "playbook",
+              "processes"
+            ]
+          },
+          "description": "Requested categories of machine details.",
+          "default": [],
+          "maxItems": 1
+        },
+        "harness": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex",
+            "opencode",
+            "pi"
+          ],
+          "description": "Harness name."
+        },
+        "model_filter": {
+          "type": "string",
+          "description": "Model ID substring."
+        },
+        "sort": {
+          "type": "string",
+          "enum": [
+            "rss",
+            "cpu"
+          ],
+          "description": "Process order, default rss. Used with include processes."
+        },
         "online": {
           "type": "string",
           "enum": [
@@ -1079,7 +1053,9 @@ export const TOOL_CATALOG = [
       "worker"
     ],
     "method": "machines_find",
-    "daemon_fields": {}
+    "daemon_fields": {
+      "id": "machine"
+    }
   },
   {
     "name": "agent_mcp_servers_find",
@@ -1146,48 +1122,6 @@ export const TOOL_CATALOG = [
     "daemon_fields": {
       "server": "name"
     }
-  },
-  {
-    "name": "agent_message_get",
-    "description": "Read one message's full body, delivery state and outcome. Long bodies come in chunks: follow next_body_cursor until it is absent. Attachments are in files: pass file to read one as text, then follow next_file_cursor. A binary file gives name, size and type only.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "message": {
-          "type": "string",
-          "description": "Message ID."
-        },
-        "body_cursor": {
-          "type": "string",
-          "description": "Cursor from the previous body chunk."
-        },
-        "max_bytes": {
-          "type": "integer",
-          "minimum": 256,
-          "maximum": 16384,
-          "default": 8192,
-          "description": "Maximum UTF-8 bytes per chunk."
-        },
-        "file": {
-          "type": "string",
-          "description": "Attachment to read as text."
-        },
-        "file_cursor": {
-          "type": "string",
-          "description": "Cursor from the previous file page."
-        }
-      },
-      "required": [
-        "message"
-      ],
-      "additionalProperties": false
-    },
-    "roles": [
-      "agent",
-      "worker"
-    ],
-    "method": "message_get",
-    "daemon_fields": {}
   },
   {
     "name": "agent_message_handoff",
@@ -1411,10 +1345,37 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_messages_find",
-    "description": "Find messages by conversation, peer, direction or time. Rows hold a preview; use agent_message_get for the body.",
+    "description": "Find messages by conversation, peer, direction or time, or read one message's full body and delivery state by message or id.",
     "inputSchema": {
       "type": "object",
       "properties": {
+        "id": {
+          "type": "string",
+          "description": "Message ID: read one message in full detail."
+        },
+        "message": {
+          "type": "string",
+          "description": "Message ID: read one message in full detail."
+        },
+        "body_cursor": {
+          "type": "string",
+          "description": "Cursor from the previous body chunk."
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 256,
+          "maximum": 16384,
+          "default": 8192,
+          "description": "Maximum UTF-8 bytes per chunk."
+        },
+        "file": {
+          "type": "string",
+          "description": "Attachment to read as text."
+        },
+        "file_cursor": {
+          "type": "string",
+          "description": "Cursor from the previous file page."
+        },
         "conversation": {
           "type": "string",
           "description": "Conversation ID."
@@ -1467,7 +1428,9 @@ export const TOOL_CATALOG = [
       "worker"
     ],
     "method": "messages_find",
-    "daemon_fields": {}
+    "daemon_fields": {
+      "id": "message"
+    }
   },
   {
     "name": "agent_note_write",
@@ -1524,10 +1487,25 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_notes_find",
-    "description": "Read notes with their bodies. Your start text lists only titles, the most used first. Give text to search names, descriptions and bodies, scope to narrow, stale to list notes nobody used for 30 days.",
+    "description": "Read notes with their bodies. Your start text lists only titles, the most used first. Give text to search names, descriptions and bodies, scope to narrow, id, ids or name to find specific notes, stale to list notes nobody used for 30 days.",
     "inputSchema": {
       "type": "object",
       "properties": {
+        "id": {
+          "type": "string",
+          "description": "Note ID: read one note in full detail."
+        },
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Note IDs: read notes by ID."
+        },
+        "name": {
+          "type": "string",
+          "description": "Note name: read notes matching name."
+        },
         "text": {
           "type": "string",
           "description": "Words to look for in names, descriptions and bodies. Empty lists the most used."
@@ -1554,7 +1532,9 @@ export const TOOL_CATALOG = [
       "worker"
     ],
     "method": "notes_find",
-    "daemon_fields": {}
+    "daemon_fields": {
+      "id": "note_id"
+    }
   },
   {
     "name": "agent_nudge_pause",
@@ -1817,10 +1797,21 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_owner_judgments_find",
-    "description": "Search the owner's past decisions, standing orders, rules, answers and corrections. Ranked for a query, else newest first. marks: true returns only the Desk marks with their asks; offset pages. Agent notes show only with kind feedback, fact or reference (see agent_notes_find to read yours).",
+    "description": "Search the owner's past decisions, standing orders, rules, answers and corrections by text, id or ids. Ranked for a query, else newest first. marks: true returns only the Desk marks with their asks; offset pages. Agent notes show only with kind feedback, fact or reference (see agent_notes_find to read yours).",
     "inputSchema": {
       "type": "object",
       "properties": {
+        "id": {
+          "type": "string",
+          "description": "Judgment ID: read one judgment."
+        },
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Judgment IDs: read judgments by ID."
+        },
         "query": {
           "type": "string",
           "description": "Text or keywords to search across owner judgments."
@@ -1872,7 +1863,9 @@ export const TOOL_CATALOG = [
       "worker"
     ],
     "method": "judgments_find",
-    "daemon_fields": {}
+    "daemon_fields": {
+      "id": "judgment_id"
+    }
   },
   {
     "name": "agent_permission_propose",
@@ -2016,34 +2009,19 @@ export const TOOL_CATALOG = [
     "daemon_fields": {}
   },
   {
-    "name": "agent_session_get",
-    "description": "Read one session's profile: folder, branch, charter, rules, delegation, worker facts. Use agent_sessions_find when the ID or name is unknown.",
+    "name": "agent_sessions_find",
+    "description": "Find sessions by machine, project, harness, model, kind, online state or text, or read one session in full by id or session.",
     "inputSchema": {
       "type": "object",
       "properties": {
+        "id": {
+          "type": "string",
+          "description": "Session ID or exact name: read one session in full detail."
+        },
         "session": {
           "type": "string",
-          "description": "Session ID or exact name."
-        }
-      },
-      "required": [
-        "session"
-      ],
-      "additionalProperties": false
-    },
-    "roles": [
-      "agent",
-      "worker"
-    ],
-    "method": "session_get",
-    "daemon_fields": {}
-  },
-  {
-    "name": "agent_sessions_find",
-    "description": "Find sessions by machine, project, harness, model, kind, online state or text. Use agent_session_get for one.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
+          "description": "Session ID or exact name: read one session in full detail."
+        },
         "machine": {
           "type": "string",
           "description": "Machine."
@@ -2154,7 +2132,9 @@ export const TOOL_CATALOG = [
       "worker"
     ],
     "method": "sessions_find",
-    "daemon_fields": {}
+    "daemon_fields": {
+      "id": "session"
+    }
   },
   {
     "name": "agent_settings_read",
@@ -2502,11 +2482,87 @@ export const TOOL_CATALOG = [
     "daemon_fields": {}
   },
   {
-    "name": "agent_worker_profiles_find",
-    "description": "List worker profiles: harness, model, effort and the machines that can run them. Read before choosing a worker model.",
+    "name": "agent_worker_profile_add",
+    "description": "Register a worker harness and model when the owner asks. Reusing a profile name replaces its model or effort. The model is checked against the harness's live model list on each chosen machine; workers cannot use this tool.",
     "inputSchema": {
       "type": "object",
       "properties": {
+        "name": {
+          "type": "string",
+          "description": "Optional profile name. Reuse an existing name to replace its model or effort; the harness and resolved model form the default name."
+        },
+        "harness": {
+          "type": "string",
+          "description": "Installed worker harness: opencode, pi, codex or claude."
+        },
+        "model": {
+          "type": "string",
+          "description": "Model ID or loose model name to resolve against the live harness model list."
+        },
+        "effort": {
+          "type": "string",
+          "description": "Optional model reasoning or thinking effort."
+        },
+        "machines": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional machines the profile is for. Empty checks every online machine with the harness."
+        },
+        "test": {
+          "type": "boolean",
+          "description": "Run a short real start to test the model before saving. False only checks the live model list."
+        }
+      },
+      "required": [
+        "harness",
+        "model"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent"
+    ],
+    "method": "worker_profile_add",
+    "daemon_fields": {}
+  },
+  {
+    "name": "agent_worker_profile_remove",
+    "description": "Remove a registered worker profile when the owner asks. Workers cannot use this tool.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the registered worker profile to remove."
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent"
+    ],
+    "method": "worker_profile_remove",
+    "daemon_fields": {}
+  },
+  {
+    "name": "agent_worker_profiles_find",
+    "description": "List worker profiles: harness, model, effort and the machines that can run them, or read one profile by id or name. Read before choosing a worker model.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Profile name or ID: read one worker profile."
+        },
+        "name": {
+          "type": "string",
+          "description": "Profile name: read one worker profile."
+        },
         "limit": {
           "type": "integer",
           "minimum": 1,

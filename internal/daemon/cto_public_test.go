@@ -16,12 +16,13 @@ import (
 var wantCTOReads = map[string]string{
 	"cto_proposals_find":  "own proposals,asks.list,permission.get",
 	"cto_intake_find":     protocol.FrameIntakeFind,
-	"agent_sessions_find": "sessions_find", "agent_session_get": "session_get",
-	"agent_machines_find": "machines_find", "agent_machine_get": "machine_get", "agent_machine_log": "machine_log",
+	"agent_sessions_find": "sessions_find",
+	"agent_machines_find": "machines_find", "agent_machine_log": "machine_log",
 	"agent_projects_find": "projects_find", "agent_workers_find": "list,get",
-	"agent_messages_find": "messages", "agent_message_get": "messages,message_status,message_file",
-	"agent_graph_read": "agent_graph", "agent_settings_read": "settings_read", "agent_mcp_servers_find": "mcp_list",
+	"agent_messages_find": "messages",
+	"agent_graph_read":    "agent_graph", "agent_settings_read": "settings_read", "agent_mcp_servers_find": "mcp_list",
 	"agent_worker_profiles_find": "worker_profiles", "agent_owner_judgments_find": "judgments_find", "projects_layout": "projects_layout",
+	"agent_protected_providers_get": protocol.OpProtectedProvidersGet,
 }
 
 func TestCTOReadParitySources(t *testing.T) {
@@ -125,14 +126,10 @@ func TestCTOReadCanary(t *testing.T) {
 		switch name {
 		case "cto_proposals_find":
 			cases = append(cases, map[string]any{"id": "p_1"})
-		case "agent_session_get":
-			cases = []map[string]any{{"session": id}}
+		case "agent_sessions_find":
+			cases = []map[string]any{{}, {"session": id}}
 		case "agent_machine_log":
 			cases = []map[string]any{{"machine": w.cfg.Hostname, "log": "daemon"}}
-		case "agent_machine_get":
-			cases = []map[string]any{{"machine": w.cfg.Hostname}}
-		case "agent_message_get":
-			cases = []map[string]any{{"message": held.ID}}
 		case "agent_messages_find":
 			cases = append(cases, map[string]any{"conversation": held.ConversationID})
 		case "agent_graph_read":
@@ -191,8 +188,8 @@ func TestCTOReadParity(t *testing.T) {
 			t.Errorf("%s has a source the allowlist does not pin", view)
 		}
 	}
-	got, ge := w.d.runCTOToolRaw(context.Background(), "agent_session_get", args)
-	want, we := w.d.ctoReadConn().dispatch(context.Background(), "session_get", args)
+	got, ge := w.d.runCTOToolRaw(context.Background(), "agent_sessions_find", args)
+	want, we := w.d.ctoReadConn().dispatch(context.Background(), "sessions_find", args)
 	gb, _ := json.Marshal(got)
 	wb, _ := json.Marshal(want)
 	// last_seen_ago is derived from the wall clock at each read, so two reads

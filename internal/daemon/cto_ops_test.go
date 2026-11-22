@@ -57,12 +57,10 @@ func TestCTOOpsHavePurposeSchemaExampleAndGate(t *testing.T) {
 		}
 	}
 	for name, want := range map[string]string{
-		"apps_list":       "direct",
-		"process_stop":    "irreversible",
-		"app_revoke":      "irreversible",
-		"node_remove":     "proposal",
-		"machine_remove":  "proposal",
-		"session_replace": "direct",
+		"gateway_backup":  "direct",
+		"charter_history": "direct",
+		"inbox_list":      "direct",
+		"step_report":     "direct",
 	} {
 		op, ok := mcpserver.CTOOpByName(name)
 		if !ok {
@@ -88,70 +86,55 @@ func TestCTOOpsListGroupsAndFilter(t *testing.T) {
 			seen[op.Name] = true
 		}
 	}
-	for _, name := range []string{"apps_list", "process_stop", "node_remove", "gateway_backup", "charter_history", "inbox_list", "session_replace", "step_report"} {
+	for _, name := range []string{"gateway_backup", "charter_history", "inbox_list", "step_report", "chief_set", "permission_apply"} {
 		if !seen[name] {
 			t.Errorf("op list misses %s", name)
 		}
 	}
-	filtered := ctoOpsCatalog("process")
-	if len(filtered) != 1 || len(filtered[0].Ops) != 1 || filtered[0].Ops[0].Name != "process_stop" {
-		t.Fatalf("filter process = %+v", filtered)
+	filtered := ctoOpsCatalog("backup")
+	if len(filtered) != 1 || len(filtered[0].Ops) != 1 || filtered[0].Ops[0].Name != "gateway_backup" {
+		t.Fatalf("filter backup = %+v", filtered)
 	}
 }
 
 func TestCTOOpResolvesToTheSamePathAsTheTypedTool(t *testing.T) {
-	// Direct: apps_list runs mcp_change action apps_list.
-	op, tool, args, err := ctoOpCall(json.RawMessage(`{"method":"apps_list","args":{}}`))
+	// step_report runs agent_step_report.
+	op, tool, args, err := ctoOpCall(json.RawMessage(`{"method":"step_report","args":{"change":"ch_1","step":"review","result":"pass","commit":"0123456789012345678901234567890123456789"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if op.Name != "apps_list" || tool != "mcp_change" {
-		t.Fatalf("direct route %s %s", op.Name, tool)
+	if op.Name != "step_report" || tool != "agent_step_report" {
+		t.Fatalf("step_report route %s %s", op.Name, tool)
 	}
-	var direct map[string]any
-	if err := json.Unmarshal(args, &direct); err != nil {
+	var stepArgs map[string]any
+	if err := json.Unmarshal(args, &stepArgs); err != nil {
 		t.Fatal(err)
 	}
-	if direct["action"] != "apps_list" {
-		t.Fatalf("direct args %s", args)
-	}
-	concrete, _, action, err := ctoConcreteCall(tool, args)
-	if err != nil || concrete != "apps.list" || action != "apps_list" {
-		t.Fatalf("direct concrete %s %s: %v", concrete, action, err)
+	if stepArgs["change"] != "ch_1" {
+		t.Fatalf("step args %s", args)
 	}
 
-	// Proposal: node_remove runs graph_change action node_remove and reaches
-	// the same concrete call the typed tool used.
-	op, tool, args, err = ctoOpCall(json.RawMessage(`{"method":"node_remove","args":{"name":"old-node","reason":"retired"}}`))
+	// Owner ops run settings_change area operator.
+	op, tool, args, err = ctoOpCall(json.RawMessage(`{"method":"gateway_backup","args":{"path":"/tmp/bak"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if op.Name != "node_remove" || tool != "graph_change" {
-		t.Fatalf("proposal route %s %s", op.Name, tool)
+	if op.Name != "gateway_backup" || tool != "settings_change" {
+		t.Fatalf("owner op route %s %s", op.Name, tool)
 	}
-	class, err := ctoClass(tool, args)
-	if err != nil || class != ctoProposal {
-		t.Fatalf("proposal class %s: %v", class, err)
-	}
-	concrete, concreteArgs, action, err := ctoConcreteCall(tool, args)
-	if err != nil || concrete != "node_remove" || action != "node_remove" {
-		t.Fatalf("proposal concrete %s %s: %v", concrete, action, err)
-	}
-	var proposed map[string]any
-	if err := json.Unmarshal(concreteArgs, &proposed); err != nil {
+	var ownerArgs map[string]any
+	if err := json.Unmarshal(args, &ownerArgs); err != nil {
 		t.Fatal(err)
 	}
-	if proposed["name"] != "old-node" || proposed["reason"] != "retired" {
-		t.Fatalf("proposal args %s", concreteArgs)
+	if ownerArgs["area"] != "operator" || ownerArgs["method"] != "gateway_backup" {
+		t.Fatalf("owner args %s", args)
 	}
 }
 
 func TestCTOOpIncompleteIrreversibleRunsNothing(t *testing.T) {
 	for _, raw := range []string{
-		`{"method":"process_stop","args":{"node_id":"n_1"}}`,
-		`{"method":"process_stop","args":{"node_id":"n_1","pids":[]}}`,
-		`{"method":"app_revoke","args":{}}`,
-		`{"method":"node_remove","args":{}}`,
+		`{"method":"permission_apply","args":{"rules":["Bash(make:*)"],"targets":["demo"]}}`,
+		`{"method":"bar_edit","args":{"add":["Rule."]}}`,
 	} {
 		if _, _, _, err := ctoOpCall(json.RawMessage(raw)); err == nil {
 			t.Errorf("%s ran", raw)
@@ -164,11 +147,29 @@ func TestCTOOpIncompleteIrreversibleRunsNothing(t *testing.T) {
 
 func TestCTOOpUnknownArgumentIsRefused(t *testing.T) {
 	for _, raw := range []string{
-		`{"method":"apps_list","args":{"bogus":true}}`,
-		`{"method":"process_stop","args":{"node_id":"n_1","pids":[1],"bogus":true}}`,
+		`{"method":"chief_set","args":{"bogus":true}}`,
+		`{"method":"bar_edit","args":{"project":"demo","bogus":true}}`,
 	} {
 		if _, _, _, err := ctoOpCall(json.RawMessage(raw)); err == nil || !strings.Contains(err.Error(), "bogus") {
 			t.Errorf("%s: %v", raw, err)
 		}
+	}
+}
+
+func TestCTOOpsListPinsNoAliases(t *testing.T) {
+	aliases := []string{
+		"apps_list", "app_grant", "app_ungrant", "app_rename", "app_revoke",
+		"public_status", "public_on", "public_off", "machine_remove",
+		"machine_rotate", "process_stop", "session_replace", "node_remove",
+		"repo_archive", "agent_tombstone",
+	}
+	for _, alias := range aliases {
+		if _, ok := mcpserver.CTOOpByName(alias); ok {
+			t.Errorf("cto_ops still includes moved alias %s", alias)
+		}
+	}
+	ops := mcpserver.CTOOps()
+	if len(ops) != 98 {
+		t.Fatalf("expected 98 ops, got %d", len(ops))
 	}
 }

@@ -65,7 +65,6 @@ func TestReminderUntilAnnounce(t *testing.T) {
 		args map[string]any
 	}{
 		{"agent_sessions_find", nil},
-		{"agent_session_get", map[string]any{"session": "s_1"}},
 		{"agent_machines_find", nil},
 		{"agent_message_send", map[string]any{"to": "s_x", "body": "hi"}}, // an error result
 	} {

@@ -125,6 +125,18 @@ func TestWorkerProfilesFind(t *testing.T) {
 	if len(on) != 1 || on[0] != "build" {
 		t.Fatalf("available_on = %+v", on)
 	}
+
+	byName := roCall(t, cs, "agent_worker_profiles_find", map[string]any{"name": "alpha"})
+	byNameItems := roPageItems(t, byName)
+	if len(byNameItems) != 1 || byNameItems[0]["name"] != "alpha" {
+		t.Fatalf("find by name: %+v", byNameItems)
+	}
+
+	byID := roCall(t, cs, "agent_worker_profiles_find", map[string]any{"id": "alpha"})
+	byIDItems := roPageItems(t, byID)
+	if len(byIDItems) != 1 || byIDItems[0]["name"] != "alpha" {
+		t.Fatalf("find by id: %+v", byIDItems)
+	}
 }
 
 // A limit outside 1..100 is refused with the valid range.

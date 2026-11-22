@@ -88,7 +88,7 @@ func TestCTONetworkMessages(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("missing approved reply")
 	}
-	status, err := w.d.readCTOTool(context.Background(), "agent_message_get", json.RawMessage(fmt.Sprintf(`{"message":%q}`, incoming.ID)))
+	status, err := w.d.readCTOTool(context.Background(), "agent_messages_find", json.RawMessage(fmt.Sprintf(`{"message":%q}`, incoming.ID)))
 	b, _ = json.Marshal(status)
 	if err != nil || !strings.Contains(string(b), "question for CTO") {
 		t.Fatalf("own status: %s %v", b, err)

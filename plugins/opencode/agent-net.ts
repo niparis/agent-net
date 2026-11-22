@@ -988,7 +988,7 @@ const TOOLS: ToolDef[] = [
     name: "agent_announce",
     description:
       "Tell the network what you are working on now, so other agents can find you with agent_sessions_find. " +
-      `REQUIRED: ${ANNOUNCE_RULE} The task shows in agent_sessions_find and agent_session_get. ` +
+      `REQUIRED: ${ANNOUNCE_RULE} The task shows in agent_sessions_find. ` +
       "Also fill expertise once: what you can answer about (services, repos, machines, logs you can see), so others ask you instead of guessing. " +
       "Function is ignored.",
     properties: {
@@ -1029,8 +1029,6 @@ const TOOLS: ToolDef[] = [
     method: "project_add",
     format: formatProjectAdd,
   },
-  { name: "agent_worker_profile_add", description: "Register a worker profile when the owner asks. Reusing a profile name replaces its model or effort. The model must be available on an installed harness.", properties: { name: str("Optional profile name. Reuse an existing name to replace its model or effort."), harness: str("Installed worker harness."), model: str("Model ID or loose name."), effort: str("Optional reasoning effort.") }, required: ["harness", "model"], method: "worker_profile_add", format: (r) => JSON.stringify(r) },
-  { name: "agent_worker_profile_remove", description: "Remove a registered worker profile when the owner asks.", properties: { name: str("Registered profile name.") }, required: ["name"], method: "worker_profile_remove", format: (r) => JSON.stringify(r) },
   {
     name: "agent_handback",
     description:

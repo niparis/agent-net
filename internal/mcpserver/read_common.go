@@ -99,6 +99,16 @@ func catalogInput(name string, req *mcp.CallToolRequest) (json.RawMessage, error
 	if err := resolved.Validate(&value); err != nil {
 		return nil, fmt.Errorf("%v. Example: %s", err, catalogExample(name))
 	}
+	if fields, ok := value.(map[string]any); ok {
+		for from, to := range toolcatalog.DaemonFields(name) {
+			if v, ok := fields[from]; ok {
+				delete(fields, from)
+				if _, has := fields[to]; !has {
+					fields[to] = v
+				}
+			}
+		}
+	}
 	return json.Marshal(value)
 }
 

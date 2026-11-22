@@ -19,12 +19,33 @@ type profileRemoveIn struct {
 }
 
 func addWorkerProfileTools(s *mcp.Server, run func(context.Context, string, any) (any, error)) {
-	mcp.AddTool(s, &mcp.Tool{Name: "agent_worker_profile_add", Description: "Register a worker harness and model when the owner asks. Reusing a profile name replaces its model or effort. The model is checked against the harness's live model list on each chosen machine; workers cannot use this tool."}, func(ctx context.Context, _ *mcp.CallToolRequest, in profileAddIn) (*mcp.CallToolResult, any, error) {
-		out, err := run(ctx, protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Name: in.Name, Harness: in.Harness, Model: in.Model, Effort: in.Effort, Machines: in.Machines, Test: in.Test})
-		return nil, out, err
+	addCatalogTool(s, "agent_worker_profile_add", func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var in profileAddIn
+		if err := decodeCatalogInput("agent_worker_profile_add", req, &in); err != nil {
+			return toolError(err)
+		}
+		out, err := run(ctx, protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{
+			Name:     in.Name,
+			Harness:  in.Harness,
+			Model:    in.Model,
+			Effort:   in.Effort,
+			Machines: in.Machines,
+			Test:     in.Test,
+		})
+		if err != nil {
+			return toolError(err)
+		}
+		return catalogResult("agent_worker_profile_add", out)
 	})
-	mcp.AddTool(s, &mcp.Tool{Name: "agent_worker_profile_remove", Description: "Remove a registered worker profile when the owner asks. Workers cannot use this tool."}, func(ctx context.Context, _ *mcp.CallToolRequest, in profileRemoveIn) (*mcp.CallToolResult, any, error) {
+	addCatalogTool(s, "agent_worker_profile_remove", func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var in profileRemoveIn
+		if err := decodeCatalogInput("agent_worker_profile_remove", req, &in); err != nil {
+			return toolError(err)
+		}
 		out, err := run(ctx, protocol.OpWorkerProfileRemove, protocol.WorkerProfileRequest{Name: in.Name})
-		return nil, out, err
+		if err != nil {
+			return toolError(err)
+		}
+		return catalogResult("agent_worker_profile_remove", out)
 	})
 }

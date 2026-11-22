@@ -23,7 +23,7 @@ graph_get charter_history edge_history node_settings_get settings_owner_read cha
 sign_in_list nudge_stats friction_find`
 
 const CTOOperatorChanges = `operator_undo sessions_archive cto_enter cto_send session_enter apps.public.restore session_pin apps.refuse apps.public.url gateway_backup
-session_stop session_resume session_replace session_agent_set notes_copy notes_uncopy learned_answer hidden_set onboarding_set quality_set timezone_set
+session_stop session_resume session_agent_set notes_copy notes_uncopy learned_answer hidden_set onboarding_set quality_set timezone_set
 worker_floors_set worker_floors_reset difficulty_set team_write delivery_owner_set merger_set merger_restore chief_set ask_undo ask_mark changes_owner_report worker_defect sign_in_raise bar_edit
 permission_apply permission_undo friction_mark edge_set`
 

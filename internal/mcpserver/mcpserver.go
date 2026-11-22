@@ -126,7 +126,6 @@ func NewWithInstructions(call Caller, version, instructions string, note ...func
 		s.AddReceivingMiddleware(staleToolsNote(note[0]))
 	}
 
-	tool := func(name, desc string) *mcp.Tool { return &mcp.Tool{Name: name, Description: desc} }
 	run := func(ctx context.Context, method string, params any) (any, error) {
 		raw, err := call(ctx, method, params)
 		if err != nil {
@@ -142,16 +141,6 @@ func NewWithInstructions(call Caller, version, instructions string, note ...func
 		return out, nil
 	}
 
-	mcp.AddTool(s, tool("agent_protected_providers_get", "Read protected providers. Owner only."),
-		func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
-			out, err := run(ctx, protocol.OpProtectedProvidersGet, nil)
-			return nil, out, err
-		})
-	mcp.AddTool(s, tool("agent_protected_providers_set", "Set protected providers and reason. Owner only; ask the owner before changing this setting."),
-		func(ctx context.Context, _ *mcp.CallToolRequest, in protocol.ProtectedProviders) (*mcp.CallToolResult, any, error) {
-			out, err := run(ctx, protocol.OpProtectedProvidersSet, in)
-			return nil, out, err
-		})
 	addRegistryTools(s, run)
 	addDueTool(s, run)
 	addMessageWriteTools(s, run)

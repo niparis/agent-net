@@ -245,6 +245,12 @@ func TestFindSessionsFullDetail(t *testing.T) {
 	if byName.Session.Worker.Caller.ID != ids["s01"] || byName.Session.Worker.Difficulty != "hard" {
 		t.Fatalf("worker facts: %+v", byName.Session.Worker)
 	}
+
+	bySession, err := s.FindSessions(protocol.SessionsFindRequest{Session: ids["s01"]})
+	if err != nil || len(bySession.Items) != 1 || bySession.Session == nil || bySession.Session.Folder != "/work/s01" {
+		t.Fatalf("sessions find by session: %+v %v", bySession, err)
+	}
+	checkOutput(t, "agent_sessions_find", bySession)
 }
 
 func TestSessionReadCarriesLegacyCharter(t *testing.T) {
@@ -398,6 +404,12 @@ func TestFindMachinesAndMachineGet(t *testing.T) {
 		}
 		seen[key] = true
 	}
+
+	oneFind, err := g.FindMachines(protocol.MachinesFindRequest{Machine: "research", Include: []string{"models"}, Limit: 2})
+	if err != nil || oneFind.Models == nil || len(oneFind.Models.Items) != 2 || oneFind.Machine == nil || len(oneFind.Items) != 1 {
+		t.Fatalf("find machines by machine: %+v %v", oneFind, err)
+	}
+	checkOutput(t, "agent_machines_find", oneFind)
 
 	if _, err := g.MachineGet(context.Background(), protocol.MachineGetRequest{Machine: "research", Include: []string{"models", "quotas"}}); err == nil ||
 		!strings.Contains(err.Error(), "one") {

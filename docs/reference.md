@@ -506,14 +506,14 @@ names are `overview`, `sessions`, `session`, `proposals`, `feed`, `messages`,
 
 | CTO read | Source and detail |
 |---|---|
-| `agent_sessions_find`, `agent_session_get` | Sessions and one session's full profile, as for an agent |
-| `agent_owner_judgments_find` | The owner's judgments (orders, rules, answers, corrections) by query, area or kind |
+| `agent_sessions_find` | Sessions and one session's full profile by id or session |
+| `agent_owner_judgments_find` | The owner's judgments (orders, rules, answers, corrections) by text, id or ids |
 | `agent_notes_find`, `agent_note_write` | The CTO's notes (agent `cto`) and the owner-wide ones, as for an agent (see Gateway notes) |
-| `agent_machines_find`, `agent_machine_get` | Machines, and one machine's health, load and busiest processes, or its models, quotas, track record or playbook |
+| `agent_machines_find` | Machines, and one machine's details by id or machine (health, load, processes, models, quotas, track record, playbook) |
 | `agent_machine_log` | Redacted daemon or gateway log on one online machine |
 | `agent_projects_find` | Public projects and where they live |
 | `agent_workers_find` | Workers; the CTO defaults to `started_by: anyone` |
-| `agent_messages_find`, `agent_message_get` | The CTO's own conversations, and one message body in chunks. `agent_message_get` also reads a received text file with `file` and `file_cursor`. |
+| `agent_messages_find` | The CTO's own conversations, and one message body in chunks by id or message. Also reads a received text file with `file` and `file_cursor`. |
 | `agent_graph_read` | The public graph: nodes with their full charters, maturity and rules (name and value), and edges with kind, mode and request rule. `node` reads one node; when a repo, an agent or a team share that name, every match comes back after the repo node, each labelled with its `kind` and `ref` and with its own charter, and `note` says how many. A typed read (`typed: true` with a `ref`) returns one node. `view: "guide"` returns the charter guide in `note`. |
 | `agent_mcp_servers_find` | Shared MCP servers |
 | `agent_settings_read`, `agent_worker_profiles_find` | Public settings values and history, and public worker profiles |

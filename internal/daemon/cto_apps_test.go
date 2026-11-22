@@ -67,8 +67,9 @@ func TestCTOConnectedApps(t *testing.T) {
 			if action == "app_rename" {
 				args["name"] = "After"
 			}
-			raw, _ := json.Marshal(map[string]any{"method": action, "args": args})
-			result, err := n.d.runCTOTool(ctx, "cto_op", raw)
+			args["action"] = action
+			raw, _ := json.Marshal(args)
+			result, err := n.d.runCTOTool(ctx, "mcp_change", raw)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -172,8 +173,8 @@ func TestCTOConnectedAppsReads(t *testing.T) {
 	g := startGatewayWith(t, t.TempDir(), "", 0, func(o *gateway.Options) { o.FunnelRunner = ctoAppsRunner{} })
 	n := startNode(t, g, nodeOpts{})
 	for _, action := range []string{"apps_list", "public_status"} {
-		raw, _ := json.Marshal(map[string]any{"method": action, "args": map[string]any{}})
-		if _, err := n.d.runCTOTool(context.Background(), "cto_op", raw); err != nil {
+		raw, _ := json.Marshal(map[string]any{"action": action})
+		if _, err := n.d.runCTOTool(context.Background(), "mcp_change", raw); err != nil {
 			t.Fatal(err)
 		}
 	}

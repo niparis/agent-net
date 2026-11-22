@@ -62,8 +62,7 @@ const server = createServer((conn) => {
       if (line.method === "harness_activity") progressFrom.push(conn.sessionID);
       if (line.method === "status") statuses.push({ id: conn.sessionID, params: line.params });
       const result =
-        charterReply && line.method === "sessions_find" ? { items: [charterReply], total: 1 }
-        : charterReply && line.method === "session_get" ? { session: charterReply }
+        charterReply && line.method === "sessions_find" ? { items: [charterReply], total: 1, session: charterReply }
         : graphReply && line.method === "agent_graph" ? graphReply
         : line.method === "project_add"
           ? { machine: "mac", dry_run: !!line.params.dry_run,
@@ -347,7 +346,7 @@ await test("agent_machines_find lists machines with their harnesses", async () =
   stop();
 });
 
-await test("agent_sessions_find and agent_session_get show public charter fields", async () => {
+await test("agent_sessions_find shows public charter fields for a list and one session", async () => {
   freshHub();
   const sessions = new Map([["ses_charter", session("ses_charter", "/work/c")]]);
   let tools;
@@ -358,9 +357,9 @@ await test("agent_sessions_find and agent_session_get show public charter fields
     online: true, status: "idle", task: "t", function: "housing work", last_seen: "2026-01-01T12:00:00Z", task_started: null,
     purpose: "description", charter: { purpose: "description", purpose_fallback: true, accepts: ["bugs"], refuses: ["special cases"], feature_requests: "ask first" } };
   try {
-    for (const [name, args] of [["agent_sessions_find", { detail: "full" }], ["agent_session_get", { session: "s_x" }]]) {
-      const out = (await tools.find((t) => t.name === name).execute(args, { sessionID: "ses_charter" })).content;
-      for (const want of ["description", "purpose_fallback", "bugs", "special cases", "ask first", "housing work"]) if (!out.includes(want)) throw new Error(name + " missing " + want);
+    for (const args of [{ detail: "full" }, { session: "s_x" }]) {
+      const out = (await tools.find((t) => t.name === "agent_sessions_find").execute(args, { sessionID: "ses_charter" })).content;
+      for (const want of ["description", "purpose_fallback", "bugs", "special cases", "ask first", "housing work"]) if (!out.includes(want)) throw new Error("agent_sessions_find missing " + want);
     }
   } finally { charterReply = null; stop(); }
 });
@@ -396,7 +395,7 @@ await test("agent_graph_read reads every charter and edge from the public graph"
   }
 });
 
-await test("agent_session_get shows the session's node rules and delegation policy", async () => {
+await test("agent_sessions_find shows the session's node rules", async () => {
   freshHub();
   const sessions = new Map([["ses_rules", session("ses_rules", "/work/rules")]]);
   let tools;
@@ -405,12 +404,12 @@ await test("agent_session_get shows the session's node rules and delegation poli
   await until("hello for ses_rules", () => registered("ses_rules"));
   charterReply = { id: "s_1", name: "x", kind: "agent", machine: "mac", project: "p", harness: "opencode", model: "m",
     online: true, status: "idle", task: "t", last_seen: "2026-01-01T12:00:00Z", task_started: null,
-    purpose: "Sells things", rules: { deploy_rule: "owner" }, delegation: "workers read-only" };
+    purpose: "Sells things", rules: { deploy_rule: "owner" } };
   try {
-    const get = tools.find((t) => t.name === "agent_session_get");
-    if (!get) throw new Error("agent_session_get is not registered");
-    const out = (await get.execute({ session: "s_1" }, { sessionID: "ses_rules" })).content;
-    for (const want of ["deploy_rule", "owner", "workers read-only"]) {
+    const find = tools.find((t) => t.name === "agent_sessions_find");
+    if (!find) throw new Error("agent_sessions_find is not registered");
+    const out = (await find.execute({ session: "s_1" }, { sessionID: "ses_rules" })).content;
+    for (const want of ["deploy_rule", "owner"]) {
       if (!out.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(out));
     }
   } finally {
@@ -1306,7 +1305,7 @@ await test("agent_announce asks for a task, and tool results end with the remind
   stop();
 });
 
-await test("the four read tools send the tool input to their own daemon method", async () => {
+await test("the read tools send the tool input to their own daemon method", async () => {
   freshHub();
   const sessions = new Map([["ses_m", session("ses_m", "/work/m")]]);
   let tools;
@@ -1323,7 +1322,7 @@ await test("the four read tools send the tool input to their own daemon method",
   // (no online_only, no renamed fields).
   const cases = [
     ["agent_messages_find", "messages_find", { conversation: "c_1", with: "bob", direction: "in", since: "2026-01-01T00:00:00Z", limit: 5, cursor: "cur" }],
-    ["agent_message_get", "message_get", { message: "m_1", max_bytes: 256, body_cursor: "b", file: "a.md", file_cursor: "f" }],
+    ["agent_messages_find", "messages_find", { message: "m_1", max_bytes: 256, body_cursor: "b", file: "a.md", file_cursor: "f" }],
     ["agent_workers_find", "workers_find", { started_by: "anyone", state: "any", project: "alpha", machine: "mac", limit: 3 }],
     ["agent_mcp_servers_find", "servers_find", { usable_only: false, limit: 2 }],
   ];

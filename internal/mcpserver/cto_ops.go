@@ -38,7 +38,7 @@ type CTOOp struct {
 	Method string
 }
 
-var ctoOpGroupOrder = []string{"Connected apps", "Machines", "Sessions", "Graph", "Delivery", "Owner reads", "Owner changes"}
+var ctoOpGroupOrder = []string{"Delivery", "Owner reads", "Owner changes"}
 
 // ctoOwnerOpTypes is the argument schema of owner operations that moved to the
 // op tier with a strict contract. Every other owner operation keeps the free
@@ -138,59 +138,6 @@ func ownerOpExample(method string) string {
 	return "{}"
 }
 
-// concreteOpSchema builds the strict schema of a moved merged action from the
-// concrete tool schema. reason is allowed only for a proposal.
-func concreteOpSchema(concrete string, required []string, proposal bool) map[string]any {
-	spec, ok := ctoConcreteTools[concrete]
-	if !ok {
-		panic("mcpserver: no concrete CTO schema for op " + concrete)
-	}
-	schema := ctoSchema(concrete, spec)
-	props, _ := schema["properties"].(map[string]any)
-	if props == nil {
-		props = map[string]any{}
-		schema["properties"] = props
-	}
-	if proposal {
-		props["reason"] = map[string]any{"type": "string", "description": "Why"}
-		props["owner_words"] = ownerWordsProperty
-	}
-	if len(required) > 0 {
-		schema["required"] = required
-	}
-	return schema
-}
-
-func mergedOp(name, group, purpose, tool, action, concrete string, required []string, proposal bool, example string) CTOOp {
-	field := "action"
-	if tool == "settings_change" {
-		field = "area"
-	}
-	return CTOOp{Name: name, Group: group, Purpose: purpose, Example: example, Tool: tool, Field: field, Action: action, Schema: concreteOpSchema(concrete, required, proposal)}
-}
-
-// ctoMovedOps are the operations removed from the everyday tools.
-var ctoMovedOps = []CTOOp{
-	mergedOp("apps_list", "Connected apps", "List connected apps and their IDs.", "mcp_change", "apps_list", "apps.list", nil, false, `{}`),
-	mergedOp("app_grant", "Connected apps", "Grant a shared MCP server to a bot.", "mcp_change", "app_grant", "apps.grant", []string{"id", "grant"}, false, `{"id":"app-1","grant":"mcp server browser"}`),
-	mergedOp("app_ungrant", "Connected apps", "Remove a bot's grant of a shared MCP server.", "mcp_change", "app_ungrant", "apps.ungrant", []string{"id", "grant"}, false, `{"id":"app-1","grant":"mcp server browser"}`),
-	mergedOp("app_rename", "Connected apps", "Rename an active app.", "mcp_change", "app_rename", "apps.rename", []string{"id", "name"}, false, `{"id":"app-1","name":"Builder"}`),
-	mergedOp("app_revoke", "Connected apps", "Revoke an app and its credentials; cannot be undone.", "mcp_change", "app_revoke", "apps.revoke", []string{"id"}, false, `{"id":"app-1"}`),
-	mergedOp("public_status", "Connected apps", "Read internet access for connected apps.", "mcp_change", "public_status", "apps.public.status", nil, false, `{}`),
-	mergedOp("public_on", "Connected apps", "Turn internet access on for connected apps.", "mcp_change", "public_on", "apps.public.on", nil, false, `{}`),
-	mergedOp("public_off", "Connected apps", "Turn internet access off for connected apps.", "mcp_change", "public_off", "apps.public.off", nil, false, `{}`),
-
-	mergedOp("machine_remove", "Machines", "Remove a machine and revoke its token; owner approval, or at once with his words in owner_words.", "settings_change", "machine_remove", "machine_remove", []string{"node_id"}, true, `{"node_id":"node-id","reason":"retired"}`),
-	mergedOp("machine_rotate", "Machines", "Rotate an online machine token; owner approval, or at once with his words in owner_words.", "settings_change", "machine_rotate", "machine_rotate", []string{"node_id"}, true, `{"node_id":"node-id"}`),
-	mergedOp("process_stop", "Machines", "Stop processes on a machine: TERM then KILL; no undo.", "settings_change", "process_stop", "process_stop", []string{"node_id", "pids"}, false, `{"node_id":"node-id","pids":[1234,5678]}`),
-
-	mergedOp("session_replace", "Sessions", "Move an old session's work to the session that replaced it.", "session_change", "replace", "session_replace", []string{"old_session", "new_session"}, false, `{"old_session":"old-session-id","new_session":"new-session-id"}`),
-
-	mergedOp("node_remove", "Graph", "Remove an edgeless architect; owner approval, or at once with his words in owner_words.", "graph_change", "node_remove", "node_remove", []string{"name"}, true, `{"name":"old-node","reason":"retired"}`),
-	mergedOp("repo_archive", "Graph", "Deactivate a typed repo identity; owner approval, or at once with his words in owner_words.", "graph_change", "repo_archive", "repo_archive", []string{"ref"}, true, `{"ref":{"kind":"repo","id":"old-repo"},"reason":"retired"}`),
-	mergedOp("agent_tombstone", "Graph", "Deactivate a typed agent identity; owner approval, or at once with his words in owner_words.", "graph_change", "agent_tombstone", "agent_tombstone", []string{"ref"}, true, `{"ref":{"kind":"agent","id":"old-agent"},"reason":"retired"}`),
-}
-
 // ctoStepReportOp reports one delivery step as the CTO itself. It is not a
 // merged action tool: it runs the typed agent_step_report path of the daemon
 // with the CTO's own session, and the gateway checks that the caller named the
@@ -211,11 +158,9 @@ func ctoStepReportOp() CTOOp {
 }
 
 var ctoOps = func() []CTOOp {
-	ops := append([]CTOOp(nil), ctoMovedOps...)
-	ops = append(ops, ctoStepReportOp())
-	seen := map[string]bool{}
-	for _, op := range ops {
-		seen[op.Name] = true
+	ops := []CTOOp{ctoStepReportOp()}
+	seen := map[string]bool{
+		"step_report": true,
 	}
 	addOwner := func(method, group string, read bool) {
 		if seen[method] {
@@ -294,38 +239,6 @@ func ValidateCTOOpArgs(op CTOOp, raw json.RawMessage) error {
 	}
 	if err := resolved.Validate(value); err != nil {
 		return ctoOpSchemaError(op, err)
-	}
-	fields, _ := value.(map[string]any)
-	stringField := func(key string) string {
-		text, _ := fields[key].(string)
-		return strings.TrimSpace(text)
-	}
-	switch op.Name {
-	case "process_stop":
-		pids, _ := fields["pids"].([]any)
-		if stringField("node_id") == "" || len(pids) == 0 {
-			return ctoOpSchemaError(op, fmt.Errorf("needs node_id and a nonempty pids list"))
-		}
-	case "machine_remove", "machine_rotate":
-		if stringField("node_id") == "" {
-			return ctoOpSchemaError(op, fmt.Errorf("needs node_id"))
-		}
-	case "node_remove":
-		if stringField("name") == "" {
-			return ctoOpSchemaError(op, fmt.Errorf("needs name"))
-		}
-	case "app_grant", "app_ungrant":
-		if stringField("id") == "" || stringField("grant") == "" {
-			return ctoOpSchemaError(op, fmt.Errorf("needs id and grant"))
-		}
-	case "app_rename":
-		if stringField("id") == "" || stringField("name") == "" {
-			return ctoOpSchemaError(op, fmt.Errorf("needs id and name"))
-		}
-	case "app_revoke":
-		if stringField("id") == "" {
-			return ctoOpSchemaError(op, fmt.Errorf("needs id"))
-		}
 	}
 	return nil
 }

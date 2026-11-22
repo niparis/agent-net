@@ -143,7 +143,7 @@ func TestCTOMessageGetReadsAttachmentPages(t *testing.T) {
 			t.Fatal("paging never ended")
 		}
 		args, _ := json.Marshal(map[string]any{"message": id, "file": "review.md", "file_cursor": cursor, "max_bytes": 256})
-		res, err := n.b.d.readCTOTool(context.Background(), "agent_message_get", args)
+		res, err := n.b.d.readCTOTool(context.Background(), "agent_messages_find", args)
 		if err != nil {
 			t.Fatal(err)
 		}

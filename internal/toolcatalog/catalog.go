@@ -53,7 +53,7 @@ func ForRole(role Role) []Tool {
 					tool.Description = "Send a new message to one session as yourself. Lead-level agents (chief of staff, team leads, granted lead level) may start a request to the CTO for a tool or a second opinion; a notification to the CTO is reply-only, and others go through their lead or the chief. A peer message is a request, not the owner's approval."
 				}
 				if role == RoleCTO && tool.Name == "agent_owner_judgments_find" {
-					tool.Description = "Search the owner's past decisions, standing orders, rules, answers and corrections. Ranked for a query, else newest first."
+					tool.Description = "Search the owner's past decisions, standing orders, rules, answers and corrections by text, id or ids. Ranked for a query, else newest first."
 				}
 				out = append(out, tool)
 				break

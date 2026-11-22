@@ -106,7 +106,7 @@ func TestMessageGetBodyChunksKeepUTF8(t *testing.T) {
 		if cursor != "" {
 			args["body_cursor"] = cursor
 		}
-		out := roCall(t, cs, "agent_message_get", args)
+		out := roCall(t, cs, "agent_messages_find", args)
 		msg := out["message"].(map[string]any)
 		chunk := msg["body"].(string)
 		if len(chunk) > 257 {
@@ -144,13 +144,13 @@ func TestBodyCursorBoundToItsMessage(t *testing.T) {
 	f := roReadFixture()
 	f.message = roMessageAt("m_big", time.Date(2026, 1, 1, 11, 0, 0, 0, time.UTC), "s_peer", "s_me", strings.Repeat("word ", 4000))
 	cs := connect(t, f.call)
-	out := roCall(t, cs, "agent_message_get", map[string]any{"message": "m_big", "max_bytes": 256})
+	out := roCall(t, cs, "agent_messages_find", map[string]any{"message": "m_big", "max_bytes": 256})
 	cursor, _ := out["next_body_cursor"].(string)
 	if cursor == "" {
 		t.Fatal("no body cursor")
 	}
 	f.message = roMessageAt("m_other", time.Date(2026, 1, 1, 11, 0, 1, 0, time.UTC), "s_peer", "s_me", "short")
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_message_get",
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_messages_find",
 		Arguments: map[string]any{"message": "m_other", "body_cursor": cursor}})
 	if err != nil {
 		t.Fatal(err)
@@ -167,14 +167,14 @@ func TestMessageGetShowsCitedNotes(t *testing.T) {
 	f.message = roMessageAt("m_fwd", time.Date(2026, 1, 1, 11, 0, 0, 0, time.UTC), "s_peer", "s_me", "see m_c0f041a063cd1359")
 	f.message.CitedNotes = []string{"cited m_c0f041a063cd1359: from a (session s_a) to b at 2026-01-01 10:00 UTC, request: \"ok\""}
 	cs := connect(t, f.call)
-	msg := roCall(t, cs, "agent_message_get", map[string]any{"message": "m_fwd"})["message"].(map[string]any)
+	msg := roCall(t, cs, "agent_messages_find", map[string]any{"message": "m_fwd"})["message"].(map[string]any)
 	notes, _ := msg["notes"].([]any)
 	if len(notes) != 1 || notes[0] != f.message.CitedNotes[0] || msg["body"] != "see m_c0f041a063cd1359" {
 		t.Fatalf("message: %v", msg)
 	}
 }
 
-// agent_message_get lists attachments and reads one as text, page by page,
+// agent_messages_find lists attachments and reads one as text, page by page,
 // with a cursor; the pages join back to the file.
 func TestMessageGetReadsAttachmentPages(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "n_me")
@@ -185,7 +185,7 @@ func TestMessageGetReadsAttachmentPages(t *testing.T) {
 	f.files = map[string]string{"design.md": text, "other.md": "x"}
 	cs := connect(t, f.call)
 
-	first := roCall(t, cs, "agent_message_get", map[string]any{"message": "m_files"})
+	first := roCall(t, cs, "agent_messages_find", map[string]any{"message": "m_files"})
 	if _, has := first["file"]; has || len(first["files"].([]any)) != 2 {
 		t.Fatalf("a read without file lists the files and reads none: %v", first)
 	}
@@ -199,7 +199,7 @@ func TestMessageGetReadsAttachmentPages(t *testing.T) {
 		if cursor != "" {
 			args["file_cursor"] = cursor
 		}
-		file := roCall(t, cs, "agent_message_get", args)["file"].(map[string]any)
+		file := roCall(t, cs, "agent_messages_find", args)["file"].(map[string]any)
 		joined.WriteString(file["text"].(string))
 		cursor, _ = file["next_file_cursor"].(string)
 		if cursor == "" {
@@ -211,13 +211,13 @@ func TestMessageGetReadsAttachmentPages(t *testing.T) {
 	}
 
 	// A cursor belongs to its file, and a name outside the manifest is refused.
-	file := roCall(t, cs, "agent_message_get", map[string]any{"message": "m_files", "file": "design.md", "max_bytes": 256})["file"].(map[string]any)
+	file := roCall(t, cs, "agent_messages_find", map[string]any{"message": "m_files", "file": "design.md", "max_bytes": 256})["file"].(map[string]any)
 	for name, args := range map[string]map[string]any{
 		"cursor of another file": {"message": "m_files", "file": "other.md", "file_cursor": file["next_file_cursor"]},
 		"unknown file":           {"message": "m_files", "file": "../design.md"},
 		"cursor without file":    {"message": "m_files", "file_cursor": file["next_file_cursor"]},
 	} {
-		res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_message_get", Arguments: args})
+		res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_messages_find", Arguments: args})
 		if err != nil || !res.IsError {
 			t.Errorf("%s was accepted: %v %v", name, err, res)
 		}

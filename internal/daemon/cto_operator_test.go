@@ -495,7 +495,7 @@ func TestCTOOperatorArchivePreviewHasNoUndo(t *testing.T) {
 	}
 }
 
-// The CTO reaches the owner's session_replace through its operator path and
+// The CTO calls session_change with action replace and
 // moves a restart's orphaned work to the session that replaced it.
 func TestCTOOperatorSessionReplaceAllowed(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
@@ -514,9 +514,9 @@ func TestCTOOperatorSessionReplaceAllowed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, _ := json.Marshal(map[string]any{"area": "operator", "method": "session_replace",
-		"arguments": map[string]string{"old_session": old, "new_session": fresh}})
-	if _, err := n.d.runCTOTool(ctx, "settings_change", raw); err != nil {
+	raw, _ := json.Marshal(map[string]any{"action": "replace",
+		"old_session": old, "new_session": fresh})
+	if _, err := n.d.runCTOTool(ctx, "session_change", raw); err != nil {
 		t.Fatalf("the CTO could not replace a session: %v", err)
 	}
 	a, ok, err := st.Agent(old)

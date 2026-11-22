@@ -234,6 +234,16 @@ func TestOwnerJudgmentsFind(t *testing.T) {
 			t.Errorf("expected newest first, but item %d (%d) < item %d (%d)", i, all[i].SavedAt, i+1, all[i+1].SavedAt)
 		}
 	}
+
+	// 5. Find by JudgmentID, and IDs.
+	byJudgmentID, err := s.FindJudgments(protocol.JudgmentsFindRequest{JudgmentID: all[1].ID})
+	if err != nil || len(byJudgmentID) != 1 || byJudgmentID[0].ID != all[1].ID {
+		t.Fatalf("expected 1 hit by JudgmentID, got %+v (err %v)", byJudgmentID, err)
+	}
+	byIDs, err := s.FindJudgments(protocol.JudgmentsFindRequest{IDs: []string{all[0].ID, all[1].ID}})
+	if err != nil || len(byIDs) != 2 {
+		t.Fatalf("expected 2 hits by IDs, got %+v (err %v)", byIDs, err)
+	}
 }
 
 func TestJudgmentsBackfillRunsOnOldDB(t *testing.T) {

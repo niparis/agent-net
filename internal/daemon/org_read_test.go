@@ -51,7 +51,7 @@ func TestCTOGraphReadRootIsOneSubtree(t *testing.T) {
 	}
 	t.Logf("agent_graph_read {\"root\":\"org-lead\"}: %s", raw)
 
-	res, err = w.d.runCTOToolRaw(ctx, "agent_session_get", json.RawMessage(`{"session":"`+sessions["org-member"]+`"}`))
+	res, err = w.d.runCTOToolRaw(ctx, "agent_sessions_find", json.RawMessage(`{"session":"`+sessions["org-member"]+`"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
