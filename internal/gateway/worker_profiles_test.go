@@ -135,3 +135,11 @@ func TestWorkerProfileAvailabilitySignedOut(t *testing.T) {
 		t.Fatalf("signed-out profile: %+v", got)
 	}
 }
+
+// saveWorkerProfiles replaces the stored roster. Tests seed rosters with it;
+// the product edits the roster through editWorkerProfiles.
+func (s *Store) saveWorkerProfiles(profiles []protocol.WorkerProfile) error {
+	return s.editWorkerProfiles(func([]protocol.WorkerProfile) ([]protocol.WorkerProfile, error) {
+		return profiles, nil
+	})
+}

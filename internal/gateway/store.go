@@ -100,9 +100,12 @@ type Store struct {
 	holds      startHolds
 	lastVacuum time.Time
 
-	mu      sync.Mutex
-	buckets map[string]*bucket
-	learnMu sync.Mutex
+	// bucketMu guards buckets. It is a leaf lock: nothing waits for the
+	// database while it is held, so allow can run inside a message
+	// transaction without a lock-order cycle with the writer.
+	bucketMu sync.Mutex
+	buckets  map[string]*bucket
+	learnMu  sync.Mutex
 	// hiddenMu serializes reads that prune expired session entries with writes.
 	hiddenMu sync.Mutex
 
@@ -4882,8 +4885,8 @@ func (s *Store) Message(id string) (protocol.Message, bool, error) {
 }
 
 func (s *Store) allow(sender string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.bucketMu.Lock()
+	defer s.bucketMu.Unlock()
 	now := s.now()
 	b := s.buckets[sender]
 	if b == nil {

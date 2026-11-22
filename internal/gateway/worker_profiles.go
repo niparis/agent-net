@@ -202,51 +202,68 @@ func (s *Store) profileSuccessNodes(p protocol.WorkerProfile) (map[string]bool, 
 	return out, rows.Err()
 }
 
-func (s *Store) saveWorkerProfiles(profiles []protocol.WorkerProfile) error {
+// editWorkerProfiles stores the roster that edit returns. edit gets the stored
+// roster, read in the same writer transaction as the write, so two edits never
+// interleave. No lock is held while the writer is waited for. The notices run
+// after the commit.
+func (s *Store) editWorkerProfiles(edit func([]protocol.WorkerProfile) ([]protocol.WorkerProfile, error)) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	profiles := []protocol.WorkerProfile{}
+	if _, err := ownerJSON(tx, workerProfilesKey, &profiles); err != nil {
+		return err
+	}
+	if profiles, err = edit(profiles); err != nil {
+		return err
+	}
 	if profiles == nil {
 		profiles = []protocol.WorkerProfile{} // JSON null is not a value
 	}
-	if err := s.setOwner(workerProfilesKey, profiles); err != nil {
+	changed, err := s.setOwnerTx(tx, workerProfilesKey, profiles)
+	if err != nil {
 		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	if changed {
+		s.settingsNotify()
 	}
 	return s.refreshQuality()
 }
+
 func (s *Store) AddWorkerProfile(p protocol.WorkerProfile) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	profiles, err := s.WorkerProfiles()
-	if err != nil {
-		return err
-	}
-	for i, other := range profiles {
-		if strings.EqualFold(other.Name, p.Name) {
-			p.Name = other.Name
-			profiles[i] = p
-			return s.saveWorkerProfiles(profiles)
+	return s.editWorkerProfiles(func(profiles []protocol.WorkerProfile) ([]protocol.WorkerProfile, error) {
+		for i, other := range profiles {
+			if strings.EqualFold(other.Name, p.Name) {
+				p.Name = other.Name
+				profiles[i] = p
+				return profiles, nil
+			}
 		}
-	}
-	return s.saveWorkerProfiles(append(profiles, p))
+		return append(profiles, p), nil
+	})
 }
+
 func (s *Store) RemoveWorkerProfile(name string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	profiles, err := s.WorkerProfiles()
-	if err != nil {
-		return err
-	}
-	out := make([]protocol.WorkerProfile, 0, len(profiles))
-	found := false
-	for _, p := range profiles {
-		if strings.EqualFold(p.Name, name) {
-			found = true
-		} else {
-			out = append(out, p)
+	return s.editWorkerProfiles(func(profiles []protocol.WorkerProfile) ([]protocol.WorkerProfile, error) {
+		out := make([]protocol.WorkerProfile, 0, len(profiles))
+		found := false
+		for _, p := range profiles {
+			if strings.EqualFold(p.Name, name) {
+				found = true
+			} else {
+				out = append(out, p)
+			}
 		}
-	}
-	if !found {
-		return reject("worker profile %q not found", name)
-	}
-	return s.saveWorkerProfiles(out)
+		if !found {
+			return nil, reject("worker profile %q not found", name)
+		}
+		return out, nil
+	})
 }
 
 // workerProfileAction verifies the requesting session and resolves new models
