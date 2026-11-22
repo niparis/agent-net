@@ -168,6 +168,14 @@ section > .head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content
 .drv text{font:600 14px var(--body);fill:var(--fg)}
 .drv .small{font:12px var(--body);fill:var(--muted)}
 .rel{font-size:13px;color:var(--muted)}
+.mdt{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.mdt table{border-collapse:collapse;width:100%;font-size:14px}
+.mdt th,.mdt td{text-align:left;vertical-align:top;padding:8px 12px;border-bottom:1px solid var(--line)}
+.mdt th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.qs.rd{max-width:none}
+.qs.rd p,.qs.rd ul,.qs.rd ol{max-width:80ch}
+.qs.rd i{color:inherit}
+details.howto .qs{margin-top:10px}
 .qs{max-width:78ch;display:grid;gap:10px;font-size:15.5px;line-height:1.6}
 .qs h3{margin:18px 0 0;font-size:18px}
 .qs h4{margin:12px 0 0;font-size:16px}
@@ -231,6 +239,37 @@ details.howto p{margin:6px 0 0;color:var(--muted);font-size:14px}
   </div>
   <div class="tabpane" id="tab-overview" role="tabpanel" aria-labelledby="t-overview">
     <section aria-labelledby="ov-h"><div class="head"><div><h2 id="ov-h">What agent-net is</h2><p class="lede">agent-net connects AI coding agents (Claude Code, Codex, OpenCode, Pi, agy) running on several machines, so they work as one team for one person, the owner. You talk to one assistant, the CTO, and it runs the network for you: machines, projects, leads, workers and settings. The agents plan, build, review and ship; you decide what only you can decide.</p><p class="lede">This page has seven tabs: <b>Overview</b> (this one: what it is and who does the work), <b>Quick start</b> (your first day), <b>How it runs</b> (the programs and how they talk), <b>Features</b> (everything it does), <b>Principles</b> (the rules it is built on), <b>Data model</b> (how it is recorded) and <b>Proposals</b> (ideas not built yet).</p></div></div></section>
+    <section aria-labelledby="rd-isnot"><div class="head"><div><h2 id="rd-isnot">What it is, and what it is not</h2></div></div><div class="qs rd"><p>It is one network for the agents you already use, in five harnesses, on every machine you own: one Go binary, self-hosted, with SQLite built in, installed with one line.</p>
+<p>It is not an SDK or framework for building agents, a hive of agents working on one task, or a hosted service. It is not for teams of people or for machines you do not trust: every machine belongs to one owner.</p></div></section>
+    <section aria-labelledby="rd-diff"><div class="head"><div><h2 id="rd-diff">What makes it different</h2></div></div><div class="qs rd"><p>The six things that set it apart most:</p>
+<ol start="1">
+<li><b>One network and one tool set for five harnesses.</b> Claude Code, Codex, OpenCode, Pi and Antigravity all get the same <code>agent_*</code> tools.</li>
+<li><b>It joins the sessions you already run, on every machine.</b> Codex threads go through the app server, OpenCode through a plugin inside its service, and an offline Claude Code session is woken with <code>claude --bg</code>.</li>
+<li><b>A session cannot pose as another.</b> The daemon checks which local process is calling.</li>
+<li><b>Models are chosen by expected cost per accepted result,</b> with quota pace, protected subscriptions and a track record per difficulty level. Quota reads never refresh a login. See <a href="https://github.com/niparis/agent-net/blob/main/docs/model-choice.md" target="_blank" rel="noopener">how it chooses</a>.</li>
+<li><b>Your words to the CTO are checked, then run at once.</b> The daemon compares the quote with what you typed in the chat. No second approval.</li>
+<li><b>One Desk, a chief of staff and a memory of your answers.</b> Asks are sorted before they reach you, and a question you already answered is not asked again.</li>
+</ol></div></section>
+    <section aria-labelledby="rd-fragile"><div class="head"><div><h2 id="rd-fragile">Isn't a swarm fragile?</h2></div></div><div class="qs rd"><p>The common criticism of multi-agent systems is right about one shape: many agents sharing one task, each missing the others' context and making choices that conflict (Cognition, "Don't build multi-agents"). It also costs many times the tokens (Anthropic measured about 15 times for its research system). A supervised swarm is built the other way.</p>
+<ul>
+<li><b>Each agent owns its piece.</b> One session per project, or one worker per task, with its own context and its own git branch. Two agents do not edit the same thing at once.</li>
+<li><b>Agents talk where their work meets.</b> When a change crosses projects, one session tells the other, the way two engineers on two services do. A worker gets a written brief and hands back a checked report, not a shared transcript.</li>
+<li><b>Every change in the pipeline is checked before it merges.</b> Accept, test, merge, release and verify each have an owner, riskier changes get a review, and a merger session can own the tests and the merge.</li>
+<li><b>Cost is chosen.</b> Each task goes to the cheapest model that is good enough for it, spread across your subscriptions.</li>
+<li><b>You supervise by exception.</b> Leads answer their members, the chief of staff sorts the rest, and only real decisions reach your Desk.</li>
+</ul></div></section>
+    <section aria-labelledby="rd-why"><div class="head"><div><h2 id="rd-why">How it compares to other tools</h2></div></div><details class="howto"><summary>Show the comparison with Claude Code teams, Conductor, OpenHands, hosted agents, swarm tools and agent frameworks</summary><div class="qs rd"><p>Other tools solve parts of this, and some of them may be all you need.</p>
+<div class="mdt"><table>
+<tr><th>Tool</th><th>What it does well</th><th>Where agent-net differs</th></tr>
+<tr><td><b>Claude Code messaging and agent teams</b></td><td>Claude Code sessions message each other, also across machines, and a lead can run a team of Claude teammates. Built in, no install.</td><td>Claude Code only. Cross-machine traffic goes through Anthropic's servers with a claude.ai sign-in. agent-net covers five harnesses through your own gateway, and adds charters, steps and the Desk.</td></tr>
+<tr><td><b>Claude Squad, Conductor</b></td><td>Run several coding agents in parallel, each in its own git worktree, from one terminal or one Mac app. Simple and fast to start.</td><td>They start new agents on one machine. agent-net joins the sessions you already have on every machine, and lets them talk and follow rules.</td></tr>
+<tr><td><b>OpenHands</b></td><td>A self-hosted control center that runs coding agents, including Claude Code and Codex, in its own environments.</td><td>OpenHands launches and hosts the agents. agent-net connects the interactive sessions you are already working in, on your own machines.</td></tr>
+<tr><td><b>Devin, Cursor cloud agents, Factory</b></td><td>Hosted agents that take a task and return a pull request.</td><td>Hosted and vendor-run. agent-net is self-hosted and mixes vendors, with you setting the rules.</td></tr>
+<tr><td><b>Swarm tools such as Ruflo (claude-flow)</b></td><td>Many agents coordinate on missions, with a hive and a queen agent.</td><td>Many agents on one goal, led by an agent. agent-net is a supervised swarm: one agent per piece, with you as the owner.</td></tr>
+<tr><td><b>CrewAI, LangGraph, AutoGen, OpenAI Agents SDK, Google ADK</b></td><td>Frameworks for building agent programs in code.</td><td>You write the agents there. agent-net uses agents that already exist and that you also use by hand.</td></tr>
+<tr><td><b>MCP and A2A</b></td><td>Protocols: MCP gives an agent tools, and A2A lets agent services call each other.</td><td>agent-net uses MCP to give agents their tools. It is not an implementation of A2A.</td></tr>
+</table></div>
+<p>If you only use Claude Code on one machine, try its built-in messaging first. If you want many agents on one task in one repo, a parallel-agent tool is simpler. agent-net fits when you run many agents, across harnesses and machines, on projects that depend on each other.</p></div></details></section>
     <section aria-labelledby="o-h"><div class="head"><div><h2 id="o-h">Who is who</h2><p class="lede">The roles in an agent-net network, and how they relate. Each box is an agent role; the running sessions play these roles. Dashed lines are optional: team leads are optional (a repo without a team reports straight to the CTO), and so is the merge module (orange). The Data model tab shows how agent-net records them.</p></div></div><svg class="coremap" id="orgmap" viewBox="0 0 1100 470" role="img" aria-label="Roles and how they relate"></svg><div class="legend"><span><i style="background:var(--accent-soft);border:1px solid var(--accent)"></i>always there</span><span><i style="background:var(--hot-soft);border:1px dashed var(--hot)"></i>optional role or module</span><span>dashed line: optional link</span></div><div class="ents" id="orgroles" style="margin-top:12px"></div></section>
   </div>
   <div class="tabpane" id="tab-quick" role="tabpanel" aria-labelledby="t-quick" hidden>
@@ -320,6 +359,26 @@ details.howto p{margin:6px 0 0;color:var(--muted);font-size:14px}
 
     <section aria-labelledby="s-h"><div class="head"><div><h2 id="s-h">Gateway and daemon: who does what</h2><p class="lede">agent-net has two programs. Everything else on this page belongs to one of them.</p></div></div><div class="split" id="split"></div><p class="rule" id="splitrule"></p><div id="lanes" style="display:grid;gap:22px;margin-top:18px"></div></section>
     <section aria-labelledby="w-h"><div class="head"><div><h2 id="w-h">The channels between them</h2><p class="lede">The processes that hold and move this model, and the channel between each pair. The gateway is the only place the data lives; every daemon and screen reaches it through these channels.</p></div></div><svg class="coremap" id="talkmap" viewBox="0 0 1000 420" role="img" aria-label="Processes and the channels between them"></svg><div class="chan" id="chan"></div></section>
+    <section aria-labelledby="rd-agents"><div class="head"><div><h2 id="rd-agents">Supported agents</h2></div></div><div class="qs rd"><div class="mdt"><table>
+<tr><th>Agent</th><th>How it connects</th><th>Tested with</th></tr>
+<tr><td>Claude Code</td><td>A stdio MCP server per session (<code>agent-net mcp</code>), and the session's own inbox socket for delivery. Setup also offers a plugin that shows the session's workers above the prompt.</td><td>2.1.326</td></tr>
+<tr><td>Codex</td><td>A stdio MCP server per thread (<code>agent-net mcp --codex</code>); messages go through the shared Codex app server (<a href="https://github.com/niparis/agent-net/blob/main/docs/decisions/0012-codex-peers.md" target="_blank" rel="noopener">decision 0012</a>)</td><td>0.167.0</td></tr>
+<tr><td>Pi</td><td>An extension that talks to the local daemon socket</td><td>1.4.0</td></tr>
+<tr><td>OpenCode</td><td>A plugin inside its v2 background service</td><td>2.3.2</td></tr>
+<tr><td>Antigravity (<code>agy</code>)</td><td>Plugin hooks and MCP for sessions, stream-json workers, and native skills</td><td>1.4.12</td></tr>
+</table></div>
+<p>Platforms: Linux (systemd user services) and macOS (launchd), on amd64 and arm64.</p></div></section>
+    <section aria-labelledby="rd-sec"><div class="head"><div><h2 id="rd-sec">Security model</h2></div></div><div class="qs rd"><p>The short version. The full model, including what is not protected, is in <a href="https://github.com/niparis/agent-net/blob/main/docs/security.md" target="_blank" rel="noopener">docs/security.md</a>.</p>
+<ul>
+<li>Built for machines you own, on a LAN or a Tailscale network. Do not expose the gateway port (7420) to the internet.</li>
+<li>A machine joins with a one-time code (10 minutes, one use) and the SHA-256 of the gateway's CA. Traffic is TLS with the gateway's own CA, and each machine has its own token.</li>
+<li>The daemon checks which local process is calling, from the kernel's view of the caller's process.</li>
+<li>A message from another agent is never your approval. Changes you ask for in the CTO chat run at once, with your words checked. Changes the CTO wants without your words wait for you on the Desk.</li>
+<li>The CTO's messages are not reviewed by Claude Code's auto-mode check; each receiving agent's charter and permission checks still apply.</li>
+<li>Connected apps: off by default. Each app is approved by you in the TUI with a one-time code, gets only its own tools, and is rate limited. Revoke it with <code>x</code>.</li>
+<li>The guidance agent-net adds to your instruction files is advice to the model, not enforcement.</li>
+<li>Not protected: a compromised enrolled machine, prompt injection carried in a message, and any process running as your user.</li>
+</ul></div></section>
   </div>
   <div class="tabpane" id="tab-features" role="tabpanel" aria-labelledby="t-features" hidden>
     <section aria-labelledby="f-h"><div class="head"><div><h2 id="f-h">Features</h2><p class="lede">Everything agent-net does, in one list. Each feature says where it lives: only in the gateway, only in the daemon, or mixed (the gateway stores and decides, the daemon acts on its machine). Every tool call passes through the daemon; a feature counts as gateway when the daemon only forwards it.</p></div></div><div class="fsum" id="fsum"></div><div class="fscroll"><table class="ftab" id="ftab"></table></div></section>
