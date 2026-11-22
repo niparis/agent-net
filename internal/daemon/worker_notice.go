@@ -334,11 +334,13 @@ func (d *Daemon) worktreeFacts(w *worker) (stat string, changed bool) {
 	ctx := context.Background()
 	start := base
 	if head, err := gitOut(ctx, dir, "rev-parse", "HEAD"); err == nil {
-		base = handbackDiffBase(ctx, dir, base, head)
+		base = noticeDiffBase(ctx, dir, base, head)
 	}
 	var parts []string
-	if s, err := gitOut(ctx, dir, "diff", "--stat", base); err == nil && s != "" {
-		parts = append(parts, s)
+	if base != "" {
+		if s, err := gitOut(ctx, dir, "diff", "--stat", base); err == nil && s != "" {
+			parts = append(parts, noticeDiffStat(s))
+		}
 	}
 	if files := untrackedWorkFiles(ctx, dir); len(files) > 0 {
 		more := ""
@@ -351,6 +353,97 @@ func (d *Daemon) worktreeFacts(w *worker) (stat string, changed bool) {
 		parts = append(parts, n+" commit(s) with no file changes")
 	}
 	return strings.Join(parts, "\n"), len(parts) > 0
+}
+
+// noticeDiffBase is the commit a notice measures its diff stat from. A worker
+// keeps the base it started from, so a branch stacked on an unmerged release
+// train shows only the worker's own work. When the worker rebased onto newer
+// work, the merge-base with the default branch is newer than that base, and
+// counting from the base would include other people's files. With no recorded
+// base, the merge-base is used; with no default branch either, there is no
+// base and the notice has no diff stat.
+func noticeDiffBase(ctx context.Context, dir, recorded, head string) string {
+	if !protocol.ValidCommit(head) {
+		return recorded
+	}
+	base := ""
+	consider := func(candidate string) {
+		if !protocol.ValidCommit(candidate) {
+			return
+		}
+		if candidate != head {
+			if _, err := gitOut(ctx, dir, "merge-base", "--is-ancestor", candidate, head); err != nil {
+				return
+			}
+		}
+		if base == "" {
+			base = candidate
+			return
+		}
+		if candidate == base {
+			return
+		}
+		if _, err := gitOut(ctx, dir, "merge-base", "--is-ancestor", base, candidate); err == nil {
+			base = candidate
+		}
+	}
+	consider(recorded)
+	if target := cleanupDefaultBranch(ctx, dir, ""); target != "" {
+		for _, ref := range []string{target, "origin/" + target} {
+			if candidate, err := gitOut(ctx, dir, "merge-base", ref, head); err == nil {
+				consider(candidate)
+			}
+		}
+	}
+	return base
+}
+
+// noticeDiffStat bounds the notice's diff stat to the delivery limit, so a
+// branch with a huge diff cannot push the notice past the body limit. It keeps
+// whole lines and names how many files it left out. git's trailing summary line
+// goes, because it counts files that are not in the list.
+func noticeDiffStat(stat string) string {
+	stat = cleanDiffStat(stat)
+	if len(stat) <= protocol.MaxDiffStatBytes {
+		return stat
+	}
+	lines := strings.Split(strings.TrimRight(stat, "\n"), "\n")
+	if n := len(lines); n > 0 && isDiffStatSummary(lines[n-1]) {
+		lines = lines[:n-1]
+	}
+	// Leave room for the tail that names the files left out.
+	const tailRoom = 64
+	budget := protocol.MaxDiffStatBytes - tailRoom
+	var kept []string
+	size := 0
+	for _, line := range lines {
+		add := len(line) + 1
+		if size+add > budget {
+			break
+		}
+		kept = append(kept, line)
+		size += add
+	}
+	omitted := len(lines) - len(kept)
+	noun := "files"
+	if omitted == 1 {
+		noun = "file"
+	}
+	tail := fmt.Sprintf("... and %d more %s", omitted, noun)
+	if len(kept) == 0 {
+		return tail
+	}
+	out := strings.Join(kept, "\n") + "\n" + tail
+	if len(out) > protocol.MaxDiffStatBytes {
+		out = deliveryDiffStat(out)
+	}
+	return out
+}
+
+// isDiffStatSummary says whether a git diff --stat line is the trailing
+// summary rather than a file line.
+func isDiffStatSummary(line string) bool {
+	return strings.Contains(line, " changed") && !strings.Contains(line, "|")
 }
 
 // unfinishedSubject is the subject of the commit that keeps unfinished work.

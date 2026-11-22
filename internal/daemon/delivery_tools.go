@@ -769,16 +769,22 @@ func (d *Daemon) reportFriction(ctx context.Context, w *worker, entries []protoc
 	}
 }
 
-// deliveryDiffStat bounds the summary and removes terminal controls before it
-// is sent to the gateway. Keep truncation on a UTF-8 boundary.
-func deliveryDiffStat(stat string) string {
+// cleanDiffStat makes a diff stat safe for a message: valid UTF-8 with no
+// terminal controls.
+func cleanDiffStat(stat string) string {
 	stat = strings.ToValidUTF8(stat, "?")
-	stat = strings.Map(func(r rune) rune {
+	return strings.Map(func(r rune) rune {
 		if (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f {
 			return ' '
 		}
 		return r
 	}, stat)
+}
+
+// deliveryDiffStat bounds the summary and removes terminal controls before it
+// is sent to the gateway. Keep truncation on a UTF-8 boundary.
+func deliveryDiffStat(stat string) string {
+	stat = cleanDiffStat(stat)
 	if len(stat) <= protocol.MaxDiffStatBytes {
 		return stat
 	}
