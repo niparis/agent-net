@@ -2551,10 +2551,18 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_worker_profiles_find",
-    "description": "List worker profiles: harness, model, effort and the machines that can run them. Read before choosing a worker model.",
+    "description": "List worker profiles: harness, model, effort and the machines that can run them, or read one profile by id or name. Read before choosing a worker model.",
     "inputSchema": {
       "type": "object",
       "properties": {
+        "id": {
+          "type": "string",
+          "description": "Profile name or ID: read one worker profile."
+        },
+        "name": {
+          "type": "string",
+          "description": "Profile name: read one worker profile."
+        },
         "limit": {
           "type": "integer",
           "minimum": 1,
@@ -2583,7 +2591,9 @@ export const TOOL_CATALOG = [
       "agent"
     ],
     "method": "worker_profiles",
-    "daemon_fields": {}
+    "daemon_fields": {
+      "id": "name"
+    }
   },
   {
     "name": "agent_worker_rate",

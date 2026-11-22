@@ -831,12 +831,18 @@ func (d *Daemon) ctoCatalogMCPServersFind(ctx context.Context, raw json.RawMessa
 
 func (d *Daemon) ctoCatalogWorkerProfilesFind(ctx context.Context, raw json.RawMessage) (any, error) {
 	var q struct {
+		ID     string `json:"id"`
+		Name   string `json:"name"`
 		Limit  int    `json:"limit"`
 		Cursor string `json:"cursor"`
 		Detail string `json:"detail"`
 	}
 	if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &q) != nil {
 		return nil, errors.New("bad agent_worker_profiles_find arguments")
+	}
+	targetName := q.Name
+	if targetName == "" && q.ID != "" {
+		targetName = q.ID
 	}
 	if q.Detail == "" {
 		q.Detail = "concise"
@@ -861,6 +867,9 @@ func (d *Daemon) ctoCatalogWorkerProfilesFind(ctx context.Context, raw json.RawM
 	}
 	rows := make([]map[string]any, 0, len(profiles))
 	for _, profile := range profiles {
+		if targetName != "" && !strings.EqualFold(profile.Name, targetName) {
+			continue
+		}
 		var on []string
 		for _, machine := range profile.MachineAvailability {
 			if machine.Available {
