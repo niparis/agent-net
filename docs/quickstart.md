@@ -73,7 +73,7 @@ The CTO changes how the network is set up. Typical asks:
 - *"Let the shop lead merge and release on its own once the tests pass."* (changes who may merge)
 - *"Move the blog into the web team."*
 - *"Where are we on the checkout rework? Just a status, no more work."*
-- *"Start a worker on Gemini Neon to clean up the blog images, and advise me on the right effort level."*
+- *"Add Gemini Neon as a new worker profile, and advise me on the right effort level."* (registers a new kind of worker that the picker can then choose)
 - *"Use a cheaper model for the blog lead."*
 - *"Keep workers off my personal subscription."*
 - *"The build on the Linux box is broken. Get it fixed by whoever owns that machine."*
