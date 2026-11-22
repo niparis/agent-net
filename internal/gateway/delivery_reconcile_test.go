@@ -110,8 +110,9 @@ func passedToMerge(t *testing.T, r *deliveryRig, c protocol.Change) {
 
 // mergeReport is the merger's merge pass: it fast-forwarded main to commitMerged.
 func mergeReport(c protocol.Change, session string) protocol.StepReportRequest {
+	yes := true
 	return protocol.StepReportRequest{SessionID: session, ChangeID: c.ID, StepRef: protocol.StepRef{Step: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitA,
-		Fields: map[string]string{protocol.FieldMergedCommit: commitMerged}}
+		Fields: map[string]string{protocol.FieldMergedCommit: commitMerged}, MergeContainsHead: &yes}
 }
 
 // externalReconcile is the daemon's observation that main now holds c's head.
