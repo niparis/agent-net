@@ -1,9 +1,8 @@
 # Owner front door: build plan
 
-Status: design approved by the owner on 2026-11-12. Nothing is built.
-Build starts only on the owner's go ("we have too many workers"). Each step is
-one change, built by a worker, accepted by the agent-net lead and merged by
-the merger.
+Status: built. The chief of staff, the Desk and the CTO intake are live
+(decisions 0150 to 0152). Each step was one change, built by a worker, accepted
+by the agent-net lead and merged by the merger.
 
 Decisions: [0150](../decisions/0150-owner-front-door.md) (roles, Desk,
 answers, safety net, measures), [0151](../decisions/0151-cto-or-chief-confirms-picker-overrides.md)

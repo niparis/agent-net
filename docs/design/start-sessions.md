@@ -5,7 +5,7 @@
 This design builds on agents, sessions, workers, workspaces and authority. Its owner-only session start conflicts with autonomy set to wake, which lets agent-net wake an agent. The owner must decide the boundary; see the open question below.
 
 **Date:** 2026-10-31
-**Status:** Design for the owner to review. Nothing here is built.
+**Status:** Built. The owner starts sessions from the TUI and Enter opens them ([0156](../decisions/0156-one-session-model.md), [0157](../decisions/0157-cto-full-power-and-own-folders.md)). This design record is history.
 **Asked for:** "Today many of our agents are sessions that I start myself in a
 terminal. Could we have agents started directly from agent-net? That would
 clean up my screen clutter." And: "it has to be designed. It becomes really an

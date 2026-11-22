@@ -1,5 +1,7 @@
 # 0045: Worker maximum level
 
+**Status:** Replaced by [0105](0105-worker-picker-learns-from-results.md) as the rule of eligibility. The max level stays as the fallback when no candidate is allowed by its record.
+
 The owner requires: "no model should be used for more than 1 level less than its max".
 
 A profile's max is the highest difficulty whose minimum its score meets,

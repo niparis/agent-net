@@ -1,5 +1,7 @@
 # 0072. Record owner use and pins for sessions
 
+**Status:** Built. The Mine and machine groups were replaced by [0079](0079-sessions-by-owner-attention.md); owner use and pins still inform the finder.
+
 Agent activity is not evidence that the owner uses a session. The gateway
 stores owner use separately from harness activity, and the owner may pin a
 session. Session snapshots carry the latest use, a decaying score, and the pin

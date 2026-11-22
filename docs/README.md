@@ -29,7 +29,7 @@
 - [lessons.md](lessons.md): engineering lessons from the build, one short rule each, with what happened and where to read more.
 - [../RELEASING.md](../RELEASING.md): cut a release and update machines.
 - [roadmap.md](roadmap.md): work the owner wants that has not started yet.
-- [design/start-sessions.md](design/start-sessions.md): proposed owner session starts.
+- [design/start-sessions.md](design/start-sessions.md): owner session starts, built; the record is history.
 - [design/tool-redesign.md](design/tool-redesign.md): the agent and CTO tool redesign: contracts, owner decisions and the task list.
 - [design/keys-audit.md](design/keys-audit.md): every TUI key, where the meanings collide, and a proposed consistent key map.
 - [design/ask-wait-lifecycle.md](design/ask-wait-lifecycle.md): the state chart of an ask and of a session wait, and the two property tests that check it.

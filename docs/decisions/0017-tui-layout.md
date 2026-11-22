@@ -1,7 +1,7 @@
 # 0017 - The TUI main table: stable rows, filters and task names
 
 **Date:** 2026-10-30
-**Status:** Built on branch `agent-net/w_0f977af31650e85b`. Proposed until the owner has read it.
+**Status:** Built and merged. Changed on 2026-11-21: the POLICY column went with the delegation policy ([0183](0183-worker-tables-rework.md)).
 **Context:** The owner reads `agent-net tui` to see what needs them, what each session is doing and what sessions say to each other. The main table sorted rows by name and status, so a row moved when a session changed, and FUNCTION (the project description) pushed the useful TASK out. This is part A of the agreed TUI design (part B is the message feed, part C is "Needs you").
 
 ## Decisions
