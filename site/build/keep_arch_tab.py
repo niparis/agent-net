@@ -13,8 +13,11 @@ def rep(a, b):
 
 rep('    <button class="tab" role="tab" id="t-proposals" aria-controls="tab-proposals" aria-selected="false">Proposals</button>',
     '    <button class="tab" role="tab" id="t-proposals" aria-controls="tab-proposals" aria-selected="false">Proposals</button>\n'
-    '    <button class="tab" role="tab" id="t-arch" aria-controls="tab-arch" aria-selected="false">Conductor arch</button>')
+    '    <button class="tab" role="tab" id="t-arch" aria-controls="tab-arch" aria-selected="false">Agentic Conductor</button>')
 i = s.index('</div>\n\n<script>')
+intro = ('<section><div class="head"><div><h2>Agentic Conductor</h2><p class="lede">A friend\'s project, shown for comparison: '
+         'a tracker-driven control plane for coding agents. Not related to the Conductor app named in the Overview.</p></div></div></section>\n')
+pane = pane.replace('hidden>\n', 'hidden>\n' + intro, 1)
 s = s[:i] + pane + s[i:]
 rep("'model', 'proposals'];", "'model', 'proposals', 'arch'];")
 rep("  try { localStorage.setItem('gt-tab4', which); } catch (_) {}\n}",
