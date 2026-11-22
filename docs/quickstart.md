@@ -4,6 +4,15 @@ Your first day with agent-net, step by step.
 
 One idea runs through all of it: **you talk to the CTO, and the CTO runs the network.** The CTO is your main assistant session. It adds machines, sets up projects, starts and stops sessions, changes settings and answers "where are we?". You use the TUI to watch, and to open a session when you want to look inside it.
 
+## Two kinds of sessions
+
+A session is one AI coding agent at work: Claude Code, Codex, OpenCode, Pi or agy. agent-net works with two kinds:
+
+- **Your own sessions.** You start them in your terminal, the way you always do (`claude`, `codex`, `opencode` and so on). agent-net finds them by itself and gives them its tools, so they can send and receive messages and start workers. They live as long as your terminal. Use them when you want to work hands-on with one agent.
+- **agent-net sessions.** agent-net starts them in the background, on any machine: the CTO, the chief of staff, a lead you ask the CTO to start, and every worker. They need no terminal and keep working while you are away. A message to one that stopped wakes it in the same conversation.
+
+Both kinds show up in the Sessions tab and talk to each other the same way. Press Enter on any session to look inside it.
+
 ## 1. Install on your main machine
 
 ```sh
