@@ -10,7 +10,7 @@ import (
 
 // The four read tools that filter, page or fetch (agent_messages_find,
 // agent_message_get, agent_workers_find, agent_mcp_servers_find) run in the
-// daemon, once, so that every harness gets the same answer (principle 19).
+// daemon, once, so that every harness gets the same answer (principle 18).
 // The MCP handlers only forward their input to the daemon method; a native
 // plugin sends the same input to the same method.
 
