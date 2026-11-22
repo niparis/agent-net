@@ -51,6 +51,15 @@ const (
 	envFakeCodexExec     = "FAKE_CODEX_EXEC_DIR" // canned one-shot replies
 	envFakeCodexExecHang = "FAKE_CODEX_EXEC_HANG"
 
+	// envFakeSocketProbe makes the test binary dial AGENT_NET_SOCKET inside a
+	// sandbox, and write the result for a test that restarts the daemon socket
+	// under it. READY is written when it waits, GATE releases it, OUT gets the
+	// result. All three are paths inside the sandbox's private /tmp.
+	envFakeSocketProbe      = "FAKE_SOCKET_PROBE"
+	envFakeSocketProbeReady = "FAKE_SOCKET_PROBE_READY"
+	envFakeSocketProbeGate  = "FAKE_SOCKET_PROBE_GATE"
+	envFakeSocketProbeOut   = "FAKE_SOCKET_PROBE_OUT"
+
 	// Variables that change what the fakes do.
 	envFakeClaudeSessions = "FAKE_CLAUDE_SESSIONS"     // the folder of the session files
 	envFakeClaudeLog      = "FAKE_CLAUDE_LOG"          // one line per `claude stop`
@@ -77,6 +86,8 @@ const (
 // whether it did, in which case the test binary must stop.
 func runFakeHarness() bool {
 	switch {
+	case os.Getenv(envFakeSocketProbe) != "":
+		fakeSocketProbe()
 	case os.Getenv(envFakeClaudeSession) != "":
 		fakeClaudeSession()
 	case os.Getenv(envFakeCodexShim) != "":
@@ -108,6 +119,36 @@ func runFakeHarness() bool {
 		return false
 	}
 	return true
+}
+
+// fakeSocketProbe dials the worker's AGENT_NET_SOCKET and writes the result.
+// A test releases it with a file after it replaced the daemon socket, so the
+// dial is the first thing the probe does after the restart.
+func fakeSocketProbe() {
+	if ready := os.Getenv(envFakeSocketProbeReady); ready != "" {
+		_ = os.WriteFile(ready, []byte("ready"), 0o600)
+	}
+	gate := os.Getenv(envFakeSocketProbeGate)
+	for {
+		if _, err := os.Stat(gate); err == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	result := "connected"
+	var err error
+	for i := 0; i < 100; i++ {
+		var c net.Conn
+		if c, err = net.DialTimeout("unix", os.Getenv("AGENT_NET_SOCKET"), time.Second); err == nil {
+			c.Close()
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err != nil {
+		result = err.Error()
+	}
+	_ = os.WriteFile(os.Getenv(envFakeSocketProbeOut), []byte(result), 0o600)
 }
 
 // fakeOpenCodeRun is the one-shot OpenCode command for difficulty judges.
