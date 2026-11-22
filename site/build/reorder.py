@@ -30,7 +30,8 @@ assert n == 1
 overview = ('  <div class="tabpane" id="tab-overview" role="tabpanel" aria-labelledby="t-overview">\n'
             '    <section aria-labelledby="ov-h"><div class="head"><div><h2 id="ov-h">What agent-net is</h2>'
             '<p class="lede">agent-net connects AI coding agents (Claude Code, Codex, OpenCode, Pi, agy) running on several machines, so they work as one team for one person, the owner. You talk to one assistant, the CTO, and it runs the network for you: machines, projects, leads, workers and settings. The agents plan, build, review and ship; you decide what only you can decide.</p>'
-            '<p class="lede">This page has seven tabs: <b>Overview</b> (this one: what it is and who does the work), <b>Quick start</b> (your first day), <b>How it runs</b> (the programs and how they talk), <b>Features</b> (everything it does), <b>Principles</b> (the rules it is built on), <b>Data model</b> (how it is recorded) and <b>Proposals</b> (ideas not built yet).</p></div></div></section>\n'
+            '<p class="lede">It is one Go binary, self-hosted, with SQLite built in. It is not a framework for building agents, not a hosted service, and not for teams of people: every machine belongs to one owner.</p>'
+            '</p></div></div></section>\n'
             + who + '\n  </div>\n')
 i = s.index('  <div class="tabpane" id="tab-quick"')
 s = s[:i] + overview + s[i:]

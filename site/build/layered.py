@@ -8,14 +8,14 @@ M = d['model']
 # Org view: who is who. Each box is an agent role; sessions play them.
 M['org'] = {
  'nodes': {
-  'owner': ['Owner (you)', 550, 50, 'The person the whole network works for. You set the direction, approve what only you can approve, and talk to the CTO in the TUI or the web console.'],
-  'cto': ['CTO', 280, 165, 'Your main assistant and the operator of the network. It runs as its own session on the agent program and model you choose, and through its own tools it can do everything you can do in the TUI. It sets the network up and changes it: starts new projects, configures optional modules (for example how changes get merged), and shapes the org graph, charters, settings, shared MCP servers and apps. It answers asks, and repo and team leads report to it. It watches a list of problems (silent machines, a failing merge queue) and raises what needs you. It can also start and stop sessions and workers when needed.'],
-  'chief': ['Chief of staff', 820, 165, 'A separate session that sorts every question on its way to you. It answers from your past decisions when it can, sends a question to the agent that should answer it, merges duplicates and hides noise, so the Desk only shows what really needs you. Every sort is logged and can be undone.'],
-  'teamlead': ['Team lead (optional)', 140, 290, 'Leads a team of related repos. Repo leads in the team report to it. Teams are optional: a repo without a team reports straight to the CTO.'],
-  'repolead': ['Repo lead', 440, 290, 'The agent in charge of one repo. It plans the work, starts workers, reviews and accepts their results, and answers for the repo. It reports to its team lead, or to the CTO when the repo has no team.'],
-  'merger': ['Merge module (optional)', 910, 290, 'An optional module for shipping changes. With the merge queue module, a merger session tests, merges and releases the changes that repo leads accepted (CI is the gate; it tags the release, installs it and checks the machines). Without it, nothing extra runs: the repo lead or another session merges the change itself. A third module that hands merging to an outside CI/CD system exists but is not tested yet.'],
-  'members': ['Repo members', 300, 405, 'Other long-lived sessions in the same repo, for example on another agent program or machine. They work with you directly on that repo and report to its repo lead (the homelab repo runs a lead plus two members). They are not workers: they stay.'],
-  'workers': ['Workers', 580, 405, 'Short-lived sessions started for one task each. They write the code in their own branch and sandbox, then hand back the result and end.'],
+  'owner': ['Owner (you)', 550, 50, 'You. You set the direction and decide what only you can decide, mostly by talking to the CTO.'],
+  'cto': ['CTO', 280, 165, 'Your main assistant and the operator of the network. It sets up and changes projects, leads, teams, charters, settings and optional modules, and raises what needs you.'],
+  'chief': ['Chief of staff', 820, 165, 'Sorts every question on its way to you. It answers from your past decisions when it can and sends the rest to the agent that should answer.'],
+  'teamlead': ['Team lead (optional)', 140, 290, 'Optional. Coordinates a team of related repos; their repo leads report to it.'],
+  'repolead': ['Repo lead', 440, 290, 'The agent in charge of one repo. It plans with you, starts workers, checks their results and answers for the repo.'],
+  'merger': ['Merge module (optional)', 910, 290, 'Optional. How changes get merged: by the lead itself, by a merger session that tests, merges and releases, or by an outside CI/CD (untested).'],
+  'members': ['Repo members', 300, 405, 'Other long-lived sessions working on the same repo, for example on another agent program. They report to the repo lead.'],
+  'workers': ['Workers', 580, 405, 'Short-lived sessions that do one task in their own branch and sandbox, hand back the result and end.'],
  },
  'edges': [
   ['owner', 'cto', 'works with'], ['chief', 'owner', 'filters asks for'], ['teamlead', 'cto', 'reports to'],

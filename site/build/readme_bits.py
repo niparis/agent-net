@@ -36,11 +36,11 @@ def block(id_, title, body_md, lede=''):
             + (f'<p class="lede">{lede}</p>' if lede else '') + f'</div></div><div class="qs rd">{html}</div></section>\n')
 
 
-different = top_n(section('What makes agent-net different', 3), 6).replace('Ranked by how much they set it apart:', 'The six things that set it apart most:')
+items = re.split(r'(?m)^(?=\d+\. )', section('What makes agent-net different', 3))[1:]
+different = ''.join(items[i] for i in (0, 1, 3, 6))
 overview_add = (
-    block('rd-isnot', 'What it is, and what it is not', section('What it is, and what it is not', 2))
-    + block('rd-diff', 'What makes it different', different)
-    + block('rd-fragile', "Isn't a swarm fragile?", section("Isn't a swarm fragile?", 2))
+    block('rd-diff', 'What makes it different', different)
+    + block('rd-fragile', "Isn't a swarm fragile?", re.sub(r'(?s)^.*?\n\n- ', 'Many agents sharing one task do conflict and waste tokens. A supervised swarm is built the other way:\n\n- ', section("Isn't a swarm fragile?", 2), count=1))
     + '    <section aria-labelledby="rd-why"><div class="head"><div><h2 id="rd-why">How it compares to other tools</h2></div></div>'
     + '<details class="howto"><summary>Show the comparison with Claude Code teams, Conductor, OpenHands, hosted agents, swarm tools and agent frameworks</summary>'
     + '<div class="qs rd">' + render(section('Why not just …', 2), base=BASE) + '</div></details></section>\n'
@@ -59,7 +59,9 @@ def rep(a, b):
     s = s.replace(a, b)
 
 
-rep('    <section aria-labelledby="o-h">', overview_add + '    <section aria-labelledby="o-h">')
+i = s.index('    <section aria-labelledby="o-h">')
+i = s.index('</section>', i) + len('</section>\n')
+s = s[:i] + overview_add + s[i:]
 i = s.index('<div class="tabpane" id="tab-runs"')
 j = s.index('\n  </div>', i)
 s = s[:j] + '\n' + runs_add.rstrip('\n') + s[j:]
