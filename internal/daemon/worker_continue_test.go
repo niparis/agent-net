@@ -132,8 +132,8 @@ func TestContinueEndedWorker(t *testing.T) {
 		for _, row := range rows {
 			if row.SessionID == res.SessionID {
 				found = true
-				if row.Touches != "ui,tests" {
-					t.Errorf("continued touches = %q", row.Touches)
+				if row.Touches != "" {
+					t.Errorf("continued touches = %q, want none", row.Touches)
 				}
 			}
 		}
