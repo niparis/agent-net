@@ -104,7 +104,9 @@ func isOwnerGoBuildCache(cacheDir, homeDir string) bool {
 
 // trimWorkerGoCache walks the worker Go build cache folder and removes old
 // files whose mtime is older than maxAge (Go touches entries when used).
-// README, trim.txt and the folder layout are preserved.
+// README, trim.txt and the folder layout are preserved. The Go caches that
+// sandboxed workers make in their private /tmp are trimmed the same way, so a
+// running worker's cache cannot grow without limit either.
 func (d *Daemon) trimWorkerGoCache(now time.Time, maxAge time.Duration) uint64 {
 	if maxAge <= 0 {
 		return 0
@@ -116,6 +118,15 @@ func (d *Daemon) trimWorkerGoCache(now time.Time, maxAge time.Duration) uint64 {
 		}
 		return 0
 	}
+	var freed uint64
+	for _, dir := range append([]string{cacheDir}, d.workerPerWorkerGoCacheDirs()...) {
+		freed += trimGoCacheDir(dir, now, maxAge)
+	}
+	return freed
+}
+
+// trimGoCacheDir removes the old files of one Go build cache folder.
+func trimGoCacheDir(cacheDir string, now time.Time, maxAge time.Duration) uint64 {
 	info, err := os.Stat(cacheDir)
 	if err != nil || !info.IsDir() {
 		return 0
@@ -252,6 +263,14 @@ func (d *Daemon) trimCacheSize(maxBytes, lowBytes int64) cacheTrimFreed {
 	var entries []goCacheEntry
 	if isGoCacheDir(workerDir) {
 		size, list := goCacheFiles(workerDir, false)
+		total += size
+		entries = append(entries, list...)
+	}
+	for _, dir := range d.workerPerWorkerGoCacheDirs() {
+		if sameDir(dir, workerDir) || (ownerDir != "" && sameDir(dir, ownerDir)) {
+			continue
+		}
+		size, list := goCacheFiles(dir, false)
 		total += size
 		entries = append(entries, list...)
 	}
@@ -512,6 +531,11 @@ func (d *Daemon) checkDiskWarning(ctx context.Context, now time.Time) error {
 		workerDir := d.workerGoCacheDir()
 		ownerDir := ownerGoBuildCacheDir(d.cfg.HomeDir)
 		workerSize := goCacheBytes(workerDir)
+		for _, dir := range d.workerPerWorkerGoCacheDirs() {
+			if !sameDir(dir, workerDir) {
+				workerSize += goCacheBytes(dir)
+			}
+		}
 		ownerSize := int64(0)
 		ownerText := sizeText(0)
 		if ownerDir != "" && sameDir(workerDir, ownerDir) {
@@ -593,7 +617,8 @@ func (d *Daemon) cleanWorkerCachesAndDisk(ctx context.Context, now time.Time) ui
 	cacheFreed := d.trimWorkerGoCache(now, settings.CacheMaxAge)
 	sizeFreed := d.trimCacheSize(settings.CacheMaxBytes, settings.CacheLowBytes)
 	tmpFreed := d.cleanWorkerGoTmp(now, settings.TmpMaxAge)
-	totalFreed := cacheFreed + sizeFreed.total() + tmpFreed
+	stateFreed := d.cleanEndedWorkerState(now)
+	totalFreed := cacheFreed + sizeFreed.total() + tmpFreed + stateFreed
 	if d.log != nil {
 		d.Logf("cache cleanup: %d bytes freed", totalFreed)
 	}
