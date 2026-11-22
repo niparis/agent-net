@@ -77,27 +77,34 @@ Real asks from daily use, lightly edited:
 - **Settings:** *"Change the merger's idle limit to 30 minutes."* / *"Put the research loop on hold."*
 - **When something is wrong:** *"The research project is stuck. Analyse why."* / *"I can't find my homelab session!"*, then *"Report it to agent-net: it's a problem that it disappears from my list."*
 - **Clearing things for you:** *"Approve all the pending drafts for me."* / *"In my inbox I have 10 really old messages from one project. Get rid of them."*
+- **Finding out what it can do:** *"What do you know about your abilities?"* The CTO lists what it can do for you, and what it would have to ask agent-net to build.
 
 ### How to talk to the CTO
 
-- **Say it once, and expect it done.** In the owner's words: *"When I speak you must do. When you can't do, you ask agent-net to build. Very simple."*
 - **Do not approve twice.** If you already asked for something, the CTO acts on it. If it asks you to authorise what you just said, tell it: that is a defect, not your job.
 - **Make it the default.** When you repeat a choice, ask the CTO to make it the default or a standing rule, so no one asks again.
 
-## 7. What stays with you
+## 7. Connect Grok Bot (optional)
 
-Some things only you can do, and agent-net asks you for them:
+Cloud agents such as Grok Bot can use agent-net too, through MCP.
 
-- Browser and OAuth sign-ins, passwords and `sudo` prompts.
-- Physical work on a machine, and network approvals such as a Tailscale route.
-- Deleting data, spending money and secrets. These always wait for your own words.
+1. In the TUI, open Settings (tab 5) and select Connected apps. Press `p` to turn internet access on. With Tailscale, agent-net sets up the route for you. The status line shows the public MCP URL.
+2. In Grok, add an MCP connector with that URL.
+3. Grok shows a code. Approve it in Connected apps, as a **bot** (it acts under its own name, with a small set of tools) or as an **owner app** (it acts as you).
+
+Details: [reference.md](reference.md#connected-apps).
 
 ## 8. When something goes wrong
 
-- Ask the CTO *"why?"* first. It can read the machine logs and the history of every message and worker.
-- `agent-net nodes` shows every machine, its version and whether it is online.
-- A message to a session that is down waits, and expires after 24 hours by default. If it matters, ask the CTO to make sure it arrives.
-- Common problems and fixes: [troubleshooting.md](troubleshooting.md).
+Most problems are found and fixed without you. The CTO watches a list of problems, such as a machine that went silent, a session that is stuck or a failing merge queue, and raises only what needs you.
+
+When you notice something yourself:
+
+- **Ask for the cause, not a workaround.** *"The research project is stuck. Analyse why."* The CTO reads the machine logs and the history of every message, worker and change, and tells you what broke.
+- **If agent-net itself is at fault, have it fixed.** *"Report it to agent-net."* The agent-net lead gets the evidence, a worker fixes it, and the fix ships in the next release. Every machine updates itself.
+- **Some causes are physical, and those are yours:** a machine that is off or asleep, an expired sign-in, a network route to approve. The CTO tells you which one it is.
+
+Known problems and their fixes: [troubleshooting.md](troubleshooting.md).
 
 ## Where to go next
 
