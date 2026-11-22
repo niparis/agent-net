@@ -34,16 +34,16 @@ Repeat for each machine. Details: [setup.md](setup.md).
 
 ## 4. Bring in your projects
 
-Tell the CTO which repositories you work on, and how you want them run. Typical first-day asks:
+Tell the CTO which repositories you work on, and how you want them run. Each ask below sets up one thing, so that later you can hand work over and stop watching it:
 
-- *"Add the repos in ~/code/shop and ~/code/blog."*
-- *"Make a lead for the shop repo."* A lead is the agent in charge of one repo: it plans, starts workers and checks their work.
-- *"Put shop and blog in one team."* Teams are optional. A repo without a team reports straight to the CTO.
-- *"Only the shop lead may merge to main."*
-- *"Trust these folders"*, or *"Let workers run the tests without asking."*
-- *"Connect the shared GitHub MCP server."* Some connections need a browser sign-in: that part is yours.
+- *"Add the repos in ~/code/shop and ~/code/blog."* **Why:** agent-net only knows about projects you add. Once a repo is added, its sessions show up together, and workers can be started in it on any machine.
+- *"Make a lead for the shop repo."* **Why:** you want one agent to talk to per repo, not ten. The lead plans the work, starts workers, checks what they hand back and answers for the repo. You give it a goal and get one outcome back.
+- *"Put shop and blog in one team."* **Why:** related repos often change together. A team lead coordinates them, so a change in one does not break the other. Teams are optional: a repo without a team reports straight to the CTO.
+- *"Only the shop lead may merge to main."* **Why:** many agents work in parallel. One named agent decides what reaches main, so nothing ships that nobody checked.
+- *"Trust these folders"*, or *"Let workers run the tests without asking."* **Why:** every permission prompt stops a worker until you answer. Granting the safe, repeated actions once lets work run while you are away.
+- *"Connect the shared GitHub MCP server."* **Why:** one connection, set up once, that every agent can use, instead of a sign-in per session. Some connections need a browser sign-in: that part is yours.
 
-If you already have a mess of sessions and repos, ask the CTO to reorganize it: *"Look at my sessions and propose a team structure."*
+If you already have a mess of sessions and repos, ask the CTO to reorganize it: *"Look at my sessions and propose a team structure."* **Why:** the same setup, built from what you already run.
 
 ## 5. Give work to a lead
 
