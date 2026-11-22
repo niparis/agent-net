@@ -28,6 +28,8 @@ func (d *Daemon) readCTOCatalogTool(ctx context.Context, name string, raw json.R
 			"agent_projects_find": "projects_find", "agent_owner_judgments_find": "judgments_find", "projects_layout": "projects_layout",
 		}[name]
 		return d.ctoReadConn().dispatch(ctx, method, raw)
+	case "agent_protected_providers_get":
+		return d.protectedProviders(ctx, nil)
 	case "agent_workers_find":
 		return d.ctoCatalogWorkersFind(ctx, raw)
 	case "agent_messages_find":

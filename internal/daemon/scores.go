@@ -244,6 +244,9 @@ func (d *Daemon) protectedProviders(ctx context.Context, change *protocol.Protec
 	}
 	var out protocol.ProtectedProviders
 	err = json.NewDecoder(io.LimitReader(resp.Body, 8192)).Decode(&out)
+	if out.Providers == nil {
+		out.Providers = []string{}
+	}
 	return out, err
 }
 

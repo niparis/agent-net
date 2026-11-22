@@ -382,7 +382,8 @@ func TestCTOSchemaBudgetAndCharterGuide(t *testing.T) {
 	// skill_archive, the skill archive and its intake (0169), 2026-11-16
 	// skills, the node skill lists (0169 task 3), grew it by 2048
 	// follow_up_at on agent_message_send (0177 addition), the shortest text left 70 bytes short, grew it by 256
-	const schemaBudget = 36*1024 + 3932 + 1024 + 2048 + 256
+	// agent_protected_providers and worker_profile tools registered through catalog (tool surface review part 2), grew it by 2048, 2026-11-22
+	const schemaBudget = 36*1024 + 3932 + 1024 + 2048 + 256 + 2048
 	const headroom = 1024
 	t.Logf("total schema: %d bytes, %d bytes left of the %d byte budget", len(schema), schemaBudget-len(schema), schemaBudget)
 	if len(schema) >= schemaBudget {

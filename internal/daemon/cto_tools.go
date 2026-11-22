@@ -499,6 +499,31 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		return out, err
 	case "agent_note_write", "agent_notes_find":
 		return d.ctoNotes(ctx, name, raw)
+	case "agent_protected_providers_set":
+		var p protocol.ProtectedProviders
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad agent_protected_providers_set params")
+		}
+		return d.protectedProviders(ctx, &p)
+	case "agent_worker_profile_add", "agent_worker_profile_remove":
+		var p protocol.WorkerProfileRequest
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad worker profile request")
+		}
+		sid := d.ctoSessionID()
+		action := map[string]string{
+			"agent_worker_profile_add":    "worker.profile.add",
+			"agent_worker_profile_remove": "worker.profile.remove",
+		}[name]
+		callCtx := ctx
+		if name == "agent_worker_profile_add" {
+			callCtx = withCallWait(ctx, profileCallWait)
+		}
+		data, err := d.call(callCtx, action, protocol.WorkerProfileFrame{WorkerProfileRequest: p, Requester: sid})
+		if err != nil {
+			return nil, tooOldGateway(err)
+		}
+		return data, nil
 	case "agent_learn":
 		var p protocol.LearnRequest
 		if json.Unmarshal(raw, &p) != nil {

@@ -2502,6 +2502,74 @@ export const TOOL_CATALOG = [
     "daemon_fields": {}
   },
   {
+    "name": "agent_worker_profile_add",
+    "description": "Register a worker harness and model when the owner asks. Reusing a profile name replaces its model or effort. The model is checked against the harness's live model list on each chosen machine; workers cannot use this tool.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Optional profile name. Reuse an existing name to replace its model or effort; the harness and resolved model form the default name."
+        },
+        "harness": {
+          "type": "string",
+          "description": "Installed worker harness: opencode, pi, codex or claude."
+        },
+        "model": {
+          "type": "string",
+          "description": "Model ID or loose model name to resolve against the live harness model list."
+        },
+        "effort": {
+          "type": "string",
+          "description": "Optional model reasoning or thinking effort."
+        },
+        "machines": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional machines the profile is for. Empty checks every online machine with the harness."
+        },
+        "test": {
+          "type": "boolean",
+          "description": "Run a short real start to test the model before saving. False only checks the live model list."
+        }
+      },
+      "required": [
+        "harness",
+        "model"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent"
+    ],
+    "method": "worker_profile_add",
+    "daemon_fields": {}
+  },
+  {
+    "name": "agent_worker_profile_remove",
+    "description": "Remove a registered worker profile when the owner asks. Workers cannot use this tool.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the registered worker profile to remove."
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent"
+    ],
+    "method": "worker_profile_remove",
+    "daemon_fields": {}
+  },
+  {
     "name": "agent_worker_profiles_find",
     "description": "List worker profiles: harness, model, effort and the machines that can run them. Read before choosing a worker model.",
     "inputSchema": {
