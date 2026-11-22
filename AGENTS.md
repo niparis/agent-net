@@ -52,6 +52,23 @@ If you change guidance text, also run go test ./internal/guidance ./internal/age
 
 CI runs `gofmt`, `go vet`, the daemon, gateway, setup, tui and command shards (`scripts/test.sh --package daemon|gateway|setup|tui|agent-net --shard-index I --shard-count N`; N is 5 for daemon, 6 for gateway and 4 for the others), the other Go packages in one job, `sh -n install.sh` and `sh scripts/test-changed-test.sh`. All must pass. Tests use localhost only. No test may sleep for more than 2 seconds: use a polling helper with a timeout.
 
+## Lessons learned
+
+Short rules from the build. Each links to the full lesson, with what happened and where to read more, in [docs/lessons.md](docs/lessons.md).
+
+- **Never hold a daemon or gateway lock across a call** to the gateway, another process or the database. [Details](docs/lessons.md#locks-across-calls)
+- **Keep migrations append-only.** Add a new migration at the end and never rewrite one that has shipped. [Details](docs/lessons.md#migrations-are-append-only)
+- **Prefer a capability check to a version gate.** Ask the peer whether it supports the feature. [Details](docs/lessons.md#prefer-capability-checks-to-version-gates)
+- **Point setup tests at temporary HOME, XDG and `AGENT_NET_*` directories** so they never touch a real setup. [Details](docs/lessons.md#setup-tests-use-temporary-directories)
+- **Run daemon and gateway tests outside the sandbox** before you accept a schema, daemon or store change. [Details](docs/lessons.md#run-daemon-and-gateway-tests-outside-the-sandbox)
+- **Run the plugin tests before a plugin or tool name change.** Go tests alone do not see them. [Details](docs/lessons.md#run-the-plugin-tests-before-a-plugin-or-tool-change)
+- **Treat CI as the single test gate.** Locally run only the tests your change needs. [Details](docs/lessons.md#ci-is-the-single-test-gate)
+- **Keep tests light.** No busy loops, no load runs, and no sleep over 2 seconds. [Details](docs/lessons.md#tests-must-not-create-load)
+- **Use a separate Go build cache and keep test temp files in RAM** where you can. [Details](docs/lessons.md#use-a-separate-go-build-cache)
+- **Check an adapter fix on the real program,** not only on the fakes. [Details](docs/lessons.md#check-adapter-fixes-on-the-real-program)
+- **Bump the screen topics when you write a value a screen shows.** [Details](docs/lessons.md#write-screen-values-so-screens-update)
+- **Stack schema changes on one train in a fixed order** and keep each change's commits separate. [Details](docs/lessons.md#stack-schema-changes-in-a-fixed-order)
+
 ## Layout
 
 | Path | What |
