@@ -324,3 +324,33 @@ func TestNoteOwnerScopeWriteIsRefusedForAnAgentAndOpenForTheCTO(t *testing.T) {
 		t.Fatalf("the CTO must write an owner-wide note: %+v", res)
 	}
 }
+
+func TestNotesFindByIDAndName(t *testing.T) {
+	s, demo, _ := noteRig(t)
+	n1 := noteWrite(t, s, demo, protocol.NoteWriteRequest{Name: "alpha-note", Description: "first", Body: "body one", Scope: "project"})
+	n2 := noteWrite(t, s, demo, protocol.NoteWriteRequest{Name: "beta-note", Description: "second", Body: "body two", Scope: "project"})
+
+	// By ID
+	res, err := s.FindNotes(demo, protocol.NotesFindRequest{ID: n1.ID})
+	if err != nil || res.Total != 1 || res.Notes[0].ID != n1.ID {
+		t.Fatalf("find by ID: got %+v err %v", res, err)
+	}
+
+	// By NoteID alias
+	res, err = s.FindNotes(demo, protocol.NotesFindRequest{NoteID: n2.ID})
+	if err != nil || res.Total != 1 || res.Notes[0].ID != n2.ID {
+		t.Fatalf("find by NoteID: got %+v err %v", res, err)
+	}
+
+	// By IDs
+	res, err = s.FindNotes(demo, protocol.NotesFindRequest{IDs: []string{n1.ID, n2.ID}})
+	if err != nil || res.Total != 2 {
+		t.Fatalf("find by IDs: got %+v err %v", res, err)
+	}
+
+	// By Name
+	res, err = s.FindNotes(demo, protocol.NotesFindRequest{Name: "alpha-note"})
+	if err != nil || res.Total != 1 || res.Notes[0].ID != n1.ID {
+		t.Fatalf("find by Name: got %+v err %v", res, err)
+	}
+}

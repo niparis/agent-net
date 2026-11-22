@@ -305,6 +305,18 @@ func (s *Store) findNotes(session string, q protocol.NotesFindRequest, now time.
 			res.StaleCount++
 		}
 	}
+	if q.NoteID != "" && q.ID == "" {
+		q.ID = q.NoteID
+	}
+	idFilter := map[string]bool{}
+	if q.ID != "" {
+		idFilter[q.ID] = true
+	}
+	for _, id := range q.IDs {
+		if id != "" {
+			idFilter[id] = true
+		}
+	}
 	terms := noteTokensMin(q.Text, 2)
 	phrase := strings.ToLower(strings.TrimSpace(q.Text))
 	type scored struct {
@@ -314,6 +326,12 @@ func (s *Store) findNotes(session string, q protocol.NotesFindRequest, now time.
 	var hits []scored
 	for _, o := range all {
 		if q.Stale && !noteStale(o, now) {
+			continue
+		}
+		if len(idFilter) > 0 && !idFilter[o.ID] {
+			continue
+		}
+		if q.Name != "" && !strings.EqualFold(o.Name, q.Name) {
 			continue
 		}
 		score := 0
@@ -336,6 +354,8 @@ func (s *Store) findNotes(session string, q protocol.NotesFindRequest, now time.
 			if score == 0 {
 				continue
 			}
+		} else if len(idFilter) > 0 || q.Name != "" {
+			score = 1
 		}
 		hits = append(hits, scored{o, score})
 	}

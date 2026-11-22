@@ -1487,10 +1487,25 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_notes_find",
-    "description": "Read notes with their bodies. Your start text lists only titles, the most used first. Give text to search names, descriptions and bodies, scope to narrow, stale to list notes nobody used for 30 days.",
+    "description": "Read notes with their bodies. Your start text lists only titles, the most used first. Give text to search names, descriptions and bodies, scope to narrow, id, ids or name to find specific notes, stale to list notes nobody used for 30 days.",
     "inputSchema": {
       "type": "object",
       "properties": {
+        "id": {
+          "type": "string",
+          "description": "Note ID: read one note in full detail."
+        },
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Note IDs: read notes by ID."
+        },
+        "name": {
+          "type": "string",
+          "description": "Note name: read notes matching name."
+        },
         "text": {
           "type": "string",
           "description": "Words to look for in names, descriptions and bodies. Empty lists the most used."
@@ -1517,7 +1532,9 @@ export const TOOL_CATALOG = [
       "worker"
     ],
     "method": "notes_find",
-    "daemon_fields": {}
+    "daemon_fields": {
+      "id": "note_id"
+    }
   },
   {
     "name": "agent_nudge_pause",
