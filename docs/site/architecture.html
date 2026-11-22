@@ -227,6 +227,7 @@ details.howto p{margin:6px 0 0;color:var(--muted);font-size:14px}
     <button class="tab" role="tab" id="t-principles" aria-controls="tab-principles" aria-selected="false">Principles</button>
     <button class="tab" role="tab" id="t-model" aria-controls="tab-model" aria-selected="false">Data model</button>
     <button class="tab" role="tab" id="t-proposals" aria-controls="tab-proposals" aria-selected="false">Proposals</button>
+    <button class="tab" role="tab" id="t-gwnet" aria-controls="tab-gwnet" aria-selected="false">Gateway network</button>
   </div>
   <div class="tabpane" id="tab-overview" role="tabpanel" aria-labelledby="t-overview">
     <section aria-labelledby="ov-h"><div class="head"><div><h2 id="ov-h">What agent-net is</h2><p class="lede">agent-net connects AI coding agents (Claude Code, Codex, OpenCode, Pi, agy) running on several machines, so they work as one team for one person, the owner. You talk to one assistant, the CTO, and it runs the network for you: machines, projects, leads, workers and settings. The agents plan, build, review and ship; you decide what only you can decide.</p><p class="lede">This page has seven tabs: <b>Overview</b> (this one: what it is and who does the work), <b>Quick start</b> (your first day), <b>How it runs</b> (the programs and how they talk), <b>Features</b> (everything it does), <b>Principles</b> (the rules it is built on), <b>Data model</b> (how it is recorded) and <b>Proposals</b> (ideas not built yet).</p></div></div></section>
@@ -412,6 +413,9 @@ details.howto p{margin:6px 0 0;color:var(--muted);font-size:14px}
     <div class="ledger-wrap"><table class="ledger"><thead><tr><th>Table</th><th>Part</th><th>What happened</th><th>Where the data went</th></tr></thead><tbody id="ledger"></tbody></table></div>
   </section>
   </div>
+  <div class="tabpane" id="tab-gwnet" role="tabpanel" aria-labelledby="t-gwnet" hidden>
+    <section aria-labelledby="gw-h"><div class="head"><div><h2 id="gw-h">A network of gateways (proposed)</h2><p class="lede">Decision 0178, proposed and not scheduled: how agent-net could go from one owner with one gateway to many owners whose gateways talk to each other. <a href="gateway-network/index.html" target="_blank" rel="noopener">Open it on its own page</a>.</p></div></div><iframe id="gw-frame" src="gateway-network/index.html" title="A network of gateways" loading="lazy" style="width:100%;height:1200px;border:0;display:block"></iframe></section>
+  </div>
 </div>
 
 <script>
@@ -563,7 +567,7 @@ pick(J[start] ? start : 0);
 
 // Data model tab
 const M = DATA.model, EN = Object.fromEntries(M.entities.map(e => [e.id, e]));
-const TABS = ['overview', 'quick', 'runs', 'features', 'principles', 'model', 'proposals'];
+const TABS = ['overview', 'quick', 'runs', 'features', 'principles', 'model', 'proposals', 'gwnet'];
 function setTab(which) {
   if (which === 'tables') which = 'model';
   if (!TABS.includes(which)) which = 'overview';
@@ -571,8 +575,14 @@ function setTab(which) {
     $('#t-' + t).setAttribute('aria-selected', String(t === which));
     $('#tab-' + t).hidden = t !== which;
   }
+  if (which === 'gwnet') fitGw();
   try { localStorage.setItem('gt-tab4', which); } catch (_) {}
 }
+function fitGw() {
+  const f = document.getElementById('gw-frame');
+  try { const d = f.contentDocument; if (d && d.documentElement && d.documentElement.scrollHeight > 200) f.style.height = d.documentElement.scrollHeight + 'px'; } catch (_) {}
+}
+{ const f = document.getElementById('gw-frame'); f.addEventListener('load', fitGw); window.addEventListener('resize', fitGw); }
 for (const t of TABS) $('#t-' + t).addEventListener('click', () => setTab(t));
 let firstTab = 'overview'; try { firstTab = localStorage.getItem('gt-tab4') || 'overview'; } catch (_) {}
 setTab(firstTab);

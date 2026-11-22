@@ -69,6 +69,7 @@ jobs:
           cp release/install.sh site/install.sh
           mkdir -p site/architecture
           cp docs/site/architecture.html site/architecture/index.html
+          cp -r docs/site/gateway-network site/architecture/gateway-network
           touch site/.nojekyll
           cat > site/index.html <<'EOF'
           <!doctype html>
