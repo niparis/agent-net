@@ -97,7 +97,7 @@ func TestWorkerUnscoredFallback(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	w.register(t, newRepo(t, "shop"))
 	for _, level := range []string{"normal", "hard"} {
-		_, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Difficulty: level, Task: "x"})
+		_, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
 		if err == nil || !strings.Contains(err.Error(), "no registered workers") || !strings.Contains(err.Error(), "model explicitly") {
 			t.Fatalf("empty roster at %s: %v", level, err)
 		}
@@ -283,11 +283,11 @@ func TestWorkerStartCellRuleUsesTheBenchmarkWhereThereIsNoRecord(t *testing.T) {
 	if err := g.gw.Store().AddWorkerProfile(protocol.WorkerProfile{Name: "strong", Harness: "opencode", Model: "fake/m1", AddedBy: w.ownerID()}); err != nil {
 		t.Fatal(err)
 	}
-	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Difficulty: "normal", Task: "x"})
+	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Task: "x"})
 	if err != nil || res.Model != "fake/m1" || !strings.Contains(res.ModelNote, "bucket 2.33-2.67: strong n0, chosen (benchmark)") {
 		t.Fatalf("a strong model with no record: %+v %v", res, err)
 	}
-	res, err = w.start(protocol.WorkerStartRequest{Project: "shop", Model: "fake/m1", Difficulty: "normal", Task: "x"})
+	res, err = w.start(protocol.WorkerStartRequest{Project: "shop", Model: "fake/m1", Task: "x"})
 	if err != nil || res.Model != "fake/m1" || !strings.Contains(res.ModelNote, "explicit model overrides") {
 		t.Fatalf("explicit override: %+v %v", res, err)
 	}
@@ -299,7 +299,7 @@ func TestWorkerStartCellRuleUsesTheBenchmarkWhereThereIsNoRecord(t *testing.T) {
 	// With a weaker adequate model on the roster, an untried strong model is
 	// still allowed by its benchmark. Neither has a record, so the note names
 	// both and never says the strong one is left out for being overqualified.
-	res, err = w.start(protocol.WorkerStartRequest{Project: "shop", Difficulty: "normal", Task: "x"})
+	res, err = w.start(protocol.WorkerStartRequest{Project: "shop", Task: "x"})
 	if err != nil || strings.Contains(res.ModelNote, "overqualified") || !strings.Contains(res.ModelNote, "strong n0") || !strings.Contains(res.ModelNote, "adequate n0") {
 		t.Fatalf("the strong model stays allowed by its benchmark: %+v %v", res, err)
 	}

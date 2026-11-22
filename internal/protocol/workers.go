@@ -361,8 +361,8 @@ type (
 		// start keeps its model unless the gate refuses it now (decision 0162).
 		Recheck string `json:"recheck,omitempty"`
 		// Level is an internal caller's fixed level, used when there is no
-		// assessment (for example the read-only phrasing worker). A caller's
-		// Difficulty field is ignored.
+		// assessment (for example the read-only phrasing worker). A caller
+		// sends no difficulty; the judge sets the label.
 		Level string `json:"level,omitempty"`
 		// Precheck is set by the gateway for "worker.precheck": the checks that
 		// need no judge run, nothing starts. A caller never sets it.

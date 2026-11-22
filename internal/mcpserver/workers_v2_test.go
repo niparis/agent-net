@@ -27,7 +27,7 @@ func TestRedesignedWorkerAndOwnerTools(t *testing.T) {
 		name, method string
 		args         map[string]any
 	}{
-		{"agent_worker_start", "worker_start", map[string]any{"task": "do it", "title": "Parser fix", "touches": []string{"ui"}, "not_family": []string{"openai"}, "fixes": "ch_shipped", "fixes_severity": 3}},
+		{"agent_worker_start", "worker_start", map[string]any{"task": "do it", "title": "Parser fix", "not_family": []string{"openai"}, "fixes": "ch_shipped", "fixes_severity": 3}},
 		{"agent_worker_stop", "worker_stop", map[string]any{"worker": "s_w"}},
 		{"agent_worker_rate", "agent_rate", map[string]any{"worker": "s_w", "kind": "rating", "score": 4}},
 		{"agent_announce", "announce", map[string]any{"task": "working", "expertise": "Go"}},
@@ -67,7 +67,7 @@ func TestRedesignedWorkerAndOwnerTools(t *testing.T) {
 		}
 		switch tc.name {
 		case "agent_worker_start":
-			if calls[first].params["task"] != "do it" || calls[first].params["title"] != "Parser fix" || calls[first].params["touches"].([]any)[0] != "ui" || calls[first].params["not_family"].([]any)[0] != "openai" || calls[first].params["fixes"] != "ch_shipped" || calls[first].params["fixes_severity"] != float64(3) {
+			if calls[first].params["task"] != "do it" || calls[first].params["title"] != "Parser fix" || calls[first].params["not_family"].([]any)[0] != "openai" || calls[first].params["fixes"] != "ch_shipped" || calls[first].params["fixes_severity"] != float64(3) {
 				t.Errorf("worker_start args: %#v", calls[first].params)
 			}
 		case "agent_worker_stop":
@@ -117,7 +117,7 @@ func TestRedesignedToolValidations(t *testing.T) {
 		name string
 		args map[string]any
 	}{
-		{"agent_worker_start", map[string]any{"task": "x", "continue": "s", "touches": []string{"ui"}}},
+		{"agent_worker_start", map[string]any{"task": "x", "continue": "s"}},
 		{"agent_worker_rate", map[string]any{"worker": "s", "kind": "rating"}},
 		{"agent_worker_rate", map[string]any{"worker": "s", "kind": "defect_found_later", "note": "bug"}},
 	} {
@@ -209,7 +209,7 @@ func TestAgentWorkerStartFillsTheCaller(t *testing.T) {
 		return json.RawMessage(`{}`), nil
 	})
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_start",
-		Arguments: map[string]any{"task": "do it", "title": "Parser fix", "touches": []string{"ui"}}})
+		Arguments: map[string]any{"task": "do it", "title": "Parser fix"}})
 	if err != nil || res.IsError {
 		t.Fatalf("agent_worker_start: %v %+v", err, res)
 	}

@@ -1004,17 +1004,16 @@ await test("agent_worker_start and agent_worker_stop reach the daemon and print 
   for (const bad of ["owner", "from", "sender", "session_id"]) {
     if (bad in start.input.properties) throw new Error("agent_worker_start exposes " + bad);
   }
-  if (!start.input.properties.difficulty) throw new Error("missing difficulty schema");
-  const areas = start.input.properties.touches?.items?.enum;
-  if (JSON.stringify(areas) !== JSON.stringify(["db", "hot-path", "ui", "docs", "tests", "config", "other"])) throw new Error("wrong touches schema");
+  if ("difficulty" in start.input.properties) throw new Error("difficulty schema is still offered");
+  if ("touches" in start.input.properties) throw new Error("touches schema is still offered");
   const plainBefore = calls.length;
   const plain = (await start.execute({ project: "alpha", task: "say ok" }, { sessionID: "ses_w" })).content;
   if (calls[plainBefore][1].touches) throw new Error("touches was sent for a plain start");
   if (!plain.includes("s_worker")) throw new Error("start without touches: " + plain);
   const before = calls.length;
-  const out = (await start.execute({ project: "alpha", task: "say ok", model: "a/x", difficulty: "hard", touches: ["ui"] }, { sessionID: "ses_w" })).content;
+  const out = (await start.execute({ project: "alpha", task: "say ok", model: "a/x" }, { sessionID: "ses_w" })).content;
   const [method, params] = calls[before];
-  if (method !== "worker_start" || params.project !== "alpha" || params.task !== "say ok" || params.model !== "a/x" || params.difficulty !== "hard") {
+  if (method !== "worker_start" || params.project !== "alpha" || params.task !== "say ok" || params.model !== "a/x" || params.difficulty || params.touches) {
     throw new Error("wrong call: " + JSON.stringify(calls[before]));
   }
   for (const want of ["s_worker", "a/x", "alpha"]) {
@@ -1192,7 +1191,7 @@ await test("agent_worker_start can ask for a worktree", async () => {
   if (!start) throw new Error("agent_worker_start is not registered");
   if (!("isolation" in start.input.properties)) throw new Error("agent_worker_start has no isolation");
   const before = calls.length;
-  await start.execute({ project: "alpha", task: "t", isolation: "worktree", touches: ["other"] }, { sessionID: "ses_iso" });
+  await start.execute({ project: "alpha", task: "t", isolation: "worktree" }, { sessionID: "ses_iso" });
   const sent = calls.slice(before).find(([m]) => m === "worker_start");
   if (!sent || sent[1].isolation !== "worktree") throw new Error("isolation was not passed: " + JSON.stringify(sent));
   stop();

@@ -2686,34 +2686,6 @@ export const TOOL_CATALOG = [
           "maxLength": 65536,
           "description": "Extra notes only: the old free-text task. Optional now. A call with only task still works for older callers. The whole brief is refused when it names a file a running worker or open change in the project holds, unless it says \"overlap ok: reason\". The change or worker this start targets (continue, fixes, base) is not an overlap."
         },
-        "difficulty": {
-          "type": "string",
-          "enum": [
-            "trivial",
-            "simple",
-            "normal",
-            "hard",
-            "very_complex"
-          ],
-          "description": "Deprecated and ignored: the level comes from the difficulty judge.",
-          "default": "normal"
-        },
-        "touches": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "enum": [
-              "db",
-              "hot-path",
-              "ui",
-              "docs",
-              "tests",
-              "config",
-              "other"
-            ]
-          },
-          "description": "Deprecated and ignored: the level comes from the difficulty judge."
-        },
         "project": {
           "type": "string",
           "description": "Project name."

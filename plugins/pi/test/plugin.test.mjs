@@ -278,7 +278,7 @@ await test("worker profile tools reach the daemon", async () => {
   await p.fire("session_shutdown", {});
 });
 
-await test("agent_worker_start forwards difficulty and touches", async () => {
+await test("agent_worker_start offers no difficulty or touches", async () => {
   const p = makePi();
   extension(p.api);
   const n = hellos.length;
@@ -289,10 +289,9 @@ await test("agent_worker_start forwards difficulty and touches", async () => {
   const plain = (await p.tools.get("agent_worker_start").execute("id", { project: "p", task: "t" })).content[0].text;
   if (requests.filter((r) => r.method === "worker_start").pop().params.touches) throw new Error("touches was sent for a plain start");
   if (!plain.includes("s_w")) throw new Error("start without touches: " + plain);
-  const started = (await p.tools.get("agent_worker_start").execute("id", { project: "p", task: "t", difficulty: "hard", touches: ["ui"] })).content[0].text;
-  if (!p.tools.get("agent_worker_start").parameters.properties.difficulty) throw new Error("missing difficulty schema");
-  if (!p.tools.get("agent_worker_start").parameters.properties.touches) throw new Error("missing touches schema");
-  if (requests.filter((r) => r.method === "worker_start").pop().params.difficulty !== "hard") throw new Error("difficulty not forwarded");
+  const started = (await p.tools.get("agent_worker_start").execute("id", { project: "p", task: "t" })).content[0].text;
+  if (p.tools.get("agent_worker_start").parameters.properties.difficulty) throw new Error("difficulty schema is still offered");
+  if (p.tools.get("agent_worker_start").parameters.properties.touches) throw new Error("touches schema is still offered");
   if (!started.includes("s_w") || !started.includes("a/x")) throw new Error("start result: " + started);
   await p.tools.get("agent_worker_start").execute("id", { continue: "old" });
   if (requests.filter((r) => r.method === "worker_start").pop().params.continue !== "old") throw new Error("continue without touches not forwarded");

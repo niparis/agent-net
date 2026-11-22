@@ -421,9 +421,6 @@ type WorkerStartRequest struct {
 	NotFamily []string `json:"not_family,omitempty"`
 	Provider  string   `json:"provider,omitempty"`
 	Effort    string   `json:"effort,omitempty"`
-	// Difficulty selects the minimum score for automatic model choice.
-	Difficulty string   `json:"difficulty,omitempty"`
-	Touches    []string `json:"touches,omitempty"`
 	// Title is one short line naming the worker, at most 60 characters and
 	// with no newlines. Empty means the gateway derives it from Task.
 	Title string `json:"title,omitempty"`
