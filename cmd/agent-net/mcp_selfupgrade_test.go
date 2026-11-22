@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -16,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/niparis/agent-net/internal/setup"
 	"github.com/niparis/agent-net/internal/testsock"
 )
 
@@ -128,7 +131,13 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	// No test here may download or run herdr's real installer.
+	restore := setup.SetHerdrForTesting(
+		func(string) (string, error) { return "/test/herdr", nil },
+		func(context.Context) error { return errors.New("herdr installer called in a test") },
+	)
 	code := m.Run()
+	restore()
 	if builtDir != "" {
 		os.RemoveAll(builtDir)
 	}

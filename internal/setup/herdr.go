@@ -25,6 +25,17 @@ var (
 	installHerdr = installHerdrOfficial
 )
 
+// SetHerdrForTesting replaces herdr's lookup and installer and returns a
+// function that puts the real ones back. Tests outside this package that run
+// Setup use it so they never download or install herdr.
+func SetHerdrForTesting(find func(string) (string, error), install func(context.Context) error) func() {
+	oldFind, oldInstall := findHerdr, installHerdr
+	findHerdr, installHerdr = find, install
+	return func() {
+		findHerdr, installHerdr = oldFind, oldInstall
+	}
+}
+
 // herdr makes sure the owner's herdr is available. Herdr is how the owner opens
 // sessions (decision 0046) and Pi sessions need it, so a missing one is
 // installed with herdr's official installer. A failed install is reported and

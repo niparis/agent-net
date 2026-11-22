@@ -6,9 +6,21 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/niparis/agent-net/internal/daemon"
 )
+
+// useRealHerdrLookup puts the daemon's lookup back. TestMain replaces it so the
+// other setup tests never reach a real herdr or the network.
+func useRealHerdrLookup(t *testing.T) {
+	t.Helper()
+	old := findHerdr
+	findHerdr = daemon.FindHerdr
+	t.Cleanup(func() { findHerdr = old })
+}
 
 // fakeHerdr writes a stand-in binary that answers the version probe.
 func fakeHerdr(t *testing.T, dir, version string) string {
@@ -38,6 +50,7 @@ func stubHerdrInstall(t *testing.T, fn func(context.Context) error) *bool {
 }
 
 func TestSetupFindsHerdr(t *testing.T) {
+	useRealHerdrLookup(t)
 	f := newFixture(t)
 	dir := t.TempDir()
 	t.Setenv("PATH", dir)
@@ -54,6 +67,7 @@ func TestSetupFindsHerdr(t *testing.T) {
 }
 
 func TestSetupInstallsMissingHerdr(t *testing.T) {
+	useRealHerdrLookup(t)
 	f := newFixture(t)
 	t.Setenv("PATH", t.TempDir())
 	dir := filepath.Join(f.home, ".local", "bin")
@@ -72,6 +86,7 @@ func TestSetupInstallsMissingHerdr(t *testing.T) {
 }
 
 func TestSetupHerdrInstallFailureContinues(t *testing.T) {
+	useRealHerdrLookup(t)
 	f := newFixture(t)
 	t.Setenv("PATH", t.TempDir())
 	stubHerdrInstall(t, func(context.Context) error {
@@ -88,6 +103,7 @@ func TestSetupHerdrInstallFailureContinues(t *testing.T) {
 }
 
 func TestSetupNoHerdrSkipsInstall(t *testing.T) {
+	useRealHerdrLookup(t)
 	f := newFixture(t)
 	t.Setenv("PATH", t.TempDir())
 	called := stubHerdrInstall(t, func(context.Context) error { return nil })
@@ -102,6 +118,7 @@ func TestSetupNoHerdrSkipsInstall(t *testing.T) {
 }
 
 func TestSetupHerdrUsesNodeConfiguredPath(t *testing.T) {
+	useRealHerdrLookup(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("PATH", t.TempDir())
@@ -128,5 +145,17 @@ func TestSetupHerdrUsesNodeConfiguredPath(t *testing.T) {
 	}
 	if *called {
 		t.Error("setup ran the installer while harness_paths.herdr was set")
+	}
+}
+
+// The real installer must never be the active one in a test binary. TestMain
+// replaces it for every setup test, and the herdr tests restore it only under
+// their own cleanup.
+func TestHerdrInstallerIsReplacedInTests(t *testing.T) {
+	if got, want := reflect.ValueOf(installHerdr).Pointer(), reflect.ValueOf(testHerdrInstall).Pointer(); got != want {
+		t.Fatal("the real herdr installer is active in tests; TestMain must replace it")
+	}
+	if got, want := reflect.ValueOf(findHerdr).Pointer(), reflect.ValueOf(testHerdrLookup).Pointer(); got != want {
+		t.Fatal("the real herdr lookup is active in tests; TestMain must replace it")
 	}
 }
