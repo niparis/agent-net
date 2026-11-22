@@ -559,11 +559,12 @@ func TestReviewIndependenceDefaultAcceptsTheCaller(t *testing.T) {
 func TestStepReportMovesChangeThroughMerge(t *testing.T) {
 	r := newDeliveryRig(t)
 	id := r.submit(r.a, r.workerSubmit("agent-net/w_1", commitA)).Change.Change.ID
+	yes := true
 	pass := func(ref protocol.StepRef, commit string, fields map[string]string) protocol.Change {
 		t.Helper()
-		return r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: ref, Result: protocol.StepResultPass, Commit: commit, Fields: fields}).Change.Change
+		return r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: ref, Result: protocol.StepResultPass, Commit: commit, Fields: fields, MergeContainsHead: &yes}).Change.Change
 	}
-	merge := protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: protocol.StepRef{Step: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitA, Fields: map[string]string{protocol.FieldMergedCommit: commitMerged}}
+	merge := protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: protocol.StepRef{Step: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitA, Fields: map[string]string{protocol.FieldMergedCommit: commitMerged}, MergeContainsHead: &yes}
 	if _, err := r.report(r.a, merge); err == nil || !strings.Contains(err.Error(), "accept: no pass") || !strings.Contains(err.Error(), "test(suite=*): no pass") {
 		t.Fatalf("premature merge: %v", err)
 	}
@@ -602,9 +603,10 @@ func TestOwnerReportsTheTryOfAMergedVerify(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := r.submit(r.a, r.workerSubmit("agent-net/w_1", commitA)).Change.Change.ID
+	yes := true
 	pass := func(ref protocol.StepRef, commit string, fields map[string]string) protocol.Change {
 		t.Helper()
-		return r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: ref, Result: protocol.StepResultPass, Commit: commit, Fields: fields}).Change.Change
+		return r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: ref, Result: protocol.StepResultPass, Commit: commit, Fields: fields, MergeContainsHead: &yes}).Change.Change
 	}
 	pass(stepAccept, commitA, nil)
 	pass(protocol.StepRef{Step: protocol.StepTest}, commitA, map[string]string{protocol.FieldSuite: protocol.SuiteChanged})
@@ -661,9 +663,10 @@ func TestChangeListFiltersAndPages(t *testing.T) {
 	}
 	c1 := sub("demo", "b1")
 	c2 := sub("demo", "b2")
+	yes := true
 	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c2, StepRef: stepAccept, Result: protocol.StepResultPass, Commit: commitA})
 	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c2, StepRef: protocol.StepRef{Step: protocol.StepTest}, Result: protocol.StepResultPass, Commit: commitA, Fields: map[string]string{protocol.FieldSuite: protocol.SuiteChanged}})
-	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c2, StepRef: protocol.StepRef{Step: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitA, Fields: map[string]string{protocol.FieldMergedCommit: commitMerged}})
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c2, StepRef: protocol.StepRef{Step: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitA, Fields: map[string]string{protocol.FieldMergedCommit: commitMerged}, MergeContainsHead: &yes})
 	c3 := sub("demo", "b3")
 	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c3, StepRef: stepAccept, Result: protocol.StepResultClose, Commit: commitA, Note: "not wanted"})
 	c4 := r.submit(r.b, protocol.ChangeSubmitRequest{SessionID: r.deepseek, Project: "web", Branch: "b1", HeadCommit: commitA, Origin: protocol.ChangeOrigin{Kind: protocol.OriginSession, SessionID: r.deepseek}}).Change.Change.ID
@@ -824,7 +827,8 @@ func TestChangeReviewRiskPersistsAndCannotBeDropped(t *testing.T) {
 		}
 		r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: protocol.StepRef{Step: step}, Result: protocol.StepResultPass, Commit: commitB, Fields: fields})
 	}
-	_, err = r.report(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: protocol.StepRef{Step: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitB, Fields: map[string]string{protocol.FieldMergedCommit: commitMerged}})
+	yes := true
+	_, err = r.report(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: protocol.StepRef{Step: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitB, Fields: map[string]string{protocol.FieldMergedCommit: commitMerged}, MergeContainsHead: &yes})
 	if err == nil || !strings.Contains(err.Error(), "review") {
 		t.Fatalf("merge without review: %v", err)
 	}

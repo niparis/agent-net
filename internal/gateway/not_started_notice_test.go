@@ -414,11 +414,23 @@ func TestRelayDeadlineMatchesTheStartersWait(t *testing.T) {
 	})
 	f.g.relayWait = 700 * time.Millisecond
 	delay.Store(int64(300 * time.Millisecond)) // slower than a fast owner, within the wait
-	if err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "")); err != nil {
+	if err := f.s.trackWorkerStart("q_slow", f.nodeA, f.b, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.startSession(f.nodeA, "q_slow", worker); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "q_slow")); err != nil {
 		t.Errorf("a slow owner within the wait: %v", err)
 	}
 	delay.Store(int64(1500 * time.Millisecond))
-	if err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "")); err == nil {
+	if err := f.s.trackWorkerStart("q_slower", f.nodeA, f.b, "shop", "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.startSession(f.nodeA, "q_slower", worker); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "q_slower")); err == nil {
 		t.Error("an owner slower than the wait succeeded")
 	}
 }
@@ -459,18 +471,19 @@ func TestQueuedStartRefMustBelongToTheWorkerOwnerAndNode(t *testing.T) {
 	if sent.Load() != 0 {
 		t.Errorf("the task was relayed %d times for a mismatched reference", sent.Load())
 	}
-	// The right reference, and a reference the gateway does not track (a start
-	// from before it tracked them), both go through.
+	// The right reference goes through. A reference the gateway does not
+	// track is refused.
 	if err := f.s.trackWorkerStart("q_ok", f.nodeA, f.b, "shop", "codex", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.s.startSession(f.nodeA, "q_ok", worker); err != nil {
 		t.Fatal(err)
 	}
-	for _, ref := range []string{"q_ok", "q_untracked"} {
-		if err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, ref)); err != nil {
-			t.Errorf("%s: %v", ref, err)
-		}
+	if err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "q_ok")); err != nil {
+		t.Errorf("q_ok: %v", err)
+	}
+	if err := f.frame(t, f.nodeA, "worker.queued_start", f.queuedStart(worker, "q_untracked")); err == nil || !errors.As(err, new(Rejection)) {
+		t.Errorf("an untracked reference was accepted: %v", err)
 	}
 	if open("q_ok") {
 		t.Error("the matching start stayed open")
