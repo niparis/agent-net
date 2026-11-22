@@ -1243,15 +1243,22 @@ func (d *Daemon) beginWorkerEnd(w *worker, reason string, when func() bool) <-ch
 			}
 		}
 		d.finishWorktree(w)
+		keepDirtyWorktree := result.keepWorktree()
+		// The folder is settled before the worker leaves the running set, so a
+		// resume that starts it again finds the data folder it kept and no
+		// removal runs against the new run's private tmp.
+		if dir != "" && !resumable && !keepDirtyWorktree {
+			os.RemoveAll(dir)
+		} else {
+			// A kept folder keeps only what a resume or the record cleanup
+			// reads. Its tmp and package caches can be gigabytes.
+			d.cleanEndedWorkerBuildState(id, dir)
+		}
 		// Keep the worker registered until its worktree and branch are settled.
 		// Continue and resume must not race cleanup of the old branch.
 		d.wmu.Lock()
 		delete(d.workers, w.id)
 		d.wmu.Unlock()
-		keepDirtyWorktree := result.keepWorktree()
-		if dir != "" && !resumable && !keepDirtyWorktree {
-			os.RemoveAll(dir)
-		}
 		if resumable {
 			d.Logf("worker.stopped worker=%s session=%s project=%s harness=%s reason=%s ran=%s ended_after_handback=1",
 				id, sid, project, harness, reason, time.Since(started).Round(time.Second))
