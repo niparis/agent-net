@@ -334,8 +334,8 @@ func TestResumeDoesNotTakeANameAliveSessionHolds(t *testing.T) {
 	if got := agentOf(t, s, resumed).Profile.Name; got != "shop 2" {
 		t.Fatalf("the resumed session took %q, a name the live session holds", got)
 	}
-	if got := agentOf(t, s, first).Profile.Name; got != "shop" {
-		t.Fatalf("the replaced record was renamed to %q", got)
+	if got := agentOf(t, s, first).Profile.Name; got != "" {
+		t.Fatalf("the replaced record kept name %q, want empty", got)
 	}
 
 	// The daemon reconnects and syncs both live sessions, as it does after a
@@ -395,8 +395,8 @@ func TestReplacedRecordThatReportsAgainDoesNotTakeAHeldName(t *testing.T) {
 	if again != first {
 		t.Fatalf("the replaced record %s reported as %s", first, again)
 	}
-	if got := agentOf(t, s, first).Profile.Name; got != "shop 3" {
-		t.Fatalf("the replaced record came back as %q, want shop 3: the next free number", got)
+	if got := agentOf(t, s, first); got.Online || got.Profile.Name != "" || got.ReplacedBy != resumed {
+		t.Fatalf("the replaced record revived or took a name: %+v", got)
 	}
 
 	// The daemon syncs all three live sessions. The holder keeps its name.
@@ -448,7 +448,7 @@ func TestReplacedRecordKeepsItsNameWhenNobodyHoldsIt(t *testing.T) {
 	if _, err := s.UpsertSession(node, report("n1")); err != nil {
 		t.Fatal(err)
 	}
-	if got := agentOf(t, s, first).Profile.Name; got != "shop" {
-		t.Fatalf("the replaced record came back as %q, want its old name shop", got)
+	if got := agentOf(t, s, first); got.Online || got.Profile.Name != "" || got.ReplacedBy != resumed {
+		t.Fatalf("the replaced record revived or reclaimed a name: %+v", got)
 	}
 }

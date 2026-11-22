@@ -731,6 +731,12 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if proposalActor(ctx) == "cto" {
 			actor = "cto"
 		}
+		var remoteNode string
+		if d.sessionByID(q.OldSession) == nil {
+			if a, viewErr := d.agentView(ctx, q.OldSession); viewErr == nil && a.Online && a.NodeID != "" && a.NodeID != d.cfg.NodeID {
+				remoteNode = a.NodeID
+			}
+		}
 		var data json.RawMessage
 		if data, err = d.call(ctx, protocol.FrameSessionOwnerReplace, protocol.SessionOwnerReplace{
 			OldSession: q.OldSession, NewSession: q.NewSession, Actor: actor,
@@ -742,6 +748,19 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 					// A hand-back and a step task name the caller from the
 					// daemon's own worker records too.
 					d.reassignWorkerOwner(q.OldSession, q.NewSession)
+					// Stop the old session best-effort if it is still running so
+					// it does not stay live alongside its replacement.
+					if ls := d.sessionByID(q.OldSession); ls != nil {
+						if d.infoOf(ls).Status != "exited" {
+							if _, stopErr := d.sessionStop(ctx, q.OldSession); stopErr != nil {
+								d.Logf("session.replace: could not stop old session %s: %v", q.OldSession, stopErr)
+							}
+						}
+					} else if remoteNode != "" && d.ownerSessionID() != "" {
+						if _, stopErr := d.relaySessionStop(ctx, remoteNode, q.OldSession); stopErr != nil {
+							d.Logf("session.replace: could not stop old session %s on %s: %v", q.OldSession, remoteNode, stopErr)
+						}
+					}
 				}
 				d.Logf("session.replace old=%s new=%s moved=%t", q.OldSession, q.NewSession, out.Moved)
 			}

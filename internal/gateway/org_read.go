@@ -193,7 +193,7 @@ func isLeadSessionQ(q leadDB, lead, agent, session string) (bool, error) {
 // and never one that waits for its user's answer.
 func liveLeadSessionQ(q leadDB, agent, repo string, now time.Time) (id, name string, err error) {
 	err = q.QueryRow(`SELECT s.id,a.display_name FROM sessions s JOIN agents a ON a.id=s.agent_id
-		WHERE s.agent_id=? AND s.online=1 AND s.worker='' AND s.harness NOT IN ('owner','cto') AND a.role<>'merger'
+		WHERE s.agent_id=? AND s.online=1 AND s.archived_at=0 AND s.replaced_by='' AND s.worker='' AND s.harness NOT IN ('owner','cto') AND a.role<>'merger'
 		AND COALESCE(s.waiting,'')=''
 		ORDER BY CASE WHEN s.limited_until>? THEN 1 ELSE 0 END,CASE WHEN s.id=COALESCE(a.lead_session,'') THEN 0 ELSE 1 END,
 		CASE WHEN s.repo_id=? THEN 0 ELSE 1 END,s.last_seen DESC,s.id LIMIT 1`, agent, now.Unix(), repo).Scan(&id, &name)
@@ -205,7 +205,7 @@ func liveLeadSessionQ(q leadDB, agent, repo string, now time.Time) (id, name str
 func leadPinStateQ(q leadDB, pin string, now time.Time) (online, waiting, limited, exists bool, err error) {
 	var on, wait, lim int
 	err = q.QueryRow(`SELECT online,CASE WHEN COALESCE(waiting,'')<>'' THEN 1 ELSE 0 END,CASE WHEN limited_until>? THEN 1 ELSE 0 END
-		FROM sessions WHERE id=? AND archived_at=0`, now.Unix(), pin).Scan(&on, &wait, &lim)
+		FROM sessions WHERE id=? AND archived_at=0 AND replaced_by=''`, now.Unix(), pin).Scan(&on, &wait, &lim)
 	if err == sql.ErrNoRows {
 		return false, false, false, false, nil
 	}
@@ -311,7 +311,7 @@ func resolveLeadSession(q leadDB, agent, repo string, now time.Time) (string, er
 		err := q.QueryRow(`SELECT s.id FROM sessions s JOIN agents a ON a.id=s.agent_id WHERE `+where+` ORDER BY s.last_seen DESC,s.id LIMIT 1`, args...).Scan(&id)
 		return id, err
 	}
-	base := `s.agent_id=? AND s.worker='' AND s.archived_at=0 AND s.harness NOT IN ('owner','cto') AND a.role<>'merger'`
+	base := `s.agent_id=? AND s.worker='' AND s.archived_at=0 AND s.replaced_by='' AND s.harness NOT IN ('owner','cto') AND a.role<>'merger'`
 	if repo != "" {
 		if id, err := pick(base+` AND s.repo_id=?`, agent, repo); err == nil {
 			return id, nil

@@ -92,7 +92,7 @@ func (s *Store) leadAskSession(leadAgent string) (id, name string, err error) {
 		return id, name, err
 	}
 	err = s.db.QueryRow(`SELECT s.id,a.display_name FROM sessions s JOIN agents a ON a.id=s.agent_id
-		WHERE s.agent_id=? AND s.worker='' AND s.archived_at=0 AND s.harness NOT IN ('owner','cto') AND a.role<>'merger' ORDER BY s.last_seen DESC,s.id LIMIT 1`, leadAgent).Scan(&id, &name)
+		WHERE s.agent_id=? AND s.worker='' AND s.archived_at=0 AND s.replaced_by='' AND s.harness NOT IN ('owner','cto') AND a.role<>'merger' ORDER BY s.last_seen DESC,s.id LIMIT 1`, leadAgent).Scan(&id, &name)
 	if err == sql.ErrNoRows {
 		return "", "", nil
 	}
