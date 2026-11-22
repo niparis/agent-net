@@ -171,6 +171,56 @@ func TestOSSandboxGroupStopReachesTheHarness(t *testing.T) {
 	})
 }
 
+// A sandboxed worker keeps its connection through a daemon restart. The
+// sandbox binds the folder of the daemon socket, so the socket the new daemon
+// creates at the same path appears in the worker's namespace. A bind of the
+// socket file would keep the socket of the daemon that stopped, and the worker
+// would never report or hand back.
+func TestOSSandboxSocketSurvivesDaemonRestart(t *testing.T) {
+	requireBwrap(t)
+	d, w, _ := sandboxWorker(t, protocol.WorkersSandboxed)
+	dir := filepath.Join(d.cfg.StateDir, "workers", w.id)
+	first, err := listenLocal(d, d.cfg.SocketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	open := first
+	t.Cleanup(func() { open.close() })
+
+	env := workerEnv(os.Environ(), map[string]string{
+		envFakeSocketProbe:      "1",
+		envFakeSocketProbeReady: "/tmp/ready",
+		envFakeSocketProbeGate:  "/tmp/gate",
+		envFakeSocketProbeOut:   "/tmp/result",
+	})
+	if err := d.spawnWorker(w, sandboxHarnessCopy(t), nil, env); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the probe waits inside the sandbox", func() bool {
+		return fileExists(filepath.Join(dir, "tmp", "ready"))
+	})
+
+	// The daemon stops and its socket goes; the new daemon listens at the same
+	// path, with a new socket file and a new inode.
+	first.close()
+	open, err = listenLocal(d, d.cfg.SocketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tmp", "gate"), []byte("go"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	waitExit(t, w)
+	raw, err := os.ReadFile(filepath.Join(dir, "tmp", "result"))
+	if err != nil {
+		t.Fatalf("no result from the sandbox: %v (log: %s)", err, d.workerLogTail(w))
+	}
+	if got := strings.TrimSpace(string(raw)); got != "connected" {
+		t.Fatalf("the worker reached %q after the restart, want connected (log: %s)", got, d.workerLogTail(w))
+	}
+}
+
 // A Pi worker of a project with the switch on starts through the gateway as
 // usual, inside bubblewrap: its extension reaches the daemon through the
 // bound socket and the worker answers, but it cannot write in the home folder

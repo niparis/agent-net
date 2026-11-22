@@ -194,15 +194,16 @@ type mountPair struct{ Src, Dst string }
 // osSandboxPolicy is what the wrapper of one worker allows. Paths are absolute
 // and resolved.
 type osSandboxPolicy struct {
-	Network  bool        // keep the host network
-	Hide     []string    // folders hidden by an empty tmpfs
-	Tmp      string      // private folder bound at /tmp
-	Mask     []string    // files hidden by /dev/null
-	Visible  []string    // bound read-only at the same path, for paths a hidden folder may cover
-	Writable []string    // bound writable at the same path
-	ReadOnly []mountPair // bound read-only on top of the writable paths
-	Socket   string      // the agent-net socket, bound at its own path
-	Dir      string      // the working folder
+	Network   bool        // keep the host network
+	Hide      []string    // folders hidden by an empty tmpfs
+	Tmp       string      // private folder bound at /tmp
+	Mask      []string    // files hidden by /dev/null
+	Visible   []string    // bound read-only at the same path, for paths a hidden folder may cover
+	Writable  []string    // bound writable at the same path
+	ReadOnly  []mountPair // bound read-only on top of the writable paths
+	Socket    string      // the agent-net socket, for a profile that names it
+	SocketDir string      // the folder with the socket, bound at its own path
+	Dir       string      // the working folder
 }
 
 // bwrapArgs is the bubblewrap command line that runs bin with args under p.
@@ -237,8 +238,10 @@ func bwrapArgs(p osSandboxPolicy, bin string, args []string) []string {
 	for _, r := range p.ReadOnly {
 		a = append(a, "--ro-bind", r.Src, r.Dst)
 	}
-	if p.Socket != "" {
-		a = append(a, "--bind", p.Socket, p.Socket)
+	if p.SocketDir != "" {
+		// A folder, not the socket file: the daemon replaces the socket at
+		// every restart, and a file bind would keep the dead one.
+		a = append(a, "--bind", p.SocketDir, p.SocketDir)
 	}
 	if p.Dir != "" {
 		a = append(a, "--chdir", p.Dir)
@@ -258,6 +261,7 @@ type osSandboxInput struct {
 	State      []string    // the harness's writable private state
 	StateRO    []mountPair // owner files bound read-only into the private state
 	Socket     string      // the agent-net socket
+	SocketDir  string      // the folder with the socket, bound to the sandbox
 	RuntimeDir string      // $XDG_RUNTIME_DIR, hidden
 	Masks      []string    // sockets hidden by /dev/null
 	Bin        string      // the resolved harness binary
@@ -266,11 +270,12 @@ type osSandboxInput struct {
 // buildOSSandboxPolicy turns the facts of a start into the wrapper's policy.
 func buildOSSandboxPolicy(in osSandboxInput) osSandboxPolicy {
 	p := osSandboxPolicy{
-		Network: protocol.WorkerPermissionsOrDefault(in.Level) != protocol.WorkersNoNetwork,
-		Tmp:     filepath.Join(in.WorkerDir, "tmp"),
-		Mask:    in.Masks,
-		Socket:  in.Socket,
-		Dir:     in.Path,
+		Network:   protocol.WorkerPermissionsOrDefault(in.Level) != protocol.WorkersNoNetwork,
+		Tmp:       filepath.Join(in.WorkerDir, "tmp"),
+		Mask:      in.Masks,
+		Socket:    in.Socket,
+		SocketDir: in.SocketDir,
+		Dir:       in.Path,
 	}
 	hidden := []string{"/tmp"}
 	if in.RuntimeDir != "" {
@@ -348,6 +353,11 @@ func (d *Daemon) osSandboxWrap(w *worker, bin string, args, env []string) (strin
 		return "", nil, nil, err
 	}
 	set := osSandboxSetEnv(osSandboxTmpEnv(filepath.Join(in.WorkerDir, "tmp")))
+	if in.SocketDir != "" {
+		// Inside the sandbox the socket is the file in the bound folder, not
+		// the public symlink, which the hidden runtime folder does not carry.
+		set["AGENT_NET_SOCKET"] = in.Socket
+	}
 	switch harness {
 	case "pi":
 		if err := d.piPrivateAgent(&in, set); err != nil {
@@ -387,7 +397,11 @@ func (d *Daemon) osSandboxInputFor(w *worker, bin string) (osSandboxInput, strin
 	in := osSandboxInput{Level: level, WorkerDir: resolved(dir), Path: resolved(path),
 		RuntimeDir: runtimeDirToHide(), Masks: hostSocketMasks()}
 	if fileExists(d.cfg.SocketPath) {
-		in.Socket = resolved(d.cfg.SocketPath)
+		// The socket lives in its own folder, and the sandbox binds the folder.
+		// It does not bind the socket file: the daemon creates a new socket at
+		// each restart, and a file bind would keep the stopped daemon's socket.
+		in.SocketDir = resolved(socketDir(d.cfg.SocketPath))
+		in.Socket = filepath.Join(in.SocketDir, filepath.Base(d.cfg.SocketPath))
 	}
 	if lp, err := exec.LookPath(bin); err == nil {
 		in.Bin = resolved(lp)

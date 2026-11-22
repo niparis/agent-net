@@ -47,6 +47,22 @@ func SocketPath() string {
 	return filepath.Join(fmt.Sprintf("/tmp/agent-net-%d", os.Getuid()), "daemon.sock")
 }
 
+// socketDir is the folder that holds the daemon socket and nothing else. The
+// OS sandbox binds this folder, not the socket file: a file bind keeps the
+// inode of the socket, and the daemon creates a new one at every restart, so a
+// worker would reach a dead socket after the restart. A folder bind follows
+// the new socket at the same path.
+func socketDir(socketPath string) string {
+	return filepath.Join(filepath.Dir(socketPath), "sock")
+}
+
+// socketFile is the path the daemon listens on, inside socketDir. The public
+// SocketPath is a symlink to it, so clients outside the sandbox keep the old
+// path.
+func socketFile(socketPath string) string {
+	return filepath.Join(socketDir(socketPath), filepath.Base(socketPath))
+}
+
 // ClaudeSessionsDir is where Claude Code writes one file per live session.
 func ClaudeSessionsDir() string {
 	if d := os.Getenv("AGENT_NET_CLAUDE_SESSIONS_DIR"); d != "" {

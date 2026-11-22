@@ -22,12 +22,16 @@ import (
 type localServer struct {
 	d    *Daemon
 	ln   net.Listener
-	path string
+	path string // the public path, a symlink to real
+	real string // the socket file in socketDir
 
 	mu    sync.Mutex
 	conns map[*localConn]bool
 }
 
+// listenLocal listens on path, with the socket itself in socketDir(path) and a
+// symlink at path. A sandbox can bind the folder, so its worker reaches the
+// socket a later daemon creates at the same path.
 func listenLocal(d *Daemon, path string) (*localServer, error) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -43,15 +47,34 @@ func listenLocal(d *Daemon, path string) (*localServer, error) {
 		}
 		os.Remove(path)
 	}
-	ln, err := net.Listen("unix", path)
+	real := socketFile(path)
+	if err := os.MkdirAll(socketDir(path), 0o700); err != nil {
+		return nil, err
+	}
+	os.Chmod(socketDir(path), 0o700)
+	if _, err := os.Lstat(real); err == nil {
+		if c, err := net.DialTimeout("unix", real, time.Second); err == nil {
+			c.Close()
+			return nil, fmt.Errorf("another daemon is already listening on %s", real)
+		}
+		os.Remove(real)
+	}
+	ln, err := net.Listen("unix", real)
 	if err != nil {
 		return nil, err
 	}
-	if err := os.Chmod(path, 0o600); err != nil {
+	if err := os.Chmod(real, 0o600); err != nil {
 		ln.Close()
 		return nil, err
 	}
-	return &localServer{d: d, ln: ln, path: path, conns: map[*localConn]bool{}}, nil
+	// A relative target keeps working when the folder is moved, and the link is
+	// not followed by the sandbox's folder bind.
+	if err := os.Symlink(filepath.Join(filepath.Base(filepath.Dir(real)), filepath.Base(real)), path); err != nil {
+		ln.Close()
+		os.Remove(real)
+		return nil, err
+	}
+	return &localServer{d: d, ln: ln, path: path, real: real, conns: map[*localConn]bool{}}, nil
 }
 
 func (s *localServer) serve(ctx context.Context) {
@@ -75,6 +98,9 @@ func (s *localServer) serve(ctx context.Context) {
 func (s *localServer) close() {
 	s.ln.Close()
 	os.Remove(s.path)
+	if s.real != "" {
+		os.Remove(s.real)
+	}
 	s.mu.Lock()
 	for lc := range s.conns {
 		lc.close()

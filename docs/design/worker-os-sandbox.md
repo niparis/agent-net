@@ -34,7 +34,7 @@ The daemon runs `bwrap <policy> -- <harness> <args>` instead of the harness. The
 - `--ro-bind / /`, `--dev /dev`, `--proc /proc`: the whole host is visible and read-only. A new `/proc` shows only the sandbox's own processes. A new `/dev` has no host terminals.
 - A private `/tmp`: the folder `tmp` in the worker's private folder, bound at `/tmp`. It is on disk, not in memory, and it is removed with the worker's folder. `TMPDIR` is `/tmp`.
 - `$XDG_RUNTIME_DIR` (for example `/run/user/1000`) is hidden by an empty tmpfs. This hides the systemd user bus (`systemd-run --user` would start a process outside the sandbox), the user's Podman socket, keyring and agent sockets.
-- The agent-net socket is bound back at its own path, so the harness's agent-net plugin or extension works.
+- The agent-net socket is bound back from its own folder (`sock` next to the public socket path), so the harness's agent-net plugin or extension works, and it follows the socket across a daemon restart.
 - `/run/docker.sock` is hidden when it exists. Membership in the docker group gives root.
 - Writable: the worker's folder (`sandboxed` and `no-network` only), and the narrow git folders a commit needs (the worktree's own git folder and the common `objects`, `refs` and `logs`), as for Codex. The worktree's `.git` file or folder is bound read-only again, so a worker cannot point git at a folder it controls or plant a hook.
 - Writable: the harness's private state (below).

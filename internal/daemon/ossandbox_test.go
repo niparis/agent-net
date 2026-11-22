@@ -24,8 +24,8 @@ func TestBwrapArgs(t *testing.T) {
 		Visible:  []string{"/state/workers/w_1", "/repo/.git"},
 		Writable: []string{"/wt", "/repo/.git/worktrees/w_1", "/repo/.git/objects"},
 		ReadOnly: []mountPair{{Src: "/wt/.git", Dst: "/wt/.git"}},
-		Socket:   "/run/user/1000/agent-net/daemon.sock",
-		Dir:      "/wt",
+		Socket:   "/run/user/1000/agent-net/sock/daemon.sock", SocketDir: "/run/user/1000/agent-net/sock",
+		Dir: "/wt",
 	}
 	sandboxed := []string{
 		"--unshare-all", "--share-net",
@@ -39,7 +39,7 @@ func TestBwrapArgs(t *testing.T) {
 		"--bind", "/repo/.git/worktrees/w_1", "/repo/.git/worktrees/w_1",
 		"--bind", "/repo/.git/objects", "/repo/.git/objects",
 		"--ro-bind", "/wt/.git", "/wt/.git",
-		"--bind", "/run/user/1000/agent-net/daemon.sock", "/run/user/1000/agent-net/daemon.sock",
+		"--bind", "/run/user/1000/agent-net/sock", "/run/user/1000/agent-net/sock",
 		"--chdir", "/wt",
 		"--", "/bin/pi", "--mode", "rpc",
 	}
@@ -67,7 +67,7 @@ func TestBwrapArgs(t *testing.T) {
 			"--ro-bind", "/repo/.git", "/repo/.git",
 			"--bind", "/state/workers/w_1/pi-agent", "/state/workers/w_1/pi-agent",
 			"--ro-bind", "/home/u/.pi/agent/extensions", "/state/workers/w_1/pi-agent/extensions",
-			"--bind", "/run/user/1000/agent-net/daemon.sock", "/run/user/1000/agent-net/daemon.sock",
+			"--bind", "/run/user/1000/agent-net/sock", "/run/user/1000/agent-net/sock",
 			"--chdir", "/wt",
 			"--", "/bin/pi", "--mode", "rpc",
 		}},
@@ -101,11 +101,12 @@ func TestOSSandboxPolicyLevels(t *testing.T) {
 	in := osSandboxInput{
 		Level: protocol.WorkersSandboxed, WorkerDir: "/s/w_1", Path: "/wt", DotGit: "/wt/.git",
 		GitCommon: "/repo/.git", GitRoots: []string{"/repo/.git/worktrees/w_1", "/repo/.git/objects"},
-		State: []string{"/s/w_1/data"}, Socket: "/run/user/1000/agent-net/daemon.sock",
+		State: []string{"/s/w_1/data"}, Socket: "/run/user/1000/agent-net/sock/daemon.sock",
+		SocketDir:  "/run/user/1000/agent-net/sock",
 		RuntimeDir: "/run/user/1000", Masks: []string{"/run/docker.sock"},
 	}
 	p := buildOSSandboxPolicy(in)
-	if !p.Network || p.Tmp != "/s/w_1/tmp" || p.Dir != "/wt" || p.Socket != in.Socket {
+	if !p.Network || p.Tmp != "/s/w_1/tmp" || p.Dir != "/wt" || p.Socket != in.Socket || p.SocketDir != in.SocketDir {
 		t.Fatalf("policy: %+v", p)
 	}
 	if want := []string{"/wt", "/repo/.git/worktrees/w_1", "/repo/.git/objects", "/s/w_1/data"}; !slices.Equal(p.Writable, want) {
