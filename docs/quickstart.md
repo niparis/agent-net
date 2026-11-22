@@ -41,18 +41,20 @@ It prints one install line, valid for 10 minutes and one machine. If the gateway
 
 Repeat for each machine. Details: [setup.md](setup.md).
 
-## 4. Bring in your projects
+## 4. Set up your projects and teams
 
-Tell the CTO which repositories you work on, and how you want them run. Each ask below sets up one thing, so that later you can hand work over and stop watching it:
+Tell the CTO what you work on and how it should be run. These are real first-day asks, lightly edited. Each one sets up something you will not have to manage again:
 
-- *"Add the repos in ~/code/shop and ~/code/blog."* **Why:** agent-net only knows about projects you add. Once a repo is added, its sessions show up together, and workers can be started in it on any machine.
-- *"Make a lead for the shop repo."* **Why:** you want one agent to talk to per repo, not ten. The lead plans the work, starts workers, checks what they hand back and answers for the repo. You give it a goal and get one outcome back.
-- *"Put shop and blog in one team."* **Why:** related repos often change together. A team lead coordinates them, so a change in one does not break the other. Teams are optional: a repo without a team reports straight to the CTO.
-- *"Only the shop lead may merge to main."* **Why:** many agents work in parallel. One named agent decides what reaches main, so nothing ships that nobody checked.
-- *"Trust these folders"*, or *"Let workers run the tests without asking."* **Why:** every permission prompt stops a worker until you answer. Granting the safe, repeated actions once lets work run while you are away.
-- *"Connect the shared GitHub MCP server."* **Why:** one connection, set up once, that every agent can use, instead of a sign-in per session. Some connections need a browser sign-in: that part is yours.
+- *"Start a new project named shop."* **Why:** agent-net only works with projects it knows. A project gets a repo, a place on a machine, and sessions that belong to it.
+- *"Create a new project on the worker VM named shop-api, in the same folder as shop. Also create a team with shop, this new project and the finance project."* **Why:** a team groups the projects that change together, so one lead can coordinate them.
+- *"I want a second team, the homelab team, with all the sessions we have and a lead."* **Why:** a lead is the one agent you talk to for a team or a repo. It plans, starts workers, checks their work and answers for it.
+- *"Help me set up a charter and edges for shop."* **Why:** the charter says what the agent does, accepts and refuses. Edges say who may ask whom for what, so agents can work together without asking you.
+- *"Set up the edge between shop and homelab so that homelab deploys shop without my confirmation."* **Why:** every confirmation you give once by rule is one you never give again.
+- *"Set up a merger agent for shop."* **Why:** the merger tests, merges and releases changes, so nothing reaches main unchecked and you do not merge by hand.
+- *"What workers could I create with agy?"*, then *"Create a new worker type: claude, sonnet, high effort."* **Why:** worker types are the menu the picker chooses from for every task.
+- *"I want to replace my homelab lead with a Claude Sonnet session. What is the best way to go about it?"* **Why:** roles stay; the agent program and model behind them can change.
 
-If you already have a mess of sessions and repos, ask the CTO to reorganize it: *"Look at my sessions and propose a team structure."* **Why:** the same setup, built from what you already run.
+If you already run many sessions and repos, the same asks work on what you have: the CTO places existing sessions into projects and teams.
 
 ## 5. Design the work with the lead
 
@@ -66,7 +68,21 @@ From there the lead works on its own. It splits the plan into tasks and starts *
 
 ## 6. Day to day with the CTO
 
-The CTO changes how the network is set up: new projects, leads, teams, charters, who may merge, worker profiles, models and settings. Ask it in plain words. (Real examples from daily use will be added here.)
+Real asks from daily use, lightly edited:
+
+- **Status, without starting work:** *"How are we doing on the storage migration? Just give me a status update, don't do more work."* / *"Has our chief of staff done anything yet?"*
+- **What runs where:** *"Can you tell me all the agents and sessions we have on the worker VM?"* / *"What's eating my CPU on the worker VM?"* / *"On the worker VM, which sessions can we put to sleep?"*
+- **Machine trouble, handled by the agents:** *"The laptop is running out of space. Message all the live and recent sessions there, ask them to reclaim disk space, and give me a report with each session and its answer."*
+- **Models and workers:** *"Can we change homelab agent 3 to use agy with Gemini Flash?"* / *"Protect Claude so it stops being used for workers. No, protect it at the provider level."* / *"Pause the argon worker: its price is about to go up. Don't delete it."*
+- **Settings:** *"Change the merger's idle limit to 30 minutes."* / *"Put the research loop on hold."*
+- **When something is wrong:** *"The research project is stuck. Analyse why."* / *"I can't find my homelab session!"*, then *"Report it to agent-net: it's a problem that it disappears from my list."*
+- **Clearing things for you:** *"Approve all the pending drafts for me."* / *"In my inbox I have 10 really old messages from one project. Get rid of them."*
+
+### How to talk to the CTO
+
+- **Say it once, and expect it done.** In the owner's words: *"When I speak you must do. When you can't do, you ask agent-net to build. Very simple."*
+- **Do not approve twice.** If you already asked for something, the CTO acts on it. If it asks you to authorise what you just said, tell it: that is a defect, not your job.
+- **Make it the default.** When you repeat a choice, ask the CTO to make it the default or a standing rule, so no one asks again.
 
 ## 7. What stays with you
 
@@ -76,11 +92,7 @@ Some things only you can do, and agent-net asks you for them:
 - Physical work on a machine, and network approvals such as a Tailscale route.
 - Deleting data, spending money and secrets. These always wait for your own words.
 
-## 8. Say it once
-
-When you notice you are repeating yourself, turn it into a rule: *"From now on, give me one-line outcomes, not long reports."* The CTO stores it as a standing order, and every agent follows it. If an agent asks you to approve or time something you already decided, tell the CTO. That is a defect, not your job.
-
-## 9. When something goes wrong
+## 8. When something goes wrong
 
 - Ask the CTO *"why?"* first. It can read the machine logs and the history of every message and worker.
 - `agent-net nodes` shows every machine, its version and whether it is online.
