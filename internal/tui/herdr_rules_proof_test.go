@@ -91,6 +91,21 @@ func TestHerdrRulesProofScenario(t *testing.T) {
 		}
 		writeHerdrProof(t, size.w, size.h, "sidebar-note", "start a Pi session while agent-net's herdr server runs without agent-net's config and a herdr window is attached",
 			"the notice starts with the key that hides the sidebar now, then says when it goes away for good", frame)
+
+		// Step 5: agent-net's herdr server is alive, but its socket file is
+		// gone. Enter cannot reach the old pane; the daemon starts a new
+		// server and says so, with herdr's own error.
+		m, src = inOwnerHerdr()
+		lost := "agent-net's herdr server lost its socket (connect: no such file or directory); a new one started. Restart tenebrae."
+		src.enterPlan = protocol.EnterPlan{Note: lost}
+		m, cmd = press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+		m, _ = press2(m, cmd())
+		frame = ansi.Strip(m.testView())
+		if !strings.Contains(frame, "lost its socket") || !strings.Contains(frame, "no such file or directory") {
+			t.Fatalf("%dx%d: notice %q:\n%s", size.w, size.h, m.notice.text, frame)
+		}
+		writeHerdrProof(t, size.w, size.h, "lost-socket", "press Enter on a session whose agent-net herdr server is alive with its socket file gone",
+			"the notice carries herdr's own error and says the server lost its socket", frame)
 	}
 }
 

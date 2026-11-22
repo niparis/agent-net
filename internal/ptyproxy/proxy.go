@@ -186,13 +186,16 @@ func (p *Proxy) Run() error {
 	case err = <-wait:
 	case <-escaped:
 		restoreSize()
-		_ = p.Cmd.Process.Signal(syscall.SIGHUP)
+		signalGroup(p.Cmd.Process, syscall.SIGHUP)
 		select {
 		case <-wait:
 		case <-time.After(time.Second):
-			_ = p.Cmd.Process.Kill()
+			signalGroup(p.Cmd.Process, syscall.SIGKILL)
 			<-wait
 		}
+		// The command may have left children in its group, as herdr --remote
+		// leaves its terminal client and ssh. End them before the TUI returns.
+		signalGroup(p.Cmd.Process, syscall.SIGKILL)
 		err = nil
 	}
 	restoreSize()
@@ -210,6 +213,20 @@ func (p *Proxy) Run() error {
 	}
 	_ = pt.Close()
 	return err
+}
+
+// signalGroup signals the command and everything it started. pty.Start gives
+// the command its own session and process group, so a negative pid reaches the
+// children it forks: herdr --remote forks its terminal client and keeps ssh
+// below it, and a client left behind holds the remote view and an ssh master
+// open after ctrl+].
+func signalGroup(proc *os.Process, sig syscall.Signal) {
+	if proc == nil {
+		return
+	}
+	if err := syscall.Kill(-proc.Pid, sig); err != nil {
+		_ = proc.Signal(sig)
+	}
 }
 
 // outputDrainMax bounds how long the output copier may take after the command

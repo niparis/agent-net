@@ -526,9 +526,10 @@ func TestEnterRemoteHerdrUsesLocalClient(t *testing.T) {
 	waitSessionOnGateway(t, local, id)
 
 	p := enterOfHerdr(t, local, id, fakeHerdrSocket(localLog))
-	if want := []string{localHerdr, "--remote", remote.cfg.Hostname}; p.OpenedHerdr || !reflect.DeepEqual(p.Argv, want) || p.Dir != "" || len(p.Env) != 0 || p.Host != remote.cfg.Hostname || !strings.Contains(p.Note, "w1:pB") {
+	if want := []string{localHerdr, "--remote", remote.cfg.Hostname}; p.OpenedHerdr || !reflect.DeepEqual(p.Argv, want) || p.Dir != "" || p.Host != remote.cfg.Hostname || !strings.Contains(p.Note, "w1:pB") {
 		t.Fatalf("plan %+v, want argv %v", p, want)
 	}
+	requireHerdrRemoteEnv(t, p)
 	// The pane is in the owner's own herdr there, which is read-only: it is
 	// found, named in the note, and not focused.
 	if calls := remoteHerdr.calls(t); !strings.Contains(calls, "pane process-info --pane w1:pB") {
@@ -844,5 +845,119 @@ func TestEnterRemoteHerdrClientNeverFallsBackToSSH(t *testing.T) {
 	p := d.wrapRemoteEnter("remote-host", protocol.EnterPlan{Host: "remote-host", Argv: []string{"claude", "attach", "job"}})
 	if len(p.Argv) > 0 && p.Argv[0] == "ssh" {
 		t.Fatalf("local herdr must prevent ssh fallback: %+v", p)
+	}
+}
+
+// A remote open runs herdr's client in a session folder of its own. herdr keeps
+// a client's log and sockets under <XDG_CONFIG_HOME>/herdr/sessions/<name>, so
+// a client for the remote "agent-net" session would otherwise share the local
+// agent-net server's folder and could remove its sockets.
+func TestRemoteEnterKeepsHerdrClientOutOfOwnerSessions(t *testing.T) {
+	bin, _ := fakeOpenHerdr(t)
+	state, owner := t.TempDir(), t.TempDir()
+	t.Setenv("AGENT_NET_STATE_DIR", state)
+	t.Setenv("XDG_CONFIG_HOME", owner)
+	t.Setenv("HERDR_CONFIG_PATH", "")
+	config := filepath.Join(owner, "herdr", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(config), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(config, []byte("[ui]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{cfg: Config{EnterSSH: true, HarnessPaths: map[string]string{"herdr": bin}}}
+	p := d.wrapRemoteEnter("research", protocol.EnterPlan{Argv: []string{"true"}, HerdrPane: "w1:p1", HerdrSession: agentNetHerdrSession, Note: "remote"})
+	wantArgv := []string{bin, "--remote", "research", "--session", agentNetHerdrSession}
+	if !reflect.DeepEqual(p.Argv, wantArgv) {
+		t.Fatalf("plan %+v, want argv %v", p, wantArgv)
+	}
+	if want := filepath.Join(state, "herdr-remote"); p.Env["XDG_CONFIG_HOME"] != want {
+		t.Fatalf("client config folder %q, want %q", p.Env["XDG_CONFIG_HOME"], want)
+	}
+	if p.Env["HERDR_CONFIG_PATH"] != config {
+		t.Fatalf("client config %q, want the owner's %q", p.Env["HERDR_CONFIG_PATH"], config)
+	}
+	if strings.HasPrefix(p.Env["XDG_CONFIG_HOME"], filepath.Join(owner, "herdr")) {
+		t.Fatalf("remote client writes into the owner's herdr folder: %q", p.Env["XDG_CONFIG_HOME"])
+	}
+}
+
+// A herdr server that is alive after its socket file disappeared cannot be
+// reached again. When it is agent-net's own, agent-net starts a new server and
+// says so, with herdr's own error. The owner's server is never replaced.
+func TestEnterHerdrLostServerSocket(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		owner    bool
+		restarts bool
+	}{
+		{"agent-net's server", false, true},
+		{"the owner's server", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("XDG_CONFIG_HOME", "")
+			t.Setenv("AGENT_NET_STATE_DIR", t.TempDir())
+			dir := t.TempDir()
+			bin, log := filepath.Join(dir, "herdr"), filepath.Join(dir, "log")
+			running, defaults := filepath.Join(dir, "running"), filepath.Join(dir, "default-config")
+			if err := os.WriteFile(defaults, []byte("[ui]\n# sidebar_collapsed_mode = \"hidden\"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			ownSocket := filepath.Join(home, ".config", "herdr", "sessions", agentNetHerdrSession, "herdr.sock")
+			socket := ownSocket
+			sessionArgs := []string{bin, "--session", agentNetHerdrSession, "server"}
+			if tc.owner {
+				socket = filepath.Join(home, ".config", "herdr", "herdr.sock")
+				sessionArgs = []string{bin, "server"}
+			}
+			script := `#!/bin/sh
+printf '%s\n' "$*" >> ` + shellQuote(log) + `
+case "$1 $2" in
+  "--default-config ") cat ` + shellQuote(defaults) + ` ;;
+  "session list") if [ -f ` + shellQuote(running) + ` ]; then r=true; else r=false; fi
+    printf '{"sessions":[{"name":"agent-net","running":%s,"socket_path":"%s"}]}\n' "$r" ` + shellQuote(ownSocket) + ` ;;
+  "--session agent-net") [ "$3" = server ] && : > ` + shellQuote(running) + ` ;;
+  "pane list") if [ -f ` + shellQuote(running) + ` ]; then printf '%s\n' '{"result":{"panes":[]}}'; else echo "server down" >&2; exit 1; fi ;;
+  *) exit 1 ;;
+esac
+`
+			if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			const pid, serverPID = 31870, 1024
+			fakeProcessTree(t,
+				map[int]int{pid: 25104, 25104: serverPID, serverPID: 1},
+				map[int][]string{pid: {"pi"}, 25104: {"-zsh"}, serverPID: sessionArgs},
+			)
+			processEnviron = func(p int) []string {
+				if p != pid {
+					return nil
+				}
+				return []string{"HERDR_ENV=1", "HERDR_PANE_ID=w1:p1", "HERDR_SOCKET_PATH=" + socket, "HERDR_BIN_PATH=" + bin}
+			}
+			plan, ok := herdrPlanFor(pid, protocol.EnterRequest{})
+			if !ok || len(plan.Argv) != 0 {
+				t.Fatalf("plan %+v ok=%v", plan, ok)
+			}
+			if !strings.Contains(plan.Note, "server down") {
+				t.Fatalf("note %q does not carry herdr's error", plan.Note)
+			}
+			if tc.restarts && !strings.Contains(plan.Note, "lost its socket") {
+				t.Fatalf("note %q does not say the server lost its socket", plan.Note)
+			}
+			calls := string(mustRead(t, log))
+			started := strings.Contains(calls, "--session agent-net server")
+			if started != tc.restarts {
+				t.Fatalf("restarted=%v, want %v: %s", started, tc.restarts, calls)
+			}
+			if tc.restarts && !strings.Contains(plan.Note, "a new one started") {
+				t.Fatalf("note %q does not say a new server started", plan.Note)
+			}
+			if !tc.restarts && !strings.Contains(plan.Note, "does not answer") {
+				t.Fatalf("note %q does not say the server does not answer", plan.Note)
+			}
+		})
 	}
 }

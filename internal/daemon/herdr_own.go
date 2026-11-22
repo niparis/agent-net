@@ -36,6 +36,21 @@ func herdrRemoteArgv(bin, target, session string) []string {
 	return argv
 }
 
+// herdrRemoteEnv is the environment of a herdr --remote client that agent-net
+// runs. herdr keeps a client's log and sockets under
+// <XDG_CONFIG_HOME>/herdr/sessions/<name>, the same folder as a local server of
+// that name. A remote open named agent-net would therefore write into the local
+// agent-net server's folder and could take its sockets with it. Point the
+// client at agent-net's own state folder instead. It still reads the owner's
+// config through HERDR_CONFIG_PATH.
+func (d *Daemon) herdrRemoteEnv() map[string]string {
+	env := map[string]string{"XDG_CONFIG_HOME": filepath.Join(StateDir(), "herdr-remote")}
+	if path, err := herdrOwnConfigPath(); err == nil && fileExists(path) {
+		env["HERDR_CONFIG_PATH"] = path
+	}
+	return env
+}
+
 // herdrCleanEnv is the daemon's environment without the variables that would
 // point a herdr command at the herdr the daemon happens to run in.
 func herdrCleanEnv() []string {

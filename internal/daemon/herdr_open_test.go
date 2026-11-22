@@ -99,6 +99,20 @@ func fakeOwnHerdrSocket(log string) string {
 	return string(raw)
 }
 
+// requireHerdrRemoteEnv checks that a remote Enter carries only the herdr
+// client's own environment, never a worker credential from the other machine.
+func requireHerdrRemoteEnv(t *testing.T, p protocol.EnterPlan) {
+	t.Helper()
+	if p.Env["XDG_CONFIG_HOME"] == "" {
+		t.Errorf("remote plan %+v has no client config folder", p)
+	}
+	for k := range p.Env {
+		if k != "XDG_CONFIG_HOME" && k != "HERDR_CONFIG_PATH" {
+			t.Errorf("remote plan carries %q", k)
+		}
+	}
+}
+
 // herdrCalls splits the fake's log into the socket and the command of each call.
 func herdrCalls(t *testing.T, log string) [][2]string {
 	t.Helper()
@@ -829,9 +843,10 @@ func TestEnterHerdrRemotePrivateWorkerKeepsCredentialsLocal(t *testing.T) {
 	local := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.HarnessPaths = map[string]string{"herdr": localBin} }})
 	waitSessionOnGateway(t, local, id)
 	p := enterOfHerdr(t, local, id, fakeHerdrSocket(localLog))
-	if want := []string{localBin, "--remote", remote.cfg.Hostname, "--session", "agent-net"}; !reflect.DeepEqual(p.Argv, want) || len(p.Env) != 0 {
+	if want := []string{localBin, "--remote", remote.cfg.Hostname, "--session", "agent-net"}; !reflect.DeepEqual(p.Argv, want) {
 		t.Fatalf("plan %+v, want argv %v", p, want)
 	}
+	requireHerdrRemoteEnv(t, p)
 	requireHerdrOpened(t, remoteLog, "worker", "--server", "--session", "ses_private")
 	remoteCalls, _ := os.ReadFile(remoteLog)
 	localCalls, _ := os.ReadFile(localLog)
@@ -862,9 +877,10 @@ func TestEnterHerdrRemotePrivateCodexKeepsTokenLocal(t *testing.T) {
 	local := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.HarnessPaths = map[string]string{"herdr": localBin} }})
 	waitSessionOnGateway(t, local, id)
 	p := enterOfHerdr(t, local, id, fakeHerdrSocket(localLog))
-	if want := []string{localBin, "--remote", remote.cfg.Hostname, "--session", "agent-net"}; !reflect.DeepEqual(p.Argv, want) || len(p.Env) != 0 {
+	if want := []string{localBin, "--remote", remote.cfg.Hostname, "--session", "agent-net"}; !reflect.DeepEqual(p.Argv, want) {
 		t.Fatalf("plan %+v, want argv %v", p, want)
 	}
+	requireHerdrRemoteEnv(t, p)
 	requireHerdrOpened(t, remoteLog, "worker", "resume", "thread_1", "--remote-auth-token-env")
 	remoteCalls, _ := os.ReadFile(remoteLog)
 	localCalls, _ := os.ReadFile(localLog)
