@@ -10,20 +10,23 @@ import (
 	"github.com/niparis/agent-net/internal/harnesses"
 )
 
-// lookupHerdrBinary uses the harness search, including the login shell's primary
-// copy. Record the choice and any local fallback in the daemon log.
-func (d *Daemon) lookupHerdrBinary() (string, error) {
+// FindHerdr returns the herdr binary the daemon would use when the node
+// configuration names no path. Setup uses it so a new machine gets herdr in the
+// same places the daemon looks: PATH, the usual install folders, ~/.local/bin
+// and the login shell's PATH.
+func FindHerdr(configured string) (string, error) {
+	bin, looked, _ := findHerdrPath(configured, harnesses.Options{})
+	if bin == "" {
+		return "", fmt.Errorf("herdr not found (looked in: %s; login shell PATH)", strings.Join(looked, string(os.PathListSeparator)))
+	}
+	return bin, nil
+}
+
+// findHerdrPath is the executable search shared by the daemon and setup. It
+// returns the path, the places it looked for the error message, and the
+// ~/.local/bin path the daemon logs when another copy was selected.
+func findHerdrPath(configured string, opts harnesses.Options) (string, []string, string) {
 	const name = "herdr"
-	d.binaryMu.Lock()
-	defer d.binaryMu.Unlock()
-	if bin := d.binaryPaths[name]; bin != "" && isExecutable(bin) {
-		return bin, nil
-	}
-	configured := d.cfg.HarnessPaths[name]
-	var opts harnesses.Options
-	if d.cfg.HarnessSearch != nil {
-		opts = *d.cfg.HarnessSearch
-	}
 	if opts.PATH != "" && opts.PATH != os.Getenv("PATH") {
 		opts.PATH += string(os.PathListSeparator) + os.Getenv("PATH")
 	}
@@ -56,6 +59,24 @@ func (d *Daemon) lookupHerdrBinary() (string, error) {
 	if !filepath.IsAbs(bin) || !isExecutable(bin) {
 		bin = harnesses.Executable(context.Background(), name, opts)
 	}
+	return bin, looked, local
+}
+
+// lookupHerdrBinary uses the harness search, including the login shell's primary
+// copy. Record the choice and any local fallback in the daemon log.
+func (d *Daemon) lookupHerdrBinary() (string, error) {
+	const name = "herdr"
+	d.binaryMu.Lock()
+	defer d.binaryMu.Unlock()
+	if bin := d.binaryPaths[name]; bin != "" && isExecutable(bin) {
+		return bin, nil
+	}
+	configured := d.cfg.HarnessPaths[name]
+	var opts harnesses.Options
+	if d.cfg.HarnessSearch != nil {
+		opts = *d.cfg.HarnessSearch
+	}
+	bin, looked, local := findHerdrPath(configured, opts)
 	if bin == "" {
 		return "", fmt.Errorf("%s not found (looked in: %s; login shell PATH)", name, strings.Join(looked, string(os.PathListSeparator)))
 	}

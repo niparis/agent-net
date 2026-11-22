@@ -65,6 +65,7 @@ type Options struct {
 	QuotaOnly            bool          // run only the quota setup step
 	NoRoles              bool          // leave the role model lists and the role sessions alone (upgrade sets NoRolesEnv)
 	QuotaAXI             string        // "" leave; QuotaAXIYes or QuotaAXINo is a local answer
+	NoHerdr              bool          // do not check for or install herdr on this machine
 	Out                  io.Writer
 }
 
@@ -215,6 +216,7 @@ func Setup(ctx context.Context, o Options) error {
 	r.claudeUrgentHook()
 	r.claudeWorkersMod()
 	r.quotaAXI(ctx)
+	r.herdr(ctx)
 	r.recordApplied()
 	r.piExtension()
 	r.opencodePlugin()

@@ -29,6 +29,32 @@ func TestEnterSSHIsOnUnlessNodeConfigSaysFalse(t *testing.T) {
 	}
 }
 
+// Joining again keeps an explicit harness path set by hand.
+func TestJoinKeepsHarnessPaths(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	dir := t.TempDir()
+	const herdr = "/opt/herdr/bin/herdr"
+	raw := `{"harness_paths":{"herdr":"` + herdr + `"}}`
+	if err := os.WriteFile(filepath.Join(dir, "node.json"), []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	nc, err := Join(context.Background(), g.joinString(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := nc.HarnessPaths["herdr"]; got != herdr {
+		t.Fatalf("returned config: %+v", nc)
+	}
+	got, _, err := LoadNode(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.HarnessPaths["herdr"] != herdr {
+		t.Fatalf("node.json: %+v", got)
+	}
+}
+
 // Joining again keeps the ssh settings set by hand, including false.
 func TestJoinKeepsEnterSSH(t *testing.T) {
 	t.Parallel()
