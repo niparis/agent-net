@@ -50,7 +50,7 @@ If the sandbox blocks unix sockets (Claude Code's does on Linux), the script not
 
 If you change guidance text, also run go test ./internal/guidance ./internal/agentfiles (both have golden fixtures; use -update). If you change tool, guidance or catalog text, run `go generate ./internal/daemon/ctoskill ./internal/featuremap` to refresh the generated CTO reference and feature map.
 
-CI runs `gofmt`, `go vet`, the daemon, gateway, setup, tui and command shards (`scripts/test.sh --package daemon|gateway|setup|tui|agent-net --shard-index I --shard-count N`; N is 5 for daemon and 4 for the others), the other Go packages in one job, `sh -n install.sh` and `sh scripts/test-changed-test.sh`. All must pass. Tests use localhost only. No test may sleep for more than 2 seconds: use a polling helper with a timeout.
+CI runs `gofmt`, `go vet`, the daemon, gateway, setup, tui and command shards (`scripts/test.sh --package daemon|gateway|setup|tui|agent-net --shard-index I --shard-count N`; N is 5 for daemon, 6 for gateway and 4 for the others), the other Go packages in one job, `sh -n install.sh` and `sh scripts/test-changed-test.sh`. All must pass. Tests use localhost only. No test may sleep for more than 2 seconds: use a polling helper with a timeout.
 
 ## Layout
 
