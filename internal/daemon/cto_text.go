@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -166,16 +167,34 @@ func (d *Daemon) ctoTextQuery(ctx context.Context, q protocol.TextQuery) (bool, 
 // when the query is for another session.
 func (d *Daemon) ctoEnterQuery(ctx context.Context, q protocol.EnterRequest, viaGateway bool) (bool, protocol.EnterPlan, error) {
 	id := d.ctoSessionID()
+	registered := false
 	if q.SessionID == protocol.CTONodeName {
 		if id == "" {
-			return true, protocol.EnterPlan{}, errors.New("the CTO session is not registered; retry after the gateway reconnects")
+			// A fresh install has no network row for the CTO, and pressing c is
+			// the first thing that asks for it. cto_enter registers it, so
+			// register here and then plan instead of waiting for a reconnect,
+			// which registers nothing. A CTO that already runs on another
+			// machine is not moved by a keypress: this machine gets its
+			// session from the next snapshot.
+			if !d.ctoOnThisNode(ctx) {
+				return true, protocol.EnterPlan{}, errors.New("the CTO runs on another machine; this machine has not listed its session yet. Try again in a moment")
+			}
+			if err := d.registerCTOSession(ctx); err != nil {
+				return true, protocol.EnterPlan{}, fmt.Errorf("the CTO could not be registered with the gateway: %w. Check that the gateway is reachable, then try again", err)
+			}
+			id = d.ctoSessionID()
+			if id == "" {
+				return true, protocol.EnterPlan{}, errors.New("the gateway did not register the CTO session. Check that the gateway is reachable, then try again")
+			}
+			registered = true
 		}
 		q.SessionID = id
 	}
 	if id == "" || q.SessionID != id {
 		return false, protocol.EnterPlan{}, nil
 	}
-	if !d.ctoOnThisNode(ctx) {
+	// A just-registered session is on this node by construction.
+	if !registered && !d.ctoOnThisNode(ctx) {
 		return false, protocol.EnterPlan{}, nil
 	}
 	plan, err := d.ctoEnter(ctx)
