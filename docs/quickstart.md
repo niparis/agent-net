@@ -22,9 +22,15 @@ The TUI opens on the Sessions tab: your machine and the agent sessions running o
 
 ## 3. Add your other machines (optional)
 
-Ask the CTO: *"Add my laptop."* It prints one install line, valid for 10 minutes and one machine. Paste it in a shell on that machine. The new machine shows up in the Sessions tab, and its sessions can now talk to every other session.
+On the gateway machine, run:
 
-A common setup is your laptop plus a VM that does the heavy work. Add the VM the same way, and make it the default home for workers: *"Add a VM, and run workers there by default."* Your laptop then stays free, and workers keep running when it sleeps.
+```sh
+agent-net invite
+```
+
+It prints one install line, valid for 10 minutes and one machine. If the gateway has a Tailscale address, it prints a second line for that address. Paste the line in a shell on the new machine. The new machine shows up in the Sessions tab, and its sessions can now talk to every other session.
+
+Repeat for each machine. Details: [setup.md](setup.md).
 
 ## 4. Bring in your projects
 
@@ -73,7 +79,7 @@ Some things only you can do, and agent-net asks you for them:
 
 ## 8. Say it once
 
-When you notice you are repeating yourself, turn it into a rule: *"From now on, workers never run on my laptop."* The CTO stores it as a standing order, and every agent follows it. If an agent asks you to approve or time something you already decided, tell the CTO. That is a defect, not your job.
+When you notice you are repeating yourself, turn it into a rule: *"From now on, give me one-line outcomes, not long reports."* The CTO stores it as a standing order, and every agent follows it. If an agent asks you to approve or time something you already decided, tell the CTO. That is a defect, not your job.
 
 ## 9. When something goes wrong
 
