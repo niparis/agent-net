@@ -180,7 +180,7 @@ func routeLead(tx *sql.Tx, m *protocol.Message, now time.Time, quota leadQuotaRe
 func (s *Store) resolveSessionName(name string) (string, error) {
 	rows, err := s.db.Query(`SELECT s.id,COALESCE(s.agent_id,''),s.online,s.worker,s.harness,COALESCE(n.hostname,'-'),s.cwd
 		FROM sessions s LEFT JOIN nodes n ON n.id=s.node_id
-		WHERE s.name=? AND s.archived_at=0`, name)
+		WHERE s.name=? AND s.archived_at=0 AND s.replaced_by=''`, name)
 	if err != nil {
 		return "", err
 	}
@@ -231,7 +231,7 @@ func (s *Store) resolveSessionName(name string) (string, error) {
 		agent = a
 	}
 	var id string
-	err = s.db.QueryRow(`SELECT s.id FROM sessions s WHERE s.agent_id=? AND s.worker='' AND s.archived_at=0
+	err = s.db.QueryRow(`SELECT s.id FROM sessions s WHERE s.agent_id=? AND s.worker='' AND s.archived_at=0 AND s.replaced_by=''
 		AND s.harness NOT IN ('owner','cto') ORDER BY s.last_seen DESC,s.id LIMIT 1`, agent).Scan(&id)
 	if err == sql.ErrNoRows {
 		return "", reject("no session is named %q; use agent_sessions_find to find a session_id", name)

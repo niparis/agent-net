@@ -83,27 +83,27 @@ func TestRestartMovesTheWorkWhenANewConversationGetsANewID(t *testing.T) {
 		t.Fatalf("the undelivered request still names the old session: %+v %v", msg, err)
 	}
 
-	// The old record is replaced, keeps its name, and says which session took
-	// the work. It was not renamed to "demo 2" or "demo 3".
+	// The old record is replaced, its name is cleared, and it says which session
+	// took the work. Only the new session carries "demo".
 	before, ok, err := r.s.Agent(r.caller)
 	if err != nil || !ok {
 		t.Fatalf("read the replaced session: %+v %v", before, err)
 	}
-	if before.ReplacedBy != fresh || before.Profile.Name != "demo" {
-		t.Fatalf("the old record is not marked replaced by the new one: %+v", before)
+	if before.ReplacedBy != fresh || before.Profile.Name != "" {
+		t.Fatalf("the old record is not marked replaced with cleared name: %+v", before)
 	}
 	after, ok, err := r.s.Agent(fresh)
 	if err != nil || !ok || after.Profile.Name != "demo" {
 		t.Fatalf("the new session did not keep the name: %+v %v", after, err)
 	}
-	// A later discovery report of the exited conversation must not rename the
-	// replaced record.
+	// A later discovery report of the exited conversation must not rename or
+	// revive the replaced record.
 	if _, err := r.s.UpsertSession(r.a, protocol.SessionInfo{Harness: "claude", NativeID: "caller", Status: "exited",
 		Repo: protocol.RepoInfo{Root: "/code/demo", Project: "demo"}}); err != nil {
 		t.Fatal(err)
 	}
 	again, ok, err := r.s.Agent(r.caller)
-	if err != nil || !ok || again.Profile.Name != "demo" || again.ReplacedBy != fresh {
+	if err != nil || !ok || again.Profile.Name != "" || again.Online || again.ReplacedBy != fresh {
 		t.Fatalf("the replaced record changed on a later report: %+v %v", again, err)
 	}
 }
@@ -324,5 +324,89 @@ func TestReplaceSessionFailureMovesNothing(t *testing.T) {
 	if err := r.s.db.QueryRow(`SELECT d.session_id,m.state FROM `+stepNoticesSQL+` d JOIN messages m ON m.id=d.message_id
 		WHERE d.message_id=?`, oldNotice).Scan(&session, &state); err != nil || session != r.caller || state == "expired" {
 		t.Fatalf("a failed replace changed the old notice: %q %q %v", session, state, err)
+	}
+}
+
+// Replacing an online lead session (for example a Pi session that is still
+// running) moves the name, repo_lead and team_lead to the new session and keeps
+// the old session offline, unnamed and unroutable even if it reports again.
+func TestReplaceOnlineLeadSessionMovesNameAndLeadRole(t *testing.T) {
+	s := teamStore(t)
+	var old, node, harness, native string
+	if err := s.db.QueryRow(`SELECT id,node_id,harness,native_id FROM sessions WHERE repo_id='demo'`).Scan(&old, &node, &harness, &native); err != nil {
+		t.Fatal(err)
+	}
+	var outsider string
+	if err := s.db.QueryRow(`SELECT id FROM sessions WHERE repo_id='other'`).Scan(&outsider); err != nil {
+		t.Fatal(err)
+	}
+	owner := protocol.GraphRef{Kind: "agent", ID: "demo"}
+	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "alpha", Name: "Alpha", Purpose: "Shared work", Owner: &owner})
+	teamWrite(t, s, protocol.TeamWrite{Action: "asks_to", ID: "alpha", AsksTo: protocol.AsksToLead})
+	teamWrite(t, s, protocol.TeamWrite{Action: "membership", ID: "alpha", Member: &protocol.GraphRef{Kind: "repo", ID: "demo"}})
+	if err := s.AddArchitect("helper", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	member, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "helper", Repo: protocol.RepoInfo{Root: "/code/demo", Project: "demo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET agent_id='helper' WHERE id=?`, member); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RenameSession(old, "homelab-agent - lead"); err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "fresh", Status: "idle",
+		Repo: protocol.RepoInfo{Root: "/code/demo", Project: "demo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.ReplaceSessionForOwner(old, fresh, "cto")
+	if err != nil || !res.Moved {
+		t.Fatalf("replace: %+v %v", res, err)
+	}
+	// Simulate a still-running old session reporting again on the next sync.
+	if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: harness, NativeID: native, Status: "idle",
+		Repo: protocol.RepoInfo{Root: "/code/demo", Project: "demo"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	oldView, ok, err := s.Agent(old)
+	if err != nil || !ok {
+		t.Fatalf("read old session: %+v %v", oldView, err)
+	}
+	if oldView.Online {
+		t.Fatalf("old session stayed online after replace: %+v", oldView)
+	}
+	if oldView.Profile.Name == "homelab-agent - lead" {
+		t.Fatalf("old session still carries the name %q after replace", oldView.Profile.Name)
+	}
+	if oldView.RepoLead || oldView.TeamLead {
+		t.Fatalf("old session still holds lead flags: repo_lead=%v team_lead=%v", oldView.RepoLead, oldView.TeamLead)
+	}
+	freshView, ok, err := s.Agent(fresh)
+	if err != nil || !ok {
+		t.Fatalf("read new session: %+v %v", freshView, err)
+	}
+	if !freshView.Online || freshView.Profile.Name != "homelab-agent - lead" {
+		t.Fatalf("new session did not take online name: online=%v name=%q", freshView.Online, freshView.Profile.Name)
+	}
+	if !freshView.RepoLead || !freshView.TeamLead {
+		t.Fatalf("new session did not receive lead flags: repo_lead=%v team_lead=%v", freshView.RepoLead, freshView.TeamLead)
+	}
+	for _, addr := range []string{"homelab-agent - lead", "repo:demo", "team:Alpha"} {
+		got, err := s.ResolveLeadAddress(addr)
+		if err != nil || got != fresh {
+			t.Fatalf("ResolveLeadAddress(%q) = %q (%v), want %q", addr, got, err, fresh)
+		}
+	}
+	tl, err := s.TeamLeadFor(member)
+	if err != nil || tl.LeadSession != fresh {
+		t.Fatalf("TeamLeadFor(%s) = %+v (%v), want %q", member, tl, err, fresh)
+	}
+	msg, _, _, err := s.StoreLeadMessage(protocol.MsgSend{Sender: outsider, Recipient: member, Body: "question"})
+	if err != nil || msg.To != fresh {
+		t.Fatalf("StoreLeadMessage routed to %q (%v), want %q", msg.To, err, fresh)
 	}
 }

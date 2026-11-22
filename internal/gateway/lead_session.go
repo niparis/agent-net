@@ -30,7 +30,7 @@ func leadSessionCandidatesQ(q leadDB, agent string) ([]leadSessionRef, error) {
 	rows, err := q.Query(`SELECT s.id,
 		COALESCE(NULLIF(s.name,''),NULLIF(s.title,''),NULLIF(s.repo_project,''),s.id)
 		FROM sessions s
-		WHERE s.agent_id=? AND s.worker='' AND s.archived_at=0
+		WHERE s.agent_id=? AND s.worker='' AND s.archived_at=0 AND s.replaced_by=''
 		AND s.harness NOT IN ('owner','cto','bot')
 		AND NOT EXISTS(SELECT 1 FROM repos pm WHERE pm.merger_session=s.id)
 		AND NOT EXISTS(SELECT 1 FROM agents ma WHERE ma.id=s.agent_id AND ma.role='merger')

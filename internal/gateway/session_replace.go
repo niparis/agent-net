@@ -84,8 +84,9 @@ func (s *Store) RebindResumedSession(nodeID, sessionID, nativeID string) (bool, 
 //
 // It moves the caller role of running and queued workers, the caller ownership
 // of open and merged delivery changes and their steps, undelivered messages and open
-// requests, the agent and repo binding, and the name. The old record keeps its
-// name and says which session replaced it, so nothing is renamed to "name 2".
+// requests, the agent and repo binding, the lead role, and the name. The old
+// record is marked replaced with its name cleared, so only the new session
+// carries the name and the lead role.
 // The new record takes the old name only when no other live session holds it.
 func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, error) {
 	if !validSessionID(sessionID) || !validSessionID(newSessionID) || sessionID == newSessionID {
@@ -163,18 +164,16 @@ func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, er
 	}
 	// The conversation takes the old name only when no other live session shows
 	// it. Two live sessions must not share a name, or the holder's next report
-	// renumbers it and the two swap names (decision 0024). A refused name stays
-	// with the old record, which keeps its own name as history.
+	// renumbers it and the two swap names (decision 0024).
 	oldName := name
 	name = replacedSessionName(oldName, newName)
-	recordName := name
 	if name != newName {
 		held, err := liveNameHeld(tx, name, sessionID, newSessionID)
 		if err != nil {
 			return false, err
 		}
 		if held {
-			name, recordName = newName, oldName
+			name = newName
 		}
 	}
 	now := s.now().UnixNano()
@@ -197,6 +196,7 @@ func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, er
 		// the session held.
 		{`UPDATE sessions SET agent_id=COALESCE(NULLIF((SELECT agent_id FROM sessions WHERE id=?),''),agent_id), repo_id=COALESCE((SELECT repo_id FROM sessions WHERE id=?),repo_id) WHERE id=?`, []any{sessionID, sessionID, newSessionID}},
 		{`UPDATE agents SET lead_session=? WHERE lead_session=?`, []any{newSessionID, sessionID}},
+		{`UPDATE gateway_state SET value=? WHERE key='chief_session' AND value=?`, []any{newSessionID, sessionID}},
 		// A merger place follows the conversation, unless the new record is
 		// already the merger of another project.
 		{`UPDATE repos SET merger_session=? WHERE merger_session=? AND NOT EXISTS (SELECT 1 FROM repos WHERE merger_session=?)`, []any{newSessionID, sessionID, newSessionID}},
@@ -225,8 +225,8 @@ func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, er
 	if _, err := tx.Exec(`UPDATE sessions SET name=?, name_fixed=CASE WHEN ?=? THEN (SELECT name_fixed FROM sessions WHERE id=?) ELSE name_fixed END WHERE id=?`, name, name, oldName, sessionID, newSessionID); err != nil {
 		return false, err
 	}
-	if _, err := tx.Exec(`UPDATE sessions SET name=?, replaced_by=?, online=0, status='replaced', waiting='' WHERE id=?`,
-		recordName, newSessionID, sessionID); err != nil {
+	if _, err := tx.Exec(`UPDATE sessions SET name='', name_fixed=0, replaced_by=?, online=0, status='replaced', waiting='' WHERE id=?`,
+		newSessionID, sessionID); err != nil {
 		return false, err
 	}
 	if err := tx.Commit(); err != nil {

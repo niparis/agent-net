@@ -3673,6 +3673,9 @@ func (s *Store) upsertSession(q interface {
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", false, err
 	}
+	if known && knownReplaced != "" {
+		return knownID, false, nil
+	}
 	if known && in.Harness == "opencode" && in.Worker == nil {
 		var closed int64
 		if err := q.QueryRow(`SELECT closed_at FROM sessions WHERE id=?`, knownID).Scan(&closed); err != nil {
@@ -4491,9 +4494,9 @@ var agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.
  WHERE wa.session_id=s.id ORDER BY wa.started_at DESC, wa.rowid DESC LIMIT 1),''),
  COALESCE(s.repo_id,''), COALESCE(s.agent_id,''), COALESCE((SELECT display_name FROM agents WHERE id=s.agent_id),''),
   '',
- COALESCE((SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id)=s.id AND s.agent_id=(` + repoTopAgentOfSQL("s.repo_id") + `) AND NOT ` + mergerAgentSQL("s") + `,0),
-	EXISTS(SELECT 1 FROM repos rp WHERE rp.id=s.repo_id AND rp.lead_agent_id=s.agent_id AND (SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id)=s.id),
- EXISTS(SELECT 1 FROM teams t WHERE t.active=1 AND t.owner_agent_id=s.agent_id AND (SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id)=s.id AND (EXISTS(SELECT 1 FROM repos r WHERE r.id=s.repo_id AND r.team_id=t.id) OR EXISTS(SELECT 1 FROM agents ag WHERE ag.id=s.agent_id AND ag.team_id=t.id))),
+ COALESCE((SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id)=s.id AND s.agent_id=(` + repoTopAgentOfSQL("s.repo_id") + `) AND NOT ` + mergerAgentSQL("s") + ` AND s.replaced_by='' AND s.archived_at=0,0),
+	EXISTS(SELECT 1 FROM repos rp WHERE rp.id=s.repo_id AND rp.lead_agent_id=s.agent_id AND (SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id)=s.id AND s.replaced_by='' AND s.archived_at=0),
+ EXISTS(SELECT 1 FROM teams t WHERE t.active=1 AND t.owner_agent_id=s.agent_id AND (SELECT a.lead_session FROM agents a WHERE a.id=s.agent_id)=s.id AND s.replaced_by='' AND s.archived_at=0 AND (EXISTS(SELECT 1 FROM repos r WHERE r.id=s.repo_id AND r.team_id=t.id) OR EXISTS(SELECT 1 FROM agents ag WHERE ag.id=s.agent_id AND ag.team_id=t.id))),
  @MAX@
  @COUNT@
  s.owner_used_at, s.owner_uses, s.pinned_at, s.idle_compacted_at, s.last_compacted_reason,
@@ -4512,7 +4515,7 @@ var agentListTables = []string{"sessions", "nodes.id", "nodes.hostname", "apps",
 const (
 	// agentRepoCountWhere is what makes a session count toward its Repo's
 	// agent limit. x is the session.
-	agentRepoCountWhere = `x.online=1 AND x.worker='' AND x.harness NOT IN ('owner','cto','bot') AND x.id<>COALESCE((SELECT value FROM gateway_state WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM repos pm WHERE pm.merger_session=x.id)`
+	agentRepoCountWhere = `x.online=1 AND x.archived_at=0 AND x.replaced_by='' AND x.worker='' AND x.harness NOT IN ('owner','cto','bot') AND x.id<>COALESCE((SELECT value FROM gateway_state WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM repos pm WHERE pm.merger_session=x.id)`
 
 	// A Repo has one max_agents row, as the key is unique. The stall item is
 	// the newest of the session, and the later row when two are as new, which
