@@ -76,6 +76,13 @@ func TestAgyProcess(t *testing.T) {
 			os.Exit(2)
 		}
 		body := in.Message.Content
+		// A message the daemon writes itself carries no FAKE marker. A test
+		// gives the markers for the next turn in this file, read once.
+		next := filepath.Join(os.Getenv("FAKE_AGY_RECORDS"), "next-turn")
+		if extra, err := os.ReadFile(next); err == nil {
+			_ = os.Remove(next)
+			body += "\n" + string(extra)
+		}
 		r.Turns = append(r.Turns, body)
 		save()
 		write(map[string]any{"event": "step_update", "step_update": map[string]any{"conversation_id": native}})
@@ -382,7 +389,7 @@ func TestAgyWorkerHandbackFilesAfterRestart(t *testing.T) {
 	}
 }
 
-func startAgyNode(t *testing.T, set WorkerSettings) (*workerNode, string, string) {
+func startAgyNode(t *testing.T, set WorkerSettings, opts ...func(*Config)) (*workerNode, string, string) {
 	t.Helper()
 	// A start includes starting the fake agy, which is a whole Go test binary.
 	// The 8 s budget of shortSet expired under CI load, so give agy the same
@@ -398,6 +405,9 @@ func startAgyNode(t *testing.T, set WorkerSettings) (*workerNode, string, string
 	w := startWorkerNodeWithDetect(t, g, set, agyInventory, func(c *Config) {
 		c.HarnessPaths = map[string]string{"agy": bin}
 		c.WorkerGoTmp = filepath.Join(dir, "gotmp")
+		for _, opt := range opts {
+			opt(c)
+		}
 	})
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
