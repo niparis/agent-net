@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/niparis/agent-net/internal/sqlitecache"
 )
 
 type syncLogBuffer struct {
@@ -149,7 +151,7 @@ func TestFreezeDumpWhenBothStuck(t *testing.T) {
 		"oldest=session.upsert",
 		"oldest_ms=",
 		"waiting=2",
-		"writer=session.upsert",
+		"writer=gateway.TestFreezeDumpWhenBothStuck",
 		"writer_ms=",
 		"wal_bytes=",
 		"profile=",
@@ -439,12 +441,106 @@ func TestFreezeWriterHolderConcurrentAndEdgeCases(t *testing.T) {
 
 	g.freeze.mu.Lock()
 	depth := g.freeze.wDepth
-	holder := g.freeze.wHolder
+	pcsLen := g.freeze.wPCsLen
 	since := g.freeze.wSince
 	g.freeze.mu.Unlock()
-	if depth != 0 || holder != "" || !since.IsZero() {
-		t.Fatalf("expected empty writer holder after all ops, got depth=%d holder=%q since=%v", depth, holder, since)
+	if depth != 0 || pcsLen != 0 || !since.IsZero() {
+		t.Fatalf("expected empty writer holder after all ops, got depth=%d pcsLen=%d since=%v", depth, pcsLen, since)
 	}
+}
+
+func TestFreezeWriterNamesCaller(t *testing.T) {
+	extractWriter := func(t *testing.T, logOut string) string {
+		t.Helper()
+		for _, line := range strings.Split(logOut, "\n") {
+			if !strings.Contains(line, "event=freeze ") {
+				continue
+			}
+			for _, field := range strings.Fields(line) {
+				if strings.HasPrefix(field, "writer=") {
+					return strings.TrimPrefix(field, "writer=")
+				}
+			}
+		}
+		t.Fatalf("missing writer= in freeze log:\n%s", logOut)
+		return ""
+	}
+
+	checkWriter := func(t *testing.T, writer string) {
+		t.Helper()
+		if writer == "unknown" || writer == "none" || writer == "" {
+			t.Fatalf("expected resolved writer name, got %q", writer)
+		}
+		for _, bad := range []string{"storeDB", "sqlitecache", "database/sql", "call.one", "call.two", "loop.three"} {
+			if strings.Contains(writer, bad) {
+				t.Fatalf("writer %q must not be wrapper or active call (%q)", writer, bad)
+			}
+		}
+		if !strings.Contains(writer, "TestFreezeWriterNamesCaller") {
+			t.Fatalf("expected writer %q to name TestFreezeWriterNamesCaller", writer)
+		}
+	}
+
+	t.Run("Begin", func(t *testing.T) {
+		g, logs := newFreezeTestGateway(t, 40*time.Millisecond, 10*time.Millisecond, 10*time.Minute)
+		defer g.startRequest("call.one", "n1")()
+		defer g.startRequest("call.two", "n2")()
+		defer g.startLoop("loop.three")()
+
+		tx, err := g.store.db.Begin()
+		if err != nil {
+			t.Fatalf("Begin: %v", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+
+		logOut := waitForFreezeLog(t, logs, 1900*time.Millisecond)
+		checkWriter(t, extractWriter(t, logOut))
+	})
+
+	t.Run("Exec", func(t *testing.T) {
+		g, logs := newFreezeTestGateway(t, 40*time.Millisecond, 10*time.Millisecond, 10*time.Minute)
+		defer g.startRequest("call.one", "n1")()
+		defer g.startRequest("call.two", "n2")()
+		defer g.startLoop("loop.three")()
+
+		started := make(chan struct{})
+		release := make(chan struct{})
+		g.store.connector.SetObserver(func(_ sqlitecache.Statement) {
+			g.store.connector.SetObserver(nil)
+			close(started)
+			<-release
+		})
+
+		execDone := make(chan error, 1)
+		go func() {
+			_, err := g.store.db.Exec(`INSERT OR IGNORE INTO gateway_state (key, value) VALUES ('k_exec', 'v')`)
+			execDone <- err
+		}()
+		<-started
+
+		logOut := waitForFreezeLog(t, logs, 1900*time.Millisecond)
+		close(release)
+		if err := <-execDone; err != nil {
+			t.Fatalf("Exec: %v", err)
+		}
+		checkWriter(t, extractWriter(t, logOut))
+	})
+
+	t.Run("Query", func(t *testing.T) {
+		g, logs := newFreezeTestGateway(t, 40*time.Millisecond, 10*time.Millisecond, 10*time.Minute)
+		defer g.startRequest("call.one", "n1")()
+		defer g.startRequest("call.two", "n2")()
+		defer g.startLoop("loop.three")()
+
+		rows, err := g.store.db.Query(`INSERT INTO gateway_state (key, value) VALUES ('k_query', 'v') ON CONFLICT(key) DO UPDATE SET value=excluded.value RETURNING key`)
+		if err != nil {
+			t.Fatalf("Query: %v", err)
+		}
+		defer func() { _ = rows.Close() }()
+
+		logOut := waitForFreezeLog(t, logs, 1900*time.Millisecond)
+		checkWriter(t, extractWriter(t, logOut))
+	})
 }
 
 func BenchmarkFreezeRequest(b *testing.B) {

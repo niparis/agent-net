@@ -30,7 +30,8 @@ type freezeSnapshot struct {
 	oldestName string
 	oldestAge  time.Duration
 	waiting    int
-	writer     string
+	writerHeld bool
+	writerPCs  []uintptr
 	writerAge  time.Duration
 }
 
@@ -44,7 +45,8 @@ type freezeTracker struct {
 	nextID   uint64
 	active   map[uint64]activeWork
 	wDepth   int
-	wHolder  string
+	wPCs     [32]uintptr
+	wPCsLen  int
 	wSince   time.Time
 	inFreeze bool
 	lastDump time.Time
@@ -89,41 +91,65 @@ func (f *freezeTracker) acquireWriter() {
 	now := time.Now()
 	f.mu.Lock()
 	if f.wDepth == 0 {
-		var holder string
-		if len(f.active) == 1 {
-			for _, w := range f.active {
-				holder = w.name
-			}
-		}
-		if holder == "" {
-			holder = callerFuncName()
-		}
 		f.wSince = now
-		f.wHolder = holder
+		f.wPCsLen = runtime.Callers(2, f.wPCs[:])
 	}
 	f.wDepth++
 	f.mu.Unlock()
 }
 
-func callerFuncName() string {
-	var pcs [8]uintptr
-	n := runtime.Callers(3, pcs[:])
-	frames := runtime.CallersFrames(pcs[:n])
+func resolveWriterName(pcs []uintptr) string {
+	if len(pcs) == 0 {
+		return "unknown"
+	}
+	frames := runtime.CallersFrames(pcs)
+	var writerFn, callerFn string
 	for {
 		f, more := frames.Next()
-		if f.Function != "" &&
-			!strings.Contains(f.Function, "/internal/sqlitecache.") &&
-			!strings.Contains(f.Function, "database/sql.") {
-			if i := strings.LastIndexByte(f.Function, '/'); i >= 0 {
-				return f.Function[i+1:]
+		if f.Function != "" {
+			if writerFn == "" {
+				if isGatewayWriterFrame(f.Function) {
+					writerFn = shortFuncName(f.Function)
+				}
+			} else if isGatewayFrame(f.Function) {
+				callerFn = shortFuncName(f.Function)
+				break
+			} else {
+				break
 			}
-			return f.Function
 		}
 		if !more {
 			break
 		}
 	}
-	return "unknown"
+	if writerFn == "" {
+		return "unknown"
+	}
+	if callerFn != "" {
+		return writerFn + "<-" + callerFn
+	}
+	return writerFn
+}
+
+func isGatewayFrame(fn string) bool {
+	return strings.Contains(fn, "/internal/gateway.")
+}
+
+func isGatewayWriterFrame(fn string) bool {
+	return isGatewayFrame(fn) &&
+		!strings.Contains(fn, "(*storeDB).") &&
+		!strings.Contains(fn, "(storeDB).") &&
+		!strings.Contains(fn, "(*freezeTracker).")
+}
+
+func shortFuncName(fn string) string {
+	if i := strings.Index(fn, "/internal/gateway."); i >= 0 {
+		return fn[i+len("/internal/"):]
+	}
+	if i := strings.LastIndexByte(fn, '/'); i >= 0 {
+		return fn[i+1:]
+	}
+	return fn
 }
 
 func (f *freezeTracker) releaseWriter() {
@@ -132,7 +158,7 @@ func (f *freezeTracker) releaseWriter() {
 		f.wDepth--
 	}
 	if f.wDepth == 0 {
-		f.wHolder = ""
+		f.wPCsLen = 0
 		f.wSince = time.Time{}
 	}
 	f.mu.Unlock()
@@ -170,21 +196,23 @@ func (f *freezeTracker) check(now time.Time) (freezeSnapshot, bool) {
 	f.inFreeze = true
 	f.lastDump = now
 
-	writer := f.wHolder
+	var writerHeld bool
+	var writerPCs []uintptr
 	var writerAge time.Duration
 	if f.wDepth > 0 && !f.wSince.IsZero() {
-		if writer == "" {
-			writer = "unknown"
-		}
+		writerHeld = true
 		writerAge = now.Sub(f.wSince)
-	} else {
-		writer = "none"
+		if f.wPCsLen > 0 {
+			writerPCs = make([]uintptr, f.wPCsLen)
+			copy(writerPCs, f.wPCs[:f.wPCsLen])
+		}
 	}
 	return freezeSnapshot{
 		oldestName: oldestName,
 		oldestAge:  now.Sub(oldestStart),
 		waiting:    len(f.active),
-		writer:     writer,
+		writerHeld: writerHeld,
+		writerPCs:  writerPCs,
 		writerAge:  writerAge,
 	}, true
 }
@@ -260,11 +288,15 @@ func (g *Gateway) writeFreezeDump(snap freezeSnapshot) {
 		name := fmt.Sprintf("freeze-%s.txt", g.store.now().UTC().Format("20060102-150405.000"))
 		profPath = filepath.Join(dir, name)
 	}
+	writer := "none"
+	if snap.writerHeld {
+		writer = resolveWriterName(snap.writerPCs)
+	}
 	g.logLine("freeze",
 		"oldest", snap.oldestName,
 		"oldest_ms", snap.oldestAge.Milliseconds(),
 		"waiting", snap.waiting,
-		"writer", snap.writer,
+		"writer", writer,
 		"writer_ms", snap.writerAge.Milliseconds(),
 		"wal_bytes", walBytes,
 		"io_pressure", ioPressure,
