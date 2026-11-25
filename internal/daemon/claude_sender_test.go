@@ -312,7 +312,7 @@ func TestClaudeScheduledPromptInTheCTOPaneIsNotOwnerWords(t *testing.T) {
 		t.Fatal(err)
 	}
 	n.d.cto.mu.Lock()
-	n.d.claudeCTO.session = native
+	n.d.claudeCTO.setSession(native)
 	n.d.cto.mu.Unlock()
 	transcript := writeClaudeTranscript(t, t.TempDir(), native, claudeUserEntry(promptID, text, scheduledOrigin))
 	askPolicy(t, cliClient(t, n), protocol.PolicyRequest{
@@ -346,7 +346,7 @@ func TestCTOPaneLateEntryKeepsOnlyTheOwnerWords(t *testing.T) {
 				t.Fatal(err)
 			}
 			n.d.cto.mu.Lock()
-			n.d.claudeCTO.session = native
+			n.d.claudeCTO.setSession(native)
 			n.d.cto.mu.Unlock()
 			n.d.claudeOwnerWait = 100 * time.Millisecond
 			transcript := filepath.Join(t.TempDir(), native+".jsonl")

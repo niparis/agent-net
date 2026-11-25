@@ -66,7 +66,7 @@ func (r *queuedRig) setCTONative(t *testing.T, native string) string {
 		t.Fatal(err)
 	}
 	r.d.cto.mu.Lock()
-	r.d.claudeCTO.session = native
+	r.d.claudeCTO.setSession(native)
 	r.d.cto.mu.Unlock()
 	return "s_cto"
 }

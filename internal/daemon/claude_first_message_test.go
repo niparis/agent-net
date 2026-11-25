@@ -459,7 +459,7 @@ func TestClaudeCTODeliveryRestartFirstMessageIsNotOwnerWords(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.d.cto.mu.Lock()
-	native := c.d.claudeCTO.session
+	native := c.d.claudeCTO.sessionID()
 	c.d.cto.mu.Unlock()
 	if native == "" {
 		t.Fatal("CTO native session ID not recorded")

@@ -271,7 +271,7 @@ func (d *Daemon) claudeCTOPID(session string) (int, bool) {
 	d.cto.mu.Lock()
 	defer d.cto.mu.Unlock()
 	root := d.claudeCTO.root.Load()
-	if root == nil || d.claudeCTO.session != session {
+	if root == nil || d.claudeCTO.sessionID() != session {
 		return 0, false
 	}
 	return root.pid, true
@@ -349,7 +349,7 @@ func (d *Daemon) restartClaudeCTOForDelivery(ctx context.Context, w *ctoTranscri
 		return
 	}
 	d.cto.mu.Lock()
-	if d.claudeCTO.root.Load() == nil || d.claudeCTO.session != w.session {
+	if d.claudeCTO.root.Load() == nil || d.claudeCTO.sessionID() != w.session {
 		d.cto.mu.Unlock()
 		d.Logf("cto.delivery_unconfirmed msg=%s reason=cto_changed", msgID)
 		return

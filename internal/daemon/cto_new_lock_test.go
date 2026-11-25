@@ -108,7 +108,7 @@ func TestClaudeCTONewRepeatsCallWhenConversationMoved(t *testing.T) {
 	d := newCTOStateTestDaemon(t, func(dd *Daemon) {
 		calls++
 		if calls == 1 {
-			dd.claudeCTO.session = "claude_started"
+			dd.claudeCTO.setSession("claude_started")
 		}
 	})
 	if _, err := (claudeCTOHarness{}).newConversation(context.Background(), d); err != nil {

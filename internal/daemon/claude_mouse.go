@@ -111,7 +111,7 @@ func (d *Daemon) checkClaudeMouseSessions(ctx context.Context, now time.Time) {
 	// The CTO keeps its own deliberate exception in its launch settings, so
 	// its inherited environment does not decide anything for it.
 	d.cto.mu.Lock()
-	ctoSession := d.claudeCTO.session
+	ctoSession := d.claudeCTO.sessionID()
 	d.cto.mu.Unlock()
 	ctoDir := ""
 	if d.cfg.StateDir != "" {

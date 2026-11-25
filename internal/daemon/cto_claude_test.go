@@ -964,7 +964,7 @@ func TestClaudeCTOJobIdentity(t *testing.T) {
 		t.Fatal("an unbound daemon claims a CTO job")
 	}
 	d.claudeCTO.ref = "job-cto"
-	d.claudeCTO.session = "sess-cto"
+	d.claudeCTO.setSession("sess-cto")
 	if !d.IsClaudeCTOJob("job-cto") {
 		t.Fatal("the bound CTO job is not recognised")
 	}
