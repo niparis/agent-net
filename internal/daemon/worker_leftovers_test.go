@@ -341,3 +341,33 @@ func TestAgyHandbackWhileGatewayDownWaitsForTheRecord(t *testing.T) {
 		t.Errorf("the change records %s, want the head %s", q.HeadCommit, gitHead(t, wt, "HEAD"))
 	}
 }
+
+// A Codex hand-back while the gateway is down is not saved as a row. The
+// replay of a row ends only workers that hand back with end set, and a Codex
+// worker ends from its own turn loop, so a row left it running after its
+// notice. The hand-back waits for the link instead. When the daemon stops
+// first, nothing is saved and nothing is sent: the Codex thread still holds
+// the turn, and the next daemon hands it back again.
+func TestCodexHandbackWhileGatewayDownLeavesTheTurnToTheThread(t *testing.T) {
+	w, _, _ := leftoverWorker(t)
+	w.harness = "codex"
+	d, f := handbackRecordDaemon(t)
+	d.workers = map[string]*worker{w.id: w}
+	f.answer(protocol.FrameChangeSubmit, func(json.RawMessage) (any, error) { return nil, errNotConnected })
+	stopped, stop := context.WithCancel(context.Background())
+	stop()
+	d.workerStreamCtx = stopped
+
+	if _, err := d.handbackFlow(context.Background(), w, handbackDone, "", "", "", false, nil); !errors.Is(err, errHandbackDeferred) {
+		t.Fatalf("hand-back while the gateway is down and the daemon stops: %v", err)
+	}
+	if _, ok := d.st.pendingHandback(w.id); ok {
+		t.Error("the Codex hand-back was saved as a row that the replay sends without ending the worker")
+	}
+	if queued, _ := d.st.outbox(); len(queued) != 0 {
+		t.Errorf("the notice went out without the change record: %s", queued[0].msg.Body)
+	}
+	if w.handbackPending {
+		t.Error("the worker stays marked as waiting for a hand-back that nobody sends")
+	}
+}

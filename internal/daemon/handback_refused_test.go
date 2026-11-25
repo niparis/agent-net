@@ -600,6 +600,46 @@ func TestCodexRefusedHandbackStopAtEachStep(t *testing.T) {
 	}
 }
 
+// A Codex turn ends while the gateway is down. The hand-back waits for the
+// link: at connect the change is recorded at the worktree's head, the caller
+// gets one notice, and the worker ends after it as after any hand-back. Its
+// hand-back was saved as a row before, which the connect sent without ending
+// the worker.
+func TestCodexHandbackWhileGatewayDownEndsTheWorkerAtConnect(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = map[string]string{"codex": os.Args[0]} })
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: "FAKE:edit FAKE:hold-codex", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinueOff()})
+	eventually(t, "codex turn held", func() bool { _, err := os.Stat(filepath.Join(res.Worktree, "fake-codex-held")); return err == nil })
+	s := &savedHandback{g: g, w: w}
+	s.gatewayDown(t)
+	if err := os.WriteFile(filepath.Join(res.Worktree, "fake-codex-release"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the hand-back waits for the link", func() bool {
+		wk := w.d.workerBySession(res.SessionID)
+		w.d.wmu.Lock()
+		defer w.d.wmu.Unlock()
+		return wk != nil && wk.handbackPending
+	})
+
+	g2 := startGateway(t, g.dir, g.addr)
+	eventually(t, "the daemon connects", w.d.Connected)
+	n := w.waitNotice(t, 1)[0]
+	if !strings.Contains(n.Body, "status: done") || n.ParentID != res.Task.ID {
+		t.Fatalf("the hand-back notice: %+v", n)
+	}
+	eventually(t, "codex worker ends after its hand-back", func() bool { return w.d.workerCount() == 0 })
+	if change := changeView(t, g2, noticeChangeID(t, n.Body)); change.Change.HeadCommit != gitOutT(t, res.Worktree, "rev-parse", "HEAD") {
+		t.Errorf("change head %s, want the worktree head", change.Change.HeadCommit)
+	}
+	if got := len(w.notices(t)); got != 1 {
+		t.Fatalf("the caller got %d notices, want the hand-back only", got)
+	}
+}
+
 // The Codex app server ended while the daemon was down, after the refusal was
 // saved and before the caller was told. The worker is lost, and its lost
 // notice carries the saved report and the reason.

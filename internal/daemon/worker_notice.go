@@ -1476,9 +1476,48 @@ func (d *Daemon) handbackFlow(ctx context.Context, w *worker, req protocol.Worke
 	t := &handbackTail{req: req, to: to, replyTo: replyTo, sandboxNote: sandboxNote, end: end, files: files,
 		sessionID: sessionID, committed: committed, keptAside: keptAside, wipDetail: wipDetail, complete: complete, frictionDropped: frictionDropped}
 	out, err := d.finishHandback(ctx, w, t)
+	if errors.Is(err, errHandbackDeferred) && !t.persisted {
+		out, err = d.finishWhenLinked(ctx, w, t)
+	}
 	// A saved hand-back keeps its snapshots for the next connect.
 	handedOver = errors.Is(err, errHandbackDeferred)
 	return out, err
+}
+
+// finishWhenLinked finishes a hand-back that has no saved row
+// (harnessKeepsHandback) once the gateway link is back. It finishes the same
+// tail, so the notice still names what this hand-back committed, and the
+// change gets the head the worktree has when it is sent. Until then the
+// worker is not nudged, reported idle or ended. A daemon that stops first
+// returns errHandbackDeferred with nothing saved: the harness state hands
+// the turn back again at the next adoption.
+func (d *Daemon) finishWhenLinked(ctx context.Context, w *worker, t *handbackTail) (*protocol.WorkerHandbackResult, error) {
+	d.wmu.Lock()
+	w.handbackPending = true
+	d.wmu.Unlock()
+	defer func() {
+		d.wmu.Lock()
+		w.handbackPending = false
+		d.wmu.Unlock()
+	}()
+	stop := d.streamCtx()
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		if !d.waitForLink(stop) {
+			return nil, errHandbackDeferred
+		}
+		out, err := d.finishHandback(ctx, w, t)
+		if !errors.Is(err, errHandbackDeferred) {
+			return out, err
+		}
+		d.Logf("worker %s: the hand-back waits for the gateway link again", w.id)
+		select {
+		case <-stop.Done():
+			return nil, errHandbackDeferred
+		case <-tick.C:
+		}
+	}
 }
 
 // finishHandback records the change and sends the notice. A hand-back saved
@@ -1497,6 +1536,12 @@ func (d *Daemon) finishHandback(ctx context.Context, w *worker, t *handbackTail)
 		} else {
 			rec := d.submitHandbackChange(ctx, w, handbackCheck, req.Report, req.VisualEvidence)
 			changeID, deliveryProblem, pick = rec.changeID, rec.problem, rec.pick
+			if rec.offline && !t.persisted && harnessKeepsHandback(w.harness) {
+				// handbackFlow waits for the link and finishes this
+				// hand-back again, so the change gets the head then.
+				d.Logf("worker.handback_deferred worker=%s reason=%q", w.id, "the daemon has no gateway link")
+				return nil, errHandbackDeferred
+			}
 			if rec.offline && !t.persisted {
 				// Saved now, the next connect records the change at the head
 				// the worktree has then, and sends the notice.
@@ -1508,16 +1553,17 @@ func (d *Daemon) finishHandback(ctx context.Context, w *worker, t *handbackTail)
 						w.handbackPending = true
 					}
 					d.wmu.Unlock()
+					err := d.deferHandback(w, t, "the daemon has no gateway link")
+					if d.Connected() {
+						// The link came back after the submit, and its replay
+						// may have read the rows before this one was saved.
+						d.replayHandbacks()
+					}
+					return nil, err
 				}
 			}
 			if rec.offline && t.persisted {
 				return nil, d.deferHandback(w, t, "the daemon has no gateway link")
-			}
-			if rec.offline && w.harness == "agy" {
-				// Its stream state keeps the pending hand-back, and
-				// publishHandback sends it again once the link is back.
-				d.Logf("worker.handback_deferred worker=%s reason=%q", w.id, "the daemon has no gateway link")
-				return nil, errHandbackDeferred
 			}
 			t.recorded, t.changeID, t.deliveryProblem = true, changeID, deliveryProblem
 		}
