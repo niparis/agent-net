@@ -137,8 +137,8 @@ func (d *Daemon) codexThreadInstructions(ctx context.Context, project string) st
 // launchOwnerCodex starts an owner Codex session on the shared app server and
 // registers it. Nothing here needs a terminal: the thread lives in the app
 // server, and a viewer (`codex resume --remote`) is the optional view step.
-// The first message goes in through the daemon, as for a Claude session.
-func (d *Daemon) launchOwnerCodex(ctx context.Context, r protocol.StartedSession, firstMessage string, view startView, notify bool) (protocol.StartedSession, error) {
+// The first message goes in through the daemon, from its writer.
+func (d *Daemon) launchOwnerCodex(ctx context.Context, r protocol.StartedSession, first startFirstMessage, view startView, notify bool) (protocol.StartedSession, error) {
 	bin, err := d.harnessBinary("codex")
 	if err != nil {
 		return r, err
@@ -147,10 +147,9 @@ func (d *Daemon) launchOwnerCodex(ctx context.Context, r protocol.StartedSession
 	if err != nil {
 		return r, err
 	}
-	if firstMessage != "" {
-		if _, err := d.send(ctx, protocol.MsgSend{Sender: d.ownerSessionID(), Recipient: r.SessionID, Type: protocol.TypeRequest, Body: firstMessage}); err != nil {
-			return r, err
-		}
+	if err := d.sendFirstMessage(ctx, r.SessionID, first); err != nil {
+		keepUnsentFirstMessage(&r, first)
+		return r, err
 	}
 	r.Status = "started"
 	d.showStart(&r, d.codexViewPlan(bin, r), view)

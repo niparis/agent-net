@@ -36,6 +36,14 @@ func (d *Daemon) sessionStart(ctx context.Context, p protocol.SessionStartReques
 	if len(p.FirstMessage) > protocol.MaxBodyBytes {
 		return protocol.StartedSession{}, errors.New("first_message is too long")
 	}
+	// The daemon that takes the request says who wrote the first message.
+	// Every start here that does not carry the owner's words comes from the
+	// CTO: its tools, an approved proposal, or a role agent-net starts for it
+	// (the chief, a merger). That text goes out from the CTO's session.
+	p.FirstMessageFrom = ""
+	if p.FirstMessage != "" && !p.FirstMessageByOwner {
+		p.FirstMessageFrom = d.ctoSessionID()
+	}
 	if p.MCPServers != "" {
 		if p.MCPServers != protocol.MCPApprove && p.MCPServers != protocol.MCPDisable {
 			return protocol.StartedSession{}, fmt.Errorf("mcp_servers must be %q or %q", protocol.MCPApprove, protocol.MCPDisable)
@@ -330,14 +338,15 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	launched = true
 	remoteOwner, _ := ctx.Value(proposalRemoteOwnerKey{}).(bool)
 	notify := p.CTOProposal && !remoteOwner
+	first := firstMessageOf(p)
 	if p.Harness == "codex" {
-		return d.launchOwnerCodex(ctx, r, p.FirstMessage, startView{socket: p.HerdrSocket, pane: p.HerdrPaneID, relayed: remoteOwner, background: p.CTOProposal}, notify)
+		return d.launchOwnerCodex(ctx, r, first, startView{socket: p.HerdrSocket, pane: p.HerdrPaneID, relayed: remoteOwner, background: p.CTOProposal}, notify)
 	}
 	if p.Harness == "opencode" {
 		return d.launchOwnerOpenCode(ctx, r, p.FirstMessage, p.HerdrSocket, p.HerdrPaneID, notify, remoteOwner)
 	}
 	if p.Harness == "pi" {
-		return d.launchOwnerPi(r, p.FirstMessage, "", p.HerdrSocket, p.HerdrPaneID, notify)
+		return d.launchOwnerPi(r, first, "", p.HerdrSocket, p.HerdrPaneID, notify)
 	}
 	name := r.Project
 	if p.Merger {
@@ -358,12 +367,12 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	if p.AgentID == "" {
 		// Claude Code records a command-line prompt as typed by a human. Only
 		// a message the owner wrote may count as the owner's words there.
-		in.FirstMessage = p.FirstMessage
+		in.FirstMessage, first = p.FirstMessage, startFirstMessage{}
 		in.NonOwnerFirstMessage = !p.FirstMessageByOwner
 	}
 	spec := d.claudeStartSpec(ctx, in)
 	view := startView{socket: p.HerdrSocket, pane: p.HerdrPaneID, relayed: remoteOwner, background: p.CTOProposal}
-	return d.launchOwnerClaude(r, bin, spec, view, notify, p.FirstMessage), nil
+	return d.launchOwnerClaude(r, bin, spec, view, notify, first), nil
 }
 
 // relaySessionStart asks the gateway to start the session on another machine.
@@ -374,6 +383,14 @@ func (d *Daemon) relaySessionStart(ctx context.Context, p protocol.SessionStartR
 	}
 	socket, pane := p.HerdrSocket, p.HerdrPaneID
 	p.HerdrSocket, p.HerdrPaneID = "", ""
+	// The other machine cannot send as a session of this one, and never sends
+	// as the owner what the owner did not write. A first message that goes as
+	// a message, with a writer here, stays here and goes out once the session
+	// is up.
+	var later startFirstMessage
+	if p.FirstMessage != "" && !p.FirstMessageByOwner && p.FirstMessageFrom != "" && !firstMessageIsPrompt(p) {
+		later, p.FirstMessage = firstMessageOf(p), ""
+	}
 	p.HerdrClient = !p.CTOProposal && !p.Merger && d.herdrBinary("") != ""
 	frame := protocol.SessionStartRelay{Owner: owner, NodeID: target, SessionStartRequest: p}
 	typ := protocol.FrameSessionStart
@@ -392,6 +409,9 @@ func (d *Daemon) relaySessionStart(ctx context.Context, p protocol.SessionStartR
 		return protocol.StartedSession{}, err
 	}
 	d.rememberRelayedStart(res.ID, firstNonEmpty(res.NodeID, target), socket, pane)
+	if later.Text != "" && (res.Status == "starting" || res.Status == "started") {
+		d.sendRelayedFirstMessage(res.ID, firstNonEmpty(res.NodeID, target), later)
+	}
 	res = d.remoteStartResult(ctx, res, socket, pane)
 	remoteOwner, _ := ctx.Value(proposalRemoteOwnerKey{}).(bool)
 	if p.CTOProposal && !p.Merger && !remoteOwner && res.Status == "starting" {
@@ -563,13 +583,13 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, 
 		return d.resumeOwnerCodex(ctx, r, socket, pane)
 	}
 	if a.Harness == "pi" {
-		return d.launchOwnerPi(r, "", a.NativeID, socket, pane, false)
+		return d.launchOwnerPi(r, startFirstMessage{}, a.NativeID, socket, pane, false)
 	}
 	bin, err := d.harnessBinary("claude")
 	if err != nil {
 		return protocol.StartedSession{}, err
 	}
-	return d.launchOwnerClaude(r, bin, d.claudeResumeSpec(a), startView{socket: socket, pane: pane}, false, ""), nil
+	return d.launchOwnerClaude(r, bin, d.claudeResumeSpec(a), startView{socket: socket, pane: pane}, false, startFirstMessage{}), nil
 }
 
 func (d *Daemon) resumeRecord(a protocol.AgentView) protocol.StartedSession {
@@ -627,7 +647,7 @@ func (d *Daemon) moveToBackground(ctx context.Context, a protocol.AgentView, soc
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
-	return d.launchOwnerClaude(d.resumeRecord(a), bin, d.claudeResumeSpec(a), startView{socket: socket, pane: pane}, false, ""), nil
+	return d.launchOwnerClaude(d.resumeRecord(a), bin, d.claudeResumeSpec(a), startView{socket: socket, pane: pane}, false, startFirstMessage{}), nil
 }
 
 // claudeResumeSpec is the owner resume. The wake fallback uses the same spec,
@@ -692,9 +712,9 @@ func (d *Daemon) showStart(r *protocol.StartedSession, plan protocol.EnterPlan, 
 }
 
 // launchOwnerClaude starts an owner Claude session through startBackground and
-// tracks it until the daemon has registered it. firstMessage is sent to the
-// session after the start when it has an agent identity.
-func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, spec claudeBackground, view startView, notify bool, firstMessage string) protocol.StartedSession {
+// tracks it until the daemon has registered it. first is sent to the session
+// once it is registered; it is empty when the launch carried it as its prompt.
+func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, spec claudeBackground, view startView, notify bool, first startFirstMessage) protocol.StartedSession {
 	resume := spec.Resume
 	d.mu.Lock()
 	if d.startedSessions == nil {
@@ -766,8 +786,10 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, spec c
 		if err == nil && r.Type == "merger" {
 			_, err = d.call(cctx, "merger.set", map[string]any{"project": r.Project, "node_id": d.cfg.NodeID, "session_id": r.SessionID, "configure": true, "by": "owner"})
 		}
-		if err == nil && r.AgentID != "" && firstMessage != "" {
-			_, err = d.send(cctx, protocol.MsgSend{Sender: d.ownerSessionID(), Recipient: r.SessionID, Type: protocol.TypeRequest, Body: firstMessage})
+		if err == nil {
+			if err = d.sendFirstMessage(cctx, r.SessionID, first); err != nil {
+				keepUnsentFirstMessage(&r, first)
+			}
 		}
 		if err != nil {
 			r.Status = "failed"
@@ -826,22 +848,31 @@ func (d *Daemon) sessionStartGet(ctx context.Context, id string) (protocol.Start
 	if node == "" {
 		return r, errors.New("unknown session start")
 	}
+	remote, err := d.relayedStartGet(ctx, id, node)
+	if err != nil {
+		return r, err
+	}
+	return d.remoteStartResult(ctx, remote, socket, pane), nil
+}
+
+// relayedStartGet asks the machine that runs a relayed start for its state.
+func (d *Daemon) relayedStartGet(ctx context.Context, id, node string) (protocol.StartedSession, error) {
 	owner := d.ownerSessionID()
 	if owner == "" {
-		return r, errors.New("the owner session is not registered yet (is the gateway reachable?)")
+		return protocol.StartedSession{}, errors.New("the owner session is not registered yet (is the gateway reachable?)")
 	}
 	data, err := d.call(ctx, protocol.FrameSessionGet, protocol.SessionRelay{Owner: owner, NodeID: node, StartID: id})
 	if err != nil {
-		return r, tooOldGateway(err)
+		return protocol.StartedSession{}, tooOldGateway(err)
 	}
 	var remote protocol.StartedSession
 	if err := json.Unmarshal(data, &remote); err != nil {
-		return r, err
+		return protocol.StartedSession{}, err
 	}
 	if remote.NodeID == "" {
 		remote.NodeID = node
 	}
-	return d.remoteStartResult(ctx, remote, socket, pane), nil
+	return remote, nil
 }
 
 // sessionStartGetLocal answers the gateway for a start on this machine.

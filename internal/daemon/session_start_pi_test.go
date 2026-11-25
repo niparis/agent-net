@@ -112,7 +112,7 @@ func TestSessionStartPiRequiresHerdr(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("PATH", dir)
 	d := &Daemon{cfg: Config{HarnessPaths: map[string]string{"pi": "/fake/pi"}, HarnessSearch: &harnesses.Options{Home: home, PATH: dir, Dirs: []string{}, LoginShellPATH: func(context.Context) string { return "" }}}}
-	_, err := d.launchOwnerPi(protocol.StartedSession{Project: "shop", Path: dir}, "", "", "", "", false)
+	_, err := d.launchOwnerPi(protocol.StartedSession{Project: "shop", Path: dir}, startFirstMessage{}, "", "", "", false)
 	if err == nil || !strings.Contains(err.Error(), "herdr not found (looked in: "+dir) {
 		t.Fatalf("error: %v", err)
 	}
