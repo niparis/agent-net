@@ -3440,6 +3440,29 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return nil, nil
 
+	case "delivery.held":
+		// Claude Code kept a delivered message for review. It is not
+		// delivered, and the owner releases it in that session.
+		p, err := decode[protocol.DeliveryUpdate](raw)
+		if err != nil {
+			return nil, reject("bad delivery.held")
+		}
+		m, ok, err := st.Message(p.MessageID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, reject("unknown message %q", p.MessageID)
+		}
+		owner, err := st.SessionNode(m.To)
+		if err != nil {
+			return nil, err
+		}
+		if owner != nc.id {
+			return nil, reject("message %q is not addressed to this node", p.MessageID)
+		}
+		return nil, st.HoldDelivery(p.MessageID, p.Detail)
+
 	case "delivery.not_delivered":
 		// A message reached the session's harness, but no turn ran for it.
 		p, err := decode[protocol.DeliveryUpdate](raw)

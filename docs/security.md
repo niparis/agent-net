@@ -545,6 +545,8 @@ What stays the same: a peer message is still not your approval. Claude Code's pe
 
 Setup never turns this on by itself. It follows the answer to the one integrations question, or `--accept-peer-messages` (a local answer for that machine). It never changes a value that is already set. It records that it set the value, and `agent-net uninstall` removes the key only if agent-net set it and it is still `"accept"`. See [Integrations](setup.md#integrations).
 
+The daemon does not trust that record on its own. At start and when a Claude session starts, it reads the live settings file and compares it with the record. A managed file that replaced the key, for example a read-only Home Manager link, is reported with the line to declare in the dotfile that owns it. The check only reads files. A message Claude Code holds for review is not reported as delivered: it is `held_by_session` until the owner releases it in that session, and the daemon never fakes a matching permission mode or resends it. Turning the review off stays an explicit owner choice.
+
 ## Delivery into a Pi session
 
 The extension turns the message into a follow-up message in the running session, marked as coming from another agent and not from you. Pi's own tool permissions apply to what the agent does next.

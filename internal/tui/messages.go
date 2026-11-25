@@ -462,6 +462,8 @@ func stateMark(state string) string {
 		return lipgloss.NewStyle().Foreground(roleGood).Render("✓ ")
 	case strings.HasPrefix(state, "gw "):
 		return lipgloss.NewStyle().Foreground(roleWarning).Render("gw ")
+	case state == "held":
+		return lipgloss.NewStyle().Foreground(roleWarning).Render("! ")
 	case state == "failed":
 		return lipgloss.NewStyle().Foreground(roleError).Render("! ")
 	case state == "timed out":

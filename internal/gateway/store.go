@@ -5628,6 +5628,44 @@ func (s *Store) ApplyDelivery(id, state, detail string) error {
 	return err
 }
 
+// HoldDelivery records that Claude Code kept a delivered message for review.
+// It is not delivered, so it is not reminded, and it does not open a held ask:
+// the owner releases it in the Claude session, not at the gateway. A later
+// delivered report moves it back to delivered.
+func (s *Store) HoldDelivery(id, detail string) error {
+	now := s.now().UnixNano()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT INTO deliveries (message_id, state, detail, at) VALUES (?,?,?,?)`,
+		id, protocol.StateHeldBySession, detail, now); err != nil {
+		return err
+	}
+	res, err := tx.Exec(`UPDATE messages SET state=? WHERE id=? AND state IN ('stored','dispatched','delivered')`,
+		protocol.StateHeldBySession, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return reject("message is not waiting for a delivery report")
+	}
+	if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id=?`, id); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.Event("msg."+protocol.StateHeldBySession, "", s.recipientOf(id), id, detail)
+	s.logStep("msg."+protocol.StateHeldBySession, id, "detail", detail)
+	return nil
+}
+
 // ApplyDeliveryReport is ApplyDelivery that also returns the notice to the
 // sender, stored in the same transaction, when the report leaves the message
 // failed for good (W4.3), or delivers a request to a session that waits for
@@ -5645,7 +5683,13 @@ func (s *Store) ApplyDeliveryReport(id, state, detail string) (notice protocol.M
 	if _, err := tx.Exec(`INSERT INTO deliveries (message_id, state, detail, at) VALUES (?,?,?,?)`, id, state, detail, now); err != nil {
 		return notice, false, err
 	}
-	res, err := tx.Exec(`UPDATE messages SET state = ? WHERE id = ? AND state IN ('stored','dispatched')`, state, id)
+	// A message Claude Code held for review is not delivered. A later
+	// delivered report is the owner releasing it, so it may move forward.
+	from := `state IN ('stored','dispatched')`
+	if state == protocol.StateDelivered {
+		from = `state IN ('stored','dispatched','held_by_session')`
+	}
+	res, err := tx.Exec(`UPDATE messages SET state = ? WHERE id = ? AND `+from, state, id)
 	if err != nil {
 		return notice, false, err
 	}
@@ -5718,7 +5762,7 @@ func (s *Store) ApplyDeliveryReport(id, state, detail string) (notice protocol.M
 // Expire marks overdue undelivered messages expired and returns how many.
 func (s *Store) Expire() (int, error) {
 	now := s.now().UnixNano()
-	rows, err := s.db.Query(`SELECT id FROM messages WHERE (state IN ('stored','dispatched','held') OR (state='failed' AND EXISTS (SELECT 1 FROM delivery_retries WHERE message_id=messages.id))) AND expires_at <= ? AND NOT EXISTS (SELECT 1 FROM sessions r WHERE r.id=messages.recipient AND r.harness='bot' AND messages.state='stored')`, now)
+	rows, err := s.db.Query(`SELECT id FROM messages WHERE (state IN ('stored','dispatched','held','held_by_session') OR (state='failed' AND EXISTS (SELECT 1 FROM delivery_retries WHERE message_id=messages.id))) AND expires_at <= ? AND NOT EXISTS (SELECT 1 FROM sessions r WHERE r.id=messages.recipient AND r.harness='bot' AND messages.state='stored')`, now)
 	if err != nil {
 		return 0, err
 	}
@@ -6481,7 +6525,7 @@ func (s *Store) expireMessage(id string, now int64) (bool, error) {
 	if err != nil || !ok {
 		return false, err
 	}
-	res, err := tx.Exec(`UPDATE messages SET state='expired' WHERE id=? AND (state IN ('stored','dispatched','held') OR (state='failed' AND EXISTS (SELECT 1 FROM delivery_retries WHERE message_id=messages.id))) AND expires_at<=?`, id, now)
+	res, err := tx.Exec(`UPDATE messages SET state='expired' WHERE id=? AND (state IN ('stored','dispatched','held','held_by_session') OR (state='failed' AND EXISTS (SELECT 1 FROM delivery_retries WHERE message_id=messages.id))) AND expires_at<=?`, id, now)
 	if err != nil {
 		return false, err
 	}

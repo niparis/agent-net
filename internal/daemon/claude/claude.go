@@ -65,6 +65,8 @@ type Adapter struct {
 	byNative      map[string]found          // native_id -> session
 	bySock        map[string]string         // inbox socket -> native_id
 	replies       map[replyKey]net.Listener // reply address -> its listener
+	heldWatches   map[string]*heldWatch     // transcript -> how far it was read
+	heldScanning  bool                      // one background transcript scan at a time
 	ctx           context.Context           // from Start; reply listeners run under it
 	lastSweep     time.Time                 // when sweepReplies last ran
 }
@@ -249,6 +251,7 @@ func (a *Adapter) poll() {
 	}
 	a.byNative, a.bySock = byNative, bySock
 	a.mu.Unlock()
+	a.startHeldScan(byNative)
 	a.models.forget(seenModels)
 	// The daemon compares with what it already has and only tells the gateway about changes.
 	a.host.SetSessions("claude", infos)

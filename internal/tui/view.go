@@ -199,6 +199,8 @@ func stateSymbol(s string) string {
 		return "…"
 	case protocol.StateDelivered:
 		return "✓"
+	case protocol.StateHeldBySession:
+		return "!"
 	case protocol.StateReplied, protocol.StateAcknowledged:
 		return "↩"
 	case protocol.StateFailed, protocol.StateExpired, "refused":
@@ -506,6 +508,8 @@ func messageState(state string) string {
 	switch state {
 	case protocol.StateDelivered:
 		return sBusy.Render(symbol)
+	case protocol.StateHeldBySession:
+		return lipgloss.NewStyle().Foreground(roleWarning).Render(symbol)
 	case protocol.StateReplied, protocol.StateAcknowledged:
 		return lipgloss.NewStyle().Foreground(roleAccent).Render(symbol)
 	case protocol.StateFailed, protocol.StateExpired, "refused":
@@ -624,8 +628,10 @@ func (m Model) messageView(w, rows int) []string {
 	it := m.feed.byMsg[o.id]
 	if it != nil {
 		body(fmt.Sprintf("  %s -> %s   %s   %s   %s", m.who(it.From), m.who(it.To), dashIfEmpty(it.Type), it.State, m.clock(it.At)))
-		if it.State == protocol.StateDispatched && it.Detail != "" {
-			body("  " + sanitize(it.Detail))
+		if (it.State == protocol.StateDispatched || it.State == protocol.StateHeldBySession) && it.Detail != "" {
+			for _, line := range wrap(sanitize(it.Detail), max(w-4, 8)) {
+				body("  " + line)
+			}
 		}
 	}
 	switch {

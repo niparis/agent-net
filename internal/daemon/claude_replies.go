@@ -69,7 +69,8 @@ CREATE TABLE IF NOT EXISTS claude_deliveries (
 	message_id TEXT PRIMARY KEY, recipient TEXT NOT NULL, sender TEXT NOT NULL,
 	conversation_id TEXT NOT NULL, type TEXT NOT NULL,
 	delivered_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
-	answered_at INTEGER NOT NULL DEFAULT 0, answer TEXT NOT NULL DEFAULT '');
+	answered_at INTEGER NOT NULL DEFAULT 0, answer TEXT NOT NULL DEFAULT '',
+	held_at INTEGER NOT NULL DEFAULT 0, released_at INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS claude_deliveries_open ON claude_deliveries(recipient, sender, conversation_id, delivered_at);`
 
 func (s *state) SaveDelivery(r ClaudeDelivery) error {
@@ -114,6 +115,127 @@ func (s *state) OpenRequests(recipient, sender, conversation string, now time.Ti
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// markClaudeHeld records that Claude Code kept a delivered message for
+// review. It picks the newest delivery from sender in conversation that was
+// written no later than the transcript entry, so a hold is not matched to a
+// message sent after it. It returns the row it marked, if any.
+func (s *state) markClaudeHeld(recipient, sender, conversation string, at time.Time) (ClaudeDelivery, bool, error) {
+	if at.IsZero() {
+		at = time.Now()
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return ClaudeDelivery{}, false, err
+	}
+	defer tx.Rollback()
+	query := func(before int64) (*ClaudeDelivery, error) {
+		q := `SELECT message_id, recipient, sender, conversation_id, type, delivered_at, expires_at
+			FROM claude_deliveries
+			WHERE recipient=? AND sender=? AND held_at=0 AND answered_at=0 AND expires_at>? AND delivered_at<=?`
+		args := []any{recipient, sender, time.Now().UnixNano(), before}
+		if conversation != "" {
+			q += ` AND conversation_id=?`
+			args = append(args, conversation)
+		}
+		rows, err := tx.Query(q+` ORDER BY delivered_at DESC, rowid DESC LIMIT 1`, args...)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		if !rows.Next() {
+			return nil, rows.Err()
+		}
+		var r ClaudeDelivery
+		var delivered, expires int64
+		if err := rows.Scan(&r.MessageID, &r.Recipient, &r.Sender, &r.ConversationID, &r.Type, &delivered, &expires); err != nil {
+			return nil, err
+		}
+		r.DeliveredAt, r.ExpiresAt = time.Unix(0, delivered), time.Unix(0, expires)
+		return &r, rows.Err()
+	}
+	// The transcript timestamp and the delivery time come from the same
+	// machine, but a write may land a moment later. Fall back to the newest
+	// unheld row when no row is older than the entry.
+	r, err := query(at.Add(time.Second).UnixNano())
+	if err != nil {
+		return ClaudeDelivery{}, false, err
+	}
+	if r == nil {
+		r, err = query(time.Now().Add(time.Second).UnixNano())
+		if err != nil {
+			return ClaudeDelivery{}, false, err
+		}
+	}
+	if r == nil {
+		return ClaudeDelivery{}, false, nil
+	}
+	res, err := tx.Exec(`UPDATE claude_deliveries SET held_at=? WHERE message_id=? AND held_at=0`, at.UnixNano(), r.MessageID)
+	if err != nil {
+		return ClaudeDelivery{}, false, err
+	}
+	if n, err := res.RowsAffected(); err != nil || n != 1 {
+		return ClaudeDelivery{}, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return ClaudeDelivery{}, false, err
+	}
+	return *r, true, nil
+}
+
+// releaseClaudeHeld marks the held deliveries released. A message ID names one
+// exactly; without it, every held delivery from sender in conversation. It
+// returns the message IDs that were still held.
+func (s *state) releaseClaudeHeld(recipient, messageID, sender, conversation string, at time.Time) ([]string, error) {
+	if at.IsZero() {
+		at = time.Now()
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	q := `SELECT message_id FROM claude_deliveries WHERE recipient=? AND held_at>0 AND released_at=0`
+	args := []any{recipient}
+	if messageID != "" {
+		q += ` AND message_id=?`
+		args = append(args, messageID)
+	} else {
+		q += ` AND sender=?`
+		args = append(args, sender)
+		if conversation != "" {
+			q += ` AND conversation_id=?`
+			args = append(args, conversation)
+		}
+	}
+	rows, err := tx.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	for _, id := range ids {
+		if _, err := tx.Exec(`UPDATE claude_deliveries SET released_at=? WHERE message_id=? AND released_at=0`, at.UnixNano(), id); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return ids, nil
 }
 
 func (s *state) CloseRequests(ids []string, match string, at time.Time) error {

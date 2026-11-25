@@ -20,9 +20,13 @@ const (
 	StateStored     = "stored"
 	StateDispatched = "dispatched"
 	StateDelivered  = "delivered"
-	StateReplied    = "replied"
-	StateFailed     = "failed"
-	StateExpired    = "expired"
+	// StateHeldBySession is a message Claude Code kept for review instead of
+	// showing it to the session (a permission mode class mismatch). It is not
+	// delivered. If the owner releases it later, it becomes delivered.
+	StateHeldBySession = "held_by_session"
+	StateReplied       = "replied"
+	StateFailed        = "failed"
+	StateExpired       = "expired"
 	// StateAcknowledged is a request closed by an ack: answered, but with
 	// nothing delivered to the sender.
 	StateAcknowledged = "acknowledged"

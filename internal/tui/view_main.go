@@ -2057,7 +2057,7 @@ func (m Model) messageSubtabs(w int) string {
 
 // messageLegend explains the compact marks on one dim line.
 func (m Model) messageLegend() string {
-	return "you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked"
+	return "you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! held"
 }
 
 // messageFilterLine is the panel's right header: the active filters and the

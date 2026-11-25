@@ -65,6 +65,11 @@ type Host interface {
 	// Replies is the daemon.db record that matches a Claude reply to the
 	// request it answers.
 	Replies() ReplyBook
+	// ClaudeHeld reports that Claude Code kept a message from sender in
+	// conversation for review instead of delivering it.
+	ClaudeHeld(ctx context.Context, recipient, sender, conversation string, at time.Time)
+	// ClaudeHeldReleased reports that the session released a held message.
+	ClaudeHeldReleased(ctx context.Context, recipient, messageID, sender, conversation string)
 }
 
 type Config struct {
@@ -993,6 +998,7 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 	var changed []*localSession
 	var gone []sessionRemoval
 	var updates []activityUpdate
+	newClaude := false
 	for _, in := range infos {
 		in.Harness = harness
 		k := key(harness, in.NativeID)
@@ -1037,6 +1043,9 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 			}
 		}
 		if ls == nil {
+			if harness == "claude" {
+				newClaude = true
+			}
 			token, _ := procToken(in.PID)
 			ls = &localSession{stopToken: token, info: in, lastActive: candidate, harnessActivity: harnessActivity, mcpSince: time.Now()}
 			d.sessions[k] = ls
@@ -1111,6 +1120,17 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		}
 	}
 	d.mu.Unlock()
+	if newClaude {
+		// A settings file replaced while the daemon ran can be noticed at the
+		// next session start, without waiting for the next integrations pass.
+		// The gateway call must not delay discovery, and the daemon lock is
+		// already released.
+		ctx := d.ctoCtx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		d.goBackground(func() { d.checkClaudePeerMessages(ctx) })
+	}
 	d.startMCPRepairs()
 	d.sendMCPDesk()
 	for _, u := range updates {

@@ -86,6 +86,18 @@ CREATE TABLE IF NOT EXISTS workers (
 	if err == nil {
 		_, err = db.Exec(claudeDeliveriesSchema)
 	}
+	// A Claude message Claude Code holds for review is recorded on its
+	// delivery row, so a daemon restart does not report it again and a later
+	// release can be told from a first delivery.
+	for _, col := range []string{"held_at", "released_at"} {
+		var has int
+		if err == nil {
+			err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('claude_deliveries') WHERE name=?`, col).Scan(&has)
+		}
+		if err == nil && has == 0 {
+			_, err = db.Exec(`ALTER TABLE claude_deliveries ADD COLUMN ` + col + ` INTEGER NOT NULL DEFAULT 0`)
+		}
+	}
 	if err == nil {
 		var has int
 		err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('cto_proposals') WHERE name = 'note_delivered'`).Scan(&has)

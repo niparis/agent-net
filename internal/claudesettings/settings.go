@@ -96,6 +96,25 @@ func RemoveAutoUpdateOff(path string) (bool, error) {
 	return RemoveEnvValue(path, AutoUpdateKey, AutoUpdateOff)
 }
 
+// Value returns the value of one top-level key and whether it is set. A
+// missing file has no value. A file that is not valid JSON returns ErrNotJSON.
+func Value(path, key string) (string, bool, error) {
+	members, _, err := readFile(path)
+	if err != nil {
+		return "", false, err
+	}
+	for _, m := range members {
+		if m.key == key {
+			var s string
+			if json.Unmarshal(m.val, &s) == nil {
+				return s, true, nil
+			}
+			return string(m.val), true, nil
+		}
+	}
+	return "", false, nil
+}
+
 // EnvValue returns the value of one key in the env object and whether it is
 // set. A missing file has no value. A file that is not valid JSON returns
 // ErrNotJSON.

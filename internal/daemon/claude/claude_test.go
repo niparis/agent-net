@@ -19,6 +19,15 @@ import (
 	"github.com/niparis/agent-net/internal/testsock"
 )
 
+type heldCall struct {
+	recipient, sender, conversation string
+	at                              time.Time
+}
+
+type releaseCall struct {
+	recipient, messageID, sender, conversation string
+}
+
 type fakeHost struct {
 	mu       sync.Mutex
 	sessions []protocol.SessionInfo
@@ -26,6 +35,8 @@ type fakeHost struct {
 	sent     chan protocol.MsgSend
 	logs     []string
 	book     *memBook
+	held     []heldCall
+	released []releaseCall
 }
 
 func (h *fakeHost) SetSessions(harness string, infos []protocol.SessionInfo) {
@@ -44,6 +55,16 @@ func (h *fakeHost) Send(ctx context.Context, p protocol.MsgSend) error {
 	return nil
 }
 func (h *fakeHost) Replies() daemon.ReplyBook { return h.book }
+func (h *fakeHost) ClaudeHeld(ctx context.Context, recipient, sender, conversation string, at time.Time) {
+	h.mu.Lock()
+	h.held = append(h.held, heldCall{recipient: recipient, sender: sender, conversation: conversation, at: at})
+	h.mu.Unlock()
+}
+func (h *fakeHost) ClaudeHeldReleased(ctx context.Context, recipient, messageID, sender, conversation string) {
+	h.mu.Lock()
+	h.released = append(h.released, releaseCall{recipient: recipient, messageID: messageID, sender: sender, conversation: conversation})
+	h.mu.Unlock()
+}
 func (h *fakeHost) Logf(format string, args ...any) {
 	h.mu.Lock()
 	h.logs = append(h.logs, fmt.Sprintf(format, args...))

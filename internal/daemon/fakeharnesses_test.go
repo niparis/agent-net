@@ -660,7 +660,7 @@ const fakeClaudeNoResponseLine = `{"parentUuid":"cc000a9a","isSidechain":false,"
 // where Claude Code keeps it: <projects>/<cwd folder>/<session>.jsonl, next to
 // the sessions folder.
 func fakeClaudeTranscriptLine(sessionsDir, cwd, session, line string) {
-	dir := filepath.Join(filepath.Dir(sessionsDir), "projects", claudeTranscriptDir(cwd))
+	dir := filepath.Join(filepath.Dir(sessionsDir), "projects", ClaudeTranscriptDir(cwd))
 	os.MkdirAll(dir, 0o700)
 	f, err := os.OpenFile(filepath.Join(dir, session+".jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {

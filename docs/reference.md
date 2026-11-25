@@ -1125,7 +1125,7 @@ machine reconnects first. A reconnect syncs the sessions again.
 | Claude tool-decide hook record | `~/.config/agent-net/claude-tool-decide-hook.json` | Whether agent-net added the hook (and to which settings file). |
 | Claude urgent hook record | `~/.config/agent-net/claude-urgent-hook.json` | Whether agent-net added the urgent hooks (and to which settings file). |
 | Claude needs hook record | `~/.config/agent-net/claude-needs-hook.json` | Whether you were asked, and whether agent-net added the hooks (and to which settings file). |
-| Claude peer messages record | `~/.config/agent-net/claude-peer-messages.json` | Whether you were asked, and whether agent-net set Claude Code's `crossSessionInbound` setting. |
+| Claude peer messages record | `~/.config/agent-net/claude-peer-messages.json` | Whether you were asked, and whether agent-net set Claude Code's `crossSessionInbound` setting. The daemon compares it with the live settings file at start and when a Claude session starts; it never writes that file. |
 | Claude policy hook record | `~/.config/agent-net/claude-policy-hook.json` | Whether you were asked, and whether agent-net added the policy hook (and to which settings file). |
 | Codex tools record | `~/.config/agent-net/codex-tools.json` | Whether you were asked, and whether agent-net set the tool approval mode for its Codex server. |
 | Claude workers plugin record | `~/.config/agent-net/claude-workers-mod.json` | Whether you were asked, whether agent-net installed the plugin, and the marketplace folder. |
@@ -1315,6 +1315,35 @@ protocol state. A delivery-record write failure never permits a harness write.
 Confirmation means acceptance by the harness: a Pi or OpenCode plugin ack,
 a Codex queue accept, an Antigravity hook reply or herdr acceptance, or a Claude
 inbox socket write. It does not mean the agent has read or answered the message.
+
+### A message Claude Code held for review
+
+Claude Code holds a message from another session when the sender's permission
+mode class differs from the receiver's. The inbox socket write succeeds, so the
+daemon first reports `delivered`. The session's transcript then records the
+hold. The daemon reads that entry and reports the message as
+`held_by_session` with a detail that says to approve it in that session or to
+set `crossSessionInbound` to `accept` there. It logs
+`session.delivery_held msg=<id>`, and the sender and the Messages tab show the
+held state and the detail. A held message is not chased by the owed-reply
+reminders.
+
+If the owner approves the message, Claude Code writes it as a user turn. The
+daemon sees that turn, logs `session.delivery_released msg=<id>`, and reports
+the message as `delivered` with detail `released in Claude Code`.
+
+The daemon does not fake a matching permission mode, set
+`crossSessionInbound`, or send a held message again. Those are the owner's
+choices. A batch carrier names no original message ID, so releasing it releases
+every held message from that sender in that conversation.
+
+At daemon start and when a Claude session starts, the daemon also compares the
+live `crossSessionInbound` value with the answer recorded in
+`~/.config/agent-net/claude-peer-messages.json`. A difference is logged as
+`claude peer messages: ...` and reported once a day in the CTO intake queue.
+When the settings file is a link or read-only, the line names the declaration
+to put in the file that manages it, for example a Nix or Home Manager dotfile.
+The check writes nothing.
 An in-memory queue waiting for a later turn remains `dispatched`; its record is
 cleared because nothing reached the harness. It can be pushed again after a
 restart. OpenCode queued worker turns become delivered only after the plugin ack.

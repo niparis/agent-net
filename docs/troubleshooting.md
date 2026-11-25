@@ -163,6 +163,16 @@ Claude Code shows: `The sending session's permission mode class doesn't match th
 
 Claude Code does this when the sender and the receiver run in different permission mode classes (for example prompting and bypass). To deliver such messages without review, run `agent-net setup --accept-peer-messages`. It sets `"crossSessionInbound": "accept"` in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`). Read [security.md](security.md#accepting-peer-messages-in-claude-code) first: it turns off the review for all agents on your network.
 
+agent-net reads the hold from the session transcript. It shows the message as `held_by_session`, not delivered, with the action to take, and it logs `session.delivery_held msg=<id>`. It stops the owed-reply reminders for that message. When you approve it, the message becomes delivered and the log says `session.delivery_released`. agent-net does not resend it and does not change the sender's permission mode.
+
+At start and when a Claude session starts, the daemon compares the live `crossSessionInbound` value with what setup recorded. If the file lost the key, the log says `claude peer messages: ...` and names the declaration to add. On a machine whose settings file is a Home Manager or Nix link, put this line in the dotfile that owns it, then rebuild:
+
+```
+"crossSessionInbound": "accept"
+```
+
+The daemon never writes that file. On Claude Code 2.1.332 and later, the hold prompt also offers **Always deliver**.
+
 Setup does not change a value that is already set. `agent-net setup` prints the current one on the `claude peer messages` line. If it says `hold` or `refuse`, change or remove the key yourself. A `hold` in a managed (organization) setting or in a repository's `.claude/settings.json` overrides your `accept`.
 
 ## Shared MCP servers

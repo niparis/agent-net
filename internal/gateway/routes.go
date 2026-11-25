@@ -96,6 +96,7 @@ var routes = []route{
 	{Class: routeIntake, Kind: protocol.IntakeQuota, To: routeCTO, Auto: true, Wake: wakeRepeatHour, Note: "one thread with the chief's stuck-work item"},
 	{Class: routeIntake, Kind: protocol.IntakePickerOverride, To: routeCTO, Auto: true, Wake: wakeNever, Note: "the chief confirms first (0151)"},
 	{Class: routeIntake, Kind: protocol.IntakeClaudeMouse, To: routeCTO, Auto: true, Wake: wakeNever, Note: "one digest line"},
+	{Class: routeIntake, Kind: protocol.IntakeClaudePeerMessages, To: routeCTO, Auto: true, Wake: wakeNever, Note: "one digest line"},
 	{Class: routeIntake, Kind: protocol.IntakePhonePaired, To: routeCTO, Auto: true, Wake: wakeNever, Note: "one digest line"},
 }
 

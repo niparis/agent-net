@@ -507,6 +507,8 @@ func (m Model) threadState(c messageConversation) string {
 		}
 	}
 	switch {
+	case state == protocol.StateHeldBySession:
+		return "held"
 	case state == protocol.StateFailed:
 		return "failed"
 	case state == protocol.StateExpired:

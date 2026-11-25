@@ -392,7 +392,7 @@ func claudeResumeSettled(sf claudeSessionFile, job, resume, projectsDir string) 
 	if sf.Cwd == "" {
 		return false
 	}
-	_, err := os.Stat(filepath.Join(projectsDir, claudeTranscriptDir(sf.Cwd), sf.SessionID+".jsonl"))
+	_, err := os.Stat(filepath.Join(projectsDir, ClaudeTranscriptDir(sf.Cwd), sf.SessionID+".jsonl"))
 	return err == nil
 }
 
@@ -490,7 +490,7 @@ func (claudeLauncher) struggle(_ context.Context, d *Daemon, w *worker) protocol
 		return protocol.Struggle{Trace: protocol.StruggleNoTrace}
 	}
 	projectsDir := filepath.Join(filepath.Dir(d.cfg.ClaudeSessionsDir), "projects")
-	path := claudeTranscriptPath(projectsDir, w.nativeID, w.path)
+	path := ClaudeTranscriptPath(projectsDir, w.nativeID, w.path)
 	if path == "" {
 		return protocol.Struggle{Trace: protocol.StruggleNoTrace}
 	}
@@ -562,17 +562,20 @@ func claudeContextLimit(model string) int64 { return protocol.ClaudeContextLimit
 
 var claudeDirBad = regexp.MustCompile(`[^A-Za-z0-9]`)
 
-func claudeTranscriptDir(cwd string) string {
+// ClaudeTranscriptDir is the folder Claude Code names after a working folder.
+func ClaudeTranscriptDir(cwd string) string {
 	return claudeDirBad.ReplaceAllString(cwd, "-")
 }
 
-func claudeTranscriptPath(projectsDir, session, cwd string) string {
+// ClaudeTranscriptPath is the transcript of one Claude session. The folder
+// name is derived from cwd; a session whose file moved is found by its name.
+func ClaudeTranscriptPath(projectsDir, session, cwd string) string {
 	if session == "" {
 		return ""
 	}
 	name := session + ".jsonl"
 	if cwd != "" {
-		p := filepath.Join(projectsDir, claudeTranscriptDir(cwd), name)
+		p := filepath.Join(projectsDir, ClaudeTranscriptDir(cwd), name)
 		if _, err := os.Stat(p); err == nil {
 			return p
 		}
@@ -592,7 +595,7 @@ func (d *Daemon) claudeWorkerLastAssistant(native, cwd string) string {
 		return ""
 	}
 	projectsDir := filepath.Join(filepath.Dir(d.cfg.ClaudeSessionsDir), "projects")
-	return claudeTranscriptLastAssistant(claudeTranscriptPath(projectsDir, native, cwd))
+	return claudeTranscriptLastAssistant(ClaudeTranscriptPath(projectsDir, native, cwd))
 }
 
 // claudeTranscriptLastAssistant returns the text of the newest assistant
@@ -690,7 +693,7 @@ func (claudeLauncher) failure(_ context.Context, d *Daemon, w *worker) (string, 
 		return "", false
 	}
 	projectsDir := filepath.Join(filepath.Dir(d.cfg.ClaudeSessionsDir), "projects")
-	path := claudeTranscriptPath(projectsDir, native, cwd)
+	path := ClaudeTranscriptPath(projectsDir, native, cwd)
 	if path == "" {
 		return "", false
 	}
