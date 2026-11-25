@@ -1949,7 +1949,7 @@ func (d *Daemon) adoptWorkers() {
 				d.saveUnfinished(lost, protocol.StopLost)
 			}
 			d.st.saveWorker(r)
-			os.RemoveAll(filepath.Join(d.cfg.StateDir, "workers", r.ID))
+			d.removeLostWorkerFolder(r.ID)
 			d.Logf("worker.stopped worker=%s session=%s project=%s harness=%s reason=%s", r.ID, r.SessionID, r.Project, r.Harness, protocol.StopLost)
 			continue
 		}

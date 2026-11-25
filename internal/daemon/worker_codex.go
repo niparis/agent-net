@@ -361,14 +361,30 @@ func (codexLauncher) adopt(ctx context.Context, d *Daemon, w *worker) error {
 	d.wmu.Lock()
 	hasIdleNotice := !w.idleNoticeSince.IsZero()
 	d.wmu.Unlock()
+	// A saved refusal means the caller may not have its notice yet. It goes
+	// out with the saved key, so the gateway keeps one if the old daemon sent
+	// it already (codexRefused lists the steps).
+	refused, wasRefused := d.loadRefusedHandback(w.id)
 	if thread.Status.Type == "active" {
 		if hasIdleNotice {
 			d.resetIdleNotice(w)
 		}
 		d.setCodexStatus(w, "busy")
+		if wasRefused {
+			d.goBackground(func() { d.tellCallerRefused(d.streamCtx(), w, refused) })
+		}
 		return nil
 	}
-	if hasIdleNotice {
+	if wasRefused {
+		if !hasIdleNotice {
+			// The old daemon stopped before it saved the idle period. Save it
+			// before the notice, so the turn stays handled once the record is
+			// gone.
+			d.noteCodexIdle(w, refused.Req.Report, true)
+		}
+		d.goBackground(func() { d.tellCallerRefused(d.streamCtx(), w, refused) })
+	}
+	if hasIdleNotice || wasRefused {
 		// The turn already ended and its automatic hand-back failed. Keep the
 		// saved idle period instead of handing back again on adoption.
 		cc.mu.Lock()
@@ -1017,10 +1033,12 @@ func (cc *codexConn) finishTurn(turnStatus, errMsg string) {
 		}
 		req := protocol.WorkerHandbackRequest{Report: report, Status: status, Complete: complete}
 		_, err := cc.d.handbackToNote(context.Background(), cc.w, req, j.from, j.msgID, note, false)
-		told := false
 		if err != nil {
 			cc.d.Logf("worker %s: hand-back: %v", cc.w.id, err)
-			told = cc.d.handbackRefused(context.Background(), cc.w, req, err, nil)
+			// The next turn is not admitted (cc.running) until the refusal
+			// and its idle period are saved, which adoption reads as "this
+			// turn is handled", and the caller is told.
+			cc.d.codexRefused(cc.w, req, final, err)
 		}
 		cc.mu.Lock()
 		var next *codexJob
@@ -1030,12 +1048,6 @@ func (cc *codexConn) finishTurn(turnStatus, errMsg string) {
 			cc.queue = cc.queue[1:]
 			next = &n
 		} else if err != nil {
-			// Do not admit the next turn until the failed hand-back's idle
-			// period is recorded and the old turn is marked idle. Adoption
-			// reads the period as "this turn is handled" and does not hand it
-			// back again. A caller that has the refusal notice is not told
-			// again by an idle notice.
-			cc.d.noteCodexIdle(cc.w, final, told)
 			idleSession = cc.d.changeCodexStatus(cc.w, "idle")
 			cc.running = false
 		} else {

@@ -17,8 +17,11 @@ import (
 // daemon tells someone itself. A cause the worker can correct goes back to
 // the worker once, as a message in its own session. Any other cause, or a
 // second refusal, goes to the caller with the worker's report and the reason.
-// Until one of them has it, the report is kept in the worker's folder, so a
-// daemon restart does not lose it.
+//
+// The refusal is saved in the worker's folder before anyone is told, and the
+// saved record is what adoption reads: a daemon that stops at any step either
+// publishes the hand-back again with nobody told yet, or finds the record and
+// does what it still owes, once.
 
 // handbackRefusedStatus is the status line of the caller's notice.
 const handbackRefusedStatus = "hand-back refused"
@@ -33,8 +36,16 @@ func (e handbackFixable) Unwrap() error { return e.error }
 type refusedHandback struct {
 	Req    protocol.WorkerHandbackRequest `json:"req"`
 	Reason string                         `json:"reason"`
-	// Told is true once the worker had its one message about a refusal.
-	Told bool `json:"told,omitempty"`
+	// Turn is the agy turn whose hand-back was refused, as agyConn.turnKey
+	// names it. Adoption compares it with the stream state to see whether the
+	// worker's message went out.
+	Turn string `json:"turn,omitempty"`
+	// NoticeKey is the idempotency key of the caller's notice. A notice sent
+	// again after a restart has the same key, so the gateway keeps the first.
+	NoticeKey string `json:"notice_key"`
+	// Worker is true when the worker gets the one message about this
+	// refusal, false when the caller gets the notice.
+	Worker bool `json:"worker,omitempty"`
 }
 
 func (d *Daemon) refusedHandbackPath(workerID string) string {
@@ -71,61 +82,48 @@ func (d *Daemon) dropRefusedHandback(workerID string) {
 	}
 }
 
-// handbackRefused tells the worker or its caller about a hand-back that
-// handbackFlow refused after the turn. release runs once the report is saved
-// and before anyone is told: agy frees its turn there. It reports whether
-// someone was told, or the hand-back is saved for the next connect.
-func (d *Daemon) handbackRefused(ctx context.Context, w *worker, req protocol.WorkerHandbackRequest, err error, release func()) bool {
-	if errors.Is(err, errHandbackDeferred) {
-		return true
+// refusedStep marks a step of a refused hand-back. Tests stop the daemon there.
+func (d *Daemon) refusedStep(step string) {
+	if f := d.cfg.testHandbackRefusedStep; f != nil {
+		f(step)
 	}
-	r, _ := d.loadRefusedHandback(w.id)
-	r.Req, r.Reason = req, cleanFailure(err.Error())
+}
+
+// saveRefusal saves a refused hand-back before anyone is told. workerCanFix
+// is false for Codex, whose hand-back the daemon builds itself. A refusal that
+// finds an earlier one still saved goes to the caller: the worker had its
+// message, or the caller's notice is still owed.
+func (d *Daemon) saveRefusal(w *worker, req protocol.WorkerHandbackRequest, err error, turn string, workerCanFix bool) refusedHandback {
+	_, earlier := d.loadRefusedHandback(w.id)
 	var fixable handbackFixable
-	tellWorker := errors.As(err, &fixable) && !r.Told
-	r.Told = r.Told || tellWorker
+	r := refusedHandback{Req: req, Reason: cleanFailure(err.Error()), Turn: turn, NoticeKey: protocol.NewID("k"),
+		Worker: workerCanFix && !earlier && errors.As(err, &fixable)}
 	if err := d.saveRefusedHandback(w.id, r); err != nil {
 		d.Logf("worker %s: save the refused hand-back: %v", w.id, err)
 	}
-	if release != nil {
-		release()
-	}
-	d.wmu.Lock()
-	sid := w.sessionID
-	d.wmu.Unlock()
-	d.Logf("worker.handback_refused worker=%s session=%s tell_worker=%t reason=%q", w.id, sid, tellWorker, r.Reason)
-	if tellWorker {
-		err := d.tellWorkerRefused(ctx, w, r.Reason)
-		if err == nil {
-			return true
-		}
-		d.Logf("worker %s: refused hand-back message: %v", w.id, err)
-	}
-	return d.tellCallerRefused(ctx, w, r)
+	d.Logf("worker.handback_refused worker=%s tell_worker=%t reason=%q", w.id, r.Worker, r.Reason)
+	return r
 }
 
 // tellWorkerRefused sends the worker its one message about a refusal it can
 // correct, through the same path as an automatic continue.
 func (d *Daemon) tellWorkerRefused(ctx context.Context, w *worker, reason string) error {
 	d.wmu.Lock()
-	sid, harness := w.sessionID, w.harness
+	sid := w.sessionID
 	d.wmu.Unlock()
 	m := protocol.Message{ID: protocol.NewID("m"), From: "agent-net", FromName: "agent-net", FromHarness: "agent-net",
-		To: sid, Type: protocol.TypeNotification, Body: handbackRefusedText(harness, reason)}
+		To: sid, Type: protocol.TypeNotification, Body: handbackRefusedText(reason)}
 	return d.deliverAutoContinue(ctx, w, m)
 }
 
-func handbackRefusedText(harness, reason string) string {
-	again := "Fix the cause and call agent_handback again. If you cannot fix it, hand back with status blocked and say why."
-	if harness == "codex" {
-		again = "Fix the cause and end your turn with your final report again. If you cannot fix it, say why in that report."
-	}
-	return "agent-net could not take your hand-back: " + reason + "\nYour report is kept. " + again +
-		"\nThis is the only message about it: if your next hand-back is refused too, your caller gets your report and the reason."
+func handbackRefusedText(reason string) string {
+	return "agent-net could not take your hand-back: " + reason +
+		"\nYour report is kept. Fix the cause and call agent_handback again. If you cannot fix it, hand back with status blocked and say why." +
+		"\nThis is the only message about it: if your next hand-back is refused too, or you end your turn without one, your caller gets your report and the reason."
 }
 
-// tellCallerRefused sends the caller the worker's report and the reason. The
-// saved report is removed once the notice is sent.
+// tellCallerRefused sends the caller the worker's report and the reason, with
+// the saved key. The saved report is removed once the notice is sent.
 func (d *Daemon) tellCallerRefused(ctx context.Context, w *worker, r refusedHandback) bool {
 	d.wmu.Lock()
 	stopping := w.stopping
@@ -139,12 +137,55 @@ func (d *Daemon) tellCallerRefused(ctx context.Context, w *worker, r refusedHand
 		note += "; the worker is still running, and a message from you continues it"
 	}
 	n := d.notice(w, handbackRefusedStatus, note, d.workerStats(w))
-	if _, err := d.sendNoticeToKey(ctx, w, n, r.Req.Report, "", "", "", false); err != nil {
+	if _, err := d.sendNoticeToKey(ctx, w, n, r.Req.Report, "", "", r.NoticeKey, false); err != nil {
 		d.Logf("worker %s: refused hand-back notice: %v", w.id, err)
 		return false
 	}
+	d.refusedStep("told")
 	d.dropRefusedHandback(w.id)
 	return true
+}
+
+// codexRefused handles a refused Codex hand-back. Each step is on disk before
+// the next one starts:
+//
+//   - refused: nothing is saved. Adoption hands the turn back again.
+//   - saved: the record is saved. Adoption skips the turn and sends the notice.
+//   - idle: the idle period is saved as told, so no idle notice follows and
+//     adoption still skips the turn once the record is gone.
+//   - told: the notice is sent. Adoption sends it again with the same key,
+//     and the gateway keeps the first.
+//
+// Then the record is removed, and the idle period alone marks the turn.
+func (d *Daemon) codexRefused(w *worker, req protocol.WorkerHandbackRequest, final string, err error) {
+	if errors.Is(err, errHandbackDeferred) {
+		// The saved hand-back sends its own notice at the next connect.
+		d.noteCodexIdle(w, final, true)
+		return
+	}
+	d.refusedStep("refused")
+	r := d.saveRefusal(w, req, err, "", false)
+	d.refusedStep("saved")
+	d.noteCodexIdle(w, final, true)
+	d.refusedStep("idle")
+	d.tellCallerRefused(context.Background(), w, r)
+}
+
+// removeLostWorkerFolder removes the folder of a worker whose process ended
+// while the daemon was down. A refused hand-back stays: the lost notice at
+// the next connect carries it, and the state sweep removes the folder later.
+func (d *Daemon) removeLostWorkerFolder(workerID string) {
+	dir := filepath.Join(d.cfg.StateDir, "workers", workerID)
+	if _, ok := d.loadRefusedHandback(workerID); !ok {
+		os.RemoveAll(dir)
+		return
+	}
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if e.Name() != filepath.Base(d.refusedHandbackPath(workerID)) {
+			os.RemoveAll(filepath.Join(dir, e.Name()))
+		}
+	}
 }
 
 // refusedReportFor puts a refused hand-back that nobody has yet into the

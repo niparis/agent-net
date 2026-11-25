@@ -352,7 +352,7 @@ func (c *agyConn) eventAt(line []byte, offset int64) {
 		if handback != nil {
 			c.pending, c.handback = handback, nil
 			c.pendingFiles, c.handbackFiles = c.handbackFiles, nil
-			c.pendingKey = fmt.Sprintf("agy-%s-%s-%d", w.id, c.streamID, c.offset)
+			c.pendingKey = c.turnKeyLocked()
 		}
 		var discarded *OutgoingFiles
 		if failure != "" {
@@ -379,10 +379,10 @@ func (c *agyConn) eventAt(line []byte, offset int64) {
 		if handback != nil {
 			c.publishHandback(*handback)
 		} else if !d.openCodeTurnIdle(w.sessionID) {
-			if refused, ok := d.loadRefusedHandback(w.id); ok && refused.Told {
+			if refused, ok := d.loadRefusedHandback(w.id); ok && refused.Worker {
 				// The worker had its one message about a refused hand-back and
 				// ended the turn without a new one: the caller gets the report.
-				d.goBackground(func() { d.tellCallerRefused(context.Background(), w, refused) })
+				d.goBackground(func() { c.refusalNext(d.streamCtx(), refused) })
 				return
 			}
 			report := r.Response
