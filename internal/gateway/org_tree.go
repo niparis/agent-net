@@ -22,8 +22,9 @@ const orgTreeBuiltKey = "org_tree_built"
 // authoritative leadership and membership columns, never from stored edges.
 // The priority is: merger under its Repo's lead, cto and chief under owner,
 // Team Agent members under their Team lead, Repo leads of a Team's Repos under
-// the Team lead, other Team leads under cto, and Agents working in a Repo
-// under that Repo's lead. Targets that are tombstoned, mergers, or would make
+// the Team lead, Team leads and Repo leads of a Repo in no Team under cto, and
+// Agents working in a Repo under that Repo's lead. Leading a Repo outranks
+// working in another one. Targets that are tombstoned, mergers, or would make
 // a cycle are skipped. A stored reports_to edge (an explicit move) replaces
 // the computed parent when its target is valid.
 func agentParentsQ(q leadDB) (map[string]string, error) {
@@ -79,21 +80,34 @@ func agentParentsQ(q leadDB) (map[string]string, error) {
 	repoLead := map[string]string{}
 	// First active Team whose member Repo is led by agent (ordered by team_id, repo_id).
 	repoTeamParent := map[string]string{}
-	rows, err = q.Query(`SELECT id, COALESCE(lead_agent_id,''), team_id FROM repos ORDER BY team_id, id`)
+	// An Agent that leads at least one Repo in no Team. Such a Repo has no team
+	// lead above its lead, so the lead sits under the CTO.
+	leadsSoloRepo := map[string]bool{}
+	rows, err = q.Query(`SELECT id, COALESCE(lead_agent_id,''), team_id, archived FROM repos ORDER BY team_id, id`)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var id, lead, teamID string
-		if err = rows.Scan(&id, &lead, &teamID); err != nil {
+		var archived int
+		if err = rows.Scan(&id, &lead, &teamID, &archived); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		repoLead[id] = lead
-		if lead != "" && teamID != "" {
-			if owner := teamOwner[teamID]; owner != "" && owner != lead && repoTeamParent[lead] == "" {
-				repoTeamParent[lead] = owner
+		if lead == "" {
+			continue
+		}
+		if teamID == "" {
+			// An archived Repo places nobody: its former lead keeps whatever
+			// other place it has.
+			if archived == 0 {
+				leadsSoloRepo[lead] = true
 			}
+			continue
+		}
+		if owner := teamOwner[teamID]; owner != "" && owner != lead && repoTeamParent[lead] == "" {
+			repoTeamParent[lead] = owner
 		}
 	}
 	if err = rows.Err(); err != nil {
@@ -217,7 +231,10 @@ func agentParentsQ(q leadDB) (map[string]string, error) {
 		if owner := repoTeamParent[a.id]; owner != "" {
 			return owner
 		}
-		if leadsTeam[a.id] {
+		// Leading a Repo outranks working in one. A team lead, and the lead of
+		// a Repo in no Team, reports to the CTO, not to the lead of another
+		// Repo the Agent happens to work in.
+		if leadsTeam[a.id] || leadsSoloRepo[a.id] {
 			return "cto"
 		}
 		return sessionRepoLead[a.id]

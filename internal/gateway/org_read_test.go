@@ -76,7 +76,8 @@ func TestGraphReadCarriesTheOrgTree(t *testing.T) {
 	}
 	agents := agentNodes(g)
 	lead, member, chief := agents["lead"], agents["member"], agents["chief"]
-	if lead.ReportsTo != "cto" || member.ReportsTo != "lead" || chief.ReportsTo != protocol.OrgRoot || agents["demo"].ReportsTo != "" {
+	// demo leads a Repo in no Team, so it reports to the CTO like a Team lead.
+	if lead.ReportsTo != "cto" || member.ReportsTo != "lead" || chief.ReportsTo != protocol.OrgRoot || agents["demo"].ReportsTo != "cto" {
 		t.Fatalf("reports_to: lead=%q member=%q chief=%q demo=%q", lead.ReportsTo, member.ReportsTo, chief.ReportsTo, agents["demo"].ReportsTo)
 	}
 	if want := (&protocol.GraphSession{ID: ids["lead"], Name: "lead-main", Online: false, StartedBy: protocol.StartedByOwner}); !reflect.DeepEqual(lead.LeadSession, want) {
