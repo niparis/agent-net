@@ -522,6 +522,7 @@ func (d *Daemon) deliverProposalNote(ctx context.Context) error {
 	d.cto.mu.Lock()
 	base, password, version, identity, session := d.cto.base, d.cto.password, d.cto.version, d.cto.identity, d.cto.session
 	ref := d.claudeCTO.ref
+	codexRunning := d.codexCTORunningLocked()
 	d.cto.mu.Unlock()
 	idle := false
 	if ref != "" {
@@ -529,6 +530,14 @@ func (d *Daemon) deliverProposalNote(ctx context.Context) error {
 		if sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, dir, ref); ok {
 			idle = sf.Status == "idle"
 		}
+	} else if codexRunning {
+		// A Codex CTO that is not in a turn takes the note. While its app
+		// server is stopped the note waits, as it does for Claude: a read or a
+		// note never starts the CTO the owner stopped.
+		c := &d.codexCTO
+		c.nmu.Lock()
+		idle = !c.busy
+		c.nmu.Unlock()
 	} else if base != "" && session != "" {
 		busy, known := d.openCodeSessionBusy(ctx, base, password, version, identity, session)
 		idle = known && !busy

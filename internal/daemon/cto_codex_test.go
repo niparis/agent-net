@@ -435,6 +435,44 @@ func TestCTOCodexConversationOlderThanADayHasNoModelLayer(t *testing.T) {
 	})
 }
 
+// Looking at the timeline of a Codex CTO the owner stopped returns the stored
+// action lines and a line that says the CTO is stopped. It starts no app
+// server. A read while the CTO runs is the live thread, as before.
+func TestStoppedCodexCTOHistoryReadStartsNothing(t *testing.T) {
+	n, _ := startCodexCTONode(t)
+	cli := cliClient(t, n)
+	setCTOHarness(t, cli, "codex", "gpt-fake")
+	ctoSendID(t, cli, "hello codex")
+	eventually(t, "the live timeline shows the turn", func() bool {
+		return strings.Contains(string(cli.mustCall(protocol.OpCTOEvents, map[string]int{"index": 0})), "hello codex")
+	})
+	if err := n.d.recordCTOAction("stored action before stop"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := n.d.stopCTOSession(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	n.d.cto.mu.Lock()
+	running := n.d.codexCTORunningLocked()
+	n.d.cto.mu.Unlock()
+	if running {
+		t.Fatal("the CTO still runs after the owner stop")
+	}
+	raw := string(cli.mustCall(protocol.OpCTOEvents, map[string]int{"index": 0}))
+	n.d.cto.mu.Lock()
+	cmd := n.d.codexCTO.cmd
+	n.d.cto.mu.Unlock()
+	if cmd != nil {
+		t.Fatal("reading the timeline started the stopped Codex CTO")
+	}
+	if !strings.Contains(raw, "stored action before stop") {
+		t.Fatalf("the stored action is missing: %s", raw)
+	}
+	if !strings.Contains(raw, "The CTO is stopped") {
+		t.Fatalf("the timeline does not say the CTO is stopped: %s", raw)
+	}
+}
+
 // Enter on the CTO's session row opens the Codex plan on this machine, not a
 // Claude view, and keeps the app server's token on this machine for a client
 // that comes through the gateway.

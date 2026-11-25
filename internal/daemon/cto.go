@@ -188,6 +188,67 @@ func (d *Daemon) ctoConfigData(config string) ([]byte, error) {
 func (d *Daemon) ctoSession() (string, error) {
 	return d.ctoConversation("opencode")
 }
+
+// ctoPrivateRunning says whether the selected Codex or OpenCode harness has a
+// live private process. It is narrower than ctoRunning: during a handover the
+// harness being left can still be up while the selected one is stopped.
+func (d *Daemon) ctoPrivateRunning(harness string) bool {
+	d.cto.mu.Lock()
+	defer d.cto.mu.Unlock()
+	if harness == "codex" {
+		return d.codexCTORunningLocked()
+	}
+	c := &d.cto
+	if c.cmd == nil {
+		return false
+	}
+	select {
+	case <-c.exited:
+		return false
+	default:
+		return true
+	}
+}
+
+// stoppedCTOEvents is the timeline of a CTO whose Codex or OpenCode harness is
+// stopped. The conversation lives in the harness's own process, and a read
+// must not start it: the answer is the action lines agent-net stored plus one
+// line that says the CTO is stopped. mergeCTOHistory adds the history of the
+// other harnesses and the switches.
+func (d *Daemon) stoppedCTOEvents(ctx context.Context, harness string) (protocol.CTOEvents, error) {
+	out := protocol.CTOEvents{Messages: []json.RawMessage{}, Actions: []protocol.CTOAction{}}
+	if err := d.st.db.QueryRow(`SELECT graph_after FROM cto WHERE id=1`).Scan(&out.GraphAfter); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return out, err
+	}
+	if harness == "codex" {
+		out.Model = d.codexCTOModel(ctx)
+	} else if model, err := d.ctoModel(ctx); err == nil {
+		out.Model = model
+	}
+	id, err := d.ctoConversation(harness)
+	if err != nil {
+		return out, err
+	}
+	if out.Actions, err = d.ctoActions(id, harness); err != nil {
+		return out, err
+	}
+	// No stored conversation means nothing is hidden in the harness. Only a
+	// conversation the harness keeps needs the line that explains the read.
+	if id != "" {
+		out.Actions = append(out.Actions, protocol.CTOAction{Text: ctoStoppedLine(harness), At: d.ctoNowTime().UnixNano()})
+	}
+	return out, nil
+}
+
+// ctoStoppedLine is the one timeline line that explains why a stopped CTO has
+// no conversation text in the read.
+func ctoStoppedLine(harness string) string {
+	name := "OpenCode"
+	if harness == "codex" {
+		name = "Codex"
+	}
+	return "The CTO is stopped. Its " + name + " server keeps the conversation; send it a message or press Enter to start it and read it."
+}
 func (d *Daemon) ctoModel(ctx context.Context) (string, error) {
 	settings, err := d.ctoSettings(ctx, protocol.CTOSettingsRequest{})
 	if err != nil {

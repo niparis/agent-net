@@ -42,6 +42,43 @@ func TestCTORuntime(t *testing.T) {
 	withFakeOpenCodeRouteSets(t, testCTORuntime)
 }
 
+// Looking at the timeline of an OpenCode CTO the owner stopped returns the
+// stored action lines and a line that says the CTO is stopped. It starts no
+// private server.
+func TestStoppedOpenCodeCTOHistoryReadStartsNothing(t *testing.T) {
+	f := startCTOCompactionFixture(t)
+	f.send(t, "hello opencode")
+	eventually(t, "the live timeline read works", func() bool {
+		raw := string(f.cli.mustCall("cto_events", map[string]int{"index": 0}))
+		return strings.Contains(raw, `"model"`)
+	})
+	if err := f.n.d.recordCTOAction("stored action before stop"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.n.d.stopCTOSession(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	f.n.d.cto.mu.Lock()
+	cmd := f.n.d.cto.cmd
+	f.n.d.cto.mu.Unlock()
+	if cmd != nil {
+		t.Fatal("the CTO still runs after the owner stop")
+	}
+	raw := string(f.cli.mustCall("cto_events", map[string]int{"index": 0}))
+	f.n.d.cto.mu.Lock()
+	cmd = f.n.d.cto.cmd
+	f.n.d.cto.mu.Unlock()
+	if cmd != nil {
+		t.Fatal("reading the timeline started the stopped OpenCode CTO")
+	}
+	if !strings.Contains(raw, "stored action before stop") {
+		t.Fatalf("the stored action is missing: %s", raw)
+	}
+	if !strings.Contains(raw, "The CTO is stopped") {
+		t.Fatalf("the timeline does not say the CTO is stopped: %s", raw)
+	}
+}
+
 func testCTORuntime(t *testing.T) {
 	t.Setenv("FAKE_OC_AUTH_RECORD", "1")
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())

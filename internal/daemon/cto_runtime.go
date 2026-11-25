@@ -289,10 +289,15 @@ func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, 
 	if err != nil {
 		return protocol.CTOEvents{}, err
 	}
-	if id, e := d.ctoSession(); e == nil && id != "" && !d.ctoRunning() {
-		d.Logf("cto.wake trigger=timeline harness=%s", h.name())
+	// A read of a stopped Codex or OpenCode CTO returns only what agent-net
+	// stored. Its conversation lives in the harness, so reading it would start
+	// the CTO the owner stopped.
+	var out protocol.CTOEvents
+	if d.ctoPrivateRunning(h.name()) {
+		out, err = h.events(ctx, d, 0)
+	} else {
+		out, err = d.stoppedCTOEvents(ctx, h.name())
 	}
-	out, err := h.events(ctx, d, 0)
 	if err != nil {
 		return out, err
 	}
