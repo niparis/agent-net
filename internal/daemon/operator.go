@@ -299,8 +299,8 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 			return nil, true, errors.New("only the owner can report a defect found later")
 		}
 		var p protocol.DefectRequest
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, true, errors.New("bad worker_defect params")
+		if err := decodeCTOArgs(method, raw, &p); err != nil {
+			return nil, true, err
 		}
 		sid, _, err := lc.callerSession(client, method)
 		if err != nil {

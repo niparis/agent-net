@@ -307,7 +307,7 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 	switch name {
 	case "settings_values_write":
 		var q protocol.SettingsWrite
-		if err := json.Unmarshal(raw, &q); err != nil {
+		if err := decodeCTOArgs(name, raw, &q, "changes"); err != nil {
 			return nil, err
 		}
 		q.By = proposalActor(ctx)
@@ -317,7 +317,7 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		return d.call(ctx, "settings.write", q)
 	case "settings_values_undo":
 		var q protocol.SettingsUndo
-		if err := json.Unmarshal(raw, &q); err != nil {
+		if err := decodeCTOArgs(name, raw, &q, "revision"); err != nil {
 			return nil, err
 		}
 		q.By = proposalActor(ctx)
@@ -409,7 +409,10 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			Urgency        string   `json:"urgency"`
 			Replaces       string   `json:"replaces"`
 		}
-		if json.Unmarshal(raw, &p) != nil || (strings.TrimSpace(p.Text) == "" && p.Replaces == "") {
+		if err := decodeCTOArgs(name, raw, &p); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(p.Text) == "" && p.Replaces == "" {
 			return nil, errors.New("agent_owner_ask needs kind, text and recommendation")
 		}
 		sid := d.ctoSessionID()
@@ -470,8 +473,8 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		return d.stepReportReply(ctx, sid, protocol.SessionInfo{}, a)
 	case "agent_permission_propose":
 		var p protocol.PermissionProposeRequest
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, errors.New("bad agent_permission_propose params")
+		if err := decodeCTOArgs(name, raw, &p); err != nil {
+			return nil, err
 		}
 		sid := d.ctoSessionID()
 		if sid == "" {
@@ -484,8 +487,8 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		return map[string]any{"id": out.ID, "status": out.Status}, nil
 	case "agent_owner_judgment_record":
 		var p protocol.JudgmentRecordArgs
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, errors.New("bad agent_owner_judgment_record params")
+		if err := decodeCTOArgs(name, raw, &p); err != nil {
+			return nil, err
 		}
 		if err := p.Validate(); err != nil {
 			return nil, err
@@ -501,14 +504,14 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		return d.ctoNotes(ctx, name, raw)
 	case "agent_protected_providers_set":
 		var p protocol.ProtectedProviders
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, errors.New("bad agent_protected_providers_set params")
+		if err := decodeCTOArgs(name, raw, &p, "protected_providers"); err != nil {
+			return nil, err
 		}
 		return d.protectedProviders(ctx, &p)
 	case "agent_worker_profile_add", "agent_worker_profile_remove":
 		var p protocol.WorkerProfileRequest
-		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &p) != nil {
-			return nil, errors.New("bad worker profile request")
+		if err := decodeCTOArgs(name, raw, &p, "name"); err != nil {
+			return nil, err
 		}
 		sid := d.ctoSessionID()
 		action := map[string]string{
@@ -526,8 +529,8 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		return data, nil
 	case "agent_learn":
 		var p protocol.LearnRequest
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, errors.New("bad agent_learn params")
+		if err := decodeCTOArgs(name, raw, &p); err != nil {
+			return nil, err
 		}
 		sid := d.ownerSessionID()
 		if sid == "" {
@@ -551,8 +554,8 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			Why    string `json:"why"`
 			Notice string `json:"notice"`
 		}
-		if json.Unmarshal(raw, &q) != nil {
-			return nil, errors.New("bad cto_ui_show request")
+		if err := decodeCTOArgs(name, raw, &q); err != nil {
+			return nil, err
 		}
 		if q.Notice != "" {
 			b, _ := json.Marshal(protocol.UIRequest{Text: q.Notice})
@@ -588,7 +591,10 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		return "shown", nil
 	case "worker_stop":
 		var p protocol.WorkerStopRequest
-		if json.Unmarshal(raw, &p) != nil || p.Session == "" {
+		if err := decodeCTOArgs(name, raw, &p, "session"); err != nil {
+			return nil, err
+		}
+		if p.Session == "" {
 			return nil, errors.New("worker_stop needs session")
 		}
 		sid := d.ownerSessionID()
@@ -611,7 +617,10 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 				Setting string            `json:"setting"`
 				Value   string            `json:"value"`
 			}
-			if json.Unmarshal(raw, &p) != nil || p.Ref.Kind != "team" || strings.TrimSpace(p.Ref.ID) == "" || strings.TrimSpace(p.Setting) == "" {
+			if err := decodeCTOArgs(name, raw, &p); err != nil {
+				return nil, err
+			}
+			if p.Ref.Kind != "team" || strings.TrimSpace(p.Ref.ID) == "" || strings.TrimSpace(p.Setting) == "" {
 				return nil, errors.New("team settings_set needs ref {kind:team,id}, setting and value")
 			}
 			if !mcpserver.IsCTOTeamSetting(p.Setting) {
@@ -651,8 +660,8 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		return d.ctoAttributedCall(ctx, strings.ReplaceAll(name, "_", "."), args)
 	case "worker_profile_add", "worker_profile_remove":
 		var p protocol.WorkerProfileRequest
-		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &p) != nil {
-			return nil, errors.New("bad worker profile request")
+		if err := decodeCTOArgs(name, raw, &p, "name"); err != nil {
+			return nil, err
 		}
 		sid := d.ownerSessionID()
 		if sid == "" {
@@ -662,32 +671,32 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		return d.call(ctx, action, protocol.WorkerProfileFrame{WorkerProfileRequest: p, Requester: sid})
 	case "protected_providers_set":
 		var p protocol.ProtectedProviders
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, errors.New("bad protected providers")
+		if err := decodeCTOArgs(name, raw, &p, "protected_providers"); err != nil {
+			return nil, err
 		}
 		return d.protectedProviders(ctx, &p)
 	case "worker_floors_set":
 		var p protocol.WorkerFloors
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, errors.New("bad worker floors")
+		if err := decodeCTOArgs(name, raw, &p, "floors"); err != nil {
+			return nil, err
 		}
 		return d.workerFloors(ctx, &p)
 	case "worker_providers_set":
 		var p protocol.WorkerProviders
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, errors.New("bad worker providers")
+		if err := decodeCTOArgs(name, raw, &p, "providers"); err != nil {
+			return nil, err
 		}
 		return d.workerProviders(ctx, &p)
 	case "score_set":
 		var p protocol.ScoreSetRequest
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, errors.New("bad score request")
+		if err := decodeCTOArgs(name, raw, &p, "model"); err != nil {
+			return nil, err
 		}
 		return d.scores(ctx, &p)
 	case "worker_start":
 		var p protocol.WorkerStartRequest
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, errors.New("bad worker request")
+		if err := decodeCTOArgs(name, raw, &p); err != nil {
+			return nil, err
 		}
 		sid := d.ownerSessionID()
 		if sid == "" {
