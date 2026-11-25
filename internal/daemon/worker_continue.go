@@ -64,7 +64,7 @@ func workerWorktreeRetained(r *workerRow) bool {
 func (d *Daemon) continueBranch(ctx context.Context, path string, r *workerRow, old *worker, subject string, unfinished bool) (string, error) {
 	d.resumeMu.Lock()
 	defer d.resumeMu.Unlock()
-	d.saveWorkerChanges(old, subject, r.EndedReason, unfinished)
+	d.saveWorkerChanges(old, subject, r.EndedReason, unfinished, "")
 	if err := restoreWorkerBranch(ctx, path, r); err != nil {
 		return "", err
 	}

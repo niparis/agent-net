@@ -278,7 +278,7 @@ func TestWorkerCommitAmendKeepsOneSet(t *testing.T) {
 func TestAgyCommitNoWorktreeOrChanges(t *testing.T) {
 	t.Parallel()
 	d := commitTestDaemon(t)
-	if d.saveWorkerChanges(&worker{harness: "agy"}, "report", "handback", false) {
+	if d.saveWorkerChanges(&worker{harness: "agy"}, "report", "handback", false, "") {
 		t.Fatal("committed without a worktree")
 	}
 	w, dir := commitTestWorker(t, d)
@@ -288,7 +288,7 @@ func TestAgyCommitNoWorktreeOrChanges(t *testing.T) {
 	}
 	fakeHarnessCommit(t, dir, d.workerCommitEnv(w), "worker commit")
 	before := gitOutT(t, dir, "rev-parse", "HEAD")
-	if d.saveWorkerChanges(w, "report", "handback", false) {
+	if d.saveWorkerChanges(w, "report", "handback", false, "") {
 		t.Fatal("made an extra commit")
 	}
 	if after := gitOutT(t, dir, "rev-parse", "HEAD"); before != after {

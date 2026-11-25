@@ -31,6 +31,7 @@ type pendingHandback struct {
 	Files           *OutgoingFiles                 `json:"files,omitempty"`
 	SessionID       string                         `json:"session_id"`
 	Committed       string                         `json:"committed,omitempty"`
+	KeptAside       string                         `json:"kept_aside,omitempty"`
 	WIPDetail       string                         `json:"wip_detail,omitempty"`
 	FrictionDropped int                            `json:"friction_dropped,omitempty"`
 	Head            string                         `json:"head"`
@@ -49,13 +50,13 @@ var errHandbackDeferred = errors.New("the hand-back is saved; the next connectio
 
 func (t *handbackTail) saved() pendingHandback {
 	return pendingHandback{Req: t.req, To: t.to, ReplyTo: t.replyTo, SandboxNote: t.sandboxNote, End: t.end, Files: t.files,
-		SessionID: t.sessionID, Committed: t.committed, WIPDetail: t.wipDetail, FrictionDropped: t.frictionDropped, Head: t.head, NoticeKey: t.noticeKey,
+		SessionID: t.sessionID, Committed: t.committed, KeptAside: t.keptAside, WIPDetail: t.wipDetail, FrictionDropped: t.frictionDropped, Head: t.head, NoticeKey: t.noticeKey,
 		Check: t.check, Recorded: t.recorded, ChangeID: t.changeID, DeliveryProblem: t.deliveryProblem, Stats: t.stats}
 }
 
 func (p pendingHandback) tail() *handbackTail {
 	return &handbackTail{req: p.Req, to: p.To, replyTo: p.ReplyTo, sandboxNote: p.SandboxNote, end: p.End, files: p.Files,
-		sessionID: p.SessionID, committed: p.Committed, wipDetail: p.WIPDetail, complete: true, frictionDropped: p.FrictionDropped,
+		sessionID: p.SessionID, committed: p.Committed, keptAside: p.KeptAside, wipDetail: p.WIPDetail, complete: true, frictionDropped: p.FrictionDropped,
 		head: p.Head, noticeKey: p.NoticeKey, persisted: true, check: p.Check,
 		recorded: p.Recorded, changeID: p.ChangeID, deliveryProblem: p.DeliveryProblem, stats: p.Stats}
 }

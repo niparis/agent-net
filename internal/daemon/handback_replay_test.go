@@ -257,3 +257,39 @@ func TestResumeRefusedWhileCleanupWorksOnTheWorker(t *testing.T) {
 		t.Fatalf("owner_send: %v", err)
 	}
 }
+
+// A worker hands back while the gateway is down. Before, the notice went to
+// the outbox without the change record, so the change stayed on its old head.
+// The hand-back is now saved, the worker hears that, and the next connect
+// records the change at the head and sends the notice.
+func TestHandbackWhileGatewayIsDownIsRecordedAtConnect(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, queueSet, withLoad(&fakeLoad{l: roomyLoad()}))
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1",
+		Task: "FAKE:ignore", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinueOff()})
+	if err := os.WriteFile(filepath.Join(res.Worktree, "work.txt"), []byte("work\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, res.Worktree, "add", "-A")
+	gitIn(t, res.Worktree, "commit", "-q", "-m", "work")
+	head := gitOutT(t, res.Worktree, "rev-parse", "HEAD")
+	s := &savedHandback{g: g, w: w}
+	s.gatewayDown(t)
+
+	out, err := w.d.handback(context.Background(), res.SessionID, protocol.WorkerHandbackRequest{Report: "the report sent while the gateway was down", Status: protocol.StatusDone})
+	if err != nil || out == nil || !strings.Contains(out.Note, "saved your hand-back") {
+		t.Fatalf("hand-back while the gateway is down: %+v, %v", out, err)
+	}
+
+	g2 := startGateway(t, g.dir, g.addr)
+	eventually(t, "the daemon connects", w.d.Connected)
+	n := w.waitNotice(t, 1)[0]
+	if !strings.Contains(n.Body, "the report sent while the gateway was down") {
+		t.Fatalf("notice:\n%s", n.Body)
+	}
+	if change := changeView(t, g2, noticeChangeID(t, n.Body)); change.Change.HeadCommit != head {
+		t.Errorf("change head %s, want %s", change.Change.HeadCommit, head)
+	}
+}

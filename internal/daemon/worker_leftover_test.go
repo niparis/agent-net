@@ -22,7 +22,7 @@ func TestLeftoverFiltersBuildOutputs(t *testing.T) {
 			}
 			d := commitTestDaemon(t)
 			w := &worker{id: "w_leftover_test", worktree: repo}
-			saved := d.saveWorkerChanges(w, "save", "test", false)
+			saved := d.saveWorkerChanges(w, "save", "test", false, "")
 			if saved != text {
 				t.Fatalf("saved=%v want %v", saved, text)
 			}
