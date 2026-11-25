@@ -143,6 +143,10 @@ func (d *Daemon) reportTrustNeed(ctx context.Context, path, project, session str
 // proposePermission sends one proposal to the gateway. It writes nothing.
 func (d *Daemon) proposePermission(ctx context.Context, session string, req protocol.PermissionProposeRequest) (protocol.PermissionProposeResult, error) {
 	var out protocol.PermissionProposeResult
+	// The servers a trust click also approves belong to the folder, so this
+	// daemon fills them from the folder's own .mcp.json. A caller that speaks
+	// the local protocol may send its own list, but it never reaches the ask.
+	req.MCPServersByPath = nil
 	req = d.trustMCPNames(req)
 	data, err := d.call(ctx, "permission.propose", protocol.PermissionProposeFrame{PermissionProposeRequest: req, SessionID: session})
 	if err != nil {

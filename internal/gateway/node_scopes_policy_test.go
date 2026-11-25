@@ -146,7 +146,7 @@ func permissionScopeRig(t *testing.T) (*Store, string) {
 func proposeRules(t *testing.T, s *Store, session string, rules ...string) protocol.PermissionProposeResult {
 	t.Helper()
 	res, err := s.ProposePermission(protocol.PermissionProposeFrame{SessionID: session,
-		PermissionProposeRequest: protocol.PermissionProposeRequest{Rules: rules, Targets: []string{"forge"}, Reason: "merge PRs"}})
+		PermissionProposeRequest: protocol.PermissionProposeRequest{Rules: rules, Targets: []string{"forge"}, Reason: "merge PRs"}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}

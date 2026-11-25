@@ -244,7 +244,7 @@ func (s *Store) insertPermissionProposal(tx *sql.Tx, p protocol.PermissionPropos
 // permissionRulesAndTargets checks the rules and resolves the targets of one
 // proposal kind. A proposal and the CTO's apply on the owner's words resolve
 // them the same way.
-func (s *Store) permissionRulesAndTargets(kind string, rawRules, rawTargets []string, machine string, mcpByPath map[string][]string) ([]string, []protocol.PermissionTarget, error) {
+func (s *Store) permissionRulesAndTargets(kind string, rawRules, rawTargets []string, machine string, mcpByPath map[string][]string, holder string) ([]string, []protocol.PermissionTarget, error) {
 	switch kind {
 	case protocol.PermissionKindRules:
 		if strings.TrimSpace(machine) != "" {
@@ -278,6 +278,11 @@ func (s *Store) permissionRulesAndTargets(kind string, rawRules, rawTargets []st
 		}
 		targets := trustTargets(nodeID, hostname, paths)
 		for i := range targets {
+			// Only the daemon that holds the folder may name its servers.
+			// A frame from another machine's daemon cannot fill this list.
+			if targets[i].NodeID != holder {
+				continue
+			}
 			if names := mcpByPath[targets[i].Path]; len(names) > 0 {
 				targets[i].MCPServers = names
 			}
@@ -288,8 +293,9 @@ func (s *Store) permissionRulesAndTargets(kind string, rawRules, rawTargets []st
 }
 
 // ProposePermission stores an agent's proposal and opens its owner-only ask.
-// It writes no file and changes no setting.
-func (s *Store) ProposePermission(frame protocol.PermissionProposeFrame) (protocol.PermissionProposeResult, error) {
+// It writes no file and changes no setting. fromNode is the daemon that sent
+// the frame, the only one that may name a trust folder's own MCP servers.
+func (s *Store) ProposePermission(frame protocol.PermissionProposeFrame, fromNode string) (protocol.PermissionProposeResult, error) {
 	var res protocol.PermissionProposeResult
 	session := strings.TrimSpace(frame.SessionID)
 	if session == "" {
@@ -306,7 +312,7 @@ func (s *Store) ProposePermission(frame protocol.PermissionProposeFrame) (protoc
 	if len(reason) > protocol.MaxBodyBytes {
 		return res, reject("the reason is too long")
 	}
-	rules, targets, err := s.permissionRulesAndTargets(kind, frame.Rules, frame.Targets, frame.Machine, frame.MCPServersByPath)
+	rules, targets, err := s.permissionRulesAndTargets(kind, frame.Rules, frame.Targets, frame.Machine, frame.MCPServersByPath, fromNode)
 	if err != nil {
 		return res, err
 	}
@@ -627,7 +633,7 @@ func (s *Store) ApprovePermissionOnOwnerWords(frame protocol.PermissionOwnerAppl
 	if kind == "" {
 		return "", reject("kind must be permissions or trust")
 	}
-	rules, targets, err := s.permissionRulesAndTargets(kind, req.Rules, req.Targets, req.Machine, nil)
+	rules, targets, err := s.permissionRulesAndTargets(kind, req.Rules, req.Targets, req.Machine, nil, "")
 	if err != nil {
 		return "", err
 	}
