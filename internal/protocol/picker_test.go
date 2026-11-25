@@ -203,6 +203,15 @@ func pickScores(models map[string]float64) []ModelScore {
 	return out
 }
 
+// pickOwnerScores is pickScores for scores the owner set himself.
+func pickOwnerScores(models map[string]float64) []ModelScore {
+	out := pickScores(models)
+	for i := range out {
+		out[i].Source = "owner"
+	}
+	return out
+}
+
 func pickN(t *testing.T, c []WorkerModelCandidate, level string, d float64, tasks []PickerTask, scores []ModelScore, s PickerSettings, n int) map[string]int {
 	t.Helper()
 	in := &PickerInput{D: d, Table: BuildPickerTable(tasks, s)}
@@ -512,6 +521,149 @@ func TestPickExploreIsUpOnly(t *testing.T) {
 			t.Fatalf("picks: %v, want the 10 percent explore share", counts)
 		}
 	})
+}
+
+// An owner-scored model with no proven record anywhere is explored at normal
+// and hard when its benchmark level is at least the task's level (decision
+// 0190). Benchmark-only scores keep the exact-level rule, and so does every
+// other level.
+func TestPickOwnerScoredNoRecordExploresAtNormalAndHard(t *testing.T) {
+	picks := func(t *testing.T, level string, d float64, tasks []PickerTask, scores []ModelScore, names ...string) (map[string]int, string) {
+		t.Helper()
+		counts := pickN(t, pickCandidates(names...), level, d, tasks, scores, DefaultPickerSettings(), 100)
+		choice, err := chooseFirst(pickCandidates(names...), level, scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: d, Table: BuildPickerTable(tasks, DefaultPickerSettings())})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return counts, choice.PickNote
+	}
+	proven := func(d float64) []PickerTask {
+		return pickTasks("proven", d, repeat(15, 1, .8, 1)...)
+	}
+
+	t.Run("owner score joins at normal", func(t *testing.T) {
+		scores := pickOwnerScores(map[string]float64{"proven": 39, "codex": 60})
+		counts, note := picks(t, "normal", 2.5, proven(2.5), scores, "proven", "codex")
+		if counts["codex"] != 10 || counts["proven"] != 90 {
+			t.Fatalf("picks: %v, want the 10 percent explore share", counts)
+		}
+		if strings.Contains(note, "codex n0 left out") {
+			t.Fatalf("note still leaves the owner-scored model out: %q", note)
+		}
+	})
+
+	t.Run("owner score joins at hard", func(t *testing.T) {
+		scores := pickOwnerScores(map[string]float64{"proven": 39, "codex": 60})
+		counts, _ := picks(t, "hard", 3.2, proven(3.2), scores, "proven", "codex")
+		if counts["codex"] != 10 || counts["proven"] != 90 {
+			t.Fatalf("picks: %v, want the 10 percent explore share", counts)
+		}
+	})
+
+	t.Run("benchmark score keeps the exact level", func(t *testing.T) {
+		scores := pickScores(map[string]float64{"proven": 39, "codex": 60})
+		counts, note := picks(t, "normal", 2.5, proven(2.5), scores, "proven", "codex")
+		if counts["codex"] != 0 || counts["proven"] != 100 {
+			t.Fatalf("picks: %v, want no exploration for a benchmark-only score", counts)
+		}
+		if !strings.Contains(note, "codex n0 left out (explore is up only)") {
+			t.Fatalf("note: %q", note)
+		}
+	})
+
+	t.Run("unscored stays out", func(t *testing.T) {
+		scores := pickScores(map[string]float64{"proven": 39})
+		counts, note := picks(t, "normal", 2.5, proven(2.5), scores, "proven", "mystery")
+		if counts["mystery"] != 0 {
+			t.Fatalf("picks: %v", counts)
+		}
+		if !strings.Contains(note, "mystery n0 left out (no record, no benchmark)") {
+			t.Fatalf("note: %q", note)
+		}
+	})
+
+	t.Run("owner score of zero does not join", func(t *testing.T) {
+		scores := pickOwnerScores(map[string]float64{"proven": 39, "codex": 0})
+		counts, note := picks(t, "normal", 2.5, proven(2.5), scores, "proven", "codex")
+		if counts["codex"] != 0 {
+			t.Fatalf("picks: %v", counts)
+		}
+		if !strings.Contains(note, "codex n0 left out (above its benchmark)") {
+			t.Fatalf("note: %q", note)
+		}
+	})
+
+	t.Run("trivial work is not a step up", func(t *testing.T) {
+		scores := pickOwnerScores(map[string]float64{"proven": 20, "codex": 60})
+		counts, note := picks(t, "trivial", 1.0, proven(1.0), scores, "proven", "codex")
+		if counts["codex"] != 0 {
+			t.Fatalf("picks: %v", counts)
+		}
+		if !strings.Contains(note, "codex n0 left out (explore is up only)") {
+			t.Fatalf("note: %q", note)
+		}
+	})
+
+	t.Run("very_complex keeps the level rule", func(t *testing.T) {
+		scores := pickOwnerScores(map[string]float64{"proven": 60, "low": 41, "high": 60})
+		counts, note := picks(t, "very_complex", 3.7, proven(3.7), scores, "proven", "low", "high")
+		if counts["low"] != 0 || counts["high"] != 10 {
+			t.Fatalf("picks: %v, want only the model at very_complex explored", counts)
+		}
+		if !strings.Contains(note, "low n0 left out (explore is up only)") {
+			t.Fatalf("note: %q", note)
+		}
+	})
+}
+
+// The 2026-11-25 18:03Z pick: at very_complex the cost rule chose a Codex
+// model, the owner's floor refused it at the gate, and Hydrogen (score 41,
+// "explore is up only") ran while Neon high (score 60, in the exploration
+// pool) was not taken. The exploration pool comes before a thin cell the rule
+// left out, and a quota-blocked candidate stays last (decision 0190).
+func TestPickOrderPutsTheExplorationPoolBeforeALeftOutThinCell(t *testing.T) {
+	tasks := append(costTasks("gpt-6.1-sol:high", 3.7, .5, repeat(6, 1)...),
+		costTasks("gemini-4-hydrogen:high", 3.7, .2, 1)...)
+	tasks = append(tasks, costTasks("gemini-4-neon:high", 3.7, .1, 1)...)
+	scores := pickScores(map[string]float64{
+		"gpt-6.1-sol:high": 60, "gemini-4-hydrogen:high": 41, "gemini-4-neon:high": 60,
+	})
+	c := []WorkerModelCandidate{
+		{Name: "Sol high", Harness: "codex", Model: "gpt-6.1-sol:high"},
+		{Name: "Hydrogen high", Harness: "agy", Model: "gemini-4-hydrogen:high"},
+		{Name: "Neon high", Harness: "agy", Model: "gemini-4-neon:high"},
+		{Name: "Blocked high", Harness: "pi", Model: "blocked:high", Provider: "blocked"},
+	}
+	quotas := &Quotas{Providers: []QuotaProvider{{Provider: "blocked", Windows: []QuotaWindow{{Kind: "monthly", Exhausted: true}}}}}
+	in := &PickerInput{D: 3.7, Table: BuildPickerTable(tasks, DefaultPickerSettings())}
+	order, _, err := WorkerPickOrder(c, "very_complex", scores, nil, quotas, nil, &WorkerRotation{}, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, choice := range order {
+		names = append(names, choice.Name)
+	}
+	want := []string{"Sol high", "Neon high", "Hydrogen high", "Blocked high"}
+	if strings.Join(names, ", ") != strings.Join(want, ", ") {
+		t.Fatalf("order = %v, want %v", names, want)
+	}
+	t.Logf("order: %v\nnote: %s", names, order[0].PickNote)
+	for _, r := range order[0].PickRows {
+		switch r.Name {
+		case "Neon high":
+			if !r.Allowed || r.Qualified || r.LeftOutReason != "" {
+				t.Errorf("Neon high row = %+v, want an allowed exploration cell", r)
+			}
+		case "Hydrogen high":
+			if r.LeftOutReason != "explore is up only" {
+				t.Errorf("Hydrogen high row = %+v, want the explore reason", r)
+			}
+		}
+	}
+	if order[1].Why == "" {
+		t.Errorf("the next choice has no why line: %+v", order[1])
+	}
 }
 
 func TestPickBenchmarkCeilingDecidesWhereACellHasFewerThanThreeTasks(t *testing.T) {

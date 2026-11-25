@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/model"
@@ -551,6 +552,66 @@ func chooseModelTest(candidates []protocol.WorkerModelCandidate, level string, s
 		return protocol.WorkerModelChoice{}, err
 	}
 	return order[0], nil
+}
+
+// The 2026-11-25 18:03Z pick, through the gate: at very_complex the cost rule
+// chose a Codex model, the owner's floor refused it, and the start took Neon
+// high from the exploration pool rather than Hydrogen, which the rule had left
+// out as "explore is up only" (decision 0190). The note and the rows say why
+// the next one ran.
+func TestPickAfterTheGateRefusesTheCostWinnerTriesTheExplorationPool(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("h", "linux")
+	record := func(prefix, harness, model string, n int, d float64) {
+		for i := 0; i < n; i++ {
+			session := fmt.Sprintf("s_%s_%d", prefix, i)
+			pickerRun(t, s, node, session, harness, model, protocol.OutcomeComplete, 0, int64(1000+i))
+			pickerAssessment(t, s, session, d)
+		}
+	}
+	record("sol", "codex", "gpt-6.1-sol:high", 6, 3.7)
+	record("hydrogen", "agy", "gemini-4-hydrogen:high", 1, 3.7)
+	record("neon", "agy", "gemini-4-neon:high", 1, 3.7)
+
+	candidates := []protocol.WorkerModelCandidate{
+		{Name: "Sol high", Harness: "codex", Model: "gpt-6.1-sol:high"},
+		{Name: "Hydrogen high", Harness: "agy", Model: "gemini-4-hydrogen:high"},
+		{Name: "Neon high", Harness: "agy", Model: "gemini-4-neon:high"},
+	}
+	scores := []protocol.ModelScore{
+		{Match: "gpt-6.1-sol:high", Score: 60},
+		{Match: "gemini-4-hydrogen:high", Score: 41},
+		{Match: "gemini-4-neon:high", Score: 60},
+	}
+	const week = 7 * 24 * 3600
+	quotas := &protocol.Quotas{GeneratedAt: 1000, Providers: []protocol.QuotaProvider{
+		{Provider: "openai", Windows: []protocol.QuotaWindow{{Kind: "weekly", PercentUsed: 50, ResetsAt: 1000 + week}}},
+	}}
+	floors := protocol.WorkerFloors{Floors: map[string]int{"openai": 60}}
+	nodeView := &protocol.NodeView{NodeID: node, Hostname: "h", Harnesses: []protocol.HarnessInfo{
+		{Name: "codex", SignedIn: "yes"}, {Name: "agy", SignedIn: "yes"}}}
+	g := &Gateway{store: s}
+	facts, _, err := g.chooseFacts(nodeView, candidates, quotas, floors, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotation := protocol.WorkerRotation{}
+	got, err := g.Choose(ChooseRequest{Purpose: model.PurposeWorkerAutomatic, Node: nodeView, Candidates: candidates, Difficulty: "very_complex", D: 3.7,
+		Scores: scores, Quotas: quotas, Floors: floors, Facts: &facts, Rotation: &rotation})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Choice.Name != "Neon high" {
+		t.Fatalf("chosen %q, want Neon high: %s", got.Choice.Name, got.Note)
+	}
+	for _, r := range got.Pick {
+		if r.Name == "Sol high" && !strings.Contains(r.SkippedReason, "under your 60% worker floor") {
+			t.Fatalf("Sol high row has no floor refusal: %q", r.SkippedReason)
+		}
+	}
+	if !strings.Contains(got.Choice.PickNote, "Neon high") || !strings.Contains(got.Note, "under your 60% worker floor") {
+		t.Fatalf("note %q, skip note %q", got.Choice.PickNote, got.Note)
+	}
 }
 
 func TestPickerTasksQualityV2(t *testing.T) {

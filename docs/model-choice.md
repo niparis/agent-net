@@ -165,7 +165,10 @@ try, so the picker sends some work its way. While proven candidates qualify,
 about one pick in ten goes to an allowed thin candidate, but only when this task
 is a step up for it. A step up means the candidate has a proven record in a
 lower bucket and none here or above, or it has no proven record and its
-benchmark level is this task's level.
+benchmark level is this task's level. A model whose score you set yourself,
+above 0, also steps up at normal and hard when it has no proven record and its
+benchmark level is at least the task's level. A score of 0 is your pause, and a
+benchmark-only score keeps the exact-level rule.
 
 The explore share is `picker.explore_share` (default 0.1). It counts picks, so
 it is not random.
@@ -188,6 +191,12 @@ Modifiers move candidates. They never remove one.
   your orchestrator.
 - **Fixed lists** keep the order you wrote. The judge is the one fixed list that
   is paced and has protected providers last.
+
+Behind the pick, the gate tries the other qualified models by the same cost
+rule, then the exploration pool of this task, then the remaining allowed
+models, then a thin model left out with `explore is up only`, then the blocked
+models. So when the gate refuses the winner, a model in the exploration pool is
+tried before a thin model the rule had left out.
 
 Where: `internal/gateway/choose.go` (`paceOrder`, `protectedLastOrder`),
 `internal/protocol/chooser.go` (`quotaPaceFactor`, `WorkerQuotaPace`).

@@ -7,7 +7,10 @@ Changed by [0188](0188-owner-paused-models.md): a model the owner scores 0 is
 left out before the ranker, unless he named it for the start himself.
 Changed by [0189](0189-continue-meets-todays-picker.md): a continue that names
 no model meets the automatic start's rules at its stored level, and moves to
-the picker's choice when its old model no longer qualifies.
+the picker's choice when its old model no longer qualifies. Changed by
+[0190](0190-owner-scores-explore-and-the-order-behind-a-refusal.md): the rest
+of the order behind the pick tries the qualified models, then the exploration
+pool, then the other allowed models, then the blocked.
 
 ## Problem
 
