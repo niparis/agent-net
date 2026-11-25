@@ -2,7 +2,10 @@
 
 Date: 2026-11-09
 Status: Approved by the owner on 2026-11-09 ("1. Ship B' then do 2-3"). Amends
-[0105](0105-worker-picker-learns-from-results.md).
+[0105](0105-worker-picker-learns-from-results.md). Changed by
+[0190](0190-owner-scores-explore-and-the-order-behind-a-refusal.md): an
+owner-scored model with no proven record explores at normal and hard when its
+benchmark level is at least the task's level.
 
 ## Context
 

@@ -629,12 +629,20 @@ func ownerPause(s ModelScore) bool { return s.Source == "owner" && s.Score == 0 
 // WorkerBenchmarkCeiling is the benchmark ceiling of a candidate. ok is false
 // for a model with no benchmark score.
 func WorkerBenchmarkCeiling(c WorkerModelCandidate, scores []ModelScore, minimums map[string]float64) (score float64, level string, ceiling float64, ok bool) {
+	score, level, ceiling, _, ok = workerBenchmarkCeiling(c, scores, minimums)
+	return score, level, ceiling, ok
+}
+
+// workerBenchmarkCeiling is WorkerBenchmarkCeiling with whether the score is
+// the owner's, above 0, read from the same lookup. A score of 0 is the owner's
+// pause.
+func workerBenchmarkCeiling(c WorkerModelCandidate, scores []ModelScore, minimums map[string]float64) (score float64, level string, ceiling float64, owner, ok bool) {
 	s, found := workerCandidateScore(c, scores)
 	if !found {
-		return 0, "", 0, false
+		return 0, "", 0, false, false
 	}
 	level, ceiling = BenchmarkCeiling(s.Score, minimums)
-	return s.Score, level, ceiling, true
+	return s.Score, level, ceiling, s.Source == "owner" && s.Score > 0, true
 }
 
 // PickerInput is what the cell pick reads besides the candidates: the judge's

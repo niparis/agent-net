@@ -106,6 +106,9 @@ type pickerEntry struct {
 	ceiling float64
 	// benchLevel is the highest level the benchmark score meets.
 	benchLevel string
+	// owner is true when the score is one the owner set, above 0. Such a model
+	// with no proven record joins the exploration pool at normal and hard.
+	owner bool
 	// above is true when the benchmark ceiling is more than one bucket above D:
 	// the model is well above this work.
 	above bool
@@ -303,7 +306,7 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 		if e.name == "" {
 			e.name = PickerModelDisplay(key)
 		}
-		e.bench, e.benchLevel, e.ceiling, e.scored = WorkerBenchmarkCeiling(c, scores, minimums)
+		e.bench, e.benchLevel, e.ceiling, e.owner, e.scored = workerBenchmarkCeiling(c, scores, minimums)
 		e.above = e.scored && table.Bucket(e.ceiling-pickerEdgeTolerance*10)-bucket > 1
 		entries = append(entries, e)
 	}
@@ -366,7 +369,7 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 	}
 	if len(qualified) > 0 {
 		for _, e := range thinOut {
-			e.reason = "explore is up only"
+			e.reason = exploreUpOnly
 		}
 	}
 	choices := map[*pickerEntry]WorkerModelChoice{}
@@ -494,14 +497,16 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 	picked.PickRows = rows
 	picked.PickNote = PickNote(rows, set.ExploreShare)
 	picked.Why = pickerShortWhy(level, in.D, in.DifficultyNote, chosen, len(qualified), entries)
-	return pickOrder(level, picked, chosen, entries, final, qualified, allowed, choices), ""
+	return pickOrder(level, picked, chosen, entries, final, qualified, thin, allowed, choices), ""
 }
 
-// pickOrder lays the whole list behind the pick the cell rule made. A
-// candidate the rule allowed sorts by the cost rule before the fallback order;
-// one it left out comes last with its reason. A blocked candidate is already
-// last, for the gate to refuse.
-func pickOrder(level string, picked WorkerModelChoice, chosen *pickerEntry, entries, final, qualified, allowed []*pickerEntry, choices map[*pickerEntry]WorkerModelChoice) []WorkerModelChoice {
+// pickOrder lays the whole list behind the pick the cell rule made, in the
+// order the gate should try (decision 0190). The other qualified candidates
+// follow the cost rule, then the exploration pool of this task, then the
+// remaining allowed ones, then the thin cells the rule left out of exploration,
+// then the blocked, for the gate to refuse. A thin cell left out with "explore
+// is up only" comes after every other allowed one.
+func pickOrder(level string, picked WorkerModelChoice, chosen *pickerEntry, entries, final, qualified, thin, allowed []*pickerEntry, choices map[*pickerEntry]WorkerModelChoice) []WorkerModelChoice {
 	order := make([]WorkerModelChoice, 0, len(entries))
 	seen := map[*pickerEntry]bool{}
 	choiceFor := func(e *pickerEntry) WorkerModelChoice {
@@ -536,15 +541,20 @@ func pickOrder(level string, picked WorkerModelChoice, chosen *pickerEntry, entr
 			return list[i].name < list[j].name
 		})
 	}
-	rest := make([]*pickerEntry, 0, len(final))
-	for _, e := range final {
-		rest = append(rest, e)
+	// A fallback draw already rotated the whole allowed set; the pick behind it
+	// keeps that order. A cost or exploration pick has qualified candidates
+	// before the exploration pool.
+	if len(qualified) == 0 {
+		rest := make([]*pickerEntry, 0, len(final))
+		for _, e := range final {
+			rest = append(rest, e)
+		}
+		byWeight(rest)
+		for _, e := range rest {
+			add(e)
+		}
 	}
-	byWeight(rest)
-	for _, e := range rest {
-		add(e)
-	}
-	rest = nil
+	rest := make([]*pickerEntry, 0, len(qualified))
 	for _, e := range qualified {
 		rest = append(rest, e)
 	}
@@ -561,9 +571,36 @@ func pickOrder(level string, picked WorkerModelChoice, chosen *pickerEntry, entr
 	for _, e := range rest {
 		add(e)
 	}
+	explore := make(map[*pickerEntry]bool, len(thin))
+	for _, e := range thin {
+		explore[e] = true
+	}
+	rest = make([]*pickerEntry, 0, len(thin))
+	for _, e := range thin {
+		rest = append(rest, e)
+	}
+	byWeight(rest)
+	for _, e := range rest {
+		add(e)
+	}
 	rest = nil
 	for _, e := range allowed {
+		if e.qualified || explore[e] || e.reason == exploreUpOnly {
+			continue
+		}
 		rest = append(rest, e)
+	}
+	byWeight(rest)
+	for _, e := range rest {
+		add(e)
+	}
+	// A thin cell the rule left out of exploration is allowed, but it comes
+	// after every other allowed candidate.
+	rest = nil
+	for _, e := range allowed {
+		if e.reason == exploreUpOnly {
+			rest = append(rest, e)
+		}
 	}
 	byWeight(rest)
 	for _, e := range rest {
@@ -662,16 +699,28 @@ func pickerShortWhy(level string, d float64, difficultyNote string, chosen *pick
 	return strings.Join(parts, "; ")
 }
 
+// exploreUpOnly is the reason a thin cell is allowed but left out of the
+// exploration pool.
+const exploreUpOnly = "explore is up only"
+
 // exploreIsUp tells whether the task is a step up for a thin cell (decision
-// 0112). Either the model has a proven record in a lower bucket and none in
-// this bucket or above, or it has no proven record anywhere and its benchmark
-// level is exactly the task's level.
+// 0112, amended by 0190). Either the model has a proven record in a lower
+// bucket and none in this bucket or above, or it has no proven record anywhere
+// and its benchmark level is exactly the task's level. An owner-scored model
+// with no proven record also steps up at normal and hard when its benchmark
+// level is at least the task's level (decision 0190).
 func exploreIsUp(table *PickerTable, e *pickerEntry, level string, bucket int) bool {
 	below, atOrAbove := table.ProvenRecords(e.key, bucket)
 	if below || atOrAbove {
 		return below && !atOrAbove
 	}
-	return e.scored && e.benchLevel == level
+	if !e.scored {
+		return false
+	}
+	if e.owner && (level == "normal" || level == "hard") {
+		return levelIndex(e.benchLevel) >= levelIndex(level)
+	}
+	return e.benchLevel == level
 }
 
 // cellPick is what a cell pick decided, as its rows show it.
