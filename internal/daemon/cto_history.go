@@ -36,6 +36,12 @@ func (d *Daemon) snapshotCTOHarness(ctx context.Context, harness string) error {
 	if err != nil {
 		return err
 	}
+	return d.saveCTOHistory(harness, events)
+}
+
+// saveCTOHistory replaces the saved conversation of one harness in one
+// transaction, so a failed save leaves the earlier one as it was.
+func (d *Daemon) saveCTOHistory(harness string, events protocol.CTOEvents) error {
 	events.Messages = dropHandoverExchange(events.Messages)
 	sessionID, err := d.ctoConversation(harness)
 	if err != nil {

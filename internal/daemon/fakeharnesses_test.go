@@ -87,7 +87,21 @@ const (
 	// envFakeClaudeNoInbox runs the session with no inbox socket, for tests
 	// that never deliver to it.
 	envFakeClaudeNoInbox = "FAKE_CLAUDE_NO_INBOX"
+	// envFakeHangReads names a file. While it exists, the fake Codex never
+	// answers thread/read and the fake OpenCode never answers a message list,
+	// like a harness that hangs.
+	envFakeHangReads = "FAKE_HANG_READS"
 )
+
+// fakeReadsHang says whether the test asked the fake to stop answering reads.
+func fakeReadsHang() bool {
+	path := os.Getenv(envFakeHangReads)
+	if path == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
+}
 
 // runFakeHarness runs the fake that the environment asks for. It reports
 // whether it did, in which case the test binary must stop.
@@ -1364,6 +1378,9 @@ func fakeCodex() {
 				save()
 				write(map[string]any{"id": m.ID, "result": map[string]any{}})
 			case "thread/read":
+				if fakeReadsHang() {
+					continue
+				}
 				id, _ := p["threadId"].(string)
 				mu.Lock()
 				turns := []any{}

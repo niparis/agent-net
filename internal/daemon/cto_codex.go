@@ -631,16 +631,48 @@ func (d *Daemon) codexCTOEvents(ctx context.Context, index int) (protocol.CTOEve
 	if err != nil {
 		return out, err
 	}
-	raw, err := rpc.call(ctx, "thread/read", map[string]any{"threadId": thread, "includeTurns": true})
+	return out, readCodexCTOThread(ctx, rpc, thread, index, &out)
+}
+
+// codexCTORunningEvents reads the thread of a Codex CTO whose app server is
+// already up, for the save before an owner stop. It never starts the server
+// and holds no lock while it waits for the answer.
+func (d *Daemon) codexCTORunningEvents(ctx context.Context) (protocol.CTOEvents, error) {
+	out := protocol.CTOEvents{Messages: []json.RawMessage{}, Actions: []protocol.CTOAction{}}
+	d.cto.mu.Lock()
+	running, rpc := d.codexCTORunningLocked(), d.codexCTO.rpc
+	d.cto.mu.Unlock()
+	if !running {
+		return out, errCTONotRunning
+	}
+	if rpc == nil || rpc.isDead() {
+		return out, errors.New("the CTO's Codex server has no connection to read its thread")
+	}
+	thread, err := d.ctoConversation("codex")
 	if err != nil {
 		return out, err
+	}
+	if out.Actions, err = d.ctoActions(thread, "codex"); err != nil {
+		return out, err
+	}
+	if thread == "" {
+		return out, nil
+	}
+	return out, readCodexCTOThread(ctx, rpc, thread, 0, &out)
+}
+
+// readCodexCTOThread fills out with the thread's messages from index on.
+func readCodexCTOThread(ctx context.Context, rpc *codexRPC, thread string, index int, out *protocol.CTOEvents) error {
+	raw, err := rpc.call(ctx, "thread/read", map[string]any{"threadId": thread, "includeTurns": true})
+	if err != nil {
+		return err
 	}
 	messages := codexThreadMessages(raw)
 	out.Next = len(messages)
 	if index < len(messages) {
 		out.Messages = messages[index:]
 	}
-	return out, nil
+	return nil
 }
 
 // codexThreadMessages turns a thread/read answer into the timeline form the

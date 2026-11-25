@@ -307,6 +307,10 @@ func runFakeOpenCode() {
 			http.Error(w, `{"_tag":"UnauthorizedError"}`, 401)
 			return
 		}
+		if fakeReadsHang() {
+			<-r.Context().Done()
+			return
+		}
 		if os.Getenv("AGENT_NET_CTO") == "1" {
 			mu.Lock()
 			defer mu.Unlock()

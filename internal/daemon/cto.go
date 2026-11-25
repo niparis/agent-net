@@ -627,17 +627,70 @@ func (d *Daemon) openCodeCTOEvents(ctx context.Context, index int) (protocol.CTO
 	if model, _, e := d.openCodeCTOSessionSelection(ctx, id); e == nil && model != "" {
 		out.Model = model
 	}
-	path, err := d.openCodePath(ctx, c.base, c.password, c.version, c.identity, opencodeapi.Messages, id)
+	messages, err := d.openCodeCTOMessages(ctx, c.base, c.password, c.version, c.identity, id)
 	if err != nil {
 		return out, err
 	}
+	out.Next = len(messages)
+	if index < len(messages) {
+		out.Messages = messages[index:]
+	}
+	return out, nil
+}
+
+// errCTONotRunning is the save before an owner stop finding no live process:
+// there is nothing to save, and the earlier save stays.
+var errCTONotRunning = errors.New("the CTO harness is not running")
+
+// openCodeCTORunningEvents reads the conversation of an OpenCode CTO whose
+// private server is already up, for the save before an owner stop. It never
+// starts the server and holds no lock across the HTTP reads.
+func (d *Daemon) openCodeCTORunningEvents(ctx context.Context) (protocol.CTOEvents, error) {
+	out := protocol.CTOEvents{Messages: []json.RawMessage{}, Actions: []protocol.CTOAction{}}
+	c := &d.cto
+	c.mu.Lock()
+	running := c.cmd != nil
+	if running {
+		select {
+		case <-c.exited:
+			running = false
+		default:
+		}
+	}
+	base, password, version, identity := c.base, c.password, c.version, c.identity
+	c.mu.Unlock()
+	if !running || base == "" {
+		return out, errCTONotRunning
+	}
+	id, err := d.ctoSession()
+	if err != nil {
+		return out, err
+	}
+	if out.Actions, err = d.ctoActions(id, "opencode"); err != nil {
+		return out, err
+	}
+	if id == "" {
+		return out, nil
+	}
+	out.Messages, err = d.openCodeCTOMessages(ctx, base, password, version, identity, id)
+	out.Next = len(out.Messages)
+	return out, err
+}
+
+// openCodeCTOMessages reads every message of one session of the CTO's
+// private server, page by page.
+func (d *Daemon) openCodeCTOMessages(ctx context.Context, base, password, version, identity, id string) ([]json.RawMessage, error) {
+	path, err := d.openCodePath(ctx, base, password, version, identity, opencodeapi.Messages, id)
+	if err != nil {
+		return nil, err
+	}
 	query := "?order=asc"
 	seen := map[string]bool{}
-	var messages []json.RawMessage
+	messages := []json.RawMessage{}
 	for {
-		b, err := c.api(ctx, opencodeapi.Messages.Method(), path+query, nil)
+		b, err := d.cto.apiTo(ctx, base, password, opencodeapi.Messages.Method(), path+query, nil)
 		if err != nil {
-			return out, err
+			return nil, err
 		}
 		var page struct {
 			Data   []json.RawMessage `json:"data"`
@@ -646,23 +699,18 @@ func (d *Daemon) openCodeCTOEvents(ctx context.Context, index int) (protocol.CTO
 			} `json:"cursor"`
 		}
 		if err := json.Unmarshal(b, &page); err != nil {
-			return out, err
+			return nil, err
 		}
 		messages = append(messages, page.Data...)
 		if page.Cursor.Next == "" {
-			break
+			return messages, nil
 		}
 		if seen[page.Cursor.Next] {
-			return out, errors.New("OpenCode repeated a message cursor")
+			return nil, errors.New("OpenCode repeated a message cursor")
 		}
 		seen[page.Cursor.Next] = true
 		query = "?cursor=" + url.QueryEscape(page.Cursor.Next)
 	}
-	out.Next = len(messages)
-	if index < len(messages) {
-		out.Messages = messages[index:]
-	}
-	return out, nil
 }
 
 // startCTOCompactionLoop watches the CTO conversation while the daemon runs.
