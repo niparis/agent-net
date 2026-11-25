@@ -26,11 +26,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4.2.2
       - name: Go toolchain location
@@ -87,5 +84,17 @@ jobs:
       - uses: actions/upload-pages-artifact@v3.0.1
         with:
           path: _site
+
+  # deploy-pages finds its artifact by name through the run's artifact list.
+  # That list can lag the upload by a fraction of a second, and the lookup then
+  # finds nothing. A dedicated deploy job starts only after the build job has
+  # finished, which is the layout deploy-pages recommends.
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4.0.5
