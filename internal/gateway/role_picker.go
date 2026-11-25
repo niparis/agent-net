@@ -81,6 +81,10 @@ func (g *Gateway) pickRole(nodeID string, req protocol.RolePickRequest) (protoco
 	if err != nil {
 		return out, err
 	}
+	scores, err := g.store.scores()
+	if err != nil {
+		return out, err
+	}
 	chosen, err := g.Choose(ChooseRequest{
 		Purpose:    model.PurposeRole,
 		Node:       node,
@@ -88,6 +92,7 @@ func (g *Gateway) pickRole(nodeID string, req protocol.RolePickRequest) (protoco
 		Difficulty: "normal",
 		Quotas:     quotas,
 		Floors:     floors,
+		Scores:     scores,
 	})
 	if err != nil {
 		out.Refused = oneRoleLine(joinModelNote(skipNotes(chosen.Skips)))

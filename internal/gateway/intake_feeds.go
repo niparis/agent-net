@@ -164,6 +164,10 @@ func (g *Gateway) noProviderFeed(skips []model.Skip) {
 func quotaBlockedProviders(skips []model.Skip) map[string]string {
 	out := map[string]string{}
 	for _, skip := range skips {
+		if skip.Check == checkPaused {
+			// The owner paused it: that is not why the start found no provider.
+			continue
+		}
 		if skip.Check != "exhausted" {
 			return nil
 		}

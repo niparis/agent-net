@@ -555,9 +555,10 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if owner.Worker != nil {
 		return none, reject("a worker cannot start workers")
 	}
+	ownerNamed := ownerNamedModel(p, owner)
 
 	if p.Continue != "" {
-		return g.workerContinue(ctx, nc, p, validate...)
+		return g.workerContinue(ctx, nc, p, ownerNamed, validate...)
 	}
 
 	// Which machine and folder.
@@ -1004,6 +1005,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			Quotas:     quotas,
 			Floors:     floors,
 			Protected:  protected,
+			OwnerNamed: ownerNamed,
 		})
 		if chooseErr != nil {
 			if !(len(validate) > 0 && validate[0]) {
@@ -1287,6 +1289,17 @@ func (g *Gateway) workerRecheck(ctx context.Context, nc *nodeConn, p protocol.Wo
 	answer.Provider, answer.Effort = ans.Provider, ans.Effort
 	answer.ModelNote, answer.Why = ans.ModelNote, ans.Why
 	return answer, nil
+}
+
+// ownerNamedModel tells whether the owner named the start's model himself: on
+// his own command line or TUI, or in his words, which the caller's daemon
+// found (owner_selected). A model he paused runs then (decision 0188).
+func ownerNamedModel(p protocol.WorkerStartFrame, owner protocol.AgentView) bool {
+	m := strings.TrimSpace(p.Model)
+	if m == "" || strings.EqualFold(m, "auto") {
+		return false
+	}
+	return p.OwnerSelected || (protocol.IsOwner(owner.Harness) && !p.FromCTO)
 }
 
 // sameGrant reports whether a grant is for this harness and model.
@@ -1641,7 +1654,7 @@ func (g *Gateway) workerHarnessOrder(node *protocol.NodeView, model string, requ
 // workerContinue starts a new worker from an ended one. The gateway knows the
 // node of each worker session, so it asks the machine that ran the old worker.
 // The machine holds the old task and branch and checks the owner again.
-func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.WorkerStartFrame, validate ...bool) (protocol.WorkerStartAnswer, error) {
+func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.WorkerStartFrame, ownerNamed bool, validate ...bool) (protocol.WorkerStartAnswer, error) {
 	var none protocol.WorkerStartAnswer
 	if len(p.NotFamily) > 0 {
 		return none, reject("not_family cannot be used with continue; start a new worker for a different family")
@@ -1697,7 +1710,11 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	}
 	continuedModel := p.Model
 	if continuedModel == "" {
-		continuedModel = old.Model
+		// The machine continues on the model of its own record: the model of
+		// the worker's last run.
+		if continuedModel, err = g.store.workerRunModel(old.SessionID, old.Model); err != nil {
+			return none, err
+		}
 	}
 	info, err := g.NodesInfo()
 	if err != nil {
@@ -1733,6 +1750,10 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	if err != nil {
 		return none, err
 	}
+	scores, err := g.store.scores()
+	if err != nil {
+		return none, err
+	}
 	granted, gerr := g.Choose(ChooseRequest{
 		Purpose:    model.PurposeContinueOrResume,
 		Node:       withHarnessInstalled(node, harness),
@@ -1740,6 +1761,8 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 		Difficulty: protocol.WorkerLevel(old.Worker.Assessment),
 		Quotas:     quotas,
 		Floors:     floors,
+		Scores:     scores,
+		OwnerNamed: ownerNamed,
 	})
 	if gerr != nil {
 		g.feedGateSkips(granted.Skips)
@@ -2214,6 +2237,11 @@ func (g *Gateway) resumeRefusal(a protocol.AgentView) string {
 	if harness == "" {
 		harness = a.Harness
 	}
+	// The machine resumes the harness on the model of its own record: the
+	// model of the worker's last run.
+	if resumedModel, err = g.store.workerRunModel(a.SessionID, resumedModel); err != nil {
+		return ""
+	}
 	quotas := g.ownerQuotas(a.NodeID)
 	floors, err := g.store.workerFloors()
 	if err != nil {
@@ -2230,12 +2258,17 @@ func (g *Gateway) resumeRefusal(a protocol.AgentView) string {
 			break
 		}
 	}
+	scores, err := g.store.scores()
+	if err != nil {
+		return ""
+	}
 	chosen, gerr := g.Choose(ChooseRequest{
 		Purpose:    model.PurposeContinueOrResume,
 		Node:       withHarnessInstalled(node, harness),
 		Candidates: []protocol.WorkerModelCandidate{{Name: harness + " " + resumedModel, Harness: harness, Model: resumedModel}},
 		Quotas:     quotas,
 		Floors:     floors,
+		Scores:     scores,
 	})
 	if gerr == nil {
 		return ""

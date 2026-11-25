@@ -336,6 +336,10 @@ type (
 	// WorkerStartFrame is "worker.start".
 	WorkerStartFrame struct {
 		FromCTO bool `json:"sender_cto,omitempty"`
+		// OwnerSelected says the caller's daemon found the start's selection
+		// fields in the owner's own words (selection owner_words). A model
+		// the owner names this way runs even when he paused it (decision 0188).
+		OwnerSelected bool `json:"owner_selected,omitempty"`
 		// RequireReadOnly restricts automatic background tasks to a harness
 		// and daemon that enforce read-only project access.
 		RequireReadOnly bool `json:"require_read_only,omitempty"`

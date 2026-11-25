@@ -3,6 +3,8 @@
 Date: 2026-11-13
 Status: Approved by the owner on 2026-11-13, with all six choices as
 recommended ("fully approved").
+Changed by [0188](0188-owner-paused-models.md): a model the owner scores 0 is
+left out before the ranker, unless he named it for the start himself.
 
 ## Problem
 

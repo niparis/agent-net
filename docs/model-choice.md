@@ -357,8 +357,13 @@ decisions [0103](decisions/0103-agent-net-records-late-defects.md) and
   0173 are in code and off: `picker.quality_v2` and `picker.ceiling_rule`.
 - **Playbook notes.** Write a note for a model, harness, project or machine, and
   pin it so that no later finding changes it.
+- **Pause a model.** Give it a score of 0 in the model scores. No automatic
+  start, role list, continue, resume or automatic continue uses it, and the
+  note says "paused by the owner". A model with no score is not paused
+  (decision 0188).
 - **Your own choice.** If you name a harness, model or effort, the start runs on
-  that model. For a worker you name, only the locked checks apply.
+  that model, even a paused one. For a worker you name, only the locked checks
+  apply.
 
 ## What agents may not do
 

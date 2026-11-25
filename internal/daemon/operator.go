@@ -503,7 +503,8 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 	if err != nil {
 		return nil, err
 	}
-	frame := protocol.WorkerStartFrame{WorkerStartRequest: p, Owner: caller, CallerProject: callerProject, CallerPath: callerPath, FromCTO: cto}
+	frame := protocol.WorkerStartFrame{WorkerStartRequest: p, Owner: caller, CallerProject: callerProject, CallerPath: callerPath, FromCTO: cto,
+		OwnerSelected: selection == protocol.SelectionOwnerWords}
 	if p.Continue == "" && p.Mode != protocol.WorkerStartModeCheck {
 		// Everything that needs no judge is checked first, in a moment: the
 		// project, the machine, the named model and its provider's allowance.
