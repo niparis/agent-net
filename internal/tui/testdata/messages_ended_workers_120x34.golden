@@ -1,6 +1,6 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk │ 6 sessions, 5 online · 1 busy              updated 14:05:00
   Agents    [ Workers ]    System
-you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
+you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! held or blocked
 ╭─Threads───────────────────p: all · t: all / search─╮╭─Conversation─────────────────────────────────────↑ older above─╮
 │ ▸ tenebrae-53 → worker: Polish the sess… ended · 2 ││     - One test per behaviour; no cases for behaviour the task  │
 │     worker notice                                  ││     does not change.                                           │

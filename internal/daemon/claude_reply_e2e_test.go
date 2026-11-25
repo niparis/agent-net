@@ -62,22 +62,29 @@ func newClaudePeer(t *testing.T) *claudePeer {
 
 func (p *claudePeer) adapter() Adapter { return TestClaudeAdapterFactory(p.sessions, p.replies) }
 
-// nextFrame returns the reply address of the next frame in the inbox.
-func (p *claudePeer) nextFrame() string {
+// nextFrameLine returns the next frame in the inbox exactly as written.
+func (p *claudePeer) nextFrameLine() string {
 	p.t.Helper()
 	select {
 	case line := <-p.frames:
-		var f struct {
-			From string `json:"from"`
-		}
-		if err := json.Unmarshal([]byte(line), &f); err != nil || !strings.HasPrefix(f.From, "uds:") {
-			p.t.Fatalf("frame without a reply address: %s", line)
-		}
-		return strings.TrimPrefix(f.From, "uds:")
+		return line
 	case <-time.After(5 * time.Second):
 		p.t.Fatal("no frame reached the Claude inbox")
 	}
 	return ""
+}
+
+// nextFrame returns the reply address of the next frame in the inbox.
+func (p *claudePeer) nextFrame() string {
+	p.t.Helper()
+	line := p.nextFrameLine()
+	var f struct {
+		From string `json:"from"`
+	}
+	if err := json.Unmarshal([]byte(line), &f); err != nil || !strings.HasPrefix(f.From, "uds:") {
+		p.t.Fatalf("frame without a reply address: %s", line)
+	}
+	return strings.TrimPrefix(f.From, "uds:")
 }
 
 // answer writes what Claude's SendMessage tool writes to a reply address.

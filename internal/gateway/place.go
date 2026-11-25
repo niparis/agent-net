@@ -421,8 +421,8 @@ func (s *Store) StoreHandoff(p protocol.MsgHandoff) (protocol.Message, error) {
 			return none, err
 		}
 	}
-	if _, err = tx.Exec(`UPDATE messages SET state = ? WHERE id = ? AND state IN (?,?,?)`,
-		protocol.StateReplied, orig.ID, protocol.StateStored, protocol.StateDispatched, protocol.StateDelivered); err != nil {
+	if _, err = tx.Exec(`UPDATE messages SET state = ? WHERE id = ? AND state IN (?,?,?,?)`,
+		protocol.StateReplied, orig.ID, protocol.StateStored, protocol.StateDispatched, protocol.StateDelivered, protocol.StateHeldBySession); err != nil {
 		return none, err
 	}
 	if _, err = tx.Exec(`DELETE FROM delivery_retries WHERE message_id=? AND EXISTS (SELECT 1 FROM messages WHERE id=? AND state='replied')`, orig.ID, orig.ID); err != nil {

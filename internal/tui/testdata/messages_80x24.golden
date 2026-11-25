@@ -1,6 +1,6 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk │ 12 online
 [ Agents ]    Workers      System
-you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! held
+you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! held or blocked
 ╭─Threads─────────────────────────────────────────────p: all · t: all / search─╮
 │   ! ci-runner ↔ tenebrae-53                                      2m · 2 msgs │
 │     Rollback is ready if we need it.                                         │

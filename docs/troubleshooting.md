@@ -20,7 +20,7 @@ agent-net events --since 1h   # on the gateway machine: what the gateway did in 
 
 The gateway log has one `key=value` line per message and per delivery step, for example `grep msg=m_0123456789abcdef`. See [reference.md](reference.md#gateway-log-format). On the gateway machine, the gateway log is `journalctl --user -u agent-net-gateway -e` (Linux) or `~/Library/Logs/agent-net-gateway.log` (macOS).
 
-To read a message state: `stored` means the gateway has it, `dispatched` means it was sent to the machine, `delivered` means it went into the session, `replied` means the session answered. `failed` and `expired` mean it was not delivered. A recipient that is offline gets the message when it comes back, for up to 24 hours.
+To read a message state: `stored` means the gateway has it, `dispatched` means it was sent to the machine, `delivered` means it went into the session, `held_by_session` means Claude Code kept it for review, `replied` means the session answered. `failed` and `expired` mean it was not delivered. A recipient that is offline gets the message when it comes back, for up to 24 hours.
 
 ## macOS: "no route to host" when joining
 
@@ -165,13 +165,15 @@ Claude Code does this when the sender and the receiver run in different permissi
 
 agent-net reads the hold from the session transcript. It shows the message as `held_by_session`, not delivered, with the action to take, and it logs `session.delivery_held msg=<id>`. It stops the owed-reply reminders for that message. When you approve it, the message becomes delivered and the log says `session.delivery_released`. agent-net does not resend it and does not change the sender's permission mode.
 
-At start and when a Claude session starts, the daemon compares the live `crossSessionInbound` value with what setup recorded. If the file lost the key, the log says `claude peer messages: ...` and names the declaration to add. On a machine whose settings file is a Home Manager or Nix link, put this line in the dotfile that owns it, then rebuild:
+At start and when a Claude session starts, the daemon compares the live `crossSessionInbound` value with what setup recorded. If the file lost the key, the log says `claude peer messages: ...` and names the final file behind a link.
+- When that file is writable, for example a file in your own dotfiles repository, edit it and add this line. No rebuild is needed, and no package manager owns it.
+- When the file is read-only, or a link to a read-only file, declare this line in the file that manages it, for example a Home Manager or Nix dotfile, then rebuild:
 
 ```
 "crossSessionInbound": "accept"
 ```
 
-The daemon never writes that file. On Claude Code 2.1.332 and later, the hold prompt also offers **Always deliver**.
+Claude Code writes no entry when it drops a held message. The held state says the message may have expired there, because agent-net cannot see whether it still waits. The daemon never writes the settings file. On Claude Code 2.1.332 and later, the hold prompt also offers **Always deliver**.
 
 Setup does not change a value that is already set. `agent-net setup` prints the current one on the `claude peer messages` line. If it says `hold` or `refuse`, change or remove the key yourself. A `hold` in a managed (organization) setting or in a repository's `.claude/settings.json` overrides your `accept`.
 

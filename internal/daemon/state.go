@@ -88,15 +88,32 @@ CREATE TABLE IF NOT EXISTS workers (
 	}
 	// A Claude message Claude Code holds for review is recorded on its
 	// delivery row, so a daemon restart does not report it again and a later
-	// release can be told from a first delivery.
-	for _, col := range []string{"held_at", "released_at"} {
+	// release can be told from a first delivery. The frame columns describe
+	// what Claude Code sees: its reply socket, the first body line in a hold
+	// notice and the exact frame content a release writes back.
+	for _, col := range []struct{ name, def string }{
+		{"held_at", "INTEGER NOT NULL DEFAULT 0"},
+		{"released_at", "INTEGER NOT NULL DEFAULT 0"},
+		{"frame", "TEXT NOT NULL DEFAULT ''"},
+		{"reply_sock", "TEXT NOT NULL DEFAULT ''"},
+		{"preview", "TEXT NOT NULL DEFAULT ''"},
+		{"body_lines", "INTEGER NOT NULL DEFAULT 0"},
+		{"body_chars", "INTEGER NOT NULL DEFAULT 0"},
+		{"frame_hash", "TEXT NOT NULL DEFAULT ''"},
+		{"held_entry", "TEXT NOT NULL DEFAULT ''"},
+	} {
 		var has int
 		if err == nil {
-			err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('claude_deliveries') WHERE name=?`, col).Scan(&has)
+			err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('claude_deliveries') WHERE name=?`, col.name).Scan(&has)
 		}
 		if err == nil && has == 0 {
-			_, err = db.Exec(`ALTER TABLE claude_deliveries ADD COLUMN ` + col + ` INTEGER NOT NULL DEFAULT 0`)
+			_, err = db.Exec(`ALTER TABLE claude_deliveries ADD COLUMN ` + col.name + ` ` + col.def)
 		}
+	}
+	if err == nil {
+		// Old rows were one message for one frame; a batch carrier row does not
+		// exist for them, so a hold only matches a frame recorded after this.
+		_, err = db.Exec(`UPDATE claude_deliveries SET frame=message_id WHERE frame='' AND frame_hash=''`)
 	}
 	if err == nil {
 		var has int

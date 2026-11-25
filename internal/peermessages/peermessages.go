@@ -38,10 +38,13 @@ func LoadState(path string) State {
 // Report is what the live settings file says about the recorded answer.
 type Report struct {
 	SettingsPath string
-	Live         string
-	LiveSet      bool
-	Linked       bool
-	ReadOnly     bool
+	// Final is the file a link points at, or SettingsPath when it is not a
+	// link.
+	Final    string
+	Live     string
+	LiveSet  bool
+	Linked   bool
+	ReadOnly bool
 	// Problem is empty when the live file agrees with the record.
 	Problem string
 }
@@ -56,7 +59,7 @@ func Compare(st State, settingsPath string) Report {
 	if settingsPath == "" {
 		return r
 	}
-	r.Linked, r.ReadOnly = fileKind(settingsPath)
+	r.Linked, r.ReadOnly, r.Final = fileKind(settingsPath)
 	v, set, err := claudesettings.Value(settingsPath, SettingKey)
 	if err != nil {
 		r.Problem = fmt.Sprintf("agent-net cannot read %s: %v", settingsPath, err)
@@ -68,10 +71,16 @@ func Compare(st State, settingsPath string) Report {
 	}
 	r.Problem = fmt.Sprintf("agent-net recorded that it set %q to \"accept\" in %s, but %s. Claude Code holds a message when the sender's permission mode class differs from this session's.",
 		SettingKey, settingsPath, liveText(settingsPath, set, v))
-	if r.Linked || r.ReadOnly {
-		r.Problem += fmt.Sprintf(" The file is %s. Declare this line in the file that manages it, for example a Nix or Home Manager dotfile: %s.",
-			fileText(r.Linked, r.ReadOnly), `"`+SettingKey+`": "accept"`)
-	} else {
+	line := `"` + SettingKey + `": "accept"`
+	switch {
+	case r.Linked && r.ReadOnly:
+		r.Problem += fmt.Sprintf(" The file is a link to the read-only file %s. Declare this line in the file that manages it, for example a Nix or Home Manager dotfile, and rebuild: %s.",
+			r.Final, line)
+	case r.Linked:
+		r.Problem += fmt.Sprintf(" The file is a link to %s, which is writable. Edit that file and add this line: %s.", r.Final, line)
+	case r.ReadOnly:
+		r.Problem += fmt.Sprintf(" The file is read-only. Declare this line in the file that manages it, for example a Nix or Home Manager dotfile, and rebuild: %s.", line)
+	default:
 		r.Problem += fmt.Sprintf(" Run agent-net setup --accept-peer-messages, or set %q in that file.", SettingKey)
 	}
 	return r
@@ -87,31 +96,21 @@ func liveText(path string, set bool, value string) string {
 	return fmt.Sprintf("the file says %q", value)
 }
 
-func fileText(linked, readOnly bool) string {
-	switch {
-	case linked && readOnly:
-		return "a link to a read-only file"
-	case linked:
-		return "a link to another file"
-	default:
-		return "read-only"
-	}
-}
-
-// fileKind says whether the path is a symlink and whether its target is
-// read-only. A missing file is neither.
-func fileKind(path string) (linked, readOnly bool) {
+// fileKind says whether the path is a symlink, whether its target is
+// read-only, and the file a link points at. A missing file is neither kind,
+// and its final path is the path itself.
+func fileKind(path string) (linked, readOnly bool, final string) {
+	final = path
 	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
 		linked = true
 	}
-	target := path
 	if linked {
 		if p, err := filepath.EvalSymlinks(path); err == nil {
-			target = p
+			final = p
 		}
 	}
-	if fi, err := os.Stat(target); err == nil {
+	if fi, err := os.Stat(final); err == nil {
 		readOnly = fi.Mode().Perm()&0o200 == 0
 	}
-	return linked, readOnly
+	return linked, readOnly, final
 }

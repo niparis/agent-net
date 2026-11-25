@@ -2,41 +2,70 @@ package claude
 
 import (
 	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/niparis/agent-net/internal/daemon"
 )
 
 // Claude Code writes a system entry when it keeps a peer message for review
-// instead of showing it to the session. The entry names the reply socket of
-// the sender, so the adapter can match it to the delivery record and report
-// the message as held. When the owner approves it, Claude Code writes the
-// message as a user entry, which is the release.
+// instead of showing it to the session. The entry names the reply socket and
+// the first line of the body, so the adapter can tie it to the one delivery it
+// describes. When the owner approves it, Claude Code writes the message as a
+// user entry with the original frame, which is the release.
 const (
 	// heldLookback is how much of an existing transcript the first read looks
 	// at. A hold is recent; older text is not news.
 	heldLookback = 1 << 20
+	// heldChunk bounds one read. A transcript can be hundreds of megabytes,
+	// so the scan never loads the whole of what was appended.
+	heldChunk = 64 << 10
+	// heldMaxLine drops a single line larger than this. Assistant output and
+	// tool results can be far larger than a hold notice, and no frame is this
+	// big.
+	heldMaxLine = 1 << 20
+	// heldPathLookupEvery is how often a transcript that moved is searched for
+	// again. The normal path needs no search at all.
+	heldPathLookupEvery = time.Minute
 )
 
 var (
-	// A reply socket is .../r/<sender>.<conversation>.sock, or .../r/<sender>.sock
-	// for a message without a conversation.
-	heldReplySock = regexp.MustCompile(`/r/([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)\.sock`)
-	heldSoloSock  = regexp.MustCompile(`/r/([A-Za-z0-9_-]+)\.sock`)
-	// A peer frame names its message ID in the agent-net note.
-	heldMessageID = regexp.MustCompile(`\bm_[0-9a-f]{8,}\b`)
+	// A hold notice names the sender's reply socket: "from uds:<path>".
+	heldFrom = regexp.MustCompile(`\bfrom[= ]"?(uds:[^" );\s]+)"?`)
+	// A hold notice quotes the first body line and its size.
+	heldCounts = regexp.MustCompile(`\[(\d+) lines?, (\d+) chars?`)
+	// The frame content starts with the cross-session wrapper.
+	heldOpenTag = regexp.MustCompile(`<cross-session-message\b([^>]*)>`)
 )
+
+// globTranscripts is filepath.Glob, replaced by a test that counts searches.
+var globTranscripts = filepath.Glob
+
+// heldDash is the em dash Claude Code writes in a hold notice. It is built
+// from a rune because B9 forbids the character in a production literal; the
+// daemon only matches it and never shows it.
+var heldDash = string(rune(0x2014))
 
 // heldWatch is how far one transcript was read.
 type heldWatch struct {
-	path        string
-	offset      int64
-	partial     []byte
-	initialized bool
+	path    string
+	offset  int64
+	partial []byte
+}
+
+// heldPath is a session's transcript and the working folder it was found for.
+type heldPath struct {
+	path string
+	cwd  string
 }
 
 // transcriptEntry is the part of a Claude transcript line the hold check
@@ -45,6 +74,7 @@ type heldWatch struct {
 type transcriptEntry struct {
 	Type      string `json:"type"`
 	Subtype   string `json:"subtype"`
+	UUID      string `json:"uuid"`
 	Content   string `json:"content"`
 	Timestamp string `json:"timestamp"`
 	Message   struct {
@@ -79,23 +109,93 @@ func (a *Adapter) startHeldScan(byNative map[string]found) {
 
 // scanHeld reads what Claude Code appended to each session transcript since
 // the last poll. It reports a new hold and a release to the daemon. It never
-// reads the whole transcript again, and never holds the adapter lock across a
-// read.
+// holds the adapter lock across a read.
 func (a *Adapter) scanHeld(byNative map[string]found) {
-	keep := map[string]bool{}
+	keepNative := make(map[string]bool, len(byNative))
+	keepPaths := map[string]bool{}
 	for native, f := range byNative {
-		path := daemon.ClaudeTranscriptPath(a.cfg.ProjectsDir, native, f.info.Cwd)
+		keepNative[native] = true
+		path := a.transcriptPath(native, f.info.Cwd)
 		if path == "" {
 			continue
 		}
-		keep[path] = true
+		keepPaths[path] = true
 		a.scanHeldTranscript(native, path)
 	}
 	a.mu.Lock()
+	for native := range a.heldPaths {
+		if !keepNative[native] {
+			delete(a.heldPaths, native)
+		}
+	}
+	for native := range a.heldGlobAt {
+		if !keepNative[native] {
+			delete(a.heldGlobAt, native)
+		}
+	}
 	for path := range a.heldWatches {
-		if !keep[path] {
+		if !keepPaths[path] {
 			delete(a.heldWatches, path)
 		}
+	}
+	a.mu.Unlock()
+}
+
+// transcriptPath finds a session's transcript without searching every project
+// folder on every poll. The normal path is the folder named after the working
+// folder; a session whose file moved is searched for at most once a minute.
+func (a *Adapter) transcriptPath(native, cwd string) string {
+	if native == "" {
+		return ""
+	}
+	name := native + ".jsonl"
+	a.mu.Lock()
+	if p, ok := a.heldPaths[native]; ok && p.cwd == cwd && p.path != "" {
+		a.mu.Unlock()
+		return p.path
+	}
+	a.mu.Unlock()
+	if cwd != "" {
+		p := filepath.Join(a.cfg.ProjectsDir, daemon.ClaudeTranscriptDir(cwd), name)
+		if _, err := os.Stat(p); err == nil {
+			a.rememberHeldPath(native, cwd, p)
+			return p
+		}
+	}
+	a.mu.Lock()
+	last := a.heldGlobAt[native]
+	if !last.IsZero() && time.Since(last) < heldPathLookupEvery {
+		a.mu.Unlock()
+		return ""
+	}
+	if a.heldGlobAt == nil {
+		a.heldGlobAt = map[string]time.Time{}
+	}
+	a.heldGlobAt[native] = time.Now()
+	a.mu.Unlock()
+	matches, _ := globTranscripts(filepath.Join(a.cfg.ProjectsDir, "*", name))
+	if len(matches) == 0 {
+		return ""
+	}
+	a.rememberHeldPath(native, cwd, matches[0])
+	return matches[0]
+}
+
+func (a *Adapter) rememberHeldPath(native, cwd, path string) {
+	a.mu.Lock()
+	if a.heldPaths == nil {
+		a.heldPaths = map[string]heldPath{}
+	}
+	a.heldPaths[native] = heldPath{path: path, cwd: cwd}
+	a.mu.Unlock()
+}
+
+// forgetHeldPath drops a remembered path that no longer exists, so the next
+// poll resolves it again.
+func (a *Adapter) forgetHeldPath(native, path string) {
+	a.mu.Lock()
+	if p, ok := a.heldPaths[native]; ok && p.path == path {
+		delete(a.heldPaths, native)
 	}
 	a.mu.Unlock()
 }
@@ -109,6 +209,7 @@ func (a *Adapter) scanHeldTranscript(native, path string) {
 	}
 	info, err := os.Stat(path)
 	if err != nil {
+		a.forgetHeldPath(native, path)
 		return
 	}
 	a.mu.Lock()
@@ -120,94 +221,141 @@ func (a *Adapter) scanHeldTranscript(native, path string) {
 		w = &heldWatch{path: path, offset: max(info.Size()-heldLookback, 0)}
 		a.heldWatches[path] = w
 	}
-	if !w.initialized {
-		w.initialized = true
-	}
 	if info.Size() < w.offset {
-		// The transcript was rewritten. Read it from its start.
-		w.offset, w.partial = 0, nil
+		// The transcript was rewritten. Read only its tail: it can be very
+		// large, and a rewritten transcript does not describe a recent frame.
+		w.offset, w.partial = max(info.Size()-heldLookback, 0), nil
 	}
-	if info.Size() == w.offset {
-		a.mu.Unlock()
+	offset, end, partial := w.offset, info.Size(), w.partial
+	ctx := a.ctx
+	a.mu.Unlock()
+	if end <= offset {
 		return
 	}
-	offset, size := w.offset, info.Size()
-	a.mu.Unlock()
-
 	f, err := os.Open(path)
 	if err != nil {
 		return
 	}
-	buf := make([]byte, size-offset)
-	n, _ := f.ReadAt(buf, offset)
-	f.Close()
-	buf = buf[:n]
-
+	defer f.Close()
+	buf := make([]byte, heldChunk)
+	skipLine := false
+	for offset < end {
+		n := int64(len(buf))
+		if end-offset < n {
+			n = end - offset
+		}
+		read, _ := f.ReadAt(buf[:n], offset)
+		if read <= 0 {
+			break
+		}
+		offset += int64(read)
+		chunk := buf[:read]
+		for {
+			i := bytes.IndexByte(chunk, '\n')
+			if i < 0 {
+				if !skipLine {
+					partial = append(partial, chunk...)
+					if len(partial) > heldMaxLine {
+						partial, skipLine = nil, true
+					}
+				}
+				break
+			}
+			line := chunk[:i]
+			chunk = chunk[i+1:]
+			if skipLine {
+				skipLine = false
+				continue
+			}
+			if len(partial) > 0 {
+				line = append(partial, line...)
+				partial = nil
+			}
+			a.handleHeldLine(ctx, recipient, native, line)
+		}
+	}
 	a.mu.Lock()
-	lines := append(w.partial, buf...)
-	last := bytes.LastIndexByte(lines, '\n')
-	if last < 0 {
-		w.partial = append([]byte(nil), lines...)
-		w.offset = size
-		a.mu.Unlock()
+	w.offset = offset
+	w.partial = append([]byte(nil), partial...)
+	a.mu.Unlock()
+}
+
+// handleHeldLine reports one transcript line that may name a hold or a
+// release. Every other line is skipped before the JSON parse.
+func (a *Adapter) handleHeldLine(ctx context.Context, recipient, native string, line []byte) {
+	if len(line) == 0 {
 		return
 	}
-	w.partial = append([]byte(nil), lines[last+1:]...)
-	w.offset = size - int64(len(w.partial))
-	done := lines[:last]
-	ctx := a.ctx
-	a.mu.Unlock()
-
-	for _, line := range bytes.Split(done, []byte{'\n'}) {
-		if len(line) == 0 {
-			continue
+	if !bytes.Contains(line, []byte("Held peer message")) &&
+		!bytes.Contains(line, []byte("Held message from another session")) &&
+		!bytes.Contains(line, []byte("cross-session-message")) {
+		return
+	}
+	var e transcriptEntry
+	if json.Unmarshal(line, &e) != nil {
+		return
+	}
+	switch e.Type {
+	case "system":
+		sock, preview, lines, chars, ok := heldNotice(e.Content)
+		if !ok {
+			return
 		}
-		// Most new bytes are assistant output and tool results. Skip them
-		// before the JSON parse: a transcript line can be very large.
-		if !bytes.Contains(line, []byte("Held peer message")) &&
-			!bytes.Contains(line, []byte("Held message from another session")) &&
-			!bytes.Contains(line, []byte("cross-session-message")) {
-			continue
+		at := parseTranscriptTime(e.Timestamp)
+		if !at.IsZero() && sock != "" {
+			a.host.ClaudeHeld(ctx, recipient, daemon.ClaudeHeldEntry{
+				UUID: e.UUID, ReplySock: sock, Preview: preview,
+				BodyLines: lines, BodyChars: chars, At: at,
+			})
+			return
 		}
-		var e transcriptEntry
-		if json.Unmarshal(line, &e) != nil {
-			continue
+		a.host.Logf("claude: a hold notice in %s has no timestamp or reply socket: %q", native, firstLine(e.Content))
+	case "user":
+		content, ok := heldFrameContent(contentText(e.Message.Content))
+		if !ok {
+			return
 		}
-		switch e.Type {
-		case "system":
-			if !heldEntry(e.Content) {
-				continue
-			}
-			sender, conv, ok := heldAddress(e.Content)
-			if !ok {
-				a.host.Logf("claude: a held message in %s names no reply socket: %q", native, firstLine(e.Content))
-				continue
-			}
-			a.host.ClaudeHeld(ctx, recipient, sender, conv, parseTranscriptTime(e.Timestamp))
-		case "user":
-			text := contentText(e.Message.Content)
-			if !strings.Contains(text, "<cross-session-message") {
-				continue
-			}
-			sender, conv, _ := heldAddress(text)
-			ids := heldMessageIDs(text)
-			if len(ids) == 0 {
-				// A batch carrier names no original ID. A release of it
-				// releases every held message from that sender.
-				if sender != "" {
-					a.host.ClaudeHeldReleased(ctx, recipient, "", sender, conv)
-				}
-				continue
-			}
-			for _, id := range ids {
-				a.host.ClaudeHeldReleased(ctx, recipient, id, sender, conv)
-			}
+		sock, ok := frameReplySock(content)
+		if !ok {
+			a.host.Logf("claude: a released frame in %s names no reply socket", native)
+			return
 		}
+		a.host.ClaudeHeldReleased(ctx, recipient, sock, frameHash(content), parseTranscriptTime(e.Timestamp))
 	}
 }
 
-// heldEntry says whether a system entry is Claude Code's hold notice. Both
-// wordings seen in transcripts are accepted.
+// heldNotice reads the sender socket, the quoted first line and the body size
+// from a "Held peer message" entry. Both wordings seen in transcripts are
+// accepted.
+func heldNotice(s string) (sock, preview string, lines, chars int, ok bool) {
+	if !heldEntry(s) {
+		return "", "", 0, 0, false
+	}
+	if m := heldFrom.FindStringSubmatch(s); m != nil {
+		sock = strings.TrimPrefix(m[1], "uds:")
+	}
+	if i := strings.Index(s, "preview: \u00ab"); i >= 0 {
+		rest := s[i+len("preview: \u00ab"):]
+		if j := strings.Index(rest, "\u00bb"); j >= 0 {
+			preview = rest[:j]
+		} else {
+			cut := len(rest)
+			for _, marker := range []string{"\u2026[", " " + heldDash + " not delivered", heldDash + " not delivered"} {
+				if j := strings.Index(rest, marker); j >= 0 && j < cut {
+					cut = j
+				}
+			}
+			preview = strings.TrimSpace(rest[:cut])
+		}
+	}
+	if m := heldCounts.FindStringSubmatch(s); m != nil {
+		lines, _ = strconv.Atoi(m[1])
+		chars, _ = strconv.Atoi(m[2])
+	}
+	return sock, preview, lines, chars, sock != ""
+}
+
+// heldEntry says whether a system entry is Claude Code's hold notice.
 func heldEntry(s string) bool {
 	if !strings.Contains(s, "not delivered to Claude") {
 		return false
@@ -215,30 +363,62 @@ func heldEntry(s string) bool {
 	return strings.Contains(s, "Held peer message") || strings.Contains(s, "Held message from another session")
 }
 
-// heldAddress reads the sender and conversation from the reply socket the
-// hold notice names.
-func heldAddress(s string) (sender, conversation string, ok bool) {
-	if m := heldReplySock.FindStringSubmatch(s); m != nil {
-		return m[1], m[2], true
+// heldFrameContent returns the exact cross-session wrapper in a released user
+// entry. Claude Code may put text before it, but the frame itself is written
+// back unchanged.
+func heldFrameContent(text string) (string, bool) {
+	i := strings.Index(text, "<cross-session-message")
+	if i < 0 {
+		return "", false
 	}
-	if m := heldSoloSock.FindStringSubmatch(s); m != nil {
-		return m[1], "", true
+	j := strings.Index(text[i:], "</cross-session-message>")
+	if j < 0 {
+		return "", false
 	}
-	return "", "", false
+	return text[i : i+j+len("</cross-session-message>")], true
 }
 
-// heldMessageIDs returns the unique message IDs a released user entry names.
-func heldMessageIDs(s string) []string {
-	var out []string
-	seen := map[string]bool{}
-	for _, id := range heldMessageID.FindAllString(s, -1) {
-		if !seen[id] {
-			seen[id] = true
-			out = append(out, id)
+// frameReplySock reads the reply socket from a frame's opening tag.
+func frameReplySock(content string) (string, bool) {
+	m := heldOpenTag.FindStringSubmatch(content)
+	if m == nil {
+		return "", false
+	}
+	for _, field := range strings.Fields(m[1]) {
+		if strings.HasPrefix(field, `from="uds:`) {
+			return strings.TrimSuffix(strings.TrimPrefix(field, `from="uds:`), `"`), true
 		}
 	}
-	return out
+	return "", false
 }
+
+// frameHash is the hash of one frame content, which ties a release to the
+// frame it was written for.
+func frameHash(content string) string {
+	sum := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(sum[:])
+}
+
+// framePreview is the first non-empty body line, which is what a hold notice
+// quotes.
+func framePreview(body string) string {
+	for _, line := range strings.Split(body, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			return line
+		}
+	}
+	return ""
+}
+
+// frameBodyLines and frameBodyChars are the body size a hold notice reports.
+func frameBodyLines(body string) int {
+	if body == "" {
+		return 0
+	}
+	return strings.Count(body, "\n") + 1
+}
+
+func frameBodyChars(body string) int { return utf8.RuneCountInString(body) }
 
 func parseTranscriptTime(s string) time.Time {
 	t, err := time.Parse(time.RFC3339Nano, s)

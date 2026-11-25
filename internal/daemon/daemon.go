@@ -65,11 +65,24 @@ type Host interface {
 	// Replies is the daemon.db record that matches a Claude reply to the
 	// request it answers.
 	Replies() ReplyBook
-	// ClaudeHeld reports that Claude Code kept a message from sender in
-	// conversation for review instead of delivering it.
-	ClaudeHeld(ctx context.Context, recipient, sender, conversation string, at time.Time)
-	// ClaudeHeldReleased reports that the session released a held message.
-	ClaudeHeldReleased(ctx context.Context, recipient, messageID, sender, conversation string)
+	// ClaudeHeld reports one "Held peer message" line from a Claude
+	// transcript. The daemon ties it to the one delivery it describes.
+	ClaudeHeld(ctx context.Context, recipient string, e ClaudeHeldEntry)
+	// ClaudeHeldReleased reports that the session released the frame with this
+	// reply socket and content hash.
+	ClaudeHeldReleased(ctx context.Context, recipient, replySock, frameHash string, at time.Time)
+}
+
+// ClaudeHeldEntry is one hold notice from a Claude transcript. UUID is the
+// entry's own id, so the daemon handles it once across restarts. ReplySock and
+// Preview describe the frame Claude held; At is the entry's timestamp.
+type ClaudeHeldEntry struct {
+	UUID      string
+	ReplySock string
+	Preview   string
+	BodyLines int
+	BodyChars int
+	At        time.Time
 }
 
 type Config struct {

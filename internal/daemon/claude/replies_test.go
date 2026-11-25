@@ -43,6 +43,26 @@ func (b *memBook) SaveDelivery(r daemon.ClaudeDelivery) error {
 	return nil
 }
 
+func (b *memBook) SaveFrame(f daemon.ClaudeDelivery) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for i, x := range b.rows {
+		if x.MessageID == f.MessageID {
+			b.rows[i].Frame, b.rows[i].ReplySock, b.rows[i].Preview = f.Frame, f.ReplySock, f.Preview
+			b.rows[i].BodyLines, b.rows[i].BodyChars, b.rows[i].FrameHash = f.BodyLines, f.BodyChars, f.FrameHash
+			return nil
+		}
+	}
+	if f.DeliveredAt.IsZero() {
+		f.DeliveredAt = time.Now()
+	}
+	if f.ExpiresAt.IsZero() {
+		f.ExpiresAt = f.DeliveredAt.Add(protocol.DefaultTTL)
+	}
+	b.rows = append(b.rows, f)
+	return nil
+}
+
 func (b *memBook) ForgetDelivery(id string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()

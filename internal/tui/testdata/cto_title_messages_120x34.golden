@@ -1,6 +1,6 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk │ 6 sessions, 5 online · 1 busy              updated 14:05:00
 [ Agents ]    Workers      System
-you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! held
+you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! held or blocked
 ╭─Threads───────────────────p: all · t: all / search─╮╭─Conversation───────────────────────────────────────────────────╮
 │ ▸ Atlas ↔ tenebrae-53               1m ago · 1 msg ││ strategies ↔ tenebrae-53                                       │
 │     Please check the deployment.                   ││ ▸ 29 Oct 14:04  Atlas · m_cto                                  │

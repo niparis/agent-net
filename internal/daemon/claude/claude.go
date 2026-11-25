@@ -66,6 +66,8 @@ type Adapter struct {
 	bySock        map[string]string         // inbox socket -> native_id
 	replies       map[replyKey]net.Listener // reply address -> its listener
 	heldWatches   map[string]*heldWatch     // transcript -> how far it was read
+	heldPaths     map[string]heldPath       // native id -> transcript path and the cwd it was found for
+	heldGlobAt    map[string]time.Time      // native id -> when a missing file was last searched for
 	heldScanning  bool                      // one background transcript scan at a time
 	ctx           context.Context           // from Start; reply listeners run under it
 	lastSweep     time.Time                 // when sweepReplies last ran
@@ -515,6 +517,25 @@ func (a *Adapter) prepareFrame(target protocol.SessionInfo, m protocol.Message) 
 	if err != nil {
 		forget()
 		return nil, nil, err
+	}
+	// Describe the one frame Claude Code sees, so a hold notice or a release
+	// can be tied to it. A batch carrier gets its own row; a hold anywhere
+	// else in the batch must not mark one original alone.
+	var built frame
+	if err := json.Unmarshal(line, &built); err == nil {
+		rec := daemon.ClaudeDelivery{
+			MessageID: m.ID, Recipient: target.SessionID, Sender: m.From, ConversationID: m.ConversationID,
+			Type: m.Type, DeliveredAt: time.Now(), ExpiresAt: m.ExpiresAt,
+			Frame: m.ID, ReplySock: replySock, Preview: framePreview(m.Body),
+			BodyLines: frameBodyLines(m.Body), BodyChars: frameBodyChars(m.Body),
+			FrameHash: frameHash(built.Message.Content),
+		}
+		if len(m.Batch) > 0 {
+			rec.Type = "batch"
+		}
+		if err := book.SaveFrame(rec); err != nil {
+			a.host.Logf("claude: cannot record frame %s for hold matching: %v", m.ID, err)
+		}
 	}
 	return line, forget, nil
 }

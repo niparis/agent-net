@@ -1,6 +1,6 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk │ 5 online · 1 busy
 [ Agents ]    Workers      System
-you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
+you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! held or blocked
 ╭─Threads─────────────────────────────────────────────p: all · t: all / search─╮
 │   ✓ peer24 ↔ strategies                                         24m · 3 msgs │
 │     stored conversation 24                                                   │

@@ -1328,22 +1328,42 @@ set `crossSessionInbound` to `accept` there. It logs
 held state and the detail. A held message is not chased by the owed-reply
 reminders.
 
-If the owner approves the message, Claude Code writes it as a user turn. The
-daemon sees that turn, logs `session.delivery_released msg=<id>`, and reports
-the message as `delivered` with detail `released in Claude Code`.
+The notice names the sender's reply socket and the first line of the body. The
+daemon ties it to the one frame with that socket and first line, written just
+before the notice; the notice's line and character counts tell two frames with
+the same first line apart. When no frame, or more than one, could be the one it
+describes, the daemon logs the notice and marks nothing rather than guess.
+Each notice is applied once, keyed by the notice's own id, so a daemon restart
+that reads the transcript again marks nothing new.
+
+Claude Code writes no entry when it drops a held message, so the detail says
+the message may have expired there; agent-net does not claim it still waits.
+
+If the owner approves the message, Claude Code writes the frame back as a user
+turn. The daemon matches the frame's own content and reply socket, logs
+`session.delivery_released msg=<id>`, and reports the message as `delivered`
+with detail `released in Claude Code`. A message ID in the body or in
+agent-net's cited notes never ties a release, and a repeated delivered report
+does not undo a hold: only the release does.
+
+A batch is one frame for several messages. The hold and the release name the
+carrier frame, and the gateway holds or releases the carrier and every original
+in its batch together. The batch body names its originals; that text is not
+what ties the frame.
 
 The daemon does not fake a matching permission mode, set
 `crossSessionInbound`, or send a held message again. Those are the owner's
-choices. A batch carrier names no original message ID, so releasing it releases
-every held message from that sender in that conversation.
+choices.
 
 At daemon start and when a Claude session starts, the daemon also compares the
 live `crossSessionInbound` value with the answer recorded in
 `~/.config/agent-net/claude-peer-messages.json`. A difference is logged as
 `claude peer messages: ...` and reported once a day in the CTO intake queue.
-When the settings file is a link or read-only, the line names the declaration
-to put in the file that manages it, for example a Nix or Home Manager dotfile.
-The check writes nothing.
+The report names the final file behind a link. A link to a writable file, for
+example one in your own dotfiles repository, is named as the file to edit and
+needs no rebuild. A read-only file, or a link to one, is named with the
+declaration to put in the file that manages it, for example a Nix or Home
+Manager dotfile, and a rebuild. The check writes nothing.
 An in-memory queue waiting for a later turn remains `dispatched`; its record is
 cleared because nothing reached the harness. It can be pushed again after a
 restart. OpenCode queued worker turns become delivered only after the plugin ack.

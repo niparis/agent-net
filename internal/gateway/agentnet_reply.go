@@ -85,8 +85,8 @@ func (s *Store) agentNetReply(tx *sql.Tx, p protocol.MsgSend) (protocol.Message,
 	if p.Ack {
 		state = protocol.StateAcknowledged
 	}
-	if _, err := tx.Exec(`UPDATE messages SET state = ? WHERE id = ? AND state IN (?,?,?)`,
-		state, parent.ID, protocol.StateStored, protocol.StateDispatched, protocol.StateDelivered); err != nil {
+	if _, err := tx.Exec(`UPDATE messages SET state = ? WHERE id = ? AND state IN (?,?,?,?)`,
+		state, parent.ID, protocol.StateStored, protocol.StateDispatched, protocol.StateDelivered, protocol.StateHeldBySession); err != nil {
 		return none, false, err
 	}
 	if status == "open" {

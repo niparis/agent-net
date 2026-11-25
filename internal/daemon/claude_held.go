@@ -24,24 +24,29 @@ func (d *Daemon) claudeHeldDetail() string {
 		action += fmt.Sprintf(", or set \"crossSessionInbound\": \"accept\" in %s", path)
 	}
 	return "held by Claude Code: " + action + ". The sender's permission mode class does not match this session's. " +
-		"agent-net did not send it again."
+		"agent-net did not send it again. Claude Code writes no notice when it drops a held message, so this one may have expired there; " +
+		"agent-net cannot see whether it still waits."
 }
 
-// ClaudeHeld records a hold that the session's transcript names.
-func (d *Daemon) ClaudeHeld(ctx context.Context, recipient, sender, conversation string, at time.Time) {
-	r, ok, err := d.st.markClaudeHeld(recipient, sender, conversation, at)
+// ClaudeHeld records one hold notice that the session's transcript names. It
+// marks the one delivery the notice describes; when that is not certain, it
+// logs the notice and marks nothing.
+func (d *Daemon) ClaudeHeld(ctx context.Context, recipient string, e ClaudeHeldEntry) {
+	r, ok, handled, err := d.st.markClaudeHeld(recipient, e)
 	if err != nil {
-		d.Logf("claude: cannot record the held message from %s in %s: %v", sender, conversation, err)
+		d.Logf("claude: cannot record the held message in %s: %v", recipient, err)
+		return
+	}
+	if handled {
+		// A restart reads the transcript again; this notice was applied.
 		return
 	}
 	if !ok {
-		// The delivery record may be gone (old message, or a daemon restart
-		// after the record was pruned). The hold is still worth a log line.
-		d.Logf("claude: a held message from %s in %s has no unheld delivery record", sender, conversation)
+		d.Logf("claude: a hold notice in %s for %q from %s matches no single unheld delivery; not marking any message", recipient, e.Preview, e.ReplySock)
 		return
 	}
 	detail := d.claudeHeldDetail()
-	d.Logf("session.delivery_held msg=%s sender=%s recipient=%s detail=%q", r.MessageID, sender, recipient, detail)
+	d.Logf("session.delivery_held msg=%s sender=%s recipient=%s detail=%q", r.MessageID, r.Sender, recipient, detail)
 	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if _, err := d.call(callCtx, "delivery.held", protocol.DeliveryUpdate{
@@ -50,16 +55,27 @@ func (d *Daemon) ClaudeHeld(ctx context.Context, recipient, sender, conversation
 	}
 }
 
-// ClaudeHeldReleased records that the session released a held message. The
-// gateway moves it from held_by_session back to delivered.
-func (d *Daemon) ClaudeHeldReleased(ctx context.Context, recipient, messageID, sender, conversation string) {
-	ids, err := d.st.releaseClaudeHeld(recipient, messageID, sender, conversation, time.Now())
+// ClaudeHeldReleased records that the session released the frame with this
+// reply socket and content hash. The gateway moves it from held_by_session to
+// delivered. A message ID never ties a release: the body and agent-net's cited
+// notes can name other messages.
+func (d *Daemon) ClaudeHeldReleased(ctx context.Context, recipient, replySock, frameHash string, at time.Time) {
+	ids, err := d.st.releaseClaudeHeld(recipient, replySock, frameHash, at)
 	if err != nil {
-		d.Logf("claude: cannot record a released message from %s: %v", sender, err)
+		d.Logf("claude: cannot record a released message in %s: %v", recipient, err)
 		return
 	}
 	for _, id := range ids {
+		callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		_, err := d.call(callCtx, "delivery.released", protocol.DeliveryUpdate{
+			MessageID: id, State: protocol.StateDelivered, Detail: "released in Claude Code"})
+		cancel()
+		if err != nil {
+			// The gateway keeps it held. The transcript entry is applied once,
+			// so a release that cannot reach the gateway stays held there.
+			d.Logf("delivery.released %s: %v", id, err)
+			continue
+		}
 		d.Logf("session.delivery_released msg=%s", id)
-		d.sendUpdate(ctx, id, protocol.StateDelivered, "released in Claude Code")
 	}
 }

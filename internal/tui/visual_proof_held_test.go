@@ -17,8 +17,9 @@ import (
 // says held, and the body gives the action: approve it in that session, or
 // accept peer messages there.
 func TestVisualProofHeldClaudeMessage(t *testing.T) {
-	detail := "held by Claude Code: the sender's permission mode class does not match this session's. " +
-		"In that Claude Code session, review and approve the held message, or set \"crossSessionInbound\": \"accept\" in /home/owner/.claude/settings.json. agent-net did not send it again."
+	detail := "held by Claude Code: in that Claude Code session, review and approve the held message, or set \"crossSessionInbound\": \"accept\" in /home/owner/.claude/settings.json. " +
+		"The sender's permission mode class does not match this session's. agent-net did not send it again. " +
+		"Claude Code writes no notice when it drops a held message, so this one may have expired there; agent-net cannot see whether it still waits."
 	events := []protocol.FeedEvent{ev(1, -2*time.Minute, "msg.held_by_session", "m_held", "s_0000000000000002", "s_0000000000000001", "request", func(e *protocol.FeedEvent) {
 		e.Detail = detail
 	})}
@@ -38,12 +39,12 @@ func TestVisualProofHeldClaudeMessage(t *testing.T) {
 		list := ansi.Strip(m.testView())
 		// The threads pane is narrow at 120, so the row uses the state mark
 		// and the legend explains it.
-		if !strings.Contains(list, "! strategies") || !strings.Contains(list, "! held") {
+		if !strings.Contains(list, "! strategies") || !strings.Contains(list, "! held or blocked") {
 			t.Fatalf("%dx%d: the held mark is missing from the list:\n%s", size[0], size[1], list)
 		}
 		m.open = &openMsg{id: "m_held", loading: true}
 		body := ansi.Strip(strings.Join(m.messageView(size[0], 12), "\n"))
-		for _, want := range []string{"held_by_session", "approve the held message", "crossSessionInbound"} {
+		for _, want := range []string{"held_by_session", "review and approve the", "crossSessionInbound"} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("%dx%d: %q missing from the body:\n%s", size[0], size[1], want, body)
 			}

@@ -38,16 +38,40 @@ func TestCompareNamesTheLineForALinkedReadOnlyFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := Compare(State{SetByAgentNet: true}, link)
-	for _, want := range []string{"has no \"crossSessionInbound\"", "link to a read-only file", `"crossSessionInbound": "accept"`} {
+	for _, want := range []string{"has no \"crossSessionInbound\"", "link to the read-only file " + target, target,
+		"Nix or Home Manager", "rebuild", `"crossSessionInbound": "accept"`} {
 		if !strings.Contains(r.Problem, want) {
 			t.Fatalf("report %q missing %q", r.Problem, want)
 		}
 	}
-	if !r.Linked || !r.ReadOnly {
-		t.Fatalf("file kind = linked %v read-only %v", r.Linked, r.ReadOnly)
+	if !r.Linked || !r.ReadOnly || r.Final != target {
+		t.Fatalf("file kind = linked %v read-only %v final %q", r.Linked, r.ReadOnly, r.Final)
 	}
 	if b, _ := os.ReadFile(target); strings.Contains(string(b), "crossSessionInbound") {
 		t.Fatal("the check wrote the settings file")
+	}
+}
+
+// A link to a writable file is not managed by a package manager: the report
+// names the file to edit, and does not ask for a rebuild.
+func TestCompareSendsAWritableLinkToItsFile(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "dotfiles", "settings.json")
+	writeFile(t, target, `{"model": "opus"}`, 0o644)
+	link := filepath.Join(dir, "settings.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	r := Compare(State{SetByAgentNet: true}, link)
+	for _, want := range []string{"link to " + target, "writable", "Edit that file", `"crossSessionInbound": "accept"`} {
+		if !strings.Contains(r.Problem, want) {
+			t.Fatalf("report %q missing %q", r.Problem, want)
+		}
+	}
+	for _, unwanted := range []string{"Nix", "Home Manager", "rebuild", "read-only"} {
+		if strings.Contains(r.Problem, unwanted) {
+			t.Fatalf("a writable link is called %q: %s", unwanted, r.Problem)
+		}
 	}
 }
 
@@ -61,6 +85,21 @@ func TestCompareReportsAHoldValue(t *testing.T) {
 		if !strings.Contains(r.Problem, want) {
 			t.Fatalf("report %q missing %q", r.Problem, want)
 		}
+	}
+}
+
+// A plain read-only file names the line to declare, not a link.
+func TestCompareCallsAPlainReadOnlyFileReadOnly(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	writeFile(t, path, `{"model": "opus"}`, 0o444)
+	r := Compare(State{SetByAgentNet: true}, path)
+	for _, want := range []string{"read-only", "Declare this line", "rebuild"} {
+		if !strings.Contains(r.Problem, want) {
+			t.Fatalf("report %q missing %q", r.Problem, want)
+		}
+	}
+	if strings.Contains(r.Problem, "link") {
+		t.Fatalf("a plain file is called a link: %s", r.Problem)
 	}
 }
 
