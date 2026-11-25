@@ -28,6 +28,17 @@ const orgTreeBuiltKey = "org_tree_built"
 // a cycle are skipped. A stored reports_to edge (an explicit move) replaces
 // the computed parent when its target is valid.
 func agentParentsQ(q leadDB) (map[string]string, error) {
+	return agentParents(q, true)
+}
+
+// agentCommandParentsQ computes the same tree without the line from a solo Repo
+// lead to the CTO. That line is a reporting line only (decision 0184): it grants
+// no order right, so it is not a chain of command for message routing.
+func agentCommandParentsQ(q leadDB) (map[string]string, error) {
+	return agentParents(q, false)
+}
+
+func agentParents(q leadDB, soloRepoLeadReportsToCTO bool) (map[string]string, error) {
 	type agentRow struct {
 		id, role, teamID string
 	}
@@ -101,7 +112,7 @@ func agentParentsQ(q leadDB) (map[string]string, error) {
 		if teamID == "" {
 			// An archived Repo places nobody: its former lead keeps whatever
 			// other place it has.
-			if archived == 0 {
+			if archived == 0 && soloRepoLeadReportsToCTO {
 				leadsSoloRepo[lead] = true
 			}
 			continue
@@ -269,6 +280,32 @@ func agentParentsQ(q leadDB) (map[string]string, error) {
 	return parents, nil
 }
 
+// fillReportsTo gives each row the parent the org tree computes for its Agent.
+// The one-row read and the list both use it, so a row says the same either way.
+// The tree is computed only when a row has an Agent.
+func fillReportsTo(q leadDB, rows []protocol.AgentView) error {
+	need := false
+	for i := range rows {
+		if rows[i].AgentID != "" {
+			need = true
+			break
+		}
+	}
+	if !need {
+		return nil
+	}
+	parents, err := agentParentsQ(q)
+	if err != nil {
+		return err
+	}
+	for i := range rows {
+		if rows[i].AgentID != "" {
+			rows[i].ReportsTo = parents[rows[i].AgentID]
+		}
+	}
+	return nil
+}
+
 // checkReportsToTarget holds the endpoint rules of a move: the source is a
 // live Agent, the target is a live Agent that is not a merger, or the root,
 // and the move makes no cycle with other explicit moves.
@@ -348,13 +385,16 @@ func moveReportsToTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error
 	return graphRecord(tx, "edge", e.From, e.Kind, string(before), string(after), actor, now)
 }
 
-// agentAboveTx says whether one Agent is above another in the org tree: its
-// parent, or a parent of its parent, and so on. An Agent is not above itself.
+// agentAboveTx says whether one Agent is above another in the tree of command:
+// its parent, or a parent of its parent, and so on. An Agent is not above
+// itself. The line from a solo Repo lead to the CTO is a reporting line only,
+// so it is left out here: that line gives the CTO no order right, and a session
+// of the CTO's Agent is not the sender's chain of command through it.
 func agentAboveTx(tx *sql.Tx, above, agent string) (bool, error) {
 	if above == "" || agent == "" {
 		return false, nil
 	}
-	parents, err := agentParentsQ(tx)
+	parents, err := agentCommandParentsQ(tx)
 	if err != nil {
 		return false, err
 	}

@@ -201,3 +201,44 @@ func TestSoloRepoLeadRoutingAndOrderRightsAreUnchanged(t *testing.T) {
 		t.Fatalf("an outsider's message went to %s (%q), want the repo lead %s", m.To, route, lead)
 	}
 }
+
+// A second session of the CTO's Agent is not the CTO session. The reporting
+// line from a solo Repo lead to the CTO gives no command right, so this
+// sender's request to a member of the solo Repo still goes to that Repo's
+// lead, as it did before the line existed.
+func TestCTOAgentsOtherSessionRoutesToTheSoloRepoLead(t *testing.T) {
+	s := teamStore(t)
+	var lead, node string
+	if err := s.db.QueryRow(`SELECT id,node_id FROM sessions WHERE repo_id='demo'`).Scan(&lead, &node); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddArchitect("helper", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	helper, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "helper", Repo: protocol.RepoInfo{Project: "demo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`UPDATE sessions SET agent_id='helper',name='Helper' WHERE id=?`, helper); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.RegisterCTOSession(node); err != nil {
+		t.Fatal(err)
+	}
+	// A second session runs as the CTO's Agent, in another Repo. It is not
+	// the CTO session, so the routing rules apply to it.
+	other, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "cto-other", Repo: protocol.RepoInfo{Project: "other"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`UPDATE sessions SET agent_id='cto',name='CTO helper' WHERE id=?`, other); err != nil {
+		t.Fatal(err)
+	}
+	m, _, route, err := s.StoreLeadMessage(protocol.MsgSend{Sender: other, Recipient: helper, Body: "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.To != lead || !strings.Contains(route, "Redirected") {
+		t.Fatalf("the CTO Agent's other session went to %s (%q), want the repo lead %s", m.To, route, lead)
+	}
+}

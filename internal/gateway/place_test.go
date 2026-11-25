@@ -162,7 +162,7 @@ func TestPlaceTextRepoLead(t *testing.T) {
 	got, err := s.placeText(lead)
 	want := "[agent-net] Your place, from agent-net:\n" +
 		"You lead repo demo (mode: charter first). Members: helper.\n" +
-		"You report to the owner.\n" +
+		"You report to the CTO.\n" +
 		"Requests from outside demo to a member come to you. Answer each one, or hand it off with agent_message_handoff so the member answers the original sender directly."
 	if err != nil || got != want {
 		t.Fatalf("repo lead place:\n%s\nwant:\n%s\n%v", got, want, err)
