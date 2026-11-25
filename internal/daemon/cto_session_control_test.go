@@ -297,7 +297,7 @@ func TestOwnerStopsResumesAndRestartsTheCTO(t *testing.T) {
 	conversation := func() string {
 		n.d.cto.mu.Lock()
 		defer n.d.cto.mu.Unlock()
-		return n.d.claudeCTO.session
+		return n.d.claudeCTO.sessionID()
 	}
 	first := conversation()
 	if id == "" || first == "" || !n.d.ctoRunning() {

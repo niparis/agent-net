@@ -387,7 +387,7 @@ func (d *Daemon) ctoEnterOnce(ctx context.Context, trigger string) (protocol.Ent
 		d.cto.mu.Lock()
 		defer d.cto.mu.Unlock()
 		oldID := id
-		id = d.claudeCTO.session
+		id = d.claudeCTO.sessionID()
 		if e = d.setCTOConversation("claude", id); e != nil {
 			return plan, e
 		}

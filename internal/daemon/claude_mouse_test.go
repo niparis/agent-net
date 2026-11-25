@@ -121,7 +121,7 @@ func TestClaudeMouseDriftReportsLiveSessionsOnceADay(t *testing.T) {
 		// The CTO keeps its own launch settings, so it is never reported.
 		key("claude", "cto"): {info: protocol.SessionInfo{Harness: "claude", NativeID: "cto", Name: "agent-net-cto", PID: os.Getpid()}},
 	}
-	d.claudeCTO.session = "cto"
+	d.claudeCTO.setSession("cto")
 	d.checkClaudeMouseSessions(context.Background(), time.Now())
 	if len(lines) != 2 {
 		t.Fatalf("reports = %v", lines)

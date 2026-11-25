@@ -36,9 +36,7 @@ func (d *Daemon) isClaudeCTONative(native string) bool {
 	if native == "" {
 		return false
 	}
-	d.cto.mu.Lock()
-	defer d.cto.mu.Unlock()
-	return d.claudeCTO.session == native
+	return d.claudeCTO.sessionID() == native
 }
 
 // verifyCTOOwnerWords returns the quote when the owner typed it in the CTO

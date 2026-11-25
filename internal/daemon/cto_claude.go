@@ -31,16 +31,26 @@ import (
 // flight, which a start from the owner and one from a proposal note both use.
 // No probe runs while capMu is held.
 type claudeCTOState struct {
-	root                atomic.Pointer[claudeCTORoot]
-	starting            atomic.Bool
-	capMu               sync.Mutex
-	token               string
-	ref, session, model string
-	capabilities        map[string]claudeCTOCapability
+	root         atomic.Pointer[claudeCTORoot]
+	starting     atomic.Bool
+	capMu        sync.Mutex
+	token        string
+	ref, model   string
+	session      atomic.Pointer[string]
+	capabilities map[string]claudeCTOCapability
 	// capProbing has one entry per binary whose probe is running. The callers
 	// that arrive meanwhile wait for it, so a binary is probed once at a time.
 	capProbing map[string]chan struct{}
 	restarted  bool
+}
+
+func (c *claudeCTOState) setSession(id string) { c.session.Store(&id) }
+
+func (c *claudeCTOState) sessionID() string {
+	if id := c.session.Load(); id != nil {
+		return *id
+	}
+	return ""
 }
 
 type claudeCTOCapability struct {
@@ -73,7 +83,8 @@ func (d *Daemon) IsClaudeCTOJob(job string) bool {
 func (d *Daemon) releaseClaudeCTOLocked() {
 	c := &d.claudeCTO
 	c.root.Store(nil)
-	c.ref, c.session, c.model, c.token = "", "", "", ""
+	c.ref, c.model, c.token = "", "", ""
+	c.setSession("")
 }
 
 func (d *Daemon) stopClaudeCTOLocked(reasons ...string) {
@@ -104,7 +115,8 @@ func (d *Daemon) stopClaudeCTOLocked(reasons ...string) {
 		}
 	}
 	c.root.Store(nil)
-	c.ref, c.session, c.model, c.token = "", "", "", ""
+	c.ref, c.model, c.token = "", "", ""
+	c.setSession("")
 	if wasRunning {
 		if reason == "crash" {
 			d.Logf("cto.crash harness=claude reason=job_ended state=%q detail=%q", crashState, crashDetail)
@@ -414,7 +426,7 @@ func (d *Daemon) claudeCTOSend(ctx context.Context, text, label string) (any, er
 // now, which a resume can change from oldID, and moves the recorded actions to
 // it. The caller holds cto.mu.
 func (d *Daemon) saveClaudeCTOSessionLocked(oldID string) (string, error) {
-	id := d.claudeCTO.session
+	id := d.claudeCTO.sessionID()
 	if err := d.setCTOConversation("claude", id); err != nil {
 		return id, err
 	}
@@ -446,7 +458,7 @@ func (claudeCTOHarness) newConversation(ctx context.Context, d *Daemon) (any, er
 	c := &d.claudeCTO
 	for attempt := 1; ; attempt++ {
 		d.cto.mu.Lock()
-		session, model, ref, root := c.session, c.model, c.ref, c.root.Load()
+		session, model, ref, root := c.sessionID(), c.model, c.ref, c.root.Load()
 		d.cto.mu.Unlock()
 
 		data, err := d.call(ctx, "cto.graph_latest", nil)
@@ -461,7 +473,7 @@ func (claudeCTOHarness) newConversation(ctx context.Context, d *Daemon) (any, er
 		}
 
 		d.cto.mu.Lock()
-		if c.session != session || c.model != model || c.ref != ref || c.root.Load() != root {
+		if c.sessionID() != session || c.model != model || c.ref != ref || c.root.Load() != root {
 			d.cto.mu.Unlock()
 			if attempt == 1 {
 				continue
@@ -745,7 +757,8 @@ func (d *Daemon) bindClaudeCTO(sf claudeSessionFile, model, id, mode string) boo
 		d.cto.mu.Unlock()
 		return true
 	}
-	d.claudeCTO.ref, d.claudeCTO.session, d.claudeCTO.model, d.claudeCTO.token = sf.JobID, sf.SessionID, model, token
+	d.claudeCTO.ref, d.claudeCTO.model, d.claudeCTO.token = sf.JobID, model, token
+	d.claudeCTO.setSession(sf.SessionID)
 	d.claudeCTO.root.Store(&claudeCTORoot{pid: sf.PID, token: token})
 	d.cto.mu.Unlock()
 	d.Logf("cto.start harness=claude mode=%s", mode)

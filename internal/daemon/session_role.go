@@ -155,7 +155,7 @@ func (d *Daemon) startClaudeRoleOnce(ctx context.Context, role sessionRole, id, 
 			tok, alive = procToken(root.pid)
 		}
 		status, _ := claudeCTOJobState(d.cfg.ClaudeSessionsDir, c.ref)
-		if first == "" && ok && !claudeJobEnded(status) && root != nil && alive && tok == c.token && sf.PID == root.pid && c.session == id && c.model == model {
+		if first == "" && ok && !claudeJobEnded(status) && root != nil && alive && tok == c.token && sf.PID == root.pid && c.sessionID() == id && c.model == model {
 			d.cto.mu.Unlock()
 			return nil
 		}

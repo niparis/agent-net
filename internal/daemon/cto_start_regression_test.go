@@ -260,7 +260,8 @@ func TestReleasingTheClaudeCTOLeavesItsJobRunning(t *testing.T) {
 	}
 	d := &Daemon{}
 	d.claudeCTO.root.Store(&claudeCTORoot{pid: cmd.Process.Pid, token: token})
-	d.claudeCTO.ref, d.claudeCTO.session = "job-1", "s-1"
+	d.claudeCTO.ref = "job-1"
+	d.claudeCTO.setSession("s-1")
 	d.releaseClaudeCTOLocked()
 	if _, alive := procToken(cmd.Process.Pid); !alive {
 		t.Fatal("releasing the CTO ended its Claude job")

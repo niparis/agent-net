@@ -112,9 +112,7 @@ func (d *Daemon) claudeNativeOf(session string) string {
 		return ""
 	}
 	if session == d.ctoSessionID() {
-		d.cto.mu.Lock()
-		defer d.cto.mu.Unlock()
-		return d.claudeCTO.session
+		return d.claudeCTO.sessionID()
 	}
 	if ls := d.sessionByID(session); ls != nil {
 		if info := d.infoOf(ls); info.Harness == "claude" {

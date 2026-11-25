@@ -42,7 +42,7 @@ func TestCTOOwnerPromptsAreKeptFromTheClaudeHook(t *testing.T) {
 		t.Fatal(err)
 	}
 	n.d.cto.mu.Lock()
-	n.d.claudeCTO.session = "cto-native"
+	n.d.claudeCTO.setSession("cto-native")
 	n.d.cto.mu.Unlock()
 	transcript := writeClaudeTranscript(t, t.TempDir(), "cto-native",
 		claudeUserEntry("p-cto", "yes, trust the garden folder", typedOrigin))
@@ -274,5 +274,91 @@ func TestCTOBriefTellsToQuoteOwnerWords(t *testing.T) {
 		if !strings.Contains(text, "quote his") || !strings.Contains(text, "owner_words") || !strings.Contains(text, "Never file a Desk proposal for something he asked") {
 			t.Errorf("text lacks the quote rule or the Desk rule: %s", text)
 		}
+	}
+}
+
+func TestClaudeCTONativeDoesNotWaitForCTOMutex(t *testing.T) {
+	d := &Daemon{}
+	d.claudeCTO.setSession("cto")
+	d.cto.mu.Lock()
+	done := make(chan bool, 1)
+	go func() { done <- !d.isClaudeCTONative("ordinary") && d.isClaudeCTONative("cto") }()
+	select {
+	case got := <-done:
+		if !got {
+			t.Error("session lookup returned wrong result")
+		}
+	case <-time.After(time.Second):
+		d.cto.mu.Unlock()
+		<-done
+		t.Fatal("native lookup waited for CTO mutex")
+	}
+	d.cto.mu.Unlock()
+}
+
+func TestClaudeCTONativeSwitch(t *testing.T) {
+	d := &Daemon{}
+	d.claudeCTO.setSession("first")
+	if !d.isClaudeCTONative("first") || d.isClaudeCTONative("second") {
+		t.Fatal("first session not selected")
+	}
+	d.claudeCTO.setSession("second")
+	if d.isClaudeCTONative("first") || !d.isClaudeCTONative("second") {
+		t.Fatal("switch not reflected")
+	}
+	d.claudeCTO.setSession("")
+	if d.isClaudeCTONative("second") || d.isClaudeCTONative("") {
+		t.Fatal("stopped session matched")
+	}
+}
+
+func TestClaudePromptHookDoesNotWaitForCTOMutex(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	cli := cliClient(t, n)
+	if err := n.d.registerCTOSession(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	n.d.claudeCTO.setSession("cto-native")
+	transcript := writeClaudeTranscript(t, t.TempDir(), "cto-native", claudeUserEntry("p-cto", "hello", typedOrigin))
+	n.d.cto.mu.Lock()
+	done := make(chan error, 1)
+	go func() {
+		_, err := cli.call(protocol.MethodPolicy, protocol.PolicyRequest{Harness: "claude", NativeID: "ordinary", Prompt: "hello"})
+		if err == nil {
+			_, err = cli.call(protocol.MethodPolicy, protocol.PolicyRequest{Harness: "claude", NativeID: "cto-native", Prompt: "hello", PromptID: "p-cto", TranscriptPath: transcript})
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		n.d.cto.mu.Unlock()
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		n.d.cto.mu.Unlock()
+		<-done
+		t.Fatal("prompt hook waited for CTO mutex")
+	}
+}
+
+func TestClaudePromptHookAfterSwitch(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	cli := cliClient(t, n)
+	if err := n.d.registerCTOSession(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	n.d.claudeCTO.setSession("first")
+	n.d.claudeCTO.setSession("second")
+	for _, native := range []string{"first", "second"} {
+		word := "word-" + native
+		transcript := writeClaudeTranscript(t, t.TempDir(), native, claudeUserEntry("p-"+native, word, typedOrigin))
+		cli.mustCall(protocol.MethodPolicy, protocol.PolicyRequest{Harness: "claude", NativeID: native, Prompt: word, PromptID: "p-" + native, TranscriptPath: transcript})
+	}
+	sid := n.d.ctoSessionID()
+	if n.d.ownerWordsMatch(sid, "word-first") || !n.d.ownerWordsMatch(sid, "word-second") {
+		t.Fatal("hook did not follow the switch")
 	}
 }
