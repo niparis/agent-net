@@ -99,19 +99,14 @@ func (c *agyConn) publishHandback(req protocol.WorkerHandbackRequest) {
 		ctx := d.streamCtx()
 		// Adoption replays results before Start launches the gateway link.
 		// File notices need that link and cannot use the offline outbox.
-		tick := time.NewTicker(100 * time.Millisecond)
-		defer tick.Stop()
-		for !d.Connected() {
-			select {
-			case <-ctx.Done():
-				return // leave the saved pending report for the next adoption
-			case <-tick.C:
-			}
+		// A link that drops after this wait is waited for in handbackFlow.
+		if !d.waitForLink(ctx) {
+			return // leave the saved pending report for the next adoption
 		}
 		if out, err := d.handbackToNoteWithFiles(ctx, w, req, "", "", "", true, files); err != nil {
 			d.Logf("worker %s: Antigravity handback: %v", w.id, err)
 			if ctx.Err() != nil || errors.Is(err, errHandbackDeferred) {
-				return // the next adoption or connect publishes the saved report
+				return // the next adoption publishes the saved report
 			}
 			c.refused(ctx, req, key, err)
 		} else {

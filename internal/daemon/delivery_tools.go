@@ -508,8 +508,9 @@ func (d *Daemon) deliveredBranch(ctx context.Context, w *worker) string {
 }
 
 // branchUncommitted reports whether the worktree that has branch checked out
-// has changes that are not committed, untracked files included. A branch that
-// no worktree has checked out has none.
+// has changes that are not committed, untracked files included. Files a
+// harness made for itself do not count (notWorkerWork). A branch that no
+// worktree has checked out has none.
 func branchUncommitted(ctx context.Context, dir, branch string) (bool, error) {
 	list, err := gitOut(ctx, dir, "worktree", "list", "--porcelain")
 	if err != nil {
@@ -520,11 +521,7 @@ func branchUncommitted(ctx context.Context, dir, branch string) (bool, error) {
 		if p, ok := strings.CutPrefix(line, "worktree "); ok {
 			path = p
 		} else if line == "branch refs/heads/"+branch && path != "" {
-			status, err := gitOut(ctx, path, "status", "--porcelain")
-			if err != nil {
-				return false, err
-			}
-			return status != "", nil
+			return hasWorkLeftovers(ctx, path)
 		}
 	}
 	return false, nil
@@ -886,15 +883,24 @@ func handbackDiffBase(ctx context.Context, dir, start, head string) string {
 // notice's "delivery record:" line. A gateway that does not know change.submit
 // gives neither.
 func (d *Daemon) recordHandbackChange(ctx context.Context, w *worker, check *protocol.HandbackCheck, visual ...protocol.VisualEvidence) (changeID, problem string) {
-	changeID, problem, _ = d.submitHandbackChange(ctx, w, check, visual...)
-	return changeID, problem
+	rec := d.submitHandbackChange(ctx, w, check, "", visual...)
+	return rec.changeID, rec.problem
+}
+
+// handbackRecord is what submitHandbackChange did.
+type handbackRecord struct {
+	changeID, problem string
+	// offline is true when the gateway link was down.
+	offline bool
+	// pick is the branch and head the change records.
+	pick handbackHead
 }
 
 // submitHandbackChange is recordHandbackChange that also says whether the
 // submit failed only because this daemon had no gateway link. A saved
 // hand-back then waits for the next connect instead of sending its notice
 // without the change.
-func (d *Daemon) submitHandbackChange(ctx context.Context, w *worker, check *protocol.HandbackCheck, visual ...protocol.VisualEvidence) (changeID, problem string, offline bool) {
+func (d *Daemon) submitHandbackChange(ctx context.Context, w *worker, check *protocol.HandbackCheck, report string, visual ...protocol.VisualEvidence) (rec handbackRecord) {
 	d.wmu.Lock()
 	dir, branch, base, owner, sid := w.worktree, w.branch, w.base, w.owner, w.sessionID
 	harness, model, title, kept := w.harness, w.model, w.title, w.changeID
@@ -903,7 +909,7 @@ func (d *Daemon) submitHandbackChange(ctx context.Context, w *worker, check *pro
 	struggle := w.runStruggle()
 	d.wmu.Unlock()
 	if dir == "" || branch == "" || owner == "" {
-		return "", "", false
+		return rec
 	}
 	timeout := deliveryRecordTimeout
 	if d.cfg.testDeliveryRecordTimeout > 0 {
@@ -911,19 +917,26 @@ func (d *Daemon) submitHandbackChange(ctx context.Context, w *worker, check *pro
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
 	defer cancel()
-	// The work may be on a branch the worker moved to, not the start branch.
-	branch = handbackBranch(ctx, dir, branch, base)
-	fail := func(err error) (string, string, bool) {
+	// The work may be on a branch the worker moved to, not the start branch,
+	// or on a head the worker pushed or named (pickHandbackHead).
+	pick, err := pickHandbackHead(ctx, dir, branch, base, report)
+	branch, head := pick.branch, pick.head
+	rec.pick = pick
+	fail := func(err error) handbackRecord {
 		d.Logf("worker.delivery_record worker=%s session=%s branch=%s error=%q", w.id, sid, branch, err.Error())
-		return "", strings.Join(strings.Fields(err.Error()), " "), errors.Is(err, errNotConnected)
+		rec.problem, rec.offline = strings.Join(strings.Fields(err.Error()), " "), errors.Is(err, errNotConnected)
+		return rec
 	}
-	head, err := gitBranchHead(ctx, dir, branch)
 	if err != nil {
 		return fail(err)
 	}
-	uncommitted, err := branchUncommitted(ctx, dir, branch)
-	if err != nil {
-		return fail(err)
+	// A claimed head is the change as the worker handed it back: leftovers in
+	// the worktree went to the leftovers ref, not into it.
+	uncommitted := false
+	if pick.claimed == "" {
+		if uncommitted, err = branchUncommitted(ctx, dir, branch); err != nil {
+			return fail(err)
+		}
 	}
 	// The project's identity, as a session in the worktree has it (the
 	// origin remote), so a submit from the caller names the same project.
@@ -940,7 +953,7 @@ func (d *Daemon) submitHandbackChange(ctx context.Context, w *worker, check *pro
 	// change to accept, and no step task goes to the caller.
 	if base != "" && head == base && !uncommitted {
 		d.Logf("worker.delivery_record worker=%s session=%s branch=%s skipped: no commits beyond the base %s", w.id, sid, branch, base)
-		return "", "", false
+		return handbackRecord{}
 	}
 	var risk int
 	if err := d.st.db.QueryRow(`SELECT risk FROM worker_delivery_risk WHERE worker_id=?`, w.id).Scan(&risk); err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -990,11 +1003,15 @@ func (d *Daemon) submitHandbackChange(ctx context.Context, w *worker, check *pro
 		if uncommitted {
 			pushProblem = handbackUncommittedPushProblem
 		} else {
+			tracked, _ := gitOut(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+branch)
 			pushCtx, stopPush := context.WithTimeout(ctx, timeout/2)
 			_, pushErr := gitOut(pushCtx, dir, "push", "origin", "refs/heads/"+branch+":refs/heads/"+branch)
 			stopPush()
 			if pushErr != nil {
 				pushProblem = "could not push the branch to origin for the remote step owner"
+			} else if tracked != head {
+				// This push is the daemon's, not one the worker made.
+				markDaemonPush(ctx, dir, branch, head)
 			}
 		}
 	}
@@ -1007,21 +1024,23 @@ func (d *Daemon) submitHandbackChange(ctx context.Context, w *worker, check *pro
 		err = d.deliveryCall(ctx, protocol.FrameChangeSubmit, q, &out)
 	}
 	if errors.Is(err, errNoDeliveryGateway) {
-		return "", pushProblem, false
+		rec.problem = pushProblem
+		return rec
 	}
 	if err != nil {
-		_, problem, offline := fail(err)
+		rec = fail(err)
 		if pushProblem != "" {
-			problem = pushProblem + "; " + problem
+			rec.problem = pushProblem + "; " + rec.problem
 		}
-		return "", problem, offline
+		return rec
 	}
 	id := out.Change.Change.ID
 	d.wmu.Lock()
 	w.changeID = id
 	d.wmu.Unlock()
-	d.Logf("worker.delivery_record worker=%s session=%s change=%s revision=%d head=%s", w.id, sid, id, out.Change.Change.Revision, head)
-	return id, pushProblem, false
+	d.Logf("worker.delivery_record worker=%s session=%s change=%s revision=%d head=%s claimed=%s", w.id, sid, id, out.Change.Change.Revision, head, pick.claimed)
+	rec.changeID, rec.problem = id, pushProblem
+	return rec
 }
 
 // withHandbackCheckSignal appends the signal of a failed or timed-out

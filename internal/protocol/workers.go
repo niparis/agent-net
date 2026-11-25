@@ -1328,6 +1328,10 @@ type WorkerNotice struct {
 	// worker's leftover changes at a complete hand-back, empty when it made
 	// none.
 	Committed string
+	// KeptAside is "<short hash> in <ref>" when the daemon kept the worker's
+	// leftover changes off the branch, because the worker pushed or named its
+	// head; empty otherwise.
+	KeptAside string
 	// Continue and Fix are the worker's rework counters: the messages the
 	// caller sent after a hand-back with complete:no and complete:yes.
 	Continue int
@@ -1361,6 +1365,12 @@ type WorkerNotice struct {
 	// DeliveryBranch is the branch the change records when it is not the
 	// start branch (Branch), empty otherwise.
 	DeliveryBranch string
+	// DeliveryHead is the short hash the change records when it is not the
+	// worktree's HEAD (Head), empty otherwise. DeliveryClaim says how the
+	// worker claimed that head: "the head you pushed (origin/x)" or "the head
+	// your report names"; empty when the head is the branch head as usual.
+	DeliveryHead  string
+	DeliveryClaim string
 
 	// HandbackCheck is the project's pre-hand-back check, nil when it did not
 	// run (nothing changed, or the worker had no worktree). A hand-back since
@@ -1446,10 +1456,19 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 		if n.Committed != "" {
 			b.WriteString("the daemon committed your leftover changes as " + n.Committed + "\n")
 		}
+		if n.KeptAside != "" {
+			b.WriteString("the daemon kept your leftover changes as " + n.KeptAside + ", not on the branch; they are still in the worktree\n")
+		}
 		if n.Change != "" {
 			b.WriteString("change: " + n.Change + "\n")
 			if n.DeliveryBranch != "" {
 				b.WriteString("recorded branch: " + n.DeliveryBranch + "\n")
+			}
+			if n.DeliveryHead != "" {
+				b.WriteString("recorded head: " + n.DeliveryHead + "\n")
+			}
+			if n.DeliveryClaim != "" {
+				b.WriteString("the change records " + n.DeliveryClaim + "\n")
 			}
 		}
 		if n.DeliveryError != "" {

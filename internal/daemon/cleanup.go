@@ -604,8 +604,9 @@ func cleanupOnAny(ctx context.Context, project, commit string, refs []string) bo
 // cleanupHoldsWork reports whether a worktree has work that exists nowhere
 // else: a tracked change, or an untracked file the worker-end commit would have
 // saved. Untracked files that commit leaves out on purpose (the empty files the
-// OS sandbox mounts, compiled binaries, files over 5 MB) are build output, and
-// they must not keep a finished worker's folder for ever.
+// OS sandbox mounts, the runtime files a harness keeps in its folder, compiled
+// binaries, files over 5 MB) are not work, and they must not keep a finished
+// worker's folder for ever.
 func cleanupHoldsWork(ctx context.Context, dir string) (bool, error) {
 	tracked, err := gitOut(ctx, dir, "status", "--porcelain=v1", "--untracked-files=no")
 	if err != nil || tracked != "" {
@@ -626,7 +627,7 @@ func cleanupHoldsWork(ctx context.Context, dir string) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		if isUntrackedSandboxPlaceholder(ctx, dir, path, info) {
+		if notWorkerWork(dir, worktreeChange{path: path, untracked: true}) {
 			continue
 		}
 		skipped, err := workerLeftoverSkipped(dir, path, info)

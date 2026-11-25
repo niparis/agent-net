@@ -158,11 +158,6 @@ func (d *Daemon) tellCallerRefused(ctx context.Context, w *worker, r refusedHand
 //
 // Then the record is removed, and the idle period alone marks the turn.
 func (d *Daemon) codexRefused(w *worker, req protocol.WorkerHandbackRequest, final string, err error) {
-	if errors.Is(err, errHandbackDeferred) {
-		// The saved hand-back sends its own notice at the next connect.
-		d.noteCodexIdle(w, final, true)
-		return
-	}
 	d.refusedStep("refused")
 	r := d.saveRefusal(w, req, err, "", false)
 	d.refusedStep("saved")

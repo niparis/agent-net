@@ -1,10 +1,6 @@
 package daemon
 
-import (
-	"context"
-	"os"
-	"strings"
-)
+import "strings"
 
 // sandboxPlaceholderNames are the paths Claude Code's bwrap sandbox masks. When
 // a worker runs in the sandbox, it creates an empty file at each of these
@@ -33,20 +29,6 @@ var sandboxPlaceholderNames = []string{
 	".vscode",
 	".zprofile",
 	".zshrc",
-}
-
-// isUntrackedSandboxPlaceholder tells whether path is an empty file the sandbox
-// left and git does not track. The leftover commit skips these. A tracked or
-// staged file is work, even when it has a placeholder name and is empty.
-func isUntrackedSandboxPlaceholder(ctx context.Context, dir, path string, info os.FileInfo) bool {
-	if !info.Mode().IsRegular() || info.Size() != 0 {
-		return false
-	}
-	if !isSandboxPlaceholderPath(path) {
-		return false
-	}
-	_, err := gitOut(ctx, dir, "ls-files", "--error-unmatch", "--", path)
-	return err != nil
 }
 
 // isSandboxPlaceholderPath tells whether a worktree-relative path has a placeholder

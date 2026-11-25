@@ -271,6 +271,9 @@ type worker struct {
 	// revert in progress, so the daemon did not commit it.
 	leftAsIs          bool
 	excludedLeftovers string
+	// keptAside is "<short hash> in <ref>" when the last hand-back kept the
+	// leftovers off the branch, because the worker claimed its head.
+	keptAside string
 	// changeID is the delivery change of the worker's work: the one its last
 	// complete hand-back recorded, or the one a continue carried over.
 	changeID string
@@ -1217,7 +1220,10 @@ func (d *Daemon) beginWorkerEnd(w *worker, reason string, when func() bool) <-ch
 			if harness == "agy" {
 				result = d.saveAgyWorkerEnd(w, reason)
 			} else {
-				result = d.commitWorkerEndWIP(context.Background(), w.worktree, w.branch, reason)
+				d.wmu.Lock()
+				report := w.handbackReport
+				d.wmu.Unlock()
+				result = d.commitWorkerEndWIP(context.Background(), w, reason, report)
 			}
 			unlock()
 		}

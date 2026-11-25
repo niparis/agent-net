@@ -31,6 +31,7 @@ type pendingHandback struct {
 	Files           *OutgoingFiles                 `json:"files,omitempty"`
 	SessionID       string                         `json:"session_id"`
 	Committed       string                         `json:"committed,omitempty"`
+	KeptAside       string                         `json:"kept_aside,omitempty"`
 	WIPDetail       string                         `json:"wip_detail,omitempty"`
 	FrictionDropped int                            `json:"friction_dropped,omitempty"`
 	Head            string                         `json:"head"`
@@ -49,22 +50,48 @@ var errHandbackDeferred = errors.New("the hand-back is saved; the next connectio
 
 func (t *handbackTail) saved() pendingHandback {
 	return pendingHandback{Req: t.req, To: t.to, ReplyTo: t.replyTo, SandboxNote: t.sandboxNote, End: t.end, Files: t.files,
-		SessionID: t.sessionID, Committed: t.committed, WIPDetail: t.wipDetail, FrictionDropped: t.frictionDropped, Head: t.head, NoticeKey: t.noticeKey,
+		SessionID: t.sessionID, Committed: t.committed, KeptAside: t.keptAside, WIPDetail: t.wipDetail, FrictionDropped: t.frictionDropped, Head: t.head, NoticeKey: t.noticeKey,
 		Check: t.check, Recorded: t.recorded, ChangeID: t.changeID, DeliveryProblem: t.deliveryProblem, Stats: t.stats}
 }
 
 func (p pendingHandback) tail() *handbackTail {
 	return &handbackTail{req: p.Req, to: p.To, replyTo: p.ReplyTo, sandboxNote: p.SandboxNote, end: p.End, files: p.Files,
-		sessionID: p.SessionID, committed: p.Committed, wipDetail: p.WIPDetail, complete: true, frictionDropped: p.FrictionDropped,
+		sessionID: p.SessionID, committed: p.Committed, keptAside: p.KeptAside, wipDetail: p.WIPDetail, complete: true, frictionDropped: p.FrictionDropped,
 		head: p.Head, noticeKey: p.NoticeKey, persisted: true, check: p.Check,
 		recorded: p.Recorded, changeID: p.ChangeID, deliveryProblem: p.DeliveryProblem, stats: p.Stats}
 }
 
-// persistHandback saves a complete hand-back for the next connect. An
-// Antigravity hand-back is left out: its stream state already carries the
-// hand-back across a restart (worker_agy_stream.go).
+// harnessKeepsHandback reports whether the harness's own state carries a
+// hand-back across a daemon restart, so the hand-back needs no saved row:
+// the agy stream state (worker_agy_stream.go), and the Codex thread, whose
+// last turn adoption hands back again while nothing marks it handled
+// (codexRefused). The replay of a saved row ends only workers that hand back
+// with end set, and a Codex worker ends from its own turn loop, so a row
+// would leave it running after its notice. While the link is down these
+// hand-backs wait in handbackFlow instead.
+func harnessKeepsHandback(harness string) bool {
+	return harness == "agy" || harness == "codex"
+}
+
+// waitForLink returns once the gateway link is up, or false when ctx ends
+// first. Adoption runs before Start launches the link.
+func (d *Daemon) waitForLink(ctx context.Context) bool {
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	for !d.Connected() {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-tick.C:
+		}
+	}
+	return true
+}
+
+// persistHandback saves a complete hand-back for the next connect, unless
+// the harness keeps it itself (harnessKeepsHandback).
 func (d *Daemon) persistHandback(w *worker, t *handbackTail, head string) {
-	if w.harness == "agy" {
+	if harnessKeepsHandback(w.harness) {
 		return
 	}
 	t.head, t.noticeKey = head, protocol.NewID("k")
@@ -143,12 +170,19 @@ func (d *Daemon) replayHandbacks() {
 		d.Logf("saved hand-backs: %v", err)
 		return
 	}
-	for id, p := range saved {
+	for id := range saved {
 		if !d.claimHandbackReplay(id) {
 			continue
 		}
 		if !d.goBackground(func() {
 			defer d.releaseHandbackReplay(id)
+			// Read the row again under the claim: a replay that ended
+			// between the read above and the claim has removed it, and
+			// must not be sent twice.
+			p, ok := d.st.pendingHandback(id)
+			if !ok {
+				return
+			}
 			d.replayHandback(id, p)
 		}) {
 			d.releaseHandbackReplay(id)

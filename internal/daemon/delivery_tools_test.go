@@ -47,6 +47,20 @@ func (f *fakeDeliveryGateway) call(_ context.Context, typ string, params any) (j
 	return out, true, err
 }
 
+// newFakeDeliveryGateway answers change.submit with change ch_1 at the head
+// the submit names.
+func newFakeDeliveryGateway() *fakeDeliveryGateway {
+	f := &fakeDeliveryGateway{sent: map[string][]json.RawMessage{}, answers: map[string]func(json.RawMessage) (any, error){}}
+	f.answer(protocol.FrameChangeSubmit, func(raw json.RawMessage) (any, error) {
+		var q protocol.ChangeSubmitRequest
+		_ = json.Unmarshal(raw, &q)
+		c := protocol.Change{ID: "ch_1", Project: q.Project, Branch: q.Branch, HeadCommit: q.HeadCommit, Uncommitted: q.Uncommitted,
+			Revision: 1, Origin: q.Origin, Caller: q.SessionID, Title: q.Title, State: protocol.ChangeOpen, CreatedAt: 1}
+		return protocol.ChangeSubmitResult{Change: deliveryTestView(c)}, nil
+	})
+	return f
+}
+
 func (f *fakeDeliveryGateway) answer(typ string, fn func(raw json.RawMessage) (any, error)) {
 	f.mu.Lock()
 	f.answers[typ] = fn
@@ -155,14 +169,7 @@ func TestDeliveryDirectOwnerReportRoutes(t *testing.T) {
 // from the request.
 func startDeliveryNode(t *testing.T) (*node, *fakeDeliveryGateway) {
 	t.Helper()
-	f := &fakeDeliveryGateway{sent: map[string][]json.RawMessage{}, answers: map[string]func(json.RawMessage) (any, error){}}
-	f.answer(protocol.FrameChangeSubmit, func(raw json.RawMessage) (any, error) {
-		var q protocol.ChangeSubmitRequest
-		_ = json.Unmarshal(raw, &q)
-		c := protocol.Change{ID: "ch_1", Project: q.Project, Branch: q.Branch, HeadCommit: q.HeadCommit, Uncommitted: q.Uncommitted,
-			Revision: 1, Origin: q.Origin, Caller: q.SessionID, Title: q.Title, State: protocol.ChangeOpen, CreatedAt: 1}
-		return protocol.ChangeSubmitResult{Change: deliveryTestView(c)}, nil
-	})
+	f := newFakeDeliveryGateway()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi", cfg: func(c *Config) { c.testGatewayCall = f.call }})
 	return n, f

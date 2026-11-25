@@ -1033,6 +1033,13 @@ func (cc *codexConn) finishTurn(turnStatus, errMsg string) {
 		}
 		req := protocol.WorkerHandbackRequest{Report: report, Status: status, Complete: complete}
 		_, err := cc.d.handbackToNote(context.Background(), cc.w, req, j.from, j.msgID, note, false)
+		if errors.Is(err, errHandbackDeferred) {
+			// The daemon stopped while the hand-back waited for the gateway
+			// link. Nothing marks the turn handled, so the next daemon hands
+			// it back again when it adopts the worker.
+			cc.d.Logf("worker %s: hand-back left for the next daemon: %v", cc.w.id, err)
+			return
+		}
 		if err != nil {
 			cc.d.Logf("worker %s: hand-back: %v", cc.w.id, err)
 			// The next turn is not admitted (cc.running) until the refusal
