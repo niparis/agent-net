@@ -323,6 +323,31 @@ func claudeCTOErrorOutput(output []byte) string {
 	return redact.Cut(redact.Secrets(strings.TrimSpace(strings.Join(lines, " · "))), 500)
 }
 
+// ctoFrameNamePattern keeps a frame attribute to letters, digits, "_", "." and
+// "-", so a value cannot close the frame it is written into.
+var ctoFrameNamePattern = regexp.MustCompile(`[^A-Za-z0-9_.-]`)
+
+// CTOFirstPrompt is the text of one message to the Claude CTO. The owner's
+// frame is used only when label is empty; every other sender gets agent-net's
+// labelled frame. The inbox delivery writes it as a frame, and a restart for
+// delivery gives it as the first prompt, so every copy of a message names the
+// same sender and carries msgID.
+func CTOFirstPrompt(msgID, label, text string) string {
+	id := ctoFrameNamePattern.ReplaceAllString(msgID, "-")
+	if label == "" {
+		return fmt.Sprintf("<cross-session-message from-name=\"owner\" from-mode=\"prompting\" msg-id=\"%s\">\n%s\n\n[agent-net] This is the owner speaking. Please answer in this conversation.\n</cross-session-message>", id, CTOFrameText(text))
+	}
+	return fmt.Sprintf("<cross-session-message from-name=\"agent-net\" from-mode=\"prompting\" msg-id=\"%s\">\n[agent-net: %s]\n\n%s\n</cross-session-message>", id, CTOFrameText(label), CTOFrameText(text))
+}
+
+// CTOFrameText stops text from closing or opening a cross-session frame. The
+// Claude adapter uses it for every frame, so a body cannot fake the wrapper.
+func CTOFrameText(text string) string {
+	text = protocol.NeutralizeMarkers(text)
+	text = strings.ReplaceAll(text, "</cross-session-message", "</​cross-session-message")
+	return strings.ReplaceAll(text, "<cross-session-message", "<​cross-session-message")
+}
+
 func (claudeCTOHarness) send(ctx context.Context, d *Daemon, text string) (any, error) {
 	return d.claudeCTOSend(ctx, text, "")
 }
@@ -371,7 +396,7 @@ func (d *Daemon) claudeCTOSend(ctx context.Context, text, label string) (any, er
 			res = a.DeliverCTOSystem(deadline, protocol.SessionInfo{Harness: "claude", NativeID: id}, msgID, label, text)
 		}
 		if res.Delivered {
-			d.confirmClaudeCTODelivery(watch, msgID, text)
+			d.confirmClaudeCTODelivery(watch, msgID, label, text)
 			if err := d.touchCTOConversation("claude"); err != nil {
 				return nil, err
 			}

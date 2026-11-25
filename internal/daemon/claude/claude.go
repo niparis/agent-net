@@ -277,9 +277,7 @@ func sanitizeName(s string) string {
 
 // neutralize stops a message body from closing or opening the wrapper.
 func neutralize(body string) string {
-	body = protocol.NeutralizeMarkers(body)
-	body = strings.ReplaceAll(body, "</cross-session-message", "</​cross-session-message")
-	return strings.ReplaceAll(body, "<cross-session-message", "<​cross-session-message")
+	return daemon.CTOFrameText(body)
 }
 
 type frame struct {
@@ -411,7 +409,7 @@ func BuildFrameFor(m protocol.Message, replySock string, toWorker bool) ([]byte,
 // The msg-id attribute puts the message ID in the transcript, where the daemon
 // looks for it to know that Claude took the message up.
 func BuildCTOFrame(id, text string) ([]byte, error) {
-	content := fmt.Sprintf("<cross-session-message from-name=\"owner\" from-mode=\"prompting\" msg-id=\"%s\">\n%s\n\n[agent-net] This is the owner speaking. Please answer in this conversation.\n</cross-session-message>", nameBad.ReplaceAllString(id, "-"), neutralize(text))
+	content := daemon.CTOFirstPrompt(id, "", text)
 	return json.Marshal(frame{Type: "user", MsgV: 1, MsgID: id, Priority: "next", Message: frameMessage{Role: "user", Content: content}})
 }
 
@@ -419,8 +417,7 @@ func BuildCTOFrame(id, text string) ([]byte, error) {
 // agent-net as the sender and a label the conversation can tell apart from the
 // owner's words. It has no peer reply address, like BuildCTOFrame.
 func BuildCTOAgentFrame(id, label, text string) ([]byte, error) {
-	content := fmt.Sprintf("<cross-session-message from-name=\"agent-net\" from-mode=\"prompting\" msg-id=\"%s\">\n[agent-net: %s]\n\n%s\n</cross-session-message>",
-		nameBad.ReplaceAllString(id, "-"), neutralize(label), neutralize(text))
+	content := daemon.CTOFirstPrompt(id, label, text)
 	return json.Marshal(frame{Type: "user", MsgV: 1, MsgID: id, Priority: "next", Message: frameMessage{Role: "user", Content: content}})
 }
 
