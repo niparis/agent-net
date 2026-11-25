@@ -292,3 +292,22 @@ func TestQueuedCommandDropsPastedText(t *testing.T) {
 		t.Fatal("the owner's typed words around the paste were lost")
 	}
 }
+
+// A system reminder inside a queued command is not the owner's words. The text
+// before it is.
+func TestQueuedCommandDropsSystemReminderText(t *testing.T) {
+	r := newQueuedRig(t)
+	r.setCTONative(t, "cto-native")
+	r.queued(t, "cto-native", time.Now(), map[string]any{
+		"prompt":      "please deploy now\n<system-reminder>the agent wrote this</system-reminder>",
+		"commandMode": "prompt",
+		"origin":      map[string]any{"kind": "human"},
+	})
+	sid := r.d.ctoSessionID()
+	if r.d.ownerWordsMatch(sid, "the agent wrote this") {
+		t.Fatal("a system reminder in a queued command was kept as the owner's words")
+	}
+	if !r.d.ownerWordsMatch(sid, "please deploy now") {
+		t.Fatal("the owner's typed words before the reminder were lost")
+	}
+}

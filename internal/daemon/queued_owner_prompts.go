@@ -199,7 +199,8 @@ func readTranscriptFrom(path string, offset int64, primed bool) ([]byte, int64, 
 // turn ran counts as an owner prompt for the gateway too, which closes the
 // questions the session waited on. The first sweep of a transcript only keeps
 // the words, as its text may be old. A command with no origin closes the wait
-// as before but its text is not passed on as the owner's answer.
+// as before but its text is not passed on as the owner's answer. policyCall
+// reads a missing transcript entry again before this runs.
 func (d *Daemon) ownerTypedWhileBusy(ctx context.Context, ls *localSession, sid string) {
 	fresh, primed := d.sweepQueuedOwnerPrompts(sid)
 	if !primed || len(fresh) == 0 {

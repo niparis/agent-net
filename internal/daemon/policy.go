@@ -173,6 +173,9 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 	if sid == "" {
 		return protocol.PolicyResult{}, nil
 	}
+	// A prompt whose entry was missing when its wait ended may have one now.
+	// Keep the words before the next check.
+	d.resolvePendingOwnerWords(sid)
 	if p.Event == "Stop" {
 		d.ownerTypedWhileBusy(ctx, ls, sid)
 		d.recordTurnEndQuestion(ctx, ls, sid, p.LastMessage)
@@ -191,6 +194,11 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 					_, _ = d.call(ctx, "signal.prompt", map[string]string{"session_id": sid, "prompt": strings.Join(segments, " ")})
 				}
 				text = p.Prompt
+			} else {
+				// The entry was missing or named no origin. Keep the prompt
+				// for a later transcript read: a loaded machine can write the
+				// entry after the wait, and a human entry then makes it words.
+				d.notePendingOwnerWords(sid, p)
 			}
 			d.ownerTyped(ctx, ls, sid, text)
 		})
@@ -228,9 +236,12 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 // isHumanClaudePrompt is true for text the owner may have typed. Claude delivers
 // peer messages, task notifications, reminders, scheduled turns and
 // autonomous-loop turns through the same prompt hook. The markers in
-// protocol.InjectedClaudePrompt catch the ones that carry one. A scheduled turn
-// carries none, so whenClaudeOwnerPrompt reads its transcript entry as well.
+// protocol.InjectedClaudePrompt catch the ones that carry one. A reminder that
+// Claude Code appends after the owner's text does not hide that text, so it is
+// removed before the check. A scheduled turn carries no marker, so
+// whenClaudeOwnerPrompt reads its transcript entry as well.
 func isHumanClaudePrompt(prompt string) bool {
+	prompt = protocol.WithoutSystemReminders(prompt)
 	return strings.TrimSpace(prompt) != "" && !protocol.InjectedClaudePrompt(prompt)
 }
 

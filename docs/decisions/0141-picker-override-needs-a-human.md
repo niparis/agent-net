@@ -22,10 +22,15 @@ human confirmed it:
 1. The start carries `owner_words`, a quote of the owner's request. The daemon
    finds it in what the owner typed in that session in the last 3 hours (from
    the Claude Code prompt hook, in memory only). Only a prompt whose transcript
-   entry marks a human origin is kept, and every pasted block is removed from
-   it before it is stored or matched. A prompt of unknown origin, a missing or
-   late transcript entry, and a queued command without a human origin close
-   waits as before but are not kept as words.
+   entry marks a human origin is kept, and every pasted block and
+   system-reminder block is removed from it before it is stored or matched. The
+   opening and closing tags may carry the same id; everything from the first
+   opening tag to the last closing tag is dropped, including text between two
+   blocks. If the entry is still missing when the five second wait ends, the
+   daemon reads the transcript again when the words are needed, so an entry
+   written later still counts. An entry that never appears, an unknown origin
+   and a queued command without a human origin close waits as before but are
+   not kept as words.
 2. Otherwise the daemon holds the start and puts one ask on the Desk, with the
    caller's `reason`. `confirm` starts it with the fields, `picker` without.
    The caller is answered `accepted` at once and gets the worker notice later.

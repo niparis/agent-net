@@ -39,9 +39,13 @@ new check.
 
 ## Known limit
 
-The excerpt is the owner's prompt as typed, with every pasted block
-(`<pasted_content ...>...</pasted_content>`) removed. A pasted block cannot
-become the owner's words, and a quote cannot span one. What remains is still
-only as strong as the harness: a paste the harness does not mark as pasted is
-kept, and a process on the same account that writes the transcript or calls the
-prompt hook can feed words. The excerpt is cut to 200 characters.
+The excerpt is the owner's prompt as typed, with every pasted block and every
+system-reminder block removed. Claude Code writes the same id on a block's
+opening and closing tags, and an id repeats in later prompts, so tags cannot be
+paired by id: everything from the first opening tag to the last closing tag is
+dropped, including text between two blocks, and an unclosed block drops the
+rest. A quote cannot span a removed block. A reminder Claude Code appends is
+not his words; the text before it is. What remains is still only as strong as
+the harness: a paste the harness does not mark as pasted is kept, and a process
+on the same account that writes the transcript or calls the prompt hook can
+feed words. The excerpt is cut to 200 characters.

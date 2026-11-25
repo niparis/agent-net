@@ -18,6 +18,10 @@ func TestPolicyHumanClaudePrompt(t *testing.T) {
 		{"scheduled", " <scheduled>run", false},
 		{"autonomous", " <<autonomous-loop", false},
 		{"human", "Please fix this bug", true},
+		{"human text before a reminder", "Please fix this bug\n<system-reminder>be brief</system-reminder>", true},
+		{"human text before an unclosed reminder", "Please fix this bug\n<system-reminder>be brief", true},
+		{"reminder only", "<system-reminder>be brief</system-reminder>", false},
+		{"peer with a reminder", "<cross-session-message from=peer>hello</cross-session-message>\n<system-reminder>be brief</system-reminder>", false},
 		{"late mention", strings.Repeat("a", 600) + "<task-notification>", true},
 		{"empty", " \n", false},
 	}

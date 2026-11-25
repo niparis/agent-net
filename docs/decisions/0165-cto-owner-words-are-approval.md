@@ -32,8 +32,12 @@ of the CTO's own pane. The CTO cannot feed its own words into this memory: its
 - A call with no words behaves as before.
 
 Only a prompt whose transcript entry marks a human origin is kept, and every
-pasted block is removed from it before it is stored or matched. A prompt of
-unknown origin, a missing or late transcript entry, and a queued command
+pasted block and system-reminder block is removed from it before it is stored or
+matched. The opening and closing tags may carry the same id; everything from the
+first opening tag to the last closing tag is dropped, including text between two
+blocks. If the entry is still missing when the five second wait ends, the daemon
+reads the transcript again when the words are needed, so an entry written later
+still counts. An entry that never appears, an unknown origin and a queued command
 without a human origin close waits as before but are not kept as words. The
 limits are the harness's: a paste the harness does not mark, and a process on
 the same account that writes the transcript or calls the prompt hook.

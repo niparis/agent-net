@@ -103,6 +103,9 @@ func freshPrompts(list []ownerPrompt, now time.Time) []ownerPrompt {
 // ownerWordsMatch tells whether the quote is in what the owner typed in the
 // session in the last ownerPromptWindow, ignoring case and white space.
 func (d *Daemon) ownerWordsMatch(session, quote string) bool {
+	// A prompt whose transcript entry was missing when the wait ended may have
+	// one now. Read it again before matching.
+	d.resolvePendingOwnerWords(session)
 	// Text typed while a Claude turn runs fires no prompt hook: read it from
 	// the transcript now, when it is needed.
 	d.sweepQueuedOwnerPrompts(session)

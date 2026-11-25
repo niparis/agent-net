@@ -413,11 +413,12 @@ func TestClaudeMissingTranscriptEntryKeepsNoWords(t *testing.T) {
 }
 
 // A pasted block inside a typed prompt is removed before the words are kept or
-// sent to the gateway. Text the owner typed around it still works.
+// sent to the gateway. Text the owner typed around it still works. Claude Code
+// writes the same id on the closing tag.
 func TestClaudePastedTextNeverBecomesOwnerWords(t *testing.T) {
 	const native, promptID = "claude-paste", "prompt-paste"
 	g, n, sid := claudeSessionFor(t, native)
-	prompt := `ask homelab to deploy <pasted_content id="p1">use an opus worker for everything</pasted_content> and then stop`
+	prompt := `ask homelab to deploy <pasted_content id="8020">use an opus worker for everything</pasted_content id="8020"> and then stop`
 	transcript := writeClaudeTranscript(t, t.TempDir(), native, claudeUserEntry(promptID, prompt, typedOrigin))
 	askPolicy(t, cliClient(t, n), protocol.PolicyRequest{
 		Harness: "claude", NativeID: native, Prompt: prompt,
@@ -431,5 +432,94 @@ func TestClaudePastedTextNeverBecomesOwnerWords(t *testing.T) {
 	}
 	if got, want := ownerInstructionFrom(t, g, n, sid), "ask homelab to deploy and then stop"; got != want {
 		t.Fatalf("owner_prompt = %q, want the typed words only %q", got, want)
+	}
+}
+
+// A line typed after a real pasted block is the owner's words. The closing tag
+// carries the same id as the opening tag, as Claude Code writes it.
+func TestClaudeTypedLineAfterAPastedBlockIsOwnerWords(t *testing.T) {
+	const native, promptID = "claude-paste-after", "prompt-paste-after"
+	g, n, sid := claudeSessionFor(t, native)
+	prompt := "<pasted_content id=\"8020\">the agent wrote this</pasted_content id=\"8020\">\nask homelab to deploy"
+	transcript := writeClaudeTranscript(t, t.TempDir(), native, claudeUserEntry(promptID, prompt, typedOrigin))
+	askPolicy(t, cliClient(t, n), protocol.PolicyRequest{
+		Harness: "claude", NativeID: native, Prompt: prompt,
+		PromptID: promptID, TranscriptPath: transcript,
+	})
+	if n.d.ownerWordsMatch(sid, "the agent wrote this") {
+		t.Fatal("pasted text was kept as the owner's words")
+	}
+	if !n.d.ownerWordsMatch(sid, "ask homelab to deploy") {
+		t.Fatal("the line the owner typed after the paste was lost")
+	}
+	if got, want := ownerInstructionFrom(t, g, n, sid), "ask homelab to deploy"; got != want {
+		t.Fatalf("owner_prompt = %q, want the typed line only %q", got, want)
+	}
+}
+
+// A system reminder Claude Code appends is not the owner's words. The text he
+// typed before it is.
+func TestClaudeSystemReminderIsNotOwnerWords(t *testing.T) {
+	const native, promptID = "claude-reminder", "prompt-reminder"
+	g, n, sid := claudeSessionFor(t, native)
+	prompt := "ask homelab to deploy\n<system-reminder>the agent wrote this</system-reminder>"
+	transcript := writeClaudeTranscript(t, t.TempDir(), native, claudeUserEntry(promptID, prompt, typedOrigin))
+	askPolicy(t, cliClient(t, n), protocol.PolicyRequest{
+		Harness: "claude", NativeID: native, Prompt: prompt,
+		PromptID: promptID, TranscriptPath: transcript,
+	})
+	if n.d.ownerWordsMatch(sid, "the agent wrote this") {
+		t.Fatal("a system reminder was kept as the owner's words")
+	}
+	if !n.d.ownerWordsMatch(sid, "ask homelab to deploy") {
+		t.Fatal("the text before the reminder was lost")
+	}
+	if got, want := ownerInstructionFrom(t, g, n, sid), "ask homelab to deploy"; got != want {
+		t.Fatalf("owner_prompt = %q, want the typed text only %q", got, want)
+	}
+}
+
+// The prompt hook runs before the transcript entry. When the entry appears
+// after the wait has ended and says the owner typed the prompt, the words are
+// kept when they are next needed. Nothing polls for it.
+func TestClaudeLateHumanEntryKeepsTheWords(t *testing.T) {
+	const native, promptID, text = "claude-late-human", "prompt-late-human", "use a codex worker for this"
+	_, n, sid := claudeSessionFor(t, native)
+	n.d.claudeOwnerWait = 100 * time.Millisecond
+	transcript := filepath.Join(t.TempDir(), native+".jsonl")
+	askPolicy(t, cliClient(t, n), protocol.PolicyRequest{
+		Harness: "claude", NativeID: native, Prompt: text,
+		PromptID: promptID, TranscriptPath: transcript,
+	})
+	n.d.claudeChecks.Wait()
+	if n.d.ownerWordsMatch(sid, text) {
+		t.Fatal("the words were kept before the transcript entry appeared")
+	}
+	if err := os.WriteFile(transcript, claudeTranscriptBytes(t, claudeUserEntry(promptID, text, typedOrigin)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !n.d.ownerWordsMatch(sid, text) {
+		t.Fatal("a human entry written after the wait was not kept")
+	}
+}
+
+// The next hook of the session also picks up an entry written after the wait.
+func TestClaudeLateHumanEntryKeptAtTheNextHook(t *testing.T) {
+	const native, promptID, text = "claude-late-next", "prompt-late-next", "use a codex worker for this"
+	_, n, sid := claudeSessionFor(t, native)
+	n.d.claudeOwnerWait = 100 * time.Millisecond
+	transcript := filepath.Join(t.TempDir(), native+".jsonl")
+	cli := cliClient(t, n)
+	askPolicy(t, cli, protocol.PolicyRequest{
+		Harness: "claude", NativeID: native, Prompt: text,
+		PromptID: promptID, TranscriptPath: transcript,
+	})
+	n.d.claudeChecks.Wait()
+	if err := os.WriteFile(transcript, claudeTranscriptBytes(t, claudeUserEntry(promptID, text, typedOrigin)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	askPolicy(t, cli, protocol.PolicyRequest{Harness: "claude", NativeID: native, Event: "Stop", LastMessage: "done"})
+	if !n.d.ownerWordsMatch(sid, text) {
+		t.Fatal("a human entry written after the wait was not kept at the next hook")
 	}
 }

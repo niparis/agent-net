@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -91,6 +92,110 @@ func (d *Daemon) claudeWait() time.Duration {
 		return d.claudeOwnerWait
 	}
 	return claudeSenderWait
+}
+
+// pendingOwnerWords is a prompt whose transcript entry had not appeared when
+// the daemon stopped waiting. The text is not the owner's words yet: it is
+// read again later, and kept only if the entry then says a human typed it.
+type pendingOwnerWords struct {
+	session  string
+	native   string
+	path     string
+	promptID string
+	text     string
+	at       time.Time
+}
+
+const pendingWordsKeySep = "\x00"
+
+// notePendingOwnerWords keeps a prompt to read again later. A loaded machine
+// can write the transcript entry after the five second wait. The text is not
+// kept as the owner's words until an entry says he typed it.
+func (d *Daemon) notePendingOwnerWords(session string, p protocol.PolicyRequest) {
+	if session == "" || p.PromptID == "" || !claudeTranscriptFor(p.TranscriptPath, p.NativeID, p.PromptID) {
+		return
+	}
+	text := p.Prompt
+	if len(text) > maxOwnerPromptBytes {
+		text = strings.ToValidUTF8(text[:maxOwnerPromptBytes], "")
+	}
+	now := d.ownerPromptNow()
+	d.pendingWordsMu.Lock()
+	defer d.pendingWordsMu.Unlock()
+	if d.pendingWords == nil {
+		d.pendingWords = map[string]pendingOwnerWords{}
+	}
+	count := 0
+	oldestKey := ""
+	var oldest time.Time
+	for k, q := range d.pendingWords {
+		if now.Sub(q.at) > ownerPromptWindow {
+			delete(d.pendingWords, k)
+			continue
+		}
+		if q.session != session {
+			continue
+		}
+		count++
+		if oldestKey == "" || q.at.Before(oldest) {
+			oldestKey, oldest = k, q.at
+		}
+	}
+	if count >= maxOwnerPromptsPerSession && oldestKey != "" {
+		delete(d.pendingWords, oldestKey)
+	}
+	d.pendingWords[session+pendingWordsKeySep+p.PromptID] = pendingOwnerWords{
+		session: session, native: p.NativeID, path: p.TranscriptPath,
+		promptID: p.PromptID, text: text, at: now,
+	}
+}
+
+// resolvePendingOwnerWords reads the transcript again for prompts of the
+// session whose entry was missing when the daemon stopped waiting. It keeps the
+// words of an entry that now says the owner typed them and drops an entry that
+// says someone else did. A prompt whose entry is still missing stays for the
+// next call, until its window ends. There is no poll: this runs when the words
+// are needed and at the end of a turn.
+func (d *Daemon) resolvePendingOwnerWords(session string) {
+	if session == "" {
+		return
+	}
+	prefix := session + pendingWordsKeySep
+	now := d.ownerPromptNow()
+	d.pendingWordsMu.Lock()
+	if len(d.pendingWords) == 0 {
+		d.pendingWordsMu.Unlock()
+		return
+	}
+	list := make([]pendingOwnerWords, 0, len(d.pendingWords))
+	for k, q := range d.pendingWords {
+		if strings.HasPrefix(k, prefix) {
+			list = append(list, q)
+		}
+	}
+	d.pendingWordsMu.Unlock()
+	for _, q := range list {
+		key := q.session + pendingWordsKeySep + q.promptID
+		if now.Sub(q.at) > ownerPromptWindow {
+			d.pendingWordsMu.Lock()
+			delete(d.pendingWords, key)
+			d.pendingWordsMu.Unlock()
+			continue
+		}
+		s, found := claudeSenderOf(q.path, q.native, q.promptID)
+		if !found {
+			continue
+		}
+		d.pendingWordsMu.Lock()
+		_, still := d.pendingWords[key]
+		if still {
+			delete(d.pendingWords, key)
+		}
+		d.pendingWordsMu.Unlock()
+		if still && s == senderOwner {
+			d.rememberOwnerPromptAt(session, q.text, q.at)
+		}
+	}
 }
 
 // claudeTranscriptFor says whether path is the transcript of the session. Claude
