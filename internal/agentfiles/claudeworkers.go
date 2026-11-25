@@ -479,12 +479,13 @@ func readClaudeWorkersSettings() claudeWorkersSettings {
 	return s
 }
 
-// MigrateClaudeWorkers refreshes the old marketplace copy while it runs, then
-// moves or repairs it. It runs in setup and in the daemon's background
-// migration, never on the start path. It returns a line for the log when it
-// did not finish or a command failed; an empty line means nothing needed doing
-// or the work succeeded.
-func MigrateClaudeWorkers() string {
+// MigrateClaudeWorkers is the setup migration: it refreshes the old
+// marketplace copy while it runs, then moves or repairs it. The daemon never
+// calls it, because moving or uninstalling the old copy changes Claude Code's
+// plugin state and needs the owner's setup answer. It returns a line for the
+// log when it did not finish or a command failed; an empty line means nothing
+// needed doing or the work succeeded. ctx cancels its claude commands.
+func MigrateClaudeWorkers(ctx context.Context) string {
 	s := ClaudeWorkersStatusNow()
 	if s.Link == "" {
 		return ""
@@ -495,36 +496,61 @@ func MigrateClaudeWorkers() string {
 		}
 		return ""
 	}
+	refreshNote := refreshOldClaudeWorkers(ctx)
+	s = ClaudeWorkersStatusNow()
 	var notes []string
-	if s.OldNeedsRefresh() {
-		notes = append(notes, RefreshClaudeWorkers()...)
-		s = ClaudeWorkersStatusNow()
-	}
 	if s.BlockedByInstalledCopy() {
 		// No enabled entry is present, so the uninstall has no settings key to
 		// remove. This is safe also when the settings file is a link.
-		if note := uninstallOldClaudeWorkers(); note != "" {
+		if note := uninstallOldClaudeWorkers(ctx); note != "" {
 			notes = append(notes, note)
 		}
 		s = ClaudeWorkersStatusNow()
 	}
 	if s.SettingsWritable {
-		if note := removeOldClaudeWorkers(true); note != "" {
+		if note := removeOldClaudeWorkers(ctx, true); note != "" {
 			notes = append(notes, note)
 		}
 	}
-	return strings.Join(notes, "; ")
+	// The refresh only matters when the old copy still runs after the move.
+	if ClaudeWorkersStatusNow().OldNeedsRefresh() {
+		notes = append([]string{refreshNote}, notes...)
+	}
+	return joinNotes(notes...)
 }
 
-// MigrateClaudeWorkersOnce is the daemon's background migration. It records a
-// failed run against the binary version, so a broken claude command is tried
-// once per version and not at every start. A later version tries again.
-func MigrateClaudeWorkersOnce(version string) string {
+// refreshOldClaudeWorkers updates the running old marketplace copy when its
+// panel is stale. A command that succeeds without changing the installed panel
+// still counts as a failure: the daemon must not run it at every integrations
+// tick. It returns one line for the log, or "" when the copy is current.
+func refreshOldClaudeWorkers(ctx context.Context) string {
+	if !ClaudeWorkersStatusNow().OldNeedsRefresh() {
+		return ""
+	}
+	if failures := RefreshClaudeWorkers(ctx); len(failures) != 0 {
+		return strings.Join(failures, "; ")
+	}
+	if ClaudeWorkersStatusNow().OldNeedsRefresh() {
+		return "the old marketplace plugin did not update: Claude Code still lists the old panel"
+	}
+	return ""
+}
+
+// MigrateClaudeWorkersOnce is the daemon's background check. It only refreshes
+// an old marketplace copy that is the one running. It never moves or removes
+// that copy: setup --claude-workers-mod and the off switch do that. Without the
+// stored setup answer it runs no claude command at all. A failed run, including
+// a refresh that left the panel unchanged, is recorded against the binary
+// version, so it is tried once per version and not at every tick.
+func MigrateClaudeWorkersOnce(ctx context.Context, version string) string {
+	if !loadClaudeWorkersState().Installed {
+		return ""
+	}
 	st := loadClaudeWorkersMigrateState()
 	if st.Failed && st.Version == version {
 		return ""
 	}
-	note := MigrateClaudeWorkers()
+	note := refreshOldClaudeWorkers(ctx)
 	if note == "" {
 		if st.Failed {
 			os.Remove(claudeWorkersMigrateStatePath())
@@ -557,14 +583,14 @@ func loadClaudeWorkersMigrateState() claudeWorkersMigrateState {
 // plugin. The two commands write Claude Code's own plugin state, not
 // settings.json, so they are safe on a settings file that is a link. Each
 // failure is returned as one line; both commands are attempted.
-func RefreshClaudeWorkers() []string {
+func RefreshClaudeWorkers(ctx context.Context) []string {
 	claude := ClaudePath()
 	if claude == "" {
 		return []string{"the old marketplace plugin was not updated: claude not found"}
 	}
 	var failures []string
 	for _, args := range [][]string{{"plugin", "marketplace", "update", ClaudeWorkersMarketplace}, {"plugin", "update", ClaudeWorkersOldID, "-s", "user"}} {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		cmd := exec.CommandContext(ctx, claude, args...)
 		cmd.Dir = home()
 		out, err := cmd.CombinedOutput()
@@ -584,12 +610,12 @@ func RefreshClaudeWorkers() []string {
 // list when its enabled entry is lost. That entry is missing, so the command
 // has no settings key to remove and writes no settings file, also when that
 // file is a link.
-func uninstallOldClaudeWorkers() string {
+func uninstallOldClaudeWorkers(ctx context.Context) string {
 	claude := ClaudePath()
 	if claude == "" {
 		return "worker window off: claude not found"
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	cmd := exec.CommandContext(ctx, claude, "plugin", "uninstall", ClaudeWorkersOldID, "-s", "user")
 	cmd.Dir = home()
 	out, err := cmd.CombinedOutput()
@@ -610,9 +636,9 @@ func uninstallOldClaudeWorkers() string {
 // RemoveOldClaudeWorkers removes the old marketplace registration when the
 // settings file is agent-net's to write. It is the off switch, so it does not
 // need the skills link.
-func RemoveOldClaudeWorkers() string { return removeOldClaudeWorkers(false) }
+func RemoveOldClaudeWorkers(ctx context.Context) string { return removeOldClaudeWorkers(ctx, false) }
 
-func removeOldClaudeWorkers(requireSkills bool) string {
+func removeOldClaudeWorkers(ctx context.Context, requireSkills bool) string {
 	s := readClaudeWorkersSettings()
 	if !s.oldOn && !s.oldMarketplace {
 		return ""
@@ -631,7 +657,7 @@ func removeOldClaudeWorkers(requireSkills bool) string {
 	}
 	var failures []string
 	if requireSkills {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		list := exec.CommandContext(ctx, claude, "plugin", "list", "--json")
 		list.Dir = home()
 		out, err := list.Output()
@@ -644,7 +670,7 @@ func removeOldClaudeWorkers(requireSkills bool) string {
 		{"plugin", "uninstall", ClaudeWorkersOldID, "-s", "user"},
 		{"plugin", "marketplace", "remove", ClaudeWorkersMarketplace},
 	} {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		cmd := exec.CommandContext(ctx, claude, args...)
 		cmd.Dir = home()
 		if out, err := cmd.CombinedOutput(); err != nil {

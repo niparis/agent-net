@@ -33,7 +33,7 @@ func (d *Daemon) integrationsLoop(ctx context.Context) {
 	d.applyNetworkIntegrations(ctx)
 	d.claudeMouseMaintenance(ctx)
 	d.checkClaudePeerMessages(ctx)
-	d.migrateClaudeWorkers()
+	d.migrateClaudeWorkers(ctx)
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
@@ -45,7 +45,7 @@ func (d *Daemon) integrationsLoop(ctx context.Context) {
 		}
 		d.applyNetworkIntegrations(ctx)
 		d.claudeMouseMaintenance(ctx)
-		d.migrateClaudeWorkers()
+		d.migrateClaudeWorkers(ctx)
 	}
 }
 

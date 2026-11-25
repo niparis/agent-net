@@ -2,6 +2,7 @@ package setup
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -113,7 +114,7 @@ func (r *runner) claudeWorkersMod() {
 		r.hint("hint: %s is not agent-net's link. Move it away, then run agent-net setup --claude-workers-mod", displayPath(foreign))
 		return
 	}
-	migrateNote := agentfiles.MigrateClaudeWorkers()
+	migrateNote := agentfiles.MigrateClaudeWorkers(context.Background())
 	live = agentfiles.ClaudeWorkersStatusNow()
 	if err := saveWorkersModState(workersModState{Asked: true, Installed: true, Dir: agentfiles.ClaudeWorkersDir()}); err != nil {
 		r.step(workersModStepName, "", err)
@@ -192,7 +193,7 @@ func (r *runner) removeClaudeWorkersMod() {
 		r.step(workersModStepName, "", err)
 		return
 	}
-	oldNote := agentfiles.RemoveOldClaudeWorkers()
+	oldNote := agentfiles.RemoveOldClaudeWorkers(context.Background())
 	os.Remove(workersModStatePath())
 	agentfiles.RemoveClaudeWorkersRecords()
 	status := agentfiles.ClaudeWorkersStatusNow()
@@ -226,7 +227,7 @@ func (r *runner) removeClaudeWorkersModFiles() {
 		r.step(workersModStepName, "", err)
 		return
 	}
-	oldNote := agentfiles.RemoveOldClaudeWorkers()
+	oldNote := agentfiles.RemoveOldClaudeWorkers(context.Background())
 	if err := os.RemoveAll(dir); err != nil {
 		r.step(workersModStepName, "", err)
 		return

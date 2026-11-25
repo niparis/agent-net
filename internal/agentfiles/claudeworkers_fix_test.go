@@ -1,6 +1,7 @@
 package agentfiles
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -164,7 +165,7 @@ case "$1 $2" in
   "plugin update") mkdir -p "`+cache+`" && cp -R "`+ClaudeWorkersPluginDir()+`"/. "`+cache+`/" ;;
 esac
 `)
-	if failures := RefreshClaudeWorkers(); len(failures) != 0 {
+	if failures := RefreshClaudeWorkers(context.Background()); len(failures) != 0 {
 		t.Fatalf("refresh: %v", failures)
 	}
 	if got := read(t, filepath.Join(cache, "hooks", "register.tsx")); !strings.Contains(got, "new panel marker") {
@@ -192,39 +193,6 @@ func TestClaudeWorkersOldNeedsRefresh(t *testing.T) {
 	write(t, filepath.Join(h, ".claude", "settings.json"), `{}`)
 	if s := ClaudeWorkersStatusNow(); s.OldNeedsRefresh() {
 		t.Errorf("a copy that does not run is refreshed: %+v", s)
-	}
-}
-
-// A failed migration is tried once per binary version, not at every start.
-func TestMigrateClaudeWorkersOnceRecordsAFailurePerVersion(t *testing.T) {
-	h := fakeHome(t)
-	if _, err := WriteClaudeWorkers(); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := EnsureClaudeWorkersLink(); err != nil {
-		t.Fatal(err)
-	}
-	write(t, ClaudeWorkersStatePath(), `{"asked":true,"installed":true}`)
-	write(t, filepath.Join(h, ".claude", "settings.json"), `{"extraKnownMarketplaces":{"agent-net":{}}}`)
-	oldInstalled(t, h, ClaudeWorkersPanelVersion())
-	calls := filepath.Join(h, "calls")
-	fakeClaude(t, h, "#!/bin/sh\necho \"$*\" >> \""+calls+"\"\nexit 1\n")
-
-	if note := MigrateClaudeWorkersOnce("v1"); note == "" {
-		t.Fatal("the failure was not reported")
-	}
-	first := len(strings.Split(strings.TrimSpace(read(t, calls)), "\n"))
-	if note := MigrateClaudeWorkersOnce("v1"); note != "" {
-		t.Errorf("the same version tried again: %q", note)
-	}
-	if got := len(strings.Split(strings.TrimSpace(read(t, calls)), "\n")); got != first {
-		t.Errorf("claude ran again for the same version: %d then %d", first, got)
-	}
-	if note := MigrateClaudeWorkersOnce("v2"); note == "" {
-		t.Error("a new version did not try again")
-	}
-	if got := len(strings.Split(strings.TrimSpace(read(t, calls)), "\n")); got <= first {
-		t.Errorf("claude did not run for the new version: %d then %d", first, got)
 	}
 }
 

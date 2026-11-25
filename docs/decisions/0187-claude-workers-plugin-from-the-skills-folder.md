@@ -46,10 +46,12 @@ depend on a file another tool owns.
   `settings.json`, proved with real Claude Code on a regular and on a linked
   settings file. They are safe on the owner's Mac.
 - When the enabled entry alone is lost, the installed old copy keeps both
-  copies off. The daemon removes that installed copy with `claude plugin
-  uninstall`, which has no settings key to remove in that state and writes no
-  settings file, also when it is a link. This is the owner's loss: the settings
-  file lost the entries while Claude Code's own marketplace list kept them.
+  copies off. The daemon does not remove it. It reports the one step that
+  fixes it: `agent-net setup --claude-workers-mod`. Setup removes that installed
+  copy with `claude plugin uninstall`, which has no settings key to remove in
+  that state and writes no settings file, also when it is a link. This is the
+  owner's loss: the settings file lost the entries while Claude Code's own
+  marketplace list kept them.
 - If Claude Code already wrote an explicit false into a linked settings file
   after that loss, agent-net does not write the link. It reports the one command
   that removes the installed copy, for the owner to run.
@@ -57,10 +59,15 @@ depend on a file another tool owns.
   sync, with the one step that works for that state. The same line is shown on
   the machine row in the Machines screen and by `agent-net nodes`, so the owner
   sees it outside the daemon log.
-- The Claude commands that move or refresh the old copy run in the background
-  at daemon start and on the integrations tick, never on the start path or the
-  sync of the other files. A failed run is recorded against the binary version
-  and tried again only with a new version.
+- The daemon never moves or uninstalls the old copy. Moving and uninstalling
+  happen in `agent-net setup --claude-workers-mod` or when the owner turns the
+  window off in agent-net. The daemon only refreshes an old copy that is the one
+  running, in the background at daemon start and on the integrations tick,
+  never on the start path or the sync of the other files. It runs no claude
+  command when setup was never asked or the owner turned the window off. A
+  failed run, and a refresh that leaves the panel version unchanged, is
+  recorded against the binary version and tried again only with a new version.
+  Daemon stop cancels a running claude command.
 - Turning the window off in agent-net, with the setup answer or uninstall,
   removes agent-net's own link and nothing else. A disable the owner chooses in
   Claude Code (`claude plugin disable`) is kept. A foreign entry is left alone.

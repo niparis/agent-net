@@ -250,11 +250,14 @@ type Config struct {
 	// with this binary. It logs through the function it gets. Default: none
 	// (tests must not touch the home dir of the machine they run on).
 	RefreshAgentFiles func(logf func(format string, args ...any), snapshot settings.Snapshot)
-	// MigrateClaudeWorkers moves or refreshes an old Claude marketplace copy
-	// of the workers plugin. It runs in the background after the start path, so
-	// a claude command never delays the daemon. It returns a line to log when
-	// it did not finish. Default: none (tests must not touch the machine).
-	MigrateClaudeWorkers func() string
+	// MigrateClaudeWorkers refreshes an old Claude marketplace copy of the
+	// workers plugin while that copy is the one running. It never moves or
+	// removes the copy: setup and the off switch do that. It runs in the
+	// background after the start path, so a claude command never delays the
+	// daemon, and the daemon's context cancels it at stop. It returns a line to
+	// log when it did not finish. Default: none (tests must not touch the
+	// machine).
+	MigrateClaudeWorkers func(context.Context) string
 	// ClaudeWorkersWarning is the short line the Machines screen shows when
 	// the owner asked for the Claude worker window and it cannot load. It reads
 	// files only. Default: none.
@@ -825,7 +828,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 		d.wg.Add(1)
 		go func() {
 			defer d.wg.Done()
-			d.migrateClaudeWorkers()
+			d.migrateClaudeWorkers(ctx)
 		}()
 	}
 	d.adoptLiveClaudeCTO()

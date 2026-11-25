@@ -1,6 +1,7 @@
 package agentfiles
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -319,7 +320,7 @@ func TestMigrateClaudeWorkersLeavesASettingsLinkAlone(t *testing.T) {
 	if err := os.Symlink(dotfiles, settings); err != nil {
 		t.Fatal(err)
 	}
-	note := MigrateClaudeWorkers()
+	note := MigrateClaudeWorkers(context.Background())
 	if note != "" {
 		t.Errorf("note: %q", note)
 	}
@@ -373,7 +374,7 @@ esac
 	if s := ClaudeWorkersStatusNow(); !s.BlockedByInstalledCopy() || s.Marketplace || !s.KnownMarketplace {
 		t.Fatalf("the loss was not read as blocked: %+v", s)
 	}
-	if note := MigrateClaudeWorkers(); note != "" {
+	if note := MigrateClaudeWorkers(context.Background()); note != "" {
 		t.Errorf("note: %q", note)
 	}
 	got := read(t, calls)
@@ -409,7 +410,7 @@ func TestMigrateClaudeWorkersKeepsAnExplicitOldDisable(t *testing.T) {
 	write(t, settings, `{"enabledPlugins":{"`+ClaudeWorkersOldID+`":false},"extraKnownMarketplaces":{"agent-net":{}}}`)
 	write(t, filepath.Join(h, ".claude", "plugins", "installed_plugins.json"),
 		`{"version":2,"plugins":{"`+ClaudeWorkersOldID+`":[{"scope":"user","version":"`+ClaudeWorkersPanelVersion()+`"}]}}`)
-	if note := MigrateClaudeWorkers(); note != "" {
+	if note := MigrateClaudeWorkers(context.Background()); note != "" {
 		t.Errorf("note: %q", note)
 	}
 	if _, err := os.Stat(calls); err == nil {
@@ -451,7 +452,7 @@ esac
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	if note := MigrateClaudeWorkers(); note != "" {
+	if note := MigrateClaudeWorkers(context.Background()); note != "" {
 		t.Errorf("note: %q", note)
 	}
 	got := read(t, calls)

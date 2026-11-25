@@ -393,8 +393,8 @@ func cmdDaemon(ctx context.Context, args []string) error {
 		CodexHome:         agentfiles.CodexHome(),
 		AgySummaries:      filepath.Join(inventoryHome, ".gemini", "antigravity-cli", "conversation_summaries.db"),
 		RefreshAgentFiles: agentfiles.SyncAndLogWithSnapshot,
-		MigrateClaudeWorkers: func() string {
-			return agentfiles.MigrateClaudeWorkersOnce(version)
+		MigrateClaudeWorkers: func(ctx context.Context) string {
+			return agentfiles.MigrateClaudeWorkersOnce(ctx, version)
 		},
 		ClaudeWorkersWarning: agentfiles.ClaudeWorkersWarning,
 		ApplyIntegrations:    setup.ApplyIntegrations,

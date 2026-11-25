@@ -1,10 +1,12 @@
 package agentfiles
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	agentnetworkers "github.com/niparis/agent-net/plugins/claude/agent-net-workers"
 )
@@ -48,7 +50,7 @@ exit 0
 	if r.Text != "on (old marketplace copy)" {
 		t.Errorf("result: %+v", r)
 	}
-	if note := MigrateClaudeWorkers(); note != "" {
+	if note := MigrateClaudeWorkers(context.Background()); note != "" {
 		t.Errorf("migration: %q", note)
 	}
 	if _, err := os.Lstat(ClaudeWorkersSkillsLink()); err != nil {
@@ -98,11 +100,187 @@ PY
 esac
 exit 0
 `)
-	if note := MigrateClaudeWorkers(); note != "" {
+	if note := MigrateClaudeWorkers(context.Background()); note != "" {
 		t.Errorf("note: %q", note)
 	}
 	got, err := os.ReadFile(filepath.Join(cache, "hooks", "register.tsx"))
 	if err != nil || !strings.Contains(string(got), "new panel marker") {
 		t.Errorf("the old copy did not get the changed panel: %v", err)
+	}
+}
+
+// countCalls is how many claude commands a fake claude recorded.
+func countCalls(t *testing.T, path string) int {
+	t.Helper()
+	got := strings.TrimSpace(read(t, path))
+	if got == "" {
+		return 0
+	}
+	return len(strings.Split(got, "\n"))
+}
+
+// A refresh that succeeds without changing the panel counts as a failed run:
+// the daemon tries the claude commands again only with a new binary version.
+func TestMigrateClaudeWorkersOnceCountsAStaleRefreshOncePerVersion(t *testing.T) {
+	h := fakeHome(t)
+	if _, err := WriteClaudeWorkers(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := EnsureClaudeWorkersLink(); err != nil {
+		t.Fatal(err)
+	}
+	write(t, ClaudeWorkersStatePath(), `{"asked":true,"installed":true}`)
+	// A linked settings file is the owner's Mac: agent-net never writes it, so
+	// the old copy stays the one that runs and only the refresh can update it.
+	linked := filepath.Join(h, "dotfiles-settings.json")
+	write(t, linked, `{"enabledPlugins":{"`+ClaudeWorkersOldID+`":true},"extraKnownMarketplaces":{"agent-net":{}}}`)
+	mkdirs(t, filepath.Join(h, ".claude"))
+	if err := os.Symlink(linked, filepath.Join(h, ".claude", "settings.json")); err != nil {
+		t.Fatal(err)
+	}
+	oldInstalled(t, h, "0.1.0+old")
+	calls := filepath.Join(h, "calls")
+	fakeClaude(t, h, "#!/bin/sh\necho \"$*\" >> \""+calls+"\"\nexit 0\n")
+
+	if note := MigrateClaudeWorkersOnce(context.Background(), "v1"); note == "" {
+		t.Fatal("a refresh that left the old panel was not reported")
+	}
+	first := countCalls(t, calls)
+	for i := 0; i < 3; i++ {
+		if note := MigrateClaudeWorkersOnce(context.Background(), "v1"); note != "" {
+			t.Errorf("the same version tried again: %q", note)
+		}
+	}
+	if got := countCalls(t, calls); got != first {
+		t.Errorf("claude ran again for the same version: %d then %d", first, got)
+	}
+	if note := MigrateClaudeWorkersOnce(context.Background(), "v2"); note == "" {
+		t.Error("a new version did not try again")
+	}
+	if got := countCalls(t, calls); got <= first {
+		t.Errorf("claude did not run for the new version: %d then %d", first, got)
+	}
+}
+
+// The daemon runs no claude command unless setup recorded the owner's yes.
+func TestMigrateClaudeWorkersOnceRunsNoClaudeWithoutTheOwnersYes(t *testing.T) {
+	cases := []struct{ name, state string }{
+		{"never asked", ""},
+		{"turned off", `{"asked":true,"installed":false}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			h := fakeHome(t)
+			if _, err := WriteClaudeWorkers(); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := EnsureClaudeWorkersLink(); err != nil {
+				t.Fatal(err)
+			}
+			if c.state != "" {
+				write(t, ClaudeWorkersStatePath(), c.state)
+			}
+			write(t, filepath.Join(h, ".claude", "settings.json"),
+				`{"enabledPlugins":{"`+ClaudeWorkersOldID+`":true},"extraKnownMarketplaces":{"agent-net":{}}}`)
+			oldInstalled(t, h, "0.1.0+old")
+			calls := filepath.Join(h, "calls")
+			fakeClaude(t, h, "#!/bin/sh\necho \"$*\" >> \""+calls+"\"\n")
+			if note := MigrateClaudeWorkersOnce(context.Background(), "v1"); note != "" {
+				t.Errorf("note: %q", note)
+			}
+			if _, err := os.Stat(calls); err == nil {
+				t.Errorf("the migration ran claude:\n%s", read(t, calls))
+			}
+		})
+	}
+}
+
+// The daemon refreshes a running old copy but never moves or removes it; that
+// stays with agent-net setup --claude-workers-mod or the off switch.
+func TestMigrateClaudeWorkersOnceNeverMovesTheOldCopy(t *testing.T) {
+	h := fakeHome(t)
+	if _, err := WriteClaudeWorkers(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := EnsureClaudeWorkersLink(); err != nil {
+		t.Fatal(err)
+	}
+	write(t, ClaudeWorkersStatePath(), `{"asked":true,"installed":true}`)
+	settings := filepath.Join(h, ".claude", "settings.json")
+	write(t, settings, `{"enabledPlugins":{"`+ClaudeWorkersOldID+`":true},"extraKnownMarketplaces":{"agent-net":{}}}`)
+	before := read(t, settings)
+	installed := filepath.Join(h, ".claude", "plugins", "installed_plugins.json")
+	oldInstalled(t, h, "0.1.0+old")
+	calls := filepath.Join(h, "calls")
+	fakeClaude(t, h, `#!/bin/sh
+echo "$*" >> "`+calls+`"
+case "$1 $2" in
+  "plugin update")
+    python3 - "`+installed+`" "`+ClaudeWorkersPanelVersion()+`" <<'PY'
+import json,sys
+p=sys.argv[1]
+d=json.load(open(p))
+d["plugins"]["`+ClaudeWorkersOldID+`"]=[{"scope":"user","version":sys.argv[2]}]
+json.dump(d,open(p,"w"))
+PY
+  ;;
+  "plugin list") printf '%s\n' '[{"id":"`+ClaudeWorkersSkillsID+`","enabled":false}]' ;;
+esac
+exit 0
+`)
+	if note := MigrateClaudeWorkersOnce(context.Background(), "v1"); note != "" {
+		t.Errorf("note: %q", note)
+	}
+	got := read(t, calls)
+	if strings.Contains(got, "uninstall") || strings.Contains(got, "marketplace remove") {
+		t.Errorf("the daemon moved the old copy:\n%s", got)
+	}
+	if after := read(t, settings); after != before {
+		t.Errorf("the daemon wrote settings.json:\nbefore %s\nafter  %s", before, after)
+	}
+	if s := ClaudeWorkersStatusNow(); !s.OldRuns() || s.OldNeedsRefresh() {
+		t.Errorf("the running old copy was not refreshed in place: %+v", s)
+	}
+}
+
+// Daemon stop cancels a running claude command instead of waiting for it. The
+// fake claude hangs, and the cancel must end the migration promptly.
+func TestMigrateClaudeWorkersOnceStopsOnCancel(t *testing.T) {
+	h := fakeHome(t)
+	if _, err := WriteClaudeWorkers(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := EnsureClaudeWorkersLink(); err != nil {
+		t.Fatal(err)
+	}
+	write(t, ClaudeWorkersStatePath(), `{"asked":true,"installed":true}`)
+	linked := filepath.Join(h, "dotfiles-settings.json")
+	write(t, linked, `{"enabledPlugins":{"`+ClaudeWorkersOldID+`":true},"extraKnownMarketplaces":{"agent-net":{}}}`)
+	mkdirs(t, filepath.Join(h, ".claude"))
+	if err := os.Symlink(linked, filepath.Join(h, ".claude", "settings.json")); err != nil {
+		t.Fatal(err)
+	}
+	oldInstalled(t, h, "0.1.0+old")
+	calls := filepath.Join(h, "calls")
+	fakeClaude(t, h, "#!/bin/sh\necho \"$*\" >> \""+calls+"\"\nexec sleep 60\n")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan string, 1)
+	go func() { done <- MigrateClaudeWorkersOnce(ctx, "v1") }()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(calls); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the fake claude did not run")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancel did not stop the hung claude command")
 	}
 }
