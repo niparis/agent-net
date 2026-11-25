@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -66,36 +67,36 @@ func TestCTOUIBroadcast(t *testing.T) {
 			t.Fatal("missing notice")
 		}
 	}
-	if _, err := call("cto_ui_show", `{"notice":"hello","daemon_notice":true,"herdr_opened":true}`); err != nil {
-		t.Fatal(err)
+	// daemon_notice and herdr_opened are daemon-only fields of
+	// protocol.UIRequest, not arguments of this tool. A CTO call that names
+	// one is refused by name and shows nothing.
+	for _, field := range []string{"daemon_notice", "herdr_opened"} {
+		if _, err := call("cto_ui_show", `{"notice":"hello","`+field+`":true}`); err == nil || !strings.Contains(err.Error(), field) {
+			t.Fatalf("%s from the CTO: %v", field, err)
+		}
+		for _, ch := range channels {
+			select {
+			case q := <-ch:
+				t.Fatalf("%s showed %+v", field, q)
+			default:
+			}
+		}
+	}
+	// A flag the daemon itself sets still reaches the UI.
+	if got := n.d.broadcastCTOUI(protocol.UIRequest{Text: "session started", DaemonNotice: true, HerdrOpened: true}); got != len(channels) {
+		t.Fatalf("daemon notice reached %d of %d TUIs", got, len(channels))
 	}
 	for _, ch := range channels {
 		select {
 		case q := <-ch:
-			if q.DaemonNotice || q.HerdrOpened {
-				t.Fatalf("CTO forged a daemon notice: %+v", q)
+			if q.Text != "session started" || !q.DaemonNotice || !q.HerdrOpened {
+				t.Fatalf("daemon notice: %+v", q)
 			}
 		case <-time.After(time.Second):
-			t.Fatal("missing notice")
+			t.Fatal("missing daemon notice")
 		}
 	}
 	if _, err := call("cto_ui_show", `{"tab":"bad"}`); err == nil {
 		t.Fatal("invalid tab accepted")
-	}
-	if _, err := n.d.executeCTOTool(context.Background(), "ui_show", json.RawMessage(`{"tab":"sessions","daemon_notice":true,"herdr_opened":true}`)); err != nil {
-		t.Fatal(err)
-	}
-	for _, ch := range channels {
-		select {
-		case q := <-ch:
-			raw, _ := json.Marshal(q)
-			var fields map[string]any
-			_ = json.Unmarshal(raw, &fields)
-			if q.DaemonNotice || q.HerdrOpened {
-				t.Fatalf("CTO forged a daemon start: %+v", q)
-			}
-		case <-time.After(time.Second):
-			t.Fatal("missing show")
-		}
 	}
 }

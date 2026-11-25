@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -204,6 +205,17 @@ func sessionHostCommand(args []string) bool {
 		(name == "opencode" && args[1] == "serve")
 }
 
+// difficultyLevelNames lists the known difficulty levels in a stable order for
+// an error a person reads.
+func difficultyLevelNames() string {
+	names := make([]string, 0, len(protocol.DifficultyMinimums))
+	for name := range protocol.DifficultyMinimums {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
+}
+
 // operatorActor is who an owner operation acts as: the CTO when it runs the
 // operation, the owner otherwise (decision 0114, part 2).
 func operatorActor(ctx context.Context) string {
@@ -243,8 +255,8 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		// The CTO's cto_op form of agent_bar_edit. It acts as the owner session,
 		// which the gateway accepts for any project the call names.
 		var p protocol.BarEditRequest
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, true, errors.New("bad bar_edit arguments")
+		if err := decodeCTOArgs(method, raw, &p, "project"); err != nil {
+			return nil, true, err
 		}
 		sid, _, err := lc.callerSession("cli", method)
 		if err != nil {
@@ -313,8 +325,8 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		var p struct {
 			Disabled *bool `json:"disabled"`
 		}
-		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &p) != nil {
-			return nil, true, errors.New("bad notification settings")
+		if err := decodeCTOArgs(method, raw, &p); err != nil {
+			return nil, true, err
 		}
 		if p.Disabled != nil {
 			if _, err := d.st.db.Exec(`INSERT INTO owner_preferences(key,value) VALUES('notifications_disabled',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, *p.Disabled); err != nil {
@@ -353,7 +365,13 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			Name  string `json:"name"`
 			Grant string `json:"grant"`
 		}
-		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
+		write := method == "apps.approve" || method == "apps.refuse" || method == "apps.revoke" ||
+			method == protocol.OpAppsRename || method == protocol.OpAppsGrant || method == protocol.OpAppsUngrant
+		if write {
+			if err := decodeCTOArgs(method, raw, &p, "id"); err != nil {
+				return nil, true, err
+			}
+		} else if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
 			return nil, true, errors.New("bad apps request")
 		}
 		frame := struct {
@@ -386,7 +404,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.call(ctx, "sign_in.list", struct{}{})
 	case "sign_in_raise":
 		var p protocol.SignInRaise
-		if json.Unmarshal(raw, &p) != nil || p.Provider == "" {
+		if err := decodeCTOArgs(method, raw, &p, "provider"); err != nil {
+			return nil, true, err
+		}
+		if p.Provider == "" {
 			return nil, true, errors.New("sign_in_raise needs a provider")
 		}
 		if len(p.Command) != 0 {
@@ -421,7 +442,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.call(ctx, "chief.sorts", struct{}{})
 	case protocol.OpAskUndo:
 		var p protocol.AskUndoRequest
-		if json.Unmarshal(raw, &p) != nil || p.Ask == "" {
+		if err := decodeCTOArgs(method, raw, &p, "ask"); err != nil {
+			return nil, true, err
+		}
+		if p.Ask == "" {
 			return nil, true, errors.New("ask_undo needs ask")
 		}
 		res, err = d.call(ctx, "ask.undo", map[string]any{"ask": p.Ask, "by": operatorActor(ctx)})
@@ -433,7 +457,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.call(ctx, "ask.discuss", map[string]any{"ask": p.Ask, "by": operatorActor(ctx)})
 	case protocol.OpAskMark:
 		var p protocol.AskMarkRequest
-		if json.Unmarshal(raw, &p) != nil || p.Validate() != nil {
+		if err := decodeCTOArgs(method, raw, &p); err != nil {
+			return nil, true, err
+		}
+		if p.Validate() != nil {
 			return nil, true, errors.New("ask_mark needs ask and mark (didnt_need_me or should_have_asked), and an optional why")
 		}
 		res, err = d.call(ctx, "ask.mark", map[string]any{"ask": p.Ask, "mark": p.Mark, "why": p.Why, "by": operatorActor(ctx)})
@@ -471,8 +498,8 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.call(ctx, protocol.FrameFrictionFind, p)
 	case protocol.OpFrictionMark:
 		var p protocol.FrictionMarkRequest
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, true, errors.New("bad friction_mark request")
+		if err := decodeCTOArgs(method, raw, &p); err != nil {
+			return nil, true, err
 		}
 		if err = p.Validate(); err != nil {
 			return nil, true, err
@@ -491,8 +518,14 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			IfVersion uint64 `json:"if_version,omitempty"`
 			Lite      bool   `json:"lite,omitempty"`
 		}
-		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
-			return nil, true, errors.New("bad learned request")
+		var decodeErr error
+		if method == "learned_answer" {
+			decodeErr = decodeCTOArgs(method, raw, &p)
+		} else if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
+			decodeErr = errors.New("bad learned request")
+		}
+		if decodeErr != nil {
+			return nil, true, decodeErr
 		}
 		owner := d.ownerSessionID()
 		if owner == "" {
@@ -519,7 +552,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			Answer string             `json:"answer"`
 			Scope  protocol.RuleScope `json:"scope"`
 		}
-		if json.Unmarshal(raw, &p) != nil || p.ID == "" || p.Answer == "" {
+		if err := decodeCTOArgs(method, raw, &p); err != nil {
+			return nil, true, err
+		}
+		if p.ID == "" || p.Answer == "" {
 			return nil, true, errors.New("inbox_answer needs id and answer")
 		}
 		// from_cto keeps the CTO from approving an app consent ask.
@@ -534,7 +570,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.call(ctx, "inbox.answer", map[string]any{"item_id": p.ID, "answer": p.Answer, "actor": actor, "from_cto": fromCTO, "scope": p.Scope})
 	case "outcome_overrule":
 		var p protocol.OutcomeResolution
-		if json.Unmarshal(raw, &p) != nil || p.ReplyID == "" {
+		if err := decodeCTOArgs(method, raw, &p); err != nil {
+			return nil, true, err
+		}
+		if p.ReplyID == "" {
 			return nil, true, errors.New("outcome_overrule needs reply_id")
 		}
 		p.Owner = d.ownerSessionID()
@@ -548,7 +587,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.call(ctx, "held.list", struct{}{})
 	case protocol.OpHeldAnswer:
 		var p protocol.HeldAnswer
-		if json.Unmarshal(raw, &p) != nil || p.MessageID == "" {
+		if err := decodeCTOArgs(method, raw, &p); err != nil {
+			return nil, true, err
+		}
+		if p.MessageID == "" {
 			return nil, true, errors.New("held_answer needs message_id")
 		}
 		res, err = d.call(ctx, "held.answer", p)
@@ -599,7 +641,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		// peer's request: the gate above refuses agent sessions, and no agent
 		// tool exists for it (decision 0012).
 		var q protocol.SessionTrustRequest
-		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" {
+		if err := decodeCTOArgs(method, raw, &q, "session_id", "on"); err != nil {
+			return nil, true, err
+		}
+		if q.SessionID == "" {
 			return nil, true, errors.New("session_trust needs session_id")
 		}
 		if _, err = d.call(ctx, "session.trust", protocol.SessionTrust{SessionID: q.SessionID, On: q.On}); err == nil {
@@ -610,14 +655,14 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		// The owner's own words: a save from the TUI is source owner. The
 		// same op restores an order when the owner undoes a removal.
 		var q protocol.StandingOrdersRequest
-		if json.Unmarshal(raw, &q) != nil {
-			return nil, true, errors.New("bad standing orders request")
+		if err := decodeCTOArgs(method, raw, &q); err != nil {
+			return nil, true, err
 		}
 		res, err = d.standingOrdersOp(ctx, q, protocol.StandingSourceOwner)
 	case protocol.OpJudgmentAdd:
 		var q protocol.JudgmentAddRequest
-		if json.Unmarshal(raw, &q) != nil {
-			return nil, true, errors.New("bad judgment_add request")
+		if err := decodeCTOArgs(method, raw, &q); err != nil {
+			return nil, true, err
 		}
 		data, err := d.call(ctx, "judgment.add", q)
 		if err != nil {
@@ -633,31 +678,34 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		// Claude Code runs: only the owner at the keyboard, or the CTO on the
 		// owner's instruction, makes it.
 		var q protocol.FolderMCPRequest
-		if json.Unmarshal(raw, &q) != nil {
-			return nil, true, errors.New("folder_mcp needs a project or a path and a choice")
+		if err := decodeCTOArgs(method, raw, &q); err != nil {
+			return nil, true, err
 		}
 		res, err = d.folderMCP(ctx, q)
 	case protocol.OpProcessStop:
 		// Stopping a process cannot be undone: only the owner at the keyboard,
 		// or the CTO on the owner's instruction, may do it (decision 0102).
 		var q protocol.ProcessStopRequest
-		if json.Unmarshal(raw, &q) != nil {
-			return nil, true, errors.New("process_stop needs node_id and pids")
+		if err := decodeCTOArgs(method, raw, &q); err != nil {
+			return nil, true, err
 		}
 		res, err = d.processStop(ctx, q)
 	case protocol.OpFolderTrust:
 		// Claude Code trust is a security setting: only the owner at the
 		// keyboard, or the CTO on the owner's instruction, changes it.
 		var q protocol.FolderTrustRequest
-		if json.Unmarshal(raw, &q) != nil {
-			return nil, true, errors.New("folder_trust needs a project or a path")
+		if err := decodeCTOArgs(method, raw, &q); err != nil {
+			return nil, true, err
 		}
 		res, err = d.folderTrust(ctx, q)
 	case protocol.OpSessionAgentList:
 		res, err = d.call(ctx, "session.agent.list", map[string]string{"owner_session": d.ownerSessionID()})
 	case protocol.OpSessionAgentSet:
 		var q protocol.SessionAgentSetRequest
-		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" || q.Agent == "" {
+		if err := decodeCTOArgs(method, raw, &q); err != nil {
+			return nil, true, err
+		}
+		if q.SessionID == "" || q.Agent == "" {
 			return nil, true, errors.New("session_agent_set needs session_id and agent")
 		}
 		q.Owner = d.ownerSessionID()
@@ -666,14 +714,20 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		}
 	case protocol.OpNotesCopy:
 		var q protocol.NotesCopyRequest
-		if json.Unmarshal(raw, &q) != nil || q.FromAgent == "" || q.ToAgent == "" {
+		if err := decodeCTOArgs(method, raw, &q); err != nil {
+			return nil, true, err
+		}
+		if q.FromAgent == "" || q.ToAgent == "" {
 			return nil, true, errors.New("notes_copy needs from_agent and to_agent")
 		}
 		q.Owner = d.ownerSessionID()
 		res, err = d.call(ctx, "notes.copy", q)
 	case protocol.OpNotesUncopy:
 		var q protocol.NotesUncopyRequest
-		if json.Unmarshal(raw, &q) != nil || len(q.IDs) == 0 {
+		if err := decodeCTOArgs(method, raw, &q); err != nil {
+			return nil, true, err
+		}
+		if len(q.IDs) == 0 {
 			return nil, true, errors.New("notes_uncopy needs ids")
 		}
 		q.Owner = d.ownerSessionID()
@@ -684,7 +738,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			Pinned    bool   `json:"pinned"`
 			Owner     string `json:"owner"`
 		}
-		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" {
+		if err := decodeCTOArgs(method, raw, &q, "session_id", "pinned"); err != nil {
+			return nil, true, err
+		}
+		if q.SessionID == "" {
 			return nil, true, errors.New("session_pin needs session_id")
 		}
 		q.Owner = d.ownerSessionID()
@@ -694,8 +751,8 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			protocol.SessionsArchiveRequest
 			Owner string `json:"owner"`
 		}
-		if json.Unmarshal(raw, &q) != nil {
-			return nil, true, errors.New("bad sessions archive request")
+		if err := decodeCTOArgs(method, raw, &q); err != nil {
+			return nil, true, err
 		}
 		q.Owner = d.ownerSessionID()
 		frame := "sessions.archive"
@@ -708,7 +765,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		// refuses agent sessions; the CTO uses the same method through its
 		// process-tree-checked channel.
 		var q protocol.SessionRenameRequest
-		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" {
+		if err := decodeCTOArgs(method, raw, &q, "session_id", "name"); err != nil {
+			return nil, true, err
+		}
+		if q.SessionID == "" {
 			return nil, true, errors.New("session_rename needs session_id")
 		}
 		var data json.RawMessage
@@ -724,7 +784,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		// restart that already orphaned a session. Both sessions must be on
 		// the same machine; the gateway passes the old session's node.
 		var q protocol.SessionReplaceRequest
-		if json.Unmarshal(raw, &q) != nil || q.OldSession == "" || q.NewSession == "" {
+		if err := decodeCTOArgs(method, raw, &q); err != nil {
+			return nil, true, err
+		}
+		if q.OldSession == "" || q.NewSession == "" {
 			return nil, true, errors.New("session_replace needs old_session and new_session")
 		}
 		actor := "owner"
@@ -767,7 +830,16 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		}
 	case protocol.OpProjectDisplayGet, protocol.OpProjectDisplaySet:
 		var q protocol.ProjectDisplayRequest
-		if json.Unmarshal(raw, &q) != nil || q.Project == "" {
+		var decodeErr error
+		if method == protocol.OpProjectDisplaySet {
+			decodeErr = decodeCTOArgs(method, raw, &q, "project", "name")
+		} else if json.Unmarshal(raw, &q) != nil {
+			decodeErr = errors.New("project display needs project")
+		}
+		if decodeErr != nil {
+			return nil, true, decodeErr
+		}
+		if q.Project == "" {
 			return nil, true, errors.New("project display needs project")
 		}
 		frame := "project.display.get"
@@ -779,7 +851,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		var q struct {
 			NodeID string `json:"node_id"`
 		}
-		if json.Unmarshal(raw, &q) != nil || q.NodeID == "" {
+		if err := decodeCTOArgs(method, raw, &q, "node_id"); err != nil {
+			return nil, true, err
+		}
+		if q.NodeID == "" {
 			return nil, true, errors.New("machine action needs node_id")
 		}
 		actor := proposalActor(ctx)
@@ -796,7 +871,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		// owner at the keyboard sets it (decision 0015). The gate above refuses
 		// agent sessions, and no agent tool exists for it.
 		var q protocol.NodeRenameRequest
-		if json.Unmarshal(raw, &q) != nil || q.NodeID == "" {
+		if err := decodeCTOArgs(method, raw, &q, "node_id", "name"); err != nil {
+			return nil, true, err
+		}
+		if q.NodeID == "" {
 			return nil, true, errors.New("node_rename needs node_id")
 		}
 		var data json.RawMessage
@@ -824,8 +902,8 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.changesFind(ctx, "", q)
 	case protocol.OpChangesOwnerReport:
 		var q protocol.ChangesOwnerReportArgs
-		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &q) != nil {
-			return nil, true, errors.New("bad changes_owner_report params")
+		if err := decodeCTOArgs(method, raw, &q); err != nil {
+			return nil, true, err
 		}
 		if err := q.Validate(); err != nil {
 			return nil, true, err
@@ -853,7 +931,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.call(ctx, protocol.FrameNudgeUndo, protocol.NudgeUndoRequest{PauseID: q.Pause(), Receipt: q.Receipt, Owner: d.ownerSessionID()})
 	case protocol.OpPermissionUndo:
 		var q protocol.PermissionUndoRequest
-		if json.Unmarshal(raw, &q) != nil || q.ID == "" {
+		if err := decodeCTOArgs(method, raw, &q, "id"); err != nil {
+			return nil, true, err
+		}
+		if q.ID == "" {
 			return nil, true, errors.New("permission_undo needs id")
 		}
 		res, err = d.call(ctx, "permission.undo", protocol.PermissionUndoFrame{ProposalID: q.ID, Owner: d.ownerSessionID()})
@@ -937,7 +1018,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		}
 	case protocol.OpPlaybookSet:
 		var q protocol.PlaybookSetRequest
-		if err := json.Unmarshal(raw, &q); err != nil || strings.TrimSpace(q.Model) == "" {
+		if err := decodeCTOArgs(method, raw, &q, "model", "note"); err != nil {
+			return nil, true, err
+		}
+		if strings.TrimSpace(q.Model) == "" {
 			return nil, true, errors.New(method + " needs model")
 		}
 		var data json.RawMessage
@@ -958,7 +1042,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		return plan, true, err
 	case protocol.OpCTOSend:
 		var q protocol.CTOSendRequest
-		if json.Unmarshal(raw, &q) != nil || strings.TrimSpace(q.Text) == "" {
+		if err := decodeCTOArgs(method, raw, &q, "text"); err != nil {
+			return nil, true, err
+		}
+		if strings.TrimSpace(q.Text) == "" {
 			return nil, true, errors.New("cto_send needs text")
 		}
 		if err := d.registerCTOSession(ctx); err != nil {
@@ -985,8 +1072,8 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.timeZoneSettings(ctx, nil)
 	case protocol.OpTimeZoneSet:
 		var q protocol.TimeZoneSettings
-		if json.Unmarshal(raw, &q) != nil {
-			return nil, true, errors.New("bad time zone setting")
+		if err := decodeCTOArgs(method, raw, &q, "name"); err != nil {
+			return nil, true, err
 		}
 		name, zerr := protocol.NormalizeTimeZone(q.Name)
 		if zerr != nil {
@@ -997,32 +1084,49 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.protectedProviders(ctx, nil)
 	case protocol.OpProtectedProvidersSet:
 		var q protocol.ProtectedProviders
-		if json.Unmarshal(raw, &q) != nil {
-			return nil, true, errors.New("bad protected providers")
+		if err := decodeCTOArgs(method, raw, &q, "protected_providers"); err != nil {
+			return nil, true, err
 		}
 		res, err = d.protectedProviders(ctx, &q)
 	case protocol.OpWorkerFloorsGet:
 		res, err = d.workerFloors(ctx, nil)
 	case protocol.OpWorkerFloorsSet:
 		var q protocol.WorkerFloors
-		if json.Unmarshal(raw, &q) != nil {
-			return nil, true, errors.New("bad worker floors")
+		if err := decodeCTOArgs(method, raw, &q, "floors"); err != nil {
+			return nil, true, err
 		}
 		res, err = d.workerFloors(ctx, &q)
 	case protocol.OpWorkerProvidersGet:
 		res, err = d.workerProviders(ctx, nil)
 	case protocol.OpWorkerProvidersSet:
 		var q protocol.WorkerProviders
-		if json.Unmarshal(raw, &q) != nil {
-			return nil, true, errors.New("bad worker providers")
+		if err := decodeCTOArgs(method, raw, &q, "providers"); err != nil {
+			return nil, true, err
 		}
 		res, err = d.workerProviders(ctx, &q)
 	case "difficulty_get":
 		res, err = d.difficulty(ctx, nil)
 	case "difficulty_set":
 		var q map[string]float64
-		if json.Unmarshal(raw, &q) != nil || q == nil {
+		if err := decodeCTOArgs(method, raw, &q); err != nil {
+			return nil, true, err
+		}
+		if q == nil {
 			return nil, true, errors.New("bad difficulty settings")
+		}
+		// The known levels are the keys of protocol.DifficultyMinimums, the
+		// default minimum capability scores that DifficultyFit and the
+		// gateway's PUT /v1/difficulty read. From the CTO an empty map would
+		// clear every override, so it must name at least one level.
+		if lc.cto || proposalActor(ctx) == "cto" {
+			if len(q) == 0 {
+				return nil, true, errors.New("difficulty_set needs at least one level")
+			}
+			for level := range q {
+				if _, ok := protocol.DifficultyMinimums[level]; !ok {
+					return nil, true, fmt.Errorf("difficulty_set has no level %q; use one of %s", level, difficultyLevelNames())
+				}
+			}
 		}
 		res, err = d.difficulty(ctx, q)
 	case protocol.OpScoresGet:
@@ -1041,14 +1145,14 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.pickDifficultyJudge(ctx, req.ExcludeProvider)
 	case protocol.OpScoresSet:
 		var q protocol.ScoreSetRequest
-		if json.Unmarshal(raw, &q) != nil {
-			return nil, true, errors.New("bad scores_set params")
+		if err := decodeCTOArgs(method, raw, &q, "model"); err != nil {
+			return nil, true, err
 		}
 		res, err = d.scores(ctx, &q)
 	case protocol.OpCTOSettings:
 		var q protocol.CTOSettingsRequest
-		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &q) != nil {
-			return nil, true, errors.New("bad cto_settings params")
+		if err := decodeCTOArgs(method, raw, &q); err != nil {
+			return nil, true, err
 		}
 		if q.Model != nil || q.Harness != nil {
 			if err = d.ctoDispatchMu.lock(ctx); err != nil {
@@ -1073,8 +1177,8 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		}
 	case protocol.OpIntegrationsSet:
 		var in protocol.Integrations
-		if json.Unmarshal(raw, &in) != nil {
-			return nil, true, errors.New("integrations_set needs the six answers")
+		if err := decodeCTOArgs(method, raw, &in); err != nil {
+			return nil, true, err
 		}
 		res, err = d.integrationsSet(ctx, in)
 		if err == nil {
@@ -1084,8 +1188,8 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.call(ctx, "onboarding.get", nil)
 	case "onboarding_set":
 		var update protocol.OnboardingUpdate
-		if json.Unmarshal(raw, &update) != nil {
-			return nil, true, errors.New("bad onboarding update")
+		if err := decodeCTOArgs(method, raw, &update); err != nil {
+			return nil, true, err
 		}
 		res, err = d.call(ctx, "onboarding.set", update)
 	case "onboarding_restart":
@@ -1094,19 +1198,31 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.call(ctx, "hidden.get", nil)
 	case protocol.OpHiddenSet:
 		var items protocol.HiddenItems
-		if json.Unmarshal(raw, &items) != nil {
-			return nil, true, errors.New("hidden_set needs sessions and nodes")
+		if err := decodeCTOArgs(method, raw, &items); err != nil {
+			return nil, true, err
+		}
+		// Both lists carry omitempty, so the TUI sends {} for a real clear.
+		// From the CTO that would also make a dropped field clear both lists.
+		// The CTO names a list instead, and [] clears it.
+		if (lc.cto || proposalActor(ctx) == "cto") && !ctoArgsHasAny(raw, "sessions", "nodes") {
+			return nil, true, errors.New("hidden_set needs sessions or nodes; name a list with [] to clear it")
 		}
 		res, err = d.call(ctx, "hidden.set", items)
 	case protocol.OpSessionStop:
 		var p protocol.SessionResumeRequest
-		if json.Unmarshal(raw, &p) != nil || p.SessionID == "" {
+		if err := decodeCTOArgs(method, raw, &p, "session_id"); err != nil {
+			return nil, true, err
+		}
+		if p.SessionID == "" {
 			return nil, true, errors.New("session_stop needs session_id")
 		}
 		res, err = d.sessionStop(ctx, p.SessionID)
 	case protocol.OpSessionResume:
 		var p protocol.SessionResumeRequest
-		if json.Unmarshal(raw, &p) != nil || p.SessionID == "" {
+		if err := decodeCTOArgs(method, raw, &p, "session_id"); err != nil {
+			return nil, true, err
+		}
+		if p.SessionID == "" {
 			return nil, true, errors.New("session_resume needs session_id")
 		}
 		res, err = d.sessionResume(ctx, p)
@@ -1128,7 +1244,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 
 	case "session_enter":
 		var q protocol.EnterRequest
-		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" {
+		if err := decodeCTOArgs(method, raw, &q, "session_id"); err != nil {
+			return nil, true, err
+		}
+		if q.SessionID == "" {
 			return nil, true, errors.New("session_enter needs session_id")
 		}
 		res, err = d.enterPlan(ctx, q)

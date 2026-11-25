@@ -24,7 +24,10 @@ func (lc *localConn) operatorUndo(ctx context.Context, raw json.RawMessage) (any
 	var p struct {
 		Operations []ownerUndoCall `json:"operations"`
 	}
-	if json.Unmarshal(raw, &p) != nil || len(p.Operations) == 0 {
+	if err := decodeCTOArgs("operator_undo", raw, &p, "operations"); err != nil {
+		return nil, err
+	}
+	if len(p.Operations) == 0 {
 		return nil, fmt.Errorf("operator_undo needs operations")
 	}
 	allowed := map[string]bool{"onboarding_restart": true, "onboarding_set": true, "graph_undo": true, "settings_undo": true, "session_rename": true, "merger_set": true, "merger_restore": true, "sessions_archive": true, "apps.public.restore": true, "session_resume": true, "session_stop": true, "session_agent_set": true, "notes_uncopy": true, "hidden_set": true, "timezone_set": true, "difficulty_set": true, "worker_floors_set": true, "worker_floors_reset": true, "session_pin": true}

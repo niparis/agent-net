@@ -2008,7 +2008,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if owner != nc.id {
 			return nil, reject("session %q does not belong to this node", p.SessionID)
 		}
-		res, err := st.ProposePermission(p)
+		res, err := st.ProposePermission(p, nc.id)
 		if err == nil {
 			g.logLine("permission.propose", "node", nc.id, "session", p.SessionID, "proposal", res.ID)
 		}

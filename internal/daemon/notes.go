@@ -21,8 +21,8 @@ func (d *Daemon) ctoNotes(ctx context.Context, tool string, raw json.RawMessage)
 	var arg, out any
 	if tool == "agent_note_write" {
 		var p protocol.NoteWriteRequest
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, errors.New("bad agent_note_write params")
+		if err := decodeCTOArgs(tool, raw, &p); err != nil {
+			return nil, err
 		}
 		frame, arg, out = "note.write", protocol.NoteWriteFrame{NoteWriteRequest: p, Session: sid}, &protocol.NoteWriteResult{}
 	} else {

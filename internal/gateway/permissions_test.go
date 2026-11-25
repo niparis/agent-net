@@ -26,13 +26,13 @@ func permissionRig(t *testing.T) (*Store, string, string) {
 
 // An unregistered target is refused at proposal time and named.
 func TestPermissionProposalRejectsUnregisteredTarget(t *testing.T) {
-	s, _, session := permissionRig(t)
+	s, node, session := permissionRig(t)
 	_, err := s.ProposePermission(protocol.PermissionProposeFrame{
 		SessionID: session,
 		PermissionProposeRequest: protocol.PermissionProposeRequest{
 			Rules: []string{"Bash(gh pr merge *)"}, Targets: []string{"forge", "missing-repo"}, Reason: "merge PRs",
 		},
-	})
+	}, node)
 	if err == nil || !strings.Contains(err.Error(), "missing-repo") {
 		t.Fatalf("unregistered target: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestPermissionProposalRejectsUnregisteredTarget(t *testing.T) {
 // The ask lists every rule, target, reason and proposer, waits for the owner,
 // and neither the chief nor the CTO can take it over.
 func TestPermissionAskIsOwnerOnlyAndRouteFixed(t *testing.T) {
-	s, _, session := permissionRig(t)
+	s, node, session := permissionRig(t)
 	res, err := s.ProposePermission(protocol.PermissionProposeFrame{
 		SessionID: session,
 		PermissionProposeRequest: protocol.PermissionProposeRequest{
@@ -57,7 +57,7 @@ func TestPermissionAskIsOwnerOnlyAndRouteFixed(t *testing.T) {
 			Targets: []string{"forge"},
 			Reason:  "the forge repos need PR merges",
 		},
-	})
+	}, node)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,6 +102,39 @@ func TestPermissionAskIsOwnerOnlyAndRouteFixed(t *testing.T) {
 	}
 }
 
+// Only the daemon that holds a trust folder may name its MCP servers. A frame
+// from another machine's daemon still opens the ask, but names no servers, so
+// a caller cannot put its own list in front of the owner.
+func TestPermissionTrustProposalDropsAnotherNodesMCPServers(t *testing.T) {
+	s, sender, session := permissionRig(t)
+	holder, _, err := s.CreateNode("other-box", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := "/tmp/other-folder"
+	res, err := s.ProposePermission(protocol.PermissionProposeFrame{
+		SessionID: session,
+		PermissionProposeRequest: protocol.PermissionProposeRequest{
+			Kind: protocol.PermissionKindTrust, Machine: "other-box",
+			Targets: []string{path}, Reason: "start there",
+			MCPServersByPath: map[string][]string{path: {"forged-server"}},
+		},
+	}, sender)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Targets) != 1 || res.Targets[0].NodeID != holder || len(res.Targets[0].MCPServers) != 0 {
+		t.Fatalf("a remote folder took the sender's servers: %+v", res.Targets)
+	}
+	var text string
+	if err := s.db.QueryRow(`SELECT text FROM inbox_items WHERE source_ref=?`, permissionAskPrefix+res.ID).Scan(&text); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(text, "forged-server") || strings.Contains(text, "also approves MCP servers") {
+		t.Fatalf("the ask names servers from another machine's daemon:\n%s", text)
+	}
+}
+
 // A trust proposal names one machine and exact folders, and the gateway's own
 // needs_trust ask is deduped by machine and folder while it is open.
 func TestPermissionTrustProposalAndDedupedAsk(t *testing.T) {
@@ -112,7 +145,7 @@ func TestPermissionTrustProposalAndDedupedAsk(t *testing.T) {
 			Kind: protocol.PermissionKindTrust, Machine: "missing-machine",
 			Targets: []string{"/tmp/one"}, Reason: "start there",
 		},
-	}); err == nil || !strings.Contains(err.Error(), "missing-machine") {
+	}, node); err == nil || !strings.Contains(err.Error(), "missing-machine") {
 		t.Fatalf("unknown machine: %v", err)
 	}
 	res, err := s.ProposePermission(protocol.PermissionProposeFrame{
@@ -121,7 +154,7 @@ func TestPermissionTrustProposalAndDedupedAsk(t *testing.T) {
 			Kind: protocol.PermissionKindTrust, Machine: "box",
 			Targets: []string{"/tmp/one", "/tmp/one", "/tmp/two"}, Reason: "start there",
 		},
-	})
+	}, node)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,13 +193,13 @@ func TestPermissionTrustProposalAndDedupedAsk(t *testing.T) {
 
 // The approval log keeps its undo option until the undo settles it.
 func TestPermissionResultLogSettlesOnUndo(t *testing.T) {
-	s, _, session := permissionRig(t)
+	s, node, session := permissionRig(t)
 	res, err := s.ProposePermission(protocol.PermissionProposeFrame{
 		SessionID: session,
 		PermissionProposeRequest: protocol.PermissionProposeRequest{
 			Rules: []string{"Bash(gh pr merge *)"}, Targets: []string{"forge"}, Reason: "merge PRs",
 		},
-	})
+	}, node)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,13 +222,13 @@ func TestPermissionResultLogSettlesOnUndo(t *testing.T) {
 
 // Dismissing the ask rejects the proposal instead of leaving it pending.
 func TestPermissionAskDismissRejects(t *testing.T) {
-	s, _, session := permissionRig(t)
+	s, node, session := permissionRig(t)
 	res, err := s.ProposePermission(protocol.PermissionProposeFrame{
 		SessionID: session,
 		PermissionProposeRequest: protocol.PermissionProposeRequest{
 			Rules: []string{"Bash(gh pr close *)"}, Targets: []string{"forge"}, Reason: "close PRs",
 		},
-	})
+	}, node)
 	if err != nil {
 		t.Fatal(err)
 	}

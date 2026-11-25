@@ -51,9 +51,10 @@ type PermissionProposeRequest struct {
 	Reason  string   `json:"reason"`
 	// MCPServersByPath names the servers of each trust folder's own .mcp.json,
 	// keyed by the folder path as the caller gave it and by its expanded path.
-	// The daemon on the machine that holds the folders fills it, so the ask can
-	// say which servers the click approves. The gateway ignores paths it does
-	// not know.
+	// The daemon on the machine that holds the folders fills it; the gateway
+	// uses a frame's entries only for folders on the machine that sent it, and
+	// a caller's own list is dropped by the daemon. The gateway ignores paths
+	// it does not know.
 	MCPServersByPath map[string][]string `json:"mcp_servers_by_path,omitempty"`
 }
 

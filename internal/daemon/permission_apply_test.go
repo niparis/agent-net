@@ -505,6 +505,73 @@ func trustAskFor(t *testing.T, cli *localClient, path string) protocol.Ask {
 	return ask
 }
 
+// A caller's own mcp_servers_by_path never reaches the owner's trust ask. The
+// daemon fills that list from each folder's own .mcp.json on the machine that
+// holds it, so a forged list is dropped and a folder with no server stays
+// empty.
+func TestPermissionProposeTrustIgnoresCallerMCPServers(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	home := folderTrustEnv(t)
+	n := startNode(t, g, nodeOpts{cmdline: "pi"})
+	cli := cliClient(t, n)
+	plain := newHomeRepo(t, home, "code/plain")
+	withServer := newHomeRepo(t, home, "code/with-server")
+	if err := os.WriteFile(filepath.Join(withServer, ".mcp.json"),
+		[]byte(`{"mcpServers":{"real":{"command":"real-mcp"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pi, _ := helloPi(t, n, "np", home, false)
+
+	propose := func(folder string) protocol.PermissionProposeResult {
+		t.Helper()
+		raw := pi.mustCall(protocol.OpPermissionPropose, protocol.PermissionProposeRequest{
+			Kind:    protocol.PermissionKindTrust,
+			Machine: n.cfg.Hostname,
+			Targets: []string{folder},
+			Reason:  "Claude Code cannot start here",
+			// A caller that speaks the local protocol itself could send this.
+			MCPServersByPath: map[string][]string{folder: {"forged-server"}},
+		})
+		var res protocol.PermissionProposeResult
+		if err := json.Unmarshal(raw, &res); err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	askText := func(folder string) string {
+		t.Helper()
+		var box struct {
+			Items []protocol.InboxItem `json:"items"`
+		}
+		if err := json.Unmarshal(cli.mustCall("inbox_list", nil), &box); err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range box.Items {
+			if item.Kind == protocol.AskKindPermission && strings.Contains(item.Text, folder) {
+				return item.Text
+			}
+		}
+		t.Fatalf("no trust ask for %s", folder)
+		return ""
+	}
+
+	plainRes := propose(plain)
+	if text := askText(plain); strings.Contains(text, "forged-server") {
+		t.Fatalf("a caller's server list reached the ask:\n%s", text)
+	}
+	if len(plainRes.Targets) != 1 || len(plainRes.Targets[0].MCPServers) != 0 {
+		t.Fatalf("a caller's server list reached the proposal: %+v", plainRes.Targets)
+	}
+	if res := propose(withServer); len(res.Targets) != 1 ||
+		!reflect.DeepEqual(res.Targets[0].MCPServers, []string{"real"}) {
+		t.Fatalf("the folder's own server did not fill the proposal: %+v", res.Targets)
+	}
+	text := askText(withServer)
+	if !strings.Contains(text, "also approves MCP servers: real") || strings.Contains(text, "forged-server") {
+		t.Fatalf("the ask does not name only the folder's own server:\n%s", text)
+	}
+}
+
 // mcpFolder makes home/rel an untrusted git folder whose own .mcp.json declares
 // tenebrae-library, the tenebrae-strats case.
 func mcpFolder(t *testing.T, home, rel string) string {
