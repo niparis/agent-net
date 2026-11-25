@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -24,9 +25,26 @@ type ownerChoice struct {
 	Provider string `json:"provider,omitempty"`
 	Model    string `json:"model,omitempty"`
 	Effort   string `json:"effort,omitempty"`
+	// NamedAt is when he named it, in Unix nanoseconds of the gateway's
+	// clock. His newest word wins: a pause he set after it beats his choice.
+	NamedAt int64 `json:"named_at,omitempty"`
 }
 
-func (c ownerChoice) empty() bool { return c == ownerChoice{} }
+func (c ownerChoice) empty() bool {
+	return c.Harness == "" && c.Provider == "" && c.Model == "" && c.Effort == ""
+}
+
+// pausedSince tells whether the owner paused the held model after he named
+// it. A pause he set before he named the model, or one with no time (set
+// before decision 0191, so before any held choice), does not count: naming a
+// paused model is his newer word, and it runs as in decision 0188.
+func (c ownerChoice) pausedSince(scores []protocol.ModelScore) bool {
+	if c.Model == "" {
+		return false
+	}
+	at, paused := protocol.WorkerModelPausedAt(protocol.WorkerModelCandidate{Harness: c.Harness, Model: c.Model}, scores)
+	return paused && at > c.NamedAt
+}
 
 // ownerSaid tells whether the start's selection fields are the owner's own:
 // his command line or TUI, or his words found by the caller's daemon
@@ -47,18 +65,18 @@ func namedSelection(r protocol.WorkerStartRequest) bool {
 		strings.TrimSpace(r.Provider) != "" || strings.TrimSpace(r.Effort) != ""
 }
 
-// ownerChoiceOf is what the owner named in a start. asked is the request as
-// the owner sent it; harness, provider, model and effort are what the start
-// resolved and will run. A named model keeps the resolved model and the
-// harness it runs on; otherwise only the fields he named are kept.
-func ownerChoiceOf(asked protocol.WorkerStartRequest, said bool, harness, provider, model, effort string) ownerChoice {
+// ownerChoiceOf is what the owner named in a start at time at. asked is the
+// request as the owner sent it; harness, provider, model and effort are what
+// the start resolved and will run. A named model keeps the resolved model and
+// the harness it runs on; otherwise only the fields he named are kept.
+func ownerChoiceOf(asked protocol.WorkerStartRequest, said bool, at time.Time, harness, provider, model, effort string) ownerChoice {
 	if !said || !namedSelection(asked) {
 		return ownerChoice{}
 	}
 	if modelNamed(asked.Model) {
-		return ownerChoice{Harness: harness, Provider: provider, Model: model, Effort: effort}
+		return ownerChoice{Harness: harness, Provider: provider, Model: model, Effort: effort, NamedAt: at.UnixNano()}
 	}
-	return ownerChoice{Harness: strings.TrimSpace(asked.Harness), Provider: strings.TrimSpace(asked.Provider), Effort: strings.TrimSpace(asked.Effort)}
+	return ownerChoice{Harness: strings.TrimSpace(asked.Harness), Provider: strings.TrimSpace(asked.Provider), Effort: strings.TrimSpace(asked.Effort), NamedAt: at.UnixNano()}
 }
 
 // setStartOwnerChoice stores the owner's choice on a tracked start.

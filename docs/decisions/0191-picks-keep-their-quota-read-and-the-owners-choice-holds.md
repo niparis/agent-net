@@ -71,8 +71,8 @@ reading arrives. The record keeps both times, so a reviewer can see these cases.
    found them (`owner_selected`). A start by the CTO without his words, or by
    an agent, does not.
 2. A continue that names none of these fields runs what he named:
-   - a named model runs again on its harness, as his: a model he paused still
-     runs (0188);
+   - a named model runs again on its harness, as his: a model he had paused
+     when he named it still runs (0188);
    - a named harness alone keeps the 0189 re-pick inside that harness;
    - a named provider or effort alone keeps the old model with it.
    The note says `kept <what>, which the owner named at the worker's first
@@ -87,6 +87,20 @@ reading arrives. The record keeps both times, so a reviewer can see these cases.
    the gateway database, so it survives daemon and gateway restarts. A start
    record that holds one is kept as long as its worker session.
 6. A worker whose start the owner did not name re-picks as 0189 says.
+7. The owner's newest word wins. The start record keeps when he named the
+   model (`named_at`), and the score command keeps when he set each score
+   (`set_at`, in `owner.model_scores`). A held model that he paused after he
+   named it is treated as paused: the continue is refused or re-picked exactly
+   as for a model he never named, and the note says `the owner paused <model>
+   after he named it at the worker's first start`. A held model that was
+   already paused when he named it keeps running. A pause he lifts again
+   leaves his choice in force; a pause he sets after that is newer, so it
+   wins again. A pause with no `set_at` was set before this decision, so
+   before any held choice: it is older than his naming.
+
+   Only the score command stamps `set_at`. A score list restored by a
+   settings undo keeps the times it had, so an undone lift brings back the
+   pause with its old time.
 
 ## Not changed
 

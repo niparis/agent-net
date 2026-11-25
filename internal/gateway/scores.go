@@ -51,7 +51,7 @@ func (g *Gateway) handleScoresSet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if q.Score != nil {
-		out = append(out, protocol.ModelScore{Match: q.Model, Score: *q.Score, Source: "owner"})
+		out = append(out, protocol.ModelScore{Match: q.Model, Score: *q.Score, Source: "owner", SetAt: g.store.now().UnixNano()})
 	}
 	err = g.store.setOwner(scoresKey, out)
 	if err == nil {

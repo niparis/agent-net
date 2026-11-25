@@ -1124,7 +1124,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if err := g.store.trackBriefLaunch(startRef, protocol.BriefHash(pick.Name, p.WorkerStartRequest)); err != nil {
 		return none, err
 	}
-	if err := g.store.setStartOwnerChoice(startRef, ownerChoiceOf(asked, said, p.Harness, p.Provider, p.Model, p.Effort)); err != nil {
+	if err := g.store.setStartOwnerChoice(startRef, ownerChoiceOf(asked, said, g.store.now(), p.Harness, p.Provider, p.Model, p.Effort)); err != nil {
 		return none, err
 	}
 	// The machine records the assessment it gets here when the worker runs.
@@ -1697,11 +1697,17 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	}
 	// The owner's choice holds: a continue that names none runs what he named
 	// at the worker's first start. A named model runs as his, so a model he
-	// paused still runs; a named harness alone keeps the re-pick inside it.
-	// A continue that names its own fields replaces his choice only when they
-	// are his too.
+	// had paused when he named it still runs; a named harness alone keeps the
+	// re-pick inside it. His newest word wins: a pause he set after he named
+	// the model beats his choice, and the continue meets the pause as one he
+	// never named. A continue that names its own fields replaces his choice
+	// only when they are his too.
 	asked := p.WorkerStartRequest
 	held, err := g.store.ownerChoiceForSession(old.SessionID)
+	if err != nil {
+		return none, err
+	}
+	scores, err := g.store.scores()
 	if err != nil {
 		return none, err
 	}
@@ -1709,6 +1715,8 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	var heldHarness, heldNote string
 	if !namedSelection(asked) && !held.empty() {
 		switch {
+		case held.pausedSince(scores):
+			heldNote = fmt.Sprintf("the owner paused %s %s after he named it at the worker's first start", held.Harness, held.Model)
 		case held.Model != "":
 			p.Harness, p.Provider, p.Model, p.Effort = held.Harness, held.Provider, held.Model, held.Effort
 			ownerNamed = true
@@ -1791,10 +1799,6 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	if err != nil {
 		return none, err
 	}
-	scores, err := g.store.scores()
-	if err != nil {
-		return none, err
-	}
 	// A continue that names no model meets the picker's rules of today at the
 	// level stored with the worker. A model that no longer qualifies is
 	// replaced; one the caller or the owner named is kept (decision 0189).
@@ -1855,7 +1859,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	}
 	// The new worker keeps the owner's choice for its own continues: the one
 	// he named now, else the one of the worker it continues.
-	choice := ownerChoiceOf(asked, said, harness, p.Provider, continuedModel, p.Effort)
+	choice := ownerChoiceOf(asked, said, g.store.now(), harness, p.Provider, continuedModel, p.Effort)
 	if choice.empty() {
 		choice = held
 	}

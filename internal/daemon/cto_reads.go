@@ -10,13 +10,14 @@ import (
 )
 
 // Each view is derived from ordinary dispatch with the CTO session, or from
-// the CTO's own proposal store and static guidance.
+// the CTO's own proposal store and static guidance. A read whose sources
+// depend on its detail names the extra source after a semicolon.
 var ctoReadSources = map[string]string{
 	"cto_proposals_find":  "own proposals,asks.list,permission.get",
 	"cto_intake_find":     protocol.FrameIntakeFind,
 	"agent_sessions_find": "sessions_find",
 	"agent_machines_find": "machines_find", "agent_machine_log": "machine_log",
-	"agent_projects_find": "projects_find", "agent_workers_find": "list,get",
+	"agent_projects_find": "projects_find", "agent_workers_find": "list,get; detail full adds pick_quota",
 	"agent_messages_find": "messages",
 	"agent_graph_read":    "agent_graph", "agent_settings_read": "settings_read", "agent_mcp_servers_find": "mcp_list",
 	"agent_worker_profiles_find": "worker_profiles", "agent_owner_judgments_find": "judgments_find", "projects_layout": "projects_layout",

@@ -3,8 +3,12 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -107,5 +111,33 @@ func TestMachineGetListsModelScores(t *testing.T) {
 	}
 	if !reflect.DeepEqual(haiku.Scores, want) {
 		t.Fatalf("haiku scores = %+v, want %+v", haiku.Scores, want)
+	}
+}
+
+// The score command stamps the owner's score with the time he set it, so a
+// pause can be ordered against the model he named for a worker (decision
+// 0191).
+func TestOwnerScoreKeepsWhenItWasSet(t *testing.T) {
+	gw, err := New(Options{DataDir: seededDataDir(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gw.Close()
+	at := time.Date(2026, 11, 25, 12, 0, 0, 0, time.UTC)
+	gw.store.now = func() time.Time { return at }
+	_, token, err := gw.Store().CreateNode("laptop", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodPut, "/v1/scores", strings.NewReader(`{"model":"claude-opus-5-5","score":0}`))
+	r.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	gw.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT: %d %s", w.Code, w.Body)
+	}
+	scores, err := gw.store.scores()
+	if err != nil || len(scores) != 1 || scores[0].SetAt != at.UnixNano() {
+		t.Fatalf("stored scores: %+v %v", scores, err)
 	}
 }

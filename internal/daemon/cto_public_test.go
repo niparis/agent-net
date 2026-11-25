@@ -18,7 +18,7 @@ var wantCTOReads = map[string]string{
 	"cto_intake_find":     protocol.FrameIntakeFind,
 	"agent_sessions_find": "sessions_find",
 	"agent_machines_find": "machines_find", "agent_machine_log": "machine_log",
-	"agent_projects_find": "projects_find", "agent_workers_find": "list,get,pick_quota",
+	"agent_projects_find": "projects_find", "agent_workers_find": "list,get; detail full adds pick_quota",
 	"agent_messages_find": "messages",
 	"agent_graph_read":    "agent_graph", "agent_settings_read": "settings_read", "agent_mcp_servers_find": "mcp_list",
 	"agent_worker_profiles_find": "worker_profiles", "agent_owner_judgments_find": "judgments_find", "projects_layout": "projects_layout",
@@ -200,6 +200,8 @@ func TestCTOReadParity(t *testing.T) {
 		t.Fatalf("session %s %v; agent %s %v", gb, ge, wb, we)
 	}
 
+	ctoWorkersFindParity(t, g, w)
+
 	if _, err := w.d.readCTOTool(context.Background(), "unsourced_read", nil); err == nil {
 		t.Fatal("read without source ran")
 	}
@@ -207,6 +209,63 @@ func TestCTOReadParity(t *testing.T) {
 	id, err := caller.boundID()
 	if err != nil || id == "" || id == w.ownerID() || caller.client == "cli" {
 		t.Fatalf("CTO borrowed owner authority: %q %v", id, err)
+	}
+}
+
+// ctoWorkersFindParity checks agent_workers_find against its sources: the
+// concise read shows no quota read, and the full read's quota_read for a worker
+// is exactly what the ordinary agent's pick_quota read gives for it.
+func ctoWorkersFindParity(t *testing.T, g *testGateway, w *workerNode) {
+	t.Helper()
+	st := g.gw.Store()
+	worker, err := st.UpsertSession(w.d.NodeID(), protocol.SessionInfo{Harness: "codex", NativeID: "parity-worker",
+		Worker: &protocol.WorkerInfo{ID: "w_parity", Owner: w.ownerID(), Project: "alpha", StartedAt: 1, RunGeneration: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	quota := &protocol.PickQuota{At: 100, ReadAt: 100,
+		Providers:  []protocol.PickQuotaProvider{{Provider: "codex", ReadAt: 100, Windows: []protocol.PickQuotaWindow{{ID: "5h", Kind: "five_hour", Used: 40, ResetsAt: 3700}}}},
+		Candidates: []protocol.PickQuotaCandidate{{Pos: 0, Provider: "codex", Windows: []string{"5h"}, Decided: "5h"}}}
+	if err := st.RecordWorkerAssessment(protocol.WorkerAssessment{RunID: "r_parity", SessionID: worker, StartedAt: 1, AssessedAt: 1, Label: "normal", Confidence: "high",
+		PickRows: []protocol.PickCandidate{{Name: "codex gpt-6.1-terra", Harness: "codex", Model: "gpt-6.1-terra"}}, PickQuota: quota}); err != nil {
+		t.Fatal(err)
+	}
+	read := func(detail string) map[string]any {
+		t.Helper()
+		value, err := w.d.runCTOToolRaw(context.Background(), "agent_workers_find", json.RawMessage(`{"state":"any","detail":"`+detail+`"}`))
+		if err != nil {
+			t.Fatalf("agent_workers_find %s: %v", detail, err)
+		}
+		raw, _ := json.Marshal(value)
+		var out struct {
+			Items []map[string]any `json:"items"`
+		}
+		if err := json.Unmarshal(raw, &out); err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range out.Items {
+			if item["id"] == worker {
+				return item
+			}
+		}
+		t.Fatalf("agent_workers_find %s has no worker %s: %s", detail, worker, raw)
+		return nil
+	}
+	if row := read("concise"); row["quota_read"] != nil {
+		t.Fatalf("the concise read shows a quota read: %v", row)
+	}
+	value, err := w.d.ctoReadConn().dispatch(context.Background(), "pick_quota", json.RawMessage(`{"sessions":["`+worker+`"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ordinary protocol.PickQuotaResult
+	if err := ctoDecode(value, &ordinary); err != nil || len(ordinary.Picks[worker].Lines) == 0 {
+		t.Fatalf("the ordinary pick_quota read: %+v %v", ordinary, err)
+	}
+	got, _ := json.Marshal(read("full")["quota_read"])
+	want, _ := json.Marshal(ordinary.Picks[worker].Lines)
+	if string(got) != string(want) {
+		t.Fatalf("full quota_read %s; the ordinary read %s", got, want)
 	}
 }
 

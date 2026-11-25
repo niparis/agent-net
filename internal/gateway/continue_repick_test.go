@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/coder/websocket"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -343,18 +344,19 @@ func (cf continueFixture) restartedGateway(t *testing.T) *Gateway {
 	return g
 }
 
-// The model the owner named at a worker's first start holds for a continue
-// that names none, across a gateway restart, even after he paused it: the
-// re-pick of decision 0189 does not move it (decision 0191).
-func TestContinueKeepsTheModelTheOwnerNamed(t *testing.T) {
-	cf := continueGateway(t)
-	cf.setScores(t)
-	worker, first := cf.startedWorker(t, cf.owner, protocol.WorkerStartRequest{Model: opusModel}, "hard")
-	if first.Harness != "claude" || first.Model != opusModel {
-		t.Fatalf("first start ran %q %q", first.Harness, first.Model)
-	}
-	cf.setScores(t, pausedScore("claude-opus-5-5"))
-	g := cf.restartedGateway(t)
+// pauseNow is the owner's pause of match, set one second later on the test
+// clock, as the score command stamps it.
+func (cf continueFixture) pauseNow(match string) protocol.ModelScore {
+	cf.clock.advance(time.Second)
+	p := pausedScore(match)
+	p.SetAt = cf.clock.now().UnixNano()
+	return p
+}
+
+// keptOwnersModel continues worker through g and checks that the machine was
+// asked to run the owner's opus with the note that says so.
+func (cf continueFixture) keptOwnersModel(t *testing.T, g *Gateway, worker string) {
+	t.Helper()
 	ans, f, err := cf.continueAs(t, g, cf.owner, worker, "")
 	if err != nil {
 		t.Fatalf("continue: %v", err)
@@ -365,6 +367,71 @@ func TestContinueKeepsTheModelTheOwnerNamed(t *testing.T) {
 	if want := "kept claude " + opusModel + ", which the owner named at the worker's first start"; !strings.Contains(ans.ModelNote, want) {
 		t.Fatalf("note %q lacks %q", ans.ModelNote, want)
 	}
+}
+
+// movedFromOwnersModel continues worker and checks that the continue met the
+// owner's pause as on a model he never named: the re-pick of decision 0189
+// moved it, and the note says he paused it after he named it.
+func (cf continueFixture) movedFromOwnersModel(t *testing.T, worker string) {
+	t.Helper()
+	ans, f, err := cf.continueWorker(t, worker, "")
+	if err != nil {
+		t.Fatalf("continue: %v", err)
+	}
+	if f.Harness == "claude" || !strings.Contains(ans.ModelNote, "continue moved from claude "+opusModel) ||
+		!strings.Contains(ans.ModelNote, "the owner paused claude "+opusModel+" after he named it") {
+		t.Fatalf("the machine was asked to run %q %q; note %q", f.Harness, f.Model, ans.ModelNote)
+	}
+}
+
+// A model the owner had paused when he named it at a worker's first start
+// holds for a continue that names none, across a gateway restart: naming it
+// is his newer word, so the re-pick of decision 0189 does not move it
+// (decision 0191).
+func TestContinueKeepsTheModelTheOwnerNamedWhilePaused(t *testing.T) {
+	cf := continueGateway(t)
+	cf.setScores(t, cf.pauseNow("claude-opus-5-5"))
+	cf.clock.advance(time.Second)
+	worker, first := cf.startedWorker(t, cf.owner, protocol.WorkerStartRequest{Model: opusModel}, "hard")
+	if first.Harness != "claude" || first.Model != opusModel {
+		t.Fatalf("first start ran %q %q", first.Harness, first.Model)
+	}
+	cf.keptOwnersModel(t, cf.restartedGateway(t), worker)
+}
+
+// A pause the owner sets after he named the model is his newest word: the
+// continue meets it as on main, so it moves to the picker's choice.
+func TestContinueOfTheOwnersModelPausedLaterMoves(t *testing.T) {
+	cf := continueGateway(t)
+	cf.setScores(t)
+	worker, _ := cf.startedWorker(t, cf.owner, protocol.WorkerStartRequest{Model: opusModel}, "hard")
+	cf.setScores(t, cf.pauseNow("claude-opus-5-5"))
+	cf.movedFromOwnersModel(t, worker)
+}
+
+// A pause lifted again leaves the owner's choice in force. A pause set again
+// after that is newer than his naming, even when the model was paused when
+// he named it.
+func TestContinueOfTheOwnersModelAfterAPauseIsLifted(t *testing.T) {
+	t.Run("named, paused, lifted", func(t *testing.T) {
+		cf := continueGateway(t)
+		cf.setScores(t)
+		worker, _ := cf.startedWorker(t, cf.owner, protocol.WorkerStartRequest{Model: opusModel}, "hard")
+		cf.setScores(t, cf.pauseNow("claude-opus-5-5"))
+		cf.clock.advance(time.Second)
+		cf.setScores(t)
+		cf.keptOwnersModel(t, cf.g, worker)
+	})
+	t.Run("paused, named, lifted, paused again", func(t *testing.T) {
+		cf := continueGateway(t)
+		cf.setScores(t, cf.pauseNow("claude-opus-5-5"))
+		cf.clock.advance(time.Second)
+		worker, _ := cf.startedWorker(t, cf.owner, protocol.WorkerStartRequest{Model: opusModel}, "hard")
+		cf.clock.advance(time.Second)
+		cf.setScores(t)
+		cf.setScores(t, cf.pauseNow("claude-opus-5-5"))
+		cf.movedFromOwnersModel(t, worker)
+	})
 }
 
 // The owner's choice still meets the gate: a continue of a model whose quota

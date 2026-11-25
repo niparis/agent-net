@@ -18,6 +18,10 @@ type ModelScore struct {
 	Score          float64 `json:"score"`
 	Source         string  `json:"source"`
 	FallbackEffort string  `json:"fallback_effort,omitempty"`
+	// SetAt is when the owner set the score, in Unix nanoseconds of the
+	// gateway's clock. A held model the owner paused after he named it is
+	// paused again (decision 0191). Zero for the table and for older scores.
+	SetAt int64 `json:"set_at,omitempty"`
 }
 
 //go:embed scores.json
