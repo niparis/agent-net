@@ -557,6 +557,11 @@ func MigrateClaudeWorkersOnce(ctx context.Context, version string) string {
 		}
 		return ""
 	}
+	if ctx.Err() != nil {
+		// Daemon stop interrupted the run. Recording it would stop a fresh
+		// start of the same version from refreshing the panel again.
+		return ""
+	}
 	b, _ := json.MarshalIndent(claudeWorkersMigrateState{Version: version, Failed: true}, "", "  ")
 	_ = os.WriteFile(claudeWorkersMigrateStatePath(), append(b, '\n'), 0o600)
 	return note
@@ -579,6 +584,16 @@ func loadClaudeWorkersMigrateState() claudeWorkersMigrateState {
 	return st
 }
 
+// claudeCommand builds a claude command for the background plugin work. The
+// WaitDelay bounds a child that keeps the output pipe open after the command
+// exits or its context is cancelled, so daemon stop never waits for it.
+func claudeCommand(ctx context.Context, claude string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, claude, args...)
+	cmd.Dir = home()
+	cmd.WaitDelay = time.Second
+	return cmd
+}
+
 // RefreshClaudeWorkers updates Claude Code's copy of the old marketplace
 // plugin. The two commands write Claude Code's own plugin state, not
 // settings.json, so they are safe on a settings file that is a link. Each
@@ -591,9 +606,7 @@ func RefreshClaudeWorkers(ctx context.Context) []string {
 	var failures []string
 	for _, args := range [][]string{{"plugin", "marketplace", "update", ClaudeWorkersMarketplace}, {"plugin", "update", ClaudeWorkersOldID, "-s", "user"}} {
 		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		cmd := exec.CommandContext(ctx, claude, args...)
-		cmd.Dir = home()
-		out, err := cmd.CombinedOutput()
+		out, err := claudeCommand(ctx, claude, args...).CombinedOutput()
 		cancel()
 		if err != nil {
 			line := strings.TrimSpace(string(out))
@@ -616,9 +629,7 @@ func uninstallOldClaudeWorkers(ctx context.Context) string {
 		return "worker window off: claude not found"
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	cmd := exec.CommandContext(ctx, claude, "plugin", "uninstall", ClaudeWorkersOldID, "-s", "user")
-	cmd.Dir = home()
-	out, err := cmd.CombinedOutput()
+	out, err := claudeCommand(ctx, claude, "plugin", "uninstall", ClaudeWorkersOldID, "-s", "user").CombinedOutput()
 	cancel()
 	if err != nil {
 		line := strings.TrimSpace(string(out))
@@ -658,9 +669,7 @@ func removeOldClaudeWorkers(ctx context.Context, requireSkills bool) string {
 	var failures []string
 	if requireSkills {
 		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		list := exec.CommandContext(ctx, claude, "plugin", "list", "--json")
-		list.Dir = home()
-		out, err := list.Output()
+		out, err := claudeCommand(ctx, claude, "plugin", "list", "--json").Output()
 		cancel()
 		if err != nil || !strings.Contains(string(out), ClaudeWorkersSkillsID) {
 			return "the old marketplace plugin stays: Claude Code does not list " + ClaudeWorkersSkillsID + " yet"
@@ -671,9 +680,7 @@ func removeOldClaudeWorkers(ctx context.Context, requireSkills bool) string {
 		{"plugin", "marketplace", "remove", ClaudeWorkersMarketplace},
 	} {
 		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		cmd := exec.CommandContext(ctx, claude, args...)
-		cmd.Dir = home()
-		if out, err := cmd.CombinedOutput(); err != nil {
+		if out, err := claudeCommand(ctx, claude, args...).CombinedOutput(); err != nil {
 			line := strings.TrimSpace(string(out))
 			if line == "" {
 				line = err.Error()

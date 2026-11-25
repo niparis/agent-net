@@ -284,3 +284,98 @@ func TestMigrateClaudeWorkersOnceStopsOnCancel(t *testing.T) {
 		t.Fatal("cancel did not stop the hung claude command")
 	}
 }
+
+// A run that daemon stop cancelled is not a failed run for the binary
+// version: the next start of the same version must refresh the panel again.
+func TestMigrateClaudeWorkersOnceDoesNotRecordACancelledRun(t *testing.T) {
+	h := fakeHome(t)
+	if _, err := WriteClaudeWorkers(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := EnsureClaudeWorkersLink(); err != nil {
+		t.Fatal(err)
+	}
+	write(t, ClaudeWorkersStatePath(), `{"asked":true,"installed":true}`)
+	linked := filepath.Join(h, "dotfiles-settings.json")
+	write(t, linked, `{"enabledPlugins":{"`+ClaudeWorkersOldID+`":true},"extraKnownMarketplaces":{"agent-net":{}}}`)
+	mkdirs(t, filepath.Join(h, ".claude"))
+	if err := os.Symlink(linked, filepath.Join(h, ".claude", "settings.json")); err != nil {
+		t.Fatal(err)
+	}
+	oldInstalled(t, h, "0.1.0+old")
+	calls := filepath.Join(h, "calls")
+	fakeClaude(t, h, "#!/bin/sh\necho \"$*\" >> \""+calls+"\"\nexec sleep 60\n")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan string, 1)
+	go func() { done <- MigrateClaudeWorkersOnce(ctx, "v1") }()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(calls); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the fake claude did not run")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancel did not stop the hung claude command")
+	}
+	first := countCalls(t, calls)
+
+	fakeClaude(t, h, "#!/bin/sh\necho \"$*\" >> \""+calls+"\"\nexit 0\n")
+	if note := MigrateClaudeWorkersOnce(context.Background(), "v1"); note == "" {
+		t.Error("the same version did not try again after a cancelled run")
+	}
+	if got := countCalls(t, calls); got <= first {
+		t.Errorf("claude did not run again for the same version: %d then %d", first, got)
+	}
+}
+
+// A claude command whose child keeps the output pipe open must not delay
+// daemon stop: WaitDelay bounds the wait after the context is cancelled.
+func TestMigrateClaudeWorkersOnceWaitDelayBoundsAHeldPipe(t *testing.T) {
+	h := fakeHome(t)
+	if _, err := WriteClaudeWorkers(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := EnsureClaudeWorkersLink(); err != nil {
+		t.Fatal(err)
+	}
+	write(t, ClaudeWorkersStatePath(), `{"asked":true,"installed":true}`)
+	linked := filepath.Join(h, "dotfiles-settings.json")
+	write(t, linked, `{"enabledPlugins":{"`+ClaudeWorkersOldID+`":true},"extraKnownMarketplaces":{"agent-net":{}}}`)
+	mkdirs(t, filepath.Join(h, ".claude"))
+	if err := os.Symlink(linked, filepath.Join(h, ".claude", "settings.json")); err != nil {
+		t.Fatal(err)
+	}
+	oldInstalled(t, h, "0.1.0+old")
+	calls := filepath.Join(h, "calls")
+	// The script exits at once, but its background child holds stdout, so the
+	// output pipe stays open until WaitDelay closes it.
+	fakeClaude(t, h, "#!/bin/sh\necho \"$*\" >> \""+calls+"\"\nsleep 60 &\nexit 0\n")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan string, 1)
+	go func() { done <- MigrateClaudeWorkersOnce(ctx, "v1") }()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(calls); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the fake claude did not run")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a child holding the output pipe delayed stop past 2 seconds")
+	}
+}
