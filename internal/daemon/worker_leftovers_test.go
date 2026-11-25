@@ -308,3 +308,36 @@ func TestHandbackWhileGatewayDownRecordsTheHeadWhenSent(t *testing.T) {
 		t.Errorf("the change records %s, want the head %s", q.HeadCommit, gitHead(t, wt, "HEAD"))
 	}
 }
+
+// An Antigravity hand-back keeps its report in the stream state, not in a
+// saved row. While the gateway is down it is not sent without its change
+// record: it waits, and its retry after the link is back records the head.
+func TestAgyHandbackWhileGatewayDownWaitsForTheRecord(t *testing.T) {
+	w, _, wt := leftoverWorker(t)
+	w.harness = "agy"
+	d, f := handbackRecordDaemon(t)
+	submit := f.answers[protocol.FrameChangeSubmit]
+	f.answer(protocol.FrameChangeSubmit, func(json.RawMessage) (any, error) { return nil, errNotConnected })
+
+	tail := &handbackTail{req: handbackDone, sessionID: w.sessionID, complete: true}
+	if _, err := d.finishHandback(context.Background(), w, tail); !errors.Is(err, errHandbackDeferred) {
+		t.Fatalf("hand-back while the gateway is down: %v", err)
+	}
+	if queued, _ := d.st.outbox(); len(queued) != 0 {
+		t.Fatalf("the notice went out without the change record: %s", queued[0].msg.Body)
+	}
+
+	writeFiles(t, wt, map[string]string{"late.txt": "late\n"})
+	gitIn(t, wt, "add", "late.txt")
+	gitIn(t, wt, "commit", "-q", "-m", "late")
+	f.answer(protocol.FrameChangeSubmit, submit)
+	f.mu.Lock()
+	delete(f.sent, protocol.FrameChangeSubmit)
+	f.mu.Unlock()
+	if _, err := d.finishHandback(context.Background(), w, &handbackTail{req: handbackDone, sessionID: w.sessionID, complete: true}); err != nil {
+		t.Fatalf("retry after the link is back: %v", err)
+	}
+	if q := submitted(t, f); q.HeadCommit != gitHead(t, wt, "HEAD") {
+		t.Errorf("the change records %s, want the head %s", q.HeadCommit, gitHead(t, wt, "HEAD"))
+	}
+}

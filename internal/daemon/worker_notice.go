@@ -1513,6 +1513,12 @@ func (d *Daemon) finishHandback(ctx context.Context, w *worker, t *handbackTail)
 			if rec.offline && t.persisted {
 				return nil, d.deferHandback(w, t, "the daemon has no gateway link")
 			}
+			if rec.offline && w.harness == "agy" {
+				// Its stream state keeps the pending hand-back, and
+				// publishHandback sends it again once the link is back.
+				d.Logf("worker.handback_deferred worker=%s reason=%q", w.id, "the daemon has no gateway link")
+				return nil, errHandbackDeferred
+			}
 			t.recorded, t.changeID, t.deliveryProblem = true, changeID, deliveryProblem
 		}
 	}

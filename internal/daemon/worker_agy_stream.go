@@ -98,23 +98,38 @@ func (c *agyConn) publishHandback(req protocol.WorkerHandbackRequest) {
 		defer files.Remove()
 		ctx := d.streamCtx()
 		// Adoption replays results before Start launches the gateway link.
-		// File notices need that link and cannot use the offline outbox.
+		// File notices need that link and cannot use the offline outbox, and
+		// the change record needs it too.
 		tick := time.NewTicker(100 * time.Millisecond)
 		defer tick.Stop()
-		for !d.Connected() {
-			select {
-			case <-ctx.Done():
-				return // leave the saved pending report for the next adoption
-			case <-tick.C:
+		for {
+			for !d.Connected() {
+				select {
+				case <-ctx.Done():
+					return // leave the saved pending report for the next adoption
+				case <-tick.C:
+				}
 			}
-		}
-		if out, err := d.handbackToNoteWithFiles(ctx, w, req, "", "", "", true, files); err != nil {
-			d.Logf("worker %s: Antigravity handback: %v", w.id, err)
-			if ctx.Err() != nil || errors.Is(err, errHandbackDeferred) {
-				return // the next adoption or connect publishes the saved report
+			out, err := d.handbackToNoteWithFiles(ctx, w, req, "", "", "", true, files)
+			if errors.Is(err, errHandbackDeferred) && ctx.Err() == nil {
+				// The link dropped before the change was recorded: wait for
+				// it again, so the change gets the head when it is sent.
+				d.Logf("worker %s: Antigravity handback waits for the gateway link", w.id)
+				select {
+				case <-ctx.Done():
+					return
+				case <-tick.C:
+				}
+				continue
 			}
-			c.refused(ctx, req, key, err)
-		} else {
+			if err != nil {
+				d.Logf("worker %s: Antigravity handback: %v", w.id, err)
+				if ctx.Err() != nil || errors.Is(err, errHandbackDeferred) {
+					return // the next adoption publishes the saved report
+				}
+				c.refused(ctx, req, key, err)
+				return
+			}
 			c.mu.Lock()
 			if c.pendingKey == key {
 				c.pending = nil
@@ -125,6 +140,7 @@ func (c *agyConn) publishHandback(req protocol.WorkerHandbackRequest) {
 			if out.AutoContinued {
 				d.openCodeTurnIdle(w.sessionID)
 			}
+			return
 		}
 	})
 }
