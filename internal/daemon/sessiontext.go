@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -202,6 +203,17 @@ func sessionHostCommand(args []string) bool {
 	name := filepath.Base(args[0])
 	return (name == "codex" && args[1] == "app-server") ||
 		(name == "opencode" && args[1] == "serve")
+}
+
+// difficultyLevelNames lists the known difficulty levels in a stable order for
+// an error a person reads.
+func difficultyLevelNames() string {
+	names := make([]string, 0, len(protocol.DifficultyMinimums))
+	for name := range protocol.DifficultyMinimums {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
 }
 
 // operatorActor is who an owner operation acts as: the CTO when it runs the
@@ -1096,8 +1108,25 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.difficulty(ctx, nil)
 	case "difficulty_set":
 		var q map[string]float64
-		if json.Unmarshal(raw, &q) != nil || q == nil {
+		if err := decodeCTOArgs(method, raw, &q); err != nil {
+			return nil, true, err
+		}
+		if q == nil {
 			return nil, true, errors.New("bad difficulty settings")
+		}
+		// The known levels are the keys of protocol.DifficultyMinimums, the
+		// default minimum capability scores that DifficultyFit and the
+		// gateway's PUT /v1/difficulty read. From the CTO an empty map would
+		// clear every override, so it must name at least one level.
+		if lc.cto || proposalActor(ctx) == "cto" {
+			if len(q) == 0 {
+				return nil, true, errors.New("difficulty_set needs at least one level")
+			}
+			for level := range q {
+				if _, ok := protocol.DifficultyMinimums[level]; !ok {
+					return nil, true, fmt.Errorf("difficulty_set has no level %q; use one of %s", level, difficultyLevelNames())
+				}
+			}
 		}
 		res, err = d.difficulty(ctx, q)
 	case protocol.OpScoresGet:
@@ -1171,6 +1200,12 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		var items protocol.HiddenItems
 		if err := decodeCTOArgs(method, raw, &items); err != nil {
 			return nil, true, err
+		}
+		// Both lists carry omitempty, so the TUI sends {} for a real clear.
+		// From the CTO that would also make a dropped field clear both lists.
+		// The CTO names a list instead, and [] clears it.
+		if (lc.cto || proposalActor(ctx) == "cto") && !ctoArgsHasAny(raw, "sessions", "nodes") {
+			return nil, true, errors.New("hidden_set needs sessions or nodes; name a list with [] to clear it")
 		}
 		res, err = d.call(ctx, "hidden.set", items)
 	case protocol.OpSessionStop:

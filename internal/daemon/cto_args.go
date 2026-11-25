@@ -34,3 +34,22 @@ func decodeCTOArgs(action string, raw json.RawMessage, dst any, required ...stri
 	}
 	return nil
 }
+
+// ctoArgsHasAny reports whether raw names at least one of fields. A setter that
+// takes two independent lists uses it to tell a missing value from an explicit
+// empty one: naming neither list is missing, naming one with [] is a clear.
+func ctoArgsHasAny(raw json.RawMessage, fields ...string) bool {
+	if len(raw) == 0 || string(raw) == "null" {
+		return false
+	}
+	var named map[string]json.RawMessage
+	if json.Unmarshal(raw, &named) != nil {
+		return false
+	}
+	for _, field := range fields {
+		if _, ok := named[field]; ok {
+			return true
+		}
+	}
+	return false
+}
