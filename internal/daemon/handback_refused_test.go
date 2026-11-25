@@ -156,6 +156,69 @@ func TestCodexRefusalIsSavedBeforeTheCallerIsTold(t *testing.T) {
 	}
 }
 
+// A Codex session still shows busy while the daemon saves its ended turn as
+// refused and tells the caller. An idle tick then must not read the busy
+// status as a new turn and delete the saved idle period: adoption reads that
+// period as "this turn is handled" once the refusal record is gone.
+func TestCodexRefusalKeepsItsIdlePeriodWhileTheSessionIsBusy(t *testing.T) {
+	t.Parallel()
+	d, w, _ := refusalDaemon(t, "codex")
+	w.nativeID = "thread"
+	d.sessions = map[string]*localSession{key("codex", "thread"): {sessionID: w.sessionID, info: protocol.SessionInfo{Harness: "codex", NativeID: "thread", Status: "busy"}}}
+	d.cfg.testHandbackRefusedStep = func(string) {
+		d.checkIdleNotice(context.Background(), w, time.Now(), time.Hour, workerStats{})
+	}
+	d.codexRefused(w, protocol.WorkerHandbackRequest{Report: "codex report", Status: protocol.StatusDone}, "codex report", RemoteError("unknown recipient s_gone"))
+	since, _, _, sent, err := d.st.loadWorkerIdleNotice(w.id)
+	if err != nil || since.IsZero() || !sent {
+		t.Fatalf("the saved idle period is gone or not told: since %v, told %t, err %v", since, sent, err)
+	}
+}
+
+// An agy process can end before the stream reader has read its last result.
+// gone says the process runs until the reader has, so a message written then
+// reaches no process. agyEnded waits for the reader instead.
+func TestAgyEndedWaitsForTheStreamReader(t *testing.T) {
+	t.Parallel()
+	d, w, _ := refusalDaemon(t, "agy")
+	events := filepath.Join(w.dir, "agy-events.jsonl")
+	if err := syscall.Mkfifo(events, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The test holds the stream open, so the reader waits for the last line.
+	out, err := os.OpenFile(events, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer out.Close()
+	processExited := make(chan struct{})
+	close(processExited)
+	w.pid, w.exited = 1<<22, processExited
+	c := &agyConn{d: d, w: w, streamID: "s_stream", initialized: make(chan string, 1)}
+	w.agy = c
+	d.startAgyStream(c)
+	ended := make(chan bool, 1)
+	go func() { ended <- d.agyEnded(context.Background(), w) }()
+	if _, err := out.WriteString(`{"event":"result","result":{"status":"SUCCESS","response":"last words"}}` + "\n"); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the reader read the last result", func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return c.completed
+	})
+	// The reader has the stream open now: closing it ends the stream.
+	out.Close()
+	select {
+	case got := <-ended:
+		if !got {
+			t.Fatal("agyEnded says the ended process runs")
+		}
+	case <-time.After(scaled(30 * time.Second)):
+		t.Fatal("agyEnded did not return after the stream ended")
+	}
+}
+
 // A refused agy hand-back is saved, naming its pending turn, before the
 // stream state lets the pending hand-back go, and both are on disk before the
 // caller is told.
@@ -200,6 +263,27 @@ func TestAgyRefusalIsSavedBeforeTheCallerIsTold(t *testing.T) {
 	}
 	if n := g.all()[0]; n.IdempotencyKey != key || !strings.Contains(n.Body, "status: hand-back refused") || !strings.Contains(n.Body, "agy report") {
 		t.Errorf("the notice is not the saved one: key %s (saved %s)\n%s", n.IdempotencyKey, key, n.Body)
+	}
+}
+
+// A daemon that stops before the worker has its one message leaves the saved
+// refusal to the next daemon, and does not tell the caller in its place.
+func TestAgyRefusalOfAStoppingDaemonIsLeftToTheNextOne(t *testing.T) {
+	t.Parallel()
+	d, w, g := refusalDaemon(t, "agy")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	d.workerStreamCtx = ctx
+	c := &agyConn{d: d, w: w, streamID: "s_stream", offset: 42, completed: true}
+	w.agy = c
+	r := d.saveRefusal(w, protocol.WorkerHandbackRequest{Report: "agy report", Status: protocol.StatusDone},
+		handbackFixable{errors.New("the file is gone")}, c.turnKeyLocked(), true)
+	c.refusalNext(ctx, r)
+	if got := len(g.all()); got != 0 {
+		t.Fatalf("the stopping daemon sent %d notices", got)
+	}
+	if _, ok := d.loadRefusedHandback(w.id); !ok {
+		t.Fatal("the stopping daemon removed the saved refusal")
 	}
 }
 
@@ -446,16 +530,41 @@ func codexRefusalNotice(t *testing.T, n protocol.Message, res protocol.WorkerSta
 func codexFollowUpAfterRefusal(t *testing.T, w *workerNode, res protocol.WorkerStartResult) {
 	t.Helper()
 	eventually(t, "codex worker adopted", func() bool { return w.d.workerBySession(res.SessionID) != nil && w.d.sessionByID(res.SessionID) != nil })
-	var next protocol.MessageSent
-	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "continue"}), &next)
+	next := ownerSendDelivered(t, w, res.SessionID, "continue")
 	handback := w.waitNotice(t, 2)[1]
-	if !strings.Contains(handback.Body, "status: done") || handback.ParentID != next.Message.ID {
-		t.Fatalf("follow-up handback: %+v", handback)
+	if !strings.Contains(handback.Body, "status: done") || handback.ParentID != next.ID {
+		t.Fatalf("follow-up handback replies to %s, want %s: %+v", handback.ParentID, next.ID, handback)
 	}
 	eventually(t, "codex worker ends after follow-up", func() bool { return w.d.workerCount() == 0 })
 	if got := len(w.notices(t)); got != 2 {
 		t.Fatalf("the caller got %d notices, want the refusal and the follow-up hand-back", got)
 	}
+}
+
+// ownerSendDelivered sends the owner's message and returns it as the gateway
+// has it. A daemon whose link is not up yet queues the send in its outbox,
+// and the answer then carries no message.
+func ownerSendDelivered(t *testing.T, w *workerNode, to, body string) protocol.Message {
+	t.Helper()
+	var sent protocol.MessageSent
+	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: to, Body: body}), &sent)
+	if sent.Message != nil {
+		return *sent.Message
+	}
+	if !sent.Queued {
+		t.Fatalf("owner_send neither sent nor queued the message: %+v", sent)
+	}
+	var m protocol.Message
+	eventually(t, "the queued owner message reached the gateway", func() bool {
+		for _, got := range w.messagesOf(t, to) {
+			if got.To == to && got.Body == body && got.IdempotencyKey == sent.IdempotencyKey {
+				m = got
+				return true
+			}
+		}
+		return false
+	})
+	return m
 }
 
 // The daemon stops at each step of a refused Codex hand-back. Before the

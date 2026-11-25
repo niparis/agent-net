@@ -73,7 +73,12 @@ func (d *Daemon) checkIdleNotice(ctx context.Context, w *worker, now time.Time, 
 	busy := ls != nil && ls.info.Status == "busy"
 	d.mu.Unlock()
 	d.wmu.Lock()
-	if busy && !w.idleNoticeSince.IsZero() {
+	// OpenCode and Claude can start a turn the daemon does not see, so a busy
+	// session starts a new period here. The daemon starts every Codex and agy
+	// turn and resets the period there. Their sessions stay busy for a while
+	// after a turn ended, while the daemon saves that turn as handled, and a
+	// reset here would delete that mark.
+	if busy && (harness == "opencode" || harness == "claude") && !w.idleNoticeSince.IsZero() {
 		if w.idleNoticeCancel != nil {
 			w.idleNoticeCancel()
 			w.idleNoticeCancel = nil

@@ -67,6 +67,9 @@ type agyConn struct {
 	// Snapshots are kept in memory until the result event. After a daemon
 	// restart the saved request is checked and prepared again instead.
 	handbackFiles, pendingFiles *OutgoingFiles
+	// processExited is the Wait of a process this daemon started, nil for an
+	// adopted one (agyConn.processEnded).
+	processExited <-chan struct{}
 }
 
 func (agyLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
@@ -643,13 +646,17 @@ func (d *Daemon) deliverAgy(ctx context.Context, w *worker, m protocol.Message) 
 	if ending {
 		return Result{Detail: "the Antigravity worker is ending"}
 	}
-	if d.gone(w) {
+	if d.agyEnded(ctx, w) {
 		d.resumeMu.Lock()
 		var err error
 		if d.gone(w) {
 			err = (agyLauncher{}).resume(ctx, d, w)
 		}
 		d.resumeMu.Unlock()
+		if err != nil && d.streamCtx().Err() != nil {
+			// The daemon stops: the next one resumes the worker.
+			return Result{Detail: err.Error()}
+		}
 		if err != nil {
 			d.wmu.Lock()
 			w.failure = cleanFailure(err.Error())

@@ -177,6 +177,9 @@ func (c *agyConn) refusalNext(ctx context.Context, r refusedHandback) {
 		// No turn ran after the refused one, so the message is still owed.
 		if err := d.tellWorkerRefused(ctx, w, r.Reason); err != nil {
 			d.Logf("worker %s: refused hand-back message: %v", w.id, err)
+			if ctx.Err() != nil {
+				return // the daemon stops: the next one finds the record and sends the message
+			}
 			d.tellCallerRefused(ctx, w, r)
 		}
 	default:
@@ -196,12 +199,15 @@ func (d *Daemon) streamCtx() context.Context {
 
 func (d *Daemon) startAgyStream(c *agyConn) {
 	ctx := d.streamCtx()
-	c.stop, c.stopped = make(chan struct{}), make(chan struct{})
 	d.wmu.Lock()
 	processExited := c.w.exited
 	exited := make(chan struct{})
 	c.w.exited = exited
 	d.wmu.Unlock()
+	c.mu.Lock()
+	c.stop, c.stopped = make(chan struct{}), make(chan struct{})
+	c.processExited = processExited
+	c.mu.Unlock()
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
@@ -263,18 +269,7 @@ func (d *Daemon) startAgyStream(c *agyConn) {
 			if err != nil && !errors.Is(err, io.EOF) {
 				return
 			}
-			dead := false
-			if processExited != nil {
-				select {
-				case <-processExited:
-					dead = true
-				default:
-				}
-			} else {
-				tok, alive := procToken(c.w.pid)
-				dead = !alive || tok != c.w.token
-			}
-			if dead {
+			if c.processEnded() {
 				// Re-read after observing exit: the previous EOF may precede
 				// the child's last write.
 				line, _ := reader.ReadBytes('\n')
@@ -298,6 +293,49 @@ func (d *Daemon) startAgyStream(c *agyConn) {
 			}
 		}
 	}()
+}
+
+// processEnded tells whether the agy process ended: the Wait of a process
+// this daemon started, or the process table for an adopted one.
+func (c *agyConn) processEnded() bool {
+	c.mu.Lock()
+	exited := c.processExited
+	c.mu.Unlock()
+	if exited != nil {
+		select {
+		case <-exited:
+			return true
+		default:
+			return false
+		}
+	}
+	c.d.wmu.Lock()
+	pid, token := c.w.pid, c.w.token
+	c.d.wmu.Unlock()
+	tok, alive := procToken(pid)
+	return !alive || tok != token
+}
+
+// agyEnded tells whether the worker's agy process ended. gone says no until
+// the stream reader has read all that an ended process wrote, so its last
+// result is never lost. A message written in that time reaches no process,
+// so this waits for the reader.
+func (d *Daemon) agyEnded(ctx context.Context, w *worker) bool {
+	d.wmu.Lock()
+	c := w.agy
+	d.wmu.Unlock()
+	if c != nil && c.processEnded() {
+		c.mu.Lock()
+		stopped := c.stopped
+		c.mu.Unlock()
+		if stopped != nil {
+			select {
+			case <-stopped:
+			case <-ctx.Done():
+			}
+		}
+	}
+	return d.gone(w)
 }
 
 func (c *agyConn) closeStream() {
