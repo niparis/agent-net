@@ -508,6 +508,11 @@ func (a *Adapter) prepareFrame(target protocol.SessionInfo, m protocol.Message) 
 				a.host.Logf("claude: cannot forget undelivered %s: %v", r.ID, err)
 			}
 		}
+		// A batch carrier has its own frame row. A single message's row went
+		// with its record above, and deleting it again does nothing.
+		if err := book.ForgetDelivery(m.ID); err != nil {
+			a.host.Logf("claude: cannot forget the undelivered frame of %s: %v", m.ID, err)
+		}
 	}
 	replySock, err := a.replySocket(m.From, m.ConversationID)
 	if err != nil {
