@@ -749,6 +749,8 @@ func TestCTOSessionStartChosenAgentProposal(t *testing.T) {
 	home := pathTestHome(t)
 	c := startClaudeNode(t, g, shortSet)
 	c.register(t, newRepo(t, "chosen"))
+	// A stored proposal comes from a running CTO, which sends its first message.
+	cto := registerCTO(t, c.d)
 	path := filepath.Join(home, "code", "new-project")
 	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "harness": "claude", "agent_id": "chosen", "first_message": "hello"})
 	if _, err := legacyProposalFixture(context.Background(), c.d, "project_change", args); err != nil {
@@ -780,6 +782,7 @@ func TestCTOSessionStartChosenAgentProposal(t *testing.T) {
 	if a := c.agentOf(t, result.SessionID); a == nil || a.AgentID != "chosen" {
 		t.Fatalf("approved Agent: %+v", a)
 	}
+	requireOnlyMessageFrom(t, g, c.d.NodeID(), result.SessionID, "hello", cto)
 }
 
 func TestSessionStartCodexUnavailableDoesNotHoldUnrelatedSessions(t *testing.T) {

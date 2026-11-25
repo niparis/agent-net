@@ -3477,8 +3477,11 @@ offline is refused with a line that names it.
 Harness may be omitted and defaults to `claude`. Model
 and first_message are optional. An empty model keeps the harness's own default.
 For Claude, OpenCode and Pi, an empty first message starts an idle background
-session. For Claude, a nonempty message is the owner's first prompt, passed
-after `--` to `claude --bg`. `folder` is the folder choice of the TUI form; it
+session. For Claude, a nonempty message is the first prompt, passed after `--`
+to `claude --bg`; with an agent identity it is sent as a message after the
+session registers. A first message sent as a message comes from the owner
+when the owner wrote it and from the CTO's session when the CTO did (see
+[security](security.md#instruction-signals)). `folder` is the folder choice of the TUI form; it
 is carried unchanged to the machine that runs the start.
 
 `path` starts in a typed folder instead of a project name. The request is
@@ -3526,9 +3529,9 @@ is missing or its address cannot be reached, the start is refused with
 the status code. The service password stays in HTTP authentication; it is never
 logged or put in a command argument or notice.
 
-For Pi, agent-net runs `pi --session-id <uuid> --name <project> [--model M] --tui-mode regular` in a tab of its own `agent-net` herdr, started on demand; the result says `Started <project> in agent-net's herdr. Enter opens it.` A resumed Pi conversation uses `pi --session <id> --tui-mode regular`. Regular mode leaves the mouse to the terminal, so text selection and copy-paste work; Pi's default fullscreen mode captures the mouse. A first message is sent as an ordinary owner message after Pi registers. When herdr is unavailable, Pi start and resume fail with the folders searched.
+For Pi, agent-net runs `pi --session-id <uuid> --name <project> [--model M] --tui-mode regular` in a tab of its own `agent-net` herdr, started on demand; the result says `Started <project> in agent-net's herdr. Enter opens it.` A resumed Pi conversation uses `pi --session <id> --tui-mode regular`. Regular mode leaves the mouse to the terminal, so text selection and copy-paste work; Pi's default fullscreen mode captures the mouse. A first message is sent as an ordinary message after Pi registers, from the owner when the owner wrote it and from the CTO when the CTO did. When herdr is unavailable, Pi start and resume fail with the folders searched.
 
-For Codex, the daemon creates the thread on the shared app server (`thread/start`, with the model and the charter as developer instructions) and sends the first message through the same queue as any other message. A start needs no herdr pane and no TUI. Opening a view is a separate step: the result says `Enter opens it.`, and Enter runs `codex resume --remote unix:// <thread>`. The app server must be running: without it the start fails with the error the connection gave. A remote start follows the same herdr rules as Enter.
+For Codex, the daemon creates the thread on the shared app server (`thread/start`, with the model and the charter as developer instructions) and sends the first message through the same queue as any other message, from the owner when the owner wrote it and from the CTO when the CTO did. A start needs no herdr pane and no TUI. Opening a view is a separate step: the result says `Enter opens it.`, and Enter runs `codex resume --remote unix:// <thread>`. The app server must be running: without it the start fails with the error the connection gave. A remote start follows the same herdr rules as Enter.
 
 For Claude, OpenCode and Pi, the answer is a started-session record with `id`, `status: "starting"`,
 `node_id`, `hostname`, `harness`, `project`, `path`, `branch`, `model` and `started_at`

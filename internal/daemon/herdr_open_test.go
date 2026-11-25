@@ -1157,6 +1157,8 @@ func TestCTOApprovedCodexWithoutHerdrNeedsNoTUI(t *testing.T) {
 	repo := newHomeRepo(t, home, "code/garden")
 	n.register(t, repo)
 	approver, _ := herdrUIClient(t, n.node)
+	// A stored proposal comes from a running CTO, which sends its first message.
+	cto := registerCTO(t, n.d)
 	args, _ := json.Marshal(map[string]any{"action": "session_start", "project": "garden", "harness": "codex", "first_message": "hello"})
 	if _, err := legacyProposalFixture(context.Background(), n.d, "session_change", args); err != nil {
 		t.Fatal(err)
@@ -1176,6 +1178,7 @@ func TestCTOApprovedCodexWithoutHerdrNeedsNoTUI(t *testing.T) {
 	if err := json.Unmarshal(items[0].Result, &start); err != nil || start.Status != "started" || start.NativeID == "" || start.SessionID == "" || start.Error != "" {
 		t.Fatalf("start: %+v error %v", start, err)
 	}
+	requireOnlyMessageFrom(t, g, n.d.NodeID(), start.SessionID, "hello", cto)
 }
 
 func TestHerdrCreateFailureDoesNotUseTerminalFallback(t *testing.T) {

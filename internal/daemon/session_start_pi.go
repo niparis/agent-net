@@ -2,14 +2,13 @@ package daemon
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-func (d *Daemon) launchOwnerPi(r protocol.StartedSession, message, resume, socket, pane string, notify bool) (protocol.StartedSession, error) {
+func (d *Daemon) launchOwnerPi(r protocol.StartedSession, first startFirstMessage, resume, socket, pane string, notify bool) (protocol.StartedSession, error) {
 	bin, err := d.harnessBinary("pi")
 	if err != nil {
 		return protocol.StartedSession{}, err
@@ -96,13 +95,9 @@ func (d *Daemon) launchOwnerPi(r protocol.StartedSession, message, resume, socke
 		if startErr == nil {
 			startErr = d.checkStartAgent(cctx, r)
 		}
-		if startErr == nil && message != "" {
-			sender := d.ownerSessionID()
-			if sender == "" {
-				startErr = errors.New("the owner session is not registered yet")
-			} else if _, err := d.send(cctx, protocol.MsgSend{Sender: sender, Recipient: r.SessionID,
-				Type: protocol.TypeRequest, Body: message}); err != nil {
-				startErr = fmt.Errorf("could not send the first message to Pi: %w", err)
+		if startErr == nil {
+			if startErr = d.sendFirstMessage(cctx, r.SessionID, first); startErr != nil {
+				keepUnsentFirstMessage(&r, first)
 			}
 		}
 		if startErr != nil {

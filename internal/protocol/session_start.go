@@ -108,10 +108,15 @@ type SessionStartRequest struct {
 	// in the request is not trusted. A relay keeps it, so the machine that
 	// runs the start knows. Without it the text never counts as the owner's
 	// words: a machine that does not send it loses words, it never adds them.
-	FirstMessageByOwner bool   `json:"first_message_by_owner,omitempty"`
-	NodeID              string `json:"node_id,omitempty"`
-	Folder              string `json:"folder,omitempty"`
-	Branch              string `json:"branch,omitempty"`
+	FirstMessageByOwner bool `json:"first_message_by_owner,omitempty"`
+	// FirstMessageFrom is the session that wrote FirstMessage when the owner
+	// did not. The daemon that takes the request sets it, and the message goes
+	// out from that session. It never crosses the wire: a relayed start
+	// leaves the message with the machine that holds its writer.
+	FirstMessageFrom string `json:"-"`
+	NodeID           string `json:"node_id,omitempty"`
+	Folder           string `json:"folder,omitempty"`
+	Branch           string `json:"branch,omitempty"`
 	// Path is a folder typed in the Project field. It must be absolute or
 	// start with ~, and it is checked on the machine that runs the start.
 	// Project is empty for a path start.
@@ -216,6 +221,10 @@ type StartedSession struct {
 	// Requester is the session that asked for the start and is told when it
 	// fails. It is local bookkeeping and is not sent anywhere.
 	Requester string `json:"-"`
+	// UnsentFirstMessage is the first message of a start that could not send
+	// it from its writer. agent-net never sends it as the owner instead, so
+	// the text stays here for whoever asked for the start.
+	UnsentFirstMessage string `json:"unsent_first_message,omitempty"`
 }
 
 // SessionResumeRequest identifies an offline conversation. NodeID is the
