@@ -244,8 +244,10 @@ func (w *ctoTranscriptWatch) seen() bool {
 }
 
 // confirmClaudeCTODelivery starts the check of one delivery to the Claude CTO.
-// The caller has just written msgID to the inbox of w.session.
-func (d *Daemon) confirmClaudeCTODelivery(w *ctoTranscriptWatch, msgID, text string) {
+// The caller has just written msgID to the inbox of w.session. label is the
+// sender's label: empty for the owner, and the label of the first delivery
+// otherwise, so every retry keeps the same sender.
+func (d *Daemon) confirmClaudeCTODelivery(w *ctoTranscriptWatch, msgID, label, text string) {
 	d.confirmDelivery("cto", deliveryWatch{
 		label: "cto",
 		msgID: msgID,
@@ -259,8 +261,8 @@ func (d *Daemon) confirmClaudeCTODelivery(w *ctoTranscriptWatch, msgID, text str
 			d.countDeliveryRead()
 			return w.seen()
 		},
-		redeliver: func(ctx context.Context) bool { return d.redeliverClaudeCTO(ctx, w, msgID, text) },
-		restart:   func(ctx context.Context) { d.restartClaudeCTOForDelivery(ctx, w, msgID, text) },
+		redeliver: func(ctx context.Context) bool { return d.redeliverClaudeCTO(ctx, w, msgID, label, text) },
+		restart:   func(ctx context.Context) { d.restartClaudeCTOForDelivery(ctx, w, msgID, label, text) },
 	})
 }
 
@@ -289,9 +291,9 @@ func claudeSessionStatus(sessions string, pid int) string {
 	return sf.Status
 }
 
-// redeliverClaudeCTO writes the message to the inbox once more. It reports
-// whether the check goes on.
-func (d *Daemon) redeliverClaudeCTO(ctx context.Context, w *ctoTranscriptWatch, msgID, text string) bool {
+// redeliverClaudeCTO writes the message to the inbox once more, with the frame
+// of its first delivery. It reports whether the check goes on.
+func (d *Daemon) redeliverClaudeCTO(ctx context.Context, w *ctoTranscriptWatch, msgID, label, text string) bool {
 	if err := d.ctoDispatchMu.lock(ctx); err != nil {
 		return false
 	}
@@ -313,8 +315,15 @@ func (d *Daemon) redeliverClaudeCTO(ctx context.Context, w *ctoTranscriptWatch, 
 	deliver, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	// A failed write needs no own step: the next check sees no turn, and the
-	// restart delivers it.
-	if res := a.DeliverCTO(deliver, protocol.SessionInfo{Harness: "claude", NativeID: w.session}, msgID, text); !res.Delivered {
+	// restart delivers it. The label is the first delivery's, so a peer, a bot,
+	// the CTO or an agent-net notice never becomes the owner's frame.
+	var res Result
+	if label == "" {
+		res = a.DeliverCTO(deliver, protocol.SessionInfo{Harness: "claude", NativeID: w.session}, msgID, text)
+	} else {
+		res = a.DeliverCTOSystem(deliver, protocol.SessionInfo{Harness: "claude", NativeID: w.session}, msgID, label, text)
+	}
+	if !res.Delivered {
 		d.Logf("cto.delivery_retry_failed msg=%s detail=%q", msgID, res.Detail)
 	}
 	return true
@@ -322,8 +331,10 @@ func (d *Daemon) redeliverClaudeCTO(ctx context.Context, w *ctoTranscriptWatch, 
 
 // restartClaudeCTOForDelivery ends the CTO's Claude job and resumes its
 // conversation with the message as the first prompt. A prompt on the command
-// line starts a turn; it does not depend on the inbox.
-func (d *Daemon) restartClaudeCTOForDelivery(ctx context.Context, w *ctoTranscriptWatch, msgID, text string) {
+// line starts a turn; it does not depend on the inbox. The prompt is the same
+// frame as the first delivery, so the restarted conversation sees the sender
+// and the message ID, not bare text or the owner's frame.
+func (d *Daemon) restartClaudeCTOForDelivery(ctx context.Context, w *ctoTranscriptWatch, msgID, label, text string) {
 	if err := d.ctoDispatchMu.lock(ctx); err != nil {
 		return
 	}
@@ -345,7 +356,7 @@ func (d *Daemon) restartClaudeCTOForDelivery(ctx context.Context, w *ctoTranscri
 	}
 	d.stopClaudeCTOLocked("delivery_unconfirmed")
 	d.cto.mu.Unlock()
-	if err := d.startClaudeRoleWith(ctx, roleCTO, w.session, settings.ClaudeModel, text); err != nil {
+	if err := d.startClaudeRoleWith(ctx, roleCTO, w.session, settings.ClaudeModel, CTOFirstPrompt(msgID, label, text)); err != nil {
 		d.Logf("cto.delivery_unconfirmed msg=%s reason=restart_failed detail=%q", msgID, claudeCTOErrorOutput([]byte(err.Error())))
 		return
 	}

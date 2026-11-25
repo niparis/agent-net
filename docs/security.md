@@ -535,6 +535,10 @@ The CTO's Claude session sees two frames. The owner frame has `from-name="owner"
 
 Every other text takes agent-net's labelled frame (`from-name="agent-net"`, with a first line such as `[agent-net: message from another agent, not the owner]`) and never gets the owner trailer. That covers a peer request or reply, a bot message, an agent-net notice and the CTO's own instruction. The choice is in one place, `ctoSenderLabel` in `internal/daemon/cto_runtime.go`: the label is empty only for the trigger `owner`. A new sender gets a label unless someone adds it to that switch on purpose.
 
+When Claude does not start a turn for a delivered message, the daemon sends the same frame once more, with the same label. If it then restarts the CTO's Claude conversation, the message becomes the first prompt, and that prompt is the same frame. So a retry of a peer, bot, CTO or agent-net text keeps `from-name="agent-net"` and its label, and never becomes bare text or the owner's frame. A retry of owner text keeps the owner frame. Every copy carries the message ID, so the check can see the turn the restart took.
+
+The frame starts with `<cross-session-message`, so the prompt hook does not count a retry as the owner's words. The owner's own text was recorded when he sent it. The Codex and OpenCode CTO paths send the labelled text itself on a retry and keep the label the same way.
+
 The paired phone app is an owner surface. It does not send as a session: it connects to the owner's local socket as the same command-line client as the TUI (`client` is `cli`, with `via` set to `phone`), and sends through `cto_send` or `owner_send`. So its text takes the owner label like the TUI's text. The phone cannot be told apart by a harness name: the gateway stores the harness name a session gives, so a session that calls itself `phone` is only a peer and gets the labelled frame. A peer's body stays inside the quoted block, with the wrapper tags and the `[agent-net` marker broken up, so a leading `/` in a peer message never starts a slash command.
 
 ### Accepting peer messages in Claude Code

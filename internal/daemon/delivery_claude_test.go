@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"os"
@@ -21,6 +22,7 @@ type confirmingCTO struct {
 	root     string // a message from the CTO that the peer replies to
 	dropFile string
 	sessions string
+	adapter  *labelCTOClaude
 }
 
 func startConfirmingCTO(t *testing.T) *confirmingCTO {
@@ -32,9 +34,10 @@ func startConfirmingCTO(t *testing.T) *confirmingCTO {
 	t.Setenv(envFakeClaudeDropFile, dropFile)
 	logs := &logBuf{}
 	g := startGateway(t, t.TempDir(), "")
+	adapter := &labelCTOClaude{fsClaudeAdapter: &fsClaudeAdapter{dir: sessions}}
 	n := startNode(t, g, nodeOpts{cmdline: "pi", detect: fakeInventory, interval: time.Hour, logger: log.New(logs, "", 0), cfg: func(c *Config) {
 		c.ClaudeSessionsDir = sessions
-		c.Adapters = append(c.Adapters, &fsClaudeAdapter{dir: sessions})
+		c.Adapters = append(c.Adapters, adapter)
 		c.HarnessPaths = map[string]string{"claude": os.Args[0]}
 		c.testNoDeliveryConfirm = false
 		c.deliveryConfirmWait = scaled(500 * time.Millisecond)
@@ -49,7 +52,7 @@ func startConfirmingCTO(t *testing.T) *confirmingCTO {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &confirmingCTO{n: n, logs: logs, peer: peer, root: root.ID, dropFile: dropFile, sessions: sessions}
+	return &confirmingCTO{n: n, logs: logs, peer: peer, root: root.ID, dropFile: dropFile, sessions: sessions, adapter: adapter}
 }
 
 // reply sends body from the peer to the CTO and returns the message ID.
@@ -146,5 +149,109 @@ func TestClaudeCTODeliveryReadsOncePerTakenMessage(t *testing.T) {
 	eventually(t, "the delivery confirmed", func() bool { return len(c.logs.lines("cto.delivery_confirmed msg="+id)) == 1 })
 	if got := c.n.d.deliveryReads.Load() - before; got != 1 {
 		t.Fatalf("reads for one taken delivery: %d, want 1", got)
+	}
+}
+
+// all returns every delivery that holds needle, oldest first.
+func (a *labelCTOClaude) all(needle string) []ctoDelivery {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	var out []ctoDelivery
+	for _, d := range a.seen {
+		if strings.Contains(d.text, needle) {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// Every retry of a delayed message keeps the sender of the first delivery. The
+// fake CTO ignores the first copy and the redelivery, so the check restarts the
+// conversation with the message as its first prompt. A retry that took the
+// owner's frame for a peer, a bot, the CTO or an agent-net notice would put
+// text in front of the CTO as the owner's words.
+func TestClaudeCTODeliveryRetryKeepsTheSender(t *testing.T) {
+	cases := []struct {
+		name    string
+		trigger string
+		owner   bool
+		label   string
+	}{
+		{name: "owner", trigger: "owner", owner: true},
+		{name: "peer", trigger: "agent", label: ctoSenderLabel("agent")},
+		{name: "bot", trigger: "bot", label: ctoSenderLabel("bot")},
+		{name: "cto", trigger: "cto", label: ctoSenderLabel("cto")},
+		{name: "agent-net notice", trigger: "system", label: ctoSenderLabel("system")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := startConfirmingCTO(t)
+			before, err := c.n.d.claudeCTOSession()
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := "message from " + tc.name
+			msgID := "m_" + strings.ReplaceAll(tc.name, " ", "-")
+			// The inbox takes the first copy and the redelivery, and starts no turn.
+			if err := os.WriteFile(c.dropFile, []byte("2"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			ctx := withCTOMessageID(context.Background(), msgID)
+			if _, err := c.n.d.ctoSendTriggered(ctx, body, "", tc.trigger); err != nil {
+				t.Fatal(err)
+			}
+			eventually(t, "the restart takes the message", func() bool {
+				return len(c.logs.lines("cto.restart_for_delivery msg="+msgID)) == 1 && c.userTurns(t, body) == 1
+			})
+
+			got := c.adapter.all(body)
+			if len(got) != 2 {
+				t.Fatalf("deliveries of the message: %d, want the first copy and one retry: %+v", len(got), got)
+			}
+			for i, d := range got {
+				if d.owner != tc.owner || d.label != tc.label {
+					t.Errorf("delivery %d: owner=%v label=%q, want owner=%v label=%q", i+1, d.owner, d.label, tc.owner, tc.label)
+				}
+			}
+
+			rec := readClaude(t, filepath.Join(c.n.cfg.StateDir, "cto", "claude"))
+			if argValue(rec.Args, "--resume") != before {
+				t.Fatalf("restart resumed %q, want %q", argValue(rec.Args, "--resume"), before)
+			}
+			first := argAfterDashes(rec.Args)
+			if first == body {
+				t.Fatalf("the restart passed the message as bare first-prompt text")
+			}
+			if !strings.Contains(first, `msg-id="`+msgID+`"`) {
+				t.Errorf("the first prompt carries no msg-id %q: %q", msgID, first)
+			}
+			wantFrom, wantMark := `from-name="owner"`, "This is the owner speaking"
+			if !tc.owner {
+				wantFrom, wantMark = `from-name="agent-net"`, "[agent-net: "+tc.label+"]"
+			}
+			if !strings.Contains(first, wantFrom) || !strings.Contains(first, wantMark) {
+				t.Errorf("the first prompt does not name its sender: want %q and %q in %q", wantFrom, wantMark, first)
+			}
+		})
+	}
+}
+
+// A delivery copy that becomes a restarted first prompt is framed, so the
+// prompt hook cannot read it as the owner's words. The owner's original text is
+// kept when it is sent, before the retry.
+func TestClaudeCTOFirstPromptIsNotOwnerWords(t *testing.T) {
+	for _, tc := range []struct{ name, label string }{
+		{name: "owner"},
+		{name: "peer", label: ctoSenderLabel("agent")},
+		{name: "bot", label: ctoSenderLabel("bot")},
+		{name: "cto", label: ctoSenderLabel("cto")},
+		{name: "agent-net notice", label: ctoSenderLabel("system")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			prompt := CTOFirstPrompt("m_1", tc.label, "deploy it now")
+			if isHumanClaudePrompt(prompt) {
+				t.Fatalf("a delivery copy would count as the owner's words: %q", prompt)
+			}
+		})
 	}
 }
