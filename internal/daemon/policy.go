@@ -153,7 +153,11 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 	d := lc.d
 	// What the owner types in the CTO's own pane is the words he gives the CTO.
 	if client == "cli" && p.Harness == "claude" && p.Event == "" && isHumanClaudePrompt(p.Prompt) && d.isClaudeCTONative(p.NativeID) {
-		d.whenClaudeOwnerPrompt(ctx, p, func(context.Context) { d.rememberCTOOwnerPrompt(p.Prompt) })
+		d.whenClaudeOwnerPrompt(ctx, p, func(_ context.Context, owner bool) {
+			if owner {
+				d.rememberCTOOwnerPrompt(p.Prompt)
+			}
+		})
 	}
 	if client == "cli" {
 		d.mu.Lock()
@@ -179,10 +183,16 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 		notice = protocol.ToolsDisconnectedNotice
 	}
 	if client == "cli" && p.Harness == "claude" && isHumanClaudePrompt(p.Prompt) {
-		d.whenClaudeOwnerPrompt(ctx, p, func(ctx context.Context) {
-			_, _ = d.call(ctx, "signal.prompt", map[string]string{"session_id": sid, "prompt": p.Prompt})
-			d.ownerTyped(ctx, ls, sid, p.Prompt)
-			d.rememberOwnerPrompt(sid, p.Prompt)
+		d.whenClaudeOwnerPrompt(ctx, p, func(ctx context.Context, owner bool) {
+			text := ""
+			if owner {
+				d.rememberOwnerPrompt(sid, p.Prompt)
+				if segments := protocol.OwnerTypedSegments(p.Prompt); len(segments) > 0 {
+					_, _ = d.call(ctx, "signal.prompt", map[string]string{"session_id": sid, "prompt": strings.Join(segments, " ")})
+				}
+				text = p.Prompt
+			}
+			d.ownerTyped(ctx, ls, sid, text)
 		})
 	}
 	got, ok := d.policyOf(ctx, sid, d.agentsHashOf(ls))
@@ -232,8 +242,10 @@ func (d *Daemon) recordOwnerOpen(ctx context.Context, id string) {
 // message). Whatever the session waited for is answered or overtaken: the
 // wait ends here, whichever harness reported it, and the gateway closes the
 // session's open question and approval items. text is what he typed, when the
-// harness reports it: the gateway keeps it as his answer.
+// harness reports it: the gateway keeps it as his answer. A pasted block is
+// removed first, so agent text he pasted never becomes his answer.
 func (d *Daemon) ownerTyped(ctx context.Context, ls *localSession, sid, text string) {
 	d.setWaiting(ls, nil)
-	_, _ = d.call(ctx, "session.owner_use", map[string]any{"session_id": sid, "prompt": true, "text": text})
+	_, _ = d.call(ctx, "session.owner_use", map[string]any{"session_id": sid, "prompt": true,
+		"text": strings.Join(protocol.OwnerTypedSegments(text), " ")})
 }

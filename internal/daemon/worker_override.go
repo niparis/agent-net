@@ -58,12 +58,15 @@ func (d *Daemon) rememberOwnerPrompt(session, text string) {
 }
 
 // rememberOwnerPromptAt is rememberOwnerPrompt for a prompt typed at a known
-// time, such as one read back from a transcript.
+// time, such as one read back from a transcript. Text the harness marks as
+// pasted is removed here, so every store of the owner's words holds only what
+// he typed.
 func (d *Daemon) rememberOwnerPromptAt(session, text string, at time.Time) {
-	text = strings.ToValidUTF8(strings.TrimSpace(text), "")
-	if session == "" || text == "" {
+	segments := protocol.OwnerTypedSegments(text)
+	if session == "" || len(segments) == 0 {
 		return
 	}
+	text = strings.Join(segments, protocol.OwnerTypedSeparator)
 	if len(text) > maxOwnerPromptBytes {
 		text = strings.ToValidUTF8(text[:maxOwnerPromptBytes], "")
 	}

@@ -31,6 +31,13 @@ of the CTO's own pane. The CTO cannot feed its own words into this memory: its
 - A quote that is not there is refused with one line. Nothing runs.
 - A call with no words behaves as before.
 
+Only a prompt whose transcript entry marks a human origin is kept, and every
+pasted block is removed from it before it is stored or matched. A prompt of
+unknown origin, a missing or late transcript entry, and a queued command
+without a human origin close waits as before but are not kept as words. The
+limits are the harness's: a paste the harness does not mark, and a process on
+the same account that writes the transcript or calls the prompt hook.
+
 What verified words do:
 
 - Permissions: `permission_apply` applies at once. The gateway now refuses an

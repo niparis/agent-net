@@ -17,8 +17,9 @@ import (
 type claudeSender int
 
 const (
-	// senderUnknown: the entry names no origin. The owner's effects apply, as
-	// they did before this check.
+	// senderUnknown: the entry names no origin. The owner's presence applies,
+	// as it did before this check, but his words are not kept: nothing proves
+	// a human typed the prompt.
 	senderUnknown claudeSender = iota
 	// senderOwner: the owner typed the prompt in the Claude Code terminal.
 	senderOwner
@@ -48,34 +49,48 @@ type claudeTurn struct {
 	TurnOrigin string `json:"turnOrigin"`
 }
 
-// whenClaudeOwnerPrompt runs apply unless the prompt was sent by a schedule, a
-// peer, Claude Code itself or the daemon. The prompt hook runs before Claude Code writes
-// the prompt to the transcript, and the docs say the file may lag, so the
-// entry is usually missing when the hook runs. The check then waits in the
-// background. A prompt without a usable transcript gets the old answer at once.
-func (d *Daemon) whenClaudeOwnerPrompt(ctx context.Context, p protocol.PolicyRequest, apply func(context.Context)) {
+// whenClaudeOwnerPrompt runs apply for a prompt that the daemon did not type
+// and the harness did not inject. owner is true only when the transcript proves
+// the owner typed the prompt. A caller may run its presence effects (closing
+// waits, the last-use mark) also for owner false, but text it keeps or matches
+// as the owner's words must run only for owner true.
+//
+// The prompt hook runs before Claude Code writes the prompt to the transcript,
+// and the docs say the file may lag, so the entry is usually missing when the
+// hook runs. The check then waits in the background. A prompt without a usable
+// transcript is presence only, not words.
+func (d *Daemon) whenClaudeOwnerPrompt(ctx context.Context, p protocol.PolicyRequest, apply func(context.Context, bool)) {
 	// Claude Code records a line the daemon typed itself as a human prompt, so
 	// the transcript cannot tell it from the owner. The daemon knows it.
 	if d.daemonTyped.typed(p.NativeID, p.Prompt) {
 		return
 	}
 	if !claudeTranscriptFor(p.TranscriptPath, p.NativeID, p.PromptID) {
-		apply(ctx)
+		apply(ctx, false)
 		return
 	}
 	if s, found := claudeSenderOf(p.TranscriptPath, p.NativeID, p.PromptID); found {
 		if s != senderOther {
-			apply(ctx)
+			apply(ctx, s == senderOwner)
 		}
 		return
 	}
 	d.claudeChecks.Add(1)
 	go func() {
 		defer d.claudeChecks.Done()
-		if claudeSenderWithin(p.TranscriptPath, p.NativeID, p.PromptID, claudeSenderWait) != senderOther {
-			apply(context.Background())
+		if s := claudeSenderWithin(p.TranscriptPath, p.NativeID, p.PromptID, d.claudeWait()); s != senderOther {
+			apply(context.Background(), s == senderOwner)
 		}
 	}()
+}
+
+// claudeWait is how long the daemon waits for the transcript entry. Tests set
+// claudeOwnerWait to keep a missing entry short.
+func (d *Daemon) claudeWait() time.Duration {
+	if d.claudeOwnerWait > 0 {
+		return d.claudeOwnerWait
+	}
+	return claudeSenderWait
 }
 
 // claudeTranscriptFor says whether path is the transcript of the session. Claude

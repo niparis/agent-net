@@ -42,33 +42,45 @@ type queuedAttachment struct {
 
 var queuedMark = []byte(`"queued_command"`)
 
+// queuedLine is one queued command of a transcript. owner says whether the
+// command names a human origin, which is what makes its text the owner's words.
+// A command with no origin is unknown: it shows he was there, as before, but
+// nothing proves he typed it.
+type queuedLine struct {
+	text  string
+	owner bool
+}
+
 // queuedOwnerText returns what the owner typed when the line is a queued
-// command he sent. A command Claude Code or agent-net sent (a task notice, a
-// peer message, a scheduled turn, an injected reminder) has an origin that is
-// not the human's, or a mode that is not a plain prompt, and gives nothing.
-func queuedOwnerText(line []byte) (text string, at time.Time, ok bool) {
+// command he sent. ok is true for a plain prompt that is not injected; owner is
+// true only when the command names a human origin. A command Claude Code or
+// agent-net sent (a task notice, a peer message, a scheduled turn, an injected
+// reminder) has an origin that is not the human's, or a mode that is not a
+// plain prompt, and gives nothing.
+func queuedOwnerText(line []byte) (text string, at time.Time, owner bool, ok bool) {
 	if !bytes.Contains(line, queuedMark) {
-		return "", time.Time{}, false
+		return "", time.Time{}, false, false
 	}
 	var e queuedAttachment
 	if json.Unmarshal(line, &e) != nil || e.Type != "attachment" || e.Attachment.Type != "queued_command" {
-		return "", time.Time{}, false
+		return "", time.Time{}, false, false
 	}
 	if o := e.Attachment.Origin; o != nil && o.Kind != "" && o.Kind != "human" {
-		return "", time.Time{}, false
+		return "", time.Time{}, false, false
 	}
+	owner = e.Attachment.Origin != nil && e.Attachment.Origin.Kind == "human"
 	if m := e.Attachment.CommandMode; m != "" && m != "prompt" {
-		return "", time.Time{}, false
+		return "", time.Time{}, false, false
 	}
 	text = strings.TrimSpace(queuedPromptText(e.Attachment.Prompt))
 	if text == "" || !isHumanClaudePrompt(text) {
-		return "", time.Time{}, false
+		return "", time.Time{}, false, false
 	}
 	at, err := time.Parse(time.RFC3339Nano, e.Timestamp)
 	if err != nil {
-		return "", time.Time{}, false
+		return "", time.Time{}, false, false
 	}
-	return text, at, true
+	return text, at, owner, true
 }
 
 // queuedPromptText reads a prompt that is a string or a list of text blocks.
@@ -113,10 +125,12 @@ func (d *Daemon) claudeNativeOf(session string) string {
 }
 
 // sweepQueuedOwnerPrompts keeps the owner's queued prompts of a session that
-// were written to its transcript since the last sweep. It returns the new
-// ones, oldest first, and whether an earlier sweep had already read this
-// transcript (the first read finds old text, which is not news).
-func (d *Daemon) sweepQueuedOwnerPrompts(session string) (fresh []string, primed bool) {
+// were written to its transcript since the last sweep and returns the new ones,
+// oldest first. Only a command that names a human origin is kept as his words;
+// a command with no origin is returned for presence alone. primed says whether
+// an earlier sweep had already read this transcript (the first read finds old
+// text, which is not news).
+func (d *Daemon) sweepQueuedOwnerPrompts(session string) (fresh []queuedLine, primed bool) {
 	native := d.claudeNativeOf(session)
 	if native == "" || strings.ContainsAny(native, `/\`) {
 		return nil, false
@@ -140,12 +154,14 @@ func (d *Daemon) sweepQueuedOwnerPrompts(session string) (fresh []string, primed
 	d.ownerPrompts.scanned[path] = end
 	now := d.ownerPromptNow()
 	for _, line := range bytes.Split(buf, []byte{'\n'}) {
-		text, at, ok := queuedOwnerText(line)
+		text, at, owner, ok := queuedOwnerText(line)
 		if !ok || now.Sub(at) > ownerPromptWindow {
 			continue
 		}
-		d.rememberOwnerPromptAt(session, text, at)
-		fresh = append(fresh, text)
+		if owner {
+			d.rememberOwnerPromptAt(session, text, at)
+		}
+		fresh = append(fresh, queuedLine{text: text, owner: owner})
 	}
 	return fresh, primed
 }
@@ -182,10 +198,17 @@ func readTranscriptFrom(path string, offset int64, primed bool) ([]byte, int64, 
 // ownerTypedWhileBusy is the Stop hook's part: text the owner queued while the
 // turn ran counts as an owner prompt for the gateway too, which closes the
 // questions the session waited on. The first sweep of a transcript only keeps
-// the words, as its text may be old.
+// the words, as its text may be old. A command with no origin closes the wait
+// as before but its text is not passed on as the owner's answer.
 func (d *Daemon) ownerTypedWhileBusy(ctx context.Context, ls *localSession, sid string) {
 	fresh, primed := d.sweepQueuedOwnerPrompts(sid)
-	if primed && len(fresh) > 0 {
-		d.ownerTyped(ctx, ls, sid, fresh[len(fresh)-1])
+	if !primed || len(fresh) == 0 {
+		return
 	}
+	last := fresh[len(fresh)-1]
+	text := ""
+	if last.owner {
+		text = last.text
+	}
+	d.ownerTyped(ctx, ls, sid, text)
 }

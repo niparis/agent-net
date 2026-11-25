@@ -379,6 +379,7 @@ type Daemon struct {
 	ownerPrompts        ownerPrompts
 	daemonTyped         daemonTyped    // text the daemon typed into a session terminal, not the owner's
 	claudeChecks        sync.WaitGroup // background checks of Claude prompts that wait for the transcript
+	claudeOwnerWait     time.Duration  // test hook: how long to wait for a transcript entry; 0 means claudeSenderWait
 	turnEnds            turnEndAsks
 	ownerPromptClock    func() time.Time // test hook
 	heldMu              sync.Mutex
