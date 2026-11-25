@@ -115,6 +115,9 @@ CREATE TABLE IF NOT EXISTS workers (
 	// or release can be tied to it. Filling that column here would run a write
 	// at every start; a notice for such a row is logged and marks nothing.
 	if err == nil {
+		_, err = db.Exec(firstMessagesSchema)
+	}
+	if err == nil {
 		var has int
 		err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('cto_proposals') WHERE name = 'note_delivered'`).Scan(&has)
 		if err == nil && has == 0 {

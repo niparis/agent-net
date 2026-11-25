@@ -399,6 +399,7 @@ type Daemon struct {
 	ownerPrompts        ownerPrompts
 	pendingWordsMu      sync.Mutex
 	pendingWords        map[string]pendingOwnerWords // prompt whose transcript entry was missing when the wait ended
+	nonOwnerFirst       nonOwnerFirst                // command-line first messages the owner did not write
 	daemonTyped         daemonTyped                  // text the daemon typed into a session terminal, not the owner's
 	claudeChecks        sync.WaitGroup               // background checks of Claude prompts that wait for the transcript
 	claudeOwnerWait     time.Duration                // test hook: how long to wait for a transcript entry; 0 means claudeSenderWait
@@ -753,6 +754,10 @@ func New(cfg Config) (*Daemon, error) {
 		adapters: map[string]Adapter{}, inflight: map[string]chan struct{}{}, lanes: map[string]*lane{}, cmdline: procCmdline, exe: procExe,
 		client: http.DefaultClient}
 	if err := d.loadSettingsSnapshot(); err != nil {
+		st.close()
+		return nil, err
+	}
+	if err := d.loadFirstMessages(); err != nil {
 		st.close()
 		return nil, err
 	}

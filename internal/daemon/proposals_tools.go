@@ -406,7 +406,7 @@ func (d *Daemon) executeApprovedCTOTool(ctx context.Context, name string, raw js
 		}
 		p.Project, p.NodeID, p.Merger, p.CTOProposal = project.Name, node, true, true
 		p.Folder, p.Branch, p.Create = "", "", false
-		p.FirstMessage = MergerFirstMessage
+		p.FirstMessage, p.FirstMessageByOwner = MergerFirstMessage, false
 		// The merger is a role, not a special case: its ordered list goes
 		// through the one gate (decision 0162).
 		pick, err := d.pickRoleOnMachine(ctx, protocol.RoleMerger, node, nil, protocol.RoleModel{}, false)
@@ -432,6 +432,8 @@ func (d *Daemon) executeApprovedCTOTool(ctx context.Context, name string, raw js
 		}
 		p.TrustClaude = false
 		p.CTOProposal = true
+		// The CTO wrote the first message; the owner only approved the start.
+		p.FirstMessageByOwner = false
 		loc, _ := ctx.Value(proposalHerdrLocationKey{}).(proposalHerdrLocation)
 		p.HerdrSocket, p.HerdrPaneID = loc.socket, loc.pane
 		// The CTO asked for this start, so the CTO is told if it fails later.

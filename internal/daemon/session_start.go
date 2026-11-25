@@ -356,7 +356,10 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	}
 	in := claudeStartInput{Name: name, Settings: claudeSettingsWithMCPAnswers(settings, r.Path), Model: p.Model, Skills: startSkillNode(p.AgentID, found.Name)}
 	if p.AgentID == "" {
+		// Claude Code records a command-line prompt as typed by a human. Only
+		// a message the owner wrote may count as the owner's words there.
 		in.FirstMessage = p.FirstMessage
+		in.NonOwnerFirstMessage = !p.FirstMessageByOwner
 	}
 	spec := d.claudeStartSpec(ctx, in)
 	view := startView{socket: p.HerdrSocket, pane: p.HerdrPaneID, relayed: remoteOwner, background: p.CTOProposal}

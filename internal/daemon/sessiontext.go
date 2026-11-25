@@ -1234,6 +1234,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if json.Unmarshal(raw, &p) != nil {
 			return nil, true, errors.New("bad session_start params")
 		}
+		// Only the owner's own TUI or command line gives the owner's words. The CTO
+		// reaches this call through its operator tool and an approved
+		// proposal: its text is never the owner's.
+		p.FirstMessageByOwner = !lc.cto && proposalActor(ctx) == ""
 		res, err = d.sessionStart(ctx, p)
 	case protocol.OpSessionStartGet:
 		var p protocol.SessionStartQuery

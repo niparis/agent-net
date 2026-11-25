@@ -39,6 +39,7 @@ func (d *Daemon) claudeRoleDir(role sessionRole) string {
 type claudeStartInput struct {
 	Role                                        sessionRole
 	Name, Resume, Model, Settings, FirstMessage string
+	NonOwnerFirstMessage                        bool
 	// Skills is the graph node this start takes its skills from. The zero
 	// value gets no folder.
 	Skills skillNode
@@ -47,7 +48,7 @@ type claudeStartInput struct {
 // claudeStartSpec is the one builder of a Claude start. A role replaces the
 // settings and adds its flags and MCP config; a coding session has none.
 func (d *Daemon) claudeStartSpec(ctx context.Context, in claudeStartInput) claudeBackground {
-	spec := claudeBackground{Name: in.Name, Settings: in.Settings, Resume: in.Resume, FirstMessage: in.FirstMessage}
+	spec := claudeBackground{Name: in.Name, Settings: in.Settings, Resume: in.Resume, FirstMessage: in.FirstMessage, NonOwnerFirstMessage: in.NonOwnerFirstMessage}
 	if in.Model != "" {
 		spec.ModelArgs = []string{"--model", in.Model}
 	}
@@ -187,7 +188,7 @@ func (d *Daemon) startClaudeRoleOnce(ctx context.Context, role sessionRole, id, 
 	if err := claudetrust.Set(dir); err != nil {
 		return fmt.Errorf("trust CTO Claude directory: %w", err)
 	}
-	spec := d.claudeStartSpec(ctx, claudeStartInput{Role: role, Resume: id, Model: model, FirstMessage: first, Skills: skillNode{Agent: "cto"}})
+	spec := d.claudeStartSpec(ctx, claudeStartInput{Role: role, Resume: id, Model: model, FirstMessage: first, NonOwnerFirstMessage: first != "", Skills: skillNode{Agent: "cto"}})
 	c.starting.Store(true)
 	defer c.starting.Store(false)
 	// The launch is bounded like every start. The old private path bounded only
