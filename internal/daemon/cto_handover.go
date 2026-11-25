@@ -330,7 +330,13 @@ func (d *Daemon) ctoOwnerMessages(n int) ([]ctoOwnerMsg, error) {
 // recordCTOOwnerMessage keeps what the owner typed to the CTO, for the next
 // handover.
 func (d *Daemon) recordCTOOwnerMessage(text string) error {
-	if _, err := d.st.db.Exec(`INSERT INTO cto_owner_messages(at,text) VALUES(?,?)`, d.ctoNowTime().UnixNano(), text); err != nil {
+	return d.recordCTOOwnerMessageAt(text, d.ctoNowTime())
+}
+
+// recordCTOOwnerMessageAt is recordCTOOwnerMessage for a message typed at a
+// known time, such as one whose transcript entry came late.
+func (d *Daemon) recordCTOOwnerMessageAt(text string, at time.Time) error {
+	if _, err := d.st.db.Exec(`INSERT INTO cto_owner_messages(at,text) VALUES(?,?)`, at.UnixNano(), text); err != nil {
 		return err
 	}
 	// Only the newest ctoHandoverOwnerMessages are ever read, so older rows go.

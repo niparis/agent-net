@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -93,6 +94,12 @@ func (lc *localConn) compactionCall(client string, raw json.RawMessage) (any, er
 		return nil, errors.New("bad compaction params")
 	}
 	d := lc.d
+	// The CTO's Claude conversation is not in d.sessions. Only its own native
+	// ID starts a new generation for it.
+	if d.isClaudeCTONative(p.NativeID) {
+		d.charterSends.compacted(ctoTurnKey(p.NativeID))
+		return struct{}{}, nil
+	}
 	d.mu.Lock()
 	ls := d.sessions[key("claude", p.NativeID)]
 	d.mu.Unlock()
@@ -120,6 +127,75 @@ func (d *Daemon) charterBlockForTurn(sid, charter string) string {
 		return protocol.CharterChangedNotice + "\n" + charter
 	}
 	return charter
+}
+
+// The Claude CTO gets its start block (standing orders, note titles, the
+// latest handover note) in the system prompt at launch. A compaction keeps that
+// text as it was, and a change to the orders never reaches it. Its prompt hook
+// therefore sends the current block in the same form a coding session gets its
+// charter and notes: once on the first prompt after a compaction, and again
+// when the orders or the note titles change. The state is per conversation, so
+// a new conversation, whose system prompt is new, starts from its launch.
+
+// ctoNoStandingOrders stands for an empty order list, so removing the last
+// order is a change the CTO is told about.
+const ctoNoStandingOrders = "[agent-net] The owner has no standing orders now."
+
+// ctoTurnKey is the charter state key of a CTO conversation. It cannot be a
+// gateway session ID.
+func ctoTurnKey(native string) string { return "claude-cto\x00" + native }
+
+// seed records a block as already sent, for a conversation that got it in its
+// launch system prompt. It is false when the conversation has state already
+// or has compacted since the daemon started: then the block is due as usual.
+func (c *charterSendState) seed(sid, charter, notes string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, have := c.sent[sid]; have || c.generation[sid] != 0 {
+		return false
+	}
+	if c.sent == nil {
+		c.sent = map[string]charterSent{}
+	}
+	if c.notes == nil {
+		c.notes = map[string]notesSent{}
+	}
+	c.sent[sid] = charterSent{hash: charterHash(charter)}
+	c.notes[sid] = notesSent{titles: notesTitles(notes)}
+	return true
+}
+
+// ctoBlockForTurn is the start block text the Claude CTO's prompt hook prints
+// this turn, or "" when its conversation has the current one. The first
+// prompt the daemon sees of a conversation only records the block: the launch
+// put it in the system prompt. A read that fails sends nothing and changes no
+// state, so a gateway that is down never looks like removed orders.
+func (d *Daemon) ctoBlockForTurn(ctx context.Context, native string) string {
+	// The hook gives up after 3 seconds, so both reads share one short budget.
+	ctx, cancel := context.WithTimeout(ctx, policyCallTimeout)
+	defer cancel()
+	res, err := d.standingOrdersOp(ctx, protocol.StandingOrdersRequest{Action: protocol.StandingActionList}, "")
+	if err != nil {
+		return ""
+	}
+	orders := joinCharter(protocol.StandingOrdersBrief(res.Orders), d.ctoHandoverPointer())
+	if orders == "" {
+		orders = ctoNoStandingOrders
+	}
+	notes := ""
+	if sid := d.ctoSessionID(); sid != "" {
+		raw, err := d.call(ctx, "context.get", protocol.PolicyGet{SessionID: sid})
+		var got protocol.PolicyGot
+		if err != nil || json.Unmarshal(raw, &got) != nil {
+			return ""
+		}
+		notes = got.Notes
+	}
+	key := ctoTurnKey(native)
+	if d.charterSends.seed(key, orders, notes) {
+		return ""
+	}
+	return joinCharter(d.charterBlockForTurn(key, orders), d.notesBlockForTurn(key, notes))
 }
 
 // notesTitles reads the title lines of a notes index. The key of a line is the

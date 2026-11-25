@@ -375,7 +375,9 @@ owner takes off the CTO's list stays off (decision 0171).
 A switch of harness writes a handover note, named `handover-<UTC time>`, into
 the CTO's gateway notes. It lists the open asks, the messages the CTO owes a
 reply, the workers and changes it started that are not done, the owner's last
-ten messages, and any busy turn. When the old conversation can answer within 60
+ten messages (sent from the TUI or typed in a Claude CTO's own pane; a peer
+message, a scheduled prompt or a first message that agent-net or the CTO wrote
+is not one), and any busy turn. When the old conversation can answer within 60
 seconds, its answer follows, marked as model output. A switch to a harness whose
 conversation was last used more than 24 hours ago starts a new conversation
 (decision 0171).
@@ -628,7 +630,11 @@ any enrolled machine; the gateway creates the existing invite result.
 For team delivery, use `to_set: {"team": "finance"}` with the team name or ID. Only the CTO can send to a group: online sessions of member agents and the linked agents of member repos. The result lists recipients and members missed because they have no online session or a repo has no linked agent. Additional `to_set` filters narrow the recipients. `as_owner: true` sends to each recipient on the owner's instructions. A Team has an authority mode and held back text (see Authority along the tree). The CTO can list teams and membership with `agent_graph_read` using `typed: true`.
 
 Changes other than the five proposal actions above apply at once. Reversible
-changes include an undo action in the Inbox and Desk log. `agent_message_send`, `agent_message_reply`, `agent_owner_ask`,
+changes include an undo action in the Inbox and Desk log. The direct tools
+`agent_protected_providers_set`, `agent_worker_profile_add` and
+`agent_worker_profile_remove` leave the same Inbox line and undo as the
+`settings_change` areas `protected_providers`, `worker_profile_add` and
+`worker_profile_remove`. `agent_message_send`, `agent_message_reply`, `agent_owner_ask`,
 `agent_learn`, `cto_ui_show` and `proposal_ask` are talk.
 Every proposal tool takes an optional `reason`. The daemon validates the stored
 call and keeps the concrete implementation, its authority checks and its audit
@@ -862,7 +868,7 @@ The worker floor, 90% block, burn hold and quota refusal functions are called on
 
 Standing orders are the owner's lasting instructions to the CTO. The gateway keeps them in the `standing_orders` table, so they survive CTO restarts and machine changes. Each order has an `id`, `text`, `saved_at` and `source`: `owner` for the owner's own words typed in the TUI, `cto` when the CTO saved it on the owner's instruction.
 
-The CTO tool `cto_standing_orders` has the actions `save` (`text`), `read` (`order_id`), `list`, `remove` (`order_id`), `search` (`query`), `history` (`order_id`) and `update` (`order_id`, `text`). Each order can carry `tags`, `pinned`, `kind` (for example `order`, `rule`, `answer`, `correction` or `reference`), `area` and `ref`. It answers with `orders` (all, oldest first) and `order`; `search` answers ranked matches and `history` the earlier versions. A save or a remove leaves an Inbox notice with an undo (remove for a save, restore for a remove). The CTO reads the orders at the start of every conversation: a Claude CTO gets them after the brief in its appended system prompt, an OpenCode CTO gets them in front of the first message of a new conversation. The titles of the CTO's gateway notes follow the orders in the same place ([decision 0158](decisions/0158-gateway-notes-v1.md)).
+The CTO tool `cto_standing_orders` has the actions `save` (`text`), `read` (`order_id`), `list`, `remove` (`order_id`), `search` (`query`), `history` (`order_id`) and `update` (`order_id`, `text`). Each order can carry `tags`, `pinned`, `kind` (for example `order`, `rule`, `answer`, `correction` or `reference`), `area` and `ref`. It answers with `orders` (all, oldest first) and `order`; `search` answers ranked matches and `history` the earlier versions. A save or a remove leaves an Inbox notice with an undo (remove for a save, restore for a remove). The CTO reads the orders at the start of every conversation: a Claude CTO gets them after the brief in its appended system prompt, an OpenCode CTO gets them in front of the first message of a new conversation. The titles of the CTO's gateway notes follow the orders in the same place ([decision 0158](decisions/0158-gateway-notes-v1.md)). A Claude CTO's prompt hook sends the current orders, note titles and handover note again, in the form a coding session gets its charter and notes: on the first prompt after a compaction, and when the orders, the note titles or the handover note change. The first prompt of a conversation adds nothing, because its launch prompt has them. When the orders cannot be read, the hook sends nothing.
 
 The owner sees and edits them in the TUI, Settings, section "Standing orders and notes": enter adds one, `x` removes the selected one and `u` puts the last removed one back. The same section lists the gateway notes (below). The operator method is `standing_orders` (`action`, `order_id`, `text`, `restore`); a save from the operator method is always source `owner`. The gateway frames are `standing.list`, `standing.save` and `standing.remove`.
 

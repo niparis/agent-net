@@ -293,6 +293,87 @@ func TestCTOProfileChangeUndoPreservesExisting(t *testing.T) {
 	}
 }
 
+// The CTO's direct tools for protected providers and worker profiles change
+// what settings_change does. Each call leaves one Inbox line with an undo that
+// works, and one action line, and the gateway records the change as before.
+func TestCTODirectSettingsToolsLeaveInboxUndo(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	ctx := context.Background()
+	if err := w.d.registerCTOSession(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.gw.Store().AddWorkerProfile(protocol.WorkerProfile{Name: "review", Harness: "opencode", Model: "fake/m1", Effort: "low", AddedBy: w.ownerID()}); err != nil {
+		t.Fatal(err)
+	}
+	w.cli.mustCall(protocol.OpProtectedProvidersSet, protocol.ProtectedProviders{Providers: []string{"old"}, Reason: "before"})
+	actions := func() int {
+		var n int
+		if err := w.d.st.db.QueryRow(`SELECT COUNT(*) FROM cto_actions`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	profile := func() protocol.WorkerProfile {
+		profiles, err := g.gw.Store().WorkerProfiles()
+		if err != nil || len(profiles) != 1 {
+			t.Fatalf("profiles %+v %v", profiles, err)
+		}
+		return profiles[0]
+	}
+	for _, tc := range []struct {
+		tool, args, undo string
+		applied, undone  func() bool
+	}{
+		{"agent_protected_providers_set", `{"protected_providers":["fixture"],"reason":"test"}`, protocol.OpProtectedProvidersSet,
+			func() bool {
+				var info protocol.ProtectedProviders
+				_ = json.Unmarshal(w.cli.mustCall(protocol.OpProtectedProvidersGet, nil), &info)
+				return len(info.Providers) == 1 && info.Providers[0] == "fixture"
+			},
+			func() bool {
+				var info protocol.ProtectedProviders
+				_ = json.Unmarshal(w.cli.mustCall(protocol.OpProtectedProvidersGet, nil), &info)
+				return len(info.Providers) == 1 && info.Providers[0] == "old"
+			}},
+		{"agent_worker_profile_add", `{"name":"review","harness":"opencode","model":"fake/m1","effort":"high"}`, protocol.OpWorkerProfileAdd,
+			func() bool { return profile().Effort == "high" },
+			func() bool { return profile().Effort == "low" }},
+		{"agent_worker_profile_remove", `{"name":"review"}`, protocol.OpWorkerProfileAdd,
+			func() bool { profiles, err := g.gw.Store().WorkerProfiles(); return err == nil && len(profiles) == 0 },
+			func() bool { return profile().Effort == "low" }},
+	} {
+		t.Run(tc.tool, func(t *testing.T) {
+			before, err := inboxAndLog(g.gw.Store())
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeActions := actions()
+			if _, err := w.d.runCTOTool(ctx, tc.tool, json.RawMessage(tc.args)); err != nil {
+				t.Fatal(err)
+			}
+			if !tc.applied() {
+				t.Fatal("the change was not applied as before")
+			}
+			if n := actions() - beforeActions; n != 1 {
+				t.Fatalf("%d action lines, want 1", n)
+			}
+			after, err := inboxAndLog(g.gw.Store())
+			if err != nil || len(after) != len(before)+1 {
+				t.Fatalf("inbox %+v %v", after, err)
+			}
+			item := after[len(after)-1]
+			if len(item.Options) != 2 || item.Options[0] != tc.undo || strings.Count(item.Text, "review") > 1 {
+				t.Fatalf("inbox line %+v", item)
+			}
+			w.cli.mustCall(item.Options[0], json.RawMessage(item.Options[1]))
+			if !tc.undone() {
+				t.Fatal("the undo did not restore the old value")
+			}
+		})
+	}
+}
+
 func TestCTOMachineRenameInboxUndo(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
