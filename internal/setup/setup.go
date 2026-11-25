@@ -101,6 +101,9 @@ type runner struct {
 	// apply it and turn an item off as well as on. When it is nil, the steps
 	// keep their old ask-once behavior.
 	want *protocol.Integrations
+	// keepCurrent says a run with no terminal and no network answer kept this
+	// machine as it is. Such a run must not remove what the owner installed.
+	keepCurrent bool
 
 	tailscaleIP      func() string
 	gatewayListen    string

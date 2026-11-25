@@ -1,5 +1,7 @@
 // Package agentnetworkers embeds the Claude Code "agent-net workers" plugin so
-// `agent-net setup` can install it from a local marketplace.
+// `agent-net setup` can write it in agent-net's own folder and link it into
+// Claude Code's skills folder, where Claude Code loads it without a marketplace
+// or a settings entry.
 package agentnetworkers
 
 import _ "embed"

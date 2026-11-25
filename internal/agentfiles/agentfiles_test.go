@@ -19,12 +19,16 @@ import (
 
 var update = flag.Bool("update", false, "rewrite the golden files")
 
-// fakeHome points HOME at a temp dir and clears XDG_CONFIG_HOME.
+// fakeHome points HOME at a temp dir and clears XDG_CONFIG_HOME. It also
+// points the agent-net config and Claude Code config dirs there, so the Claude
+// workers record and settings never touch the real setup.
 func fakeHome(t *testing.T) string {
 	t.Helper()
 	h := t.TempDir()
 	t.Setenv("HOME", h)
 	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("AGENT_NET_CONFIG_DIR", filepath.Join(h, "config"))
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(h, ".claude"))
 	return h
 }
 

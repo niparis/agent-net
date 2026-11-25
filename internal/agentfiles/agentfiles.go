@@ -122,6 +122,8 @@ func SyncAndLogWithSnapshot(logf func(format string, args ...any), snapshot sett
 			logf("agent files: %s left alone (symlink): %s", r.Name, DisplayPath(r.Path))
 		case r.Changed && r.Note != "":
 			logf("agent files: %s %s: %s; %s", r.Name, r.Text, DisplayPath(r.Path), r.Note)
+		case !r.Changed && r.Note != "":
+			logf("agent files: %s %s: %s", r.Name, r.Text, r.Note)
 		case r.Changed && r.Text == "updated":
 			logf("agent files: %s updated: %s", r.Name, DisplayPath(r.Path))
 		case r.Changed && strings.HasPrefix(r.Text, "replaced "):

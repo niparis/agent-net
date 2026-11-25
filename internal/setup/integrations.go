@@ -123,6 +123,7 @@ func (r *runner) chooseIntegrations(ctx context.Context) {
 			// installed. A later setup with a terminal can ask the one
 			// question.
 			base = r.currentIntegrations()
+			r.keepCurrent = true
 		} else {
 			base = ans
 			stored = r.storeNetworkIntegrations(ctx, base)
@@ -180,7 +181,7 @@ func (r *runner) currentIntegrations() protocol.Integrations {
 		in.HintHook = loadHintState().Installed
 		in.PolicyHook = loadPolicyState().Installed
 		in.NeedsHook = loadNeedsState().Installed
-		in.WorkersMod = loadWorkersModState().Installed || exists(agentfiles.ClaudeWorkersDir())
+		in.WorkersMod = loadWorkersModState().Installed || agentfiles.ClaudeWorkersLiveInstalled()
 	}
 	if codexPath() != "" || exists(agentfiles.CodexHome()) {
 		if b, err := os.ReadFile(agentfiles.CodexConfigPath()); err == nil {
