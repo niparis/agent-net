@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -453,6 +454,31 @@ func TestClaudeTypedLineAfterAPastedBlockIsOwnerWords(t *testing.T) {
 		t.Fatal("the line the owner typed after the paste was lost")
 	}
 	if got, want := ownerInstructionFrom(t, g, n, sid), "ask homelab to deploy"; got != want {
+		t.Fatalf("owner_prompt = %q, want the typed line only %q", got, want)
+	}
+}
+
+// A long paste does not hide the line the owner typed after it: the daemon
+// keeps that line as his words and sends it to the gateway, and none of the
+// pasted text travels with it. The hook no longer cuts the prompt, so this is
+// the prompt the daemon receives.
+func TestClaudeLongPasteKeepsTheTypedLine(t *testing.T) {
+	const native, promptID = "claude-long-paste", "prompt-long-paste"
+	g, n, sid := claudeSessionFor(t, native)
+	prompt := `<pasted_content id="8020">` + strings.Repeat("the agent wrote this ", 500) +
+		`</pasted_content id="8020">` + "\nask homelab to use a codex worker"
+	transcript := writeClaudeTranscript(t, t.TempDir(), native, claudeUserEntry(promptID, prompt, typedOrigin))
+	askPolicy(t, cliClient(t, n), protocol.PolicyRequest{
+		Harness: "claude", NativeID: native, Prompt: prompt,
+		PromptID: promptID, TranscriptPath: transcript,
+	})
+	if n.d.ownerWordsMatch(sid, "the agent wrote this") {
+		t.Fatal("pasted text was kept as the owner's words")
+	}
+	if !n.d.ownerWordsMatch(sid, "ask homelab to use a codex worker") {
+		t.Fatal("the line the owner typed after the long paste was lost")
+	}
+	if got, want := ownerInstructionFrom(t, g, n, sid), "ask homelab to use a codex worker"; got != want {
 		t.Fatalf("owner_prompt = %q, want the typed line only %q", got, want)
 	}
 }

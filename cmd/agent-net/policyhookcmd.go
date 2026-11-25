@@ -69,9 +69,10 @@ func runPolicyHook(ctx context.Context, stdin io.Reader, stdout io.Writer,
 	default:
 		return
 	}
-	if r := []rune(in.Prompt); len(r) > 300 {
-		in.Prompt = string(r[:300])
-	}
+	// The prompt goes on whole. A cut here could end inside a pasted block and
+	// lose the line the owner typed after it; the daemon removes pasted blocks
+	// before it keeps or matches the owner's words. The stdin read above is
+	// the limit: past it the JSON is incomplete, so nothing is sent at all.
 	res, err := ask(ctx, protocol.PolicyRequest{Harness: "claude", NativeID: in.SessionID, Prompt: in.Prompt, PromptID: in.PromptID, TranscriptPath: in.TranscriptPath})
 	if err != nil || (res.Charter == "" && res.Notice == "") {
 		return

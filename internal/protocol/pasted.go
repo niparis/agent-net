@@ -22,8 +22,10 @@ const (
 // Claude Code writes the same id on a block's opening and closing tags, and an
 // id repeats in later prompts, so ids cannot pair tags. Text between two blocks
 // cannot be told from a paste that contains a forged closing tag and a forged
-// opening tag. A closing tag may carry the same id as its opening tag. Tags are
-// matched ignoring case, with white space around the name and in the
+// opening tag. A closing tag may carry the same id as its opening tag. A part
+// with a closing tag but no opening tag keeps only the text after the last
+// closing tag, since its opening tag may have stood in a removed block. Tags
+// are matched ignoring case, with white space around the name and in the
 // attributes.
 //
 // It proves nothing about who sent the prompt. The caller must have positive
@@ -49,7 +51,7 @@ func WithoutSystemReminders(prompt string) string {
 func typedAroundBlocks(s, name string) []string {
 	first, _ := findTag(s, name, 0, false)
 	if first < 0 {
-		return trimParts([]string{s})
+		return trimParts(afterClosingTags([]string{s}, name))
 	}
 	last, lastEnd := lastTag(s, name, true)
 	parts := []string{s[:first]}
@@ -60,7 +62,28 @@ func typedAroundBlocks(s, name string) []string {
 		}
 		parts = append(parts, rest)
 	}
-	return trimParts(parts)
+	return trimParts(afterClosingTags(parts, name))
+}
+
+// afterClosingTags drops the text before a closing tag when its opening tag is
+// not in the same part. Such an opening tag stood in a removed block, so
+// nothing shows that the text before the close was typed; a paste could carry
+// a forged close and an opening tag of another kind. Only the text after the
+// last closing tag is kept. A closing tag with no '>' hides where its block
+// would end, so the whole part is dropped.
+func afterClosingTags(parts []string, name string) []string {
+	var out []string
+	for _, p := range parts {
+		at, end := lastTag(p, name, true)
+		switch {
+		case at < 0:
+			out = append(out, p)
+		case end < 0:
+		default:
+			out = append(out, p[end:])
+		}
+	}
+	return out
 }
 
 // findTag returns the first tag named name at or after start and the byte

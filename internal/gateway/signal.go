@@ -9,7 +9,10 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// RememberOwnerPrompt keeps only the latest prompt of a session; it is never logged.
+// RememberOwnerPrompt keeps only the latest prompt of a session; it is never
+// logged. The daemon sends the owner's typed text with pasted blocks already
+// removed, so the cut below can lose his last words but cannot keep pasted
+// ones.
 func (s *Store) RememberOwnerPrompt(session, prompt string) error {
 	// Claude delivers peer messages, task notices and reminders as user turns.
 	// They are not the owner's words, so they are not kept. The owner's earlier

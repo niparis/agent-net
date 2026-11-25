@@ -140,11 +140,40 @@ func TestPolicyHookReportsCompaction(t *testing.T) {
 	}
 }
 
-func TestPolicyHookTruncatesPrompt(t *testing.T) {
-	input := `{"session_id":"abc","prompt":"` + strings.Repeat("é", 400) + `"}`
-	_, asked := runPolicyWith(t, input, onePolicy, nil)
-	if len(asked) != 1 || len([]rune(asked[0].Prompt)) != 300 {
-		t.Fatalf("prompt not truncated: %+v", asked)
+// The hook passes the prompt on whole. Cutting it here could end inside a
+// pasted block and lose the line the owner typed after it.
+func TestPolicyHookKeepsALongPrompt(t *testing.T) {
+	prompt := strings.Repeat("é", 5000)
+	raw, err := json.Marshal(policyHookInput{SessionID: "abc", Prompt: prompt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, asked := runPolicyWith(t, string(raw), onePolicy, nil)
+	if len(asked) != 1 || asked[0].Prompt != prompt {
+		t.Fatalf("prompt was cut: asked %d prompts of %d runes, want one of %d",
+			len(asked), len([]rune(asked[0].Prompt)), len([]rune(prompt)))
+	}
+}
+
+// A long paste must not hide the line the owner typed after it. The daemon
+// removes the paste and keeps the line as his words.
+func TestPolicyHookKeepsTheTypedLineAfterALongPaste(t *testing.T) {
+	prompt := `<pasted_content id="8020">` + strings.Repeat("the agent wrote this ", 500) +
+		`</pasted_content id="8020">` + "\nplease use a codex worker"
+	raw, err := json.Marshal(policyHookInput{SessionID: "abc", Prompt: prompt, PromptID: "p1", TranscriptPath: "/tmp/abc.jsonl"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, asked := runPolicyWith(t, string(raw), onePolicy, nil)
+	if len(asked) != 1 || asked[0].Prompt != prompt {
+		t.Fatalf("the hook cut the prompt: %d bytes carried, %d bytes typed", len(asked[0].Prompt), len(prompt))
+	}
+	words := strings.Join(protocol.OwnerTypedSegments(asked[0].Prompt), " ")
+	if !strings.Contains(words, "please use a codex worker") {
+		t.Fatalf("the typed line is not in the owner's words: %q", words)
+	}
+	if strings.Contains(words, "the agent wrote this") {
+		t.Fatalf("pasted text became the owner's words: %q", words)
 	}
 }
 

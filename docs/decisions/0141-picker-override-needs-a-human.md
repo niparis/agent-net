@@ -26,9 +26,10 @@ human confirmed it:
    system-reminder block is removed from it before it is stored or matched. The
    opening and closing tags may carry the same id; everything from the first
    opening tag to the last closing tag is dropped, including text between two
-   blocks. If the entry is still missing when the five second wait ends, the
-   daemon reads the transcript again when the words are needed, so an entry
-   written later still counts. An entry that never appears, an unknown origin
+   blocks. A part with a closing tag but no opening tag keeps only the text
+   after the last closing tag. If the entry is still missing when the five
+   second wait ends, the daemon reads the transcript again when the words are
+   needed, so an entry written later still counts. An entry that never appears, an unknown origin
    and a queued command without a human origin close waits as before but are
    not kept as words.
 2. Otherwise the daemon holds the start and puts one ask on the Desk, with the
