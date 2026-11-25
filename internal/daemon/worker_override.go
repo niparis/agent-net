@@ -57,18 +57,34 @@ func (d *Daemon) rememberOwnerPrompt(session, text string) {
 	d.rememberOwnerPromptAt(session, text, d.ownerPromptNow())
 }
 
+// ownerWordsText returns the prompt cut down to what may be kept as the
+// owner's words: pasted blocks and system reminders removed, the parts he typed
+// joined with OwnerTypedSeparator, and the result cut to the store's limit.
+// Blocks are removed before the cut, so a cut can never turn text that a block
+// hid into a quote. ok is false when he typed nothing outside a block.
+func ownerWordsText(text string) (string, bool) {
+	segments := protocol.OwnerTypedSegments(text)
+	if len(segments) == 0 {
+		return "", false
+	}
+	text = strings.Join(segments, protocol.OwnerTypedSeparator)
+	if len(text) > maxOwnerPromptBytes {
+		text = strings.ToValidUTF8(text[:maxOwnerPromptBytes], "")
+	}
+	return text, true
+}
+
 // rememberOwnerPromptAt is rememberOwnerPrompt for a prompt typed at a known
 // time, such as one read back from a transcript. Text the harness marks as
 // pasted is removed here, so every store of the owner's words holds only what
 // he typed.
 func (d *Daemon) rememberOwnerPromptAt(session, text string, at time.Time) {
-	segments := protocol.OwnerTypedSegments(text)
-	if session == "" || len(segments) == 0 {
+	if session == "" {
 		return
 	}
-	text = strings.Join(segments, protocol.OwnerTypedSeparator)
-	if len(text) > maxOwnerPromptBytes {
-		text = strings.ToValidUTF8(text[:maxOwnerPromptBytes], "")
+	text, ok := ownerWordsText(text)
+	if !ok {
+		return
 	}
 	now := d.ownerPromptNow()
 	d.ownerPrompts.mu.Lock()

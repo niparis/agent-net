@@ -110,14 +110,16 @@ const pendingWordsKeySep = "\x00"
 
 // notePendingOwnerWords keeps a prompt to read again later. A loaded machine
 // can write the transcript entry after the five second wait. The text is not
-// kept as the owner's words until an entry says he typed it.
+// kept as the owner's words until an entry says he typed it. Pasted and
+// reminder blocks are removed before the text is cut, so a cut cannot expose
+// text a block hid.
 func (d *Daemon) notePendingOwnerWords(session string, p protocol.PolicyRequest) {
 	if session == "" || p.PromptID == "" || !claudeTranscriptFor(p.TranscriptPath, p.NativeID, p.PromptID) {
 		return
 	}
-	text := p.Prompt
-	if len(text) > maxOwnerPromptBytes {
-		text = strings.ToValidUTF8(text[:maxOwnerPromptBytes], "")
+	text, ok := ownerWordsText(p.Prompt)
+	if !ok {
+		return
 	}
 	now := d.ownerPromptNow()
 	d.pendingWordsMu.Lock()
