@@ -151,10 +151,10 @@ Legend ────────────────────────�
   m                      send a message to the session as yourself
   x                      stop the selected worker or session
   d                      show or hide details
-  states               pending ... delivered ✓ replied ↩ failed ✗
+  states               pending ... delivered ✓ held ! replied ↩ failed ✗
   tab                    switch the sub-tabs: Agents, Workers, System
-  marks                  you→ owner · ~ waiting · ✓ answered · gw N held · ⚡
-                         burst · ! blocked
+  marks                  you→ owner · ~ waiting · ✓ answered · gw N held · !
+                         held by Claude or blocked · ⚡ burst
   burst                  20 or more messages in one hour and more than 3 times
                          the thread's median hourly count
   links                  PR, ch_ and ask i_ lines show above the conversation; o

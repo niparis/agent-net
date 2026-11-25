@@ -1,6 +1,6 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk │ 6 online · 2 busy
   Agents    [ Workers ]    System
-you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
+you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! held or blocked
 ╭─Threads─────────────────────────────────────────────p: all · t: all / search─╮
 │ ▸ tenebrae-53 → worker 8: Polish the sessions panel  done · 4 · claude · 12m │
 │     ✓ done · 12m · 3 files                                                   │

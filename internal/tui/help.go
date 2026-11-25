@@ -360,9 +360,9 @@ func (m Model) helpSectionContent(section helpSection, w int) []string {
 		out = append(out, m.contextHelpLines(context, w, skipGlobal)...)
 	}
 	if section.title == "Messages" {
-		out = append(out, "  "+sTitle.Render(cell("states", 20))+" pending ... delivered ✓ replied ↩ failed ✗")
+		out = append(out, "  "+sTitle.Render(cell("states", 20))+" pending ... delivered ✓ held ! replied ↩ failed ✗")
 		out = append(out, m.helpRow("tab", "switch the sub-tabs: Agents, Workers, System", w)...)
-		out = append(out, m.helpRow("marks", "you→ owner · ~ waiting · ✓ answered · gw N held · ⚡ burst · ! blocked", w)...)
+		out = append(out, m.helpRow("marks", "you→ owner · ~ waiting · ✓ answered · gw N held · ! held by Claude or blocked · ⚡ burst", w)...)
 		out = append(out, m.helpRow("burst", "20 or more messages in one hour and more than 3 times the thread's median hourly count", w)...)
 		out = append(out, m.helpRow("links", "PR, ch_ and ask i_ lines show above the conversation; o opens a loaded change or ask", w)...)
 		out = append(out, m.helpRow("p / t", "filter by project or team; / searches the text; esc clears the filters", w)...)

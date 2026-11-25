@@ -458,7 +458,7 @@ func TestWakeMergeQueueThreeFailedTrainRuns(t *testing.T) {
 // A digest kind never wakes the CTO, however often it repeats.
 func TestDigestKindsNeverWake(t *testing.T) {
 	s, c := intakeRig(t)
-	for _, kind := range []string{protocol.IntakeClaudeMouse, protocol.IntakePhonePaired, protocol.IntakePickerOverride} {
+	for _, kind := range []string{protocol.IntakeClaudeMouse, protocol.IntakeClaudePeerMessages, protocol.IntakePhonePaired, protocol.IntakePickerOverride} {
 		for i := 0; i < 3; i++ {
 			if _, err := s.RecordIntake(intakeEvent{Kind: kind, Subject: "x", Text: "x"}); err != nil {
 				t.Fatal(err)

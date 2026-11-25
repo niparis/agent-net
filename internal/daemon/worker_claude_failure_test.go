@@ -74,7 +74,7 @@ func TestClaudeTranscriptFailureParsing(t *testing.T) {
 
 func writeClaudeTranscriptLine(t *testing.T, projectsDir, sessionID, cwd, line string) {
 	t.Helper()
-	dir := filepath.Join(projectsDir, claudeTranscriptDir(cwd))
+	dir := filepath.Join(projectsDir, ClaudeTranscriptDir(cwd))
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}

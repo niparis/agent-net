@@ -65,6 +65,26 @@ type Host interface {
 	// Replies is the daemon.db record that matches a Claude reply to the
 	// request it answers.
 	Replies() ReplyBook
+	// ClaudeHeld reports one "Held peer message" line from a Claude
+	// transcript. The daemon ties it to the one delivery it describes.
+	ClaudeHeld(ctx context.Context, recipient string, e ClaudeHeldEntry)
+	// ClaudeHeldReleased reports that the session released the frame with this
+	// reply socket and content hash.
+	ClaudeHeldReleased(ctx context.Context, recipient, replySock, frameHash string, at time.Time)
+}
+
+// ClaudeHeldEntry is one hold notice from a Claude transcript. UUID is the
+// entry's own id, so the daemon handles it once across restarts. ReplySock,
+// FrameLines and FrameChars describe the frame Claude held; Preview only
+// breaks a tie between two frames with the same size. At is the entry's
+// timestamp.
+type ClaudeHeldEntry struct {
+	UUID       string
+	ReplySock  string
+	Preview    string
+	FrameLines int
+	FrameChars int
+	At         time.Time
 }
 
 type Config struct {
@@ -405,35 +425,37 @@ type Daemon struct {
 	notifySend          func()
 	// mouseMu guards mouseNotices, the last report of each Claude mouse
 	// problem (claude_mouse.go), when the daemon has no state database.
-	mouseMu         sync.Mutex
-	mouseNotices    map[string]time.Time
-	skillSnapshots  skillSnapshots // archive bundles the gateway reads in parts (decision 0169)
-	sourceMu        sync.Mutex
-	sourceLocations map[string]bool // folders the last node.skill_sources listed; sourceMu guards it
-	outboxWake      chan struct{}   // a queued message wakes the link's outbox loop
-	ctoDispatchMu   ctoDispatchLock
-	ctoHandovers    []*ctoHandoverFlight // model layer handovers in flight; guarded by cto.mu
-	ctoPresenceMu   sync.Mutex
-	ctoEnterMu      sync.Mutex
-	ctoEntering     *ctoEnterCall
-	herdrOpenMu     sync.Mutex
-	herdrOpened     map[string]herdrOpenedPane
-	herdrOwnMu      sync.Mutex
-	herdrOwnSocket  string // agent-net's herdr server, once herdr named it
-	herdrOwnConfPID int    // the server process known to run with agent-net's config
-	herdrOwnNotePID int    // the server process the owner was told about
-	signIn          signInState
-	cto             ctoRuntime
-	claudeCTO       claudeCTOState
-	codexCTO        codexCTOState
-	ctoTranscript   ctoTranscriptCache // the parsed CTO transcript, for the owner timeline
-	layoutMu        sync.Mutex
-	layoutCache     *protocol.MachineLayout
-	layoutTime      time.Time
-	cfg             Config
-	log             *log.Logger
-	st              *state
-	client          *http.Client
+	mouseMu          sync.Mutex
+	mouseNotices     map[string]time.Time
+	skillSnapshots   skillSnapshots // archive bundles the gateway reads in parts (decision 0169)
+	sourceMu         sync.Mutex
+	sourceLocations  map[string]bool // folders the last node.skill_sources listed; sourceMu guards it
+	outboxWake       chan struct{}   // a queued message wakes the link's outbox loop
+	claudeReportMu   sync.Mutex
+	claudeReportBusy map[int64]bool // reports a flush is sending, guarded by claudeReportMu
+	ctoDispatchMu    ctoDispatchLock
+	ctoHandovers     []*ctoHandoverFlight // model layer handovers in flight; guarded by cto.mu
+	ctoPresenceMu    sync.Mutex
+	ctoEnterMu       sync.Mutex
+	ctoEntering      *ctoEnterCall
+	herdrOpenMu      sync.Mutex
+	herdrOpened      map[string]herdrOpenedPane
+	herdrOwnMu       sync.Mutex
+	herdrOwnSocket   string // agent-net's herdr server, once herdr named it
+	herdrOwnConfPID  int    // the server process known to run with agent-net's config
+	herdrOwnNotePID  int    // the server process the owner was told about
+	signIn           signInState
+	cto              ctoRuntime
+	claudeCTO        claudeCTOState
+	codexCTO         codexCTOState
+	ctoTranscript    ctoTranscriptCache // the parsed CTO transcript, for the owner timeline
+	layoutMu         sync.Mutex
+	layoutCache      *protocol.MachineLayout
+	layoutTime       time.Time
+	cfg              Config
+	log              *log.Logger
+	st               *state
+	client           *http.Client
 	// ctoNow and ctoCompactEvery are replaced in tests with a fake clock and
 	// no background loop.
 	ctoNow func() time.Time
@@ -993,6 +1015,7 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 	var changed []*localSession
 	var gone []sessionRemoval
 	var updates []activityUpdate
+	newClaude := false
 	for _, in := range infos {
 		in.Harness = harness
 		k := key(harness, in.NativeID)
@@ -1037,6 +1060,9 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 			}
 		}
 		if ls == nil {
+			if harness == "claude" {
+				newClaude = true
+			}
 			token, _ := procToken(in.PID)
 			ls = &localSession{stopToken: token, info: in, lastActive: candidate, harnessActivity: harnessActivity, mcpSince: time.Now()}
 			d.sessions[k] = ls
@@ -1111,6 +1137,17 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		}
 	}
 	d.mu.Unlock()
+	if newClaude {
+		// A settings file replaced while the daemon ran can be noticed at the
+		// next session start, without waiting for the next integrations pass.
+		// The gateway call must not delay discovery, and the daemon lock is
+		// already released.
+		ctx := d.ctoCtx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		d.goBackground(func() { d.checkClaudePeerMessages(ctx) })
+	}
 	d.startMCPRepairs()
 	d.sendMCPDesk()
 	for _, u := range updates {
@@ -1591,6 +1628,10 @@ func (d *Daemon) keepOutbox(ctx context.Context, stalled bool) {
 			}
 		}
 		stalled = d.flushOutbox(ctx)
+		// A held or released report follows the messages it describes.
+		if d.flushClaudeReports(ctx) {
+			stalled = true
+		}
 	}
 }
 

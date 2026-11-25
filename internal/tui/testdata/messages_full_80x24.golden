@@ -1,6 +1,6 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk │ 6 online · 1 busy
 [ Agents ]    Workers      System
-you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! blocked
+you→ owner · ~ waiting · ✓ answered · gw held · ⚡ burst · ! held or blocked
 ╭─Threads─────────────────────────────────────────────p: all · t: all / search─╮
 │ ▸ ! tenebrae-53 ↔ strategies                                     now · 1 msg │
 │     Stored conversation 00: keep the list full and readable                  │

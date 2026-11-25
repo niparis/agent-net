@@ -150,6 +150,8 @@ func (s *Store) withdrawOne(tx *sql.Tx, m protocol.Message, now int64) error {
 		return reject("message %s was already delivered to the session; it cannot be withdrawn", m.ID)
 	case protocol.StateExpired:
 		return reject("message %s expired; it cannot be withdrawn", m.ID)
+	case protocol.StateHeldBySession:
+		return reject("message %s is held for review in the session; release or dismiss it there", m.ID)
 	case protocol.StateStored, protocol.StateDispatched, protocol.StateHeld, protocol.StateFailed:
 	default:
 		return reject("message %s is %s; it cannot be withdrawn", m.ID, m.State)

@@ -1125,7 +1125,7 @@ machine reconnects first. A reconnect syncs the sessions again.
 | Claude tool-decide hook record | `~/.config/agent-net/claude-tool-decide-hook.json` | Whether agent-net added the hook (and to which settings file). |
 | Claude urgent hook record | `~/.config/agent-net/claude-urgent-hook.json` | Whether agent-net added the urgent hooks (and to which settings file). |
 | Claude needs hook record | `~/.config/agent-net/claude-needs-hook.json` | Whether you were asked, and whether agent-net added the hooks (and to which settings file). |
-| Claude peer messages record | `~/.config/agent-net/claude-peer-messages.json` | Whether you were asked, and whether agent-net set Claude Code's `crossSessionInbound` setting. |
+| Claude peer messages record | `~/.config/agent-net/claude-peer-messages.json` | Whether you were asked, and whether agent-net set Claude Code's `crossSessionInbound` setting. The daemon compares it with the live settings file at start and when a Claude session starts; it never writes that file. |
 | Claude policy hook record | `~/.config/agent-net/claude-policy-hook.json` | Whether you were asked, and whether agent-net added the policy hook (and to which settings file). |
 | Codex tools record | `~/.config/agent-net/codex-tools.json` | Whether you were asked, and whether agent-net set the tool approval mode for its Codex server. |
 | Claude workers plugin record | `~/.config/agent-net/claude-workers-mod.json` | Whether you were asked, whether agent-net installed the plugin, and the marketplace folder. |
@@ -1315,6 +1315,65 @@ protocol state. A delivery-record write failure never permits a harness write.
 Confirmation means acceptance by the harness: a Pi or OpenCode plugin ack,
 a Codex queue accept, an Antigravity hook reply or herdr acceptance, or a Claude
 inbox socket write. It does not mean the agent has read or answered the message.
+
+### A message Claude Code held for review
+
+Claude Code holds a message from another session when the sender's permission
+mode class differs from the receiver's. The inbox socket write succeeds, so the
+daemon first reports `delivered`. The session's transcript then records the
+hold. The daemon reads that entry and reports the message as
+`held_by_session` with a detail that says to approve it in that session or to
+set `crossSessionInbound` to `accept` there. It logs
+`session.delivery_held msg=<id>`, and the sender and the Messages tab show the
+held state and the detail. A held message is not chased by the owed-reply
+reminders.
+
+The notice names the sender's reply socket and the size of the frame: its line
+count and its character count inside the wrapper, including agent-net's own
+notes. The daemon ties it to the one frame with that socket and that size,
+written just before the notice. The quoted first line only breaks a tie between
+two frames of the same size. A character outside the BMP counts as one code
+point or two UTF-16 units, and both are accepted. When no frame, or more than
+one, could be the one it describes, the daemon logs the notice and marks
+nothing rather than guess. Each notice is applied once, keyed by the notice's
+own id, so a daemon restart that reads the transcript again marks nothing new.
+
+Claude Code writes no entry when it drops a held message, so the detail says
+the message may have expired there; agent-net does not claim it still waits. A
+held message that is never released still expires like any other undelivered
+message, and its detail then says it was held and may never have been seen.
+
+If the owner approves the message, Claude Code writes the frame back: as a user
+turn, as a queued command attachment, or as a queue operation entry. The daemon
+reads the first of those forms in the transcript and matches the frame's own
+content and reply socket, logs `session.delivery_released msg=<id>`, and
+reports the message as `delivered` with detail `released in Claude Code`. A
+message ID in the body or in agent-net's cited notes never ties a release. The
+release is applied once, and a repeated delivered report does not undo a hold:
+only the release does.
+
+A batch is one frame for several messages. The hold and the release name the
+carrier frame, and the gateway holds or releases the carrier and every original
+in its batch together. The batch body names its originals; that text is not
+what ties the frame.
+
+A hold or release report that the gateway does not take is kept in
+`daemon.db`. The daemon sends it again after the next connect and after a
+restart, in order, so a hold always arrives before the release that follows it.
+
+The daemon does not fake a matching permission mode, set
+`crossSessionInbound`, or send a held message again. Those are the owner's
+choices.
+
+At daemon start and when a Claude session starts, the daemon also compares the
+live `crossSessionInbound` value with the answer recorded in
+`~/.config/agent-net/claude-peer-messages.json`. A difference is logged as
+`claude peer messages: ...` and reported once a day in the CTO intake queue.
+The report names the final file behind a link. A link to a writable file, for
+example one in your own dotfiles repository, is named as the file to edit and
+needs no rebuild. A read-only file, or a link to one, is named with the
+declaration to put in the file that manages it, for example a Nix or Home
+Manager dotfile, and a rebuild. A settings file agent-net never wrote, or one it cannot read, is not reported as a difference. The check writes nothing.
 An in-memory queue waiting for a later turn remains `dispatched`; its record is
 cleared because nothing reached the harness. It can be pushed again after a
 restart. OpenCode queued worker turns become delivered only after the plugin ack.

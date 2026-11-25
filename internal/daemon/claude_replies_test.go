@@ -139,6 +139,41 @@ func TestClaudeRepliesExpiryClosesAndPrunes(t *testing.T) {
 	}
 }
 
+// A hold notice goes with the deliveries of its age. Kept for ever, the table
+// would grow without bound.
+func TestPruneClaudeDeliveriesDropsOldHoldEntries(t *testing.T) {
+	st, err := openState(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.close()
+	now := time.Now()
+	for _, e := range []struct {
+		entry, messageID string
+		at               time.Time
+	}{
+		{"entry-matched", "m_gone", now.Add(-time.Hour)},
+		{"entry-fresh", "", now.Add(-time.Hour)},
+		{"entry-unmatched-old", "", now.Add(-49 * time.Hour)},
+	} {
+		if _, err := st.db.Exec(`INSERT INTO claude_hold_entries (entry, recipient, message_id, at) VALUES (?,?,?,?)`,
+			e.entry, "s_r", e.messageID, e.at.UnixNano()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := st.pruneClaudeDeliveries(now); err != nil {
+		t.Fatal(err)
+	}
+	var kept int
+	if err := st.db.QueryRow(`SELECT COUNT(*) FROM claude_hold_entries`).Scan(&kept); err != nil {
+		t.Fatal(err)
+	}
+	// The fresh unmatched notice stays: a restart must not try it twice.
+	if kept != 1 {
+		t.Fatalf("%d notices left, want only the fresh unmatched one", kept)
+	}
+}
+
 // The hourly housekeeping prunes the Claude rows with the delivery records.
 func TestHousekeepingPrunesClaudeDeliveries(t *testing.T) {
 	t.Parallel()

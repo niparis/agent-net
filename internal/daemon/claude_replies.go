@@ -1,9 +1,12 @@
 package daemon
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/claudeframes"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -24,6 +27,24 @@ type ClaudeDelivery struct {
 	// ExpiresAt is the message expiry. Zero means DeliveredAt plus the
 	// message expiry.
 	ExpiresAt time.Time
+	// Frame is the message ID of the one frame written to the inbox. It is
+	// the message itself, or the carrier of a batch. Frame is empty on a row
+	// saved before the frame was built.
+	Frame string
+	// ReplySock is the reply socket the frame names.
+	ReplySock string
+	// Preview is the frame's first line, as Claude Code shows it in a hold
+	// notice.
+	Preview string
+	// FrameLines, FrameChars and FrameChars16 are the hold notice's size of
+	// the inner frame: code points, and UTF-16 units for characters outside
+	// the BMP. Zero for a row saved before frames were described.
+	FrameLines   int
+	FrameChars   int
+	FrameChars16 int
+	// FrameHash is the hash of the exact frame content, which is what the
+	// session writes back when it releases the frame.
+	FrameHash string
 }
 
 // ReplyAddress is the sender and conversation of one reply socket.
@@ -47,6 +68,11 @@ type ReplyBook interface {
 	// SaveDelivery records a message before it is written to the session.
 	// Saving it again keeps the first row and its answer.
 	SaveDelivery(ClaudeDelivery) error
+	// SaveFrame records how the one frame written to the inbox appears: its
+	// head message, reply socket and the body a hold notice quotes. For a
+	// batch, the head row is the carrier, typed "batch" so it is not matched
+	// as an open request.
+	SaveFrame(ClaudeDelivery) error
 	// ForgetDelivery removes the row of a message that never reached the
 	// session.
 	ForgetDelivery(messageID string) error
@@ -69,8 +95,22 @@ CREATE TABLE IF NOT EXISTS claude_deliveries (
 	message_id TEXT PRIMARY KEY, recipient TEXT NOT NULL, sender TEXT NOT NULL,
 	conversation_id TEXT NOT NULL, type TEXT NOT NULL,
 	delivered_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
-	answered_at INTEGER NOT NULL DEFAULT 0, answer TEXT NOT NULL DEFAULT '');
-CREATE INDEX IF NOT EXISTS claude_deliveries_open ON claude_deliveries(recipient, sender, conversation_id, delivered_at);`
+	answered_at INTEGER NOT NULL DEFAULT 0, answer TEXT NOT NULL DEFAULT '',
+	frame TEXT NOT NULL DEFAULT '', reply_sock TEXT NOT NULL DEFAULT '',
+	preview TEXT NOT NULL DEFAULT '', frame_lines INTEGER NOT NULL DEFAULT 0,
+	frame_chars INTEGER NOT NULL DEFAULT 0, frame_chars16 INTEGER NOT NULL DEFAULT 0,
+	frame_hash TEXT NOT NULL DEFAULT '',
+	held_at INTEGER NOT NULL DEFAULT 0, released_at INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS claude_deliveries_open ON claude_deliveries(recipient, sender, conversation_id, delivered_at);
+-- One row per hold notice from a transcript, so a restart does not apply an
+-- old notice to another delivery.
+CREATE TABLE IF NOT EXISTS claude_hold_entries (
+	entry TEXT PRIMARY KEY, recipient TEXT NOT NULL, message_id TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL);
+-- A hold or release the gateway has not taken yet. The rows go out in order,
+-- after a reconnect and after a daemon restart.
+CREATE TABLE IF NOT EXISTS claude_report_outbox (
+	seq INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, message_id TEXT NOT NULL,
+	detail TEXT NOT NULL, at INTEGER NOT NULL);`
 
 func (s *state) SaveDelivery(r ClaudeDelivery) error {
 	if r.DeliveredAt.IsZero() {
@@ -116,6 +156,184 @@ func (s *state) OpenRequests(recipient, sender, conversation string, now time.Ti
 	return out, rows.Err()
 }
 
+// heldFresh is how long before a hold notice its frame can have been written.
+// A hold follows the inbox write at once; this only keeps an old notice from
+// matching a much older message with the same text.
+const heldFresh = 15 * time.Minute
+
+// heldClockSlack tolerates a transcript clock a moment behind the daemon.
+const heldClockSlack = 5 * time.Second
+
+// SaveFrame records how the one frame written to the inbox appears to Claude
+// Code: its head message, reply socket and the body a hold notice quotes. For
+// a batch the head is the carrier; its row is typed "batch" so reply matching
+// never treats it as an open request.
+func (s *state) SaveFrame(f ClaudeDelivery) error {
+	if f.DeliveredAt.IsZero() {
+		f.DeliveredAt = time.Now()
+	}
+	if f.ExpiresAt.IsZero() {
+		f.ExpiresAt = f.DeliveredAt.Add(protocol.DefaultTTL)
+	}
+	_, err := s.db.Exec(`INSERT INTO claude_deliveries
+		(message_id, recipient, sender, conversation_id, type, delivered_at, expires_at, frame, reply_sock, preview, frame_lines, frame_chars, frame_chars16, frame_hash)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT (message_id) DO UPDATE SET
+			frame=excluded.frame, reply_sock=excluded.reply_sock, preview=excluded.preview,
+			frame_lines=excluded.frame_lines, frame_chars=excluded.frame_chars,
+			frame_chars16=excluded.frame_chars16, frame_hash=excluded.frame_hash`,
+		f.MessageID, f.Recipient, f.Sender, f.ConversationID, f.Type, f.DeliveredAt.UnixNano(), f.ExpiresAt.UnixNano(),
+		f.Frame, f.ReplySock, f.Preview, f.FrameLines, f.FrameChars, f.FrameChars16, f.FrameHash)
+	return err
+}
+
+// markClaudeHeld records that Claude Code kept one frame for review. It picks
+// the one unheld frame from the notice's reply socket whose first body line is
+// the notice's preview and that was written just before the notice. When that
+// is not one frame, it records the notice and marks nothing: a hold is never
+// guessed.
+//
+// The notice's own id keys claude_hold_entries, so a daemon restart that reads
+// the transcript again applies each notice once. handled reports that case.
+func (s *state) markClaudeHeld(recipient string, e ClaudeHeldEntry, detail string) (r ClaudeDelivery, ok, handled bool, err error) {
+	if e.At.IsZero() {
+		return r, false, false, nil
+	}
+	key := e.UUID
+	if key == "" {
+		// An older notice without its own id: key it by what it says.
+		sum := sha256.Sum256([]byte(e.ReplySock + "\n" + e.Preview + "\n" + e.At.UTC().Format(time.RFC3339Nano)))
+		key = fmt.Sprintf("text:%x", sum)
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return r, false, false, err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`INSERT INTO claude_hold_entries (entry, recipient, at) VALUES (?,?,?) ON CONFLICT (entry) DO NOTHING`,
+		key, recipient, e.At.UnixNano())
+	if err != nil {
+		return r, false, false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return r, false, false, err
+	}
+	if n == 0 {
+		return r, false, true, nil
+	}
+	rows, err := tx.Query(`SELECT message_id, recipient, sender, conversation_id, type, delivered_at, expires_at,
+			frame, reply_sock, preview, frame_lines, frame_chars, frame_chars16, frame_hash
+		FROM claude_deliveries
+		WHERE recipient=? AND message_id=frame AND reply_sock=? AND held_at=0 AND released_at=0
+			AND answered_at=0 AND expires_at>? AND delivered_at BETWEEN ? AND ?
+		ORDER BY delivered_at DESC, rowid DESC`,
+		recipient, e.ReplySock, time.Now().UnixNano(),
+		e.At.Add(-heldFresh).UnixNano(), e.At.Add(heldClockSlack).UnixNano())
+	if err != nil {
+		return r, false, false, err
+	}
+	var candidates []ClaudeDelivery
+	var frames []claudeframes.Description
+	for rows.Next() {
+		var c ClaudeDelivery
+		var delivered, expires int64
+		if err := rows.Scan(&c.MessageID, &c.Recipient, &c.Sender, &c.ConversationID, &c.Type, &delivered, &expires,
+			&c.Frame, &c.ReplySock, &c.Preview, &c.FrameLines, &c.FrameChars, &c.FrameChars16, &c.FrameHash); err != nil {
+			rows.Close()
+			return r, false, false, err
+		}
+		c.DeliveredAt, c.ExpiresAt = time.Unix(0, delivered), time.Unix(0, expires)
+		candidates = append(candidates, c)
+		frames = append(frames, claudeframes.Description{
+			Preview: c.Preview, Lines: c.FrameLines, Chars: c.FrameChars, Chars16: c.FrameChars16})
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return r, false, false, err
+	}
+	i := claudeframes.Choose(claudeframes.Notice{
+		ReplySock: e.ReplySock, Preview: e.Preview, Lines: e.FrameLines, Chars: e.FrameChars}, frames)
+	if i < 0 {
+		// Keep the notice, so a restart logs it once and does not try again.
+		if err := tx.Commit(); err != nil {
+			return r, false, false, err
+		}
+		return r, false, false, nil
+	}
+	r = candidates[i]
+	if _, err := tx.Exec(`UPDATE claude_deliveries SET held_at=?, held_entry=? WHERE message_id=? AND held_at=0`,
+		e.At.UnixNano(), key, r.MessageID); err != nil {
+		return r, false, false, err
+	}
+	if _, err := tx.Exec(`UPDATE claude_hold_entries SET message_id=? WHERE entry=?`, r.MessageID, key); err != nil {
+		return r, false, false, err
+	}
+	// Keep the report in the same transaction that marks the message held: a
+	// daemon that stops before the gateway call must still send it later.
+	if _, err := tx.Exec(`INSERT INTO claude_report_outbox (kind, message_id, detail, at) VALUES (?,?,?,?)`,
+		reportHeld, r.MessageID, detail, e.At.UnixNano()); err != nil {
+		return r, false, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return r, false, false, err
+	}
+	return r, true, false, nil
+}
+
+// releaseClaudeHeld marks the held frames that the release writes back. The
+// frame's own body hash and reply socket tie it to one delivery, never a
+// message ID in the body or in agent-net's cited notes. It returns the head
+// message IDs that were still held.
+func (s *state) releaseClaudeHeld(recipient, replySock, frameHash string, at time.Time) ([]string, error) {
+	if at.IsZero() {
+		at = time.Now()
+	}
+	if frameHash == "" {
+		return nil, nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.Query(`SELECT message_id FROM claude_deliveries
+		WHERE recipient=? AND reply_sock=? AND frame_hash=? AND held_at>0 AND released_at=0`,
+		recipient, replySock, frameHash)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		if _, err := tx.Exec(`UPDATE claude_deliveries SET released_at=? WHERE message_id=? AND released_at=0`, at.UnixNano(), id); err != nil {
+			return nil, err
+		}
+		// The report goes in the same transaction, after the hold's own row.
+		if _, err := tx.Exec(`INSERT INTO claude_report_outbox (kind, message_id, detail, at) VALUES (?,?,?,?)`,
+			reportRelease, id, releasedDetail, at.UnixNano()); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
 func (s *state) CloseRequests(ids []string, match string, at time.Time) error {
 	if len(ids) == 0 {
 		return nil
@@ -147,11 +365,63 @@ func (s *state) ReplyAddresses() ([]ReplyAddress, error) {
 }
 
 // pruneClaudeDeliveries deletes rows whose message expired more than
-// claudeReplyMargin ago. It returns how many rows went.
+// claudeReplyMargin ago, and the hold notices that described them. A notice
+// older than that can never match a delivery again. It returns how many
+// delivery rows went.
 func (s *state) pruneClaudeDeliveries(now time.Time) (int64, error) {
-	res, err := s.db.Exec(`DELETE FROM claude_deliveries WHERE expires_at < ?`, now.Add(-claudeReplyMargin).UnixNano())
+	cutoff := now.Add(-claudeReplyMargin).UnixNano()
+	res, err := s.db.Exec(`DELETE FROM claude_deliveries WHERE expires_at < ?`, cutoff)
 	if err != nil {
 		return 0, err
 	}
+	// A notice goes with the delivery it marked. A notice that marked nothing
+	// stays until every delivery it could describe is gone, so it is never
+	// tried twice on a restart. That is the expiry, plus the margin, plus a
+	// second margin: deliveries live until their expiry plus the margin.
+	if _, err := s.db.Exec(`DELETE FROM claude_hold_entries WHERE
+		(message_id <> '' AND message_id NOT IN (SELECT message_id FROM claude_deliveries))
+		OR (message_id = '' AND at < ?)`, now.Add(-2*claudeReplyMargin).UnixNano()); err != nil {
+		return 0, err
+	}
 	return res.RowsAffected()
+}
+
+// claudeReport is one hold or release the gateway has not taken.
+type claudeReport struct {
+	Seq       int64
+	Kind      string
+	MessageID string
+	Detail    string
+}
+
+// enqueueClaudeReport keeps a hold or release report until the gateway takes
+// it. The rows are sent in their order, so a hold always reaches the gateway
+// before the release that follows it.
+func (s *state) enqueueClaudeReport(kind, messageID, detail string) error {
+	_, err := s.db.Exec(`INSERT INTO claude_report_outbox (kind, message_id, detail, at) VALUES (?,?,?,?)`,
+		kind, messageID, detail, time.Now().UnixNano())
+	return err
+}
+
+// claudeReports lists the reports that wait, oldest first.
+func (s *state) claudeReports() ([]claudeReport, error) {
+	rows, err := s.db.Query(`SELECT seq, kind, message_id, detail FROM claude_report_outbox ORDER BY seq`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []claudeReport
+	for rows.Next() {
+		var r claudeReport
+		if err := rows.Scan(&r.Seq, &r.Kind, &r.MessageID, &r.Detail); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *state) dropClaudeReport(seq int64) error {
+	_, err := s.db.Exec(`DELETE FROM claude_report_outbox WHERE seq=?`, seq)
+	return err
 }

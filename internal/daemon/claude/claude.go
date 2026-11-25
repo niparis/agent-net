@@ -23,6 +23,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/niparis/agent-net/internal/claudeframes"
 	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -65,6 +66,10 @@ type Adapter struct {
 	byNative      map[string]found          // native_id -> session
 	bySock        map[string]string         // inbox socket -> native_id
 	replies       map[replyKey]net.Listener // reply address -> its listener
+	heldWatches   map[string]*heldWatch     // transcript -> how far it was read
+	heldPaths     map[string]heldPath       // native id -> transcript path and the cwd it was found for
+	heldGlobAt    map[string]time.Time      // native id -> when a missing file was last searched for
+	heldScanning  bool                      // one background transcript scan at a time
 	ctx           context.Context           // from Start; reply listeners run under it
 	lastSweep     time.Time                 // when sweepReplies last ran
 }
@@ -249,6 +254,7 @@ func (a *Adapter) poll() {
 	}
 	a.byNative, a.bySock = byNative, bySock
 	a.mu.Unlock()
+	a.startHeldScan(byNative)
 	a.models.forget(seenModels)
 	// The daemon compares with what it already has and only tells the gateway about changes.
 	a.host.SetSessions("claude", infos)
@@ -503,6 +509,11 @@ func (a *Adapter) prepareFrame(target protocol.SessionInfo, m protocol.Message) 
 				a.host.Logf("claude: cannot forget undelivered %s: %v", r.ID, err)
 			}
 		}
+		// A batch carrier has its own frame row. A single message's row went
+		// with its record above, and deleting it again does nothing.
+		if err := book.ForgetDelivery(m.ID); err != nil {
+			a.host.Logf("claude: cannot forget the undelivered frame of %s: %v", m.ID, err)
+		}
 	}
 	replySock, err := a.replySocket(m.From, m.ConversationID)
 	if err != nil {
@@ -512,6 +523,27 @@ func (a *Adapter) prepareFrame(target protocol.SessionInfo, m protocol.Message) 
 	if err != nil {
 		forget()
 		return nil, nil, err
+	}
+	// Describe the one frame Claude Code sees, so a hold notice or a release
+	// can be tied to it. A batch carrier gets its own row; a hold anywhere
+	// else in the batch must not mark one original alone.
+	var built frame
+	if err := json.Unmarshal(line, &built); err == nil {
+		if desc, ok := claudeframes.Describe(built.Message.Content); ok {
+			rec := daemon.ClaudeDelivery{
+				MessageID: m.ID, Recipient: target.SessionID, Sender: m.From, ConversationID: m.ConversationID,
+				Type: m.Type, DeliveredAt: time.Now(), ExpiresAt: m.ExpiresAt,
+				Frame: m.ID, ReplySock: replySock, Preview: desc.Preview,
+				FrameLines: desc.Lines, FrameChars: desc.Chars, FrameChars16: desc.Chars16,
+				FrameHash: desc.Hash,
+			}
+			if len(m.Batch) > 0 {
+				rec.Type = "batch"
+			}
+			if err := book.SaveFrame(rec); err != nil {
+				a.host.Logf("claude: cannot record frame %s for hold matching: %v", m.ID, err)
+			}
+		}
 	}
 	return line, forget, nil
 }

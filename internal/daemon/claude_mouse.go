@@ -276,17 +276,27 @@ func (d *Daemon) claudeServiceLiveSessions(now time.Time) int {
 // reportMouseNotice writes one digest line to the CTO intake queue (decision
 // 0152); it never reaches the owner. It keeps to one report per key per day.
 func (d *Daemon) reportMouseNotice(ctx context.Context, key, text string) {
+	d.reportClaudeNotice(ctx, key, text, mouseIntake)
+}
+
+// reportClaudeNotice sends one line about the Claude settings to the CTO
+// intake queue, once per key per day.
+func (d *Daemon) reportClaudeNotice(ctx context.Context, key, text string, intake func(string) protocol.IntakeReport) {
 	now := time.Now()
 	if !d.mouseNoticeDue(key, now) {
 		return
 	}
 	d.markMouseNotice(key, now)
-	d.showMouseNotice(ctx, key, text)
+	d.showClaudeNotice(ctx, key, text, intake)
 }
 
 // showMouseNotice sends the line to the CTO intake queue. If the gateway link
 // is not connected yet, it retries with backoff.
 func (d *Daemon) showMouseNotice(ctx context.Context, key, text string) {
+	d.showClaudeNotice(ctx, key, text, mouseIntake)
+}
+
+func (d *Daemon) showClaudeNotice(ctx context.Context, key, text string, intake func(string) protocol.IntakeReport) {
 	d.mouseMu.Lock()
 	if d.mouseNotices == nil {
 		d.mouseNotices = map[string]time.Time{}
@@ -304,7 +314,7 @@ func (d *Daemon) showMouseNotice(ctx context.Context, key, text string) {
 		d.mouseMu.Unlock()
 	}
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	_, err := d.call(cctx, "intake.report", mouseIntake(text))
+	_, err := d.call(cctx, "intake.report", intake(text))
 	cancel()
 	if err == nil {
 		clearPending()
@@ -334,7 +344,7 @@ func (d *Daemon) showMouseNotice(ctx context.Context, key, text string) {
 			case <-timer.C:
 			}
 			cctx, cancel := context.WithTimeout(bctx, 10*time.Second)
-			_, err := d.call(cctx, "intake.report", mouseIntake(text))
+			_, err := d.call(cctx, "intake.report", intake(text))
 			cancel()
 			if err == nil {
 				return

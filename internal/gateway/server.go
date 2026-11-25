@@ -1205,6 +1205,27 @@ func frameArgumentNames(rt reflect.Type) []string {
 	return names
 }
 
+// deliveryMessageOnNode reads the message a delivery report names and checks
+// that its recipient is on the reporting node. A node may not report for
+// another node's session.
+func deliveryMessageOnNode(st *Store, nc *nodeConn, id string) (protocol.Message, error) {
+	m, ok, err := st.Message(id)
+	if err != nil {
+		return protocol.Message{}, err
+	}
+	if !ok {
+		return protocol.Message{}, reject("unknown message %q", id)
+	}
+	owner, err := st.SessionNode(m.To)
+	if err != nil {
+		return protocol.Message{}, err
+	}
+	if owner != nc.id {
+		return protocol.Message{}, reject("message %q is not addressed to this node", id)
+	}
+	return m, nil
+}
+
 func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []byte) (any, error) {
 	st := g.store
 	if err := st.graphFrameAllowed(nc, typ); err != nil {
@@ -3417,19 +3438,8 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, reject("bad delivery.update")
 		}
-		m, ok, err := st.Message(p.MessageID)
-		if err != nil {
+		if _, err := deliveryMessageOnNode(st, nc, p.MessageID); err != nil {
 			return nil, err
-		}
-		if !ok {
-			return nil, reject("unknown message %q", p.MessageID)
-		}
-		owner, err := st.SessionNode(m.To)
-		if err != nil {
-			return nil, err
-		}
-		if owner != nc.id {
-			return nil, reject("message %q is not addressed to this node", p.MessageID)
 		}
 		notice, noticed, err := st.ApplyDeliveryReport(p.MessageID, p.State, p.Detail)
 		if err != nil {
@@ -3440,25 +3450,38 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return nil, nil
 
+	case "delivery.held":
+		// Claude Code kept a delivered message for review. It is not
+		// delivered, and the owner releases it in that session.
+		p, err := decode[protocol.DeliveryUpdate](raw)
+		if err != nil {
+			return nil, reject("bad delivery.held")
+		}
+		if _, err := deliveryMessageOnNode(st, nc, p.MessageID); err != nil {
+			return nil, err
+		}
+		return nil, st.HoldDelivery(p.MessageID, p.Detail)
+
+	case "delivery.released":
+		// The owner approved a held message in the Claude session. Only this
+		// report releases it; a repeated delivered report does not.
+		p, err := decode[protocol.DeliveryUpdate](raw)
+		if err != nil {
+			return nil, reject("bad delivery.released")
+		}
+		if _, err := deliveryMessageOnNode(st, nc, p.MessageID); err != nil {
+			return nil, err
+		}
+		return nil, st.ReleaseDelivery(p.MessageID, p.Detail)
+
 	case "delivery.not_delivered":
 		// A message reached the session's harness, but no turn ran for it.
 		p, err := decode[protocol.DeliveryUpdate](raw)
 		if err != nil {
 			return nil, reject("bad delivery.not_delivered")
 		}
-		m, ok, err := st.Message(p.MessageID)
-		if err != nil {
+		if _, err := deliveryMessageOnNode(st, nc, p.MessageID); err != nil {
 			return nil, err
-		}
-		if !ok {
-			return nil, reject("unknown message %q", p.MessageID)
-		}
-		owner, err := st.SessionNode(m.To)
-		if err != nil {
-			return nil, err
-		}
-		if owner != nc.id {
-			return nil, reject("message %q is not addressed to this node", p.MessageID)
 		}
 		notice, noticed, err := st.NotDelivered(p.MessageID, p.Detail)
 		if err != nil {

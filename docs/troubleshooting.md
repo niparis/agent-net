@@ -20,7 +20,7 @@ agent-net events --since 1h   # on the gateway machine: what the gateway did in 
 
 The gateway log has one `key=value` line per message and per delivery step, for example `grep msg=m_0123456789abcdef`. See [reference.md](reference.md#gateway-log-format). On the gateway machine, the gateway log is `journalctl --user -u agent-net-gateway -e` (Linux) or `~/Library/Logs/agent-net-gateway.log` (macOS).
 
-To read a message state: `stored` means the gateway has it, `dispatched` means it was sent to the machine, `delivered` means it went into the session, `replied` means the session answered. `failed` and `expired` mean it was not delivered. A recipient that is offline gets the message when it comes back, for up to 24 hours.
+To read a message state: `stored` means the gateway has it, `dispatched` means it was sent to the machine, `delivered` means it went into the session, `held_by_session` means Claude Code kept it for review, `replied` means the session answered. `failed` and `expired` mean it was not delivered. A recipient that is offline gets the message when it comes back, for up to 24 hours.
 
 ## macOS: "no route to host" when joining
 
@@ -162,6 +162,18 @@ Workers must survive a daemon restart. On Linux that needs `KillMode=process` in
 Claude Code shows: `The sending session's permission mode class doesn't match this session's. Review it below, or set "crossSessionInbound" to "accept".` The message waits until you approve it in that session, and is dropped after a while if you do not.
 
 Claude Code does this when the sender and the receiver run in different permission mode classes (for example prompting and bypass). To deliver such messages without review, run `agent-net setup --accept-peer-messages`. It sets `"crossSessionInbound": "accept"` in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`). Read [security.md](security.md#accepting-peer-messages-in-claude-code) first: it turns off the review for all agents on your network.
+
+agent-net reads the hold from the session transcript. It shows the message as `held_by_session`, not delivered, with the action to take, and it logs `session.delivery_held msg=<id>`. It stops the owed-reply reminders for that message. The notice names the reply socket and the frame's size, and those tie it to one message; when that is not certain, the daemon logs it and marks nothing. When you approve it, Claude Code writes the frame back and the message becomes delivered; the log says `session.delivery_released`. A hold or release the gateway did not take is kept and sent again after a reconnect or a daemon restart, in order. agent-net does not resend it and does not change the sender's permission mode. If you never release it, the message expires and its detail still says it was held and may never have been seen.
+
+At start and when a Claude session starts, the daemon compares the live `crossSessionInbound` value with what setup recorded. If the file lost the key, the log says `claude peer messages: ...` and names the final file behind a link.
+- When that file is writable, for example a file in your own dotfiles repository, edit it and add this line. No rebuild is needed, and no package manager owns it.
+- When the file is read-only, or a link to a read-only file, declare this line in the file that manages it, for example a Home Manager or Nix dotfile, then rebuild:
+
+```
+"crossSessionInbound": "accept"
+```
+
+Claude Code writes no entry when it drops a held message. The held state says the message may have expired there, because agent-net cannot see whether it still waits. The daemon never writes the settings file. On Claude Code 2.1.332 and later, the hold prompt also offers **Always deliver**.
 
 Setup does not change a value that is already set. `agent-net setup` prints the current one on the `claude peer messages` line. If it says `hold` or `refuse`, change or remove the key yourself. A `hold` in a managed (organization) setting or in a repository's `.claude/settings.json` overrides your `accept`.
 

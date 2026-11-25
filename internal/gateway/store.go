@@ -5405,8 +5405,8 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 	if m.ParentID != "" {
 		if m.Type == protocol.TypeAck {
 			// The ack closes the request with nothing delivered.
-			if _, err := tx.Exec(`UPDATE messages SET state = ? WHERE id = ? AND state IN (?,?,?)`,
-				protocol.StateAcknowledged, m.ParentID, protocol.StateStored, protocol.StateDispatched, protocol.StateDelivered); err != nil {
+			if _, err := tx.Exec(`UPDATE messages SET state = ? WHERE id = ? AND state IN (?,?,?,?)`,
+				protocol.StateAcknowledged, m.ParentID, protocol.StateStored, protocol.StateDispatched, protocol.StateDelivered, protocol.StateHeldBySession); err != nil {
 				return msg, false, err
 			}
 			if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id=? AND EXISTS (SELECT 1 FROM messages WHERE id=? AND state=?)`,
@@ -5417,8 +5417,8 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 			if err := s.storeHandoffCopy(tx, m.ParentID, m); err != nil {
 				return msg, false, err
 			}
-			if _, err := tx.Exec(`UPDATE messages SET state = ? WHERE id = ? AND state IN (?,?,?)`,
-				protocol.StateReplied, m.ParentID, protocol.StateStored, protocol.StateDispatched, protocol.StateDelivered); err != nil {
+			if _, err := tx.Exec(`UPDATE messages SET state = ? WHERE id = ? AND state IN (?,?,?,?)`,
+				protocol.StateReplied, m.ParentID, protocol.StateStored, protocol.StateDispatched, protocol.StateDelivered, protocol.StateHeldBySession); err != nil {
 				return msg, false, err
 			}
 			if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id=? AND EXISTS (SELECT 1 FROM messages WHERE id=? AND state='replied')`, m.ParentID, m.ParentID); err != nil {
@@ -5439,7 +5439,7 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 			state = protocol.StateAcknowledged
 		}
 		// An answer to a batch message answers every original in it.
-		if _, err := tx.Exec(`UPDATE messages SET state=? WHERE batch_id=? AND state IN ('stored','dispatched','delivered')`, state, m.ParentID); err != nil {
+		if _, err := tx.Exec(`UPDATE messages SET state=? WHERE batch_id=? AND state IN ('stored','dispatched','delivered','held_by_session')`, state, m.ParentID); err != nil {
 			return msg, false, err
 		}
 	}
@@ -5458,9 +5458,9 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		}
 		// A reply to the conversation answers every open request there from
 		// its recipient, as the reminder check already counts it.
-		if _, err := tx.Exec(`UPDATE messages SET state = ? WHERE conversation_id = ? AND sender = ? AND recipient = ? AND (type = ? OR is_order = 1) AND state IN (?,?,?)`,
+		if _, err := tx.Exec(`UPDATE messages SET state = ? WHERE conversation_id = ? AND sender = ? AND recipient = ? AND (type = ? OR is_order = 1) AND state IN (?,?,?,?)`,
 			protocol.StateReplied, m.ConversationID, m.To, m.From, protocol.TypeRequest,
-			protocol.StateStored, protocol.StateDispatched, protocol.StateDelivered); err != nil {
+			protocol.StateStored, protocol.StateDispatched, protocol.StateDelivered, protocol.StateHeldBySession); err != nil {
 			return msg, false, err
 		}
 		if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id IN (SELECT id FROM messages WHERE conversation_id = ? AND sender = ? AND recipient = ? AND (type = ? OR is_order = 1) AND state = ?)`,
@@ -5628,6 +5628,103 @@ func (s *Store) ApplyDelivery(id, state, detail string) error {
 	return err
 }
 
+// HoldDelivery records that Claude Code kept a delivered message for review.
+// It is not delivered, so it is not reminded, and it does not open a held ask:
+// the owner releases it in the Claude session, not at the gateway. A batch
+// carrier carries every original with it, so the whole batch is held. A later
+// delivered report is not a release and leaves the hold; ReleaseDelivery is.
+func (s *Store) HoldDelivery(id, detail string) error {
+	now := s.now().UnixNano()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT INTO deliveries (message_id, state, detail, at) VALUES (?,?,?,?)`,
+		id, protocol.StateHeldBySession, detail, now); err != nil {
+		return err
+	}
+	res, err := tx.Exec(`WITH RECURSIVE carried(id) AS (
+		SELECT ?
+		UNION
+		SELECT m.id FROM messages m JOIN carried c ON m.batch_id=c.id
+	) UPDATE messages SET state=? WHERE id IN (SELECT id FROM carried) AND state IN ('stored','dispatched','delivered')`,
+		id, protocol.StateHeldBySession)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return reject("message is not waiting for a delivery report")
+	}
+	if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id IN (
+		WITH RECURSIVE carried(id) AS (SELECT ? UNION SELECT m.id FROM messages m JOIN carried c ON m.batch_id=c.id)
+		SELECT id FROM carried)`, id); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.Event("msg."+protocol.StateHeldBySession, "", s.recipientOf(id), id, detail)
+	s.logStep("msg."+protocol.StateHeldBySession, id, "detail", detail)
+	return nil
+}
+
+// ReleaseDelivery records that the owner released a held message in the
+// Claude session. It is the only report that moves a message out of
+// held_by_session; a late delivered report is a repeat, not a release. A
+// released batch carrier releases every original it carries.
+func (s *Store) ReleaseDelivery(id, detail string) error {
+	now := s.now().UnixNano()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT INTO deliveries (message_id, state, detail, at) VALUES (?,?,?,?)`,
+		id, protocol.StateDelivered, detail, now); err != nil {
+		return err
+	}
+	res, err := tx.Exec(`UPDATE messages SET state=? WHERE id=? AND state=?`,
+		protocol.StateDelivered, id, protocol.StateHeldBySession)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return reject("message is not held by the session")
+	}
+	if _, err := tx.Exec(`WITH RECURSIVE carried(id) AS (
+		SELECT id FROM messages WHERE batch_id=?
+		UNION
+		SELECT m.id FROM messages m JOIN carried c ON m.batch_id=c.id
+	) UPDATE messages SET state=? WHERE id IN (SELECT id FROM carried) AND state=?`,
+		id, protocol.StateDelivered, protocol.StateHeldBySession); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id IN (
+		WITH RECURSIVE carried(id) AS (SELECT ? UNION SELECT id FROM messages WHERE batch_id=?
+			UNION SELECT m.id FROM messages m JOIN carried c ON m.batch_id=c.id)
+		SELECT id FROM carried)`, id, id); err != nil {
+		return err
+	}
+	if err := s.learnDelivery(tx, id, now); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.Event("msg."+protocol.StateDelivered, "", s.recipientOf(id), id, detail)
+	s.logStep("msg."+protocol.StateDelivered, id, "detail", detail, "note", "released")
+	return nil
+}
+
 // ApplyDeliveryReport is ApplyDelivery that also returns the notice to the
 // sender, stored in the same transaction, when the report leaves the message
 // failed for good (W4.3), or delivers a request to a session that waits for
@@ -5645,6 +5742,8 @@ func (s *Store) ApplyDeliveryReport(id, state, detail string) (notice protocol.M
 	if _, err := tx.Exec(`INSERT INTO deliveries (message_id, state, detail, at) VALUES (?,?,?,?)`, id, state, detail, now); err != nil {
 		return notice, false, err
 	}
+	// A held message moves only on ReleaseDelivery: a repeated delivered
+	// report is not a release and keeps the hold.
 	res, err := tx.Exec(`UPDATE messages SET state = ? WHERE id = ? AND state IN ('stored','dispatched')`, state, id)
 	if err != nil {
 		return notice, false, err
@@ -5701,7 +5800,11 @@ func (s *Store) ApplyDeliveryReport(id, state, detail string) (notice protocol.M
 	if err = tx.Commit(); err != nil {
 		return protocol.Message{}, false, err
 	}
-	s.Event("msg."+state, "", s.recipientOf(id), id, detail)
+	// A report that kept the state is not news for the screens: a late
+	// delivered report must not turn a held message back to delivered.
+	if n == 1 {
+		s.Event("msg."+state, "", s.recipientOf(id), id, detail)
+	}
 	note := ""
 	if err == nil {
 		if n, _ := res.RowsAffected(); n == 0 {
@@ -5715,10 +5818,17 @@ func (s *Store) ApplyDeliveryReport(id, state, detail string) (notice protocol.M
 	return notice, noticed, err
 }
 
-// Expire marks overdue undelivered messages expired and returns how many.
+// heldExpiredDetail is what a sender reads when a message held by Claude Code
+// expired without a release. Claude Code writes no entry when it drops a held
+// message, so agent-net cannot claim it was seen.
+const heldExpiredDetail = "held by Claude Code and never released; it expired, so it may never have been seen"
+
+// Expire marks overdue undelivered messages expired and returns how many. A
+// message held by Claude Code has no other end: if the owner never releases it,
+// it expires like any other undelivered message.
 func (s *Store) Expire() (int, error) {
 	now := s.now().UnixNano()
-	rows, err := s.db.Query(`SELECT id FROM messages WHERE (state IN ('stored','dispatched','held') OR (state='failed' AND EXISTS (SELECT 1 FROM delivery_retries WHERE message_id=messages.id))) AND expires_at <= ? AND NOT EXISTS (SELECT 1 FROM sessions r WHERE r.id=messages.recipient AND r.harness='bot' AND messages.state='stored')`, now)
+	rows, err := s.db.Query(`SELECT id FROM messages WHERE (state IN ('stored','dispatched','held','held_by_session') OR (state='failed' AND EXISTS (SELECT 1 FROM delivery_retries WHERE message_id=messages.id))) AND expires_at <= ? AND NOT EXISTS (SELECT 1 FROM sessions r WHERE r.id=messages.recipient AND r.harness='bot' AND messages.state='stored')`, now)
 	if err != nil {
 		return 0, err
 	}
@@ -6481,7 +6591,19 @@ func (s *Store) expireMessage(id string, now int64) (bool, error) {
 	if err != nil || !ok {
 		return false, err
 	}
-	res, err := tx.Exec(`UPDATE messages SET state='expired' WHERE id=? AND (state IN ('stored','dispatched','held') OR (state='failed' AND EXISTS (SELECT 1 FROM delivery_retries WHERE message_id=messages.id))) AND expires_at<=?`, id, now)
+	if m.State == protocol.StateHeldBySession {
+		// Keep why it ended: a held message may never have been seen, and the
+		// sender reads that detail in its own list.
+		if _, err = tx.Exec(`INSERT INTO deliveries (message_id, state, detail, at)
+			SELECT m.id, ?, ?, ? FROM messages m
+			WHERE (m.id = ? OR m.batch_id = ?) AND m.state = ?
+				AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.message_id = m.id AND d.state = ?)`,
+			protocol.StateExpired, heldExpiredDetail, now, id, id,
+			protocol.StateHeldBySession, protocol.StateExpired); err != nil {
+			return false, err
+		}
+	}
+	res, err := tx.Exec(`UPDATE messages SET state='expired' WHERE id=? AND (state IN ('stored','dispatched','held','held_by_session') OR (state='failed' AND EXISTS (SELECT 1 FROM delivery_retries WHERE message_id=messages.id))) AND expires_at<=?`, id, now)
 	if err != nil {
 		return false, err
 	}
@@ -6490,7 +6612,7 @@ func (s *Store) expireMessage(id string, now int64) (bool, error) {
 		return false, err
 	}
 	// The originals of a batch expire with it.
-	if _, err = tx.Exec(`UPDATE messages SET state='expired' WHERE batch_id=? AND state IN ('stored','dispatched','failed')`, id); err != nil {
+	if _, err = tx.Exec(`UPDATE messages SET state='expired' WHERE batch_id=? AND state IN ('stored','dispatched','failed','held_by_session')`, id); err != nil {
 		return false, err
 	}
 	if _, err = tx.Exec(`DELETE FROM delivery_retries WHERE message_id=?`, id); err != nil {

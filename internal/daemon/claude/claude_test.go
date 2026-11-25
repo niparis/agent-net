@@ -19,6 +19,16 @@ import (
 	"github.com/niparis/agent-net/internal/testsock"
 )
 
+type heldCall struct {
+	recipient string
+	entry     daemon.ClaudeHeldEntry
+}
+
+type releaseCall struct {
+	recipient, replySock, frameHash string
+	at                              time.Time
+}
+
 type fakeHost struct {
 	mu       sync.Mutex
 	sessions []protocol.SessionInfo
@@ -26,6 +36,8 @@ type fakeHost struct {
 	sent     chan protocol.MsgSend
 	logs     []string
 	book     *memBook
+	held     []heldCall
+	released []releaseCall
 }
 
 func (h *fakeHost) SetSessions(harness string, infos []protocol.SessionInfo) {
@@ -44,6 +56,16 @@ func (h *fakeHost) Send(ctx context.Context, p protocol.MsgSend) error {
 	return nil
 }
 func (h *fakeHost) Replies() daemon.ReplyBook { return h.book }
+func (h *fakeHost) ClaudeHeld(ctx context.Context, recipient string, e daemon.ClaudeHeldEntry) {
+	h.mu.Lock()
+	h.held = append(h.held, heldCall{recipient: recipient, entry: e})
+	h.mu.Unlock()
+}
+func (h *fakeHost) ClaudeHeldReleased(ctx context.Context, recipient, replySock, frameHash string, at time.Time) {
+	h.mu.Lock()
+	h.released = append(h.released, releaseCall{recipient: recipient, replySock: replySock, frameHash: frameHash, at: at})
+	h.mu.Unlock()
+}
 func (h *fakeHost) Logf(format string, args ...any) {
 	h.mu.Lock()
 	h.logs = append(h.logs, fmt.Sprintf(format, args...))
@@ -557,7 +579,9 @@ func TestDeliverToWorkerNamesHandback(t *testing.T) {
 }
 
 // A batch message is one harness write, but every original in it is recorded
-// for reply matching, so an answer names the original (decision 0130).
+// for reply matching, so an answer names the original (decision 0130). The one
+// frame Claude Code sees is the carrier, recorded so a hold or a release names
+// the batch and never one original.
 func TestBatchDeliveryRecordsEveryOriginal(t *testing.T) {
 	r := newRig(t)
 	eventually(t, "session found", func() bool { return len(r.host.current()) == 1 })
@@ -576,15 +600,22 @@ func TestBatchDeliveryRecordsEveryOriginal(t *testing.T) {
 	r.book.mu.Lock()
 	rows := append([]daemon.ClaudeDelivery(nil), r.book.rows...)
 	r.book.mu.Unlock()
-	if len(rows) != 2 {
-		t.Fatalf("recorded %d deliveries, want the 2 originals: %+v", len(rows), rows)
+	if len(rows) != 3 {
+		t.Fatalf("recorded %d deliveries, want the 2 originals and the carrier: %+v", len(rows), rows)
 	}
 	if rows[0].MessageID != "m_newest" || rows[1].MessageID != "m_older" {
 		t.Fatalf("recorded %+v, want newest then older", rows)
 	}
-	for _, row := range rows {
-		if row.MessageID == "m_batch" {
-			t.Fatal("the batch carrier was recorded as a request")
+	carrier := rows[2]
+	if carrier.MessageID != "m_batch" || carrier.Type != "batch" || carrier.Frame != "m_batch" {
+		t.Fatalf("batch carrier row = %+v, want a batch frame", carrier)
+	}
+	if carrier.Preview != batch.Body || carrier.FrameHash == "" {
+		t.Fatalf("the carrier frame has no preview or hash: %+v", carrier)
+	}
+	for _, row := range rows[:2] {
+		if row.Frame != "" {
+			t.Fatalf("original %s was recorded as a frame head: %+v", row.MessageID, row)
 		}
 	}
 }

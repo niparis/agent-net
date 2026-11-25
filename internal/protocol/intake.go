@@ -38,6 +38,9 @@ const (
 	IntakePickerOverride = "picker_override"
 	// IntakeClaudeMouse: the Claude Code mouse notice. Digest only.
 	IntakeClaudeMouse = "claude_mouse"
+	// IntakeClaudePeerMessages: the live Claude Code cross-session setting no
+	// longer matches the answer setup recorded. Digest only.
+	IntakeClaudePeerMessages = "claude_peer_messages"
 	// IntakePhonePaired: a phone paired by Tailscale sign-in. Digest only.
 	IntakePhonePaired = "phone_paired"
 )
@@ -68,7 +71,7 @@ const (
 // detects the others itself.
 func DaemonIntakeKind(kind string) bool {
 	switch kind {
-	case IntakeHarnessUpdate, IntakeCompaction, IntakeMCPRepair, IntakeClaudeMouse:
+	case IntakeHarnessUpdate, IntakeCompaction, IntakeMCPRepair, IntakeClaudeMouse, IntakeClaudePeerMessages:
 		return true
 	}
 	return false
@@ -88,7 +91,7 @@ type IntakeReport struct {
 // Validate checks a daemon report and names the field that is wrong.
 func (r IntakeReport) Validate() error {
 	if !DaemonIntakeKind(r.Kind) {
-		return errors.New("kind must be harness_update_failed, compaction_failed, mcp_repair_failed or claude_mouse")
+		return errors.New("kind must be harness_update_failed, compaction_failed, mcp_repair_failed, claude_mouse or claude_peer_messages")
 	}
 	if strings.TrimSpace(r.Subject) == "" {
 		return errors.New("subject is required: the harness or the server")
