@@ -88,10 +88,13 @@ func stopWorker(t *testing.T, w *workerNode, session string) {
 // the delivery change, the task ID and the full first task, for each pair of
 // harnesses. Each harness is once the old one and once the new one.
 func TestContinueMovesAcrossHarnesses(t *testing.T) {
-	w, _, _ := startMixedNode(t)
 	for _, pair := range [][2]harnessModel{{fakeOpenCode, fakeCodexHM}, {fakeCodexHM, fakeClaude}, {fakeClaude, fakeAgy}, {fakeAgy, fakeOpenCode}} {
 		from, to := pair[0], pair[1]
 		t.Run(from.harness+"-to-"+to.harness, func(t *testing.T) {
+			// Each pair gets its own node: the fake agy always reports the
+			// same conversation, so a second agy worker on one node would
+			// land on the first one's session.
+			w, _, _ := startMixedNode(t)
 			old, oldRow := endedWorkerWithWork(t, w, from)
 			res, err := w.startDefault(protocol.WorkerStartRequest{Continue: old.SessionID, Harness: to.harness, Model: to.model})
 			if err != nil {
