@@ -288,8 +288,12 @@ model name or alias in the setting, such as `opus` or `sonnet`; the default is
 
 Each harness keeps its own conversation ID in daemon state across restarts and
 harness switches. `cto_new` starts a fresh conversation for the selected
-harness only. When a harness is left, the daemon saves its messages and action
-lines in the local state database. `session_text` on the CTO session merges that
+harness only. When a harness is left, and before a conversation ends (`cto_new`,
+a fallback to a new conversation, or a switch back after a day, which starts a
+new one), the daemon saves its messages and action lines in the local state
+database. Each conversation is saved under its own ID, and a save replaces
+only the copy of the conversation it saves, so the earlier conversations of a
+harness stay in the timeline. `session_text` on the CTO session merges that
 saved history with the selected harness's live conversation and the durable
 switch dividers, in chronological order. It returns the newest page by default
 and `older` is the cursor for the previous page. Graph action lines carry the
@@ -303,9 +307,16 @@ when no runtime is running. Its directory entry says `online: true`, with
 from the owner, a peer, a bot or the phone starts the selected harness and is
 delivered to its saved conversation. Messages sent while the daemon is offline
 wait in the normal gateway queue. After a restart or upgrade, the host sync
-restores the same network identity without moving it to another machine. The
-first message starts OpenCode again or adopts a live Claude background job (and
-resumes the saved conversation if the job is gone). Claude may be reported as
+restores the same network identity without moving it to another machine. A
+daemon stop ends a Codex or OpenCode CTO, so the stop records which one ran
+(`cto.running_at_stop` in the daemon state). The next daemon starts it again
+in the background once it is connected to the gateway, on its saved
+conversation, and logs `cto.wake trigger=daemon_restart`. It does not when the
+owner stopped the CTO or another harness is now selected. A start that fails is
+logged once as `cto.restart ... failed`, and the CTO then waits for a message
+or Enter. After a crash there is no record, so the first message starts the
+CTO, as before. A live Claude background job is adopted at daemon start (and
+the saved conversation is resumed if the job is gone). Claude may be reported as
 dormant until the new daemon adopts its job. The daemon does not stop the CTO
 for idleness; a harness switch, daemon shutdown or an external process exit can
 end supervision. A shutdown releases a live Claude job rather than killing it.
@@ -3318,7 +3329,7 @@ Messages sent to the old ID after the move go to the new session. This matters b
 
 All three refuse a worker (use `worker_change` with `stop`) and the CTO's own session; the trust rules are in [security.md](security.md#cto-stop-resume-and-restart). They are immediate changes with an Inbox notice and an audit line (`session_stop`, `session_resume` or `session_restart`). Only `stop` has an undo. `resume` and `restart` have none, because the session is already running again.
 
-**The CTO's own session, from the owner.** You stop, resume and restart the CTO with the same functions as any session ([decision 0157](decisions/0157-cto-full-power-and-own-folders.md)): `x` on its Sessions row (operator method `session_stop`), Enter or `session_resume` on it, and the restart path above. A stop ends its Claude job or private OpenCode server and keeps its session ID and conversation; the gateway shows it `dorm`. A resume starts it again on its conversation, or on a new one when Claude says the old one is gone, and opens no view. A restart waits until the CTO is reported dormant, then resumes it. A message to the CTO also starts it again, as before.
+**The CTO's own session, from the owner.** You stop, resume and restart the CTO with the same functions as any session ([decision 0157](decisions/0157-cto-full-power-and-own-folders.md)): `x` on its Sessions row (operator method `session_stop`), Enter or `session_resume` on it, and the restart path above. A stop ends its Claude job or private OpenCode server and keeps its session ID and conversation; the gateway shows it `dorm`. A resume starts it again on its conversation, or on a new one when Claude says the old one is gone, and opens no view. A restart waits until the CTO is reported dormant, then resumes it. A message to the CTO also starts it again, as before. The CTO itself cannot do any of this to its own session, by any of its tools: it gets the one-line refusal "the CTO cannot stop, resume or restart its own session; only the owner can".
 
 ### CTO folder trust
 

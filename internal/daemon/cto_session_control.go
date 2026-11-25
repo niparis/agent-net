@@ -22,6 +22,24 @@ const (
 	ctoStopSaveWait = 3 * time.Second
 )
 
+// errCTOSelfControl refuses the CTO a stop, resume or restart of its own
+// session (decision 0157). Only the owner does that.
+var errCTOSelfControl = errors.New("the CTO cannot stop, resume or restart its own session; only the owner can")
+
+// refuseCTOSelfControl is the one check of errCTOSelfControl. Every path of the
+// CTO's tools to its own session (session_change, the settings_change operator
+// methods session_stop and session_resume, cto_op, a stored CTO proposal, a
+// restart) carries an actor, "cto" or the approver of a CTO proposal, and
+// reaches the CTO's branch of sessionStopLocal or resumeAgent, which call this
+// first. Only those paths set an actor: the owner's own stop and start, and
+// the gateway's relay of them, carry none.
+func refuseCTOSelfControl(ctx context.Context) error {
+	if proposalActor(ctx) != "" {
+		return errCTOSelfControl
+	}
+	return nil
+}
+
 // ctoSessionControlResult is what the CTO sees after stop, resume or restart.
 type ctoSessionControlResult struct {
 	Action    string                   `json:"action"`
@@ -52,9 +70,6 @@ func (d *Daemon) ctoSessionControl(ctx context.Context, concrete string, raw jso
 	}
 	if view.Worker != nil || view.Type == "worker" {
 		return nil, errors.New("use worker_change stop for a worker")
-	}
-	if view.Type == "cto" || id == d.ctoSessionID() {
-		return nil, errors.New("the CTO cannot " + action + " its own session")
 	}
 	if action != "stop" && view.Harness == "pi" {
 		return nil, errors.New("Pi cannot reopen an old session, so it cannot be resumed or restarted. Stop it and start a new Pi session")

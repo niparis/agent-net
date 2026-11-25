@@ -458,6 +458,7 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	}
 	d.mu.Unlock()
 	d.Logf("connected to gateway")
+	d.startCTOAfterRestart()
 	for _, rm := range left {
 		if d.sessionByID(rm.remove.SessionID) == nil {
 			d.removeSession(rm.remove, rm.key)

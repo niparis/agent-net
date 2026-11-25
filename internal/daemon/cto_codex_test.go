@@ -19,8 +19,8 @@ import (
 )
 
 // startCodexCTONode is a node whose CTO can run on the fake Codex app server
-// and the fake OpenCode server.
-func startCodexCTONode(t *testing.T) (*node, *logBuf) {
+// and the fake OpenCode server. Each extra changes the config after that.
+func startCodexCTONode(t *testing.T, extra ...func(*Config)) (*node, *logBuf) {
 	t.Helper()
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	t.Setenv(envFakeCodex, "1")
@@ -40,6 +40,9 @@ func startCodexCTONode(t *testing.T) (*node, *logBuf) {
 				return []string{"fake/m1"}, nil
 			}
 			return nil, nil
+		}
+		for _, change := range extra {
+			change(c)
 		}
 	}})
 	return n, logs

@@ -348,6 +348,25 @@ func TestProcessStopRefusesLiveSessionsAndWorkers(t *testing.T) {
 	}
 }
 
+// The CTO's own OpenCode server and Codex app server are its session, so the
+// CTO cannot stop itself with process_stop (decision 0157).
+func TestProcessStopRefusesTheCTOsOwnHarnessProcess(t *testing.T) {
+	openCode := startThrowaway(t, false)
+	codex := startThrowaway(t, false)
+	g := newSignalGuard(openCode, codex)
+	d := processStopDaemon(g)
+	d.cto.cmd, d.cto.exited = openCode.cmd, make(chan struct{})
+	d.codexCTO.cmd, d.codexCTO.exited = codex.cmd, make(chan struct{})
+
+	got := stopLocal(t, d, openCode.pid, codex.pid)
+	g.check(t)
+	for _, outcome := range got {
+		if outcome.Outcome != protocol.ProcessRefused || outcome.Reason != "it is the CTO's own harness process" {
+			t.Errorf("the CTO's own process must be refused: %+v", outcome)
+		}
+	}
+}
+
 func TestProcessStopRefusesAProcessOfAnotherUser(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("every process is the daemon user's when the tests run as root")
@@ -596,6 +615,12 @@ func startNamedThrowaway(t *testing.T, name string) *throwaway {
 		case <-time.After(5 * time.Second):
 			t.Errorf("throwaway process %d did not exit", s.pid)
 		}
+	})
+	// The process table can show the test binary's command line for a moment
+	// after Start, and a stop read then would not see the name.
+	eventually(t, "throwaway process shows "+name, func() bool {
+		v, err := readProcView(s.pid)
+		return err == nil && strings.HasPrefix(v.Command, name)
 	})
 	return s
 }

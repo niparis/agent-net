@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -344,7 +345,8 @@ func isAgentNetService(command string) bool {
 }
 
 // knownAgentNetProcess returns the reason for refusing pid when it is a live
-// session or worker known to this daemon, or "".
+// session or worker known to this daemon, or the CTO's own harness process
+// (the CTO does not stop itself, decision 0157), or "".
 func (d *Daemon) knownAgentNetProcess(pid int) string {
 	d.mu.Lock()
 	for _, ls := range d.sessions {
@@ -356,6 +358,9 @@ func (d *Daemon) knownAgentNetProcess(pid int) string {
 		}
 	}
 	d.mu.Unlock()
+	if d.isCTOHarnessProcess(pid) {
+		return "it is the CTO's own harness process"
+	}
 	d.wmu.Lock()
 	defer d.wmu.Unlock()
 	for id, w := range d.workers {
@@ -399,4 +404,27 @@ func processOutcomeLine(p protocol.ProcessOutcome) string {
 		line += " (" + details + ")"
 	}
 	return line
+}
+
+// isCTOHarnessProcess says whether pid is the live process of the CTO: its
+// private OpenCode server, its Codex app server or its Claude job.
+func (d *Daemon) isCTOHarnessProcess(pid int) bool {
+	d.cto.mu.Lock()
+	defer d.cto.mu.Unlock()
+	alive := func(cmd *exec.Cmd, exited chan struct{}) bool {
+		if cmd == nil || cmd.Process == nil || cmd.Process.Pid != pid {
+			return false
+		}
+		select {
+		case <-exited:
+			return false
+		default:
+			return true
+		}
+	}
+	if alive(d.cto.cmd, d.cto.exited) || alive(d.codexCTO.cmd, d.codexCTO.exited) {
+		return true
+	}
+	root := d.claudeCTO.root.Load()
+	return root != nil && root.pid == pid
 }

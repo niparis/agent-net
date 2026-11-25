@@ -169,7 +169,15 @@ restart. A resume never opens a view and carries no herdr location. A CTO can
 therefore interrupt a running turn of any agent session, as the owner can; the
 conversation is kept, and the Inbox notice for a stop can resume it. The owner,
 not the CTO, can stop, resume and restart the CTO's own session through the same
-`session_stop` and `session_resume` methods, behind the same owner gate.
+`session_stop` and `session_resume` methods, behind the same owner gate. The
+refusal of the CTO's own session is one check, at the CTO's branch of the stop
+and of the resume, for every call from the CTO's tools: `session_change`, the
+operator methods `session_stop` and `session_resume` through `settings_change`
+or `cto_op`, a stored CTO proposal (also after the owner approves it) and the
+restart. It
+answers "the CTO cannot stop, resume or restart its own session; only the owner
+can". `process_stop` refuses the CTO's own OpenCode server, Codex app server
+and Claude job for the same reason.
 
 **Connected apps.** The private CTO may list connected apps and public-access
 status, grant or remove a bot's shared MCP server access, rename an app, revoke
@@ -1410,7 +1418,7 @@ What limits it:
 
 - **Only the owner path.** The operator method `process_stop` is refused for agent clients and for a command line inside an agent session's process tree. The gateway accepts the relay frame only from the owner session of the calling machine, and the target machine checks the owner flag again. A forged frame needs a machine token, like every other owner frame.
 - **A named machine.** `node_id` is required. A stop never defaults to the local machine, so a stop cannot land on the wrong machine because a field was left out.
-- **What is refused.** Pid 1 and any number below 1 (so a signal can never reach a process group); the daemon itself; any `agent-net daemon` or `agent-net gateway` process; any session or worker the daemon knows by its registered process ID; any process that is not owned by the daemon's own user (real and effective user ID both checked), so system processes and other users' processes are never signalled; and the Claude Code background sessions (below). These are the only refusals. A process of the owner's user that the daemon does not know, for example the owner's editor or a shell, is not refused. A parent or child of a live agent-net session is not refused either: only the registered process of the session or worker is.
+- **What is refused.** Pid 1 and any number below 1 (so a signal can never reach a process group); the daemon itself; any `agent-net daemon` or `agent-net gateway` process; any session or worker the daemon knows by its registered process ID; the CTO's own harness process (its private OpenCode server, its Codex app server or its Claude job), because the CTO does not stop itself (decision 0157); any process that is not owned by the daemon's own user (real and effective user ID both checked), so system processes and other users' processes are never signalled; and the Claude Code background sessions (below). These are the only refusals. A process of the owner's user that the daemon does not know, for example the owner's editor or a shell, is not refused. A parent or child of a live agent-net session is not refused either: only the registered process of the session or worker is.
 - **Claude Code background sessions.** Claude Code runs its background sessions outside agent-net. Its supervisor rewrites `daemon/roster.json` in the Claude folder every few seconds: `$CLAUDE_CONFIG_DIR`, or `~/.claude` when that is not set, on Linux and macOS. A stop refuses the supervisor's `supervisorPid`, the background host (`pid`) and the session process (`replPid`) of each live session, and every process inside a session, meaning any process whose parent chain reaches one of those. The reason names the session by its short ID and working folder, so the owner can see what the CTO nearly stopped. The roster is used only when it was written within 60 seconds of the stop. The daemon never reads `daemon.status.json`, which can be hours old. When the roster is missing, stale or unreadable, the daemon cannot tell which Claude processes are live, so it refuses every process whose command line has `claude bg-` or `claude daemon`, with the reason "Claude roster not fresh; cannot tell live sessions". Known gap: while the roster is not fresh, a child of a Claude session whose command line does not match those words is not refused. A process that is not Claude's, such as an orphan of a dead session, is stopped in both cases.
 - **No reused process number.** The daemon reads the process start time before SIGTERM and checks it again before SIGKILL. If the process ended and the number now belongs to another process, the new process is not signalled.
 

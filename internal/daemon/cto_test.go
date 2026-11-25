@@ -282,7 +282,13 @@ func testCTORuntime(t *testing.T) {
 	if rec3.SessionID == rec.SessionID {
 		t.Fatal("new conversation reused old session")
 	}
-	if got := events(0); len(got) != 1 || got[0].Text != "new" {
+	// The old conversation stays in the timeline after cto_new.
+	got := events(0)
+	texts := map[string]int{}
+	for _, m := range got {
+		texts[m.Text]++
+	}
+	if len(got) != 4 || texts["first"] != 1 || texts["second"] != 1 || texts["third"] != 1 || texts["new"] != 1 {
 		t.Fatalf("new events: %+v", got)
 	}
 	n.d.wmu.Lock()
@@ -804,7 +810,9 @@ func testCTOToolsThroughFakeOpenCode(t *testing.T) {
 		t.Fatalf("undo action: %+v %v", events, err)
 	}
 	w.cli.mustCall("cto_new", nil)
-	if err := json.Unmarshal(w.cli.mustCall("cto_events", nil), &events); err != nil || events.GraphAfter <= 0 || len(events.Actions) != 0 {
+	// The new conversation starts after the latest graph change, and the old
+	// conversation's lines stay in the timeline.
+	if err := json.Unmarshal(w.cli.mustCall("cto_events", nil), &events); err != nil || events.GraphAfter <= 0 || len(events.Actions) == 0 || !strings.Contains(events.Actions[len(events.Actions)-1].Text, "undid graph change") {
 		t.Fatalf("new conversation baseline: %+v %v", events, err)
 	}
 
@@ -855,9 +863,11 @@ func testCTOUndoBeforeFirstMessageIsKept(t *testing.T) {
 	if err := json.Unmarshal(cli.mustCall("cto_events", nil), &out); err != nil || len(out.Actions) != 1 {
 		t.Fatalf("undo lost after send: %+v %v", out, err)
 	}
+	// The undo belongs to the conversation that ends, which stays in the
+	// timeline once, and not to the new one.
 	cli.mustCall("cto_new", nil)
-	if err := json.Unmarshal(cli.mustCall("cto_events", nil), &out); err != nil || len(out.Actions) != 0 {
-		t.Fatalf("new conversation retained old undo: %+v %v", out, err)
+	if err := json.Unmarshal(cli.mustCall("cto_events", nil), &out); err != nil || len(out.Actions) != 1 || !strings.Contains(out.Actions[0].Text, "undid graph change") {
+		t.Fatalf("the old conversation's undo after cto_new: %+v %v", out, err)
 	}
 }
 
