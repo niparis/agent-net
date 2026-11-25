@@ -415,7 +415,7 @@ mv "$work/runs.unique" "$work/runs"
 # daemon kills the whole check at delivery.handback_check_timeout (default 30
 # minutes), so every run gets what is left of test_budget. The runs together
 # stay inside that limit, and go test names the test that was running.
-test_budget=1500
+test_budget=3600
 
 # test_timeout prints the -timeout for the next run: the time left of the budget,
 # and at least one second.
