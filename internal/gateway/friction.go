@@ -94,9 +94,12 @@ const frictionCols = "f.id,f.project,f.session,f.change_id,f.harness,f.model,f.a
 	"f.status,f.status_by,f.status_at,f.status_link,f.status_note"
 
 // ReportFriction stores one hand-back's list. It returns how many rows it
-// stored; a report with no entries stores nothing and is fine.
+// stored; a report with no entries stores nothing and is fine. A bad entry is
+// dropped or cut here rather than refusing the report, because a hand-back's
+// friction is optional.
 func (s *Store) ReportFriction(q protocol.FrictionReportRequest) (protocol.FrictionReportResult, error) {
 	var out protocol.FrictionReportResult
+	q.Entries, _ = protocol.SanitizeFriction(q.Entries)
 	if err := q.Validate(); err != nil {
 		return out, reject("%s", err.Error())
 	}

@@ -1295,6 +1295,10 @@ type handbackTail struct {
 	sessionID, committed, wipDetail string
 	complete                        bool
 
+	// frictionDropped is how many hand-back friction entries were dropped or
+	// shortened before the notice, so a saved hand-back keeps it for the replay.
+	frictionDropped int
+
 	// persisted is true when the hand-back is saved in the state database
 	// (handback_replay.go): head and noticeKey name it, and check and the
 	// record fields carry what it already did.
@@ -1325,9 +1329,10 @@ func (d *Daemon) handbackFlow(ctx context.Context, w *worker, req protocol.Worke
 	if strings.TrimSpace(req.Report) == "" {
 		return nil, errors.New("the report is empty: say what you did, or what blocks you")
 	}
-	if err := protocol.ValidateFriction(req.Friction); err != nil {
-		return nil, err
-	}
+	// Friction is optional: clean a bad entry instead of refusing the whole
+	// hand-back. The caller's notice says how many entries changed.
+	var frictionDropped int
+	req.Friction, frictionDropped = protocol.SanitizeFriction(req.Friction)
 	handedOver := false
 	if files == nil {
 		var err error
@@ -1402,7 +1407,7 @@ func (d *Daemon) handbackFlow(ctx context.Context, w *worker, req protocol.Worke
 	// A complete hand-back is a revision of a delivery change (delivery
 	// pipeline build step 1). A partial one records nothing.
 	t := &handbackTail{req: req, to: to, replyTo: replyTo, sandboxNote: sandboxNote, end: end, files: files,
-		sessionID: sessionID, committed: committed, wipDetail: wipDetail, complete: complete}
+		sessionID: sessionID, committed: committed, wipDetail: wipDetail, complete: complete, frictionDropped: frictionDropped}
 	out, err := d.finishHandback(ctx, w, t)
 	// A saved hand-back keeps its snapshots for the next connect.
 	handedOver = errors.Is(err, errHandbackDeferred)
@@ -1468,6 +1473,7 @@ func (d *Daemon) finishHandback(ctx context.Context, w *worker, t *handbackTail)
 	n.Committed = committed
 	n.HandbackCheck = handbackCheck
 	n.WIPDetail = wipDetail
+	n.FrictionDropped = t.frictionDropped
 	n.Change, n.DeliveryError = changeID, deliveryProblem
 	if changeID != "" {
 		n.DeliveryBranch = d.deliveredBranch(ctx, w)
