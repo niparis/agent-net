@@ -10,7 +10,8 @@ import (
 
 // The CTO's agent_graph_read with root reads one subtree of the org tree,
 // and each Agent row says whom it reports to; agent_session_get says it for
-// a session. Run with -v to see both answers.
+// a session. org-lead leads a Repo in no Team, so it reports to the CTO.
+// Run with -v to see both answers.
 func TestCTOGraphReadRootIsOneSubtree(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
@@ -46,7 +47,7 @@ func TestCTOGraphReadRootIsOneSubtree(t *testing.T) {
 		got = append(got, n.Name+"<"+n.ReportsTo)
 	}
 	sort.Strings(got)
-	if strings.Join(got, " ") != "org-lead< org-member<org-lead" {
+	if strings.Join(got, " ") != "org-lead<cto org-member<org-lead" {
 		t.Fatalf("root org-lead read %v: %s", got, raw)
 	}
 	t.Logf("agent_graph_read {\"root\":\"org-lead\"}: %s", raw)
