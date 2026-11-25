@@ -254,10 +254,12 @@ func TestComputedOrgTreeAndStaleLeadBug(t *testing.T) {
 	}
 }
 
-// The tree every session sees does not change with the migration. The fixture
-// has the live shape: 51 agents, 44 repos, 4 teams, 24 agent-to-agent and 2
-// agent-to-owner stored reports_to edges. After the migration the stored edges
-// are gone and the computed parents are the same.
+// The tree every session sees does not change with the migration, apart from
+// the Repo leads a Repo in no Team reports to (decision 0184): those 25 leads
+// sit under the CTO. The fixture has the live shape: 51 agents, 44 repos, 4
+// teams, 24 agent-to-agent and 2 agent-to-owner stored reports_to edges. After
+// the migration the stored edges are gone and the computed parents are the
+// ones spelled out in want.
 func TestOrgFoldKeepsTheLiveTree(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "gateway.db")
 	s, err := OpenStore(path)
@@ -270,6 +272,10 @@ func TestOrgFoldKeepsTheLiveTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]string{"cto": protocol.OrgRoot, "chief": protocol.OrgRoot}
+	// soloRepoLead holds the leads the old stored tree did not place: their
+	// Repo is in no Team, so the new rule puts them under the CTO but the
+	// fixture's 26 stored edges do not include them.
+	soloRepoLead := map[string]bool{}
 	var stmts []string
 	add := func(format string, args ...any) { stmts = append(stmts, fmt.Sprintf(format, args...)) }
 	agent := func(id, role string) {
@@ -302,6 +308,11 @@ func TestOrgFoldKeepsTheLiveTree(t *testing.T) {
 		if team, ok := teamOfRepo[i]; ok {
 			add(`INSERT INTO team_members(member_kind,member_id,team_id) VALUES('repo','%s','t%d')`, repo, team)
 			want[lead] = fmt.Sprintf("tl%d", team)
+		} else {
+			// A Repo lead whose Repo is in no Team reports to the CTO
+			// (decision 0184): the solo Repo has no Team lead above its lead.
+			want[lead] = "cto"
+			soloRepoLead[lead] = true
 		}
 	}
 	for i := 0; i < 13; i++ {
@@ -320,7 +331,13 @@ func TestOrgFoldKeepsTheLiveTree(t *testing.T) {
 	}
 	add(`INSERT INTO sessions(id,node_id,harness,native_id,last_seen,agent_id) VALUES('s_chief','%s','claude','chief',0,'chief')`, node)
 	add(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('chief_session','s_chief',1)`)
+	stored := make(map[string]string, len(want))
 	for child, parent := range want {
+		if !soloRepoLead[child] {
+			stored[child] = parent
+		}
+	}
+	for child, parent := range stored {
 		kind := "agent"
 		if parent == protocol.OrgRoot {
 			kind = "special"
@@ -334,8 +351,8 @@ func TestOrgFoldKeepsTheLiveTree(t *testing.T) {
 	if err := s.db.QueryRow(`SELECT (SELECT COUNT(*) FROM agents), (SELECT COUNT(*) FROM repos), (SELECT COUNT(*) FROM teams), (SELECT COUNT(*) FROM graph_edges WHERE kind='reports_to')`).Scan(&agents, &repos, &teams, &edges); err != nil {
 		t.Fatal(err)
 	}
-	if agents != 51 || repos != 44 || teams != 4 || edges != 26 {
-		t.Fatalf("fixture has %d agents, %d repos, %d teams, %d edges; want 51, 44, 4, 26", agents, repos, teams, edges)
+	if agents != 51 || repos != 44 || teams != 4 || edges != len(stored) {
+		t.Fatalf("fixture has %d agents, %d repos, %d teams, %d edges; want 51, 44, 4, %d", agents, repos, teams, edges, len(stored))
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)

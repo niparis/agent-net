@@ -409,7 +409,7 @@ func (g *Gateway) relay(ctx context.Context, typ string, raw []byte) (json.RawMe
 		return nil, reject("bad %s", typ)
 	}
 	// Only the node and the online flag are used: no delegation or charter.
-	a, ok, err := g.store.agentBase(req.SessionID)
+	a, ok, err := g.store.agentStored(req.SessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -470,7 +470,7 @@ func (g *Gateway) relayMessageBody(ctx context.Context, raw []byte) (json.RawMes
 	connected := false
 	seen := map[string]bool{}
 	for _, sid := range []string{msg.From, msg.To} {
-		a, found, e := g.store.agentBase(sid)
+		a, found, e := g.store.agentStored(sid)
 		if e != nil {
 			return nil, e
 		}

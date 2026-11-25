@@ -548,7 +548,7 @@ func TestOrgTreeMigrationBuildsTheTreeFromTodaysData(t *testing.T) {
 		"finget":           "cto",
 		"visitor":          "solo",
 		"misc":             "",
-		"solo":             "",
+		"solo":             "cto",
 		"agent-net-merger": "agent-net",
 	} {
 		if got := reportsTo(t, s, agent); got != parent {

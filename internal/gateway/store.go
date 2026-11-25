@@ -4642,10 +4642,25 @@ func (s *Store) agentRead(sessionID string) (protocol.AgentView, bool, error) {
 	return one[0], true, nil
 }
 
-// agentBase reads one agent row without charter or rules. Callers
-// that need only the stored fields (name, title, node) use it so they do not
-// build the graph and the settings snapshot.
+// agentBase reads one agent row without charter or rules, with the parent the
+// org tree computes for its Agent, so its row says what the same row in the
+// list says. Callers that need only the stored fields use agentStored.
 func (s *Store) agentBase(sessionID string) (protocol.AgentView, bool, error) {
+	a, ok, err := s.agentStored(sessionID)
+	if err != nil || !ok {
+		return a, ok, err
+	}
+	rows := []protocol.AgentView{a}
+	if err := fillReportsTo(s.db, rows); err != nil {
+		return a, false, err
+	}
+	return rows[0], true, nil
+}
+
+// agentStored reads one agent row without charter, rules or the computed
+// parent. A caller that needs only the stored fields (node, online, worker,
+// name) uses it so it does not compute the org tree.
+func (s *Store) agentStored(sessionID string) (protocol.AgentView, bool, error) {
 	a, err := scanAgent(s.db.QueryRow(agentSelect+` WHERE s.archived_at=0 AND s.id = ? AND (n.id IS NOT NULL OR s.harness='bot')`, sessionID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return a, false, nil
@@ -4817,14 +4832,8 @@ func (s *Store) agentsBaseOwned(selectSQL string, f protocol.QueryAgents, owners
 		return nil, err
 	}
 	if len(out) > 0 {
-		parents, err := agentParentsQ(s.db)
-		if err != nil {
+		if err := fillReportsTo(s.db, out); err != nil {
 			return nil, err
-		}
-		for i := range out {
-			if out[i].AgentID != "" {
-				out[i].ReportsTo = parents[out[i].AgentID]
-			}
 		}
 	}
 	return out, nil

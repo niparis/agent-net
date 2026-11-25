@@ -211,7 +211,9 @@ func (idx *placeIndex) leadName(agent string) string {
 }
 
 // parentLabel names the Agent an Agent reports to in the tree, the way the
-// turn text does.
+// turn text does. An Agent the tree does not place reports to the owner, the
+// root of the tree. A live Repo lead is placed: to the CTO for a Repo in no
+// Team (decision 0184), else to its Team lead.
 func (idx *placeIndex) parentLabel(agent string) string {
 	switch parent := idx.agentParent[agent]; parent {
 	case "", protocol.OrgRoot:

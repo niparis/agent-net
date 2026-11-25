@@ -10,11 +10,11 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// orgReadRig is a small org tree: lead reports to the owner, member to lead,
-// chief to the owner. lead and member have two sessions each; the first is
-// the Agent's lead session, and lead's is offline. chief holds asks over all
-// and lead holds merge over member; the store seeds the CTO's admin and
-// permissions over all.
+// orgReadRig is a small org tree: lead is a Team lead and reports to the CTO,
+// member to lead, chief to the owner. lead and member have two sessions each;
+// the first is the Agent's lead session, and lead's is offline. chief holds
+// asks over all and lead holds merge over member; the store seeds the CTO's
+// admin and permissions over all.
 func orgReadRig(t *testing.T) (*Store, map[string]string) {
 	t.Helper()
 	s := teamStore(t)
@@ -76,7 +76,8 @@ func TestGraphReadCarriesTheOrgTree(t *testing.T) {
 	}
 	agents := agentNodes(g)
 	lead, member, chief := agents["lead"], agents["member"], agents["chief"]
-	if lead.ReportsTo != "cto" || member.ReportsTo != "lead" || chief.ReportsTo != protocol.OrgRoot || agents["demo"].ReportsTo != "" {
+	// demo leads a Repo in no Team, so it reports to the CTO like a Team lead.
+	if lead.ReportsTo != "cto" || member.ReportsTo != "lead" || chief.ReportsTo != protocol.OrgRoot || agents["demo"].ReportsTo != "cto" {
 		t.Fatalf("reports_to: lead=%q member=%q chief=%q demo=%q", lead.ReportsTo, member.ReportsTo, chief.ReportsTo, agents["demo"].ReportsTo)
 	}
 	if want := (&protocol.GraphSession{ID: ids["lead"], Name: "lead-main", Online: false, StartedBy: protocol.StartedByOwner}); !reflect.DeepEqual(lead.LeadSession, want) {

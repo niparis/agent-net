@@ -313,27 +313,35 @@ func BenchmarkRepairOrgTree(b *testing.B) {
 }
 
 // A Team's lead follows the Team's top: the owner is placed under the CTO when
-// the Team is created, and re-placed when it is archived.
+// the Team is created, and re-placed when it is archived. The lead here owns no
+// Repo, so the Team is the only thing that places it.
 func TestTeamLeadPlacementFollowsCreateAndArchive(t *testing.T) {
 	s := teamStore(t)
-	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "alpha", Name: "Alpha", Owner: &protocol.GraphRef{Kind: "agent", ID: "demo"}})
-	if got := reportsTo(t, s, "demo"); got != "cto" {
+	if err := s.GraphLifecycle("agent.create", protocol.GraphLifecycleRequest{Name: "helper"}, "owner", false); err != nil {
+		t.Fatal(err)
+	}
+	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "alpha", Name: "Alpha", Owner: &protocol.GraphRef{Kind: "agent", ID: "helper"}})
+	if got := reportsTo(t, s, "helper"); got != "cto" {
 		t.Fatalf("a new Team's lead reports to %q, want cto", got)
 	}
 	teamWrite(t, s, protocol.TeamWrite{Action: "archive", ID: "alpha"})
-	if got := reportsTo(t, s, "demo"); got != "" {
+	if got := reportsTo(t, s, "helper"); got != "" {
 		t.Fatalf("an archived Team's former lead still reports to %q", got)
 	}
 }
 
-// A lead undo is a lead write: the tree follows it back.
+// A lead undo is a lead write: the tree follows it back. The lead owns no Repo,
+// so the undone Team lead leaves no other parent behind.
 func TestLeadUndoMovesTheTree(t *testing.T) {
 	s := teamStore(t)
-	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "alpha", Name: "Alpha"})
-	if err := s.SetLead(protocol.LeadSetRequest{Ref: protocol.GraphRef{Kind: "team", ID: "alpha"}, Lead: &protocol.GraphRef{Kind: "agent", ID: "demo"}}, "cto", false); err != nil {
+	if err := s.GraphLifecycle("agent.create", protocol.GraphLifecycleRequest{Name: "helper"}, "owner", false); err != nil {
 		t.Fatal(err)
 	}
-	if got := reportsTo(t, s, "demo"); got != "cto" {
+	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "alpha", Name: "Alpha"})
+	if err := s.SetLead(protocol.LeadSetRequest{Ref: protocol.GraphRef{Kind: "team", ID: "alpha"}, Lead: &protocol.GraphRef{Kind: "agent", ID: "helper"}}, "cto", false); err != nil {
+		t.Fatal(err)
+	}
+	if got := reportsTo(t, s, "helper"); got != "cto" {
 		t.Fatalf("team lead reports to %q, want cto", got)
 	}
 	history, err := s.CTOGraphHistory(0)
@@ -343,7 +351,7 @@ func TestLeadUndoMovesTheTree(t *testing.T) {
 	if err = s.GraphUndo(history[0].ID, "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if got := reportsTo(t, s, "demo"); got != "" {
+	if got := reportsTo(t, s, "helper"); got != "" {
 		t.Fatalf("after the undo the former team lead still reports to %q", got)
 	}
 }
