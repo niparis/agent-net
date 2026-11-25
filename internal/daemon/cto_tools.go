@@ -472,10 +472,21 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		}
 		return d.stepReportReply(ctx, sid, protocol.SessionInfo{}, a)
 	case "agent_permission_propose":
-		var p protocol.PermissionProposeRequest
-		if err := decodeCTOArgs(name, raw, &p); err != nil {
+		// mcp_servers_by_path is filled by this daemon from each folder's own
+		// .mcp.json (trustMCPNames), so it is not decoded here. Strict decode
+		// refuses it by name instead of letting a call invent the servers the
+		// owner's ask says the click approves.
+		var q struct {
+			Kind    string   `json:"kind"`
+			Rules   []string `json:"rules"`
+			Targets []string `json:"targets"`
+			Machine string   `json:"machine"`
+			Reason  string   `json:"reason"`
+		}
+		if err := decodeCTOArgs(name, raw, &q); err != nil {
 			return nil, err
 		}
+		p := protocol.PermissionProposeRequest{Kind: q.Kind, Rules: q.Rules, Targets: q.Targets, Machine: q.Machine, Reason: q.Reason}
 		sid := d.ctoSessionID()
 		if sid == "" {
 			return nil, errors.New("CTO network session is not registered; retry after the gateway reconnects")
