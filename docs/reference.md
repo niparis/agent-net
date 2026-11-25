@@ -170,8 +170,10 @@ in order, stopping on an error. The daemon validates again and runs the stored
 call once with actor `owner (CTO proposal p_N)`. Full results, including plans,
 MCP results and invite lines, are shown to the owner. An approval through
 `proposal_answer` gives the CTO a short outcome note at its next idle moment,
-without the call's result data. A dialog approval returns the outcome as the
-tool result instead, so no note follows it.
+without the call's result data. This holds on every harness, including a Codex
+CTO. While the CTO is stopped, the note waits and starts nothing; it goes at
+the next idle moment after the CTO runs again. A dialog approval returns the
+outcome as the tool result instead, so no note follows it.
 
 The daemon classifies every tool and action as a read, talk, immediate change
 or proposal. The five destructive actions above remain proposals. Messages
@@ -3287,6 +3289,8 @@ A rejection or escalation of another agent's request appears as a separate Inbox
 The daemon marks its private Claude CTO folder and Claude worker worktrees trusted in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`). It removes the worktree trust setting when a known Claude worker worktree is deleted. Uninstall removes the CTO folder's trust setting and preserves other project settings.
 
 `session_enter` with the CTO session ID starts the local CTO runtime if needed and returns an enter plan for its full harness UI. In the CTO box, press Enter to open it in the TUI's terminal or herdr pane; ctrl+] returns. Claude starts a background session on first entry if needed. Entry errors appear in the TUI. The Claude CTO requires Claude Code with `--bg` and `--strict-mcp-config`; update Claude Code if either flag is missing. The daemon waits for the background job to run before saving its session ID. If Claude Code has closed the conversation and a resume fails, or the resumed job crashes at startup, the daemon starts a fresh Claude conversation once. The CTO timeline and proposals remain in agent-net. The CTO box reports the restart or any startup error.
+
+Reading the CTO timeline does not start a CTO the owner stopped. A Codex or OpenCode CTO keeps its conversation in its own process, so the daemon saves it at the owner stop and the stopped read shows that saved conversation with one line that says the CTO is stopped. The save gets at most 3 seconds. If the harness does not answer in time, the daemon logs it and stops the process anyway, and the conversation saved at an earlier stop stays. A stop keeps the conversation saved at an earlier stop too. Enter, a message or a resume starts it. A CTO that is down for another reason, such as a daemon restart, an update or a crash, was not stopped by the owner: a read starts it and reads it live, as before. The stored fact that the owner stopped it is cleared by any start the owner or a message causes.
 
 The daemon service records the login shell's PATH in its environment, so tools
 installed outside the system directories are available to workers. If the shell

@@ -17,6 +17,9 @@ const (
 	ctoRestartEndedWait = 30 * time.Second
 	ctoResumeStartWait  = 60 * time.Second
 	ctoControlPoll      = 100 * time.Millisecond
+	// ctoStopSaveWait is all the time the owner stop gives the save of a
+	// Codex or OpenCode conversation before it stops the process anyway.
+	ctoStopSaveWait = 3 * time.Second
 )
 
 // ctoSessionControlResult is what the CTO sees after stop, resume or restart.
@@ -165,13 +168,66 @@ func (d *Daemon) stopCTOSession(ctx context.Context) (protocol.SessionStopResult
 		return protocol.SessionStopResult{}, err
 	}
 	defer d.ctoDispatchMu.unlock()
+	d.saveCTOBeforeStop(ctx)
 	d.cto.mu.Lock()
 	d.stopClaudeCTOLocked("owner_stop")
 	d.stopOpenCodeCTOLocked("owner_stop")
 	d.stopCodexCTOLocked("owner_stop")
 	d.cto.mu.Unlock()
+	if err := d.setCTOStoppedByOwner(true); err != nil {
+		d.Logf("cto.stop owner flag: %v", err)
+	}
 	d.scheduleCTOPresence()
 	return protocol.SessionStopResult{Note: "Stopped the CTO. The conversation is kept."}, nil
+}
+
+// saveCTOBeforeStop saves the conversation of a running Codex or OpenCode
+// CTO, which lives in its process, before the owner stop ends that process.
+// The reads run in their own goroutines and share one deadline, so a harness
+// that hangs, or a lock a hung call holds, delays the stop by at most
+// ctoStopSaveWait. Only this function writes, and only a read that finished in
+// time, so a save left running can neither block the stop nor replace the
+// earlier save with part of the conversation. The reads never start a process.
+// A save that fails is logged and the stop goes on.
+func (d *Daemon) saveCTOBeforeStop(ctx context.Context) {
+	type read struct {
+		harness string
+		events  protocol.CTOEvents
+		err     error
+	}
+	ctx, cancel := context.WithTimeout(ctx, ctoStopSaveWait)
+	defer cancel()
+	harnesses := []string{"opencode", "codex"}
+	reads := make(chan read, len(harnesses))
+	for _, harness := range harnesses {
+		go func() {
+			var r read
+			r.harness = harness
+			if harness == "codex" {
+				r.events, r.err = d.codexCTORunningEvents(ctx)
+			} else {
+				r.events, r.err = d.openCodeCTORunningEvents(ctx)
+			}
+			reads <- r
+		}()
+	}
+	for range harnesses {
+		select {
+		case r := <-reads:
+			if errors.Is(r.err, errCTONotRunning) {
+				continue
+			}
+			if r.err == nil {
+				r.err = d.saveCTOHistory(r.harness, r.events)
+			}
+			if r.err != nil {
+				d.Logf("cto.stop snapshot harness=%s: %v", r.harness, r.err)
+			}
+		case <-ctx.Done():
+			d.Logf("cto.stop snapshot: not done after %s, the earlier save stays: %v", ctoStopSaveWait, ctx.Err())
+			return
+		}
+	}
 }
 
 // resumeCTOSession is session_resume for the CTO on this machine: the CTO's

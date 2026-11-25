@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -40,6 +41,130 @@ func TestCTOBriefTeachesGraphUse(t *testing.T) {
 
 func TestCTORuntime(t *testing.T) {
 	withFakeOpenCodeRouteSets(t, testCTORuntime)
+}
+
+// Looking at the timeline of an OpenCode CTO the owner stopped returns the
+// conversation as it was at the stop and a line that says the CTO is stopped.
+// It starts no private server.
+func TestStoppedOpenCodeCTOHistoryReadStartsNothing(t *testing.T) {
+	f := startCTOCompactionFixture(t)
+	f.send(t, "hello opencode")
+	eventually(t, "the live timeline shows the message", func() bool {
+		raw := string(f.cli.mustCall("cto_events", map[string]int{"index": 0}))
+		return strings.Contains(raw, "hello opencode")
+	})
+	if err := f.n.d.recordCTOAction("stored action before stop"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.n.d.stopCTOSession(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	f.n.d.cto.mu.Lock()
+	cmd := f.n.d.cto.cmd
+	f.n.d.cto.mu.Unlock()
+	if cmd != nil {
+		t.Fatal("the CTO still runs after the owner stop")
+	}
+	raw := string(f.cli.mustCall("cto_events", map[string]int{"index": 0}))
+	f.n.d.cto.mu.Lock()
+	cmd = f.n.d.cto.cmd
+	f.n.d.cto.mu.Unlock()
+	if cmd != nil {
+		t.Fatal("reading the timeline started the stopped OpenCode CTO")
+	}
+	if !strings.Contains(raw, "hello opencode") {
+		t.Fatalf("the message from before the stop is missing: %s", raw)
+	}
+	if !strings.Contains(raw, "stored action before stop") {
+		t.Fatalf("the stored action is missing: %s", raw)
+	}
+	if !strings.Contains(raw, "The CTO is stopped") {
+		t.Fatalf("the timeline does not say the CTO is stopped: %s", raw)
+	}
+}
+
+// An OpenCode CTO that never answers the message list cannot hang the owner
+// stop: the save gives up, the process is stopped, and the conversation saved
+// at the earlier stop is still shown.
+func TestOpenCodeCTOStopDoesNotWaitForAHungSave(t *testing.T) {
+	hang := filepath.Join(t.TempDir(), "hang")
+	t.Setenv(envFakeHangReads, hang)
+	f := startCTOCompactionFixture(t)
+	f.send(t, "hello opencode")
+	eventually(t, "the live timeline shows the message", func() bool {
+		return strings.Contains(string(f.cli.mustCall("cto_events", map[string]int{"index": 0})), "hello opencode")
+	})
+	if _, err := f.n.d.stopCTOSession(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	f.send(t, "second opencode")
+	eventually(t, "the live timeline shows the second message", func() bool {
+		return strings.Contains(string(f.cli.mustCall("cto_events", map[string]int{"index": 0})), "second opencode")
+	})
+	f.n.d.cto.mu.Lock()
+	pid := f.n.d.cto.cmd.Process.Pid
+	f.n.d.cto.mu.Unlock()
+	if err := os.WriteFile(hang, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stopCTOWithin(t, f.n.d, pid)
+	f.n.d.cto.mu.Lock()
+	cmd := f.n.d.cto.cmd
+	f.n.d.cto.mu.Unlock()
+	if cmd != nil {
+		t.Fatal("the OpenCode CTO still runs after the owner stop")
+	}
+	raw := string(f.cli.mustCall("cto_events", map[string]int{"index": 0}))
+	if !strings.Contains(raw, "hello opencode") || !strings.Contains(raw, "The CTO is stopped") {
+		t.Fatalf("the conversation saved at the earlier stop is not shown: %s", raw)
+	}
+	if strings.Contains(raw, "second opencode") {
+		t.Fatalf("the unfinished save replaced the earlier one: %s", raw)
+	}
+}
+
+// The save before an owner stop gives up within its time even while a hung
+// call holds the CTO's lock, so the stop ends the process as soon as that lock
+// is free. It needs no socket: no process runs.
+func TestCTOStopSaveGivesUpWhileTheCTOLockIsHeld(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	st, err := openState(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.close()
+	logs := &logBuf{}
+	// bgClosed keeps the presence update, which needs a gateway, from running.
+	d := &Daemon{st: st, log: log.New(logs, "", 0), bgClosed: true}
+	d.cto.mu.Lock()
+	held := true
+	defer func() {
+		if held {
+			d.cto.mu.Unlock()
+		}
+	}()
+	start := time.Now()
+	done := make(chan error, 1)
+	go func() {
+		_, err := d.stopCTOSession(context.Background())
+		done <- err
+	}()
+	eventually(t, "the save gave up", func() bool {
+		return strings.Contains(logs.String(), "cto.stop snapshot: not done")
+	})
+	if took := time.Since(start); took > 5*time.Second {
+		t.Fatalf("the save held the stop for %s", took)
+	}
+	held = false
+	d.cto.mu.Unlock()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the stop did not return once the lock was free")
+	}
 }
 
 func testCTORuntime(t *testing.T) {

@@ -188,6 +188,84 @@ func (d *Daemon) ctoConfigData(config string) ([]byte, error) {
 func (d *Daemon) ctoSession() (string, error) {
 	return d.ctoConversation("opencode")
 }
+
+// ctoPrivateRunning says whether the selected Codex or OpenCode harness has a
+// live private process. It is narrower than ctoRunning: during a handover the
+// harness being left can still be up while the selected one is stopped.
+func (d *Daemon) ctoPrivateRunning(harness string) bool {
+	d.cto.mu.Lock()
+	defer d.cto.mu.Unlock()
+	if harness == "codex" {
+		return d.codexCTORunningLocked()
+	}
+	c := &d.cto
+	if c.cmd == nil {
+		return false
+	}
+	select {
+	case <-c.exited:
+		return false
+	default:
+		return true
+	}
+}
+
+// stoppedCTOEvents is the part of a stopped CTO's timeline that is not in
+// cto_history. The conversation of the Codex and OpenCode harnesses lives in
+// the harness's own process, so it is saved into cto_history when the owner
+// stops the CTO. The read adds the switches and the other harnesses, and one
+// line that says the CTO is stopped.
+func (d *Daemon) stoppedCTOEvents(ctx context.Context, harness string) (protocol.CTOEvents, error) {
+	out := protocol.CTOEvents{Messages: []json.RawMessage{}, Actions: []protocol.CTOAction{}}
+	if err := d.st.db.QueryRow(`SELECT graph_after FROM cto WHERE id=1`).Scan(&out.GraphAfter); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return out, err
+	}
+	if harness == "codex" {
+		out.Model = d.codexCTOModel(ctx)
+	} else if model, err := d.ctoModel(ctx); err == nil {
+		out.Model = model
+	}
+	out.Actions = append(out.Actions, protocol.CTOAction{Text: ctoStoppedLine(), At: d.ctoNowTime().UnixNano()})
+	return out, nil
+}
+
+// ctoStoppedLine is the timeline line that explains why a stopped CTO's
+// conversation is not read live.
+func ctoStoppedLine() string {
+	return "The CTO is stopped. This is its conversation as it was at the stop. Send it a message or press Enter to start it."
+}
+
+// ctoStoppedByOwner reads the stored fact that the owner stopped the CTO. The
+// fact is separate from whether a process runs: a CTO that is down because the
+// daemon restarted or the harness crashed was not stopped by the owner, and a
+// read starts it again as before.
+func (d *Daemon) ctoStoppedByOwner() (bool, error) {
+	var stopped int
+	err := d.st.db.QueryRow(`SELECT stopped_by_owner FROM cto WHERE id=1`).Scan(&stopped)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return stopped != 0, err
+}
+
+// setCTOStoppedByOwner stores or clears the owner-stop fact. A start the owner
+// or a message causes clears it.
+func (d *Daemon) setCTOStoppedByOwner(stopped bool) error {
+	value := 0
+	if stopped {
+		value = 1
+	}
+	_, err := d.st.db.Exec(`UPDATE cto SET stopped_by_owner=? WHERE id=1`, value)
+	return err
+}
+
+// noteCTOStart clears the owner-stop fact after a start succeeded. A start
+// that fails leaves the fact, so a later read still treats the CTO as stopped.
+func (d *Daemon) noteCTOStart() {
+	if err := d.setCTOStoppedByOwner(false); err != nil {
+		d.Logf("cto.start clear owner stop: %v", err)
+	}
+}
 func (d *Daemon) ctoModel(ctx context.Context) (string, error) {
 	settings, err := d.ctoSettings(ctx, protocol.CTOSettingsRequest{})
 	if err != nil {
@@ -549,17 +627,70 @@ func (d *Daemon) openCodeCTOEvents(ctx context.Context, index int) (protocol.CTO
 	if model, _, e := d.openCodeCTOSessionSelection(ctx, id); e == nil && model != "" {
 		out.Model = model
 	}
-	path, err := d.openCodePath(ctx, c.base, c.password, c.version, c.identity, opencodeapi.Messages, id)
+	messages, err := d.openCodeCTOMessages(ctx, c.base, c.password, c.version, c.identity, id)
 	if err != nil {
 		return out, err
 	}
+	out.Next = len(messages)
+	if index < len(messages) {
+		out.Messages = messages[index:]
+	}
+	return out, nil
+}
+
+// errCTONotRunning is the save before an owner stop finding no live process:
+// there is nothing to save, and the earlier save stays.
+var errCTONotRunning = errors.New("the CTO harness is not running")
+
+// openCodeCTORunningEvents reads the conversation of an OpenCode CTO whose
+// private server is already up, for the save before an owner stop. It never
+// starts the server and holds no lock across the HTTP reads.
+func (d *Daemon) openCodeCTORunningEvents(ctx context.Context) (protocol.CTOEvents, error) {
+	out := protocol.CTOEvents{Messages: []json.RawMessage{}, Actions: []protocol.CTOAction{}}
+	c := &d.cto
+	c.mu.Lock()
+	running := c.cmd != nil
+	if running {
+		select {
+		case <-c.exited:
+			running = false
+		default:
+		}
+	}
+	base, password, version, identity := c.base, c.password, c.version, c.identity
+	c.mu.Unlock()
+	if !running || base == "" {
+		return out, errCTONotRunning
+	}
+	id, err := d.ctoSession()
+	if err != nil {
+		return out, err
+	}
+	if out.Actions, err = d.ctoActions(id, "opencode"); err != nil {
+		return out, err
+	}
+	if id == "" {
+		return out, nil
+	}
+	out.Messages, err = d.openCodeCTOMessages(ctx, base, password, version, identity, id)
+	out.Next = len(out.Messages)
+	return out, err
+}
+
+// openCodeCTOMessages reads every message of one session of the CTO's
+// private server, page by page.
+func (d *Daemon) openCodeCTOMessages(ctx context.Context, base, password, version, identity, id string) ([]json.RawMessage, error) {
+	path, err := d.openCodePath(ctx, base, password, version, identity, opencodeapi.Messages, id)
+	if err != nil {
+		return nil, err
+	}
 	query := "?order=asc"
 	seen := map[string]bool{}
-	var messages []json.RawMessage
+	messages := []json.RawMessage{}
 	for {
-		b, err := c.api(ctx, opencodeapi.Messages.Method(), path+query, nil)
+		b, err := d.cto.apiTo(ctx, base, password, opencodeapi.Messages.Method(), path+query, nil)
 		if err != nil {
-			return out, err
+			return nil, err
 		}
 		var page struct {
 			Data   []json.RawMessage `json:"data"`
@@ -568,23 +699,18 @@ func (d *Daemon) openCodeCTOEvents(ctx context.Context, index int) (protocol.CTO
 			} `json:"cursor"`
 		}
 		if err := json.Unmarshal(b, &page); err != nil {
-			return out, err
+			return nil, err
 		}
 		messages = append(messages, page.Data...)
 		if page.Cursor.Next == "" {
-			break
+			return messages, nil
 		}
 		if seen[page.Cursor.Next] {
-			return out, errors.New("OpenCode repeated a message cursor")
+			return nil, errors.New("OpenCode repeated a message cursor")
 		}
 		seen[page.Cursor.Next] = true
 		query = "?cursor=" + url.QueryEscape(page.Cursor.Next)
 	}
-	out.Next = len(messages)
-	if index < len(messages) {
-		out.Messages = messages[index:]
-	}
-	return out, nil
 }
 
 // startCTOCompactionLoop watches the CTO conversation while the daemon runs.

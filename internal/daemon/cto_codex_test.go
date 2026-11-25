@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -432,6 +433,158 @@ func TestCTOCodexConversationOlderThanADayHasNoModelLayer(t *testing.T) {
 		if strings.Contains(body, "## Model output") {
 			t.Fatalf("a Codex conversation older than a day wrote a model layer:\n%s", body)
 		}
+	})
+}
+
+// Looking at the timeline of a Codex CTO the owner stopped returns the
+// conversation as it was at the stop and a line that says the CTO is stopped.
+// It starts no app server. A read while the CTO runs is the live thread, as
+// before.
+func TestStoppedCodexCTOHistoryReadStartsNothing(t *testing.T) {
+	n, _ := startCodexCTONode(t)
+	cli := cliClient(t, n)
+	setCTOHarness(t, cli, "codex", "gpt-fake")
+	ctoSendID(t, cli, "hello codex")
+	eventually(t, "the live timeline shows the turn", func() bool {
+		return strings.Contains(string(cli.mustCall(protocol.OpCTOEvents, map[string]int{"index": 0})), "hello codex")
+	})
+	if err := n.d.recordCTOAction("stored action before stop"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := n.d.stopCTOSession(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	n.d.cto.mu.Lock()
+	running := n.d.codexCTORunningLocked()
+	n.d.cto.mu.Unlock()
+	if running {
+		t.Fatal("the CTO still runs after the owner stop")
+	}
+	raw := string(cli.mustCall(protocol.OpCTOEvents, map[string]int{"index": 0}))
+	n.d.cto.mu.Lock()
+	cmd := n.d.codexCTO.cmd
+	n.d.cto.mu.Unlock()
+	if cmd != nil {
+		t.Fatal("reading the timeline started the stopped Codex CTO")
+	}
+	if !strings.Contains(raw, "hello codex") {
+		t.Fatalf("the message from before the stop is missing: %s", raw)
+	}
+	if !strings.Contains(raw, "stored action before stop") {
+		t.Fatalf("the stored action is missing: %s", raw)
+	}
+	if !strings.Contains(raw, "The CTO is stopped") {
+		t.Fatalf("the timeline does not say the CTO is stopped: %s", raw)
+	}
+}
+
+// stopCTOWithin runs the owner stop and fails when it does not return within
+// five seconds, then waits until the process with pid is gone.
+func stopCTOWithin(t *testing.T, d *Daemon, pid int) {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() {
+		_, err := d.stopCTOSession(context.Background())
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the owner stop hung on a harness that does not answer")
+	}
+	eventually(t, "the CTO process is gone", func() bool {
+		return syscall.Kill(pid, 0) != nil
+	})
+}
+
+// A Codex CTO that never answers the read of its thread cannot hang the owner
+// stop: the save gives up, the process is stopped, and the conversation saved
+// at the earlier stop is still shown.
+func TestCodexCTOStopDoesNotWaitForAHungSave(t *testing.T) {
+	hang := filepath.Join(t.TempDir(), "hang")
+	t.Setenv(envFakeHangReads, hang)
+	n, _ := startCodexCTONode(t)
+	cli := cliClient(t, n)
+	setCTOHarness(t, cli, "codex", "gpt-fake")
+	ctoSendID(t, cli, "hello codex")
+	eventually(t, "the live timeline shows the turn", func() bool {
+		return strings.Contains(string(cli.mustCall(protocol.OpCTOEvents, map[string]int{"index": 0})), "hello codex")
+	})
+	if _, err := n.d.stopCTOSession(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ctoSendID(t, cli, "second codex")
+	eventually(t, "the live timeline shows the second turn", func() bool {
+		return strings.Contains(string(cli.mustCall(protocol.OpCTOEvents, map[string]int{"index": 0})), "second codex")
+	})
+	n.d.cto.mu.Lock()
+	pid := n.d.codexCTO.cmd.Process.Pid
+	n.d.cto.mu.Unlock()
+	if err := os.WriteFile(hang, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stopCTOWithin(t, n.d, pid)
+	n.d.cto.mu.Lock()
+	cmd := n.d.codexCTO.cmd
+	n.d.cto.mu.Unlock()
+	if cmd != nil {
+		t.Fatal("the Codex CTO still runs after the owner stop")
+	}
+	raw := string(cli.mustCall(protocol.OpCTOEvents, map[string]int{"index": 0}))
+	if !strings.Contains(raw, "hello codex") || !strings.Contains(raw, "The CTO is stopped") {
+		t.Fatalf("the conversation saved at the earlier stop is not shown: %s", raw)
+	}
+	if strings.Contains(raw, "second codex") {
+		t.Fatalf("the unfinished save replaced the earlier one: %s", raw)
+	}
+}
+
+// Stopping the CTO again while it is down keeps the conversation saved at the
+// first stop, because there is no live process to save and nothing replaces it.
+func TestStoppedCodexCTOHistoryReadKeepsTheEarlierSave(t *testing.T) {
+	n, _ := startCodexCTONode(t)
+	cli := cliClient(t, n)
+	setCTOHarness(t, cli, "codex", "gpt-fake")
+	ctoSendID(t, cli, "hello codex")
+	eventually(t, "the live timeline shows the turn", func() bool {
+		return strings.Contains(string(cli.mustCall(protocol.OpCTOEvents, map[string]int{"index": 0})), "hello codex")
+	})
+	ctx := context.Background()
+	if _, err := n.d.stopCTOSession(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := n.d.stopCTOSession(ctx); err != nil {
+		t.Fatal(err)
+	}
+	raw := string(cli.mustCall(protocol.OpCTOEvents, map[string]int{"index": 0}))
+	if !strings.Contains(raw, "hello codex") {
+		t.Fatalf("the second stop lost the saved conversation: %s", raw)
+	}
+}
+
+// A message the owner sends to a stopped CTO starts it and clears the stored
+// owner-stop fact, so the next read is live again.
+func TestMessageToStoppedCodexCTOClearsTheStop(t *testing.T) {
+	n, _ := startCodexCTONode(t)
+	cli := cliClient(t, n)
+	setCTOHarness(t, cli, "codex", "gpt-fake")
+	ctoSendID(t, cli, "hello codex")
+	eventually(t, "the live timeline shows the turn", func() bool {
+		return strings.Contains(string(cli.mustCall(protocol.OpCTOEvents, map[string]int{"index": 0})), "hello codex")
+	})
+	if _, err := n.d.stopCTOSession(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if stopped, err := n.d.ctoStoppedByOwner(); err != nil || !stopped {
+		t.Fatalf("the owner stop is not stored: stopped=%t err=%v", stopped, err)
+	}
+	ctoSendID(t, cli, "hello codex again")
+	eventually(t, "the message started the CTO and cleared the stop", func() bool {
+		stopped, err := n.d.ctoStoppedByOwner()
+		return err == nil && !stopped
 	})
 }
 

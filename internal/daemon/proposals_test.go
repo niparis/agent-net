@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -293,5 +294,115 @@ func TestOpenProposalCountIgnoresExpiredRows(t *testing.T) {
 	}
 	if got := p.openProposalCount(); got != 0 {
 		t.Fatalf("openProposalCount after the decision = %d, want 0", got)
+	}
+}
+
+// waitCodexCTOIdle waits until the fake Codex CTO has finished its turn.
+func waitCodexCTOIdle(t *testing.T, n *node) {
+	t.Helper()
+	eventually(t, "the Codex CTO is idle", func() bool {
+		n.d.cto.mu.Lock()
+		running := n.d.codexCTORunningLocked()
+		n.d.cto.mu.Unlock()
+		if !running {
+			return false
+		}
+		n.d.codexCTO.nmu.Lock()
+		defer n.d.codexCTO.nmu.Unlock()
+		return !n.d.codexCTO.busy
+	})
+}
+
+// codexProposalNote stores and approves a proposal, so its one-line outcome
+// waits for the CTO.
+func codexProposalNote(t *testing.T, n *node, action string) string {
+	t.Helper()
+	p := proposalRunner{state: n.d.st, now: time.Now,
+		validate: func(context.Context, proposalCall) error { return nil },
+		run: func(context.Context, proposalCall, string) (json.RawMessage, error) {
+			return json.RawMessage(`{"ok":true}`), nil
+		}}
+	id, err := p.propose(context.Background(), proposalCall{Tool: "one", Action: action, Args: json.RawMessage(`{}`)}, "test outcome")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.decide(context.Background(), id, true); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func codexNoteDelivered(t *testing.T, n *node, id string) bool {
+	t.Helper()
+	var delivered int
+	if err := n.d.st.db.QueryRow(`SELECT note_delivered FROM cto_proposals WHERE id=?`, strings.TrimPrefix(id, "p_")).Scan(&delivered); err != nil {
+		t.Fatal(err)
+	}
+	return delivered == 1
+}
+
+// The outcome of a proposal reaches a Codex CTO once, with the same framed
+// agent-net notice the other harnesses get.
+func TestProposalOutcomeReachesCodexCTOOnce(t *testing.T) {
+	n, _ := startCodexCTONode(t)
+	cli := cliClient(t, n)
+	setCTOHarness(t, cli, "codex", "gpt-fake")
+	ctoSendID(t, cli, "hello codex")
+	waitCodexCTOIdle(t, n)
+	id := codexProposalNote(t, n, "reaches")
+	ctx := context.Background()
+	if err := n.d.deliverProposalNote(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := n.d.deliverProposalNote(ctx); err != nil {
+		t.Fatal(err)
+	}
+	want := "[agent-net: agent-net notice, not the owner]\n\n" + id + " approved and applied"
+	rec := readCodex(t, codexCTODir(n), func(r fakeCodexRecord) bool { return slices.Contains(r.Turns, want) })
+	if got := len(slices.DeleteFunc(slices.Clone(rec.Turns), func(turn string) bool { return turn != want })); got != 1 {
+		t.Fatalf("the outcome note was sent %d times: %v", got, rec.Turns)
+	}
+	if !codexNoteDelivered(t, n, id) {
+		t.Fatal("the outcome note is not marked delivered")
+	}
+}
+
+// While the owner has stopped the Codex CTO, its outcome note waits and starts
+// nothing. It goes once after the CTO runs and is idle again.
+func TestProposalOutcomeWaitsWhileCodexCTOStopped(t *testing.T) {
+	n, _ := startCodexCTONode(t)
+	cli := cliClient(t, n)
+	setCTOHarness(t, cli, "codex", "gpt-fake")
+	ctoSendID(t, cli, "hello codex")
+	waitCodexCTOIdle(t, n)
+	ctx := context.Background()
+	if _, err := n.d.stopCTOSession(ctx); err != nil {
+		t.Fatal(err)
+	}
+	id := codexProposalNote(t, n, "waits")
+	if err := n.d.deliverProposalNote(ctx); err != nil {
+		t.Fatal(err)
+	}
+	n.d.cto.mu.Lock()
+	cmd := n.d.codexCTO.cmd
+	n.d.cto.mu.Unlock()
+	if cmd != nil {
+		t.Fatal("the outcome note started the stopped Codex CTO")
+	}
+	if codexNoteDelivered(t, n, id) {
+		t.Fatal("the outcome note was delivered while the CTO was stopped")
+	}
+	ctoSendID(t, cli, "hello codex again")
+	waitCodexCTOIdle(t, n)
+	if err := n.d.deliverProposalNote(ctx); err != nil {
+		t.Fatal(err)
+	}
+	want := "[agent-net: agent-net notice, not the owner]\n\n" + id + " approved and applied"
+	rec := readCodex(t, codexCTODir(n), func(r fakeCodexRecord) bool { return slices.Contains(r.Turns, want) })
+	if got := len(slices.DeleteFunc(slices.Clone(rec.Turns), func(turn string) bool { return turn != want })); got != 1 {
+		t.Fatalf("the outcome note was sent %d times after the restart: %v", got, rec.Turns)
+	}
+	if !codexNoteDelivered(t, n, id) {
+		t.Fatal("the outcome note is not marked delivered after the restart")
 	}
 }
