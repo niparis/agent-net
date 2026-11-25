@@ -67,6 +67,14 @@ enrolled node token, which is an owner credential. Scores and minimums are
 limited to 0 through 100. Worker floors are limited to 0 through 95. The CTO's `settings_change` with `area: score` changes
 the same settings at once.
 
+An owner score of 0 pauses a model: the gateway leaves it out of every choice
+(decision 0188). The owner can still name it for one start. The gateway trusts
+two signs of that: the start comes from the owner session and not the CTO, or
+the caller's daemon set `owner_selected` on the start frame. The daemon sets it
+only when it found the agent's `owner_words` in what the owner typed, and an
+agent cannot set it in its own request. Like `sender_cto`, it is a claim of an
+enrolled node.
+
 The daemon sends each worker brief to the configured difficulty judge before it asks the gateway to choose a model. The default is OpenCode with the DeepSeek judge model. The judge's label is the level the picker uses. A missing judge, a failure, a timeout or low confidence falls back to normal and never blocks the start. The gateway stores the scores and judge reasons, which may reflect the brief, but not the brief itself. Enrolled nodes and agents can read assessments with worker records. The assessment write is a daemon-to-gateway operation: the gateway accepts it only from the node that owns the worker session.
 
 Brief overlap checks read tracked paths at the selected repository's base commit through the selected daemon (`worker.brief_repo`). They read file names, not file contents, and ignore paths outside that tree. A leading slash can name a path relative to the repository root. A running worker's brief is read as the files it names: a directory there is not expanded to files another change added since that worker started. Documentation under `docs/`, `AGENTS.md`, README files and `migrations.lock` overlaps only warn. An unreadable base tree skips overlap checks and adds no refusal. Registering a project on several machines does not require the caller to name a machine; the gateway chooses one.

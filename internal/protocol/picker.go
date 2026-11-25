@@ -600,6 +600,32 @@ func workerCandidateScore(c WorkerModelCandidate, scores []ModelScore) (ModelSco
 	return LookupModelScoreWithDefaultEffort(selection.LegacyModel(), c.DefaultEffort, scores)
 }
 
+// PausedByOwner is the reason a pick, a refusal and a pick row give for a
+// model the owner paused (decision 0188).
+const PausedByOwner = "paused by the owner"
+
+// WorkerModelPaused tells whether the owner paused the candidate's model: the
+// score the picker reads for it is one the owner set, and it is exactly 0. A
+// model with no owner score is not paused (decision 0188).
+func WorkerModelPaused(c WorkerModelCandidate, scores []ModelScore) bool {
+	s, found := workerCandidateScore(c, scores)
+	return found && ownerPause(s)
+}
+
+// PausesAny tells whether the owner paused any model in scores. A pick with no
+// pause then skips the lookup of each candidate.
+func PausesAny(scores []ModelScore) bool {
+	for _, s := range scores {
+		if ownerPause(s) {
+			return true
+		}
+	}
+	return false
+}
+
+// ownerPause tells whether a score is the owner's pause.
+func ownerPause(s ModelScore) bool { return s.Source == "owner" && s.Score == 0 }
+
 // WorkerBenchmarkCeiling is the benchmark ceiling of a candidate. ok is false
 // for a model with no benchmark score.
 func WorkerBenchmarkCeiling(c WorkerModelCandidate, scores []ModelScore, minimums map[string]float64) (score float64, level string, ceiling float64, ok bool) {

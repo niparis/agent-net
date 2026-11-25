@@ -342,6 +342,22 @@ func (s *Store) WorkerSessionFacts(sessionID string) (startedAt int64, harness, 
 	return ns / int64(time.Second), harness, model, true, nil
 }
 
+// workerRunModel is the model of a worker session's last run, which its
+// machine reported from its own record: the model a continue or a resume
+// starts again. The session's own model is what the harness said, and
+// OpenCode says none. With no run, it is fallback.
+func (s *Store) workerRunModel(sessionID, fallback string) (string, error) {
+	var m string
+	err := s.db.QueryRow(`SELECT model FROM worker_runs WHERE session_id = ? AND model <> '' ORDER BY id DESC LIMIT 1`, sessionID).Scan(&m)
+	if err == sql.ErrNoRows {
+		return fallback, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return m, nil
+}
+
 // choiceNotes is what the gateway tells a caller when it picks a harness and
 // model: the track record for that machine and the fresh playbook notes for
 // the model, harness, project and machine. The track record is present even

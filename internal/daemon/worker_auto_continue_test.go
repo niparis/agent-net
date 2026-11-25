@@ -1,6 +1,8 @@
 package daemon
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -197,5 +199,35 @@ func TestAutoContinueCodexReportReachesTheCaller(t *testing.T) {
 	}
 	if row := reworkRow(t, w, res.SessionID); row.AutoContinueCount != 1 {
 		t.Errorf("automatic continues: %d, want 1", row.AutoContinueCount)
+	}
+}
+
+// A worker whose model the owner paused gets no automatic continue: the daemon
+// reads the owner's scores from the gateway first (decision 0188). The Codex
+// worker's turn still runs, so a continue would only join its queue.
+func TestAutoContinueSkipsAPausedModel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/scores" {
+			http.NotFound(rw, r)
+			return
+		}
+		rw.Write([]byte(`[{"match":"gpt-6.1-terra","score":0,"source":"owner"}]`))
+	}))
+	t.Cleanup(srv.Close)
+	st, err := openState(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.close() })
+	d := &Daemon{cfg: Config{GatewayURL: srv.URL, Token: "test-token"}, client: srv.Client(), st: st, workers: map[string]*worker{}}
+	w := &worker{id: "w_paused", sessionID: "s_paused", harness: "codex", model: "gpt-6.1-terra:high", autoContinue: true}
+	w.codex = &codexConn{d: d, w: w, running: true}
+	d.workers[w.id] = w
+
+	if d.tryAutoContinue(t.Context(), w) {
+		t.Fatal("a paused model got an automatic continue")
+	}
+	if len(w.codex.queue) != 0 || w.autoContinueCount != 0 {
+		t.Fatalf("a paused model got an automatic continue: %d queued, count %d", len(w.codex.queue), w.autoContinueCount)
 	}
 }

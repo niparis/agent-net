@@ -557,3 +557,50 @@ func TestContinueWorkerMissingWorktree(t *testing.T) {
 		t.Fatalf("missing worktree error: %v", err)
 	}
 }
+
+// A continue of a worker whose model the owner paused does not start it again
+// on that model (decision 0188). The gateway refuses it with the reason before
+// the machine is asked, so the worker keeps its record, its worktree and its
+// unfinished work on its branch: a continue on another model picks them up.
+func TestContinueOfAPausedWorkerKeepsItsWork(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	old := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "write half.txt", Isolation: protocol.IsolationWorktree})
+	if err := os.WriteFile(filepath.Join(old.Worktree, "half.txt"), []byte("half\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: old.SessionID})
+	w.workerStopped(t, g, protocol.StopRequested)
+	w.waitNotice(t, 1)
+	zero := 0.0
+	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/m1", Score: &zero})
+
+	if _, err := w.startDefault(protocol.WorkerStartRequest{Continue: old.SessionID}); err == nil || !strings.Contains(err.Error(), "paused by the owner") {
+		t.Fatalf("continue on the paused model: %v", err)
+	}
+	if r, ok, err := w.d.st.workerBySession(old.SessionID); err != nil || !ok || r.EndedReason == "" {
+		t.Fatalf("the ended worker's record: %+v %v %v", r, ok, err)
+	}
+	if _, err := os.Stat(old.Worktree); err != nil {
+		t.Fatalf("the worktree is gone: %v", err)
+	}
+	if got := gitOutT(t, repo, "show", old.Branch+":half.txt"); got != "half" {
+		t.Fatalf("the unfinished work is not on the branch: %q", got)
+	}
+
+	res, err := w.startDefault(protocol.WorkerStartRequest{Continue: old.SessionID, Model: "fake/m2"})
+	if err != nil {
+		t.Fatalf("continue on another model: %v", err)
+	}
+	if res.Model != "fake/m2" || res.SessionID == old.SessionID || res.Branch == old.Branch {
+		t.Fatalf("continue on another model: %+v", res)
+	}
+	if got := gitOutT(t, res.Worktree, "show", "HEAD:half.txt"); got != "half" {
+		t.Errorf("the unfinished work is not in the new worktree: %q", got)
+	}
+	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
+	w.workerStopped(t, g, protocol.StopRequested)
+}

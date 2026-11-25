@@ -555,9 +555,10 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if owner.Worker != nil {
 		return none, reject("a worker cannot start workers")
 	}
+	ownerNamed := ownerNamedModel(p, owner)
 
 	if p.Continue != "" {
-		return g.workerContinue(ctx, nc, p, validate...)
+		return g.workerContinue(ctx, nc, p, ownerNamed, validate...)
 	}
 
 	// Which machine and folder.
@@ -1004,6 +1005,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			Quotas:     quotas,
 			Floors:     floors,
 			Protected:  protected,
+			OwnerNamed: ownerNamed,
 		})
 		if chooseErr != nil {
 			if !(len(validate) > 0 && validate[0]) {
@@ -1287,6 +1289,17 @@ func (g *Gateway) workerRecheck(ctx context.Context, nc *nodeConn, p protocol.Wo
 	answer.Provider, answer.Effort = ans.Provider, ans.Effort
 	answer.ModelNote, answer.Why = ans.ModelNote, ans.Why
 	return answer, nil
+}
+
+// ownerNamedModel tells whether the owner named the start's model himself: on
+// his own command line or TUI, or in his words, which the caller's daemon
+// found (owner_selected). A model he paused runs then (decision 0188).
+func ownerNamedModel(p protocol.WorkerStartFrame, owner protocol.AgentView) bool {
+	m := strings.TrimSpace(p.Model)
+	if m == "" || strings.EqualFold(m, "auto") {
+		return false
+	}
+	return p.OwnerSelected || (protocol.IsOwner(owner.Harness) && !p.FromCTO)
 }
 
 // sameGrant reports whether a grant is for this harness and model.
@@ -1641,7 +1654,7 @@ func (g *Gateway) workerHarnessOrder(node *protocol.NodeView, model string, requ
 // workerContinue starts a new worker from an ended one. The gateway knows the
 // node of each worker session, so it asks the machine that ran the old worker.
 // The machine holds the old task and branch and checks the owner again.
-func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.WorkerStartFrame, validate ...bool) (protocol.WorkerStartAnswer, error) {
+func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.WorkerStartFrame, ownerNamed bool, validate ...bool) (protocol.WorkerStartAnswer, error) {
 	var none protocol.WorkerStartAnswer
 	if len(p.NotFamily) > 0 {
 		return none, reject("not_family cannot be used with continue; start a new worker for a different family")
@@ -1697,7 +1710,11 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	}
 	continuedModel := p.Model
 	if continuedModel == "" {
-		continuedModel = old.Model
+		// The machine continues on the model of its own record: the model of
+		// the worker's last run.
+		if continuedModel, err = g.store.workerRunModel(old.SessionID, old.Model); err != nil {
+			return none, err
+		}
 	}
 	info, err := g.NodesInfo()
 	if err != nil {
@@ -1733,6 +1750,24 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	if err != nil {
 		return none, err
 	}
+	scores, err := g.store.scores()
+	if err != nil {
+		return none, err
+	}
+	// A continue that names no model meets the picker's rules of today at the
+	// level stored with the worker. A model that no longer qualifies is
+	// replaced; one the caller or the owner named is kept (decision 0189).
+	var repick continueRepick
+	if p.Model == "" && p.Harness == "" && old.Worker.Assessment != nil {
+		repick, err = g.repickContinue(node, old.Worker.Assessment, harness, continuedModel, quotas, floors, scores, !(len(validate) > 0 && validate[0]))
+		if err != nil {
+			return none, err
+		}
+		if repick.moved {
+			harness, continuedModel = repick.harness, repick.model
+			p.Harness, p.Model = repick.harness, repick.model
+		}
+	}
 	granted, gerr := g.Choose(ChooseRequest{
 		Purpose:    model.PurposeContinueOrResume,
 		Node:       withHarnessInstalled(node, harness),
@@ -1740,16 +1775,27 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 		Difficulty: protocol.WorkerLevel(old.Worker.Assessment),
 		Quotas:     quotas,
 		Floors:     floors,
+		Scores:     scores,
+		OwnerNamed: ownerNamed,
 	})
 	if gerr != nil {
 		g.feedGateSkips(granted.Skips)
-		return none, reject("machine %s: %s", old.Hostname, joinModelNote(skipNotes(granted.Skips)))
+		return none, reject("machine %s: %s", old.Hostname, joinModelNote(append(skipNotes(granted.Skips), repick.note)))
 	}
 	if !sameGrant(granted.Granted, harness, continuedModel) {
 		return none, reject("the gate granted another model than the continued worker runs")
 	}
 	if len(validate) > 0 && validate[0] {
-		return none, nil
+		return protocol.WorkerStartAnswer{NodeID: old.NodeID, Hostname: old.Hostname, Project: old.Worker.Project,
+			Harness: harness, Model: continuedModel, ModelNote: repick.note}, nil
+	}
+	assessment := old.Worker.Assessment
+	if repick.moved {
+		// The pick's note and rows travel with the start, so a queued
+		// continue records them when it runs, as a new start does.
+		copied := *assessment
+		copied.PickerNote, copied.PickRows = repick.note, repick.rows
+		assessment = &copied
 	}
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
@@ -1767,7 +1813,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	}
 	raw, err := target.call(cctx, "worker.continue", protocol.WorkerContinue{StartRef: startRef, Session: old.SessionID, Requester: p.Owner, FromCTO: p.FromCTO, TaskID: taskID,
 		Harness: p.Harness, Model: p.Model, Task: p.BriefText(), Title: p.Title,
-		Assessment: old.Worker.Assessment})
+		Assessment: assessment})
 	if err != nil {
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
 			_ = g.store.markStartUnknown(old.NodeID, startRef)
@@ -1796,6 +1842,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 			c.Track, c.Playbooks = track, books
 		}
 		modelNote = workerDifficultyLead(c.Assessment, protocol.WorkerLevel(c.Assessment))
+		modelNote = appendModelNote(modelNote, repick.note)
 		if c.Model != "" && protocol.PayPerUseProvider(c.Harness, c.Model, quotas) {
 			modelNote = appendModelNote(modelNote, fmt.Sprintf("uses pay-per-use provider (%s)", protocol.ProfileProvider(c.Harness, c.Model)))
 		}
@@ -1814,7 +1861,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	if err != nil || c.SessionID == "" {
 		return none, reject("machine %s answered without a session", old.Hostname)
 	}
-	g.recordWorkerPickerNote(c.Assessment, c.SessionID, modelNote, nil)
+	g.recordWorkerPickerNote(c.Assessment, c.SessionID, modelNote, repick.rows)
 	event := "worker.started"
 	if c.Starting {
 		event = "worker.starting"
@@ -2214,6 +2261,11 @@ func (g *Gateway) resumeRefusal(a protocol.AgentView) string {
 	if harness == "" {
 		harness = a.Harness
 	}
+	// The machine resumes the harness on the model of its own record: the
+	// model of the worker's last run.
+	if resumedModel, err = g.store.workerRunModel(a.SessionID, resumedModel); err != nil {
+		return ""
+	}
 	quotas := g.ownerQuotas(a.NodeID)
 	floors, err := g.store.workerFloors()
 	if err != nil {
@@ -2230,12 +2282,17 @@ func (g *Gateway) resumeRefusal(a protocol.AgentView) string {
 			break
 		}
 	}
+	scores, err := g.store.scores()
+	if err != nil {
+		return ""
+	}
 	chosen, gerr := g.Choose(ChooseRequest{
 		Purpose:    model.PurposeContinueOrResume,
 		Node:       withHarnessInstalled(node, harness),
 		Candidates: []protocol.WorkerModelCandidate{{Name: harness + " " + resumedModel, Harness: harness, Model: resumedModel}},
 		Quotas:     quotas,
 		Floors:     floors,
+		Scores:     scores,
 	})
 	if gerr == nil {
 		return ""

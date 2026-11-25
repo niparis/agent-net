@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/settings"
@@ -44,6 +45,20 @@ func autoContinueEligibleWith(w *worker, snap settings.Snapshot, repo string) bo
 // a message was sent; false means the caller must be told instead.
 func (d *Daemon) tryAutoContinue(ctx context.Context, w *worker) bool {
 	snap := d.SettingsSnapshot()
+	d.wmu.Lock()
+	eligible := d.workers[w.id] == w && autoContinueEligibleWith(w, snap, w.project)
+	harness, model := w.harness, w.model
+	d.wmu.Unlock()
+	if !eligible {
+		return false
+	}
+	// An automatic continue is the daemon's own pick of the same model. A
+	// model the owner paused gets none: the caller is told at once and can
+	// continue on another model (decision 0188).
+	if d.workerModelPaused(ctx, harness, model) {
+		d.Logf("worker.auto_continue_skipped worker=%s model=%s reason=%q", w.id, model, protocol.PausedByOwner)
+		return false
+	}
 	d.wmu.Lock()
 	if d.workers[w.id] != w || !autoContinueEligibleWith(w, snap, w.project) {
 		d.wmu.Unlock()
@@ -88,6 +103,20 @@ func (d *Daemon) tryAutoContinue(ctx context.Context, w *worker) bool {
 	}
 	d.Logf("worker.auto_continue worker=%s session=%s count=%d", w.id, sid, count)
 	return true
+}
+
+// workerModelPaused tells whether the owner paused a worker's model, by the
+// owner's scores on the gateway. A failed read is no pause: the worker gets
+// its continue, as before the pause existed.
+func (d *Daemon) workerModelPaused(ctx context.Context, harness, model string) bool {
+	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	scores, err := d.scores(cctx, nil)
+	if err != nil {
+		d.Logf("worker.auto_continue scores: %v", err)
+		return false
+	}
+	return protocol.WorkerModelPaused(protocol.WorkerModelCandidate{Harness: harness, Model: model}, scores)
 }
 
 // deliverAutoContinue hands the reserved message to the worker's own harness.

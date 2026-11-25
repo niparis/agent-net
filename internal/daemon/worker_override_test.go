@@ -373,3 +373,22 @@ func TestOverrideScopeHolderGoesAheadAtOnce(t *testing.T) {
 		return res.SelectionPath == protocol.SelectionScope && res.SessionID != ""
 	})
 }
+
+// The owner's own words can name a model he paused: the start goes ahead on it
+// at once, as before the pause existed (decision 0188).
+func TestOwnerWordsCanNameAPausedModel(t *testing.T) {
+	g, w, pi, piID := overrideNode(t)
+	zero := 0.0
+	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/m2", Score: &zero})
+	w.d.rememberOwnerPrompt(piID, "Use fake/m2 for this worker")
+	req := overrideRequest()
+	req.Reason = ""
+	req.OwnerWords = "use fake/m2 for this worker"
+	res := startFrom(t, pi, req)
+	if res.SelectionPath != protocol.SelectionOwnerWords || res.SessionID == "" || res.Model != "fake/m2" {
+		t.Fatalf("the owner's choice of a paused model: %+v", res)
+	}
+	if n := len(overrideAsks(g)); n != 0 {
+		t.Fatalf("%d asks for a start the owner asked for", n)
+	}
+}

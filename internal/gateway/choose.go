@@ -47,6 +47,10 @@ type ChooseRequest struct {
 	// Prefer is the key of a candidate to try first without re-ranking it
 	// away: a queued start asks the gate again for the model it already chose.
 	Prefer string
+	// OwnerNamed is true when the owner named the model of this start
+	// himself. A model he paused (an owner score of 0) still runs then;
+	// otherwise it is left out (decision 0188).
+	OwnerNamed bool
 }
 
 // ChooseResult is the gate's answer and the note that explains it.
@@ -68,6 +72,9 @@ type ChooseResult struct {
 	facts  model.Facts
 	checks model.Checks
 	level  string
+	// paused are the skips of the models the owner paused, so the answer
+	// for the next candidate still names them.
+	paused []model.Skip
 }
 
 // Next asks the gate for the next candidate in the same list, after the one
@@ -93,6 +100,7 @@ func (r ChooseResult) Next() (ChooseResult, bool) {
 	if err != nil {
 		return ChooseResult{}, false
 	}
+	skips = append(append([]model.Skip(nil), r.paused...), skips...)
 	chosenKey := granted.Candidate().Key()
 	index := -1
 	for i, c := range rest {
@@ -111,7 +119,7 @@ func (r ChooseResult) Next() (ChooseResult, bool) {
 			choice.Why = protocol.WhyLine(r.level, choice)
 		}
 	}
-	return ChooseResult{Choice: choice, Note: joinModelNote(skipNotes(skips)), Skips: skips, Granted: granted, list: rest, facts: r.facts, checks: r.checks, level: r.level}, true
+	return ChooseResult{Choice: choice, Note: joinModelNote(skipNotes(skips)), Skips: skips, Granted: granted, list: rest, facts: r.facts, checks: r.checks, level: r.level, paused: r.paused}, true
 }
 
 // joinModelNote joins note lines with the separator every model note uses.
@@ -129,17 +137,39 @@ func joinModelNote(lines []string) string {
 // Choose is the one path an automatic worker start uses to pick a model
 // (decision 0162): build the facts snapshot, rank the candidates, reorder
 // them, then let the gate return the first that can run now. The ranker removes
-// no candidate; every check that can refuse one is in the gate.
+// no candidate; every check that can refuse one is in the gate. The one
+// exception is a model the owner paused: it is left out before the ranker, so
+// no rule, draw or exploration can choose it (decision 0188).
 func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 	policy := model.PolicyFor(req.Purpose)
+	candidates, paused, pausedSkips := req.Candidates, []protocol.WorkerModelCandidate(nil), []model.Skip(nil)
+	if !req.OwnerNamed && protocol.PausesAny(req.Scores) {
+		candidates = make([]protocol.WorkerModelCandidate, 0, len(req.Candidates))
+		for _, c := range req.Candidates {
+			if protocol.WorkerModelPaused(c, req.Scores) {
+				paused = append(paused, c)
+				pausedSkips = append(pausedSkips, model.Skip{Candidate: c, Check: checkPaused, Reason: protocol.PausedByOwner})
+				continue
+			}
+			candidates = append(candidates, c)
+		}
+	}
+	// refuse is an answer with no candidate that still names the paused ones,
+	// so the caller's refusal says why they were not used.
+	refuse := func(err error) (ChooseResult, error) {
+		return ChooseResult{Skips: pausedSkips, Note: joinModelNote(skipNotes(pausedSkips))}, err
+	}
+	if len(candidates) == 0 && len(paused) > 0 {
+		return refuse(fmt.Errorf("no candidate can run now: %s", joinModelNote(skipNotes(pausedSkips))))
+	}
 	var facts model.Facts
 	var err error
 	if req.Facts != nil {
 		facts = *req.Facts
 	} else {
-		facts, _, err = g.chooseFacts(req.Node, req.Candidates, req.Quotas, req.Floors, req.Auth, req.Health)
+		facts, _, err = g.chooseFacts(req.Node, candidates, req.Quotas, req.Floors, req.Auth, req.Health)
 		if err != nil {
-			return ChooseResult{}, err
+			return refuse(err)
 		}
 	}
 	level := req.Difficulty
@@ -160,12 +190,12 @@ func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 			rotation, readErr = g.store.WorkerRotation()
 			g.rotationMu.Unlock()
 			if readErr != nil {
-				return ChooseResult{}, readErr
+				return refuse(readErr)
 			}
 		}
 		pick := &protocol.PickerInput{D: req.D, DifficultyNote: req.DifficultyNote, Table: g.store.pickerTable(), Prices: g.store.priceBook()}
 		var leftOut []protocol.WorkerLeftOut
-		order, leftOut, err = protocol.WorkerPickOrder(req.Candidates, req.Difficulty, req.Scores, req.Minimums, req.Quotas, req.Running, &rotation, pick)
+		order, leftOut, err = protocol.WorkerPickOrder(candidates, req.Difficulty, req.Scores, req.Minimums, req.Quotas, req.Running, &rotation, pick)
 		if err == nil {
 			resultLeftOut = leftOut
 		}
@@ -175,11 +205,11 @@ func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 			g.rotationMu.Unlock()
 		}
 		if err != nil {
-			return ChooseResult{}, err
+			return refuse(err)
 		}
 	case model.RankFixed, model.RankSame:
-		order = make([]protocol.WorkerModelChoice, len(req.Candidates))
-		for i, c := range req.Candidates {
+		order = make([]protocol.WorkerModelChoice, len(candidates))
+		for i, c := range candidates {
 			score, fit, _, _ := protocol.WorkerCandidateFit(c, level, req.Scores, req.Minimums)
 			order[i] = protocol.WorkerModelChoice{WorkerModelCandidate: c, Score: score, Fit: fit}
 			order[i].Why = protocol.WhyLine(level, order[i])
@@ -188,10 +218,10 @@ func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 			order = paceOrder(order, req.Quotas)
 		}
 	default:
-		return ChooseResult{}, fmt.Errorf("purpose %q has no ranker", req.Purpose)
+		return refuse(fmt.Errorf("purpose %q has no ranker", req.Purpose))
 	}
 	if len(order) == 0 {
-		return ChooseResult{}, fmt.Errorf("no model qualifies for %s; register a profile for %s, or pass model explicitly", level, level)
+		return refuse(fmt.Errorf("no model qualifies for %s; register a profile for %s, or pass model explicitly", level, level))
 	}
 	// The ranker's note explains the whole pick: the bucket, the cells and the
 	// cost terms. Keep it when the gate moves to another candidate, or the
@@ -205,7 +235,9 @@ func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 		order = preferFirst(order, req.Prefer)
 	}
 	granted, skips, gateErr := gateWithCoolingLast(order, policy.Checks, facts)
-	result := ChooseResult{Skips: skips, LeftOut: resultLeftOut, Pick: markPickSkips(rankerRows, skips), facts: facts, checks: policy.Checks, list: order, level: level}
+	pickRows := protocol.PausedPickRows(markPickSkips(rankerRows, skips), paused)
+	skips = append(append([]model.Skip(nil), pausedSkips...), skips...)
+	result := ChooseResult{Skips: skips, LeftOut: resultLeftOut, Pick: pickRows, facts: facts, checks: policy.Checks, list: order, level: level, paused: pausedSkips}
 	if gateErr != nil {
 		result.Note = joinModelNote(skipNotes(skips))
 		return result, gateErr
@@ -509,6 +541,9 @@ func (g *Gateway) chooseFacts(node *protocol.NodeView, candidates []protocol.Wor
 	}
 	return facts, healths, nil
 }
+
+// checkPaused names the skip of a model the owner paused (decision 0188).
+const checkPaused = "paused"
 
 // rosterRankForSkip orders gate skips in the refusal roster.
 func rosterRankForSkip(check string) int {

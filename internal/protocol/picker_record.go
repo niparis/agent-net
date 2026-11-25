@@ -269,3 +269,20 @@ func levelPickRow(c WorkerModelCandidate, room float64, measured bool) PickCandi
 	}
 	return r
 }
+
+// PausedPickRows adds a row for each candidate the owner paused to the rows of
+// a pick, with the pick's rule and bucket, so the stored pick says why the
+// model was not in it. A pick without rows gets none.
+func PausedPickRows(rows []PickCandidate, paused []WorkerModelCandidate) []PickCandidate {
+	if len(rows) == 0 || len(paused) == 0 {
+		return rows
+	}
+	out := append([]PickCandidate(nil), rows...)
+	for _, c := range paused {
+		r := levelPickRow(c, 0, false)
+		r.Rule, r.BucketLo, r.BucketHi, r.Fallback = rows[0].Rule, rows[0].BucketLo, rows[0].BucketHi, rows[0].Fallback
+		r.LeftOutReason = PausedByOwner
+		out = append(out, r)
+	}
+	return out
+}
