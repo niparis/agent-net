@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // The owner's words to the CTO are his approval (decision 0165). When the CTO
@@ -27,6 +28,16 @@ func verifiedWords(ctx context.Context) string {
 func (d *Daemon) rememberCTOOwnerPrompt(text string) {
 	if sid := d.ctoSessionID(); sid != "" {
 		d.rememberOwnerPrompt(sid, text)
+	}
+}
+
+// recordCTOOwnerPrompt keeps a prompt the owner typed in the Claude CTO's
+// pane for the next handover note. text is already cut to what he typed. A
+// message sent from the TUI is recorded where it is sent, and reaches this
+// pane framed as a delivered message, so it is never recorded twice.
+func (d *Daemon) recordCTOOwnerPrompt(text string, at time.Time) {
+	if err := d.recordCTOOwnerMessageAt(text, at); err != nil {
+		d.Logf("cto: the owner's message was not kept for the handover note: %v", err)
 	}
 }
 

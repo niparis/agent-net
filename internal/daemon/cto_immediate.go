@@ -10,6 +10,16 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// ctoDirectSettingsTools are the CTO's direct tools that change what a
+// settings_change area changes, by the concrete name of that area. They keep
+// their own call, so the gateway records them as before, and they leave the
+// same Inbox line and undo as the area.
+var ctoDirectSettingsTools = map[string]string{
+	"agent_protected_providers_set": "protected_providers_set",
+	"agent_worker_profile_add":      "worker_profile_add",
+	"agent_worker_profile_remove":   "worker_profile_remove",
+}
+
 // executeImmediateCTOTool runs classified mutations through the same concrete
 // owner handlers used for approved calls and records a durable Inbox notice.
 func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
@@ -39,12 +49,16 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 			return d.executeCTOApps(ctx, concrete, args)
 		}
 	}
-	if class != ctoMinor {
+	direct := ctoDirectSettingsTools[name]
+	if class != ctoMinor && direct == "" {
 		return d.executeCTOTool(ctx, name, raw)
 	}
 	concrete, args, _, err := ctoConcreteCall(name, raw)
 	if err != nil {
 		return nil, err
+	}
+	if direct != "" {
+		concrete = direct
 	}
 	var fields map[string]json.RawMessage
 	if len(args) > 0 && json.Unmarshal(args, &fields) != nil {
@@ -211,8 +225,13 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 			}
 		}
 	}
-	ctx = context.WithValue(ctx, proposalActorKey{}, "cto")
-	result, err := d.executeApprovedCTOTool(ctx, concrete, args)
+	var result any
+	if direct != "" {
+		result, err = d.executeCTOTool(ctx, name, raw)
+	} else {
+		ctx = context.WithValue(ctx, proposalActorKey{}, "cto")
+		result, err = d.executeApprovedCTOTool(ctx, concrete, args)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -454,7 +473,8 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 				q.Name = added.Name
 			}
 		}
-		text += " " + q.Name
+		// The add result names a default profile the call did not name.
+		text = strings.TrimSpace("CTO applied " + strings.ReplaceAll(concrete, "_", " ") + " " + q.Name)
 		var old *protocol.WorkerProfile
 		for i := range oldProfiles {
 			if strings.EqualFold(oldProfiles[i].Name, q.Name) {
@@ -465,7 +485,11 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 		if haveProfiles && old != nil {
 			undo, _ := json.Marshal(protocol.WorkerProfileRequest{Name: old.Name, Harness: old.Harness, Model: old.Model, Effort: old.Effort})
 			options = []string{protocol.OpWorkerProfileAdd, string(undo)}
-			diff = fmt.Sprintf("%s: %s %s %s -> %s %s %s", old.Name, old.Harness, old.Model, old.Effort, q.Harness, q.Model, q.Effort)
+			next := strings.TrimSpace(q.Harness + " " + q.Model + " " + q.Effort)
+			if concrete == "worker_profile_remove" {
+				next = "removed"
+			}
+			diff = fmt.Sprintf("%s: %s %s %s -> %s", old.Name, old.Harness, old.Model, old.Effort, next)
 		} else if haveProfiles && concrete == "worker_profile_add" && q.Name != "" {
 			undo, _ := json.Marshal(protocol.WorkerProfileRequest{Name: q.Name})
 			options = []string{protocol.OpWorkerProfileRemove, string(undo)}

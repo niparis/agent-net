@@ -126,12 +126,16 @@ func (d *Daemon) ctoStartBlock(ctx context.Context) string {
 		_, notes := d.sessionContext(ctx, sid, "")
 		block = joinCharter(block, notes)
 	}
-	// A switch of harness leaves its handover note (decision 0171). The new
-	// conversation is pointed at it first.
+	return joinCharter(block, d.ctoHandoverPointer())
+}
+
+// ctoHandoverPointer points a new conversation at the handover note a switch
+// of harness left (decision 0171), or is "" when there is none.
+func (d *Daemon) ctoHandoverPointer() string {
 	if name := d.latestHandoverNote(); name != "" {
-		block = joinCharter(block, "Latest handover note: "+name+". Read it with agent_notes_find, then its open asks, before anything else.")
+		return "Latest handover note: " + name + ". Read it with agent_notes_find, then its open asks, before anything else."
 	}
-	return block
+	return ""
 }
 
 // ctoSystemPrompt is the CTO brief plus its start block, for a harness that

@@ -151,19 +151,10 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 		return nil, errors.New("bad policy params")
 	}
 	d := lc.d
-	// What the owner types in the CTO's own pane is the words he gives the CTO.
-	if client == "cli" && p.Harness == "claude" && p.Event == "" && isHumanClaudePrompt(p.Prompt) && d.isClaudeCTONative(p.NativeID) {
-		d.whenClaudeOwnerPrompt(ctx, p, func(_ context.Context, owner bool) {
-			if owner {
-				d.rememberCTOOwnerPrompt(p.Prompt)
-				return
-			}
-			// The entry was missing or named no origin. Keep the prompt for a
-			// later transcript read, as the ordinary branch does: a loaded
-			// machine can write the entry after the wait, and a human entry
-			// then makes it the owner's words to the CTO.
-			d.notePendingOwnerWords(d.ctoSessionID(), p)
-		})
+	// The CTO's Claude conversation is kept out of d.sessions, so its hook
+	// has a path of its own.
+	if client == "cli" && p.Harness == "claude" && d.isClaudeCTONative(p.NativeID) {
+		return d.claudeCTOTurn(ctx, p), nil
 	}
 	if client == "cli" {
 		d.mu.Lock()
@@ -237,6 +228,35 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 		d.recordTurnEndQuestion(ctx, ls, sid, "")
 	}
 	return res, nil
+}
+
+// claudeCTOTurn serves the Claude Code hook of the CTO's own conversation.
+// What the owner types in its pane is the words he gives the CTO, and a message
+// for the next handover note. The answer carries the CTO's start block when
+// its conversation does not have the current one (charter_send.go).
+func (d *Daemon) claudeCTOTurn(ctx context.Context, p protocol.PolicyRequest) protocol.PolicyResult {
+	// A prompt whose entry was missing when its wait ended may have one now.
+	d.resolvePendingOwnerWords(d.ctoSessionID())
+	if p.Event != "" {
+		return protocol.PolicyResult{}
+	}
+	if isHumanClaudePrompt(p.Prompt) {
+		d.whenClaudeOwnerPrompt(ctx, p, func(_ context.Context, owner bool) {
+			if owner {
+				d.rememberCTOOwnerPrompt(p.Prompt)
+				if text, ok := ownerWordsText(p.Prompt); ok {
+					d.recordCTOOwnerPrompt(text, d.ownerPromptNow())
+				}
+				return
+			}
+			// The entry was missing or named no origin. Keep the prompt for a
+			// later transcript read, as the ordinary branch does: a loaded
+			// machine can write the entry after the wait, and a human entry
+			// then makes it the owner's words to the CTO and a handover message.
+			d.notePendingCTOOwnerWords(p)
+		})
+	}
+	return protocol.PolicyResult{Charter: d.ctoBlockForTurn(ctx, p.NativeID)}
 }
 
 // isHumanClaudePrompt is true for text the owner may have typed. Claude delivers

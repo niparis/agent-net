@@ -131,6 +131,9 @@ type pendingOwnerWords struct {
 	// the words are kept.
 	first string
 	at    time.Time
+	// handover is set for a prompt in the Claude CTO's pane: the owner's
+	// words there are also a message for the next handover note.
+	handover bool
 }
 
 const pendingWordsKeySep = "\x00"
@@ -141,6 +144,16 @@ const pendingWordsKeySep = "\x00"
 // reminder blocks are removed before the text is cut, so a cut cannot expose
 // text a block hid.
 func (d *Daemon) notePendingOwnerWords(session string, p protocol.PolicyRequest) {
+	d.notePendingWords(session, p, false)
+}
+
+// notePendingCTOOwnerWords is notePendingOwnerWords for a prompt in the
+// Claude CTO's pane.
+func (d *Daemon) notePendingCTOOwnerWords(p protocol.PolicyRequest) {
+	d.notePendingWords(d.ctoSessionID(), p, true)
+}
+
+func (d *Daemon) notePendingWords(session string, p protocol.PolicyRequest, handover bool) {
 	if session == "" || p.PromptID == "" || !claudeTranscriptFor(p.TranscriptPath, p.NativeID, p.PromptID) {
 		return
 	}
@@ -175,7 +188,7 @@ func (d *Daemon) notePendingOwnerWords(session string, p protocol.PolicyRequest)
 	}
 	d.pendingWords[session+pendingWordsKeySep+p.PromptID] = pendingOwnerWords{
 		session: session, native: p.NativeID, path: p.TranscriptPath,
-		promptID: p.PromptID, text: text, first: firstMessageHash(p.Prompt), at: now,
+		promptID: p.PromptID, text: text, first: firstMessageHash(p.Prompt), at: now, handover: handover,
 	}
 }
 
@@ -229,6 +242,9 @@ func (d *Daemon) resolvePendingOwnerWords(session string) {
 		d.pendingWordsMu.Unlock()
 		if still && !first && s == senderOwner {
 			d.rememberOwnerPromptAt(session, q.text, q.at)
+			if q.handover {
+				d.recordCTOOwnerPrompt(q.text, q.at)
+			}
 		}
 	}
 }
