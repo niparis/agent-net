@@ -88,6 +88,11 @@ type Options struct {
 	// agent's tool call gives up after about 10 s, and a resend would send the
 	// message twice.
 	ResumeAnswerWait time.Duration
+	// FreezeAfter, FreezePollInterval and FreezeCooldown configure the freeze
+	// monitor (defaults: 10 s, 1 s, 10 m). Tests override them to run fast.
+	FreezeAfter        time.Duration
+	FreezePollInterval time.Duration
+	FreezeCooldown     time.Duration
 }
 
 type Gateway struct {
@@ -199,6 +204,10 @@ type Gateway struct {
 	enrollLimit      *enrollLimiter
 	exposureWarnings []string
 	exposureMu       sync.RWMutex
+	freeze           *freezeTracker
+	freezeStop       chan struct{}
+	freezeStopOnce   sync.Once
+	freezeWG         sync.WaitGroup
 }
 
 type offlineTimer struct {
@@ -388,7 +397,10 @@ func New(opts Options) (*Gateway, error) {
 		appsDone: make(chan struct{}), adminToken: protocol.NewToken(), conns: map[string]*nodeConn{}, timers: map[string]*offlineTimer{},
 		enrollLimit: newEnrollLimiter(opts.Now),
 		stepBatches: make(map[string]*stepTaskBatch), lastReportBySession: make(map[string]time.Time),
-		stepTaskQuietWindow: opts.StepTaskQuietWindow, stepTaskRecentWindow: opts.StepTaskRecentWindow, stepTaskBatchCap: opts.StepTaskBatchCap}
+		stepTaskQuietWindow: opts.StepTaskQuietWindow, stepTaskRecentWindow: opts.StepTaskRecentWindow, stepTaskBatchCap: opts.StepTaskBatchCap,
+		freeze: newFreezeTracker(opts), freezeStop: make(chan struct{})}
+	store.connector.SetWriterHooks(g.freeze.acquireWriter, g.freeze.releaseWriter)
+	g.startFreezeMonitor()
 	store.settingsHook = func() { g.goBackground(g.settingsChanged) }
 	store.charterHook = func() { g.goBackground(g.charterChanged) }
 	store.logf = g.logLine
@@ -402,6 +414,7 @@ func New(opts Options) (*Gateway, error) {
 		g.logLine("graph.junk_removed", "count", store.graphJunkRemoved)
 	}
 	if err := g.restorePublic(); err != nil {
+		g.stopFreezeMonitor()
 		store.Close()
 		return nil, err
 	}
@@ -459,6 +472,7 @@ func (g *Gateway) Close() error {
 	// A cutover in its backup or transaction finishes first, so the backup is
 	// complete and the database is still open for it.
 	g.graphCutoverWG.Wait()
+	g.stopFreezeMonitor()
 	return g.store.Close()
 }
 
@@ -490,7 +504,7 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 			return
 		case <-agentStarts.C:
 			func() {
-				defer g.slowLoop("agent_starts", time.Now())
+				defer g.startLoop("agent_starts")()
 				nodes, err := g.store.ExpireSessionAgentStarts()
 				if err != nil {
 					g.logLine("error", "where", "expire Agent starts", "err", err)
@@ -504,7 +518,7 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 			}()
 		case <-appsCleanup.C:
 			func() {
-				defer g.slowLoop("apps_cleanup", time.Now())
+				defer g.startLoop("apps_cleanup")()
 				now := g.store.now()
 				if err := g.store.DeleteExpiredTokens(now); err != nil {
 					g.logLine("error", "where", "app token cleanup", "err", err)
@@ -515,7 +529,7 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 			}()
 		case <-t.C:
 			func() {
-				defer g.slowLoop("expiry", time.Now())
+				defer g.startLoop("expiry")()
 				if err := g.store.expireNudgePauses(g.store.db); err != nil {
 					g.logLine("error", "where", "nudge pause expiry", "err", err)
 				}
@@ -611,7 +625,7 @@ func (g *Gateway) RunLearning(ctx context.Context) {
 	defer t.Stop()
 	for {
 		func() {
-			defer g.slowLoop("learning", time.Now())
+			defer g.startLoop("learning")()
 			if err := g.store.ProcessLearned(); err != nil && ctx.Err() == nil {
 				g.logLine("error", "where", "learned suggestions", "err", err)
 			}
@@ -653,7 +667,7 @@ func (g *Gateway) RunRetention(ctx context.Context) {
 	first := true
 	for {
 		func() {
-			defer g.slowLoop("retention", time.Now())
+			defer g.startLoop("retention")()
 			// At startup all sessions are marked offline until their daemons
 			// reconnect. Wait for the first maintenance interval before archiving.
 			retention := g.opts.Retention
@@ -1020,6 +1034,7 @@ func answerFrame(id string, data any, err error) ([]byte, error) {
 // answer handles one frame and writes its result. A link error ends the loop.
 func (g *Gateway) answer(ctx context.Context, nc *nodeConn, h protocol.Header, raw []byte) error {
 	start, sent := time.Now(), 0
+	defer g.startRequest(h.Type, nc.id)()
 	defer g.finishRequest(h, nc.id, start, &sent)
 	data, err := g.handle(ctx, nc, h.Type, raw)
 	var reply []byte

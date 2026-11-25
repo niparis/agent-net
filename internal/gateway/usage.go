@@ -348,6 +348,7 @@ func isRelay(typ string) bool {
 // it waits for another node while this node's read loop must keep going.
 func (g *Gateway) serveRelay(ctx context.Context, nc *nodeConn, h protocol.Header, raw []byte) {
 	start, sent := time.Now(), 0
+	defer g.startRequest(h.Type, nc.id)()
 	defer g.finishRequest(h, nc.id, start, &sent)
 	var data json.RawMessage
 	var err error

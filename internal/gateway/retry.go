@@ -46,7 +46,7 @@ func (g *Gateway) RunRetries(ctx context.Context) {
 			return
 		case <-t.C:
 			func() {
-				defer g.slowLoop("retries", time.Now())
+				defer g.startLoop("retries")()
 				rows, err := g.store.db.Query(`SELECT message_id FROM delivery_retries WHERE next_at <= ?`, g.store.now().UnixNano())
 				if err != nil {
 					g.logLine("error", "where", "retry query", "err", err)

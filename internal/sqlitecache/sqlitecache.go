@@ -93,8 +93,10 @@ type shared struct {
 	// counts only these: a table no key reads by column costs nothing per row.
 	watched sync.Map // lower case table name -> struct{}
 
-	views    atomic.Pointer[viewSet]
-	observer atomic.Pointer[func(Statement)]
+	views         atomic.Pointer[viewSet]
+	observer      atomic.Pointer[func(Statement)]
+	writerAcquire atomic.Pointer[func()]
+	writerRelease atomic.Pointer[func()]
 }
 
 // New returns a connector for the SQLite database dsn. Each connection keeps
@@ -120,6 +122,21 @@ func (c *Connector) NewReader(dsn string, size int) (*Connector, error) {
 		return nil, err
 	}
 	return &Connector{shared: c.shared, inner: inner, size: size, readOnly: true}, nil
+}
+
+// SetWriterHooks registers callbacks invoked when the writer connection is
+// acquired and released (outside a read-only pool). Either callback may be nil.
+func (c *Connector) SetWriterHooks(acquire, release func()) {
+	if acquire == nil {
+		c.writerAcquire.Store(nil)
+	} else {
+		c.writerAcquire.Store(&acquire)
+	}
+	if release == nil {
+		c.writerRelease.Store(nil)
+	} else {
+		c.writerRelease.Store(&release)
+	}
 }
 
 // Writes is the number of statements run so far that may have changed the
@@ -441,6 +458,31 @@ type txState struct {
 
 func (t *txState) active() bool { return t.api || t.text }
 
+func (c *conn) isTxActive() bool {
+	c.pmu.Lock()
+	active := c.open.active()
+	c.pmu.Unlock()
+	return active
+}
+
+func (c *conn) callWriterAcquire() {
+	if c.owner.readOnly {
+		return
+	}
+	if fn := c.owner.writerAcquire.Load(); fn != nil && *fn != nil {
+		(*fn)()
+	}
+}
+
+func (c *conn) callWriterRelease() {
+	if c.owner.readOnly {
+		return
+	}
+	if fn := c.owner.writerRelease.Load(); fn != nil && *fn != nil {
+		(*fn)()
+	}
+}
+
 func (c *conn) Prepare(query string) (driver.Stmt, error) {
 	return c.PrepareContext(context.Background(), query)
 }
@@ -457,8 +499,12 @@ func (c *conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, e
 		return nil, err
 	}
 	c.pmu.Lock()
+	wasActive := c.open.active()
 	c.open.api = true
 	c.pmu.Unlock()
+	if !wasActive {
+		c.callWriterAcquire()
+	}
 	return &countedTx{Tx: tx, c: c}, nil
 }
 
@@ -487,9 +533,13 @@ func (t *countedTx) Rollback() error {
 // statements when it committed and drops them when it did not.
 func (c *conn) endTx(commit bool) {
 	c.pmu.Lock()
-	defer c.pmu.Unlock()
 	c.open.api = false
+	stillActive := c.open.active()
 	c.settleLocked(commit)
+	c.pmu.Unlock()
+	if !stillActive {
+		c.callWriterRelease()
+	}
 }
 
 // settleLocked moves the pending counts (commit) or drops them, unless a
@@ -664,51 +714,83 @@ func (s *countedStmt) current() *stmtInfo {
 }
 
 func (s *countedStmt) Exec(args []driver.Value) (driver.Result, error) {
+	wasActive := s.c.isTxActive()
+	if !wasActive {
+		s.c.callWriterAcquire()
+	}
 	s.owner.observe(s.query, s.info)
 	res, err := s.Stmt.Exec(args) //nolint:staticcheck
 	s.c.recordExec(s.current(), s.query, res, err)
+	if !s.c.isTxActive() {
+		s.c.callWriterRelease()
+	}
 	return res, err
 }
 
 func (s *countedStmt) Query(args []driver.Value) (driver.Rows, error) {
+	wasActive := s.c.isTxActive()
+	if !wasActive {
+		s.c.callWriterAcquire()
+	}
 	s.owner.observe(s.query, s.info)
-	return s.c.queryEnded(s.current(), s.query, func() (driver.Rows, error) {
+	r, err := s.c.queryEnded(s.current(), s.query, !wasActive, func() (driver.Rows, error) {
 		return s.Stmt.Query(args) //nolint:staticcheck
 	})
+	if err != nil && !wasActive {
+		s.c.callWriterRelease()
+	}
+	return r, err
 }
 
 func (s *countedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
+	wasActive := s.c.isTxActive()
+	if !wasActive {
+		s.c.callWriterAcquire()
+	}
 	s.owner.observe(s.query, s.info)
 	res, err := s.Stmt.(driver.StmtExecContext).ExecContext(ctx, args)
 	s.c.recordExec(s.current(), s.query, res, err)
+	if !s.c.isTxActive() {
+		s.c.callWriterRelease()
+	}
 	return res, err
 }
 
 func (s *countedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
+	wasActive := s.c.isTxActive()
+	if !wasActive {
+		s.c.callWriterAcquire()
+	}
 	s.owner.observe(s.query, s.info)
-	return s.c.queryEnded(s.current(), s.query, func() (driver.Rows, error) {
+	r, err := s.c.queryEnded(s.current(), s.query, !wasActive, func() (driver.Rows, error) {
 		return s.Stmt.(driver.StmtQueryContext).QueryContext(ctx, args)
 	})
+	if err != nil && !wasActive {
+		s.c.callWriterRelease()
+	}
+	return r, err
 }
 
 // queryEnded runs a statement that returns rows. A write that returns rows
 // (INSERT ... RETURNING) makes its change on the first step but commits when
 // the statement ends, which is when its rows are closed. So its counts move
 // at Close and not before.
-func (c *conn) queryEnded(info *stmtInfo, query string, run func() (driver.Rows, error)) (driver.Rows, error) {
+func (c *conn) queryEnded(info *stmtInfo, query string, releaseWriter bool, run func() (driver.Rows, error)) (driver.Rows, error) {
 	write := !c.owner.readOnly && isWrite(info, query)
 	if write {
 		c.note(info, query)
 	}
 	r, err := run()
-	if !write {
-		return r, err
-	}
 	if err != nil {
-		c.endStatement()
+		if write {
+			c.endStatement()
+		}
 		return nil, err
 	}
-	return &rows{Rows: r, c: c, write: true}, nil
+	if !write && (c.owner.readOnly || !releaseWriter) {
+		return r, nil
+	}
+	return &rows{Rows: r, c: c, write: write, releaseWriter: releaseWriter && !c.owner.readOnly}, nil
 }
 
 func (c *conn) Ping(ctx context.Context) error {
@@ -837,6 +919,10 @@ func (c *conn) ExecContext(ctx context.Context, query string, args []driver.Name
 	if err != nil {
 		return nil, err
 	}
+	wasActive := c.isTxActive()
+	if !wasActive {
+		c.callWriterAcquire()
+	}
 	if e == nil {
 		c.describe(ctx, query)
 		res, err := c.exec.ExecContext(ctx, query, args)
@@ -849,12 +935,18 @@ func (c *conn) ExecContext(ctx context.Context, query string, args []driver.Name
 			}
 			c.endStatement()
 		}
+		if !c.isTxActive() {
+			c.callWriterRelease()
+		}
 		return res, err
 	}
 	defer c.done(e, kept)
 	c.owner.observe(query, e.info)
 	res, err := e.stmt.(driver.StmtExecContext).ExecContext(ctx, args)
 	c.recordExec(e.info, query, res, err)
+	if !c.isTxActive() {
+		c.callWriterRelease()
+	}
 	return res, err
 }
 
@@ -863,11 +955,19 @@ func (c *conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 	if err != nil {
 		return nil, err
 	}
+	wasActive := c.isTxActive()
+	if !wasActive {
+		c.callWriterAcquire()
+	}
 	if e == nil {
 		c.describe(ctx, query)
-		return c.queryEnded(nil, query, func() (driver.Rows, error) {
+		r, err := c.queryEnded(nil, query, !wasActive, func() (driver.Rows, error) {
 			return c.query.QueryContext(ctx, query, args)
 		})
+		if err != nil && !wasActive {
+			c.callWriterRelease()
+		}
+		return r, err
 	}
 	c.owner.observe(query, e.info)
 	write := !c.owner.readOnly && isWrite(e.info, query)
@@ -880,9 +980,12 @@ func (c *conn) QueryContext(ctx context.Context, query string, args []driver.Nam
 		if write {
 			c.endStatement()
 		}
+		if !wasActive {
+			c.callWriterRelease()
+		}
 		return nil, err
 	}
-	return &rows{Rows: r, c: c, e: e, kept: kept, write: write}, nil
+	return &rows{Rows: r, c: c, e: e, kept: kept, write: write, releaseWriter: !wasActive && !c.owner.readOnly}, nil
 }
 
 // describe tells the observer about a statement that is not kept. It prepares
@@ -1213,7 +1316,8 @@ type rows struct {
 	released bool
 	// write is true for the rows of a statement that may change the database.
 	// Its changes are final when the rows close.
-	write bool
+	write         bool
+	releaseWriter bool
 }
 
 func (r *rows) Close() error {
@@ -1225,6 +1329,9 @@ func (r *rows) Close() error {
 		}
 		if r.write {
 			r.c.endStatement()
+		}
+		if r.releaseWriter {
+			r.c.callWriterRelease()
 		}
 	}
 	return err
