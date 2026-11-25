@@ -162,6 +162,13 @@ func (a *Adapter) scanHeldTranscript(native, path string) {
 		if len(line) == 0 {
 			continue
 		}
+		// Most new bytes are assistant output and tool results. Skip them
+		// before the JSON parse: a transcript line can be very large.
+		if !bytes.Contains(line, []byte("Held peer message")) &&
+			!bytes.Contains(line, []byte("Held message from another session")) &&
+			!bytes.Contains(line, []byte("cross-session-message")) {
+			continue
+		}
 		var e transcriptEntry
 		if json.Unmarshal(line, &e) != nil {
 			continue
