@@ -39,7 +39,7 @@ func (g *Gateway) conn(nodeID string) *nodeConn {
 // may wait for another node while this node's read loop must keep going.
 func (g *Gateway) serveMCP(ctx context.Context, nc *nodeConn, h protocol.Header, raw []byte) {
 	start, sent := time.Now(), 0
-	defer g.startRequest(h.Type, nc.id)()
+	defer g.startWait(h.Type, nc.id)()
 	defer g.finishRequest(h, nc.id, start, &sent)
 	data, err := g.handleMCP(ctx, nc, h.Type, raw)
 	if err != nil {

@@ -21,8 +21,9 @@ const (
 )
 
 type activeWork struct {
-	name  string
-	start time.Time
+	name    string
+	start   time.Time
+	trigger bool
 }
 
 type freezeSnapshot struct {
@@ -34,11 +35,13 @@ type freezeSnapshot struct {
 }
 
 type freezeTracker struct {
-	after    time.Duration
-	cooldown time.Duration
-	poll     time.Duration
+	after        time.Duration
+	cooldown     time.Duration
+	poll         time.Duration
+	writeProfile func(path string, data []byte) error
 
 	mu       sync.Mutex
+	nextID   uint64
 	active   map[uint64]activeWork
 	wDepth   int
 	wHolder  string
@@ -68,23 +71,38 @@ func newFreezeTracker(opts Options) *freezeTracker {
 	}
 }
 
-func curGoroutineID() uint64 {
-	var buf [32]byte
-	n := runtime.Stack(buf[:], false)
-	s := buf[:n]
-	const prefix = "goroutine "
-	if !bytes.HasPrefix(s, []byte(prefix)) {
-		return 0
+func (f *freezeTracker) begin(name string, trigger bool) func() {
+	now := time.Now()
+	f.mu.Lock()
+	f.nextID++
+	id := f.nextID
+	f.active[id] = activeWork{name: name, start: now, trigger: trigger}
+	f.mu.Unlock()
+	return func() {
+		f.mu.Lock()
+		delete(f.active, id)
+		f.mu.Unlock()
 	}
-	s = s[len(prefix):]
-	var id uint64
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			break
+}
+
+func (f *freezeTracker) acquireWriter() {
+	now := time.Now()
+	f.mu.Lock()
+	if f.wDepth == 0 {
+		var holder string
+		if len(f.active) == 1 {
+			for _, w := range f.active {
+				holder = w.name
+			}
 		}
-		id = id*10 + uint64(c-'0')
+		if holder == "" {
+			holder = callerFuncName()
+		}
+		f.wSince = now
+		f.wHolder = holder
 	}
-	return id
+	f.wDepth++
+	f.mu.Unlock()
 }
 
 func callerFuncName() string {
@@ -108,49 +126,6 @@ func callerFuncName() string {
 	return "unknown"
 }
 
-func (f *freezeTracker) begin(name string) func() {
-	gid := curGoroutineID()
-	now := time.Now()
-	f.mu.Lock()
-	f.active[gid] = activeWork{name: name, start: now}
-	f.mu.Unlock()
-	return func() {
-		f.mu.Lock()
-		delete(f.active, gid)
-		f.mu.Unlock()
-	}
-}
-
-func (f *freezeTracker) acquireWriter() {
-	gid := curGoroutineID()
-	now := time.Now()
-	f.mu.Lock()
-	if f.wDepth == 0 {
-		holder := ""
-		if w, ok := f.active[gid]; ok {
-			holder = w.name
-		}
-		f.wSince = now
-		f.wHolder = holder
-		f.mu.Unlock()
-		if holder == "" {
-			// Resolve caller outside tracker.mu, then fill if still the same holder.
-			fn := callerFuncName()
-			f.mu.Lock()
-			if f.wDepth > 0 && f.wHolder == "" && f.wSince.Equal(now) {
-				f.wHolder = fn
-			}
-			f.mu.Unlock()
-		}
-		f.mu.Lock()
-		f.wDepth++
-		f.mu.Unlock()
-		return
-	}
-	f.wDepth++
-	f.mu.Unlock()
-}
-
 func (f *freezeTracker) releaseWriter() {
 	f.mu.Lock()
 	if f.wDepth > 0 {
@@ -164,20 +139,25 @@ func (f *freezeTracker) releaseWriter() {
 }
 
 // check inspects active calls and returns a snapshot if a new freeze dump
-// should be written now. At most one dump per freeze and one per cooldown.
+// should be written now. Only triggering work (answered frames and loops) can
+// start a dump or use the cooldown.
 func (f *freezeTracker) check(now time.Time) (freezeSnapshot, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	var oldestName string
 	var oldestStart time.Time
+	var oldestTriggerStart time.Time
 	for _, w := range f.active {
 		if oldestStart.IsZero() || w.start.Before(oldestStart) {
 			oldestStart = w.start
 			oldestName = w.name
 		}
+		if w.trigger && (oldestTriggerStart.IsZero() || w.start.Before(oldestTriggerStart)) {
+			oldestTriggerStart = w.start
+		}
 	}
-	if oldestStart.IsZero() || now.Sub(oldestStart) <= f.after {
+	if oldestTriggerStart.IsZero() || now.Sub(oldestTriggerStart) <= f.after {
 		f.inFreeze = false
 		return freezeSnapshot{}, false
 	}
@@ -213,7 +193,14 @@ func (g *Gateway) startRequest(method, _ string) func() {
 	if g.freeze == nil {
 		return func() {}
 	}
-	return g.freeze.begin(method)
+	return g.freeze.begin(method, true)
+}
+
+func (g *Gateway) startWait(method, _ string) func() {
+	if g.freeze == nil {
+		return func() {}
+	}
+	return g.freeze.begin(method, false)
 }
 
 func (g *Gateway) startLoop(name string) func() {
@@ -221,7 +208,7 @@ func (g *Gateway) startLoop(name string) func() {
 	if g.freeze == nil {
 		return func() { g.slowLoop(name, start) }
 	}
-	end := g.freeze.begin(name)
+	end := g.freeze.begin(name, true)
 	return func() {
 		end()
 		g.slowLoop(name, start)
@@ -262,23 +249,17 @@ func (g *Gateway) writeFreezeDump(snap freezeSnapshot) {
 	if p := pprof.Lookup("goroutine"); p != nil {
 		_ = p.WriteTo(&buf, 2)
 	}
-	profPath := ""
-	if g.opts.DataDir != "" {
-		dir := filepath.Join(g.opts.DataDir, "freeze-profiles")
-		if err := os.MkdirAll(dir, 0o700); err == nil {
-			name := fmt.Sprintf("freeze-%s.txt", g.store.now().UTC().Format("20060102-150405.000"))
-			candidate := filepath.Join(dir, name)
-			if err := os.WriteFile(candidate, buf.Bytes(), 0o600); err == nil {
-				profPath = candidate
-				_ = pruneFreezeProfiles(dir, freezeMaxFiles)
-			}
-		}
-	}
 	var walBytes int64
 	if g.store != nil {
 		walBytes = walSizeBytes(g.store.path)
 	}
-	ioPressure, memInfo := freezeSystemStats()
+	ioPressure, memPressure := freezeSystemStats()
+	profPath := ""
+	if g.opts.DataDir != "" {
+		dir := filepath.Join(g.opts.DataDir, "freeze-profiles")
+		name := fmt.Sprintf("freeze-%s.txt", g.store.now().UTC().Format("20060102-150405.000"))
+		profPath = filepath.Join(dir, name)
+	}
 	g.logLine("freeze",
 		"oldest", snap.oldestName,
 		"oldest_ms", snap.oldestAge.Milliseconds(),
@@ -287,9 +268,28 @@ func (g *Gateway) writeFreezeDump(snap freezeSnapshot) {
 		"writer_ms", snap.writerAge.Milliseconds(),
 		"wal_bytes", walBytes,
 		"io_pressure", ioPressure,
-		"mem", memInfo,
+		"mem", memPressure,
 		"profile", profPath,
 	)
+	if profPath != "" {
+		writeFn := writeFreezeProfileFile
+		if g.freeze != nil && g.freeze.writeProfile != nil {
+			writeFn = g.freeze.writeProfile
+		}
+		_ = writeFn(profPath, buf.Bytes())
+	}
+}
+
+func writeFreezeProfileFile(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return err
+	}
+	_ = pruneFreezeProfiles(dir, freezeMaxFiles)
+	return nil
 }
 
 func walSizeBytes(dbPath string) int64 {

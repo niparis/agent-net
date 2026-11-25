@@ -63,7 +63,22 @@ func waitForFreezeLog(t *testing.T, logs *syncLogBuffer, timeout time.Duration) 
 }
 
 func TestFreezeDumpWhenBothStuck(t *testing.T) {
-	g, logs := newFreezeTestGateway(t, 60*time.Millisecond, 15*time.Millisecond, 10*time.Minute)
+	g, logs := newFreezeTestGateway(t, 100*time.Millisecond, 15*time.Millisecond, 10*time.Minute)
+
+	// Hold every connection in the read pool with open queries before starting
+	// the tracked calls so setup time does not race FreezeAfter.
+	poolSize := readPoolSize()
+	if poolSize < 1 {
+		t.Fatalf("expected read pool size >= 1, got %d", poolSize)
+	}
+	heldRows := make([]*sql.Rows, 0, poolSize)
+	for i := 0; i < poolSize; i++ {
+		rows, err := g.store.db.Query(`SELECT 1`)
+		if err != nil {
+			t.Fatalf("hold read pool %d: %v", i, err)
+		}
+		heldRows = append(heldRows, rows)
+	}
 
 	// Hold the single write connection inside a tracked request.
 	writeHeld := make(chan struct{})
@@ -83,30 +98,18 @@ func TestFreezeDumpWhenBothStuck(t *testing.T) {
 	}()
 	<-writeHeld
 
-	// Hold every connection in the read pool with open queries.
-	poolSize := readPoolSize()
-	if poolSize < 1 {
-		t.Fatalf("expected read pool size >= 1, got %d", poolSize)
-	}
-	heldRows := make([]*sql.Rows, 0, poolSize)
-	for i := 0; i < poolSize; i++ {
-		rows, err := g.store.db.Query(`SELECT 1`)
-		if err != nil {
-			t.Fatalf("hold read pool %d: %v", i, err)
-		}
-		heldRows = append(heldRows, rows)
-	}
-
 	// Start a read call that genuinely blocks waiting for the read pool,
 	// with a secret token/prompt/body in local variables to verify nothing leaks.
 	secretBody := "SECRET_BODY_DO_NOT_LOG"
 	secretToken := "SECRET_TOKEN_DO_NOT_LOG"
 	secretPrompt := "SECRET_PROMPT_DO_NOT_LOG"
 	_ = secretBody + secretToken + secretPrompt
+	readStarted := make(chan struct{})
 	readDone := make(chan error, 1)
 	go func() {
 		end := g.startRequest("query.projects", "node-read")
 		defer end()
+		close(readStarted)
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		rows, err := g.store.db.QueryContext(ctx, `SELECT 1`)
@@ -116,6 +119,7 @@ func TestFreezeDumpWhenBothStuck(t *testing.T) {
 		}
 		readDone <- rows.Close()
 	}()
+	<-readStarted
 
 	logOut := waitForFreezeLog(t, logs, 1900*time.Millisecond)
 
@@ -157,6 +161,15 @@ func TestFreezeDumpWhenBothStuck(t *testing.T) {
 	if runtime.GOOS == "linux" {
 		if !strings.Contains(freezeLine, "io_pressure=") || !strings.Contains(freezeLine, "mem=") {
 			t.Fatalf("expected linux io_pressure and mem in freeze line:\n%s", freezeLine)
+		}
+		for _, field := range []string{"io_pressure=", "mem="} {
+			idx := strings.Index(freezeLine, field)
+			rest := freezeLine[idx:]
+			for _, sub := range []string{"some ", "full ", "total="} {
+				if !strings.Contains(rest, sub) {
+					t.Fatalf("expected %q in %s:\n%s", sub, field, freezeLine)
+				}
+			}
 		}
 	} else if runtime.GOOS == "darwin" {
 		if strings.Contains(freezeLine, "io_pressure=") || strings.Contains(freezeLine, "mem=") {
@@ -260,4 +273,217 @@ func TestFreezeRateLimitAndRetention(t *testing.T) {
 	if filepath.Base(remaining[0]) == "freeze-20260101-000001.000.txt" {
 		t.Fatalf("expected oldest file to be pruned, got %v", remaining)
 	}
+}
+
+func TestFreezeRelayDoesNotTriggerDump(t *testing.T) {
+	g, logs := newFreezeTestGateway(t, 40*time.Millisecond, 10*time.Millisecond, 10*time.Minute)
+
+	// A relay held past FreezeAfter must not trigger a dump or consume cooldown.
+	endRelay := g.startWait("query.proposal_list", "node-relay")
+	defer endRelay()
+	time.Sleep(80 * time.Millisecond)
+	if strings.Contains(logs.String(), "event=freeze") {
+		t.Fatalf("relay should not trigger freeze dump:\n%s", logs.String())
+	}
+
+	// An answered frame over the limit while the relay is still running must trigger
+	// the dump (proving cooldown was not consumed) and include the relay in waiting.
+	endFrame := g.startRequest("session.upsert", "node-frame")
+	defer endFrame()
+	logOut := waitForFreezeLog(t, logs, 1900*time.Millisecond)
+	if !strings.Contains(logOut, "waiting=2") {
+		t.Fatalf("expected waiting=2 (relay + frame), got:\n%s", logOut)
+	}
+	if !strings.Contains(logOut, "oldest=query.proposal_list") {
+		t.Fatalf("expected oldest=query.proposal_list, got:\n%s", logOut)
+	}
+}
+
+func TestFreezeLogBeforeFileWrite(t *testing.T) {
+	g, logs := newFreezeTestGateway(t, 40*time.Millisecond, 10*time.Millisecond, 10*time.Minute)
+
+	writeStarted := make(chan struct{})
+	releaseWrite := make(chan struct{})
+	writeDone := make(chan error, 1)
+	var writtenPath string
+	g.freeze.writeProfile = func(path string, data []byte) error {
+		writtenPath = path
+		close(writeStarted)
+		<-releaseWrite
+		err := writeFreezeProfileFile(path, data)
+		writeDone <- err
+		return err
+	}
+
+	end := g.startRequest("msg.send", "node-1")
+	defer end()
+
+	// Log line must appear BEFORE the file write unblocks, and carry the profile path.
+	logOut := waitForFreezeLog(t, logs, 1900*time.Millisecond)
+	<-writeStarted
+	if !strings.Contains(logOut, "wal_bytes=") || !strings.Contains(logOut, "profile="+writtenPath) {
+		close(releaseWrite)
+		<-writeDone
+		t.Fatalf("expected wal_bytes and profile path in log before file write:\n%s", logOut)
+	}
+	if _, err := os.Stat(writtenPath); !os.IsNotExist(err) {
+		close(releaseWrite)
+		<-writeDone
+		t.Fatalf("expected profile file not to exist while writer is blocked, stat err=%v", err)
+	}
+
+	close(releaseWrite)
+	if err := <-writeDone; err != nil {
+		t.Fatalf("writeProfile: %v", err)
+	}
+	prof, err := os.ReadFile(writtenPath)
+	if err != nil {
+		t.Fatalf("read written profile: %v", err)
+	}
+	if !strings.Contains(string(prof), "goroutine ") {
+		t.Fatalf("expected goroutine dump in %s", writtenPath)
+	}
+}
+
+func TestFreezeNestedCallsKeepOuterTracked(t *testing.T) {
+	g, logs := newFreezeTestGateway(t, 50*time.Millisecond, 10*time.Millisecond, 10*time.Minute)
+
+	endOuter := g.startRequest("outer.frame", "node-1")
+	endInner := g.startLoop("inner.loop")
+	endInner()
+
+	g.freeze.mu.Lock()
+	remaining := len(g.freeze.active)
+	g.freeze.mu.Unlock()
+	if remaining != 1 {
+		endOuter()
+		t.Fatalf("expected outer call to remain tracked after inner ended, got %d", remaining)
+	}
+
+	logOut := waitForFreezeLog(t, logs, 1900*time.Millisecond)
+	endOuter()
+	if !strings.Contains(logOut, "oldest=outer.frame") || !strings.Contains(logOut, "waiting=1") {
+		t.Fatalf("expected outer.frame with waiting=1, got:\n%s", logOut)
+	}
+}
+
+func TestFreezeWriterHolderConcurrentAndEdgeCases(t *testing.T) {
+	g, _ := newFreezeTestGateway(t, 10*time.Second, time.Second, 10*time.Minute)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 6; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			ctx := context.Background()
+
+			// Normal Exec.
+			if _, err := g.store.db.ExecContext(ctx, `INSERT OR IGNORE INTO gateway_state (key, value) VALUES (?, 'v')`, "k1"); err != nil {
+				t.Errorf("exec: %v", err)
+			}
+
+			// BeginTx + Commit.
+			tx, err := g.store.db.BeginTx(ctx, nil)
+			if err != nil {
+				t.Errorf("begin commit: %v", err)
+				return
+			}
+			_, _ = tx.ExecContext(ctx, `INSERT OR IGNORE INTO gateway_state (key, value) VALUES (?, 'v')`, "k2")
+			if err := tx.Commit(); err != nil {
+				t.Errorf("commit: %v", err)
+			}
+
+			// BeginTx + Rollback.
+			tx2, err := g.store.db.BeginTx(ctx, nil)
+			if err != nil {
+				t.Errorf("begin rollback: %v", err)
+				return
+			}
+			_, _ = tx2.ExecContext(ctx, `INSERT OR IGNORE INTO gateway_state (key, value) VALUES (?, 'v')`, "k3")
+			if err := tx2.Rollback(); err != nil {
+				t.Errorf("rollback: %v", err)
+			}
+
+			// Text BEGIN and COMMIT on a pinned writer connection.
+			conn, err := g.store.db.w.Conn(ctx)
+			if err != nil {
+				t.Errorf("conn: %v", err)
+				return
+			}
+			if _, err := conn.ExecContext(ctx, `BEGIN`); err != nil {
+				t.Errorf("text BEGIN: %v", err)
+			}
+			_, _ = conn.ExecContext(ctx, `INSERT OR IGNORE INTO gateway_state (key, value) VALUES (?, 'v')`, "k4")
+			if _, err := conn.ExecContext(ctx, `COMMIT`); err != nil {
+				t.Errorf("text COMMIT: %v", err)
+			}
+			_ = conn.Close()
+
+			// Rows closed late on writer connection.
+			rows, err := g.store.db.w.QueryContext(ctx, `SELECT key FROM gateway_state LIMIT 1`)
+			if err != nil {
+				t.Errorf("query writer: %v", err)
+			} else {
+				time.Sleep(2 * time.Millisecond)
+				_ = rows.Close()
+			}
+
+			// Errors in Exec and Query.
+			_, _ = g.store.db.ExecContext(ctx, `INVALID SQL STATEMENT`)
+			if r, qerr := g.store.db.w.QueryContext(ctx, `SELECT * FROM nonexistent_table_xyz`); qerr == nil {
+				_ = r.Close()
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	g.freeze.mu.Lock()
+	depth := g.freeze.wDepth
+	holder := g.freeze.wHolder
+	since := g.freeze.wSince
+	g.freeze.mu.Unlock()
+	if depth != 0 || holder != "" || !since.IsZero() {
+		t.Fatalf("expected empty writer holder after all ops, got depth=%d holder=%q since=%v", depth, holder, since)
+	}
+}
+
+func BenchmarkFreezeRequest(b *testing.B) {
+	g := &Gateway{freeze: newFreezeTracker(Options{})}
+	b.Run("tracked", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			end := g.startRequest("policy.get", "node-1")
+			end()
+		}
+	})
+	gNil := &Gateway{}
+	b.Run("untracked", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			end := gNil.startRequest("policy.get", "node-1")
+			end()
+		}
+	})
+}
+
+func BenchmarkFreezeWriterStatement(b *testing.B) {
+	run := func(b *testing.B, withHooks bool) {
+		dir := b.TempDir()
+		g, err := New(Options{DataDir: dir, FreezeAfter: time.Hour, FreezePollInterval: time.Hour})
+		if err != nil {
+			b.Fatalf("New: %v", err)
+		}
+		defer g.Close()
+		if !withHooks {
+			g.store.connector.SetWriterHooks(nil, nil)
+		}
+		ctx := context.Background()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if _, err := g.store.db.ExecContext(ctx, `UPDATE gateway_state SET value = 'v' WHERE key = 'nonexistent'`); err != nil {
+				b.Fatalf("exec: %v", err)
+			}
+		}
+		b.StopTimer()
+	}
+	b.Run("with_hooks", func(b *testing.B) { run(b, true) })
+	b.Run("without_hooks", func(b *testing.B) { run(b, false) })
 }
