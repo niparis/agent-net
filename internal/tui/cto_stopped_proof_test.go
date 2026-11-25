@@ -18,7 +18,7 @@ import (
 // 120x34 go to AGENT_NET_PROOF_DIR when it is set
 // (scripts/cto-stopped-history-proof.sh).
 func TestCTOStoppedHistoryProofScenario(t *testing.T) {
-	const stopped = "The CTO is stopped. Its Codex server keeps the conversation; send it a message or press Enter to start it and read it."
+	const stopped = "The CTO is stopped. This is its conversation as it was at the stop. Send it a message or press Enter to start it."
 	events := protocol.CTOEvents{Actions: []protocol.CTOAction{
 		{ID: 1, Text: "approved p_7 and applied", At: 1},
 		{ID: 2, Text: stopped, At: 2},

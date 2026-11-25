@@ -210,11 +210,11 @@ func (d *Daemon) ctoPrivateRunning(harness string) bool {
 	}
 }
 
-// stoppedCTOEvents is the timeline of a CTO whose Codex or OpenCode harness is
-// stopped. The conversation lives in the harness's own process, and a read
-// must not start it: the answer is the action lines agent-net stored plus one
-// line that says the CTO is stopped. mergeCTOHistory adds the history of the
-// other harnesses and the switches.
+// stoppedCTOEvents is the part of a stopped CTO's timeline that is not in
+// cto_history. The conversation of the Codex and OpenCode harnesses lives in
+// the harness's own process, so it is saved into cto_history when the owner
+// stops the CTO. The read adds the switches and the other harnesses, and one
+// line that says the CTO is stopped.
 func (d *Daemon) stoppedCTOEvents(ctx context.Context, harness string) (protocol.CTOEvents, error) {
 	out := protocol.CTOEvents{Messages: []json.RawMessage{}, Actions: []protocol.CTOAction{}}
 	if err := d.st.db.QueryRow(`SELECT graph_after FROM cto WHERE id=1`).Scan(&out.GraphAfter); err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -225,29 +225,46 @@ func (d *Daemon) stoppedCTOEvents(ctx context.Context, harness string) (protocol
 	} else if model, err := d.ctoModel(ctx); err == nil {
 		out.Model = model
 	}
-	id, err := d.ctoConversation(harness)
-	if err != nil {
-		return out, err
-	}
-	if out.Actions, err = d.ctoActions(id, harness); err != nil {
-		return out, err
-	}
-	// No stored conversation means nothing is hidden in the harness. Only a
-	// conversation the harness keeps needs the line that explains the read.
-	if id != "" {
-		out.Actions = append(out.Actions, protocol.CTOAction{Text: ctoStoppedLine(harness), At: d.ctoNowTime().UnixNano()})
-	}
+	out.Actions = append(out.Actions, protocol.CTOAction{Text: ctoStoppedLine(), At: d.ctoNowTime().UnixNano()})
 	return out, nil
 }
 
-// ctoStoppedLine is the one timeline line that explains why a stopped CTO has
-// no conversation text in the read.
-func ctoStoppedLine(harness string) string {
-	name := "OpenCode"
-	if harness == "codex" {
-		name = "Codex"
+// ctoStoppedLine is the timeline line that explains why a stopped CTO's
+// conversation is not read live.
+func ctoStoppedLine() string {
+	return "The CTO is stopped. This is its conversation as it was at the stop. Send it a message or press Enter to start it."
+}
+
+// ctoStoppedByOwner reads the stored fact that the owner stopped the CTO. The
+// fact is separate from whether a process runs: a CTO that is down because the
+// daemon restarted or the harness crashed was not stopped by the owner, and a
+// read starts it again as before.
+func (d *Daemon) ctoStoppedByOwner() (bool, error) {
+	var stopped int
+	err := d.st.db.QueryRow(`SELECT stopped_by_owner FROM cto WHERE id=1`).Scan(&stopped)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
 	}
-	return "The CTO is stopped. Its " + name + " server keeps the conversation; send it a message or press Enter to start it and read it."
+	return stopped != 0, err
+}
+
+// setCTOStoppedByOwner stores or clears the owner-stop fact. A start the owner
+// or a message causes clears it.
+func (d *Daemon) setCTOStoppedByOwner(stopped bool) error {
+	value := 0
+	if stopped {
+		value = 1
+	}
+	_, err := d.st.db.Exec(`UPDATE cto SET stopped_by_owner=? WHERE id=1`, value)
+	return err
+}
+
+// noteCTOStart clears the owner-stop fact after a start succeeded. A start
+// that fails leaves the fact, so a later read still treats the CTO as stopped.
+func (d *Daemon) noteCTOStart() {
+	if err := d.setCTOStoppedByOwner(false); err != nil {
+		d.Logf("cto.start clear owner stop: %v", err)
+	}
 }
 func (d *Daemon) ctoModel(ctx context.Context) (string, error) {
 	settings, err := d.ctoSettings(ctx, protocol.CTOSettingsRequest{})

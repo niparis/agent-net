@@ -165,11 +165,25 @@ func (d *Daemon) stopCTOSession(ctx context.Context) (protocol.SessionStopResult
 		return protocol.SessionStopResult{}, err
 	}
 	defer d.ctoDispatchMu.unlock()
+	// The Codex and OpenCode conversations live in their processes, so save a
+	// running one before its process goes. A save that fails is logged and never
+	// blocks the stop: the conversation saved from an earlier stop stays.
+	for _, harness := range []string{"opencode", "codex"} {
+		if !d.ctoPrivateRunning(harness) {
+			continue
+		}
+		if err := d.snapshotCTOHarness(ctx, harness); err != nil {
+			d.Logf("cto.stop snapshot harness=%s: %v", harness, err)
+		}
+	}
 	d.cto.mu.Lock()
 	d.stopClaudeCTOLocked("owner_stop")
 	d.stopOpenCodeCTOLocked("owner_stop")
 	d.stopCodexCTOLocked("owner_stop")
 	d.cto.mu.Unlock()
+	if err := d.setCTOStoppedByOwner(true); err != nil {
+		d.Logf("cto.stop owner flag: %v", err)
+	}
 	d.scheduleCTOPresence()
 	return protocol.SessionStopResult{Note: "Stopped the CTO. The conversation is kept."}, nil
 }

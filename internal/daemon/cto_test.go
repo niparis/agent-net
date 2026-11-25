@@ -43,14 +43,14 @@ func TestCTORuntime(t *testing.T) {
 }
 
 // Looking at the timeline of an OpenCode CTO the owner stopped returns the
-// stored action lines and a line that says the CTO is stopped. It starts no
-// private server.
+// conversation as it was at the stop and a line that says the CTO is stopped.
+// It starts no private server.
 func TestStoppedOpenCodeCTOHistoryReadStartsNothing(t *testing.T) {
 	f := startCTOCompactionFixture(t)
 	f.send(t, "hello opencode")
-	eventually(t, "the live timeline read works", func() bool {
+	eventually(t, "the live timeline shows the message", func() bool {
 		raw := string(f.cli.mustCall("cto_events", map[string]int{"index": 0}))
-		return strings.Contains(raw, `"model"`)
+		return strings.Contains(raw, "hello opencode")
 	})
 	if err := f.n.d.recordCTOAction("stored action before stop"); err != nil {
 		t.Fatal(err)
@@ -70,6 +70,9 @@ func TestStoppedOpenCodeCTOHistoryReadStartsNothing(t *testing.T) {
 	f.n.d.cto.mu.Unlock()
 	if cmd != nil {
 		t.Fatal("reading the timeline started the stopped OpenCode CTO")
+	}
+	if !strings.Contains(raw, "hello opencode") {
+		t.Fatalf("the message from before the stop is missing: %s", raw)
 	}
 	if !strings.Contains(raw, "stored action before stop") {
 		t.Fatalf("the stored action is missing: %s", raw)

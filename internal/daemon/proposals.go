@@ -519,6 +519,16 @@ func (d *Daemon) proposalNotesLoop(ctx context.Context) {
 }
 
 func (d *Daemon) deliverProposalNote(ctx context.Context) error {
+	// A note never starts the CTO the owner stopped. The stored fact covers the
+	// case where no harness process is up at all, so the idle checks below have
+	// nothing to look at; the note goes after a start clears it.
+	stopped, err := d.ctoStoppedByOwner()
+	if err != nil {
+		return err
+	}
+	if stopped {
+		return d.proposalRunner().expire()
+	}
 	d.cto.mu.Lock()
 	base, password, version, identity, session := d.cto.base, d.cto.password, d.cto.version, d.cto.identity, d.cto.session
 	ref := d.claudeCTO.ref

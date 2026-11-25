@@ -250,6 +250,9 @@ func (d *Daemon) ctoSendTriggered(ctx context.Context, text, sender, trigger str
 	} else {
 		out, err = h.sendSystem(ctx, d, label, text)
 	}
+	if err == nil {
+		d.noteCTOStart()
+	}
 	if err == nil && sender != "" {
 		err = d.st.recordCTODelivery(sender, time.Now())
 	}
@@ -264,7 +267,11 @@ func (d *Daemon) ctoNew(ctx context.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return h.newConversation(ctx, d)
+	out, err := h.newConversation(ctx, d)
+	if err == nil {
+		d.noteCTOStart()
+	}
+	return out, err
 }
 func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, error) {
 	// Claude events read the transcript and database without preparing a runtime.
@@ -285,19 +292,27 @@ func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, 
 		return protocol.CTOEvents{}, err
 	}
 	defer d.ctoDispatchMu.unlock()
+	// The owner stop takes the same gate, so one check of the stored fact here
+	// cannot race with it: a CTO stopped before the check is read from the save,
+	// and one stopped after the read cannot be started by the read.
+	stopped, err := d.ctoStoppedByOwner()
+	if err != nil {
+		return protocol.CTOEvents{}, err
+	}
+	if stopped {
+		out, err := d.stoppedCTOEvents(ctx, settings.Harness)
+		if err != nil {
+			return out, err
+		}
+		// The stopped harness's conversation is in cto_history too, so no
+		// harness is excluded from the merge here.
+		return d.mergeCTOHistory(out, "", index)
+	}
 	h, err := d.prepareStoredCTOHarness(ctx)
 	if err != nil {
 		return protocol.CTOEvents{}, err
 	}
-	// A read of a stopped Codex or OpenCode CTO returns only what agent-net
-	// stored. Its conversation lives in the harness, so reading it would start
-	// the CTO the owner stopped.
-	var out protocol.CTOEvents
-	if d.ctoPrivateRunning(h.name()) {
-		out, err = h.events(ctx, d, 0)
-	} else {
-		out, err = d.stoppedCTOEvents(ctx, h.name())
-	}
+	out, err := h.events(ctx, d, 0)
 	if err != nil {
 		return out, err
 	}
@@ -352,12 +367,19 @@ func (d *Daemon) ctoEnterFor(ctx context.Context, trigger string) (protocol.Ente
 	return call.plan, call.err
 }
 
-func (d *Daemon) ctoEnterOnce(ctx context.Context, trigger string) (protocol.EnterPlan, error) {
+func (d *Daemon) ctoEnterOnce(ctx context.Context, trigger string) (plan protocol.EnterPlan, err error) {
 	if err := d.ctoDispatchMu.lock(ctx); err != nil {
 		return protocol.EnterPlan{}, err
 	}
 	defer d.ctoDispatchMu.unlock()
 	defer d.scheduleCTOPresence()
+	// Clear the owner-stop fact before the gate is released, so a read that
+	// follows the start cannot still see the stopped state.
+	defer func() {
+		if err == nil {
+			d.noteCTOStart()
+		}
+	}()
 	h, err := d.selectedCTOHarness(ctx)
 	if err != nil {
 		return protocol.EnterPlan{}, err
@@ -368,7 +390,7 @@ func (d *Daemon) ctoEnterOnce(ctx context.Context, trigger string) (protocol.Ent
 	if !d.ctoRunning() {
 		d.Logf("cto.wake trigger=%s harness=%s", trigger, h.name())
 	}
-	plan := protocol.EnterPlan{Note: "Press ctrl+] to come back here; the CTO keeps running."}
+	plan = protocol.EnterPlan{Note: "Press ctrl+] to come back here; the CTO keeps running."}
 	bin, err := d.harnessBinary(h.name())
 	if err != nil {
 		return plan, err
