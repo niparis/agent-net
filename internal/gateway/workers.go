@@ -24,6 +24,7 @@ const launchWait = 75 * time.Second
 
 func (g *Gateway) serveWorker(ctx context.Context, nc *nodeConn, h protocol.Header, raw []byte) {
 	start, sent := time.Now(), 0
+	defer g.startWait(h.Type, nc.id)()
 	defer g.finishRequest(h, nc.id, start, &sent)
 	data, err := g.handleWorker(ctx, nc, h.Type, raw)
 	if err != nil {

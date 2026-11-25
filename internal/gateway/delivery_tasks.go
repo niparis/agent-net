@@ -740,7 +740,7 @@ func (g *Gateway) dispatchStepTasks(ctx context.Context) {
 	defer g.flushNudges(ctx, batch)
 
 	g.stepDispatchRuns.Add(1)
-	defer g.slowLoop("dispatchStepTasks", time.Now())
+	defer g.startLoop("dispatchStepTasks")()
 	// End tasks the change's state has already made unreportable before
 	// choosing what to hand out; their notices must not become reminders.
 	if err := g.store.retireObsoleteStepTasks(); err != nil {
