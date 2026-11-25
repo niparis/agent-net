@@ -4,6 +4,9 @@ Date: 2026-11-25
 Status: Asked for by the owner on 2026-11-25: he paused a model with a score of
 0, and the picker still used it. Amends [0162](0162-one-model-choice-path.md)
 and [0105](0105-worker-picker-learns-from-results.md).
+Changed by [0189](0189-continue-meets-todays-picker.md): a continue of a paused
+model with a stored level moves to the picker's choice instead of being
+refused; it is refused only when no other model qualifies.
 
 ## Problem
 

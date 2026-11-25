@@ -5,6 +5,9 @@ Status: Approved by the owner on 2026-11-13, with all six choices as
 recommended ("fully approved").
 Changed by [0188](0188-owner-paused-models.md): a model the owner scores 0 is
 left out before the ranker, unless he named it for the start himself.
+Changed by [0189](0189-continue-meets-todays-picker.md): a continue that names
+no model meets the automatic start's rules at its stored level, and moves to
+the picker's choice when its old model no longer qualifies.
 
 ## Problem
 

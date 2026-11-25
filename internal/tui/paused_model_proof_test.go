@@ -20,20 +20,40 @@ const pausedStartNote = "difficulty: no assessment (no judge result); started at
 // out, at both screen sizes (decision 0188). With AGENT_NET_PROOF_DIR set, the
 // frames are written there (scripts/paused-model-proof.sh).
 func TestPausedModelProofScenario(t *testing.T) {
+	workerLogProof(t, workerLogScenario{
+		file:   "paused-model",
+		action: "open the TUI after an automatic start while the owner paused Opus (score 0)",
+		want:   "skipped opus: paused by the owner",
+		entry: protocol.WorkerLogEntry{StartedAt: t0.Unix() - 600, Title: "Fix the login page", Harness: "opencode",
+			Model: "deepseek/deepseek-v4.1-flash:high", Status: "done", Difficulty: "hard", RunSeconds: 540, ModelNote: pausedStartNote},
+	})
+}
+
+// workerLogScenario is one worker log entry a proof opens, and the text its
+// details must show.
+type workerLogScenario struct {
+	file, action, want string
+	entry              protocol.WorkerLogEntry
+}
+
+// workerLogProof opens the worker log in the Quotas tab at 80x24 and 120x34
+// with one entry, and checks that its details show the wanted text and that no
+// line overflows. With AGENT_NET_PROOF_DIR set, each frame is written there.
+func workerLogProof(t *testing.T, s workerLogScenario) {
+	t.Helper()
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		w, h := size[0], size[1]
 		m := New(&fakeSource{snap: fakeSnapshot()})
 		m.tab, m.workersLog, m.haveData = quotasTab, true, true
 		m.loc, m.now = time.UTC, func() time.Time { return t0 }
-		m.snap.WorkerLog = []protocol.WorkerLogEntry{{StartedAt: t0.Unix() - 600, Title: "Fix the login page", Harness: "opencode",
-			Model: "deepseek/deepseek-v4.1-flash:high", Status: "done", Difficulty: "hard", RunSeconds: 540, ModelNote: pausedStartNote}}
+		m.snap.WorkerLog = []protocol.WorkerLogEntry{s.entry}
 		m.width, m.height = w, h
 		frame := ansi.Strip(m.testView())
 		// The note wraps inside the details box: read it without the borders
 		// and the line breaks.
 		text := strings.Join(strings.Fields(strings.ReplaceAll(frame, "│", " ")), " ")
-		if !strings.Contains(text, "skipped opus: paused by the owner") {
-			t.Fatalf("%dx%d: the worker log does not say Opus is paused by the owner:\n%s", w, h, frame)
+		if !strings.Contains(text, s.want) {
+			t.Fatalf("%dx%d: the worker log does not say %q:\n%s", w, h, s.want, frame)
 		}
 		for _, line := range strings.Split(frame, "\n") {
 			if ansi.StringWidth(line) > w {
@@ -47,9 +67,9 @@ func TestPausedModelProofScenario(t *testing.T) {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			t.Fatal(err)
 		}
-		capture := fmt.Sprintf("build: %s\nstep: open the worker log in the Quotas tab at %dx%d\naction: open the TUI after an automatic start while the owner paused Opus (score 0)\nexpected: the picker note says \"skipped opus: paused by the owner\"\nerrors: none\n\n%s\n",
-			os.Getenv("AGENT_NET_PROOF_BUILD"), w, h, frame)
-		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("paused-model-%dx%d.txt", w, h)), []byte(capture), 0600); err != nil {
+		capture := fmt.Sprintf("build: %s\nstep: open the worker log in the Quotas tab at %dx%d\naction: %s\nexpected: the picker note says %q\nerrors: none\n\n%s\n",
+			os.Getenv("AGENT_NET_PROOF_BUILD"), w, h, s.action, s.want, frame)
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("%s-%dx%d.txt", s.file, w, h)), []byte(capture), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}

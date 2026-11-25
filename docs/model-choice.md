@@ -230,16 +230,26 @@ The checks each kind of start uses are one table in code, and a test pins it:
 | Worker, model named by an agent | the agent's list | yes | yes | yes | yes | no | no |
 | Worker, model named by you | your list | no | no | no | no | no | no |
 | Continue or resume a worker | same model | no | no | no | no | no | no |
+| Continue whose old model no longer qualifies | cost rule | yes | yes | yes | yes | yes | yes |
 | Difficulty judge | worker profiles | yes | yes | yes | yes | yes | yes |
 | CTO, chief of staff, merger | role list | no | no | no | yes | no | no |
 
 A preview or backtest uses the same checks as the row it previews. It decides
 and starts nothing, so the preview shows the choice a real start would make.
 
-A continued or resumed worker keeps its model, so its conversation carries on.
-The locked checks still apply. If its provider is exhausted, the continue is
-refused, and you or the agent that started it starts a new worker on the same
-branch.
+A resumed worker keeps its model, so its conversation carries on. The locked
+checks still apply. If its provider is exhausted, the resume is refused, and
+you or the agent that started it starts a new worker on the same branch.
+
+A continue starts a new session on a new branch made from the old one, so it
+carries no conversation. When it names no model, the gateway checks the old
+model with the rules of today at the level stored with the worker, as an
+automatic start would. A model that still qualifies stays. One that no longer
+qualifies (paused, protected, left out by the cell or ceiling rule, under its
+floor, out of quota) is replaced by the picker's choice at that level, and the
+note says `continue moved from <old> to <new>`. When no other model qualifies,
+the old one stays if it may run. A continue that names a model keeps it
+(decision [0189](decisions/0189-continue-meets-todays-picker.md)).
 
 The CTO, chief of staff and merger have a role list. Their session resumes on
 the model it already runs. If a locked check refuses that model, the next entry
