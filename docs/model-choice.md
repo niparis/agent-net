@@ -258,7 +258,12 @@ qualifies (paused, protected, left out by the cell or ceiling rule, under its
 floor, out of quota) is replaced by the picker's choice at that level, and the
 note says `continue moved from <old> to <new>`. When no other model qualifies,
 the old one stays if it may run. A continue that names a model keeps it
-(decision [0189](decisions/0189-continue-meets-todays-picker.md)).
+(decision [0189](decisions/0189-continue-meets-todays-picker.md)). What you
+named at the worker's first start holds for every continue that names none.
+Your newest word wins: if you pause that model after you named it, the
+continue meets the pause as for any other worker. If it was already paused
+when you named it, it keeps running (decision
+[0191](decisions/0191-picks-keep-their-quota-read-and-the-owners-choice-holds.md)).
 
 The CTO, chief of staff and merger have a role list. Their session resumes on
 the model it already runs. If a locked check refuses that model, the next entry

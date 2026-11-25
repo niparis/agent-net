@@ -35,7 +35,7 @@ var parallelFrames = map[string]bool{
 	"query.agents": true, "query.agent": true, "query.projects": true, "query.nodes": true,
 	"query.graph": true, "query.graph_talk": true, "graph.read": true, "graph.get": true,
 	"query.team_lead": true,
-	"query.events":    true, "query.worker_log": true, "query.outcome_inbox": true,
+	"query.events":    true, "query.worker_log": true, "query.pick_quota": true, "query.outcome_inbox": true,
 	"query.conversations": true, "query.conversation_messages": true,
 	"query.messages": true, "query.message": true,
 	"query.usage": true, "query.counts": true, "query.machine_get": true,

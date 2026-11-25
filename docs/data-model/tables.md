@@ -478,9 +478,19 @@ One row per candidate (worker, model and effort) of every automatic worker pick,
 - **Columns:** `run_id`, `pos`, `name`, `harness`, `provider`, `model`, `effort`, `rule`, `bucket_lo`, `bucket_hi`, `fallback`, `cell_score`, `cell_low`, `cell_high`, `cell_n`, `is_allowed`, `is_qualified`, `is_prior`, `is_best`, `is_chosen`, `is_winner`, `left_out_reason`, `cost_known`, `cost_recorded`, `price_unknown`, `cost_per_run`, `p_clean`, `rescue_cost`, `expected_cost`, `pace_room`, `pace_factor`, `adjusted_cost`, `weight`, `probability`, `skipped_reason`, `explore`, `explore_credit_before`, `explore_credit_after`, `margin`
 - **Rows on 2026-11-22:** 6474
 - **Written by:** `gateway/worker_assessment.go`
-- **Read by:** `tools/pickerreplay`, `research/picker-ml`
+- **Read by:** `tools/pickerreplay`, `research/picker-ml`, `gateway/pick_quota.go` (names and reasons for `quota_read`)
 - **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself
 - **Kept:** Forever.
+
+### `pick_quota`
+
+One row per recorded automatic pick (same `run_id` as its `pick_candidates` rows): the quota windows it read, once per provider, which window decided each candidate and which gate step held it back; and, when the chosen run ends, its tokens by kind and its provider's windows at the end (decision 0191). Added after the 2026-11-22 snapshot.
+
+- **Columns:** `run_id`, `read`, `run_end`
+- **Written by:** `gateway/worker_assessment.go` (with the pick rows), `gateway/pick_quota.go` (run end)
+- **Read by:** `gateway/pick_quota.go`
+- **Shown in:** tool `agent_workers_find` (detail full, `quota_read`), CTO `agent_workers_find`
+- **Kept:** Forever, as the pick rows.
 
 ### `playbook`
 
@@ -553,12 +563,12 @@ One row per worker run: which machine, harness and model, how it ended, how long
 
 One row per request to start a worker, with the machine, project, harness, session, whether it is open or closed, and the brief's done list. A start that the brief check refused is a closed row in state `refused`, with the task key and the failures, so the third attempt of a task can start.
 
-- **Columns:** `ref`, `node_id`, `owner`, `project`, `harness`, `permissions`, `session_id`, `state`, `created_at`, `closed_at`, `legacy_ref`, `launch_state`, `caller_agent_id`, `done`, `brief_hash`, `not_attempted_at`, `task_key`, `failures`
+- **Columns:** `ref`, `node_id`, `owner`, `project`, `harness`, `permissions`, `session_id`, `state`, `created_at`, `closed_at`, `legacy_ref`, `launch_state`, `caller_agent_id`, `done`, `brief_hash`, `not_attempted_at`, `task_key`, `failures`, `owner_choice` (what the owner named at the start, decision 0191)
 - **Rows on 2026-11-22:** 1643
 - **Written by:** `gateway/brief_check.go`, `gateway/session_replace.go`, `gateway/store.go`, `gateway/worker_starts.go`
 - **Read by:** `gateway/brief_check.go`, `gateway/context_resolver.go`, `gateway/graph_lifecycle.go`, `gateway/track.go`, `gateway/worker_starts.go`
 - **Shown in:** tool `agent_worker_start`, tool `agent_workers_find`
-- **Kept:** Closed starts are deleted after 30 days, when the next start is recorded.
+- **Kept:** Closed starts are deleted after 30 days, when the next start is recorded. A start that holds the owner's choice is kept while its worker session exists.
 - **Note:** Also holds refused briefs (state refused), counted by the third-attempt rule.
 
 ## Delivery

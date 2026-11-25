@@ -612,6 +612,16 @@ func WorkerModelPaused(c WorkerModelCandidate, scores []ModelScore) bool {
 	return found && ownerPause(s)
 }
 
+// WorkerModelPausedAt is WorkerModelPaused with the time the owner set the
+// pause (ModelScore.SetAt), 0 when the pause carries none.
+func WorkerModelPausedAt(c WorkerModelCandidate, scores []ModelScore) (setAt int64, paused bool) {
+	s, found := workerCandidateScore(c, scores)
+	if !found || !ownerPause(s) {
+		return 0, false
+	}
+	return s.SetAt, true
+}
+
 // PausesAny tells whether the owner paused any model in scores. A pick with no
 // pause then skips the lookup of each candidate.
 func PausesAny(scores []ModelScore) bool {

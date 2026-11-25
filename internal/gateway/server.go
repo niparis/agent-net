@@ -3629,6 +3629,16 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("bad query.worker_log")
 		}
 		return st.WorkerLog(p.Limit)
+	case "query.pick_quota":
+		p, err := decode[protocol.QueryPickQuota](raw)
+		if err != nil {
+			return nil, reject("bad query.pick_quota")
+		}
+		picks, err := st.PickQuotaViews(p.Sessions)
+		if err != nil {
+			return nil, err
+		}
+		return protocol.PickQuotaResult{Picks: picks}, nil
 	case "query.conversations":
 		p, err := decode[protocol.QueryConversations](raw)
 		if err != nil {

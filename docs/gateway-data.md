@@ -60,13 +60,13 @@ The picker reads the machine, quota, past results and prices to choose a model, 
 8. `worker_runs` (reads): It reads the tokens past runs used, to turn token counts into a cost per run.
 9. `model_failures` (reads): It reads which models recently failed or lost sign-in on this machine, to skip models that are cooling down.
 10. `gateway_state` (writes): The rotation counter is saved, so the next start spreads work across models instead of always picking the same one.
-11. `worker_starts` (writes): The gateway records the start (reference, machine, who asked, project, harness, permissions, the 'done' list) before it asks the machine to launch.
+11. `worker_starts` (writes): The gateway records the start (reference, machine, who asked, project, harness, permissions, the 'done' list, and what the owner named, so a continue keeps it) before it asks the machine to launch.
 12. `worker_assessments` (writes): The judge's difficulty result and the picker's explanation are saved under the new worker session.
-13. `pick_candidates` (writes): One row per candidate model is saved: its score, cost, quota room, chance of being picked, and why it was skipped or chosen.
+13. `pick_candidates` (writes): One row per candidate model is saved: its score, cost, quota room, chance of being picked, and why it was skipped or chosen. In the same transaction, `pick_quota` saves the quota windows the pick read and which one decided each candidate.
 14. `events` (writes): The audit log records 'worker.started' with project, harness, model and who started it.
 15. `delivery_changes` (writes): At a complete hand-back, the worker's branch is submitted as a change to deliver (a first revision row is saved with it).
 16. `messages` (writes): The hand-back notice is saved as a reply to the starter's task message, and the task is marked 'replied'. It is delivered to the starter like any message.
-17. `worker_runs` (writes): When the worker stops, its run is saved: model, outcome, seconds, files and lines changed, fixes, struggle counters, the tokens the worker used and their cost at API prices. This feeds the track record the picker reads next time.
+17. `worker_runs` (writes): When the worker stops, its run is saved: model, outcome, seconds, files and lines changed, fixes, struggle counters, the tokens the worker used and their cost at API prices. This feeds the track record the picker reads next time. The run's tokens and its provider's windows at the end are added to its pick in `pick_quota`.
 
 ## Journey: A machine connects and reports health
 
@@ -599,6 +599,14 @@ Worker runs, their quality and cost, and the data the picker reads.
 - **Read by:** `tools/pickerreplay`, `research/picker-ml`
 - **Shown in:** Not shown on a screen or in a tool. The gateway uses it itself.
 - **Kept:** Forever.
+
+### pick_quota
+
+- **Holds:** One row per recorded automatic pick: the quota windows it read, which window decided each candidate and which gate step held it back, and what the chosen run used (decision 0191).
+- **Written by:** `gateway/worker_assessment.go`, `gateway/pick_quota.go`
+- **Read by:** `gateway/pick_quota.go`
+- **Shown in:** tool `agent_workers_find` with detail full (`quota_read`), for agents and the CTO.
+- **Kept:** Forever, as the pick rows.
 
 ### quota_blocks
 

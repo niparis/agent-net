@@ -276,6 +276,25 @@ func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 	return result, nil
 }
 
+// QuotaRead is what the pick read of the quota windows, for its rows: the
+// start's one reading and floors, and the gate step that held each candidate
+// back. It is built only by a start that records the pick, so a preview or a
+// check pays nothing for it. Nil when the pick made no rows.
+func (r ChooseResult) QuotaRead(at time.Time) *protocol.PickQuota {
+	if len(r.Pick) == 0 {
+		return nil
+	}
+	checks := map[int]string{}
+	for _, s := range r.Skips {
+		for pos, row := range r.Pick {
+			if _, done := checks[pos]; !done && sameRowCandidate(row, s.Candidate) {
+				checks[pos] = s.Check
+			}
+		}
+	}
+	return protocol.PickQuotaRead(r.facts.Quotas, r.facts.Floors, r.Pick, checks, at.Unix())
+}
+
 // markPickSkips copies the rows of a pick and writes the gate's reason on each
 // candidate the gate skipped. The rows describe the pick; the skips describe the
 // gate that ran after it. The first reason for a candidate is kept.

@@ -309,12 +309,49 @@ func (d *Daemon) ctoCatalogWorkersFind(ctx context.Context, raw json.RawMessage)
 	if err != nil {
 		return nil, err
 	}
+	if q.Detail == "full" {
+		d.ctoAddQuotaRead(ctx, page)
+	}
 	out := map[string]any{"items": page, "total": len(rows)}
 	if next != "" {
 		out["next_cursor"] = next
 		out["note"] = "More workers match. Call again with next_cursor for the next page, or narrow the filters."
 	}
 	return out, nil
+}
+
+// ctoAddQuotaRead adds to each worker on the page what its pick read of the
+// quota windows and what its run used, in plain words (decision 0191). It is
+// the ordinary agent's read (pick_quota), once for the page; a gateway that
+// does not keep it adds nothing.
+func (d *Daemon) ctoAddQuotaRead(ctx context.Context, page []map[string]any) {
+	ids := make([]string, 0, len(page))
+	for _, row := range page {
+		if id, ok := row["id"].(string); ok {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	raw, err := json.Marshal(protocol.QueryPickQuota{Sessions: ids})
+	if err != nil {
+		return
+	}
+	value, err := d.ctoReadConn().dispatch(ctx, "pick_quota", raw)
+	if err != nil {
+		return
+	}
+	var result protocol.PickQuotaResult
+	if ctoDecode(value, &result) != nil {
+		return
+	}
+	for _, row := range page {
+		id, _ := row["id"].(string)
+		if lines := result.Picks[id].Lines; len(lines) > 0 {
+			row["quota_read"] = lines
+		}
+	}
 }
 
 func (d *Daemon) ctoCatalogMessagesFind(ctx context.Context, raw json.RawMessage) (any, error) {

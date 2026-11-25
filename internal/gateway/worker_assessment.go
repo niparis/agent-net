@@ -11,7 +11,8 @@ import (
 )
 
 // RecordWorkerAssessment stores an immutable result, idempotently per run. The
-// pick rows the result carries are stored in the same transaction.
+// pick rows the result carries, and what the pick read of the quota windows,
+// are stored in the same transaction.
 // started_at is Unix nanoseconds, the judge's clock when it was asked, so it
 // is usually a few seconds before the run's own Unix-second start.
 func (s *Store) RecordWorkerAssessment(a protocol.WorkerAssessment) error {
@@ -50,6 +51,9 @@ func (s *Store) recordWorkerAssessment(a protocol.WorkerAssessment, startNote bo
 		}
 	}
 	if err := insertPickRows(tx, a.RunID, a.PickRows); err != nil {
+		return err
+	}
+	if err := insertPickQuota(tx, a.RunID, a.PickRows, a.PickQuota); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {

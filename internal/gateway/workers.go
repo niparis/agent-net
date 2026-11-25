@@ -333,6 +333,9 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		if err := g.store.RecordWorkerRun(run); err != nil {
 			return nil, err
 		}
+		// The pick that chose this run's model keeps what the run used and its
+		// provider's windows at the end (decision 0191).
+		g.recordPickRunEnd(nc.id, run)
 		// A quota failure teaches the size of the provider's quota window: the
 		// tokens its workers used before it (decision 0144). The run is
 		// recorded, so its own tokens count.
@@ -557,9 +560,12 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		return none, reject("a worker cannot start workers")
 	}
 	ownerNamed := ownerNamedModel(p, owner)
+	// What the owner named, as he sent it, before the start resolves it. The
+	// start record keeps it, so a continue that names none keeps it too.
+	said, asked := ownerSaid(p, owner), p.WorkerStartRequest
 
 	if p.Continue != "" {
-		return g.workerContinue(ctx, nc, p, ownerNamed, validate...)
+		return g.workerContinue(ctx, nc, p, said, validate...)
 	}
 
 	// Which machine and folder.
@@ -809,6 +815,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	// the first pick, because a launch that fails moves to another candidate
 	// without making a new pick.
 	var pickRows []protocol.PickCandidate
+	var pickQuota *protocol.PickQuota
 	var namedOrder []protocol.WorkerModelCandidate
 	var namedScores []protocol.ModelScore
 	var namedMinimums map[string]float64
@@ -911,6 +918,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			}
 			granted = chosen.Granted
 			pickRows = chosen.Pick
+			if !(len(validate) > 0 && validate[0]) {
+				pickQuota = chosen.QuotaRead(g.store.now())
+			}
 			p.Harness, p.Model = choice.Harness, choice.Model
 			automaticNote = "(" + workerChoiceNote(difficulty, choice, candidates, scores, minimums)
 			if note := resolutionNotes[p.Harness+"\x00"+p.Model]; note != "" {
@@ -1115,6 +1125,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if err := g.store.trackBriefLaunch(startRef, protocol.BriefHash(pick.Name, p.WorkerStartRequest)); err != nil {
 		return none, err
 	}
+	if err := g.store.setStartOwnerChoice(startRef, ownerChoiceOf(asked, said, g.store.now(), p.Harness, p.Provider, p.Model, p.Effort)); err != nil {
+		return none, err
+	}
 	// The machine records the assessment it gets here when the worker runs.
 	// A queued start reaches only that write, so the picker's note travels
 	// with it. The queue keeps the chosen model, so the note stays true.
@@ -1123,6 +1136,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		copied := *launchAssessment
 		copied.PickerNote = modelNote
 		copied.PickRows = pickRows
+		copied.PickQuota = pickQuota
 		launchAssessment = &copied
 	}
 	launchBegan := time.Now()
@@ -1202,7 +1216,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if err != nil || launched.SessionID == "" {
 		return none, reject("machine %s answered without a session", pick.Hostname)
 	}
-	g.recordWorkerPickerNote(p.Assessment, launched.SessionID, modelNote, pickRows)
+	g.recordWorkerPickerNote(p.Assessment, launched.SessionID, modelNote, pickRows, pickQuota)
 	if automatic {
 		dVal := protocol.PickerD(p.Assessment, difficultyUsed)
 		g.logLine("worker.pick", "session", launched.SessionID, "level", difficultyUsed, "d", fmt.Sprintf("%.2f", dVal), "chosen", p.Harness+" "+p.Model, "reason", choice.Why)
@@ -1296,11 +1310,7 @@ func (g *Gateway) workerRecheck(ctx context.Context, nc *nodeConn, p protocol.Wo
 // his own command line or TUI, or in his words, which the caller's daemon
 // found (owner_selected). A model he paused runs then (decision 0188).
 func ownerNamedModel(p protocol.WorkerStartFrame, owner protocol.AgentView) bool {
-	m := strings.TrimSpace(p.Model)
-	if m == "" || strings.EqualFold(m, "auto") {
-		return false
-	}
-	return p.OwnerSelected || (protocol.IsOwner(owner.Harness) && !p.FromCTO)
+	return modelNamed(p.Model) && ownerSaid(p, owner)
 }
 
 // sameGrant reports whether a grant is for this harness and model.
@@ -1369,7 +1379,7 @@ func (g *Gateway) workerStartReport(ctx context.Context, nc *nodeConn, p protoco
 // explanation for the model under the new session. The machine's daemon sends
 // the same result later; the run id makes that write a no-op, and the store
 // keeps the note when the machine's write lands first.
-func (g *Gateway) recordWorkerPickerNote(a *protocol.WorkerAssessment, sessionID, note string, rows []protocol.PickCandidate) {
+func (g *Gateway) recordWorkerPickerNote(a *protocol.WorkerAssessment, sessionID, note string, rows []protocol.PickCandidate, quota *protocol.PickQuota) {
 	if a == nil || a.RunID == "" || sessionID == "" {
 		return
 	}
@@ -1377,6 +1387,7 @@ func (g *Gateway) recordWorkerPickerNote(a *protocol.WorkerAssessment, sessionID
 	copied.SessionID = sessionID
 	copied.PickerNote = note
 	copied.PickRows = rows
+	copied.PickQuota = quota
 	if err := g.store.RecordWorkerStartAssessment(copied); err != nil {
 		g.logLine("error", "where", "worker picker note", "session", sessionID, "err", err)
 	}
@@ -1655,7 +1666,11 @@ func (g *Gateway) workerHarnessOrder(node *protocol.NodeView, model string, requ
 // workerContinue starts a new worker from an ended one. The gateway knows the
 // node of each worker session, so it asks the machine that ran the old worker.
 // The machine holds the old task and branch and checks the owner again.
-func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.WorkerStartFrame, ownerNamed bool, validate ...bool) (protocol.WorkerStartAnswer, error) {
+//
+// said is true when the selection fields of this continue are the owner's own.
+// A continue that names none keeps what the owner named at the worker's first
+// start (decision 0191).
+func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.WorkerStartFrame, said bool, validate ...bool) (protocol.WorkerStartAnswer, error) {
 	var none protocol.WorkerStartAnswer
 	if len(p.NotFamily) > 0 {
 		return none, reject("not_family cannot be used with continue; start a new worker for a different family")
@@ -1680,6 +1695,40 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	// refuses with "still running". Its record is also the newer one.
 	if p.Project != "" && old.Worker.Project != "" && !strings.EqualFold(p.Project, old.Worker.Project) {
 		return none, reject("worker %s ran in project %q, not %q: a continued worker keeps its project", old.SessionID, old.Worker.Project, p.Project)
+	}
+	// The owner's choice holds: a continue that names none runs what he named
+	// at the worker's first start. A named model runs as his, so a model he
+	// had paused when he named it still runs; a named harness alone keeps the
+	// re-pick inside it. His newest word wins: a pause he set after he named
+	// the model beats his choice, and the continue meets the pause as one he
+	// never named. A continue that names its own fields replaces his choice
+	// only when they are his too.
+	asked := p.WorkerStartRequest
+	held, err := g.store.ownerChoiceForSession(old.SessionID)
+	if err != nil {
+		return none, err
+	}
+	scores, err := g.store.scores()
+	if err != nil {
+		return none, err
+	}
+	ownerNamed := said && modelNamed(asked.Model)
+	var heldHarness, heldNote string
+	if !namedSelection(asked) && !held.empty() {
+		switch {
+		case held.pausedSince(scores):
+			heldNote = fmt.Sprintf("the owner paused %s %s after he named it at the worker's first start", held.Harness, held.Model)
+		case held.Model != "":
+			p.Harness, p.Provider, p.Model, p.Effort = held.Harness, held.Provider, held.Model, held.Effort
+			ownerNamed = true
+			heldNote = fmt.Sprintf("kept %s %s, which the owner named at the worker's first start", held.Harness, held.Model)
+		case held.Provider != "" || held.Effort != "":
+			p.Harness, p.Provider, p.Effort = held.Harness, held.Provider, held.Effort
+			heldNote = "kept " + strings.TrimSpace(strings.Join([]string{held.Harness, held.Provider, held.Effort}, " ")) + ", which the owner named at the worker's first start"
+		default:
+			heldHarness = held.Harness
+			heldNote = "kept harness " + held.Harness + ", which the owner named at the worker's first start"
+		}
 	}
 	p.Harness = strings.TrimSpace(p.Harness)
 	if p.Harness != "" && !protocol.WorkerHarnessSupported(p.Harness) {
@@ -1751,16 +1800,12 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	if err != nil {
 		return none, err
 	}
-	scores, err := g.store.scores()
-	if err != nil {
-		return none, err
-	}
 	// A continue that names no model meets the picker's rules of today at the
 	// level stored with the worker. A model that no longer qualifies is
 	// replaced; one the caller or the owner named is kept (decision 0189).
 	var repick continueRepick
 	if p.Model == "" && p.Harness == "" && old.Worker.Assessment != nil {
-		repick, err = g.repickContinue(node, old.Worker.Assessment, harness, continuedModel, quotas, floors, scores, !(len(validate) > 0 && validate[0]))
+		repick, err = g.repickContinue(node, old.Worker.Assessment, harness, continuedModel, heldHarness, quotas, floors, scores, !(len(validate) > 0 && validate[0]))
 		if err != nil {
 			return none, err
 		}
@@ -1769,6 +1814,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 			p.Harness, p.Model = repick.harness, repick.model
 		}
 	}
+	repick.note = joinModelNote([]string{heldNote, repick.note})
 	granted, gerr := g.Choose(ChooseRequest{
 		Purpose:    model.PurposeContinueOrResume,
 		Node:       withHarnessInstalled(node, harness),
@@ -1795,7 +1841,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 		// The pick's note and rows travel with the start, so a queued
 		// continue records them when it runs, as a new start does.
 		copied := *assessment
-		copied.PickerNote, copied.PickRows = repick.note, repick.rows
+		copied.PickerNote, copied.PickRows, copied.PickQuota = repick.note, repick.rows, repick.quota
 		assessment = &copied
 	}
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
@@ -1810,6 +1856,15 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 		done = g.store.startDoneForSession(old.SessionID)
 	}
 	if err := g.store.trackWorkerStart(startRef, old.NodeID, p.Owner, old.Worker.Project, p.Harness, old.Worker.Permissions, done); err != nil {
+		return none, err
+	}
+	// The new worker keeps the owner's choice for its own continues: the one
+	// he named now, else the one of the worker it continues.
+	choice := ownerChoiceOf(asked, said, g.store.now(), harness, p.Provider, continuedModel, p.Effort)
+	if choice.empty() {
+		choice = held
+	}
+	if err := g.store.setStartOwnerChoice(startRef, choice); err != nil {
 		return none, err
 	}
 	raw, err := target.call(cctx, "worker.continue", protocol.WorkerContinue{StartRef: startRef, Session: old.SessionID, Requester: p.Owner, FromCTO: p.FromCTO, TaskID: taskID,
@@ -1862,7 +1917,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	if err != nil || c.SessionID == "" {
 		return none, reject("machine %s answered without a session", old.Hostname)
 	}
-	g.recordWorkerPickerNote(c.Assessment, c.SessionID, modelNote, repick.rows)
+	g.recordWorkerPickerNote(c.Assessment, c.SessionID, modelNote, repick.rows, repick.quota)
 	event := "worker.started"
 	if c.Starting {
 		event = "worker.starting"

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/coder/websocket"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -25,17 +26,21 @@ const (
 
 // continueFixture is the floor gateway with a fake machine. Each
 // worker.continue the machine gets is sent on frames and answered with a new
-// session that runs what it was asked for.
+// session that runs what it was asked for. A worker.launch makes the worker's
+// session, as the machine's report does, and is answered with it.
 type continueFixture struct {
 	g      *Gateway
 	nc     *nodeConn
 	owner  string
+	agent  string
+	clock  *clock
 	frames chan protocol.WorkerContinue
 }
 
 func continueGateway(t *testing.T) continueFixture {
 	t.Helper()
-	g, node, owner, _, _ := setupFloorGateway(t)
+	g, node, owner, agent, c := setupFloorGateway(t)
+	g.opts.TestNoBriefChecks = true
 	setOwnerScores(t, g.store, nil)
 	accepted := make(chan *websocket.Conn, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -60,7 +65,21 @@ func continueGateway(t *testing.T) continueFixture {
 				return
 			}
 			var h protocol.Header
-			if json.Unmarshal(raw, &h) != nil || h.Type != "worker.continue" {
+			if json.Unmarshal(raw, &h) != nil {
+				continue
+			}
+			if h.Type == "worker.launch" {
+				var l protocol.WorkerLaunch
+				_ = json.Unmarshal(raw, &l)
+				id, err := g.store.UpsertSession(node, protocol.SessionInfo{Harness: l.Harness, NativeID: "ses_" + l.StartRef, Model: l.Model,
+					Worker: &protocol.WorkerInfo{ID: "w_" + l.StartRef, Owner: l.Owner, Project: l.Project, RunGeneration: 1}})
+				b, _ := protocol.EncodeResult(h.ID, protocol.WorkerLaunched{SessionID: id}, err)
+				var reply protocol.Header
+				_ = json.Unmarshal(b, &reply)
+				nc.answer(reply)
+				continue
+			}
+			if h.Type != "worker.continue" {
 				continue
 			}
 			var f protocol.WorkerContinue
@@ -78,7 +97,7 @@ func continueGateway(t *testing.T) continueFixture {
 			nc.answer(reply)
 		}
 	}()
-	return continueFixture{g: g, nc: nc, owner: owner, frames: frames}
+	return continueFixture{g: g, nc: nc, owner: owner, agent: agent, clock: c, frames: frames}
 }
 
 // endedWorker is an ended worker of the owner that ran harness and model, and
@@ -91,7 +110,30 @@ func (cf continueFixture) endedWorker(t *testing.T, harness, model, level string
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := g.store.RecordWorkerAssessment(protocol.WorkerAssessment{RunID: "r_old", SessionID: worker, StartedAt: 1, AssessedAt: 1,
+	cf.endWorker(t, worker, harness, model, level)
+	return worker
+}
+
+// startedWorker starts a worker through the gateway for caller with the
+// request's selection fields, as the caller's daemon sends it, then ends it as
+// a worker judged at level.
+func (cf continueFixture) startedWorker(t *testing.T, caller string, req protocol.WorkerStartRequest, level string) (string, protocol.WorkerStartAnswer) {
+	t.Helper()
+	req.Project, req.Task = "alpha", "implement feature x"
+	ans, err := cf.g.workerStart(t.Context(), cf.nc, protocol.WorkerStartFrame{Owner: caller, Level: level, WorkerStartRequest: req})
+	if err != nil || ans.SessionID == "" {
+		t.Fatalf("first start: %+v %v", ans, err)
+	}
+	cf.endWorker(t, ans.SessionID, ans.Harness, ans.Model, level)
+	return ans.SessionID, ans
+}
+
+// endWorker records the judge's level and one run for a worker session, and
+// ends it.
+func (cf continueFixture) endWorker(t *testing.T, worker, harness, model, level string) {
+	t.Helper()
+	g, nc := cf.g, cf.nc
+	if err := g.store.RecordWorkerAssessment(protocol.WorkerAssessment{RunID: "r_" + worker, SessionID: worker, StartedAt: 1, AssessedAt: 1,
 		Label: level, D: protocol.PickerD(nil, level), Confidence: "high"}); err != nil {
 		t.Fatal(err)
 	}
@@ -102,14 +144,19 @@ func (cf continueFixture) endedWorker(t *testing.T, harness, model, level string
 	if err := g.store.SetWorkerSessionEnded(nc.id, worker, 1); err != nil {
 		t.Fatal(err)
 	}
-	return worker
 }
 
 // continueWorker continues the worker and returns the answer and what the
 // machine was asked to run.
 func (cf continueFixture) continueWorker(t *testing.T, worker, model string) (protocol.WorkerStartAnswer, protocol.WorkerContinue, error) {
 	t.Helper()
-	ans, err := cf.g.workerStart(t.Context(), cf.nc, protocol.WorkerStartFrame{Owner: cf.owner,
+	return cf.continueAs(t, cf.g, cf.owner, worker, model)
+}
+
+// continueAs continues the worker through g for caller.
+func (cf continueFixture) continueAs(t *testing.T, g *Gateway, caller, worker, model string) (protocol.WorkerStartAnswer, protocol.WorkerContinue, error) {
+	t.Helper()
+	ans, err := g.workerStart(t.Context(), cf.nc, protocol.WorkerStartFrame{Owner: caller,
 		WorkerStartRequest: protocol.WorkerStartRequest{Continue: worker, Model: model}})
 	if err != nil {
 		return ans, protocol.WorkerContinue{}, err
@@ -278,6 +325,170 @@ func TestContinueNamingAModelKeepsIt(t *testing.T) {
 		t.Fatalf("continue: %v", err)
 	}
 	if f.Model != opusModel || strings.Contains(ans.ModelNote, "continue moved") {
+		t.Fatalf("the machine was asked to run %q %q; note %q", f.Harness, f.Model, ans.ModelNote)
+	}
+}
+
+// restartedGateway is a new gateway on the same database, as after a restart,
+// with the fake machine connected to it.
+func (cf continueFixture) restartedGateway(t *testing.T) *Gateway {
+	t.Helper()
+	g, err := New(Options{DataDir: cf.g.opts.DataDir, TempFolders: []string{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { g.Close() })
+	g.store.now = cf.clock.now
+	g.opts.TestNoBriefChecks = true
+	setTestConn(t, g, cf.nc.id, cf.nc)
+	return g
+}
+
+// pauseNow is the owner's pause of match, set one second later on the test
+// clock, as the score command stamps it.
+func (cf continueFixture) pauseNow(match string) protocol.ModelScore {
+	cf.clock.advance(time.Second)
+	p := pausedScore(match)
+	p.SetAt = cf.clock.now().UnixNano()
+	return p
+}
+
+// keptOwnersModel continues worker through g and checks that the machine was
+// asked to run the owner's opus with the note that says so.
+func (cf continueFixture) keptOwnersModel(t *testing.T, g *Gateway, worker string) {
+	t.Helper()
+	ans, f, err := cf.continueAs(t, g, cf.owner, worker, "")
+	if err != nil {
+		t.Fatalf("continue: %v", err)
+	}
+	if f.Harness != "claude" || f.Model != opusModel || strings.Contains(ans.ModelNote, "continue moved") {
+		t.Fatalf("the machine was asked to run %q %q; note %q", f.Harness, f.Model, ans.ModelNote)
+	}
+	if want := "kept claude " + opusModel + ", which the owner named at the worker's first start"; !strings.Contains(ans.ModelNote, want) {
+		t.Fatalf("note %q lacks %q", ans.ModelNote, want)
+	}
+}
+
+// movedFromOwnersModel continues worker and checks that the continue met the
+// owner's pause as on a model he never named: the re-pick of decision 0189
+// moved it, and the note says he paused it after he named it.
+func (cf continueFixture) movedFromOwnersModel(t *testing.T, worker string) {
+	t.Helper()
+	ans, f, err := cf.continueWorker(t, worker, "")
+	if err != nil {
+		t.Fatalf("continue: %v", err)
+	}
+	if f.Harness == "claude" || !strings.Contains(ans.ModelNote, "continue moved from claude "+opusModel) ||
+		!strings.Contains(ans.ModelNote, "the owner paused claude "+opusModel+" after he named it") {
+		t.Fatalf("the machine was asked to run %q %q; note %q", f.Harness, f.Model, ans.ModelNote)
+	}
+}
+
+// A model the owner had paused when he named it at a worker's first start
+// holds for a continue that names none, across a gateway restart: naming it
+// is his newer word, so the re-pick of decision 0189 does not move it
+// (decision 0191).
+func TestContinueKeepsTheModelTheOwnerNamedWhilePaused(t *testing.T) {
+	cf := continueGateway(t)
+	cf.setScores(t, cf.pauseNow("claude-opus-5-5"))
+	cf.clock.advance(time.Second)
+	worker, first := cf.startedWorker(t, cf.owner, protocol.WorkerStartRequest{Model: opusModel}, "hard")
+	if first.Harness != "claude" || first.Model != opusModel {
+		t.Fatalf("first start ran %q %q", first.Harness, first.Model)
+	}
+	cf.keptOwnersModel(t, cf.restartedGateway(t), worker)
+}
+
+// A pause the owner sets after he named the model is his newest word: the
+// continue meets it as on main, so it moves to the picker's choice.
+func TestContinueOfTheOwnersModelPausedLaterMoves(t *testing.T) {
+	cf := continueGateway(t)
+	cf.setScores(t)
+	worker, _ := cf.startedWorker(t, cf.owner, protocol.WorkerStartRequest{Model: opusModel}, "hard")
+	cf.setScores(t, cf.pauseNow("claude-opus-5-5"))
+	cf.movedFromOwnersModel(t, worker)
+}
+
+// A pause lifted again leaves the owner's choice in force. A pause set again
+// after that is newer than his naming, even when the model was paused when
+// he named it.
+func TestContinueOfTheOwnersModelAfterAPauseIsLifted(t *testing.T) {
+	t.Run("named, paused, lifted", func(t *testing.T) {
+		cf := continueGateway(t)
+		cf.setScores(t)
+		worker, _ := cf.startedWorker(t, cf.owner, protocol.WorkerStartRequest{Model: opusModel}, "hard")
+		cf.setScores(t, cf.pauseNow("claude-opus-5-5"))
+		cf.clock.advance(time.Second)
+		cf.setScores(t)
+		cf.keptOwnersModel(t, cf.g, worker)
+	})
+	t.Run("paused, named, lifted, paused again", func(t *testing.T) {
+		cf := continueGateway(t)
+		cf.setScores(t, cf.pauseNow("claude-opus-5-5"))
+		cf.clock.advance(time.Second)
+		worker, _ := cf.startedWorker(t, cf.owner, protocol.WorkerStartRequest{Model: opusModel}, "hard")
+		cf.clock.advance(time.Second)
+		cf.setScores(t)
+		cf.setScores(t, cf.pauseNow("claude-opus-5-5"))
+		cf.movedFromOwnersModel(t, worker)
+	})
+}
+
+// The owner's choice still meets the gate: a continue of a model whose quota
+// is used up is refused, and the refusal says why and that his choice was
+// kept.
+func TestContinueOfTheOwnersModelWithNoQuotaIsRefused(t *testing.T) {
+	cf := continueGateway(t)
+	cf.setScores(t)
+	worker, _ := cf.startedWorker(t, cf.owner, protocol.WorkerStartRequest{Model: opusModel}, "normal")
+	now := cf.g.store.now()
+	cf.g.usage.set(cf.nc.id, now, protocol.UsageReport{Quotas: &protocol.Quotas{GeneratedAt: now.Unix(), Providers: []protocol.QuotaProvider{
+		{Provider: "claude", Windows: []protocol.QuotaWindow{{ID: "5h", PercentUsed: 100, Exhausted: true}}}}}})
+	_, _, err := cf.continueWorker(t, worker, "")
+	if err == nil || !strings.Contains(err.Error(), "5h") || !strings.Contains(err.Error(), "which the owner named") {
+		t.Fatalf("continue: %v", err)
+	}
+}
+
+// A harness the owner named alone holds too: the continue re-picks inside it,
+// so a model he paused moves to another model of the same harness.
+func TestContinueKeepsTheHarnessTheOwnerNamed(t *testing.T) {
+	cf := continueGateway(t)
+	cf.setScores(t)
+	worker, first := cf.startedWorker(t, cf.owner, protocol.WorkerStartRequest{Harness: "opencode"}, "normal")
+	if first.Harness != "opencode" {
+		t.Fatalf("first start ran %q %q", first.Harness, first.Model)
+	}
+	cf.setScores(t, pausedScore(strings.TrimSuffix(first.Model, ":high")))
+	ans, f, err := cf.continueWorker(t, worker, "")
+	if err != nil {
+		t.Fatalf("continue: %v", err)
+	}
+	if f.Harness != "opencode" || f.Model == "" || f.Model == first.Model {
+		t.Fatalf("the machine was asked to run %q %q after %q; note %q", f.Harness, f.Model, first.Model, ans.ModelNote)
+	}
+	if !strings.Contains(ans.ModelNote, "kept harness opencode, which the owner named") {
+		t.Fatalf("note: %q", ans.ModelNote)
+	}
+	// The re-pick's roster held only that harness.
+	var others int
+	if err := cf.g.store.db.QueryRow(`SELECT COUNT(*) FROM pick_candidates WHERE run_id='k_continue' AND harness<>'opencode'`).Scan(&others); err != nil || others != 0 {
+		t.Fatalf("%d rows of other harnesses in the re-pick: %v", others, err)
+	}
+}
+
+// A model an agent named, not the owner, is not held: the continue re-picks
+// as decision 0189 says.
+func TestContinueOfAnAgentsNamedModelRepicks(t *testing.T) {
+	cf := continueGateway(t)
+	cf.setScores(t)
+	worker, _ := cf.startedWorker(t, cf.agent, protocol.WorkerStartRequest{Model: opusModel}, "hard")
+	cf.setScores(t, pausedScore("claude-opus-5-5"))
+	ans, f, err := cf.continueAs(t, cf.g, cf.agent, worker, "")
+	if err != nil {
+		t.Fatalf("continue: %v", err)
+	}
+	if f.Harness == "" || f.Harness == "claude" || !strings.Contains(ans.ModelNote, "continue moved from claude "+opusModel) {
 		t.Fatalf("the machine was asked to run %q %q; note %q", f.Harness, f.Model, ans.ModelNote)
 	}
 }

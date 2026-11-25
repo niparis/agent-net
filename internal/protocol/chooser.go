@@ -485,50 +485,43 @@ func QuotaRoomForProvider(q *Quotas, provider, model string) (room float64, note
 // A window that is used up or above 90 percent says nothing about pace: it is
 // skipped, so the ranker can still order the candidate. The gate refuses it.
 func WorkerQuotaPace(q *Quotas, provider, model string) (room float64, note string, measured bool) {
-	p, ok := q.Provider(provider)
-	if !ok || !p.usable() {
-		return 0, "", false
-	}
-	for _, w := range p.Windows {
-		if !QuotaWindowServes(w, model) || w.Exhausted || w.PercentUsed > 90 {
-			continue
-		}
-		duration := quotaWindowDuration(w)
-		if duration == 0 || w.ResetsAt <= 0 || q.GeneratedAt <= 0 {
-			continue
-		}
-		elapsed := 100 * (1 - float64(w.ResetsAt-q.GeneratedAt)/duration.Seconds())
-		elapsed = math.Max(0, math.Min(100, elapsed))
-		current := elapsed - w.PercentUsed
-		if !measured || current < room {
-			room = current
-			pace := "on pace"
-			if current > 0.05 {
-				pace = fmt.Sprintf("%.0f%% behind pace", current)
-			} else if current < -0.05 {
-				pace = fmt.Sprintf("%.0f%% ahead of pace", -current)
-			}
-			note = fmt.Sprintf("%s %s (%s, %.0f%% used at %.0f%% elapsed)", provider, pace, QuotaWindowName(w), w.PercentUsed, elapsed)
-			measured = true
-		}
-	}
+	room, note, measured, _, _ = quotaPaceRead(q, provider, model, true)
 	return room, note, measured
 }
 
 func workerQuotaRoom(q *Quotas, provider, model string) (float64, string, bool, bool) {
+	room, note, measured, blocked, _ := quotaPaceRead(q, provider, model, false)
+	return room, note, measured, blocked
+}
+
+// QuotaPaceWindow is the window that decided a pace reading: the window that
+// blocked the model, or the one with the least room. skipBlocked is the level
+// rule's reading (WorkerQuotaPace), false the cell rule's and the gate's
+// (QuotaRoomForProvider). ok is false when no window decided.
+func QuotaPaceWindow(q *Quotas, provider, model string, skipBlocked bool) (QuotaWindow, bool) {
+	_, _, measured, blocked, w := quotaPaceRead(q, provider, model, skipBlocked)
+	return w, measured || blocked
+}
+
+// quotaPaceRead is the one pace reading of a provider's windows for a model.
+// Room is percentage points behind pace in the tightest window, measured at the
+// reading's own time. A window that is used up or above 90 percent blocks the
+// model, unless skipBlocked leaves it out of the reading. decided is the window
+// that blocked, or the one with the least room.
+func quotaPaceRead(q *Quotas, provider, model string, skipBlocked bool) (room float64, note string, measured, blocked bool, decided QuotaWindow) {
 	p, ok := q.Provider(provider)
 	if !ok || !p.usable() {
-		return 0, "", false, false
+		return 0, "", false, false, QuotaWindow{}
 	}
-	var room float64
-	var note string
-	measured := false
 	for _, w := range p.Windows {
 		if !QuotaWindowServes(w, model) {
 			continue
 		}
 		if w.Exhausted || w.PercentUsed > 90 {
-			return 0, quotaWindowBlockedReason(provider, w), false, true
+			if skipBlocked {
+				continue
+			}
+			return 0, quotaWindowBlockedReason(provider, w), false, true, w
 		}
 		duration := quotaWindowDuration(w)
 		if duration == 0 || w.ResetsAt <= 0 || q.GeneratedAt <= 0 {
@@ -547,9 +540,10 @@ func workerQuotaRoom(q *Quotas, provider, model string) (float64, string, bool, 
 			}
 			note = fmt.Sprintf("%s %s (%s, %.0f%% used at %.0f%% elapsed)", provider, pace, QuotaWindowName(w), w.PercentUsed, elapsed)
 			measured = true
+			decided = w
 		}
 	}
-	return room, note, measured, false
+	return room, note, measured, false, decided
 }
 
 // quotaWindowBlockedReason says why a window keeps a profile out of a choice.
