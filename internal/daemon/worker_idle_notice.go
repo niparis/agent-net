@@ -33,7 +33,8 @@ func (d *Daemon) resetIdleNotice(w *worker) {
 
 // noteCodexIdle keeps the final text if an automatic hand-back failed, so
 // adoption can still report it. The notice itself applies the same size limit.
-func (d *Daemon) noteCodexIdle(w *worker, report string) {
+// told means the caller already has a notice for this idle period.
+func (d *Daemon) noteCodexIdle(w *worker, report string, told bool) {
 	if strings.TrimSpace(report) == "" {
 		report = "(Codex ended the turn with no message.)"
 	}
@@ -48,8 +49,9 @@ func (d *Daemon) noteCodexIdle(w *worker, report string) {
 	w.idleNoticeReport = report
 	w.idleNoticeSince = time.Now()
 	w.idleNoticeKey = protocol.NewID("k")
-	if err := d.st.saveWorkerIdleNotice(w.id, w.idleNoticeSince, w.idleNoticeKey, report, false); err != nil {
-		w.idleNoticeSince, w.idleNoticeKey = time.Time{}, ""
+	w.idleNoticeSent = told
+	if err := d.st.saveWorkerIdleNotice(w.id, w.idleNoticeSince, w.idleNoticeKey, report, told); err != nil {
+		w.idleNoticeSince, w.idleNoticeKey, w.idleNoticeSent = time.Time{}, "", false
 		d.Logf("worker %s: save idle notice: %v", w.id, err)
 	}
 }

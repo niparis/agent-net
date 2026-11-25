@@ -1015,9 +1015,12 @@ func (cc *codexConn) finishTurn(turnStatus, errMsg string) {
 		if denied && (status == protocol.StatusBlocked || status == protocol.StatusFailed) {
 			note = "blocked by the sandbox (" + protocol.WorkerPermissionsOrDefault(cc.w.permissions) + ")"
 		}
-		_, err := cc.d.handbackToNote(context.Background(), cc.w, protocol.WorkerHandbackRequest{Report: report, Status: status, Complete: complete}, j.from, j.msgID, note, false)
+		req := protocol.WorkerHandbackRequest{Report: report, Status: status, Complete: complete}
+		_, err := cc.d.handbackToNote(context.Background(), cc.w, req, j.from, j.msgID, note, false)
+		told := false
 		if err != nil {
 			cc.d.Logf("worker %s: hand-back: %v", cc.w.id, err)
+			told = cc.d.handbackRefused(context.Background(), cc.w, req, err, nil)
 		}
 		cc.mu.Lock()
 		var next *codexJob
@@ -1028,8 +1031,11 @@ func (cc *codexConn) finishTurn(turnStatus, errMsg string) {
 			next = &n
 		} else if err != nil {
 			// Do not admit the next turn until the failed hand-back's idle
-			// period is recorded and the old turn is marked idle.
-			cc.d.noteCodexIdle(cc.w, final)
+			// period is recorded and the old turn is marked idle. Adoption
+			// reads the period as "this turn is handled" and does not hand it
+			// back again. A caller that has the refusal notice is not told
+			// again by an idle notice.
+			cc.d.noteCodexIdle(cc.w, final, told)
 			idleSession = cc.d.changeCodexStatus(cc.w, "idle")
 			cc.running = false
 		} else {

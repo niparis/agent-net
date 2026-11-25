@@ -100,6 +100,22 @@ func (c *agyConn) publishHandback(req protocol.WorkerHandbackRequest) {
 		}
 		if out, err := d.handbackToNoteWithFiles(ctx, w, req, "", "", "", true, files); err != nil {
 			d.Logf("worker %s: Antigravity handback: %v", w.id, err)
+			if ctx.Err() != nil {
+				return // the daemon is stopping: the next adoption publishes the saved report
+			}
+			d.handbackRefused(ctx, w, req, err, func() {
+				// The saved refusal holds the report now, so adoption must
+				// not publish it again.
+				c.mu.Lock()
+				if c.pendingKey == key {
+					c.pending = nil
+					c.pendingKey = ""
+					_ = c.saveStreamLocked()
+				}
+				c.mu.Unlock()
+				// The refused hand-back ended the turn: let the next message in.
+				d.openCodeTurnIdle(w.sessionID)
+			})
 		} else {
 			c.mu.Lock()
 			if c.pendingKey == key {

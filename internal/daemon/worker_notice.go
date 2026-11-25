@@ -1133,7 +1133,7 @@ func (d *Daemon) sendNoticeToKeyWithFiles(ctx context.Context, w *worker, n prot
 	raw, err := d.sendWorkerNoticeBodyWithFiles(ctx, w, body, to, replyTo, noticeKey, files, n.Status == "idle without hand-back")
 	if err == nil {
 		switch n.Status {
-		case protocol.StatusDone, protocol.StatusFailed, protocol.StatusTimedOut, "partial", "idle without hand-back":
+		case protocol.StatusDone, protocol.StatusFailed, protocol.StatusTimedOut, "partial", "idle without hand-back", handbackRefusedStatus:
 			d.wmu.Lock()
 			if to == "" || to == w.owner {
 				w.noticeSinceRequest = true
@@ -1324,10 +1324,10 @@ func (d *Daemon) handbackFlow(ctx context.Context, w *worker, req protocol.Worke
 		req.Status = protocol.StatusDone
 	}
 	if !protocol.ValidHandbackStatus(req.Status) {
-		return nil, fmt.Errorf("status must be done, blocked or failed, not %q", req.Status)
+		return nil, handbackFixable{fmt.Errorf("status must be done, blocked or failed, not %q", req.Status)}
 	}
 	if strings.TrimSpace(req.Report) == "" {
-		return nil, errors.New("the report is empty: say what you did, or what blocks you")
+		return nil, handbackFixable{errors.New("the report is empty: say what you did, or what blocks you")}
 	}
 	// Friction is optional: clean a bad entry instead of refusing the whole
 	// hand-back. The caller's notice says how many entries changed.
@@ -1338,7 +1338,8 @@ func (d *Daemon) handbackFlow(ctx context.Context, w *worker, req protocol.Worke
 		var err error
 		files, err = d.prepareHandbackFiles(w, handbackPaths(req))
 		if err != nil {
-			return nil, err
+			// The worker can fix the path or hand back without the file.
+			return nil, handbackFixable{err}
 		}
 		// The finish path takes over the snapshots and removes them.
 		defer func() {
@@ -1521,6 +1522,8 @@ func (d *Daemon) finishHandback(ctx context.Context, w *worker, t *handbackTail)
 	if t.persisted {
 		d.dropHandback(w.id, t.head)
 	}
+	// This hand-back replaces one that was refused earlier.
+	d.dropRefusedHandback(w.id)
 	d.wmu.Lock()
 	var next *protocol.Message
 	if (w.harness == "opencode" || w.harness == "agy") && len(w.turnQueue) > 0 {
@@ -1767,11 +1770,12 @@ func (d *Daemon) lostNotice(ctx context.Context, r workerRow) {
 	if !state.Sent {
 		n := d.notice(w, status, note, workerStats{})
 		n.WIPDetail = result.noticeDetail()
-		if _, err := d.sendNotice(ctx, w, n, ""); err != nil {
+		if _, err := d.sendNotice(ctx, w, n, d.refusedReportFor(r.ID, &n)); err != nil {
 			d.Logf("worker %s: notice: %v", r.ID, err)
 			d.finishWorktree(w)
 			return
 		}
+		d.dropRefusedHandback(r.ID)
 		state.Sent = true
 		if result.SHA != "" {
 			state.WIPSHA = result.SHA

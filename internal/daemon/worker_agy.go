@@ -379,11 +379,17 @@ func (c *agyConn) eventAt(line []byte, offset int64) {
 		if handback != nil {
 			c.publishHandback(*handback)
 		} else if !d.openCodeTurnIdle(w.sessionID) {
+			if refused, ok := d.loadRefusedHandback(w.id); ok && refused.Told {
+				// The worker had its one message about a refused hand-back and
+				// ended the turn without a new one: the caller gets the report.
+				d.goBackground(func() { d.tellCallerRefused(context.Background(), w, refused) })
+				return
+			}
 			report := r.Response
 			if strings.TrimSpace(report) == "" {
 				report = "(Antigravity ended the turn with no message.)"
 			}
-			d.noteCodexIdle(w, report)
+			d.noteCodexIdle(w, report, false)
 		}
 	}
 }
