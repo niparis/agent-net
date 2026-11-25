@@ -66,20 +66,44 @@ func (d *Daemon) whenClaudeOwnerPrompt(ctx context.Context, p protocol.PolicyReq
 	if d.daemonTyped.typed(p.NativeID, p.Prompt) {
 		return
 	}
-	if !claudeTranscriptFor(p.TranscriptPath, p.NativeID, p.PromptID) {
-		apply(ctx, false)
+	// A first message that agent-net or an agent passed on the command line
+	// is recorded as typed too. A launch with the same text that has not
+	// returned yet may still name this session, so the check then waits.
+	skip, wait := d.nonOwnerFirstPrompt(p)
+	if skip {
 		return
 	}
-	if s, found := claudeSenderOf(p.TranscriptPath, p.NativeID, p.PromptID); found {
-		if s != senderOther {
-			apply(ctx, s == senderOwner)
+	if len(wait) == 0 {
+		if !claudeTranscriptFor(p.TranscriptPath, p.NativeID, p.PromptID) {
+			apply(ctx, false)
+			return
 		}
-		return
+		if s, found := claudeSenderOf(p.TranscriptPath, p.NativeID, p.PromptID); found {
+			if s != senderOther {
+				apply(ctx, s == senderOwner)
+			}
+			return
+		}
 	}
 	d.claudeChecks.Add(1)
 	go func() {
 		defer d.claudeChecks.Done()
-		if s := claudeSenderWithin(p.TranscriptPath, p.NativeID, p.PromptID, d.claudeWait()); s != senderOther {
+		s := claudeSenderWithin(p.TranscriptPath, p.NativeID, p.PromptID, d.claudeWait())
+		// The first message check runs again after each wait, before any
+		// effect: a launch can bind its message to this session meanwhile.
+		for {
+			skip, wait := d.nonOwnerFirstPrompt(p)
+			if skip {
+				return
+			}
+			if len(wait) == 0 {
+				break
+			}
+			for _, ch := range wait {
+				<-ch
+			}
+		}
+		if s != senderOther {
 			apply(context.Background(), s == senderOwner)
 		}
 	}()
@@ -103,7 +127,10 @@ type pendingOwnerWords struct {
 	path     string
 	promptID string
 	text     string
-	at       time.Time
+	// first is the first message hash of the prompt, checked again before
+	// the words are kept.
+	first string
+	at    time.Time
 }
 
 const pendingWordsKeySep = "\x00"
@@ -148,7 +175,7 @@ func (d *Daemon) notePendingOwnerWords(session string, p protocol.PolicyRequest)
 	}
 	d.pendingWords[session+pendingWordsKeySep+p.PromptID] = pendingOwnerWords{
 		session: session, native: p.NativeID, path: p.TranscriptPath,
-		promptID: p.PromptID, text: text, at: now,
+		promptID: p.PromptID, text: text, first: firstMessageHash(p.Prompt), at: now,
 	}
 }
 
@@ -188,13 +215,19 @@ func (d *Daemon) resolvePendingOwnerWords(session string) {
 		if !found {
 			continue
 		}
+		// A first message that a launch passed is never words, however
+		// late its entry. A launch that still runs decides at a later read.
+		first, wait := d.firstMessageMatch(q.native, q.promptID, q.first)
+		if !first && len(wait) > 0 {
+			continue
+		}
 		d.pendingWordsMu.Lock()
 		_, still := d.pendingWords[key]
 		if still {
 			delete(d.pendingWords, key)
 		}
 		d.pendingWordsMu.Unlock()
-		if still && s == senderOwner {
+		if still && !first && s == senderOwner {
 			d.rememberOwnerPromptAt(session, q.text, q.at)
 		}
 	}

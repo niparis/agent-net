@@ -103,9 +103,15 @@ type SessionStartRequest struct {
 	Harness      string `json:"harness,omitempty"`
 	Model        string `json:"model,omitempty"`
 	FirstMessage string `json:"first_message,omitempty"`
-	NodeID       string `json:"node_id,omitempty"`
-	Folder       string `json:"folder,omitempty"`
-	Branch       string `json:"branch,omitempty"`
+	// FirstMessageByOwner says the owner wrote FirstMessage in the owner's
+	// TUI or command line. The daemon that takes the request sets it; a value
+	// in the request is not trusted. A relay keeps it, so the machine that
+	// runs the start knows. Without it the text never counts as the owner's
+	// words: a machine that does not send it loses words, it never adds them.
+	FirstMessageByOwner bool   `json:"first_message_by_owner,omitempty"`
+	NodeID              string `json:"node_id,omitempty"`
+	Folder              string `json:"folder,omitempty"`
+	Branch              string `json:"branch,omitempty"`
 	// Path is a folder typed in the Project field. It must be absolute or
 	// start with ~, and it is checked on the machine that runs the start.
 	// Project is empty for a path start.

@@ -26,6 +26,9 @@ type claudeBackground struct {
 	// FirstMessage is the first prompt of the job: of a new conversation, or
 	// the next turn of a resumed one.
 	FirstMessage string
+	// NonOwnerFirstMessage says the owner did not write FirstMessage, so it
+	// never counts as the owner's words (typed_prompts.go).
+	NonOwnerFirstMessage bool
 	// DropEnv names variables the launch must not inherit. The first launch can
 	// start Claude's background service, and every session that service starts
 	// later inherits the environment of that launch.
@@ -76,7 +79,24 @@ func claudeBackgroundArgs(s claudeBackground) []string {
 // discovery cannot register the session first. Records and lifetime rules
 // belong to the caller.
 func (d *Daemon) startBackground(ctx context.Context, bin, dir string, s claudeBackground, logPath string, env map[string]string, onJob func(string)) (claudeSessionFile, error) {
-	return d.launchClaudeBackground(ctx, bin, dir, s, logPath, env, onJob)
+	if !s.NonOwnerFirstMessage || s.FirstMessage == "" {
+		return d.launchClaudeBackground(ctx, bin, dir, s, logPath, env, onJob)
+	}
+	// The prompt hook can run before the launch returns, so the message is
+	// known first and bound to the conversation when the launch names it.
+	m := d.beginFirstMessage(s.FirstMessage, s.Resume)
+	sf, err := d.launchClaudeBackground(ctx, bin, dir, s, logPath, env, func(id string) {
+		d.firstMessageJob(m, id)
+		if onJob != nil {
+			onJob(id)
+		}
+	})
+	native := ""
+	if err == nil {
+		native = sf.SessionID
+	}
+	d.endFirstMessage(m, native)
+	return sf, err
 }
 
 // runClaudeBackground runs `claude --bg` for the spec and returns its output

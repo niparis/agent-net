@@ -80,6 +80,13 @@ const (
 	// above zero, the session accepts an inbox line and never takes it up,
 	// and counts down.
 	envFakeClaudeDropFile = "FAKE_CLAUDE_DROP_FILE"
+	// envFakeClaudeReturnGate makes `claude --bg` wait, once the session is
+	// up, until this file exists before it names the job and returns. The
+	// session runs meanwhile, as a real one runs its first prompt.
+	envFakeClaudeReturnGate = "FAKE_CLAUDE_RETURN_GATE"
+	// envFakeClaudeNoInbox runs the session with no inbox socket, for tests
+	// that never deliver to it.
+	envFakeClaudeNoInbox = "FAKE_CLAUDE_NO_INBOX"
 )
 
 // runFakeHarness runs the fake that the environment asks for. It reports
@@ -432,6 +439,13 @@ func fakeClaudeCLI() {
 			if job == "" {
 				job = sf.SessionID[:8]
 			}
+			if gate := os.Getenv(envFakeClaudeReturnGate); gate != "" {
+				for deadline := time.Now().Add(scaled(30 * time.Second)); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+					if _, err := os.Stat(gate); err == nil {
+						break
+					}
+				}
+			}
 
 			fmt.Printf("backgrounded · %s · %s (idle - send a prompt to start)\n  claude attach %s    open in this terminal\n  claude stop %s      stop this session\n",
 				job, argValue(os.Args, "--name"), job, job)
@@ -521,12 +535,15 @@ func fakeClaudeSession() {
 		session = copyID
 	}
 	sock := filepath.Join(os.Getenv(envFakeClaudeSockets), "fc-"+id+".sock")
-	os.Remove(sock)
-	ln, err := net.Listen("unix", sock)
-	if err != nil {
-		os.Exit(1)
+	var ln net.Listener
+	if os.Getenv(envFakeClaudeNoInbox) == "" {
+		os.Remove(sock)
+		var err error
+		if ln, err = net.Listen("unix", sock); err != nil {
+			os.Exit(1)
+		}
+		defer os.Remove(sock)
 	}
-	defer os.Remove(sock)
 	if gate := os.Getenv(envFakeResumeSettleGate); gate != "" && argValue(in.Args, "--resume") != "" {
 		// A cold `claude --bg --resume` names the job after the resumed
 		// conversation, but its first session file shows a fresh
@@ -591,6 +608,9 @@ func fakeClaudeSession() {
 	}
 	if first := argAfterDashes(in.Args); transcribe && first != "" {
 		userTurn(first)
+	}
+	if ln == nil {
+		select {} // a session with no inbox runs until it is stopped
 	}
 	for {
 		c, err := ln.Accept()
