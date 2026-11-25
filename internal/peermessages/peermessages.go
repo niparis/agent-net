@@ -62,7 +62,11 @@ func Compare(st State, settingsPath string) Report {
 	r.Linked, r.ReadOnly, r.Final = fileKind(settingsPath)
 	v, set, err := claudesettings.Value(settingsPath, SettingKey)
 	if err != nil {
-		r.Problem = fmt.Sprintf("agent-net cannot read %s: %v", settingsPath, err)
+		// A file agent-net never wrote is the owner's business, not a
+		// difference from a record agent-net made.
+		if st.SetByAgentNet {
+			r.Problem = fmt.Sprintf("agent-net cannot read %s: %v", settingsPath, err)
+		}
 		return r
 	}
 	r.Live, r.LiveSet = v, set

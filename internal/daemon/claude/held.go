@@ -3,25 +3,22 @@ package claude
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
+	"github.com/niparis/agent-net/internal/claudeframes"
 	"github.com/niparis/agent-net/internal/daemon"
 )
 
 // Claude Code writes a system entry when it keeps a peer message for review
 // instead of showing it to the session. The entry names the reply socket and
-// the first line of the body, so the adapter can tie it to the one delivery it
-// describes. When the owner approves it, Claude Code writes the message as a
-// user entry with the original frame, which is the release.
+// the size of the frame, so the adapter can tie it to the one delivery it
+// describes. When the owner approves it, Claude Code writes the frame back as
+// a user entry, a queued command attachment, or a queue operation entry, which
+// is the release.
 const (
 	// heldLookback is how much of an existing transcript the first read looks
 	// at. A hold is recent; older text is not news.
@@ -38,22 +35,8 @@ const (
 	heldPathLookupEvery = time.Minute
 )
 
-var (
-	// A hold notice names the sender's reply socket: "from uds:<path>".
-	heldFrom = regexp.MustCompile(`\bfrom[= ]"?(uds:[^" );\s]+)"?`)
-	// A hold notice quotes the first body line and its size.
-	heldCounts = regexp.MustCompile(`\[(\d+) lines?, (\d+) chars?`)
-	// The frame content starts with the cross-session wrapper.
-	heldOpenTag = regexp.MustCompile(`<cross-session-message\b([^>]*)>`)
-)
-
 // globTranscripts is filepath.Glob, replaced by a test that counts searches.
 var globTranscripts = filepath.Glob
-
-// heldDash is the em dash Claude Code writes in a hold notice. It is built
-// from a rune because B9 forbids the character in a production literal; the
-// daemon only matches it and never shows it.
-var heldDash = string(rune(0x2014))
 
 // heldWatch is how far one transcript was read.
 type heldWatch struct {
@@ -69,17 +52,22 @@ type heldPath struct {
 }
 
 // transcriptEntry is the part of a Claude transcript line the hold check
-// reads. A system entry carries its text in content; a user entry carries a
-// message with string or block content.
+// reads. A system entry carries its text in content; a release carries the
+// frame in a user message, a queued_command attachment, or a queue operation
+// entry.
 type transcriptEntry struct {
-	Type      string `json:"type"`
-	Subtype   string `json:"subtype"`
-	UUID      string `json:"uuid"`
-	Content   string `json:"content"`
-	Timestamp string `json:"timestamp"`
+	Type      string          `json:"type"`
+	Subtype   string          `json:"subtype"`
+	UUID      string          `json:"uuid"`
+	Content   json.RawMessage `json:"content"`
+	Timestamp string          `json:"timestamp"`
 	Message   struct {
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
+	Attachment struct {
+		Type   string          `json:"type"`
+		Prompt json.RawMessage `json:"prompt"`
+	} `json:"attachment"`
 }
 
 // startHeldScan runs one transcript scan in the background. The poll loop
@@ -297,128 +285,54 @@ func (a *Adapter) handleHeldLine(ctx context.Context, recipient, native string, 
 	}
 	switch e.Type {
 	case "system":
-		sock, preview, lines, chars, ok := heldNotice(e.Content)
+		text := contentText(e.Content)
+		n, ok := claudeframes.ParseNotice(text)
 		if !ok {
+			if strings.Contains(text, "not delivered to Claude") {
+				a.host.Logf("claude: a hold notice in %s names no reply socket: %q", native, firstLine(text))
+			}
 			return
 		}
 		at := parseTranscriptTime(e.Timestamp)
-		if !at.IsZero() && sock != "" {
-			a.host.ClaudeHeld(ctx, recipient, daemon.ClaudeHeldEntry{
-				UUID: e.UUID, ReplySock: sock, Preview: preview,
-				BodyLines: lines, BodyChars: chars, At: at,
-			})
+		if at.IsZero() {
+			a.host.Logf("claude: a hold notice in %s has no timestamp: %q", native, firstLine(text))
 			return
 		}
-		a.host.Logf("claude: a hold notice in %s has no timestamp or reply socket: %q", native, firstLine(e.Content))
-	case "user":
-		content, ok := heldFrameContent(contentText(e.Message.Content))
+		a.host.ClaudeHeld(ctx, recipient, daemon.ClaudeHeldEntry{
+			UUID: e.UUID, ReplySock: n.ReplySock, Preview: n.Preview,
+			FrameLines: n.Lines, FrameChars: n.Chars, At: at,
+		})
+	case "user", "attachment", "queue-operation":
+		text, ok := releaseText(e)
 		if !ok {
 			return
 		}
-		sock, ok := frameReplySock(content)
+		content, sock, ok := claudeframes.FrameIn(text)
 		if !ok {
 			a.host.Logf("claude: a released frame in %s names no reply socket", native)
 			return
 		}
-		a.host.ClaudeHeldReleased(ctx, recipient, sock, frameHash(content), parseTranscriptTime(e.Timestamp))
+		a.host.ClaudeHeldReleased(ctx, recipient, sock, claudeframes.Hash(content), parseTranscriptTime(e.Timestamp))
 	}
 }
 
-// heldNotice reads the sender socket, the quoted first line and the body size
-// from a "Held peer message" entry. Both wordings seen in transcripts are
-// accepted.
-func heldNotice(s string) (sock, preview string, lines, chars int, ok bool) {
-	if !heldEntry(s) {
-		return "", "", 0, 0, false
-	}
-	if m := heldFrom.FindStringSubmatch(s); m != nil {
-		sock = strings.TrimPrefix(m[1], "uds:")
-	}
-	if i := strings.Index(s, "preview: \u00ab"); i >= 0 {
-		rest := s[i+len("preview: \u00ab"):]
-		if j := strings.Index(rest, "\u00bb"); j >= 0 {
-			preview = rest[:j]
-		} else {
-			cut := len(rest)
-			for _, marker := range []string{"\u2026[", " " + heldDash + " not delivered", heldDash + " not delivered"} {
-				if j := strings.Index(rest, marker); j >= 0 && j < cut {
-					cut = j
-				}
-			}
-			preview = strings.TrimSpace(rest[:cut])
+// releaseText is the text a release entry writes the frame into. A user entry
+// carries it in its message, a queued command attachment in its prompt, and a
+// queue operation entry in its content.
+func releaseText(e transcriptEntry) (string, bool) {
+	switch e.Type {
+	case "user":
+		return contentText(e.Message.Content), true
+	case "attachment":
+		if e.Attachment.Type != "queued_command" {
+			return "", false
 		}
-	}
-	if m := heldCounts.FindStringSubmatch(s); m != nil {
-		lines, _ = strconv.Atoi(m[1])
-		chars, _ = strconv.Atoi(m[2])
-	}
-	return sock, preview, lines, chars, sock != ""
-}
-
-// heldEntry says whether a system entry is Claude Code's hold notice.
-func heldEntry(s string) bool {
-	if !strings.Contains(s, "not delivered to Claude") {
-		return false
-	}
-	return strings.Contains(s, "Held peer message") || strings.Contains(s, "Held message from another session")
-}
-
-// heldFrameContent returns the exact cross-session wrapper in a released user
-// entry. Claude Code may put text before it, but the frame itself is written
-// back unchanged.
-func heldFrameContent(text string) (string, bool) {
-	i := strings.Index(text, "<cross-session-message")
-	if i < 0 {
-		return "", false
-	}
-	j := strings.Index(text[i:], "</cross-session-message>")
-	if j < 0 {
-		return "", false
-	}
-	return text[i : i+j+len("</cross-session-message>")], true
-}
-
-// frameReplySock reads the reply socket from a frame's opening tag.
-func frameReplySock(content string) (string, bool) {
-	m := heldOpenTag.FindStringSubmatch(content)
-	if m == nil {
-		return "", false
-	}
-	for _, field := range strings.Fields(m[1]) {
-		if strings.HasPrefix(field, `from="uds:`) {
-			return strings.TrimSuffix(strings.TrimPrefix(field, `from="uds:`), `"`), true
-		}
+		return contentText(e.Attachment.Prompt), true
+	case "queue-operation":
+		return contentText(e.Content), true
 	}
 	return "", false
 }
-
-// frameHash is the hash of one frame content, which ties a release to the
-// frame it was written for.
-func frameHash(content string) string {
-	sum := sha256.Sum256([]byte(content))
-	return hex.EncodeToString(sum[:])
-}
-
-// framePreview is the first non-empty body line, which is what a hold notice
-// quotes.
-func framePreview(body string) string {
-	for _, line := range strings.Split(body, "\n") {
-		if line = strings.TrimSpace(line); line != "" {
-			return line
-		}
-	}
-	return ""
-}
-
-// frameBodyLines and frameBodyChars are the body size a hold notice reports.
-func frameBodyLines(body string) int {
-	if body == "" {
-		return 0
-	}
-	return strings.Count(body, "\n") + 1
-}
-
-func frameBodyChars(body string) int { return utf8.RuneCountInString(body) }
 
 func parseTranscriptTime(s string) time.Time {
 	t, err := time.Parse(time.RFC3339Nano, s)

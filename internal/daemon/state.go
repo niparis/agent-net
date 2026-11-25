@@ -89,16 +89,17 @@ CREATE TABLE IF NOT EXISTS workers (
 	// A Claude message Claude Code holds for review is recorded on its
 	// delivery row, so a daemon restart does not report it again and a later
 	// release can be told from a first delivery. The frame columns describe
-	// what Claude Code sees: its reply socket, the first body line in a hold
-	// notice and the exact frame content a release writes back.
+	// what Claude Code sees: its reply socket, the size and first line in a
+	// hold notice, and the exact frame content a release writes back.
 	for _, col := range []struct{ name, def string }{
 		{"held_at", "INTEGER NOT NULL DEFAULT 0"},
 		{"released_at", "INTEGER NOT NULL DEFAULT 0"},
 		{"frame", "TEXT NOT NULL DEFAULT ''"},
 		{"reply_sock", "TEXT NOT NULL DEFAULT ''"},
 		{"preview", "TEXT NOT NULL DEFAULT ''"},
-		{"body_lines", "INTEGER NOT NULL DEFAULT 0"},
-		{"body_chars", "INTEGER NOT NULL DEFAULT 0"},
+		{"frame_lines", "INTEGER NOT NULL DEFAULT 0"},
+		{"frame_chars", "INTEGER NOT NULL DEFAULT 0"},
+		{"frame_chars16", "INTEGER NOT NULL DEFAULT 0"},
 		{"frame_hash", "TEXT NOT NULL DEFAULT ''"},
 		{"held_entry", "TEXT NOT NULL DEFAULT ''"},
 	} {
@@ -110,11 +111,9 @@ CREATE TABLE IF NOT EXISTS workers (
 			_, err = db.Exec(`ALTER TABLE claude_deliveries ADD COLUMN ` + col.name + ` ` + col.def)
 		}
 	}
-	if err == nil {
-		// Old rows were one message for one frame; a batch carrier row does not
-		// exist for them, so a hold only matches a frame recorded after this.
-		_, err = db.Exec(`UPDATE claude_deliveries SET frame=message_id WHERE frame='' AND frame_hash=''`)
-	}
+	// A row from a build before frames were described has frame "", so no hold
+	// or release can be tied to it. Filling that column here would run a write
+	// at every start; a notice for such a row is logged and marks nothing.
 	if err == nil {
 		var has int
 		err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('cto_proposals') WHERE name = 'note_delivered'`).Scan(&has)

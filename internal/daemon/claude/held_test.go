@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/niparis/agent-net/internal/claudeframes"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -38,26 +39,34 @@ func appendHeldTranscript(t *testing.T, path string, entries ...any) {
 	}
 }
 
-func holdLine(t *testing.T, r *rig, uuid, sock, body string, at time.Time) map[string]any {
-	t.Helper()
+// holdLine is the system entry Claude Code writes for a held frame. It has the
+// real shape: the reply socket, the quoted first line, the inner frame's size,
+// and its own id and time.
+func holdLine(uuid, sock string, d claudeframes.Description, at time.Time) map[string]any {
 	return map[string]any{
 		"type": "system", "subtype": "informational", "uuid": uuid, "timestamp": at.UTC().Format(time.RFC3339Nano),
-		"content": "Held peer message \u2014 from uds:" + sock + " (peer claims name: bob); preview: \u00ab" + framePreview(body) +
-			"\u00bb \u2026[" + strconv.Itoa(frameBodyLines(body)) + " line, " + strconv.Itoa(frameBodyChars(body)) +
-			" chars \u2014 expand to review before approving] \u2014 not delivered to Claude (1 held). " +
+		"content": "Held peer message \u2014 from uds:" + sock + " (peer claims name: bob); preview: \u00ab" + d.Preview +
+			"\u00bb \u2026[" + strconv.Itoa(d.Lines) + " lines, " + strconv.Itoa(d.Chars) +
+			" chars total \u2014 expand to review before approving] \u2014 not delivered to Claude (1 held). " +
 			"The sending session's permission mode class doesn't match this session's. Review it below, or set \"crossSessionInbound\" to \"accept\".",
 	}
 }
 
 // Claude Code writes a system entry when it holds a peer message for review.
-// The adapter reports the sender socket, the first body line and the notice's
-// own id, so the daemon can tie it to one delivery and apply it once.
+// The adapter reports the sender socket, the frame's size and first line, and
+// the notice's own id, so the daemon can tie it to one delivery and apply it
+// once.
 func TestTranscriptHoldIsReported(t *testing.T) {
-	r := newRig(t)
-	eventually(t, "session found", func() bool { return len(r.host.current()) == 1 })
+	r := newBookRig(t)
+	m := request("m_hold", "s_bob", "c_1")
+	m.Body = "do the thing"
+	content, sock := r.deliverContent(m)
+	desc, ok := claudeframes.Describe(content)
+	if !ok {
+		t.Fatal("the delivered frame has no wrapper")
+	}
 	at := time.Date(2026, 11, 23, 7, 10, 46, 0, time.UTC)
-	body := "do the thing"
-	appendHeldTranscript(t, transcriptPath(r), holdLine(t, r, "entry-1", "/tmp/agent-net-501/r/s_bob.c_6f1b93f3c3bf060c.sock", body, at))
+	appendHeldTranscript(t, transcriptPath(r), holdLine("entry-1", sock, desc, at))
 	eventually(t, "the hold is reported", func() bool {
 		r.host.mu.Lock()
 		defer r.host.mu.Unlock()
@@ -67,9 +76,12 @@ func TestTranscriptHoldIsReported(t *testing.T) {
 	got := r.host.held[0]
 	r.host.mu.Unlock()
 	e := got.entry
-	if got.recipient != "s_claude" || e.UUID != "entry-1" || e.ReplySock != "/tmp/agent-net-501/r/s_bob.c_6f1b93f3c3bf060c.sock" ||
-		e.Preview != body || e.BodyLines != 1 || e.BodyChars != 12 || !e.At.Equal(at) {
-		t.Fatalf("hold = %+v, want s_claude entry-1 for the body %q at %s", got, body, at)
+	if got.recipient != "s_claude" || e.UUID != "entry-1" || e.ReplySock != sock ||
+		e.Preview != desc.Preview || e.FrameLines != desc.Lines || e.FrameChars != desc.Chars || !e.At.Equal(at) {
+		t.Fatalf("hold = %+v, want s_claude entry-1 for %q at %s", got, desc.Preview, at)
+	}
+	if e.Preview != "do the thing" {
+		t.Fatalf("preview = %q, want the first body line", e.Preview)
 	}
 }
 
@@ -113,7 +125,7 @@ func TestTranscriptReleaseNamesTheFrameNotCitedIDs(t *testing.T) {
 	if want == "" {
 		t.Fatal("the frame was not recorded")
 	}
-	if got := frameHash(content); got != want {
+	if got := claudeframes.Hash(content); got != want {
 		t.Fatalf("frame hash %s, recorded %s", got, want)
 	}
 	appendHeldTranscript(t, transcriptPath(r), map[string]any{
@@ -131,6 +143,49 @@ func TestTranscriptReleaseNamesTheFrameNotCitedIDs(t *testing.T) {
 	r.host.mu.Unlock()
 	if got.recipient != "s_claude" || got.replySock != sock || got.frameHash != want {
 		t.Fatalf("release = %+v, want the frame %s on %s", got, want, sock)
+	}
+}
+
+// A release is written as a user entry, a queued command attachment, or a
+// queue operation entry. Each form carries the frame unchanged, and each one
+// releases it.
+func TestTranscriptReleaseIsFoundInAnyEntryForm(t *testing.T) {
+	forms := []struct {
+		name  string
+		entry func(content string) map[string]any
+	}{
+		{"user turn", func(content string) map[string]any {
+			return map[string]any{"type": "user", "uuid": "release-user", "timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+				"message": map[string]any{"role": "user", "content": "Another Claude session sent a message:\n" + content}}
+		}},
+		{"queued command", func(content string) map[string]any {
+			return map[string]any{"type": "attachment", "uuid": "release-queued", "timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+				"attachment": map[string]any{"type": "queued_command", "commandMode": "prompt", "prompt": content}}
+		}},
+		{"queue operation", func(content string) map[string]any {
+			return map[string]any{"type": "queue-operation", "uuid": "release-queue", "timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+				"operation": "dequeue", "content": content}
+		}},
+	}
+	for _, f := range forms {
+		t.Run(f.name, func(t *testing.T) {
+			r := newBookRig(t)
+			m := request("m_release", "s_bob", "c_1")
+			m.Body = "please release this"
+			content, sock := r.deliverContent(m)
+			appendHeldTranscript(t, transcriptPath(r), f.entry(content))
+			eventually(t, "the release is reported", func() bool {
+				r.host.mu.Lock()
+				defer r.host.mu.Unlock()
+				return len(r.host.released) == 1
+			})
+			r.host.mu.Lock()
+			got := r.host.released[0]
+			r.host.mu.Unlock()
+			if got.replySock != sock || got.frameHash != claudeframes.Hash(content) {
+				t.Fatalf("release = %+v, want the frame on %s", got, sock)
+			}
+		})
 	}
 }
 
@@ -155,7 +210,13 @@ func TestTranscriptScansPastAHugeLine(t *testing.T) {
 	}
 	f.Close()
 	body := "after the huge line"
-	appendHeldTranscript(t, path, holdLine(t, r, "entry-after", "/tmp/x/r/s_bob.c_y.sock", body, time.Now()))
+	sock := "/tmp/x/r/s_bob.c_y.sock"
+	content := "<cross-session-message from=\"uds:" + sock + "\">\n" + body + "\n\n[agent-net] note\n</cross-session-message>"
+	desc, ok := claudeframes.Describe(content)
+	if !ok {
+		t.Fatal("the frame has no wrapper")
+	}
+	appendHeldTranscript(t, path, holdLine("entry-after", sock, desc, time.Now()))
 	eventually(t, "the hold after the huge line is reported", func() bool {
 		r.host.mu.Lock()
 		defer r.host.mu.Unlock()

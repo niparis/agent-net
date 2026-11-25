@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/niparis/agent-net/internal/claudeframes"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -53,13 +54,23 @@ func (p *claudePeer) frameIn(t *testing.T) (content, sock string) {
 }
 
 // holdEntry is the transcript entry Claude Code writes when it holds a frame.
-func holdEntry(uuid, sock, preview, at string) map[string]any {
+func holdEntry(uuid, sock string, d claudeframes.Description, at string) map[string]any {
 	return map[string]any{
 		"type": "system", "subtype": "informational", "uuid": uuid, "timestamp": at,
-		"content": "Held peer message \u2014 from uds:" + sock + " (peer claims name: bob); preview: \u00ab" + preview +
-			"\u00bb \u2026[1 line, " + itoa(len(preview)) + " chars \u2014 expand to review before approving] \u2014 not delivered to Claude (1 held). " +
+		"content": "Held peer message \u2014 from uds:" + sock + " (peer claims name: bob); preview: \u00ab" + d.Preview +
+			"\u00bb \u2026[" + itoa(d.Lines) + " lines, " + itoa(d.Chars) + " chars total \u2014 expand to review before approving] \u2014 not delivered to Claude (1 held). " +
 			"The sending session's permission mode class doesn't match this session's. Review it below, or set \"crossSessionInbound\" to \"accept\".",
 	}
+}
+
+// described is the description a frame has as Claude Code reports it.
+func described(t *testing.T, content string) claudeframes.Description {
+	t.Helper()
+	d, ok := claudeframes.Describe(content)
+	if !ok {
+		t.Fatalf("frame has no wrapper: %s", content)
+	}
+	return d
 }
 
 // A Claude session that held a message reports it as held, not delivered: the
@@ -91,7 +102,7 @@ func TestClaudeHeldMessageIsReportedAndReleased(t *testing.T) {
 	content, sock := p.frameIn(t)
 	eventually(t, "the message is delivered", func() bool { return messageState(t, sender, req.ID) == protocol.StateDelivered })
 
-	p.appendTranscript(t, holdEntry("held-1", sock, body, time.Now().UTC().Format(time.RFC3339Nano)))
+	p.appendTranscript(t, holdEntry("held-1", sock, described(t, content), time.Now().UTC().Format(time.RFC3339Nano)))
 	eventually(t, "the hold reaches the gateway", func() bool { return messageState(t, sender, req.ID) == protocol.StateHeldBySession })
 	got, _, err := g.gw.Store().Message(req.ID)
 	if err != nil {
@@ -165,9 +176,9 @@ func TestClaudeHeldNoticeIsAppliedOnceAcrossARestart(t *testing.T) {
 	})
 	sender, _ := helloPi(t, n, "bob", "/work/bob", true)
 	held := sendResult(t, sender.mustCall("send", map[string]any{"to": claudeID, "body": "the held body"}))
-	_, sock := p.frameIn(t)
+	heldContent, sock := p.frameIn(t)
 	eventually(t, "the held message is delivered", func() bool { return messageState(t, sender, held.ID) == protocol.StateDelivered })
-	p.appendTranscript(t, holdEntry("held-1", sock, "the held body", time.Now().UTC().Format(time.RFC3339Nano)))
+	p.appendTranscript(t, holdEntry("held-1", sock, described(t, heldContent), time.Now().UTC().Format(time.RFC3339Nano)))
 	eventually(t, "the hold is applied", func() bool { return messageState(t, sender, held.ID) == protocol.StateHeldBySession })
 
 	later := sendResult(t, sender.mustCall("send", map[string]any{"to": claudeID, "body": "the later body"}))
@@ -179,7 +190,9 @@ func TestClaudeHeldNoticeIsAppliedOnceAcrossARestart(t *testing.T) {
 	eventually(t, "Claude session registered again", func() bool { return n.d.SessionID("claude", "claude-peer") == claudeID })
 
 	// A notice that matches nothing makes the scan past the old notice visible.
-	p.appendTranscript(t, holdEntry("noise-1", sockLater, "no message starts like this", time.Now().UTC().Format(time.RFC3339Nano)))
+	p.appendTranscript(t, holdEntry("noise-1", sockLater,
+		claudeframes.Description{Preview: "no message starts like this", Lines: 9, Chars: 999},
+		time.Now().UTC().Format(time.RFC3339Nano)))
 	eventually(t, "the restarted scan reads the transcript", func() bool {
 		return len(logs.lines("matches no single unheld delivery", "no message starts like this")) == 1
 	})
@@ -221,10 +234,10 @@ func TestClaudeHeldNoticeDoesNotMatchAMessageDeliveredAfterIt(t *testing.T) {
 	})
 	sender, _ := helloPi(t, n, "bob", "/work/bob", true)
 	req := sendResult(t, sender.mustCall("send", map[string]any{"to": claudeID, "body": "arrived after the notice"}))
-	_, sock := p.frameIn(t)
+	content, sock := p.frameIn(t)
 	eventually(t, "the message is delivered", func() bool { return messageState(t, sender, req.ID) == protocol.StateDelivered })
 
-	p.appendTranscript(t, holdEntry("old-1", sock, "arrived after the notice", time.Now().Add(-5*time.Minute).UTC().Format(time.RFC3339Nano)))
+	p.appendTranscript(t, holdEntry("old-1", sock, described(t, content), time.Now().Add(-5*time.Minute).UTC().Format(time.RFC3339Nano)))
 	eventually(t, "the old notice is refused", func() bool {
 		return len(logs.lines("matches no single unheld delivery", "arrived after the notice")) == 1
 	})

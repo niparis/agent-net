@@ -1328,28 +1328,38 @@ set `crossSessionInbound` to `accept` there. It logs
 held state and the detail. A held message is not chased by the owed-reply
 reminders.
 
-The notice names the sender's reply socket and the first line of the body. The
-daemon ties it to the one frame with that socket and first line, written just
-before the notice; the notice's line and character counts tell two frames with
-the same first line apart. When no frame, or more than one, could be the one it
-describes, the daemon logs the notice and marks nothing rather than guess.
-Each notice is applied once, keyed by the notice's own id, so a daemon restart
-that reads the transcript again marks nothing new.
+The notice names the sender's reply socket and the size of the frame: its line
+count and its character count inside the wrapper, including agent-net's own
+notes. The daemon ties it to the one frame with that socket and that size,
+written just before the notice. The quoted first line only breaks a tie between
+two frames of the same size. A character outside the BMP counts as one code
+point or two UTF-16 units, and both are accepted. When no frame, or more than
+one, could be the one it describes, the daemon logs the notice and marks
+nothing rather than guess. Each notice is applied once, keyed by the notice's
+own id, so a daemon restart that reads the transcript again marks nothing new.
 
 Claude Code writes no entry when it drops a held message, so the detail says
-the message may have expired there; agent-net does not claim it still waits.
+the message may have expired there; agent-net does not claim it still waits. A
+held message that is never released still expires like any other undelivered
+message, and its detail then says it was held and may never have been seen.
 
-If the owner approves the message, Claude Code writes the frame back as a user
-turn. The daemon matches the frame's own content and reply socket, logs
-`session.delivery_released msg=<id>`, and reports the message as `delivered`
-with detail `released in Claude Code`. A message ID in the body or in
-agent-net's cited notes never ties a release, and a repeated delivered report
-does not undo a hold: only the release does.
+If the owner approves the message, Claude Code writes the frame back: as a user
+turn, as a queued command attachment, or as a queue operation entry. The daemon
+reads the first of those forms in the transcript and matches the frame's own
+content and reply socket, logs `session.delivery_released msg=<id>`, and
+reports the message as `delivered` with detail `released in Claude Code`. A
+message ID in the body or in agent-net's cited notes never ties a release. The
+release is applied once, and a repeated delivered report does not undo a hold:
+only the release does.
 
 A batch is one frame for several messages. The hold and the release name the
 carrier frame, and the gateway holds or releases the carrier and every original
 in its batch together. The batch body names its originals; that text is not
 what ties the frame.
+
+A hold or release report that the gateway does not take is kept in
+`daemon.db`. The daemon sends it again after the next connect and after a
+restart, in order, so a hold always arrives before the release that follows it.
 
 The daemon does not fake a matching permission mode, set
 `crossSessionInbound`, or send a held message again. Those are the owner's
@@ -1363,7 +1373,7 @@ The report names the final file behind a link. A link to a writable file, for
 example one in your own dotfiles repository, is named as the file to edit and
 needs no rebuild. A read-only file, or a link to one, is named with the
 declaration to put in the file that manages it, for example a Nix or Home
-Manager dotfile, and a rebuild. The check writes nothing.
+Manager dotfile, and a rebuild. A settings file agent-net never wrote, or one it cannot read, is not reported as a difference. The check writes nothing.
 An in-memory queue waiting for a later turn remains `dispatched`; its record is
 cleared because nothing reached the harness. It can be pushed again after a
 restart. OpenCode queued worker turns become delivered only after the plugin ack.

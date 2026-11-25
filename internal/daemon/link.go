@@ -475,6 +475,9 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	// while this link stays up. It ends when rctx is cancelled (runLink does
 	// that on return), and d.wg counts it, so Stop waits for it.
 	stalled := d.flushOutbox(rctx)
+	if d.flushClaudeReports(rctx) {
+		stalled = true
+	}
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.keepOutbox(rctx, stalled) }()
 	d.flushWorkerAssessments(rctx)

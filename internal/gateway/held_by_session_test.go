@@ -143,6 +143,32 @@ func TestHeldBatchCoversItsOriginalsAndCarrier(t *testing.T) {
 	}
 }
 
+// A held message reaches its normal end. If the owner never releases it, it
+// expires like any other undelivered message, and the sender reads that it was
+// held and may never have been seen.
+func TestHeldMessageExpiresWithTheReason(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+	req := heldRequest(t, s, a, b, "expires")
+	c.advance(protocol.DefaultTTL + time.Minute)
+	n, err := s.Expire()
+	if err != nil || n != 1 {
+		t.Fatalf("expired %d messages, %v, want the held one", n, err)
+	}
+	got, _, err := s.Message(req.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != protocol.StateExpired {
+		t.Fatalf("a held message that expired is %s, want expired", got.State)
+	}
+	for _, want := range []string{"held by Claude Code", "may never have been seen"} {
+		if !strings.Contains(got.DeliveryDetail, want) {
+			t.Fatalf("expired detail %q missing %q", got.DeliveryDetail, want)
+		}
+	}
+}
+
 // A held request that the session reads and answers closes like a delivered
 // one: a reply, an ack and a handoff all move it out of the held state.
 func TestHeldRequestClosesOnReplyAckAndHandoff(t *testing.T) {

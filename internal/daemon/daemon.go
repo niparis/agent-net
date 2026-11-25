@@ -74,15 +74,17 @@ type Host interface {
 }
 
 // ClaudeHeldEntry is one hold notice from a Claude transcript. UUID is the
-// entry's own id, so the daemon handles it once across restarts. ReplySock and
-// Preview describe the frame Claude held; At is the entry's timestamp.
+// entry's own id, so the daemon handles it once across restarts. ReplySock,
+// FrameLines and FrameChars describe the frame Claude held; Preview only
+// breaks a tie between two frames with the same size. At is the entry's
+// timestamp.
 type ClaudeHeldEntry struct {
-	UUID      string
-	ReplySock string
-	Preview   string
-	BodyLines int
-	BodyChars int
-	At        time.Time
+	UUID       string
+	ReplySock  string
+	Preview    string
+	FrameLines int
+	FrameChars int
+	At         time.Time
 }
 
 type Config struct {
@@ -423,35 +425,37 @@ type Daemon struct {
 	notifySend          func()
 	// mouseMu guards mouseNotices, the last report of each Claude mouse
 	// problem (claude_mouse.go), when the daemon has no state database.
-	mouseMu         sync.Mutex
-	mouseNotices    map[string]time.Time
-	skillSnapshots  skillSnapshots // archive bundles the gateway reads in parts (decision 0169)
-	sourceMu        sync.Mutex
-	sourceLocations map[string]bool // folders the last node.skill_sources listed; sourceMu guards it
-	outboxWake      chan struct{}   // a queued message wakes the link's outbox loop
-	ctoDispatchMu   ctoDispatchLock
-	ctoHandovers    []*ctoHandoverFlight // model layer handovers in flight; guarded by cto.mu
-	ctoPresenceMu   sync.Mutex
-	ctoEnterMu      sync.Mutex
-	ctoEntering     *ctoEnterCall
-	herdrOpenMu     sync.Mutex
-	herdrOpened     map[string]herdrOpenedPane
-	herdrOwnMu      sync.Mutex
-	herdrOwnSocket  string // agent-net's herdr server, once herdr named it
-	herdrOwnConfPID int    // the server process known to run with agent-net's config
-	herdrOwnNotePID int    // the server process the owner was told about
-	signIn          signInState
-	cto             ctoRuntime
-	claudeCTO       claudeCTOState
-	codexCTO        codexCTOState
-	ctoTranscript   ctoTranscriptCache // the parsed CTO transcript, for the owner timeline
-	layoutMu        sync.Mutex
-	layoutCache     *protocol.MachineLayout
-	layoutTime      time.Time
-	cfg             Config
-	log             *log.Logger
-	st              *state
-	client          *http.Client
+	mouseMu          sync.Mutex
+	mouseNotices     map[string]time.Time
+	skillSnapshots   skillSnapshots // archive bundles the gateway reads in parts (decision 0169)
+	sourceMu         sync.Mutex
+	sourceLocations  map[string]bool // folders the last node.skill_sources listed; sourceMu guards it
+	outboxWake       chan struct{}   // a queued message wakes the link's outbox loop
+	claudeReportMu   sync.Mutex
+	claudeReportBusy map[int64]bool // reports a flush is sending, guarded by claudeReportMu
+	ctoDispatchMu    ctoDispatchLock
+	ctoHandovers     []*ctoHandoverFlight // model layer handovers in flight; guarded by cto.mu
+	ctoPresenceMu    sync.Mutex
+	ctoEnterMu       sync.Mutex
+	ctoEntering      *ctoEnterCall
+	herdrOpenMu      sync.Mutex
+	herdrOpened      map[string]herdrOpenedPane
+	herdrOwnMu       sync.Mutex
+	herdrOwnSocket   string // agent-net's herdr server, once herdr named it
+	herdrOwnConfPID  int    // the server process known to run with agent-net's config
+	herdrOwnNotePID  int    // the server process the owner was told about
+	signIn           signInState
+	cto              ctoRuntime
+	claudeCTO        claudeCTOState
+	codexCTO         codexCTOState
+	ctoTranscript    ctoTranscriptCache // the parsed CTO transcript, for the owner timeline
+	layoutMu         sync.Mutex
+	layoutCache      *protocol.MachineLayout
+	layoutTime       time.Time
+	cfg              Config
+	log              *log.Logger
+	st               *state
+	client           *http.Client
 	// ctoNow and ctoCompactEvery are replaced in tests with a fake clock and
 	// no background loop.
 	ctoNow func() time.Time
@@ -1624,6 +1628,10 @@ func (d *Daemon) keepOutbox(ctx context.Context, stalled bool) {
 			}
 		}
 		stalled = d.flushOutbox(ctx)
+		// A held or released report follows the messages it describes.
+		if d.flushClaudeReports(ctx) {
+			stalled = true
+		}
 	}
 }
 

@@ -49,7 +49,8 @@ func (b *memBook) SaveFrame(f daemon.ClaudeDelivery) error {
 	for i, x := range b.rows {
 		if x.MessageID == f.MessageID {
 			b.rows[i].Frame, b.rows[i].ReplySock, b.rows[i].Preview = f.Frame, f.ReplySock, f.Preview
-			b.rows[i].BodyLines, b.rows[i].BodyChars, b.rows[i].FrameHash = f.BodyLines, f.BodyChars, f.FrameHash
+			b.rows[i].FrameLines, b.rows[i].FrameChars, b.rows[i].FrameChars16 = f.FrameLines, f.FrameChars, f.FrameChars16
+			b.rows[i].FrameHash = f.FrameHash
 			return nil
 		}
 	}

@@ -23,6 +23,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/niparis/agent-net/internal/claudeframes"
 	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -528,18 +529,20 @@ func (a *Adapter) prepareFrame(target protocol.SessionInfo, m protocol.Message) 
 	// else in the batch must not mark one original alone.
 	var built frame
 	if err := json.Unmarshal(line, &built); err == nil {
-		rec := daemon.ClaudeDelivery{
-			MessageID: m.ID, Recipient: target.SessionID, Sender: m.From, ConversationID: m.ConversationID,
-			Type: m.Type, DeliveredAt: time.Now(), ExpiresAt: m.ExpiresAt,
-			Frame: m.ID, ReplySock: replySock, Preview: framePreview(m.Body),
-			BodyLines: frameBodyLines(m.Body), BodyChars: frameBodyChars(m.Body),
-			FrameHash: frameHash(built.Message.Content),
-		}
-		if len(m.Batch) > 0 {
-			rec.Type = "batch"
-		}
-		if err := book.SaveFrame(rec); err != nil {
-			a.host.Logf("claude: cannot record frame %s for hold matching: %v", m.ID, err)
+		if desc, ok := claudeframes.Describe(built.Message.Content); ok {
+			rec := daemon.ClaudeDelivery{
+				MessageID: m.ID, Recipient: target.SessionID, Sender: m.From, ConversationID: m.ConversationID,
+				Type: m.Type, DeliveredAt: time.Now(), ExpiresAt: m.ExpiresAt,
+				Frame: m.ID, ReplySock: replySock, Preview: desc.Preview,
+				FrameLines: desc.Lines, FrameChars: desc.Chars, FrameChars16: desc.Chars16,
+				FrameHash: desc.Hash,
+			}
+			if len(m.Batch) > 0 {
+				rec.Type = "batch"
+			}
+			if err := book.SaveFrame(rec); err != nil {
+				a.host.Logf("claude: cannot record frame %s for hold matching: %v", m.ID, err)
+			}
 		}
 	}
 	return line, forget, nil

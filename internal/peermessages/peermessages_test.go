@@ -103,6 +103,22 @@ func TestCompareCallsAPlainReadOnlyFileReadOnly(t *testing.T) {
 	}
 }
 
+// An unreadable settings file is the owner's business unless agent-net wrote
+// the key it recorded there.
+func TestCompareReportsAnUnreadableFileOnlyWhenAgentNetSetTheKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if r := Compare(State{Asked: true}, path); r.Problem != "" {
+		t.Fatalf("a file agent-net did not write was reported: %+v", r)
+	}
+	r := Compare(State{SetByAgentNet: true}, path)
+	if !strings.Contains(r.Problem, "cannot read") {
+		t.Fatalf("the unreadable file agent-net wrote was not reported: %+v", r)
+	}
+}
+
 // A missing file is named, and a record that did not set the key is not a
 // problem: the owner chose to hold messages.
 func TestCompareTreatsAMissingFileAsTheRecordedChoice(t *testing.T) {
