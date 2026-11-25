@@ -131,7 +131,7 @@ func TestPickKeepsWhatItsRunUsed(t *testing.T) {
 	if _, err := g.store.db.Exec(`UPDATE sessions SET worker=json_set(worker,'$.usage',json(?)) WHERE id=?`, string(raw), worker); err != nil {
 		t.Fatal(err)
 	}
-	cf.clock.t = cf.clock.t.Add(30 * time.Minute)
+	cf.clock.advance(30 * time.Minute)
 	now := g.store.now()
 	g.usage.set(cf.nc.id, now, protocol.UsageReport{Quotas: &protocol.Quotas{GeneratedAt: now.Unix(), Providers: []protocol.QuotaProvider{
 		{Provider: "codex", Windows: []protocol.QuotaWindow{{ID: "5h", Kind: "five_hour", PercentUsed: 12}, {ID: "week", Kind: "week", PercentUsed: 21}}}}}})
