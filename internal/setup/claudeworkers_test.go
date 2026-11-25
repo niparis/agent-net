@@ -177,7 +177,7 @@ func TestClaudeWorkersModUpdatesWhenOnlyPluginVersionIsStale(t *testing.T) {
 }
 
 // A settings file that is a link is never written. The old marketplace entries
-// stay and the workers step reports why it could not move them.
+// stay and the workers step says the skills link is in place.
 func TestClaudeWorkersModDoesNotWriteALinkedSettingsFile(t *testing.T) {
 	f := newFixture(t)
 	fakeClaude(t, f.home)
@@ -204,7 +204,7 @@ func TestClaudeWorkersModDoesNotWriteALinkedSettingsFile(t *testing.T) {
 	want := protocol.Integrations{WorkersMod: true}
 	r.want = &want
 	r.claudeWorkersMod()
-	if !strings.Contains(out.String(), "the old marketplace plugin stays:") {
+	if !strings.Contains(out.String(), "claude workers mod    on (plugin agent-net-workers in the Claude skills folder)") {
 		t.Errorf("output:\n%s", out.String())
 	}
 	if got, err := os.ReadFile(dotfiles); err != nil || string(got) != old {
@@ -268,6 +268,13 @@ func TestUninstallRemovesTheClaudeWorkersMod(t *testing.T) {
 	f := newFixture(t)
 	fakeClaude(t, f.home)
 	runAskingAll(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo, HintHook: HintHookNo, PolicyHook: PolicyHookNo, WorkersMod: WorkersModYes})
+	notice := filepath.Join(filepath.Dir(workersModStatePath()), "claude-workers-notice.json")
+	migrate := filepath.Join(filepath.Dir(workersModStatePath()), "claude-workers-migrate.json")
+	for _, path := range []string{notice, migrate} {
+		if err := os.WriteFile(path, []byte(`{"state":"blocked"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	var out bytes.Buffer
 	if err := Uninstall(Options{Out: &out, NoService: true}); err != nil {
@@ -284,6 +291,11 @@ func TestUninstallRemovesTheClaudeWorkersMod(t *testing.T) {
 	}
 	if _, err := os.Stat(workersModStatePath()); err == nil {
 		t.Error("the state file is still there")
+	}
+	for _, path := range []string{notice, migrate} {
+		if _, err := os.Stat(path); err == nil {
+			t.Errorf("%s is still there", path)
+		}
 	}
 }
 
@@ -309,14 +321,17 @@ echo "$*" >> "` + calls + `"
 case "$1 $2" in
   "plugin list") printf '%s\n' '[{"id":"` + agentfiles.ClaudeWorkersSkillsID + `","enabled":false}]' ;;
   "plugin marketplace")
-    python3 - "$3" "` + settings + `" <<'PY'
+    if [ "$3" = remove ]; then
+      python3 - "$3" "` + settings + `" <<'PY'
 import json,sys
 d=json.load(open(sys.argv[2]))
 d.pop("enabledPlugins",None); d.pop("extraKnownMarketplaces",None)
 json.dump(d,open(sys.argv[2],"w"))
 PY
+    fi
   ;;
 esac
+exit 0
 `
 	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)

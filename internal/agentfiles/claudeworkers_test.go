@@ -208,7 +208,7 @@ func TestSyncClaudeWorkersReportsAUserDisable(t *testing.T) {
 	write(t, settings, `{"enabledPlugins":{"`+ClaudeWorkersSkillsID+`":false}}`)
 
 	r := SyncClaudeWorkers()
-	if r.Text != "off (disabled in Claude Code)" || !strings.Contains(r.Note, "claude plugin enable "+ClaudeWorkersSkillsID) {
+	if r.Text != "off (disabled in Claude Code)" || r.Note != "" {
 		t.Errorf("result: %+v", r)
 	}
 	if got := read(t, settings); !strings.Contains(got, `"`+ClaudeWorkersSkillsID+`":false`) {
@@ -219,10 +219,10 @@ func TestSyncClaudeWorkersReportsAUserDisable(t *testing.T) {
 	}
 }
 
-// An old marketplace copy that is enabled and installed is the window. The
-// sync takes agent-net's own link out so a lost marketplace registration
-// cannot load both copies. When the old entry is lost, the link comes back.
-func TestSyncClaudeWorkersKeepsOneWindow(t *testing.T) {
+// The link stays while the old marketplace copy runs: Claude Code itself
+// enables only one copy. When the old entry is lost, the skills copy is
+// already there, without a daemon start.
+func TestSyncClaudeWorkersKeepsTheLinkWhileTheOldCopyRuns(t *testing.T) {
 	fakeHome(t)
 	if _, err := WriteClaudeWorkers(); err != nil {
 		t.Fatal(err)
@@ -238,22 +238,22 @@ func TestSyncClaudeWorkersKeepsOneWindow(t *testing.T) {
 	settings := filepath.Join(home(), ".claude", "settings.json")
 	write(t, settings, `{"enabledPlugins":{"`+ClaudeWorkersOldID+`":true}}`)
 	write(t, filepath.Join(home(), ".claude", "plugins", "installed_plugins.json"),
-		`{"version":2,"plugins":{"`+ClaudeWorkersOldID+`":[{"scope":"user"}]}}`)
+		`{"version":2,"plugins":{"`+ClaudeWorkersOldID+`":[{"scope":"user","version":"`+ClaudeWorkersPanelVersion()+`"}]}}`)
 
 	r := SyncClaudeWorkers()
-	if r.Text != "on (old marketplace copy)" {
+	if r.Text != "on (old marketplace copy)" || r.Err != nil {
 		t.Errorf("old copy runs: %+v", r)
 	}
-	if _, err := os.Lstat(link); err == nil {
-		t.Error("both copies can load: the link was left in the skills folder")
+	if _, err := os.Lstat(link); err != nil {
+		t.Error("the link was removed while the old copy runs: a lost old entry would leave no window")
 	}
 	write(t, settings, `{}`)
 	r = SyncClaudeWorkers()
-	if !r.Changed || r.Err != nil {
+	if r.Err != nil {
 		t.Fatalf("old entry lost: %+v", r)
 	}
 	if _, err := os.Lstat(link); err != nil {
-		t.Error("the link was not put back after the old entry was lost")
+		t.Error("the link was not kept")
 	}
 	if s := ClaudeWorkersStatusNow(); s.OldRuns() || !s.Live() {
 		t.Errorf("status after the move: %+v", s)
@@ -269,7 +269,7 @@ func TestClaudeWorkersStatusReadsTheLiveState(t *testing.T) {
 	settings := filepath.Join(home(), ".claude", "settings.json")
 	write(t, settings, `{"enabledPlugins":{"`+ClaudeWorkersOldID+`":true}}`)
 	write(t, filepath.Join(home(), ".claude", "plugins", "installed_plugins.json"),
-		`{"version":2,"plugins":{"`+ClaudeWorkersOldID+`":[{"scope":"user"}]}}`)
+		`{"version":2,"plugins":{"`+ClaudeWorkersOldID+`":[{"scope":"user","version":"`+ClaudeWorkersPanelVersion()+`"}]}}`)
 	s := ClaudeWorkersStatusNow()
 	if s.LinkOK || !s.OldEnabled || !s.OldInstalled || !s.OldRuns() || !s.Live() {
 		t.Errorf("old copy: %+v", s)
@@ -320,13 +320,102 @@ func TestMigrateClaudeWorkersLeavesASettingsLinkAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	note := MigrateClaudeWorkers()
-	if !strings.Contains(note, "not agent-net's to write") {
+	if note != "" {
 		t.Errorf("note: %q", note)
 	}
 	if got := read(t, dotfiles); !strings.Contains(got, ClaudeWorkersOldID) {
 		t.Error("the linked settings file was changed")
 	}
 	if s := ClaudeWorkersStatusNow(); !s.SettingsLinked || !s.OldEnabled || s.SettingsWritable {
+		t.Errorf("status: %+v", s)
+	}
+}
+
+// When the enabled entry alone is lost, an installed old copy blocks the
+// skills copy. The daemon removes that installed copy; the command writes no
+// settings key, so a linked settings file is left byte for byte. This is the
+// owner's loss: the settings file lost its marketplace entry too, but Claude
+// Code's own marketplace list still has it.
+func TestMigrateClaudeWorkersUninstallsTheBlockingOldCopyOnALinkedSettingsFile(t *testing.T) {
+	h := fakeHome(t)
+	if _, err := WriteClaudeWorkers(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := EnsureClaudeWorkersLink(); err != nil {
+		t.Fatal(err)
+	}
+	calls := filepath.Join(h, "calls")
+	bin := filepath.Join(h, "bin")
+	write(t, filepath.Join(bin, "claude"), `#!/bin/sh
+echo "$*" >> "`+calls+`"
+case "$1 $2" in
+  "plugin uninstall") printf '%s\n' '{"version":2,"plugins":{}}' > "`+filepath.Join(h, ".claude", "plugins", "installed_plugins.json")+`" ;;
+esac
+`)
+	if err := os.Chmod(filepath.Join(bin, "claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	dotfiles := filepath.Join(h, "dotfiles", "settings.json")
+	write(t, dotfiles, `{}`)
+	settings := filepath.Join(h, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settings), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(dotfiles, settings); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(h, ".claude", "plugins", "known_marketplaces.json"),
+		`{"agent-net":{"source":{"source":"directory","path":"/tmp/market"}}}`)
+	write(t, filepath.Join(h, ".claude", "plugins", "installed_plugins.json"),
+		`{"version":2,"plugins":{"`+ClaudeWorkersOldID+`":[{"scope":"user","version":"`+ClaudeWorkersPanelVersion()+`"}]}}`)
+	before := read(t, dotfiles)
+	if s := ClaudeWorkersStatusNow(); !s.BlockedByInstalledCopy() || s.Marketplace || !s.KnownMarketplace {
+		t.Fatalf("the loss was not read as blocked: %+v", s)
+	}
+	if note := MigrateClaudeWorkers(); note != "" {
+		t.Errorf("note: %q", note)
+	}
+	got := read(t, calls)
+	if !strings.Contains(got, "plugin uninstall "+ClaudeWorkersOldID+" -s user") {
+		t.Errorf("the blocking old copy was not uninstalled:\n%s", got)
+	}
+	if s := ClaudeWorkersStatusNow(); s.OldInstalled || !s.Live() {
+		t.Errorf("status: %+v", s)
+	}
+	if after := read(t, dotfiles); after != before {
+		t.Errorf("the linked settings file was written:\nbefore %s\nafter  %s", before, after)
+	}
+}
+
+// A user's explicit false for the old id is respected: the repair does not
+// remove the installed copy and bring the window back.
+func TestMigrateClaudeWorkersKeepsAnExplicitOldDisable(t *testing.T) {
+	h := fakeHome(t)
+	if _, err := WriteClaudeWorkers(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := EnsureClaudeWorkersLink(); err != nil {
+		t.Fatal(err)
+	}
+	calls := filepath.Join(h, "calls")
+	bin := filepath.Join(h, "bin")
+	write(t, filepath.Join(bin, "claude"), "#!/bin/sh\necho \"$*\" >> \""+calls+"\"\n")
+	if err := os.Chmod(filepath.Join(bin, "claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	settings := filepath.Join(h, ".claude", "settings.json")
+	write(t, settings, `{"enabledPlugins":{"`+ClaudeWorkersOldID+`":false},"extraKnownMarketplaces":{"agent-net":{}}}`)
+	write(t, filepath.Join(h, ".claude", "plugins", "installed_plugins.json"),
+		`{"version":2,"plugins":{"`+ClaudeWorkersOldID+`":[{"scope":"user","version":"`+ClaudeWorkersPanelVersion()+`"}]}}`)
+	if note := MigrateClaudeWorkers(); note != "" {
+		t.Errorf("note: %q", note)
+	}
+	if _, err := os.Stat(calls); err == nil {
+		t.Errorf("a claude command ran for a user disable:\n%s", read(t, calls))
+	}
+	if s := ClaudeWorkersStatusNow(); !s.Disabled || s.Live() {
 		t.Errorf("status: %+v", s)
 	}
 }

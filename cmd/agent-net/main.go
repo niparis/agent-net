@@ -393,10 +393,14 @@ func cmdDaemon(ctx context.Context, args []string) error {
 		CodexHome:         agentfiles.CodexHome(),
 		AgySummaries:      filepath.Join(inventoryHome, ".gemini", "antigravity-cli", "conversation_summaries.db"),
 		RefreshAgentFiles: agentfiles.SyncAndLogWithSnapshot,
-		ApplyIntegrations: setup.ApplyIntegrations,
-		UsageSampler:      sysusage.New(nil),
-		NoAutoUpgrade:     nc.NoAutoUpgrade || *noAuto || os.Getenv("AGENT_NET_NO_AUTO_UPGRADE") == "1",
-		NoLaunch:          nc.NoLaunch, ModelProviders: nc.ModelProviders, Workers: ws, EnterSSH: nc.EnterSSHEnabled(), EnterSSHHosts: nc.EnterSSHHosts,
+		MigrateClaudeWorkers: func() string {
+			return agentfiles.MigrateClaudeWorkersOnce(version)
+		},
+		ClaudeWorkersWarning: agentfiles.ClaudeWorkersWarning,
+		ApplyIntegrations:    setup.ApplyIntegrations,
+		UsageSampler:         sysusage.New(nil),
+		NoAutoUpgrade:        nc.NoAutoUpgrade || *noAuto || os.Getenv("AGENT_NET_NO_AUTO_UPGRADE") == "1",
+		NoLaunch:             nc.NoLaunch, ModelProviders: nc.ModelProviders, Workers: ws, EnterSSH: nc.EnterSSHEnabled(), EnterSSHHosts: nc.EnterSSHHosts,
 		QuotaAXIPath: nc.QuotaAXI,
 		HarnessPaths: nc.HarnessPaths,
 		// Tests set this to 0s so they need not wait up to 10 s.

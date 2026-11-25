@@ -250,6 +250,15 @@ type Config struct {
 	// with this binary. It logs through the function it gets. Default: none
 	// (tests must not touch the home dir of the machine they run on).
 	RefreshAgentFiles func(logf func(format string, args ...any), snapshot settings.Snapshot)
+	// MigrateClaudeWorkers moves or refreshes an old Claude marketplace copy
+	// of the workers plugin. It runs in the background after the start path, so
+	// a claude command never delays the daemon. It returns a line to log when
+	// it did not finish. Default: none (tests must not touch the machine).
+	MigrateClaudeWorkers func() string
+	// ClaudeWorkersWarning is the short line the Machines screen shows when
+	// the owner asked for the Claude worker window and it cannot load. It reads
+	// files only. Default: none.
+	ClaudeWorkersWarning func() string
 	// ApplyIntegrations makes this machine follow the owner's setup answers
 	// for the network. It runs at start and when the answers change. Default:
 	// none (tests must not touch the home dir of the machine they run on).
@@ -585,6 +594,9 @@ type Daemon struct {
 	updateSettingKnown bool
 	updateSettingOff   bool
 	intgWake           chan struct{}
+	// claudeMigrateMu keeps the background Claude worker migration to one run
+	// at a time (claude_workers.go).
+	claudeMigrateMu sync.Mutex
 	// qmu guards worker admission: the queue, lastStart and qGone (queue.go).
 	// It is taken before wmu, never after.
 	qmu sync.Mutex
@@ -806,6 +818,15 @@ func (d *Daemon) Start(ctx context.Context) error {
 	d.files.mu.Unlock()
 	if d.cfg.RefreshAgentFiles != nil {
 		d.cfg.RefreshAgentFiles(d.Logf, d.SettingsSnapshot())
+	}
+	// The Claude commands that move an old worker plugin run off the start
+	// path: a broken claude run must not delay the socket or the other files.
+	if d.cfg.MigrateClaudeWorkers != nil {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
+			d.migrateClaudeWorkers()
+		}()
 	}
 	d.adoptLiveClaudeCTO()
 	d.planCTORestart()

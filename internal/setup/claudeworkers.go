@@ -115,15 +115,6 @@ func (r *runner) claudeWorkersMod() {
 	}
 	migrateNote := agentfiles.MigrateClaudeWorkers()
 	live = agentfiles.ClaudeWorkersStatusNow()
-	if live.OldRuns() {
-		// Keep our link out of the skills folder while the old marketplace copy
-		// is the window, so a lost marketplace registration cannot load both.
-		if _, _, err := agentfiles.RemoveClaudeWorkersLink(); err != nil {
-			r.step(workersModStepName, "", err)
-			return
-		}
-		live = agentfiles.ClaudeWorkersStatusNow()
-	}
 	if err := saveWorkersModState(workersModState{Asked: true, Installed: true, Dir: agentfiles.ClaudeWorkersDir()}); err != nil {
 		r.step(workersModStepName, "", err)
 		return
@@ -133,13 +124,12 @@ func (r *runner) claudeWorkersMod() {
 	}
 	switch {
 	case live.OldRuns():
-		r.step(workersModStepName, "on (old marketplace copy)", nil)
-		r.hint("hint: run agent-net setup --claude-workers-mod after the old marketplace entry is gone to move the window to the skills folder")
-	case live.OldEnabled && !live.OldInstalled && live.OldMarketplace:
-		r.step(workersModStepName, "off (stale marketplace entry)", nil)
-		r.hint("hint: remove the old agent-net-workers@agent-net entry from Claude Code settings, then run agent-net setup --claude-workers-mod")
+		r.step(workersModStepName, "on (old marketplace copy, and the skills link is ready)", nil)
 	case live.Disabled:
 		r.step(workersModStepName, "off (disabled in Claude Code; the skills link is in place)", nil)
+	case live.BlockedByInstalledCopy():
+		r.step(workersModStepName, "off (the old installed copy blocks the skills plugin)", nil)
+		r.hint("hint: run claude plugin uninstall %s -s user", agentfiles.ClaudeWorkersOldID)
 	case !st.Installed:
 		r.step(workersModStepName, "on (plugin agent-net-workers in the Claude skills folder)", nil)
 	case changed:
@@ -158,10 +148,10 @@ func claudeWorkersLiveText(s agentfiles.ClaudeWorkersStatus) string {
 		return "off (a foreign entry has the name)"
 	case s.OldRuns():
 		return "on (old marketplace copy)"
-	case s.OldEnabled && !s.OldInstalled && s.OldMarketplace:
-		return "off (stale marketplace entry)"
 	case s.Disabled:
 		return "off (disabled in Claude Code)"
+	case s.BlockedByInstalledCopy():
+		return "off (the old installed copy blocks the skills plugin)"
 	case s.LinkOK:
 		return "on (plugin agent-net-workers in the Claude skills folder)"
 	default:
@@ -204,6 +194,7 @@ func (r *runner) removeClaudeWorkersMod() {
 	}
 	oldNote := agentfiles.RemoveOldClaudeWorkers()
 	os.Remove(workersModStatePath())
+	agentfiles.RemoveClaudeWorkersRecords()
 	status := agentfiles.ClaudeWorkersStatusNow()
 	switch {
 	case foreign != "":
@@ -241,6 +232,7 @@ func (r *runner) removeClaudeWorkersModFiles() {
 		return
 	}
 	os.Remove(workersModStatePath())
+	agentfiles.RemoveClaudeWorkersRecords()
 	switch {
 	case foreign != "":
 		r.step(workersModStepName, "ok (removed agent-net's files; a foreign entry with the name was left alone)", nil)

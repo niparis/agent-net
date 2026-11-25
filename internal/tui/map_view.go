@@ -67,6 +67,11 @@ func (m Model) mapDetailLines(node protocol.Node, ok bool, width, rows int) []st
 					add(sBad.Render(line))
 				}
 			}
+			if harness.WorkersWarning != "" {
+				for _, line := range wrap("! "+sanitize(harness.WorkersWarning), max(width-2, 8)) {
+					add(sBad.Render(line))
+				}
+			}
 		}
 	}
 

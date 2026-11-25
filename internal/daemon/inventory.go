@@ -43,6 +43,9 @@ func (d *Daemon) refreshHarnessInventory(ctx context.Context) []protocol.Harness
 		list[i].ModelProviders = d.cfg.ModelProviders
 		if list[i].Name == "claude" {
 			list[i].PolicyReady = policyHookInstalled()
+			if d.cfg.ClaudeWorkersWarning != nil {
+				list[i].WorkersWarning = d.cfg.ClaudeWorkersWarning()
+			}
 		}
 	}
 	d.hmu.Unlock()
