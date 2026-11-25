@@ -560,10 +560,11 @@ func TestClaudeSystemReminderIsNotOwnerWords(t *testing.T) {
 
 // The prompt hook runs before the transcript entry. When the entry appears
 // after the wait has ended and says the owner typed the prompt, the words are
-// kept when they are next needed. Nothing polls for it.
+// kept when they are next needed. Nothing polls for it. The late entry sends no
+// signal: that goes only at hook time.
 func TestClaudeLateHumanEntryKeepsTheWords(t *testing.T) {
 	const native, promptID, text = "claude-late-human", "prompt-late-human", "use a codex worker for this"
-	_, n, sid := claudeSessionFor(t, native)
+	g, n, sid := claudeSessionFor(t, native)
 	n.d.claudeOwnerWait = 100 * time.Millisecond
 	transcript := filepath.Join(t.TempDir(), native+".jsonl")
 	askPolicy(t, cliClient(t, n), protocol.PolicyRequest{
@@ -579,6 +580,9 @@ func TestClaudeLateHumanEntryKeepsTheWords(t *testing.T) {
 	}
 	if !n.d.ownerWordsMatch(sid, text) {
 		t.Fatal("a human entry written after the wait was not kept")
+	}
+	if got := ownerInstructionFrom(t, g, n, sid); got != "" {
+		t.Fatalf("a late entry was sent as the owner's words: %q", got)
 	}
 }
 

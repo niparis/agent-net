@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -162,7 +163,9 @@ func TestTypedClaudePromptClearsTheWaitAndClosesTheAsk(t *testing.T) {
 		t.Fatalf("a peer message closed the ask: %s", got)
 	}
 
-	cli.mustCall(protocol.MethodPolicy, protocol.PolicyRequest{Harness: "claude", NativeID: "c-one", Prompt: "go"})
+	transcript := writeClaudeTranscript(t, t.TempDir(), "c-one", claudeUserEntry("p-go", "go", typedOrigin))
+	cli.mustCall(protocol.MethodPolicy, protocol.PolicyRequest{Harness: "claude", NativeID: "c-one", Prompt: "go",
+		PromptID: "p-go", TranscriptPath: transcript})
 	eventually(t, "typed prompt clears the wait", func() bool { return waitingOf(t, n, id) == nil })
 	eventually(t, "typed prompt closes the ask", func() bool { return inboxStatus(t, n, created.Item.ID) != "open" })
 	// What he typed is his answer: the judgment search finds it with the ask.
@@ -175,6 +178,54 @@ func TestTypedClaudePromptClearsTheWaitAndClosesTheAsk(t *testing.T) {
 	}
 	if err := json.Unmarshal(found, &judged); err != nil || len(judged.Items) != 1 || judged.Items[0].Text != "Q: Build the grant? / A: go" {
 		t.Fatalf("judgments: %s %v", found, err)
+	}
+}
+
+// No transcript entry proves the owner typed the prompt. The wait still ends
+// and the ask closes as before, but its text is not captured and no signal is
+// sent for the next message. A late human entry is covered in
+// claude_sender_test.go.
+func TestTypedClaudePromptWithoutTranscriptKeepsNoText(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi"})
+	n.d.SetSessions("claude", []protocol.SessionInfo{{Harness: "claude", NativeID: "c-noentry", Status: "idle", Cwd: "/work/c"}})
+	n.d.claudeOwnerWait = 100 * time.Millisecond
+	eventually(t, "claude session", func() bool { return n.d.SessionID("claude", "c-noentry") != "" })
+	id := n.d.SessionID("claude", "c-noentry")
+	raw, err := n.d.call(context.Background(), "inbox.create", map[string]any{"session_id": id, "kind": "approval", "text": "Build the grant?", "recommendation": "go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var created struct {
+		Item protocol.InboxItem `json:"item"`
+	}
+	if err := json.Unmarshal(raw, &created); err != nil || created.Item.ID == "" {
+		t.Fatalf("create: %s %v", raw, err)
+	}
+	cli := dialLocal(t, n.sock)
+	cli.mustCall("hello", map[string]any{"client": "cli"})
+	cli.mustCall("waiting", map[string]any{"harness": "claude", "native_id": "c-noentry", "kind": "approval", "text": "Build the grant?", "explicit": true})
+	eventually(t, "waiting stored", func() bool { return waitingOf(t, n, id) != nil })
+
+	cli.mustCall(protocol.MethodPolicy, protocol.PolicyRequest{Harness: "claude", NativeID: "c-noentry", Prompt: "go",
+		PromptID: "p-go", TranscriptPath: filepath.Join(t.TempDir(), "c-noentry.jsonl")})
+	n.d.claudeChecks.Wait()
+	eventually(t, "the wait closes without text", func() bool { return waitingOf(t, n, id) == nil })
+	eventually(t, "the ask closes without text", func() bool { return inboxStatus(t, n, created.Item.ID) != "open" })
+	found, err := n.d.call(context.Background(), "judgment.find", protocol.JudgmentsFindRequest{Ref: created.Item.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var judged struct {
+		Items []protocol.StandingOrder `json:"items"`
+	}
+	want := "Q: Build the grant? / A: replied in the asking session (the text was not captured)"
+	if err := json.Unmarshal(found, &judged); err != nil || len(judged.Items) != 1 || judged.Items[0].Text != want {
+		t.Fatalf("judgments: %s %v", found, err)
+	}
+	if got := ownerInstructionFrom(t, g, n, id); got != "" {
+		t.Fatalf("a prompt with no entry entered owner_prompt: %q", got)
 	}
 }
 
