@@ -7,9 +7,11 @@
 # the Messages API replaces the model, so no model call is made and no login is
 # read. A stub `agent-net` prints one worker row for the band.
 #
-# Usage: scripts/claude-plugin-skills-proof.sh [output folder]
-# Needs: claude 2.1.332, python3. tmux is used for the interactive checks and
-# for the band; without it those checks print SKIP.
+# Usage: scripts/claude-plugin-skills-proof.sh [--claude PATH] [output folder]
+#   --claude PATH  run every check on that Claude Code binary instead of the
+#                  one on PATH, so a second installed version can be checked.
+# Needs: Claude Code 2.1.330 or newer, python3. tmux is used for the
+# interactive checks and for the band; without it those checks print SKIP.
 #
 # Checks, in order:
 #   1. plugin list: <name>@skills-dir is enabled with no settings.json.
@@ -21,15 +23,42 @@
 #      the settings entry leaves one run.
 #   7. old marketplace plugin plus skills plugin: the marketplace one shadows
 #      the skills one; removing it lets the skills one load.
+#   8. with no settings.json, Claude Code obeys the plugin's output: a
+#      PreToolUse deny and allow, additionalContext on PreToolUse,
+#      UserPromptSubmit, PostToolUse, PostToolUseFailure and SessionStart
+#      (compact), and a Stop block. Each has a control without that hook, and
+#      the disabled plugin has no effect.
+#   9. a stale enabledPlugins entry from an earlier install keeps the plugin
+#      off when it comes back, until the entry is cleared.
+#
+# The five agent-net hooks print these kinds of output: additionalContext
+# (hint, policy-hook, urgent-hook), permissionDecision allow (tool-decide), and
+# nothing at all, with one daemon call (needs-hook). Section 8 checks the first
+# two kinds and a Stop block.
 set -euo pipefail
 
 repo="$(cd "$(dirname "$0")/.." && pwd)"
-for tool in claude python3 timeout; do
+out_arg=""; claude_bin="${CLAUDE_BIN:-}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --claude) claude_bin="${2:?--claude needs a path}"; shift 2;;
+    --claude=*) claude_bin="${1#*=}"; shift;;
+    -h|--help) sed -n '2,30p' "$0"; exit 0;;
+    *) out_arg="$1"; shift;;
+  esac
+done
+[ -n "$claude_bin" ] || claude_bin="$(command -v claude || true)"
+[ -n "$claude_bin" ] && [ -x "$claude_bin" ] || { echo "claude not found; give --claude PATH" >&2; exit 2; }
+claude_bin="$(readlink -f "$claude_bin")"
+root="$(mktemp -d "${TMPDIR:-/tmp}/agent-net-claude-plugin-proof.XXXXXX")"
+mkdir -p "$root/claude-bin"
+ln -s "$claude_bin" "$root/claude-bin/claude"
+export PATH="$root/claude-bin:$PATH"
+for tool in python3 timeout; do
   command -v "$tool" >/dev/null 2>&1 || { echo "needs $tool on PATH" >&2; exit 2; }
 done
-printf 'claude: %s\n' "$(claude --version 2>/dev/null | head -1)"
-root="$(mktemp -d "${TMPDIR:-/tmp}/agent-net-claude-plugin-proof.XXXXXX")"
-out="${1:-$root/frames}"
+printf 'claude: %s (%s)\n' "$(claude --version 2>/dev/null | head -1)" "$claude_bin"
+out="${out_arg:-$root/frames}"
 mkdir -p "$out"
 out="$(cd "$out" && pwd)"
 trap 'rm -rf "$root"' EXIT
@@ -74,7 +103,37 @@ cat > "$root/bin/allowhook.sh" <<'EOF'
 cat >/dev/null
 printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"plugin proof"}}\n'
 EOF
-chmod +x "$root/bin/loghook.sh" "$root/bin/allowhook.sh"
+# The output stubs: a decision for PreToolUse, additionalContext for an event,
+# and a Stop block that fires once (the second Stop lets the turn end).
+cat > "$root/bin/decide.py" <<'EOF'
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+cmd = (d.get("tool_input") or {}).get("command") or ""
+if "deny-me" in cmd:
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
+        "permissionDecision": "deny", "permissionDecisionReason": "probe deny"}}))
+elif "allow-me" in cmd:
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
+        "permissionDecision": "allow", "permissionDecisionReason": "probe allow"}}))
+EOF
+cat > "$root/bin/context.sh" <<'EOF'
+#!/bin/sh
+cat >/dev/null
+printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"}}\n' "$1" "$2"
+EOF
+cat > "$root/bin/stopblock.sh" <<'EOF'
+#!/bin/sh
+cat >/dev/null
+n=$(cat "$1" 2>/dev/null || echo 0)
+echo $((n+1)) > "$1"
+if [ "$n" -eq 0 ]; then
+  printf '{"decision":"block","reason":"PROBE_STOP_REASON_CONTINUE"}\n'
+fi
+EOF
+chmod +x "$root/bin/loghook.sh" "$root/bin/allowhook.sh" "$root/bin/decide.py" "$root/bin/context.sh" "$root/bin/stopblock.sh"
 
 # A local stand-in for the Messages API. It picks a tool from the prompt and
 # ends the turn after the tool result. No network, no model.
@@ -116,6 +175,10 @@ def plan(body):
     if last_has_tool_result(body):
         return ("text", None, None)
     p = user_text(body)
+    if "use-bash-deny" in p:
+        return ("tool", "Bash", {"command": "echo deny-me >> " + os.environ["PROBE_DENY_FILE"], "description": "proof"})
+    if "use-bash-allow" in p:
+        return ("tool", "Bash", {"command": "echo allow-me >> " + os.environ["PROBE_ALLOW_FILE"], "description": "proof"})
     if "use-bash-ok" in p:
         return ("tool", "Bash", {"command": "echo ok", "description": "proof"})
     if "use-bash-fail" in p:
@@ -218,6 +281,8 @@ printf '%s\n' "{\"mcpServers\":{\"agent-net\":{\"command\":\"python3\",\"args\":
 
 export FAKE_API_LOG="$api_log"
 export PROBE_WRITE="$root/work/never-written.txt"
+export PROBE_DENY_FILE="$root/work/deny-ran.txt"
+export PROBE_ALLOW_FILE="$root/work/allow-ran.txt"
 : > "$api_log"
 python3 "$root/bin/fakeapi.py" > "$root/port" 2> "$root/api.err" &
 api_pid=$!
@@ -489,7 +554,204 @@ claude plugin uninstall agent-net-workers@agent-net >/dev/null 2>&1 || true
 claude plugin marketplace remove agent-net >/dev/null 2>&1 || true
 check "old entries removed: skills copy is enabled" "[ \"\$(plugin_enabled agent-net-workers@skills-dir)\" = true ]"
 
+# --- 8. Hook output from the plugin is obeyed, with no settings file. ------
+# Claude Code must act on what a skills-folder plugin hook prints, not only run
+# it: a PreToolUse decision, additionalContext on each event, and a Stop block.
+# Each has a control with that one hook removed; the disabled plugin is the
+# last check.
+rm -f "$CLAUDE_CONFIG_DIR/settings.json"
+
+# write_probe_hooks writes the probe hooks.json. MODE names the one feature to
+# leave out, so a control run has the same plugin without that hook.
+write_probe_hooks() {
+python3 - "$CLAUDE_CONFIG_DIR/skills/probe/hooks/hooks.json" "$root" "$log" "$1" <<'PY'
+import json, sys
+out, root, log, mode = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+def loghook(name):
+    return {"type": "command", "command": f"sh {root}/bin/loghook.sh {name} {log}"}
+def ctx(event, text):
+    return {"type": "command", "command": f"sh {root}/bin/context.sh {event} {text}"}
+def group(matcher, hooks):
+    return {"matcher": matcher, "hooks": hooks} if matcher else {"hooks": hooks}
+hooks = {}
+if mode != "no-compact":
+    hooks["SessionStart"] = [group("compact", [loghook("output-sessionstart"),
+        ctx("SessionStart", "PROBE_SESSIONSTART_COMPACT")])]
+else:
+    hooks["SessionStart"] = [group("compact", [loghook("output-sessionstart")])]
+hooks["PostCompact"] = [{"hooks": [loghook("output-postcompact")]}]
+if mode != "no-prompt":
+    hooks["UserPromptSubmit"] = [{"hooks": [loghook("output-prompt"),
+        ctx("UserPromptSubmit", "PROBE_PROMPT_CONTEXT")]}]
+else:
+    hooks["UserPromptSubmit"] = [{"hooks": [loghook("output-prompt")]}]
+if mode != "no-post":
+    hooks["PostToolUse"] = [group("Bash", [ctx("PostToolUse", "PROBE_POSTTOOL_CONTEXT")])]
+if mode != "no-pretoolctx":
+    hooks.setdefault("PreToolUse", []).append(group("Bash", [ctx("PreToolUse", "PROBE_PRETOOL_CONTEXT")]))
+if mode != "no-failure":
+    hooks["PostToolUseFailure"] = [group("Bash", [ctx("PostToolUseFailure", "PROBE_FAILURE_CONTEXT")])]
+if mode != "no-stop":
+    hooks["Stop"] = [{"hooks": [{"type": "command", "command": f"sh {root}/bin/stopblock.sh {root}/stopcount"},
+        loghook("output-stop")]}]
+if mode != "no-decider":
+    hooks.setdefault("PreToolUse", []).append(group("Bash", [{"type": "command", "command": f"python3 {root}/bin/decide.py"}]))
+json.dump({"hooks": hooks}, open(out, "w"), indent=1)
+PY
+}
+api_calls() { grep -c '"/v1/messages' "$api_log" || true; }
+wait_api() {
+  for _ in $(seq 1 600); do grep -qF -- "$1" "$api_log" && return 0; sleep 0.05; done
+  return 1
+}
+wait_rows() {
+  for _ in $(seq 1 600); do [ "$(rows "$1")" -ge "$2" ] && return 0; sleep 0.05; done
+  return 1
+}
+
+write_probe_hooks full
+check "output checks run with no settings.json" "[ ! -e '$CLAUDE_CONFIG_DIR/settings.json' ]"
+
+# 8a. A deny stops a command that the command line allows; an allow runs one
+# that Claude Code would otherwise refuse. The control has no decider hook.
+clear_log; : > "$api_log"; rm -f "$PROBE_DENY_FILE"
+claude_run -p "use-bash-deny" --model "$model" --allowedTools "Bash" || true
+check "plugin PreToolUse deny stops an allowed command" "[ ! -e '$PROBE_DENY_FILE' ]"
+check "the deny reason reaches the request body" "grep -qF 'probe deny' '$api_log'"
+write_probe_hooks no-decider
+: > "$api_log"; rm -f "$PROBE_DENY_FILE"
+claude_run -p "use-bash-deny" --model "$model" --allowedTools "Bash" || true
+check "control without the deny hook runs the command" "[ -s '$PROBE_DENY_FILE' ]"
+write_probe_hooks full
+: > "$api_log"; rm -f "$PROBE_ALLOW_FILE"
+claude_run -p "use-bash-allow" --model "$model" || true
+check "plugin PreToolUse allow runs a command needing permission" "[ -s '$PROBE_ALLOW_FILE' ]"
+write_probe_hooks no-decider
+: > "$api_log"; rm -f "$PROBE_ALLOW_FILE"
+claude_run -p "use-bash-allow" --model "$model" || true
+check "control without the allow hook refuses the command" "[ ! -e '$PROBE_ALLOW_FILE' ]"
+
+# 8b. additionalContext on UserPromptSubmit and PostToolUse is in the request
+# the stub API receives. Each control removes only its own context hook.
+write_probe_hooks full
+: > "$api_log"
+claude_run -p "use-bash-ok" --model "$model" --allowedTools "Bash" || true
+check "UserPromptSubmit context is in the request body" "grep -qF 'PROBE_PROMPT_CONTEXT' '$api_log'"
+check "PostToolUse context is in the request body" "grep -qF 'PROBE_POSTTOOL_CONTEXT' '$api_log'"
+write_probe_hooks no-prompt
+: > "$api_log"
+claude_run -p "use-bash-ok" --model "$model" --allowedTools "Bash" || true
+check "control without the UserPromptSubmit hook: context absent" "! grep -qF 'PROBE_PROMPT_CONTEXT' '$api_log'"
+write_probe_hooks no-post
+: > "$api_log"
+claude_run -p "use-bash-ok" --model "$model" --allowedTools "Bash" || true
+check "control without the PostToolUse hook: context absent" "! grep -qF 'PROBE_POSTTOOL_CONTEXT' '$api_log'"
+write_probe_hooks full
+: > "$api_log"
+claude_run -p "use-bash-ok" --model "$model" --allowedTools "Bash" || true
+check "PreToolUse context is in the request body" "grep -qF 'PROBE_PRETOOL_CONTEXT' '$api_log'"
+write_probe_hooks no-pretoolctx
+: > "$api_log"
+claude_run -p "use-bash-ok" --model "$model" --allowedTools "Bash" || true
+check "control without the PreToolUse context hook: context absent" "! grep -qF 'PROBE_PRETOOL_CONTEXT' '$api_log'"
+write_probe_hooks full
+: > "$api_log"
+claude_run -p "use-bash-fail" --model "$model" --allowedTools "Bash" || true
+check "PostToolUseFailure context is in the request body" "grep -qF 'PROBE_FAILURE_CONTEXT' '$api_log'"
+write_probe_hooks no-failure
+: > "$api_log"
+claude_run -p "use-bash-fail" --model "$model" --allowedTools "Bash" || true
+check "control without the PostToolUseFailure hook: context absent" "! grep -qF 'PROBE_FAILURE_CONTEXT' '$api_log'"
+
+# 8c. A Stop hook that blocks makes the turn continue: the reason comes back in
+# another request. The control ends the turn at once.
+write_probe_hooks full
+: > "$api_log"; rm -f "$root/stopcount"
+claude_run -p "plain-hello" --model "$model" || true
+check "plugin Stop block continues the turn" "[ \"\$(api_calls)\" -ge 2 ]"
+check "the Stop reason is in the next request" "grep -qF 'PROBE_STOP_REASON_CONTINUE' '$api_log'"
+write_probe_hooks no-stop
+: > "$api_log"; rm -f "$root/stopcount"
+claude_run -p "plain-hello" --model "$model" || true
+check "control without the Stop hook ends after one request" "[ \"\$(api_calls)\" -eq 1 ]"
+
+# 8d. SessionStart (compact) context is in the first request after a compaction.
+if command -v tmux >/dev/null 2>&1; then
+  for mode in full no-compact; do
+    label="SessionStart compact context"; [ "$mode" = full ] || label="control without the SessionStart compact hook: context absent"
+    write_probe_hooks "$mode"
+    clear_log; : > "$api_log"; echo 1 > "$root/stopcount"
+    tmux -L "$tmux_socket" -f /dev/null new-session -d -s outcompact -x 120 -y 34 "cd $root/work && claude --model $model --allowedTools Bash"
+    if wait_pane outcompact "❯"; then
+      send_keys outcompact "use-bash-ok"
+      if wait_rows output-stop 1; then
+        send_keys outcompact "/compact"
+        if wait_rows output-postcompact 1 && wait_rows output-sessionstart 1; then
+          : > "$api_log"
+          send_keys outcompact "use-bash-ok"
+          wait_api PROBE_POSTTOOL_CONTEXT || true
+          if [ "$mode" = full ]; then
+            check "$label is in the next request" "grep -qF 'PROBE_SESSIONSTART_COMPACT' '$api_log'"
+          else
+            check "$label" "! grep -qF 'PROBE_SESSIONSTART_COMPACT' '$api_log'"
+          fi
+        else
+          bad "$label: no compaction"
+        fi
+      else bad "$label: the first turn did not finish"
+      fi
+    else bad "$label: session did not reach the prompt"
+    fi
+    tmux -L "$tmux_socket" kill-session -t outcompact 2>/dev/null || true
+  done
+  tmux -L "$tmux_socket" kill-server 2>/dev/null || true
+else
+  note "SessionStart compact context needs tmux"
+fi
+
+# 8e. A background session gets the same UserPromptSubmit context.
+write_probe_hooks full
+clear_log; : > "$api_log"
+bg_out=$(cd "$root/work" && timeout 60 claude --bg "use-bash-ok" --model "$model" --allowedTools "Bash" 2>/dev/null) || true
+bg_id=$(printf '%s' "$bg_out" | sed -n 's/^backgrounded · //p' | head -1)
+if [ -n "$bg_id" ]; then
+  wait_rows output-stop 1 || true
+  check "background: UserPromptSubmit context reaches the request" "grep -qF 'PROBE_PROMPT_CONTEXT' '$api_log'"
+  ( cd "$root/work" && timeout 30 claude stop "$bg_id" >/dev/null 2>&1 ) || true
+else
+  bad "background context: no session id"
+fi
+
+# 8f. A disabled plugin has none of these effects.
+write_probe_hooks full
+check "probe can be disabled" "claude plugin disable probe@skills-dir >/dev/null 2>&1"
+check "probe reports disabled" "[ \"\$(plugin_enabled probe@skills-dir)\" = false ]"
+: > "$api_log"; rm -f "$PROBE_DENY_FILE"
+claude_run -p "use-bash-deny" --model "$model" --allowedTools "Bash" || true
+check "disabled plugin: the deny hook does not stop the command" "[ -s '$PROBE_DENY_FILE' ]"
+: > "$api_log"
+claude_run -p "use-bash-ok" --model "$model" --allowedTools "Bash" || true
+check "disabled plugin: no additionalContext reaches the request" "! grep -qF 'PROBE_PROMPT_CONTEXT' '$api_log'"
+: > "$api_log"; rm -f "$root/stopcount"
+claude_run -p "plain-hello" --model "$model" || true
+check "disabled plugin: the Stop hook does not continue the turn" "[ \"\$(api_calls)\" -eq 1 ]"
+
+# --- 9. A stale enabledPlugins entry keeps the plugin off when it returns. --
+# This is how the worker window stayed off after the old marketplace install:
+# disabling writes agent-net-workers@skills-dir:false and it outlives the
+# plugin, so a freshly copied plugin at the same id stays disabled.
+check "disable writes the off entry" "claude plugin disable probe@skills-dir >/dev/null 2>&1"
+mv "$CLAUDE_CONFIG_DIR/skills/probe" "$CLAUDE_CONFIG_DIR/skills/probe-gone"
+state_away=$(plugin_enabled probe@skills-dir)
+check "the plugin does not load while its folder is away (state=$state_away)" "[ '$state_away' != true ]"
+mv "$CLAUDE_CONFIG_DIR/skills/probe-gone" "$CLAUDE_CONFIG_DIR/skills/probe"
+check "the stale off entry keeps the returned plugin disabled" "[ \"\$(plugin_enabled probe@skills-dir)\" = false ]"
+printf '%s\n' '{"enabledPlugins":{"gone@nosuchmarket":true}}' > "$CLAUDE_CONFIG_DIR/settings.json"
+check "a stale entry for another id does not affect it" "[ \"\$(plugin_enabled probe@skills-dir)\" = true ]"
+rm -f "$CLAUDE_CONFIG_DIR/settings.json"
+check "clearing the stale entry turns the plugin on" "[ \"\$(plugin_enabled probe@skills-dir)\" = true ]"
+
 printf '\nPASS %d  FAIL %d  SKIP %d\n' "$pass" "$fail" "$skip"
 printf 'Frames: %s\n' "$out"
-printf 'Not shown: the Notification matcher (no Notification event reached a plugin hook or a settings hook in this terminal), and PostToolUseFailure for AskUserQuestion/ExitPlanMode (cancelling the dialog produced no failure event).\n'
+printf 'Not shown: the Notification matcher (no Notification event reached a plugin hook or a settings hook in this terminal), PostToolUseFailure for AskUserQuestion/ExitPlanMode (cancelling the dialog produced no failure event), and a PreToolUse decision in a background session (its UserPromptSubmit context is shown).\n'
 [ "$fail" -eq 0 ]
