@@ -324,6 +324,59 @@ func TestClaudeScheduledPromptInTheCTOPaneIsNotOwnerWords(t *testing.T) {
 	}
 }
 
+// The CTO pane's prompt hook also runs before Claude Code writes the entry.
+// A late human entry keeps the owner's words, so the quote check finds them. A
+// late peer entry, or an entry that never appears, keeps nothing.
+func TestCTOPaneLateEntryKeepsOnlyTheOwnerWords(t *testing.T) {
+	const native, promptID, text = "cto-late", "prompt-cto-late", "use a codex worker for this"
+	for _, tc := range []struct {
+		name   string
+		entry  bool
+		origin map[string]any
+		want   bool
+	}{
+		{"late human entry", true, typedOrigin, true},
+		{"late peer entry", true, peerOrigin, false},
+		{"entry never appears", false, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := startGateway(t, t.TempDir(), "")
+			n := startNode(t, g, nodeOpts{})
+			if err := n.d.registerCTOSession(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			n.d.cto.mu.Lock()
+			n.d.claudeCTO.session = native
+			n.d.cto.mu.Unlock()
+			n.d.claudeOwnerWait = 100 * time.Millisecond
+			transcript := filepath.Join(t.TempDir(), native+".jsonl")
+			askPolicy(t, cliClient(t, n), protocol.PolicyRequest{
+				Harness: "claude", NativeID: native, Prompt: text,
+				PromptID: promptID, TranscriptPath: transcript,
+			})
+			n.d.claudeChecks.Wait()
+			if _, err := n.d.verifyCTOOwnerWords(text); err == nil {
+				t.Fatal("the words were kept before the transcript entry appeared")
+			}
+			if tc.entry {
+				if err := os.WriteFile(transcript, claudeTranscriptBytes(t, claudeUserEntry(promptID, text, tc.origin)), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, err := n.d.verifyCTOOwnerWords(text)
+			if !tc.want {
+				if err == nil {
+					t.Fatalf("words the owner did not type verified: %q", got)
+				}
+				return
+			}
+			if err != nil || got != text {
+				t.Fatalf("a late human entry did not keep the words: %q, %v", got, err)
+			}
+		})
+	}
+}
+
 // ownerInstructionFrom sends one message to a session named homelab and returns
 // the owner prompt the gateway attached to it. It is the gateway's own store of
 // the owner's words, which the daemon feeds with signal.prompt.

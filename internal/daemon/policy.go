@@ -156,7 +156,13 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 		d.whenClaudeOwnerPrompt(ctx, p, func(_ context.Context, owner bool) {
 			if owner {
 				d.rememberCTOOwnerPrompt(p.Prompt)
+				return
 			}
+			// The entry was missing or named no origin. Keep the prompt for a
+			// later transcript read, as the ordinary branch does: a loaded
+			// machine can write the entry after the wait, and a human entry
+			// then makes it the owner's words to the CTO.
+			d.notePendingOwnerWords(d.ctoSessionID(), p)
 		})
 	}
 	if client == "cli" {
