@@ -53,6 +53,10 @@ type QuotaProvider struct {
 	Error          string        `json:"error,omitempty"`
 	NeedsAttention bool          `json:"needs_attention,omitempty"`
 	Windows        []QuotaWindow `json:"windows"`
+	// ReadAt is when this provider's reading was made, in Unix seconds. The
+	// gateway sets it when it joins the machines' readings into one; it
+	// never travels.
+	ReadAt int64 `json:"-"`
 }
 
 // QuotaCopy identifies the executable that produced a reading.

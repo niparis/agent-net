@@ -119,6 +119,7 @@ func (g *Gateway) ownerQuotas(nodeID string) *protocol.Quotas {
 	if own != nil {
 		out.GeneratedAt, out.Copy = own.GeneratedAt, own.Copy
 		for _, p := range own.Providers {
+			p.ReadAt = own.GeneratedAt
 			chosen[p.Provider] = p
 		}
 	}
@@ -134,6 +135,7 @@ func (g *Gateway) ownerQuotas(nodeID string) *protocol.Quotas {
 			if existing, ok := chosen[p.Provider]; ok && quotaReadingUsable(existing) {
 				continue
 			}
+			p.ReadAt = e.rep.Quotas.GeneratedAt
 			chosen[p.Provider] = p
 		}
 		// A machine with no reading of its own takes the newest generated time

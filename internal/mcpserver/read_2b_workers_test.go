@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -103,5 +104,25 @@ func TestWorkersFindDetailFullReturnsPickerNote(t *testing.T) {
 	nf, ok := items[0]["not_family"].([]any)
 	if !ok || len(nf) != 1 || nf[0] != "openai" {
 		t.Fatalf("not_family = %v", items[0]["not_family"])
+	}
+}
+
+// Detail full shows, in plain words, what the worker's pick read of the quota
+// windows (decision 0191), read once for the page. Concise does not read it.
+func TestWorkersFindDetailFullShowsTheQuotaRead(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "n_me")
+	f := roReadFixture()
+	lines := []string{"quota reading of 2026-11-04 11:58 UTC, 2 min before the pick", "codex: 5h window 0% used, resets 2026-11-04 16:58 UTC"}
+	f.pickQuota = map[string]protocol.PickQuotaView{"s_w_mine": {RunID: "r_1", Lines: lines}}
+	cs := connect(t, f.call)
+
+	concise := roPageItems(t, roCall(t, cs, "agent_workers_find", map[string]any{}))
+	if _, ok := concise[0]["quota_read"]; ok || slices.Contains(f.methods, "pick_quota") {
+		t.Fatalf("concise read the quota: %+v %v", concise[0], f.methods)
+	}
+	items := roPageItems(t, roCall(t, cs, "agent_workers_find", map[string]any{"detail": "full"}))
+	got, _ := items[0]["quota_read"].([]any)
+	if len(got) != 2 || got[0] != lines[0] || got[1] != lines[1] {
+		t.Fatalf("quota_read = %v; %v; %+v", items[0]["quota_read"], f.methods, items[0])
 	}
 }

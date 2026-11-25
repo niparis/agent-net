@@ -16,8 +16,10 @@ type continueRepick struct {
 	// note says what happened to the old model: why it moved, or why it
 	// stayed although it no longer qualifies. Empty when it qualifies.
 	note string
-	// rows are the pick's rows when the picker chose again.
-	rows []protocol.PickCandidate
+	// rows are the pick's rows when the picker chose again, and quota is what
+	// that pick read of the quota windows.
+	rows  []protocol.PickCandidate
+	quota *protocol.PickQuota
 }
 
 // repickContinue checks the model a continue would start again against the
@@ -27,8 +29,10 @@ type continueRepick struct {
 // the normal roster at that level. When no other model qualifies, the old
 // model stays and the caller's own check says whether it may run.
 //
-// persist is false for a validation call: it moves no rotation.
-func (g *Gateway) repickContinue(node *protocol.NodeView, a *protocol.WorkerAssessment, oldHarness, oldModel string, quotas *protocol.Quotas, floors protocol.WorkerFloors, scores []protocol.ModelScore, persist bool) (continueRepick, error) {
+// onlyHarness keeps the roster to the harness the owner named at the worker's
+// first start (decision 0191); empty is the whole roster. persist is false for
+// a validation call: it moves no rotation.
+func (g *Gateway) repickContinue(node *protocol.NodeView, a *protocol.WorkerAssessment, oldHarness, oldModel, onlyHarness string, quotas *protocol.Quotas, floors protocol.WorkerFloors, scores []protocol.ModelScore, persist bool) (continueRepick, error) {
 	kept := continueRepick{harness: oldHarness, model: oldModel}
 	profiles, err := g.store.WorkerProfiles()
 	if err != nil || len(profiles) == 0 {
@@ -63,7 +67,7 @@ func (g *Gateway) repickContinue(node *protocol.NodeView, a *protocol.WorkerAsse
 		}
 	}
 	reads := &candidateFacts{}
-	candidates, _, _, err := g.workerModelCandidatesWith(reads, nil, node, profiles, providers, quotas, "", false, protected)
+	candidates, _, _, err := g.workerModelCandidatesWith(reads, nil, node, profiles, providers, quotas, onlyHarness, false, protected)
 	if err != nil {
 		return kept, err
 	}
@@ -123,7 +127,7 @@ func (g *Gateway) repickContinue(node *protocol.NodeView, a *protocol.WorkerAsse
 		// still allows as a last resort.
 		return kept, nil
 	}
-	return continueRepick{moved: true, harness: chosen.Choice.Harness, model: chosen.Choice.Model, rows: chosen.Pick,
+	return continueRepick{moved: true, harness: chosen.Choice.Harness, model: chosen.Choice.Model, rows: chosen.Pick, quota: chosen.QuotaRead(g.store.now()),
 		note: fmt.Sprintf("continue moved from %s to %s %s at %s (old model: %s)", oldName, chosen.Choice.Harness, chosen.Choice.Model, level, why)}, nil
 }
 

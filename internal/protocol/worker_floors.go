@@ -69,6 +69,24 @@ func (wf WorkerFloors) Floor(provider string) int {
 // If provider has a floor but no quota reading: returns false, "no quota reading, floor not applied", true.
 // If above floor or no floor set: returns false, "", false.
 func CheckWorkerFloor(quotas *Quotas, floors WorkerFloors, harness, model string) (underFloor bool, note string, noReading bool) {
+	r := WorkerFloorRead(quotas, floors, harness, model)
+	return r.Under, r.Note, r.NoReading
+}
+
+// WorkerFloorReading is what the floor check read for one model: the floor in
+// force for its provider, and the window under it when there is one.
+type WorkerFloorReading struct {
+	// Floor is the owner's worker floor in percent left, 0 when none is set.
+	Floor     int
+	Under     bool
+	Window    QuotaWindow
+	Note      string
+	NoReading bool
+}
+
+// WorkerFloorRead is CheckWorkerFloor with the floor and the window that
+// decided it, so a pick can record what it read.
+func WorkerFloorRead(quotas *Quotas, floors WorkerFloors, harness, model string) WorkerFloorReading {
 	provider := ProfileProvider(harness, model)
 	qp := QuotaProviderForStart(harness, model)
 
@@ -77,11 +95,13 @@ func CheckWorkerFloor(quotas *Quotas, floors WorkerFloors, harness, model string
 		floor = floors.Floor(qp)
 	}
 	if floor <= 0 {
-		return false, "", false
+		return WorkerFloorReading{}
 	}
+	read := WorkerFloorReading{Floor: floor}
 
 	if quotas == nil {
-		return false, "no quota reading, floor not applied", true
+		read.Note, read.NoReading = "no quota reading, floor not applied", true
+		return read
 	}
 
 	p, ok := quotas.Provider(qp)
@@ -89,7 +109,8 @@ func CheckWorkerFloor(quotas *Quotas, floors WorkerFloors, harness, model string
 		p, ok = quotas.Provider(provider)
 	}
 	if !ok || !p.usable() || len(p.Windows) == 0 {
-		return false, "no quota reading, floor not applied", true
+		read.Note, read.NoReading = "no quota reading, floor not applied", true
+		return read
 	}
 
 	var worstWindow QuotaWindow
@@ -116,9 +137,8 @@ func CheckWorkerFloor(quotas *Quotas, floors WorkerFloors, harness, model string
 	}
 
 	if foundUnder {
-		sentence := fmt.Sprintf("%s has %d%% left in its %s window, under your %d%% worker floor", provider, worstRemaining, QuotaWindowName(worstWindow), floor)
-		return true, sentence, false
+		read.Under, read.Window = true, worstWindow
+		read.Note = fmt.Sprintf("%s has %d%% left in its %s window, under your %d%% worker floor", provider, worstRemaining, QuotaWindowName(worstWindow), floor)
 	}
-
-	return false, "", false
+	return read
 }

@@ -88,4 +88,6 @@ but the gateway re-picks at the stored level.
 
 A first start where the owner named the model is not remembered as such. A
 continue of it that names no model meets the rules like any other. The owner
-can name the model on the continue to keep it.
+can name the model on the continue to keep it. Closed by
+[0191](0191-picks-keep-their-quota-read-and-the-owners-choice-holds.md): the
+owner's choice is now kept and holds for a continue that names none.

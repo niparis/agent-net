@@ -32,7 +32,10 @@ type WorkerAssessment struct {
 	// above written from them. It travels with the start like the note, so a
 	// queued start keeps it until it runs. Empty when the start was not picked.
 	PickRows []PickCandidate `json:"pick_rows,omitempty"`
-	Error    string          `json:"error,omitempty"`
+	// PickQuota is what the same pick read of the quota windows (decision
+	// 0191). It travels and is stored with the rows.
+	PickQuota *PickQuota `json:"pick_quota,omitempty"`
+	Error     string     `json:"error,omitempty"`
 }
 
 // DifficultyLine is the one-line score profile: the six scores, D and label.

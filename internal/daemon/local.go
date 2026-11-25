@@ -928,7 +928,7 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		return lc.urgentTakeCall(ctx, client, ls, raw)
 	}
 	readOnly := map[string]bool{"info": true, "list": true, "get": true, "messages": true, "message_status": true,
-		"nodes": true, "restart": true, "projects": true, "events": true, protocol.OpWorkers: true, "judgments_find": true}
+		"nodes": true, "restart": true, "projects": true, "events": true, protocol.OpWorkers: true, "judgments_find": true, "pick_quota": true}
 	if client == "cli" && !readOnly[method] && !strings.HasPrefix(method, "mcp_") &&
 		method != "project_add" && method != "project_remove" &&
 		method != protocol.OpSend && method != protocol.OpWorkerStart && method != protocol.OpWorkerStop &&
@@ -1271,6 +1271,13 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			return page, nil
 		}
 		return result, err
+
+	case "pick_quota":
+		var p protocol.QueryPickQuota
+		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad pick_quota params")
+		}
+		return d.call(ctx, "query.pick_quota", p)
 
 	case "projects":
 		var p protocol.QueryProjects

@@ -26,7 +26,8 @@ type workerStart struct {
 }
 
 // closedStartKeep is how long a closed start stays, counted from the day it
-// closed. An open start is never removed: it may still be reported.
+// closed. An open start is never removed: it may still be reported. A start
+// that holds the owner's choice stays as long as its worker session.
 const closedStartKeep = 30 * 24 * time.Hour
 
 // TrackWorkerStart records a start that the gateway handed to a machine.
@@ -41,7 +42,10 @@ func (s *Store) trackWorkerStart(ref, nodeID, owner, project, harness, permissio
 	if ref == "" || nodeID == "" || owner == "" {
 		return nil
 	}
-	if _, err := s.db.Exec(`DELETE FROM worker_starts WHERE state <> 'open' AND closed_at > 0 AND closed_at < ?`, s.now().Add(-closedStartKeep).UnixNano()); err != nil {
+	// A start that holds the owner's choice stays while its worker session
+	// does, so a later continue still keeps his choice (decision 0191).
+	if _, err := s.db.Exec(`DELETE FROM worker_starts WHERE state <> 'open' AND closed_at > 0 AND closed_at < ?
+		AND (owner_choice='' OR NOT EXISTS (SELECT 1 FROM sessions WHERE sessions.id=worker_starts.session_id))`, s.now().Add(-closedStartKeep).UnixNano()); err != nil {
 		return err
 	}
 	list := "[]"

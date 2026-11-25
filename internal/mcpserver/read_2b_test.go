@@ -31,6 +31,8 @@ type roFakeDaemon struct {
 	mcpListDetail bool
 	// files serves message_file: attachment name to text.
 	files map[string]string
+	// pickQuota serves pick_quota: worker session to its pick's quota read.
+	pickQuota map[string]protocol.PickQuotaView
 }
 
 func (f *roFakeDaemon) call(_ context.Context, method string, params any) (json.RawMessage, error) {
@@ -53,6 +55,16 @@ func (f *roFakeDaemon) call(_ context.Context, method string, params any) (json.
 		}}})
 	case "list":
 		return json.Marshal(protocol.AgentsResult{Agents: f.agents})
+	case "pick_quota":
+		var q protocol.QueryPickQuota
+		json.Unmarshal(raw, &q)
+		picks := map[string]protocol.PickQuotaView{}
+		for _, id := range q.Sessions {
+			if v, ok := f.pickQuota[id]; ok {
+				picks[id] = v
+			}
+		}
+		return json.Marshal(protocol.PickQuotaResult{Picks: picks})
 	case "messages":
 		var q protocol.QueryMessages
 		json.Unmarshal(raw, &q)

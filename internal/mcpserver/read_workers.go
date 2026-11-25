@@ -45,10 +45,13 @@ type roWorkerRow struct {
 	Struggle *protocol.Struggle `json:"struggle,omitempty"`
 	// Cause is why the latest run failed or needed rework, shown by detail
 	// full only. Empty when none is known.
-	Cause      string   `json:"cause,omitempty"`
-	PickerNote string   `json:"picker_note,omitempty"`
-	NotFamily  []string `json:"not_family,omitempty"`
-	key        string
+	Cause      string `json:"cause,omitempty"`
+	PickerNote string `json:"picker_note,omitempty"`
+	// QuotaRead says in plain words what the worker's pick read of the quota
+	// windows and what its run used (decision 0191). Detail full only.
+	QuotaRead []string `json:"quota_read,omitempty"`
+	NotFamily []string `json:"not_family,omitempty"`
+	key       string
 }
 
 type roWorkersFindOut struct {
@@ -136,6 +139,9 @@ func roFindWorkers(ctx context.Context, call Caller, in roWorkersFindIn) (roWork
 	}
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].key > rows[j].key })
 	page, next := roWindow(rows, limit, after, true, func(row roWorkerRow) string { return row.key })
+	if full {
+		roAddQuotaRead(ctx, call, page)
+	}
 	out := roWorkersFindOut{Items: page, Total: len(rows)}
 	if next != "" {
 		out.NextCursor = roEncodeCursor(roCursor{Tool: "agent_workers_find", Caller: caller.SessionID, Filters: filters, After: next})
@@ -191,6 +197,29 @@ func roWorkerRowOf(agent protocol.AgentView, names map[string]string, full bool)
 		}
 	}
 	return row, true
+}
+
+// roAddQuotaRead fills the quota read of the workers on the page, with one
+// read for the page only. A gateway that does not keep it leaves it out.
+func roAddQuotaRead(ctx context.Context, call Caller, page []roWorkerRow) {
+	if len(page) == 0 {
+		return
+	}
+	ids := make([]string, len(page))
+	for i, row := range page {
+		ids[i] = row.ID
+	}
+	raw, err := call(ctx, "pick_quota", protocol.QueryPickQuota{Sessions: ids})
+	if err != nil {
+		return
+	}
+	var result protocol.PickQuotaResult
+	if json.Unmarshal(raw, &result) != nil {
+		return
+	}
+	for i := range page {
+		page[i].QuotaRead = result.Picks[page[i].ID].Lines
+	}
 }
 
 // roWorkerByID reads one worker the way agent_workers_find would show it.
