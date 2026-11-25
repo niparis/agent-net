@@ -241,12 +241,20 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 
 // isHumanClaudePrompt is true for text the owner may have typed. Claude delivers
 // peer messages, task notifications, reminders, scheduled turns and
-// autonomous-loop turns through the same prompt hook. The markers in
-// protocol.InjectedClaudePrompt catch the ones that carry one. A reminder that
-// Claude Code appends after the owner's text does not hide that text, so it is
-// removed before the check. A scheduled turn carries no marker, so
-// whenClaudeOwnerPrompt reads its transcript entry as well.
+// autonomous-loop turns through the same prompt hook. A marker at the start of
+// the raw prompt is an injected turn whatever tags follow, so that check runs
+// before any block is removed: a forged closing tag would otherwise drop the
+// marker with the text before it. A reminder that Claude Code appends after
+// the owner's text does not hide that text, so reminders are removed before
+// the marker check for the rest of the prompt. A scheduled turn carries no
+// marker, so whenClaudeOwnerPrompt reads its transcript entry as well.
+//
+// A reminder at the start with typed text after it is refused. Its words are
+// lost, which is safe: losing words never makes pasted or peer text typed.
 func isHumanClaudePrompt(prompt string) bool {
+	if protocol.StartsInjectedClaudeTurn(prompt) {
+		return false
+	}
 	prompt = protocol.WithoutSystemReminders(prompt)
 	return strings.TrimSpace(prompt) != "" && !protocol.InjectedClaudePrompt(prompt)
 }
