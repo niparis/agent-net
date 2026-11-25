@@ -23,17 +23,18 @@ import (
 
 // pendingHandback is the saved form of a handbackTail.
 type pendingHandback struct {
-	Req         protocol.WorkerHandbackRequest `json:"req"`
-	To          string                         `json:"to,omitempty"`
-	ReplyTo     string                         `json:"reply_to,omitempty"`
-	SandboxNote string                         `json:"sandbox_note,omitempty"`
-	End         bool                           `json:"end"`
-	Files       *OutgoingFiles                 `json:"files,omitempty"`
-	SessionID   string                         `json:"session_id"`
-	Committed   string                         `json:"committed,omitempty"`
-	WIPDetail   string                         `json:"wip_detail,omitempty"`
-	Head        string                         `json:"head"`
-	NoticeKey   string                         `json:"notice_key"`
+	Req             protocol.WorkerHandbackRequest `json:"req"`
+	To              string                         `json:"to,omitempty"`
+	ReplyTo         string                         `json:"reply_to,omitempty"`
+	SandboxNote     string                         `json:"sandbox_note,omitempty"`
+	End             bool                           `json:"end"`
+	Files           *OutgoingFiles                 `json:"files,omitempty"`
+	SessionID       string                         `json:"session_id"`
+	Committed       string                         `json:"committed,omitempty"`
+	WIPDetail       string                         `json:"wip_detail,omitempty"`
+	FrictionDropped int                            `json:"friction_dropped,omitempty"`
+	Head            string                         `json:"head"`
+	NoticeKey       string                         `json:"notice_key"`
 	// Check is the hand-back check of an older daemon, kept so an upgrade
 	// still reads the row. New hand-backs carry none (decision 2026-11-14).
 	Check           *protocol.HandbackCheck `json:"check,omitempty"`
@@ -48,13 +49,13 @@ var errHandbackDeferred = errors.New("the hand-back is saved; the next connectio
 
 func (t *handbackTail) saved() pendingHandback {
 	return pendingHandback{Req: t.req, To: t.to, ReplyTo: t.replyTo, SandboxNote: t.sandboxNote, End: t.end, Files: t.files,
-		SessionID: t.sessionID, Committed: t.committed, WIPDetail: t.wipDetail, Head: t.head, NoticeKey: t.noticeKey,
+		SessionID: t.sessionID, Committed: t.committed, WIPDetail: t.wipDetail, FrictionDropped: t.frictionDropped, Head: t.head, NoticeKey: t.noticeKey,
 		Check: t.check, Recorded: t.recorded, ChangeID: t.changeID, DeliveryProblem: t.deliveryProblem, Stats: t.stats}
 }
 
 func (p pendingHandback) tail() *handbackTail {
 	return &handbackTail{req: p.Req, to: p.To, replyTo: p.ReplyTo, sandboxNote: p.SandboxNote, end: p.End, files: p.Files,
-		sessionID: p.SessionID, committed: p.Committed, wipDetail: p.WIPDetail, complete: true,
+		sessionID: p.SessionID, committed: p.Committed, wipDetail: p.WIPDetail, complete: true, frictionDropped: p.FrictionDropped,
 		head: p.Head, noticeKey: p.NoticeKey, persisted: true, check: p.Check,
 		recorded: p.Recorded, changeID: p.ChangeID, deliveryProblem: p.DeliveryProblem, stats: p.Stats}
 }

@@ -1238,8 +1238,11 @@ func (d *Daemon) beginWorkerEnd(w *worker, reason string, when func() bool) <-ch
 			n.WIPDetail = wipDetail
 			// Time waiting behind another notice is not worker run time.
 			n.RunTime = ran
-			if _, err := d.sendNotice(context.Background(), w, n, ""); err != nil {
+			report := d.refusedReportFor(id, &n)
+			if _, err := d.sendNotice(context.Background(), w, n, report); err != nil {
 				d.Logf("worker %s: notice: %v", id, err)
+			} else if report != "" {
+				d.dropRefusedHandback(id)
 			}
 		}
 		d.finishWorktree(w)
@@ -1946,7 +1949,7 @@ func (d *Daemon) adoptWorkers() {
 				d.saveUnfinished(lost, protocol.StopLost)
 			}
 			d.st.saveWorker(r)
-			os.RemoveAll(filepath.Join(d.cfg.StateDir, "workers", r.ID))
+			d.removeLostWorkerFolder(r.ID)
 			d.Logf("worker.stopped worker=%s session=%s project=%s harness=%s reason=%s", r.ID, r.SessionID, r.Project, r.Harness, protocol.StopLost)
 			continue
 		}

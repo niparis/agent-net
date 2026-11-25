@@ -76,6 +76,13 @@ func TestAgyProcess(t *testing.T) {
 			os.Exit(2)
 		}
 		body := in.Message.Content
+		// A message the daemon writes itself carries no FAKE marker. A test
+		// gives the markers for the next turn in this file, read once.
+		next := filepath.Join(os.Getenv("FAKE_AGY_RECORDS"), "next-turn")
+		if extra, err := os.ReadFile(next); err == nil {
+			_ = os.Remove(next)
+			body += "\n" + string(extra)
+		}
 		r.Turns = append(r.Turns, body)
 		save()
 		write(map[string]any{"event": "step_update", "step_update": map[string]any{"conversation_id": native}})
@@ -176,7 +183,16 @@ func TestAgyProcess(t *testing.T) {
 					}
 					files = []string{file}
 				}
-				if !call("handback", protocol.OpWorkerHandback, protocol.WorkerHandbackRequest{Report: "finished agy task", Complete: &complete, Files: files}) {
+				var friction []protocol.FrictionEntry
+				if strings.Contains(body, "FAKE:friction") {
+					// One good line and one the daemon must drop, so a test can
+					// see the hand-back accepted and the notice say so.
+					friction = []protocol.FrictionEntry{
+						{Area: protocol.FrictionTooling, Text: "the fake agy handback carried a broken entry"},
+						{Area: "", Text: ""},
+					}
+				}
+				if !call("handback", protocol.OpWorkerHandback, protocol.WorkerHandbackRequest{Report: "finished agy task", Complete: &complete, Files: files, Friction: friction}) {
 					r.MCPError += " rejected handback"
 				}
 				conn.Close()
@@ -253,6 +269,21 @@ func TestAgyWorkerHandbackFiles(t *testing.T) {
 	}
 	path := filepath.Join(w.cfg.StateDir, "inbox", w.ownerID(), n.ID, "agy-result.txt")
 	eventually(t, "Antigravity handback file", func() bool { b, err := os.ReadFile(path); return err == nil && string(b) == "agy file\n" })
+}
+
+// antigravity hands back from its own output stream after the tool call has
+// been acknowledged. A broken friction line must not lose the notice there.
+func TestAgyWorkerHandbackDropsBadFrictionFromOutput(t *testing.T) {
+	t.Parallel()
+	w, _, _ := startAgyNode(t, shortSet)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:friction FAKE:handback", Isolation: protocol.IsolationWorktree})
+	n := w.waitNotice(t, 1)[0]
+	if n.From != res.SessionID || !strings.Contains(n.Body, "finished agy task") {
+		t.Fatalf("notice: %+v", n)
+	}
+	if !strings.Contains(n.Body, "friction: 1 entry was dropped or shortened before it was stored") {
+		t.Errorf("the notice does not say the friction list was cleaned:\n%s", n.Body)
+	}
 }
 
 func TestAgyWorkerHandbackFilesSnapshotOnce(t *testing.T) {
@@ -358,7 +389,7 @@ func TestAgyWorkerHandbackFilesAfterRestart(t *testing.T) {
 	}
 }
 
-func startAgyNode(t *testing.T, set WorkerSettings) (*workerNode, string, string) {
+func startAgyNode(t *testing.T, set WorkerSettings, opts ...func(*Config)) (*workerNode, string, string) {
 	t.Helper()
 	// A start includes starting the fake agy, which is a whole Go test binary.
 	// The 8 s budget of shortSet expired under CI load, so give agy the same
@@ -374,6 +405,9 @@ func startAgyNode(t *testing.T, set WorkerSettings) (*workerNode, string, string
 	w := startWorkerNodeWithDetect(t, g, set, agyInventory, func(c *Config) {
 		c.HarnessPaths = map[string]string{"agy": bin}
 		c.WorkerGoTmp = filepath.Join(dir, "gotmp")
+		for _, opt := range opts {
+			opt(c)
+		}
 	})
 	repo := newRepo(t, "shop")
 	w.register(t, repo)

@@ -430,8 +430,10 @@ func stringSlice(v any) []string {
 }
 func boolValue(v any) bool { b, _ := v.(bool); return b }
 
-// frictionList reads the friction entries of a hand-back. The daemon validates
-// the areas and the line length, so a bad entry comes back as a clear refusal.
+// frictionList reads the friction entries of a hand-back. The daemon cleans
+// the list: an entry the harness sent with an unknown area or no text is
+// dropped, and the caller's notice says so. The tool passes what it got, so
+// that count is not lost here.
 func frictionList(v any) []protocol.FrictionEntry {
 	a, _ := v.([]any)
 	out := make([]protocol.FrictionEntry, 0, len(a))

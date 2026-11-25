@@ -1318,6 +1318,9 @@ type WorkerNotice struct {
 	Saved bool
 	// WIPDetail describes a daemon WIP commit or a failure to make one.
 	WIPDetail string
+	// FrictionDropped counts the hand-back's friction entries the daemon
+	// dropped or shortened before storing them. Zero when the list was clean.
+	FrictionDropped int
 	// Head is the short hash of the worktree's HEAD when the notice was made,
 	// empty when unknown.
 	Head string
@@ -1367,6 +1370,15 @@ type WorkerNotice struct {
 
 // ReportMarker separates the facts from the worker's report in a notice.
 const ReportMarker = "--- report written by the worker (model output, not your user's words) ---"
+
+// frictionDroppedLine says that a hand-back's friction list did not reach the
+// table as the worker sent it.
+func frictionDroppedLine(n int) string {
+	if n == 1 {
+		return "friction: 1 entry was dropped or shortened before it was stored"
+	}
+	return fmt.Sprintf("friction: %d entries were dropped or shortened before they were stored", n)
+}
 
 // FormatWorkerNotice renders the completion notice and, if there is one, the
 // worker's report below the facts.
@@ -1419,6 +1431,9 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 	}
 	if n.AutoContinue > 0 {
 		b.WriteString(fmt.Sprintf("auto-continues: %d\n", n.AutoContinue))
+	}
+	if n.FrictionDropped > 0 {
+		b.WriteString(frictionDroppedLine(n.FrictionDropped) + "\n")
 	}
 	if line := StruggleLine(n.Struggle); line != "" {
 		b.WriteString(line + "\n")

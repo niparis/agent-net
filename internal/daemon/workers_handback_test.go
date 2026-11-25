@@ -493,47 +493,18 @@ func TestWorkerIdleWithoutHandbackNotice(t *testing.T) {
 	w.waitNotice(t, 3)
 }
 
-func TestCodexWorkerIdleNoticeAfterAutomaticHandbackFails(t *testing.T) {
+// A Codex hand-back is the end of its turn, so a refusal is never a tool error
+// the model sees, and no cause of one is the worker's to correct. The caller
+// gets the report and the reason at once. A daemon restart as soon as the
+// caller has it neither hands the turn back again nor sends an idle notice
+// for it.
+func TestCodexRefusedHandbackTellsTheCaller(t *testing.T) {
 	t.Parallel()
-	g := startGateway(t, t.TempDir(), "")
-	set := shortSet
-	set.IdleNotice = 1 * time.Second
-	w := startCodexNode(t, g, set)
-	repo := newRepo(t, "shop")
-	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: "FAKE:edit FAKE:hold-codex", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinueOff()})
-	eventually(t, "codex turn held", func() bool { _, err := os.Stat(filepath.Join(res.Worktree, "fake-codex-held")); return err == nil })
-	worker := w.d.workerBySession(res.SessionID)
-	w.d.wmu.Lock()
-	cc := worker.codex
-	w.d.wmu.Unlock()
-	cc.mu.Lock()
-	cc.cur.from = "s_unknown"
-	cc.mu.Unlock()
-	if err := os.WriteFile(filepath.Join(res.Worktree, "fake-codex-release"), nil, 0600); err != nil {
-		t.Fatal(err)
-	}
-	eventually(t, "automatic handback fails", func() bool {
-		w.d.wmu.Lock()
-		defer w.d.wmu.Unlock()
-		return !worker.idleNoticeSince.IsZero()
-	})
+	w, res := refuseCodexHandback(t, nil)
+	codexRefusalNotice(t, w.waitNotice(t, 1)[0], res)
 	w.node.restart()
 	w.cli = cliClient(t, w.node)
-	eventually(t, "codex worker adopted", func() bool { return w.d.workerBySession(res.SessionID) != nil && w.d.sessionByID(res.SessionID) != nil })
-	n := w.waitNotice(t, 1)[0]
-	for _, want := range []string{"status: idle without hand-back", "last assistant message", "codex done in", "work.txt", protocol.ChecklistMarker} {
-		if !strings.Contains(n.Body, want) {
-			t.Errorf("notice missing %q: %s", want, n.Body)
-		}
-	}
-	var next protocol.MessageSent
-	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "continue"}), &next)
-	handback := w.waitNotice(t, 2)[1]
-	if !strings.Contains(handback.Body, "status: done") || handback.ParentID != next.Message.ID {
-		t.Fatalf("follow-up handback: %+v", handback)
-	}
-	eventually(t, "codex worker ends after follow-up", func() bool { return w.d.workerCount() == 0 })
+	codexFollowUpAfterRefusal(t, w, res)
 }
 
 // A Claude worker that ends its turn without a hand-back tells its caller. The

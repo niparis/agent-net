@@ -67,6 +67,9 @@ type agyConn struct {
 	// Snapshots are kept in memory until the result event. After a daemon
 	// restart the saved request is checked and prepared again instead.
 	handbackFiles, pendingFiles *OutgoingFiles
+	// processExited is the Wait of a process this daemon started, nil for an
+	// adopted one (agyConn.processEnded).
+	processExited <-chan struct{}
 }
 
 func (agyLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
@@ -352,7 +355,7 @@ func (c *agyConn) eventAt(line []byte, offset int64) {
 		if handback != nil {
 			c.pending, c.handback = handback, nil
 			c.pendingFiles, c.handbackFiles = c.handbackFiles, nil
-			c.pendingKey = fmt.Sprintf("agy-%s-%s-%d", w.id, c.streamID, c.offset)
+			c.pendingKey = c.turnKeyLocked()
 		}
 		var discarded *OutgoingFiles
 		if failure != "" {
@@ -379,11 +382,17 @@ func (c *agyConn) eventAt(line []byte, offset int64) {
 		if handback != nil {
 			c.publishHandback(*handback)
 		} else if !d.openCodeTurnIdle(w.sessionID) {
+			if refused, ok := d.loadRefusedHandback(w.id); ok && refused.Worker {
+				// The worker had its one message about a refused hand-back and
+				// ended the turn without a new one: the caller gets the report.
+				d.goBackground(func() { c.refusalNext(d.streamCtx(), refused) })
+				return
+			}
 			report := r.Response
 			if strings.TrimSpace(report) == "" {
 				report = "(Antigravity ended the turn with no message.)"
 			}
-			d.noteCodexIdle(w, report)
+			d.noteCodexIdle(w, report, false)
 		}
 	}
 }
@@ -637,13 +646,17 @@ func (d *Daemon) deliverAgy(ctx context.Context, w *worker, m protocol.Message) 
 	if ending {
 		return Result{Detail: "the Antigravity worker is ending"}
 	}
-	if d.gone(w) {
+	if d.agyEnded(ctx, w) {
 		d.resumeMu.Lock()
 		var err error
 		if d.gone(w) {
 			err = (agyLauncher{}).resume(ctx, d, w)
 		}
 		d.resumeMu.Unlock()
+		if err != nil && d.streamCtx().Err() != nil {
+			// The daemon stops: the next one resumes the worker.
+			return Result{Detail: err.Error()}
+		}
 		if err != nil {
 			d.wmu.Lock()
 			w.failure = cleanFailure(err.Error())

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -68,10 +69,22 @@ func (agyLauncher) adopt(ctx context.Context, d *Daemon, w *worker) error {
 		d.setAgyStatus(w, "busy")
 	}
 	d.startAgyStream(c)
-	if s.Completed && s.Failure == "" && s.Pending != nil {
+	refused, ok := d.loadRefusedHandback(w.id)
+	switch {
+	case s.Completed && s.Failure == "" && s.Pending != nil && (!ok || refused.Turn != s.PendingKey):
 		c.publishHandback(*s.Pending)
+	case ok:
+		// The refusal of this pending hand-back, or of an earlier one, is
+		// saved: do what it still owes.
+		d.goBackground(func() { c.refusalNext(d.streamCtx(), refused) })
 	}
 	return nil
+}
+
+// turnKeyLocked names the turn whose result was read last. It is the pending
+// hand-back's notice key, and a refused hand-back saves it as its Turn.
+func (c *agyConn) turnKeyLocked() string {
+	return fmt.Sprintf("agy-%s-%s-%d", c.w.id, c.streamID, c.offset)
 }
 
 func (c *agyConn) publishHandback(req protocol.WorkerHandbackRequest) {
@@ -83,10 +96,7 @@ func (c *agyConn) publishHandback(req protocol.WorkerHandbackRequest) {
 	c.mu.Unlock()
 	d.goBackground(func() {
 		defer files.Remove()
-		ctx := d.workerStreamCtx
-		if ctx == nil {
-			ctx = context.Background()
-		}
+		ctx := d.streamCtx()
 		// Adoption replays results before Start launches the gateway link.
 		// File notices need that link and cannot use the offline outbox.
 		tick := time.NewTicker(100 * time.Millisecond)
@@ -100,6 +110,10 @@ func (c *agyConn) publishHandback(req protocol.WorkerHandbackRequest) {
 		}
 		if out, err := d.handbackToNoteWithFiles(ctx, w, req, "", "", "", true, files); err != nil {
 			d.Logf("worker %s: Antigravity handback: %v", w.id, err)
+			if ctx.Err() != nil || errors.Is(err, errHandbackDeferred) {
+				return // the next adoption or connect publishes the saved report
+			}
+			c.refused(ctx, req, key, err)
 		} else {
 			c.mu.Lock()
 			if c.pendingKey == key {
@@ -115,17 +129,85 @@ func (c *agyConn) publishHandback(req protocol.WorkerHandbackRequest) {
 	})
 }
 
-func (d *Daemon) startAgyStream(c *agyConn) {
-	ctx := d.workerStreamCtx
-	if ctx == nil {
-		ctx = context.Background()
+// refused saves the refusal of the pending hand-back named key, then tells
+// the worker or the caller.
+func (c *agyConn) refused(ctx context.Context, req protocol.WorkerHandbackRequest, key string, err error) {
+	d, w := c.d, c.w
+	d.refusedStep("refused")
+	r := d.saveRefusal(w, req, err, key, true)
+	d.refusedStep("saved")
+	// The refused hand-back ended the turn: let the next message in.
+	d.openCodeTurnIdle(w.sessionID)
+	c.refusalNext(ctx, r)
+}
+
+// refusalNext does what a saved refusal still owes, read from the stream
+// state, so a live refusal, an adoption and the end of a later turn take the
+// same path. The steps of a refused hand-back, each on disk before the next:
+//
+//   - refused: nothing is saved. Adoption publishes the pending hand-back again.
+//   - saved: the record names the pending turn. Adoption finds both and goes on
+//     here, so the hand-back is not published again.
+//   - cleared: the stream state no longer holds the pending hand-back.
+//   - the worker's message: deliverAgy saves the stream as not completed before
+//     it writes, so adoption never sends it twice. The result of that turn
+//     comes here again when it carries no hand-back.
+//   - told: the caller's notice is sent. Adoption sends it again with the same
+//     key, and the gateway keeps the first. Then the record is removed.
+func (c *agyConn) refusalNext(ctx context.Context, r refusedHandback) {
+	d, w := c.d, c.w
+	c.mu.Lock()
+	if c.pending != nil && c.pendingKey == r.Turn {
+		c.pending, c.pendingKey = nil, ""
+		if err := c.saveStreamLocked(); err != nil {
+			d.Logf("worker %s: save the Antigravity stream: %v", w.id, err)
+		}
 	}
-	c.stop, c.stopped = make(chan struct{}), make(chan struct{})
+	completed, failed, sameTurn := c.completed, c.failure != "", c.turnKeyLocked() == r.Turn
+	c.mu.Unlock()
+	d.refusedStep("cleared")
+	switch {
+	case !r.Worker:
+		d.tellCallerRefused(ctx, w, r)
+	case !completed || failed:
+		// A turn runs: its result comes here again, or carries a new
+		// hand-back. A failed run ends the worker, whose notice carries the
+		// saved report.
+	case sameTurn:
+		// No turn ran after the refused one, so the message is still owed.
+		if err := d.tellWorkerRefused(ctx, w, r.Reason); err != nil {
+			d.Logf("worker %s: refused hand-back message: %v", w.id, err)
+			if ctx.Err() != nil {
+				return // the daemon stops: the next one finds the record and sends the message
+			}
+			d.tellCallerRefused(ctx, w, r)
+		}
+	default:
+		// The worker had its message and ended a later turn without a new
+		// hand-back.
+		d.tellCallerRefused(ctx, w, r)
+	}
+}
+
+// streamCtx ends when the daemon stops.
+func (d *Daemon) streamCtx() context.Context {
+	if d.workerStreamCtx == nil {
+		return context.Background()
+	}
+	return d.workerStreamCtx
+}
+
+func (d *Daemon) startAgyStream(c *agyConn) {
+	ctx := d.streamCtx()
 	d.wmu.Lock()
 	processExited := c.w.exited
 	exited := make(chan struct{})
 	c.w.exited = exited
 	d.wmu.Unlock()
+	c.mu.Lock()
+	c.stop, c.stopped = make(chan struct{}), make(chan struct{})
+	c.processExited = processExited
+	c.mu.Unlock()
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
@@ -187,18 +269,7 @@ func (d *Daemon) startAgyStream(c *agyConn) {
 			if err != nil && !errors.Is(err, io.EOF) {
 				return
 			}
-			dead := false
-			if processExited != nil {
-				select {
-				case <-processExited:
-					dead = true
-				default:
-				}
-			} else {
-				tok, alive := procToken(c.w.pid)
-				dead = !alive || tok != c.w.token
-			}
-			if dead {
+			if c.processEnded() {
 				// Re-read after observing exit: the previous EOF may precede
 				// the child's last write.
 				line, _ := reader.ReadBytes('\n')
@@ -222,6 +293,49 @@ func (d *Daemon) startAgyStream(c *agyConn) {
 			}
 		}
 	}()
+}
+
+// processEnded tells whether the agy process ended: the Wait of a process
+// this daemon started, or the process table for an adopted one.
+func (c *agyConn) processEnded() bool {
+	c.mu.Lock()
+	exited := c.processExited
+	c.mu.Unlock()
+	if exited != nil {
+		select {
+		case <-exited:
+			return true
+		default:
+			return false
+		}
+	}
+	c.d.wmu.Lock()
+	pid, token := c.w.pid, c.w.token
+	c.d.wmu.Unlock()
+	tok, alive := procToken(pid)
+	return !alive || tok != token
+}
+
+// agyEnded tells whether the worker's agy process ended. gone says no until
+// the stream reader has read all that an ended process wrote, so its last
+// result is never lost. A message written in that time reaches no process,
+// so this waits for the reader.
+func (d *Daemon) agyEnded(ctx context.Context, w *worker) bool {
+	d.wmu.Lock()
+	c := w.agy
+	d.wmu.Unlock()
+	if c != nil && c.processEnded() {
+		c.mu.Lock()
+		stopped := c.stopped
+		c.mu.Unlock()
+		if stopped != nil {
+			select {
+			case <-stopped:
+			case <-ctx.Done():
+			}
+		}
+	}
+	return d.gone(w)
 }
 
 func (c *agyConn) closeStream() {

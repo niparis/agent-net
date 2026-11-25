@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -544,5 +545,54 @@ func TestHandbackAndStepReportStoreFriction(t *testing.T) {
 	}
 	if step.Entries[0].Change != ch.ID || step.Entries[0].Session != callerID {
 		t.Fatalf("step friction link: %+v", step.Entries[0])
+	}
+}
+
+// Friction is optional, so a bad entry never refuses the hand-back an agent
+// just made through agent_handback. The daemon keeps the good entries, cleans
+// the rest, and the caller's notice says that a line was dropped.
+func TestHandbackDropsBadFrictionFromTheTool(t *testing.T) {
+	c, g, _ := deliveryHandbackNode(t, nil)
+	caller, callerID := deliveryCaller(t, c)
+	res := startDeliveryWorker(t, c, caller, callerID, protocol.WorkerStartRequest{Model: "sonnet", Project: "shop", Harness: "claude",
+		Title: "Hand back friction", Task: "FAKE:ignore", Isolation: protocol.IsolationWorktree})
+	long := strings.Repeat("x", protocol.MaxFrictionText+1)
+	if _, err := c.d.handback(context.Background(), res.SessionID, protocol.WorkerHandbackRequest{
+		Report: "the hand-back carries one good friction line and four bad ones",
+		Friction: []protocol.FrictionEntry{
+			{Area: protocol.FrictionTooling, Text: "the fake harness needed a restart"},
+			{Area: protocol.FrictionTooling, Text: "   "},
+			{Area: "mood", Text: "not a listed area"},
+			{Area: protocol.FrictionCI, Text: "the suite ran\ntwice"},
+			{Area: protocol.FrictionSkill, Text: long},
+		},
+	}); err != nil {
+		t.Fatalf("the hand-back was refused for its friction: %v", err)
+	}
+	n := handbackNotice(t, c, callerID, res.SessionID)
+	t.Logf("notice frame:\n%s", n.Body)
+	if !strings.Contains(n.Body, "friction: 4 entries were dropped or shortened before they were stored") {
+		t.Errorf("the notice does not say the friction list was cleaned:\n%s", n.Body)
+	}
+	stored, err := g.gw.Store().FrictionFind(protocol.FrictionQuery{Project: "shop"})
+	if err != nil || len(stored.Entries) != 3 {
+		t.Fatalf("stored friction: %+v %v", stored, err)
+	}
+	byArea := map[string]string{}
+	for _, e := range stored.Entries {
+		text, err := strconv.Unquote(e.Text)
+		if err != nil {
+			t.Fatalf("stored text %q: %v", e.Text, err)
+		}
+		byArea[e.Area] = text
+	}
+	if byArea[protocol.FrictionTooling] != "the fake harness needed a restart" {
+		t.Errorf("the good line changed: %q", byArea[protocol.FrictionTooling])
+	}
+	if byArea[protocol.FrictionCI] != "the suite ran twice" {
+		t.Errorf("a wrapped line was not made one line: %q", byArea[protocol.FrictionCI])
+	}
+	if got := byArea[protocol.FrictionSkill]; len([]rune(got)) != protocol.MaxFrictionText {
+		t.Errorf("a long line was not cut to %d characters: %d", protocol.MaxFrictionText, len([]rune(got)))
 	}
 }

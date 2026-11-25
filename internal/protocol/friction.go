@@ -77,6 +77,39 @@ func ValidateFriction(list []FrictionEntry) error {
 	return nil
 }
 
+// SanitizeFriction keeps the entries a hand-back may store, and reports how
+// many entries did not reach the table as written. Friction is optional, so it
+// never refuses a hand-back: an entry with an area outside the list or with no
+// text is dropped, its text becomes one line, and a line longer than
+// MaxFrictionText is cut. A step report still validates its own entries.
+func SanitizeFriction(list []FrictionEntry) (kept []FrictionEntry, dropped int) {
+	if len(list) == 0 {
+		return nil, 0
+	}
+	kept = make([]FrictionEntry, 0, len(list))
+	for _, f := range list {
+		if !validFrictionArea(f.Area) {
+			dropped++
+			continue
+		}
+		text := CleanFrictionText(f.Text)
+		if text == "" {
+			dropped++
+			continue
+		}
+		changed := text != strings.TrimSpace(f.Text)
+		if r := []rune(text); len(r) > MaxFrictionText {
+			text = strings.TrimSpace(string(r[:MaxFrictionText]))
+			changed = true
+		}
+		if changed {
+			dropped++
+		}
+		kept = append(kept, FrictionEntry{Area: f.Area, Text: text})
+	}
+	return kept, dropped
+}
+
 // CleanFrictionText is the text as it is stored: trimmed, one line.
 func CleanFrictionText(s string) string {
 	s = strings.Map(func(r rune) rune {

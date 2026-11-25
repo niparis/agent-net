@@ -36,6 +36,45 @@ func TestFrictionTextIsRedactedBeforeStorage(t *testing.T) {
 	}
 }
 
+// A hand-back's friction report is optional, so the gateway cleans a bad
+// entry of a report that reaches it instead of refusing the whole list.
+func TestFrictionReportDropsBadEntries(t *testing.T) {
+	s, _ := newTestStore(t)
+	res, err := s.ReportFriction(protocol.FrictionReportRequest{
+		SessionID: "s_1", Project: "demo", Harness: "agy",
+		Entries: []protocol.FrictionEntry{
+			{Area: protocol.FrictionTooling, Text: "the fake agy took two runs"},
+			{Area: "", Text: ""},
+			{Area: protocol.FrictionCI, Text: "the suite ran\ntwice"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("the report was refused for a bad entry: %v", err)
+	}
+	if res.Stored != 2 {
+		t.Fatalf("stored %d rows", res.Stored)
+	}
+	rows, err := s.db.Query(`SELECT area, text FROM friction ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var areas, texts []string
+	for rows.Next() {
+		var area, text string
+		if err := rows.Scan(&area, &text); err != nil {
+			t.Fatal(err)
+		}
+		areas, texts = append(areas, area), append(texts, text)
+	}
+	if len(areas) != 2 || areas[0] != protocol.FrictionTooling || areas[1] != protocol.FrictionCI {
+		t.Fatalf("stored areas: %v", areas)
+	}
+	if texts[1] != "the suite ran twice" {
+		t.Fatalf("a wrapped line was not made one line: %q", texts[1])
+	}
+}
+
 // The read filters, returns the newest first, and counts each project.
 func TestFrictionFindFiltersAndCounts(t *testing.T) {
 	s, c := newTestStore(t)
