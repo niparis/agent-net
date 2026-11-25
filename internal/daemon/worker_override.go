@@ -57,15 +57,34 @@ func (d *Daemon) rememberOwnerPrompt(session, text string) {
 	d.rememberOwnerPromptAt(session, text, d.ownerPromptNow())
 }
 
-// rememberOwnerPromptAt is rememberOwnerPrompt for a prompt typed at a known
-// time, such as one read back from a transcript.
-func (d *Daemon) rememberOwnerPromptAt(session, text string, at time.Time) {
-	text = strings.ToValidUTF8(strings.TrimSpace(text), "")
-	if session == "" || text == "" {
-		return
+// ownerWordsText returns the prompt cut down to what may be kept as the
+// owner's words: pasted blocks and system reminders removed, the parts he typed
+// joined with OwnerTypedSeparator, and the result cut to the store's limit.
+// Blocks are removed before the cut, so a cut can never turn text that a block
+// hid into a quote. ok is false when he typed nothing outside a block.
+func ownerWordsText(text string) (string, bool) {
+	segments := protocol.OwnerTypedSegments(text)
+	if len(segments) == 0 {
+		return "", false
 	}
+	text = strings.Join(segments, protocol.OwnerTypedSeparator)
 	if len(text) > maxOwnerPromptBytes {
 		text = strings.ToValidUTF8(text[:maxOwnerPromptBytes], "")
+	}
+	return text, true
+}
+
+// rememberOwnerPromptAt is rememberOwnerPrompt for a prompt typed at a known
+// time, such as one read back from a transcript. Text the harness marks as
+// pasted is removed here, so every store of the owner's words holds only what
+// he typed.
+func (d *Daemon) rememberOwnerPromptAt(session, text string, at time.Time) {
+	if session == "" {
+		return
+	}
+	text, ok := ownerWordsText(text)
+	if !ok {
+		return
 	}
 	now := d.ownerPromptNow()
 	d.ownerPrompts.mu.Lock()
@@ -100,6 +119,9 @@ func freshPrompts(list []ownerPrompt, now time.Time) []ownerPrompt {
 // ownerWordsMatch tells whether the quote is in what the owner typed in the
 // session in the last ownerPromptWindow, ignoring case and white space.
 func (d *Daemon) ownerWordsMatch(session, quote string) bool {
+	// A prompt whose transcript entry was missing when the wait ended may have
+	// one now. Read it again before matching.
+	d.resolvePendingOwnerWords(session)
 	// Text typed while a Claude turn runs fires no prompt hook: read it from
 	// the transcript now, when it is needed.
 	d.sweepQueuedOwnerPrompts(session)

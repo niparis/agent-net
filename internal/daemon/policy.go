@@ -153,7 +153,17 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 	d := lc.d
 	// What the owner types in the CTO's own pane is the words he gives the CTO.
 	if client == "cli" && p.Harness == "claude" && p.Event == "" && isHumanClaudePrompt(p.Prompt) && d.isClaudeCTONative(p.NativeID) {
-		d.whenClaudeOwnerPrompt(ctx, p, func(context.Context) { d.rememberCTOOwnerPrompt(p.Prompt) })
+		d.whenClaudeOwnerPrompt(ctx, p, func(_ context.Context, owner bool) {
+			if owner {
+				d.rememberCTOOwnerPrompt(p.Prompt)
+				return
+			}
+			// The entry was missing or named no origin. Keep the prompt for a
+			// later transcript read, as the ordinary branch does: a loaded
+			// machine can write the entry after the wait, and a human entry
+			// then makes it the owner's words to the CTO.
+			d.notePendingOwnerWords(d.ctoSessionID(), p)
+		})
 	}
 	if client == "cli" {
 		d.mu.Lock()
@@ -169,6 +179,9 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 	if sid == "" {
 		return protocol.PolicyResult{}, nil
 	}
+	// A prompt whose entry was missing when its wait ended may have one now.
+	// Keep the words before the next check.
+	d.resolvePendingOwnerWords(sid)
 	if p.Event == "Stop" {
 		d.ownerTypedWhileBusy(ctx, ls, sid)
 		d.recordTurnEndQuestion(ctx, ls, sid, p.LastMessage)
@@ -179,10 +192,21 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 		notice = protocol.ToolsDisconnectedNotice
 	}
 	if client == "cli" && p.Harness == "claude" && isHumanClaudePrompt(p.Prompt) {
-		d.whenClaudeOwnerPrompt(ctx, p, func(ctx context.Context) {
-			_, _ = d.call(ctx, "signal.prompt", map[string]string{"session_id": sid, "prompt": p.Prompt})
-			d.ownerTyped(ctx, ls, sid, p.Prompt)
-			d.rememberOwnerPrompt(sid, p.Prompt)
+		d.whenClaudeOwnerPrompt(ctx, p, func(ctx context.Context, owner bool) {
+			text := ""
+			if owner {
+				d.rememberOwnerPrompt(sid, p.Prompt)
+				if segments := protocol.OwnerTypedSegments(p.Prompt); len(segments) > 0 {
+					_, _ = d.call(ctx, "signal.prompt", map[string]string{"session_id": sid, "prompt": strings.Join(segments, " ")})
+				}
+				text = p.Prompt
+			} else {
+				// The entry was missing or named no origin. Keep the prompt
+				// for a later transcript read: a loaded machine can write the
+				// entry after the wait, and a human entry then makes it words.
+				d.notePendingOwnerWords(sid, p)
+			}
+			d.ownerTyped(ctx, ls, sid, text)
 		})
 	}
 	got, ok := d.policyOf(ctx, sid, d.agentsHashOf(ls))
@@ -217,10 +241,21 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 
 // isHumanClaudePrompt is true for text the owner may have typed. Claude delivers
 // peer messages, task notifications, reminders, scheduled turns and
-// autonomous-loop turns through the same prompt hook. The markers in
-// protocol.InjectedClaudePrompt catch the ones that carry one. A scheduled turn
-// carries none, so whenClaudeOwnerPrompt reads its transcript entry as well.
+// autonomous-loop turns through the same prompt hook. A marker at the start of
+// the raw prompt is an injected turn whatever tags follow, so that check runs
+// before any block is removed: a forged closing tag would otherwise drop the
+// marker with the text before it. A reminder that Claude Code appends after
+// the owner's text does not hide that text, so reminders are removed before
+// the marker check for the rest of the prompt. A scheduled turn carries no
+// marker, so whenClaudeOwnerPrompt reads its transcript entry as well.
+//
+// A reminder at the start with typed text after it is refused. Its words are
+// lost, which is safe: losing words never makes pasted or peer text typed.
 func isHumanClaudePrompt(prompt string) bool {
+	if protocol.StartsInjectedClaudeTurn(prompt) {
+		return false
+	}
+	prompt = protocol.WithoutSystemReminders(prompt)
 	return strings.TrimSpace(prompt) != "" && !protocol.InjectedClaudePrompt(prompt)
 }
 
@@ -232,8 +267,10 @@ func (d *Daemon) recordOwnerOpen(ctx context.Context, id string) {
 // message). Whatever the session waited for is answered or overtaken: the
 // wait ends here, whichever harness reported it, and the gateway closes the
 // session's open question and approval items. text is what he typed, when the
-// harness reports it: the gateway keeps it as his answer.
+// harness reports it: the gateway keeps it as his answer. A pasted block is
+// removed first, so agent text he pasted never becomes his answer.
 func (d *Daemon) ownerTyped(ctx context.Context, ls *localSession, sid, text string) {
 	d.setWaiting(ls, nil)
-	_, _ = d.call(ctx, "session.owner_use", map[string]any{"session_id": sid, "prompt": true, "text": text})
+	_, _ = d.call(ctx, "session.owner_use", map[string]any{"session_id": sid, "prompt": true,
+		"text": strings.Join(protocol.OwnerTypedSegments(text), " ")})
 }

@@ -39,5 +39,17 @@ new check.
 
 ## Known limit
 
-The excerpt is the owner's prompt as typed. It can include text the owner
-pasted from an agent, and it is cut to 200 characters.
+The excerpt is the owner's prompt as typed, with every pasted block and every
+system-reminder block removed. Claude Code writes the same id on a block's
+opening and closing tags, and an id repeats in later prompts, so tags cannot be
+paired by id: everything from the first opening tag to the last closing tag is
+dropped, including text between two blocks, and an unclosed block drops the
+rest. A part with a closing tag but no opening tag keeps only the text after
+the last closing tag, since its opening tag may have stood in a removed block.
+A quote cannot span a removed block. A reminder Claude Code appends is
+not his words; the text before it is. What remains is still only as strong as
+the harness: a paste the harness does not mark as pasted is kept, and a process
+on the same account that writes the transcript or calls the prompt hook can
+feed words. The hook passes the prompt on whole. The excerpt is cut to 300
+characters at the gateway, and the size limits on the path are in
+docs/security.md.
