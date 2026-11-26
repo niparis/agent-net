@@ -109,10 +109,9 @@ func folderOr(folder, fallback string) string {
 	return fallback
 }
 
-// toolAllowed is the one decision every harness path asks: the Claude hook
-// through tool_decide, and the Codex and OpenCode adapters directly. It is true
-// only when the scopes of the role node of session sid allow the call. Every
-// other case, including a failure, is false: no decision.
+// toolAllowed is the one decision every harness path asks through tool_decide.
+// It is true only when the scopes of the role node of session sid allow the
+// call. Every other case, including a failure, is false: no decision.
 func (d *Daemon) toolAllowed(ctx context.Context, sid, tool string, input json.RawMessage, folder string) bool {
 	held, ok := d.scopesOf(ctx, sid)
 	if !ok || len(held.Scopes) == 0 {

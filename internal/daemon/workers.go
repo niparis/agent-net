@@ -1010,6 +1010,9 @@ func (d *Daemon) setWorkerDir(w *worker) string {
 	return dir
 }
 
+// workerLogTail is the end of the worker log. Stream-json event lines are
+// skipped: the agy log holds both streams, and its events would push the error
+// text, which agy writes to stderr last, out of the failure note.
 func (d *Daemon) workerLogTail(w *worker) string {
 	d.wmu.Lock()
 	logPath := w.logPath
@@ -1021,7 +1024,18 @@ func (d *Daemon) workerLogTail(w *worker) string {
 	if err != nil {
 		return ""
 	}
-	s := strings.TrimSpace(string(raw))
+	var kept []string
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		var event struct {
+			Event string `json:"event"`
+		}
+		if line == "" || json.Unmarshal([]byte(line), &event) == nil && event.Event != "" {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	s := strings.Join(kept, " ")
 	if len(s) > 400 {
 		s = "..." + s[len(s)-400:]
 	}

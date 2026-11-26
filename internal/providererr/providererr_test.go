@@ -46,6 +46,30 @@ func TestNotALimit(t *testing.T) {
 	}
 }
 
+// The OpenCode failure classifier is the shared one: its upstream markers and
+// its local-error exclusions both decide a failed run.
+func TestOpenCodeFailureMarkers(t *testing.T) {
+	for _, tc := range []struct {
+		typ, msg string
+		want     bool
+	}{
+		{"provider.upstream", "Insufficient account funds", true},
+		{"error", "HTTP 401 invalid API key", true},
+		{"error", "not logged in", true},
+		{"error", "rate limit exceeded", true},
+		{"error", "no route for model", true},
+		{"effect/sql/SqlError", "Failed to execute statement", false},
+		{"tool.error", "tool crashed", false},
+		{"provider.upstream", "effect/sql/SqlError: Failed to execute statement", false},
+		{"error", "unknown failure", false},
+		{"error", "HTTP 503 service unavailable", false},
+	} {
+		if got := UpstreamFailure(tc.typ + " " + tc.msg); got != tc.want {
+			t.Errorf("%q %q: got %v", tc.typ, tc.msg, got)
+		}
+	}
+}
+
 func TestFailureKeepsOldMarkers(t *testing.T) {
 	for _, s := range []string{"model not found", "401", "429 too many", "503 service unavailable", "overloaded"} {
 		if !Failure(s) {

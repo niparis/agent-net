@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -77,11 +76,8 @@ func (agyLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 }
 
 func (agyLauncher) resume(ctx context.Context, d *Daemon, w *worker) error {
-	d.wmu.Lock()
-	native := w.nativeID
-	d.wmu.Unlock()
-	if native == "" {
-		return errors.New("the Antigravity conversation of the worker is not known")
+	if _, err := w.nativeSessionID("Antigravity conversation"); err != nil {
+		return err
 	}
 	return d.startAgy(ctx, w)
 }
@@ -104,12 +100,7 @@ func (d *Daemon) startAgy(ctx context.Context, w *worker) error {
 	defer func() { d.wmu.Lock(); w.agyStarting = false; d.wmu.Unlock() }()
 	if old != nil {
 		old.closeStream()
-		old.mu.Lock()
-		if old.in != nil {
-			old.in.Close()
-			old.in = nil
-		}
-		old.mu.Unlock()
+		old.closeInput()
 	}
 	// Reap any stragglers and drain the old stream before reading its usage.
 	d.killGroup(w)
@@ -124,16 +115,12 @@ func (d *Daemon) startAgy(ctx context.Context, w *worker) error {
 	if err != nil {
 		return err
 	}
-	dir := d.setWorkerDir(w)
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	dir, err := d.workerDir(w)
+	if err != nil {
 		return err
 	}
 	fifo := filepath.Join(dir, "agy-stdin")
-	_ = os.Remove(fifo)
-	if err := syscall.Mkfifo(fifo, 0600); err != nil {
-		return err
-	}
-	rd, err := os.OpenFile(fifo, os.O_RDWR, 0)
+	rd, err := openWorkerFIFO(fifo)
 	if err != nil {
 		return err
 	}
@@ -157,15 +144,8 @@ func (d *Daemon) startAgy(ctx context.Context, w *worker) error {
 	w.agy = c
 	d.wmu.Unlock()
 	mode, settings := "accept-edits", agyWorkerSettings
-	var gitDirs []string
 	if permissions == protocol.WorkersReadOnly {
 		mode, settings = "plan", agyReadOnlySettings
-	} else {
-		// A linked worktree's .git file points at the main repository's git
-		// folder, which the sandbox hides. Without these narrow folders a
-		// worker cannot run git status, and reading the .git file's target is
-		// denied in headless mode.
-		gitDirs = workerGitRoots(ctx, w.path)
 	}
 	env := d.workerGitEnv(w, os.Environ(), map[string]string{"AGENT_NET_WORKER": w.id, "AGENT_NET_SOCKET": d.cfg.SocketPath,
 		"AGENT_NET_WORKER_SESSION_FILE": filepath.Join(dir, "session")})
@@ -183,22 +163,21 @@ func (d *Daemon) startAgy(ctx context.Context, w *worker) error {
 	args = append(args, modelArgs...)
 
 	args = append(args, "--mode", mode, "--sandbox", "--settings", settings)
-	for _, path := range toolchains {
-		args = append(args, "--add-dir", path)
-	}
-	for _, path := range gitDirs {
-		args = append(args, "--add-dir", path)
-	}
-	// The Go temp folder the worker's go command writes to (GOTMPDIR), then the
-	// package caches of the worker (UV_CACHE_DIR and the others), which stay last.
+	// The linked worktree's git folders, the Go temp folder the worker's go
+	// command writes to (GOTMPDIR) and the package caches of the worker
+	// (UV_CACHE_DIR and the others) stay writable. agy needs the package cache
+	// last.
 	if permissions != protocol.WorkersReadOnly {
-		goTmp := d.workerSandboxGoTmpDir()
-		if err := os.MkdirAll(goTmp, 0o700); err == nil {
-			args = append(args, "--add-dir", goTmp)
+		for _, path := range toolchains {
+			args = append(args, "--add-dir", path)
 		}
-		cache := d.workerCacheRoot(w)
-		if err := os.MkdirAll(cache, 0o700); err == nil {
-			args = append(args, "--add-dir", cache)
+		roots := d.workerWriteRootsThen(ctx, w.path, d.workerSandboxGoTmpDir(), d.workerCacheRoot(w))
+		for _, path := range roots {
+			args = append(args, "--add-dir", path)
+		}
+	} else {
+		for _, path := range toolchains {
+			args = append(args, "--add-dir", path)
 		}
 	}
 	if native != "" {
@@ -249,26 +228,12 @@ func (d *Daemon) startAgy(ctx context.Context, w *worker) error {
 
 func (d *Daemon) registerAgySession(ctx context.Context, w *worker) error {
 	d.wmu.Lock()
-	native, model, path, pid, sid := w.nativeID, w.model, w.path, w.pid, w.sessionID
+	native, model, path, pid := w.nativeID, w.model, w.path, w.pid
 	d.wmu.Unlock()
-	ls := &localSession{owned: true, sessionID: sid, info: protocol.SessionInfo{Harness: "agy", NativeID: native, PID: pid, Cwd: path,
-		Status: "idle", Delivery: "stream-json", Mode: protocol.ModeBackground, Model: protocol.CleanModel(model), Repo: d.repo.Refresh(path), Worker: d.workerInfo(w)}}
-	d.mu.Lock()
-	ls.lastActive = d.activity[key("agy", native)]
-	d.sessions[key("agy", native)] = ls
-	d.mu.Unlock()
-	for {
-		d.pushSession(ls)
-		if sid := d.currentSessionID(ls); sid != "" {
-			d.workerSessionReady(w, sid)
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return errors.New("the gateway did not register the Antigravity worker session in time")
-		case <-time.After(50 * time.Millisecond):
-		}
-	}
+	info := protocol.SessionInfo{Harness: "agy", NativeID: native, PID: pid, Cwd: path,
+		Status: "idle", Delivery: "stream-json", Mode: protocol.ModeBackground, Model: protocol.CleanModel(model),
+		Repo: d.repo.Refresh(path), Worker: d.workerInfo(w)}
+	return d.registerWorkerSession(ctx, w, info, true)
 }
 
 func (c *agyConn) Write(p []byte) (int, error) {
@@ -328,7 +293,7 @@ func (c *agyConn) eventAt(line []byte, offset int64) {
 		w.turnAwaitingStart = false
 		d.wmu.Unlock()
 		d.keepWorkerActive(w, time.Now())
-		d.setAgyStatus(w, "busy")
+		d.setWorkerStatus(w, "busy")
 		c.noteStepUsage(e.StepUpdate.StepType, e.StepUpdate.State, e.StepUpdate.Usage)
 	case "result":
 		r := e.Result
@@ -375,7 +340,7 @@ func (c *agyConn) eventAt(line []byte, offset int64) {
 			_ = os.Rename(tmp, filepath.Join(w.dir, "agy-usage.json"))
 		}
 		d.noteWorkerUsage(w, agyStats(usage, w.model))
-		d.setAgyStatus(w, "idle")
+		d.setWorkerStatus(w, "idle")
 		if failure != "" {
 			return
 		}
@@ -558,7 +523,7 @@ func (agyLauncher) failure(_ context.Context, d *Daemon, w *worker) (string, boo
 		return "", false
 	}
 	if agyFailedAfterExit(c, func() bool { return d.gone(w) }, exitErr) {
-		return cleanFailure("Antigravity exited without a successful result: " + d.agyLogTail(w)), false
+		return cleanFailure("Antigravity exited without a successful result: " + d.workerLogTail(w)), false
 	}
 	c.mu.Lock()
 	failure := c.failure
@@ -606,12 +571,7 @@ func (agyLauncher) stop(d *Daemon, w *worker) {
 	d.wmu.Unlock()
 	if c != nil {
 		c.closeStream()
-		c.mu.Lock()
-		if c.in != nil {
-			c.in.Close()
-			c.in = nil
-		}
-		c.mu.Unlock()
+		c.closeInput()
 	}
 	if exited != nil {
 		select {
@@ -620,23 +580,6 @@ func (agyLauncher) stop(d *Daemon, w *worker) {
 		}
 	}
 	// The inherited FIFO keeps stdin open. endWorker kills the process group.
-}
-
-func (d *Daemon) setAgyStatus(w *worker, status string) {
-	d.wmu.Lock()
-	native := w.nativeID
-	d.wmu.Unlock()
-	d.mu.Lock()
-	ls := d.sessions[key("agy", native)]
-	if ls != nil {
-		ls.info.Status = status
-		d.recordActivityLocked(ls, time.Now())
-	}
-	d.mu.Unlock()
-	if ls != nil {
-		d.persistActivity(ls)
-		go d.pushSession(ls)
-	}
 }
 
 func (d *Daemon) deliverAgy(ctx context.Context, w *worker, m protocol.Message) Result {
@@ -673,7 +616,7 @@ func (d *Daemon) deliverAgy(ctx context.Context, w *worker, m protocol.Message) 
 	}
 	d.resetIdleNotice(w)
 	// Set busy before writing: a fast result must be the last status change.
-	d.setAgyStatus(w, "busy")
+	d.setWorkerStatus(w, "busy")
 	text := d.workerToolchainPermissions(w, codexWorkerText(m))
 	line, _ := json.Marshal(map[string]any{"event": "user", "message": map[string]string{"content": text}})
 	err := c.send(append(line, '\n'))
@@ -681,6 +624,17 @@ func (d *Daemon) deliverAgy(ctx context.Context, w *worker, m protocol.Message) 
 		return Result{Detail: "Antigravity input: " + err.Error()}
 	}
 	return Result{Delivered: true}
+}
+
+// closeInput closes the Antigravity input, if it is open. Closing it must
+// interrupt a blocked write, even if the worker has stopped reading.
+func (c *agyConn) closeInput() {
+	c.mu.Lock()
+	if c.in != nil {
+		c.in.Close()
+		c.in = nil
+	}
+	c.mu.Unlock()
 }
 
 // Closing stdin must interrupt a blocked write, even if the worker has stopped
@@ -790,33 +744,4 @@ func (d *Daemon) agyWorkerConversation(native string) bool {
 		}
 	}
 	return false
-}
-
-// agyLogTail is the end of the worker log without agy's stream-json events.
-// The log holds both streams; the events would push the error text, which
-// agy writes to stderr last, out of the failure note.
-func (d *Daemon) agyLogTail(w *worker) string {
-	d.wmu.Lock()
-	logPath := w.logPath
-	d.wmu.Unlock()
-	raw, err := os.ReadFile(logPath)
-	if logPath == "" || err != nil {
-		return ""
-	}
-	var kept []string
-	for _, line := range strings.Split(string(raw), "\n") {
-		line = strings.TrimSpace(line)
-		var event struct {
-			Event string `json:"event"`
-		}
-		if line == "" || json.Unmarshal([]byte(line), &event) == nil && event.Event != "" {
-			continue
-		}
-		kept = append(kept, line)
-	}
-	s := strings.Join(kept, " ")
-	if len(s) > 400 {
-		s = "..." + s[len(s)-400:]
-	}
-	return strings.Join(strings.Fields(s), " ")
 }

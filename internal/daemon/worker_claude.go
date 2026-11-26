@@ -78,8 +78,8 @@ func (claudeLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 // `claude --bg --resume <session-id>`, with the same settings, model and
 // MCP server. Claude keeps the transcript, so the conversation continues.
 func (claudeLauncher) resume(ctx context.Context, d *Daemon, w *worker) error {
-	if w.nativeID == "" {
-		return errors.New("the Claude session of the worker is not known")
+	if _, err := w.nativeSessionID("Claude session"); err != nil {
+		return err
 	}
 	// The old MCP server is gone with the old process. Wait for the new one.
 	d.mu.Lock()
@@ -99,8 +99,8 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 	if err != nil {
 		return err
 	}
-	dir := d.setWorkerDir(w)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	dir, err := d.workerDir(w)
+	if err != nil {
 		return err
 	}
 	d.wmu.Lock()
@@ -213,23 +213,19 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 	// before: a turn that begins before Claude has connected its MCP servers
 	// has no agent_handback (seen on Claude Code 2.1.312, where the first
 	// message of a session started a turn at once, without the tools).
-	for {
-		if sid := d.workerSessionIDOf(w); sid != "" && d.claudeMCPReady(w) {
-			d.workerSessionReady(w, sid)
-			return nil
+	err = d.waitWorkerReady(ctx, w, func() bool {
+		return d.workerSessionIDOf(w) != "" && d.claudeMCPReady(w)
+	}, func() error {
+		if d.workerSessionIDOf(w) != "" {
+			return errors.New("the agent-net MCP server did not start in the Claude session in time: the worker could not hand back")
 		}
-		select {
-		case <-ctx.Done():
-			if d.workerSessionIDOf(w) != "" {
-				return errors.New("the agent-net MCP server did not start in the Claude session in time: the worker could not hand back")
-			}
-			return errors.New("the daemon did not see the Claude session in time: is the Claude adapter running on this machine?")
-		case <-time.After(25 * time.Millisecond):
-		}
-		if d.gone(w) {
-			return errors.New("the Claude background session ended at start")
-		}
+		return errors.New("the daemon did not see the Claude session in time: is the Claude adapter running on this machine?")
+	}, errors.New("the Claude background session ended at start"))
+	if err != nil {
+		return err
 	}
+	d.workerSessionReady(w, d.workerSessionIDOf(w))
+	return nil
 }
 
 // claudeWorkerSettings is the --settings JSON of a Claude worker: its identity
@@ -246,7 +242,7 @@ func (d *Daemon) claudeWorkerSettings(w *worker, env map[string]string) map[stri
 		"crossSessionInbound": "accept",
 		"env":                 env,
 		"permissions":         claudeWorkerPermissions(level, dir),
-		"sandbox":             claudeWorkerSandbox(level, dir, append(d.claudeWorkerWrites(dir), d.workerCacheRoot(w))),
+		"sandbox":             claudeWorkerSandbox(level, dir, d.claudeWorkerWrites(w)),
 	}
 }
 
@@ -282,18 +278,16 @@ func claudeWriteRule(dir string) string {
 }
 
 // claudeWorkerWrites is the writable folders a Claude worker needs beyond its
-// working directory: the folders git writes in the main repository for a
-// commit in the worktree, the Go module cache, and the shared Go build cache
-// and Go temp folder (under /tmp). The sandbox's own per-user temp folder is
-// writable already.
+// working directory: the folders of a commit in its worktree, the Go module
+// cache, and the shared Go build cache and Go temp folder. The sandbox's own
+// per-user temp folder is writable already.
 //
-// The git folders are the narrow set Codex gets (workerGitRoots), not the whole
-// git directory: hooks and config stay read-only, since a hook runs outside
-// the sandbox's rules when the owner commits.
-func (d *Daemon) claudeWorkerWrites(dir string) []string {
-	paths := []string{dir}
-	paths = append(paths, workerGitRoots(context.Background(), dir)...)
-	paths = append(paths, d.workerGoModCache(dir), d.workerGoCacheDir(), d.workerSandboxGoTmpDir())
+// The git folders are the narrow set of workerGitRoots, not the whole git
+// directory: hooks and config stay read-only, since a hook runs outside the
+// sandbox's rules when the owner commits.
+func (d *Daemon) claudeWorkerWrites(w *worker) []string {
+	paths := append([]string{w.path}, d.workerWriteRoots(context.Background(), w)...)
+	paths = append(paths, d.workerGoModCache(w.path))
 	var out []string
 	seen := map[string]bool{}
 	for _, p := range paths {
@@ -313,10 +307,7 @@ func (d *Daemon) claudeWorkerWrites(dir string) []string {
 // worktree. A folder that cannot be made is logged; the worker still starts,
 // and its builds then find that folder read-only.
 func (d *Daemon) prepareClaudeWorkerWrites(w *worker) {
-	d.wmu.Lock()
-	dir := w.path
-	d.wmu.Unlock()
-	for _, p := range d.claudeWorkerWrites(dir) {
+	for _, p := range d.claudeWorkerWrites(w) {
 		if err := os.MkdirAll(p, 0o700); err != nil {
 			d.Logf("worker %s: Claude write path %s: %v", w.id, p, err)
 		}
@@ -479,7 +470,7 @@ func (claudeLauncher) stats(ctx context.Context, d *Daemon, w *worker) workerSta
 	if w.nativeID == "" {
 		return workerStats{}
 	}
-	return claudeTranscriptStats(filepath.Join(filepath.Dir(d.cfg.ClaudeSessionsDir), "projects"), w.nativeID)
+	return claudeTranscriptStats(d.claudeProjectsDir(), w.nativeID)
 }
 
 // struggle reads the session transcript once and counts the run's struggle
@@ -489,12 +480,17 @@ func (claudeLauncher) struggle(_ context.Context, d *Daemon, w *worker) protocol
 	if w.nativeID == "" {
 		return protocol.Struggle{Trace: protocol.StruggleNoTrace}
 	}
-	projectsDir := filepath.Join(filepath.Dir(d.cfg.ClaudeSessionsDir), "projects")
+	projectsDir := d.claudeProjectsDir()
 	path := ClaudeTranscriptPath(projectsDir, w.nativeID, w.path)
 	if path == "" {
 		return protocol.Struggle{Trace: protocol.StruggleNoTrace}
 	}
 	return readClaudeStruggle(path)
+}
+
+// claudeProjectsDir is where Claude Code keeps the transcripts of its sessions.
+func (d *Daemon) claudeProjectsDir() string {
+	return filepath.Join(filepath.Dir(d.cfg.ClaudeSessionsDir), "projects")
 }
 
 // claudeTranscriptStats sums the usage of the assistant messages in the
@@ -594,7 +590,7 @@ func (d *Daemon) claudeWorkerLastAssistant(native, cwd string) string {
 	if native == "" {
 		return ""
 	}
-	projectsDir := filepath.Join(filepath.Dir(d.cfg.ClaudeSessionsDir), "projects")
+	projectsDir := d.claudeProjectsDir()
 	return claudeTranscriptLastAssistant(ClaudeTranscriptPath(projectsDir, native, cwd))
 }
 
@@ -692,7 +688,7 @@ func (claudeLauncher) failure(_ context.Context, d *Daemon, w *worker) (string, 
 	if native == "" {
 		return "", false
 	}
-	projectsDir := filepath.Join(filepath.Dir(d.cfg.ClaudeSessionsDir), "projects")
+	projectsDir := d.claudeProjectsDir()
 	path := ClaudeTranscriptPath(projectsDir, native, cwd)
 	if path == "" {
 		return "", false
@@ -931,7 +927,7 @@ func (d *Daemon) launchClaudeBackground(ctx context.Context, bin, path string, s
 	find := func() (claudeSessionFile, bool) {
 		return findClaudeBg(d.cfg.ClaudeSessionsDir, id)
 	}
-	projectsDir := filepath.Join(filepath.Dir(d.cfg.ClaudeSessionsDir), "projects")
+	projectsDir := d.claudeProjectsDir()
 	unsettled := ""
 	for tick := 0; ; tick++ {
 		if f, ok := find(); ok {

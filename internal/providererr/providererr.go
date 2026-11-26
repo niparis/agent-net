@@ -14,6 +14,7 @@ var local = []string{"sqlerror", "sqlite", "database", "tool.error", "tool error
 
 var modelMarkers = []string{"not exist", "no access", "not have access", "model not found", "model_not_found", "model unavailable", "model not available", "unknown model", "invalid model", "issue with the selected model"}
 var authMarkers = []string{"401", "403", "unauthorized", "forbidden", "not logged in", "authentication", "invalid api key", "invalid_api_key"}
+var upstreamMarkers = []string{"402", "payment required", "insufficient", "billing", "funds", "no route", "no-route", "provider.auth", "provider.quota", "provider.rate"}
 
 // limitMarkers are the errors that mean the account is out of quota or rate:
 // the session can answer again after a reset.
@@ -33,11 +34,28 @@ func hasAny(s string, markers []string) bool {
 // Failure tells whether text is a provider error: model not found or no
 // access, auth (401/403), quota, rate limit or capacity, or another API error.
 func Failure(text string) bool {
+	return failure(text, true)
+}
+
+// UpstreamFailure is Failure for a harness that names the error kind apart from
+// the message, as OpenCode does. It is deliberately conservative: a server
+// error alone is not proof of a provider error, so it must not penalize a model.
+func UpstreamFailure(text string) bool {
+	return failure(text, false)
+}
+
+func failure(text string, api bool) bool {
 	s := strings.ToLower(text)
 	if hasAny(s, local) {
 		return false
 	}
-	return hasAny(s, modelMarkers) || hasAny(s, authMarkers) || hasAny(s, limitMarkers) || hasAny(s, capacityMarkers) || hasAny(s, apiMarkers)
+	if hasAny(s, modelMarkers) || hasAny(s, authMarkers) || hasAny(s, limitMarkers) {
+		return true
+	}
+	if api {
+		return hasAny(s, capacityMarkers) || hasAny(s, apiMarkers)
+	}
+	return hasAny(s, upstreamMarkers)
 }
 
 // Limited is a usage limit with the time it ends.

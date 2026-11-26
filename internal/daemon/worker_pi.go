@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -63,17 +62,14 @@ func (piLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	if err := d.bindWorkerNative(w, native); err != nil {
 		return err
 	}
-	dir := d.setWorkerDir(w)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	dir, err := d.workerDir(w)
+	if err != nil {
 		return err
 	}
 	fifo := filepath.Join(dir, "stdin")
-	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		return fmt.Errorf("cannot make the stdin pipe: %w", err)
-	}
-	in, err := os.OpenFile(fifo, os.O_RDWR, 0)
+	in, err := openWorkerFIFO(fifo)
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot make the stdin pipe: %w", err)
 	}
 	defer in.Close() // the process has its own copy, so its input never closes
 	env := d.workerGitEnv(w, os.Environ(), map[string]string{
@@ -101,18 +97,16 @@ func (piLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	}
 	// The extension registers the session (the daemon binds it by process
 	// group). If it does not, it is not installed and the worker cannot answer.
-	for {
+	return d.waitWorkerReady(ctx, w, func() bool {
 		select {
 		case <-w.ready:
-			return nil
-		case <-ctx.Done():
-			return errors.New("the agent-net extension did not register the worker session in time: is the Pi extension installed? Run `agent-net setup` on that machine")
-		case <-time.After(50 * time.Millisecond):
+			return true
+		default:
+			return false
 		}
-		if d.gone(w) {
-			return errors.New("pi exited at start")
-		}
-	}
+	}, func() error {
+		return errors.New("the agent-net extension did not register the worker session in time: is the Pi extension installed? Run `agent-net setup` on that machine")
+	}, errors.New("pi exited at start"))
 }
 
 // stats reads the usage of the Pi worker's session file. Pi writes the session

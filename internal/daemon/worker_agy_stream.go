@@ -66,7 +66,7 @@ func (agyLauncher) adopt(ctx context.Context, d *Daemon, w *worker) error {
 		return err
 	}
 	if !s.Completed {
-		d.setAgyStatus(w, "busy")
+		d.setWorkerStatus(w, "busy")
 	}
 	d.startAgyStream(c)
 	refused, ok := d.loadRefusedHandback(w.id)

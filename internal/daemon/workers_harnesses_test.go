@@ -837,28 +837,26 @@ func TestCodexWorkerQueuedTurnAfterHandback(t *testing.T) {
 	eventually(t, "worker ends after the second report", func() bool { return w.d.workerCount() == 0 })
 }
 
-// An approval is never given: Codex gets "decline", and the hand-back says
-// blocked, with what was asked and where to approve it (W6, W15).
-func TestCodexWorkerBlockedOnAnApproval(t *testing.T) {
+// An approval request is declined: agent-net never approves for a worker, since
+// every Codex thread and turn carries the approval policy "never". A request
+// that still arrives is answered with no and the turn ends with its own report
+// (W6, W15).
+func TestCodexWorkerDeclinesAnApproval(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: "FAKE:approve clean the build"})
+	w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: "FAKE:approve clean the build"})
 	n := w.waitNotice(t, 1)[0]
-	for _, want := range []string{"status: blocked", "BLOCKED:", "action: run the command: rm -rf build", "reason: outside the sandbox",
-		"approve_in: Codex thread th-", "codex resume th-", "approval_text:"} {
-		if !strings.Contains(n.Body, want) {
-			t.Errorf("notice lacks %q:\n%s", want, n.Body)
-		}
+	if !strings.Contains(n.Body, "status: done") || !strings.Contains(n.Body, "codex done in "+repo) {
+		t.Errorf("notice:\n%s", n.Body)
 	}
 	rec := readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Answers) == 1 })
 	if m, _ := rec.Answers[0].(map[string]any); m["decision"] != "decline" {
 		t.Errorf("the approval was answered %v", rec.Answers[0])
 	}
-	eventually(t, "a blocked worker ends after its hand-back", func() bool { return w.d.workerCount() == 0 })
-	_ = res
+	eventually(t, "the worker ends after its hand-back", func() bool { return w.d.workerCount() == 0 })
 }
 
 // A failed turn is a failed hand-back with the reason; the worktree facts are

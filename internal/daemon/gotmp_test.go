@@ -229,7 +229,7 @@ func TestSandboxedWorkersMayWriteTheDiskGoTempFolder(t *testing.T) {
 	t.Setenv("AGENT_NET_GOTMPDIR", "")
 	d := &Daemon{cfg: Config{StateDir: t.TempDir(), testShm: func() shmInfo { return roomy() }}}
 	w := &worker{id: "w_codex", path: t.TempDir()}
-	if writes := d.claudeWorkerWrites(w.path); !hasString(writes, disk) {
+	if writes := d.claudeWorkerWrites(w); !hasString(writes, disk) {
 		t.Fatalf("Claude writable folders %v lack the disk Go temp folder %s", writes, disk)
 	}
 	if roots := d.codexRootsFor(context.Background(), w); !hasString(roots, disk) {

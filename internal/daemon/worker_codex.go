@@ -36,9 +36,8 @@ import (
 //     "final_answer"), `thread/tokenUsage/updated` and `turn/completed`.
 //   - When a step needs approval, the server sends a request
 //     (`item/commandExecution/requestApproval`, `item/fileChange/requestApproval`,
-//     `item/permissions/requestApproval`, ...). We decline, and the turn ends
-//     with a hand-back of status blocked, except for a command that a scope
-//     the owner delegated covers (tool_decide): that one is accepted once.
+//     `item/permissions/requestApproval`, ...). We decline every one, and the
+//     turn fails.
 //
 // So the daemon registers the thread as a session of harness codex, delivers
 // each message from the owner as a turn, and turns the end of each turn into a
@@ -208,8 +207,8 @@ func codexSupportedEfforts(out []byte, model string) (levels []string, known boo
 // thread/resume. Codex keeps the thread on disk, so the conversation and its
 // folder continue.
 func (codexLauncher) resume(ctx context.Context, d *Daemon, w *worker) error {
-	if w.nativeID == "" {
-		return errors.New("the Codex thread of the worker is not known")
+	if _, err := w.nativeSessionID("Codex thread"); err != nil {
+		return err
 	}
 	cc, err := d.startCodex(ctx, w)
 	if err != nil {
@@ -249,8 +248,8 @@ func (d *Daemon) startCodex(ctx context.Context, w *worker) (*codexConn, error) 
 	if err != nil {
 		return nil, err
 	}
-	dir := d.setWorkerDir(w)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	dir, err := d.workerDir(w)
+	if err != nil {
 		return nil, err
 	}
 	token := protocol.NewToken()
@@ -265,7 +264,7 @@ func (d *Daemon) startCodex(ctx context.Context, w *worker) (*codexConn, error) 
 		}
 		addr := "127.0.0.1:" + strconv.Itoa(port)
 		args := []string{"app-server", "--listen", "ws://" + addr, "--ws-auth", "capability-token", "--ws-token-file", tokenPath}
-		if codexConfigDefinesAgentNet() {
+		if codexConfigDefinesAgentNet(codexHome(d.cfg)) {
 			args = append(args, "-c", "mcp_servers.agent-net.enabled=false")
 		}
 		if err := d.spawnWorker(w, bin, args, d.workerGitEnv(w, os.Environ(), nil)); err != nil {
@@ -369,7 +368,7 @@ func (codexLauncher) adopt(ctx context.Context, d *Daemon, w *worker) error {
 		if hasIdleNotice {
 			d.resetIdleNotice(w)
 		}
-		d.setCodexStatus(w, "busy")
+		d.setWorkerStatus(w, "busy")
 		if wasRefused {
 			d.goBackground(func() { d.tellCallerRefused(d.streamCtx(), w, refused) })
 		}
@@ -390,7 +389,7 @@ func (codexLauncher) adopt(ctx context.Context, d *Daemon, w *worker) error {
 		cc.mu.Lock()
 		cc.running, cc.cur = false, nil
 		cc.mu.Unlock()
-		d.setCodexStatus(w, "idle")
+		d.setWorkerStatus(w, "idle")
 		return nil
 	}
 	turn := thread.Turns[len(thread.Turns)-1]
@@ -444,14 +443,7 @@ func (codexLauncher) stats(ctx context.Context, _ *Daemon, w *worker) workerStat
 // struggle reads the thread's rollout file once and counts the run's struggle
 // signs (decision 0133). Codex writes each function call and its output there.
 func (codexLauncher) struggle(_ context.Context, d *Daemon, w *worker) protocol.Struggle {
-	home := d.cfg.CodexHome
-	if home == "" {
-		home = os.Getenv("CODEX_HOME")
-	}
-	if home == "" {
-		home = defaultCodexHome()
-	}
-	path := codexRolloutPath(home, w.nativeID)
+	path := codexRolloutPath(codexHome(d.cfg), w.nativeID)
 	if path == "" {
 		return protocol.Struggle{Trace: protocol.StruggleNoTrace}
 	}
@@ -464,56 +456,15 @@ func (codexLauncher) struggle(_ context.Context, d *Daemon, w *worker) protocol.
 // all its sessions when it connects.
 func (d *Daemon) registerCodexSession(ctx context.Context, w *worker, wait bool) error {
 	d.wmu.Lock()
-	native, model, path, pid, sessionID := w.nativeID, w.model, w.path, w.pid, w.sessionID
-	cc := w.codex
-	d.wmu.Unlock()
-	if cc != nil && cc.model != "" {
+	native, model, path, pid := w.nativeID, w.model, w.path, w.pid
+	if cc := w.codex; cc != nil && cc.model != "" {
 		model = cc.model
 	}
+	d.wmu.Unlock()
 	info := protocol.SessionInfo{Harness: "codex", NativeID: native, PID: pid, Cwd: path,
 		Status: "idle", Delivery: "codex-app-server", Repo: d.repo.Refresh(path),
 		Mode: protocol.ModeBackground, Model: protocol.CleanModel(model), Worker: d.workerInfo(w)}
-	ls := &localSession{info: info, sessionID: sessionID, owned: true}
-	d.mu.Lock()
-	ls.lastActive = d.activity[key("codex", native)]
-	d.sessions[key("codex", native)] = ls
-	d.mu.Unlock()
-	if !wait {
-		go d.pushSession(ls)
-		return nil
-	}
-	for {
-		d.pushSession(ls)
-		if sid := d.currentSessionID(ls); sid != "" {
-			d.workerSessionReady(w, sid)
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return errors.New("the gateway did not register the Codex worker session in time")
-		case <-time.After(100 * time.Millisecond):
-		}
-	}
-}
-
-// setCodexStatus changes the status of the worker's session (idle or busy).
-func (d *Daemon) setCodexStatus(w *worker, status string) {
-	if ls := d.changeCodexStatus(w, status); ls != nil {
-		d.persistActivity(ls)
-		d.pushSession(ls)
-	}
-}
-
-func (d *Daemon) changeCodexStatus(w *worker, status string) *localSession {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	ls := d.sessions[key("codex", w.nativeID)]
-	if ls == nil || ls.info.Status == status {
-		return nil
-	}
-	ls.info.Status = status
-	d.recordActivityLocked(ls, time.Now())
-	return ls
+	return d.registerWorkerSession(ctx, w, info, wait)
 }
 
 // ---- delivery ----
@@ -595,8 +546,6 @@ func codexWorkerText(m protocol.Message) string {
 
 type codexJob struct{ from, msgID, text string }
 
-type codexBlock struct{ action, reason string }
-
 type codexConn struct {
 	d *Daemon
 	w *worker
@@ -616,7 +565,6 @@ type codexConn struct {
 	sb            codexSandbox // the permissions of the worker (decision 0020)
 	final         string
 	texts         []string
-	blocked       []codexBlock
 	sandboxDenied bool
 	tokens        struct{ in, out, reasoning, cacheRead, cacheWrite float64 }
 	// contextTokens and contextLimit come from the last turn's usage and the
@@ -769,70 +717,18 @@ func (cc *codexConn) readLoop() {
 	}
 }
 
-type codexRequest struct {
-	Command   string `json:"command"`
-	Reason    string `json:"reason"`
-	Cwd       string `json:"cwd"`
-	GrantRoot string `json:"grantRoot"`
-}
-
-// codexDecideTimeout bounds the scope check of one command approval.
-const codexDecideTimeout = 3 * time.Second
-
-// serverRequest answers a request from the server. agent-net approves one kind
-// of request, a command that a scope delegated by the owner covers: tool_decide
-// says allow, and the command is accepted once (decision 0166). Everything else,
-// and every doubt, is declined as before. The check runs apart from the read
-// loop: the turn waits for this answer, so nothing else is lost by waiting.
+// serverRequest answers every request from the server with no. agent-net never
+// approves for a worker: the approval policy is "never", and the turn fails
+// rather than waiting for an answer nobody can give.
 func (cc *codexConn) serverRequest(m codexMsg) {
-	var p codexRequest
-	json.Unmarshal(m.Params, &p)
-	if m.Method != "item/commandExecution/requestApproval" || p.Command == "" || cc.w.sessionID == "" {
-		cc.decline(m, p)
-		return
-	}
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), codexDecideTimeout)
-		defer cancel()
-		input, _ := json.Marshal(map[string]string{"command": p.Command})
-		if cc.d.toolAllowed(ctx, cc.w.sessionID, "Bash", input, p.Cwd) {
-			if err := cc.write(map[string]any{"id": m.ID, "result": map[string]any{"decision": "accept"}}); err != nil {
-				cc.d.Logf("worker %s: answer to %s: %v", cc.w.id, m.Method, err)
-			}
-			return
-		}
-		cc.decline(m, p)
-	}()
-}
-
-// decline answers a request with no, and records what blocked the worker.
-func (cc *codexConn) decline(m codexMsg, p codexRequest) {
 	var result any
-	var block *codexBlock
 	switch m.Method {
-	case "item/commandExecution/requestApproval":
+	case "item/commandExecution/requestApproval", "item/fileChange/requestApproval":
 		result = map[string]any{"decision": "decline"}
-		block = &codexBlock{action: "run the command: " + p.Command, reason: p.Reason}
-	case "item/fileChange/requestApproval":
-		result = map[string]any{"decision": "decline"}
-		act := "change files"
-		if p.GrantRoot != "" {
-			act += " under " + p.GrantRoot
-		}
-		block = &codexBlock{action: act, reason: p.Reason}
 	case "execCommandApproval", "applyPatchApproval":
 		result = map[string]any{"decision": "denied"}
-		block = &codexBlock{action: "run a command or change files (" + m.Method + ")", reason: p.Reason}
 	case "mcpServer/elicitation/request":
 		result = map[string]any{"action": "decline", "content": nil, "_meta": nil}
-		block = &codexBlock{action: "answer a request from an MCP server", reason: p.Reason}
-	case "item/permissions/requestApproval", "item/tool/requestUserInput":
-		block = &codexBlock{action: "get extra permissions or an answer from a person (" + m.Method + ")", reason: p.Reason}
-	}
-	if block != nil {
-		cc.mu.Lock()
-		cc.blocked = append(cc.blocked, *block)
-		cc.mu.Unlock()
 	}
 	var resp map[string]any
 	if result != nil {
@@ -969,12 +865,12 @@ func (cc *codexConn) startTurn(j codexJob) {
 	cc.d.resetIdleNotice(cc.w)
 	cc.mu.Lock()
 	cc.cur = &j
-	cc.final, cc.texts, cc.blocked = "", nil, nil
+	cc.final, cc.texts = "", nil
 	cc.sandboxDenied = false
 	thread, sb := cc.thread, cc.sb
 	effort := cc.effort
 	cc.mu.Unlock()
-	cc.d.setCodexStatus(cc.w, "busy")
+	cc.d.setWorkerStatus(cc.w, "busy")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	tparams := map[string]any{"threadId": thread, "approvalPolicy": "never",
@@ -1001,16 +897,14 @@ func (cc *codexConn) finishTurn(turnStatus, errMsg string) {
 		return
 	}
 	cc.cur = nil
-	final, texts, blocked, denied := cc.final, cc.texts, cc.blocked, cc.sandboxDenied || sandboxDenial(errMsg)
-	cc.final, cc.texts, cc.blocked = "", nil, nil
+	final, texts, denied := cc.final, cc.texts, cc.sandboxDenied || sandboxDenial(errMsg)
+	cc.final, cc.texts = "", nil
 	cc.mu.Unlock()
 	if final == "" && len(texts) > 0 {
 		final = texts[len(texts)-1]
 	}
 	status, report := protocol.StatusDone, final
 	switch {
-	case len(blocked) > 0:
-		status, report = protocol.StatusBlocked, cc.blockedReport(blocked, final)
 	case turnStatus == "failed":
 		status = protocol.StatusFailed
 		report = "The Codex turn failed: " + firstNonEmpty(errMsg, "no reason given") + ifText("\n\nLast message:\n", final)
@@ -1028,7 +922,7 @@ func (cc *codexConn) finishTurn(turnStatus, errMsg string) {
 	}
 	go func() {
 		note := ""
-		if denied && (status == protocol.StatusBlocked || status == protocol.StatusFailed) {
+		if denied && status == protocol.StatusFailed {
 			note = "blocked by the sandbox (" + protocol.WorkerPermissionsOrDefault(cc.w.permissions) + ")"
 		}
 		req := protocol.WorkerHandbackRequest{Report: report, Status: status, Complete: complete}
@@ -1055,7 +949,7 @@ func (cc *codexConn) finishTurn(turnStatus, errMsg string) {
 			cc.queue = cc.queue[1:]
 			next = &n
 		} else if err != nil {
-			idleSession = cc.d.changeCodexStatus(cc.w, "idle")
+			idleSession = cc.d.changeWorkerStatus(cc.w, "idle")
 			cc.running = false
 		} else {
 			cc.ending = make(chan struct{})
@@ -1095,32 +989,6 @@ func sandboxDenial(s string) bool {
 // then counts as complete).
 func codexReportComplete(report string) (complete, ok bool) {
 	return protocol.WorkerReportComplete(report)
-}
-
-// blockedReport is the W15 report: what was tried, why it stopped, and where
-// the person can approve it.
-func (cc *codexConn) blockedReport(blocked []codexBlock, final string) string {
-	cc.d.wmu.Lock()
-	path, host := cc.w.path, cc.d.hostName()
-	cc.d.wmu.Unlock()
-	var b strings.Builder
-	b.WriteString("BLOCKED: the Codex worker needs an approval that it cannot get. agent-net never approves for the worker; it declined.\n")
-	for i, x := range blocked {
-		if i == 3 {
-			fmt.Fprintf(&b, "(and %d more)\n", len(blocked)-3)
-			break
-		}
-		fmt.Fprintf(&b, "action: %s\n", x.action)
-		if x.reason != "" {
-			fmt.Fprintf(&b, "reason: %s\n", x.reason)
-		}
-	}
-	fmt.Fprintf(&b, "approve_in: Codex thread %s on %s (open it with `codex resume %s` in %s)\n", cc.thread, host, cc.thread, path)
-	fmt.Fprintf(&b, "approval_text: Approve %s in the Codex session %s.\n", blocked[0].action, cc.thread)
-	if final != "" {
-		b.WriteString("\nLast message from the worker:\n" + final)
-	}
-	return b.String()
 }
 
 func firstNonEmpty(s ...string) string {

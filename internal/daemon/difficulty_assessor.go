@@ -566,7 +566,7 @@ func (a *DifficultyAssessor) runCodexExec(ctx context.Context, model, dir, promp
 	if selection.ModelID() != "" {
 		args = append(args, "-m", selection.ModelID())
 	}
-	if codexConfigDefinesAgentNet() {
+	if codexConfigDefinesAgentNet(codexHome(a.cfg)) {
 		args = append(args, "-c", "mcp_servers.agent-net.enabled=false")
 	}
 	args = append(args, "-")

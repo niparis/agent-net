@@ -50,21 +50,10 @@ func workerGitRoots(ctx context.Context, dir string) []string {
 	return roots
 }
 
-// codexWritableRoots are the extra writable folders of a sandboxed worker.
-func codexWritableRoots(ctx context.Context, w *worker) []string {
-	return workerGitRoots(ctx, w.path)
-}
-
-// codexRootsFor adds the worker's package caches (UV_CACHE_DIR and the others)
-// and the Go temp folder to the git folders. A worker's scripts pick the Go temp
-// folder themselves, so it is listed here as a writable root, not left to the
-// sandbox's defaults.
+// codexRootsFor are the extra writable folders of a sandboxed worker: the git
+// folders, the package caches and the Go temp folder.
 func (d *Daemon) codexRootsFor(ctx context.Context, w *worker) []string {
-	cache := d.workerCacheRoot(w)
-	_ = os.MkdirAll(cache, 0o700) // a root that does not exist yet is not writable
-	goTmp := d.workerSandboxGoTmpDir()
-	_ = os.MkdirAll(goTmp, 0o700)
-	return append(codexWritableRoots(ctx, w), cache, goTmp)
+	return d.workerWriteRoots(ctx, w)
 }
 
 // codexSandbox is what the worker's level means for Codex.
@@ -113,19 +102,23 @@ func (d *Daemon) codexSandboxFor(ctx context.Context, w *worker) codexSandbox {
 	return newCodexSandbox(level, d.codexRootsFor(ctx, w))
 }
 
-// codexConfigDefinesAgentNet tells whether the user's Codex config.toml
-// defines the agent-net MCP server. A worker turns it off: it has no use for
-// the tools, and Codex would ask approval to call them. Turning off a server
-// that is not defined makes Codex fail, so this is checked first.
-func codexConfigDefinesAgentNet() bool {
-	home := os.Getenv("CODEX_HOME")
-	if home == "" {
-		h, err := os.UserHomeDir()
-		if err != nil {
-			return false
-		}
-		home = filepath.Join(h, ".codex")
+// codexHome is the Codex home folder: the configured one, then CODEX_HOME,
+// then ~/.codex. The workers, the CTO and the difficulty judge all read it.
+func codexHome(cfg Config) string {
+	if cfg.CodexHome != "" {
+		return cfg.CodexHome
 	}
+	if home := os.Getenv("CODEX_HOME"); home != "" {
+		return home
+	}
+	return defaultCodexHome()
+}
+
+// codexConfigDefinesAgentNet tells whether the Codex config in home defines the
+// agent-net MCP server. A worker turns it off: it has no use for the tools, and
+// Codex would ask approval to call them. Turning off a server that is not
+// defined makes Codex fail, so this is checked first.
+func codexConfigDefinesAgentNet(home string) bool {
 	b, err := os.ReadFile(filepath.Join(home, "config.toml"))
 	if err != nil {
 		return false

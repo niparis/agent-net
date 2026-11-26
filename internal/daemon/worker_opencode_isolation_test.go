@@ -23,24 +23,3 @@ func TestOpenCodePrivateAuth(t *testing.T) {
 		t.Fatalf("import: %q %v", b, err)
 	}
 }
-
-func TestOpenCodeProviderFailure(t *testing.T) {
-	for _, tc := range []struct {
-		typ, msg string
-		want     bool
-	}{
-		{"provider.upstream", "Insufficient account funds", true},
-		{"error", "HTTP 401 invalid API key", true},
-		{"error", "not logged in", true},
-		{"error", "rate limit exceeded", true},
-		{"error", "no route for model", true},
-		{"effect/sql/SqlError", "Failed to execute statement", false},
-		{"tool.error", "tool crashed", false},
-		{"provider.upstream", "effect/sql/SqlError: Failed to execute statement", false},
-		{"error", "unknown failure", false},
-	} {
-		if got := openCodeProviderFailure(tc.typ, tc.msg); got != tc.want {
-			t.Errorf("%q %q: got %v", tc.typ, tc.msg, got)
-		}
-	}
-}
