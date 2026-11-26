@@ -1805,8 +1805,8 @@ SELECT 1 /* permission owner words column */;
 // deskItemShapeMigration gives each Desk item an owner (chief or cto), a
 // state and a category, and links a duplicate to the open item it joined
 // (decision 0150). A rule judgment gains its action and category, a sort
-// keeps the rule it applied, and a held picker override keeps the facts the
-// chief's confirm rule checks (decision 0151). The columns are added in the migration loop, so
+// keeps the rule it applied, and a held picker override keeps its facts
+// (decision 0194). The columns are added in the migration loop, so
 // replaying it is safe. The triggers keep owner and state equal to the item's
 // status and next who, whichever code path changes them.
 const deskItemShapeMigration = `

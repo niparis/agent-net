@@ -1,9 +1,10 @@
 # 0151 - The CTO or the chief may confirm a picker override
 
 Date: 2026-11-12
-Status: Approved by the owner on 2026-11-12 (reshape brief v2). It is
-already saved as a standing order. Code change not built: step (a) of
-[the plan](../design/owner-front-door-plan.md).
+Status: Superseded by [0194](0194-two-worker-start-tools.md) on 2026-11-26.
+The owner now answers one ask for an exceptional start, and the chief does not
+confirm starts. Approved by the owner on 2026-11-12 (reshape brief v2); it was
+saved as a standing order.
 Amends [0141](0141-picker-override-needs-a-human.md).
 
 ## Context

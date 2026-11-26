@@ -488,13 +488,20 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 	if err != nil {
 		return nil, err
 	}
-	// An agent cannot override the picker without a human: the owner's words
-	// or his answer on the Desk (worker_override.go). The owner's command line
-	// and TUI and the CTO are not agents here.
+	// A caller cannot override the picker without the owner: his words or his
+	// answer on the Desk (worker_override.go). The owner's own command line and
+	// TUI are not callers here. The CTO is one.
 	agent, _ := ctx.Value(answerEarlyKey{}).(bool)
-	selection, hold, reason, err := d.checkOverride(ctx, caller, &p, agent && !cto)
-	if err != nil {
-		return nil, err
+	selection, hold, reason := d.checkOverride(caller, &p, agent)
+	if p.Continue != "" && protocol.IsStartID(p.Continue) {
+		target, err := d.startTarget(p.Continue)
+		if err != nil {
+			return nil, err
+		}
+		if strings.HasPrefix(target, protocol.QueueIDPrefix) {
+			return nil, fmt.Errorf("start %s is queued (queue id %s): continue the worker once its notice says it started", p.Continue, target)
+		}
+		p.Continue = target
 	}
 	frame := protocol.WorkerStartFrame{WorkerStartRequest: p, Owner: caller, CallerProject: callerProject, CallerPath: callerPath, FromCTO: cto,
 		OwnerSelected: selection == protocol.SelectionOwnerWords}
@@ -509,7 +516,7 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		}
 	}
 	if hold {
-		return d.holdStart(ctx, caller, p, reason, callerProject, callerPath)
+		return d.holdStart(ctx, caller, p, reason, callerProject, callerPath, cto)
 	}
 	run := func(ctx context.Context) (*protocol.WorkerStartResult, error) {
 		return d.runWorkerStartCall(ctx, caller, p, frame, callerPath, cto, ph)

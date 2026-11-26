@@ -160,6 +160,38 @@ func TestContinueEndedWorker(t *testing.T) {
 	}
 }
 
+// A caller may continue a worker by the start id of an accepted start, which
+// stands for the worker that start became.
+func TestContinueAcceptsTheStartIDOfAnAcceptedStart(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	old := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "first", Isolation: protocol.IsolationWorktree})
+	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: old.SessionID})
+	w.workerStopped(t, g, protocol.StopRequested)
+	w.waitNotice(t, 1)
+
+	w.d.acceptedMu.Lock()
+	if w.d.accepted == nil {
+		w.d.accepted = map[string]*acceptedStart{}
+	}
+	w.d.accepted["a_known"] = &acceptedStart{Session: old.SessionID, Settled: true}
+	w.d.acceptedMu.Unlock()
+
+	res, err := w.startDefault(protocol.WorkerStartRequest{Continue: "a_known", Task: "then add tests"})
+	if err != nil {
+		t.Fatalf("continue by start id: %v", err)
+	}
+	if res.SessionID == "" || res.SessionID == old.SessionID {
+		t.Fatalf("continue made no new worker: %+v", res)
+	}
+	if !strings.Contains(res.Task.Body, "Also: then add tests") {
+		t.Fatalf("task does not carry the follow-up:\n%s", res.Task.Body)
+	}
+}
+
 // Only the owner may continue a worker. The gateway checks, and the machine
 // checks its own record too.
 func TestContinueNeedsTheOwner(t *testing.T) {

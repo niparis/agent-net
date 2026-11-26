@@ -21,6 +21,9 @@ const (
 	// BriefCheckBrowser flags a start whose Done needs a browser and whose
 	// harness cannot run one on its machine (see HarnessRunsBrowser).
 	BriefCheckBrowser = "browser"
+	// BriefCheckOverlap flags a file this brief shares with a running worker
+	// or an open change. It is advice, never a refusal.
+	BriefCheckOverlap = "overlap"
 )
 
 // MaxBriefCommitIDs caps the commit IDs one start asks its machine to resolve.

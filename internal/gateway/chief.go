@@ -763,13 +763,6 @@ func askAge(now, created time.Time) string {
 // status and answer in ask_sorts. It returns the message to send when the ask
 // went to a session; the caller dispatches it.
 func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSortResult, protocol.Message, error) {
-	return s.SortAskWith(node, q, nil)
-}
-
-// SortAskWith is SortAsk with the context a confirm of a held worker start is
-// checked against (decision 0151). The gateway reads it before the sort; a
-// confirm without it is refused.
-func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *protocol.ConfirmContext) (protocol.AskSortResult, protocol.Message, error) {
 	var out protocol.AskSortResult
 	var none protocol.Message
 	if err := q.Validate(); err != nil {
@@ -976,30 +969,6 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 		if q.ReplacedBy != "" {
 			logText += " (replaced by " + q.ReplacedBy + ")"
 		}
-	case protocol.AskSortConfirm, protocol.AskSortPicker:
-		// The chief answers a held worker start (decision 0151).
-		var ref string
-		if err := tx.QueryRow(`SELECT source_ref FROM inbox_items WHERE id=?`, q.Ask).Scan(&ref); err != nil {
-			return out, none, err
-		}
-		if !strings.HasPrefix(ref, protocol.StartOverrideRefPrefix) {
-			return out, none, reject("confirm and picker answer only a held worker start")
-		}
-		if q.Result == protocol.AskSortConfirm {
-			if confirm == nil {
-				return out, none, reject("confirm needs the gateway's quota reading: try again")
-			}
-			if err := confirmOverrideCheck(tx, q.Ask, true, *confirm); err != nil {
-				return out, none, err
-			}
-			logText = "Chief confirmed a picker override: " + text
-		} else {
-			logText = "Chief let the picker choose: " + text
-		}
-		if _, err := tx.Exec(`UPDATE inbox_items SET status='answered', answer=?, answered_at=? WHERE id=?`, q.Result, now.UnixNano(), q.Ask); err != nil {
-			return out, none, err
-		}
-		out.Next, out.State = "", protocol.AskAnswered
 	case protocol.AskSortSend:
 		// An ask about a session cannot go back to that session: it would
 		// return to the session it is about, a loop. Every other send stays.
@@ -1141,7 +1110,7 @@ func chiefMaySort(tx *sql.Tx, q protocol.AskSortRequest, a askSortRow) error {
 	}
 	if a.next == "" || a.next == protocol.AskNextOwner {
 		// The owner holds the ask. Only a close that cites his words settles it.
-		// SortAskWith checked the citation before this call.
+		// SortAsk checked the citation before this call.
 		if a.next == protocol.AskNextOwner && q.Result == protocol.AskSortClose && strings.TrimSpace(q.OwnerWordsMessage) != "" {
 			return nil
 		}

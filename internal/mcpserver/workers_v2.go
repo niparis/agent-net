@@ -15,7 +15,7 @@ import (
 // addRedesignedTools registers the agent and worker contracts directly from
 // the shared catalog. The daemon methods remain the existing implementations.
 func addRedesignedTools(s *mcp.Server, call Caller, run func(context.Context, string, any) (any, error)) {
-	for _, name := range []string{"agent_worker_start", "agent_worker_stop", "agent_worker_rate", "agent_handback", "agent_announce", "agent_owner_ask", "agent_owner_brief", "agent_learn", "agent_charter_draft", "agent_bar_edit", "agent_permission_propose", "agent_project_add", "agent_mcp_test"} {
+	for _, name := range []string{"agent_worker_start", "agent_worker_start_override", "agent_worker_stop", "agent_worker_rate", "agent_handback", "agent_announce", "agent_owner_ask", "agent_owner_brief", "agent_learn", "agent_charter_draft", "agent_bar_edit", "agent_permission_propose", "agent_project_add", "agent_mcp_test"} {
 		entry := redesignedCatalogTool(name)
 		t := &mcp.Tool{Name: entry.Name, Description: entry.Description, InputSchema: json.RawMessage(entry.InputSchema)}
 		s.AddTool(t, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -32,7 +32,7 @@ func addRedesignedTools(s *mcp.Server, call Caller, run func(context.Context, st
 	}
 	if os.Getenv("AGENT_NET_WORKER") != "" {
 		// These are agent-only capabilities.
-		s.RemoveTools("agent_worker_start", "agent_worker_stop", "agent_worker_rate", "agent_owner_ask",
+		s.RemoveTools("agent_worker_start", "agent_worker_start_override", "agent_worker_stop", "agent_worker_rate", "agent_owner_ask",
 			"agent_project_add", "agent_announce", "agent_charter_draft", "agent_bar_edit", "agent_owner_brief")
 	}
 }
@@ -50,7 +50,7 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 	str := func(k string) string { v, _ := a[k].(string); return v }
 	integer := func(k string) int { v, _ := a[k].(float64); return int(v) }
 	switch name {
-	case "agent_worker_start":
+	case "agent_worker_start", "agent_worker_start_override":
 		task, continuation := str("task"), str("continue")
 		if continuation != "" && task != "" {
 			// Task is extra notes now. A continue still refuses it, so an
@@ -61,9 +61,6 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 			Problem: str("problem"), Evidence: stringSlice(a["evidence"]), Done: stringSlice(a["done"]), Hypothesis: str("hypothesis"), Scope: str("scope")}
 		if v, ok := a["auto_continue"].(bool); ok {
 			in.AutoContinue = &v
-		}
-		if in.Harness == "" && in.Model != "" && in.Model != "auto" {
-			in.Harness = "opencode"
 		}
 		m, err := workerStartCall(ctx, run, protocol.WorkerStartRequest{NotFamily: stringSlice(a["not_family"]), Project: in.Project, Machine: in.Machine, Harness: in.Harness, Model: in.Model, Provider: in.Provider, Effort: in.Effort, Task: in.Task, Problem: in.Problem, Evidence: in.Evidence, Done: in.Done, Hypothesis: in.Hypothesis, Scope: in.Scope, Title: in.Title, Isolation: in.Isolation, Base: in.Base, MCPServers: in.MCPServers, Fixes: str("fixes"), FixesSeverity: integer("fixes_severity"), Continue: in.Continue, AutoContinue: in.AutoContinue, OwnerWords: str("owner_words"), Reason: str("reason")})
 		if err != nil {

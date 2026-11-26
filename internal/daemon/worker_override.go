@@ -3,8 +3,6 @@ package daemon
 import (
 	"context"
 	"errors"
-	"fmt"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -135,42 +133,30 @@ func (d *Daemon) ownerWordsMatch(session, quote string) bool {
 	return protocol.OwnerWordsMatch(quote, texts)
 }
 
-// checkOverride decides what an agent's start with selection fields needs.
-// It clears owner_words and reason from the request: they stop here. For an
-// agent whose start sets a selection field it returns:
-//   - selection SelectionOwnerWords when the quote matches: the start goes ahead;
-//   - selection SelectionScope when the caller's role node holds admin over the project;
-//   - hold true with the caller's reason when the start must wait for the owner;
-//   - an error when there is no match and no reason, which says what to give.
-//
-// A start from the owner's command line or the CTO, and a start with no
-// selection field, is not an override.
-func (d *Daemon) checkOverride(ctx context.Context, caller string, p *protocol.WorkerStartRequest, agent bool) (selection string, hold bool, reason string, err error) {
+// checkOverride decides what a start with selection fields needs. It clears
+// owner_words and reason from the request: they stop here. For a caller that
+// sets a selection field it returns:
+//   - selection SelectionOwnerWords when the quote is in the owner's own words:
+//     the start goes ahead;
+//   - hold true with the caller's reason when the owner must approve it;
+//   - no hold for the owner's own command line and TUI.
+func (d *Daemon) checkOverride(caller string, p *protocol.WorkerStartRequest, callerIsAgent bool) (selection string, hold bool, reason string) {
 	words, why := strings.TrimSpace(p.OwnerWords), strings.TrimSpace(p.Reason)
 	p.OwnerWords, p.Reason = "", ""
-	if !agent || d.cfg.testOpenSelection {
-		return "", false, "", nil
+	if !callerIsAgent || d.cfg.testOpenSelection {
+		return "", false, ""
 	}
 	fields := p.SelectionFields()
 	if len(fields) == 0 {
-		return "", false, "", nil
+		return "", false, ""
 	}
 	if words != "" && d.ownerWordsMatch(caller, words) {
-		return protocol.SelectionOwnerWords, false, "", nil
-	}
-	// The owner's words come first, then a scope. A caller whose role node holds
-	// admin over the project was delegated this choice; with no such scope the
-	// start waits as before (decision 0166).
-	if held, ok := d.scopesOf(ctx, caller); ok && held.Holds(protocol.ScopeAdmin, p.Project) {
-		return protocol.SelectionScope, false, "", nil
+		return protocol.SelectionOwnerWords, false, ""
 	}
 	if why == "" {
-		if words != "" {
-			return "", false, "", fmt.Errorf("owner_words %q was not found in what your owner typed in this session in the last %d hours, so agent-net cannot treat it as his request. Leave %s empty and let the picker choose, or give a reason: the start then waits for your owner to confirm it", words, int(ownerPromptWindow.Hours()), strings.Join(fieldNames(fields), ", "))
-		}
-		return "", false, "", fmt.Errorf("%s set without owner_words: a caller cannot override the picker without a human. Leave them empty, or pass owner_words with a quote of your owner's request, or give a reason: the start then waits for your owner to confirm it", strings.Join(fieldNames(fields), ", "))
+		why = "the caller did not say why"
 	}
-	return "", true, why, nil
+	return "", true, why
 }
 
 func fieldNames(fields []string) []string {
@@ -188,16 +174,17 @@ type heldStart struct {
 	req           protocol.WorkerStartRequest
 	callerProject bool
 	callerPath    string
+	cto           bool
 }
 
-// holdStart puts the ask on the Desk and answers the caller at once: the start
-// is accepted and waits. The worker notice follows when it starts, or when it
-// does not.
-func (d *Daemon) holdStart(ctx context.Context, caller string, p protocol.WorkerStartRequest, reason string, callerProject bool, callerPath string) (*protocol.WorkerStartResult, error) {
+// holdStart puts the one ask on the owner's Desk and answers the caller at
+// once: the start is accepted and waits. The worker notice follows when it
+// starts, or when it does not.
+func (d *Daemon) holdStart(ctx context.Context, caller string, p protocol.WorkerStartRequest, reason string, callerProject bool, callerPath string, cto bool) (*protocol.WorkerStartResult, error) {
 	id := protocol.NewID("a")
 	title := protocol.WorkerTitle(p.Title, p.BriefText(), "worker")
 	text := protocol.StartOverrideText(d.sessionName(ctx, caller), p.SelectionFields(), title, reason)
-	if _, err := d.call(ctx, "worker.override_ask", protocol.StartOverrideAsk{Session: caller, StartID: id, Text: text, OverrideFacts: d.overrideFacts(caller, p)}); err != nil {
+	if _, err := d.call(ctx, "worker.override_ask", protocol.StartOverrideAsk{Session: caller, StartID: id, Text: text, OverrideFacts: d.overrideFacts(p)}); err != nil {
 		if strings.Contains(err.Error(), "unknown frame type") {
 			return nil, errors.New("the gateway is too old to hold a start for the owner: upgrade it with `agent-net upgrade` on the gateway machine, or leave the selection fields empty")
 		}
@@ -207,13 +194,13 @@ func (d *Daemon) holdStart(ctx context.Context, caller string, p protocol.Worker
 	if d.heldStarts == nil {
 		d.heldStarts = map[string]*heldStart{}
 	}
-	d.heldStarts[id] = &heldStart{id: id, caller: caller, req: p, callerProject: callerProject, callerPath: callerPath}
+	d.heldStarts[id] = &heldStart{id: id, caller: caller, req: p, callerProject: callerProject, callerPath: callerPath, cto: cto}
 	d.heldMu.Unlock()
 	d.Logf("worker.held start=%s project=%s fields=%q", id, p.Project, strings.Join(fieldNames(p.SelectionFields()), ","))
 	// A held start never reaches the gateway, so only the text checks run.
 	flags := protocol.LintBrief(p, protocol.BriefLintFacts{})
 	d.logBriefFlags(p.Project, flags)
-	note := "the start is held: " + strings.Join(fieldNames(p.SelectionFields()), ", ") + " need someone else to agree. The ask goes to the chief of staff (or the CTO, or your owner): confirm starts the worker with those fields, picker starts it with the picker's own choice. A worker notice arrives in your inbox when it starts or does not start. Do not start it again."
+	note := "the start is held: " + strings.Join(fieldNames(p.SelectionFields()), ", ") + " need your owner's approval. One ask is on his Desk: confirm starts the worker with those fields, picker starts it with the picker's own choice. A worker notice arrives in your inbox when it starts or does not start. Do not start it again."
 	if flagNote := protocol.BriefFlagsNote(flags); flagNote != "" {
 		note += "\n" + flagNote
 	}
@@ -221,36 +208,12 @@ func (d *Daemon) holdStart(ctx context.Context, caller string, p protocol.Worker
 		SelectionPath: protocol.SelectionHeld, BriefFlags: flags, Note: note}, nil
 }
 
-// reviewWords mark a task that reviews work. Only the title and the done
-// lines are read, the parts that say what the worker delivers: the problem
-// and the notes mention reviews in passing ("after review, merge"). The words
-// are review, audit, second opinion and "check the diff", whole words, any
-// case. The confirm rule forbids the caller's own model family for a review
-// of its own work (decision 0151).
-var reviewWords = regexp.MustCompile(`(?i)\b(review|reviews|reviewing|audit|audits|auditing|second opinion|check the diff)\b`)
-
-// isReviewTask tells whether a start reviews work, by reviewWords.
-func isReviewTask(p protocol.WorkerStartRequest) bool {
-	return reviewWords.MatchString(p.Title + "\n" + strings.Join(p.Done, "\n"))
-}
-
-// overrideFacts are the facts the confirm rule checks for a held start. The
-// provider is resolved the way the start resolves it; a fact that stays
-// unknown is left empty, and the rule then sends the ask to the CTO.
-func (d *Daemon) overrideFacts(caller string, p protocol.WorkerStartRequest) protocol.OverrideFacts {
-	f := protocol.OverrideFacts{Harness: strings.TrimSpace(p.Harness), Effort: strings.TrimSpace(p.Effort), Level: "",
-		Provider: protocol.OverrideProvider(p), Review: isReviewTask(p)}
+// overrideFacts are the selection facts the owner reads in the ask and the
+// lost-start notice names.
+func (d *Daemon) overrideFacts(p protocol.WorkerStartRequest) protocol.OverrideFacts {
+	f := protocol.OverrideFacts{Harness: strings.TrimSpace(p.Harness), Effort: strings.TrimSpace(p.Effort)}
 	if model := strings.TrimSpace(p.Model); model != "" && model != "auto" {
 		f.Model = model
-		f.OverrideFamily = protocol.ModelFamily(p.Harness, model)
-	}
-	if ls := d.sessionByID(caller); ls != nil {
-		d.mu.Lock()
-		harness, model := ls.info.Harness, ls.info.Model
-		d.mu.Unlock()
-		if model != "" {
-			f.CallerFamily = protocol.ModelFamily(harness, model)
-		}
 	}
 	return f
 }
@@ -276,12 +239,12 @@ func (d *Daemon) onStartDecision(p protocol.StartDecision) {
 		req, lead = req.WithoutSelection(), "The picker chooses, as answered on the Desk. "
 	default:
 		d.Logf("worker.held start=%s: not started, owner answer %q", id, p.Answer)
-		d.reportAcceptedStart(id, h.caller, req, nil, errors.New("the choice of "+strings.Join(fieldNames(req.SelectionFields()), ", ")+" was not confirmed (answer: "+oneLineAnswer(p.Answer)+"). Start again without selection fields"))
+		d.reportAcceptedStart(id, h.caller, req, nil, errors.New("the choice of "+strings.Join(fieldNames(req.SelectionFields()), ", ")+" was not approved (answer: "+oneLineAnswer(p.Answer)+"). Start again without selection fields"))
 		return
 	}
 	d.goBackground(func() {
-		frame := protocol.WorkerStartFrame{WorkerStartRequest: req, Owner: h.caller, CallerProject: h.callerProject, CallerPath: h.callerPath}
-		res, err := d.runWorkerStartCall(d.ctoCtx, h.caller, req, frame, h.callerPath, false, &callPhases{})
+		frame := protocol.WorkerStartFrame{WorkerStartRequest: req, Owner: h.caller, CallerProject: h.callerProject, CallerPath: h.callerPath, FromCTO: h.cto}
+		res, err := d.runWorkerStartCall(d.ctoCtx, h.caller, req, frame, h.callerPath, h.cto, &callPhases{})
 		if res != nil {
 			res.OwnerLine = lead + res.OwnerLine
 		}

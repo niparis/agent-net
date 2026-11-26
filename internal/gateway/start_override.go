@@ -10,16 +10,14 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// A worker start that an agent held back because it set selection fields
+// A worker start that a caller held back because it set selection fields
 // (protocol/worker_override.go) is one Desk ask. Its source key is
-// "wstart:<start id>". It goes to the chief of staff first (decision 0151):
-// the chief answers confirm or picker under the confirm rule, or sends it to
-// the CTO, who may answer it too; with no chief it goes to the owner.
-// "confirm" starts the worker with the fields, "picker" starts it with the
-// picker's choice, and "dismiss" ends it. Any other text is refused with the
-// three answers and the start stays held, so free text that names two options
-// chooses neither. The answer goes to the machine that holds the start as a
-// FrameStartDecision, not to the asking session as a message.
+// "wstart:<start id>". It goes straight to the owner: nobody confirms it for
+// him. "confirm" starts the worker with the fields, "picker" starts it with
+// the picker's choice, and "dismiss" ends it. Any other text is refused with
+// the three answers and the start stays held, so free text that names two
+// options chooses neither. The answer goes to the machine that holds the start
+// as a FrameStartDecision, not to the asking session as a message.
 
 // CreateStartOverrideAsk puts the ask on the Desk for a session of the node and
 // keeps its facts on the ask. It stays open when the owner types in the asking session.
@@ -31,7 +29,7 @@ func (s *Store) CreateStartOverrideAsk(node string, p protocol.StartOverrideAsk)
 	item, err := s.CreateInboxItem(protocol.InboxItem{Kind: protocol.AskKindQuestion, SessionID: agent.SessionID, Node: project, Text: p.Text,
 		Recommendation: "let the picker choose", Options: []string{protocol.StartAnswerConfirm, protocol.StartAnswerPicker},
 		AskerName: name, FromKind: protocol.AskFromGateway, SourceRef: protocol.StartOverrideRefPrefix + p.StartID,
-		WhyYou: "a caller wants to override the worker picker"})
+		NextWho: protocol.AskNextOwner, WhyYou: "a caller wants a worker the picker did not choose"})
 	if err != nil {
 		return item, err
 	}
@@ -56,43 +54,6 @@ func overrideFacts(q askDB, id string) (protocol.OverrideFacts, error) {
 		return f, err
 	}
 	return f, json.Unmarshal([]byte(raw), &f)
-}
-
-// confirmOverrideCheck applies the confirm rule for the chief (with the
-// context the gateway read) or the CTO (no context: only the family rule).
-func confirmOverrideCheck(q askDB, id string, chief bool, c protocol.ConfirmContext) error {
-	f, err := overrideFacts(q, id)
-	if err != nil {
-		return err
-	}
-	if err := protocol.ConfirmOverride(f, c, chief); err != nil {
-		return reject("%v", err)
-	}
-	return nil
-}
-
-// confirmContext reads what the chief's confirm of a held start is checked
-// against: the protected providers and the picker's scores and level minimums.
-// The start's gate owns the quota, floor and burn checks.
-func (g *Gateway) confirmContext(ask string) (protocol.ConfirmContext, error) {
-	var c protocol.ConfirmContext
-	var session string
-	if err := g.store.db.QueryRow(`SELECT session_id FROM inbox_items WHERE id=?`, ask).Scan(&session); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return c, reject("unknown ask %q", ask)
-		}
-		return c, err
-	}
-	protected, err := g.store.protectedProviders()
-	if err != nil {
-		return c, err
-	}
-	c.Protected = protected.Providers
-	if c.Scores, err = g.store.scores(); err != nil {
-		return c, err
-	}
-	c.Minimums, err = g.store.difficultyMinimums()
-	return c, err
 }
 
 // startOverrideRef is the source key of an ask that holds a start, or "".
@@ -123,7 +84,7 @@ func startAnswerCheck(answer string) error {
 }
 
 // answerStartAsk answers an open ask that holds a start. handled is false for
-// any other ask. The CTO may confirm under the confirm rule (decision 0151).
+// any other ask.
 func (s *Store) answerStartAsk(id, answer, actor string, validate ...bool) (item protocol.InboxItem, handled bool, err error) {
 	var ref, status string
 	err = s.db.QueryRow(`SELECT source_ref, status FROM inbox_items WHERE id=? AND source_ref LIKE ?`, id, protocol.StartOverrideRefPrefix+"%").Scan(&ref, &status)
@@ -146,10 +107,8 @@ func (s *Store) answerStartAsk(id, answer, actor string, validate ...bool) (item
 	if err := startAnswerCheck(answer); err != nil {
 		return item, true, err
 	}
-	if actor == "cto" && answer == protocol.StartAnswerConfirm {
-		if err := confirmOverrideCheck(s.db, id, false, protocol.ConfirmContext{}); err != nil {
-			return item, true, err
-		}
+	if actor != "owner" {
+		return item, true, reject("only your owner answers a held worker start")
 	}
 	if item, err = scanInbox(s.db.QueryRow(`SELECT `+inboxColumns+` FROM inbox_items WHERE id=?`, id)); err != nil {
 		return item, true, err

@@ -33,8 +33,8 @@ const (
 	// IntakeQuota: a provider reached the worker floor or ran out. Subject:
 	// the provider.
 	IntakeQuota = "quota"
-	// IntakePickerOverride: a held picker override (decision 0151). Digest
-	// only: the chief confirms it first.
+	// IntakePickerOverride: a held picker override (decision 0194). Digest
+	// only: one ask on the owner's Desk.
 	IntakePickerOverride = "picker_override"
 	// IntakeClaudeMouse: the Claude Code mouse notice. Digest only.
 	IntakeClaudeMouse = "claude_mouse"

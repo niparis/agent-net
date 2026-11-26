@@ -95,7 +95,7 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 			"rule":   {"normal", "auto", "ask", "never"},
 		},
 		"session_change": {"action": {"rename", "replace", "trust", "mcp_servers", "policy", "session_start", "merger_start", "merger_stop", "stop", "resume", "restart"}, "folder": {"project", "worktree"}, "harness": {"opencode", "claude", "pi", "codex"}},
-		"worker_change":  {"action": {"start", "stop"}, "harness": {"opencode", "claude", "pi", "codex", "agy"}, "isolation": {"worktree", "none"}},
+		"worker_change":  {"action": {"start", "stop"}, "isolation": {"worktree", "none"}},
 		"answer":         {"kind": {"held", "inbox", "outcome"}},
 		"settings_change": {
 			"area": {"values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding", "process_stop"},
@@ -492,9 +492,9 @@ func TestCTOProjectRemoveMachineSchema(t *testing.T) {
 
 // The CTO uses worker_change start to launch agy workers on machines where
 // antigravity is installed (m_fc8bf55ce081fe07).
-func TestCTOWorkerChangeStartAgyHarness(t *testing.T) {
+func TestCTOWorkerChangeStartHasNoSelection(t *testing.T) {
 	ctx := context.Background()
-	st, ct := mcp.NewInMemoryTransports()
+	ct, st := mcp.NewInMemoryTransports()
 	var calledMethod string
 	var calledArgs map[string]any
 	srv := NewCTO(func(_ context.Context, method string, params any) (json.RawMessage, error) {
@@ -527,18 +527,18 @@ func TestCTOWorkerChangeStartAgyHarness(t *testing.T) {
 	if err != nil {
 		t.Fatalf("call failed: %v", err)
 	}
-	if res.IsError {
-		t.Fatalf("worker_change rejected harness agy: %+v", res)
+	if !res.IsError {
+		t.Fatalf("worker_change start accepted a harness: %+v", res)
 	}
-	if calledMethod != "worker_change" || calledArgs["harness"] != "agy" {
-		t.Fatalf("got method %q args %v, want worker_change with harness agy", calledMethod, calledArgs)
+	if calledMethod != "" {
+		t.Fatalf("a selection field reached the daemon: %q %v", calledMethod, calledArgs)
 	}
 	for _, tc := range []struct{ name, args string }{
-		{"worker_start", `{"task":"x","project":"p","harness":"agy"}`},
-		{"worker_change", `{"action":"start","task":"x","project":"p","harness":"agy"}`},
+		{"worker_start", `{"task":"x","project":"p"}`},
+		{"worker_change", `{"action":"start","task":"x","project":"p"}`},
 	} {
 		if err := CTOArguments(tc.name, json.RawMessage(tc.args)); err != nil {
-			t.Errorf("%s refused harness agy: %v", tc.name, err)
+			t.Errorf("%s refused a start without a selection: %v", tc.name, err)
 		}
 	}
 }

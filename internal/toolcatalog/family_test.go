@@ -7,7 +7,7 @@ import (
 
 func TestWorkerStartNotFamilySchema(t *testing.T) {
 	for _, tool := range Tools {
-		if tool.Name == "agent_worker_start" {
+		if tool.Name == "agent_worker_start_override" {
 			var schema struct {
 				Properties map[string]struct {
 					Type  string `json:"type"`

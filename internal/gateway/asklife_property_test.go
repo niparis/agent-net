@@ -289,7 +289,7 @@ func (r *lifeRig) apply(e lifeEvent) string {
 				Ask: id, Result: protocol.AskSortWithdraw, Reason: "the head moved"}})
 			r.rejected(err, "withdraw")
 		case opChief:
-			// What a chief close writes (SortAskWith, result close).
+			// What a chief close writes (SortAsk, result close).
 			_, err := r.s.db.Exec(`UPDATE inbox_items SET status='closed', answer='chief: same wait', answered_at=? WHERE id=? AND status='open'`, nowNs, id)
 			r.must(err, "chief close")
 		}

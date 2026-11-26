@@ -1,7 +1,6 @@
 package daemon
 
 import (
-	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -141,7 +140,7 @@ func TestOverrideDismissedIsNotStartedWithANotice(t *testing.T) {
 	ask := waitOverrideAsk(t, g)
 	w.cli.mustCall("inbox_answer", map[string]string{"id": ask.ID, "answer": "dismiss"})
 	body := noticeFor(t, w, piID, res.StartID)
-	if !strings.Contains(body, "status: not started") || !strings.Contains(body, "was not confirmed") {
+	if !strings.Contains(body, "status: not started") || !strings.Contains(body, "was not approved") {
 		t.Fatalf("notice:\n%s", body)
 	}
 }
@@ -181,12 +180,12 @@ func TestOverrideOwnerWordsMismatchIsHeld(t *testing.T) {
 
 	req.Reason = ""
 	req.Title = "Second"
-	_, err := pi.call("worker_start", req)
-	if err == nil || !strings.Contains(err.Error(), "reason") || !strings.Contains(err.Error(), "owner_words") {
-		t.Fatalf("no match and no reason: %v", err)
+	res = startFrom(t, pi, req)
+	if res.Status != "accepted" || res.SelectionPath != protocol.SelectionHeld {
+		t.Fatalf("no match and no reason: %+v", res)
 	}
-	if n := len(overrideAsks(g)); n != 1 {
-		t.Fatalf("a refused start left %d asks", n)
+	if n := len(overrideAsks(g)); n != 2 {
+		t.Fatalf("want one ask per held start, got %d", n)
 	}
 }
 
@@ -222,19 +221,16 @@ func TestOverrideNotForAStartWithoutSelectionFields(t *testing.T) {
 	}
 }
 
-// The owner's command line and the CTO choose a model without a confirmation.
-func TestOverrideNotForTheOwnerOrTheCTO(t *testing.T) {
+// The owner's command line chooses a model at once, with no ask. The CTO's
+// standard start has no selection fields, so there is nothing to hold.
+func TestOverrideNotForTheOwnerCommandLine(t *testing.T) {
 	g, w, _, _ := overrideNode(t)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m2", Task: "FAKE:ignore"})
 	if res.SelectionPath != "" || res.Model != "fake/m2" {
 		t.Fatalf("owner command line: %+v", res)
 	}
-	out, err := w.d.workerStartCall(context.Background(), w.ownerID(), protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m2", Task: "FAKE:ignore", Isolation: protocol.IsolationNone}, false, "", true)
-	if err != nil || out.SelectionPath != "" || out.Model != "fake/m2" {
-		t.Fatalf("CTO start: %+v, %v", out, err)
-	}
 	if n := len(overrideAsks(g)); n != 0 {
-		t.Fatalf("%d asks", n)
+		t.Fatalf("%d owner asks for the owner's own start", n)
 	}
 }
 
@@ -257,39 +253,6 @@ func TestOwnerPromptsAreKeptFromTheClaudeHook(t *testing.T) {
 	}
 	if n.d.ownerWordsMatch(sid, "use an opus worker for everything") {
 		t.Fatal("an injected turn was kept as the owner's words")
-	}
-}
-
-// The held start carries the facts of the confirm rule (decision 0151): the
-// provider resolved as the start does, the model family, and whether the task
-// reviews work, read from the title and the done lines only.
-func TestOverrideFactsOfAReview(t *testing.T) {
-	d := &Daemon{}
-	p := overrideRequest()
-	p.Title, p.Done = "Audit the parser change", []string{"every finding has a file and line"}
-	f := d.overrideFacts("s_unknown", p)
-	if f.Provider != protocol.ProfileProvider("opencode", "fake/m2") || f.OverrideFamily != protocol.ModelFamily("opencode", "fake/m2") || f.Model != "fake/m2" || !f.Review {
-		t.Fatalf("facts = %+v", f)
-	}
-	p.Title, p.Problem, p.Done = "Do the work", "after review, merge the branch", []string{"the branch is merged"}
-	if f := d.overrideFacts("s_unknown", p); f.Review {
-		t.Fatalf("a problem that mentions a review made the task one: %+v", f)
-	}
-	p.Done = []string{"a second opinion on the schema"}
-	if f := d.overrideFacts("s_unknown", p); !f.Review {
-		t.Fatalf("a done line asking for a second opinion is not a review: %+v", f)
-	}
-}
-
-// A harness-only override still names its provider when the harness fixes
-// it; an effort-only one leaves it unknown, so the chief cannot confirm it.
-func TestOverrideProviderResolvedLikeTheStart(t *testing.T) {
-	d := &Daemon{}
-	if f := d.overrideFacts("s_unknown", protocol.WorkerStartRequest{Harness: "claude"}); f.Provider != "anthropic" {
-		t.Fatalf("claude harness provider = %q", f.Provider)
-	}
-	if f := d.overrideFacts("s_unknown", protocol.WorkerStartRequest{Effort: "high", Model: "auto"}); f.Provider != "" || f.Model != "" {
-		t.Fatalf("effort-only facts = %+v", f)
 	}
 }
 
@@ -357,50 +320,6 @@ func TestOverrideLostHeldStartTellsTheCaller(t *testing.T) {
 	if !strings.Contains(body, "status: not started") || !strings.Contains(body, "lost the held start") {
 		t.Fatalf("notice:\n%s", body)
 	}
-}
-
-// A caller whose role node holds admin over the project passes the override
-// check: the owner delegated that choice, so there is no ask. A scope over
-// another project changes nothing: the start is held as before.
-func TestOverrideScopeHolderGoesAheadAtOnce(t *testing.T) {
-	g, w, pi, piID := overrideNode(t)
-	if _, err := w.node.d.call(context.Background(), "hello", map[string]any{"hostname": "fixture", "version": "v0.4.145", "graph_refs": true}); err != nil {
-		t.Fatal(err)
-	}
-	waitGraphCutover(t, g)
-	st := g.gw.Store()
-	if _, err := st.AddProjects(w.node.d.cfg.NodeID, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "other", Path: "/code/other"}}}); err != nil {
-		t.Fatal(err)
-	}
-	// The caller's role node is the agent of its repo.
-	view, ok, err := st.Agent(piID)
-	if err != nil || !ok || view.AgentID == "" {
-		t.Fatalf("the caller has no role node: %+v %v", view, err)
-	}
-	agent := view.AgentID
-	elsewhere := protocol.ScopeSetRequest{Node: agent, Kind: protocol.ScopeAdmin, Over: "repo:other"}
-	if _, err := st.SetScope(elsewhere, "owner", false); err != nil {
-		t.Fatal(err)
-	}
-	res := startFrom(t, pi, overrideRequest())
-	if res.SelectionPath != protocol.SelectionHeld {
-		t.Fatalf("an admin scope over another repo lifted the hold: %+v", res)
-	}
-	waitOverrideAsk(t, g)
-
-	if _, err := st.SetScope(protocol.ScopeSetRequest{Node: agent, Kind: protocol.ScopeAdmin, Over: "repo:shop"}, "owner", false); err != nil {
-		t.Fatal(err)
-	}
-	req := overrideRequest()
-	req.Title = "Second"
-	eventually(t, "the scope reaches the daemon", func() bool {
-		res := startFrom(t, pi, req)
-		if res.SelectionPath == protocol.SelectionHeld {
-			req.Title += "x"
-			return false
-		}
-		return res.SelectionPath == protocol.SelectionScope && res.SessionID != ""
-	})
 }
 
 // The owner's own words can name a model he paused: the start goes ahead on it

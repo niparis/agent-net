@@ -23,10 +23,6 @@ const (
 	// AskSortUndo is the result of an undo: a row in the sort history that puts
 	// an ask back the way it was before the newest sort.
 	AskSortUndo = "undo"
-	// AskSortConfirm and AskSortPicker answer a held worker start (decision
-	// 0151): confirm starts it with the caller's fields, picker without them.
-	AskSortConfirm = "confirm"
-	AskSortPicker  = "picker"
 	// AskSortDone reports that the answer of an answered ask was carried out
 	// (decision 0150): the ask moves to carried_out and its askers are told.
 	AskSortDone = "done"
@@ -232,7 +228,7 @@ func (a AskSortArgs) Validate() error {
 		return errors.New("change goes with follow_up_at: it names the change whose step you wait for")
 	}
 	switch a.Result {
-	case AskSortClose, AskSortConfirm, AskSortPicker, AskSortDone, AskSortWithdraw:
+	case AskSortClose, AskSortDone, AskSortWithdraw:
 	case AskSortMerge:
 		if a.Into == "" {
 			return errors.New("merge needs into: the ask id to merge into")

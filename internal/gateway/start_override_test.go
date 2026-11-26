@@ -35,7 +35,7 @@ func TestStartOverrideAskAnswers(t *testing.T) {
 		return item
 	}
 	item := mk("a_1")
-	// With no chief of staff the ask goes to the owner (decision 0151).
+	// The ask goes to the owner, never to the chief (decision 0194).
 	var next string
 	if err := s.db.QueryRow(`SELECT next_who FROM inbox_items WHERE id=?`, item.ID).Scan(&next); err != nil {
 		t.Fatal(err)
@@ -61,8 +61,11 @@ func TestStartOverrideAskAnswers(t *testing.T) {
 		t.Fatalf("dismiss: %+v, %v", got, err)
 	}
 	item = mk("a_3")
-	if got, err = s.AnswerInboxAs(item.ID, protocol.StartAnswerPicker, "cto"); err != nil || got.Answer != protocol.StartAnswerPicker {
-		t.Fatalf("the CTO chose the picker: %+v, %v", got, err)
+	if _, err = s.AnswerInboxAs(item.ID, protocol.StartAnswerPicker, "cto"); err == nil || !strings.Contains(err.Error(), "only your owner") {
+		t.Fatalf("the CTO answered a held start: %v", err)
+	}
+	if got, err = s.AnswerInboxAs(item.ID, protocol.StartAnswerPicker, "owner"); err != nil || got.Answer != protocol.StartAnswerPicker {
+		t.Fatalf("the owner chose the picker: %+v, %v", got, err)
 	}
 	// The ask is not closed when the owner types in the asking session.
 	item = mk("a_4")
@@ -76,6 +79,23 @@ func TestStartOverrideAskAnswers(t *testing.T) {
 	}
 	if !open {
 		t.Fatal("typing in the asking session closed the override ask")
+	}
+}
+
+// The one ask of an exceptional start goes to the owner even when a live
+// chief could adopt it. The chief does not confirm starts.
+func TestStartOverrideAskGoesToTheOwnerNotTheChief(t *testing.T) {
+	s, _, _, asker, node := chiefRig(t)
+	if err := s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, asker).Scan(&node); err != nil {
+		t.Fatal(err)
+	}
+	item, err := s.CreateStartOverrideAsk(node, protocol.StartOverrideAsk{Session: asker, StartID: "a_owner",
+		Text: "an agent wants model=m. Confirm, or let the picker choose.", OverrideFacts: protocol.OverrideFacts{Harness: "opencode", Model: "fake/m2"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next := askNext(t, s, item.ID); next != protocol.AskNextOwner {
+		t.Fatalf("held start next = %q, want the owner", next)
 	}
 }
 
