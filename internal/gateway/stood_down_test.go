@@ -199,3 +199,34 @@ func mustAgent(t *testing.T, s *Store, id string) protocol.AgentView {
 	}
 	return a
 }
+
+// A message is never handed back to its sender: the project lead's own reply
+// to an ended merger waits under the merger, and the merger is not woken.
+func TestLeadsReplyToAnEndedMergerIsNotHandedBack(t *testing.T) {
+	r := newReplaceRedirectRig(t)
+	r.s.graphRefsOn.Store(true)
+	old, lead := r.sonnet, r.caller
+	if err := r.s.SetLead(protocol.LeadSetRequest{Ref: protocol.GraphRef{Kind: "repo", ID: "demo"}, Lead: &protocol.GraphRef{Kind: "session", ID: lead}}, "owner", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.SetMerger(protocol.MergerSetRequest{Project: "demo", NodeID: r.a, SessionID: old}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.SetMerger(protocol.MergerSetRequest{Project: "demo", NodeID: r.a}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.SetSessionOffline(r.a, old); err != nil {
+		t.Fatal(err)
+	}
+	m, _, err := r.s.StoreMessage(protocol.MsgSend{Sender: lead, Recipient: old, Body: "thanks"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.g.dispatch(context.Background(), m) || wasWoken(t, r.s, old) {
+		t.Fatal("the ended merger was woken")
+	}
+	stored, ok, err := r.s.Message(m.ID)
+	if err != nil || !ok || stored.To != old {
+		t.Fatalf("the reply is stored for %q, want it to wait for %s (%v)", stored.To, old, err)
+	}
+}

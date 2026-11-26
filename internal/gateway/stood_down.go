@@ -122,6 +122,12 @@ func (s *Store) stoodDownTarget(session string) (target, note string, err error)
 			if next, _, err = liveSession(s.db, d.successor); err != nil {
 				return "", "", err
 			}
+			// An archived successor took over nothing.
+			if nd, ok, err := readStoodDown(s.db, next); err != nil {
+				return "", "", err
+			} else if !ok || nd.archived {
+				next = ""
+			}
 		}
 		if next == "" || seen[next] {
 			next, err = s.projectLeadSession(d.project)
@@ -225,7 +231,9 @@ func (s *Store) redirectReceipt(m protocol.Message) (string, error) {
 // recipient sees. moved is false when the message stays where it is.
 func (s *Store) redirectStoodDown(m protocol.Message) (protocol.Message, bool, error) {
 	target, note, err := s.stoodDownTarget(m.To)
-	if err != nil || target == "" || target == m.To {
+	// A message is never handed back to its own sender: a lead's reply to a
+	// stood-down session that falls to that same lead waits instead.
+	if err != nil || target == "" || target == m.To || target == m.From {
 		return m, false, err
 	}
 	res, err := s.db.Exec(`UPDATE messages SET recipient=?, redirect_note=? WHERE id=? AND recipient=? AND state IN `+undeliveredStates,
