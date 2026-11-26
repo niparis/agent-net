@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -234,5 +235,69 @@ func TestWorktreeBaseDetachedHeadStartsAtOriginDefault(t *testing.T) {
 	}
 	if got := baseTestHead(t, w.worktree); got != tip || w.base != tip {
 		t.Fatalf("worktree starts at %s, base %s, want origin/main tip %s", got, w.base, tip)
+	}
+}
+
+// A config.lock that git left behind must not stop worktree creation or the
+// branch upstream write. An empty lock older than ten seconds is stale; a
+// fresh one or one that holds content belongs to a running process.
+func TestWorktreeStaleConfigLockRemoved(t *testing.T) {
+	writeLock := func(t *testing.T, repo, content string, age time.Duration) string {
+		t.Helper()
+		path := filepath.Join(repo, ".git", "config.lock")
+		if err := os.WriteFile(path, []byte(content), 0o444); err != nil {
+			t.Fatal(err)
+		}
+		stamp := time.Now().Add(-age)
+		if err := os.Chtimes(path, stamp, stamp); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	t.Run("stale empty lock is removed", func(t *testing.T) {
+		repo, _, _ := baseTestRepo(t)
+		lock := writeLock(t, repo, "", time.Minute)
+
+		d, w, logs := baseTestWorker(t, repo)
+		if err := d.createWorktree(context.Background(), w); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(lock); !os.IsNotExist(err) {
+			t.Fatalf("stale lock still there: %v", err)
+		}
+		if !strings.Contains(logs.String(), "worker.git stale config.lock removed path="+lock) {
+			t.Fatalf("no removal log line: %q", logs.String())
+		}
+		// The upstream write needs the config lock, so this proves it went through.
+		out, err := gitOut(context.Background(), repo, "config", "--get", "branch."+w.branch+".remote")
+		if err != nil || out != "origin" {
+			t.Fatalf("branch upstream is %q (%v), want origin", out, err)
+		}
+	})
+
+	for _, tc := range []struct {
+		name    string
+		content string
+		age     time.Duration
+	}{
+		{"fresh lock is kept", "", 0},
+		{"old lock with content is kept", "pid 123", time.Minute},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, _, _ := baseTestRepo(t)
+			lock := writeLock(t, repo, tc.content, tc.age)
+
+			d, w, logs := baseTestWorker(t, repo)
+			if err := d.createWorktree(context.Background(), w); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(lock); err != nil {
+				t.Fatalf("lock was removed: %v", err)
+			}
+			if strings.Contains(logs.String(), "stale config.lock removed") {
+				t.Fatalf("log claims a removal: %q", logs.String())
+			}
+		})
 	}
 }
