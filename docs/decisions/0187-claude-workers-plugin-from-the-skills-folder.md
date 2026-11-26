@@ -23,6 +23,13 @@ depend on a file another tool owns.
   real Claude Code 2.1.330 and 2.1.332 in a throwaway setup: the plugin is
   listed as `agent-net-workers@skills-dir`, enabled, and the band renders at
   120x34 and 80x24.
+- The skills folder can be a git work tree of the owner's own: on his Mac it
+  is his skills repository. When agent-net writes the link there, it adds the
+  line `/agent-net-workers` to that repository's `info/exclude`, once, so the
+  link is never untracked, staged or committed. It never runs `git add` or
+  `git commit` and never writes `.gitignore`. Turning the window off removes
+  the link and that one line, and keeps every other line. A skills folder that
+  is not in a work tree gets no exclude.
 - The link stays in place all the time, also while an old marketplace copy
   runs. Real Claude Code on both versions shows exactly one window in each
   state, with the old copy in its installed list: both settings entries

@@ -3,13 +3,57 @@ package agentfiles
 import (
 	"context"
 	"encoding/json"
+	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	agentnetworkers "github.com/niparis/agent-net/plugins/claude/agent-net-workers"
 )
+
+// treeState records every file and link below root, so a test can name the
+// paths a sync changed instead of trusting a list of files it knows about.
+func treeState(t *testing.T, root string) map[string]string {
+	t.Helper()
+	state := map[string]string{}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			state[path] = "link:" + target
+			return nil
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		state[path] = "file:" + string(b)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return state
+}
+
+func gitIn(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return string(out)
+}
 
 func TestClaudeWorkersMarketplaceContent(t *testing.T) {
 	fakeHome(t)
@@ -258,6 +302,148 @@ func TestSyncClaudeWorkersKeepsTheLinkWhileTheOldCopyRuns(t *testing.T) {
 	}
 	if s := ClaudeWorkersStatusNow(); s.OldRuns() || !s.Live() {
 		t.Errorf("status after the move: %+v", s)
+	}
+}
+
+// The skills folder on the owner's Mac is a git repository of his own. The
+// link must never show up there as untracked or staged, so agent-net adds one
+// line to info/exclude, once. Turning the window off removes the link and that
+// line, and nothing else.
+func TestClaudeWorkersLinkIsExcludedFromTheSkillsRepo(t *testing.T) {
+	h := fakeHome(t)
+	if _, err := WriteClaudeWorkers(); err != nil {
+		t.Fatal(err)
+	}
+	write(t, ClaudeWorkersStatePath(), `{"asked":true,"installed":true}`)
+	skills := filepath.Join(h, ".claude", "skills")
+	mkdirs(t, skills)
+	gitIn(t, skills, "init", "-q", ".")
+	exclude := filepath.Join(skills, ".git", "info", "exclude")
+	before := read(t, exclude)
+	settings := filepath.Join(h, ".claude", "settings.json")
+	write(t, settings, `{"keep":true}`)
+
+	if r := SyncClaudeWorkers(); r.Err != nil {
+		t.Fatalf("sync: %+v", r)
+	}
+	if !isSymlink(t, ClaudeWorkersSkillsLink()) {
+		t.Fatal("the link was not written")
+	}
+	if got := read(t, exclude); strings.Count(got, "/agent-net-workers"+"\n") != 1 {
+		t.Errorf("exclude after the first sync:\n%s", got)
+	}
+	if got := gitIn(t, skills, "status", "--porcelain"); strings.Contains(got, ClaudeWorkersPlugin) {
+		t.Errorf("git status shows the link:\n%s", got)
+	}
+
+	if r := SyncClaudeWorkers(); r.Err != nil {
+		t.Fatalf("second sync: %+v", r)
+	}
+	if got := read(t, exclude); strings.Count(got, "/agent-net-workers"+"\n") != 1 {
+		t.Errorf("the second sync added the line again:\n%s", got)
+	}
+	if got := read(t, settings); got != `{"keep":true}` {
+		t.Errorf("the settings file was written: %s", got)
+	}
+	if _, err := os.Stat(filepath.Join(skills, ".gitignore")); err == nil {
+		t.Error("a .gitignore was written")
+	}
+
+	removed, foreign, err := RemoveClaudeWorkersLink()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !removed || foreign != "" {
+		t.Fatalf("remove: removed=%v foreign=%q", removed, foreign)
+	}
+	if _, err := os.Lstat(ClaudeWorkersSkillsLink()); !os.IsNotExist(err) {
+		t.Error("the link stayed")
+	}
+	if got := read(t, exclude); got != before {
+		t.Errorf("the exclude was not restored:\nbefore %q\nafter  %q", before, got)
+	}
+}
+
+// The sync writes agent-net's own files, the link and that one exclude line.
+// Nothing else changes, and a settings file that exists keeps its bytes.
+func TestClaudeWorkersSyncWritesOnlyTheLinkAndTheExclude(t *testing.T) {
+	h := fakeHome(t)
+	if _, err := WriteClaudeWorkers(); err != nil {
+		t.Fatal(err)
+	}
+	write(t, ClaudeWorkersStatePath(), `{"asked":true,"installed":true}`)
+	skills := filepath.Join(h, ".claude", "skills")
+	mkdirs(t, skills)
+	gitIn(t, skills, "init", "-q", ".")
+	settings := filepath.Join(h, ".claude", "settings.json")
+	write(t, settings, `{"keep":true}`)
+	exclude := filepath.Join(skills, ".git", "info", "exclude")
+	link := filepath.Join(skills, "agent-net-workers")
+
+	before := treeState(t, h)
+	if r := SyncClaudeWorkers(); r.Err != nil {
+		t.Fatalf("sync: %+v", r)
+	}
+	after := treeState(t, h)
+
+	allowed := func(path string) bool {
+		switch path {
+		case link, exclude:
+			return true
+		}
+		for _, dir := range []string{
+			filepath.Join(h, ".local", "share", "agent-net"),
+			filepath.Join(h, "config"),
+		} {
+			if strings.HasPrefix(path, dir+string(filepath.Separator)) {
+				return true
+			}
+		}
+		return false
+	}
+	for path, state := range after {
+		if before[path] == state {
+			continue
+		}
+		if !allowed(path) {
+			t.Errorf("the sync wrote %s outside agent-net's folder", path)
+		}
+	}
+	for path := range before {
+		if _, ok := after[path]; !ok {
+			t.Errorf("the sync removed %s", path)
+		}
+	}
+	if got := read(t, settings); got != `{"keep":true}` {
+		t.Errorf("the settings file was written: %s", got)
+	}
+	if got := read(t, exclude); !strings.Contains(got, "/agent-net-workers\n") {
+		t.Errorf("the exclude has no line:\n%s", got)
+	}
+}
+
+// A folder that is not in a git work tree needs no exclude, and the sync must
+// not create a repository there.
+func TestClaudeWorkersLinkLeavesANonGitSkillsFolderAlone(t *testing.T) {
+	h := fakeHome(t)
+	if _, err := WriteClaudeWorkers(); err != nil {
+		t.Fatal(err)
+	}
+	write(t, ClaudeWorkersStatePath(), `{"asked":true,"installed":true}`)
+	skills := filepath.Join(h, ".claude", "skills")
+	mkdirs(t, skills)
+
+	if r := SyncClaudeWorkers(); r.Err != nil {
+		t.Fatalf("sync: %+v", r)
+	}
+	if !isSymlink(t, ClaudeWorkersSkillsLink()) {
+		t.Fatal("the link was not written")
+	}
+	if err := exec.Command("git", "-C", skills, "rev-parse", "--git-dir").Run(); err == nil {
+		t.Fatal("the sync made the skills folder a git repository")
+	}
+	if _, err := os.Stat(filepath.Join(skills, ".gitignore")); err == nil {
+		t.Error("a .gitignore was written")
 	}
 }
 

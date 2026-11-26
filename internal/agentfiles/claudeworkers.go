@@ -206,6 +206,100 @@ func WriteClaudeWorkersAt(exe string) (changed bool, err error) {
 	return changed, nil
 }
 
+// claudeWorkersSkillsExclude is the one line agent-net adds to the skills
+// repository's info/exclude, so the link is never committed to the owner's
+// skills repository. info/exclude belongs to the clone and is not .gitignore.
+const claudeWorkersSkillsExclude = "/agent-net-workers"
+
+// gitInfoExclude returns the info/exclude path of the work tree that holds dir,
+// or "" when dir is not in one or git is not available. A linked worktree
+// resolves to the common git directory, where info/exclude lives.
+func gitInfoExclude(dir string) string {
+	if _, err := os.Stat(dir); err != nil {
+		return ""
+	}
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "--git-path", "info/exclude").Output()
+	if err != nil {
+		return ""
+	}
+	p := strings.TrimSpace(string(out))
+	if p == "" {
+		return ""
+	}
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(dir, p)
+	}
+	return filepath.Clean(p)
+}
+
+// ensureClaudeWorkersSkillsExclude adds the line once. A repository that
+// already has it, a folder outside a work tree and a machine without git all
+// need no write.
+func ensureClaudeWorkersSkillsExclude(dir string) error {
+	path := gitInfoExclude(dir)
+	if path == "" {
+		return nil
+	}
+	existing, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	for _, line := range strings.Split(string(existing), "\n") {
+		if strings.TrimSuffix(line, "\r") == claudeWorkersSkillsExclude {
+			return nil
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	prefix := ""
+	if len(existing) > 0 && !strings.HasSuffix(string(existing), "\n") {
+		prefix = "\n"
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.WriteString(prefix + claudeWorkersSkillsExclude + "\n")
+	return err
+}
+
+// removeClaudeWorkersSkillsExclude removes agent-net's one line and keeps every
+// other line. A folder outside a work tree and a machine without git need no
+// write.
+func removeClaudeWorkersSkillsExclude(dir string) error {
+	path := gitInfoExclude(dir)
+	if path == "" {
+		return nil
+	}
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(b), "\n")
+	kept := make([]string, 0, len(lines))
+	removed := false
+	for _, line := range lines {
+		if strings.TrimSuffix(line, "\r") == claudeWorkersSkillsExclude {
+			removed = true
+			continue
+		}
+		kept = append(kept, line)
+	}
+	if !removed {
+		return nil
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(strings.Join(kept, "\n")), st.Mode().Perm())
+}
+
 // EnsureClaudeWorkersLink puts the link to the plugin in Claude Code's skills
 // folder. A foreign entry with that name is never replaced: foreign is set to
 // its path and the caller reports it. changed says whether the link was made.
@@ -227,7 +321,9 @@ func EnsureClaudeWorkersLink() (changed bool, foreign string, err error) {
 		}
 		if filepath.Clean(target) == filepath.Clean(dir) {
 			if _, serr := os.Stat(filepath.Join(dir, claudeWorkersPluginManifest)); serr == nil {
-				return false, "", nil
+				// The link may predate this binary, or the folder became a git
+				// work tree later, so the exclude is checked every time.
+				return false, "", ensureClaudeWorkersSkillsExclude(filepath.Dir(link))
 			}
 			// Our link points at a folder that is gone or incomplete. Replace it
 			// after the files are written.
@@ -250,6 +346,9 @@ func EnsureClaudeWorkersLink() (changed bool, foreign string, err error) {
 	if err := os.Symlink(dir, link); err != nil {
 		return false, "", err
 	}
+	if err := ensureClaudeWorkersSkillsExclude(filepath.Dir(link)); err != nil {
+		return true, "", err
+	}
 	return true, "", nil
 }
 
@@ -262,7 +361,7 @@ func RemoveClaudeWorkersLink() (removed bool, foreign string, err error) {
 	}
 	st, err := os.Lstat(link)
 	if os.IsNotExist(err) {
-		return false, "", nil
+		return false, "", removeClaudeWorkersSkillsExclude(filepath.Dir(link))
 	}
 	if err != nil {
 		return false, "", err
@@ -282,6 +381,9 @@ func RemoveClaudeWorkersLink() (removed bool, foreign string, err error) {
 	}
 	if err := os.Remove(link); err != nil {
 		return false, "", err
+	}
+	if err := removeClaudeWorkersSkillsExclude(filepath.Dir(link)); err != nil {
+		return true, "", err
 	}
 	return true, "", nil
 }
