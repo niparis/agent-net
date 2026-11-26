@@ -77,7 +77,7 @@ var ctoOwnerOpExamples = map[string]string{
 	"permission_reject":     `{"id":"pp_1","reason":"the rule is too broad","owner_words":"no, do not allow that"}`,
 	"delivery_owner_answer": `{"change":"ch_1","step":"approve","for":"merge","commit":"0123456789012345678901234567890123456789","result":"pass","owner_words":"go ahead and merge it"}`,
 	"loop_resume":           `{"node":"demo","owner_words":"resume the loop"}`,
-	"sign_in_open":          `{"machine":"Nicolas-MBP","provider":"alibaba","owner_words":"yes, open the Alibaba login"}`,
+	"sign_in_open":          `{"machine":"build-vm","provider":"alibaba","owner_words":"yes, open the Alibaba login"}`,
 	"permission_undo":       `{"id":"pp_1"}`,
 	"friction_find":         `{"project":"demo","area":"ci","limit":20}`,
 	"friction_mark":         `{"ids":[12,13],"status":"fixed","link":"ch_1234","note":"fixed by the lint change"}`,

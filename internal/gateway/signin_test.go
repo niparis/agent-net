@@ -67,7 +67,7 @@ func TestSignInRefusesAnyCommandAndUnknownProvider(t *testing.T) {
 // machine's own daemon.
 func TestSignInOpenOpensOnNamedMachineWithoutStoredAsk(t *testing.T) {
 	s, _ := newTestStore(t)
-	mac, _, err := s.CreateNode("Nicolas-MBP", "darwin")
+	mac, _, err := s.CreateNode("build-vm", "darwin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestSignInOpenOpensOnNamedMachineWithoutStoredAsk(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	raw, _ := json.Marshal(protocol.SignInOpenFrame{
-		Request: protocol.SignInOpenRequest{Machine: "Nicolas-MBP", Provider: "alibaba", OwnerWords: "open the login"},
+		Request: protocol.SignInOpenRequest{Machine: "build-vm", Provider: "alibaba", OwnerWords: "open the login"},
 		Owner:   owner, By: "cto", WordsVerified: true,
 	})
 	type answer struct {
@@ -99,7 +99,7 @@ func TestSignInOpenOpensOnNamedMachineWithoutStoredAsk(t *testing.T) {
 		if err := json.Unmarshal(frame, &p); err != nil || p.Provider != "alibaba" {
 			t.Fatalf("prepare %s: %v", frame, err)
 		}
-		reply, _ := protocol.EncodeResult(h.ID, protocol.SignInPrepareResult{Opened: true, Host: "Nicolas-MBP", Pane: "w1:p1"}, nil)
+		reply, _ := protocol.EncodeResult(h.ID, protocol.SignInPrepareResult{Opened: true, Host: "build-vm", Pane: "w1:p1"}, nil)
 		if err := client.Write(ctx, websocket.MessageText, reply); err != nil {
 			t.Fatal(err)
 		}
@@ -123,7 +123,7 @@ func TestSignInOpenOpensOnNamedMachineWithoutStoredAsk(t *testing.T) {
 // unknown provider and for a machine that is not connected.
 func TestSignInOpenRefusals(t *testing.T) {
 	s, _ := newTestStore(t)
-	node, _, err := s.CreateNode("Nicolas-MBP", "darwin")
+	node, _, err := s.CreateNode("build-vm", "darwin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestSignInOpenRefusals(t *testing.T) {
 	nc := &nodeConn{id: node}
 	base := func() protocol.SignInOpenFrame {
 		return protocol.SignInOpenFrame{
-			Request: protocol.SignInOpenRequest{Machine: "Nicolas-MBP", Provider: "alibaba", OwnerWords: "open the login"},
+			Request: protocol.SignInOpenRequest{Machine: "build-vm", Provider: "alibaba", OwnerWords: "open the login"},
 			Owner:   owner, By: "cto", WordsVerified: true,
 		}
 	}
@@ -163,7 +163,7 @@ func TestSignInOpenRefusals(t *testing.T) {
 // and keeps the owner authority check.
 func TestSignInPrepareTakesAMachineAndProvider(t *testing.T) {
 	s, _ := newTestStore(t)
-	mac, _, err := s.CreateNode("Nicolas-MBP", "darwin")
+	mac, _, err := s.CreateNode("build-vm", "darwin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,10 +174,10 @@ func TestSignInPrepareTakesAMachineAndProvider(t *testing.T) {
 		raw, _ := json.Marshal(protocol.SignInPrepareRequest{Machine: machine, Provider: provider, Owner: who})
 		return raw
 	}
-	if _, err := g.signInPrepare(context.Background(), nc, prepare("Nicolas-MBP", "alibaba", "")); err == nil || !strings.Contains(err.Error(), "owner authority") {
+	if _, err := g.signInPrepare(context.Background(), nc, prepare("build-vm", "alibaba", "")); err == nil || !strings.Contains(err.Error(), "owner authority") {
 		t.Fatalf("no owner: %v", err)
 	}
-	if _, err := g.signInPrepare(context.Background(), nc, prepare("Nicolas-MBP", "sh -c curl", owner)); err == nil || !strings.Contains(err.Error(), "unknown sign-in provider") {
+	if _, err := g.signInPrepare(context.Background(), nc, prepare("build-vm", "sh -c curl", owner)); err == nil || !strings.Contains(err.Error(), "unknown sign-in provider") {
 		t.Fatalf("unknown provider: %v", err)
 	}
 	if _, err := g.signInPrepare(context.Background(), nc, prepare(mac, "alibaba", owner)); err == nil || !strings.Contains(err.Error(), "offline") {
@@ -189,7 +189,7 @@ func TestSignInPrepareTakesAMachineAndProvider(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		_, err := g.signInPrepare(ctx, nc, prepare("Nicolas-MBP", "alibaba", owner))
+		_, err := g.signInPrepare(ctx, nc, prepare("build-vm", "alibaba", owner))
 		done <- err
 	}()
 	select {
@@ -213,14 +213,14 @@ func TestSignInPrepareTakesAMachineAndProvider(t *testing.T) {
 // A console token goes to the named machine and provider, only from the owner.
 func TestSignInTransferGoesToTheNamedMachine(t *testing.T) {
 	s, _ := newTestStore(t)
-	mac, _, err := s.CreateNode("Nicolas-MBP", "darwin")
+	mac, _, err := s.CreateNode("build-vm", "darwin")
 	if err != nil {
 		t.Fatal(err)
 	}
 	owner := ownerSessionOn(t, s, mac)
 	g := &Gateway{store: s, conns: map[string]*nodeConn{}}
 	nc := &nodeConn{id: mac}
-	transfer := protocol.SignInTransfer{Machine: "Nicolas-MBP", Provider: "alibaba", Owner: owner, Token: "throwaway-token"}
+	transfer := protocol.SignInTransfer{Machine: "build-vm", Provider: "alibaba", Owner: owner, Token: "throwaway-token"}
 	raw, _ := json.Marshal(transfer)
 	if _, err := g.signInTransfer(context.Background(), nc, raw); err == nil || !strings.Contains(err.Error(), "offline") {
 		t.Fatalf("offline machine: %v", err)
@@ -267,7 +267,7 @@ func TestSignInTransferGoesToTheNamedMachine(t *testing.T) {
 // owner's words (decision 0196).
 func TestSignInRequestNamesSignInOpen(t *testing.T) {
 	s, _, chief, _, _ := chiefRig(t)
-	mac, _, err := s.CreateNode("Nicolas-MBP", "darwin")
+	mac, _, err := s.CreateNode("build-vm", "darwin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +278,7 @@ func TestSignInRequestNamesSignInOpen(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("want one request to the chief, got %d: %+v", len(got), got)
 	}
-	want := "If the owner agrees, the CTO opens it with sign_in_open machine Nicolas-MBP provider alibaba, quoting the owner's words."
+	want := "If the owner agrees, the CTO opens it with sign_in_open machine build-vm provider alibaba, quoting the owner's words."
 	if !strings.HasSuffix(got[0].body, want) {
 		t.Fatalf("request does not end with %q:\n%s", want, got[0].body)
 	}
