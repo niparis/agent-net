@@ -73,8 +73,18 @@ func waitForFreezeProfile(t *testing.T, dir string, timeout time.Duration) []str
 		if err != nil {
 			t.Fatalf("glob freeze profiles: %v", err)
 		}
-		if len(files) > 0 {
-			return files
+		var complete []string
+		for _, path := range files {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read freeze profile %s: %v", path, err)
+			}
+			if strings.Contains(string(data), "goroutine ") {
+				complete = append(complete, path)
+			}
+		}
+		if len(complete) > 0 {
+			return complete
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -82,7 +92,7 @@ func waitForFreezeProfile(t *testing.T, dir string, timeout time.Duration) []str
 	if err != nil {
 		t.Fatalf("glob freeze profiles: %v", err)
 	}
-	t.Fatalf("timed out waiting for freeze profile in %s; got %v", dir, files)
+	t.Fatalf("timed out waiting for a complete freeze profile in %s; got %v", dir, files)
 	return nil
 }
 
