@@ -272,7 +272,7 @@ func TestNodeSettingsAreTheSameAcrossTheMigration(t *testing.T) {
 	if err = s.AddArchitect("alpha", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	for setting, value := range map[string]string{protocol.SettingMergeAuthority: "delegated", protocol.SettingWorkerSandbox: "read-only", protocol.SettingAutonomy: "wake"} {
+	for setting, value := range map[string]string{protocol.SettingMergeAuthority: "delegated", protocol.SettingWorkerSandbox: protocol.WorkersSandboxed, protocol.SettingAutonomy: "wake"} {
 		if err = s.SetNodeSetting("alpha", setting, value, "owner"); err != nil {
 			t.Fatal(err)
 		}

@@ -12,7 +12,7 @@ Set with `graph_change` action `settings_set`, or `settings_change` area `values
 |---|---|---|---|
 | tests_before_merge | optional, suite, suite-new-tests, suite-new-tests-review | suite | experimental optional; early optional; mature suite-new-tests; critical suite-new-tests-review |
 | merge_authority | full, delegated, ask | full | mature delegated; critical ask |
-| worker_sandbox | sandboxed, no-network, read-only | sandboxed | critical no-network |
+| worker_sandbox | sandboxed | sandboxed | same at every maturity |
 | judge_consumers | free, charter, strict, escalate | charter | experimental free; early free; mature strict; critical escalate |
 | deploy_rule | brief, ask, owner | brief | mature ask; critical owner |
 | autonomy | off, wake | off | same at every maturity |
@@ -66,7 +66,7 @@ The repo lead is the repo's owner agent unless `lead_set` names another. The tea
 
 ## Delegation and workers
 
-The permission level of workers started in a project is the repo setting `workers.sandbox_level`: sandboxed, no-network, read-only.
+The permission level of workers started in a project is the repo setting `workers.sandbox_level`: sandboxed.
 
 A worker start leaves harness, model, provider, effort and machine empty to let the picker choose. Naming one needs the owner's words in `owner_words`, or the start waits for the owner. The difficulty is judged automatically. `isolation` is `worktree` or `none`; `none` is for read-only or non-code work. `fixes` names a shipped change this work fixes with `fixes_severity` from 1 to 4, `continue` names an ended worker to continue, and `base` names the base branch. Worker harnesses: opencode, claude, pi, codex, agy.
 
@@ -391,7 +391,7 @@ Every key in standard.yaml, grouped by the part before its first dot. Each row i
 | key | levels | default | values or range | tier | description |
 |---|---|---|---|---|---|
 | `workers.early_quit_threshold` | network, repo | 120s | min 0s | 3 | Incomplete worker runs shorter than this with no changes or fewer than 20 uncommitted changed lines count as early quits. |
-| `workers.sandbox_level` | network, repo | sandboxed | sandboxed, no-network, read-only | 1 | How far a worker's permissions are limited. |
+| `workers.sandbox_level` | network, repo | sandboxed | sandboxed | 1 | How far a worker's permissions are limited. |
 | `workers.max_age` | network, repo | 4h | min 1ns | 3 | Maximum worker run age. |
 | `workers.cache_max_age` | network, repo | 24h | min 0s | 3 | Maximum age of entries kept in the worker Go build cache. |
 | `workers.cache_max_bytes` | network, repo | 16106127360 | min 1 | 3 | Size cap in bytes for the worker and owner Go build caches together. |

@@ -23,7 +23,7 @@ func refQualityPreview(g *Gateway, in qualityPreviewInputs, node protocol.NodeVi
 		running = map[string]int{}
 	}
 	quotas := g.withQuotaBurn(g.ownerQuotas(node.NodeID), in.agents)
-	candidates, _, _, err := g.workerModelCandidatesWith(&candidateFacts{}, nil, &node, in.profiles, in.providers, quotas, "", false, in.protected)
+	candidates, _, _, err := g.workerModelCandidatesWith(&candidateFacts{}, nil, &node, in.profiles, in.providers, quotas, "")
 	if err != nil {
 		return nil, nil, nil, err
 	}

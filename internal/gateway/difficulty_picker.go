@@ -31,7 +31,7 @@ func (g *Gateway) pickDifficultyJudge(nodeID string, req protocol.DifficultyJudg
 	if err != nil {
 		return out, err
 	}
-	candidates, _, _, err := in.candidates(g, &candidateFacts{}, nil, node, false)
+	candidates, _, _, err := in.candidates(g, &candidateFacts{}, nil, node)
 	if err != nil {
 		return out, err
 	}

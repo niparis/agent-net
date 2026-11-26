@@ -87,13 +87,15 @@ func TestDeliveryChecklistMarkerCannotBeEditedOrForged(t *testing.T) {
 }
 
 func TestWorkerSandboxCutoverFlag(t *testing.T) {
+	// A level retired from an older record is read as sandboxed, whether the
+	// value comes from the old graph override or the cutover setting.
 	snap := settings.Snapshot{Values: []settings.Value{{Key: "workers.sandbox_level", Level: "repo", Scope: "repo", Value: json.RawMessage(`"read-only"`)}}}
 	overrides := map[string]string{SettingWorkerSandbox: "no-network"}
-	if got := NodeDefaultsWithSettings("early", overrides, snap, "repo").WorkerSandbox; got != "no-network" {
+	if got := NodeDefaultsWithSettings("early", overrides, snap, "repo").WorkerSandbox; got != WorkersSandboxed {
 		t.Fatalf("old gateway = %s", got)
 	}
 	snap.WorkerSandboxCutover = true
-	if got := NodeDefaultsWithSettings("early", overrides, snap, "repo").WorkerSandbox; got != "read-only" {
+	if got := NodeDefaultsWithSettings("early", overrides, snap, "repo").WorkerSandbox; got != WorkersSandboxed {
 		t.Fatalf("cutover = %s", got)
 	}
 }

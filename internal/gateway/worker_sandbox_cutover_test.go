@@ -87,7 +87,7 @@ func TestWorkerSandboxLegacyBackupDoesNotOverrideSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	legacyNodeSetting(t, s, "shop", "worker_sandbox", "read-only")
-	if err := s.SetNodeSetting("shop", protocol.SettingWorkerSandbox, "no-network", "owner"); err != nil {
+	if err := s.SetNodeSetting("shop", protocol.SettingWorkerSandbox, protocol.WorkersSandboxed, "owner"); err != nil {
 		t.Fatal(err)
 	}
 	g, err := s.Graph()
@@ -95,7 +95,7 @@ func TestWorkerSandboxLegacyBackupDoesNotOverrideSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, n := range g.Nodes {
-		if n.Name == "shop" && n.Settings[protocol.SettingWorkerSandbox] != "no-network" {
+		if n.Name == "shop" && n.Settings[protocol.SettingWorkerSandbox] != protocol.WorkersSandboxed {
 			t.Fatalf("stale graph: %+v", n.Settings)
 		}
 	}
@@ -106,8 +106,8 @@ func TestWorkerSandboxLegacyBackupDoesNotOverrideSettings(t *testing.T) {
 
 func TestWorkerSandboxCutoverPreservesMachineFallback(t *testing.T) {
 	for _, tc := range []struct{ name, maturity, override, want string }{
-		{"critical maturity", "critical", "", protocol.WorkersNoNetwork},
-		{"graph override", "growing", protocol.WorkersReadOnly, protocol.WorkersReadOnly},
+		{"critical maturity", "critical", "", legacyWorkersNoNetwork},
+		{"graph override", "growing", legacyWorkersReadOnly, legacyWorkersReadOnly},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, _ := newTestStore(t)
@@ -150,8 +150,8 @@ func TestWorkerSandboxCutoverPreservesMachineFallback(t *testing.T) {
 			}
 			for _, id := range []string{a, b} {
 				got, err := s.WorkerPermissions(id, "shop")
-				if err != nil || got != tc.want {
-					t.Errorf("machine sandbox = %q, want %q: %v", got, tc.want, err)
+				if err != nil || got != protocol.WorkersSandboxed {
+					t.Errorf("machine sandbox = %q, want %q: %v", got, protocol.WorkersSandboxed, err)
 				}
 			}
 			inbox, err := s.ListInbox()
@@ -184,7 +184,7 @@ func TestWorkerSandboxCutoverTightensUnsafeExistingValue(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := s.WorkerPermissions("host", "shop")
-	if err != nil || got != protocol.WorkersNoNetwork {
+	if err != nil || got != protocol.WorkersSandboxed {
 		t.Fatalf("unsafe existing value: %q %v", got, err)
 	}
 	var oldValue, newValue, cause, actor string
@@ -229,7 +229,7 @@ func TestWorkerSandboxCutoverNoticesMachineWithoutPolicy(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	raw, _ := legacyPolicy(protocol.WorkersReadOnly)
+	raw, _ := legacyPolicy(legacyWorkersReadOnly)
 	if _, err := legacyPolicyDB(t, s).Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, a, string(raw)); err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +241,7 @@ func TestWorkerSandboxCutoverNoticesMachineWithoutPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, id := range []string{a, b} {
-		if got, err := s.WorkerPermissions(id, "shop"); err != nil || got != protocol.WorkersReadOnly {
+		if got, err := s.WorkerPermissions(id, "shop"); err != nil || got != protocol.WorkersSandboxed {
 			t.Fatalf("effective: %q %v", got, err)
 		}
 	}
@@ -279,7 +279,7 @@ func TestWorkerSandboxCutoverPreservesExistingWhenNetworkEnforcesFloor(t *testin
 		t.Fatal(err)
 	}
 	got, err := s.WorkerPermissions("host", "shop")
-	if err != nil || got != protocol.WorkersReadOnly {
+	if err != nil || got != protocol.WorkersSandboxed {
 		t.Fatalf("effective %q %v", got, err)
 	}
 	after, err := s.SettingsSnapshot()
@@ -350,7 +350,7 @@ func TestWorkerSandboxCutoverPreservesExactMachineProjectFallback(t *testing.T) 
 	// node now, and a node named SHOP would make the name ambiguous.
 	mustExec(t, s, `DELETE FROM charter_values WHERE level='repo' AND scope='SHOP'`)
 	got, err := s.WorkerPermissions(b, "SHOP")
-	if err != nil || got != protocol.WorkersNoNetwork {
+	if err != nil || got != protocol.WorkersSandboxed {
 		t.Fatalf("machine with exact-name fallback became %q: %v", got, err)
 	}
 }
@@ -381,7 +381,7 @@ func TestWorkerSandboxCutoverPreservesMultipleOldNamesOnMachine(t *testing.T) {
 	mustExec(t, s, `DELETE FROM charter_values WHERE level='repo' AND scope='SHOP'`)
 	for _, project := range []string{"shop", "SHOP"} {
 		got, err := s.WorkerPermissions(id, project)
-		if err != nil || got != protocol.WorkersNoNetwork {
+		if err != nil || got != protocol.WorkersSandboxed {
 			t.Errorf("%s became %q: %v", project, got, err)
 		}
 	}
@@ -413,7 +413,7 @@ func TestWorkerSandboxCutoverNoticeListsAllAffectedMachines(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, p := range []struct{ id, value string }{{a, protocol.WorkersNoNetwork}, {c, protocol.WorkersReadOnly}} {
+	for _, p := range []struct{ id, value string }{{a, legacyWorkersNoNetwork}, {c, legacyWorkersReadOnly}} {
 		raw, _ := legacyPolicy(p.value)
 		if _, err = legacyPolicyDB(t, s).Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, p.id, string(raw)); err != nil {
 			t.Fatal(err)
@@ -493,7 +493,7 @@ func TestWorkerSandboxCutoverNoticesSessionInferredProject(t *testing.T) {
 	if _, err = s.UpsertSession(b, protocol.SessionInfo{Harness: "claude", NativeID: "test", Cwd: "/work/shop"}); err != nil {
 		t.Fatal(err)
 	}
-	raw, _ := legacyPolicy(protocol.WorkersReadOnly)
+	raw, _ := legacyPolicy(legacyWorkersReadOnly)
 	if _, err = legacyPolicyDB(t, s).Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, a, string(raw)); err != nil {
 		t.Fatal(err)
 	}
@@ -505,7 +505,7 @@ func TestWorkerSandboxCutoverNoticesSessionInferredProject(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := s.WorkerPermissions(b, "shop")
-	if err != nil || got != protocol.WorkersReadOnly {
+	if err != nil || got != protocol.WorkersSandboxed {
 		t.Fatalf("effective: %q %v", got, err)
 	}
 	inbox, err := s.ListInbox()
@@ -539,7 +539,7 @@ func TestWorkerSandboxCutoverNoticesSeenProjectWithDifferentRegistrationName(t *
 	if _, err = s.UpsertSession(b, protocol.SessionInfo{Harness: "claude", NativeID: "test", Cwd: "/work/other", Repo: protocol.RepoInfo{Project: "other", Root: "/work/other"}}); err != nil {
 		t.Fatal(err)
 	}
-	raw, _ := legacyPolicy(protocol.WorkersReadOnly)
+	raw, _ := legacyPolicy(legacyWorkersReadOnly)
 	if _, err = legacyPolicyDB(t, s).Exec(`INSERT INTO project_policies VALUES(?,'other',?,1)`, a, string(raw)); err != nil {
 		t.Fatal(err)
 	}

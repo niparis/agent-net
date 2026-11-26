@@ -12,7 +12,7 @@ import (
 func TestWorkerSettingsBaseline(t *testing.T) {
 	out := map[string]string{}
 	for _, harness := range []string{"", "codex", "claude", "opencode", "pi", "agy"} {
-		for _, level := range []string{"", WorkersSandboxed, WorkersNoNetwork, WorkersReadOnly} {
+		for _, level := range []string{"", WorkersSandboxed} {
 			for _, worktree := range []string{"", "/tmp/worktree"} {
 				out[harness+"/"+level+"/"+worktree] = WorkerTaskBodyBriefBar(harness, WorkerBrief{Notes: "do work"}, worktree, "agent-net/w_test", "", "project rules", "charter rules", level, "", settings.Snapshot{}, "", nil)
 			}

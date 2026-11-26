@@ -29,6 +29,7 @@ type fakeAgyRecord struct {
 	PID, PGID, Child            int
 	Turns                       []string
 	MCPError                    string
+	BadHandbackRejected         bool
 	InputClosed                 bool
 }
 
@@ -192,6 +193,14 @@ func TestAgyProcess(t *testing.T) {
 						{Area: "", Text: ""},
 					}
 				}
+				if strings.Contains(body, "FAKE:badhandback") {
+					missing := filepath.Join(cwd, "not-there.txt")
+					if call("badhandback", protocol.OpWorkerHandback, protocol.WorkerHandbackRequest{Report: "bad hand-back", Files: []string{missing}}) {
+						r.MCPError += " accepted a hand-back with a missing file"
+					} else {
+						r.BadHandbackRejected = true
+					}
+				}
 				if !call("handback", protocol.OpWorkerHandback, protocol.WorkerHandbackRequest{Report: "finished agy task", Complete: &complete, Files: files, Friction: friction}) {
 					r.MCPError += " rejected handback"
 				}
@@ -284,6 +293,23 @@ func TestAgyWorkerHandbackDropsBadFrictionFromOutput(t *testing.T) {
 	if !strings.Contains(n.Body, "friction: 1 entry was dropped or shortened before it was stored") {
 		t.Errorf("the notice does not say the friction list was cleaned:\n%s", n.Body)
 	}
+}
+
+// A bad hand-back is refused while the worker's turn still runs, and the same
+// turn can hand back again.
+func TestAgyBadHandbackIsRefusedInTheSameTurn(t *testing.T) {
+	t.Parallel()
+	w, dir, _ := startAgyNode(t, shortSet)
+	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:badhandback FAKE:handback FAKE:exit", Isolation: protocol.IsolationWorktree})
+	n := w.waitNotice(t, 1)[0]
+	if !strings.Contains(n.Body, "status: done") || !strings.Contains(n.Body, "finished agy task") {
+		t.Fatalf("the second hand-back did not reach the caller: %+v", n)
+	}
+	r := agyRecords(dir)[0]
+	if !r.BadHandbackRejected || r.MCPError != "" {
+		t.Fatalf("bad hand-back: rejected %t, error %q", r.BadHandbackRejected, r.MCPError)
+	}
+	eventually(t, "agy ends after its hand-back", func() bool { return w.d.workerCount() == 0 })
 }
 
 func TestAgyWorkerHandbackFilesSnapshotOnce(t *testing.T) {
@@ -387,6 +413,42 @@ func TestAgyWorkerHandbackFilesAfterRestart(t *testing.T) {
 	if got := string(mustReadFile(t, path)); got != "agy file\n" {
 		t.Fatalf("recovered file = %q", got)
 	}
+}
+
+// A hand-back the tool call checked is not checked again after a restart: the
+// daemon sends the checked snapshot even when the original file is gone.
+func TestAgyCheckedHandbackSurvivesARestart(t *testing.T) {
+	set := shortSet
+	set.Idle, set.IdleNotice = time.Hour, time.Hour
+	w, dir, _ := startAgyNode(t, set)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:handback FAKE:filehandback FAKE:result-gate FAKE:exit", Isolation: protocol.IsolationWorktree})
+	wk := w.d.workerBySession(res.SessionID)
+	eventually(t, "Antigravity acknowledged handback", func() bool {
+		wk.agy.mu.Lock()
+		defer wk.agy.mu.Unlock()
+		return wk.agy.handback != nil
+	})
+	pid := agyRecords(dir)[0].PID
+	w.node.restartWith(func() {
+		if err := os.Remove(filepath.Join(res.Worktree, "agy-result.txt")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "result-release"), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+		eventually(t, "Antigravity result written during downtime", func() bool { return !alive(pid) })
+	}, true)
+	w.cli = cliClient(t, w.node)
+	n := w.waitNotice(t, 1)[0]
+	if n.From != res.SessionID || !strings.Contains(n.Body, "status: done") || !strings.Contains(n.Body, "finished agy task") {
+		t.Fatalf("the checked hand-back did not reach the caller: %+v", n)
+	}
+	path := filepath.Join(w.cfg.StateDir, "inbox", w.ownerID(), n.ID, "agy-result.txt")
+	eventually(t, "the checked snapshot was delivered", func() bool {
+		b, err := os.ReadFile(path)
+		return err == nil && string(b) == "agy file\n"
+	})
+	eventually(t, "agy ends after its hand-back", func() bool { return w.d.workerCount() == 0 })
 }
 
 func startAgyNode(t *testing.T, set WorkerSettings, opts ...func(*Config)) (*workerNode, string, string) {
@@ -894,23 +956,6 @@ func addDirs(args []string) []string {
 		}
 	}
 	return out
-}
-
-func TestAgyWorkerReadOnly(t *testing.T) {
-	t.Parallel()
-	w, dir, repo := startAgyNode(t, shortSet)
-	setWorkersLevel(t, w, repo, protocol.WorkersReadOnly)
-	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:handback"})
-	w.waitNotice(t, 1)
-	r := agyRecords(dir)[0]
-	if argValue(r.Args, "--mode") != "plan" || argValue(r.Args, "--settings") != `{"permissions":{"allow":["mcp(agent-net_agent-net/*)"]}}` {
-		t.Fatalf("read-only args: %v", r.Args)
-	}
-	for i, arg := range r.Args {
-		if arg == "--add-dir" && i+1 < len(r.Args) && strings.HasPrefix(r.Args[i+1], filepath.Join(repo, ".git")) {
-			t.Fatalf("read-only worker got a git folder: %v", r.Args[i+1])
-		}
-	}
 }
 
 // The same user cannot impersonate a worker conversation from another group.

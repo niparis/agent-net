@@ -5,20 +5,17 @@ package protocol
 // and a notice. The owner's delegation policy (per session or per project) was
 // removed on 2026-11-21, so the answer holds no delegation text.
 
-// Permission levels of unattended workers (decision 0020). The owner sets one
-// per project; the default is WorkersSandboxed.
-const (
-	WorkersSandboxed = "sandboxed"  // writes only in the worktree, the temp folder and the main repository's git dir; network on
-	WorkersNoNetwork = "no-network" // the same writes, network off
-	WorkersReadOnly  = "read-only"  // no writes at all; network on
-)
+// Permission level of unattended workers (decision 0020). The owner sets it per
+// project; sandboxed is the only level.
+const WorkersSandboxed = "sandboxed" // writes only in the worktree, the temp folder and the main repository's git dir; network on
 
-// WorkersLevels lists the levels in the order a form shows them.
-var WorkersLevels = []string{WorkersSandboxed, WorkersNoNetwork, WorkersReadOnly}
+// WorkersLevels lists the levels a form shows.
+var WorkersLevels = []string{WorkersSandboxed}
 
-// WorkerPermissionsOrDefault maps "" (unset, or an older record) to the default.
+// WorkerPermissionsOrDefault maps "" and a level retired from an older record
+// to the default.
 func WorkerPermissionsOrDefault(s string) string {
-	if s == "" {
+	if s != WorkersSandboxed {
 		return WorkersSandboxed
 	}
 	return s

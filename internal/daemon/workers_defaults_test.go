@@ -50,12 +50,12 @@ func TestWorkerSandboxFollowsTheNodesMaturity(t *testing.T) {
 	if err := st.SetCharter("shop", "maturity", "mature", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetNodeSetting("shop", protocol.SettingWorkerSandbox, protocol.WorkersReadOnly, "owner"); err != nil {
+	if err := st.SetNodeSetting("shop", protocol.SettingWorkerSandbox, protocol.WorkersSandboxed, "owner"); err != nil {
 		t.Fatal(err)
 	}
 	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
-	if res.Permissions != protocol.WorkersReadOnly {
-		t.Fatalf("the worker got %q, want the node's override %q", res.Permissions, protocol.WorkersReadOnly)
+	if res.Permissions != protocol.WorkersSandboxed {
+		t.Fatalf("the worker got %q, want the node's setting %q", res.Permissions, protocol.WorkersSandboxed)
 	}
 }
 

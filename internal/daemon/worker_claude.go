@@ -251,30 +251,16 @@ func (d *Daemon) claudeWorkerSettings(w *worker, env map[string]string) map[stri
 // blockWritesOutsideWorkingDirectories refuses Write, Edit and NotebookEdit
 // outside the session's working directory in every permission mode, and no
 // allow rule lifts it (Claude Code 2.1.314). The worker's working directory is
-// its own worktree. A read-only worker also gets a deny rule for the worktree
-// itself, since the block above permits writes inside it.
+// its own worktree.
 //
 // A sandboxed Bash command starts with no allowed host and nobody can answer
 // its prompt in a background session, so the allow rule pre-allows every host
-// for the sandbox (Claude Code 2.1.186). The no-network level leaves it out.
+// for the sandbox (Claude Code 2.1.186).
 func claudeWorkerPermissions(level, dir string) map[string]any {
-	rules := map[string]any{"blockWritesOutsideWorkingDirectories": true}
-	if level == protocol.WorkersReadOnly {
-		rules["deny"] = []string{claudeWriteRule(dir)}
-		rules["allow"] = []string{"WebFetch(domain:*)"}
-		return rules
+	return map[string]any{
+		"blockWritesOutsideWorkingDirectories": true,
+		"allow":                                []string{"WebFetch(domain:*)"},
 	}
-	if level == protocol.WorkersNoNetwork {
-		return rules
-	}
-	rules["allow"] = []string{"WebFetch(domain:*)"}
-	return rules
-}
-
-// claudeWriteRule is the permission rule that matches every file write below
-// dir. Permission rules use "//" for an absolute path.
-func claudeWriteRule(dir string) string {
-	return "Edit(//" + strings.TrimPrefix(filepath.ToSlash(filepath.Clean(dir)), "/") + "/**)"
 }
 
 // claudeWorkerWrites is the writable folders a Claude worker needs beyond its
@@ -321,16 +307,10 @@ func (d *Daemon) prepareClaudeWorkerWrites(w *worker) {
 // them still gets a worker with the file-tool boundary; a worker never starts
 // with the file-tool boundary missing.
 func claudeWorkerSandbox(level, dir string, writes []string) map[string]any {
-	files := map[string]any{}
-	if level == protocol.WorkersReadOnly {
-		files["denyWrite"] = []string{dir}
-	} else {
-		files["allowWrite"] = writes
-	}
 	return map[string]any{
 		"enabled":                  true,
 		"allowUnsandboxedCommands": false,
-		"filesystem":               files,
+		"filesystem":               map[string]any{"allowWrite": writes},
 	}
 }
 

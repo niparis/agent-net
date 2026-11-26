@@ -60,6 +60,6 @@ func (g *Gateway) pickInputs(node *protocol.NodeView, onlyHarness string) (picke
 }
 
 // candidates builds the roster of this pick from the loaded inputs.
-func (in pickerInputs) candidates(g *Gateway, facts *candidateFacts, roster *notStartedRoster, node *protocol.NodeView, readOnly bool) ([]protocol.WorkerModelCandidate, []string, map[string]string, error) {
-	return g.workerModelCandidatesWith(facts, roster, node, in.profiles, in.providers, in.quotas, in.onlyHarness, readOnly, in.protected)
+func (in pickerInputs) candidates(g *Gateway, facts *candidateFacts, roster *notStartedRoster, node *protocol.NodeView) ([]protocol.WorkerModelCandidate, []string, map[string]string, error) {
+	return g.workerModelCandidatesWith(facts, roster, node, in.profiles, in.providers, in.quotas, in.onlyHarness)
 }

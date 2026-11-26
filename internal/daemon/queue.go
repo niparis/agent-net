@@ -31,10 +31,6 @@ func (d *Daemon) admitOrQueue(l protocol.WorkerLaunch) *protocol.WorkerLaunched 
 		d.reserveWorkerBaseLocked(l.Base)
 		return nil
 	}
-	// A short background phrasing task must not outlive its caller in the queue.
-	if l.RequireReadOnly {
-		return &protocol.WorkerLaunched{Reason: "no room for a read-only background worker"}
-	}
 	q := queuedFromLaunch(l, queueIDFor(l))
 	if err := d.st.addQueued(q); err != nil {
 		// Without a queue the old behaviour is the safe one: refuse.

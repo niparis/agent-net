@@ -243,13 +243,10 @@ func nodeDefaults(maturity string, overrides map[string]string, snap settings.Sn
 			}
 		}
 	}
-	if level == MaturityCritical {
-		d.WorkerSandbox = WorkersNoNetwork
-	}
 	if carry && snap.WorkerSandboxCutover {
-		d.WorkerSandbox = snap.String("workers.sandbox_level", where)
+		d.WorkerSandbox = WorkerPermissionsOrDefault(snap.String("workers.sandbox_level", where))
 	} else if v := overrides[SettingWorkerSandbox]; v != "" && ValidateNodeSetting(SettingWorkerSandbox, v) == nil {
-		d.WorkerSandbox = v
+		d.WorkerSandbox = WorkerPermissionsOrDefault(v)
 	}
 	if carry {
 		d.recipe = &snap
@@ -333,7 +330,7 @@ func ValidateNodeSetting(setting, value string) error {
 	var allowed []string
 	keys := map[string]string{SettingTestsBeforeMerge: "delivery.tests_before_merge", SettingMergeAuthority: "delivery.merge_authority", SettingJudgeConsumers: "charter.judge_consumers", SettingDeployRule: "delivery.deploy_rule", SettingAutonomy: "charter.autonomy_mode", SettingWakeOnMessage: "charter.wake_on_message"}
 	if setting == SettingWorkerSandbox {
-		allowed = []string{WorkersSandboxed, WorkersNoNetwork, WorkersReadOnly}
+		allowed = []string{WorkersSandboxed}
 	} else if key, ok := keys[setting]; ok {
 		d, _ := settings.DefinitionFor(key)
 		allowed = d.Values

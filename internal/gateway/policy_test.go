@@ -50,22 +50,14 @@ func TestWorkerPermissionsAreAProjectSetting(t *testing.T) {
 	if got := level("cogforge"); got != protocol.WorkersSandboxed {
 		t.Fatalf("default level %q", got)
 	}
-	for _, l := range []string{protocol.WorkersNoNetwork, protocol.WorkersReadOnly, protocol.WorkersSandboxed} {
-		if err := s.SetNodeSetting("cogforge", protocol.SettingWorkerSandbox, l, "owner"); err != nil {
-			t.Fatalf("set %s: %v", l, err)
-		}
-		if got := level("CogForge"); got != l {
-			t.Errorf("level %q, want %q", got, l)
-		}
-	}
 	// The repo value applies on every machine; another project keeps the default.
-	if err := s.SetNodeSetting("cogforge", protocol.SettingWorkerSandbox, protocol.WorkersReadOnly, "owner"); err != nil {
+	if err := s.SetNodeSetting("cogforge", protocol.SettingWorkerSandbox, protocol.WorkersSandboxed, "owner"); err != nil {
 		t.Fatal(err)
 	}
 	if got := level("other"); got != protocol.WorkersSandboxed {
 		t.Errorf("another project got %q", got)
 	}
-	if got, _ := s.WorkerPermissions("n_elsewhere", "cogforge"); got != protocol.WorkersReadOnly {
+	if got, _ := s.WorkerPermissions("n_elsewhere", "cogforge"); got != protocol.WorkersSandboxed {
 		t.Errorf("another machine got %q", got)
 	}
 	ps, err := s.Projects("cogforge")
@@ -73,7 +65,7 @@ func TestWorkerPermissionsAreAProjectSetting(t *testing.T) {
 		t.Fatalf("projects: %v %v", ps, err)
 	}
 	for _, p := range ps {
-		if p.NodeID == node && p.Permissions != protocol.WorkersReadOnly {
+		if p.NodeID == node && p.Permissions != protocol.WorkersSandboxed {
 			t.Errorf("project level: %+v", p)
 		}
 	}

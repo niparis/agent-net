@@ -14,6 +14,14 @@ import (
 
 const workerSandboxKey = "workers.sandbox_level"
 
+// The two levels retired on 2026-11-26. The cutover migration still reads them
+// from rows that an older daemon wrote, so it can keep a machine's old policy.
+// Nothing writes them now.
+const (
+	legacyWorkersNoNetwork = "no-network"
+	legacyWorkersReadOnly  = "read-only"
+)
+
 // workerProjectNamesTx follows Graph's node discovery, including its filtering
 // of implicit projects, without opening another connection during a migration.
 func workerProjectNamesTx(tx *sql.Tx) (map[string][]string, error) {
@@ -93,7 +101,16 @@ func legacyNodeWorkerSandboxTx(tx *sql.Tx, project string) (string, error) {
 	if err != nil && err != sql.ErrNoRows {
 		return "", err
 	}
-	return protocol.NodeDefaults(maturity, map[string]string{protocol.SettingWorkerSandbox: value}).WorkerSandbox, nil
+	// The shipped cutover must read the levels as they were when it ran. The
+	// retired values are kept for this legacy path only.
+	switch value {
+	case legacyWorkersNoNetwork, legacyWorkersReadOnly, protocol.WorkersSandboxed:
+		return value, nil
+	}
+	if maturity == protocol.MaturityCritical {
+		return legacyWorkersNoNetwork, nil
+	}
+	return protocol.WorkersSandboxed, nil
 }
 
 type legacyWorkerPolicy struct {
@@ -112,7 +129,7 @@ func (s *Store) cutoverWorkerSandboxTx(tx *sql.Tx) error {
 	if err != nil {
 		return err
 	}
-	rank := map[string]int{protocol.WorkersSandboxed: 1, protocol.WorkersNoNetwork: 2, protocol.WorkersReadOnly: 3}
+	rank := map[string]int{protocol.WorkersSandboxed: 1, legacyWorkersNoNetwork: 2, legacyWorkersReadOnly: 3}
 	strictest := func(a, b string) string {
 		if rank[b] > rank[a] {
 			return b

@@ -43,11 +43,6 @@ func TestBwrapArgs(t *testing.T) {
 		"--chdir", "/wt",
 		"--", "/bin/pi", "--mode", "rpc",
 	}
-	noNet := base
-	noNet.Network = false
-	readOnly := base
-	readOnly.Writable = []string{"/state/workers/w_1/pi-agent"}
-	readOnly.ReadOnly = []mountPair{{Src: "/home/u/.pi/agent/extensions", Dst: "/state/workers/w_1/pi-agent/extensions"}}
 	minimal := osSandboxPolicy{Network: true, Tmp: "/s/tmp", Dir: "/wt"}
 
 	for _, tc := range []struct {
@@ -56,21 +51,6 @@ func TestBwrapArgs(t *testing.T) {
 		want []string
 	}{
 		{"sandboxed", base, sandboxed},
-		{"no-network unshares the network", noNet, append([]string{"--unshare-all"}, sandboxed[2:]...)},
-		{"read-only binds only private state", readOnly, []string{
-			"--unshare-all", "--share-net",
-			"--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
-			"--tmpfs", "/run/user/1000",
-			"--bind", "/state/workers/w_1/tmp", "/tmp",
-			"--ro-bind", "/dev/null", "/run/docker.sock",
-			"--ro-bind", "/state/workers/w_1", "/state/workers/w_1",
-			"--ro-bind", "/repo/.git", "/repo/.git",
-			"--bind", "/state/workers/w_1/pi-agent", "/state/workers/w_1/pi-agent",
-			"--ro-bind", "/home/u/.pi/agent/extensions", "/state/workers/w_1/pi-agent/extensions",
-			"--bind", "/run/user/1000/agent-net/sock", "/run/user/1000/agent-net/sock",
-			"--chdir", "/wt",
-			"--", "/bin/pi", "--mode", "rpc",
-		}},
 		{"minimal", minimal, []string{
 			"--unshare-all", "--share-net",
 			"--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
@@ -95,8 +75,8 @@ func TestBwrapArgs(t *testing.T) {
 	}
 }
 
-// The policy level decides what is writable: read-only drops the worktree and
-// the git folders, and keeps the harness's own private state.
+// The policy says what is writable: the worktree, the git folders and the
+// harness's own private state.
 func TestOSSandboxPolicyLevels(t *testing.T) {
 	in := osSandboxInput{
 		Level: protocol.WorkersSandboxed, WorkerDir: "/s/w_1", Path: "/wt", DotGit: "/wt/.git",
@@ -119,22 +99,8 @@ func TestOSSandboxPolicyLevels(t *testing.T) {
 		t.Fatalf("read-only %q, want %q", p.ReadOnly, want)
 	}
 
-	in.Level = protocol.WorkersReadOnly
-	p = buildOSSandboxPolicy(in)
-	if want := []string{"/s/w_1/data"}; !slices.Equal(p.Writable, want) || !p.Network {
-		t.Fatalf("read-only level: writable %q network %v, want %q and on", p.Writable, p.Network, want)
-	}
-	if want := []string{"/s/w_1", "/repo/.git", "/wt"}; !slices.Equal(p.Visible, want) {
-		t.Fatalf("read-only level: visible %q, want %q (the real tree, read-only)", p.Visible, want)
-	}
-
-	in.Level = protocol.WorkersNoNetwork
-	if p = buildOSSandboxPolicy(in); p.Network {
-		t.Fatal("no-network level keeps the network")
-	}
-
 	// A harness binary in a hidden folder (a test binary in /tmp) stays visible.
-	in.Level, in.Bin = protocol.WorkersSandboxed, "/tmp/go-build1/daemon.test"
+	in.Bin = "/tmp/go-build1/daemon.test"
 	if p = buildOSSandboxPolicy(in); !slices.Contains(p.Visible, in.Bin) {
 		t.Fatalf("a harness in /tmp is not bound back: %q", p.Visible)
 	}
@@ -207,21 +173,17 @@ func TestOSSandboxDecide(t *testing.T) {
 		refuse  string
 	}{
 		{"turned off", osSandboxOff, "pi", "", missing, "", ""},
-		{"turned off, no-network", osSandboxOff, "opencode", protocol.WorkersNoNetwork, missing, "", ""},
 		{"default pi", osSandboxDefault, "pi", "", ready, osSandboxName, ""},
 		{"default opencode", osSandboxDefault, "opencode", protocol.WorkersSandboxed, ready, osSandboxName, ""},
-		{"default read-only", osSandboxDefault, "opencode", protocol.WorkersReadOnly, ready, osSandboxName, ""},
 		{"default claude runs on its own sandbox", osSandboxDefault, "claude", "", missing, "", ""},
 		{"default codex", osSandboxDefault, "codex", "", missing, "", ""},
 		{"default agy", osSandboxDefault, "agy", "", missing, "", ""},
 		{"default unknown harness", osSandboxDefault, "other", "", missing, "", ""},
 		{"default tool missing", osSandboxDefault, "pi", "", missing, "", "not installed"},
-		{"default no-network", osSandboxDefault, "opencode", protocol.WorkersNoNetwork, ready, "", "cut its connection to its model"},
 		{"listed pi", osSandboxExplicit, "pi", "", ready, osSandboxName, ""},
-		{"listed codex keeps its own", osSandboxExplicit, "codex", protocol.WorkersNoNetwork, missing, "", ""},
+		{"listed codex keeps its own", osSandboxExplicit, "codex", "", missing, "", ""},
 		{"listed agy keeps its own", osSandboxExplicit, "agy", "", missing, "", ""},
 		{"listed claude refused", osSandboxExplicit, "claude", "", ready, "", "Claude Code's own background service"},
-		{"listed no-network refused", osSandboxExplicit, "opencode", protocol.WorkersNoNetwork, ready, "", "cut its connection to its model"},
 		{"listed tool missing refused", osSandboxExplicit, "pi", "", missing, "", "not installed"},
 		{"listed unknown harness refused", osSandboxExplicit, "other", "", ready, "", "cannot wrap"},
 	} {
@@ -390,11 +352,6 @@ func TestSeatbeltProfile(t *testing.T) {
 		t.Error("the read-only .git is denied before the worktree is allowed, so the allow wins")
 	}
 
-	// read-only: the worktree is not writable, the private state still is.
-	ro := seatbeltProfile(buildOSSandboxPolicy(osSandboxInput{Level: protocol.WorkersReadOnly, WorkerDir: "/state/workers/w_1", Path: "/work/wt", State: []string{"/state/workers/w_1/data"}}))
-	if strings.Contains(ro, `(subpath "/work/wt")`) || !strings.Contains(ro, `(subpath "/state/workers/w_1/data")`) {
-		t.Errorf("read-only profile:\n%s", ro)
-	}
 	// a quote in a path cannot end the string early
 	q := seatbeltProfile(osSandboxPolicy{Network: true, Writable: []string{`/a"b) (allow default`}})
 	if !strings.Contains(q, `(subpath "/a\"b) (allow default")`) {
@@ -423,7 +380,7 @@ func TestOSSandboxDefaultOffWhereTheOSHasNoDefault(t *testing.T) {
 		refuse  bool
 	}{
 		{"default pi", osSandboxDefault, "pi", "", never, protocol.OSSandboxNoneMacOS, false},
-		{"default opencode no-network", osSandboxDefault, "opencode", protocol.WorkersNoNetwork, never, protocol.OSSandboxNoneMacOS, false},
+		{"default opencode", osSandboxDefault, "opencode", protocol.WorkersSandboxed, never, protocol.OSSandboxNoneMacOS, false},
 		{"default claude", osSandboxDefault, "claude", "", never, "", false},
 		{"default codex", osSandboxDefault, "codex", "", never, "", false},
 		{"listed pi wraps", osSandboxExplicit, "pi", "", ok, osSandboxName, false},

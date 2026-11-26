@@ -87,11 +87,7 @@ handback uses the normal idle notice and automatic continue limits. A failed
 result, an early finish reason, denied tools or an error exit marks the worker
 failed. Stop closes stdin, waits briefly, then stops the whole process group.
 
-Read-only workers use `--mode plan --sandbox`, with only
-`mcp(agent-net_agent-net/*)` in the allow list. They get no command allow rule.
-The no-network project level is not enforced for agy.
-
-A writable worker also receives `--add-dir` for its worktree's private git
+A worker also receives `--add-dir` for its worktree's private git
 folder and the main repository git folder's `objects`, `refs` and `logs`. This
 is the same narrow set a Codex worker gets. In a linked worktree the `.git`
 file points at the main git folder that the sandbox otherwise hides, so without

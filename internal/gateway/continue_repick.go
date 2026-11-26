@@ -42,7 +42,7 @@ func (g *Gateway) repickContinue(node *protocol.NodeView, a *protocol.WorkerAsse
 	}
 	level := protocol.WorkerLevel(a)
 	reads := &candidateFacts{}
-	candidates, _, _, err := in.candidates(g, reads, nil, node, false)
+	candidates, _, _, err := in.candidates(g, reads, nil, node)
 	if err != nil {
 		return kept, err
 	}

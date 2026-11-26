@@ -87,7 +87,7 @@ func TestLoaderStrict(t *testing.T) {
 		"bad level type":       strings.Replace(base, "levels: [network, repo]", "levels: [true, repo]", 1),
 		"bad description type": strings.Replace(base, "description: How far a worker's permissions are limited.", "description: true", 1),
 		"duplicate definition": strings.Replace(base, "key: delivery.merge_authority", "key: workers.sandbox_level", 1),
-		"bad maturity":         strings.Replace(base, "critical: no-network", "critical: 12", 1),
+		"bad maturity":         strings.Replace(base, "critical: ask", "critical: 12", 1),
 		"duplicate":            strings.Replace(base, "format: 1", "format: 1\nformat: 1", 1),
 		"type":                 strings.Replace(base, "default: sandboxed", "default: true", 1),
 		"stricter":             strings.Replace(base, "stricter: false\n", "", 1),
@@ -147,17 +147,12 @@ func TestCodecAndStricter(t *testing.T) {
 func TestResolveSources(t *testing.T) {
 	s := Snapshot{Revision: 4, Maturity: map[string]string{"r": "critical"}}
 	e, _ := s.Resolve("workers.sandbox_level", Where{Repo: "r"})
-	if string(e.Value) != `"no-network"` || e.Source != "repo r, maturity critical" {
+	if string(e.Value) != `"sandboxed"` || e.Source != "network default" {
 		t.Fatal(e)
 	}
 	s.Values = []Value{{Key: "workers.sandbox_level", Level: "repo", Scope: "r", Value: raw(`"sandboxed"`)}}
 	e, _ = s.Resolve("workers.sandbox_level", Where{Repo: "r"})
 	if string(e.Value) != `"sandboxed"` || e.Source != "repo r" {
-		t.Fatal(e)
-	}
-	s.Values = append(s.Values, Value{Key: "workers.sandbox_level", Level: "network", Scope: "network", Value: raw(`"read-only"`)})
-	e, _ = s.Resolve("workers.sandbox_level", Where{Repo: "r"})
-	if string(e.Value) != `"read-only"` || e.Source != "network" || !e.Raised || e.Revision != 4 {
 		t.Fatal(e)
 	}
 	s.Values = []Value{{Key: "workers.auto_continue", Level: "network", Scope: "network", Value: raw("false")}}

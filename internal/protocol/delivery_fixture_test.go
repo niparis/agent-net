@@ -15,7 +15,7 @@ func deliveryFixture() []byte {
 	out := map[string]any{}
 	choices := map[string][]string{
 		"none": {""}, SettingTestsBeforeMerge: {"optional", "suite", "suite-new-tests", "suite-new-tests-review"},
-		SettingMergeAuthority: {"full", "delegated", "ask"}, SettingWorkerSandbox: {"sandboxed", "no-network", "read-only"},
+		SettingMergeAuthority: {"full", "delegated", "ask"}, SettingWorkerSandbox: {"sandboxed"},
 		SettingJudgeConsumers: {"free", "charter", "strict", "escalate"}, SettingDeployRule: {"brief", "ask", "owner"}, SettingAutonomy: {"off", "wake"},
 	}
 	for _, maturity := range []string{"", "early", "growing", "mature", "critical"} {

@@ -37,7 +37,7 @@ func TestCandidatesLeaveOutModelsTheMachineDoesNotList(t *testing.T) {
 	g := &Gateway{store: s}
 	n, profiles := unavailableNode()
 	roster := newNotStartedRoster()
-	candidates, skipped, _, err := g.workerModelCandidatesWith(&candidateFacts{}, roster, n, profiles, bothProviders, nil, "", false, protocol.ProtectedProviders{})
+	candidates, skipped, _, err := g.workerModelCandidatesWith(&candidateFacts{}, roster, n, profiles, bothProviders, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestCandidatesLeaveOutAModelThatFailedAtLaunchUntilTheNextInventory(t *test
 	n, profiles := unavailableNode()
 	n.Harnesses[0].Models = append(n.Harnesses[0].Models, "alibaba-token-plan/deepseek-v4.1-flash-1017")
 	s.markModelUnavailable(n.NodeID, "opencode", "alibaba-token-plan/deepseek-v4.1-flash-1017:high", "Model unavailable: alibaba-token-plan/deepseek-v4.1-flash-1017")
-	candidates, _, _, err := g.workerModelCandidates(n, profiles, bothProviders, nil, "", false, protocol.ProtectedProviders{})
+	candidates, _, _, err := g.workerModelCandidates(n, profiles, bothProviders, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestCandidatesLeaveOutAModelThatFailedAtLaunchUntilTheNextInventory(t *test
 		t.Fatalf("candidates after the mark = %v", got)
 	}
 	s.clearModelsUnavailable(n.NodeID)
-	candidates, _, _, err = g.workerModelCandidates(n, profiles, bothProviders, nil, "", false, protocol.ProtectedProviders{})
+	candidates, _, _, err = g.workerModelCandidates(n, profiles, bothProviders, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestCandidatesLeaveOutAModelThatFailedAtLaunchUntilTheNextInventory(t *test
 func TestModelUnavailableReportMarksTheModelAndTracksANewStart(t *testing.T) {
 	s, _ := newTestStore(t)
 	g := &Gateway{store: s}
-	if err := s.trackWorkerStart("q-old", "n-new", "s-owner", "demo", "opencode", protocol.WorkersReadOnly, []string{"tests pass"}); err != nil {
+	if err := s.trackWorkerStart("q-old", "n-new", "s-owner", "demo", "opencode", protocol.WorkersSandboxed, []string{"tests pass"}); err != nil {
 		t.Fatal(err)
 	}
 	nc := &nodeConn{id: "n-new"}
@@ -98,7 +98,7 @@ func TestModelUnavailableReportMarksTheModelAndTracksANewStart(t *testing.T) {
 		t.Fatal("the model is not marked unavailable on the machine")
 	}
 	project, perms, done, err := s.startFacts(answer.Ref)
-	if err != nil || project != "demo" || perms != protocol.WorkersReadOnly || !reflect.DeepEqual(done, []string{"tests pass"}) {
+	if err != nil || project != "demo" || perms != protocol.WorkersSandboxed || !reflect.DeepEqual(done, []string{"tests pass"}) {
 		t.Fatalf("new start = %q %q %v %v", project, perms, done, err)
 	}
 	if err := s.verifyRecheckStart("n-new", answer.Ref, "s-owner"); err != nil {

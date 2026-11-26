@@ -23,7 +23,7 @@ func TestMaturityDefaultsTable(t *testing.T) {
 			WorkerSandbox: WorkersSandboxed, JudgeConsumers: JudgeStrict, DeployRule: DeployAsk}},
 		{"critical", MaturityDefaults{
 			Level: MaturityCritical, TestsBeforeMerge: TestsSuiteNewTestsReview, MergeAuthority: MergeAsk,
-			WorkerSandbox: WorkersNoNetwork, JudgeConsumers: JudgeEscalate, DeployRule: DeployOwner}},
+			WorkerSandbox: WorkersSandboxed, JudgeConsumers: JudgeEscalate, DeployRule: DeployOwner}},
 	}
 	for _, tc := range tests {
 		if got := DefaultsForMaturity(tc.value); !reflect.DeepEqual(got, tc.want) {
@@ -35,14 +35,14 @@ func TestMaturityDefaultsTable(t *testing.T) {
 func TestMaturityDefaultsOverrides(t *testing.T) {
 	d := DefaultsForMaturity("mature").Apply(map[string]string{
 		SettingMergeAuthority:   MergeAsk,
-		SettingWorkerSandbox:    WorkersReadOnly,
+		SettingWorkerSandbox:    WorkersSandboxed,
 		SettingTestsBeforeMerge: TestsOptional,
 		SettingJudgeConsumers:   JudgeFree,
 		SettingDeployRule:       DeployOwner,
 		"not_a_setting":         "ignored",
 	})
 	want := MaturityDefaults{Level: MaturityMature, TestsBeforeMerge: TestsOptional, MergeAuthority: MergeAsk,
-		WorkerSandbox: WorkersReadOnly, JudgeConsumers: JudgeFree, DeployRule: DeployOwner}
+		WorkerSandbox: WorkersSandboxed, JudgeConsumers: JudgeFree, DeployRule: DeployOwner}
 	if !reflect.DeepEqual(d, want) {
 		t.Fatalf("overrides: %#v, want %#v", d, want)
 	}

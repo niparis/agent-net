@@ -204,7 +204,7 @@ func TestDeliveryAdaptersMatchMaturityFixtures(t *testing.T) {
 	choices := map[string][]string{
 		protocol.SettingTestsBeforeMerge: {"optional", "suite", "suite-new-tests", "suite-new-tests-review"},
 		protocol.SettingMergeAuthority:   {"full", "delegated", "ask"},
-		protocol.SettingWorkerSandbox:    {"sandboxed", "no-network", "read-only"},
+		protocol.SettingWorkerSandbox:    {"sandboxed"},
 		protocol.SettingJudgeConsumers:   {"free", "charter", "strict", "escalate"},
 		protocol.SettingDeployRule:       {"brief", "ask", "owner"},
 		protocol.SettingAutonomy:         {"off", "wake"},

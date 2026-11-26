@@ -16,7 +16,7 @@ import (
 // harnessChoice is the harness workerHarnessOrder picks first, as the start
 // uses it, and the error when no harness lists the model.
 func harnessChoice(g *Gateway, node *protocol.NodeView, model string) (string, error) {
-	order, _, err := g.workerHarnessOrder(node, model, false, nil)
+	order, _, err := g.workerHarnessOrder(node, model, nil)
 	if err != nil {
 		return "", err
 	}

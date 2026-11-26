@@ -317,8 +317,8 @@ type WorkerInfo struct {
 	// The gateway keeps it with the run to price it (decision 0161).
 	Usage *RunTokens `json:"usage,omitempty"`
 	// Permissions is the level the worker was started with (decision 0020):
-	// sandboxed, no-network or read-only. Codex, Antigravity and Claude
-	// workers apply it with their own sandbox.
+	// sandboxed. Codex, Antigravity and Claude workers apply it with their own
+	// sandbox.
 	Permissions string `json:"permissions,omitempty"`
 	// OSSandbox is the OS wrapper the worker runs in ("bubblewrap"), or ""
 	// (docs/design/worker-os-sandbox.md).
@@ -356,9 +356,6 @@ type (
 		// fields in the owner's own words (selection owner_words). A model
 		// the owner names this way runs even when he paused it (decision 0188).
 		OwnerSelected bool `json:"owner_selected,omitempty"`
-		// RequireReadOnly restricts automatic background tasks to a harness
-		// and daemon that enforce read-only project access.
-		RequireReadOnly bool `json:"require_read_only,omitempty"`
 		WorkerStartRequest
 		// Owner is the caller's session ID. The gateway checks it belongs to
 		// the sending node.
@@ -381,8 +378,7 @@ type (
 		// start keeps its model unless the gate refuses it now (decision 0162).
 		Recheck string `json:"recheck,omitempty"`
 		// Level is an internal caller's fixed level, used when there is no
-		// assessment (for example the read-only phrasing worker). A caller
-		// sends no difficulty; the judge sets the label.
+		// assessment. A caller sends no difficulty; the judge sets the label.
 		Level string `json:"level,omitempty"`
 		// Precheck is set by the gateway for "worker.precheck": the checks that
 		// need no judge run, nothing starts. A caller never sets it.
@@ -478,9 +474,8 @@ type (
 		// StartRef is the reference the gateway tracks this start under. A
 		// queued start uses it as its queue ID, and a machine names it when it
 		// reports that the start never became a worker.
-		StartRef        string `json:"start_ref,omitempty"`
-		FromCTO         bool   `json:"sender_cto,omitempty"`
-		RequireReadOnly bool   `json:"require_read_only,omitempty"`
+		StartRef string `json:"start_ref,omitempty"`
+		FromCTO  bool   `json:"sender_cto,omitempty"`
 		// Automatic is true when the gateway chose this model itself. A queued
 		// automatic start passes the gate again when it leaves the queue
 		// (decision 0162).
@@ -757,10 +752,6 @@ func WorkerHarnessSupported(h string) bool {
 	return false
 }
 
-// WorkerReadOnlySupported reports which worker adapters enforce read-only
-// access. Other adapters currently treat permissions as guidance only.
-func WorkerReadOnlySupported(h string) bool { return h == "codex" || h == "agy" }
-
 // The default briefs remain available to callers that do not have a snapshot.
 var (
 	WorkerPreamble      = workerPreamble("", settings.Snapshot{}, "")
@@ -954,15 +945,15 @@ func OSSandboxWrapper(osSandbox string) string {
 
 // WorkerEnforcer names what enforces a worker's level: the OS sandbox the
 // worker runs in (osSandbox, such as "bubblewrap"), the harness's own sandbox
-// ("codex", or "agy" except for no-network), or "" when nothing does: a Pi or
-// OpenCode worker that the project's node.json took out of the OS sandbox.
+// ("codex", "claude" or "agy"), or "" when nothing does: a Pi or OpenCode
+// worker that the project's node.json took out of the OS sandbox.
 func WorkerEnforcer(level, harness, osSandbox string) string {
 	switch {
 	case OSSandboxWrapper(osSandbox) != "":
 		return osSandbox
 	case harness == "claude" && ClaudeSandboxMissing(osSandbox) != "":
 		return ""
-	case harness == "codex", harness == "claude", harness == "agy" && WorkerPermissionsOrDefault(level) != WorkersNoNetwork:
+	case harness == "codex", harness == "claude", harness == "agy":
 		return harness
 	}
 	return ""
@@ -1007,13 +998,8 @@ func WorkerEnforcedBy(level string) string {
 
 // WorkerEnforcedLine is the line of the policy screen that says what enforces
 // a workers level. Pi and OpenCode workers run in the OS sandbox by default
-// on Linux and macOS (decision 0171, phase 4b); no-network is refused for
-// them, so it is not listed.
+// on Linux and macOS (decision 0171, phase 4b).
 func WorkerEnforcedLine(level string) string {
-	text := "Enforced for " + WorkerEnforcedBy(level) + " only for now."
-	if WorkerPermissionsOrDefault(level) == WorkersNoNetwork {
-		return text
-	}
 	return "Enforced for " + WorkerEnforcedBy(level) + ", and for Pi and OpenCode (OS sandbox)."
 }
 
@@ -1026,14 +1012,7 @@ func WorkerPermissionsLine(level, harness, osSandbox string) string {
 		return "permissions: NOT sandboxed: Claude sandbox needs " + missing + ", install it on the worker's machine"
 	}
 	level = WorkerPermissionsOrDefault(level)
-	detail := "writes only in its worktree, network on"
-	switch level {
-	case WorkersNoNetwork:
-		detail = "writes only in its worktree, network off"
-	case WorkersReadOnly:
-		detail = "no writes"
-	}
-	text := "permissions: " + level + " (" + detail + ")"
+	text := "permissions: " + level + " (writes only in its worktree, network on)"
 	switch {
 	case OSSandboxWrapper(osSandbox) != "":
 		text += " (sandboxed by " + osSandbox + ")"
@@ -1056,15 +1035,8 @@ func WorkerTaskBodyBriefBar(harness string, brief WorkerBrief, worktree, branch,
 		b += "\n- " + snap.String("delivery.worker_agy_commit_instruction", settings.Where{})
 	}
 	b += "\n- " + WorkerPermissionsLine(level, harness, osSandbox)
-	switch WorkerPermissionsOrDefault(level) {
-	case WorkersReadOnly:
-		b += ": you cannot write files; report findings only"
-	case WorkersNoNetwork:
-		b += ": no network: git fetch, package installs and web calls will fail"
-	default:
-		if OSSandboxWrapper(osSandbox) != "" {
-			b += ": writes outside your worktree and /tmp fail (read-only file system)"
-		}
+	if OSSandboxWrapper(osSandbox) != "" {
+		b += ": writes outside your worktree and /tmp fail (read-only file system)"
 	}
 	if worktree != "" {
 		b += "\n\nYou work in a git worktree of the project at " + worktree + " on the branch " + branch +

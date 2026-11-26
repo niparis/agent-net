@@ -94,10 +94,11 @@ settings:
     description: How far a worker's permissions are limited.
     kind: rule
     type: enum
+    # The two retired levels stay readable so the shipped sandbox cutover can
+    # read old rows. New starts always use sandboxed.
     values: [sandboxed, no-network, read-only]
     levels: [network, repo]
     default: sandboxed
-    by_maturity: {critical: no-network}
     live: true
   - key: delivery.merge_authority
     rows: [128]
