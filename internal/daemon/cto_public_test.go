@@ -271,6 +271,8 @@ func ctoWorkersFindParity(t *testing.T, g *testGateway, w *workerNode) {
 
 // withoutLastSeenAgo blanks the one field a read derives from the wall clock,
 // so two reads taken at different moments still compare on every other field.
+// It does the session and every item, because a read carries the same row in
+// both places.
 func withoutLastSeenAgo(t *testing.T, raw []byte) []byte {
 	t.Helper()
 	var out map[string]any
@@ -281,15 +283,54 @@ func withoutLastSeenAgo(t *testing.T, raw []byte) []byte {
 	if !ok {
 		t.Fatalf("read has no session object: %s", raw)
 	}
-	if ago, ok := session["last_seen_ago"].(string); !ok || ago == "" {
-		t.Fatalf("read has no last_seen_ago: %s", raw)
+	blankLastSeenAgo(t, session, "session", raw)
+	items, ok := out["items"].([]any)
+	if !ok {
+		t.Fatalf("read has no items array: %s", raw)
 	}
-	session["last_seen_ago"] = "derived"
+	for i, item := range items {
+		row, ok := item.(map[string]any)
+		if !ok {
+			t.Fatalf("read item %d is not an object: %s", i, raw)
+		}
+		blankLastSeenAgo(t, row, fmt.Sprintf("item %d", i), raw)
+	}
 	norm, err := json.Marshal(out)
 	if err != nil {
 		t.Fatalf("encode read: %v", err)
 	}
 	return norm
+}
+
+func blankLastSeenAgo(t *testing.T, row map[string]any, where string, raw []byte) {
+	t.Helper()
+	if ago, ok := row["last_seen_ago"].(string); !ok || ago == "" {
+		t.Fatalf("read has no last_seen_ago in %s: %s", where, raw)
+	}
+	row["last_seen_ago"] = "derived"
+}
+
+// TestWithoutLastSeenAgo pins the comparison helper itself: two reads that
+// differ only in a derived last_seen_ago must compare equal, and no other
+// field may be hidden.
+func TestWithoutLastSeenAgo(t *testing.T) {
+	read := func(itemAgos []string, name string) []byte {
+		items := make([]string, len(itemAgos))
+		for i, ago := range itemAgos {
+			items[i] = fmt.Sprintf(`{"id":"s%d","name":%q,"last_seen_ago":%q}`, i, name, ago)
+		}
+		return []byte(fmt.Sprintf(`{"items":[%s],"total":%d,"session":{"id":"s0","name":%q,"last_seen_ago":%q}}`,
+			strings.Join(items, ","), len(items), name, itemAgos[0]))
+	}
+	first := withoutLastSeenAgo(t, read([]string{"0s ago", "1s ago"}, "parity"))
+	second := withoutLastSeenAgo(t, read([]string{"1s ago", "2s ago"}, "parity"))
+	if string(first) != string(second) {
+		t.Fatalf("a read that differs only in last_seen_ago did not normalise:\n%s\n%s", first, second)
+	}
+	renamed := withoutLastSeenAgo(t, read([]string{"0s ago", "1s ago"}, "other"))
+	if string(first) == string(renamed) {
+		t.Fatal("normalisation hid a field other than last_seen_ago")
+	}
 }
 
 func TestCTOOutcomeCanary(t *testing.T) {
