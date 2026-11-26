@@ -47,6 +47,7 @@ const usage = `usage: agent-net <command>
   enroll     print a one-time join string (run on the gateway host)
   join       join this machine to a gateway: agent-net join <join-string>;
              on a machine that already joined: agent-net join --gateway URL
+  restart    restart this machine's daemon service; --gateway on the gateway machine also restarts the gateway
   daemon     run the per-machine daemon
   mcp        stdio MCP server for a Claude Code session; with a subcommand (add, list, test,
              remove, enable, disable) manages the MCP server registry
@@ -125,6 +126,8 @@ func run(ctx context.Context, argv []string, stderr io.Writer) int {
 		err = cmdEnroll(args)
 	case "join":
 		err = cmdJoin(ctx, args)
+	case "restart":
+		err = cmdRestart(args)
 	case "daemon":
 		err = cmdDaemon(ctx, args)
 	case "cto-mcp":

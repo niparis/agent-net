@@ -8,57 +8,70 @@ import (
 	"testing"
 )
 
-func TestRestartDaemonRunsTheServiceManager(t *testing.T) {
+func TestRestartServiceRunsTheServiceManager(t *testing.T) {
 	for _, c := range []struct {
-		platform, command, want string
+		service, platform, command, want string
 	}{
-		{"linux", "systemctl", "--user --no-block restart agent-net-daemon.service"},
-		{"darwin", "launchctl", fmt.Sprintf("kickstart -k gui/%d/com.agent-net.daemon", os.Getuid())},
+		{"daemon", "linux", "systemctl", "--user --no-block restart agent-net-daemon.service"},
+		{"daemon", "darwin", "launchctl", fmt.Sprintf("kickstart -k gui/%d/com.agent-net.daemon", os.Getuid())},
+		{"gateway", "linux", "systemctl", "--user --no-block restart agent-net-gateway.service"},
+		{"gateway", "darwin", "launchctl", fmt.Sprintf("kickstart -k gui/%d/com.agent-net.gateway", os.Getuid())},
 	} {
-		t.Run(c.platform, func(t *testing.T) {
-			dir := t.TempDir()
-			calls := filepath.Join(dir, "calls")
-			script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '" + calls + "'\n"
-			if err := os.WriteFile(filepath.Join(dir, c.command), []byte(script), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			t.Setenv("PATH", dir)
+		t.Run(c.service+"/"+c.platform, func(t *testing.T) {
+			calls := fakeServiceManager(t, c.command)
 			t.Setenv("AGENT_NET_NO_SERVICE", "")
-			note, err := restartDaemon(c.platform)
+			note, err := restartService(c.service, c.platform)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if note != "daemon restarted" {
+			if note != c.service+" restarted" {
 				t.Fatalf("note = %q", note)
 			}
-			raw, err := os.ReadFile(calls)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := strings.TrimSpace(string(raw)); got != c.want {
+			if got := readCalls(t, calls); got != c.want {
 				t.Fatalf("call = %q, want %q", got, c.want)
 			}
 		})
 	}
 }
 
-func TestRestartDaemonSkipsWithNoService(t *testing.T) {
+func TestRestartServiceSkipsWithNoService(t *testing.T) {
+	for _, service := range []string{"daemon", "gateway"} {
+		t.Run(service, func(t *testing.T) {
+			calls := fakeServiceManager(t, "systemctl")
+			t.Setenv("AGENT_NET_NO_SERVICE", "1")
+			note, err := restartService(service, "linux")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(note, service+" not restarted") || !strings.Contains(note, "AGENT_NET_NO_SERVICE") {
+				t.Fatalf("note = %q", note)
+			}
+			if _, err := os.Stat(calls); err == nil {
+				t.Fatal("ran the service command with AGENT_NET_NO_SERVICE=1")
+			}
+		})
+	}
+}
+
+// fakeServiceManager puts a command that records its arguments on PATH and
+// returns the file it writes them to.
+func fakeServiceManager(t *testing.T, command string) string {
+	t.Helper()
 	dir := t.TempDir()
 	calls := filepath.Join(dir, "calls")
 	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '" + calls + "'\n"
-	if err := os.WriteFile(filepath.Join(dir, "systemctl"), []byte(script), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, command), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir)
-	t.Setenv("AGENT_NET_NO_SERVICE", "1")
-	note, err := restartDaemon("linux")
+	return calls
+}
+
+func readCalls(t *testing.T, path string) string {
+	t.Helper()
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(note, "not restarted") || !strings.Contains(note, "AGENT_NET_NO_SERVICE") {
-		t.Fatalf("note = %q", note)
-	}
-	if _, err := os.Stat(calls); err == nil {
-		t.Fatal("ran the service command with AGENT_NET_NO_SERVICE=1")
-	}
+	return strings.TrimSpace(string(raw))
 }

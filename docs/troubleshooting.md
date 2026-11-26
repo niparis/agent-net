@@ -56,7 +56,7 @@ With `ssh -t ... herdr agent attach <pane>`, the session on the other machine re
 
 Press `e` from a machine that has herdr installed, on `PATH` or in `~/.local/bin/herdr`. agent-net then runs `herdr --remote <ssh-target>`, and herdr carries the clipboard and image paste between the machines. The note names the machine and the pane, because the client can open on another tab. Use `ctrl+b q` to detach.
 
-If the plan still uses ssh, the daemon did not find a herdr binary on this machine. Install herdr, or put it in `~/.local/bin`, and restart the daemon. The ssh target is the machine's name or its entry in `enter_ssh_hosts`, the same as for the ssh plan.
+If the plan still uses ssh, the daemon did not find a herdr binary on this machine. Install herdr, or put it in `~/.local/bin`, and run `agent-net restart`. The ssh target is the machine's name or its entry in `enter_ssh_hosts`, the same as for the ssh plan.
 
 ## `curl ... | sh` of an invite line printed nothing and exited 0
 
@@ -137,7 +137,7 @@ A worker that never answers may be waiting for a permission that nobody can give
 
 If a worker worktree fails because `git-lfs` is not found, install git-lfs in a
 directory on the login shell PATH, then run `agent-net setup` to refresh the
-daemon service environment. Restart the daemon to use the updated PATH.
+daemon service environment. Run `agent-net restart` to use the updated PATH.
 
 ## An agent has no agent_worker_start, or other tools are missing (old tools)
 
@@ -241,7 +241,7 @@ If the CTO box says "The CTO's Claude conversation was closed by Claude Code; st
 
 A worker start can say "claude is not installed on this machine" just after the daemon starts or after an upgrade. Detection runs `opencode models`, which takes seconds, so the harness list can still be empty when the start arrives. The daemon now looks the harness up itself in PATH, the usual install folders and the login shell PATH, and uses it when it runs. It also keeps a harness that an earlier detection run found when a later probe fails or times out. The entry is removed only when its binary is really gone.
 
-If the message stays, install the harness on that machine, or run `agent-net setup` so the service sees your login PATH, then restart the daemon.
+If the message stays, install the harness on that machine, or run `agent-net setup` so the service sees your login PATH, then run `agent-net restart`.
 
 ## Enter on the CTO seems to do nothing
 
@@ -256,7 +256,7 @@ this warning is active. Find the affected machine and version with
 
 Open a new Claude session. Check whether a Claude Code update changed or removed
 `messagingSocketPath`. If needed, return to a compatible Claude Code version.
-Restart the daemon to recheck immediately; regular harness inventory refreshes
+Run `agent-net restart` to recheck immediately; regular harness inventory refreshes
 and managed updates also recheck and clear the warning when an inbox works.
 No live sessions means unknown, not broken. The check only connects and sends
 no message, so a passing check cannot prove that Claude consumed a user frame.
