@@ -396,6 +396,10 @@ func startAgyNode(t *testing.T, set WorkerSettings, opts ...func(*Config)) (*wor
 	// scaled start budget as the other harness tests.
 	set.StartTimeout = scaled(30 * time.Second)
 	dir := t.TempDir()
+	// Run last: a daemon that stopped before its worker did no longer tracks
+	// the worker, so killAllWorkers cannot see it. Kill each fake agy group
+	// this test started, so no fake child outlives the test.
+	t.Cleanup(func() { killFakeAgyGroups(dir) })
 	bin := filepath.Join(dir, "agy")
 	script := "#!/bin/sh\nFAKE_AGY_RECORDS=" + shellQuote(dir) + " FAKE_AGY_PROCESS=1 exec " + shellQuote(os.Args[0]) + " -test.run '^TestAgyProcess$' -- \"$@\"\n"
 	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
@@ -412,6 +416,50 @@ func startAgyNode(t *testing.T, set WorkerSettings, opts ...func(*Config)) (*wor
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	return w, dir, repo
+}
+
+// killFakeAgyGroups kills the process group of every fake agy whose record is
+// in dir. The fake is the leader of its group, so its own children go too.
+func killFakeAgyGroups(dir string) {
+	for _, r := range agyRecords(dir) {
+		pgid := r.PGID
+		if pgid <= 1 {
+			pgid = r.PID
+		}
+		if pgid > 1 {
+			if alive(pgid) {
+				syscall.Kill(-pgid, syscall.SIGKILL)
+			}
+		}
+	}
+}
+
+// A fake agy process that a test forgets is killed by its process group.
+func TestAgyCleanupKillsTheFakeProcessGroup(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "agy")
+	script := "#!/bin/sh\nFAKE_AGY_RECORDS=" + shellQuote(dir) + " FAKE_AGY_PROCESS=1 exec " + shellQuote(os.Args[0]) + " -test.run '^TestAgyProcess$' -- \"$@\"\n"
+	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bin, "-p=", "--input-format", "stream-json", "--output-format", "stream-json")
+	cmd.Dir, cmd.Env = dir, os.Environ()
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		cmd.Wait()
+	})
+	var recs []fakeAgyRecord
+	eventually(t, "the fake agy wrote its record", func() bool {
+		recs = agyRecords(dir)
+		return len(recs) == 1
+	})
+	killFakeAgyGroups(dir)
+	eventually(t, "the fake agy process group is gone", func() bool { return !alive(recs[0].PID) })
 }
 
 func agyRecords(dir string) []fakeAgyRecord {
