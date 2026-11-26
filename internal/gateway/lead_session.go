@@ -13,7 +13,9 @@ import (
 // routing). The pin is agents.lead_session. Nothing else counts: another
 // session of the same Agent never leads. A lead_set that names an Agent pins
 // its one session, and asks the CTO which session leads when there are several.
-// A new session pins a lead Agent that had none.
+// Offline leftovers do not count against a single live session: when exactly
+// one session of the Agent is online, it is the one pinned. A new session pins
+// a lead Agent that had none.
 
 // leadSessionAskRef is the source key of the CTO question about an Agent's lead
 // session, so the same open question is updated rather than repeated.
@@ -22,13 +24,16 @@ const leadSessionAskRef = "lead_session:"
 // leadSessionRef is one session of a lead Agent, as the CTO question lists it.
 type leadSessionRef struct {
 	id, label string
+	online    bool
 }
 
 // leadSessionCandidatesQ lists the sessions that may be a lead session: not a
-// worker, not a merger, not archived, and not the owner, CTO or a bot.
+// worker, not a merger, not archived, and not the owner, CTO or a bot. Offline
+// sessions are listed too; online is set so the caller can tell them apart.
 func leadSessionCandidatesQ(q leadDB, agent string) ([]leadSessionRef, error) {
 	rows, err := q.Query(`SELECT s.id,
-		COALESCE(NULLIF(s.name,''),NULLIF(s.title,''),NULLIF(s.repo_project,''),s.id)
+		COALESCE(NULLIF(s.name,''),NULLIF(s.title,''),NULLIF(s.repo_project,''),s.id),
+		s.online=1
 		FROM sessions s
 		WHERE s.agent_id=? AND s.worker='' AND s.archived_at=0 AND s.replaced_by=''
 		AND s.harness NOT IN ('owner','cto','bot')
@@ -42,12 +47,30 @@ func leadSessionCandidatesQ(q leadDB, agent string) ([]leadSessionRef, error) {
 	var out []leadSessionRef
 	for rows.Next() {
 		var s leadSessionRef
-		if err := rows.Scan(&s.id, &s.label); err != nil {
+		if err := rows.Scan(&s.id, &s.label, &s.online); err != nil {
 			return nil, err
 		}
 		out = append(out, s)
 	}
 	return out, rows.Err()
+}
+
+// leadPinChoice returns the one session a pin takes. A lone candidate is that
+// session. Among several, exactly one online session is, and the offline
+// leftovers are ignored. Otherwise there is no choice and the CTO is asked.
+func leadPinChoice(sessions []leadSessionRef) (leadSessionRef, bool) {
+	if len(sessions) == 1 {
+		return sessions[0], true
+	}
+	var only leadSessionRef
+	online := 0
+	for _, s := range sessions {
+		if s.online {
+			only = s
+			online++
+		}
+	}
+	return only, online == 1
 }
 
 // agentLeadsAnythingQ says whether an Agent leads a Repo or an active Team, or
@@ -210,7 +233,7 @@ func (s *Store) pinFirstLeadSessionQ(q askDB, session string) error {
 	if err != nil || !leads {
 		return err
 	}
-	if len(sessions) == 1 && sessions[0].id == session {
+	if choice, ok := leadPinChoice(sessions); ok && choice.id == session {
 		if _, err = q.Exec(`UPDATE agents SET lead_session=? WHERE id=? AND COALESCE(lead_session,'')=''`, session, agent); err != nil {
 			return err
 		}
@@ -224,20 +247,20 @@ func (s *Store) pinFirstLeadSessionQ(q askDB, session string) error {
 }
 
 // pinOrAskLeadSessionTx runs after a lead_set that names an Agent. One session
-// is pinned. Several are not guessed at: the CTO is asked once which one leads.
+// is pinned: the only one, or the only online one. Several live sessions are
+// not guessed at: the CTO is asked once which one leads.
 func (s *Store) pinOrAskLeadSessionTx(tx *sql.Tx, agent string) error {
 	sessions, err := leadSessionCandidatesQ(tx, agent)
 	if err != nil {
 		return err
 	}
-	switch len(sessions) {
-	case 0:
+	if len(sessions) == 0 {
 		return nil
-	case 1:
-		return s.setAgentLeadSessionTx(tx, agent, sessions[0].id)
-	default:
-		return s.askWhichLeadSessionQ(tx, agent, sessions)
 	}
+	if choice, ok := leadPinChoice(sessions); ok {
+		return s.setAgentLeadSessionTx(tx, agent, choice.id)
+	}
+	return s.askWhichLeadSessionQ(tx, agent, sessions)
 }
 
 // askWhichLeadSessionQ writes the CTO's one question about an Agent's lead

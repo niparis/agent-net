@@ -536,3 +536,57 @@ func TestLeadSessionRepairMigration(t *testing.T) {
 		}
 	}
 }
+
+// The live homelab-lead shape: one live session and one offline leftover of the
+// same Agent, nothing pinned. A lead_set that names the Agent pins the live
+// session; the leftover does not make the CTO decide.
+func TestLeadSetPinsTheOneOnlineSessionOverOfflineLeftover(t *testing.T) {
+	s := teamStore(t)
+	var node string
+	if err := s.db.QueryRow(`SELECT node_id FROM sessions LIMIT 1`).Scan(&node); err != nil {
+		t.Fatal(err)
+	}
+	ctoForTest(t, s, node)
+	live := agentSession(t, s, "demo", "homelab")
+	leftover := secondSessionOf(t, s, live, "homelab-old")
+	if err := s.SetSessionOffline(node, leftover); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE agents SET lead_session=NULL WHERE id='homelab'`); err != nil {
+		t.Fatal(err)
+	}
+	agent := protocol.GraphRef{Kind: "agent", ID: "homelab"}
+	if err := s.SetLead(protocol.LeadSetRequest{Ref: protocol.GraphRef{Kind: "repo", ID: "demo"}, Lead: &agent}, "owner", false); err != nil {
+		t.Fatal(err)
+	}
+	if got := agentLeadSession(t, s, "homelab"); got != live {
+		t.Fatalf("homelab lead_session=%q, want the online session %q", got, live)
+	}
+}
+
+// The automatic pin takes the same choice: when the only online session of an
+// unpinned lead Agent is registered, the offline leftover does not block the pin.
+func TestAutomaticPinTakesTheOneOnlineSessionOverOfflineLeftover(t *testing.T) {
+	s := teamStore(t)
+	var node string
+	if err := s.db.QueryRow(`SELECT node_id FROM sessions LIMIT 1`).Scan(&node); err != nil {
+		t.Fatal(err)
+	}
+	live := agentSession(t, s, "demo", "homelab-auto")
+	leftover := secondSessionOf(t, s, live, "homelab-auto-old")
+	if err := s.SetSessionOffline(node, leftover); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE agents SET lead_session=NULL WHERE id='homelab-auto'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE repos SET lead_agent_id='homelab-auto' WHERE id='demo'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.pinFirstLeadSessionQ(s.db, live); err != nil {
+		t.Fatal(err)
+	}
+	if got := agentLeadSession(t, s, "homelab-auto"); got != live {
+		t.Fatalf("homelab-auto lead_session=%q, want the online session %q", got, live)
+	}
+}
