@@ -143,6 +143,33 @@ func TestPermissionProposalIsARequestToTheChief(t *testing.T) {
 	}
 }
 
+// A message an 'ask the owner' rule holds reaches the chief as a request that
+// names the held message and tells how the CTO releases it.
+func TestHeldMessageRequestNamesHeldAnswer(t *testing.T) {
+	s, _, a, b := heldRig(t)
+	s.keepDeskItems = false
+	node, _, _ := s.CreateNode("chief-box", "linux")
+	chief, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "chief", Name: "chief"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetChief(protocol.ChiefSetRequest{SessionID: chief}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	m, _, err := send(s, a, b, "k1", "")
+	if err != nil || m.State != protocol.StateHeld {
+		t.Fatalf("message %+v %v", m, err)
+	}
+	got := messagesTo(t, s, chief)
+	if len(got) != 1 {
+		t.Fatalf("want one request to the chief, got %+v", got)
+	}
+	want := "If the owner agrees, the CTO answers it with held_answer, message_id " + m.ID + ", action a to deliver or r to refuse."
+	if !strings.HasSuffix(got[0].body, want) {
+		t.Fatalf("request does not end with the held_answer line:\n%s", got[0].body)
+	}
+}
+
 // An older machine's ask to hold a start is refused with the one line, and no
 // ask is stored: the machine passes the refusal to the caller.
 func TestStartOverrideAskIsRefused(t *testing.T) {
