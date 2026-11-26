@@ -50,6 +50,12 @@ type Store struct {
 	runsMu          sync.Mutex
 	runs            *runsSnapshot
 	reminderMu      sync.Mutex
+
+	// unavailable holds the models each machine could not run at launch,
+	// until its next harness inventory (model_unavailable.go).
+	unavailableMu sync.Mutex
+	unavailable   map[string]map[string]string
+
 	// chiefQuota is the quota verdict on the chief session (chief_health.go).
 	chiefQuota atomic.Pointer[chiefQuotaReading]
 	// leadQuota holds the pinned lead sessions that are out of quota (lead_quota.go).

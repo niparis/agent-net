@@ -111,10 +111,10 @@ func TestDifficultyJudgePickerChecksMachineAvailabilityAndLevel(t *testing.T) {
 		}
 		return v.(protocol.DifficultyJudgeChoice)
 	}
-	// A signed-out harness is skipped. A model the stored list lacks is not: the
-	// start tests it, so the picker still offers that profile.
-	if got := pick(); got.Model != "gemini-test" || got.Harness != "agy" {
-		t.Fatalf("signed-out harness or live-tested model picked wrongly: %+v", got)
+	// A signed-out harness is skipped, and so is a model the machine's list
+	// lacks: the machine cannot run it.
+	if got := pick(); got.Model != "" {
+		t.Fatalf("signed-out harness or unlisted model picked: %+v", got)
 	}
 	if _, err := s.SetNodeHarnesses(node, []protocol.HarnessInfo{{Name: "agy", SignedIn: "yes", Models: []string{"gemini-test"}}}); err != nil {
 		t.Fatal(err)

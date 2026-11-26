@@ -16,7 +16,7 @@ import (
 
 // A machine that refuses the granted model does not lose the start: the route
 // asks the gate for the next candidate in the same list and launches that one
-// (decision 0162).
+// (decision 0162). A model the harness reports unavailable is marked so.
 func TestLaunchFailureTriesTheNextCandidateInTheSameList(t *testing.T) {
 	g, node, owner, _, _ := setupFloorGateway(t)
 	g.opts.TestNoBriefChecks = true
@@ -60,7 +60,7 @@ func TestLaunchFailureTriesTheNextCandidateInTheSameList(t *testing.T) {
 			mu.Unlock()
 			var res []byte
 			if first {
-				res, _ = protocol.EncodeResult(h.ID, nil, errors.New("this machine cannot run that model"))
+				res, _ = protocol.EncodeResult(h.ID, nil, errors.New("Model unavailable: "+l.Model))
 			} else {
 				res, _ = protocol.EncodeResult(h.ID, protocol.WorkerLaunched{SessionID: "s_next"}, nil)
 			}
@@ -86,5 +86,9 @@ func TestLaunchFailureTriesTheNextCandidateInTheSameList(t *testing.T) {
 	}
 	if !strings.Contains(ans.ModelNote, "launch failed on") {
 		t.Fatalf("note does not say the first launch failed: %q", ans.ModelNote)
+	}
+	// The next start on this machine leaves the refused model out.
+	if _, ok := g.store.modelUnavailable(node, launched[0].Harness, launched[0].Model); !ok {
+		t.Fatalf("%s %s is not marked unavailable on the machine", launched[0].Harness, launched[0].Model)
 	}
 }

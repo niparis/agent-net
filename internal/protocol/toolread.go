@@ -241,6 +241,9 @@ type MachineModelRow struct {
 	Harness string             `json:"harness"`
 	ID      string             `json:"id"`
 	Scores  []ModelEffortScore `json:"scores,omitempty"`
+	// Login is "not logged in" when the harness reports no login for the
+	// model's provider on this machine, else empty.
+	Login string `json:"login,omitempty"`
 }
 
 // MachineModelPage pages the models category.

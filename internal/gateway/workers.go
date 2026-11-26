@@ -130,6 +130,12 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 			return nil, err
 		}
 		return g.workerProfileAction(ctx, nc.id, typ, p)
+	case "worker.model_unavailable":
+		p, err := decodeOperator[protocol.WorkerModelUnavailable](raw)
+		if err != nil {
+			return nil, reject("bad worker.model_unavailable")
+		}
+		return g.workerModelUnavailable(nc, p)
 	case "worker.recheck":
 		p, err := decodeOperator[protocol.WorkerRecheck](raw)
 		if err != nil {
@@ -269,6 +275,9 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 			}
 		}
 		if p.Reason == protocol.StopModelFails && p.Model != "" {
+			if protocol.ModelUnavailable(p.Failure) {
+				g.store.markModelUnavailable(nc.id, p.Harness, p.Model, p.Failure)
+			}
 			var err error
 			if protocol.ModelAuthFailure(p.Failure) {
 				err = g.store.RecordModelAuthFailure(nc.id, p.Harness, p.Model)
@@ -1049,6 +1058,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		// The machine refused this model. The gate names the next candidate in
 		// the same list, so the start does not lose its work to one provider
 		// (decision 0162).
+		if protocol.ModelUnavailable(err.Error()) {
+			g.store.markModelUnavailable(pick.NodeID, p.Harness, p.Model, err.Error())
+		}
 		next, ok := chosen.Next()
 		if !ok {
 			break
@@ -2434,6 +2446,8 @@ func (g *Gateway) workerModelCandidatesWith(facts *candidateFacts, roster *notSt
 	}
 	var candidates []protocol.WorkerModelCandidate
 	var skippedProfiles []string
+	// notListed are the profiles whose model the machine cannot run.
+	var notListed []string
 	resolutionNotes := map[string]string{}
 	// harnessReason is why a whole harness was left out; the roster reports it
 	// once for each of its profiles.
@@ -2467,15 +2481,32 @@ func (g *Gateway) workerModelCandidatesWith(facts *candidateFacts, roster *notSt
 				continue
 			}
 			resolved, ambiguous := protocol.ResolveWorkerProfileModel(profile.Selection().ModelID(), h.Models)
+			if resolved == "" && len(ambiguous) == 0 && protocol.HarnessListsModels(h.Name) {
+				// The harness lists what it can run here, and this model is
+				// not in the list: a start would fail at launch.
+				if roster != nil {
+					roster.add(profileRosterName(profile), notAvailableOn+node.Hostname, rosterUnavailable)
+				}
+				notListed = append(notListed, profile.Name)
+				continue
+			}
 			if resolved == "" {
-				// The stored list is a hint, not the source of truth. The
-				// profile model is tried on the machine and the start reports
-				// the harness's own answer.
+				// Claude's fixed table and a name several providers share
+				// are hints only. The profile model is tried on the machine
+				// and the start reports the harness's own answer.
 				resolved = profile.Selection().ModelID()
 				if len(ambiguous) > 0 {
 					resolutionNotes[h.Name+"\x00"+protocol.ParseModelSelection(profile.Harness, "", resolved, profile.Effort).LegacyModel()] =
 						fmt.Sprintf("%s: model %s is ambiguous on %s (%s); the start will test it", profile.Name, profile.Model, node.Hostname, strings.Join(ambiguous, ", "))
 				}
+			}
+			if failure, ok := g.store.modelUnavailable(node.NodeID, h.Name, resolved); ok {
+				// It failed at launch here since the last inventory.
+				if roster != nil {
+					roster.add(profileRosterName(profile), notAvailableOn+node.Hostname+": "+failure, rosterUnavailable)
+				}
+				notListed = append(notListed, profile.Name)
+				continue
 			}
 			blocked, err := facts.authBlocked(g.store, node.NodeID, h.Name, resolved)
 			if err != nil {
@@ -2508,6 +2539,9 @@ func (g *Gateway) workerModelCandidatesWith(facts *candidateFacts, roster *notSt
 			}
 		}
 	}
+	if len(notListed) > 0 {
+		skippedProfiles = append(skippedProfiles, notAvailableOn+node.Hostname+": "+strings.Join(notListed, ", "))
+	}
 	if roster != nil {
 		// Profiles that never reached the loop above: their harness is not
 		// installed on this machine, or the harness was skipped as a whole.
@@ -2528,6 +2562,9 @@ func (g *Gateway) workerModelCandidatesWith(facts *candidateFacts, roster *notSt
 
 	return candidates, skippedProfiles, resolutionNotes, nil
 }
+
+// notAvailableOn opens the note of a profile whose model a machine cannot run.
+const notAvailableOn = "left out, not available on "
 
 // filterWorkerFamilies removes excluded makers before scoring and rotation. A
 // non-nil roster records each removed candidate with the family that removed it.

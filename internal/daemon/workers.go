@@ -292,6 +292,13 @@ type worker struct {
 	// failure is the cleaned error text of a failed model call, set when the
 	// worker ends with StopModelFails.
 	failure string
+	// launch is the frame of an automatic start, kept so a start whose model
+	// this machine cannot run can move to the next model (model_unavailable.go).
+	launch *protocol.WorkerLaunch
+	// movePending is set while the daemon asks the gateway to move such a
+	// start; movesToNextModel when the gateway took it, so the end notice
+	// says a new notice follows. Both guarded by Daemon.wmu.
+	movePending, movesToNextModel bool
 	// info is the worker part of the session, made once so that a comparison
 	// of session infos does not see a change each time.
 	info *protocol.WorkerInfo
@@ -790,6 +797,10 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 		permissions: protocol.WorkerPermissionsOrDefault(l.Permissions), difficultyAsked: l.DifficultyAsked, difficultyUsed: l.DifficultyUsed, touches: strings.Join(l.Touches, ","),
 		autoContinue: protocol.AutoContinueEnabled(l.AutoContinue), changeID: l.ChangeID, fixes: l.Fixes, mcpServers: l.MCPServers,
 		why: l.Why, notFamily: l.NotFamily}
+	if l.Automatic {
+		kept := l
+		w.launch = &kept
+	}
 	if l.TaskID != "" {
 		w.taskID = l.TaskID
 		if l.ContinuationPartial {
@@ -1160,6 +1171,9 @@ func (d *Daemon) beginWorkerEnd(w *worker, reason string, when func() bool) <-ch
 	if reason == protocol.StopModelFails || reason == protocol.StopRunFailed {
 		d.wmu.Lock()
 		note += ": " + w.failure
+		if w.movesToNextModel {
+			note += ". " + movedToNextModelNote
+		}
 		d.wmu.Unlock()
 	}
 	// Lost workers are reported from their persisted row by reportWorkerEnds.
@@ -1756,13 +1770,29 @@ func (d *Daemon) endFailedWorker(ctx context.Context, w *worker) bool {
 		return false
 	}
 	d.wmu.Lock()
+	if w.movePending {
+		// The move to the next model ends this worker itself.
+		d.wmu.Unlock()
+		return true
+	}
 	w.failure = msg
+	move := provider && protocol.ModelUnavailable(msg) && firstUntouchedRunLocked(w)
+	w.movePending = move
 	d.wmu.Unlock()
 	reason := protocol.StopRunFailed
 	if provider {
 		reason = protocol.StopModelFails
 	}
-	d.beginWorkerEnd(w, reason, nil)
+	if !move {
+		d.beginWorkerEnd(w, reason, nil)
+		return true
+	}
+	// The gateway call can be slow; the other workers' checks go on.
+	d.wg.Add(1)
+	go func() {
+		defer d.wg.Done()
+		d.moveToNextModel(d.ctoCtx, w, reason, msg)
+	}()
 	return true
 }
 

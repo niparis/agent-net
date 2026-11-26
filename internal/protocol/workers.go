@@ -610,6 +610,24 @@ type (
 		Refused   bool   `json:"refused,omitempty"`
 		Reason    string `json:"reason,omitempty"`
 	}
+	// WorkerModelUnavailable is "worker.model_unavailable", a machine to the
+	// gateway: an automatic start failed at launch because the harness could
+	// not use its model there ("Model unavailable", or a provider with no
+	// login). The gateway marks the model unavailable on that machine until
+	// the next harness inventory, and tracks a new start for the same task.
+	WorkerModelUnavailable struct {
+		Ref     string `json:"ref"`
+		Owner   string `json:"owner_session"`
+		Project string `json:"project"`
+		Harness string `json:"harness"`
+		Model   string `json:"model"`
+		Failure string `json:"failure"`
+	}
+	// WorkerModelUnavailableAnswer names the new tracked start. The machine
+	// queues the task under it, and the queue asks the gate for the model.
+	WorkerModelUnavailableAnswer struct {
+		Ref string `json:"ref"`
+	}
 	// WorkerStopFrame is "worker.stop".
 	WorkerStopFrame struct {
 		Session   string `json:"session"`
@@ -1474,6 +1492,30 @@ func ModelAuthFailure(detail string) bool {
 		if token == "401" || token == "403" {
 			return true
 		}
+	}
+	return false
+}
+
+// ModelUnavailable recognizes a failure where the harness could not use the
+// model on this machine at all: the model is not in its list, or its provider
+// has no login. Another model can run the same task at once.
+func ModelUnavailable(detail string) bool {
+	detail = strings.ToLower(detail)
+	for _, marker := range []string{"model unavailable", "model not available", "model not found", "model_not_found", "unknown model", "not logged in"} {
+		if strings.Contains(detail, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// HarnessListsModels tells whether the harness reports the models it can run,
+// read from the harness itself. Claude's list is a fixed table of names, so a
+// model missing from it may still run.
+func HarnessListsModels(harness string) bool {
+	switch harness {
+	case "opencode", "pi", "codex", "agy":
+		return true
 	}
 	return false
 }

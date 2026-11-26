@@ -869,6 +869,11 @@ type HarnessInfo struct {
 	// harness has a provider, plain ids for Codex and Claude's aliases. It is
 	// empty when the harness did not report a list.
 	Models []string `json:"models,omitempty"`
+	// NoLogin lists the providers of Models that have no login on this
+	// machine, where the harness can tell (OpenCode: the providers of
+	// `opencode models` that `opencode auth list` does not name). Nil when
+	// unknown.
+	NoLogin []string `json:"no_login,omitempty"`
 	// ModelDefaultEfforts contains known harness defaults by model ID.
 	ModelDefaultEfforts map[string]string `json:"model_default_efforts,omitempty"`
 	// ModelProviders is the owner's list of preferred model providers on this
@@ -888,6 +893,24 @@ type HarnessInfo struct {
 	// Update is the last update check on this machine, when one has run.
 	Update *HarnessUpdate `json:"update,omitempty"`
 }
+
+// LoginMissing tells whether the harness reports no login for the provider of
+// model on this machine.
+func (h HarnessInfo) LoginMissing(model string) bool {
+	provider, _, ok := strings.Cut(model, "/")
+	if !ok || provider == "" {
+		return false
+	}
+	for _, p := range h.NoLogin {
+		if strings.EqualFold(p, provider) {
+			return true
+		}
+	}
+	return false
+}
+
+// LoginMissingLabel is what a model list shows for a provider without a login.
+const LoginMissingLabel = "not logged in"
 
 type HarnessUpdate struct {
 	CheckedAt time.Time `json:"checked_at"`

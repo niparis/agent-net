@@ -356,3 +356,19 @@ func TestWorkersPanelAgyLevelScoresUseTheStoredDashKey(t *testing.T) {
 		t.Fatalf("the agy level scores did not find the stored dash key: %q", row)
 	}
 }
+
+// A provider the machine has no login for is named under its row, so the
+// owner sees why its model cannot run there. Frames at 80x24 and 120x34.
+func TestWorkersPanelShowsAProviderWithoutLogin(t *testing.T) {
+	for _, size := range [][2]int{{120, 34}, {80, 24}} {
+		m := workersOwnerModel(size[0])
+		m.snap.Nodes[0].Harnesses[2].NoLogin = []string{"opencode-go"}
+		m = send(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		view := ansi.Strip(strings.Join(m.quotaModelsView(size[0]), "\n"))
+		want := "not logged in on " + m.snap.Nodes[0].Hostname
+		if !strings.Contains(view, want) {
+			t.Fatalf("%dx%d: no %q:\n%s", size[0], size[1], want, view)
+		}
+		golden(t, fmt.Sprintf("workers_panel_no_login_%dx%d", size[0], size[1]), m.testView())
+	}
+}

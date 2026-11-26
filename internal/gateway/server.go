@@ -1333,8 +1333,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		// Older daemons send no inventory; their stored one stays as it is.
-		if _, err := st.SetNodeHarnesses(nc.id, p.Harnesses); err != nil {
+		changed, err := st.SetNodeHarnesses(nc.id, p.Harnesses)
+		if err != nil {
 			return nil, err
+		}
+		if changed != "" {
+			// A hello repeats the last inventory; only a new one is a refresh.
+			st.clearModelsUnavailable(nc.id)
 		}
 		if err := st.SetNodeLaunch(nc.id, p.Launch); err != nil {
 			return nil, err
@@ -1590,6 +1595,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if _, err = st.SetNodeHarnesses(nc.id, p.Harnesses); err != nil {
 			return nil, err
 		}
+		// The daemon sends this after each detection: a refresh of what the
+		// machine can run.
+		st.clearModelsUnavailable(nc.id)
 		if p.Health != nil {
 			if err := st.SetNodeHealth(nc.id, p.Health); err != nil {
 				return nil, err

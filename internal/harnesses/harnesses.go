@@ -114,6 +114,9 @@ func Detect(ctx context.Context, o Options) []protocol.HarnessInfo {
 		} else {
 			h.Models = models(ctx, o, n, installs[0], s.dirs)
 		}
+		if n == "opencode" && len(h.Models) > 0 {
+			h.NoLogin = openCodeNoLogin(ctx, o, installs[0], h.Models)
+		}
 		for _, p := range installs[1:] {
 			h.Others = append(h.Others, protocol.HarnessInstall{Path: p, Version: version(ctx, o, p)})
 		}
@@ -333,6 +336,58 @@ func ParseModels(out string) []string {
 		models = models[:MaxModels]
 	}
 	return models
+}
+
+// openCodeNoLogin reads `opencode auth list --format json` and returns the
+// providers of models that it does not name. It is nil when the list cannot be
+// read: an older OpenCode, or a probe that failed, says nothing about logins.
+func openCodeNoLogin(ctx context.Context, o Options, path string, models []string) []string {
+	ctx, cancel := context.WithTimeout(ctx, VersionTimeout)
+	defer cancel()
+	out, err := o.Run(ctx, path, "auth", "list", "--format", "json")
+	if err != nil {
+		return nil
+	}
+	missing, ok := ParseOpenCodeNoLogin(out, models)
+	if !ok {
+		return nil
+	}
+	return missing
+}
+
+// ParseOpenCodeNoLogin reads the JSON of `opencode auth list --format json`
+// (a list of integrations, each with an id and its connections) and returns
+// the providers of models that have no connection there, sorted. The
+// "opencode" provider is left out: its free models need no login. ok is false
+// when out is not that JSON.
+//
+// A key written in opencode.json is not in the list, so such a provider is
+// reported as having no login although its models may run.
+func ParseOpenCodeNoLogin(out string, models []string) (missing []string, ok bool) {
+	var list []struct {
+		ID          string            `json:"id"`
+		Connections []json.RawMessage `json:"connections"`
+	}
+	if json.Unmarshal([]byte(strings.TrimSpace(out)), &list) != nil {
+		return nil, false
+	}
+	logged := map[string]bool{"opencode": true}
+	for _, integration := range list {
+		if integration.ID != "" && len(integration.Connections) > 0 {
+			logged[integration.ID] = true
+		}
+	}
+	seen := map[string]bool{}
+	for _, m := range models {
+		provider, _, found := strings.Cut(m, "/")
+		if !found || provider == "" || logged[provider] || seen[provider] {
+			continue
+		}
+		seen[provider] = true
+		missing = append(missing, provider)
+	}
+	sort.Strings(missing)
+	return missing, true
 }
 
 func firstLine(s string) string {
