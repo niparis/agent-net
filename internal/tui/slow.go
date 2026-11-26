@@ -15,7 +15,7 @@ func deliverySlowText(haveList bool) string {
 
 // screenNames are the names of the tabs in tabNames, as the daemon log and the
 // gateway counters show them.
-var screenNames = []string{"sessions", "graph", "quotas", "messages", "settings", "desk"}
+var screenNames = []string{"sessions", "graph", "quotas", "messages", "settings"}
 
 // screenName names the tab or view that is on screen.
 func (m Model) screenName() string {

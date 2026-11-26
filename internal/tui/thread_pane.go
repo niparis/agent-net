@@ -184,7 +184,7 @@ func firstWords(body string, limit int) string {
 	return cut + "…"
 }
 
-// messageLinks is the PRs, changes and Desk asks the body names, so the body
+// messageLinks is the PRs, changes and asks the body names, so the body
 // does not have to carry them as noise. A body that names none has no line.
 func messageLinks(msg threadMsg) []string {
 	var out []string

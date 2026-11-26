@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestApprovedKeyMapContract(t *testing.T) {
@@ -23,14 +22,11 @@ func TestApprovedKeyMapContract(t *testing.T) {
 		{"04_shared_graph_help", []check{{contextGraph, "?", "help"}}},
 		{"05_no_session_e", []check{{contextSessions, "e", ""}}},
 		{"06_view_v", []check{{contextSessions, "v", "cycle view"}, {contextSessions, "A", ""}, {contextSessions, "a", "archive offline"}}},
-		{"07_held_answer", []check{{contextHeld, "a", "approve"}, {contextHeld, "r", "refuse"}, {contextHeld, "A", ""}, {contextHeld, "R", ""}}},
-		{"08_outcome_overrule", []check{{contextOutcome, "O", "overrule"}, {contextOutcome, "o", ""}, {contextSessions, "o", ""}}},
-		{"09_proposal_decline", []check{{contextProposal, "r", "decline"}, {contextProposalDetail, "r", "decline"}, {contextProposal, "x", ""}}},
+		{"09_proposal_decline", []check{{contextProposalDetail, "r", "decline"}}},
 		{"10_message_enter", []check{{contextMessages, "enter", "message body"}}},
 		{"11_message_end", []check{{contextMessages, "end", actLast}}},
 		{"12_no_message_v", []check{{contextMessages, "v", ""}}},
 		{"13_body_close", []check{{contextBody, "esc", actClose}, {contextBody, "enter", actClose}, {contextBody, "m", ""}, {contextBody, "backspace", ""}}},
-		{"14_inbox_back", []check{{contextInbox, "esc", "back"}, {contextInbox, "backspace", ""}}},
 		{"15_quota_enter", []check{{contextQuotas, "enter", ""}}},
 		{"16_graph_pan", []check{{contextGraph, "shift+left", "pan left"}, {contextGraph, "h", ""}, {contextGraph, "j", ""}, {contextGraph, "k", ""}, {contextGraph, "l", ""}}},
 		{"17_graph_links", []check{{contextGraph, ",", "previous link"}, {contextGraph, ".", "next link"}, {contextGraph, "[", ""}, {contextGraph, "]", ""}}},
@@ -104,35 +100,5 @@ func TestApprovedOverlayCloseKeys(t *testing.T) {
 	m = keys(m, "enter")
 	if m.open != nil {
 		t.Fatal("enter did not close message body")
-	}
-	m.tab = inboxTab
-	m.inboxDetail = true
-	m = keys(m, "backspace")
-	if !m.inboxDetail {
-		t.Fatal("backspace closed inbox details")
-	}
-}
-
-func TestApprovedSessionsAndHeldKeys(t *testing.T) {
-	m := newModel(120, 34)
-	if !m.activeOnly || m.sessionViewName() != "active" {
-		t.Fatalf("the default view is %q", m.sessionViewName())
-	}
-	m = keys(m, "v")
-	if m.activeOnly || m.sessionViewName() != "all" {
-		t.Fatalf("v did not show all: %q", m.sessionViewName())
-	}
-	m = keys(m, "v")
-	if !m.activeOnly || m.sessionViewName() != "active" {
-		t.Fatalf("v did not return to active: %q", m.sessionViewName())
-	}
-	src := &heldTestSource{fakeSource: fakeSource{snap: fakeSnapshot()}}
-	n := New(src)
-	n.asks = []protocol.Ask{askFromHeld(protocol.Message{ID: "m_held", FromName: "peer", To: "s_0000000000000002", Body: "hello"})}
-	n.snap = src.snap
-	n.selected = "m_held"
-	_, cmd := n.Update(tea.KeyPressMsg{Text: "R", Code: []rune("R")[0]})
-	if cmd != nil && src.answer.MessageID != "" {
-		t.Fatal("R answered held request")
 	}
 }

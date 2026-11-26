@@ -32,7 +32,7 @@ func (m Model) onboardingWrite(method string, params any) (Model, tea.Cmd) {
 		m.onboardingQueue = append(m.onboardingQueue, onboardingWriteRequest{method: method, params: params})
 		return m, nil
 	}
-	src, ok := m.src.(inboxCaller)
+	src, ok := m.src.(localCaller)
 	if !ok {
 		return m, nil
 	}

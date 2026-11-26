@@ -19,7 +19,7 @@ type sessionPinMsg struct {
 // sessionPinCall pins or unpins one session through the operator's owner-only
 // call, the same way the archive dialog calls sessions_archive.
 func (m Model) sessionPinCall(id string, pinned bool) tea.Cmd {
-	c, ok := m.src.(inboxCaller)
+	c, ok := m.src.(localCaller)
 	return func() tea.Msg {
 		if !ok {
 			return sessionPinMsg{id: id, pinned: pinned, err: fmt.Errorf("session pin unavailable")}

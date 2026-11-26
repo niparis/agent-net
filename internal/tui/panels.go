@@ -101,10 +101,4 @@ var panelTable = []panelSpec{
 	{tab: settingsTab, title: panelStanding},
 	{tab: settingsTab, title: panelWorkingRules},
 	{tab: settingsTab, title: panelNudges},
-
-	{tab: inboxTab, title: panelNeedsYou},
-	{tab: inboxTab, view: contextDelivery, title: panelChange},
-	{tab: inboxTab, view: contextDelivery, title: panelEvidence, note: "or " + panelStepsEvidence + " for a change with steps"},
-	{tab: inboxTab, view: contextInbox, title: panelInboxDetail},
-	{tab: inboxTab, view: contextInbox, title: panelLog, note: "Log · SOURCE for one log source"},
 }

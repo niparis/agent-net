@@ -73,7 +73,7 @@ func (a *app) read(ctx context.Context, method string, params any) (json.RawMess
 func (a *app) clearReads() { a.cacheMu.Lock(); a.cache = nil; a.cacheMu.Unlock() }
 
 // screenSnapshot composes only fields used by this screen. Header counts are
-// separate so a Messages or Desk refresh never needs the machine settings.
+// separate so a Messages refresh never needs the machine settings.
 func (a *app) screenSnapshot(ctx context.Context, screen string) (operator.Snapshot, error) {
 	var snap operator.Snapshot
 	raw, err := a.read(ctx, protocol.OpInfo, nil)

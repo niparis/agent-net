@@ -34,11 +34,11 @@ func TestSessionsPriorityGroups(t *testing.T) {
 	if got := strings.Join(ids(m), ","); got != "kid,pin,lead,merge" {
 		t.Fatalf("order %s", got)
 	}
-	m.asks = askItems([]protocol.InboxItem{{ID: "q", SessionID: "kid", Kind: "question", Status: "open"}})
+	m.snap.Agents[3].Waiting = &protocol.Waiting{Kind: protocol.WaitingQuestion, Text: "may I?"}
 	if g = m.groups(); g[0].host != "Needs you" || len(g[0].agents) != 1 {
 		t.Fatalf("question did not move only its row: %+v", g)
 	}
-	m.asks = nil
+	m.snap.Agents[3].Waiting = nil
 	m.snap.Agents[1].Status = "needs you"
 	if m.groups()[0].host != "Needs you" {
 		t.Fatal("needs you status ignored")
@@ -54,7 +54,6 @@ func TestOfflineWaitingSessionIsIdle(t *testing.T) {
 	m.snap.Agents[0].Waiting = &protocol.Waiting{Kind: protocol.WaitingQuestion, Text: "waiting for owner"}
 	m.snap.Agents[1].Status = "idle"
 	m.snap.Agents[1].Worker = &protocol.WorkerInfo{Owner: "lead"}
-	m.asks = askItems([]protocol.InboxItem{{ID: "q", SessionID: "lead", Kind: "question", Status: "open"}})
 
 	if m.sessionNeedsOwner(m.snap.Agents[0]) {
 		t.Fatal("offline session needs owner")
@@ -73,9 +72,6 @@ func TestOfflineWaitingSessionIsIdle(t *testing.T) {
 	idle := groupOf(m, "lead")
 	if idle.total < 2 || indexOfID(agentIDs(idle.agents), "kid") < 0 {
 		t.Fatalf("offline session tree is not counted in Idle: %+v", idle)
-	}
-	if m.waitingCount() != 1 {
-		t.Fatalf("inbox waiting count %d, want 1", m.waitingCount())
 	}
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		view := m
@@ -146,7 +142,7 @@ func TestSessionsPriorityIdleAndInbox(t *testing.T) {
 	if !strings.Contains(view, "1 more idle · v to show") {
 		t.Fatalf("missing fold:\n%s", view)
 	}
-	m.asks = askItems([]protocol.InboxItem{{ID: "q", SessionID: "kid", Kind: "question", Status: "open"}})
+	m.snap.Agents[1].Waiting = &protocol.Waiting{Kind: protocol.WaitingQuestion, Text: "may I?"}
 	view = ansi.Strip(m.testView())
 	// The Desk count is hidden since decision 0196.
 	if strings.Contains(view, "to decide") || strings.Contains(view, "waiting in Inbox") {
@@ -274,8 +270,7 @@ func TestSessionsPriorityGoldens(t *testing.T) {
 		m.snap.Agents[0].Profile.Name = "demo lead"
 		m.snap.Agents[2].Profile.Name = "merger"
 		m.snap.Agents[4].Profile.Name = "pinned"
-		m.snap.Agents = append(m.snap.Agents, protocol.AgentView{SessionID: "video", NodeID: "one", Hostname: "desk", Harness: "claude", Model: "opus", Online: true, Status: "idle", Profile: protocol.Profile{Name: "video", Task: "Combine the recorded demos"}})
-		m.asks = askItems([]protocol.InboxItem{{ID: "q", SessionID: "video", Kind: "question", Status: "open", Text: "Combine the recorded demos?"}})
+		m.snap.Agents = append(m.snap.Agents, protocol.AgentView{SessionID: "video", NodeID: "one", Hostname: "desk", Harness: "claude", Model: "opus", Online: true, Status: "needs you", Profile: protocol.Profile{Name: "video", Task: "Combine the recorded demos"}})
 		for i := 0; i < 20; i++ {
 			m.snap.Agents = append(m.snap.Agents, protocol.AgentView{SessionID: fmt.Sprintf("idle-%02d", i), NodeID: "two", Hostname: "build", Harness: "codex", Online: true, Status: "idle"})
 		}

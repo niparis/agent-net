@@ -177,15 +177,6 @@ func TestVisualAuditFixes(t *testing.T) {
 		}
 	})
 
-	t.Run("Item16_InboxEmptyStateNoSelectHint", func(t *testing.T) {
-		m := newModel(80, 24)
-		m.tab = inboxTab
-		help := m.helpLine(80)
-		if strings.Contains(help, "select") {
-			t.Errorf("inbox empty state should not show select hint, got: %q", help)
-		}
-	})
-
 	t.Run("Item17_HelpNoDuplicateHeading", func(t *testing.T) {
 		m := newModel(80, 24)
 		m.help = true

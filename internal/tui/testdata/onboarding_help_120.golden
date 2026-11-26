@@ -10,31 +10,31 @@ Keys · all screens ────────────────────
   n                      rename the selected app
   r                      rotate the selected online machine token
 
- Desk
+ In overlays
+ Message body
+  esc, enter             close
+  ?                      help
+  q                      quit
+  up/down, j/k           scroll
   pgup/pgdn              page
-  home/g, end            first, last row
-  a                      approve the request
-  r                      refuse the request
-  s                      keep the refusal
-  O                      grant the request
-  A                      approve all changes
-  t                      type answer
-  x                      dismiss the ask
-  i                      on a sign-in ask: open that CLI's login in a herdr pane on the machine that needs it
-  w                      in the details of a question or approval: answer the marked option and keep it as a standing
-                         rule. Type the action and its area: merge in repo:<name>, team:<name> or network. A rule
-                         applies only on an exact match; undo it on its Log line.
-  d                      on an open ask: talk it over. A chief item opens the chief's session and wakes it; a CTO item
-                         opens your CTO chat.
-  u                      undo
-  n                      on an ask that reached you, open or answered: the chief did not need to send it. Type one
-                         optional line of why; the chief reads it in its next batch.
-  l                      open or close the Log section: what the CTO and the gateway did, with the undo of a CTO change
 
- On a held request row
-  a                      approve the request
-  r                      refuse the request
+ Connected apps
+  up/down, j/k           move
+  p                      internet access
+  u                      tunnel URL
+  a                      add
+  x                      revoke
+  g                      grant
+  enter                  approve a pending app; on an app row, rename it (same as n)
+  r                      refuse
+  left, right            change kind
+  n                      rename the selected app
 
- On a learned suggestion row
+ Quality details
+  tab, shift+tab         sub tab
+  ?                      help
+  up/down, j/k           model
+  left/right, h/l        bucket
+  pgup/pgdn              page
   more below
 up/down scroll  ? this screen  esc close

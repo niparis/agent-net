@@ -77,7 +77,7 @@ func TestMachineProposalNamesTarget(t *testing.T) {
 	for _, action := range []string{"machine_remove", "machine_rotate"} {
 		args, _ := json.Marshal(map[string]string{"node_id": target.nodeID})
 		p := protocol.CTOProposal{Tool: "settings_change", Action: action, Args: args}
-		if got := m.inboxProposalSummary(p); !strings.Contains(got, target.host) {
+		if got := proposalSummary(p); !strings.Contains(got, target.nodeID) {
 			t.Fatalf("proposal omits machine: %s", got)
 		}
 	}

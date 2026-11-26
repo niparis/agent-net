@@ -285,92 +285,6 @@ func post(t *testing.T, f *consoleOperator, path string, v url.Values) int {
 	return w.Code
 }
 
-func TestDeskRendersAsksWithRecommendationAndWhyYou(t *testing.T) {
-	f := newConsoleOperator()
-	body := page1(t, f, "/")
-	mustContain(t, "desk", body,
-		"Needs you", "Allow the record tools for every session?", "tenebrae", "question", "4m",
-		"Recommended", "Yes, record and read tools only.", "Why you", "Permission settings are yours.",
-		"held request body", "do the thing", "unclear", "Let it stand.",
-		"peer-b escalated this request: &#34;unclear&#34;",
-		"Keep the escalation: the requester does not get do the thing",
-		"Overrule: the requester gets do the thing")
-	// The rail, the CTO button and the bottom bar.
-	for _, name := range []string{"Desk", "Sessions", "Graph", "Changes", "Messages"} {
-		mustContain(t, "rail "+name, body, ">"+name+"<")
-	}
-	mustContain(t, "shell", body, `id="toggleCTO"`, `class="bottomnav"`, `id="ctobody"`, `id="cto" hidden`, `class="live"`)
-	// An ask that waits on someone else is not shown.
-	mustNotContain(t, "desk", body, "not yours to answer")
-	// Hand-off kinds say where to answer.
-	mustContain(t, "desk proposal", body, "Answer from the TUI")
-}
-
-func TestDeskShowsNeedsYouAndLog(t *testing.T) {
-	body := page1(t, newConsoleOperator(), "/")
-	mustContain(t, "desk", body, "Needs you", "Allow the record tools for every session?", "Log", "log line text", "release")
-	// The Desk no longer lists delivery changes or the chief's sorts.
-	mustNotContain(t, "desk", body, "In flight", "Handled for you", "Push updates part 1", "ch_flight1", "handled question text", `class="pipe"`)
-}
-
-// A chief that cannot work shows as one line above the asks, with the reason.
-// A chief that can work shows no line.
-func TestDeskShowsChiefOfflineLine(t *testing.T) {
-	f := newConsoleOperator()
-	mustNotContain(t, "desk with a working chief", page1(t, f, "/"), "chief of staff offline")
-	f.chiefDown = "codex quota exhausted (weekly window, until 2026-11-15 00:00 UTC)"
-	body := page1(t, f, "/")
-	mustContain(t, "desk", body, `class="chiefline"`, "chief of staff offline: codex quota exhausted (weekly window, until 2026-11-15 00:00 UTC)")
-}
-
-func TestAnswerPostsThroughOperatorAndAskDisappears(t *testing.T) {
-	f := newConsoleOperator()
-	if !strings.Contains(page1(t, f, "/"), "Allow the record tools for every session?") {
-		t.Fatal("ask missing before the answer")
-	}
-	if code := post(t, f, "/action", url.Values{"kind": {"inbox"}, "id": {"i_q"}, "action": {"Record only"}}); code != 303 {
-		t.Fatalf("answer status %d", code)
-	}
-	if !f.has("answer:i_q:Record only") {
-		t.Fatalf("operator not called: %v", f.calls)
-	}
-	body := page1(t, f, "/")
-	mustNotContain(t, "after answer", body, "Allow the record tools for every session?")
-	// Held and outcome answers use the dedicated operator calls.
-	post(t, f, "/action", url.Values{"kind": {"held"}, "id": {"m_held"}, "action": {"a"}})
-	post(t, f, "/action", url.Values{"kind": {"outcome"}, "id": {"r_esc"}, "action": {"let_stand"}})
-	if !f.has("held:m_held:a") || !f.has("outcome:r_esc:let_stand") {
-		t.Fatalf("calls: %v", f.calls)
-	}
-	body = page1(t, f, "/")
-	mustNotContain(t, "after held and outcome", body, "held request body", "do the thing")
-	// "Didn't need me" goes to the ask mark call.
-	f = newConsoleOperator()
-	post(t, f, "/action", url.Values{"kind": {"mark"}, "id": {"i_q"}, "action": {protocol.MarkDidntNeedMe}})
-	if !f.has("mark:i_q:" + protocol.MarkDidntNeedMe) {
-		t.Fatalf("mark calls: %v", f.calls)
-	}
-	// A waiting session is answered as the owner, to that session.
-	post(t, f, "/action", url.Values{"kind": {"send"}, "id": {"s_wait"}, "action": {"yes, allow"}})
-	if !f.has("send:s_wait:yes, allow") {
-		t.Fatalf("send calls: %v", f.calls)
-	}
-}
-
-func TestConsentAskCannotBeApprovedFromTheWeb(t *testing.T) {
-	body := page1(t, newConsoleOperator(), "/")
-	i := strings.Index(body, "Allow internet access?")
-	if i < 0 {
-		t.Fatal("consent ask missing")
-	}
-	chunk := body[i:]
-	if j := strings.Index(chunk, `class="ask`); j > 0 {
-		chunk = chunk[:j]
-	}
-	mustContain(t, "consent ask", chunk, "Dismiss")
-	mustNotContain(t, "consent ask", chunk, ">Approve<")
-}
-
 func TestSessionsGroupsByStateAndShowsDetail(t *testing.T) {
 	f := newConsoleOperator()
 	body := page1(t, f, "/sessions?s=s_busy")
@@ -490,7 +404,7 @@ func TestKeysSwitchScreens(t *testing.T) {
 	}
 	mustContain(t, "console.js", string(js), "keydown", "/sessions", "/graph", "/changes", "/messages")
 	body := page1(t, newConsoleOperator(), "/")
-	mustContain(t, "keys", body, `src="/static/console.js"`, `data-key="1"`, `data-key="5"`)
+	mustContain(t, "keys", body, `src="/static/console.js"`, `data-key="1"`, `data-key="4"`)
 }
 
 func TestDaemonDownIsVisible(t *testing.T) {

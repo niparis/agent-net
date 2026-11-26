@@ -348,7 +348,7 @@ func (m Model) sessionPendingKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			ask := *m.sessionPending
 			m.sessionPending = nil
 			m.mode = modeNormal
-			src, ok := m.src.(inboxCaller)
+			src, ok := m.src.(localCaller)
 			if !ok {
 				m.fail("Settings unavailable.")
 				return m, nil

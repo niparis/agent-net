@@ -22,7 +22,7 @@ func (m Model) cycleSessionAgent() (Model, tea.Cmd) {
 		m.fail("Pick a running agent session.")
 		return m, nil
 	}
-	caller, ok := m.src.(inboxCaller)
+	caller, ok := m.src.(localCaller)
 	if !ok {
 		m.fail("Changing the agent is unavailable.")
 		return m, nil

@@ -72,7 +72,7 @@ func (m Model) startApps() (Model, tea.Cmd) {
 	return m, m.appsCall("apps.list", struct{}{})
 }
 func (m Model) appsCall(op string, params any) tea.Cmd {
-	c, ok := m.src.(inboxCaller)
+	c, ok := m.src.(localCaller)
 	return func() tea.Msg {
 		if !ok {
 			return appsResult{op: op, err: fmt.Errorf("connected apps unavailable")}
