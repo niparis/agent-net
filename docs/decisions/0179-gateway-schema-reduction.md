@@ -139,3 +139,59 @@ The owner reviewed the tools, skills and MCP tables and said to execute the plan
 - `skill_archive_changes` and `skill_list_changes` are one table, `skill_changes`, with a `kind` column. This replaces the line that kept them apart. Undo by id still works for both kinds.
 
 This change drops 15 tables and adds one, so the schema has 14 fewer tables.
+
+## Result, measured 2026-11-26
+
+Measured on the live gateway store, opened read-only, after v0.5.145 was installed on the gateway at schema version 249. The count is made the same way as the audit: `schema_version` and the five tables of the notes full-text index are included.
+
+| | Tables | Columns |
+|---|---|---|
+| Audit, 2026-11-20 | 155 | 1158 |
+| Plan of this decision | 118 | 1042 |
+| Live store, 2026-11-26 | 67 | 870 |
+
+### The ten parts, as built
+
+| Part | Planned | Built | Note |
+|---|---|---|---|
+| 1 | 7 | 7 | |
+| 2 | 6 | 5 | `inventory_reports` stayed its own table. As a column of `nodes`, a hello took 497 microseconds instead of 50, because SQLite rewrites the whole row and a report is about 630 KB. |
+| 3 | 3 | 3 | |
+| 4 | 2 | 2 | |
+| 5 | 3 | 2 | `delivery_step_inbox` stayed. Owner approvals are queued with no `delivery_step_tasks` row (`queueOwnerApproval`), so the inbox could not fold into the tasks. |
+| 6 | 8 | 8 | See "Part 6 result". |
+| 7 | 3 | 3 | Five tables dropped, `plans` and `oauth_attempts` added. |
+| 8 | 3 | 3 | Four tables dropped, `gateway_state` added. The 12 marker rows left `owner_settings`. |
+| 9 | 1 | 1 | |
+| 10 | 1 | 1 | `graph_nodes` dropped with no new column. The design note is `docs/design/graph-nodes-fold.md`, in its own change. |
+
+The ten parts removed 35 tables, not 37. A fresh store had 120 tables after them. The live store had 121, because `follow_ups` was added on 2026-11-20 by an unrelated change.
+
+### Later work in the same direction
+
+The owner then reviewed the tables area by area, and each review folded more tables. Each change appended its own migration and kept the rules above.
+
+| Area | Change | Tables dropped |
+|---|---|---|
+| Learned tables | b76ef6a243 | 6 |
+| Settings | [0182](0182-one-settings-system.md) | 3 |
+| Session tables | a08bfc45f0 | 7 |
+| Delivery step tables | "Step tables result" above | 6 |
+| Worker and picker tables | [0183](0183-worker-tables-rework.md) | 9 |
+| Machine tables | c1ce3fae29 | 2 |
+| Org graph | [0184](0184-org-graph-leadership-and-folds.md) | 4 |
+| Tools retire | "Update 2026-11-21" above | 15 |
+| OAuth clients | [0186](0186-oauth-clients-live-in-apps.md) | 2 |
+| Desk tables | c261334540 | 3 |
+
+These changes dropped 57 tables. Three tables are new: `skill_changes` (tools retire), `pick_quota` ([0191](0191-picks-keep-their-quota-read-and-the-owners-choice-holds.md)) and `session_dues` (the `agent_due` tool). 121 - 57 + 3 = 67.
+
+The two tables the parts kept on purpose are gone too, each by a later design: `inventory_reports` with the tools retire, and `delivery_step_inbox` with the Desk tables change.
+
+### What changed in "What stays, on purpose" and "Not decided here"
+
+- Later changes dropped `friction_status_history`, `setting_revision`, `table_versions`, `profiles`, `session_checks`, `worker_usage`, `project_bar_next`, `skill_archive_latest`, `skill_archive_changes` and `skill_list_changes`.
+- `pick_candidates`, `setting_history`, `standing_order_history` and `worker_assessments` are still their own tables.
+- The copied harness, model and difficulty columns of ratings and defects are decided in [0183](0183-worker-tables-rework.md): ratings and defects read them through their run, and the copies are dropped.
+
+The tables today, with what each holds and who uses it: [gateway-data.md](../gateway-data.md).
