@@ -371,7 +371,15 @@ func modelRef(providerID, id, modelID string) string {
 // openCodeCTOSessionSelection reads the model and agent selected in the live
 // OpenCode session.
 func (d *Daemon) openCodeCTOSessionSelection(ctx context.Context, id string) (string, string, error) {
-	b, err := d.ctoOp(ctx, opencodeapi.GetSession, id, "", nil)
+	return d.openCodeCTOSessionSelectionAt(ctx, d.cto.base, d.cto.password, d.cto.version, d.cto.identity, id)
+}
+
+func (d *Daemon) openCodeCTOSessionSelectionAt(ctx context.Context, base, password, version, identity, id string) (string, string, error) {
+	path, err := d.openCodePath(ctx, base, password, version, identity, opencodeapi.GetSession, id)
+	if err != nil {
+		return "", "", err
+	}
+	b, err := d.cto.apiTo(ctx, base, password, opencodeapi.GetSession.Method(), path, nil)
 	if err != nil {
 		return "", "", err
 	}
@@ -602,8 +610,6 @@ func (d *Daemon) ctoActions(id, harness string) ([]protocol.CTOAction, error) {
 
 func (d *Daemon) openCodeCTOEvents(ctx context.Context, index int) (protocol.CTOEvents, error) {
 	c := &d.cto
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	out := protocol.CTOEvents{Messages: []json.RawMessage{}, Actions: []protocol.CTOAction{}}
 	if model, err := d.ctoModel(ctx); err == nil {
 		out.Model = model
@@ -621,13 +627,17 @@ func (d *Daemon) openCodeCTOEvents(ctx context.Context, index int) (protocol.CTO
 	if id == "" {
 		return out, nil
 	}
-	if err = d.startOpenCodeRole(ctx, roleCTO); err != nil {
+	c.mu.Lock()
+	err = d.startOpenCodeRole(ctx, roleCTO)
+	base, password, version, identity := c.base, c.password, c.version, c.identity
+	c.mu.Unlock()
+	if err != nil {
 		return out, err
 	}
-	if model, _, e := d.openCodeCTOSessionSelection(ctx, id); e == nil && model != "" {
+	if model, _, e := d.openCodeCTOSessionSelectionAt(ctx, base, password, version, identity, id); e == nil && model != "" {
 		out.Model = model
 	}
-	messages, err := d.openCodeCTOMessages(ctx, c.base, c.password, c.version, c.identity, id)
+	messages, err := d.openCodeCTOMessages(ctx, base, password, version, identity, id)
 	if err != nil {
 		return out, err
 	}
