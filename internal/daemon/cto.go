@@ -279,36 +279,10 @@ func (d *Daemon) ctoModel(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	list, _ := d.inventory()
-	var providers []string
-	found := false
-	for _, h := range list {
-		if h.Name == "opencode" {
-			found = true
-			providers = h.ModelProviders
-		}
+	if settings.OpenCodeModel == "" {
+		return "", errors.New("OpenCode CTO has no selected model")
 	}
-	if !found {
-		return "", errors.New("OpenCode is not installed on this machine")
-	}
-	// The model list is read live: a provider added since the daemon started
-	// must be usable without a restart.
-	models, err := d.readHarnessModels(ctx, "opencode")
-	if err != nil {
-		return "", err
-	}
-	if len(models) == 0 {
-		return "", errors.New("OpenCode has no available models")
-	}
-	if settings.OpenCodeModel != "" {
-		return protocol.ResolveModel(settings.OpenCodeModel, models, nil, providers)
-	}
-	for _, q := range []string{"gpt 6.1", "opus 5.5", "deepseek v4 pro"} {
-		if model, e := protocol.ResolveModel(q, models, nil, providers); e == nil {
-			return model, nil
-		}
-	}
-	return models[0], nil
+	return settings.OpenCodeModel, nil
 }
 func (d *Daemon) createCTO(ctx context.Context, gen uint64, base, password, version, identity string) (string, error) {
 	model, err := d.ctoModel(ctx)

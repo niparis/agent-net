@@ -132,7 +132,7 @@ func (d *Daemon) selectedCTOHarness(ctx context.Context) (ctoHarness, error) {
 			return nil, err
 		}
 	}
-	if pick.Harness != settings.Harness || pick.Model != settings.Model {
+	if pick.Harness != settings.Harness || pick.Model != settings.Model || (pick.Harness == "opencode" && pick.Model != settings.OpenCodeModel) {
 		if err := d.saveCTORoleModels(models, pick.Harness, pick.Model); err != nil {
 			return nil, err
 		}

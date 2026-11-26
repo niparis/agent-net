@@ -110,3 +110,25 @@ func TestCTOResumeFallsToTheListWithANewConversation(t *testing.T) {
 		t.Fatalf("the gate was asked %d times, want a resume check too", gateCalls)
 	}
 }
+
+func TestOpenCodeCTOUsesPickerModel(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) {
+		c.testGatewayCall = func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
+			if typ != "worker.role.pick" {
+				return nil, false, nil
+			}
+			raw, err := json.Marshal(protocol.RolePickResult{Harness: "opencode", Provider: "fake", Model: "fake/picked"})
+			return raw, true, err
+		}
+	}})
+	ctx := context.Background()
+	if _, err := n.d.selectedCTOHarness(ctx); err != nil {
+		t.Fatal(err)
+	}
+	model, err := n.d.ctoModel(ctx)
+	if err != nil || model != "fake/picked" {
+		t.Fatalf("model = %q, error = %v; want picker model fake/picked", model, err)
+	}
+}
