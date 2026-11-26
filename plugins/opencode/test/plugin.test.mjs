@@ -1728,7 +1728,7 @@ for (const [authority, rule] of [
     if (text.split(rule).length !== 3) throw new Error("trust and owner notes must carry the same receiver rule: " + text);
     if (!text.includes("as if the owner had asked you")) throw new Error(text);
     if (text.includes("or merging a pull request into the default branch")) throw new Error(text);
-    if (authority === "delegated" && (!text.includes("repo lead or team lead") || !text.includes("agent_owner_ask"))) throw new Error(text);
+    if (authority === "delegated" && (!text.includes("repo lead or team lead") || !text.includes("the chief of staff") || !text.includes("agent_message_send"))) throw new Error(text);
   });
 }
 
