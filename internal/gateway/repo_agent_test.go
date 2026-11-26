@@ -105,7 +105,7 @@ func TestRepoAgentMigrationPreservesGraphAndDelivery(t *testing.T) {
 	// extra sessions of the lead Agent to a member Agent on purpose
 	// (TestTreeInvariantsMigration), which is not what this test checks.
 	full := migrations
-	migrations = full[:migrationVersion(t, treeInvariantsMarker)-1]
+	migrations = full[:migrationVersion(t, TreeInvariantsMarker)-1]
 	defer func() { migrations = full }()
 	for i := 0; i < 2; i++ {
 		s, err := OpenStore(path)

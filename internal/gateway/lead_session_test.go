@@ -390,7 +390,7 @@ func TestLeadSessionRepairMigration(t *testing.T) {
 	}
 	// Up to the release before decision 0193, whose migration decides the
 	// rest by rule (TestTreeInvariantsMigration).
-	if err := replayMigrationsUpTo(t, s, migrationVersion(t, treeInvariantsMarker)-1); err != nil {
+	if err := replayMigrationsUpTo(t, s, migrationVersion(t, TreeInvariantsMarker)-1); err != nil {
 		t.Fatal(err)
 	}
 	pinned := 0

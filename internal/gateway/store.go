@@ -1341,6 +1341,18 @@ END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
 `, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration, workerTablesMigration, machineTablesMigration, orgFoldMigration, toolsRetireMigration, oauthClientsMigration, deskTablesMigration, pickQuotaMigration, workerStartOwnerChoiceMigration, sessionRequestedModelMigration, stoodDownMigration, deskHideRemovalMigration, treeInvariantsMigration, sessionStallColumnsMigration, permissionDecidedReasonMigration}
 
+// MigrationVersion returns the 1-based version of the migration whose text
+// contains marker. A test that must replay one migration finds it by name, so
+// a migration appended later cannot make it replay the wrong one.
+func MigrationVersion(marker string) (int, bool) {
+	for i, migration := range migrations {
+		if strings.Contains(migration, marker) {
+			return i + 1, true
+		}
+	}
+	return 0, false
+}
+
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
 -- Worker visual proof reports, deduplicated by ended run.
@@ -2091,7 +2103,7 @@ func (s *Store) migrate() error {
 				}
 			}
 		}
-		if strings.Contains(migrations[i], treeInvariantsMarker) {
+		if strings.Contains(migrations[i], TreeInvariantsMarker) {
 			if _, err := s.applyTreeInvariantsTx(tx); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("migration %d: %w", i+1, err)

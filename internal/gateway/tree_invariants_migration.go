@@ -6,14 +6,14 @@ import (
 	"slices"
 )
 
-// treeInvariantsMarker names the migration of decision 0193 part 2. The
+// TreeInvariantsMarker names the migration of decision 0193 part 2. The
 // migration runner calls applyTreeInvariantsTx when it reaches it.
-const treeInvariantsMarker = "Session tree invariants I1 I2 I4"
+const TreeInvariantsMarker = "Session tree invariants I1 I2 I4"
 
 // treeInvariantsMigration applies I1, I2 and I4 of decision 0193 once to the
 // stored data. The work is in applyTreeInvariantsTx; the text only marks the
 // place in the list. Appended at the end and never edited once it ships.
-const treeInvariantsMigration = `SELECT 1 /* ` + treeInvariantsMarker + ` */;`
+const treeInvariantsMigration = `SELECT 1 /* ` + TreeInvariantsMarker + ` */;`
 
 // applyTreeInvariantsTx brings stored data to the state the writes now keep:
 //
