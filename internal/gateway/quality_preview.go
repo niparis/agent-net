@@ -82,8 +82,7 @@ func (g *Gateway) qualityPreviewWith(in qualityPreviewInputs, node protocol.Node
 		return nil, nil, nil, err
 	}
 	rotation, rotationErr := g.store.WorkerRotation()
-	floors := floorsWithProtected(in.floors, in.protected)
-	snapshot, err := g.chooseFacts(&node, candidates, quotas, floors, nil)
+	snapshot, err := g.chooseFacts(&node, candidates, quotas, in.floors, nil)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -113,7 +112,7 @@ func (g *Gateway) qualityPreviewWith(in qualityPreviewInputs, node protocol.Node
 			Quotas:     quotas,
 			Running:    running,
 			Protected:  in.protected,
-			Floors:     floors,
+			Floors:     in.floors,
 			Facts:      &snapshot,
 			Rotation:   &rotation,
 		})

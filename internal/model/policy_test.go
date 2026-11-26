@@ -10,11 +10,11 @@ func TestPolicyForPinsEveryRow(t *testing.T) {
 		purpose Purpose
 		want    Policy
 	}{
-		{PurposeWorkerAutomatic, Policy{Ranker: RankCost, Checks: all, Pace: true, Rotation: true}},
+		{PurposeWorkerAutomatic, Policy{Ranker: RankCost, Checks: all, Pace: true, ProtectedLast: true, Rotation: true}},
 		{PurposeWorkerNamed, Policy{Ranker: RankFixed, Checks: all}},
 		{PurposeOwnerNamed, Policy{Ranker: RankFixed}},
 		{PurposeContinueOrResume, Policy{Ranker: RankSame}},
-		{PurposeDifficultyJudge, Policy{Ranker: RankFixed, Checks: all, Pace: true}},
+		{PurposeDifficultyJudge, Policy{Ranker: RankFixed, Checks: all, Pace: true, ProtectedLast: true}},
 		{PurposeRole, Policy{Ranker: RankFixed}},
 	}
 	for _, tt := range tests {

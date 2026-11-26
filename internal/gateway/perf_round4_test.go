@@ -27,8 +27,7 @@ func refQualityPreview(g *Gateway, in qualityPreviewInputs, node protocol.NodeVi
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	floors := floorsWithProtected(in.floors, in.protected)
-	snapshot, err := g.chooseFacts(&node, candidates, quotas, floors, nil)
+	snapshot, err := g.chooseFacts(&node, candidates, quotas, in.floors, nil)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -41,7 +40,7 @@ func refQualityPreview(g *Gateway, in qualityPreviewInputs, node protocol.NodeVi
 		chosen, err := g.Choose(ChooseRequest{
 			Purpose: model.PurposePreview, Node: &node, Candidates: candidates, Difficulty: level,
 			D: protocol.PickerD(nil, level), Scores: in.scores, Minimums: in.minimums, Quotas: quotas,
-			Running: running, Protected: in.protected, Floors: floors, Facts: &snapshot, Rotation: &rotation,
+			Running: running, Protected: in.protected, Floors: in.floors, Facts: &snapshot, Rotation: &rotation,
 		})
 		if err == nil {
 			out[level] = qualityModelFamily(chosen.Choice.Model)

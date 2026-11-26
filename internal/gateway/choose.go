@@ -3,7 +3,6 @@ package gateway
 import (
 	"fmt"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/model"
@@ -160,9 +159,6 @@ func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 	if len(candidates) == 0 && len(paused) > 0 {
 		return refuse(fmt.Errorf("no candidate can run now: %s", joinModelNote(skipNotes(pausedSkips))))
 	}
-	// Protection is a floor of 100 percent left, so one mechanism holds a
-	// protected provider back and keeps the owner's ordinary floors as they are.
-	req.Floors = floorsWithProtected(req.Floors, req.Protected)
 	var facts model.Facts
 	var err error
 	if req.Facts != nil {
@@ -228,6 +224,9 @@ func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 	// cost terms. Keep it when the gate moves to another candidate.
 	rankerNote := order[0].PickNote
 	rankerRows := order[0].PickRows
+	if policy.ProtectedLast {
+		order = protectedLastOrder(order, req.Protected)
+	}
 	if req.Prefer != "" {
 		order = preferFirst(order, req.Prefer)
 	}
@@ -261,6 +260,7 @@ func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 		}
 	}
 	var notes []string
+	notes = append(notes, protectionNotes(order, result.Choice, level, req.Scores, req.Minimums, req.Protected)...)
 	if result.Granted.FloorUnread() {
 		notes = append(notes, "no quota reading, floor not applied")
 	}
@@ -379,24 +379,47 @@ func orderCandidates(order []protocol.WorkerModelChoice) []model.Candidate {
 	return list
 }
 
-// floorsWithProtected folds the protected providers into the owner's floors:
-// each protected provider becomes a floor of 100 percent left. The caller's
-// map is copied, so a floor the owner set keeps its value when it is stronger.
-func floorsWithProtected(floors protocol.WorkerFloors, protected protocol.ProtectedProviders) protocol.WorkerFloors {
-	if len(protected.Providers) == 0 {
-		return floors
+// protectionNotes is the protected-provider note: a protected candidate that
+// was skipped for an ordinary one, or the note that only a protected one was
+// left. It is a modifier note, not a check.
+func protectionNotes(order []protocol.WorkerModelChoice, choice protocol.WorkerModelChoice, level string, scores []protocol.ModelScore, minimums map[string]float64, setting protocol.ProtectedProviders) []string {
+	if len(setting.Providers) == 0 {
+		return nil
 	}
-	out := protocol.WorkerFloors{Floors: make(map[string]int, len(floors.Floors)+len(protected.Providers))}
-	for provider, floor := range floors.Floors {
-		out.Floors[provider] = floor
+	if isProtected(choice.Harness, choice.Model, setting) {
+		reason := setting.Reason
+		if reason == "" {
+			reason = "your orchestrator's provider"
+		}
+		return []string{fmt.Sprintf("used %s %s (protected: %s) because no other profile meets %s, or the others are out of quota", choice.Harness, choice.Model, reason, level)}
 	}
-	for _, provider := range protected.Providers {
-		key := strings.ToLower(strings.TrimSpace(provider))
-		if key == "" {
+	var notes []string
+	for _, c := range order {
+		if !isProtected(c.Harness, c.Model, setting) {
 			continue
 		}
-		if out.Floors[key] < 100 {
-			out.Floors[key] = 100
+		if _, _, eligible, _ := protocol.WorkerCandidateFit(c.WorkerModelCandidate, level, scores, minimums); eligible {
+			notes = append(notes, fmt.Sprintf("skipped %s: protected provider (%s), saved for your orchestrator", c.Name, protocol.ProfileProvider(c.Harness, c.Model)))
+		}
+	}
+	return notes
+}
+
+// protectedLastOrder moves protected providers after the others without
+// changing the order inside either group. It reorders, never removes.
+func protectedLastOrder(order []protocol.WorkerModelChoice, setting protocol.ProtectedProviders) []protocol.WorkerModelChoice {
+	if len(setting.Providers) == 0 {
+		return order
+	}
+	out := make([]protocol.WorkerModelChoice, 0, len(order))
+	for _, c := range order {
+		if !isProtected(c.Harness, c.Model, setting) {
+			out = append(out, c)
+		}
+	}
+	for _, c := range order {
+		if isProtected(c.Harness, c.Model, setting) {
+			out = append(out, c)
 		}
 	}
 	return out

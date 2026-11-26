@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"testing"
-	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -57,11 +56,6 @@ func TestDifficultyJudgePickerUsesTheFixedListAndProtection(t *testing.T) {
 	if _, err := s.db.Exec(`INSERT INTO setting_values(key,level,scope,item,value,revision) VALUES (?,'network','network','',?,0)`, protectedProvidersKey, `{"protected_providers":["anthropic"]}`); err != nil {
 		t.Fatal(err)
 	}
-	// Protection is a floor of 100 percent left, so it needs a reading.
-	now := s.now()
-	g.usage.set(node, now, protocol.UsageReport{Quotas: &protocol.Quotas{GeneratedAt: now.Unix(), Providers: []protocol.QuotaProvider{
-		{Provider: "claude", Windows: []protocol.QuotaWindow{{Kind: "weekly", PercentUsed: 10, ResetsAt: now.Add(7 * 24 * time.Hour).Unix()}}},
-	}}})
 	for i := 0; i < 3; i++ {
 		if got := pick(""); got["harness"] != "pi" {
 			t.Fatalf("protected provider chosen: %v", got)
