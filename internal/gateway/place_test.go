@@ -128,6 +128,9 @@ func TestPlaceTextFollowsTeamChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err = r.s.db.Exec(`UPDATE sessions SET agent_id='other' WHERE id=?`, second); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = r.s.db.Exec(`UPDATE agents SET lead_session=? WHERE id='other'`, second); err != nil {
 		t.Fatal(err)
 	}

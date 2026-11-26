@@ -154,15 +154,12 @@ func (s *Store) ArchiveSessions(q protocol.SessionsArchiveRequest) (protocol.Ses
 			if err = recordOwnerUse(tx, id, s.now()); err != nil {
 				return out, err
 			}
+		} else if err = s.keepLeadOfSessionTx(tx, id); err != nil {
+			return out, err
 		}
 	}
 	if err = tx.Commit(); err != nil {
 		return out, err
-	}
-	if !q.Restore {
-		if err = s.repairArchivedLeadSessions(ids); err != nil {
-			return out, err
-		}
 	}
 	return out, nil
 }

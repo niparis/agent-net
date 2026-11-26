@@ -398,40 +398,25 @@ func bindMergerAgentTx(tx *sql.Tx, project, session string, now int64) error {
 	return err
 }
 
-// setAgentLeadSessionTx stores an Agent's lead session and closes the open CTO
-// question about it. The Agent is the only lead session (decision 0160); the
-// old Team and Repo copy columns are gone.
-func (s *Store) setAgentLeadSessionTx(tx *sql.Tx, agent, session string) error {
-	// The session that led before is stood down: its messages go to the new
-	// lead session.
+// setAgentLeadSessionTx makes session the lead session of agent. The session
+// that led before is stood down, so its messages go to the new lead. Its
+// workers keep it as their caller: the daemon that runs them holds the caller
+// and reports it on every sync, so only a replace, which tells that daemon,
+// moves them.
+func (s *Store) setAgentLeadSessionTx(q askDB, agent, session string) error {
 	var previous string
-	if err := tx.QueryRow(`SELECT COALESCE(lead_session,'') FROM agents WHERE id=?`, agent).Scan(&previous); err != nil && err != sql.ErrNoRows {
+	if err := q.QueryRow(`SELECT COALESCE(lead_session,'') FROM agents WHERE id=?`, agent).Scan(&previous); err != nil && err != sql.ErrNoRows {
 		return err
 	}
 	if previous != session {
-		if err := standDownTx(tx, previous, stoodDownLead, session); err != nil {
+		if err := standDownTx(q, previous, stoodDownLead, session); err != nil {
 			return err
 		}
-		if err := clearStoodDownTx(tx, session); err != nil {
+		if err := clearStoodDownTx(q, session); err != nil {
 			return err
 		}
 	}
-	if _, err := tx.Exec(`UPDATE agents SET lead_session=? WHERE id=?`, session, agent); err != nil {
-		return err
-	}
-	return closeLeadSessionQuestionQ(tx, agent, session, s.now().UnixNano())
-}
-
-// clearLostLeadSessionTx clears an Agent's lead session once the Agent leads no
-// Team or Repo. The pin would otherwise name a session from a place the Agent
-// no longer leads, the stale pin the copies caused.
-func clearLostLeadSessionTx(tx *sql.Tx, agent string) error {
-	if agent == "" {
-		return nil
-	}
-	_, err := tx.Exec(`UPDATE agents SET lead_session=NULL WHERE id=? AND lead_session IS NOT NULL
-		AND NOT EXISTS(SELECT 1 FROM repos WHERE lead_agent_id=?)
-		AND NOT EXISTS(SELECT 1 FROM teams WHERE active=1 AND owner_agent_id=?)`, agent, agent, agent)
+	_, err := q.Exec(`UPDATE agents SET lead_session=? WHERE id=?`, session, agent)
 	return err
 }
 

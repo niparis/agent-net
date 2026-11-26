@@ -21,15 +21,17 @@ var fixtureNow = time.Date(2026, 11, 26, 5, 45, 0, 0, time.UTC)
 // fixtureTreeSnapshot loads testdata/session_tree_0193.sql, a scrubbed copy
 // of the live gateway of 2026-11-26, into a real gateway store and reads the
 // session list the way the TUI gets it, so the gateway's placement rule
-// (decision 0193) is what the tree draws.
-func fixtureTreeSnapshot(t *testing.T) Snapshot {
+// (decision 0193) is what the tree draws. With migrate set, the store is
+// opened once more with its last migration undone, so the part 2 migration of
+// decision 0193 runs on the fixture as it does on the live gateway.
+func fixtureTreeSnapshot(t *testing.T, migrate bool) Snapshot {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "gateway.db")
 	s, err := gateway.OpenStore(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { s.Close() }()
 	fixture, err := os.ReadFile(filepath.Join("testdata", "session_tree_0193.sql"))
 	if err != nil {
 		t.Fatal(err)
@@ -41,6 +43,18 @@ func fixtureTreeSnapshot(t *testing.T) Snapshot {
 	defer db.Close()
 	if _, err := db.Exec(string(fixture)); err != nil {
 		t.Fatal(err)
+	}
+	if migrate {
+		// The last migration is decision 0193's (I1, I2, I4 on stored data).
+		if _, err := db.Exec(`DELETE FROM schema_version WHERE version=(SELECT MAX(version) FROM schema_version)`); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if s, err = gateway.OpenStore(path); err != nil {
+			t.Fatal(err)
+		}
 	}
 	snap := Snapshot{Connected: true, NodeID: "n_01"}
 	rows, err := db.Query(`SELECT id, hostname FROM nodes ORDER BY id`)
@@ -69,7 +83,18 @@ func fixtureTreeSnapshot(t *testing.T) Snapshot {
 // owner judges the golden pictures. A session the rule cannot place shows
 // "(no parent: <rule>)" under its project's lead, not as a root of its own.
 func TestSessionTreeFromScrubbedGateway(t *testing.T) {
-	snap := fixtureTreeSnapshot(t)
+	renderFixtureTree(t, fixtureTreeSnapshot(t, false), "session_tree_0193")
+}
+
+// TestSessionTreeAfterTheTreeMigration renders the same fixture after the
+// part 2 migration: the "(no parent: no lead)" marker and the old offline
+// copy of a lead are gone.
+func TestSessionTreeAfterTheTreeMigration(t *testing.T) {
+	renderFixtureTree(t, fixtureTreeSnapshot(t, true), "session_tree_0193_migrated")
+}
+
+func renderFixtureTree(t *testing.T, snap Snapshot, name string) {
+	t.Helper()
 	for _, size := range []struct{ w, h int }{{120, 34}, {80, 24}} {
 		src := &fakeSource{snap: snap}
 		m := New(src)
@@ -79,6 +104,6 @@ func TestSessionTreeFromScrubbedGateway(t *testing.T) {
 		// The "all" view (v) shows every session the fixture holds, so the
 		// dormant and offline shapes are in the picture too.
 		m = keys(m, "v")
-		golden(t, fmt.Sprintf("session_tree_0193_%dx%d", size.w, size.h), m.testView())
+		golden(t, fmt.Sprintf("%s_%dx%d", name, size.w, size.h), m.testView())
 	}
 }

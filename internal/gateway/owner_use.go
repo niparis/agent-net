@@ -109,12 +109,14 @@ func (s *Store) AutoArchiveSessions() ([]string, error) {
 		if _, err = tx.Exec(`UPDATE sessions SET archived_at=? WHERE id=?`, now.UnixNano(), id); err != nil {
 			return nil, err
 		}
+		// I4: an archived lead hands its lead to a live session in the
+		// same transaction.
+		if err = s.keepLeadOfSessionTx(tx, id); err != nil {
+			return nil, err
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return nil, err
-	}
-	if err := s.repairArchivedLeadSessions(ids); err != nil {
-		return ids, err
 	}
 	return ids, nil
 }

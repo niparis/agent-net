@@ -286,8 +286,9 @@ func TestMergerIsNeverALead(t *testing.T) {
 	}
 }
 
-// A restart that replaces a session moves its places in the tree: the Agent's
-// lead session, the caller of its workers and its merger place.
+// A restart that replaces a session moves its places in the tree: the caller
+// of its workers and its merger place. A merger Agent leads nothing, so a
+// stray pin on it is cleared (decision 0193 I1).
 func TestReplaceSessionMovesTheTreePlaces(t *testing.T) {
 	s, merger := mergerRig(t)
 	var node string
@@ -312,13 +313,13 @@ func TestReplaceSessionMovesTheTreePlaces(t *testing.T) {
 		t.Fatalf("replace: %v %v", moved, err)
 	}
 	var lead, owner, place string
-	if err := s.db.QueryRow(`SELECT (SELECT lead_session FROM agents WHERE id='demo-merger'),
+	if err := s.db.QueryRow(`SELECT (SELECT COALESCE(lead_session,'') FROM agents WHERE id='demo-merger'),
 		(SELECT json_extract(worker,'$.owner') FROM sessions WHERE id=?),
 		(SELECT session_id FROM `+mergerRowsSQL+` WHERE project='demo')`, worker).Scan(&lead, &owner, &place); err != nil {
 		t.Fatal(err)
 	}
-	if lead != fresh || owner != fresh || place != fresh {
-		t.Fatalf("lead_session=%q worker owner=%q merger=%q, want all %q", lead, owner, place, fresh)
+	if lead != "" || owner != fresh || place != fresh {
+		t.Fatalf("lead_session=%q worker owner=%q merger=%q, want no lead session and %q", lead, owner, place, fresh)
 	}
 }
 
@@ -491,6 +492,8 @@ func orgFixture(t *testing.T) (*Store, map[string]string) {
 		args []any
 	}{
 		{`UPDATE sessions SET agent_id='visitor' WHERE id=?`, []any{ids["visit"]}},
+		// h2 and h3 held the lead Agent, as the old code let them.
+		{`UPDATE sessions SET agent_id='homelab-agent' WHERE id IN (?,?)`, []any{ids["h2"], ids["h3"]}},
 		{`INSERT INTO repo_leads(repo_id,agent_id,lead_session) VALUES('homelab-agent','homelab-agent',?),('agent-net','agent-net',NULL)`, []any{ids["h2"]}},
 		{`UPDATE repos SET lead_agent_id='homelab-agent' WHERE id='homelab-agent'`, nil},
 		{`UPDATE repos SET lead_agent_id='agent-net' WHERE id='agent-net'`, nil},

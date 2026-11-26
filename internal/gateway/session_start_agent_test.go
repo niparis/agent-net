@@ -192,8 +192,10 @@ func TestSessionStartAgentLaunchHold(t *testing.T) {
 	if err != nil || c.Agent != "chosen" {
 		t.Fatalf("first delivery context: %+v %v", c, err)
 	}
+	// repo already has a live lead session, so the default is its member
+	// Agent (decision 0193 I2).
 	c, err = s.resolveSessionContext(other)
-	if err != nil || c.Agent != "repo" {
+	if err != nil || c.Agent != "repo-agent" {
 		t.Fatalf("concurrent default: %+v %v", c, err)
 	}
 	pending, err = s.Pending(node, false)
@@ -278,8 +280,10 @@ func TestSessionStartAgentHoldExpiresAndNextStartWorks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// repo already has a live lead session, so the default is its member
+	// Agent (decision 0193 I2).
 	c, err = s.resolveSessionContext(lateID)
-	if err != nil || c.Agent != "repo" {
+	if err != nil || c.Agent != "repo-agent" {
 		t.Fatalf("late default: %+v %v", c, err)
 	}
 	items, err = s.ListInbox()

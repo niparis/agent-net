@@ -118,68 +118,6 @@ func TestOnlyPinnedLeadSessionCarriesTheLeadFlags(t *testing.T) {
 	}
 }
 
-// A second session on a lead Agent with no pin does not become the lead: the
-// CTO is asked which session leads.
-func TestSecondSessionWithoutPinAsksCTO(t *testing.T) {
-	r := newPlaceRig(t)
-	var node string
-	if err := r.s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, r.lead).Scan(&node); err != nil {
-		t.Fatal(err)
-	}
-	cto := ctoForTest(t, r.s, node)
-	if _, err := r.s.db.Exec(`UPDATE agents SET lead_session=NULL WHERE id='other'`); err != nil {
-		t.Fatal(err)
-	}
-	secondSessionOf(t, r.s, r.lead, "homelab-agent 2")
-	if got := agentLeadSession(t, r.s, "other"); got != "" {
-		t.Fatalf("the new session became the lead: %q", got)
-	}
-	var next string
-	if err := r.s.db.QueryRow(`SELECT next_who FROM inbox_items WHERE source_ref=? AND status='open'`, "lead_session:other").Scan(&next); err != nil {
-		t.Fatalf("no CTO question for the second session: %v", err)
-	}
-	if next != cto {
-		t.Fatalf("question next_who=%q, want cto %q", next, cto)
-	}
-}
-
-// Two new sessions joining an unpinned lead Agent that already has two keep
-// one open CTO question; each registration refreshes its text.
-func TestRepeatedUnpinnedLeadSessionAsksOneCTOQuestion(t *testing.T) {
-	r := newPlaceRig(t)
-	var node string
-	if err := r.s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, r.lead).Scan(&node); err != nil {
-		t.Fatal(err)
-	}
-	cto := ctoForTest(t, r.s, node)
-	second := secondSessionOf(t, r.s, r.lead, "two")
-	if _, err := r.s.db.Exec(`UPDATE agents SET lead_session=NULL WHERE id='other'`); err != nil {
-		t.Fatal(err)
-	}
-	third := secondSessionOf(t, r.s, r.lead, "three")
-	fourth := secondSessionOf(t, r.s, r.lead, "four")
-	var count int
-	if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref=? AND status='open'`, "lead_session:other").Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	if count != 1 {
-		t.Fatalf("%d open CTO questions, want one", count)
-	}
-	var next, text string
-	if err := r.s.db.QueryRow(`SELECT next_who,text FROM inbox_items WHERE source_ref=? AND status='open'`, "lead_session:other").Scan(&next, &text); err != nil {
-		t.Fatal(err)
-	}
-	if next != cto {
-		t.Fatalf("question next_who=%q, want cto %q", next, cto)
-	}
-	for _, id := range []string{r.lead, second, third, fourth} {
-		label := sessionLabel(r.s.db, id)
-		if !strings.Contains(text, "- "+label+" ("+id+")") {
-			t.Fatalf("question misses %s (%s):\n%s", label, id, text)
-		}
-	}
-}
-
 // The automatic default gives a second session in a project the project's
 // member agent while the pinned lead is live. Explicit start reservations and
 // session_agent_set calls still succeed and keep the lead pin on the lead.
@@ -261,56 +199,39 @@ func TestLeadSetAgentPinsItsOnlySession(t *testing.T) {
 	}
 }
 
-// A lead_set that names an Agent with several sessions pins none and asks the
-// CTO, not the owner, which session leads it.
-func TestLeadSetAgentWithSeveralSessionsAsksCTO(t *testing.T) {
+// A lead_set that names an Agent with several live sessions pins one by the
+// I1 order of decision 0193 (here the one the owner used last) and asks the
+// CTO nothing. A lead_set naming a session still overrides the choice.
+func TestLeadSetAgentWithSeveralSessionsPinsByTheRule(t *testing.T) {
 	s := teamStore(t)
-	var node string
-	if err := s.db.QueryRow(`SELECT node_id FROM sessions LIMIT 1`).Scan(&node); err != nil {
-		t.Fatal(err)
-	}
-	cto := ctoForTest(t, s, node)
 	first := agentSession(t, s, "demo", "multi")
 	second := secondSessionOf(t, s, first, "multi-two")
-	if _, err := s.db.Exec(`UPDATE sessions SET name='multi-one' WHERE id=?`, first); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.db.Exec(`UPDATE sessions SET name='multi-two' WHERE id=?`, second); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := s.db.Exec(`UPDATE agents SET lead_session=NULL WHERE id='multi'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordOwnerUse(second); err != nil {
 		t.Fatal(err)
 	}
 	agent := protocol.GraphRef{Kind: "agent", ID: "multi"}
 	if err := s.SetLead(protocol.LeadSetRequest{Ref: protocol.GraphRef{Kind: "repo", ID: "demo"}, Lead: &agent}, "owner", false); err != nil {
 		t.Fatal(err)
 	}
-	if got := agentLeadSession(t, s, "multi"); got != "" {
-		t.Fatalf("multi was pinned to %q with two sessions", got)
-	}
-	var text, next, source string
-	if err := s.db.QueryRow(`SELECT text,next_who,source_ref FROM inbox_items WHERE source_ref=? AND status='open'`,
-		"lead_session:multi").Scan(&text, &next, &source); err != nil {
-		t.Fatalf("no CTO question: %v", err)
-	}
-	if next != cto || !strings.Contains(text, "Which session leads multi?") ||
-		!strings.Contains(text, "- multi-one ("+first+")") || !strings.Contains(text, "- multi-two ("+second+")") {
-		t.Fatalf("question next=%q text=%q", next, text)
-	}
-	// The CTO answers with the session it picks; the question closes with it.
-	answer := protocol.GraphRef{Kind: "session", ID: second}
-	if err := s.SetLead(protocol.LeadSetRequest{Ref: agent, Lead: &answer}, "cto", false); err != nil {
-		t.Fatal(err)
-	}
 	if got := agentLeadSession(t, s, "multi"); got != second {
-		t.Fatalf("after the CTO answer lead_session=%q, want %q", got, second)
+		t.Fatalf("multi lead_session=%q, want %q, the session the owner used last", got, second)
 	}
-	var status, reply string
-	if err := s.db.QueryRow(`SELECT status,answer FROM inbox_items WHERE source_ref='lead_session:multi'`).Scan(&status, &reply); err != nil {
+	var questions int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref LIKE 'lead_session:%'`).Scan(&questions); err != nil {
 		t.Fatal(err)
 	}
-	if status != "answered" || !strings.Contains(reply, second) {
-		t.Fatalf("question status=%q answer=%q, want answered with %s", status, reply, second)
+	if questions != 0 {
+		t.Fatalf("%d CTO questions about the lead, want none", questions)
+	}
+	override := protocol.GraphRef{Kind: "session", ID: first}
+	if err := s.SetLead(protocol.LeadSetRequest{Ref: agent, Lead: &override}, "cto", false); err != nil {
+		t.Fatal(err)
+	}
+	if got := agentLeadSession(t, s, "multi"); got != first {
+		t.Fatalf("after the CTO override lead_session=%q, want %q", got, first)
 	}
 }
 
@@ -348,16 +269,15 @@ func TestFirstSessionPinsTheLeadAgent(t *testing.T) {
 	}
 }
 
-// Archiving the pinned session clears the pin. Other sessions left make the
-// same CTO question.
-func TestArchivingThePinnedLeadSessionAsksCTO(t *testing.T) {
+// Archiving the pinned session hands the lead to the live session left, in
+// the same transaction (decision 0193 I1).
+func TestArchivingThePinnedLeadSessionPicksTheNext(t *testing.T) {
 	r := newPlaceRig(t)
 	var node string
 	if err := r.s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, r.lead).Scan(&node); err != nil {
 		t.Fatal(err)
 	}
-	cto := ctoForTest(t, r.s, node)
-	secondSessionOf(t, r.s, r.lead, "homelab-agent 2")
+	second := secondSessionOf(t, r.s, r.lead, "homelab-agent 2")
 	if _, err := r.s.db.Exec(`UPDATE agents SET lead_session=? WHERE id='other'`, r.lead); err != nil {
 		t.Fatal(err)
 	}
@@ -367,27 +287,18 @@ func TestArchivingThePinnedLeadSessionAsksCTO(t *testing.T) {
 	if _, err := r.s.ArchiveSessions(protocol.SessionsArchiveRequest{IDs: []string{r.lead}}); err != nil {
 		t.Fatal(err)
 	}
-	if got := agentLeadSession(t, r.s, "other"); got != "" {
-		t.Fatalf("archived session still pinned: %q", got)
-	}
-	var next string
-	if err := r.s.db.QueryRow(`SELECT next_who FROM inbox_items WHERE source_ref=? AND status='open'`, "lead_session:other").Scan(&next); err != nil {
-		t.Fatalf("no CTO question after the archive: %v", err)
-	}
-	if next != cto {
-		t.Fatalf("question next_who=%q, want cto %q", next, cto)
+	if got := agentLeadSession(t, r.s, "other"); got != second {
+		t.Fatalf("lead_session=%q after the archive, want the live session %q", got, second)
 	}
 }
 
-// Archiving the pinned session with no other session clears the pin and asks
-// nothing.
-func TestArchivingTheOnlyLeadSessionAsksNothing(t *testing.T) {
+// Archiving the pinned session with no other session clears the pin.
+func TestArchivingTheOnlyLeadSessionClearsThePin(t *testing.T) {
 	r := newPlaceRig(t)
 	var node string
 	if err := r.s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, r.lead).Scan(&node); err != nil {
 		t.Fatal(err)
 	}
-	ctoForTest(t, r.s, node)
 	if _, err := r.s.db.Exec(`UPDATE agents SET lead_session=? WHERE id='other'`, r.lead); err != nil {
 		t.Fatal(err)
 	}
@@ -399,13 +310,6 @@ func TestArchivingTheOnlyLeadSessionAsksNothing(t *testing.T) {
 	}
 	if got := agentLeadSession(t, r.s, "other"); got != "" {
 		t.Fatalf("archived session still pinned: %q", got)
-	}
-	var count int
-	if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref LIKE 'lead_session:%' AND status='open'`).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	if count != 0 {
-		t.Fatalf("%d CTO questions after the last session went", count)
 	}
 }
 
@@ -484,7 +388,9 @@ func TestLeadSessionRepairMigration(t *testing.T) {
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, version); err != nil {
 		t.Fatal(err)
 	}
-	if err := replayMigrations(t, s); err != nil {
+	// Up to the release before decision 0193, whose migration decides the
+	// rest by rule (TestTreeInvariantsMigration).
+	if err := replayMigrationsUpTo(t, s, migrationVersion(t, treeInvariantsMarker)-1); err != nil {
 		t.Fatal(err)
 	}
 	pinned := 0
@@ -583,7 +489,7 @@ func TestAutomaticPinTakesTheOneOnlineSessionOverOfflineLeftover(t *testing.T) {
 	if _, err := s.db.Exec(`UPDATE repos SET lead_agent_id='homelab-auto' WHERE id='demo'`); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.pinFirstLeadSessionQ(s.db, live); err != nil {
+	if err := s.keepLeadOfSessionTx(s.db, live); err != nil {
 		t.Fatal(err)
 	}
 	if got := agentLeadSession(t, s, "homelab-auto"); got != live {

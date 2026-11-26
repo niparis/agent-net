@@ -104,8 +104,10 @@ func TestSessionAgentAssignmentSurvivesOldDaemonSyncForEveryHarness(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
+			// demo has a live lead session, so a new session joins as the
+			// project's member Agent (decision 0193 I2).
 			initial, err := r.s.resolveSessionContext(id)
-			if err != nil || initial.Agent != "demo" {
+			if err != nil || initial.Agent != "demo-agent" {
 				t.Fatalf("default: %+v %v", initial, err)
 			}
 			req := map[string]string{"session_id": id, "agent": "advisor", "owner_session": owner}
