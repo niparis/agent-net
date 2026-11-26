@@ -1601,7 +1601,7 @@ func (d *Daemon) dropWorkerRow(r workerRow) bool {
 		return true
 	}
 	size := workerFolderBytes(filepath.Join(d.cfg.StateDir, "workers", r.ID))
-	if err := os.RemoveAll(filepath.Join(d.cfg.StateDir, "workers", r.ID)); err != nil {
+	if err := removeWorkerFolder(filepath.Join(d.cfg.StateDir, "workers", r.ID)); err != nil {
 		d.Logf("worker.cleanup retry worker=%s: %v", r.ID, err)
 		return false
 	}

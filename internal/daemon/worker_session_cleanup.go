@@ -142,6 +142,27 @@ func (d *Daemon) deleteWorkerHarnessSession(ctx context.Context, r workerRow) er
 	return nil
 }
 
+// removeWorkerFolder removes one worker's private folder. Go writes its module
+// cache read-only, and a file can only be unlinked with write permission on the
+// folder that holds it, so make each folder writable first. A walk does not
+// follow symlinks, so nothing outside the folder is changed.
+func removeWorkerFolder(dir string) error {
+	_ = filepath.WalkDir(dir, func(path string, e fs.DirEntry, err error) error {
+		if err != nil || !e.IsDir() {
+			return nil
+		}
+		info, err := e.Info()
+		if err != nil || info.Mode().Perm()&0o200 != 0 {
+			return nil
+		}
+		_ = os.Chmod(path, info.Mode().Perm()|0o200)
+		return nil
+	})
+	// The removal reports the real reason, including a folder that could not
+	// be made writable.
+	return os.RemoveAll(dir)
+}
+
 // workerFolderBytes counts only the private worker folder. Shared harness
 // database free pages cannot be reported as reclaimed filesystem space.
 func workerFolderBytes(dir string) int64 {
