@@ -9,67 +9,6 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-func TestInboxStore(t *testing.T) {
-	s, err := OpenStore(seededStorePath(t, "inbox.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	node, _, _ := s.CreateNode("test", "linux")
-	if _, err := s.UpsertSession(node, owner("test")); err != nil {
-		t.Fatal(err)
-	}
-	agent, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	item, err := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: agent, Node: "project", Text: "deploy abc", Recommendation: "yes", MessageID: "m_1", ConversationID: "c_1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if item.ID == "" || item.Status != "open" || item.CreatedAt.IsZero() {
-		t.Fatalf("item: %+v", item)
-	}
-	rows, err := s.ListInbox()
-	if err == nil && len(rows) == 1 {
-		item.AskerName = rows[0].AskerName
-	}
-	if err != nil || len(rows) != 1 || !reflect.DeepEqual(rows[0], item) {
-		t.Fatalf("rows: %+v, %v", rows, err)
-	}
-	answered, err := s.AnswerInbox(item.ID, "approve")
-	if err != nil || answered.Status != "approved" || answered.AnsweredAt.IsZero() {
-		t.Fatalf("answer: %+v, %v", answered, err)
-	}
-	if _, err := s.AnswerInbox(item.ID, "refuse"); err == nil {
-		t.Fatal("answered twice")
-	}
-	if _, err := s.CreateInboxItem(protocol.InboxItem{Kind: "bad", SessionID: "s_1", Text: "text"}); err == nil {
-		t.Fatal("invalid kind")
-	}
-	if _, err := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: "s_1"}); err == nil {
-		t.Fatal("empty action")
-	}
-	idea, err := s.CreateInboxItem(protocol.InboxItem{Kind: "feature_idea", SessionID: agent, Text: "idea"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.AnswerInbox(idea.ID, "approve"); err != nil {
-		t.Fatal(err)
-	}
-	question, err := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: agent, Text: "question"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.AnswerInbox(question.ID, "good idea"); err != nil {
-		t.Fatal(err)
-	}
-	rows, err = s.ListInbox()
-	if err != nil || len(rows) != 3 || rows[0].Status != "approved" || rows[1].Status != "approved" || rows[2].Status != "answered" || rows[2].Answer != "good idea" {
-		t.Fatalf("answered rows: %+v, %v", rows, err)
-	}
-}
-
 func TestInboxAnswerQueuesDeliveryAtomically(t *testing.T) {
 	s, _ := newTestStore(t)
 	node, _, _ := s.CreateNode("test", "linux")
@@ -81,7 +20,7 @@ func TestInboxAnswerQueuesDeliveryAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: agent, Text: "question"})
+	item, err := storeOldItem(t, s, protocol.InboxItem{Kind: "question", SessionID: agent, Text: "question"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +45,7 @@ func TestInboxAnswerRollsBackWhenDeliveryFails(t *testing.T) {
 	node, _, _ := s.CreateNode("test", "linux")
 	_, _ = s.UpsertSession(node, owner("test"))
 	agent, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p"})
-	item, err := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: agent, Text: "question"})
+	item, err := storeOldItem(t, s, protocol.InboxItem{Kind: "question", SessionID: agent, Text: "question"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +67,7 @@ func TestInboxAnswerRollsBackWhenDeliveryFails(t *testing.T) {
 // recipient or queueing a message.
 func TestInboxDismissClosesAnApprovalWhoseSessionIsGone(t *testing.T) {
 	s, _ := newTestStore(t)
-	item, err := s.CreateInboxItem(protocol.InboxItem{
+	item, err := storeOldItem(t, s, protocol.InboxItem{
 		Kind: "approval", SessionID: "s_gone", Node: "wbg-procurement",
 		Text: "merge the procurement branch", Recommendation: "yes",
 	})
@@ -161,7 +100,7 @@ func TestInboxDismissOfAMissingItemSaysNotFound(t *testing.T) {
 
 func TestInboxDismissTwiceSaysAlreadyAnswered(t *testing.T) {
 	s, _ := newTestStore(t)
-	item, err := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: "s_gone", Text: "which branch?"})
+	item, err := storeOldItem(t, s, protocol.InboxItem{Kind: "question", SessionID: "s_gone", Text: "which branch?"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +119,7 @@ func TestInboxDismissDoesNotMessageTheSession(t *testing.T) {
 	node, _, _ := s.CreateNode("test", "linux")
 	_, _ = s.UpsertSession(node, owner("test"))
 	agent, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p"})
-	item, err := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: agent, Text: "merge abc"})
+	item, err := storeOldItem(t, s, protocol.InboxItem{Kind: "approval", SessionID: agent, Text: "merge abc"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,11 +134,11 @@ func TestInboxDismissDoesNotMessageTheSession(t *testing.T) {
 
 func TestInboxConnectedNoticeExpiresAfterDay(t *testing.T) {
 	s, c := newTestStore(t)
-	old, err := s.CreateInboxItem(protocol.InboxItem{Kind: "check", SessionID: "s_test", Node: "apps", Text: "Connected: Test (bot)"})
+	old, err := storeOldItem(t, s, protocol.InboxItem{Kind: "check", SessionID: "s_test", Node: "apps", Text: "Connected: Test (bot)"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: "s_test", Text: "approve?"})
+	_, err = storeOldItem(t, s, protocol.InboxItem{Kind: "approval", SessionID: "s_test", Text: "approve?"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +160,7 @@ func TestInboxConnectedNoticeExpiresAfterDay(t *testing.T) {
 func TestInboxFieldsRoundTrip(t *testing.T) {
 	s, _ := newTestStore(t)
 	want := protocol.InboxItem{Kind: "question", SessionID: "s_test", Text: "Which branch?", Recommendation: "Use main", Options: []string{"main", "next"}, AskerName: "Build agent", ChangeTitle: "Fix build"}
-	_, err := s.CreateInboxItem(want)
+	_, err := storeOldItem(t, s, want)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,14 +171,6 @@ func TestInboxFieldsRoundTrip(t *testing.T) {
 	got := items[0]
 	if got.Text != want.Text || got.Recommendation != want.Recommendation || !reflect.DeepEqual(got.Options, want.Options) || got.AskerName != want.AskerName || got.ChangeTitle != want.ChangeTitle {
 		t.Fatalf("got %+v", got)
-	}
-}
-
-func TestInboxTextLimit(t *testing.T) {
-	s, _ := newTestStore(t)
-	_, err := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: "s_a", Text: strings.Repeat("é", 4001)})
-	if err == nil {
-		t.Fatal("accepted question over 4000 characters")
 	}
 }
 
@@ -262,11 +193,11 @@ func inboxStatus(t *testing.T, s *Store, id string) string {
 func TestInboxNewAskKeepsEarlierOpenAsks(t *testing.T) {
 	for _, kind := range []string{"approval", "question"} {
 		s, _ := newTestStore(t)
-		first, err := s.CreateInboxItem(protocol.InboxItem{Kind: kind, SessionID: "s_a", Text: "delete the data"})
+		first, err := storeOldItem(t, s, protocol.InboxItem{Kind: kind, SessionID: "s_a", Text: "delete the data"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		second, err := s.CreateInboxItem(protocol.InboxItem{Kind: kind, SessionID: "s_a", Text: "spend the money"})
+		second, err := storeOldItem(t, s, protocol.InboxItem{Kind: kind, SessionID: "s_a", Text: "spend the money"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -279,31 +210,12 @@ func TestInboxNewAskKeepsEarlierOpenAsks(t *testing.T) {
 	}
 }
 
-func TestInboxReplacesRetiresOnlyTheNamedAsk(t *testing.T) {
-	s, _ := newTestStore(t)
-	first, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: "s_a", Text: "first"})
-	second, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: "s_a", Text: "second"})
-	third, err := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: "s_a", Text: "third", Replaces: first.ID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := inboxStatus(t, s, first.ID); got != "replaced" {
-		t.Fatalf("named ask is %q", got)
-	}
-	if got := inboxStatus(t, s, second.ID); got != "open" {
-		t.Fatalf("unnamed ask is %q", got)
-	}
-	if got := inboxStatus(t, s, third.ID); got != "open" {
-		t.Fatalf("new ask is %q", got)
-	}
-}
-
 func TestOtherOpenAsksListsTheSessionsPendingAsks(t *testing.T) {
 	s, _ := newTestStore(t)
-	a, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: "s_a", Text: "delete the data\nmore detail"})
-	b, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: "s_a", Text: "which one?"})
-	s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: "s_other", Text: "someone else"})
-	c, _ := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: "s_a", Text: "spend the money"})
+	a, _ := storeOldItem(t, s, protocol.InboxItem{Kind: "approval", SessionID: "s_a", Text: "delete the data\nmore detail"})
+	b, _ := storeOldItem(t, s, protocol.InboxItem{Kind: "question", SessionID: "s_a", Text: "which one?"})
+	storeOldItem(t, s, protocol.InboxItem{Kind: "approval", SessionID: "s_other", Text: "someone else"})
+	c, _ := storeOldItem(t, s, protocol.InboxItem{Kind: "approval", SessionID: "s_a", Text: "spend the money"})
 	got, err := s.OtherOpenAsks("s_a", c.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -354,113 +266,6 @@ func TestInboxArchivedSessionClosesItems(t *testing.T) {
 	for _, r := range rows {
 		if r.ID == item.ID && r.Status == "open" {
 			t.Fatal("archived session item remains open")
-		}
-	}
-}
-
-func TestInboxOwnerIdeaTextLimit(t *testing.T) {
-	s, _ := newTestStore(t)
-	if _, err := s.CreateInboxItem(protocol.InboxItem{Kind: "feature_idea", SessionID: "s_a", Text: strings.Repeat("x", 4001)}); err == nil {
-		t.Fatal("accepted idea beyond owner ask limit")
-	}
-}
-
-func TestInboxOwnerAskReplaceAndClose(t *testing.T) {
-	s, _ := newTestStore(t)
-	node, _, _ := s.CreateNode("h1", "linux")
-	sidA, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "codex", NativeID: "thread-a", Name: "alice"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sidB, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "codex", NativeID: "thread-b", Name: "bob"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// 1. Session A creates an initial ask
-	first, err := s.CreateInboxItem(protocol.InboxItem{
-		Kind:      "question",
-		SessionID: sidA,
-		Text:      "PR15 + router + Mac",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first.Status != "open" {
-		t.Fatalf("first status = %q, want open", first.Status)
-	}
-
-	// 2. Another session (Session B) cannot replace Session A's ask
-	_, err = s.CreateInboxItem(protocol.InboxItem{
-		Kind:      "question",
-		SessionID: sidB,
-		Text:      "bob tries to replace",
-		Replaces:  first.ID,
-	})
-	if err == nil {
-		t.Fatal("expected error when session B tries to replace session A's ask")
-	}
-	if !strings.Contains(err.Error(), "does not belong to this session") {
-		t.Fatalf("unexpected error message: %v", err)
-	}
-
-	// 3. Session A replaces its own ask with a new question
-	second, err := s.CreateInboxItem(protocol.InboxItem{
-		Kind:      "question",
-		SessionID: sidA,
-		Text:      "router + Mac",
-		Replaces:  first.ID,
-	})
-	if err != nil {
-		t.Fatalf("replace ask: %v", err)
-	}
-	if second.ID == first.ID || second.Status != "open" {
-		t.Fatalf("second item: %+v", second)
-	}
-
-	// Verify first ask is replaced and second ask is open in Inbox
-	items, err := s.ListInbox()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var openCount int
-	for _, it := range items {
-		if it.ID == first.ID && it.Status != "replaced" {
-			t.Fatalf("first item status = %q, want replaced", it.Status)
-		}
-		if it.ID == second.ID && it.Status != "open" {
-			t.Fatalf("second item status = %q, want open", it.Status)
-		}
-		if it.Status == "open" {
-			openCount++
-		}
-	}
-	if openCount != 1 {
-		t.Fatalf("open items count = %d, want 1", openCount)
-	}
-
-	// 4. Session A closes its ask without a new question
-	closed, err := s.CreateInboxItem(protocol.InboxItem{
-		Kind:      "question",
-		SessionID: sidA,
-		Text:      "",
-		Replaces:  second.ID,
-	})
-	if err != nil {
-		t.Fatalf("close ask: %v", err)
-	}
-	if closed.ID != second.ID || closed.Status != "replaced" {
-		t.Fatalf("closed item: %+v, want ID=%s Status=replaced", closed, second.ID)
-	}
-
-	// Verify second ask is also replaced and no open items remain
-	items, err = s.ListInbox()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, it := range items {
-		if it.Status == "open" {
-			t.Fatalf("unexpected open item: %+v", it)
 		}
 	}
 }

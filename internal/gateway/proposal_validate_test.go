@@ -112,7 +112,7 @@ func TestCTOProposalValidationLeavesDatabaseUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err := st.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: a, Text: "approve work"})
+	item, err := storeOldItem(t, st, protocol.InboxItem{Kind: "approval", SessionID: a, Text: "approve work"})
 	if err != nil {
 		t.Fatal(err)
 	}

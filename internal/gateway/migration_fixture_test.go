@@ -72,7 +72,7 @@ func TestMigrationInboxAndSessionIdentityReplay(t *testing.T) {
 		}
 	}
 	r := newDeliveryRig(t)
-	item, err := r.s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: r.caller, Node: "demo", Text: "Choose", Options: []string{"one", "two"}, AskerName: "Reviewer"})
+	item, err := storeOldItem(t, r.s, protocol.InboxItem{Kind: "question", SessionID: r.caller, Node: "demo", Text: "Choose", Options: []string{"one", "two"}, AskerName: "Reviewer"})
 	if err != nil {
 		t.Fatal(err)
 	}

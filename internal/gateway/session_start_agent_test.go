@@ -251,10 +251,6 @@ func TestSessionStartAgentHoldExpiresAndNextStartWorks(t *testing.T) {
 	if err != nil || status.Status != "failed" {
 		t.Fatalf("expired status: %+v %v", status, err)
 	}
-	items, err := s.ListInbox()
-	if err != nil || len(items) != 1 || !strings.HasPrefix(items[0].Text, "Agent choice for start_crashed failed; ") || !strings.Contains(items[0].Text, "uses the default repo") {
-		t.Fatalf("expiry inbox: %+v %v", items, err)
-	}
 	next := p
 	next.Ref = "start_next"
 	if err = s.ReserveSessionAgent(node, next); err != nil {
@@ -285,10 +281,6 @@ func TestSessionStartAgentHoldExpiresAndNextStartWorks(t *testing.T) {
 	c, err = s.resolveSessionContext(lateID)
 	if err != nil || c.Agent != "repo-agent" {
 		t.Fatalf("late default: %+v %v", c, err)
-	}
-	items, err = s.ListInbox()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("duplicate failure inbox: %+v %v", items, err)
 	}
 }
 
@@ -328,10 +320,6 @@ func TestSessionStartAgentFailureCancelsBoundReservation(t *testing.T) {
 	c, err := s.resolveSessionContext(id)
 	if err != nil || c.Agent != "repo" {
 		t.Fatalf("failed late session: %+v %v", c, err)
-	}
-	items, err := s.ListInbox()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("failure inbox: %+v %v", items, err)
 	}
 	next.NativeID = "next"
 	if err = s.ReserveSessionAgent(node, next); err != nil {

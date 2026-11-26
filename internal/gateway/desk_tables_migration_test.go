@@ -5,7 +5,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -314,87 +313,5 @@ func TestDeskTablesFreshMatchesUpgradedSchema(t *testing.T) {
 				t.Errorf("columns diff on %s:\nfresh:    %v\nupgraded: %v", k, v, upCols[k])
 			}
 		}
-	}
-}
-
-// Exercises Desk operations across ask kinds and states after the rework:
-// owner asks, sort (owner, send, close, merge, withdraw, done, undo),
-// inbox_list, asks_list, inbox_answer, ask_history, ask_undo, desk_log, and
-// cto_intake_find (single-row dedupe, wake, quota_stuck, close).
-func TestDeskOperationsAfterRework(t *testing.T) {
-	s, c, chief, asker, cto, node := deskRig(t)
-	if _, err := s.db.Exec(`INSERT INTO agents(id,display_name,created_at,updated_at) VALUES('a-net','agent-net lead',0,0);
-		INSERT INTO repos(id,display_name,created_at,updated_at,lead_agent_id) VALUES('agent-net','agent-net',0,0,'a-net')`); err != nil {
-		t.Fatal(err)
-	}
-
-	// 1. Owner ask -> sort to owner -> inbox_list + asks_list + inbox_answer -> done (carried_out).
-	q1, err := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: asker, Node: "demo", Text: "Ship v2?", Options: []string{"yes", "no"}, FromKind: protocol.AskFromSession})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{Ask: q1.ID, Result: protocol.AskSortOwner, Reason: "decision", Priority: 2, WhyYou: "only you"}}); err != nil {
-		t.Fatal(err)
-	}
-	if asks, err := s.ListAsks(); err != nil || len(asks) != 1 || asks[0].DeskState != protocol.DeskReady {
-		t.Fatalf("ListAsks = %+v, %v", asks, err)
-	}
-	if items, err := s.ListInbox(); err != nil || len(items) != 1 || items[0].ID != q1.ID {
-		t.Fatalf("ListInbox = %+v, %v", items, err)
-	}
-	if _, err := s.AnswerInbox(q1.ID, "yes"); err != nil {
-		t.Fatal(err)
-	}
-	if res, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{Ask: q1.ID, Result: protocol.AskSortDone, Reason: "shipped"}}); err != nil || res.State != protocol.DeskCarriedOut {
-		t.Fatalf("done sort = %+v, %v", res, err)
-	}
-
-	// 2. Sort send to CTO -> ask_history + ask_undo.
-	q2, err := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: asker, Node: "demo", Text: "Upgrade Go?", Options: []string{"yes", "no"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{Ask: q2.ID, Result: protocol.AskSortSend, To: cto, Reason: "infra"}}); err != nil {
-		t.Fatal(err)
-	}
-	if asks, err := s.ListAsks(); err != nil || len(asks) != 1 || asks[0].Owner != protocol.DeskOwnerCTO || asks[0].DeskState != protocol.DeskWithCTO {
-		t.Fatalf("ListAsks with CTO = %+v, %v", asks, err)
-	}
-	if hist, err := s.AskSortHistory(q2.ID); err != nil || len(hist) != 1 {
-		t.Fatalf("AskSortHistory = %+v, %v", hist, err)
-	}
-	if _, err := s.UndoAsk(q2.ID, "owner"); err != nil {
-		t.Fatalf("UndoAsk: %v", err)
-	}
-	if asks, err := s.ListAsks(); err != nil || len(asks) != 1 || asks[0].Owner != protocol.DeskOwnerChief || asks[0].DeskState != protocol.DeskReady {
-		t.Fatalf("ListAsks after undo = %+v, %v", asks, err)
-	}
-
-	// 4. CTO intake lives in one inbox_items row through dedupe, wake and close.
-	ev := intakeEvent{Kind: protocol.IntakeHarnessUpdate, Subject: "box/codex", Text: "codex update failed"}
-	first, err := s.RecordIntake(ev)
-	if err != nil {
-		t.Fatal(err)
-	}
-	c.advance(61 * time.Minute)
-	second, err := s.RecordIntake(ev)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if second.ID != first.ID || second.Count != 2 || second.Alert != first.ID || second.Severity != protocol.IntakeSeverityWake {
-		t.Fatalf("woken intake = %+v, first %+v", second, first)
-	}
-	var ctoRows int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE dedupe_key=?`, protocol.IntakeHarnessUpdate+":box/codex").Scan(&ctoRows); err != nil || ctoRows != 1 {
-		t.Fatalf("intake created %d rows, want 1 (%v)", ctoRows, err)
-	}
-	if found, err := s.CTOIntake(0); err != nil || found.Total != 1 || found.Entries[0].Alert != first.ID {
-		t.Fatalf("CTOIntake = %+v, %v", found, err)
-	}
-	if err := s.CloseIntake(protocol.IntakeHarnessUpdate, "box/codex", intakeResolved); err != nil {
-		t.Fatal(err)
-	}
-	if found, err := s.CTOIntake(0); err != nil || found.Total != 0 {
-		t.Fatalf("CTOIntake after close = %+v, %v", found, err)
 	}
 }

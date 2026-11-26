@@ -68,12 +68,6 @@ func (s *Store) deskLog(q askDB, source, aboutKind, aboutID, text, detail string
 	return nil
 }
 
-// AddDeskNote adds one line to the event log from a machine's daemon. It is a
-// report, not an ask: nothing waits for an answer.
-func (s *Store) AddDeskNote(nodeID, text, detail string) error {
-	return s.deskLog(s.db, "daemon", "node", nodeID, text, detail, nil)
-}
-
 // DeskLog returns the newest log lines, newest first.
 func (s *Store) DeskLog(limit int) ([]protocol.DeskLogEntry, error) {
 	if limit <= 0 {
@@ -594,10 +588,9 @@ func (s *Store) reconcileWaitingAsks() error {
 	return nil
 }
 
-// reconcileLearnedAsks opens an ask for every ready major learned suggestion
-// and every pending charter draft, and closes the asks of those the owner or
-// the CTO decided. It reads the same two lists the owner saw before, so the
-// same suggestions show up.
+// reconcileLearnedAsks sends the ready major edge suggestions and the pending
+// charter drafts to the team leads, and closes the stored asks of those the
+// owner or the CTO decided.
 func (s *Store) reconcileLearnedAsks() error {
 	// PendingCharterDrafts first: it marks the drafts that got a value some
 	// other way as superseded.
@@ -617,50 +610,23 @@ func (s *Store) reconcileLearnedAsks() error {
 	if _, err := s.closeAsks(s.db, `kind='learned' AND source_ref LIKE ? AND NOT EXISTS (SELECT 1 FROM learned_suggestions l WHERE l.node=inbox_items.about_id AND l.status='pending')`, []any{leadAskRefPrefix + "%"}, protocol.AskReasonResolved); err != nil {
 		return err
 	}
-	open := map[string]bool{}
-	rows, err := s.db.Query(`SELECT source_ref FROM inbox_items WHERE status='open' AND kind='learned'`)
-	if err != nil {
-		return err
-	}
-	for rows.Next() {
-		var ref string
-		if err := rows.Scan(&ref); err != nil {
-			rows.Close()
-			return err
-		}
-		open[ref] = true
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return err
-	}
 	ready, err := s.LearnedSuggestions(true)
 	if err != nil {
 		return err
 	}
+	// Only an edge suggestion for a team member is sent, to the team lead.
+	// The owner has no Desk (decision 0196): he reads the rest in the
+	// learned list.
 	for _, v := range ready {
-		ref := fmt.Sprintf("learned:%d", v.ID)
-		if v.Severity != "major" || open[ref] {
+		if v.Severity != "major" || v.Field != "edge" {
 			continue
 		}
 		item := protocol.InboxItem{
 			Kind: protocol.AskKindLearned, SessionID: gatewayAsker, FromKind: protocol.AskFromGateway, Node: v.Node, AskerName: "learned",
-			SourceRef: ref, AboutKind: protocol.AskAboutProject, AboutID: v.Node,
+			SourceRef: fmt.Sprintf("learned:%d", v.ID), AboutKind: protocol.AskAboutProject, AboutID: v.Node,
 			Text: learnedAskText(v), Detail: learnedAskBecause(v),
-			Options: []string{"accept", "reject"},
 		}
-		// An edge suggestion for a team member goes to the team lead, once.
-		if v.Field == "edge" {
-			sent, err := s.sendLearnedToLead(v, item)
-			if err != nil {
-				return err
-			}
-			if sent {
-				continue
-			}
-		}
-		if _, err := s.createInboxItem(s.db, item); err != nil {
+		if err := s.sendLearnedToLead(v, item); err != nil {
 			return err
 		}
 	}
@@ -668,20 +634,14 @@ func (s *Store) reconcileLearnedAsks() error {
 }
 
 // sendLearnedToLead sends the ask of a learned suggestion to the lead of the
-// node's team when the team asks to the lead. It is false when the ask is the
-// owner's, and also false when the lead was already asked about this
-// suggestion and the ask is still there or was answered: then there is nothing
-// to open for the owner either, so it reports true.
-func (s *Store) sendLearnedToLead(v protocol.LearnedSuggestion, item protocol.InboxItem) (bool, error) {
+// node's team when the team asks to the lead, once: not when the lead was
+// already asked about it and the ask is still there or was answered.
+func (s *Store) sendLearnedToLead(v protocol.LearnedSuggestion, item protocol.InboxItem) error {
 	var seen int
 	if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM inbox_items WHERE kind='learned' AND about_id=? AND text=? AND status<>'closed' AND source_ref LIKE ?)`,
-		v.Node, item.Text, leadAskRefPrefix+"%").Scan(&seen); err != nil {
-		return false, err
+		v.Node, item.Text, leadAskRefPrefix+"%").Scan(&seen); err != nil || seen != 0 {
+		return err
 	}
-	if seen != 0 {
-		return true, nil
-	}
-	item.Options = nil
 	return s.redirectNodeAsk(v.Node, "", item)
 }
 
@@ -743,15 +703,18 @@ func (s *Store) OpenExternalAsk(node string, a protocol.AskOpen) (protocol.Ask, 
 		fromKind = protocol.AskFromGateway
 	}
 	// A failed MCP repair is also a CTO intake entry for the machine (decision
-	// 0152). A repeat of the same ask is not a new failure.
+	// 0152). A repeat of the same ask is not a new failure: the open entry
+	// still has its text. The ask itself is not stored (decision 0196), so
+	// the entry is what catches the repeat.
 	if a.Kind == protocol.AskKindCheck && strings.HasPrefix(a.Ref, mcpRepairRefPrefix) {
-		var open bool
-		if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM inbox_items WHERE source_ref=? AND status='open')`, a.Kind+":"+ref).Scan(&open); err != nil {
+		subject := s.hostname(node) + "/agent-net"
+		var repeat bool
+		if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM inbox_items WHERE dedupe_key=? AND status='open' AND text=?)`,
+			protocol.IntakeMCPRepair+":"+subject, a.Question).Scan(&repeat); err != nil {
 			return protocol.Ask{}, err
 		}
-		if !open {
-			if _, err := s.RecordIntake(intakeEvent{Kind: protocol.IntakeMCPRepair, Subject: s.hostname(node) + "/agent-net",
-				Text: a.Question, Detail: a.Detail}); err != nil {
+		if !repeat {
+			if _, err := s.RecordIntake(intakeEvent{Kind: protocol.IntakeMCPRepair, Subject: subject, Text: a.Question, Detail: a.Detail}); err != nil {
 				return protocol.Ask{}, err
 			}
 		}
@@ -848,13 +811,6 @@ func (s *Store) SyncExternalAsks(node string, sync protocol.AskSync) error {
 		}
 	}
 	return nil
-}
-
-// SettleDeskLog marks a log line as done once its change was undone: the undo
-// options go, and the text says so. A second call changes nothing.
-func (s *Store) SettleDeskLog(id int64) error {
-	_, err := s.db.Exec(`UPDATE desk_log SET options='[]', text='Undone: '||text WHERE id=? AND options<>'[]'`, id)
-	return err
 }
 
 // askPlainField names a charter field in the owner's words.

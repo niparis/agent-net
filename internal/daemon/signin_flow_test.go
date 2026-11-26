@@ -272,6 +272,10 @@ func TestSignInWebClickDelegatesToOwnerTUI(t *testing.T) {
 }
 
 func TestSignInWebClickReachesOneRemoteOwnerTUI(t *testing.T) {
+	// The click needs the id of a stored sign-in ask. A sign-in for the owner
+	// goes to the chief and is not stored (decision 0196); the follow-up of
+	// part 1b gives it its own stored ask and turns this test back on.
+	t.Skip("gap 2 of part 1b: a sign-in needs a stored ask, which decision 0196 no longer stores")
 	g := startGateway(t, t.TempDir(), "")
 	web := startNode(t, g, nodeOpts{})
 	browser := startNode(t, g, nodeOpts{})

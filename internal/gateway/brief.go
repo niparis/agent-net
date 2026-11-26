@@ -178,24 +178,23 @@ func (s *Store) dailyBriefStatus(now time.Time) (protocol.OwnerBriefResult, erro
 	if out.LastWakeDate, err = briefLastWake(s.db); err != nil {
 		return out, err
 	}
-	if out.LastItemID, err = briefState(s.db, protocol.BriefLastItemKey); err != nil {
+	var delivered bool
+	if out.LastItemID, delivered, err = stateGet(s.db, protocol.BriefLastItemKey); err != nil {
 		return out, err
 	}
-	// An older gateway wrote the wake date to BriefLastSentKey. A delivered
-	// date always has its brief item, so report the newest item's date when
-	// the stored date has no item of its own.
-	if out.LastDateSent != "" {
-		delivered := ""
-		if out.LastItemID != "" {
-			var ref string
-			if err := s.db.QueryRow(`SELECT source_ref FROM inbox_items WHERE id=?`, out.LastItemID).Scan(&ref); err != nil {
-				return out, err
-			}
-			delivered = strings.TrimPrefix(ref, protocol.BriefSourceRef(""))
+	// An older gateway wrote the wake date to BriefLastSentKey and no item
+	// key, so that date was never delivered. A brief item stored before
+	// decision 0196 gives the date it was delivered for. A brief delivered
+	// since then has an empty item key: its stored date is the one.
+	switch {
+	case !delivered:
+		out.LastDateSent = ""
+	case out.LastDateSent != "" && out.LastItemID != "":
+		var ref string
+		if err := s.db.QueryRow(`SELECT source_ref FROM inbox_items WHERE id=?`, out.LastItemID).Scan(&ref); err != nil {
+			return out, err
 		}
-		if delivered != out.LastDateSent {
-			out.LastDateSent = delivered
-		}
+		out.LastDateSent = strings.TrimPrefix(ref, protocol.BriefSourceRef(""))
 	}
 	if !sch.zoneSet {
 		out.Status = protocol.BriefStatusWaitingZone

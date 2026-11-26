@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -46,151 +48,6 @@ func TestPermissionProposalRejectsUnregisteredTarget(t *testing.T) {
 	}
 }
 
-// The ask lists every rule, target, reason and proposer, waits for the owner,
-// and neither the chief nor the CTO can take it over.
-func TestPermissionAskIsOwnerOnlyAndRouteFixed(t *testing.T) {
-	s, node, session := permissionRig(t)
-	res, err := s.ProposePermission(protocol.PermissionProposeFrame{
-		SessionID: session,
-		PermissionProposeRequest: protocol.PermissionProposeRequest{
-			Rules:   []string{"Bash(gh pr merge *)", "Bash(gh pr close *)"},
-			Targets: []string{"forge"},
-			Reason:  "the forge repos need PR merges",
-		},
-	}, node)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.Status != "pending" || len(res.Targets) != 1 || res.Targets[0].Name != "forge" || res.Targets[0].Path != "/tmp/forge" {
-		t.Fatalf("proposal answer: %+v", res)
-	}
-	var askID, text, detail, next string
-	var fixed int
-	if err := s.db.QueryRow(`SELECT id,text,detail,next_who,route_fixed FROM inbox_items WHERE source_ref=?`,
-		permissionAskPrefix+res.ID).Scan(&askID, &text, &detail, &next, &fixed); err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"Bash(gh pr merge *)", "Bash(gh pr close *)", "forge", "box", "/tmp/forge",
-		"the forge repos need PR merges", "forge-agent", "restart"} {
-		if !strings.Contains(text, want) || !strings.Contains(detail, want) {
-			t.Errorf("ask does not name %q:\n%s", want, text)
-		}
-	}
-	if next != protocol.AskNextOwner || fixed != 1 {
-		t.Fatalf("ask next=%q route_fixed=%d, want owner and fixed", next, fixed)
-	}
-	if n, err := adoptChiefAsks(s.db, "s_chief", s.now().UnixNano()); err != nil || n != 0 {
-		t.Fatalf("chief adopted the permission ask: %d %v", n, err)
-	}
-	if _, err := s.AnswerInboxAs(askID, "approve", "cto"); err == nil || !strings.Contains(err.Error(), "owner") {
-		t.Fatalf("the CTO answered a permission ask: %v", err)
-	}
-	p, err := s.PermissionProposal(res.ID)
-	if err != nil || p.Status != "pending" {
-		t.Fatalf("proposal after the CTO answer: %+v %v", p, err)
-	}
-	var status string
-	if err := s.db.QueryRow(`SELECT status FROM inbox_items WHERE id=?`, askID).Scan(&status); err != nil || status != "open" {
-		t.Fatalf("ask after the CTO answer: %q %v", status, err)
-	}
-	// The owner's answer is accepted.
-	if _, err := s.AnswerInboxAs(askID, "approve", "owner"); err != nil {
-		t.Fatal(err)
-	}
-	if p, err = s.PermissionProposal(res.ID); err != nil || p.Status != "approved" {
-		t.Fatalf("proposal after the owner answer: %+v %v", p, err)
-	}
-}
-
-// Only the daemon that holds a trust folder may name its MCP servers. A frame
-// from another machine's daemon still opens the ask, but names no servers, so
-// a caller cannot put its own list in front of the owner.
-func TestPermissionTrustProposalDropsAnotherNodesMCPServers(t *testing.T) {
-	s, sender, session := permissionRig(t)
-	holder, _, err := s.CreateNode("other-box", "linux")
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := "/tmp/other-folder"
-	res, err := s.ProposePermission(protocol.PermissionProposeFrame{
-		SessionID: session,
-		PermissionProposeRequest: protocol.PermissionProposeRequest{
-			Kind: protocol.PermissionKindTrust, Machine: "other-box",
-			Targets: []string{path}, Reason: "start there",
-			MCPServersByPath: map[string][]string{path: {"forged-server"}},
-		},
-	}, sender)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Targets) != 1 || res.Targets[0].NodeID != holder || len(res.Targets[0].MCPServers) != 0 {
-		t.Fatalf("a remote folder took the sender's servers: %+v", res.Targets)
-	}
-	var text string
-	if err := s.db.QueryRow(`SELECT text FROM inbox_items WHERE source_ref=?`, permissionAskPrefix+res.ID).Scan(&text); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(text, "forged-server") || strings.Contains(text, "also approves MCP servers") {
-		t.Fatalf("the ask names servers from another machine's daemon:\n%s", text)
-	}
-}
-
-// A trust proposal names one machine and exact folders, and the gateway's own
-// needs_trust ask is deduped by machine and folder while it is open.
-func TestPermissionTrustProposalAndDedupedAsk(t *testing.T) {
-	s, node, session := permissionRig(t)
-	if _, err := s.ProposePermission(protocol.PermissionProposeFrame{
-		SessionID: session,
-		PermissionProposeRequest: protocol.PermissionProposeRequest{
-			Kind: protocol.PermissionKindTrust, Machine: "missing-machine",
-			Targets: []string{"/tmp/one"}, Reason: "start there",
-		},
-	}, node); err == nil || !strings.Contains(err.Error(), "missing-machine") {
-		t.Fatalf("unknown machine: %v", err)
-	}
-	res, err := s.ProposePermission(protocol.PermissionProposeFrame{
-		SessionID: session,
-		PermissionProposeRequest: protocol.PermissionProposeRequest{
-			Kind: protocol.PermissionKindTrust, Machine: "box",
-			Targets: []string{"/tmp/one", "/tmp/one", "/tmp/two"}, Reason: "start there",
-		},
-	}, node)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Targets) != 2 || res.Targets[0].NodeID != node || res.Targets[0].Path != "/tmp/one" {
-		t.Fatalf("trust targets: %+v", res.Targets)
-	}
-	var text string
-	if err := s.db.QueryRow(`SELECT text FROM inbox_items WHERE source_ref=?`, permissionAskPrefix+res.ID).Scan(&text); err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"Trust 2 Claude Code folder(s)", "box", "/tmp/one", "/tmp/two", "start there"} {
-		if !strings.Contains(text, want) {
-			t.Errorf("trust ask does not name %q:\n%s", want, text)
-		}
-	}
-	created, err := s.RaiseTrustAsk(session, node, "box", "/tmp/three", "proj", "session needs trust", []string{"tenebrae-library"})
-	if err != nil || !created {
-		t.Fatalf("first automatic ask: created=%v err=%v", created, err)
-	}
-	var automatic string
-	if err := s.db.QueryRow(`SELECT text FROM inbox_items WHERE source_ref IN (SELECT '`+permissionAskPrefix+`'||id FROM permission_proposals WHERE dedupe_key=?)`, node+"\x00/tmp/three").Scan(&automatic); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(automatic, "also approves MCP servers: tenebrae-library") {
-		t.Fatalf("automatic trust ask does not name the server it approves:\n%s", automatic)
-	}
-	created, err = s.RaiseTrustAsk(session, node, "box", "/tmp/three", "proj", "session needs trust again", nil)
-	if err != nil || created {
-		t.Fatalf("duplicate automatic ask: created=%v err=%v", created, err)
-	}
-	var open int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM permission_proposals WHERE kind=? AND dedupe_key=?`, protocol.PermissionKindTrust, node+"\x00/tmp/three").Scan(&open); err != nil || open != 1 {
-		t.Fatalf("automatic trust asks: %d %v", open, err)
-	}
-}
-
 // The approval log keeps its undo option until the undo settles it.
 func TestPermissionResultLogSettlesOnUndo(t *testing.T) {
 	s, node, session := permissionRig(t)
@@ -220,26 +77,36 @@ func TestPermissionResultLogSettlesOnUndo(t *testing.T) {
 	}
 }
 
-// Dismissing the ask rejects the proposal instead of leaving it pending.
-func TestPermissionAskDismissRejects(t *testing.T) {
+// With no Desk (decision 0196) the owner's yes reaches the CTO in its chat,
+// and the CTO finds the proposal to apply in the pending list. A decided
+// proposal is not in it, and only the owner's machine may read it.
+func TestPendingPermissionProposalsFrame(t *testing.T) {
 	s, node, session := permissionRig(t)
-	res, err := s.ProposePermission(protocol.PermissionProposeFrame{
-		SessionID: session,
-		PermissionProposeRequest: protocol.PermissionProposeRequest{
-			Rules: []string{"Bash(gh pr close *)"}, Targets: []string{"forge"}, Reason: "close PRs",
-		},
-	}, node)
+	owner, err := s.UpsertSession(node, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: protocol.OwnerNativeID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var askID string
-	if err := s.db.QueryRow(`SELECT id FROM inbox_items WHERE source_ref=?`, permissionAskPrefix+res.ID).Scan(&askID); err != nil {
+	propose := func(rule string) string {
+		t.Helper()
+		res, err := s.ProposePermission(protocol.PermissionProposeFrame{SessionID: session,
+			PermissionProposeRequest: protocol.PermissionProposeRequest{Rules: []string{rule}, Targets: []string{"forge"}, Reason: "merge PRs"}}, node)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.ID
+	}
+	decided, pending := propose("Bash(gh pr merge *)"), propose("Bash(gh pr view *)")
+	if _, err := s.db.Exec(`UPDATE permission_proposals SET status='rejected' WHERE id=?`, decided); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.AnswerInbox(askID, "dismiss"); err != nil {
-		t.Fatal(err)
+	g := &Gateway{store: s}
+	if _, err := g.handle(context.Background(), &nodeConn{id: node}, protocol.FramePermissionPending, []byte(`{}`)); err == nil {
+		t.Fatal("pending proposals listed without the owner")
 	}
-	if p, err := s.PermissionProposal(res.ID); err != nil || p.Status != "rejected" {
-		t.Fatalf("dismissed proposal: %+v %v", p, err)
+	raw, _ := json.Marshal(protocol.PermissionGetFrame{Owner: owner})
+	out, err := g.handle(context.Background(), &nodeConn{id: node}, protocol.FramePermissionPending, raw)
+	got, ok := out.([]protocol.PermissionProposal)
+	if err != nil || !ok || len(got) != 1 || got[0].ID != pending || got[0].Status != "pending" || got[0].Rules[0] != "Bash(gh pr view *)" {
+		t.Fatalf("pending proposals: %#v %v", out, err)
 	}
 }

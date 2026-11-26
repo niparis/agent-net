@@ -14,7 +14,7 @@ import (
 func TestOwnerAnswerAndDismissCreateAnswerRowAndAutomaticCloseDoesNot(t *testing.T) {
 	s, _ := newTestStore(t)
 	// Create an ask for a project.
-	item, err := s.CreateInboxItem(protocol.InboxItem{
+	item, err := storeOldItem(t, s, protocol.InboxItem{
 		Kind:      "question",
 		SessionID: "s_test_session",
 		Node:      "my-project",
@@ -53,7 +53,7 @@ func TestOwnerAnswerAndDismissCreateAnswerRowAndAutomaticCloseDoesNot(t *testing
 	}
 
 	// Now create another ask that gets automatically closed.
-	closedItem, err := s.CreateInboxItem(protocol.InboxItem{
+	closedItem, err := storeOldItem(t, s, protocol.InboxItem{
 		Kind:      "question",
 		SessionID: "s_test_session_2",
 		Node:      "my-project",
@@ -78,7 +78,7 @@ func TestOwnerAnswerAndDismissCreateAnswerRowAndAutomaticCloseDoesNot(t *testing
 	}
 
 	// An owner dismiss is one answer row that says no decision was made.
-	dismissItem, err := s.CreateInboxItem(protocol.InboxItem{
+	dismissItem, err := storeOldItem(t, s, protocol.InboxItem{
 		Kind:      "question",
 		SessionID: "s_test_session_3",
 		Node:      "my-project",
@@ -167,7 +167,7 @@ func TestOwnerJudgmentsFind(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	item, err := s.CreateInboxItem(protocol.InboxItem{
+	item, err := storeOldItem(t, s, protocol.InboxItem{
 		Kind:      "question",
 		SessionID: "s_1",
 		Node:      "agent-net",

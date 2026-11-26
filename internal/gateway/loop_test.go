@@ -97,6 +97,23 @@ func openLoopAsks(t *testing.T, s *Store) []protocol.Ask {
 	return out
 }
 
+// oldLoopAsk stores the ask of a paused loop the way a gateway did before
+// decision 0196. A gateway now only logs the pause, but it still answers the
+// asks it stored.
+func oldLoopAsk(t *testing.T, s *Store, session string) protocol.Ask {
+	t.Helper()
+	if _, err := storeOldItem(t, s, protocol.InboxItem{Kind: protocol.AskKindCheck, SessionID: session, Node: "proj",
+		Text: "Loop paused for proj: 2 ticks in a row with no progress", Options: []string{protocol.LoopAnswerResume, protocol.LoopAnswerStop},
+		FromKind: protocol.AskFromGateway, SourceRef: loopRef("proj"), AboutKind: "project", AboutID: "proj"}); err != nil {
+		t.Fatal(err)
+	}
+	asks := openLoopAsks(t, s)
+	if len(asks) != 1 {
+		t.Fatalf("asks = %+v", asks)
+	}
+	return asks[0]
+}
+
 func TestLoopTickSendsThePromptToAnIdleSession(t *testing.T) {
 	s, c := newTestStore(t)
 	_, b := twoSessions(t, s)
@@ -222,16 +239,9 @@ func TestLoopTwoTicksWithNoProgressPauseAndOpenOneAsk(t *testing.T) {
 	if m := loopMessages(t, s); len(m) != 2 {
 		t.Fatalf("messages = %d, want 2", len(m))
 	}
-	asks := openLoopAsks(t, s)
-	if len(asks) != 1 || strings.Join(asks[0].Options, ",") != "resume,stop" || !strings.Contains(asks[0].Question, "2 ticks in a row with no progress") {
-		t.Fatalf("asks = %+v", asks)
-	}
-	// A paused loop stays quiet: no more ticks, no second ask.
+	// A paused loop stays quiet: no more ticks.
 	if res := runLoops(t, s, c); len(res) != 0 {
 		t.Fatalf("paused loop ticked: %+v", res)
-	}
-	if asks := openLoopAsks(t, s); len(asks) != 1 {
-		t.Fatalf("asks = %+v", asks)
 	}
 	g, _ := s.Graph()
 	for _, n := range g.Nodes {
@@ -240,7 +250,7 @@ func TestLoopTwoTicksWithNoProgressPauseAndOpenOneAsk(t *testing.T) {
 		}
 	}
 	// Resume clears the ask and the clock runs again at once.
-	if _, err := s.AnswerInbox(asks[0].ID, protocol.LoopAnswerResume); err != nil {
+	if _, err := s.AnswerInbox(oldLoopAsk(t, s, b).ID, protocol.LoopAnswerResume); err != nil {
 		t.Fatal(err)
 	}
 	if asks := openLoopAsks(t, s); len(asks) != 0 {
@@ -268,11 +278,7 @@ func TestLoopStopAnswerClearsTheSetting(t *testing.T) {
 		idleSince(t, s, c, b, time.Minute)
 		runLoops(t, s, c)
 	}
-	asks := openLoopAsks(t, s)
-	if len(asks) != 1 {
-		t.Fatalf("asks = %+v", asks)
-	}
-	if _, err := s.AnswerInbox(asks[0].ID, protocol.LoopAnswerStop); err != nil {
+	if _, err := s.AnswerInbox(oldLoopAsk(t, s, b).ID, protocol.LoopAnswerStop); err != nil {
 		t.Fatal(err)
 	}
 	if asks := openLoopAsks(t, s); len(asks) != 0 {
@@ -358,6 +364,7 @@ func TestLoopAnnounceIsProgressAndLogsTheResult(t *testing.T) {
 
 func TestLoopSharesTheDailyCapWithTheWakeRule(t *testing.T) {
 	s, c := newTestStore(t)
+	logs := captureLog(s)
 	_, b := twoSessions(t, s)
 	loopNode(t, s, c, b)
 	loopTicks(t, s)
@@ -376,19 +383,16 @@ func TestLoopSharesTheDailyCapWithTheWakeRule(t *testing.T) {
 	if m := loopMessages(t, s); len(m) != 0 {
 		t.Fatalf("capped loop sent %+v", m)
 	}
-	asks := openLoopAsks(t, s)
-	if len(asks) != 1 || !strings.Contains(asks[0].Question, "daily cap") {
-		t.Fatalf("asks = %+v", asks)
+	// agent-net raised the pause, so it is a log line (decision 0196).
+	if !strings.Contains(strings.Join(*logs, ""), "daily cap") {
+		t.Fatalf("no pause line names the daily cap: %q", *logs)
 	}
-	// A new day lifts the cap and closes the ask.
+	// A new day lifts the cap.
 	c.advance(24 * time.Hour)
 	idleSince(t, s, c, b, time.Minute)
 	res = loopTicks(t, s)
 	if len(res) != 1 || res[0].Outcome != protocol.LoopSent {
 		t.Fatalf("next day tick = %+v", res)
-	}
-	if asks := openLoopAsks(t, s); len(asks) != 0 {
-		t.Fatalf("ask left: %+v", asks)
 	}
 }
 
@@ -566,7 +570,7 @@ func TestLoopPromptStartsWithWhatChanged(t *testing.T) {
 		VALUES('m_step1','c_step','agent-net',?,'notification','task',0,'step_1_x',?,?,'stored')`, b, s.now().Add(time.Minute).UnixNano(), s.now().Add(time.Hour).UnixNano()); err != nil {
 		t.Fatal(err)
 	}
-	ask, err := s.createInboxItem(s.db, protocol.InboxItem{Kind: "rejection", SessionID: b, Text: "request refused"})
+	ask, err := storeOldItem(t, s, protocol.InboxItem{Kind: "rejection", SessionID: b, Text: "request refused"})
 	if err != nil {
 		t.Fatal(err)
 	}

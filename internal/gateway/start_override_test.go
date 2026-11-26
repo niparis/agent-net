@@ -3,6 +3,7 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"log"
 	"strings"
 	"testing"
@@ -30,6 +31,28 @@ func askStatus(t *testing.T, s *Store, id string) string {
 	return status
 }
 
+// oldStartOverrideAsk stores the ask of a held start the way a gateway did
+// before decision 0196. A gateway no longer makes one, but it still answers
+// the ones it stored.
+func oldStartOverrideAsk(t *testing.T, s *Store, p protocol.StartOverrideAsk) (protocol.InboxItem, error) {
+	t.Helper()
+	item := protocol.InboxItem{Kind: protocol.AskKindQuestion, SessionID: p.Session, Text: p.Text, FromKind: protocol.AskFromGateway,
+		Options: []string{protocol.StartAnswerConfirm, protocol.StartAnswerPicker}, SourceRef: protocol.StartOverrideRefPrefix + p.StartID}
+	if err := s.db.QueryRow(`SELECT repo_project FROM sessions WHERE id=?`, p.Session).Scan(&item.Node); err != nil {
+		return item, err
+	}
+	item, err := storeOldItem(t, s, item)
+	if err != nil {
+		return item, err
+	}
+	facts, err := json.Marshal(p.OverrideFacts)
+	if err != nil {
+		return item, err
+	}
+	_, err = s.db.Exec(`UPDATE inbox_items SET override_facts=? WHERE id=?`, string(facts), item.ID)
+	return item, err
+}
+
 // The ask that holds a worker start is answered like any ask, but its answer
 // reaches the daemon as a decision, not the asking session as a message.
 func TestStartOverrideAskAnswers(t *testing.T) {
@@ -48,7 +71,7 @@ func TestStartOverrideAskAnswers(t *testing.T) {
 	}
 	mk := func(ref string) protocol.InboxItem {
 		t.Helper()
-		item, err := s.CreateStartOverrideAsk(node, protocol.StartOverrideAsk{Session: agent, StartID: ref, Text: "an agent wants model=m. Confirm, or let the picker choose."})
+		item, err := oldStartOverrideAsk(t, s, protocol.StartOverrideAsk{Session: agent, StartID: ref, Text: "an agent wants model=m. Confirm, or let the picker choose."})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -118,23 +141,6 @@ func TestStartOverrideAskAnswers(t *testing.T) {
 	}
 }
 
-// The one ask of an exceptional start goes to the owner even when a live
-// chief could adopt it. The chief does not confirm starts.
-func TestStartOverrideAskGoesToTheOwnerNotTheChief(t *testing.T) {
-	s, _, _, asker, node := chiefRig(t)
-	if err := s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, asker).Scan(&node); err != nil {
-		t.Fatal(err)
-	}
-	item, err := s.CreateStartOverrideAsk(node, protocol.StartOverrideAsk{Session: asker, StartID: "a_owner",
-		Text: "an agent wants model=m. Confirm, or let the picker choose.", OverrideFacts: protocol.OverrideFacts{Harness: "opencode", Model: "fake/m2"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if next := askNext(t, s, item.ID); next != protocol.AskNextOwner {
-		t.Fatalf("held start next = %q, want the owner", next)
-	}
-}
-
 // A held start takes one of its own answers. Free text that names confirm and
 // picker together, or any other answer, is refused before it is stored, so a
 // start is never read as an option the human did not choose.
@@ -149,7 +155,7 @@ func TestStartOverrideAskRefusesAnyOtherAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err := s.CreateStartOverrideAsk(node, protocol.StartOverrideAsk{Session: agent, StartID: "a_text",
+	item, err := oldStartOverrideAsk(t, s, protocol.StartOverrideAsk{Session: agent, StartID: "a_text",
 		Text: "an agent wants machine=research. Confirm, or let the picker choose.", OverrideFacts: protocol.OverrideFacts{Harness: "opencode", Model: "fake/m2"}})
 	if err != nil {
 		t.Fatal(err)
@@ -195,7 +201,7 @@ func TestStartDecisionToOfflineNodeTellsTheCaller(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err := s.CreateStartOverrideAsk(node, protocol.StartOverrideAsk{Session: agent, StartID: "a_off",
+	item, err := oldStartOverrideAsk(t, s, protocol.StartOverrideAsk{Session: agent, StartID: "a_off",
 		Text: "an agent wants harness=opencode model=fake/m2. Confirm, or let the picker choose.", OverrideFacts: protocol.OverrideFacts{Harness: "opencode", Model: "fake/m2"}})
 	if err != nil {
 		t.Fatal(err)

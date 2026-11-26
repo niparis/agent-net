@@ -351,10 +351,23 @@ func assertGatewayOwnerEffects(t *testing.T, g *testGateway, sid, text string, w
 	}
 }
 
+// openQuestionItem opens a question of the session to its team lead, the way
+// a team that sends questions to its lead stores it. A question for the owner
+// is a request to the chief and is not stored (decision 0196). The owner's
+// words typed in the session answer the stored one.
 func openQuestionItem(t *testing.T, g *testGateway, sid string) {
 	t.Helper()
-	if _, err := g.gw.Store().CreateInboxItem(protocol.InboxItem{
-		Kind: "question", SessionID: sid, Node: "shop", Text: "Ready?",
+	st := g.gw.Store()
+	leadNode, _, err := st.CreateNode("lead-node", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lead, err := st.UpsertSession(leadNode, protocol.SessionInfo{Harness: "pi", NativeID: "lead-1", Name: "lead", Repo: protocol.RepoInfo{Project: "shop"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateInboxItem(protocol.InboxItem{
+		Kind: "question", SessionID: sid, Node: "shop", FromKind: protocol.AskFromSession, NextWho: lead, Text: "Ready?",
 	}); err != nil {
 		t.Fatal(err)
 	}
