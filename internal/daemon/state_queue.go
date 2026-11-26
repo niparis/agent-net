@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS worker_costs (
 
 // queuedStart is a worker start that waits for room.
 type queuedStart struct {
+	// Seq is the place of the start in the queue, oldest first. A start put
+	// back by a stop keeps its turn with it.
+	Seq int64
+
 	ID, Owner, Project, Path, Harness, Model, Task, Title, Isolation string
 	// OwnerName is the caller's display name, for the commit trailers.
 	OwnerName string
@@ -59,6 +63,17 @@ type queuedStart struct {
 }
 
 func (s *state) addQueued(q queuedStart) error {
+	return s.insertQueued(q, false)
+}
+
+// putQueuedBack puts a start back at the place it had in the queue. A stop that
+// began after the start left the queue but before anything launched must leave
+// it for the next daemon, in the turn it had.
+func (s *state) putQueuedBack(q queuedStart) error {
+	return s.insertQueued(q, true)
+}
+
+func (s *state) insertQueued(q queuedStart, keepPlace bool) error {
 	assessment := ""
 	if q.Assessment != nil {
 		if raw, err := json.Marshal(q.Assessment); err == nil {
@@ -69,14 +84,19 @@ func (s *state) addQueued(q queuedStart) error {
 	if raw, err := json.Marshal(q.NotFamily); err == nil && len(q.NotFamily) > 0 {
 		notFamily = string(raw)
 	}
-	_, err := s.db.Exec(`INSERT INTO worker_queue (id, owner, owner_name, project, path, harness, model, task, title, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue, task_id, continuation_partial, assessment, change_id, mcp_servers, fixes, resume_session, why, not_family, automatic)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, q.ID, q.Owner, q.OwnerName, q.Project, q.Path, q.Harness, q.Model, q.Task, q.Title, q.Isolation, q.QueuedAt.UnixNano(), q.Base, q.RecordTask, q.Permissions, q.FromCTO, q.DifficultyAsked, q.DifficultyUsed, q.Touches, boolInt(q.AutoContinue), q.TaskID, boolInt(q.ContinuationPartial), assessment, q.ChangeID, q.MCPServers, q.Fixes, q.ResumeSession, q.Why, notFamily, boolInt(q.Automatic))
+	// A NULL seq takes the next place, as a fresh start does.
+	var seq any
+	if keepPlace && q.Seq > 0 {
+		seq = q.Seq
+	}
+	_, err := s.db.Exec(`INSERT INTO worker_queue (seq, id, owner, owner_name, project, path, harness, model, task, title, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue, task_id, continuation_partial, assessment, change_id, mcp_servers, fixes, resume_session, why, not_family, automatic)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, seq, q.ID, q.Owner, q.OwnerName, q.Project, q.Path, q.Harness, q.Model, q.Task, q.Title, q.Isolation, q.QueuedAt.UnixNano(), q.Base, q.RecordTask, q.Permissions, q.FromCTO, q.DifficultyAsked, q.DifficultyUsed, q.Touches, boolInt(q.AutoContinue), q.TaskID, boolInt(q.ContinuationPartial), assessment, q.ChangeID, q.MCPServers, q.Fixes, q.ResumeSession, q.Why, notFamily, boolInt(q.Automatic))
 	return err
 }
 
 // queue lists the waiting starts, the oldest first.
 func (s *state) queue() ([]queuedStart, error) {
-	rows, err := s.db.Query(`SELECT id, owner, owner_name, project, path, harness, model, task, title, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue, task_id, continuation_partial, assessment, change_id, mcp_servers, fixes, resume_session, why, not_family, automatic FROM worker_queue ORDER BY seq`)
+	rows, err := s.db.Query(`SELECT seq, id, owner, owner_name, project, path, harness, model, task, title, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue, task_id, continuation_partial, assessment, change_id, mcp_servers, fixes, resume_session, why, not_family, automatic FROM worker_queue ORDER BY seq`)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +107,7 @@ func (s *state) queue() ([]queuedStart, error) {
 		var at int64
 		var autoContinue, automatic int
 		var assessment, notFamily string
-		if err := rows.Scan(&q.ID, &q.Owner, &q.OwnerName, &q.Project, &q.Path, &q.Harness, &q.Model, &q.Task, &q.Title, &q.Isolation, &at, &q.Base, &q.RecordTask, &q.Permissions, &q.FromCTO, &q.DifficultyAsked, &q.DifficultyUsed, &q.Touches, &autoContinue, &q.TaskID, &q.ContinuationPartial, &assessment, &q.ChangeID, &q.MCPServers, &q.Fixes, &q.ResumeSession, &q.Why, &notFamily, &automatic); err != nil {
+		if err := rows.Scan(&q.Seq, &q.ID, &q.Owner, &q.OwnerName, &q.Project, &q.Path, &q.Harness, &q.Model, &q.Task, &q.Title, &q.Isolation, &at, &q.Base, &q.RecordTask, &q.Permissions, &q.FromCTO, &q.DifficultyAsked, &q.DifficultyUsed, &q.Touches, &autoContinue, &q.TaskID, &q.ContinuationPartial, &assessment, &q.ChangeID, &q.MCPServers, &q.Fixes, &q.ResumeSession, &q.Why, &notFamily, &automatic); err != nil {
 			return nil, err
 		}
 		q.QueuedAt = time.Unix(0, at)

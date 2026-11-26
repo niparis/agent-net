@@ -928,6 +928,15 @@ func (d *Daemon) Stop() {
 	d.st.close()
 }
 
+// stopping reports whether Stop has begun. New work is not taken then: the
+// queue waits for the next daemon, and a start in flight is not read as a
+// failure of the harness.
+func (d *Daemon) stopping() bool {
+	d.bgMu.Lock()
+	defer d.bgMu.Unlock()
+	return d.bgClosed
+}
+
 // goBackground runs fn in a goroutine that Stop waits for. New work is not
 // started once the daemon is stopping; the result says whether fn started.
 func (d *Daemon) goBackground(fn func()) bool {

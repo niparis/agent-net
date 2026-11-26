@@ -262,6 +262,16 @@ func (n *node) restartWith(between func(), connect bool) {
 	if between != nil {
 		between()
 	}
+	n.startAgain()
+	if connect {
+		eventually(n.t, "daemon reconnected to gateway", n.d.Connected)
+	}
+}
+
+// startAgain starts a daemon on the socket and state of n, after the last one
+// has stopped.
+func (n *node) startAgain() {
+	n.t.Helper()
 	d, err := New(n.cfg)
 	if err != nil {
 		n.t.Fatal(err)
@@ -278,9 +288,6 @@ func (n *node) restartWith(between func(), connect bool) {
 	}
 	n.d = d
 	n.t.Cleanup(d.Stop)
-	if connect {
-		eventually(n.t, "daemon reconnected to gateway", d.Connected)
-	}
 }
 
 type nodeOpts struct {
