@@ -592,7 +592,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_friction_mark",
-    "description": "Lead sessions only: set the read status of friction reports (new, read, triaged, fixed, wontfix or infra) by ids, by group, or by a filter with project, area and text. Give link (a change id or a web address) and note when the mark has them. dry_run counts the matches first. Other sessions are refused.",
+    "description": "Lead sessions only: set the read status of friction reports (new, read, triaged, fixed, wontfix or infra) by ids, by group, or by a filter with project, area and text. Give link (a change id or a web address) and note when the mark has them. dry_run counts the matches first. Other sessions are refused. File reports with agent_friction_report, the friction field of agent_step_report, or agent_handback.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -662,6 +662,67 @@ export const TOOL_CATALOG = [
       "agent"
     ],
     "method": "friction_mark_lead",
+    "daemon_fields": {}
+  },
+  {
+    "name": "agent_friction_report",
+    "description": "File what slowed you down with no step: one {area, text} per problem, the same entries a step report takes. Optionally name the change or project. The report joins the hand-back friction in the same store.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "friction": {
+          "type": "array",
+          "description": "What slowed you down: one {area, text} per problem. An empty list means nothing to report. This needs no step and no change.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "area": {
+                "type": "string",
+                "enum": [
+                  "tooling",
+                  "permissions",
+                  "brief",
+                  "review",
+                  "ci",
+                  "environment",
+                  "skill"
+                ],
+                "description": "Where the friction was."
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "pattern": "^[^\\r\\n]*$",
+                "description": "One line: what slowed you down."
+              }
+            },
+            "required": [
+              "area",
+              "text"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "change": {
+          "type": "string",
+          "description": "Optional change id this is about, such as ch_1234."
+        },
+        "project": {
+          "type": "string",
+          "description": "Optional project name. Default: your session's project."
+        }
+      },
+      "required": [
+        "friction"
+      ],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent",
+      "worker"
+    ],
+    "method": "friction_report",
     "daemon_fields": {}
   },
   {

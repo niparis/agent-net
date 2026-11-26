@@ -1564,6 +1564,7 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 				body += "\n" + stLine
 				line += " | " + stLine
 			}
+			body += "\n" + protocol.FrictionReportLine
 			notices = append(notices, notice{targets: group, body: body, line: line + "\n" + s.stepContract(c.Project, t.ref.Step), isReminder: t.isReminder})
 			continue
 		}
@@ -1643,6 +1644,7 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 			body += "\n" + stLine
 			line += " | " + stLine
 		}
+		body += "\n" + protocol.FrictionReportLine
 		notices = append(notices, notice{targets: group, body: body, line: line + "\n" + s.stepContracts(c.Project, run), order: order, isReminder: isReminder})
 	}
 	if len(notices) == 0 {

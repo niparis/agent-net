@@ -51,6 +51,9 @@ func TestCoalesceSingleIsolatedTask(t *testing.T) {
 	if !strings.Contains(body, cid) || !strings.Contains(body, "diff stat:") || !strings.Contains(body, "evidence:") {
 		t.Fatalf("single task missing details: %s", body)
 	}
+	if !strings.HasSuffix(strings.TrimSpace(body), protocol.FrictionReportLine) {
+		t.Fatalf("single task does not end with the friction line:\n%s", body)
+	}
 }
 
 func TestCoalesceMixedBurstTwoRecipients(t *testing.T) {

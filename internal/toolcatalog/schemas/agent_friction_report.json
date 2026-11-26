@@ -1,0 +1,49 @@
+{
+  "input": {
+    "type": "object",
+    "properties": {
+      "friction": {
+        "type": "array",
+        "description": "What slowed you down: one {area, text} per problem. An empty list means nothing to report. This needs no step and no change.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "area": {
+              "type": "string",
+              "enum": ["tooling", "permissions", "brief", "review", "ci", "environment", "skill"],
+              "description": "Where the friction was."
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "^[^\\r\\n]*$",
+              "description": "One line: what slowed you down."
+            }
+          },
+          "required": ["area", "text"],
+          "additionalProperties": false
+        }
+      },
+      "change": {
+        "type": "string",
+        "description": "Optional change id this is about, such as ch_1234."
+      },
+      "project": {
+        "type": "string",
+        "description": "Optional project name. Default: your session's project."
+      }
+    },
+    "required": ["friction"],
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "stored": {
+        "type": "integer"
+      }
+    },
+    "additionalProperties": false
+  }
+}
