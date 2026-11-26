@@ -914,6 +914,13 @@ type handbackRecord struct {
 // hand-back then waits for the next connect instead of sending its notice
 // without the change.
 func (d *Daemon) submitHandbackChange(ctx context.Context, w *worker, check *protocol.HandbackCheck, report string, visual ...protocol.VisualEvidence) (rec handbackRecord) {
+	return d.submitHandbackChangeFrom(ctx, w, check, report, "", visual...)
+}
+
+// submitHandbackChangeFrom is submitHandbackChange with the branch head from
+// before the daemon committed the hand-back's leftovers, so a claimed head is
+// still the change's head.
+func (d *Daemon) submitHandbackChangeFrom(ctx context.Context, w *worker, check *protocol.HandbackCheck, report, beforeCommit string, visual ...protocol.VisualEvidence) (rec handbackRecord) {
 	d.wmu.Lock()
 	dir, branch, base, owner, sid := w.worktree, w.branch, w.base, w.owner, w.sessionID
 	harness, model, title, kept := w.harness, w.model, w.title, w.changeID
@@ -932,7 +939,7 @@ func (d *Daemon) submitHandbackChange(ctx context.Context, w *worker, check *pro
 	defer cancel()
 	// The work may be on a branch the worker moved to, not the start branch,
 	// or on a head the worker pushed or named (pickHandbackHead).
-	pick, err := pickHandbackHead(ctx, dir, branch, base, report)
+	pick, err := pickHandbackHead(ctx, dir, branch, base, report, beforeCommit)
 	branch, head := pick.branch, pick.head
 	rec.pick = pick
 	fail := func(err error) handbackRecord {
@@ -943,8 +950,8 @@ func (d *Daemon) submitHandbackChange(ctx context.Context, w *worker, check *pro
 	if err != nil {
 		return fail(err)
 	}
-	// A claimed head is the change as the worker handed it back: leftovers in
-	// the worktree went to the leftovers ref, not into it.
+	// A claimed head is the change as the worker handed it back: the daemon's
+	// leftover commit goes on the branch, not into the recorded head.
 	uncommitted := false
 	if pick.claimed == "" {
 		if uncommitted, err = branchUncommitted(ctx, dir, branch); err != nil {

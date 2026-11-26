@@ -69,20 +69,14 @@ func (agyLauncher) adopt(ctx context.Context, d *Daemon, w *worker) error {
 		d.setWorkerStatus(w, "busy")
 	}
 	d.startAgyStream(c)
-	refused, ok := d.loadRefusedHandback(w.id)
-	switch {
-	case s.Completed && s.Failure == "" && s.Pending != nil && (!ok || refused.Turn != s.PendingKey):
+	if s.Completed && s.Failure == "" && s.Pending != nil {
 		c.publishHandback(*s.Pending)
-	case ok:
-		// The refusal of this pending hand-back, or of an earlier one, is
-		// saved: do what it still owes.
-		d.goBackground(func() { c.refusalNext(d.streamCtx(), refused) })
 	}
 	return nil
 }
 
 // turnKeyLocked names the turn whose result was read last. It is the pending
-// hand-back's notice key, and a refused hand-back saves it as its Turn.
+// hand-back's notice key.
 func (c *agyConn) turnKeyLocked() string {
 	return fmt.Sprintf("agy-%s-%s-%d", c.w.id, c.streamID, c.offset)
 }
@@ -124,64 +118,21 @@ func (c *agyConn) publishHandback(req protocol.WorkerHandbackRequest) {
 	})
 }
 
-// refused saves the refusal of the pending hand-back named key, then tells
-// the worker or the caller.
+// refused drops the pending hand-back named key and tells the caller why
+// agent-net could not take it, with the worker's report.
 func (c *agyConn) refused(ctx context.Context, req protocol.WorkerHandbackRequest, key string, err error) {
 	d, w := c.d, c.w
-	d.refusedStep("refused")
-	r := d.saveRefusal(w, req, err, key, true)
-	d.refusedStep("saved")
-	// The refused hand-back ended the turn: let the next message in.
-	d.openCodeTurnIdle(w.sessionID)
-	c.refusalNext(ctx, r)
-}
-
-// refusalNext does what a saved refusal still owes, read from the stream
-// state, so a live refusal, an adoption and the end of a later turn take the
-// same path. The steps of a refused hand-back, each on disk before the next:
-//
-//   - refused: nothing is saved. Adoption publishes the pending hand-back again.
-//   - saved: the record names the pending turn. Adoption finds both and goes on
-//     here, so the hand-back is not published again.
-//   - cleared: the stream state no longer holds the pending hand-back.
-//   - the worker's message: deliverAgy saves the stream as not completed before
-//     it writes, so adoption never sends it twice. The result of that turn
-//     comes here again when it carries no hand-back.
-//   - told: the caller's notice is sent. Adoption sends it again with the same
-//     key, and the gateway keeps the first. Then the record is removed.
-func (c *agyConn) refusalNext(ctx context.Context, r refusedHandback) {
-	d, w := c.d, c.w
 	c.mu.Lock()
-	if c.pending != nil && c.pendingKey == r.Turn {
+	if c.pending != nil && c.pendingKey == key {
 		c.pending, c.pendingKey = nil, ""
 		if err := c.saveStreamLocked(); err != nil {
 			d.Logf("worker %s: save the Antigravity stream: %v", w.id, err)
 		}
 	}
-	completed, failed, sameTurn := c.completed, c.failure != "", c.turnKeyLocked() == r.Turn
 	c.mu.Unlock()
-	d.refusedStep("cleared")
-	switch {
-	case !r.Worker:
-		d.tellCallerRefused(ctx, w, r)
-	case !completed || failed:
-		// A turn runs: its result comes here again, or carries a new
-		// hand-back. A failed run ends the worker, whose notice carries the
-		// saved report.
-	case sameTurn:
-		// No turn ran after the refused one, so the message is still owed.
-		if err := d.tellWorkerRefused(ctx, w, r.Reason); err != nil {
-			d.Logf("worker %s: refused hand-back message: %v", w.id, err)
-			if ctx.Err() != nil {
-				return // the daemon stops: the next one finds the record and sends the message
-			}
-			d.tellCallerRefused(ctx, w, r)
-		}
-	default:
-		// The worker had its message and ended a later turn without a new
-		// hand-back.
-		d.tellCallerRefused(ctx, w, r)
-	}
+	// The refused hand-back ended the turn: let the next message in.
+	d.openCodeTurnIdle(w.sessionID)
+	d.tellCallerRefused(ctx, w, req, cleanFailure(err.Error()))
 }
 
 // streamCtx ends when the daemon stops.

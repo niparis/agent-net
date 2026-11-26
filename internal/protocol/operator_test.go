@@ -165,14 +165,32 @@ func TestWorkerTaskSummary(t *testing.T) {
 func TestFormatWorkerNotice(t *testing.T) {
 	n := WorkerNotice{Status: StatusDone, Session: "s_1", Harness: "opencode", Model: "a/b", Project: "shop", Host: "mac", Title: "Fix the parser",
 		RunTime: 3*time.Minute + 12*time.Second + 400*time.Millisecond, Tokens: "10 in, 5 out", Cost: "0.0100",
-		Worktree: "/w", Branch: "agent-net/w_1", DiffStat: " x.go | 2 ++\n 1 file changed, 2 insertions(+)"}
+		APICost: "$0.43 at API prices", AutoContinue: 2,
+		Struggle: &Struggle{Trace: "trace", Failed: 3, Repeats: 1, Top: []string{"go test ./..."}},
+		Worktree: "/w", Branch: "agent-net/w_1", Head: "abc1234", Change: "ch_1",
+		RateAsk: true, Difficulty: "normal",
+		DiffStat: " x.go | 2 ++\n 1 file changed, 2 insertions(+)"}
 	out := FormatWorkerNotice(n, "  the report  ")
 	want := "[agent-net worker notice]\nstatus: done\nworker: s_1 (opencode, a/b), project shop on mac · Fix the parser\npermissions: sandboxed (writes only in its worktree, network on) (no OS sandbox: turned off for this project in node.json)\nrun time: 3m12s\n" +
-		"tokens: 10 in, 5 out\ncost: 0.0100\nworktree: /w (branch agent-net/w_1)\nchanges (git diff --stat):\n x.go | 2 ++\n 1 file changed, 2 insertions(+)\n\n" +
+		"tokens: 10 in, 5 out\ncost: 0.0100, $0.43 at API prices\nauto-continues: 2\n" +
+		"struggle: 3 failed tool calls, 1 repeats; top: go test ./...\n" +
+		"worktree: /w (branch agent-net/w_1)\nhead: abc1234\nchange: ch_1\nchanges (git diff --stat):\n x.go | 2 ++\n 1 file changed, 2 insertions(+)\n" +
+		"rate worker s_1 (a/b, normal, 3m0s) with agent_worker_rate: 1 to 5 for the result, and one line on why\n\n" +
 		ReportMarker + "\nthe report\n\n" + ChecklistMarker + " Before you tell your user it is done: read the diff in /w, follow the accept contract, then report what you checked. The test step owns test suites. Merge only if your user asked."
 	if out != want {
 		t.Errorf("got:\n%s\nwant:\n%s", out, want)
 	}
+	// The model appears once, in the worker line: no second `model:` line.
+	if strings.Contains(out, "\nmodel:") || !strings.Contains(out, "worker: s_1 (opencode, a/b)") {
+		t.Errorf("the model is not on the worker line only:\n%s", out)
+	}
+	if strings.Count(out, "cost:") != 1 {
+		t.Errorf("the notice has more than one cost line:\n%s", out)
+	}
+	if strings.Count(out, "auto-continues:") != 1 || strings.Contains(out, "automatic continue was sent") {
+		t.Errorf("the notice does not say auto-continue once:\n%s", out)
+	}
+	t.Logf("rendered notice:\n%s", out)
 	n = WorkerNotice{Status: StatusTimedOut, Note: "no message for 1h0m0s", Session: "s_1", Harness: "opencode", Project: "p", Host: "h", RunTime: time.Hour}
 	out = FormatWorkerNotice(n, "")
 	if strings.Contains(out, ReportMarker) || strings.Contains(out, "tokens") || strings.Contains(out, "worktree: ") ||

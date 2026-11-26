@@ -493,20 +493,6 @@ func TestWorkerIdleWithoutHandbackNotice(t *testing.T) {
 	w.waitNotice(t, 3)
 }
 
-// A Codex hand-back is the end of its turn, so a refusal is never a tool error
-// the model sees, and no cause of one is the worker's to correct. The caller
-// gets the report and the reason at once. A daemon restart as soon as the
-// caller has it neither hands the turn back again nor sends an idle notice
-// for it.
-func TestCodexRefusedHandbackTellsTheCaller(t *testing.T) {
-	t.Parallel()
-	w, res := refuseCodexHandback(t, nil)
-	codexRefusalNotice(t, w.waitNotice(t, 1)[0], res)
-	w.node.restart()
-	w.cli = cliClient(t, w.node)
-	codexFollowUpAfterRefusal(t, w, res)
-}
-
 // A Claude worker that ends its turn without a hand-back tells its caller. The
 // daemon adopts it after a restart (nothing of the session belongs to the old
 // daemon process), so the notice must come from the adopted worker too.

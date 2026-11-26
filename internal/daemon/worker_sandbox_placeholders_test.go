@@ -59,7 +59,7 @@ func TestLeftoverSkipsUntrackedSandboxPlaceholders(t *testing.T) {
 	}
 	d := commitTestDaemon(t)
 	w := &worker{id: "w_placeholder_leftover_test", worktree: repo}
-	if !d.saveWorkerChanges(w, "save", "test", false, "") {
+	if d.saveWorkerChanges(w, "save", "test", false).SHA == "" {
 		t.Fatal("nothing committed")
 	}
 	if got := gitOutT(t, repo, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"); got != "keep.txt" {
@@ -84,7 +84,7 @@ func TestLeftoverKeepsRealFilesWithPlaceholderNames(t *testing.T) {
 	}
 	d := commitTestDaemon(t)
 	w := &worker{id: "w_placeholder_real_test", worktree: repo}
-	if !d.saveWorkerChanges(w, "save", "test", false, "") {
+	if d.saveWorkerChanges(w, "save", "test", false).SHA == "" {
 		t.Fatal("nothing committed")
 	}
 	if got := gitOutT(t, repo, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"); got != ".bashrc\n.gitconfig" {
@@ -110,7 +110,7 @@ func TestLeftoverSkipsSandboxPlaceholdersInSubfolders(t *testing.T) {
 	}
 	d := commitTestDaemon(t)
 	w := &worker{id: "w_placeholder_subdirs_test", worktree: repo}
-	if !d.saveWorkerChanges(w, "save", "test", false, "") {
+	if d.saveWorkerChanges(w, "save", "test", false).SHA == "" {
 		t.Fatal("nothing committed")
 	}
 	if got := gitOutT(t, repo, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"); got != "keep.txt" {
@@ -136,7 +136,7 @@ func TestLeftoverKeepsRealFilesWithPlaceholderNamesInSubfolders(t *testing.T) {
 	}
 	d := commitTestDaemon(t)
 	w := &worker{id: "w_placeholder_subdirs_real_test", worktree: repo}
-	if !d.saveWorkerChanges(w, "save", "test", false, "") {
+	if d.saveWorkerChanges(w, "save", "test", false).SHA == "" {
 		t.Fatal("nothing committed")
 	}
 	if got := gitOutT(t, repo, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"); got != "sub/.claude/settings.json\nsub/.mcp.json" {

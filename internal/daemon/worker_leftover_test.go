@@ -22,8 +22,8 @@ func TestLeftoverFiltersBuildOutputs(t *testing.T) {
 			}
 			d := commitTestDaemon(t)
 			w := &worker{id: "w_leftover_test", worktree: repo}
-			saved := d.saveWorkerChanges(w, "save", "test", false, "")
-			if saved != text {
+			saved := d.saveWorkerChanges(w, "save", "test", false)
+			if (saved.SHA != "") != text {
 				t.Fatalf("saved=%v want %v", saved, text)
 			}
 			if !text && gitOutT(t, repo, "rev-parse", "HEAD") != base {

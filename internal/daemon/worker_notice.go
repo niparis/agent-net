@@ -1,473 +1,19 @@
 package daemon
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
-
-	"github.com/niparis/agent-net/internal/loginpath"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// Worker hand-back, completion notices and worktrees (decision 0002, W10, W11
-// and W13).
+// Worker hand-back and completion notices (decision 0002, W10, W11 and W13).
 
-// ---- worktrees ----
-
-var gitPathOnce sync.Once
-var gitSearchPath string
-
-func worktreeGitPath() string {
-	gitPathOnce.Do(func() {
-		login := loginpath.Path()
-		var dirs []string
-		for _, name := range []string{"git", "git-lfs"} {
-			for _, dir := range filepath.SplitList(login) {
-				if dir == "" {
-					continue
-				}
-				if fi, err := os.Stat(filepath.Join(dir, name)); err == nil && !fi.IsDir() && fi.Mode()&0111 != 0 {
-					dirs = append(dirs, dir)
-					break
-				}
-			}
-		}
-		gitSearchPath = strings.Join(append(dirs, login), string(os.PathListSeparator))
-	})
-	// Honor an explicitly selected git on the daemon's current PATH, while
-	// adding the login-shell tools for subprocesses such as git-lfs.
-	var dirs []string
-	if git, err := exec.LookPath("git"); err == nil {
-		dirs = append(dirs, filepath.Dir(git))
-	}
-	dirs = append(dirs, gitSearchPath, os.Getenv("PATH"))
-	return strings.Join(dirs, string(os.PathListSeparator))
-}
-
-var workerGitCommandTimeout = func() *atomic.Int64 {
-	timeout := &atomic.Int64{}
-	timeout.Store(int64(20 * time.Second))
-	return timeout
-}()
-
-type workerGitError struct {
-	args   []string
-	err    error
-	stderr string
-}
-
-func (e *workerGitError) Error() string {
-	return fmt.Sprintf("git %s: %v: %s", strings.Join(e.args, " "), e.err, e.stderr)
-}
-
-func (e *workerGitError) Unwrap() error { return e.err }
-
-// git runs a git command in dir and returns its output.
-func gitOut(ctx context.Context, dir string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(workerGitCommandTimeout.Load()))
-	defer cancel()
-	return gitOutWithContext(ctx, dir, args...)
-}
-
-func gitOutWithContext(ctx context.Context, dir string, args ...string) (string, error) {
-	return gitOutWithEnv(ctx, dir, nil, args...)
-}
-
-// gitOutWithEnv is gitOut with extra environment entries for the command, such
-// as a worker's commit hook settings.
-func gitOutWithEnv(ctx context.Context, dir string, extra []string, args ...string) (string, error) {
-	return gitWithInput(ctx, dir, extra, nil, args...)
-}
-
-// gitOutWithInput is gitOut with stdin, for a command that reads paths such as
-// check-ignore --stdin.
-func gitOutWithInput(ctx context.Context, dir string, stdin []byte, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(workerGitCommandTimeout.Load()))
-	defer cancel()
-	return gitWithInput(ctx, dir, nil, stdin, args...)
-}
-
-func gitWithInput(ctx context.Context, dir string, extra []string, stdin []byte, args ...string) (string, error) {
-	path := worktreeGitPath()
-	git := "git"
-	for _, dir := range filepath.SplitList(path) {
-		candidate := filepath.Join(dir, "git")
-		if fi, err := os.Stat(candidate); err == nil && !fi.IsDir() && fi.Mode()&0111 != 0 {
-			git = candidate
-			break
-		}
-	}
-	cmd := exec.CommandContext(ctx, git, append([]string{"-C", dir}, args...)...)
-	if stdin != nil {
-		cmd.Stdin = bytes.NewReader(stdin)
-	}
-	base := os.Environ()
-	if len(extra) > 0 {
-		// Extra entries replace inherited command-scope git config and worker
-		// trailer values, so an inherited set cannot win or leak in.
-		kept := base[:0]
-		for _, item := range base {
-			k, _, _ := strings.Cut(item, "=")
-			if strings.HasPrefix(k, "GIT_CONFIG_") || strings.HasPrefix(k, "AGENT_NET_TRAILER_") {
-				continue
-			}
-			kept = append(kept, item)
-		}
-		base = kept
-	}
-	cmd.Env = append(append(base, "PATH="+path, "GIT_TERMINAL_PROMPT=0", "LC_ALL=C"), extra...)
-	var out, errb bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errb
-	if err := cmd.Run(); err != nil {
-		return "", &workerGitError{args: args, err: err, stderr: strings.TrimSpace(errb.String())}
-	}
-	return strings.TrimRight(out.String(), "\n"), nil
-}
-
-// isGitRepo tells whether dir is inside a git work tree with a commit, so that
-// a worktree can be made from it.
-func isGitRepo(ctx context.Context, dir string) bool {
-	_, err := gitOut(ctx, dir, "rev-parse", "--verify", "HEAD")
-	return err == nil
-}
-
-// worktreeFetchTimeout bounds the fetch that looks for a newer upstream tip.
-const worktreeFetchTimeout = 10 * time.Second
-
-// freshUpstreamBase returns the commit a new worktree should start from when
-// the owner asked for no base. Work often lands on the remote default branch (a
-// merged pull request or a merge queue) while a local branch stays behind. So
-// it fetches origin's default branch and returns that tip, except for one case:
-// the checkout is the default branch and holds every commit of origin's tip
-// plus its own. Those unpushed commits are the owner's own work on the default
-// branch, so the worker starts from local HEAD and gets them. A checkout on
-// another branch, a detached HEAD or a diverged default branch starts from the
-// tip, because its commits would otherwise come with the worker's work and
-// show up as unrelated files. A missing origin or a failed fetch starts from
-// local HEAD. It never moves the owner's checkout or any local branch: a fetch
-// only updates refs/remotes.
-func (d *Daemon) freshUpstreamBase(ctx context.Context, main, localHead string) string {
-	keep := func(why string) string {
-		if d.log != nil {
-			d.log.Printf("worktree base: starting from local HEAD %s in %s: %s", shortCommit(localHead), main, why)
-		}
-		return localHead
-	}
-	target := cleanupDefaultBranch(ctx, main, "")
-	if target == "" {
-		return keep("there is no origin default branch, local main or local master")
-	}
-	if _, err := gitOut(ctx, main, "remote", "get-url", "origin"); err != nil {
-		return keep("the repository has no origin remote")
-	}
-	remoteRef := "refs/remotes/origin/" + target
-	fctx, cancel := context.WithTimeout(ctx, worktreeFetchTimeout)
-	defer cancel()
-	if _, err := gitOutWithContext(fctx, main, "fetch", "--quiet", "--no-tags", "origin", "+refs/heads/"+target+":"+remoteRef); err != nil {
-		return keep("fetch of origin/" + target + " failed: " + err.Error())
-	}
-	tip, err := gitOut(ctx, main, "rev-parse", "--verify", remoteRef+"^{commit}")
-	if err != nil {
-		return keep("cannot read " + remoteRef + ": " + err.Error())
-	}
-	if _, err := gitOut(ctx, main, "merge-base", "--is-ancestor", localHead, tip); err == nil {
-		if tip != localHead && d.log != nil {
-			d.log.Printf("worktree base: starting from origin/%s %s (local %s is behind) in %s", target, shortCommit(tip), shortCommit(localHead), main)
-		}
-		return tip
-	}
-	branch, _ := gitOut(ctx, main, "symbolic-ref", "--quiet", "--short", "HEAD")
-	if branch == target {
-		if _, err := gitOut(ctx, main, "merge-base", "--is-ancestor", tip, localHead); err == nil {
-			if d.log != nil {
-				d.log.Printf("worktree base: starting from local %s %s, %d commits not yet pushed in %s", target, shortCommit(localHead), commitCount(ctx, main, tip+".."+localHead), main)
-			}
-			return localHead
-		}
-	}
-	why := "local HEAD is detached"
-	switch {
-	case branch == "":
-	case branch != target:
-		why = "local HEAD is on branch " + branch + ", not " + target
-	default:
-		why = "local " + target + " and origin/" + target + " have diverged"
-	}
-	if d.log != nil {
-		d.log.Printf("worktree base: starting from origin/%s %s (%s) in %s", target, shortCommit(tip), why, main)
-	}
-	return tip
-}
-
-// commitCount counts the commits in a rev range. It returns 0 when git cannot
-// count them, which only shortens the log line.
-func commitCount(ctx context.Context, dir, rng string) int {
-	out, err := gitOut(ctx, dir, "rev-list", "--count", rng)
-	if err != nil {
-		return 0
-	}
-	n, err := strconv.Atoi(strings.TrimSpace(out))
-	if err != nil {
-		return 0
-	}
-	return n
-}
-
-func shortCommit(c string) string {
-	if len(c) > 12 {
-		return c[:12]
-	}
-	return c
-}
-
-// createWorktree makes the worker's own worktree of its project, on a new
-// branch, in a folder the daemon manages (not in the user's checkout). The
-// worker then runs in it.
-func (d *Daemon) createWorktree(ctx context.Context, w *worker, requestedBase ...string) error {
-	main := w.path
-	ref := "HEAD"
-	requested := len(requestedBase) > 0 && requestedBase[0] != ""
-	if requested {
-		name := requestedBase[0]
-		if strings.HasPrefix(name, "-") {
-			return fmt.Errorf("invalid base branch %q", name)
-		}
-		if _, err := gitOut(ctx, main, "check-ref-format", "--branch", name); err != nil {
-			return fmt.Errorf("invalid base branch %q: %w", name, err)
-		}
-		ref = "refs/heads/" + name
-	}
-	base, err := gitOut(ctx, main, "rev-parse", "--verify", ref+"^{commit}")
-	if err != nil {
-		if ref != "HEAD" {
-			return fmt.Errorf("base branch %q does not exist: %w", requestedBase[0], err)
-		}
-		return fmt.Errorf("cannot make a worktree: %s is not a git repository with a commit (%v)", main, err)
-	}
-	if !requested {
-		base = d.freshUpstreamBase(ctx, main, base)
-	}
-	dir := filepath.Join(d.cfg.StateDir, "worktrees", w.id)
-	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
-		return err
-	}
-	branch := protocol.WorktreeBranchWithSettings(w.id, d.SettingsSnapshot())
-	d.wmu.Lock()
-	previousBase := w.base
-	if w.branch != "" {
-		branch = w.branch
-	}
-	d.wmu.Unlock()
-	// A resumed worker's branch stays after its worktree folder is removed (a
-	// disk cleanup). Make the worktree on that branch instead of failing on
-	// -b, so the commits the branch holds are still there.
-	reuse := false
-	if _, err := gitOut(ctx, main, "rev-parse", "--verify", "refs/heads/"+branch+"^{commit}"); err == nil {
-		reuse = true
-	}
-	args := []string{"worktree", "add", dir}
-	if reuse {
-		// A registration of the removed folder would block the add.
-		if _, err := gitOut(ctx, main, "worktree", "prune"); err != nil {
-			return fmt.Errorf("cannot make a worktree: git worktree prune: %w", err)
-		}
-		args = append(args, branch)
-	} else {
-		args = append(args, "-b", branch, base)
-	}
-	if _, err := gitOutWithContext(ctx, main, args...); err != nil {
-		var gitErr *workerGitError
-		if errors.As(err, &gitErr) {
-			message := gitErr.stderr
-			missingLFS := strings.Contains(message, "git-lfs: command not found")
-			if len(message) > 200 {
-				message = message[len(message)-200:]
-			}
-			if missingLFS {
-				return fmt.Errorf("cannot make a worktree: git-lfs is missing on this machine: %s: %w", message, gitErr.err)
-			}
-			return fmt.Errorf("cannot make a worktree: git worktree add: %s: %w", message, gitErr.err)
-		}
-		return fmt.Errorf("cannot make a worktree: %w", err)
-	}
-	if err := setWorktreeUpstream(ctx, main, branch); err != nil {
-		d.Logf("worker %s: branch upstream: %v", w.id, err) // the worker can still push with an explicit branch
-	}
-	if err := d.copyWorktreeSkills(ctx, main, dir); err != nil {
-		_, _ = gitOut(ctx, main, "worktree", "remove", "--force", dir)
-		return err
-	}
-	d.wmu.Lock()
-	w.mainPath, w.path, w.worktree, w.branch = main, dir, dir, branch
-	if !reuse || previousBase == "" {
-		w.base = base
-	}
-	d.wmu.Unlock()
-	return nil
-}
-
-// untrackedWorkFiles lists the untracked files in dir that the worker-end commit
-// would save. Sandbox placeholders and harness files are left out, as the
-// commit leaves them out.
-func untrackedWorkFiles(ctx context.Context, dir string) []string {
-	out, err := gitOut(ctx, dir, "ls-files", "-z", "--others", "--exclude-standard")
-	if err != nil {
-		return nil
-	}
-	var files []string
-	for _, path := range strings.Split(out, "\x00") {
-		if path == "" {
-			continue
-		}
-		if notWorkerWork(dir, worktreeChange{path: path, untracked: true}) {
-			continue
-		}
-		files = append(files, path)
-	}
-	return files
-}
-
-// worktreeFacts returns git diff --stat of the worktree against the commit it
-// started from, with the untracked files, and whether there is anything.
-func (d *Daemon) worktreeFacts(w *worker) (stat string, changed bool) {
-	d.wmu.Lock()
-	dir, base := w.worktree, w.base
-	d.wmu.Unlock()
-	if dir == "" {
-		return "", false
-	}
-	ctx := context.Background()
-	start := base
-	if head, err := gitOut(ctx, dir, "rev-parse", "HEAD"); err == nil {
-		base = noticeDiffBase(ctx, dir, base, head)
-	}
-	var parts []string
-	if base != "" {
-		if s, err := gitOut(ctx, dir, "diff", "--stat", base); err == nil && s != "" {
-			parts = append(parts, noticeDiffStat(s))
-		}
-	}
-	if files := untrackedWorkFiles(ctx, dir); len(files) > 0 {
-		more := ""
-		if len(files) > 20 {
-			files, more = files[:20], fmt.Sprintf(" and %d more", len(files)-20)
-		}
-		parts = append(parts, "untracked: "+strings.Join(files, ", ")+more)
-	}
-	if n, err := gitOut(ctx, dir, "rev-list", "--count", start+"..HEAD"); err == nil && n != "0" && n != "" && len(parts) == 0 {
-		parts = append(parts, n+" commit(s) with no file changes")
-	}
-	return strings.Join(parts, "\n"), len(parts) > 0
-}
-
-// noticeDiffBase is the commit a notice measures its diff stat from. A worker
-// keeps the base it started from, so a branch stacked on an unmerged release
-// train shows only the worker's own work. When the worker rebased onto newer
-// work, the merge-base with the default branch is newer than that base, and
-// counting from the base would include other people's files. With no recorded
-// base, the merge-base is used; with no default branch either, there is no
-// base and the notice has no diff stat.
-func noticeDiffBase(ctx context.Context, dir, recorded, head string) string {
-	if !protocol.ValidCommit(head) {
-		return recorded
-	}
-	base := ""
-	consider := func(candidate string) {
-		if !protocol.ValidCommit(candidate) {
-			return
-		}
-		if candidate != head {
-			if _, err := gitOut(ctx, dir, "merge-base", "--is-ancestor", candidate, head); err != nil {
-				return
-			}
-		}
-		if base == "" {
-			base = candidate
-			return
-		}
-		if candidate == base {
-			return
-		}
-		if _, err := gitOut(ctx, dir, "merge-base", "--is-ancestor", base, candidate); err == nil {
-			base = candidate
-		}
-	}
-	consider(recorded)
-	if target := cleanupDefaultBranch(ctx, dir, ""); target != "" {
-		for _, ref := range []string{target, "origin/" + target} {
-			if candidate, err := gitOut(ctx, dir, "merge-base", ref, head); err == nil {
-				consider(candidate)
-			}
-		}
-	}
-	return base
-}
-
-// noticeDiffStat bounds the notice's diff stat to the delivery limit, so a
-// branch with a huge diff cannot push the notice past the body limit. It keeps
-// whole lines and names how many files it left out. git's trailing summary line
-// goes, because it counts files that are not in the list.
-func noticeDiffStat(stat string) string {
-	stat = cleanDiffStat(stat)
-	if len(stat) <= protocol.MaxDiffStatBytes {
-		return stat
-	}
-	lines := strings.Split(strings.TrimRight(stat, "\n"), "\n")
-	if n := len(lines); n > 0 && isDiffStatSummary(lines[n-1]) {
-		lines = lines[:n-1]
-	}
-	// Leave room for the tail that names the files left out.
-	const tailRoom = 64
-	budget := protocol.MaxDiffStatBytes - tailRoom
-	var kept []string
-	size := 0
-	for _, line := range lines {
-		add := len(line) + 1
-		if size+add > budget {
-			break
-		}
-		kept = append(kept, line)
-		size += add
-	}
-	omitted := len(lines) - len(kept)
-	noun := "files"
-	if omitted == 1 {
-		noun = "file"
-	}
-	tail := fmt.Sprintf("... and %d more %s", omitted, noun)
-	if len(kept) == 0 {
-		return tail
-	}
-	out := strings.Join(kept, "\n") + "\n" + tail
-	if len(out) > protocol.MaxDiffStatBytes {
-		out = deliveryDiffStat(out)
-	}
-	return out
-}
-
-// isDiffStatSummary says whether a git diff --stat line is the trailing
-// summary rather than a file line.
-func isDiffStatSummary(line string) bool {
-	return strings.Contains(line, " changed") && !strings.Contains(line, "|")
-}
-
-// unfinishedSubject is the subject of the commit that keeps unfinished work.
-func unfinishedSubject(workerID, reason string) string {
-	return "agent-net: unfinished work of worker " + workerID + " (" + reason + ")"
-}
-
-// boundTask cuts a task to the 64 KiB that a worker record keeps.
 func boundTask(s string) string {
 	const max = 64 * 1024
 	if len(s) > max {
@@ -482,568 +28,6 @@ func first(a, b string) string {
 	}
 	return b
 }
-
-// saveUnfinished commits lost worker changes during adoption, before any
-// notice reporting can fail. A clean worktree is an idempotent no-op.
-func (d *Daemon) saveUnfinished(w *worker, reason string) bool {
-	if w.worktree == "" {
-		return false
-	}
-	unlock := d.lockWorktree(w.worktree)
-	defer unlock()
-	if w.harness == "agy" {
-		result := d.saveAgyWorkerEnd(w, reason)
-		return result.SHA != ""
-	}
-	result := d.commitWorkerEndWIP(context.Background(), w, reason, w.handbackReport)
-	if result.Failed != "" {
-		d.Logf("worker %s: adoption WIP commit: %s", w.id, result.Failed)
-	}
-	return result.SHA != ""
-}
-
-type worktreeLock struct {
-	mu   sync.Mutex
-	refs int
-}
-
-// lockWorktree serializes git operations by path, including operations that
-// rebuild a worker value from a persisted row during daemon adoption.
-func (d *Daemon) lockWorktree(path string) func() {
-	if path == "" {
-		return func() {}
-	}
-	key, err := filepath.Abs(path)
-	if err != nil {
-		key = filepath.Clean(path)
-	} else {
-		key = filepath.Clean(key)
-	}
-	d.worktreeLocksMu.Lock()
-	if d.worktreeLocks == nil {
-		d.worktreeLocks = make(map[string]*worktreeLock)
-	}
-	lock := d.worktreeLocks[key]
-	if lock == nil {
-		lock = &worktreeLock{}
-		d.worktreeLocks[key] = lock
-	}
-	lock.refs++
-	d.worktreeLocksMu.Unlock()
-	lock.mu.Lock()
-	return func() {
-		lock.mu.Unlock()
-		d.worktreeLocksMu.Lock()
-		lock.refs--
-		if lock.refs == 0 && d.worktreeLocks[key] == lock {
-			delete(d.worktreeLocks, key)
-		}
-		d.worktreeLocksMu.Unlock()
-	}
-}
-
-type workerEndCommitResult struct {
-	SHA     string
-	Files   int
-	Skipped string
-	Failed  string
-	Legacy  bool // Agy keeps its historical title-based commit subject.
-	// Ref is set when the commit was kept off the branch, at this ref,
-	// because the worker claimed its head.
-	Ref string
-}
-
-func workerCommitFileCount(ctx context.Context, dir, rev string) int {
-	files, err := gitOut(ctx, dir, "show", "--format=", "--name-only", rev)
-	if err != nil {
-		return 0
-	}
-	count := 0
-	for _, line := range strings.Split(files, "\n") {
-		if strings.TrimSpace(line) != "" {
-			count++
-		}
-	}
-	return count
-}
-
-func (r workerEndCommitResult) noticeDetail() string {
-	if r.Failed != "" {
-		if r.Legacy {
-			return "left uncommitted changes; unfinished work commit failed: " + r.Failed
-		}
-		return "left uncommitted changes; WIP commit failed: " + r.Failed
-	}
-	if r.Skipped == "git operation in progress" {
-		return ""
-	}
-	if r.SHA == "" {
-		if r.Skipped != "" {
-			return "left uncommitted changes; skipped: " + r.Skipped
-		}
-		return ""
-	}
-	kind := "WIP "
-	if r.Legacy {
-		kind = ""
-	}
-	detail := fmt.Sprintf("left uncommitted changes; committed as %s%s: %d files", kind, r.SHA, r.Files)
-	if r.Ref != "" {
-		detail = fmt.Sprintf("left uncommitted changes; kept as %s%s in %s, off the branch, which stays at the head you pushed or named: %d files", kind, r.SHA, r.Ref, r.Files)
-	}
-	if r.Skipped != "" {
-		detail += "; skipped: " + r.Skipped
-	}
-	return detail
-}
-
-func (r workerEndCommitResult) keepWorktree() bool {
-	return r.Failed != "" || r.Skipped != ""
-}
-
-// workerIndexLockStaleAfter is how old an empty index lock must be before a
-// WIP save may treat it as the one a dead git process left behind.
-const workerIndexLockStaleAfter = 10 * time.Minute
-
-// wipLockPolicy says whether a WIP save may clear a stale index lock. An empty
-// WorktreesRoot leaves every lock alone.
-type wipLockPolicy struct {
-	WorktreesRoot string
-	Logf          func(format string, args ...any)
-	// Aside, when set, is the ref the WIP commit goes to instead of the
-	// branch (see leftoversAside).
-	Aside string
-}
-
-// commitWorkerEndWIP is commitWorkerEndWIPWithPolicy for this daemon: a stale
-// lock is cleared only inside the daemon's own worktrees folder.
-// The WIP goes to the leftovers ref when the worker claimed its head.
-func (d *Daemon) commitWorkerEndWIP(ctx context.Context, w *worker, reason, report string) workerEndCommitResult {
-	d.wmu.Lock()
-	dir, branch := w.worktree, w.branch
-	d.wmu.Unlock()
-	return commitWorkerEndWIPWithPolicy(ctx, dir, branch, reason, wipLockPolicy{WorktreesRoot: d.worktreesDir(), Logf: d.Logf, Aside: d.leftoversAside(ctx, w, report)})
-}
-
-// commitWorkerEndWIPWithoutLockPolicy leaves every index lock alone, for
-// callers that do not own a worktrees folder.
-func commitWorkerEndWIP(ctx context.Context, dir, branch, reason string) workerEndCommitResult {
-	return commitWorkerEndWIPWithPolicy(ctx, dir, branch, reason, wipLockPolicy{})
-}
-
-// commitWorkerEndWIPWithPolicy saves the WIP once, and once more after it
-// removes a stale index lock that a dead git process left behind.
-func commitWorkerEndWIPWithPolicy(ctx context.Context, dir, branch, reason string, policy wipLockPolicy) workerEndCommitResult {
-	result := commitWorkerEndWIPOnce(ctx, dir, branch, reason, policy.Aside)
-	if result.Failed == "" || policy.WorktreesRoot == "" || !strings.Contains(result.Failed, "index.lock") {
-		return result
-	}
-	removed, _ := removeStaleIndexLock(ctx, dir, policy)
-	if !removed {
-		return result
-	}
-	if policy.Logf != nil {
-		policy.Logf("worker worktree %s: removed stale index lock", dir)
-	}
-	return commitWorkerEndWIPOnce(ctx, dir, branch, reason, policy.Aside)
-}
-
-// removeStaleIndexLock removes the index lock of the WIP worktree when it is
-// empty, older than workerIndexLockStaleAfter, inside the daemon's worktrees
-// folder, and no git process uses the worktree. It says whether it removed the
-// file, and why not.
-func removeStaleIndexLock(ctx context.Context, dir string, policy wipLockPolicy) (bool, string) {
-	root := strings.TrimSpace(policy.WorktreesRoot)
-	if root == "" {
-		return false, ""
-	}
-	absDir, err := filepath.Abs(dir)
-	if err != nil {
-		return false, err.Error()
-	}
-	absRoot, err := filepath.Abs(root)
-	if err != nil {
-		return false, err.Error()
-	}
-	if absDir == absRoot || !strings.HasPrefix(absDir, absRoot+string(filepath.Separator)) {
-		return false, "the worktree is not under the daemon's worktrees folder"
-	}
-	indexPath, err := gitOut(ctx, dir, "rev-parse", "--git-path", "index")
-	if err != nil {
-		return false, err.Error()
-	}
-	if !filepath.IsAbs(indexPath) {
-		indexPath = filepath.Join(dir, indexPath)
-	}
-	lockPath := indexPath + ".lock"
-	info, err := os.Stat(lockPath)
-	if err != nil {
-		return false, ""
-	}
-	if info.Size() != 0 {
-		return false, "the index lock is not empty"
-	}
-	if time.Since(info.ModTime()) < workerIndexLockStaleAfter {
-		return false, "the index lock is recent"
-	}
-	if gitProcessUsesWorktree(absDir) {
-		return false, "a git process is using the worktree"
-	}
-	if err := os.Remove(lockPath); err != nil {
-		return false, err.Error()
-	}
-	return true, ""
-}
-
-// gitProcessUsesWorktree says whether a running git process works in dir or a
-// folder under it. A system without /proc says yes, so a lock is never removed
-// where the daemon cannot look.
-func gitProcessUsesWorktree(dir string) bool {
-	entries, err := os.ReadDir("/proc")
-	if err != nil {
-		return true
-	}
-	seen := false
-	for _, e := range entries {
-		pid := e.Name()
-		if pid == "" || pid[0] < '0' || pid[0] > '9' {
-			continue
-		}
-		seen = true
-		comm, err := os.ReadFile(filepath.Join("/proc", pid, "comm"))
-		if err != nil {
-			continue
-		}
-		name := strings.TrimSpace(string(comm))
-		if name != "git" && !strings.HasPrefix(name, "git-") {
-			continue
-		}
-		if cwd, err := os.Readlink(filepath.Join("/proc", pid, "cwd")); err == nil &&
-			(cwd == dir || strings.HasPrefix(cwd, dir+string(filepath.Separator))) {
-			return true
-		}
-		cmdline, err := os.ReadFile(filepath.Join("/proc", pid, "cmdline"))
-		if err != nil {
-			continue
-		}
-		for _, arg := range strings.Split(string(cmdline), "\x00") {
-			if filepath.IsAbs(arg) && (arg == dir || strings.HasPrefix(arg, dir+string(filepath.Separator))) {
-				return true
-			}
-		}
-	}
-	return !seen
-}
-
-// commitWorkerEndWIP commits remaining work using a fixed daemon identity. It
-// shares stageWorkerLeftovers with hand-back commits so ignored and oversized
-// files follow the same filtering rules.
-func commitWorkerEndWIPOnce(ctx context.Context, dir, branch, reason, aside string) workerEndCommitResult {
-	if dir == "" {
-		return workerEndCommitResult{}
-	}
-	dirty, err := hasWorkLeftovers(ctx, dir)
-	if err != nil {
-		return workerEndCommitResult{Failed: err.Error()}
-	}
-	if !dirty {
-		return workerEndCommitResult{}
-	}
-	if branch != "" {
-		current, err := gitOut(ctx, dir, "branch", "--show-current")
-		if err != nil || current != branch {
-			return workerEndCommitResult{Failed: "worktree is not on worker branch"}
-		}
-	}
-	if gitOperationInProgress(ctx, dir) {
-		return workerEndCommitResult{Skipped: "git operation in progress"}
-	}
-	indexPath, err := gitOut(ctx, dir, "rev-parse", "--git-path", "index")
-	if err != nil {
-		return workerEndCommitResult{Failed: err.Error()}
-	}
-	if !filepath.IsAbs(indexPath) {
-		indexPath = filepath.Join(dir, indexPath)
-	}
-	indexInfo, err := os.Stat(indexPath)
-	if err != nil {
-		return workerEndCommitResult{Failed: err.Error()}
-	}
-	indexBefore, err := os.ReadFile(indexPath)
-	if err != nil {
-		return workerEndCommitResult{Failed: err.Error()}
-	}
-	restoreIndex := func() {
-		_ = os.WriteFile(indexPath, indexBefore, indexInfo.Mode().Perm())
-	}
-	excluded, err := stageWorkerLeftovers(ctx, dir)
-	if err != nil {
-		restoreIndex()
-		return workerEndCommitResult{Skipped: excluded, Failed: err.Error()}
-	}
-	staged, err := gitOut(ctx, dir, "diff", "--cached", "--name-only")
-	if err != nil {
-		restoreIndex()
-		return workerEndCommitResult{Skipped: excluded, Failed: err.Error()}
-	}
-	if staged == "" {
-		return workerEndCommitResult{Skipped: excluded}
-	}
-	subject := "WIP: uncommitted changes at worker end (" + reason + ")"
-	if aside != "" {
-		sha, err := commitStagedAside(ctx, dir, aside, subject)
-		restoreIndex()
-		if err != nil {
-			return workerEndCommitResult{Skipped: excluded, Failed: err.Error()}
-		}
-		return workerEndCommitResult{SHA: sha, Ref: aside, Files: workerCommitFileCount(ctx, dir, sha), Skipped: excluded}
-	}
-	args := []string{"-c", "user.name=agent-net", "-c", "user.email=agent-net@localhost", "-c", "author.name=agent-net", "-c", "author.email=agent-net@localhost", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "commit", "-q", "--no-verify", "-m", subject}
-	if _, err := gitOut(ctx, dir, args...); err != nil {
-		restoreIndex()
-		return workerEndCommitResult{Skipped: excluded, Failed: err.Error()}
-	}
-	sha, err := gitOut(ctx, dir, "rev-parse", "--short", "HEAD")
-	if err != nil {
-		return workerEndCommitResult{Skipped: excluded, Failed: err.Error()}
-	}
-	return workerEndCommitResult{SHA: sha, Files: workerCommitFileCount(ctx, dir, "HEAD"), Skipped: excluded}
-}
-
-// saveAgyWorkerEnd preserves Antigravity's historical title-based unfinished
-// commit while running it in the worker-end job.
-func (d *Daemon) saveAgyWorkerEnd(w *worker, reason string) workerEndCommitResult {
-	ctx := context.Background()
-	dirty, err := hasWorkLeftovers(ctx, w.worktree)
-	if err != nil {
-		return workerEndCommitResult{Failed: err.Error(), Legacy: true}
-	}
-	if !dirty {
-		return workerEndCommitResult{}
-	}
-	before := d.worktreeHead(w)
-	d.wmu.Lock()
-	subject := strings.TrimSpace(strings.SplitN(w.title, "\n", 2)[0])
-	report := w.handbackReport
-	d.wmu.Unlock()
-	if subject == "" {
-		subject = unfinishedSubject(w.id, reason)
-	}
-	if !d.saveWorkerChanges(w, subject, reason, true, d.leftoversAside(ctx, w, report)) {
-		d.wmu.Lock()
-		leftAsIs, excluded, aside := w.leftAsIs, w.excludedLeftovers, w.keptAside
-		d.wmu.Unlock()
-		if aside != "" {
-			sha, ref, _ := strings.Cut(aside, " in ")
-			return workerEndCommitResult{SHA: sha, Ref: ref, Files: workerCommitFileCount(ctx, w.worktree, sha), Skipped: excluded}
-		}
-		if leftAsIs {
-			return workerEndCommitResult{Skipped: "git operation in progress", Legacy: true}
-		}
-		return workerEndCommitResult{Skipped: excluded, Failed: "could not commit Antigravity worker changes", Legacy: true}
-	}
-	sha := d.worktreeHead(w)
-	if sha == before {
-		return workerEndCommitResult{Failed: "Antigravity commit did not advance HEAD", Legacy: true}
-	}
-	d.wmu.Lock()
-	excluded := w.excludedLeftovers
-	d.wmu.Unlock()
-	return workerEndCommitResult{SHA: sha, Files: workerCommitFileCount(ctx, w.worktree, "HEAD"), Skipped: excluded, Legacy: true}
-}
-
-// saveWorkerChanges commits the worker's leftovers on its branch. With aside
-// set, the commit goes to that ref instead and the branch, the index and the
-// worktree stay as they are (see leftoversAside).
-func (d *Daemon) saveWorkerChanges(w *worker, subject, reason string, unfinished bool, aside string) bool {
-	d.wmu.Lock()
-	dir, id, branch := w.worktree, w.id, w.branch
-	w.keptAside = ""
-	d.wmu.Unlock()
-	if dir == "" {
-		return false
-	}
-	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
-		return false
-	}
-	ctx := context.Background()
-	if branch != "" {
-		if current, err := gitOut(ctx, dir, "branch", "--show-current"); err != nil || current != branch {
-			d.Logf("worker %s: cannot save changes: worktree is not on worker branch", id)
-			return false
-		}
-	}
-	if dirty, err := hasWorkLeftovers(ctx, dir); err != nil || !dirty {
-		return false
-	}
-	// A commit now would drop the merge parents (or the rest of a rebase), so
-	// the worktree stays as it is. It is kept because it has changes.
-	if gitOperationInProgress(ctx, dir) {
-		d.wmu.Lock()
-		w.leftAsIs = true
-		d.wmu.Unlock()
-		d.Logf("worker.unfinished_left worker=%s reason=%s path=%s (a git merge, rebase, cherry-pick or revert is in progress)", id, reason, dir)
-		return false
-	}
-	if aside != "" {
-		var excluded string
-		sha, err := withSavedIndex(ctx, dir, func() (string, error) {
-			var err error
-			if excluded, err = stageWorkerLeftovers(ctx, dir); err != nil {
-				return "", err
-			}
-			return commitStagedAside(ctx, dir, aside, subject)
-		})
-		d.wmu.Lock()
-		w.excludedLeftovers = excluded
-		if sha != "" {
-			w.keptAside = sha + " in " + aside
-		}
-		d.wmu.Unlock()
-		if err != nil {
-			d.Logf("worker %s: keep leftovers aside: %v", id, err)
-			return false
-		}
-		d.Logf("worker.leftovers_aside worker=%s reason=%s ref=%s commit=%s", id, reason, aside, sha)
-		return false
-	}
-	excluded, err := stageWorkerLeftovers(ctx, dir)
-	d.wmu.Lock()
-	w.excludedLeftovers = excluded
-	d.wmu.Unlock()
-	if err != nil {
-		d.Logf("worker %s: keep unfinished work: %v", id, err)
-		return false
-	}
-	if diff, err := gitOut(ctx, dir, "diff", "--cached", "--name-only"); err != nil || diff == "" {
-		return false
-	}
-	args := []string{"-c", "commit.gpgsign=false"}
-	if v, _ := gitOut(ctx, dir, "config", "user.name"); v == "" {
-		args = append(args, "-c", "user.name=agent-net")
-	}
-	if v, _ := gitOut(ctx, dir, "config", "user.email"); v == "" {
-		args = append(args, "-c", "user.email=agent-net@localhost")
-	}
-	args = append(args, "commit", "-q", "--no-verify", "-m", subject)
-	if _, err := gitOutWithEnv(ctx, dir, d.workerGitEnv(w, nil, nil), args...); err != nil {
-		d.Logf("worker %s: keep unfinished work: %v", id, err)
-		return false
-	}
-	d.wmu.Lock()
-	w.unfinished = unfinished
-	d.wmu.Unlock()
-	d.Logf("worker.unfinished_saved worker=%s reason=%s path=%s", id, reason, dir)
-	return true
-}
-
-// gitOperationInProgress tells whether the worktree is in the middle of a
-// merge, rebase, cherry-pick or revert.
-func gitOperationInProgress(ctx context.Context, dir string) bool {
-	for _, name := range []string{"MERGE_HEAD", "rebase-merge", "rebase-apply", "CHERRY_PICK_HEAD", "REVERT_HEAD"} {
-		p, err := gitOut(ctx, dir, "rev-parse", "--git-path", name)
-		if err != nil || p == "" {
-			continue
-		}
-		if !filepath.IsAbs(p) {
-			p = filepath.Join(dir, p)
-		}
-		if _, err := os.Stat(p); err == nil {
-			return true
-		}
-	}
-	return false
-}
-
-// finishWorktree keeps ended worktrees until the next cleanup check.
-func (d *Daemon) finishWorktree(w *worker) {
-	d.wmu.Lock()
-	dir, branch := w.worktree, w.branch
-	d.wmu.Unlock()
-	if dir == "" {
-		return
-	}
-	if d.isOwnerWorktree(dir) {
-		d.Logf("worker.worktree kept owner path=%s", dir)
-		return
-	}
-	d.Logf("worker.worktree kept worker=%s path=%s branch=%s", w.id, dir, branch)
-}
-
-// ---- stats from the harness ----
-
-// workerStats is what the harness reports about a worker's run.
-type workerStats struct {
-	Tokens string
-	Cost   string
-	Model  string
-	// ContextTokens is the tokens the model saw on its last step, ContextLimit
-	// the model's context window, both 0 when the harness cannot say.
-	ContextTokens int64
-	ContextLimit  int64
-	// TotalTokens is input plus output plus reasoning for the run, no cache
-	// reads. 0 when the harness cannot say.
-	TotalTokens int64
-	// Usage is the same run by kind of token. Zero when the harness cannot say.
-	Usage protocol.RunTokens
-}
-
-// workerStats asks the launcher, with a short time limit. When the harness
-// cannot say, it keeps the last complete context pair for notices and views.
-func (d *Daemon) workerStats(w *worker) workerStats {
-	var st workerStats
-	if ln, ok := d.launchers[w.harness].(interface {
-		stats(ctx context.Context, d *Daemon, w *worker) workerStats
-	}); ok {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		st = ln.stats(ctx, d, w)
-	}
-	d.wmu.Lock()
-	defer d.wmu.Unlock()
-	return lastWorkerContext(w, st)
-}
-
-// lastWorkerContext keeps the last complete context pair through failed reads
-// and turns that have not reported usage yet. A real value may be lower after
-// compaction, so this is not a high-water mark. A harness without a context
-// window for the model still keeps the tokens it reports: with no limit, a
-// token count alone is the whole picture. The caller holds d.wmu.
-func lastWorkerContext(w *worker, st workerStats) workerStats {
-	if st.ContextLimit <= 0 && w.contextLimit <= 0 && st.ContextTokens > 0 {
-		return st
-	}
-	if st.ContextTokens <= 0 || st.ContextLimit <= 0 {
-		st.ContextTokens, st.ContextLimit = w.contextTokens, w.contextLimit
-	}
-	return st
-}
-
-// tokenText formats token counts, or "" when there are none.
-func tokenText(in, out, reasoning, cacheRead, cacheWrite float64) string {
-	if in+out+reasoning+cacheRead+cacheWrite == 0 {
-		return ""
-	}
-	s := fmt.Sprintf("%.0f in, %.0f out", in, out)
-	if reasoning > 0 {
-		s += fmt.Sprintf(", %.0f reasoning", reasoning)
-	}
-	if cacheRead+cacheWrite > 0 {
-		s += fmt.Sprintf(", %.0f cache read, %.0f cache write", cacheRead, cacheWrite)
-	}
-	return s
-}
-
-// trimWorkerReport bounds a report kept in a notice or an idle report, so one
-// long message cannot grow the state database without limit.
-func trimWorkerReport(report string) string {
-	if len(report) > 48*1024 {
-		return strings.ToValidUTF8(report[:48*1024], "") + "\n[report cut at 48 KB]"
-	}
-	return report
-}
-
-// ---- notices ----
 
 // notice builds the facts of a completion notice.
 func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol.WorkerNotice {
@@ -1082,42 +66,6 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 		n.Note = strings.TrimSpace(n.Note + " A git merge was in progress; the worktree was left as is.")
 	}
 	return n
-}
-
-// queueWorkerEnd keeps end notices in decision order without holding up the
-// worker loop. The worker stays registered until its notice and cleanup finish,
-// so a resume cannot change the facts that go into the notice.
-func (d *Daemon) queueWorkerEnd(fn func()) <-chan struct{} {
-	d.workerEndMu.Lock()
-	previous := d.workerEndTail
-	done := make(chan struct{})
-	d.workerEndTail = done
-	// Register before Stop closes admission and waits for background work. An
-	// end already in progress when admission closes must still send (or reach
-	// the durable outbox), so its producer finishes it inline during shutdown.
-	d.bgMu.Lock()
-	background := !d.bgClosed
-	if background {
-		d.bg.Add(1)
-	}
-	d.bgMu.Unlock()
-	d.workerEndMu.Unlock()
-	run := func() {
-		defer close(done)
-		if previous != nil {
-			<-previous
-		}
-		fn()
-	}
-	if background {
-		go func() {
-			defer d.bg.Done()
-			run()
-		}()
-	} else {
-		run()
-	}
-	return done
 }
 
 // rateOffer asks the gateway whether the caller should be asked to rate this
@@ -1293,8 +241,6 @@ func (d *Daemon) noticeFor(reason string) (status, note string) {
 	return "", ""
 }
 
-// ---- hand-back ----
-
 // handback serves "worker_handback" from a worker's session: the final report
 // goes to the owner with the facts, and the worker is marked done.
 func (d *Daemon) handback(ctx context.Context, sessionID string, req protocol.WorkerHandbackRequest) (*protocol.WorkerHandbackResult, error) {
@@ -1313,14 +259,7 @@ func (d *Daemon) handback(ctx context.Context, sessionID string, req protocol.Wo
 		}
 		return out, err
 	}
-	out, err := d.handbackFlow(ctx, w, req, "", "", "", true, nil)
-	if errors.Is(err, errHandbackDeferred) {
-		// The worker did its part: the saved hand-back records the change and
-		// sends the notice at the next connect.
-		return &protocol.WorkerHandbackResult{Status: req.Status, Complete: req.IsComplete(),
-			Note: "agent-net is not connected to the gateway now; it saved your hand-back and records the change and sends the notice when the link is back"}, nil
-	}
-	return out, err
+	return d.handbackFlow(ctx, w, req, "", "", "", true, nil)
 }
 
 func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.WorkerHandbackRequest, to, replyTo, sandboxNote string, end bool) (*protocol.WorkerHandbackResult, error) {
@@ -1340,24 +279,17 @@ type handbackTail struct {
 	end                             bool
 	files                           *OutgoingFiles
 	sessionID, committed, wipDetail string
-	complete                        bool
-	// keptAside is where the hand-back kept leftovers off the branch.
-	keptAside string
-
+	// committedFrom is the branch head before the daemon committed the
+	// hand-back's leftovers, so a claimed head stays the change's head.
+	committedFrom string
+	complete      bool
 	// frictionDropped is how many hand-back friction entries were dropped or
-	// shortened before the notice, so a saved hand-back keeps it for the replay.
+	// shortened before the notice.
 	frictionDropped int
-
-	// persisted is true when the hand-back is saved in the state database
-	// (handback_replay.go): head and noticeKey name it, and the record fields
-	// carry what it already did.
-	persisted                 bool
-	head, noticeKey           string
-	recorded                  bool
-	changeID, deliveryProblem string
-	// stats is the worker's usage an older daemon read before ending it at
-	// its hand-back, kept for a row that daemon saved.
-	stats *workerStats
+	// noticeKey is the idempotency key of the notice. An agy hand-back uses
+	// the key its stream saved; another hand-back leaves it empty and the
+	// sender makes one.
+	noticeKey string
 }
 
 // handbackFlow records a hand-back and sends its notice.
@@ -1372,10 +304,10 @@ func (d *Daemon) handbackFlow(ctx context.Context, w *worker, req protocol.Worke
 		req.Status = protocol.StatusDone
 	}
 	if !protocol.ValidHandbackStatus(req.Status) {
-		return nil, handbackFixable{fmt.Errorf("status must be done, blocked or failed, not %q", req.Status)}
+		return nil, fmt.Errorf("status must be done, blocked or failed, not %q", req.Status)
 	}
 	if strings.TrimSpace(req.Report) == "" {
-		return nil, handbackFixable{errors.New("the report is empty: say what you did, or what blocks you")}
+		return nil, errors.New("the report is empty: say what you did, or what blocks you")
 	}
 	// Friction is optional: clean a bad entry instead of refusing the whole
 	// hand-back. The caller's notice says how many entries changed.
@@ -1387,7 +319,7 @@ func (d *Daemon) handbackFlow(ctx context.Context, w *worker, req protocol.Worke
 		files, err = d.prepareHandbackFiles(w, handbackPaths(req))
 		if err != nil {
 			// The worker can fix the path or hand back without the file.
-			return nil, handbackFixable{err}
+			return nil, err
 		}
 		// The finish path takes over the snapshots and removes them.
 		defer func() {
@@ -1437,34 +369,28 @@ func (d *Daemon) handbackFlow(ctx context.Context, w *worker, req protocol.Worke
 	// the notice and the delivery record carry the same counts.
 	d.noteWorkerStruggle(ctx, w)
 	d.captureWorkerEvidence(w, &complete)
+	committedFrom := d.worktreeCommit(w)
 	committed := d.commitAtHandback(w, req)
-	d.wmu.Lock()
-	keptAside := w.keptAside
-	d.wmu.Unlock()
 	wipDetail := ""
 	if !complete && w.worktree != "" && w.harness != "agy" {
 		unlock := d.lockWorktree(w.worktree)
-		result := d.commitWorkerEndWIP(context.Background(), w, "handback", req.Report)
+		result := d.saveWorkerEndWIP(w, "handback")
 		unlock()
 		wipDetail = result.noticeDetail()
 		if result.Failed != "" {
 			d.Logf("worker %s: end WIP commit: %s", w.id, result.Failed)
 		}
-		if result.Skipped == "git operation in progress" {
-			d.wmu.Lock()
-			w.leftAsIs = true
-			d.wmu.Unlock()
-		}
 	}
 	// A complete hand-back is a revision of a delivery change (delivery
 	// pipeline build step 1). A partial one records nothing.
 	t := &handbackTail{req: req, to: to, replyTo: replyTo, sandboxNote: sandboxNote, end: end, files: files,
-		sessionID: sessionID, committed: committed, keptAside: keptAside, wipDetail: wipDetail, complete: complete, frictionDropped: frictionDropped}
+		sessionID: sessionID, committed: committed, committedFrom: committedFrom, wipDetail: wipDetail, complete: complete, frictionDropped: frictionDropped}
 	out, err := d.finishHandback(ctx, w, t)
-	if errors.Is(err, errHandbackDeferred) && !t.persisted {
+	if errors.Is(err, errHandbackDeferred) && harnessKeepsHandback(w.harness) {
 		out, err = d.finishWhenLinked(ctx, w, t)
 	}
-	// A saved hand-back keeps its snapshots for the next connect.
+	// A hand-back held in the harness state keeps its snapshots for the next
+	// connect.
 	handedOver = errors.Is(err, errHandbackDeferred)
 	return out, err
 }
@@ -1505,64 +431,28 @@ func (d *Daemon) finishWhenLinked(ctx context.Context, w *worker, t *handbackTai
 	}
 }
 
-// finishHandback records the change and sends the notice. A hand-back saved
-// by an older daemon runs through the same path after a restart
-// (handback_replay.go); its check result is carried to the notice and the
-// change, and no check runs.
+// finishHandback records the change and sends the notice.
 func (d *Daemon) finishHandback(ctx context.Context, w *worker, t *handbackTail) (*protocol.WorkerHandbackResult, error) {
 	req, to, replyTo, sandboxNote, end, files := t.req, t.to, t.replyTo, t.sandboxNote, t.end, t.files
 	sessionID, committed, wipDetail := t.sessionID, t.committed, t.wipDetail
 	changeID, deliveryProblem := "", ""
 	var pick handbackHead
 	if t.complete {
-		if t.recorded {
-			changeID, deliveryProblem = t.changeID, t.deliveryProblem
-		} else {
-			rec := d.submitHandbackChange(ctx, w, nil, req.Report, req.VisualEvidence)
-			changeID, deliveryProblem, pick = rec.changeID, rec.problem, rec.pick
-			if rec.offline && !t.persisted && harnessKeepsHandback(w.harness) {
-				// handbackFlow waits for the link and finishes this
-				// hand-back again, so the change gets the head then.
+		rec := d.submitHandbackChangeFrom(ctx, w, nil, req.Report, t.committedFrom, req.VisualEvidence)
+		changeID, deliveryProblem, pick = rec.changeID, rec.problem, rec.pick
+		if rec.offline {
+			if harnessKeepsHandback(w.harness) {
+				// handbackFlow waits for the link and finishes this hand-back
+				// again, so the change gets the head then.
 				d.Logf("worker.handback_deferred worker=%s reason=%q", w.id, "the daemon has no gateway link")
 				return nil, errHandbackDeferred
 			}
-			if rec.offline && !t.persisted {
-				// Saved now, the next connect records the change at the head
-				// the worktree has then, and sends the notice.
-				head, _ := gitOut(context.Background(), w.worktree, "rev-parse", "HEAD")
-				d.persistHandback(w, t, head)
-				if t.persisted {
-					d.wmu.Lock()
-					if d.workers[w.id] == w {
-						w.handbackPending = true
-					}
-					d.wmu.Unlock()
-					err := d.deferHandback(w, t, "the daemon has no gateway link")
-					if d.Connected() {
-						// The link came back after the submit, and its replay
-						// may have read the rows before this one was saved.
-						d.replayHandbacks()
-					}
-					return nil, err
-				}
-			}
-			if rec.offline && t.persisted {
-				return nil, d.deferHandback(w, t, "the daemon has no gateway link")
-			}
-			t.recorded, t.changeID, t.deliveryProblem = true, changeID, deliveryProblem
+			return nil, errors.New("agent-net is not connected to the gateway, so the change was not recorded; hand back again when the link is back")
 		}
 	}
-	// Friction is best effort and never fails a hand-back. A replayed
-	// hand-back already reported it before it was saved.
-	if !t.persisted {
-		d.reportFriction(ctx, w, req.Friction, changeID)
-	}
-	var st workerStats
-	if t.stats != nil {
-		st = *t.stats
-	} else {
-		st = d.workerStats(w)
-	}
+	// Friction is best effort and never fails a hand-back.
+	d.reportFriction(ctx, w, req.Friction, changeID)
+	st := d.workerStats(w)
 	d.wmu.Lock()
 	pending, cc := len(w.turnQueue) > 0, w.codex
 	d.wmu.Unlock()
@@ -1588,7 +478,6 @@ func (d *Daemon) finishHandback(ctx context.Context, w *worker, t *handbackTail)
 	n := d.notice(w, req.Status, note, st)
 	n.VisualEvidence = req.VisualEvidence
 	n.Committed = committed
-	n.KeptAside = t.keptAside
 	n.WIPDetail = wipDetail
 	n.FrictionDropped = t.frictionDropped
 	n.Change, n.DeliveryError = changeID, deliveryProblem
@@ -1629,19 +518,8 @@ func (d *Daemon) finishHandback(ctx context.Context, w *worker, t *handbackTail)
 		w.handingBack = false
 		d.wmu.Unlock()
 		// A notice with files needs the link; one without goes to the outbox.
-		if t.persisted && !d.Connected() {
-			return nil, d.deferHandback(w, t, err.Error())
-		}
-		if t.persisted {
-			d.dropHandback(w.id, t.head)
-		}
 		return nil, err
 	}
-	if t.persisted {
-		d.dropHandback(w.id, t.head)
-	}
-	// This hand-back replaces one that was refused earlier.
-	d.dropRefusedHandback(w.id)
 	d.wmu.Lock()
 	var next *protocol.Message
 	if (w.harness == "opencode" || w.harness == "agy") && len(w.turnQueue) > 0 {
@@ -1704,25 +582,11 @@ func (d *Daemon) commitAtHandback(w *worker, req protocol.WorkerHandbackRequest)
 	if subject == "" {
 		subject = strings.TrimSpace(strings.SplitN(req.Report, "\n", 2)[0])
 	}
-	if !d.saveWorkerChanges(w, subject, "handback", !complete, d.leftoversAside(context.Background(), w, req.Report)) || !complete {
+	result := d.saveWorkerChanges(w, subject, "handback", !complete)
+	if !complete {
 		return ""
 	}
-	return d.worktreeHead(w)
-}
-
-// worktreeHead is the short hash of the worker's worktree HEAD, or "".
-func (d *Daemon) worktreeHead(w *worker) string {
-	d.wmu.Lock()
-	dir := w.worktree
-	d.wmu.Unlock()
-	if dir == "" {
-		return ""
-	}
-	head, err := gitOut(context.Background(), dir, "rev-parse", "--short", "HEAD")
-	if err != nil {
-		return ""
-	}
-	return head
+	return result.SHA
 }
 
 // noteAsk records a message from a worker's owner and counts a follow-up after
@@ -1846,8 +710,6 @@ func (d *Daemon) setSessionWorker(sessionID string, info *protocol.WorkerInfo) *
 	return nil
 }
 
-// ---- a worker that was lost while the daemon was down ----
-
 // lostNotice sends the notice of a worker found dead at start, from its row.
 func (d *Daemon) lostNotice(ctx context.Context, r workerRow) {
 	if r.DoneStatus != "" || r.SessionID == "" {
@@ -1863,7 +725,7 @@ func (d *Daemon) lostNotice(ctx context.Context, r workerRow) {
 	status, note := d.noticeFor(protocol.StopLost)
 	d.noteWorkerStruggle(ctx, w)
 	unlock := d.lockWorktree(w.worktree)
-	result := d.commitWorkerEndWIP(ctx, w, protocol.StopLost, "")
+	result := d.saveWorkerEndWIP(w, protocol.StopLost)
 	unlock()
 	if result.Failed != "" {
 		d.Logf("worker %s: end WIP commit: %s", r.ID, result.Failed)
@@ -1888,12 +750,11 @@ func (d *Daemon) lostNotice(ctx context.Context, r workerRow) {
 	if !state.Sent {
 		n := d.notice(w, status, note, workerStats{})
 		n.WIPDetail = result.noticeDetail()
-		if _, err := d.sendNotice(ctx, w, n, d.refusedReportFor(r.ID, &n)); err != nil {
+		if _, err := d.sendNotice(ctx, w, n, ""); err != nil {
 			d.Logf("worker %s: notice: %v", r.ID, err)
 			d.finishWorktree(w)
 			return
 		}
-		d.dropRefusedHandback(r.ID)
 		state.Sent = true
 		if result.SHA != "" {
 			state.WIPSHA = result.SHA
@@ -1915,269 +776,6 @@ func (d *Daemon) lostNotice(ctx context.Context, r workerRow) {
 		}
 	}
 	d.finishWorktree(w)
-}
-
-// worktreesDir is the folder where this daemon creates the git worktrees of
-// its workers, as a cleaned absolute path.
-func (d *Daemon) worktreesDir() string {
-	root, err := filepath.Abs(filepath.Join(d.cfg.StateDir, "worktrees"))
-	if err != nil {
-		return ""
-	}
-	return root
-}
-
-// dropWorktreeSessions closes the plugin connections of live sessions that
-// work inside the worktrees folder and are not a worker's own. They are ghosts
-// of workers that a user's own service registered before the hello refused
-// them. Closing the connection takes the session offline.
-func (d *Daemon) dropWorktreeSessions() {
-	var drop []*localConn
-	d.mu.Lock()
-	for _, ls := range d.sessions {
-		if ls.conn != nil && !ls.owned && ls.info.Worker == nil && d.inWorktreesDir(ls.info.Cwd) {
-			drop = append(drop, ls.conn)
-		}
-	}
-	d.mu.Unlock()
-	for _, c := range drop {
-		c.close()
-	}
-}
-
-// inWorktreesDir tells whether cwd is inside the folder where this daemon
-// creates the git worktrees of its workers. It compares cleaned absolute paths
-// and works for a folder that no longer exists.
-func (d *Daemon) inWorktreesDir(cwd string) bool {
-	root := d.worktreesDir()
-	if cwd == "" || root == "" {
-		return false
-	}
-	p, err := filepath.Abs(cwd)
-	if err != nil {
-		return false
-	}
-	return p == root || strings.HasPrefix(p, root+string(filepath.Separator))
-}
-
-// queueOpenCodeTurn keeps later prompts in the daemon until the current turn
-// hands back or becomes idle. This keeps them out of a process being ended.
-func (d *Daemon) queueOpenCodeTurn(w *worker, m protocol.Message) (queued, retry bool) {
-	d.wmu.Lock()
-	defer d.wmu.Unlock()
-	if d.workers[w.id] != w || w.stopping || w.doneStatus != "" {
-		return false, true
-	}
-	if w.harness != "opencode" && w.harness != "agy" {
-		return false, false
-	}
-	if w.turnAwaitingStart && w.turnMessageID == m.ID {
-		return true, false
-	}
-	if !w.turnActive {
-		w.idleFollowUp = w.idleNoticeSent && m.From == w.owner
-		d.resetIdleNoticeLocked(w)
-		w.turnActive = true
-		return false, false
-	}
-	for _, queued := range w.turnQueue {
-		if queued.ID == m.ID {
-			return true, false
-		}
-	}
-	w.turnQueue = append(w.turnQueue, m)
-	return true, false
-}
-
-func (d *Daemon) deliverQueuedWorkerTurn(m protocol.Message) {
-	ctx := context.Background()
-	// A hand-back can drain the queue before onDeliver has saved dispatched.
-	// Wait for that push to finish before claiming the actual harness write.
-	for {
-		d.mu.Lock()
-		done := d.inflight[m.ID]
-		d.mu.Unlock()
-		if done == nil {
-			break
-		}
-		<-done
-	}
-	if !d.startDelivery(ctx, m) {
-		return
-	}
-	defer d.releaseDelivery(m.ID)
-	ls := d.sessionByID(m.To)
-	if ls == nil {
-		d.finishDelivery(ctx, m, Result{Detail: "worker session is gone"})
-		return
-	}
-	d.noteAsk(m)
-	res := d.deliverTo(context.Background(), ls, m)
-	d.finishDelivery(ctx, m, res)
-}
-
-// An OpenCode turn that did not hand back can finish normally. Let the next
-// queued prompt run, or mark the worker ready for the next message.
-func (d *Daemon) openCodeTurnIdle(session string) bool {
-	d.wmu.Lock()
-	var next *protocol.Message
-	pending := false
-	for _, w := range d.workers {
-		if w.sessionID != session || (w.harness != "opencode" && w.harness != "agy") || w.stopping || w.doneStatus != "" {
-			continue
-		}
-		if w.turnHandbackIdle {
-			w.turnHandbackIdle = false
-			pending = true
-			break
-		}
-		if w.turnAwaitingStart {
-			pending = true
-			break
-		}
-		if len(w.turnQueue) == 0 {
-			w.turnActive = false
-		} else {
-			m := w.turnQueue[0]
-			w.turnQueue = w.turnQueue[1:]
-			w.turnAwaitingStart = true
-			w.turnMessageID = m.ID
-			pending = true
-			next = &m
-		}
-		break
-	}
-	d.wmu.Unlock()
-	if next != nil {
-		d.goBackground(func() { d.deliverQueuedWorkerTurn(*next) })
-	}
-	return pending
-}
-
-// workerLeftoverSkipped tells whether the worker-end commit leaves a file out
-// on purpose: a built tool, a compiled binary, a binary blob or a file over
-// 5 MB. Such a file is build output, not work. Cleanup uses the same answer.
-func workerLeftoverSkipped(dir, path string, info os.FileInfo) (bool, error) {
-	skip := path == "agent-net" || strings.HasSuffix(path, ".test") || strings.HasSuffix(path, ".exe") || info.Size() > 5_000_000
-	if !info.Mode().IsRegular() || skip {
-		return skip, nil
-	}
-	f, err := os.Open(filepath.Join(dir, path))
-	if err != nil {
-		return false, err
-	}
-	buf := make([]byte, 8192)
-	n, _ := f.Read(buf)
-	f.Close()
-	buf = buf[:n]
-	magic := string(buf)
-	skip = strings.HasPrefix(magic, "\x7fELF") || strings.HasPrefix(magic, "MZ")
-	if len(buf) >= 4 {
-		switch string(buf[:4]) {
-		case "\xfe\xed\xfa\xce", "\xce\xfa\xed\xfe", "\xfe\xed\xfa\xcf", "\xcf\xfa\xed\xfe", "\xca\xfe\xba\xbe", "\xbe\xba\xfe\xca":
-			skip = true
-		}
-	}
-	return skip || bytes.IndexByte(buf, 0) >= 0, nil
-}
-
-// ignoredForAdd is the set of paths git refuses to add: a path an exclude file
-// matches, which also covers a tracked file inside an ignored folder. Plain
-// check-ignore leaves tracked paths out, so --no-index is what makes this the
-// answer git add gives.
-func ignoredForAdd(ctx context.Context, dir string, paths []string) (map[string]bool, error) {
-	if len(paths) == 0 {
-		return nil, nil
-	}
-	var in strings.Builder
-	for _, path := range paths {
-		in.WriteString(path)
-		in.WriteByte(0)
-	}
-	out, err := gitOutWithInput(ctx, dir, []byte(in.String()), "check-ignore", "--no-index", "--stdin", "-z")
-	if err != nil {
-		// check-ignore exits 1 when no path is ignored.
-		var exit *exec.ExitError
-		if errors.As(err, &exit) && exit.ExitCode() == 1 {
-			return nil, nil
-		}
-		return nil, err
-	}
-	ignored := map[string]bool{}
-	for _, path := range strings.Split(out, "\x00") {
-		if path != "" {
-			ignored[path] = true
-		}
-	}
-	return ignored, nil
-}
-
-// stageWorkerLeftovers stages the worker's leftovers: the paths that differ
-// from HEAD, staged or not. Files the harness made for itself are left alone
-// (notWorkerWork), a path git will not add because .gitignore matches it is
-// left out and listed, and build output and large files are unstaged and
-// listed. A tracked file that is the same as in HEAD is never listed, however
-// large it is: it is not a leftover.
-func stageWorkerLeftovers(ctx context.Context, dir string) (string, error) {
-	changes, err := worktreeChanges(ctx, dir)
-	if err != nil {
-		return "", err
-	}
-	var existing []string
-	for _, c := range changes {
-		if notWorkerWork(dir, c) {
-			continue
-		}
-		if _, err := os.Lstat(filepath.Join(dir, c.path)); err == nil {
-			existing = append(existing, c.path)
-		}
-	}
-	ignored, err := ignoredForAdd(ctx, dir, existing)
-	if err != nil {
-		return "", err
-	}
-	var excluded []string
-	for _, c := range changes {
-		if notWorkerWork(dir, c) {
-			continue
-		}
-		path := c.path
-		info, err := os.Lstat(filepath.Join(dir, path))
-		if os.IsNotExist(err) {
-			// A deletion, staged or not.
-			if _, err := gitOut(ctx, dir, "rm", "--cached", "-q", "--ignore-unmatch", "--", path); err != nil {
-				return "", err
-			}
-			continue
-		}
-		if err != nil {
-			return "", err
-		}
-		if ignored[path] {
-			// A file the worker already staged stays in the commit; the
-			// daemon never adds one itself.
-			if !c.staged {
-				excluded = append(excluded, path+" (ignored)")
-			}
-			continue
-		}
-		skip, err := workerLeftoverSkipped(dir, path, info)
-		if err != nil {
-			return "", err
-		}
-		if skip {
-			// Reset also removes a file the worker had already staged.
-			if _, err := gitOut(ctx, dir, "reset", "-q", "HEAD", "--", path); err != nil {
-				return "", err
-			}
-			excluded = append(excluded, fmt.Sprintf("%s %.0f MB", path, float64(info.Size())/1_000_000))
-			continue
-		}
-		if _, err := gitOut(ctx, dir, "add", "-A", "--", path); err != nil {
-			return "", err
-		}
-	}
-	return strings.Join(excluded, ", "), nil
 }
 
 // handbackPaths uses the same transfer and confinement rules for proof frames.

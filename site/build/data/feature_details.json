@@ -172,10 +172,10 @@
   "Keeps a send from being lost when the gateway cannot be reached.",
   "In the daemon, send tries msg.send first (90 s wait). On an unreachable gateway it saves the message in an outbox table of daemon.db with an idempotency key, and tells the sender queued: true. A loop flushes it in order after reconnect.",
   "Not queued: a message with files (needs a live link) and CTO messages (the flag could be dropped by an older gateway).",
-  "Hand-backs also survive: a complete worker hand-back is saved (worker_pending_handback) and replayed after the next connect. There are also outboxes for worker assessments and start outcomes.",
+  "A hand-back that cannot record its change because the gateway is away is refused, so the worker can hand back again; an Antigravity or Codex hand-back waits for the next connect in its own stream state. There are also outboxes for worker assessments and start outcomes.",
   "Mode 0600, in ~/.local/state/agent-net/daemon/daemon.db."
  ],
- "files": ["internal/daemon/daemon.go", "internal/daemon/state.go", "internal/daemon/handback_replay.go"],
+ "files": ["internal/daemon/daemon.go", "internal/daemon/state.go", "internal/daemon/handback_link.go"],
  "decisions": [],
  "correction": ""
 },

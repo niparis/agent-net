@@ -479,7 +479,6 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	d.flushWorkerAssessments(rctx)
 	d.flushStartOutcomes(rctx)
 	d.reportWorkerEnds(rctx)
-	d.replayHandbacks()
 	d.cleanupWorkers(rctx)
 	go d.autoUpgrade(rctx) // not tracked: it may stop the daemon itself to restart
 
