@@ -130,7 +130,7 @@ func (s *Store) stoodDownTarget(session string) (target, note string, err error)
 			}
 		}
 		if next == "" || seen[next] {
-			next, err = s.projectLeadSession(d.project)
+			next, err = s.projectLeadAddress(d.project)
 			if err != nil {
 				return "", "", err
 			}
@@ -155,9 +155,9 @@ func (s *Store) stoodDownTarget(session string) (target, note string, err error)
 	return "", "", nil
 }
 
-// projectLeadSession is the lead session of a project, or empty when the
-// project has none.
-func (s *Store) projectLeadSession(project string) (string, error) {
+// projectLeadAddress is where a message for a project's lead goes: the lead
+// session that lead routing picks, or empty when the project has none.
+func (s *Store) projectLeadAddress(project string) (string, error) {
 	if project == "" {
 		return "", nil
 	}

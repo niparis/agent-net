@@ -743,23 +743,39 @@ func (a *app) sessions(ctx context.Context, snap operator.Snapshot, selected str
 		}
 	}
 	if chosen != nil {
-		v.Detail = a.sessionDetail(ctx, *chosen, now)
+		names := map[string]string{}
+		for _, ag := range snap.Agents {
+			names[ag.SessionID] = sessionName(ag)
+		}
+		v.Detail = a.sessionDetail(ctx, *chosen, now, names)
 	}
 	return v
 }
 
-func (a *app) sessionDetail(ctx context.Context, ag protocol.AgentView, now time.Time) *sessionDetail {
+// sessionPlace says where a session sits in the Sessions tree. The gateway
+// computes the parent by one rule (decision 0193); the console only names it.
+func sessionPlace(ag protocol.AgentView, names map[string]string) string {
+	switch {
+	case ag.NoParent != "":
+		return "no parent: " + ag.NoParent
+	case ag.Parent != "":
+		return "under " + firstNonEmpty(names[ag.Parent], ag.Parent)
+	}
+	return "answers to you"
+}
+
+func (a *app) sessionDetail(ctx context.Context, ag protocol.AgentView, now time.Time, names map[string]string) *sessionDetail {
 	d := &sessionDetail{Name: sessionName(ag), Class: sessionState(ag), Task: ag.Profile.TaskLine(), Machine: firstNonEmpty(ag.Hostname, "-"),
 		Project: sessionProject(ag), Model: sessionModel(ag), Charter: ag.Charter.Purpose}
 	d.Status = map[string]string{"you": "needs you", "busy": "busy", "idle": "idle", "off": "offline"}[d.Class]
-	d.Place = "answers to you"
+	d.Place = sessionPlace(ag, names)
 	if ag.AgentID != "" {
 		if raw, err := a.read(ctx, protocol.OpGraphView, protocol.QueryGraph{Places: true, All: true}); err == nil {
 			var g protocol.GraphView
 			if json.Unmarshal(raw, &g) == nil {
 				for _, n := range g.Nodes {
 					if n.Ref != nil && n.Ref.Kind == "agent" && n.Ref.ID == ag.AgentID && n.Place != nil && n.Place.Team != "" {
-						d.Place = "team " + n.Place.Team
+						d.Place += " · team " + n.Place.Team
 						if n.Place.TeamLead != "" {
 							if n.Place.TeamLead == d.Name {
 								d.Place += " · lead"

@@ -4703,7 +4703,7 @@ func (s *Store) agentBase(sessionID string) (protocol.AgentView, bool, error) {
 		return a, ok, err
 	}
 	rows := []protocol.AgentView{a}
-	if err := fillReportsTo(s.db, rows); err != nil {
+	if err := fillPlacement(s.db, rows); err != nil {
 		return a, false, err
 	}
 	return rows[0], true, nil
@@ -4884,7 +4884,7 @@ func (s *Store) agentsBaseOwned(selectSQL string, f protocol.QueryAgents, owners
 		return nil, err
 	}
 	if len(out) > 0 {
-		if err := fillReportsTo(s.db, out); err != nil {
+		if err := fillPlacement(s.db, out); err != nil {
 			return nil, err
 		}
 	}

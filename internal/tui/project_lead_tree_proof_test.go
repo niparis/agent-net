@@ -13,9 +13,10 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// homelabTreeFixture mirrors the homelab shape: two live sessions holding the
-// lead agent_id (one pinned as lead, one not), two member sessions, a worker
-// started by the non-lead session, and a worker started by the lead.
+// homelabTreeFixture mirrors the homelab shape as the gateway places it
+// (decision 0193): two live sessions holding the lead agent_id (one pinned as
+// lead, one not), two member sessions whose Agent has no lead session, a
+// worker started by the non-lead session, and a worker started by the lead.
 func homelabTreeFixture() Snapshot {
 	const (
 		leadID    = "s_dab96cf4869f0e75"
@@ -47,6 +48,7 @@ func homelabTreeFixture() Snapshot {
 				a.AgentLeadSession = leadID
 				a.Repo = protocol.RepoInfo{Project: "homelab-agent", Root: "/srv/homelab"}
 				a.ReportsTo = protocol.CTONodeName
+				a.Parent = leadID
 				a.FirstSeen = t0.Add(-90 * time.Minute).Unix()
 				a.LastActive = t0.Add(-4 * time.Minute).Unix()
 			}),
@@ -54,6 +56,9 @@ func homelabTreeFixture() Snapshot {
 				a.AgentID = "homelab-agent"
 				a.Repo = protocol.RepoInfo{Project: "homelab-agent", Root: "/srv/homelab"}
 				a.ReportsTo = "homelab-lead"
+				// homelab-agent has no lead session: the gateway draws it under
+				// the project lead with the marker (decision 0193).
+				a.Parent, a.NoParent = leadID, "no lead"
 				a.FirstSeen = t0.Add(-80 * time.Minute).Unix()
 				a.LastActive = t0.Add(-3 * time.Minute).Unix()
 			}),
@@ -61,6 +66,9 @@ func homelabTreeFixture() Snapshot {
 				a.AgentID = "homelab-agent"
 				a.Repo = protocol.RepoInfo{Project: "homelab-agent", Root: "/srv/homelab"}
 				a.ReportsTo = "homelab-lead"
+				// homelab-agent has no lead session: the gateway draws it under
+				// the project lead with the marker (decision 0193).
+				a.Parent, a.NoParent = leadID, "no lead"
 				a.FirstSeen = t0.Add(-70 * time.Minute).Unix()
 				a.LastActive = t0.Add(-2 * time.Minute).Unix()
 			}),
@@ -68,6 +76,7 @@ func homelabTreeFixture() Snapshot {
 				a.Status = "busy"
 				a.Repo = protocol.RepoInfo{Project: "homelab-agent", Root: "/srv/homelab"}
 				a.Worker = &protocol.WorkerInfo{ID: "w_truenas", Owner: storageID, Project: "homelab-agent", StartedAt: t0.Add(-10 * time.Minute).Unix(), Task: "truenas-stacks"}
+				a.Parent = storageID
 				a.FirstSeen = t0.Add(-10 * time.Minute).Unix()
 				a.LastActive = t0.Add(-1 * time.Minute).Unix()
 			}),
@@ -75,6 +84,7 @@ func homelabTreeFixture() Snapshot {
 				a.Status = "busy"
 				a.Repo = protocol.RepoInfo{Project: "homelab-agent", Root: "/srv/homelab"}
 				a.Worker = &protocol.WorkerInfo{ID: "w_lead", Owner: leadID, Project: "homelab-agent", StartedAt: t0.Add(-8 * time.Minute).Unix(), Task: "backup check"}
+				a.Parent = leadID
 				a.FirstSeen = t0.Add(-8 * time.Minute).Unix()
 				a.LastActive = t0.Unix()
 			}),

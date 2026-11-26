@@ -30,6 +30,7 @@ func orgFixture() Snapshot {
 			a.AgentID = "org-research"
 			a.AgentName = "research"
 			a.ReportsTo = "org-strategy"
+			a.Parent = leadSessionID
 		}))
 	return snap
 }
@@ -72,37 +73,6 @@ func TestReportingSessionWithoutShownLeadStaysTopLevel(t *testing.T) {
 	}
 	if indexOfID(ids(m), childSessionID) < 0 {
 		t.Fatal("session with no shown lead is not a row")
-	}
-}
-
-// When an Agent has more than one shown session, the session its pinned lead
-// is wins the nesting, even when another session of the Agent is online and
-// has a lower ID.
-func TestPinnedLeadIsTheNestingParent(t *testing.T) {
-	const pinnedID, onlineID = "s_0000000000000311", "s_0000000000000310"
-	snap := orgFixture()
-	for i := range snap.Agents {
-		if snap.Agents[i].SessionID == leadSessionID {
-			snap.Agents[i].RepoLeadExplicit = false
-		}
-	}
-	snap.Agents = append(snap.Agents,
-		agent(onlineID, "n_mac", "Mac", "claude", "strategy spare", func(a *protocol.AgentView) {
-			a.AgentID = "org-strategy"
-		}),
-		agent(pinnedID, "n_mac", "Mac", "claude", "strategy pinned", func(a *protocol.AgentView) {
-			a.AgentID = "org-strategy"
-			a.Online = false
-			a.TeamLead = true
-		}))
-	m := treeModel(120, 34, snap)
-	shown := map[string]protocol.AgentView{}
-	for _, a := range m.snap.Agents {
-		shown[a.SessionID] = a
-	}
-	child := shown[childSessionID]
-	if got := m.reportParent(child, shown); got != pinnedID {
-		t.Fatalf("parent %s, want the pinned lead %s", got, pinnedID)
 	}
 }
 

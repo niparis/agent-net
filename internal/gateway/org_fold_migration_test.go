@@ -242,7 +242,16 @@ func TestComputedOrgTreeAndStaleLeadBug(t *testing.T) {
 	if !found {
 		t.Fatal("visitor not found in GraphForRoot")
 	}
-	if reportsTo, _, err := s.sessionOrgLines(visitorSession); err != nil || !strings.HasPrefix(reportsTo, "lead2") {
+	// The Sessions tree places a session through its Agent's lead session
+	// (decision 0193), so the visitor session leads its Agent here.
+	if _, err := s.db.Exec(`UPDATE agents SET lead_session=? WHERE id='visitor'`, visitorSession); err != nil {
+		t.Fatal(err)
+	}
+	visitorView, _, err := s.Agent(visitorSession)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reportsTo, _, err := s.sessionOrgLines(visitorView); err != nil || !strings.HasPrefix(reportsTo, "lead2") {
 		t.Fatalf("sessionOrgLines=%q err=%v, want prefix lead2", reportsTo, err)
 	}
 	// An explicit move is not refused: it is stored and wins over the lead.

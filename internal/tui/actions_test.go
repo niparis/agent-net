@@ -33,6 +33,7 @@ func workerFixture() (Snapshot, []protocol.FeedEvent) {
 			a.Cwd = "/Users/n/code/tenebrae"
 			a.Repo = protocol.RepoInfo{Root: "/Users/n/code/tenebrae", Worktree: "/Users/n/code/tenebrae", Project: "tenebrae", Branch: "main"}
 			a.Worker = &protocol.WorkerInfo{ID: "w_1", Owner: ownerID, Project: "tenebrae", StartedAt: t0.Add(-5 * time.Minute).Unix(), Task: "tenebrae"}
+			a.Parent = ownerID
 		}))
 	evs := fakeEvents()
 	evs = append(evs,

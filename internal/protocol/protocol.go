@@ -437,6 +437,14 @@ type AgentView struct {
 	// a session without an Agent. A lead session the list does not show is gone.
 	AgentLeadSession string  `json:"agent_lead_session,omitempty"`
 	Scopes           []Scope `json:"scopes,omitempty"`
+	// Parent is the session this one sits under in the Sessions tree, from
+	// the gateway's one placement rule (decision 0193). Empty for a root.
+	// Clients draw it as given and never compute a place themselves.
+	Parent string `json:"parent,omitempty"`
+	// NoParent names the rule that could not place this session: "no Agent",
+	// "no reports_to" or "no lead". Parent is then its project's lead session, so the session
+	// is drawn there with a marker instead of as a separate root.
+	NoParent string `json:"no_parent,omitempty"`
 	// TaskStarted is when the announced task last changed, in Unix seconds. It
 	// is for the read tools; the old list tools keep their output unchanged.
 	TaskStarted int64   `json:"-"`

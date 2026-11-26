@@ -180,15 +180,16 @@ func TestGraphReadRootIsOneSubtree(t *testing.T) {
 }
 
 // agent_session_get says whom a session reports to and who else it answers
-// to, both read from the stored tree and scopes. A session that is not its
-// Agent's lead session reports to that lead session first.
+// to: its parent in the Sessions tree (decision 0193) and the scopes.
 func TestSessionGetShowsWhoTheSessionReportsTo(t *testing.T) {
 	s, ids := orgReadRig(t)
 	for _, c := range []struct{ session, reportsTo, also string }{
 		{ids["member-2"], "member (lead session member-main)", "chief (asks), cto (admin, permissions), lead (merge)"},
 		{ids["member"], "lead (lead session lead-main)", "chief (asks), cto (admin, permissions), lead (merge)"},
 		{ids["lead"], "cto", "chief (asks), cto (admin, permissions)"},
-		{ids["chief"], "owner", "cto (admin, permissions)"},
+		// The chief's Agent has no lead session, so the one rule cannot place
+		// it (decision 0193); the line says so instead of guessing.
+		{ids["chief"], "no parent: no lead", "cto (admin, permissions)"},
 	} {
 		got, err := s.GetSession(protocol.SessionGetRequest{Session: c.session})
 		if err != nil {

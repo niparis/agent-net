@@ -62,6 +62,7 @@ func liveSortSnapshot() Snapshot {
 			a.TeamLead = r.lead
 			if r.owner != "" {
 				a.Worker = &protocol.WorkerInfo{ID: "w_" + itoa(i+1), Owner: ids[r.owner], Project: strings.TrimSuffix(r.owner, " "), Task: r.name}
+				a.Parent = ids[r.owner]
 			}
 		})
 		snap.Agents = append(snap.Agents, a)
@@ -130,6 +131,7 @@ func TestExitedSessionLeavesWorking(t *testing.T) {
 			a.Status, a.Online = "exited", true
 			a.LastActive, a.LastSeen = liveSortNow.Add(-time.Minute).Unix(), liveSortNow.Add(-time.Minute).Unix()
 			a.Worker = &protocol.WorkerInfo{ID: "w_exited", Owner: "s_live_root", Task: "exited-worker"}
+			a.Parent = "s_live_root"
 		}),
 		agent("s_bot", "n_app", "app", "bot", "cursor-bot", func(a *protocol.AgentView) {
 			a.LastActive, a.LastSeen = liveSortNow.Unix(), liveSortNow.Unix()

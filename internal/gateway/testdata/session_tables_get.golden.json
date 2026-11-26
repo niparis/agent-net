@@ -30,6 +30,8 @@
         "tests_before_merge": "suite",
         "worker_sandbox": "sandboxed"
       },
+      "no_parent": "no Agent",
+      "reports_to": "no parent: no Agent",
       "also_answers_to": "cto (admin, permissions)"
     }
   },
@@ -59,6 +61,8 @@
         "tests_before_merge": "suite",
         "worker_sandbox": "sandboxed"
       },
+      "no_parent": "no Agent",
+      "reports_to": "no parent: no Agent",
       "also_answers_to": "cto (admin, permissions)"
     }
   }
