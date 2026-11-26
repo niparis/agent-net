@@ -367,23 +367,15 @@ func listFixture(t *testing.T) (*Store, map[string]string) {
 	if _, err := s.WriteSettings([]SettingsChange{{Key: "max_agents", Level: "repo", Scope: "demo", Value: json.RawMessage(`2`)}}, "owner", "limit"); err != nil {
 		t.Fatal(err)
 	}
-	stall := func(id, session, status string, conversation, created int64) {
+	stall := func(name string, since int64) {
 		t.Helper()
-		if _, err := s.db.Exec(`INSERT INTO inbox_items (id, kind, session_id, node, text, recommendation, message_id, conversation_id, created_at, status) VALUES (?, 'stall', ?, ?, 't', '', ?, ?, ?, ?)`,
-			id, session, node, sessionStallMarker, conversation, created, status); err != nil {
+		if _, err := s.db.Exec(`UPDATE sessions SET stalled_since=? WHERE id=?`, since, ids[name]); err != nil {
 			t.Fatal(err)
 		}
 	}
-	stall("st1", ids["demo2"], "open", 11, 100)
-	stall("st2", ids["demo2"], "dismissed", 12, 200)
-	stall("st3", ids["demo2"], "closed", 13, 300)
-	stall("st4", ids["demo3"], "closed", 14, 100)
-	stall("st5", ids["other2"], "dismissed", 15, 500)
-	stall("st6", ids["other2"], "open", 16, 500)
-	stall("st7", ids["norepo"], "open", 17, 50)
-	if _, err := s.db.Exec(`INSERT INTO inbox_items (id, kind, session_id, node, text, recommendation, message_id, conversation_id, created_at, status) VALUES ('other-kind', 'stall', ?, ?, 't', '', 'something-else', 99, 900, 'open')`, ids["norepo2"], node); err != nil {
-		t.Fatal(err)
-	}
+	stall("demo2", 12)
+	stall("other2", 16)
+	stall("norepo", 17)
 	return s, ids
 }
 
@@ -510,10 +502,10 @@ func TestAgentsBaseFollowsItsInputs(t *testing.T) {
 	if a := view("demo2"); a.RepoAgentCount != before.RepoAgentCount-1 {
 		t.Fatalf("count after a session went offline: %d, was %d", a.RepoAgentCount, before.RepoAgentCount)
 	}
-	if _, err := s.db.Exec(`UPDATE inbox_items SET status='closed' WHERE id='st2'`); err != nil {
+	if _, err := s.db.Exec(`UPDATE sessions SET stalled_since=11 WHERE id=?`, ids["demo2"]); err != nil {
 		t.Fatal(err)
 	}
 	if a := view("demo2"); a.StalledSince != 11 {
-		t.Fatalf("stall after the newest was closed: %d", a.StalledSince)
+		t.Fatalf("stall mark after a write: %d", a.StalledSince)
 	}
 }

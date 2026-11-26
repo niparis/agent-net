@@ -1,16 +1,12 @@
 package gateway
 
 import (
-	"database/sql"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/settings"
 )
-
-const sessionStallMarker = "session-stall"
 
 func busyInitialActivity(status string, now int64) int64 {
 	if status == "busy" {
@@ -36,8 +32,10 @@ const sessionWaitsForOthersSQL = `(EXISTS(SELECT 1 FROM sessions w WHERE w.onlin
 
 // checkSessionStalls runs on the gateway's minute tick. A poll of a harness is
 // not progress: only output, a turn boundary or a delivery acknowledgement is.
-// One ask covers one activity time: it is not raised again for that time after
-// the owner answers it or the chief closes it.
+// The mark lives on the session row (decision 0196): no item waits for the
+// owner, so the mark may not come from one. It clears on the next activity or
+// when the session is no longer eligible, and the log line of a stall is
+// raised once for the activity time it started from.
 func (s *Store) checkSessionStalls() error {
 	if err := s.retireObsoleteNotices(); err != nil {
 		return err
@@ -55,6 +53,7 @@ func (s *Store) checkSessionStalls() error {
  COALESCE(NULLIF(s.repo_project,''),s.announced_project),s.harness_activity,s.task,
  COALESCE((SELECT MIN(m.created_at) FROM messages m WHERE m.recipient=s.id AND
  (m.state IN ('stored','dispatched') OR (m.state='failed' AND EXISTS(SELECT 1 FROM delivery_retries r WHERE r.message_id=m.id)))),0),
+ s.stalled_since,s.stall_asked_for,s.stall_asked_at,
  ` + sessionWaitsForOthersSQL + `
  FROM sessions s
  WHERE s.harness IN ('claude','codex','opencode','pi')`)
@@ -65,12 +64,14 @@ func (s *Store) checkSessionStalls() error {
 		id, harness, status, worker, waiting, repo, task string
 		online                                           int
 		active, pending                                  int64
+		stalledSince, askedFor, askedAt                  int64
 		waitsForOthers                                   bool
 	}
 	var sessions []candidate
 	for rows.Next() {
 		var c candidate
-		if err := rows.Scan(&c.id, &c.harness, &c.status, &c.online, &c.worker, &c.waiting, &c.repo, &c.active, &c.task, &c.pending, &c.waitsForOthers); err != nil {
+		if err := rows.Scan(&c.id, &c.harness, &c.status, &c.online, &c.worker, &c.waiting, &c.repo, &c.active, &c.task, &c.pending,
+			&c.stalledSince, &c.askedFor, &c.askedAt, &c.waitsForOthers); err != nil {
 			rows.Close()
 			return err
 		}
@@ -93,50 +94,36 @@ func (s *Store) checkSessionStalls() error {
 			baseline = c.pending
 		}
 		baselineSec := baseline / int64(time.Second)
-		// The newest activity time an ask was raised for, in any state: open,
-		// dismissed, answered or closed. It is not raised again for that time.
-		var asked int64
-		if err := tx.QueryRow(`SELECT COALESCE(MAX(CAST(conversation_id AS INTEGER)),0) FROM inbox_items WHERE session_id=? AND message_id=?`, c.id, sessionStallMarker).Scan(&asked); err != nil {
-			return err
-		}
-		var id, saved string
-		err := tx.QueryRow(`SELECT id,conversation_id FROM inbox_items WHERE session_id=? AND message_id=? AND status IN ('open','dismissed') ORDER BY created_at DESC LIMIT 1`, c.id, sessionStallMarker).Scan(&id, &saved)
-		if err != nil && err != sql.ErrNoRows {
-			return err
-		}
-		old, _ := strconv.ParseInt(saved, 10, 64)
+		// The mark is the activity time the stall started from. Newer activity
+		// or a session that can no longer stall ends it. An end this sweep made
+		// lets a new stall for that newer activity start no wait: it ended when
+		// that activity came.
 		closedNow := false
-		if id != "" && (!eligible || baselineSec > old) {
+		if c.stalledSince > 0 && (!eligible || baselineSec > c.stalledSince) {
 			closedNow = true
-			if _, err := tx.Exec(`UPDATE inbox_items SET status='closed',answer='activity_or_end',answered_at=? WHERE id=?`, now.UnixNano(), id); err != nil {
+			if _, err := tx.Exec(`UPDATE sessions SET stalled_since=0 WHERE id=?`, c.id); err != nil {
 				return err
 			}
+			c.stalledSince = 0
 		}
-		if !eligible || baseline <= 0 || baselineSec <= asked {
+		// A stall is not raised again for an activity time it was raised for.
+		if !eligible || baseline <= 0 || baselineSec <= c.askedFor {
 			continue
 		}
 		timeout := snap.Duration("sessions.stall_timeout", settings.Where{Repo: c.repo})
 		if timeout <= 0 || now.Sub(time.Unix(0, baseline)) <= timeout {
 			continue
 		}
-		// One ask at a time, and none within the stall window after the last
+		// One mark at a time, and none within the stall window after the last
 		// one ended. Activity that the harness reports late can make a session
-		// look stalled again at once, and the asks then came about every hour.
-		// An ask this sweep just closed for newer activity starts no window:
-		// the sweep closed it late, and it ended when that activity came.
-		var lastStatus string
-		var lastAt int64
-		err = tx.QueryRow(`SELECT status,CASE WHEN answered_at>0 THEN answered_at ELSE created_at END FROM inbox_items WHERE session_id=? AND message_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1`, c.id, sessionStallMarker).Scan(&lastStatus, &lastAt)
-		if err != nil && err != sql.ErrNoRows {
-			return err
-		}
-		if err == nil && (lastStatus == "open" || (!closedNow && now.Sub(time.Unix(0, lastAt)) < timeout)) {
+		// look stalled again at once, and the marks then came about every hour.
+		if c.stalledSince > 0 || (!closedNow && c.askedAt > 0 && now.Sub(time.Unix(0, c.askedAt)) < timeout) {
 			continue
 		}
-		_, err = s.createInboxItem(tx, protocol.InboxItem{Kind: "session_stall", SessionID: c.id, Node: c.repo, MessageID: sessionStallMarker,
-			ConversationID: strconv.FormatInt(baselineSec, 10),
-			Text:           fmt.Sprintf("%s session may be stalled. No harness activity has been observed since %s. Open Sessions and press Enter to look, or restart the session.", c.harness, time.Unix(0, baseline).UTC().Format(time.RFC3339))})
-		if err != nil {
+		s.logOwnerItem("desk.dropped", protocol.InboxItem{Kind: protocol.AskKindStall, SessionID: c.id, Node: c.repo},
+			"text", askFirstLine(fmt.Sprintf("%s session may be stalled. No harness activity has been observed since %s. Open Sessions and press Enter to look, or restart the session.", c.harness, time.Unix(0, baseline).UTC().Format(time.RFC3339)), 160))
+		if _, err := tx.Exec(`UPDATE sessions SET stalled_since=?,stall_asked_for=?,stall_asked_at=? WHERE id=?`,
+			baselineSec, baselineSec, now.UnixNano(), c.id); err != nil {
 			return err
 		}
 	}

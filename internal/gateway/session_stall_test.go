@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -8,10 +9,6 @@ import (
 )
 
 func TestSessionStallPendingAndWorkers(t *testing.T) {
-	// The stall mark is read from the stored stall item, which agent-net no
-	// longer stores (decision 0196). The follow-up of part 1b gives the mark
-	// its own place and turns this test back on.
-	t.Skip("stalled_since comes from the stall item, which decision 0196 no longer stores")
 	s, c := newTestStore(t)
 	a, b := twoSessions(t, s)
 	if _, _, err := send(s, a, b, "pending-stall", ""); err != nil {
@@ -33,11 +30,54 @@ func TestSessionStallPendingAndWorkers(t *testing.T) {
 	}
 }
 
+// A stall is the mark on the session and one log line: no item and no message
+// to the chief (decision 0196).
+func TestSessionStallMarksAndLogsOnly(t *testing.T) {
+	s, c, chief, asker, _ := chiefRig(t)
+	logs := captureLog(s)
+	if _, _, err := send(s, chief, asker, "stall-log-only", ""); err != nil {
+		t.Fatal(err)
+	}
+	beforeItems, beforeChief := inboxCount(t, s), len(messagesTo(t, s, chief))
+	c.advance(21 * time.Minute)
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	a, _, _ := s.Agent(asker)
+	if a.StalledSince == 0 {
+		t.Fatal("the stall was not marked on the session")
+	}
+	if got := inboxCount(t, s); got != beforeItems {
+		t.Fatalf("%d items stored, was %d", got, beforeItems)
+	}
+	if got := len(messagesTo(t, s, chief)); got != beforeChief {
+		t.Fatalf("%d messages to the chief, was %d", got, beforeChief)
+	}
+	countStallLogs := func() int {
+		n := 0
+		for _, line := range *logs {
+			if strings.Contains(line, "desk.dropped ") && strings.Contains(line, "kind session_stall ") {
+				n++
+			}
+		}
+		return n
+	}
+	if got := countStallLogs(); got != 1 {
+		t.Fatalf("%d stall log lines, want 1: %q", got, *logs)
+	}
+	c.advance(2 * time.Minute)
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	if got := countStallLogs(); got != 1 {
+		t.Fatalf("the same stall logged again: %q", *logs)
+	}
+	if a, _, _ = s.Agent(asker); a.StalledSince == 0 {
+		t.Fatal("the mark went away while the stall lasted")
+	}
+}
+
 func TestSessionStallPendingDeliveryClearsOnAck(t *testing.T) {
-	// The stall mark is read from the stored stall item, which agent-net no
-	// longer stores (decision 0196). The follow-up of part 1b gives the mark
-	// its own place and turns this test back on.
-	t.Skip("stalled_since comes from the stall item, which decision 0196 no longer stores")
 	s, c := newTestStore(t)
 	a, b := twoSessions(t, s)
 	m, _, err := send(s, a, b, "ack-stall", "")
@@ -164,10 +204,6 @@ func TestSessionStallSkipsOfflineAndIdleDone(t *testing.T) {
 }
 
 func TestSessionStallLongBusyRunWithCPUProgress(t *testing.T) {
-	// The stall mark is read from the stored stall item, which agent-net no
-	// longer stores (decision 0196). The follow-up of part 1b gives the mark
-	// its own place and turns this test back on.
-	t.Skip("stalled_since comes from the stall item, which decision 0196 no longer stores")
 	s, c := newTestStore(t)
 	node, _, _ := s.CreateNode("test-host", "linux")
 	in := protocol.SessionInfo{Harness: "claude", NativeID: "long-test", Status: "busy"}

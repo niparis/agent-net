@@ -1339,7 +1339,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration, workerTablesMigration, machineTablesMigration, orgFoldMigration, toolsRetireMigration, oauthClientsMigration, deskTablesMigration, pickQuotaMigration, workerStartOwnerChoiceMigration, sessionRequestedModelMigration, stoodDownMigration, deskHideRemovalMigration, treeInvariantsMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration, workerTablesMigration, machineTablesMigration, orgFoldMigration, toolsRetireMigration, oauthClientsMigration, deskTablesMigration, pickQuotaMigration, workerStartOwnerChoiceMigration, sessionRequestedModelMigration, stoodDownMigration, deskHideRemovalMigration, treeInvariantsMigration, sessionStallColumnsMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -2555,6 +2555,25 @@ func (s *Store) migrate() error {
 				if _, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN requested_model TEXT NOT NULL DEFAULT ''`); err != nil {
 					tx.Rollback()
 					return err
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "session stall columns") {
+			for _, col := range []struct{ name, def string }{
+				{"stalled_since", "INTEGER NOT NULL DEFAULT 0"},
+				{"stall_asked_for", "INTEGER NOT NULL DEFAULT 0"},
+				{"stall_asked_at", "INTEGER NOT NULL DEFAULT 0"},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name=?`, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN ` + col.name + ` ` + col.def); err != nil {
+						tx.Rollback()
+						return err
+					}
 				}
 			}
 		}
@@ -3913,13 +3932,13 @@ tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harne
 			return "", false, err
 		}
 	}
-	// A new progress report clears the current warning without waiting for
-	// the minute sweep. Keep a pending delivery warning until its ack.
-	_, err = q.Exec(`UPDATE inbox_items SET status='closed',answer='activity_or_end',answered_at=?
-		WHERE session_id=? AND message_id='session-stall' AND status IN ('open','dismissed') AND EXISTS
-		(SELECT 1 FROM sessions s WHERE s.id=? AND (s.worker<>'' OR s.waiting<>'' OR s.harness_activity / 1000000000 > CAST(inbox_items.conversation_id AS INTEGER)
-		OR (s.status<>'busy' AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.recipient=s.id
-		AND (m.state IN ('stored','dispatched') OR (m.state='failed' AND EXISTS (SELECT 1 FROM delivery_retries r WHERE r.message_id=m.id)))))))`, now, id, id)
+	// A new progress report clears the stall mark without waiting for the
+	// minute sweep. A pending delivery keeps it until its ack.
+	_, err = q.Exec(`UPDATE sessions SET stalled_since=0
+		WHERE id=? AND stalled_since>0 AND (worker<>'' OR waiting<>''
+		OR harness_activity / 1000000000 > stalled_since
+		OR (status<>'busy' AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.recipient=?
+		AND (m.state IN ('stored','dispatched') OR (m.state='failed' AND EXISTS (SELECT 1 FROM delivery_retries r WHERE r.message_id=m.id))))))`, id, id)
 	if err != nil {
 		return "", false, err
 	}
@@ -4531,10 +4550,10 @@ func (s *Store) AnnounceNotify(nodeID string, p protocol.ProfileAnnounce) (proto
 	return a.Profile, notice, nil
 }
 
-// agentSelectTemplate is the select of an agent row. Three of its values count
-// or look up rows of other tables by the session's repo or id: the Repo
-// max_agents setting, the number of live sessions in the Repo and the stall
-// item. They are written two ways, and the values are the same:
+// agentSelectTemplate is the select of an agent row. Two of its values count
+// rows of another table by the session's repo: the Repo max_agents setting and
+// the number of live sessions in the Repo. They are written two ways, and the
+// values are the same:
 //   - agentSelect has a subquery for each, which runs for that row. It suits
 //     one session or a few.
 //   - agentListSelect reads each from a join on a table that is worked out
@@ -4572,7 +4591,7 @@ var agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.
 // agentListTables are the tables agentListSelect and its joins read, with the
 // piChildSQL filter. Keep it equal to those queries (see readThrough).
 var agentListTables = []string{"sessions", "nodes.id", "nodes.hostname", "apps",
-	"worker_assessments", "agents", "node_scopes", "repos", "teams", "setting_values", "inbox_items",
+	"worker_assessments", "agents", "node_scopes", "repos", "teams", "setting_values",
 	"messages", "gateway_state"}
 
 const (
@@ -4580,27 +4599,23 @@ const (
 	// agent limit. x is the session.
 	agentRepoCountWhere = `x.online=1 AND x.archived_at=0 AND x.replaced_by='' AND x.worker='' AND x.harness NOT IN ('owner','cto','bot') AND x.id<>COALESCE((SELECT value FROM gateway_state WHERE key='cto_session'),'') AND NOT EXISTS(SELECT 1 FROM repos pm WHERE pm.merger_session=x.id)`
 
-	// A Repo has one max_agents row, as the key is unique. The stall item is
-	// the newest of the session, and the later row when two are as new, which
-	// is what the subquery's scan of the index gives.
 	agentListJoins = `
 	LEFT JOIN setting_values mx ON mx.key='max_agents' AND mx.level='repo' AND mx.scope=s.repo_id AND mx.item=''
-	LEFT JOIN (SELECT x.repo_id AS repo_id, COUNT(*) AS n FROM sessions x WHERE ` + agentRepoCountWhere + ` GROUP BY x.repo_id) rc ON rc.repo_id=s.repo_id
-	LEFT JOIN (SELECT session_id, conversation_id, ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY created_at DESC, rowid DESC) AS rn FROM inbox_items WHERE message_id='session-stall' AND status IN ('open','dismissed')) st ON st.session_id=s.id AND st.rn=1`
+	LEFT JOIN (SELECT x.repo_id AS repo_id, COUNT(*) AS n FROM sessions x WHERE ` + agentRepoCountWhere + ` GROUP BY x.repo_id) rc ON rc.repo_id=s.repo_id`
 )
 
 var (
 	agentSelect = strings.NewReplacer(
 		"@MAX@", `COALESCE((SELECT CAST(value AS INTEGER) FROM setting_values WHERE key='max_agents' AND level='repo' AND scope=s.repo_id AND item=''),0),`,
 		"@COUNT@", `(SELECT COUNT(*) FROM sessions x WHERE x.repo_id=s.repo_id AND `+agentRepoCountWhere+`),`,
-		"@STALL@", `COALESCE((SELECT CAST(i.conversation_id AS INTEGER) FROM inbox_items i WHERE i.session_id=s.id AND i.message_id='session-stall' AND i.status IN ('open','dismissed') ORDER BY i.created_at DESC LIMIT 1),0),`,
+		"@STALL@", `s.stalled_since,`,
 		"@HELD@", `COALESCE((SELECT COUNT(*) FROM messages mw WHERE mw.recipient=s.id AND mw.state='stored' AND mw.batch_id=''),0),`,
 		"@INSESSION@", `COALESCE((SELECT COUNT(*) FROM messages mw WHERE mw.recipient=s.id AND mw.state='dispatched' AND mw.batch_id=''),0),`,
 		"@JOINS@", "").Replace(agentSelectTemplate)
 	agentListSelect = strings.NewReplacer(
 		"@MAX@", `COALESCE(CAST(mx.value AS INTEGER),0),`,
 		"@COUNT@", `COALESCE(rc.n,0),`,
-		"@STALL@", `COALESCE(CAST(st.conversation_id AS INTEGER),0),`,
+		"@STALL@", `s.stalled_since,`,
 		"@HELD@", `COALESCE((SELECT COUNT(*) FROM messages mw WHERE mw.recipient=s.id AND mw.state='stored' AND mw.batch_id=''),0),`,
 		"@INSESSION@", `COALESCE((SELECT COUNT(*) FROM messages mw WHERE mw.recipient=s.id AND mw.state='dispatched' AND mw.batch_id=''),0),`,
 		"@JOINS@", agentListJoins).Replace(agentSelectTemplate)
@@ -6795,6 +6810,14 @@ const sessionRequestedModelMigration = `SELECT 1 /* session requested model colu
 // sessions: the cause of a session's last failed turn and its time. The
 // migration loop adds the columns when they are missing.
 const sessionTurnErrorMigration = `SELECT 1 /* session turn error columns */;`
+
+// sessionStallColumnsMigration keeps the stall mark on the session itself
+// (decision 0196): no item waits for the owner, so the mark may not come from
+// one. stalled_since is the activity time the stall started from. asked_for is
+// the newest activity time a stall was logged for and asked_at when it was
+// logged, which keeps the log line to one per stall. The migration loop adds
+// the columns when they are missing.
+const sessionStallColumnsMigration = `SELECT 1 /* session stall columns */;`
 
 // deadTablesDropMigration drops the tables that no code reads or writes
 // (schema reduction, part 1). The older migrations that name them run before
