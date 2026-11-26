@@ -58,7 +58,7 @@ func setPhoneCookie(w http.ResponseWriter, token string, now time.Time) {
 }
 func phoneRoute(path string) bool {
 	switch path {
-	case "/", "/action", "/events", "/manifest.webmanifest", "/sessions", "/graph", "/changes", "/messages", "/workers":
+	case "/", "/action", "/events", "/manifest.webmanifest", "/sessions", "/graph", "/changes", "/messages":
 		return true
 	}
 	return strings.HasPrefix(path, "/session/") || strings.HasPrefix(path, "/static/")

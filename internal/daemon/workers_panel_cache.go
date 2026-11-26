@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"sync"
 	"time"
 
@@ -25,7 +24,6 @@ const panelIdle = time.Minute
 type workersPanelCache struct {
 	mu     sync.Mutex
 	link   *link
-	noPush bool // the gateway does not know workers.watch: ask it every time
 	owners map[string]*panelOwner
 	pruned time.Time
 }
@@ -44,8 +42,8 @@ type panelOwner struct {
 
 // ownerAgents answers the workers query of one owner session: the gateway's
 // agents of that owner, from the kept answer while the gateway has pushed no
-// change of them. It asks the gateway, and keeps nothing, when the daemon has
-// no way to be told of changes: no link, or a gateway that does not push them.
+// change of them. It asks the gateway and keeps nothing when the daemon has no
+// link.
 func (d *Daemon) ownerAgents(ctx context.Context, owner string) (json.RawMessage, error) {
 	q := protocol.QueryAgents{IncludeOwners: true, WorkersOwnedBy: owner}
 	d.mu.Lock()
@@ -58,11 +56,7 @@ func (d *Daemon) ownerAgents(ctx context.Context, owner string) (json.RawMessage
 	now := time.Now()
 	c.mu.Lock()
 	if c.link != l {
-		c.link, c.owners, c.noPush, c.pruned = l, nil, false, now
-	}
-	if c.noPush {
-		c.mu.Unlock()
-		return d.call(ctx, "query.agents", q)
+		c.link, c.owners, c.pruned = l, nil, now
 	}
 	o := c.owners[owner]
 	if o != nil && o.hasData && o.dataRev == o.rev {
@@ -130,13 +124,6 @@ func (d *Daemon) panelWatch(ctx context.Context, l *link, add string) (uint64, b
 
 	raw, err := d.call(ctx, protocol.FrameWorkersWatch, protocol.WorkersWatch{Owners: set})
 	if err != nil {
-		if strings.Contains(err.Error(), "unknown frame type") {
-			c.mu.Lock()
-			if c.link == l {
-				c.noPush = true
-			}
-			c.mu.Unlock()
-		}
 		return 0, false
 	}
 	var res protocol.WorkersWatchResult

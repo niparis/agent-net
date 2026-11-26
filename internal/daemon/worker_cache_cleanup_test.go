@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -80,7 +79,7 @@ func TestCacheSizeCapTrimsOldestAcrossCaches(t *testing.T) {
 
 	// 5 KiB total, cap 3 KiB, low mark 2 KiB. The three oldest files across
 	// both caches go, and the two youngest stay.
-	freed := d.trimCacheSize(3*1024, 2*1024)
+	freed := d.trimCache(0, 3*1024, 2*1024)
 	if freed.Worker != 1024 || freed.Owner != 2048 {
 		t.Fatalf("freed worker=%d owner=%d, want worker=1024 owner=2048", freed.Worker, freed.Owner)
 	}
@@ -136,7 +135,7 @@ func TestCacheSizeCapKeepsEntriesYoungerThan70Minutes(t *testing.T) {
 	// 6 KiB total, cap 5 KiB, low mark 2 KiB. The three 90 minute old entries
 	// go. The trim then stops above the low mark, because only younger entries
 	// are left, and the log line says so.
-	freed := d.trimCacheSize(5*1024, 2*1024)
+	freed := d.trimCache(0, 5*1024, 2*1024)
 	if freed.Worker != 2048 || freed.Owner != 1024 {
 		t.Fatalf("freed worker=%d owner=%d, want worker=2048 owner=1024", freed.Worker, freed.Owner)
 	}
@@ -168,7 +167,7 @@ func TestCacheSizeCapLeavesCachesUnderTheCap(t *testing.T) {
 	ownerFile := writeCacheEntry(t, ownerDir, filepath.Join("bb", "entry"), 512, now.Add(-48*time.Hour))
 
 	d := &Daemon{cfg: Config{HomeDir: homeDir, WorkerGoCache: workerDir}}
-	freed := d.trimCacheSize(4*1024, 2*1024)
+	freed := d.trimCache(0, 4*1024, 2*1024)
 	if freed.Worker != 0 || freed.Owner != 0 {
 		t.Fatalf("trimmed under the cap: %+v", freed)
 	}
@@ -190,7 +189,7 @@ func TestCacheSizeCapSkipsOwnerFolderWithoutReadme(t *testing.T) {
 	workerFile := writeCacheEntry(t, workerDir, filepath.Join("bb", "entry"), 1024, now.Add(-2*time.Hour))
 
 	d := &Daemon{cfg: Config{HomeDir: homeDir, WorkerGoCache: workerDir}}
-	freed := d.trimCacheSize(512, 256)
+	freed := d.trimCache(0, 512, 256)
 	if _, err := os.Stat(ownerFile); err != nil {
 		t.Fatalf("owner folder without README was trimmed: %v", err)
 	}
@@ -214,7 +213,7 @@ func TestDiskWarningTrimsCachesAndNamesTheirSizes(t *testing.T) {
 	workerNew := writeCacheEntry(t, workerDir, filepath.Join("bb", "new"), 1024, now.Add(-1*time.Hour))
 	ownerOld := writeCacheEntry(t, ownerDir, filepath.Join("cc", "old"), 1024, now.Add(-20*time.Hour))
 
-	var created []map[string]any
+	var reports []protocol.IntakeReport
 	d := &Daemon{
 		cfg: Config{
 			NodeID:        "n_test",
@@ -223,14 +222,9 @@ func TestDiskWarningTrimsCachesAndNamesTheirSizes(t *testing.T) {
 			WorkerGoCache: workerDir,
 			Workers:       WorkerSettings{CacheMaxBytes: 2048, CacheLowBytes: 1024},
 			testGatewayCall: func(ctx context.Context, typ string, params any) (json.RawMessage, bool, error) {
-				switch typ {
-				case "inbox.create":
-					created = append(created, params.(map[string]any))
-					raw, _ := json.Marshal(map[string]any{"item": protocol.InboxItem{ID: "i_cache", Status: "open"}})
-					return raw, true, nil
-				case "inbox.list":
-					raw, _ := json.Marshal(map[string]any{"items": []protocol.InboxItem{}})
-					return raw, true, nil
+				if typ == "intake.report" {
+					reports = append(reports, params.(protocol.IntakeReport))
+					return nil, true, nil
 				}
 				return nil, false, nil
 			},
@@ -241,13 +235,15 @@ func TestDiskWarningTrimsCachesAndNamesTheirSizes(t *testing.T) {
 	if err := d.checkDiskWarning(context.Background(), now); err != nil {
 		t.Fatal(err)
 	}
-	if len(created) != 1 {
-		t.Fatalf("expected one warning, got %d", len(created))
+	if len(reports) != 1 {
+		t.Fatalf("expected one warning, got %d", len(reports))
 	}
-	text, _ := created[0]["text"].(string)
+	if reports[0].Kind != protocol.IntakeDiskSpace || reports[0].Subject != diskIntakeSubject || reports[0].Resolved {
+		t.Fatalf("warning report %+v", reports[0])
+	}
 	for _, want := range []string{"worker Go cache 1.0 KB", "owner Go cache 0 bytes"} {
-		if !strings.Contains(text, want) {
-			t.Errorf("warning %q does not contain %q", text, want)
+		if !strings.Contains(reports[0].Text, want) {
+			t.Errorf("warning %q does not contain %q", reports[0].Text, want)
 		}
 	}
 	// The warning fires the size trim at once: the oldest file across both
@@ -402,9 +398,9 @@ func TestWorkerCacheCleanupNeverTouchOwnerGoBuild(t *testing.T) {
 		},
 	}
 
-	freed := d.trimWorkerGoCache(now, 24*time.Hour)
-	if freed != 0 {
-		t.Fatalf("expected 0 freed from owner cache, got %d", freed)
+	freed := d.trimCache(24*time.Hour, 0, 0)
+	if freed.total() != 0 {
+		t.Fatalf("expected 0 freed from owner cache, got %d", freed.total())
 	}
 	if _, err := os.Stat(victim); err != nil {
 		t.Fatalf("victim file in owner cache was deleted: %v", err)
@@ -474,20 +470,12 @@ func TestDiskWarningGatewayNoDeadlock(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			if clear {
-				raw, err := n.d.call(ctx, "inbox.create", map[string]string{
-					"session_id": n.cfg.NodeID, "kind": "check", "text": "Disk space low on " + n.d.hostName(),
-				})
+				// Leave an open warning for the clear pass to resolve.
+				_, err := n.d.call(ctx, "intake.report", protocol.IntakeReport{Kind: protocol.IntakeDiskSpace, Subject: diskIntakeSubject, Text: "Disk space low"})
 				if err != nil {
 					t.Fatal(err)
 				}
-				var res struct {
-					Item protocol.InboxItem `json:"item"`
-				}
-				if err := json.Unmarshal(raw, &res); err != nil || res.Item.ID == "" {
-					t.Fatalf("create warning: %s, %v", raw, err)
-				}
 				n.d.diskWarningActive = true
-				n.d.diskWarningItemID = res.Item.ID
 			}
 			done := make(chan error, 1)
 			go func() { done <- n.d.checkDiskWarning(ctx, time.Now()) }()
@@ -500,22 +488,20 @@ func TestDiskWarningGatewayNoDeadlock(t *testing.T) {
 				t.Fatal("checkDiskWarning did not return within 2 seconds")
 			}
 			// A subsequent gateway call must still work after either transition.
-			raw, err := n.d.call(ctx, "inbox.list", struct{}{})
+			raw, err := n.d.call(ctx, protocol.FrameIntakeFind, protocol.IntakeFindArgs{})
 			if err != nil {
 				t.Fatal(err)
 			}
-			var res struct {
-				Items []protocol.InboxItem `json:"items"`
-			}
-			if err := json.Unmarshal(raw, &res); err != nil {
+			var found protocol.IntakeFindResult
+			if err := json.Unmarshal(raw, &found); err != nil {
 				t.Fatal(err)
 			}
-			want := "open"
+			want := 1
 			if clear {
-				want = "dismissed"
+				want = 0
 			}
-			if len(res.Items) != 1 || res.Items[0].Status != want {
-				t.Fatalf("inbox after transition: %s, want one %s warning", raw, want)
+			if found.Total != want {
+				t.Fatalf("intake after transition: %s, want %d open entries", raw, want)
 			}
 		})
 	}
@@ -523,8 +509,7 @@ func TestDiskWarningGatewayNoDeadlock(t *testing.T) {
 
 func TestDiskWarningHysteresis(t *testing.T) {
 	isolateDaemonCaches(t)
-	var createdItems []map[string]any
-	var answeredItems []map[string]string
+	var reports []protocol.IntakeReport
 	var simPct float64
 
 	d := &Daemon{
@@ -533,274 +518,130 @@ func TestDiskWarningHysteresis(t *testing.T) {
 			Hostname: "test-node",
 			StateDir: t.TempDir(),
 			testGatewayCall: func(ctx context.Context, typ string, params any) (json.RawMessage, bool, error) {
-				switch typ {
-				case "inbox.create":
-					p := params.(map[string]any)
-					createdItems = append(createdItems, p)
-					item := protocol.InboxItem{
-						ID:             "i_disk_warning_1",
-						Kind:           p["kind"].(string),
-						SessionID:      p["session_id"].(string),
-						Text:           p["text"].(string),
-						Recommendation: p["recommendation"].(string),
-						Status:         "open",
-					}
-					raw, _ := json.Marshal(map[string]any{"item": item})
-					return raw, true, nil
-				case "inbox.answer":
-					p := params.(map[string]string)
-					answeredItems = append(answeredItems, p)
-					item := protocol.InboxItem{
-						ID:     p["item_id"],
-						Status: "dismissed",
-					}
-					raw, _ := json.Marshal(map[string]any{"item": item})
-					return raw, true, nil
-				case "inbox.list":
-					raw, _ := json.Marshal(map[string]any{"items": []protocol.InboxItem{}})
-					return raw, true, nil
+				if typ == "intake.report" {
+					reports = append(reports, params.(protocol.IntakeReport))
+					return nil, true, nil
 				}
 				return nil, false, nil
 			},
-			testDiskPercent: func(path string) (float64, bool) {
-				return simPct, true
-			},
+			testDiskPercent: func(path string) (float64, bool) { return simPct, true },
 		},
 	}
-
 	now := time.Now()
-
-	// 1. At 86% (> 85%): raises one inbox item.
-	simPct = 86.0
-	if err := d.checkDiskWarning(context.Background(), now); err != nil {
-		t.Fatal(err)
-	}
-	if len(createdItems) != 1 {
-		t.Fatalf("expected 1 created item at 86%%, got %d", len(createdItems))
-	}
-	if !d.diskWarningActive {
-		t.Errorf("expected diskWarningActive = true")
-	}
-
-	// 2. At 86% again: no repeat spam!
-	if err := d.checkDiskWarning(context.Background(), now); err != nil {
-		t.Fatal(err)
-	}
-	if len(createdItems) != 1 {
-		t.Fatalf("expected still 1 created item (no repeat spam), got %d", len(createdItems))
-	}
-
-	// 3. At 82%: between 80% and 85%, hysteresis keeps warning active, does not clear.
-	simPct = 82.0
-	if err := d.checkDiskWarning(context.Background(), now); err != nil {
-		t.Fatal(err)
-	}
-	if len(answeredItems) != 0 {
-		t.Fatalf("expected 0 answered/cleared at 82%%, got %d", len(answeredItems))
-	}
-	if !d.diskWarningActive {
-		t.Errorf("expected warning to stay active at 82%%")
-	}
-
-	// 4. Drops below 80% (79%): clears warning!
-	simPct = 79.0
-	if err := d.checkDiskWarning(context.Background(), now); err != nil {
-		t.Fatal(err)
-	}
-	if len(answeredItems) != 1 {
-		t.Fatalf("expected 1 answered/cleared item at 79%%, got %d", len(answeredItems))
-	}
-	if answeredItems[0]["answer"] != "dismiss" {
-		t.Errorf("expected answer dismiss, got %s", answeredItems[0]["answer"])
-	}
-	if d.diskWarningActive {
-		t.Errorf("expected diskWarningActive = false after drop below 80%%")
-	}
-
-	// 5. At 79% again: no repeated clear.
-	if err := d.checkDiskWarning(context.Background(), now); err != nil {
-		t.Fatal(err)
-	}
-	if len(answeredItems) != 1 {
-		t.Fatalf("expected still 1 answered item, got %d", len(answeredItems))
-	}
-
-	// 6. Rises again to 86%: raises warning again.
-	simPct = 86.0
-	if err := d.checkDiskWarning(context.Background(), now); err != nil {
-		t.Fatal(err)
-	}
-	if len(createdItems) != 2 {
-		t.Fatalf("expected 2 created items after re-crossing 85%%, got %d", len(createdItems))
-	}
-}
-
-// diskInbox is the gateway's inbox as the disk check sees it. A test closes a
-// warning the way the owner does, by changing its status.
-type diskInbox struct {
-	items   []protocol.InboxItem
-	creates int
-}
-
-func (in *diskInbox) call(_ context.Context, typ string, params any) (json.RawMessage, bool, error) {
-	switch typ {
-	case "inbox.create":
-		p := params.(map[string]any)
-		in.creates++
-		item := protocol.InboxItem{
-			ID:     fmt.Sprintf("i_disk_%d", in.creates),
-			Kind:   p["kind"].(string),
-			Text:   p["text"].(string),
-			Status: "open",
+	check := func(pct float64) {
+		t.Helper()
+		simPct = pct
+		if err := d.checkDiskWarning(context.Background(), now); err != nil {
+			t.Fatal(err)
 		}
-		in.items = append(in.items, item)
-		raw, _ := json.Marshal(map[string]any{"item": item})
-		return raw, true, nil
-	case "inbox.answer":
-		p := params.(map[string]string)
-		for i := range in.items {
-			if in.items[i].ID == p["item_id"] {
-				in.items[i].Status = "dismissed"
+	}
+	unresolved := func() int {
+		n := 0
+		for _, r := range reports {
+			if !r.Resolved {
+				n++
 			}
 		}
-		raw, _ := json.Marshal(map[string]any{"item": protocol.InboxItem{ID: p["item_id"], Status: "dismissed"}})
-		return raw, true, nil
-	case "inbox.list":
-		raw, _ := json.Marshal(map[string]any{"items": in.items})
-		return raw, true, nil
+		return n
 	}
-	return nil, false, nil
+	resolved := func() int {
+		n := 0
+		for _, r := range reports {
+			if r.Resolved {
+				n++
+			}
+		}
+		return n
+	}
+
+	// Each check above 85% reports the warning; the gateway deduplicates the
+	// item, so a repeat raises the entry's count instead of a new item.
+	check(86)
+	if unresolved() != 1 || !d.diskWarningActive {
+		t.Fatalf("at 86%%: %d warnings, active=%v", unresolved(), d.diskWarningActive)
+	}
+	check(86)
+	if unresolved() != 2 {
+		t.Fatalf("repeat at 86%%: %d warnings, want 2 reports", unresolved())
+	}
+	// Between 80% and 85% keeps the warning without resolving it.
+	check(82)
+	if resolved() != 0 || !d.diskWarningActive {
+		t.Fatalf("at 82%%: %d resolves, active=%v", resolved(), d.diskWarningActive)
+	}
+	// Below 80% resolves it once.
+	check(79)
+	if resolved() != 1 || d.diskWarningActive {
+		t.Fatalf("at 79%%: %d resolves, active=%v", resolved(), d.diskWarningActive)
+	}
+	check(79)
+	if resolved() != 1 {
+		t.Fatalf("repeat at 79%% resolved again: %d", resolved())
+	}
+	// A fresh crossing reports a new warning.
+	check(86)
+	if unresolved() != 3 {
+		t.Fatalf("after re-crossing 85%%: %d warnings, want 3 reports", unresolved())
+	}
 }
 
-// diskWarningHarness runs the disk check the way the daemon does. A restart is
-// a new daemon over the same state directory, so only daemon.db carries over.
-type diskWarningHarness struct {
-	t     *testing.T
-	dir   string
-	inbox *diskInbox
-	pct   float64
-	d     *Daemon
-}
-
-func newDiskWarningHarness(t *testing.T) *diskWarningHarness {
-	t.Helper()
+// An agent-net-* temp folder the test scripts or a sandbox left behind is
+// removed after six idle hours, while the cache, the Go temp folder and a
+// recent folder stay.
+func TestWorkerCacheCleanupSweepsOrphanAgentNetTmp(t *testing.T) {
 	isolateDaemonCaches(t)
-	h := &diskWarningHarness{t: t, dir: t.TempDir(), inbox: &diskInbox{}}
-	h.restart()
-	t.Cleanup(func() { h.d.st.close() })
-	return h
-}
-
-func (h *diskWarningHarness) restart() {
-	h.t.Helper()
-	if h.d != nil {
-		h.d.st.close()
-	}
-	st, err := openState(h.dir)
-	if err != nil {
-		h.t.Fatal(err)
-	}
-	h.d = &Daemon{
-		st: st,
-		cfg: Config{
-			NodeID:          "n_test",
-			Hostname:        "test-node",
-			StateDir:        h.dir,
-			testGatewayCall: h.inbox.call,
-			testDiskPercent: func(string) (float64, bool) { return h.pct, true },
-		},
-	}
-}
-
-// check runs one disk check at pct and returns how many asks it raised.
-func (h *diskWarningHarness) check(pct float64) int {
-	h.t.Helper()
-	h.pct = pct
-	before := h.inbox.creates
-	if err := h.d.checkDiskWarning(context.Background(), time.Now()); err != nil {
-		h.t.Fatal(err)
-	}
-	return h.inbox.creates - before
-}
-
-// closeOpenWarnings is the owner closing every open warning.
-func (h *diskWarningHarness) closeOpenWarnings() {
-	for i := range h.inbox.items {
-		if h.inbox.items[i].Status == "open" {
-			h.inbox.items[i].Status = "answered"
+	now := time.Now()
+	root := t.TempDir()
+	gotmpDir := filepath.Join(root, "agent-net-gotmp")
+	cacheDir := filepath.Join(root, "agent-net-gocache")
+	orphanRoot := filepath.Join(root, "agent-net-orphan")
+	orphan := filepath.Join(orphanRoot, "private")
+	recent := filepath.Join(root, "agent-net-recent")
+	other := filepath.Join(root, "other-folder")
+	for _, dir := range []string{gotmpDir, cacheDir, orphan, recent, other} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
 		}
 	}
-}
+	writeGoCacheMarkers(t, cacheDir)
+	for _, dir := range []string{gotmpDir, orphan, recent, other} {
+		if err := os.WriteFile(filepath.Join(dir, "file"), []byte("data"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := now.Add(-7 * time.Hour)
+	for _, dir := range []string{gotmpDir, orphan, other} {
+		if err := os.Chtimes(filepath.Join(dir, "file"), old, old); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(dir, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Chtimes(orphanRoot, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(cacheDir, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(filepath.Join(cacheDir, "README"), old, old); err != nil {
+		t.Fatal(err)
+	}
 
-// After a restart, with the earlier warning closed, usage must grow by the
-// step or reach the mark before another ask is raised.
-func TestDiskWarningRepeatRule(t *testing.T) {
-	cases := []struct {
-		name    string
-		first   float64
-		checks  []float64
-		wantAsk []bool
-	}{
-		{"three points above the last alert", 86, []float64{86, 87, 88, 89}, []bool{false, false, false, true}},
-		{"92 percent mark above a 90 alert", 90, []float64{91, 92}, []bool{false, true}},
+	d := &Daemon{
+		cfg: Config{WorkerGoCache: cacheDir, WorkerGoTmp: gotmpDir, testTrimRoot: root},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			h := newDiskWarningHarness(t)
-			if got := h.check(tc.first); got != 1 {
-				t.Fatalf("first alert at %v%%: %d asks, want 1", tc.first, got)
-			}
-			h.restart()
-			h.closeOpenWarnings()
-			for i, pct := range tc.checks {
-				want := 0
-				if tc.wantAsk[i] {
-					want = 1
-				}
-				if got := h.check(pct); got != want {
-					t.Fatalf("check at %v%%: %d asks, want %d", pct, got, want)
-				}
-			}
-		})
+	freed := d.cleanWorkerGoTmp(now, 0)
+	if freed == 0 {
+		t.Fatal("the orphan sweep freed nothing")
 	}
-}
-
-// Usage below 80% clears the alert, also across a restart. The next crossing of
-// 85% asks again, and the warning the earlier daemon left open is dismissed.
-func TestDiskWarningClearsAfterRestart(t *testing.T) {
-	h := newDiskWarningHarness(t)
-	if got := h.check(86); got != 1 {
-		t.Fatalf("first alert at 86%%: %d asks, want 1", got)
+	if _, err := os.Stat(filepath.Join(root, "agent-net-orphan")); !os.IsNotExist(err) {
+		t.Errorf("orphan folder idle for seven hours was kept: %v", err)
 	}
-	h.restart()
-	if got := h.check(79); got != 0 {
-		t.Fatalf("check at 79%%: %d asks, want 0", got)
-	}
-	if h.inbox.items[0].Status != "dismissed" {
-		t.Fatalf("warning after drop below 80%%: status %q, want dismissed", h.inbox.items[0].Status)
-	}
-	if got := h.check(85); got != 1 {
-		t.Fatalf("crossing 85%% again: %d asks, want 1", got)
-	}
-}
-
-// A warning open before the alert record existed (a release before this one)
-// is kept, and recorded, so closing it does not raise another ask after a restart.
-func TestDiskWarningAdoptsOpenWarningWithoutRecord(t *testing.T) {
-	h := newDiskWarningHarness(t)
-	h.inbox.items = []protocol.InboxItem{{
-		ID:     "i_old",
-		Kind:   "check",
-		Text:   "Disk space low on test-node: 86% used",
-		Status: "open",
-	}}
-	if got := h.check(86); got != 0 {
-		t.Fatalf("check at 86%% with an open warning: %d asks, want 0", got)
-	}
-	h.closeOpenWarnings()
-	h.restart()
-	if got := h.check(87); got != 0 {
-		t.Fatalf("check at 87%% after the warning was closed: %d asks, want 0", got)
+	for _, kept := range []string{gotmpDir, cacheDir, recent, other} {
+		if _, err := os.Stat(kept); err != nil {
+			t.Errorf("%s should be kept: %v", kept, err)
+		}
 	}
 }
 

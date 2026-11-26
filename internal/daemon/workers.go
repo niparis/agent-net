@@ -1551,18 +1551,11 @@ func (d *Daemon) runWorkerResume(ctx context.Context, row workerRow, set WorkerS
 	}
 	// Both resume paths announce the new generation before the harness can
 	// register. A delayed report from the previous process cannot end it.
-	runStateSupported := true
 	if _, err := d.call(cctx, "worker.run_state", protocol.WorkerRunState{Session: row.SessionID, RunGeneration: w.runGeneration}); err != nil {
-		var refusal RemoteError
-		if !errors.As(err, &refusal) || string(refusal) != `unknown frame type "worker.run_state"` {
-			return nil, err
-		}
-		// An older gateway activates the worker before asking us to resume it.
-		// Only its explicit unknown-method refusal permits this legacy path.
-		runStateSupported = false
+		return nil, err
 	}
 	defer func() {
-		if !okStart && runStateSupported {
+		if !okStart {
 			rollbackCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			d.call(rollbackCtx, "worker.run_state", protocol.WorkerRunState{Session: row.SessionID, RunGeneration: w.runGeneration, Ended: true})
@@ -1601,7 +1594,7 @@ func (d *Daemon) dropWorkerRow(r workerRow) bool {
 		d.releaseWorkerReport(r.ID)
 		return true
 	}
-	size := workerFolderBytes(filepath.Join(d.cfg.StateDir, "workers", r.ID))
+	size := folderBytes(filepath.Join(d.cfg.StateDir, "workers", r.ID))
 	if err := removeWorkerFolder(filepath.Join(d.cfg.StateDir, "workers", r.ID)); err != nil {
 		d.Logf("worker.cleanup retry worker=%s: %v", r.ID, err)
 		return false
@@ -1636,8 +1629,7 @@ func (d *Daemon) cleanupWorkers(ctx context.Context) {
 		d.Logf("worker.cleanup: cannot read retained workers: %v", err)
 		return
 	}
-	if _, err := d.call(cctx, "worker.cleanup", protocol.WorkerCleanup{MaxAgeSeconds: int64(set.MaxAge / time.Second), Running: retained, WorktreesDir: d.worktreesDir()}); err != nil &&
-		!strings.Contains(err.Error(), "unknown frame type") { // an older gateway has no such frame
+	if _, err := d.call(cctx, "worker.cleanup", protocol.WorkerCleanup{MaxAgeSeconds: int64(set.MaxAge / time.Second), Running: retained, WorktreesDir: d.worktreesDir()}); err != nil {
 		d.Logf("worker.cleanup: %v", err)
 	}
 }

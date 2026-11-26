@@ -142,16 +142,15 @@ func TestWorkerResumeRunGeneration(t *testing.T) {
 	}
 }
 
-func TestWorkerResumeAgainstOldGateway(t *testing.T) {
+func TestWorkerResumeRefusedOnGatewayError(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		refusal error
-		resumes bool
 	}{
-		{"unknown_method", RemoteError(`unknown frame type "worker.run_state"`), true},
-		{"other_refusal", RemoteError("worker run is not allowed"), false},
-		{"lost_connection", errNotConnected, false},
-		{"local_unknown_method_error", errors.New(`unknown frame type "worker.run_state"`), false},
+		{"unknown_method", RemoteError(`unknown frame type "worker.run_state"`)},
+		{"other_refusal", RemoteError("worker run is not allowed")},
+		{"lost_connection", errNotConnected},
+		{"local_unknown_method_error", errors.New(`unknown frame type "worker.run_state"`)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			g := startGateway(t, t.TempDir(), "")
@@ -170,25 +169,12 @@ func TestWorkerResumeAgainstOldGateway(t *testing.T) {
 			res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "FAKE:handback first", Isolation: protocol.IsolationNone})
 			w.waitNotice(t, 1)
 			eventually(t, "first run reported", func() bool { row, ok, _ := w.d.st.workerBySession(res.SessionID); return ok && row.Reported })
-			raw, err := w.cli.call("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "one more thing"})
-			if tc.resumes {
-				if err != nil {
-					t.Fatalf("legacy gateway prevented resume: %v", err)
-				}
-				var sent protocol.MessageSent
-				mustJSON(t, raw, &sent)
-				w.replyTo(t, w.ownerID(), sent.Message.ID)
-				row, ok, err := w.d.st.workerBySession(res.SessionID)
-				if err != nil || !ok || row.RunGeneration != 2 || row.EndedReason != "" {
-					t.Fatalf("resumed worker: %+v %v", row, err)
-				}
-			} else {
-				if err == nil {
-					t.Fatal("resume ignored a gateway error")
-				}
-				if w.d.workerCount() != 0 || len(w.logs.lines("worker.resumed")) != 0 {
-					t.Fatal("worker resumed despite gateway error")
-				}
+			eventually(t, "worker ended", func() bool { return w.d.workerCount() == 0 })
+			if _, err := w.d.resumeWorkerSession(context.Background(), res.SessionID, w.ownerID()); err == nil {
+				t.Fatal("resume ignored a gateway error")
+			}
+			if w.d.workerCount() != 0 || len(w.logs.lines("worker.resumed")) != 0 {
+				t.Fatal("worker resumed despite gateway error")
 			}
 			if n := calls.Load(); n != 1 {
 				t.Fatalf("run_state calls=%d, want 1", n)

@@ -97,27 +97,11 @@ func (a *app) screenSnapshot(ctx context.Context, screen string) (operator.Snaps
 		return snap, err
 	}
 	snap.Agents = agents.Agents
-	if screen == "sessions" || screen == "workers" {
+	if screen == "sessions" {
 		if raw, err := a.read(ctx, protocol.OpNodes, nil); err == nil {
 			var nodes protocol.NodesInfo
 			if json.Unmarshal(raw, &nodes) == nil {
 				snap.Nodes = nodes.Nodes
-			}
-		}
-	}
-	if screen == "workers" {
-		for _, r := range []struct {
-			method string
-			params any
-			out    any
-		}{
-			{protocol.OpWorkerProfiles, nil, &snap.WorkerProfiles},
-			{protocol.OpScoresGet, nil, &snap.Scores},
-			{protocol.OpWorkerRotationGet, nil, &snap.WorkerRotation},
-			{protocol.OpProtectedProvidersGet, nil, &snap.ProtectedProviders},
-		} {
-			if raw, err := a.read(ctx, r.method, r.params); err == nil {
-				_ = json.Unmarshal(raw, r.out)
 			}
 		}
 	}

@@ -24,7 +24,6 @@ gofmt -l .                  # must print nothing
 sh -n install.sh            # syntax check of the installer
 bash -n scripts/test.sh
 sh scripts/test-changed-test.sh # checks how test-changed.sh calls go test (fake go, about 10 s)
-sh scripts/dev/gocache-trim-test.sh # checks the dev cache trim on temporary folders (about 1 s)
 plugins/pi/typecheck.sh     # type-check the Pi extension (needs Pi installed)
 plugins/claude/test-agent-net-workers.sh # validate and test Claude hooks (needs npm)
 go -C tools/rulecheck vet ./... && go -C tools/rulecheck test -count=1 ./... # the rule checker and its fixtures
@@ -51,7 +50,7 @@ If the sandbox blocks unix sockets (Claude Code's does on Linux), the script not
 
 If you change guidance text, also run go test ./internal/guidance ./internal/agentfiles (both have golden fixtures; use -update). If you change tool, guidance or catalog text, run `go generate ./internal/daemon/ctoskill ./internal/featuremap` to refresh the generated CTO reference and feature map.
 
-CI runs `gofmt`, `go vet`, the daemon, gateway, setup, tui and command shards (`scripts/test.sh --package daemon|gateway|setup|tui|agent-net --shard-index I --shard-count N`; N is 5 for daemon, 6 for gateway and 4 for the others), the other Go packages in one job, `sh -n install.sh`, `sh scripts/test-changed-test.sh` and `sh scripts/dev/gocache-trim-test.sh`. All must pass. Tests use localhost only. No test may sleep for more than 2 seconds: use a polling helper with a timeout.
+CI runs `gofmt`, `go vet`, the daemon, gateway, setup, tui and command shards (`scripts/test.sh --package daemon|gateway|setup|tui|agent-net --shard-index I --shard-count N`; N is 5 for daemon, 6 for gateway and 4 for the others), the other Go packages in one job, `sh -n install.sh` and `sh scripts/test-changed-test.sh`. All must pass. Tests use localhost only. No test may sleep for more than 2 seconds: use a polling helper with a timeout.
 
 ## Lessons learned
 

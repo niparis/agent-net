@@ -136,7 +136,7 @@ func TestCacheSizeCapCountsPerWorkerGoCache(t *testing.T) {
 	writeGoCacheMarkers(t, perWorker)
 	perWorkerOld := writeCacheEntry(t, perWorker, filepath.Join("bb", "old"), 1024, now.Add(-20*time.Hour))
 
-	freed := d.trimCacheSize(1500, 1200)
+	freed := d.trimCache(0, 1500, 1200)
 	if freed.Worker != 1024 || freed.Owner != 0 {
 		t.Fatalf("freed worker=%d owner=%d, want worker=1024 owner=0", freed.Worker, freed.Owner)
 	}

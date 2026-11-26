@@ -43,6 +43,9 @@ const (
 	IntakeClaudePeerMessages = "claude_peer_messages"
 	// IntakePhonePaired: a phone paired by Tailscale sign-in. Digest only.
 	IntakePhonePaired = "phone_paired"
+	// IntakeDiskSpace: the disk holding the daemon state or a Go build cache
+	// is above 85 percent used. Subject: the machine.
+	IntakeDiskSpace = "disk_warning"
 )
 
 // Intake severities. An entry starts as an alert or a digest line by its
@@ -71,7 +74,7 @@ const (
 // detects the others itself.
 func DaemonIntakeKind(kind string) bool {
 	switch kind {
-	case IntakeHarnessUpdate, IntakeCompaction, IntakeMCPRepair, IntakeClaudeMouse, IntakeClaudePeerMessages:
+	case IntakeHarnessUpdate, IntakeCompaction, IntakeMCPRepair, IntakeClaudeMouse, IntakeClaudePeerMessages, IntakeDiskSpace:
 		return true
 	}
 	return false
@@ -91,7 +94,7 @@ type IntakeReport struct {
 // Validate checks a daemon report and names the field that is wrong.
 func (r IntakeReport) Validate() error {
 	if !DaemonIntakeKind(r.Kind) {
-		return errors.New("kind must be harness_update_failed, compaction_failed, mcp_repair_failed, claude_mouse or claude_peer_messages")
+		return errors.New("kind must be harness_update_failed, compaction_failed, mcp_repair_failed, claude_mouse, claude_peer_messages or disk_warning")
 	}
 	if strings.TrimSpace(r.Subject) == "" {
 		return errors.New("subject is required: the harness or the server")

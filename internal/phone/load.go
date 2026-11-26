@@ -35,8 +35,6 @@ var screens = []screenInfo{
 		Icon: `<circle cx="4" cy="4" r="1.8"/><circle cx="4" cy="12" r="1.8"/><circle cx="12" cy="8" r="1.8"/><path d="M4 5.8v4.4M5.6 4.6c4 0 4.6 1.4 4.6 3.4"/>`},
 	{ID: "messages", Name: "Messages", Path: "/messages", Key: "5", Sub: "Conversations between your agents",
 		Icon: `<path d="M2 3h12v8H7l-3 2.5V11H2z"/>`},
-	{ID: "workers", Name: "Workers", Path: "/workers", Key: "6", Sub: "Subscriptions, model picks and running workers",
-		Icon: `<path d="M2 13V9M6 13V5M10 13V7M14 13V3"/>`},
 }
 
 func screenByID(id string) screenInfo {
@@ -68,7 +66,6 @@ type page struct {
 	Changes      *changesView
 	Messages     *messagesView
 	Graph        *graphView
-	Workers      *workersView
 }
 
 // query is what a page names beyond its screen: the selected row, the Changes
@@ -266,8 +263,6 @@ func (a *app) load(ctx context.Context, screen string, q query) page {
 		p.Messages = a.messages(ctx, snap, q.Selected)
 	case "graph":
 		p.Graph = a.graph(ctx, snap, q.Selected)
-	case "workers":
-		p.Workers = a.workers(ctx, snap)
 	}
 	return p
 }

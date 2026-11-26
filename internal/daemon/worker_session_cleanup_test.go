@@ -165,7 +165,6 @@ func TestWorkerCodexDeletionFailureRetention(t *testing.T) {
 	}{
 		{"missing", "Error: thread not found", time.Hour, true, false},
 		{"missing_with_id", "Error: session 12345678-1234-1234-1234-123456789abc not found", time.Hour, true, false},
-		{"unsupported", "error: unrecognized subcommand 'delete'", time.Hour, true, true},
 		{"retry", "Error: failed to delete session", time.Hour, false, false},
 		{"expired", "Error: failed to delete session", 7*24*time.Hour + time.Minute, true, true},
 		{"config_missing", "Error: config file not found", time.Hour, false, false},

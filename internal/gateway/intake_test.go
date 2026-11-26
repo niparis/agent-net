@@ -163,6 +163,37 @@ func TestIntakeDeduplicatesByKindAndSubject(t *testing.T) {
 	}
 }
 
+// A disk warning that repeats while one entry is open raises its count and
+// adds no second entry.
+func TestDiskWarningAddsOneOpenIntakeEntry(t *testing.T) {
+	s, c := newTestStore(t)
+	ev := intakeEvent{Kind: protocol.IntakeDiskSpace, Subject: "box/disk", Text: "Disk space low on box: 90% used"}
+	first, err := s.RecordIntake(ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.advance(10 * time.Minute)
+	ev.Text = "Disk space low on box: 91% used"
+	second, err := s.RecordIntake(ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.ID != first.ID || second.Count != 2 || !second.FirstSeen.Equal(first.FirstSeen) {
+		t.Fatalf("second warning = %+v, first %+v", second, first)
+	}
+	found, err := s.CTOIntake(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found.Total != 1 || len(found.Entries) != 1 || found.Entries[0].ID != first.ID || found.Entries[0].Count != 2 {
+		t.Fatalf("open intake = %+v, want one entry with count 2", found)
+	}
+	var rows int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE dedupe_key=?`, protocol.IntakeDiskSpace+":box/disk").Scan(&rows); err != nil || rows != 1 {
+		t.Fatalf("%d rows, %v", rows, err)
+	}
+}
+
 // The CTO's read returns the open entries, newest first.
 func TestCTOIntakeReadsOpenEntriesNewestFirst(t *testing.T) {
 	s, c := newTestStore(t)
