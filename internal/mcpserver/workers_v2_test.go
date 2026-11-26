@@ -308,3 +308,19 @@ func TestAgentWorkerRateLeavesOutTheAssessment(t *testing.T) {
 		t.Fatalf("agent_worker_rate: %v %+v", err, res)
 	}
 }
+
+// When the ask went to the chief of staff as a request (decision 0196), the
+// tool result says so.
+func TestOwnerAskSentToTheChiefSaysSo(t *testing.T) {
+	cs := connect(t, func(context.Context, string, any) (json.RawMessage, error) {
+		return json.RawMessage(`{"item":{"kind":"question","status":"sent_to_chief"},"redirected":{"chief":true,"lead":"chief","lead_session":"s_c","message_id":"m_1","note":"Sent to the chief of staff as a request."}}`), nil
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_owner_ask", Arguments: map[string]any{"kind": "question", "text": "Can I?", "recommendation": "yes"}})
+	if err != nil || res.IsError {
+		t.Fatalf("%v %+v", err, res)
+	}
+	out, _ := res.StructuredContent.(map[string]any)
+	if out["state"] != "sent_to_chief" || out["note"] != "Sent to the chief of staff as a request." {
+		t.Fatalf("result: %+v", out)
+	}
+}

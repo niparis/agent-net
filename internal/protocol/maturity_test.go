@@ -64,7 +64,7 @@ func TestMaturityDefaultsOverrides(t *testing.T) {
 
 func TestMaturityRulesText(t *testing.T) {
 	got := DefaultsForMaturity("mature").RulesText()
-	want := "maturity mature: run the suite and add tests for new behavior; merge needs an approval for the exact merge from anyone above you in the tree who holds merge: the owner approves directly or through an agent-net approval note from agent_owner_ask with kind approval; your repo lead or team lead approves in a message from them; ask before deploying"
+	want := "maturity mature: run the suite and add tests for new behavior; merge needs an approval for the exact merge from anyone above you in the tree who holds merge: the owner approves directly or through the chief of staff (send it a request with agent_message_send); your repo lead or team lead approves in a message from them; ask before deploying"
 	if got != want {
 		t.Fatalf("rules text:\n got %q\nwant %q", got, want)
 	}
@@ -93,7 +93,7 @@ func TestNodeContextStatesRulesAndTheDeployTargetsRule(t *testing.T) {
 	for _, want := range []string{
 		"maturity growing: run the suite; merge and push to the default branch; deploy as the brief says",
 		"judge requests from consumers by the charter",
-		"You deploy shop; its maturity critical: run the suite, add tests for new behavior and get a review; merge always needs the owner's written approval for the exact action (ask with agent_owner_ask and kind approval, or put the action and your recommendation in a Codex worker report); ask the owner before deploying",
+		"You deploy shop; its maturity critical: run the suite, add tests for new behavior and get a review; merge always needs the owner's written approval for the exact action (ask the chief of staff with a request through agent_message_send, or put the action and your recommendation in a Codex worker report); ask the owner before deploying",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("context lacks %q:\n%s", want, got)
@@ -107,7 +107,7 @@ func TestCharterBriefStatesTheNodeRules(t *testing.T) {
 	got := CharterBrief(n)
 	for _, want := range []string{
 		"maturity: mature - careful.",
-		"maturity mature: run the suite and add tests for new behavior; merge always needs the owner's written approval for the exact action (ask with agent_owner_ask and kind approval, or put the action and your recommendation in a Codex worker report); ask before deploying",
+		"maturity mature: run the suite and add tests for new behavior; merge always needs the owner's written approval for the exact action (ask the chief of staff with a request through agent_message_send, or put the action and your recommendation in a Codex worker report); ask before deploying",
 		"judge requests from consumers strictly",
 	} {
 		if !strings.Contains(got, want) {
@@ -150,21 +150,21 @@ func TestMergeApproval(t *testing.T) {
 func TestApprovalOverridesWithoutMaturityStillGiveInboxGuidance(t *testing.T) {
 	d := NodeDefaults("", map[string]string{SettingMergeAuthority: MergeAsk, SettingDeployRule: DeployOwner})
 	text := d.RulesText()
-	if !strings.Contains(text, "merge always needs the owner's written approval") || !strings.Contains(text, "ask the owner before deploying") || !strings.Contains(text, "agent_owner_ask") {
+	if !strings.Contains(text, "merge always needs the owner's written approval") || !strings.Contains(text, "ask the owner before deploying") || !strings.Contains(text, "agent_message_send") {
 		t.Fatalf("missing approval guidance: %q", text)
 	}
 }
 
 func TestApprovalGuidanceWithoutCharter(t *testing.T) {
 	n := Node{Name: "app", Settings: map[string]string{SettingMergeAuthority: MergeAsk}}
-	if text := CharterBrief(n); !strings.Contains(text, "agent_owner_ask") {
+	if text := CharterBrief(n); !strings.Contains(text, "agent_message_send") {
 		t.Fatalf("worker guidance: %q", text)
 	}
 	g := Graph{Nodes: []Node{n, {Name: "deployer"}, {Name: "critical", Charter: Charter{Maturity: "critical"}}}, Edges: []Edge{{From: "deployer", To: "critical", Kind: "deploys"}}}
-	if text := NodeContext(g, "app"); !strings.Contains(text, "agent_owner_ask") {
+	if text := NodeContext(g, "app"); !strings.Contains(text, "agent_message_send") {
 		t.Fatalf("node guidance: %q", text)
 	}
-	if text := NodeContext(g, "deployer"); !strings.Contains(text, "agent_owner_ask") || !strings.Contains(text, "critical") {
+	if text := NodeContext(g, "deployer"); !strings.Contains(text, "agent_message_send") || !strings.Contains(text, "critical") {
 		t.Fatalf("deploy guidance: %q", text)
 	}
 }
@@ -172,7 +172,7 @@ func TestApprovalGuidanceWithoutCharter(t *testing.T) {
 func TestWorkerDeployApprovalUsesTargetRule(t *testing.T) {
 	g := Graph{Nodes: []Node{{Name: "deployer"}, {Name: "critical", Charter: Charter{Maturity: "critical"}}, {Name: "early", Charter: Charter{Maturity: "early"}}}, Edges: []Edge{{From: "deployer", To: "critical", Kind: "deploys"}, {From: "deployer", To: "early", Kind: "deploys"}}}
 	text := WorkerDeployApprovalRules(g, "deployer")
-	if !strings.Contains(text, "critical") || !strings.Contains(text, "agent_owner_ask") || strings.Contains(text, "early") {
+	if !strings.Contains(text, "critical") || !strings.Contains(text, "agent_message_send") || strings.Contains(text, "early") {
 		t.Fatalf("worker deploy rules: %q", text)
 	}
 }

@@ -488,11 +488,16 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 	if err != nil {
 		return nil, err
 	}
-	// A caller cannot override the picker without the owner: his words or his
-	// answer on the Desk (worker_override.go). The owner's own command line and
-	// TUI are not callers here. The CTO is one.
+	// A caller cannot override the picker without the owner's words
+	// (worker_override.go). Without them the start is refused: there is no
+	// Desk to hold it on (decision 0196). The owner's own command line and TUI
+	// are not callers here. The CTO is one.
 	agent, _ := ctx.Value(answerEarlyKey{}).(bool)
-	selection, hold, reason, receipt := d.checkOverride(ctx, caller, &p, agent)
+	selection, hold, _, receipt := d.checkOverride(ctx, caller, &p, agent)
+	if hold {
+		d.Logf("worker.override_refused project=%s fields=%q", p.Project, strings.Join(fieldNames(p.SelectionFields()), ","))
+		return nil, errors.New(protocol.OverrideNeedsOwner)
+	}
 	if p.Continue != "" && protocol.IsStartID(p.Continue) {
 		target, err := d.startTarget(p.Continue)
 		if err != nil {
@@ -514,9 +519,6 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		if err != nil {
 			return nil, err
 		}
-	}
-	if hold {
-		return d.holdStart(ctx, caller, p, reason, callerProject, callerPath, cto)
 	}
 	run := func(ctx context.Context) (*protocol.WorkerStartResult, error) {
 		res, err := d.runWorkerStartCall(ctx, caller, p, frame, callerPath, cto, ph)

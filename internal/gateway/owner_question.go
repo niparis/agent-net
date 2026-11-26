@@ -110,6 +110,14 @@ func (g *Gateway) agentOwnerAsk(ctx context.Context, st *Store, ask protocol.Inb
 	if err != nil {
 		return map[string]any{"item": item}, err
 	}
+	// The ask went to the chief as a request (decision 0196): the session does
+	// not wait for its user, and the chief's reply comes as a message.
+	if item.Status == ownerItemSentToChief {
+		g.flushHolderAsks(ctx)
+		return map[string]any{"item": item, "redirected": &protocol.AskRedirect{Chief: true, Lead: sessionLabel(st.db, item.NextWho),
+			LeadSession: item.NextWho, MessageID: item.MessageID,
+			Note: "Sent to the chief of staff as a request; the reply comes as a message. Carry on with work that does not need the answer."}}, nil
+	}
 	// A new ask adds to the pending ones. Tell the asker which others are
 	// still open so it can name one with replaces.
 	others, err := st.OtherOpenAsks(ask.SessionID, item.ID)

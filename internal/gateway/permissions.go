@@ -215,8 +215,8 @@ func insertPermissionRow(tx *sql.Tx, p protocol.PermissionProposal) error {
 	return err
 }
 
-// insertPermissionProposal stores the proposal row and opens its owner-only
-// ask in the same transaction. It writes no file and changes no setting.
+// insertPermissionProposal stores the proposal row and sends its owner-only
+// ask to the chief in the same transaction. It writes no file and changes no setting.
 func (s *Store) insertPermissionProposal(tx *sql.Tx, p protocol.PermissionProposal, session, why string) error {
 	if err := insertPermissionRow(tx, p); err != nil {
 		return err
@@ -229,7 +229,9 @@ func (s *Store) insertPermissionProposal(tx *sql.Tx, p protocol.PermissionPropos
 			about = p.Targets[0].Name
 		}
 	}
-	text := permissionAskText(p)
+	// The proposal reaches the chief as a request (decision 0196). The CTO
+	// applies it by id once the owner says yes, quoting his words.
+	text := permissionAskText(p) + fmt.Sprintf("\nIf the owner agrees, the CTO applies it with permission_apply id %s, quoting the owner's words in owner_words.", p.ID)
 	item := protocol.InboxItem{
 		Kind: protocol.AskKindPermission, SessionID: session, FromKind: protocol.AskFromSession,
 		AskerName: p.ProposedName, SourceRef: permissionAskPrefix + p.ID,

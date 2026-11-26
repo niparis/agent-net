@@ -30,7 +30,7 @@ type Caller func(ctx context.Context, method string, params any) (json.RawMessag
 // agent_announce description and, in other words, in the guidance file.
 const AnnounceRule = "At the start of every session, before other work, call agent_announce with your current task in one short line. " +
 	"Call it again whenever your task changes. " +
-	"Ask an owner question in your chat, on a line that starts with \"Owner question:\", and also send it with agent_owner_ask, in one line with your recommendation: it goes to the chief of staff and the Desk. " +
+	"When you need the owner, send a request to the chief of staff with agent_message_send, saying what you need, why only the owner can decide, and your recommendation. " +
 	"Then carry on with work that does not depend on the answer, or end the turn. " +
 	"Your project description is taken from the project's AGENTS.md automatically."
 

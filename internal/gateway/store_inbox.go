@@ -12,8 +12,10 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// CreateInboxItem stores an item for the owner. Callers must derive the session
-// and node from authenticated state rather than trusting agent-supplied values.
+// CreateInboxItem makes an item: an item for the owner goes to the chief of
+// staff or the log (decision 0196), any other is stored. Callers must derive
+// the session and node from authenticated state rather than trusting
+// agent-supplied values.
 func (s *Store) CreateInboxItem(item protocol.InboxItem) (protocol.InboxItem, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -48,9 +50,11 @@ func (s *Store) CreateInboxItem(item protocol.InboxItem) (protocol.InboxItem, er
 		}
 	}
 	// One decision per item (decision 0150): an ask with several questions
-	// becomes one item per question. The first one is returned.
+	// becomes one item per question. The first one is returned. An ask that
+	// goes to the chief stays one request.
 	parts := []string{item.Text}
-	if item.Kind == protocol.AskKindQuestion && item.SourceRef == "" {
+	toChief := s.ownerItemToChiefOrLog(item)
+	if item.Kind == protocol.AskKindQuestion && item.SourceRef == "" && !toChief {
 		if split := protocol.SplitQuestions(item.Text); split != nil {
 			parts = split
 		}
@@ -99,7 +103,14 @@ func (s *Store) RequestWrittenApproval(session, node string, req protocol.Approv
 	return s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: session, Node: node, Text: req.Action, Recommendation: req.Recommendation})
 }
 
+// createInboxItem is the one way an item is made. An item for the owner is not
+// stored (decision 0196): it becomes a request to the chief of staff, or a log
+// line when agent-net raised it itself (owner_items.go). Other items are
+// stored as before.
 func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.InboxItem, error) {
+	if s.ownerItemToChiefOrLog(item) {
+		return s.ownerItemToChief(db, item)
+	}
 	switch item.Kind {
 	case "approval", "feature_idea", "question", "rejection", "escalation", "check", "session_stall",
 		protocol.AskKindHeld, protocol.AskKindLearned, protocol.AskKindDraft, protocol.AskKindProposal, protocol.AskKindPermission, protocol.AskKindStep, protocol.AskKindWaiting,

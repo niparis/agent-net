@@ -14,14 +14,14 @@ type Tab struct {
 // CTOKey opens the CTO session from any tab. The CTO is not a tab.
 const CTOKey = "c"
 
-// All is the tab bar, left to right.
+// All is the tab bar, left to right. The Desk (key 6) is hidden since
+// decision 0196: what needs the owner goes to the chief of staff.
 var All = []Tab{
 	{Name: "Sessions", Short: "Sess", Key: "1", Action: "sessions tab"},
 	{Name: "Graph", Short: "Graph", Key: "2", Action: "graph tab"},
 	{Name: "Quotas", Short: "Quota", Key: "3", Action: "quotas tab"},
 	{Name: "Messages", Short: "Msg", Key: "4", Action: "messages tab"},
 	{Name: "Settings", Short: "Set", Key: "5", Action: "settings tab"},
-	{Name: "Desk", Short: "Desk", Key: "6", Action: "inbox tab"},
 }
 
 // Names returns the full tab names in tab order.
