@@ -89,6 +89,10 @@ func (s *Store) RebindResumedSession(nodeID, sessionID, nativeID string) (bool, 
 // carries the name and the lead role.
 // The new record takes the old name only when no other live session holds it.
 func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, error) {
+	return s.replaceSession(nodeID, sessionID, newSessionID, false)
+}
+
+func (s *Store) replaceSession(nodeID, sessionID, newSessionID string, allowBusy bool) (bool, error) {
 	if !validSessionID(sessionID) || !validSessionID(newSessionID) || sessionID == newSessionID {
 		return false, reject("a replaced session needs its ID and a different new session")
 	}
@@ -145,7 +149,7 @@ func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, er
 		}
 		return repaired > 0, nil
 	}
-	if replaced != "" || (online != 0 && status == "busy") {
+	if replaced != "" || (!allowBusy && online != 0 && status == "busy") {
 		return false, nil
 	}
 	var newNode, newName, newWorker string
@@ -178,12 +182,20 @@ func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, er
 	}
 	now := s.now().UnixNano()
 
-	// The caller role of running and queued workers and the ratings that were
-	// waiting for this caller.
+	// The lasting binding moves before worker_starts so queued starts inherit
+	// the new session's updated agent_id.
 	steps := []struct {
 		query string
 		args  []any
 	}{
+		{`UPDATE sessions SET agent_id=COALESCE(NULLIF((SELECT agent_id FROM sessions WHERE id=?),''),agent_id), repo_id=COALESCE((SELECT repo_id FROM sessions WHERE id=?),repo_id) WHERE id=?`, []any{sessionID, sessionID, newSessionID}},
+		{`UPDATE agents SET lead_session=? WHERE lead_session=?`, []any{newSessionID, sessionID}},
+		{`UPDATE gateway_state SET value=? WHERE key='chief_session' AND value=?`, []any{newSessionID, sessionID}},
+		// A merger place follows the conversation, unless the new record is
+		// already the merger of another project.
+		{`UPDATE repos SET merger_session=? WHERE merger_session=? AND NOT EXISTS (SELECT 1 FROM repos WHERE merger_session=?)`, []any{newSessionID, sessionID, newSessionID}},
+		// The caller role of running and queued workers and the ratings that were
+		// waiting for this caller.
 		{`UPDATE sessions SET worker=json_set(worker,'$.owner',?) WHERE worker<>'' AND json_valid(worker) AND json_extract(worker,'$.owner')=?`, []any{newSessionID, sessionID}},
 		{`UPDATE worker_starts SET owner=?, caller_agent_id=(SELECT agent_id FROM sessions WHERE id=?) WHERE owner=? AND state IN ('open','starting')`, []any{newSessionID, newSessionID, sessionID}},
 		{`UPDATE worker_runs SET caller_session_id=? WHERE caller_session_id=?`, []any{newSessionID, sessionID}},
@@ -192,14 +204,6 @@ func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, er
 		{`UPDATE delivery_step_tasks SET claimed_by=? WHERE claimed_by=? AND change_id IN (SELECT id FROM delivery_changes WHERE state IN ('open','merged'))`, []any{newSessionID, sessionID}},
 		// The open requests follow the new record instead of a dead ID.
 		{`UPDATE inbox_items SET session_id=? WHERE session_id=?`, []any{newSessionID, sessionID}},
-		// The lasting binding: the agent and the repo, and the lead places
-		// the session held.
-		{`UPDATE sessions SET agent_id=COALESCE(NULLIF((SELECT agent_id FROM sessions WHERE id=?),''),agent_id), repo_id=COALESCE((SELECT repo_id FROM sessions WHERE id=?),repo_id) WHERE id=?`, []any{sessionID, sessionID, newSessionID}},
-		{`UPDATE agents SET lead_session=? WHERE lead_session=?`, []any{newSessionID, sessionID}},
-		{`UPDATE gateway_state SET value=? WHERE key='chief_session' AND value=?`, []any{newSessionID, sessionID}},
-		// A merger place follows the conversation, unless the new record is
-		// already the merger of another project.
-		{`UPDATE repos SET merger_session=? WHERE merger_session=? AND NOT EXISTS (SELECT 1 FROM repos WHERE merger_session=?)`, []any{newSessionID, sessionID, newSessionID}},
 	}
 	for _, step := range steps {
 		if _, err := tx.Exec(step.query, step.args...); err != nil {
@@ -289,7 +293,7 @@ func (s *Store) ReplaceSessionForOwner(oldSessionID, newSessionID, actor string)
 	if !ok {
 		return res, reject("unknown session %s", oldSessionID)
 	}
-	moved, err := s.ReplaceSession(old.NodeID, oldSessionID, newSessionID)
+	moved, err := s.replaceSession(old.NodeID, oldSessionID, newSessionID, true)
 	if err != nil {
 		return res, err
 	}

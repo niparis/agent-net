@@ -13,7 +13,9 @@ import (
 // routing). The pin is agents.lead_session. Nothing else counts: another
 // session of the same Agent never leads. A lead_set that names an Agent pins
 // its one session, and asks the CTO which session leads when there are several.
-// A new session pins a lead Agent that had none.
+// Offline leftovers do not count against a single live session: when exactly
+// one session of the Agent is online, it is the one pinned. A new session pins
+// a lead Agent that had none.
 
 // leadSessionAskRef is the source key of the CTO question about an Agent's lead
 // session, so the same open question is updated rather than repeated.
@@ -22,13 +24,16 @@ const leadSessionAskRef = "lead_session:"
 // leadSessionRef is one session of a lead Agent, as the CTO question lists it.
 type leadSessionRef struct {
 	id, label string
+	online    bool
 }
 
 // leadSessionCandidatesQ lists the sessions that may be a lead session: not a
-// worker, not a merger, not archived, and not the owner, CTO or a bot.
+// worker, not a merger, not archived, and not the owner, CTO or a bot. Offline
+// sessions are listed too; online is set so the caller can tell them apart.
 func leadSessionCandidatesQ(q leadDB, agent string) ([]leadSessionRef, error) {
 	rows, err := q.Query(`SELECT s.id,
-		COALESCE(NULLIF(s.name,''),NULLIF(s.title,''),NULLIF(s.repo_project,''),s.id)
+		COALESCE(NULLIF(s.name,''),NULLIF(s.title,''),NULLIF(s.repo_project,''),s.id),
+		s.online=1
 		FROM sessions s
 		WHERE s.agent_id=? AND s.worker='' AND s.archived_at=0 AND s.replaced_by=''
 		AND s.harness NOT IN ('owner','cto','bot')
@@ -42,12 +47,30 @@ func leadSessionCandidatesQ(q leadDB, agent string) ([]leadSessionRef, error) {
 	var out []leadSessionRef
 	for rows.Next() {
 		var s leadSessionRef
-		if err := rows.Scan(&s.id, &s.label); err != nil {
+		if err := rows.Scan(&s.id, &s.label, &s.online); err != nil {
 			return nil, err
 		}
 		out = append(out, s)
 	}
 	return out, rows.Err()
+}
+
+// leadPinChoice returns the one session a pin takes. A lone candidate is that
+// session. Among several, exactly one online session is, and the offline
+// leftovers are ignored. Otherwise there is no choice and the CTO is asked.
+func leadPinChoice(sessions []leadSessionRef) (leadSessionRef, bool) {
+	if len(sessions) == 1 {
+		return sessions[0], true
+	}
+	var only leadSessionRef
+	online := 0
+	for _, s := range sessions {
+		if s.online {
+			only = s
+			online++
+		}
+	}
+	return only, online == 1
 }
 
 // agentLeadsAnythingQ says whether an Agent leads a Repo or an active Team, or
@@ -60,6 +83,125 @@ func agentLeadsAnythingQ(q leadDB, agent string) (bool, error) {
 		UNION ALL SELECT 1 FROM teams t WHERE t.active=1 AND t.owner_agent_id=?
 		UNION ALL SELECT 1 FROM agents a WHERE a.id=? AND a.lead_level<>0 AND a.role<>'merger')`, agent, agent, agent).Scan(&leads)
 	return leads, err
+}
+
+// leadAgentHolderQ returns the live pinned lead session holding agent (other
+// than excludeSession), or "" when agent is not a lead agent or has no other
+// live pinned lead session.
+func leadAgentHolderQ(q leadDB, agent, excludeSession string) (string, error) {
+	if agent == "" {
+		return "", nil
+	}
+	leads, err := agentLeadsAnythingQ(q, agent)
+	if err != nil || !leads {
+		return "", err
+	}
+	var holder string
+	err = q.QueryRow(`SELECT COALESCE(a.lead_session,'')
+		FROM agents a JOIN sessions s ON s.id=a.lead_session
+		WHERE a.id=? AND a.lead_session<>'' AND a.lead_session<>?
+		AND s.online=1 AND s.archived_at=0 AND s.replaced_by=''`, agent, excludeSession).Scan(&holder)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return holder, err
+}
+
+// repoMemberAgentQ finds a live non-lead member agent for repoID when the
+// repo's lead agent is already held by its pinned lead session.
+func repoMemberAgentQ(q leadDB, repoID, leadAgentID string) (string, error) {
+	if repoID == "" {
+		return "", nil
+	}
+	for _, cand := range []string{repoID, repoID + "-agent"} {
+		if cand == "" || cand == leadAgentID {
+			continue
+		}
+		var ok bool
+		if err := q.QueryRow(`SELECT EXISTS(SELECT 1 FROM agents WHERE id=? AND tombstone=0 AND role NOT IN ('cto','bot','merger'))`, cand).Scan(&ok); err != nil {
+			return "", err
+		}
+		if ok {
+			return cand, nil
+		}
+	}
+	if leadAgentID == repoID {
+		return "", nil
+	}
+	var existing string
+	err := q.QueryRow(`SELECT a.id FROM agents a
+		JOIN sessions s ON s.agent_id=a.id
+		WHERE s.repo_id=? AND a.id<>? AND a.tombstone=0 AND a.role NOT IN ('cto','bot','merger')
+		AND NOT EXISTS(SELECT 1 FROM repos r WHERE r.lead_agent_id=a.id)
+		ORDER BY a.id LIMIT 1`, repoID, leadAgentID).Scan(&existing)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return existing, err
+}
+
+// defaultSessionAgentQ picks the default agent for a new non-worker session in
+// repoID. When the repo's lead agent is already held by another live pinned
+// lead session and the repo has a member agent, the new session gets the
+// member agent so only the pinned lead holds the lead agent_id.
+func defaultSessionAgentQ(q leadDB, repoID, excludeSession string) (string, error) {
+	if repoID == "" {
+		return "", nil
+	}
+	var leadAgent string
+	err := q.QueryRow(`SELECT COALESCE(lead_agent_id,'') FROM repos WHERE id=?`, repoID).Scan(&leadAgent)
+	if errors.Is(err, sql.ErrNoRows) || leadAgent == "" {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	holder, err := leadAgentHolderQ(q, leadAgent, excludeSession)
+	if err != nil || holder == "" {
+		return leadAgent, err
+	}
+	member, err := repoMemberAgentQ(q, repoID, leadAgent)
+	if err != nil || member == "" {
+		return leadAgent, err
+	}
+	return member, nil
+}
+
+// assignDefaultSessionAgentsQ fills agent_id for matching unassigned sessions
+// using defaultSessionAgentQ.
+func assignDefaultSessionAgentsQ(q askDB, where string, args ...any) error {
+	rows, err := q.Query(`SELECT id, repo_id FROM sessions WHERE worker='' AND agent_id IS NULL AND repo_id IS NOT NULL AND repo_id<>'' AND `+where, args...)
+	if err != nil {
+		return err
+	}
+	type pair struct{ id, repo string }
+	var targets []pair
+	for rows.Next() {
+		var p pair
+		if err := rows.Scan(&p.id, &p.repo); err != nil {
+			rows.Close()
+			return err
+		}
+		targets = append(targets, p)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	for _, t := range targets {
+		agent, err := defaultSessionAgentQ(q, t.repo, t.id)
+		if err != nil {
+			return err
+		}
+		if agent == "" {
+			continue
+		}
+		if _, err := q.Exec(`UPDATE sessions SET agent_id=? WHERE id=? AND agent_id IS NULL`, agent, t.id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // pinFirstLeadSessionQ pins a new session when it is the only session of a lead
@@ -91,7 +233,7 @@ func (s *Store) pinFirstLeadSessionQ(q askDB, session string) error {
 	if err != nil || !leads {
 		return err
 	}
-	if len(sessions) == 1 && sessions[0].id == session {
+	if choice, ok := leadPinChoice(sessions); ok && choice.id == session {
 		if _, err = q.Exec(`UPDATE agents SET lead_session=? WHERE id=? AND COALESCE(lead_session,'')=''`, session, agent); err != nil {
 			return err
 		}
@@ -105,20 +247,20 @@ func (s *Store) pinFirstLeadSessionQ(q askDB, session string) error {
 }
 
 // pinOrAskLeadSessionTx runs after a lead_set that names an Agent. One session
-// is pinned. Several are not guessed at: the CTO is asked once which one leads.
+// is pinned: the only one, or the only online one. Several live sessions are
+// not guessed at: the CTO is asked once which one leads.
 func (s *Store) pinOrAskLeadSessionTx(tx *sql.Tx, agent string) error {
 	sessions, err := leadSessionCandidatesQ(tx, agent)
 	if err != nil {
 		return err
 	}
-	switch len(sessions) {
-	case 0:
+	if len(sessions) == 0 {
 		return nil
-	case 1:
-		return s.setAgentLeadSessionTx(tx, agent, sessions[0].id)
-	default:
-		return s.askWhichLeadSessionQ(tx, agent, sessions)
 	}
+	if choice, ok := leadPinChoice(sessions); ok {
+		return s.setAgentLeadSessionTx(tx, agent, choice.id)
+	}
+	return s.askWhichLeadSessionQ(tx, agent, sessions)
 }
 
 // askWhichLeadSessionQ writes the CTO's one question about an Agent's lead

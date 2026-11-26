@@ -410,3 +410,71 @@ func TestReplaceOnlineLeadSessionMovesNameAndLeadRole(t *testing.T) {
 		t.Fatalf("StoreLeadMessage routed to %q (%v), want %q", msg.To, err, fresh)
 	}
 }
+
+// Replacing a live busy lead session through the owner/CTO session_change
+// replace path records replaced_by, moves the lead role, member reporting and
+// workers to the new session, and returns moved: true.
+func TestOwnerReplaceBusyLeadSessionMovesMembersAndWorkers(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, err := s.CreateNode("homelab", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddProjects(node, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "homelab-agent", Path: "/srv/homelab"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddArchitect("homelab-lead", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE repos SET lead_agent_id='homelab-lead' WHERE id='homelab-agent'`); err != nil {
+		t.Fatal(err)
+	}
+	oldLead, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "old-lead", Status: "busy",
+		Repo: protocol.RepoInfo{Root: "/srv/homelab", Project: "homelab-agent"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "opencode", NativeID: "w-1", Status: "busy",
+		Repo:   protocol.RepoInfo{Root: "/srv/homelab", Project: "homelab-agent"},
+		Worker: &protocol.WorkerInfo{ID: "w_homelab", Owner: oldLead, Project: "homelab-agent"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "member-1", Status: "idle",
+		Repo: protocol.RepoInfo{Root: "/srv/homelab", Project: "homelab-agent"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET agent_id='homelab-agent' WHERE id=?`, member); err != nil {
+		t.Fatal(err)
+	}
+	newLead, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "new-lead", Status: "idle",
+		Repo: protocol.RepoInfo{Root: "/srv/homelab", Project: "homelab-agent"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := s.ReplaceSessionForOwner(oldLead, newLead, "cto")
+	if err != nil || !res.Moved {
+		t.Fatalf("ReplaceSessionForOwner(busy lead): res=%+v err=%v, want moved=true", res, err)
+	}
+	oldView, ok, err := s.Agent(oldLead)
+	if err != nil || !ok || oldView.ReplacedBy != newLead || oldView.Online {
+		t.Fatalf("old lead after replace: %+v %v", oldView, err)
+	}
+	newView, ok, err := s.Agent(newLead)
+	if err != nil || !ok || newView.AgentID != "homelab-lead" || !newView.RepoLead || !newView.RepoLeadExplicit {
+		t.Fatalf("new lead after replace: %+v %v", newView, err)
+	}
+	if got := agentLeadSession(t, s, "homelab-lead"); got != newLead {
+		t.Fatalf("agents.lead_session = %q, want %q", got, newLead)
+	}
+	wView, ok, err := s.Agent(worker)
+	if err != nil || !ok || wView.Worker == nil || wView.Worker.Owner != newLead {
+		t.Fatalf("worker owner after replace: %+v %v", wView, err)
+	}
+	mView, ok, err := s.Agent(member)
+	if err != nil || !ok || mView.ReportsTo != "homelab-lead" {
+		t.Fatalf("member after replace: %+v %v", mView, err)
+	}
+}
