@@ -60,9 +60,37 @@ func (d *Daemon) loginPATH() string {
 }
 
 // workerSearchPATH is the PATH a worker's processes get: the daemon's PATH with
-// the entries of the login shell that it lacks.
+// the entries of the login shell that it lacks, then the per-user tool folders
+// that exist and are still missing.
 func (d *Daemon) workerSearchPATH() string {
-	return mergePATH(os.Getenv("PATH"), d.loginPATH())
+	return workerToolPATH(mergePATH(os.Getenv("PATH"), d.loginPATH()))
+}
+
+// workerToolDirs are the per-user tool folders a login profile can miss.
+// rustup installs cargo in ~/.cargo/bin but only adds it when the profile that
+// the login shell reads has run rustup's setup.
+var workerToolDirs = []string{
+	filepath.Join(".cargo", "bin"),
+	filepath.Join(".local", "bin"),
+	filepath.Join(".bun", "bin"),
+	filepath.Join("go", "bin"),
+}
+
+// workerToolPATH is path with the per-user tool folders that exist and that it
+// lacks, after its own entries. A folder that is not there is left out.
+func workerToolPATH(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || !filepath.IsAbs(home) {
+		return path
+	}
+	var dirs []string
+	for _, rel := range workerToolDirs {
+		dir := filepath.Join(home, rel)
+		if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
+			dirs = append(dirs, dir)
+		}
+	}
+	return mergePATH(path, strings.Join(dirs, string(os.PathListSeparator)))
 }
 
 // mergePATH is current with the entries of extra that it lacks, in order. The

@@ -38,6 +38,7 @@ func envWorker(t *testing.T, d *Daemon) *worker {
 }
 
 func TestWorkerPATHHasTheLoginShellPATH(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	_, counter := fakeLoginShell(t, "/opt/fake-homebrew/bin:/opt/fake-go/bin:/usr/bin")
 	t.Setenv("PATH", "/usr/bin:/bin")
 	d := commitTestDaemon(t)
@@ -55,11 +56,52 @@ func TestWorkerPATHHasTheLoginShellPATH(t *testing.T) {
 }
 
 func TestWorkerPATHKeepsTheDaemonPATHWhenTheLoginShellFails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	t.Setenv("PATH", "/usr/bin:/bin")
 	t.Setenv("SHELL", "/nonexistent/sh")
 	d := commitTestDaemon(t)
 	if got := d.workerToolEnv(envWorker(t, d))["PATH"]; got != "/usr/bin:/bin" {
 		t.Fatalf("PATH = %q", got)
+	}
+}
+
+// TestWorkerEnvHasThePerUserToolFolders covers the folders a login profile can
+// miss, such as rustup's ~/.cargo/bin. Only the folders that exist are added,
+// after the login shell's entries.
+func TestWorkerEnvHasThePerUserToolFolders(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("SHELL", "/nonexistent/sh")
+	cargo := filepath.Join(home, ".cargo", "bin")
+	goBin := filepath.Join(home, "go", "bin")
+	for _, dir := range []string{cargo, goBin} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d := commitTestDaemon(t)
+	got := d.workerToolEnv(envWorker(t, d))["PATH"]
+	if want := "/usr/bin:/bin:" + cargo + ":" + goBin; got != want {
+		t.Fatalf("PATH = %q, want %q", got, want)
+	}
+}
+
+// TestWorkerEnvKeepsAToolFolderOnce covers a tool folder that the login shell
+// already added: the worker PATH must not list it twice.
+func TestWorkerEnvKeepsAToolFolderOnce(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	local := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(local, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", "/usr/bin:"+local)
+	t.Setenv("SHELL", "/nonexistent/sh")
+	d := commitTestDaemon(t)
+	got := d.workerToolEnv(envWorker(t, d))["PATH"]
+	if want := "/usr/bin:" + local; got != want {
+		t.Fatalf("PATH = %q, want %q", got, want)
 	}
 }
 

@@ -4,9 +4,15 @@ import (
 	"context"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/niparis/agent-net/internal/harnesses"
 	"github.com/niparis/agent-net/internal/protocol"
 )
+
+// harnessCheckEvery is how often the daemon checks for a harness installed
+// after the last detection.
+const harnessCheckEvery = 5 * time.Minute
 
 // inventory returns the installed harnesses found so far and a counter that
 // grows with each new inventory. The list is nil until the first detection ends.
@@ -19,12 +25,77 @@ func (d *Daemon) inventory() ([]protocol.HarnessInfo, int) {
 	return append([]protocol.HarnessInfo{}, d.installed...), d.hgen
 }
 
-// harnessLoop detects the installed harnesses once at start and tells the
-// gateway. There is no periodic model scan: a model list is read from the
-// harness live when someone asks for one. Detection still runs when a harness
-// update check needs it (harness_update.go).
+// harnessLoop detects the installed harnesses at start and tells the gateway.
+// Full detection runs every harness's version and model probes, so after that
+// the loop only looks for a binary that was missing, and detects again when one
+// is found. Detection also runs when a harness update check needs it
+// (harness_update.go) and when a start asks for a harness that is not listed.
 func (d *Daemon) harnessLoop(ctx context.Context) {
 	d.refreshHarnessInventory(ctx)
+	every := d.cfg.HarnessCheckInterval
+	if every <= 0 {
+		every = harnessCheckEvery
+	}
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		d.harnessCheck(ctx)
+	}
+}
+
+// harnessCheck looks for a harness that detection did not list, with the same
+// lookup detection uses, and refreshes the inventory when one is found. The
+// lookup stats files only; it starts no harness.
+func (d *Daemon) harnessCheck(ctx context.Context) bool {
+	list, _ := d.inventory()
+	if list == nil {
+		return false // the first detection has not finished
+	}
+	have := make(map[string]bool, len(list))
+	for _, h := range list {
+		if h.Path != "" {
+			have[h.Name] = true
+		}
+	}
+	search := d.harnessSearch()
+	if search.LoginShellPATH == nil {
+		// The tick reuses the login PATH that the worker environment reads once
+		// per start, so a five minute check starts no shell.
+		search.LoginShellPATH = func(context.Context) string { return d.loginPATH() }
+	}
+	for _, name := range harnesses.Names {
+		if have[name] {
+			continue
+		}
+		if harnesses.Executable(ctx, name, search) != "" {
+			d.refreshHarnessInventory(ctx)
+			return true
+		}
+	}
+	return false
+}
+
+// harnessSearch is where the daemon looks up a harness without a full
+// detection, the same search detection uses.
+func (d *Daemon) harnessSearch() harnesses.Options {
+	if d.cfg.HarnessSearch != nil {
+		return *d.cfg.HarnessSearch
+	}
+	return harnesses.Options{}
+}
+
+func harnessPath(list []protocol.HarnessInfo, name string) string {
+	for _, h := range list {
+		if h.Name == name && h.Path != "" {
+			return h.Path
+		}
+	}
+	return ""
 }
 
 func (d *Daemon) refreshHarnessInventory(ctx context.Context) []protocol.HarnessInfo {

@@ -139,23 +139,21 @@ func (d *Daemon) workerWriteRootsThen(ctx context.Context, path string, then ...
 }
 
 // harnessBinary returns the path of an installed harness, from the inventory
-// or from the test overrides. When detection has not finished, or a run missed
-// the harness, it looks the harness up the same way detection does.
+// or from the test overrides. When a run missed the harness, it looks the
+// harness up the same way detection does. A harness found that way is detected
+// into the inventory, so later starts and the gateway see it without a restart.
 func (d *Daemon) harnessBinary(name string) (string, error) {
 	if p := d.cfg.HarnessPaths[name]; p != "" {
 		return p, nil
 	}
 	list, _ := d.inventory()
-	for _, h := range list {
-		if h.Name == name && h.Path != "" {
-			return h.Path, nil
+	if p := harnessPath(list, name); p != "" {
+		return p, nil
+	}
+	if p := harnesses.Locate(context.Background(), name, d.harnessSearch()); p != "" {
+		if list != nil {
+			d.refreshHarnessInventory(context.Background())
 		}
-	}
-	search := harnesses.Options{}
-	if d.cfg.HarnessSearch != nil {
-		search = *d.cfg.HarnessSearch
-	}
-	if p := harnesses.Locate(context.Background(), name, search); p != "" {
 		return p, nil
 	}
 	return "", fmt.Errorf("%s is not installed on this machine", name)

@@ -278,6 +278,10 @@ type Config struct {
 	ListModels func(ctx context.Context, harness string) ([]string, error)
 	// Harness update delays are configurable for tests; zero uses production defaults.
 	HarnessUpdateInitialDelay, HarnessUpdateInterval, HarnessUpdateRetryDelay, HarnessUpdateTimeout time.Duration
+	// HarnessCheckInterval is how often the daemon looks for a harness that
+	// is installed after start and missing from the inventory. Default: 5
+	// minutes.
+	HarnessCheckInterval time.Duration
 	// UsageSampler measures CPU and memory (see usage.go). Nil turns that off.
 	UsageSampler *usage.Sampler
 	// LoadProbe replaces the machine load that worker admission reads from
