@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -18,6 +19,9 @@ import (
 // worker then runs in it.
 func (d *Daemon) createWorktree(ctx context.Context, w *worker, requestedBase ...string) error {
 	main := w.path
+	// A config.lock git left behind blocks `git worktree add` and the branch
+	// upstream write that follows it.
+	d.removeStaleConfigLock(main)
 	ref := "HEAD"
 	requested := len(requestedBase) > 0 && requestedBase[0] != ""
 	if requested {
@@ -97,6 +101,25 @@ func (d *Daemon) createWorktree(ctx context.Context, w *worker, requestedBase ..
 	}
 	d.wmu.Unlock()
 	return nil
+}
+
+// staleConfigLockAge is how long an empty .git/config.lock must sit before the
+// daemon treats it as left behind. git holds the lock for milliseconds.
+const staleConfigLockAge = 10 * time.Second
+
+// removeStaleConfigLock removes an empty shared-repository config.lock that
+// git left behind, which blocks worktree creation and branch config writes. A
+// lock that holds content or is younger than staleConfigLockAge may belong to
+// a running git process and is left alone.
+func (d *Daemon) removeStaleConfigLock(main string) {
+	path := filepath.Join(main, ".git", "config.lock")
+	info, err := os.Stat(path)
+	if err != nil || info.Size() != 0 || time.Since(info.ModTime()) <= staleConfigLockAge {
+		return
+	}
+	if err := os.Remove(path); err == nil {
+		d.Logf("worker.git stale config.lock removed path=%s", path)
+	}
 }
 
 // finishWorktree keeps ended worktrees until the next cleanup check.
