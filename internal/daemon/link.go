@@ -478,6 +478,8 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	go func() { defer d.wg.Done(); d.keepOutbox(rctx, stalled) }()
 	d.flushWorkerAssessments(rctx)
 	d.flushStartOutcomes(rctx)
+	d.wg.Add(1)
+	go func() { defer d.wg.Done(); d.refillOwnerWords(rctx) }()
 	d.reportWorkerEnds(rctx)
 	d.cleanupWorkers(rctx)
 	go d.autoUpgrade(rctx) // not tracked: it may stop the daemon itself to restart
