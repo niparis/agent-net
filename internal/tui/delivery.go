@@ -96,9 +96,9 @@ const deliveryRefreshEvery = 30 * time.Second
 // changes; a change on one is shown within this time.
 const deliveryFullReadEvery = 2 * time.Minute
 
-// inboxRefreshEvery is how often the Inbox lists are checked on a tab that
-// does not show them, so its count is never stale for long.
-const inboxRefreshEvery = 10 * time.Second
+// proposalsRefreshEvery is how often the CTO box lists are checked on a tab
+// that does not show them, so their count is never stale for long.
+const proposalsRefreshEvery = 10 * time.Second
 
 // frictionRefreshEvery is how often the Work tab reads the friction reports.
 // They arrive when a worker hands back, so a minute is enough.

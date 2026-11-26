@@ -656,7 +656,7 @@ type nudgeStatsMsg struct {
 // It is read when the tab opens, not on every refresh: the lazy follow pass
 // writes only the rows that just crossed their window.
 func (m Model) loadNudgeStats() tea.Cmd {
-	src, ok := m.src.(inboxCaller)
+	src, ok := m.src.(localCaller)
 	return func() tea.Msg {
 		if !ok {
 			return nudgeStatsMsg{err: fmt.Errorf("unavailable")}
@@ -676,7 +676,7 @@ func (m Model) loadNudgeStats() tea.Cmd {
 }
 
 func (m Model) loadSettingValues() tea.Cmd {
-	src, ok := m.src.(inboxCaller)
+	src, ok := m.src.(localCaller)
 	repo := m.settingRepo
 	return func() tea.Msg {
 		if !ok {
@@ -764,7 +764,7 @@ func (m Model) startSettingValueEdit(i int) (Model, tea.Cmd) {
 		m.fail("Edit the pipeline rule settings and owner rows below.")
 		return m, nil
 	}
-	if _, ok := m.src.(inboxCaller); !ok {
+	if _, ok := m.src.(localCaller); !ok {
 		m.fail("Settings unavailable.")
 		return m, nil
 	}
@@ -789,7 +789,7 @@ func (m Model) settingValueKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		row := m.settingValues[m.settingEdit]
-		src, ok := m.src.(inboxCaller)
+		src, ok := m.src.(localCaller)
 		if !ok {
 			m.fail("Settings unavailable.")
 			return m, nil
@@ -871,7 +871,7 @@ func (m Model) settingUndoKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeNormal
 		return m, nil
 	case "submit":
-		src, ok := m.src.(inboxCaller)
+		src, ok := m.src.(localCaller)
 		if !ok {
 			m.mode = modeNormal
 			m.fail("Settings unavailable.")

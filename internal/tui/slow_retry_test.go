@@ -12,8 +12,8 @@ import (
 
 // A load that ends by its deadline keeps the last changes and asks once more in
 // the background. A second timeout does not loop: the regular refresh goes on.
-func TestDeskSlowChangesLoadKeepsTheChangesAndRetries(t *testing.T) {
-	m := deskModel(t, 120, 40)
+func TestSlowChangesLoadKeepsTheChangesAndRetries(t *testing.T) {
+	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 120, 40))
 	changes := len(m.delivery.changes)
 	if changes == 0 {
 		t.Fatal("fixture has no changes")
@@ -120,10 +120,10 @@ func TestModelTellsTheSourceWhichScreenIsOn(t *testing.T) {
 	if got := src.screens[len(src.screens)-1]; got != "sessions" {
 		t.Fatalf("first screen = %q", got)
 	}
-	m.tab = inboxTab
+	m.tab = messagesTab
 	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 30})
-	if got := src.screens[len(src.screens)-1]; got != "desk" {
-		t.Fatalf("desk screen = %q", got)
+	if got := src.screens[len(src.screens)-1]; got != "messages" {
+		t.Fatalf("messages screen = %q", got)
 	}
 	m.tab = sessionsTab
 	m.cto, m.focus = &ctoState{generation: 1}, focusCTO

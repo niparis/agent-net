@@ -25,15 +25,13 @@ type screenInfo struct {
 
 // The icons are fixed markup of this package, never data.
 var screens = []screenInfo{
-	{ID: "desk", Name: "Desk", Path: "/", Key: "1", Sub: "What needs you, and the log", Ready: true,
-		Icon: `<path d="M2 4h12v8H2z"/><path d="M2 7h12"/>`},
-	{ID: "sessions", Name: "Sessions", Path: "/sessions", Key: "2", Sub: "Every agent session on every machine", Ready: true,
+	{ID: "sessions", Name: "Sessions", Path: "/sessions", Key: "1", Sub: "Every agent session on every machine", Ready: true,
 		Icon: `<rect x="2" y="2.5" width="12" height="4" rx="1"/><rect x="2" y="9.5" width="12" height="4" rx="1"/>`},
-	{ID: "graph", Name: "Graph", Path: "/graph", Key: "3", Sub: "Teams, leads and who talks to whom",
+	{ID: "graph", Name: "Graph", Path: "/graph", Key: "2", Sub: "Teams, leads and who talks to whom",
 		Icon: `<circle cx="4" cy="4" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="7" cy="12" r="2"/><path d="M5.6 5 6.5 10M6 4.3l4 .5M10.6 6.4 8.4 10.6"/>`},
-	{ID: "changes", Name: "Changes", Path: "/changes", Key: "4", Sub: "Worker changes on their way from brief to verified",
+	{ID: "changes", Name: "Changes", Path: "/changes", Key: "3", Sub: "Worker changes on their way from brief to verified",
 		Icon: `<circle cx="4" cy="4" r="1.8"/><circle cx="4" cy="12" r="1.8"/><circle cx="12" cy="8" r="1.8"/><path d="M4 5.8v4.4M5.6 4.6c4 0 4.6 1.4 4.6 3.4"/>`},
-	{ID: "messages", Name: "Messages", Path: "/messages", Key: "5", Sub: "Conversations between your agents",
+	{ID: "messages", Name: "Messages", Path: "/messages", Key: "4", Sub: "Conversations between your agents",
 		Icon: `<path d="M2 3h12v8H7l-3 2.5V11H2z"/>`},
 }
 
@@ -46,14 +44,12 @@ func screenByID(id string) screenInfo {
 	return screens[0]
 }
 
-// page is everything one render needs. Desk and Sessions are set for their own
-// screen only.
+// page is everything one render needs. A screen's own view is set for it only.
 type page struct {
 	Screen       screenInfo
 	Screens      []screenInfo
 	Error        string
 	Connected    bool
-	AskCount     int
 	Live         string
 	EventsURL    string
 	CTOOpen      bool
@@ -61,7 +57,6 @@ type page struct {
 	CTOBack      string
 	CTOEventsURL string
 	CTO          *ctoView
-	Desk         *deskView
 	Sessions     *sessionsView
 	Changes      *changesView
 	Messages     *messagesView
@@ -121,23 +116,7 @@ func (q query) ctoEvents(s screenInfo) string {
 	return "/events?" + v.Encode()
 }
 
-// ---- Desk ----
-
-type askView struct {
-	ID, Kind, From, Age          string
-	Question, Reason, Detail     string
-	Recommendation, WhyYou       string
-	Priority                     int
-	Options                      []string
-	Form                         string // inbox, held, outcome, send or tui
-	TargetID                     string // the id the form posts
-	Approve, Refuse, Dismiss     bool
-	HeldAlways, CanText, CanMark bool
-	Hint                         string
-	HeldTo                       string // who a held request would reach
-	RefusalNote                  string // who refused and why, above the choices
-	LetStand, Overrule           string // what the two outcome answers do
-}
+// ---- Change rows ----
 
 type changeRow struct {
 	ID, Title, Project, Status, Age string
@@ -145,18 +124,6 @@ type changeRow struct {
 	Marks                           []string
 	Aria                            string
 	NeedsYou, Selected              bool
-}
-
-type logRow struct {
-	Source, Text, Age string
-}
-
-type deskView struct {
-	// ChiefLine is "chief of staff offline: <reason>" when the chief cannot
-	// work, and empty when it can or none is set.
-	ChiefLine string
-	Asks      []askView
-	Log       []logRow
 }
 
 // ---- Sessions ----
@@ -248,13 +215,8 @@ func (a *app) load(ctx context.Context, screen string, q query) page {
 	if raw, err := a.read(ctx, protocol.OpCounts, nil); err == nil {
 		_ = json.Unmarshal(raw, &counts)
 	}
-	p.AskCount = counts.ConsoleAsks
 	p.Live = fmt.Sprintf("live · %s · %s", plural(counts.MachinesOnline, "machine"), plural(counts.ConsoleSessions, "session"))
 	switch p.Screen.ID {
-	case "desk":
-		asks := a.asks(ctx)
-		p.AskCount = len(asks)
-		p.Desk = a.desk(ctx, asks, snap)
 	case "sessions":
 		p.Sessions = a.sessions(ctx, snap, q.Selected)
 	case "changes":
@@ -300,68 +262,6 @@ func firstNonEmpty(v ...string) string {
 	return ""
 }
 
-// ---- asks ----
-
-// askRank orders the asks like the TUI Desk: what needs an answer first, then
-// what proposes a change, then what only informs.
-func askRank(a protocol.Ask) int {
-	switch a.Kind {
-	case protocol.AskKindSignIn:
-		return 0
-	case protocol.AskKindQuestion:
-		return 0
-	case protocol.AskKindApproval, protocol.AskKindPermission:
-		return 1
-	case protocol.AskKindStep:
-		return 2
-	case protocol.AskKindWaiting:
-		return 3
-	case protocol.AskKindHeld:
-		return 4
-	case protocol.AskKindRejection, protocol.AskKindEscalation:
-		return 5
-	case protocol.AskKindProposal:
-		return 6
-	case protocol.AskKindDraft, protocol.AskKindLearned:
-		return 7
-	case protocol.AskKindCheck, protocol.AskKindStall:
-		return 8
-	case protocol.AskKindBrief:
-		return 8
-	}
-	return 9
-}
-
-// asks reads the one list of asks the Desk shows (decision 0090). An ask that
-// waits on someone else, or of a kind the Desk does not show, is left out.
-func (a *app) asks(ctx context.Context) []protocol.Ask {
-	raw, err := a.read(ctx, protocol.OpAsksList, nil)
-	if err != nil {
-		return nil
-	}
-	var v protocol.AsksResult
-	if json.Unmarshal(raw, &v) != nil {
-		return nil
-	}
-	var out []protocol.Ask
-	for _, ask := range v.Asks {
-		if ask.State == protocol.AskWithSomeone || askRank(ask) == 9 {
-			continue
-		}
-		out = append(out, ask)
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if ri, rj := askRank(out[i]), askRank(out[j]); ri != rj {
-			return ri < rj
-		}
-		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
-			return out[i].CreatedAt.After(out[j].CreatedAt)
-		}
-		return out[i].ID < out[j].ID
-	})
-	return out
-}
-
 func firstLine(s string) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
 		s = s[:i]
@@ -369,132 +269,7 @@ func firstLine(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// shortText keeps a label to n runes so a button stays readable.
-func shortText(s string, n int) string {
-	s = strings.TrimSpace(s)
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	return strings.TrimSpace(string(r[:n])) + "..."
-}
-
-// askView makes the card of one ask and says which answers the web offers.
-// Kinds that need more than an answer (a CTO proposal, a learned suggestion)
-// are answered in the TUI.
-func askCard(a protocol.Ask, now time.Time, names map[string]string) askView {
-	v := askView{ID: a.ID, Kind: a.Kind, From: firstNonEmpty(a.From, a.FromSession, "unknown"), Age: ago(a.CreatedAt, now),
-		Question: a.Question, Recommendation: a.Recommendation, WhyYou: a.WhyYou, Priority: a.Priority, Options: a.Options,
-		TargetID: a.ID, CanMark: a.ID != ""}
-	switch a.Kind {
-	case protocol.AskKindHeld:
-		v.Kind = "held request"
-		v.HeldTo = firstNonEmpty(names[a.AboutID], "the other agent")
-		v.Question = "A request to " + v.HeldTo + " is held for your approval."
-		v.Detail = a.Detail
-		v.Form, v.TargetID, v.Approve, v.Refuse, v.HeldAlways = "held", a.MessageID, true, true, true
-	case protocol.AskKindRejection, protocol.AskKindEscalation:
-		request, reason := a.Question, ""
-		if first, rest, ok := strings.Cut(a.Question, "\nReason: "); ok {
-			request, reason = strings.TrimPrefix(first, "Request: "), rest
-		}
-		party := firstNonEmpty(a.Node, "the requester")
-		request = firstNonEmpty(shortText(request, 70), "the request")
-		refuser := firstNonEmpty(a.From, "The other agent")
-		v.RefusalNote = refuser + " refused this request"
-		keep := "Keep the refusal: " + party + " does not get " + request
-		if a.Kind == protocol.AskKindEscalation {
-			v.RefusalNote = refuser + " escalated this request"
-			keep = "Keep the escalation: " + party + " does not get " + request
-		}
-		if reason != "" {
-			v.RefusalNote += ": \"" + reason + "\""
-		}
-		v.LetStand = keep
-		v.Overrule = "Overrule: " + party + " gets " + request
-		v.Question, v.Reason = request, reason
-		v.Form, v.TargetID = "outcome", a.MessageID
-	case protocol.AskKindWaiting:
-		lead := "waits for you"
-		if a.Detail == protocol.WaitingPermission {
-			lead = "waits for your approval"
-		}
-		if text := firstLine(a.Question); text != "" {
-			lead += ": " + text
-		}
-		v.Question = lead
-		v.Form, v.TargetID, v.CanText = "send", a.FromSession, a.FromSession != ""
-		if !v.CanText {
-			v.Form, v.Hint = "tui", "Answer from the TUI."
-		}
-	case protocol.AskKindPermission:
-		// The owner's one-click allow of exact Claude Code rules. Nothing is
-		// written until this answer reaches the gateway.
-		v.Form, v.Dismiss, v.Options = "inbox", true, nil
-		v.Approve, v.Refuse = true, true
-		v.Question, v.Detail = firstLine(a.Question), a.Detail
-	case protocol.AskKindApproval, protocol.AskKindQuestion:
-		v.Form, v.Dismiss, v.CanText = "inbox", true, true
-		v.Approve, v.Refuse = true, true
-		v.Detail = a.Detail
-		switch {
-		case a.Ref == "apps-public-consent":
-			// Approving needs the owner's consent page, which the TUI opens.
-			v.Approve, v.Refuse, v.CanText, v.Options, v.Detail = false, false, false, nil, ""
-			v.Hint = "Approve from the TUI."
-		case a.Delivery != nil && len(a.Delivery.ReportFields) != 0:
-			v.Approve, v.CanText, v.Options = false, false, nil
-			v.Hint = "Give the evidence from the TUI."
-		}
-	case protocol.AskKindCheck, protocol.AskKindStall:
-		v.Form, v.Dismiss = "inbox", true
-		v.Detail = a.Detail
-	case protocol.AskKindBrief:
-		v.Kind = "brief"
-		v.Form, v.Dismiss, v.CanMark = "inbox", true, false
-		v.Detail = a.Detail
-	case protocol.AskKindSignIn:
-		// The owner TUI is where the local browser callback can be received.
-		v.Kind, v.Form, v.TargetID = "sign in", "signin", a.ID
-		v.Detail = a.Detail
-		v.Hint = "Opens sign-in in an owner TUI. Open the link in Firefox, not Safari."
-	default:
-		v.Form, v.Hint = "tui", "Answer from the TUI."
-		v.Detail = a.Detail
-	}
-	return v
-}
-
-// ---- Desk ----
-
 var deliveryStepNames = []string{"accept", "review", "test", "approve", "merge", "test after merge", "release", "deploy", "verify"}
-
-func (a *app) desk(ctx context.Context, asks []protocol.Ask, snap operator.Snapshot) *deskView {
-	now := time.Now()
-	d := &deskView{}
-	names := map[string]string{}
-	for _, ag := range snap.Agents {
-		names[ag.SessionID] = sessionName(ag)
-	}
-	for _, ask := range asks {
-		d.Asks = append(d.Asks, askCard(ask, now, names))
-	}
-	if raw, err := a.read(ctx, protocol.OpChiefGet, nil); err == nil {
-		var st protocol.ChiefStatus
-		if json.Unmarshal(raw, &st) == nil && st.Down != "" {
-			d.ChiefLine = firstLine(protocol.ChiefOfflineLine(st.Down))
-		}
-	}
-	if raw, err := a.read(ctx, protocol.OpDeskLog, protocol.DeskLogQuery{Limit: 20}); err == nil {
-		var v protocol.DeskLogResult
-		if json.Unmarshal(raw, &v) == nil {
-			for _, e := range v.Entries {
-				d.Log = append(d.Log, logRow{Source: e.Source, Text: firstLine(e.Text), Age: ago(e.At, now)})
-			}
-		}
-	}
-	return d
-}
 
 func stepOwnerLabel(o protocol.StepOwner) string {
 	if o.Kind == protocol.OwnerNode {

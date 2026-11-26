@@ -65,25 +65,9 @@ type Model struct {
 	proposalConfirmScroll int
 	proposalHistory       bool
 	proposalHistoryIndex  int
-	asks                  []protocol.Ask
-	deskLog               []protocol.DeskLogEntry
-	deskLogOpen           bool
-	// The chief of staff (decision 0114, part 2): its status, the digest of the
-	// Desk, the owner's last key and the mark whose why is being typed.
+	// The chief of staff (decision 0114, part 2): its status.
 	chief                               protocol.ChiefStatus
 	chiefLoaded                         bool
-	digest                              *deskDigest
-	lastInput                           time.Time
-	asksVersion                         int64
-	deskCache                           *deskCacheState
-	deskPending                         *deskMark
-	inboxDetail, inboxEditing           bool
-	inboxDeliveryID                     string
-	inboxIndex, inboxDetailScroll       int
-	inboxDetailOption                   int
-	inboxError                          string
-	inboxNote                           string
-	inboxInput                          textinput.Model
 	cto                                 *ctoState
 	ctoGeneration                       int
 	onboarding                          protocol.Onboarding
@@ -174,14 +158,12 @@ type Model struct {
 	dataVersions   map[string]uint64
 	dataVersionsAt map[string]time.Time
 	topicView      string
-	// inboxSeen is the Snapshot signature the Inbox and proposals were last
-	// fetched at. A different signature, or the Inbox or CTO pane on screen,
-	// asks for them again. inboxAt is when they were last asked for away from
-	// that screen, so the count cannot stay stale.
-	inboxSeen string
-	inboxAt   time.Time
-	// proposalsAt is when the proposals were last asked for.
-	proposalsAt time.Time
+	// proposalsSeen is the Snapshot signature the proposals and the chief's
+	// status were last fetched at. A different signature, or the CTO box on
+	// screen, asks for them again. proposalsAt is when they were last asked
+	// for away from that box, so the CTO count cannot stay stale.
+	proposalsSeen string
+	proposalsAt   time.Time
 
 	// Stored conversations for the Messages tab. The gateway answers a page;
 	// View only reads convs, never calls the source.
@@ -315,17 +297,13 @@ func New(src Source) Model {
 	m := Model{src: src, loc: time.Local, now: time.Now, home: localHomeDir(), width: 80, height: 24, feed: newFeed(), input: ti, fetching: true, activeOnly: true,
 		top: map[string]*topEntry{}, hiddenSessions: map[string]bool{}, hiddenNodes: map[string]bool{},
 		convDetail: map[string]convDetail{}, convDetailLoading: map[string]bool{},
-		graphPixel: &graphPixelState{imageID: graphview.ImageID},
-		deskCache: &deskCacheState{
-			rowLines: make(map[inboxRowLineKey]string),
-			whyLines: make(map[inboxWhyLineKey]string),
-		}}
+		graphPixel: &graphPixelState{imageID: graphview.ImageID}}
 	if _, ok := src.(interface {
 		SubscribeTopics(context.Context) (*operator.TopicSubscription, error)
 	}); ok {
 		m.topicSubscribing = true
 	}
-	if c, ok := src.(inboxCaller); ok {
+	if c, ok := src.(localCaller); ok {
 		m.deliverySrc = newGatewayDelivery(c.Call, time.Now)
 	}
 	m.ctoGeneration = 1
@@ -360,13 +338,8 @@ type fetchedMsg struct {
 	proposals       []protocol.CTOProposal
 	proposalsOK     bool
 	proposalsAsked  bool // the proposals were asked for this refresh
-	asks            []protocol.Ask
-	inboxOK         bool
 	chief           protocol.ChiefStatus
 	chiefOK         bool
-	deskLog         []protocol.DeskLogEntry
-	deskLogOK       bool
-	listsAsked      bool // the Inbox and proposals were asked for this refresh
 	snap            Snapshot
 	err             error
 	topicVersions   map[string]uint64
@@ -492,7 +465,7 @@ func (m Model) topicRefreshDue() bool {
 }
 
 func (m Model) topicViewKey() string {
-	return fmt.Sprintf("%d:%d:%t:%t:%t", m.tab, m.focus, m.workersLog, m.deskLogOpen, m.mapOn)
+	return fmt.Sprintf("%d:%d:%t:%t", m.tab, m.focus, m.workersLog, m.mapOn)
 }
 
 // tickDelay is RefreshEvery; tests shorten it.
@@ -547,9 +520,8 @@ func (m Model) fetchCmd() tea.Cmd {
 	askUsage := full && m.usageDue() || topics[protocol.TopicUsage]
 	askCounts := askUsage && !m.usage.noCounts
 	askU := askUsage && m.usage.unavailable == ""
-	inboxOnScreen := m.tab == inboxTab || m.focus == focusCTO
-	inboxSeen, inboxAt, proposalsAt := m.inboxSeen, m.inboxAt, m.proposalsAt
-	deskLogOpen := m.deskLogOpen
+	ctoOnScreen := m.focus == focusCTO
+	proposalsSeen, proposalsAt := m.proposalsSeen, m.proposalsAt
 	wantWorkerLog := m.tab == quotasTab && m.workersLog
 	wantPicker := m.tab == quotasTab && !m.workersLog && m.pickerWanted
 	wantWeekly := m.tab == quotasTab && m.qualityDetail && (m.weeklyWanted || !m.weeklyLoaded)
@@ -644,7 +616,7 @@ func (m Model) fetchCmd() tea.Cmd {
 			})
 		}
 
-		if caller, ok := src.(inboxCaller); ok && !onboardingPending && (wants(protocol.TopicInbox) || wants(protocol.TopicWorkers)) {
+		if caller, ok := src.(localCaller); ok && !onboardingPending && (wants(protocol.TopicInbox) || wants(protocol.TopicWorkers)) {
 			res.onboardingAsked, res.onboardingRevision = true, onboardingRevision
 			group(func(ctx context.Context) {
 				var raw json.RawMessage
@@ -669,34 +641,24 @@ func (m Model) fetchCmd() tea.Cmd {
 				}
 			})
 		}
-		// The list is needed at once on the screen that shows it, or when the
-		// Snapshot says that what waits for the owner changed. Away from that
-		// screen it is still checked now and then, because gateway items and
-		// proposals made on another machine do not change the Snapshot.
+		// The CTO box needs the proposals at once while it is on screen, or
+		// when the Snapshot says its count changed. Away from that box the
+		// list is checked now and then, because a proposal made on another
+		// machine does not change this Snapshot.
 		//
 		// The gateway's Inbox topic moves with every session report, as the
 		// agents topic does, so it is no reason to ask for the proposals: they
 		// are the machines' own, and each ask goes to every online machine. A
 		// proposal on this machine changes the count in the Snapshot, and one
 		// on another machine is found by the wait.
-		markerMoved := inboxMarkerOf(res.snap) != inboxSeen
+		markerMoved := proposalsMarkerOf(res.snap) != proposalsSeen
 		listsWanted := wants(protocol.TopicInbox) || wants(protocol.TopicAgents) || wants(protocol.TopicLearned)
-		c, ok := src.(inboxCaller)
-		if ok && listsWanted && (markerMoved || res.at.Sub(proposalsAt) >= inboxRefreshEvery || (inboxOnScreen && full)) {
+		c, ok := src.(localCaller)
+		if ok && listsWanted && (markerMoved || res.at.Sub(proposalsAt) >= proposalsRefreshEvery || (ctoOnScreen && full)) {
 			res.proposalsAsked = true
 			group(func(ctx context.Context) {
 				if raw, err := c.Call(ctx, protocol.OpProposalList, nil); err == nil && json.Unmarshal(raw, &res.proposals) == nil {
 					res.proposalsOK = true
-				}
-			})
-		}
-		if ok && listsWanted && (markerMoved || res.at.Sub(inboxAt) >= inboxRefreshEvery || topics[protocol.TopicInbox] || (inboxOnScreen && full)) {
-			res.listsAsked = true
-			group(func(ctx context.Context) {
-				var data protocol.AsksResult
-				raw, err := c.Call(ctx, protocol.OpAsksList, nil)
-				if err == nil && json.Unmarshal(raw, &data) == nil {
-					res.asks, res.inboxOK = data.Asks, true
 				}
 			})
 			group(func(ctx context.Context) {
@@ -705,15 +667,6 @@ func (m Model) fetchCmd() tea.Cmd {
 					res.chief, res.chiefOK = status, true
 				}
 			})
-			if deskLogOpen {
-				group(func(ctx context.Context) {
-					var log protocol.DeskLogResult
-					raw, err := c.Call(ctx, protocol.OpDeskLog, protocol.DeskLogQuery{Limit: deskLogShown})
-					if err == nil && json.Unmarshal(raw, &log) == nil {
-						res.deskLog, res.deskLogOK = log.Entries, true
-					}
-				})
-			}
 		}
 		if !skipFeed && wants(protocol.TopicChanges) {
 			limit := 100
@@ -737,22 +690,17 @@ func (m Model) fetchCmd() tea.Cmd {
 	}
 }
 
-// inboxMarkerOf describes what the Snapshot says waits for the owner. It is a
-// change marker, not the list itself: when it differs the Inbox and proposals
-// are fetched again, even on a tab that does not show them.
-func inboxMarkerOf(s Snapshot) string {
+// proposalsMarkerOf describes what the Snapshot says about open proposals and
+// learned suggestions. It is a change marker, not the list itself: when it
+// differs the proposals are fetched again, even on a tab that does not show
+// the CTO box.
+func proposalsMarkerOf(s Snapshot) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "p%d;", s.ProposalCount)
 	for _, learned := range s.Learned {
 		if learned.Status == "pending" && learned.Severity == "major" {
 			fmt.Fprintf(&b, "l%d;", learned.ID)
 		}
-	}
-	for _, a := range s.Agents {
-		if a.Waiting == nil || a.Worker != nil || protocol.IsOwner(a.Harness) {
-			continue
-		}
-		fmt.Fprintf(&b, "w%s:%d:%s;", a.SessionID, a.Waiting.Since, a.Waiting.Text)
 	}
 	return b.String()
 }
@@ -1113,59 +1061,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case deskDigestMsg:
-		m.onDeskDigest(msg)
-		return m, nil
-	case deskAskMsg:
-		return m.onDeskAsk(msg), nil
-	case deskLogMsg:
-		if msg.err == nil {
-			m.deskLog = msg.entries
-		}
-		return m, nil
-	case askDiscussMsg:
-		return m.onAskDiscuss(msg)
-	case deskUndoneMsg:
-		m.say("Undone.")
-		for i := range m.deskLog {
-			if m.deskLog[i].ID == msg.id {
-				m.deskLog[i].Options = nil
-				m.deskLog[i].Text = "Undone: " + m.deskLog[i].Text
-			}
-		}
-		return m, m.deskLogCmd()
-	case inboxAnswerMsg:
-		switch {
-		case msg.err == nil:
-			m.inboxDetail, m.inboxDetailOption = false, 0
-			m.inboxError, m.inboxNote = "", ""
-			m.dropInboxItem(msg.id)
-		case inboxGone(msg.err):
-			// The item left the gateway while the row waited. Keep the list
-			// honest: drop the row and say it is gone, not the raw error.
-			m.inboxDetail, m.inboxDetailOption = false, 0
-			m.inboxError = ""
-			m.inboxNote = "already gone"
-			m.dropInboxItem(msg.id)
-		default:
-			m.inboxError = sanitize(msg.err.Error())
-			m.inboxNote = ""
-		}
-		return m, nil
-	case inboxSignInMsg:
-		if msg.err != nil {
-			m.failErr(msg.err, "Cannot open sign-in: "+explain(msg.err))
-			return m, nil
-		}
-		if msg.plan.OpenedHerdr {
-			m.say(sanitize(msg.plan.Note))
-			return m, nil
-		}
-		if len(msg.plan.Argv) == 0 {
-			m.fail(sanitize(firstNonEmpty(msg.plan.Note, "The sign-in pane could not be opened.")))
-			return m, nil
-		}
-		return m.onEnter(enterMsg{name: msg.name, plan: msg.plan})
 	case signInCompleteMsg:
 		if msg.err != nil {
 			m.fail("Sign-in could not finish: " + sanitize(msg.err.Error()))
@@ -1202,18 +1097,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.onboarding, m.onboardingLoaded = msg.onboarding, true
 		}
 		before := m.onboardingStep().id
-		if msg.inboxOK {
-			m.asks = msg.asks
-			m.asksVersion++
-		}
 		if msg.chiefOK {
 			m.chief, m.chiefLoaded = msg.chief, true
-		}
-		if msg.inboxOK {
-			m.inboxIndex = min(max(m.inboxIndex, 0), max(m.deskRowCount()-1, 0))
-		}
-		if msg.deskLogOK {
-			m.deskLog = msg.deskLog
 		}
 		m.fetching = false
 		if msg.err == nil && msg.snap.Connected {
@@ -1293,10 +1178,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if msg.err == nil && msg.snap.Connected {
-			m.inboxSeen = inboxMarkerOf(m.snap)
-		}
-		if msg.listsAsked {
-			m.inboxAt = msg.at
+			m.proposalsSeen = proposalsMarkerOf(m.snap)
 		}
 		if msg.proposalsAsked {
 			m.proposalsAt = msg.at
@@ -1506,9 +1388,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.frozenOrder[a.SessionID] = i
 		}
 		m.orderFrozenUntil = m.now().Add(3 * time.Second)
-		digest := m.deskDigestStart()
 		next, cmd := m.key(msg)
-		cmd = tea.Batch(cmd, digest)
 		if changed, ok := next.(Model); ok && changed.tab == messagesTab && m.tab != messagesTab && changed.onboardingHasPeerThread() {
 			var save tea.Cmd
 			changed, save = changed.onboardingComplete("talk")
@@ -1949,12 +1829,6 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if i == sessionsTab {
 				m.sessionCell = 0
 			}
-			if i == inboxTab {
-				m.inboxDetail, m.inboxDetailOption, m.inboxEditing = false, 0, false
-				m.delivery.detail = false
-				m.inboxIndex = min(max(m.inboxIndex, 0), max(m.deskRowCount()-1, 0))
-				return m, nil
-			}
 			if i == settingsTab {
 				m.settingsRow = 0
 				m.apps = appsForm{loading: true}
@@ -2050,10 +1924,6 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.tab == inboxTab {
-		return m.inboxTabKey(k)
-	}
-
 	context := contextSessions
 	if m.tab == messagesTab {
 		context = contextMessages
@@ -2678,15 +2548,7 @@ func (m Model) sessionNeedsOwner(a protocol.AgentView) bool {
 }
 
 func (m Model) sessionHasOwnerRequest(a protocol.AgentView) bool {
-	if a.Status == "needs you" || a.Status == "needs_you" || a.Worker == nil && a.Waiting != nil {
-		return true
-	}
-	for _, ask := range m.asks {
-		if ask.FromSession == a.SessionID && ask.State != protocol.AskWithSomeone && (ask.Kind == protocol.AskKindQuestion || ask.Kind == protocol.AskKindApproval || ask.Kind == protocol.AskKindWaiting) {
-			return true
-		}
-	}
-	return false
+	return a.Status == "needs you" || a.Status == "needs_you" || a.Worker == nil && a.Waiting != nil
 }
 
 func (m *Model) toggleSessionTrees(all bool) {
@@ -2955,9 +2817,6 @@ func (m *Model) fixScroll() {
 
 // applyCTOUI applies a CTO request or a daemon notice from the local channel.
 func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
-	if q.SignInAskID != "" {
-		return m, m.inboxSignIn(inboxRow{ask: protocol.Ask{ID: q.SignInAskID}})
-	}
 	if q.EnterSession != "" {
 		if q.EnterCTO {
 			return m.openCTO(q.EnterSession)

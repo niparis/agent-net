@@ -90,9 +90,6 @@ func TestWorkerWaitingDoesNotNeedOwner(t *testing.T) {
 	m := newModel(80, 24)
 	a := protocol.AgentView{SessionID: "s_worker", Harness: "opencode", Online: true, Status: "busy", Worker: &protocol.WorkerInfo{}, Waiting: &protocol.Waiting{Kind: protocol.WaitingQuestion, Text: "Blocked"}}
 	m.snap.Agents = []protocol.AgentView{a}
-	if got := m.inboxRows(); len(got) != 0 {
-		t.Fatalf("worker in Inbox: %+v", got)
-	}
 	if got := m.statusCell(a); got == "needs you" {
 		t.Fatal("worker status needs you")
 	}
@@ -116,99 +113,5 @@ func TestWorkerWaitingScreen(t *testing.T) {
 			}
 			golden(t, tc.name, m.testView())
 		})
-	}
-}
-
-func TestCheckInboxItemAppearsInInbox(t *testing.T) {
-	m := newModel(100, 30)
-	m.snap.Agents = []protocol.AgentView{agent("s_check", "n_mac", "test-host", "pi", "checker", nil)}
-	m.asks = askItems([]protocol.InboxItem{{ID: "i_check", Kind: "check", SessionID: "s_check", Text: "checker stopped with work left: write the docs", Status: "open", CreatedAt: t0}})
-	rows := m.inboxRows()
-	if len(rows) != 1 || !strings.Contains(rows[0].text, "stopped with work left") {
-		t.Fatalf("check row = %+v", rows)
-	}
-}
-
-func TestInboxRowsFollowTheFilter(t *testing.T) {
-	m := newModel(100, 30)
-	for i := range m.snap.Agents {
-		switch m.snap.Agents[i].SessionID {
-		case "s_0000000000000002":
-			waiting(&m.snap.Agents[i], -12*time.Minute, protocol.WaitingQuestion, "Merge tenebrae-nexus/truenas-stacks #817?")
-		case "s_0000000000000004":
-			waiting(&m.snap.Agents[i], -3*time.Minute, protocol.WaitingPermission, "Bash(git push origin main)")
-		}
-	}
-	m = withWaitingAsks(m)
-	if got := len(m.inboxRows()); got != 2 {
-		t.Fatalf("inbox has %d rows, want 2", got)
-	}
-	m = keys(m, "/", "c", "i", "-", "r", "u", "n", "n", "e", "r", "enter")
-	if got := len(m.inboxRows()); got != 1 {
-		t.Fatalf("filter left %d rows, want 1:\n%s", got, m.testView())
-	}
-}
-
-func TestInboxViewFitsEverySize(t *testing.T) {
-	m, _ := inboxAllKindsModel(80, 24)
-	m = openInbox(m)
-	for w := 30; w <= 140; w += 11 {
-		for h := 8; h <= 40; h += 4 {
-			v := send(m, tea.WindowSizeMsg{Width: w, Height: h})
-			out := v.testView()
-			if ls := lines(out); len(ls) > max(h, 10) {
-				t.Fatalf("%dx%d: %d lines", w, h, len(ls))
-			}
-			for i, l := range lines(out) {
-				if ansi.StringWidth(l) > max(w, 40) {
-					t.Fatalf("%dx%d line %d is %d columns wide: %q", w, h, i, ansi.StringWidth(l), l)
-				}
-			}
-		}
-	}
-}
-
-// A session that waits for its user is an Inbox row in the owner's words:
-// "<session> waits for you: <question>" (decision 0057). Enter opens
-// the session, and the row goes when the wait ends.
-func TestInboxWaitingRowSaysTheSessionWaitsForYou(t *testing.T) {
-	m := newModel(100, 30)
-	for i := range m.snap.Agents {
-		switch m.snap.Agents[i].SessionID {
-		case "s_0000000000000002":
-			waiting(&m.snap.Agents[i], -12*time.Minute, protocol.WaitingQuestion, "Merge branch w_1 into main?")
-		case "s_0000000000000004":
-			waiting(&m.snap.Agents[i], -3*time.Minute, protocol.WaitingPermission, "Bash(git push origin main)")
-		}
-	}
-	m = withWaitingAsks(m)
-	texts := map[string]string{}
-	titles := map[string]string{}
-	for _, row := range m.inboxRows() {
-		if row.kind == "waiting" {
-			texts[row.session] = row.text
-			titles[row.session] = m.inboxPanelTitle(row)
-		}
-	}
-	if got := texts["s_0000000000000002"]; got != "waits for you: Merge branch w_1 into main?" {
-		t.Errorf("question row: %q", got)
-	}
-	if got := texts["s_0000000000000004"]; got != "waits for your approval: Bash(git push origin main)" {
-		t.Errorf("permission row: %q", got)
-	}
-	if got := titles["s_0000000000000002"]; got != "strategies waits for you" {
-		t.Errorf("panel title: %q", got)
-	}
-	if got := inboxWaitingText(protocol.Ask{Detail: protocol.WaitingInput}); got != "waits for you" {
-		t.Errorf("wait without words: %q", got)
-	}
-	for i := range m.snap.Agents {
-		m.snap.Agents[i].Waiting = nil
-	}
-	m.asks = nil
-	for _, row := range m.inboxRows() {
-		if row.kind == "waiting" {
-			t.Fatalf("a row is left after the wait ended: %+v", row)
-		}
 	}
 }

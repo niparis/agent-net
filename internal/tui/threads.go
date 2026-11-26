@@ -562,7 +562,7 @@ var (
 	prNumberRE   = regexp.MustCompile(`(?i)\bPR\s*#?(\d+)\b`)
 )
 
-// threadLinks finds the PRs, changes and Desk asks named in a thread's bodies.
+// threadLinks finds the PRs, changes and asks named in a thread's bodies.
 // The gateway sends the last line and the task; the feed and an opened
 // conversation add the full bodies.
 func (m Model) threadLinks(c messageConversation) []string {
@@ -595,7 +595,7 @@ func (m Model) threadLinks(c messageConversation) []string {
 	return out
 }
 
-// linksIn finds the PRs, changes and Desk asks one text names, in the order the
+// linksIn finds the PRs, changes and asks one text names, in the order the
 // thread header lists them: PR URLs, changes, asks, then bare PR numbers.
 func linksIn(text string) []string {
 	var out []string
@@ -618,9 +618,8 @@ func linkLabel(link string) string {
 	return link
 }
 
-// threadLinkJump opens the selected thread's change or ask in the Desk when it
-// is already loaded. A PR URL has no open action in the TUI, so it is named in
-// the notice instead.
+// threadLinkJump names the selected thread's PRs, changes and asks. A PR URL
+// has no open action in the TUI, so every link is named in the notice.
 func (m Model) threadLinkJump() (Model, tea.Cmd) {
 	rows := m.messageConversations()
 	if len(rows) == 0 {
@@ -632,51 +631,6 @@ func (m Model) threadLinkJump() (Model, tea.Cmd) {
 		m.fail("This thread names no PR, change or ask.")
 		return m, nil
 	}
-	// The Desk is hidden (decision 0196): the links are only named.
-	for _, link := range links {
-		if deskShown && strings.HasPrefix(link, "ch_") {
-			if cmd := m.openDeskChange(link); cmd != nil {
-				return m, cmd
-			}
-		}
-	}
-	for _, link := range links {
-		if deskShown && strings.HasPrefix(link, "ask i_") {
-			if m.openDeskAsk(strings.TrimPrefix(link, "ask ")) {
-				return m, nil
-			}
-		}
-	}
 	m.fail("Links: " + strings.Join(links, " · "))
 	return m, nil
-}
-
-// openDeskChange selects a loaded change and opens its evidence.
-func (m *Model) openDeskChange(id string) tea.Cmd {
-	for i, ch := range m.delivery.changes {
-		if ch.ID != id {
-			continue
-		}
-		m.tab = inboxTab
-		m.delivery.detail = true
-		m.delivery.scroll = 0
-		m.delivery.row = i
-		m.delivery.detailLoading = true
-		return m.deliveryDetailCmd(id)
-	}
-	return nil
-}
-
-// openDeskAsk selects a loaded ask in the Desk.
-func (m *Model) openDeskAsk(id string) bool {
-	rows := m.inboxRows()
-	for i, row := range rows {
-		if row.ask.ID != id {
-			continue
-		}
-		m.tab = inboxTab
-		m.inboxIndex = i
-		return true
-	}
-	return false
 }

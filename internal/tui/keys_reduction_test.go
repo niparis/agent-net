@@ -169,8 +169,7 @@ func TestHelpSubsectionsHaveBlankLines(t *testing.T) {
 	m.helpAll = true
 	view := ansi.Strip(strings.Join(m.helpContent(120), "\n"))
 	for _, heading := range []string{
-		"On a held request row", "On a learned suggestion row", "On an outcome row",
-		"On a CTO proposal row", "Agent card",
+		"Agent card",
 	} {
 		if !strings.Contains(view, "\n\n "+heading+"\n") {
 			t.Errorf("help has no blank line before %q", heading)

@@ -49,38 +49,6 @@ func TestLearnedMapShowsEvidenceAndUndo(t *testing.T) {
 		t.Fatalf("undo %s", b)
 	}
 }
-func TestLearnedMajorNeedsActions(t *testing.T) {
-	for _, key := range []string{"a", "r"} {
-		t.Run(key, func(t *testing.T) {
-			src := &learnedSource{fakeSource: fakeSource{snap: fakeSnapshot()}}
-			m := New(src)
-			m.snap = src.snap
-			m.snap.Learned = []protocol.LearnedSuggestion{{ID: 7, Node: "ops", Field: "refuses", Phrase: "deploys", OldValue: "", NewValue: "deploys", Status: "pending", Severity: "major"}}
-			m.asks = []protocol.Ask{askFromLearned(m.snap.Learned[0])}
-			m.tab = inboxTab
-			if view := m.testView(); !strings.Contains(view, "ops") || !strings.Contains(view, "deploys") {
-				t.Fatalf("needs missing: %s", view)
-			}
-			_, cmd := m.Update(tea.KeyPressMsg{Text: key, Code: []rune(key)[0]})
-			if cmd == nil {
-				t.Fatal("missing action")
-			}
-			cmd()
-			if src.method != "learned_answer" {
-				t.Fatalf("called %q", src.method)
-			}
-			b, _ := json.Marshal(src.params)
-			want := "accept"
-			if key == "r" {
-				want = "reject"
-			}
-			if !strings.Contains(string(b), want) {
-				t.Fatalf("answer %s", b)
-			}
-		})
-	}
-}
-
 func TestLearnedMapMarksViewedOnLeavingProject(t *testing.T) {
 	src := &learnedSource{fakeSource: fakeSource{snap: fakeSnapshot(), graph: fakeGraph()}}
 	m := New(src)
@@ -143,13 +111,9 @@ func TestLearnedMapMarksViewedWhenChangingTabs(t *testing.T) {
 	}
 }
 
-func TestGoldenLearnedMapAndInbox(t *testing.T) {
+func TestGoldenLearnedMap(t *testing.T) {
 	m := openMap(t, mapModel(120, 34, fakeGraph()))
 	m.mp.selected = "cogforge"
 	m.snap.Learned = []protocol.LearnedSuggestion{{ID: 11, Node: "cogforge", Field: "needs", Phrase: "ops backups", NewValue: "ops backups", Status: "applied", By: "learned", HistoryID: 42, Unseen: true, DecidedAt: t0.UnixNano(), Evidence: []protocol.LearnedEvidence{{ID: "m1", Excerpt: "ops owns backups"}}}}
 	golden(t, "map_learned_120x34", m.testView())
-	n := newModel(100, 30)
-	n.snap.Learned = []protocol.LearnedSuggestion{{ID: 7, Node: "ops", Field: "refuses", Phrase: "deploys", Kind: "add", NewValue: "deploys", Evidence: []protocol.LearnedEvidence{{Excerpt: "ops refuses deploys"}}, Status: "pending", Severity: "major"}}
-	n = openDesk(n)
-	golden(t, "inbox_learned_100x30", n.testView())
 }

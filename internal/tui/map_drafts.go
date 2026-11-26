@@ -64,7 +64,7 @@ func (m Model) mapDraftLines(node protocol.Node, w int) []string {
 
 // mapDraftDecide answers the selected draft through the owner's learned answer.
 func (m Model) mapDraftDecide(action string) tea.Cmd {
-	c, ok := m.src.(inboxCaller)
+	c, ok := m.src.(localCaller)
 	node, found := m.mapNode(m.mp.selected)
 	if !ok || !found {
 		return nil

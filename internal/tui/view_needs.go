@@ -10,8 +10,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// Waiting sessions and their names, shared by the Inbox tab and the sessions
-// table. The Inbox replaced the old "Needs you" section and inbox overlay.
+// Waiting sessions and their names, used by the sessions table.
 
 func appApprovalNoticeText(text string) string {
 	if strings.HasPrefix(text, "New app approved: ") {
@@ -52,8 +51,18 @@ func (m Model) needsName(a protocol.AgentView) string {
 	return shortID(a.SessionID)
 }
 
+// anySessionWaiting tells whether a table row reports a wait.
+func (m Model) anySessionWaiting() bool {
+	for _, a := range m.snap.Agents {
+		if a.Waiting != nil && a.Worker == nil && !protocol.IsOwner(a.Harness) {
+			return true
+		}
+	}
+	return false
+}
+
 // waitingStatus is the STATUS of a session in the table: a wait outranks idle,
-// busy and offline (the Inbox shows it too).
+// busy and offline.
 func waitingStatus(a protocol.AgentView) string {
 	if a.Waiting == nil || a.Worker != nil {
 		return ""

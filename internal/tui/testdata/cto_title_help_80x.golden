@@ -144,7 +144,7 @@ Legend ────────────────────────�
   tab/shift+tab          sub tab
   p                      filter the threads by project
   t                      filter the threads by team
-  o                      open the thread's change or Desk ask
+  o                      name the thread's change or ask links
   e                      expand or collapse the selected worker run
   l                      filter
   m                      send a message to the session as yourself
@@ -175,58 +175,6 @@ Legend ────────────────────────�
   g                      choose the shared MCP servers the selected bot may use
   n                      rename the selected app
   r                      rotate the selected online machine token
-
- Desk
-  pgup/pgdn              page
-  home/g, end            first, last row
-  a                      approve the request
-  r                      refuse the request
-  s                      keep the refusal
-  O                      grant the request
-  A                      approve all changes
-  t                      type answer
-  x                      dismiss the ask
-  i                      on a sign-in ask: open that CLI's login in a herdr pane
-                         on the machine that needs it
-  w                      in the details of a question or approval: answer the
-                         marked option and keep it as a standing rule. Type the
-                         action and its area: merge in repo:<name>, team:<name>
-                         or network. A rule applies only on an exact match; undo
-                         it on its Log line.
-  d                      on an open ask: talk it over. A chief item opens the
-                         chief's session and wakes it; a Atlas item opens your
-                         Atlas chat.
-  u                      undo
-  n                      on an ask that reached you, open or answered: the chief
-                         did not need to send it. Type one optional line of why;
-                         the chief reads it in its next batch.
-  l                      open or close the Log section: what the Atlas and the
-                         gateway did, with the undo of a Atlas change
-
- On a held request row
-  a                      approve the request
-  r                      refuse the request
-
- On a learned suggestion row
-  a                      accept it
-  r                      reject it
-
- On an outcome row
-  s                      keep the refusal
-  O                      grant the request
-
- On a Atlas proposal row
-  enter                  open the proposal detail
-  a                      approve the change
-  r                      decline the change
-  A                      approve all the changes
-
- On a change's evidence
-  pgup                   page up
-  pgdown                 page down
-
-  in details             up and down choose an answer; enter answers the marked
-                         one; digits still switch tabs
 
  In overlays
  Message body

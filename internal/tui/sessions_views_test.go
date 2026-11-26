@@ -172,10 +172,11 @@ func TestTreeViewPutsNeedsYouBeforePinnedIdle(t *testing.T) {
 		agent("s_0000000000000601", "n_mac", "Mac", "claude", "pinned idle", func(a *protocol.AgentView) {
 			a.PinnedAt = 1
 		}),
-		agent("s_0000000000000602", "n_mac", "Mac", "claude", "asks", func(a *protocol.AgentView) {}),
+		agent("s_0000000000000602", "n_mac", "Mac", "claude", "asks", func(a *protocol.AgentView) {
+			a.Waiting = &protocol.Waiting{Kind: protocol.WaitingQuestion, Text: "may I?", Since: t0.Unix()}
+		}),
 	}
 	m := layoutModel(120, 34, snap)
-	m.asks = askItems([]protocol.InboxItem{{ID: "q", SessionID: "s_0000000000000602", Kind: "question", Status: "open"}})
 	if got := strings.Join(ids(m), ","); got != "s_0000000000000602,s_0000000000000601" {
 		t.Fatalf("tree order %s, want the row that needs the owner first", got)
 	}

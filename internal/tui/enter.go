@@ -262,7 +262,7 @@ func (m Model) onEnterDone(r enterDoneMsg) (Model, tea.Cmd) {
 	}
 	var finish tea.Cmd
 	if r.signInAskID != "" {
-		if c, ok := m.src.(inboxCaller); ok {
+		if c, ok := m.src.(localCaller); ok {
 			finish = func() tea.Msg {
 				ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 				defer cancel()

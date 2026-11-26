@@ -1083,16 +1083,11 @@ func TestQuotaHarnessProviders(t *testing.T) {
 	}
 }
 
-func TestTabBarKeepsSeparatorWhenInboxHasItemsAt80(t *testing.T) {
+func TestTabBarKeepsSeparatorAt80(t *testing.T) {
 	m := newModel(80, 24)
 	m.usage.counts = &protocol.SessionCounts{Online: 12}
-	m.asks = []protocol.Ask{
-		askFromHeld(protocol.Message{ID: "h1", To: "s_0000000000000001", CreatedAt: t0}),
-		askFromHeld(protocol.Message{ID: "h2", To: "s_0000000000000002", CreatedAt: t0}),
-	}
 	line := ansi.Strip(m.titleLine(80))
-	// The tabs fit by their full names at 80 columns. The Desk and its count
-	// are hidden (decision 0196).
+	// The tabs fit by their full names at 80 columns.
 	if strings.Contains(line, "Desk") {
 		t.Errorf("80 column tab bar shows the Desk: %q", line)
 	}

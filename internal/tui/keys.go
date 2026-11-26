@@ -26,15 +26,10 @@ const (
 	contextWorkersLog      keyContext = "Workers log"
 	contextDelivery        keyContext = "Delivery"
 	contextSessions        keyContext = "Sessions"
-	contextHeld            keyContext = "held request"
-	contextSuggestion      keyContext = "learned suggestion"
-	contextOutcome         keyContext = "outcome"
-	contextProposal        keyContext = "CTO proposal"
 	contextProposalDetail  keyContext = "proposal detail"
 	contextProposalHistory keyContext = "proposal history"
 	contextMessages        keyContext = "Messages"
 	contextBody            keyContext = "message body"
-	contextInbox           keyContext = "inbox"
 	contextApps            keyContext = "connected apps"
 	contextSettings        keyContext = "Settings"
 	contextQuotas          keyContext = "Quotas"
@@ -51,8 +46,8 @@ const (
 )
 
 var allKeyContexts = []keyContext{
-	contextGlobal, contextWorkersLog, contextDelivery, contextSessions, contextHeld, contextSuggestion, contextOutcome,
-	contextProposal, contextProposalDetail, contextProposalHistory, contextMessages, contextBody, contextInbox,
+	contextGlobal, contextWorkersLog, contextDelivery, contextSessions,
+	contextProposalDetail, contextProposalHistory, contextMessages, contextBody,
 	contextSettings, contextApps, contextQuotas, contextQualityDetails, contextGraph, contextGraphFind, contextCard, contextTeams,
 	contextCTO, contextHelp, contextConfirm, contextForm, contextFinder,
 }
@@ -165,16 +160,6 @@ var keyBindings = []keyBinding{
 	bind(contextSessions, "/", "filter", "filter", -1),
 	bind(contextSessions, "esc", "back", "back", -1),
 	bind(contextSessions, "?", "help", "help", 2),
-	bind(contextHeld, "a", "approve", "approve the request", 1),
-	bind(contextHeld, "r", "refuse", "refuse the request", 1),
-	bind(contextSuggestion, "a", "accept", "accept it", 1),
-	bind(contextSuggestion, "r", "reject", "reject it", 1),
-	bind(contextOutcome, "s", "let stand", "keep the refusal", 1),
-	bind(contextOutcome, "O", "overrule", "grant the request", 1),
-	withLocal(withHelp(bind(contextProposal, "enter", "detail", "detail", 1), "open the proposal detail")),
-	bind(contextProposal, "a", "approve", "approve the change", 1),
-	bind(contextProposal, "r", "decline", "decline the change", 1),
-	bind(contextProposal, "A", "approve all", "approve all the changes", 1),
 	bind(contextProposalDetail, "esc", actClose, "back", 1),
 	bind(contextProposalDetail, "up|k", actUp, "scroll", 1),
 	bind(contextProposalDetail, "down|j", actDown, "scroll", 1),
@@ -204,7 +189,7 @@ var keyBindings = []keyBinding{
 	bind(contextMessages, "shift+tab", "previous message subtab", "sub tab", 0),
 	withHelp(bind(contextMessages, "p", "thread project", "project", -1), "filter the threads by project"),
 	withHelp(bind(contextMessages, "t", "thread team", "team", -1), "filter the threads by team"),
-	withHelp(bind(contextMessages, "o", "open thread link", "link", -1), "open the thread's change or Desk ask"),
+	withHelp(bind(contextMessages, "o", "open thread link", "link", -1), "name the thread's change or ask links"),
 	withHelp(bind(contextMessages, "e", "expand worker", "expand", -1), "expand or collapse the selected worker run"),
 	bind(contextMessages, "l", "cycle message filter", "filter", -1),
 	withHelp(bind(contextMessages, "m", "compose", "msg", -1), "send a message to the session as yourself"),
@@ -221,29 +206,6 @@ var keyBindings = []keyBinding{
 	bind(contextBody, "down|j", actDown, "scroll", 1),
 	bind(contextBody, "pgup", actPageUp, "page", -1),
 	bind(contextBody, "pgdown", actPageDown, "page", -1),
-	bind(contextInbox, "esc", "back", "back", 1),
-	withHelp(bind(contextInbox, "up|k", actUp, "select", 1), "move the selection; in details, choose an answer"),
-	withHelp(bind(contextInbox, "down|j", actDown, "select", 1), "move the selection; in details, choose an answer"),
-	bind(contextInbox, "pgup", actPageUp, "page", -1),
-	bind(contextInbox, "pgdown", actPageDown, "page", -1),
-	bind(contextInbox, "home|g", actFirst, "first row", -1),
-	bind(contextInbox, "end", actLast, "last row", -1),
-	withHelp(bind(contextInbox, "enter", "details", "open details", 1), "open the details, the proposal, or the session; in details, answer the marked option"),
-	bind(contextInbox, "a", "approve", "approve the request", 1),
-	bind(contextInbox, "r", "refuse", "refuse the request", 1),
-	bind(contextInbox, "s", "let stand", "keep the refusal", 1),
-	bind(contextInbox, "O", "overrule", "grant the request", 1),
-	bind(contextInbox, "A", "approve all", "approve all changes", 1),
-	bind(contextInbox, "t", "answer", "type answer", 1),
-	bind(contextInbox, "x", "dismiss", "dismiss the ask", 1),
-	withHelp(bind(contextInbox, "i", "signin", "Open sign-in", 1), "on a sign-in ask: open that CLI's login in a herdr pane on the machine that needs it"),
-	withHelp(bind(contextInbox, "w", "always", "answer always", 1), "in the details of a question or approval: answer the marked option and keep it as a standing rule. Type the action and its area: merge in repo:<name>, team:<name> or network. A rule applies only on an exact match; undo it on its Log line."),
-	withHelp(bind(contextInbox, "d", "discuss", "discuss", 2), "on an open ask: talk it over. A chief item opens the chief's session and wakes it; a CTO item opens your CTO chat."),
-	bind(contextInbox, "u", "undo", "undo", 1),
-	withHelp(bind(contextInbox, "n", "didnt_need", "didn't need me", 1), "on an ask that reached you, open or answered: the chief did not need to send it. Type one optional line of why; the chief reads it in its next batch."),
-	withHelp(bind(contextInbox, "l", "log", "open the log", 1), "open or close the Log section: what the CTO and the gateway did, with the undo of a CTO change"),
-	bind(contextInbox, "?", "help", "help", 1),
-	bind(contextInbox, "q", actQuit, "quit", 0),
 	bind(contextApps, "esc", "back", "back", 1),
 	bind(contextApps, "up|k", actUp, "move", 1),
 	bind(contextApps, "down|j", actDown, "move", 1),

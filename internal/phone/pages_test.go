@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 
@@ -20,14 +19,6 @@ func (f *fakeOperator) Snapshot(context.Context) (operator.Snapshot, error) {
 func (f *fakeOperator) SessionText(context.Context, protocol.TextQuery) (protocol.TextPage, error) {
 	return protocol.TextPage{Entries: []protocol.TextEntry{{Text: "conversation text"}}}, nil
 }
-func (f *fakeOperator) AnswerHeld(_ context.Context, q protocol.HeldAnswer) error {
-	f.calls = append(f.calls, "held:"+q.Action)
-	return nil
-}
-func (f *fakeOperator) ResolveOutcome(_ context.Context, id, action string) error {
-	f.calls = append(f.calls, "outcome:"+action)
-	return nil
-}
 func (f *fakeOperator) SendAsOwner(_ context.Context, to, body string) (protocol.MessageSent, error) {
 	f.calls = append(f.calls, "send:"+body)
 	return protocol.MessageSent{}, nil
@@ -36,56 +27,29 @@ func (f *fakeOperator) Call(ctx context.Context, method string, params any) (jso
 	if raw, ok := snapshotFixtureRead(ctx, f, method); ok {
 		return raw, nil
 	}
-	if method == protocol.OpAsksList {
-		return json.RawMessage(`{"asks":[{"id":"i_h","kind":"held","message_id":"m_1","detail":"held request"},{"id":"i_o","kind":"escalation","message_id":"r_1","question":"Request: outcome request\nReason: unclear"},{"id":"i_1","kind":"question","question":"inbox request"}]}`), nil
-	}
 	f.calls = append(f.calls, method)
 	return nil, nil
 }
 func TestPagesAndActions(t *testing.T) {
 	f := &fakeOperator{}
 	h := New(f)
-	for _, tc := range []struct{ path, want string }{{"/sessions", "test-machine"}, {"/", "held request"}, {"/", "outcome request"}, {"/", "inbox request"}, {"/sessions?s=s_1", "test-task"}} {
+	for _, tc := range []struct{ path, want string }{{"/", "test-machine"}, {"/sessions", "test-machine"}, {"/sessions?s=s_1", "test-task"}} {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest("GET", tc.path, nil))
 		if w.Code != 200 || !strings.Contains(w.Body.String(), tc.want) {
 			t.Errorf("%s: %d missing %q", tc.path, w.Code, tc.want)
 		}
 	}
-	for _, tc := range []struct{ kind, id, action, want string }{{"held", "m_1", "a", "held:a"}, {"held", "m_1", "r", "held:r"}, {"outcome", "r_1", "let_stand", "outcome:let_stand"}, {"outcome", "r_1", "overrule", "outcome:overrule"}, {"inbox", "i_1", "approve", "inbox_answer"}, {"inbox", "i_1", "refuse", "inbox_answer"}, {"inbox", "i_1", "custom", "inbox_answer"}, {"send", "s_1", "hello", "send:hello"}} {
-		v := url.Values{"kind": {tc.kind}, "id": {tc.id}, "action": {tc.action}}
-		r := httptest.NewRequest("POST", "http://example.test/action", strings.NewReader(v.Encode()))
-		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		r.Header.Set("Origin", "http://example.test")
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, r)
-		if w.Code != 303 || len(f.calls) == 0 || f.calls[len(f.calls)-1] != tc.want {
-			t.Errorf("%s: %d calls %v", tc.want, w.Code, f.calls)
-		}
-	}
 }
 
 func TestActionRejectsCrossOrigin(t *testing.T) {
 	f := &fakeOperator{}
-	r := httptest.NewRequest("POST", "http://example.test/action", strings.NewReader("kind=held&id=m_1&action=a"))
+	r := httptest.NewRequest("POST", "http://example.test/action", strings.NewReader("kind=reply&id=c_1&action=hi"))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	r.Header.Set("Origin", "http://attacker.test")
 	w := httptest.NewRecorder()
 	New(f).ServeHTTP(w, r)
 	if w.Code != 403 || len(f.calls) != 0 {
 		t.Fatalf("cross-origin action: %d, %v", w.Code, f.calls)
-	}
-}
-
-func TestHeldActionRejectsCompoundValue(t *testing.T) {
-	f := &fakeOperator{}
-	v := url.Values{"kind": {"held"}, "id": {"m_1"}, "action": {"a|A"}}
-	r := httptest.NewRequest("POST", "http://example.test/action", strings.NewReader(v.Encode()))
-	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	r.Header.Set("Origin", "http://example.test")
-	w := httptest.NewRecorder()
-	New(f).ServeHTTP(w, r)
-	if w.Code != 400 || len(f.calls) != 0 {
-		t.Fatalf("invalid action: %d, %v", w.Code, f.calls)
 	}
 }
