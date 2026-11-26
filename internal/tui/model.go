@@ -974,13 +974,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.deliveryLoaded(msg)
 	case deliveryDetailMsg:
 		return m.deliveryDetailLoaded(msg), nil
-	case deliveryReportMsg:
-		if msg.err != nil {
-			m.failErr(msg.err, msg.err.Error())
-			return m, nil
-		}
-		m.say(msg.text)
-		return m.startDeliveryLoad()
 	case ctoPollMsg:
 		if m.cto == nil || m.cto.generation != msg.generation {
 			return m, nil
@@ -1958,9 +1951,9 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 			if i == inboxTab {
 				m.inboxDetail, m.inboxDetailOption, m.inboxEditing = false, 0, false
-				m.delivery.project, m.delivery.detail = "", false
+				m.delivery.detail = false
 				m.inboxIndex = min(max(m.inboxIndex, 0), max(m.deskRowCount()-1, 0))
-				return m.startDeliveryLoad()
+				return m, nil
 			}
 			if i == settingsTab {
 				m.settingsRow = 0

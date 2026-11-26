@@ -9,14 +9,14 @@ Desk · no chief of staff · log closed (l opens it)
 │ ▸ ops (learned) add "deploys" to what it refuses                          7m │
 │   Notice        checker is blocked on the deploy key                     11m │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-╭─In flight · 0────────────────────────────────────────────────────────────────╮
-│ Loading changes...                                                           │
-╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ops (learned)────────────────────────────────────────────────────────────────╮
 │ add "deploys" to what it refuses                                             │
 │ ops charter · 7 minutes ago                                                  │
 │ a accept the suggestion  r reject the suggestion                             │
 ╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+
 ╭─CTO · 1 open proposal────────────────────────────────────────────────────────╮
 │                                                                              │
 │ 1/6 See  All your agents, live. Enter opens tenebrae-53.                     │

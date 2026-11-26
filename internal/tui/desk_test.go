@@ -11,8 +11,8 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// deskModel is the Desk with everything on it: asks, changes in flight and an
-// open log with a CTO line that can be undone.
+// deskModel is the Desk with everything on it: asks and an open log with a
+// CTO line that can be undone.
 func deskModel(t *testing.T, w, h int) Model {
 	t.Helper()
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, w, h))
@@ -30,11 +30,11 @@ func deskModel(t *testing.T, w, h int) Model {
 	return m
 }
 
-// The Desk shows the three sections, and one cursor walks all of them.
-func TestDeskShowsThreeSectionsAndOneCursor(t *testing.T) {
+// The Desk shows Needs you and the Log, and one cursor walks both.
+func TestDeskShowsNeedsYouAndLogOneCursor(t *testing.T) {
 	m := deskModel(t, 120, 40)
 	view := ansi.Strip(m.testView())
-	for _, want := range []string{"Desk · chief of staff", "Needs you · 2", "In flight · ", "Log · 3", "Merge PR #3? CI green.", "CTO applied graph edge set", "Reminded 2 sessions"} {
+	for _, want := range []string{"Desk · chief of staff", "Needs you · 2", "Log · 3", "Merge PR #3? CI green.", "CTO applied graph edge set", "Reminded 2 sessions"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("missing %q:\n%s", want, view)
 		}
@@ -42,11 +42,14 @@ func TestDeskShowsThreeSectionsAndOneCursor(t *testing.T) {
 	if strings.Contains(view, "sorted ") || strings.Contains(view, "Handled for you") {
 		t.Fatalf("the Desk still shows Handled for you:\n%s", view)
 	}
-	asks, changes := m.askRowCount(), len(m.deliveryVisible())
-	if asks != 2 || changes == 0 {
-		t.Fatalf("%d asks and %d changes", asks, changes)
+	if strings.Contains(view, "In flight") || strings.Contains(view, "changes of ") {
+		t.Fatalf("the Desk still shows In flight:\n%s", view)
 	}
-	for i := 0; i < asks+changes+len(m.deskLogRows())-1; i++ {
+	asks := m.askRowCount()
+	if asks != 2 {
+		t.Fatalf("%d asks", asks)
+	}
+	for i := 0; i < asks+len(m.deskLogRows())-1; i++ {
 		m = send(m, tea.KeyPressMsg{Code: tea.KeyDown})
 	}
 	if sec, i := m.deskPosition(); sec != deskSecLog || i != 2 {
@@ -57,8 +60,8 @@ func TestDeskShowsThreeSectionsAndOneCursor(t *testing.T) {
 		t.Fatalf("up did not step back inside the log: %d %d", sec, i)
 	}
 	m.inboxIndex = asks
-	if sec, i := m.deskPosition(); sec != deskSecChange || i != 0 {
-		t.Fatalf("the cursor is not on the first change: %d %d", sec, i)
+	if sec, i := m.deskPosition(); sec != deskSecLog || i != 0 {
+		t.Fatalf("the cursor is not on the first log line: %d %d", sec, i)
 	}
 }
 
@@ -86,18 +89,36 @@ func TestDeskLogOpensWithL(t *testing.T) {
 	}
 }
 
-// The ask of a change shows on the change's row in flight.
-func TestDeskChangeRowShowsItsAsk(t *testing.T) {
-	m := deskModel(t, 120, 40)
-	ch := m.deliveryVisible()[0]
-	m.asks = append(m.asks, protocol.Ask{ID: "i_s", Kind: protocol.AskKindStep, State: protocol.AskStateOpen, FromKind: protocol.AskFromSession, From: "caller",
-		AboutKind: protocol.AskAboutChange, AboutID: ch.ID, Question: "Owner: press v and try it", Next: protocol.AskNextOwner, CreatedAt: t0})
-	view := ansi.Strip(m.testView())
-	if !strings.Contains(view, "asks you: Owner: press v and try it") {
-		t.Fatalf("the change row does not show its ask:\n%s", view)
-	}
-	if got := m.waitingCount(); got != 3 {
-		t.Fatalf("waiting count %d, want 3", got)
+// The ask of a change no longer gets a row of its own on the Desk.
+func TestDeskHasNoInFlight(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := deskModel(t, size[0], size[1])
+		view := ansi.Strip(m.testView())
+		t.Logf("frame %dx%d, open:\n%s", size[0], size[1], view)
+		for _, gone := range []string{"In flight", "changes of ", "show all changes", "Try it"} {
+			if strings.Contains(view, gone) {
+				t.Errorf("%dx%d: the Desk still shows %q:\n%s", size[0], size[1], gone, view)
+			}
+		}
+		// The cursor walks from the asks into the Log, with no stop in between.
+		for i := 0; i < m.askRowCount(); i++ {
+			m = send(m, tea.KeyPressMsg{Code: tea.KeyDown})
+		}
+		if sec, i := m.deskPosition(); sec != deskSecLog || i != 0 {
+			t.Fatalf("%dx%d: the cursor is not on the first log line: %d %d", size[0], size[1], sec, i)
+		}
+		t.Logf("frame %dx%d, after scrolling to the Log:\n%s", size[0], size[1], ansi.Strip(m.testView()))
+		before := m.inboxIndex
+		m = send(m, tea.KeyPressMsg{Text: "v", Code: 'v'})
+		if m.inboxIndex != before {
+			t.Errorf("%dx%d: v moved the cursor", size[0], size[1])
+		}
+		if action := keyAction(contextInbox, "v"); action != "" {
+			t.Errorf("%dx%d: v is still bound to %q", size[0], size[1], action)
+		}
+		if action := keyAction(contextGraph, "D"); action != "" {
+			t.Errorf("%dx%d: Graph D is still bound to %q", size[0], size[1], action)
+		}
 	}
 }
 
@@ -105,7 +126,7 @@ func TestDeskGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}, {160, 40}} {
 		m := deskChiefModel(t, size[0], size[1])
 		golden(t, "desk_all_"+itoa(size[0]), m.testView())
-		m.inboxIndex = m.askRowCount() + len(m.deliveryVisible())
+		m.inboxIndex = m.askRowCount()
 		golden(t, "desk_log_selected_"+itoa(size[0]), m.testView())
 	}
 }

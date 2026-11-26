@@ -3,12 +3,10 @@ package tui
 import (
 	"context"
 	"errors"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/niparis/agent-net/internal/operator"
@@ -56,10 +54,7 @@ type deliveryChange struct {
 	Marks []stripState
 	// Full says the evidence covers every revision, not only the latest
 	// counted result of each step.
-	Full     bool
-	Group    deliveryGroup
-	Count    int
-	Children []deliveryChange
+	Full bool
 }
 
 // deliveryStep is one pipeline step, including repeated test and approval steps.
@@ -90,12 +85,6 @@ type deliveryDetailSource interface {
 	Change(ctx context.Context, id string) (deliveryChange, error)
 }
 
-// deliveryReporter is a source that can record the owner's try of a released
-// change. result is pass or fail; note says what is wrong on a fail.
-type deliveryReporter interface {
-	ReportTry(ctx context.Context, changeID, result, note string) error
-}
-
 // deliveryLoadTimeout is how long the view waits for the source.
 const deliveryLoadTimeout = 5 * time.Second
 
@@ -119,11 +108,9 @@ const frictionRefreshEvery = time.Minute
 // and is replaced, never shared.
 type deliveryState struct {
 	on      bool // retained for compatibility with existing fixtures
-	project string
 	detail  bool // the evidence of the selected change is showing
-	showAll bool // done and stale changes are on screen too
-	row     int
-	scroll  int // detail scroll, in lines
+	row     int  // the index of that change in changes
+	scroll  int  // detail scroll, in lines
 	loaded  bool
 	changes []deliveryChange
 	err     string
@@ -144,13 +131,6 @@ type deliveryState struct {
 	dataAt        time.Time
 	detailLoading bool // the full change is out
 	detailErr     string
-	expanded      map[string]bool
-
-	// reporting asks for one line of what is wrong before a To try row is
-	// reported as failed.
-	reporting    bool
-	reportChange string
-	reportInput  textinput.Model
 }
 
 // deliveryStartMsg starts the first load through the normal in-flight guard.
@@ -234,10 +214,10 @@ func (m Model) startDeliveryLoad() (Model, tea.Cmd) {
 }
 
 // deliveryTick loads again after deliveryRefreshEvery
-// since the last load. Only the Sessions table and the Desk show a change
-// state, so other tabs do not ask for it.
+// since the last load. Only the Sessions table shows a change state, so other
+// tabs do not ask for it.
 func (m Model) deliveryTick() (Model, tea.Cmd) {
-	if m.tab != sessionsTab && m.tab != inboxTab {
+	if m.tab != sessionsTab {
 		return m, nil
 	}
 	d := m.delivery
@@ -253,175 +233,7 @@ func (m Model) deliveryTick() (Model, tea.Cmd) {
 	return m.startDeliveryLoad()
 }
 
-// deliveryGroup is one band of the list. The bands appear in this order, so a
-// change the owner has to act on is never below one that waits on an agent.
-type deliveryGroup int
-
-const (
-	groupNeedsYou deliveryGroup = iota
-	groupMoving
-	groupToTry
-	groupStuck
-	groupDone
-)
-
-func (g deliveryGroup) title() string {
-	switch g {
-	case groupNeedsYou:
-		return "Needs you"
-	case groupMoving:
-		return "Moving"
-	case groupToTry:
-		return "To try"
-	case groupStuck:
-		return "Stuck"
-	}
-	return "Done"
-}
-
-// deliveryToTry says the change waits for an owner check, not for an owner
-// decision: its after-merge verify reported needs_owner. Nothing blocks on it;
-// the work is released and the owner tries it when they can.
-func deliveryToTry(ch deliveryChange) bool {
-	return ch.StepState == protocol.StepStateNeedsOwner && ch.Step == protocol.StepVerify && ch.MergedCommit != ""
-}
-
-// deliveryGroupOf says who has to act on a change next.
-func deliveryGroupOf(ch deliveryChange, ownerSession string) deliveryGroup {
-	if ch.State == protocol.ChangeDone || ch.State == protocol.ChangeStopped || ch.StepState == protocol.StepStateClosed {
-		return groupDone
-	}
-	if ch.StepState == protocol.StepStateFailed {
-		return groupMoving
-	}
-	if ch.StepState == protocol.StepStateNeedsOwner {
-		if deliveryToTry(ch) {
-			return groupToTry
-		}
-		return groupNeedsYou
-	}
-	// A passed, skipped or blocked step has no action for anyone yet.
-	switch ch.StepState {
-	case "", protocol.StepStatePassed, protocol.StepStateSkipped, protocol.StepStateWaiting:
-		if ch.Waiting >= 12*time.Hour {
-			return groupStuck
-		}
-		return groupMoving
-	}
-	switch ch.OwnerKind {
-	case protocol.OwnerPerson:
-		return groupNeedsYou
-	}
-	if ch.OwnerKind == protocol.OwnerCaller && ownerSession != "" && ch.Caller == ownerSession {
-		return groupNeedsYou
-	}
-	if ch.Waiting >= 12*time.Hour {
-		return groupStuck
-	}
-	return groupMoving
-}
-
-func (m Model) deliveryGroupFor(ch deliveryChange) deliveryGroup {
-	group := deliveryGroupOf(ch, m.snap.OwnerSession)
-	if group == groupNeedsYou || group == groupDone || ch.StepState == protocol.StepStateFailed {
-		return group
-	}
-	// An open approval for this change blocks an agent: it belongs under
-	// Needs you, even when the step itself is an after-merge check.
-	for _, a := range m.asks {
-		if a.Kind == protocol.AskKindApproval && a.Delivery != nil && a.Delivery.ChangeID == ch.ID {
-			return groupNeedsYou
-		}
-	}
-	return group
-}
-
-// deliveryStale says nothing happened on a change for a day and it is not
-// merged. A merged change may wait for its after-merge steps for as long as it
-// takes; an open one that nobody touched is abandoned or superseded.
-func deliveryStale(ch deliveryChange) bool {
-	switch ch.State {
-	case protocol.ChangeMerged, protocol.ChangeDone, protocol.ChangeStopped:
-		return false
-	}
-	if ch.StepState == protocol.StepStateClosed {
-		return false
-	}
-	return ch.Waiting >= 24*time.Hour
-}
-
-// deliveryVisible is the list on screen: grouped by who has to act, with done
-// and stale rows left out until the owner asks for them.
-func (m Model) deliveryVisible() []deliveryChange {
-	var out []deliveryChange
-	for _, ch := range m.delivery.changes {
-		group := m.deliveryGroupFor(ch)
-		if m.delivery.project != "" && ch.Repo != m.delivery.project {
-			continue
-		}
-		if !m.delivery.showAll && (group == groupDone || deliveryStale(ch)) {
-			continue
-		}
-		out = append(out, ch)
-	}
-	sort.SliceStable(out, func(i, j int) bool { return m.deliveryGroupFor(out[i]) < m.deliveryGroupFor(out[j]) })
-	var rows []deliveryChange
-	stuck := map[string][]deliveryChange{}
-	for _, ch := range out {
-		g := m.deliveryGroupFor(ch)
-		if g != groupStuck {
-			ch.Group, ch.Count = g, 1
-			rows = append(rows, ch)
-			continue
-		}
-		key := ch.Repo + "\x00" + ch.Step + "\x00" + ch.StepOwner
-		stuck[key] = append(stuck[key], ch)
-	}
-	for _, group := range stuck {
-		if len(group) == 1 {
-			ch := group[0]
-			ch.Group, ch.Count = groupStuck, 1
-			rows = append(rows, ch)
-			continue
-		}
-		first := group[0]
-		minAge, maxAge := group[0].Waiting, group[0].Waiting
-		for _, ch := range group {
-			minAge = min(minAge, ch.Waiting)
-			maxAge = max(maxAge, ch.Waiting)
-		}
-		sort.SliceStable(group, func(i, j int) bool { return group[i].ID < group[j].ID })
-		first.Group, first.Count, first.Children = groupStuck, len(group), group
-		who := ""
-		if presence := m.deliveryOwnerPresence(first.StepOwner); presence != "" {
-			who = " (" + presence + ")"
-		}
-		first.Title = first.Repo + " · " + strconv.Itoa(len(group)) + " changes wait for " + first.Step + " by " + first.StepOwner + who + " · " + deliveryHourText(minAge) + "-" + deliveryHourText(maxAge)
-		rows = append(rows, first)
-	}
-	sort.SliceStable(rows, func(i, j int) bool {
-		if rows[i].Group != rows[j].Group {
-			return rows[i].Group < rows[j].Group
-		}
-		if rows[i].Repo != rows[j].Repo {
-			return rows[i].Repo < rows[j].Repo
-		}
-		if rows[i].Step != rows[j].Step {
-			return rows[i].Step < rows[j].Step
-		}
-		return rows[i].StepOwner < rows[j].StepOwner
-	})
-	var expanded []deliveryChange
-	for _, row := range rows {
-		if len(row.Children) > 1 && m.delivery.expanded[row.ID] {
-			expanded = append(expanded, row.Children...)
-		} else {
-			expanded = append(expanded, row)
-		}
-	}
-	return expanded
-}
-
+// deliveryOwnerPresence says whether an agent with this name is online.
 func (m Model) deliveryOwnerPresence(name string) string {
 	for _, a := range m.snap.Agents {
 		if strings.EqualFold(strings.TrimSpace(a.Profile.Name), strings.TrimSpace(name)) {
@@ -434,48 +246,12 @@ func (m Model) deliveryOwnerPresence(name string) string {
 	return ""
 }
 
-func deliveryHourText(d time.Duration) string {
-	h := int(d.Hours())
-	if h < 1 {
-		return "<1h"
-	}
-	return strconv.Itoa(h) + "h"
-}
-
-// selectedChange is the change under the cursor.
+// selectedChange is the change whose detail is open.
 func (m Model) selectedChange() (deliveryChange, bool) {
-	visible := m.deliveryVisible()
-	if len(visible) == 0 {
+	if len(m.delivery.changes) == 0 {
 		return deliveryChange{}, false
 	}
-	return visible[min(max(m.delivery.row, 0), len(visible)-1)], true
-}
-
-// deliveryReportMsg is the answer of one "try it" report.
-type deliveryReportMsg struct {
-	err  error
-	text string
-}
-
-// deliveryReport records what the owner saw on a released change: pass when it
-// worked, fail with the owner's line when it did not.
-func (m Model) deliveryReport(id, result, note string) tea.Cmd {
-	src := m.deliverySrc
-	return func() tea.Msg {
-		reporter, ok := src.(deliveryReporter)
-		if !ok {
-			return deliveryReportMsg{err: errors.New("recording a try is unavailable")}
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), deliveryLoadTimeout)
-		defer cancel()
-		if err := reporter.ReportTry(ctx, id, result, note); err != nil {
-			return deliveryReportMsg{err: err}
-		}
-		if result == protocol.StepResultPass {
-			return deliveryReportMsg{text: "Tried it: it works."}
-		}
-		return deliveryReportMsg{text: "Tried it: it does not work."}
-	}
+	return m.delivery.changes[min(max(m.delivery.row, 0), len(m.delivery.changes)-1)], true
 }
 
 // deliveryDetailCmd reads one change in full. A source that cannot do it
@@ -493,16 +269,11 @@ func (m Model) deliveryDetailCmd(id string) tea.Cmd {
 	}
 }
 
-// deliveryLoaded takes an answer. A failed load keeps the last list on screen
-// and shows the error above it. The cursor stays on the same change when the
-// list changes under it, and an open detail keeps its full evidence until the
+// deliveryLoaded takes an answer. A failed load keeps the last changes on
+// screen and shows the error above them. The open detail stays on the same
+// change when the list changes under it, and keeps its full evidence until the
 // fresh one arrives.
 func (m Model) deliveryLoaded(msg deliveryLoadedMsg) (Model, tea.Cmd) {
-	onChange := false
-	if m.tab == inboxTab {
-		sec, _ := m.deskPosition()
-		onChange = sec == deskSecChange
-	}
 	d := m.delivery
 	prev, had := m.selectedChange()
 	d.loaded, d.loading = true, false
@@ -534,25 +305,20 @@ func (m Model) deliveryLoaded(msg deliveryLoadedMsg) (Model, tea.Cmd) {
 		d.changes = changes
 		d.dataVersion, d.dataAt = msg.version, msg.at
 	}
-	m.delivery = d
-	visible := m.deliveryVisible()
 	found := false
-	for i := range visible {
-		if had && visible[i].ID == prev.ID {
+	for i := range d.changes {
+		if had && d.changes[i].ID == prev.ID {
 			d.row, found = i, true
 		}
 	}
 	if had && !found {
 		d.detail = false
 	}
-	d.row = min(max(d.row, 0), max(len(visible)-1, 0))
-	if len(visible) == 0 {
+	d.row = min(max(d.row, 0), max(len(d.changes)-1, 0))
+	if len(d.changes) == 0 {
 		d.detail = false
 	}
 	m.delivery = d
-	if onChange {
-		m.inboxIndex = m.askRowCount() + d.row
-	}
 	if retry {
 		return m.startDeliveryLoad()
 	}
@@ -611,107 +377,21 @@ func (m Model) nextQuotasSubtab() (Model, tea.Cmd) {
 	return m, nil
 }
 
+// deliveryKey handles the keys of an open change detail.
 func (m Model) deliveryKey(k tea.KeyPressMsg) (Model, tea.Cmd) {
-	d := m.delivery
-	if d.reporting {
-		switch k.Code {
-		case tea.KeyEsc:
-			d.reporting = false
-			m.delivery = d
-			return m, nil
-		case tea.KeyEnter:
-			note := strings.TrimSpace(d.reportInput.Value())
-			if note == "" {
-				m.fail("Say what is wrong.")
-				m.delivery = d
-				return m, nil
-			}
-			d.reporting = false
-			m.delivery = d
-			return m, m.deliveryReport(d.reportChange, protocol.StepResultFail, note)
-		default:
-			var cmd tea.Cmd
-			d.reportInput, cmd = d.reportInput.Update(k)
-			m.delivery = d
-			return m, cmd
-		}
-	}
 	action := keyAction(contextDelivery, k.String())
-	if action == "all" && d.project != "" {
-		d.project, d.detail, d.row = "", false, 0
-		m.delivery = d
-		return m, nil
-	}
-	if action == "all" {
-		d.showAll = !d.showAll
-		d.detail = false
-		m.delivery = d
-		d.row = min(max(d.row, 0), max(len(m.deliveryVisible())-1, 0))
-		m.delivery = d
-		return m, nil
-	}
-	last := max(len(m.deliveryVisible())-1, 0)
+	d := m.delivery
 	switch action {
 	case "up":
-		if d.detail {
-			d.scroll = max(d.scroll-1, 0)
-		} else {
-			d.row = max(d.row-1, 0)
-		}
+		d.scroll = max(d.scroll-1, 0)
 	case "down":
-		if d.detail {
-			d.scroll++
-		} else {
-			d.row = min(d.row+1, last)
-		}
+		d.scroll++
 	case "page up":
-		if d.detail {
-			d.scroll = max(d.scroll-10, 0)
-		} else {
-			d.row = max(d.row-10, 0)
-		}
+		d.scroll = max(d.scroll-10, 0)
 	case "page down":
-		if d.detail {
-			d.scroll += 10
-		} else {
-			d.row = min(d.row+10, last)
-		}
-	case "open":
-		if sel, ok := m.selectedChange(); ok && !d.detail && len(sel.Children) > 1 {
-			if d.expanded == nil {
-				d.expanded = map[string]bool{}
-			}
-			d.expanded[sel.ID] = !d.expanded[sel.ID]
-			m.delivery = d
-			return m, nil
-		}
-		if sel, ok := m.selectedChange(); ok && !d.detail {
-			d.detail, d.scroll, d.detailErr = true, 0, ""
-			cmd := m.deliveryDetailCmd(sel.ID)
-			d.detailLoading = cmd != nil
-			m.delivery = d
-			return m, cmd
-		}
+		d.scroll += 10
 	case "back":
-		if !d.detail {
-			d.project, d.row = "", 0
-		}
 		d.detail, d.detailErr, d.detailLoading = false, "", false
-	case "try works", "try fails":
-		sel, ok := m.selectedChange()
-		if !ok || d.detail || sel.Group != groupToTry {
-			break
-		}
-		if action == "try works" {
-			m.delivery = d
-			return m, m.deliveryReport(sel.ID, protocol.StepResultPass, "checked by the owner in the TUI")
-		}
-		d.reporting, d.reportChange = true, sel.ID
-		d.reportInput = newTextInput()
-		d.reportInput.Prompt = "what is wrong> "
-		d.reportInput.CharLimit = protocol.MaxEvidenceNoteBytes
-		m.delivery = d
-		return m, d.reportInput.Focus()
 	case "refresh":
 		// Do not overlap a load that is already in flight.
 		m.delivery = d
@@ -828,20 +508,10 @@ func deliveryWaitText(d time.Duration) string {
 	return strconv.Itoa(int(d/(24*time.Hour))) + "d"
 }
 
-// deliveryHints is the key line of the Delivery tab.
+// deliveryHints is the key line of an open change detail.
 func (m Model) deliveryHints() []hint {
 	help, quit := bindingHint(contextDelivery, "help"), bindingHint(contextDelivery, actQuit)
-	if m.delivery.reporting {
-		return []hint{{key: "enter", label: "send"}, {key: "esc", label: "cancel"}, help, quit}
-	}
-	if m.delivery.detail {
-		scroll := bindingPairHint(contextDelivery, actUp, actDown)
-		scroll.label = "scroll"
-		return []hint{scroll, bindingHint(contextDelivery, "back"), help, quit}
-	}
-	hints := []hint{bindingPairHint(contextDelivery, actUp, actDown), bindingHint(contextDelivery, "open"), bindingHint(contextDelivery, "all"), bindingHint(contextDelivery, "refresh")}
-	if sel, ok := m.selectedChange(); ok && sel.Group == groupToTry {
-		hints = append(hints, hint{key: "y", label: "it works", prio: 1}, hint{key: "n", label: "it fails", prio: 1})
-	}
-	return append(hints, help, quit)
+	scroll := bindingPairHint(contextDelivery, actUp, actDown)
+	scroll.label = "scroll"
+	return []hint{scroll, bindingHint(contextDelivery, "back"), help, quit}
 }

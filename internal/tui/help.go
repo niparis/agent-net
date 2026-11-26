@@ -199,9 +199,6 @@ func (m Model) helpLine(w int) string {
 	if m.tab == inboxTab && m.inboxEditing {
 		return clip(m.inboxInput.View()+sDim.Render("   enter sends, esc cancels"), w)
 	}
-	if m.tab == inboxTab && m.delivery.reporting {
-		return clip(m.delivery.reportInput.View()+sDim.Render("   enter sends, esc cancels"), w)
-	}
 
 	if m.filtering {
 		return clip(m.input.View()+sDim.Render("   enter keeps the filter, esc clears and leaves"), w)
@@ -416,7 +413,7 @@ func (m Model) currentHelpSection() helpSection {
 		return m.helpContextSection(contextCTO)
 	case m.open != nil:
 		return m.helpContextSection(contextBody)
-	case m.tab == inboxTab && m.deskOnChange():
+	case m.tab == inboxTab && m.delivery.detail:
 		return m.helpContextSection(contextDelivery)
 	case m.tab == quotasTab && m.workersLog:
 		return m.helpContextSection(contextWorkersLog)
@@ -499,7 +496,7 @@ func (m Model) helpSubsectionTitle(context keyContext) string {
 	case contextInbox:
 		return "Desk"
 	case contextDelivery:
-		return "On a change in flight"
+		return "On a change's evidence"
 	case contextApps:
 		return "Connected apps"
 	case contextProposalDetail:

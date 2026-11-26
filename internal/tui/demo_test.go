@@ -14,9 +14,9 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// The README animation: nine frames of the real screen, in four beats. The
+// The README animation: five frames of the real screen, in four beats. The
 // data is invented but fixed, and it never names a real machine, host or path:
-// two machines (laptop and build-box), six sessions and one change.
+// two machines (laptop and build-box) and six sessions.
 const demoWidth, demoHeight = 100, 28
 
 func demoNodes() []protocol.NodeView {
@@ -114,56 +114,11 @@ func demoMessages(m Model, reply bool) Model {
 	return m
 }
 
-// demoStepIndex is where a step sits in the full strip, which also has
-// approve, test after merge, release, deploy and verify after merge.
-func demoStepIndex(name string) int {
-	for i, step := range deliverySteps {
-		if step == name {
-			return i
-		}
-	}
-	return 0
-}
-
-// demoChange is the worker's change. passed is how many of accept, review,
-// test and merge have turned green.
-func demoChange(passed int) deliveryChange {
-	names := []string{"accept", "review", "test", "merge"}
-	steps := make([]deliveryStep, 0, len(names))
-	marks := make([]stripState, len(deliverySteps))
-	for i := range marks {
-		marks[i] = stripWaiting
-	}
-	for i, name := range names {
-		state := "ready"
-		switch {
-		case i < passed:
-			state = "passed"
-			marks[demoStepIndex(name)] = stripPassed
-		case i == passed:
-			state = "running"
-		}
-		steps = append(steps, deliveryStep{Name: name, State: state})
-	}
-	current := min(passed, len(names)-1)
-	stepState := "ready"
-	switch {
-	case passed == 0:
-		stepState = "running"
-	case passed >= len(names):
-		stepState = "passed"
-	}
-	return deliveryChange{
-		ID: "c_1", Title: "Use shared-auth v2.3 in invoices-app", Repo: "billing", Head: "3f2a91c0d4e5",
-		Branch: "agent-net/w_account", Revision: 1, State: "open", Caller: "s_worker_billing",
-		Step: names[current], StepOwner: "merger", OwnerKind: "node", StepState: stepState,
-		Waiting: 2 * time.Minute, Steps: steps, Marks: marks,
-	}
-}
-
-func demoDesk(t *testing.T, passed int, digest, ask bool) Model {
+// demoDesk is the Desk with a digest, and optionally the decision that reached
+// the owner.
+func demoDesk(t *testing.T, digest, ask bool) Model {
 	t.Helper()
-	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: []deliveryChange{demoChange(passed)}}, demoWidth, demoHeight))
+	m := openDelivery(t, deliveryModel(&fakeDelivery{}, demoWidth, demoHeight))
 	m.snap = demoSnapshot()
 	m.cto = nil
 	if digest {
@@ -202,29 +157,21 @@ func demoFrames(t *testing.T) []demoFrame {
 			want: []string{"shared-auth", "invoices-app", "token field renamed: user_id is now", "account_id in shared-auth v2.3"}},
 		{name: "demo_02_reply", duration: 1500 * time.Millisecond, view: demoMessages(messages, true).testView(),
 			want: []string{"shared-auth", "invoices-app", "updated to v2.3, commit 3f2a91c"}},
-		{name: "demo_03_accept", duration: 750 * time.Millisecond, view: demoDesk(t, 1, false, false).testView(),
-			want: []string{"In flight · 1", "review", "●○○○"}},
-		{name: "demo_04_review", duration: 750 * time.Millisecond, view: demoDesk(t, 2, false, false).testView(),
-			want: []string{"test", "●●○○"}},
-		{name: "demo_05_test", duration: 750 * time.Millisecond, view: demoDesk(t, 3, false, false).testView(),
-			want: []string{"merge", "●●●○"}},
-		{name: "demo_06_merge", duration: 750 * time.Millisecond, view: demoDesk(t, 4, false, false).testView(),
-			want: []string{"merge", "●●●●"}},
-		{name: "demo_07_digest", duration: 1500 * time.Millisecond, view: demoDesk(t, 4, true, false).testView(),
+		{name: "demo_03_digest", duration: 3 * time.Second, view: demoDesk(t, true, false).testView(),
 			want: []string{"While you were away (3 h)", "closed 22 · sent on 4", "Nothing is waiting for you."}},
-		{name: "demo_08_decision", duration: 1500 * time.Millisecond, view: demoDesk(t, 4, true, true).testView(),
+		{name: "demo_04_decision", duration: 3 * time.Second, view: demoDesk(t, true, true).testView(),
 			want: []string{"closed 22 · sent on 4", "Merge PR #212?", "CI green. Recommended: yes"}},
 	}
 }
 
 // TestDemoScenes is the golden screen harness for the README animation. It
 // writes one .ansi per beat frame, and checks that every frame says what its
-// beat is about. The beats are: sessions, a message exchange, a change that
-// moves through its steps, and one decision that reaches the owner.
+// beat is about. The beats are: sessions, a message exchange, the digest of an
+// absence, and one decision that reaches the owner.
 func TestDemoScenes(t *testing.T) {
 	frames := demoFrames(t)
-	if len(frames) != 9 {
-		t.Fatalf("%d frames, want 9", len(frames))
+	if len(frames) != 5 {
+		t.Fatalf("%d frames, want 5", len(frames))
 	}
 	var total time.Duration
 	for _, f := range frames {

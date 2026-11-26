@@ -4,13 +4,13 @@ While you were away (3 h)                                                 x hide
 closed 22 · sent on 4 · answered 2 · 3 for you
 ╭─Needs you · 3────────────────────────────────────────────────────────────────╮
 │ ▸ ingest-forge [question] Merge PR #3? CI green.                          2h │
-│ … 2 more                                                                     │
-╰──────────────────────────────────────────────────────────────────────────────╯
-╭─In flight · 5────────────────────────────────────────────────────────────────╮
-│ … 5 more                                                                     │
+│   strategies   [approval] Release v1.2.3 to the machines                 30m │
+│   ingest-forge [approval] Pay for the new model?                         40m │
+│     priority 1 · why you: the ingest-forge charter has no rule for spend     │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Log · 3──────────────────────────────────────────────────────────────────────╮
-│ … 3 more                                                                     │
+│   cto      CTO applied graph edge set app -> ops                          5m │
+│ … 2 more                                                                     │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ingest-forge asks────────────────────────────────────────────────────────────╮
 │ Merge PR #3? CI green.                                                       │

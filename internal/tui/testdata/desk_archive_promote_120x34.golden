@@ -3,9 +3,9 @@ Desk · chief of staff · log closed (l opens it)
 ╭─Needs you · 1───────────────────────────────────────────────────────╮ ╭─CTO connected────────────────────────────────╮
 │ ▸ CTO          CTO chose version 1 of skill graphify as the…     1m │ │ CTO chose version 1 of skill graphify as     │
 ╰─────────────────────────────────────────────────────────────────────╯ │ the latest                                   │
-╭─In flight · 0───────────────────────────────────────────────────────╮ │                                              │
-│ No open changes.                                                    │ │ session s_cto                                │
-╰─────────────────────────────────────────────────────────────────────╯ │ 1 minute ago                                 │
+                                                                        │                                              │
+                                                                        │ session s_cto                                │
+                                                                        │ 1 minute ago                                 │
                                                                         │                                              │
                                                                         │ x dismiss the notice                         │
                                                                         │                                              │

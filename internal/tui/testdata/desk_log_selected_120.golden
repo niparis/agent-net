@@ -7,21 +7,21 @@ While you were away (3 h)  closed 22 · sent on 4 · answered 2 · 3 for you    
 │   ingest-forge [approval] Pay for the new model?                40m │ │                                              │
 │     priority 1 · why you: the ingest-forge charter has no rule for… │ │ u undo this change  l open the log           │
 ╰─────────────────────────────────────────────────────────────────────╯ │                                              │
-╭─In flight · 5───────────────────────────────────────────────────────╮ │                                              │
-│   TITLE                     STEP     STATUS             AGE    DONE │ │                                              │
-│   Approve the deploy gate   approve  waiting for you    3h0m   ○    │ │                                              │
-│   Show which provider each… review   waiting for merger 2h14m  ●○●  │ │                                              │
-│   Say what a delivery row … test     waiting for ci-ru… 6m     ●●○○ │ │                                              │
-│     merged: abcdef1                                                 │ │                                              │
-│   Fix the deploy gate       review   back to strategie… 2h5m   ●✗   │ │                                              │
-│   wbg-procurement · 2 changes: accept by wbg-procurement (exited) … │ │                                              │
-│ 1 done and 1 stale hidden · v shows all                             │ │                                              │
-╰─────────────────────────────────────────────────────────────────────╯ │                                              │
 ╭─Log · 3─────────────────────────────────────────────────────────────╮ │                                              │
 │ ▸ cto      CTO applied graph edge set app -> ops                 5m │ │                                              │
 │   gateway  Reminded 2 sessions about messages they have not…    20m │ │                                              │
 │   apps     Connected: phone (owner_app, Phone, example.test)     3h │ │                                              │
-╰─────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────────────╯
+╰─────────────────────────────────────────────────────────────────────╯ │                                              │
+                                                                        ╰──────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
 
 
 

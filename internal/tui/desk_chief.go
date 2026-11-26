@@ -184,13 +184,13 @@ func (m Model) deskDigestLines(w int) []string {
 	return []string{head + strings.Repeat(" ", max(room, 1)) + hide, clip(counts, w)}
 }
 
-// deskSectionCount is how many boxes the Desk draws: Needs you, In flight, and
-// the Log when it is open.
+// deskSectionCount is how many boxes the Desk draws: Needs you, and the Log
+// when it is open.
 func (m Model) deskSectionCount() int {
 	if m.deskLogOpen {
-		return 3
+		return 2
 	}
-	return 2
+	return 1
 }
 
 // deskChiefText names the chief and says whether it is online.

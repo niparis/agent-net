@@ -43,7 +43,6 @@ const (
 	panelWorkingRules    = "Working rules and guidance"
 	panelNudges          = "Nudges"
 	panelNeedsYou        = "Needs you"
-	panelDelivery        = "Delivery"
 	panelChange          = "Change"
 	panelEvidence        = "Evidence"
 	panelStepsEvidence   = "Steps and evidence"
@@ -104,7 +103,6 @@ var panelTable = []panelSpec{
 	{tab: settingsTab, title: panelNudges},
 
 	{tab: inboxTab, title: panelNeedsYou},
-	{tab: inboxTab, title: panelDelivery},
 	{tab: inboxTab, view: contextDelivery, title: panelChange},
 	{tab: inboxTab, view: contextDelivery, title: panelEvidence, note: "or " + panelStepsEvidence + " for a change with steps"},
 	{tab: inboxTab, view: contextInbox, title: panelInboxDetail},

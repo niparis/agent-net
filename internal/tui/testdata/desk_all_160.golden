@@ -7,21 +7,21 @@ While you were away (3 h)  closed 22 · sent on 4 · answered 2 · 3 for you    
 │   ingest-forge [approval] Pay for the new model?                                                        40m │ │                                              │
 │     priority 1 · why you: the ingest-forge charter has no rule for spend                                    │ │ session ingest-forge · on Mac                │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────╯ │ 2 hours ago                                  │
-╭─In flight · 5───────────────────────────────────────────────────────────────────────────────────────────────╮ │                                              │
-│   TITLE                       REPO             STEP      STATUS                                AGE     DONE │ │ t answer ingest-forge  x dismiss the ask     │
-│   Approve the deploy gate     voicemechs       approve   waiting for you                       3h0m    ○    │ │ enter open details  d discuss                │
-│   Show which provider each …  agent-net        review    waiting for merger                    2h14m   ●○●  │ │                                              │
-│   Say what a delivery row w…  agent-net        test      waiting for ci-runner (online)        6m      ●●○○ │ │                                              │
-│     merged: abcdef1                                                                                         │ │                                              │
-│   Fix the deploy gate         voicemechs       review    back to strategies to restart the w…  2h5m    ●✗   │ │                                              │
-│   wbg-procurement · 2 changes wait for accept by wbg-procurement (exited) · 15h-22h                         │ │                                              │
-│ 1 done and 1 stale hidden · v shows all                                                                     │ │                                              │
-╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────╯ │                                              │
 ╭─Log · 3─────────────────────────────────────────────────────────────────────────────────────────────────────╮ │                                              │
-│   cto      CTO applied graph edge set app -> ops                                                         5m │ │                                              │
-│   gateway  Reminded 2 sessions about messages they have not type answered                               20m │ │                                              │
+│   cto      CTO applied graph edge set app -> ops                                                         5m │ │ t answer ingest-forge  x dismiss the ask     │
+│   gateway  Reminded 2 sessions about messages they have not type answered                               20m │ │ enter open details  d discuss                │
 │   apps     Connected: phone (owner_app, Phone, example.test)                                             3h │ │                                              │
-╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────────────╯
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────╯ │                                              │
+                                                                                                                ╰──────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
 
 
 

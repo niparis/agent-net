@@ -32,8 +32,7 @@ const (
 )
 
 // box is the one list the owner answers from. Every ask waits for the owner
-// in the same "Needs you" section (decision 0090); what moves along without
-// them is the In flight section.
+// in the same "Needs you" section (decision 0090).
 func (g inboxGroup) box() inboxBox { return inboxBoxAnswer }
 
 // inboxBox is a section of asks. After decision 0090 there is only one.
@@ -1256,7 +1255,7 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.inboxInput, cmd = m.inboxInput.Update(k)
 		return m, cmd
 	}
-	if m.delivery.detail || m.delivery.reporting {
+	if m.delivery.detail {
 		mm, cmd := m.deliveryKey(k)
 		return mm, cmd
 	}
@@ -1282,19 +1281,6 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "help":
 		m.openHelp()
 		return m, nil
-	case "show all":
-		if !m.inboxDetail {
-			m.delivery.showAll = !m.delivery.showAll
-			m.delivery.detail = false
-			m.inboxIndex = m.deskIndex()
-			return m, nil
-		}
-	case "back":
-		if !m.inboxDetail && m.delivery.project != "" {
-			m.delivery.project = ""
-			m.inboxIndex = m.deskIndex()
-			return m, nil
-		}
 	case "log":
 		if !m.inboxDetail {
 			m.deskLogOpen = !m.deskLogOpen
@@ -1375,9 +1361,6 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		moved = false
 	}
 	if moved {
-		if sec, i := m.deskPosition(); sec == deskSecChange {
-			m.delivery.row = i
-		}
 		return m, nil
 	}
 	row, ok := m.inboxSelected(rows)
@@ -1403,13 +1386,6 @@ func (m Model) inboxTabKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.proposalDetail = &proposalDetail{proposal: row.proposal, loading: true}
 			return m, m.proposalDetailCmd(row.proposal)
 		case "step":
-			// Go to the change the step is about, when it is in flight.
-			for i, ch := range m.deliveryVisible() {
-				if ch.ID == row.ask.AboutID {
-					m.inboxIndex = len(rows) + i
-					return m, nil
-				}
-			}
 			m.inboxDetailScroll, m.inboxDetailOption = 0, 0
 			m.inboxDetail = true
 		default:
@@ -1666,14 +1642,8 @@ func (m Model) inboxHints() []hint {
 	move := hint{key: "↑↓", label: "select", prio: 0}
 	logHint := bindingHint(contextInbox, "log")
 	logHint.prio = 1
-	if m.deskOnChange() {
-		if m.delivery.reporting || m.delivery.detail {
-			return m.deliveryHints()
-		}
-		if changes := m.deliveryVisible(); len(changes) > 0 {
-			_, i := m.deskPosition()
-			return append(m.deskChangeHints(changes[min(i, len(changes)-1)]), move, logHint, help)
-		}
+	if m.delivery.detail {
+		return m.deliveryHints()
 	}
 	if e, ok := m.deskSelectedLog(); ok {
 		return append(m.deskLogHints(e), move, help)

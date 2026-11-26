@@ -1,5 +1,4 @@
 Keys · Graph ───────────────────────────────────────────────────────────────────
-  D                      delivery
   d                      show or hide dormant nodes
   f                      focus on a node and its neighbours, or zoom into a team
   esc                    go back one focus or team level
@@ -19,6 +18,7 @@ Keys · Graph ──────────────────────
   T                      create, rename, fill or archive a team
   e                      charter
   E                      global charter
+
   more below
 
 up/down scroll  ? all screens  esc close
