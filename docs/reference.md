@@ -1617,7 +1617,8 @@ The daemon owns one more value in the same file: it writes `DISABLE_AUTOUPDATER=
 | `invite` | `--host H` | the IPv4 address of the interface with the default route. A second line is printed for a Tailscale address if there is one. |
 | | `--port P`, `--data DIR` | `7420`, gateway data |
 | `enroll` | `--host H`, `--port P`, `--data DIR` | this host's name, `7420`, gateway data |
-| `join` | `--config-dir DIR` | `~/.config/agent-net` |
+| `join` | `--gateway URL` | none. On a machine that already joined: point it at a gateway that serves the same CA and accepts its token. Keeps `node_id` and the token, and restarts the daemon. |
+| | `--config-dir DIR` | `~/.config/agent-net` |
 | `workers` | `--json` | off. The task line, the usage figures and, with `--recent`, the end facts are in the JSON. |
 | | `--owner-claude UUID` | none. Only workers owned by this machine's Claude Code session with that native id. No machine room or queue lines, and no `queued` in the JSON. |
 | | `--recent` | off. Also list workers that ended in the last two minutes. |

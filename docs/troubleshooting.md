@@ -88,22 +88,24 @@ agent-net gateway restore --backup /path/to/backup --to /path/to/new-data
 
 Start the gateway with that new data directory (stop the old one first). Do not edit or clear `schema_version` to get past the error. A backup made by a newer release is refused the same way, so restore one made by the release you are running.
 
-## A joined machine keeps its first gateway URL
+## The gateway moved to a new address
 
-A machine saves the address it joined with in `~/.config/agent-net/node.json`. If the gateway's address changes, the daemon keeps trying the old one. To switch:
+A machine saves the address it joined with in `~/.config/agent-net/node.json`. If the gateway's address changes, point the machine at the new address:
 
 ```
-rm ~/.config/agent-net/node.json
+agent-net join --gateway https://NEW-ADDRESS:7420
 ```
 
-Then paste a fresh invite line from the gateway. If you can, use the Tailscale line, because that address does not change. If the new address is a name or IP the gateway certificate does not list, restart the gateway with `--san NAME`. The certificate already lists the host name and every interface address of the gateway machine.
+The command checks that the new address serves the same gateway certificate (the `ca_sha256` in `node.json`) and accepts this machine's token. Then it writes the new `gateway_url`, keeps `node_id` and the token, and restarts the daemon service. A different certificate or a refused token changes nothing and says why in one line, so the machine keeps its identity on the network.
+
+If you can, use the Tailscale address, because it does not change. If the new address is a name or IP the gateway certificate does not list, restart the gateway with `--san NAME`. The certificate already lists the host name and every interface address of the gateway machine.
 
 ## The daemon says it is not connected
 
 - Is the gateway running? On the gateway machine, `systemctl --user status agent-net-gateway` (Linux) or `launchctl print gui/$(id -u)/com.agent-net.gateway` (macOS).
 - Can this machine reach port 7420 on the gateway machine? A firewall is the usual cause.
 - Does the log say `certificate` or `x509`? Then the address the daemon uses is not in the gateway certificate. See the section above.
-- Does the log say `401` or `unauthorized`? Then the gateway no longer knows this machine's token (for example you started a new gateway data directory). Remove `node.json` and join again.
+- Does the log say `401` or `unauthorized`? Then the gateway no longer knows this machine's token (for example you started a new gateway data directory). Run `agent-net join` with a fresh invite line from the gateway.
 
 ## Services stop when I log out (Linux)
 
