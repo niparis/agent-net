@@ -29,15 +29,18 @@ Every session has exactly one parent, computed in one gateway function (`session
 
 1. A worker's parent is the session that started it (`worker.owner`).
 2. A session that is the lead session of its Agent has, as its parent, the lead session of the Agent it `reports_to`. When that Agent has no live lead session, or the edge points to the root, the parent is the root (owner, then CTO and chief, as today).
-3. Any other session of an Agent has the Agent's lead session as its parent.
+3. Any other session of an Agent that leads something (a Repo, an active Team, or a lead-level grant) has the Agent's lead session as its parent.
+4. A session of an Agent that leads nothing (a member Agent such as `<project>-agent`, or a merger Agent) has, as its parent, the lead session of the Agent it `reports_to`, the same as rule 2. Such an Agent has no lead session of its own, so its sessions sit side by side under their lead, never under one of their peers.
 
-There is no fallback chain, and no rule reads team membership, repo columns or names.
+There is no fallback chain, and no rule reads team membership, repo columns or names. A lead whose `reports_to` is the CTO Agent sits under the CTO session (0160, 0184); only the owner edge is a root.
+
+Rule 4 was added on 2026-11-26 after the part 1 golden picture: without it, member and merger sessions showed "(no parent: no lead)", and I1 would have made one member session the parent of its peers.
 
 ### Invariants, kept at write time
 
 The gateway enforces these in the same transaction as the write that could break them. It never repairs them later.
 
-- I1. An Agent with at least one live session has exactly one lead session, and it is live. When the lead session stops, is archived or is replaced, the same transaction picks the next one: the replacement, else the live session the owner used last, else the oldest live one. There is no question to the CTO; the CTO can change the choice with `lead_set`, which stays the only override.
+- I1. An Agent that leads something (rule 3) and has at least one live session has exactly one lead session, and it is live. An Agent that leads nothing has no lead session. When the lead session stops, is archived or is replaced, the same transaction picks the next one: the replacement, else the live session the owner used last, else the oldest live one. There is no question to the CTO; the CTO can change the choice with `lead_set`, which stays the only override.
 - I2. A session holds exactly one Agent. A new session takes the Agent it was started for. With none named, it takes its project's member Agent, which is created at once if the project has none (`<project>-agent`, the convention since 0160). It never takes the lead Agent while that Agent has a live lead session.
 - I3. `session_change replace`, a stop, an archive and a merger or lead move change parents in one transaction: children of the old session follow the new one. A replace never answers `moved:false` without saying why.
 - I4. Offline sessions that were never archived do not count for I1. A session that stays offline past the existing retention is archived by the gateway.
