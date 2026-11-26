@@ -25,7 +25,7 @@ type screenInfo struct {
 
 // The icons are fixed markup of this package, never data.
 var screens = []screenInfo{
-	{ID: "desk", Name: "Desk", Path: "/", Key: "1", Sub: "What needs you, and what the chief of staff handled", Ready: true,
+	{ID: "desk", Name: "Desk", Path: "/", Key: "1", Sub: "What needs you, and the log", Ready: true,
 		Icon: `<path d="M2 4h12v8H2z"/><path d="M2 7h12"/>`},
 	{ID: "sessions", Name: "Sessions", Path: "/sessions", Key: "2", Sub: "Every agent session on every machine", Ready: true,
 		Icon: `<rect x="2" y="2.5" width="12" height="4" rx="1"/><rect x="2" y="9.5" width="12" height="4" rx="1"/>`},
@@ -150,11 +150,6 @@ type changeRow struct {
 	NeedsYou, Selected              bool
 }
 
-type handledRow struct {
-	Label, Question, Reason, Age string
-	Undone                       bool
-}
-
 type logRow struct {
 	Source, Text, Age string
 }
@@ -164,9 +159,6 @@ type deskView struct {
 	// work, and empty when it can or none is set.
 	ChiefLine string
 	Asks      []askView
-	Changes   []changeRow
-	More      int // changes left out of the list
-	Handled   []handledRow
 	Log       []logRow
 }
 
@@ -482,12 +474,6 @@ func askCard(a protocol.Ask, now time.Time, names map[string]string) askView {
 
 var deliveryStepNames = []string{"accept", "review", "test", "approve", "merge", "test after merge", "release", "deploy", "verify"}
 
-// inFlightWindow is how long a change may be quiet and still be in flight.
-const inFlightWindow = 24 * time.Hour
-
-// inFlightMax is how many changes the Desk lists. The Changes screen has all.
-const inFlightMax = 12
-
 func (a *app) desk(ctx context.Context, asks []protocol.Ask, snap operator.Snapshot) *deskView {
 	now := time.Now()
 	d := &deskView{}
@@ -498,23 +484,10 @@ func (a *app) desk(ctx context.Context, asks []protocol.Ask, snap operator.Snaps
 	for _, ask := range asks {
 		d.Asks = append(d.Asks, askCard(ask, now, names))
 	}
-	d.Changes, d.More = a.inFlight(ctx, now)
 	if raw, err := a.read(ctx, protocol.OpChiefGet, nil); err == nil {
 		var st protocol.ChiefStatus
 		if json.Unmarshal(raw, &st) == nil && st.Down != "" {
 			d.ChiefLine = firstLine(protocol.ChiefOfflineLine(st.Down))
-		}
-	}
-	if raw, err := a.read(ctx, protocol.OpChiefSorts, nil); err == nil {
-		var v protocol.ChiefSortsResult
-		if json.Unmarshal(raw, &v) == nil {
-			for _, s := range v.Sorts {
-				label := map[string]string{protocol.AskSortClose: "closed", protocol.AskSortMerge: "merged", protocol.AskSortSend: "sent", protocol.AskSortOwner: "to you"}[s.Result]
-				if s.Undone {
-					label = "undone"
-				}
-				d.Handled = append(d.Handled, handledRow{Label: firstNonEmpty(label, s.Result), Question: firstLine(s.Question), Reason: s.Reason, Age: ago(s.At, now), Undone: s.Undone})
-			}
 		}
 	}
 	if raw, err := a.read(ctx, protocol.OpDeskLog, protocol.DeskLogQuery{Limit: 20}); err == nil {
@@ -658,41 +631,6 @@ func changeStatusLine(v protocol.ChangeView) string {
 		status += " · " + owner
 	}
 	return strings.TrimSpace(status)
-}
-
-// inFlight lists the open changes that moved in the last day, or that need the
-// owner. It is read only: the TUI Delivery tab and the Changes screen have the
-// rest.
-func (a *app) inFlight(ctx context.Context, now time.Time) ([]changeRow, int) {
-	raw, err := a.read(ctx, protocol.OpChangesOwnerFind, protocol.ChangesFindArgs{State: protocol.ChangeListActive, Limit: 100})
-	if err != nil {
-		return nil, 0
-	}
-	var res protocol.ChangesFindResult
-	if json.Unmarshal(raw, &res) != nil {
-		return nil, 0
-	}
-	var rows []changeRow
-	for _, v := range res.Items {
-		c := v.Change
-		v.Steps = changeSteps(v)
-		updated := time.Unix(max(c.UpdatedAt, c.CreatedAt), 0)
-		_, state, _ := currentStep(v)
-		needs := state == protocol.StepStateNeedsOwner
-		if now.Sub(updated) > inFlightWindow && !needs {
-			continue
-		}
-		marks, aria := changeMarks(v.Steps)
-		rows = append(rows, changeRow{ID: c.ID, Title: firstNonEmpty(c.Title, c.Branch, c.ID), Project: c.Project, Revision: c.Revision, Risk: c.Risk,
-			Marks: marks, Aria: aria, Status: changeStatusLine(v), Age: ago(updated, now), NeedsYou: needs})
-	}
-	sort.SliceStable(rows, func(i, j int) bool { return rows[i].NeedsYou && !rows[j].NeedsYou })
-	more := 0
-	if len(rows) > inFlightMax {
-		more = len(rows) - inFlightMax
-		rows = rows[:inFlightMax]
-	}
-	return rows, more
 }
 
 // ---- Sessions ----

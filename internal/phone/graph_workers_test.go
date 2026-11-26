@@ -229,7 +229,7 @@ func TestGraphAndWorkersLoadOnlyWhatTheyShow(t *testing.T) {
 	}
 	richServe("/graph")
 	f.mu.Lock()
-	for _, m := range []string{protocol.OpUsage, protocol.OpChangesOwnerFind, protocol.OpConversationMessages, protocol.OpChiefSorts, protocol.OpDeskLog} {
+	for _, m := range []string{protocol.OpUsage, protocol.OpChangesOwnerFind, protocol.OpConversationMessages, protocol.OpDeskLog} {
 		if f.reads[m] != 0 {
 			t.Errorf("the Graph screen read %s", m)
 		}
@@ -244,7 +244,7 @@ func TestGraphAndWorkersLoadOnlyWhatTheyShow(t *testing.T) {
 	richServe("/workers")
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	for _, m := range []string{protocol.OpGraphView, protocol.OpConversations, protocol.OpChangesOwnerFind, protocol.OpChiefSorts, protocol.OpDeskLog} {
+	for _, m := range []string{protocol.OpGraphView, protocol.OpConversations, protocol.OpChangesOwnerFind, protocol.OpDeskLog} {
 		if f.reads[m] != 0 {
 			t.Errorf("the Workers screen read %s", m)
 		}
