@@ -46,7 +46,7 @@ var operatorMethods = map[string]bool{
 	"notification_settings":     true,
 	protocol.OpSkillArchiveUndo: true, protocol.OpSkillsUndo: true, "gateway_backup": true,
 	protocol.OpSessionStop: true, protocol.OpSessionStart: true, protocol.OpSessionStartGet: true, protocol.OpSessionResume: true,
-	"inbox_list": true, protocol.OpAsksList: true, protocol.OpChiefGet: true, protocol.OpChiefSet: true, protocol.OpAskHistory: true, protocol.OpChiefSorts: true, protocol.OpAskUndo: true, protocol.OpAskMark: true, protocol.OpAskDiscuss: true, protocol.OpDeskLog: true, protocol.OpDeskSettle: true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true, "learned_list": true, "learned_answer": true, "learned_view": true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
+	"inbox_list": true, protocol.OpAsksList: true, protocol.OpChiefGet: true, protocol.OpChiefSet: true, protocol.OpAskHistory: true, protocol.OpAskUndo: true, protocol.OpAskMark: true, protocol.OpAskDiscuss: true, protocol.OpDeskLog: true, protocol.OpDeskSettle: true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true, "learned_list": true, "learned_answer": true, "learned_view": true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpConversations:        true,
 	protocol.OpConversationMessages: true,
 	protocol.OpProjectDisplayGet:    true, protocol.OpProjectDisplaySet: true,
@@ -438,8 +438,6 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			return nil, true, errors.New("ask_history needs ask")
 		}
 		res, err = d.call(ctx, "ask.history", p)
-	case protocol.OpChiefSorts:
-		res, err = d.call(ctx, "chief.sorts", struct{}{})
 	case protocol.OpAskUndo:
 		var p protocol.AskUndoRequest
 		if err := decodeCTOArgs(method, raw, &p, "ask"); err != nil {

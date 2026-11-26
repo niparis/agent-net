@@ -52,7 +52,7 @@ func (h *pollHarness) count(method string, n int) {
 var pollFrames = map[string]string{
 	"list": "query.agents", "nodes": "query.nodes", "projects": "query.projects",
 	"learned_list": "learned.list", "asks_list": "asks.list", "chief_get": "chief.get",
-	"chief_sorts": "chief.sorts", "counts": "query.counts", "usage": "query.usage",
+	"counts": "query.counts", "usage": "query.usage",
 	"events": "query.events",
 }
 

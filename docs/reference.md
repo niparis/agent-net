@@ -2845,25 +2845,6 @@ caller (the chief); `since` and `until` are Unix seconds (both inclusive), and
 when none did). The chief uses it to audit its own sorts without reading every
 row.
 
-**Hide handled history.** The live chief or a live owner session may call
-`agent_ask_sort` with `result: "hide"`. For a preview, set `mode: "preview"`,
-`kind`, `hide_result`, `before` (an exclusive UTC RFC3339 cutoff), and optionally
-`repeats_only: true`. The response includes the exact sort IDs, visible counts
-before and after, and a token. Apply with `mode: "apply"`, the same filter and
-`token`. The gateway rejects a changed match set. The response contains a
-receipt and IDs. Undo with `mode: "undo"` and `receipt`. The operation changes
-only sort history visibility, never inbox items. Open and dismissed asks are excluded. Visible counts cover all sort history,
-not only the last 24 hours shown on the Desk. Hidden
-rows are omitted from the web console. List stats
-still count them and include `hidden_count`.
-
-For `repeats_only`, only `session_stall` closes are supported. Stall asks carry
-the session ID and the activity baseline in `conversation_id` (Unix seconds).
-Stall sorts for a session with the same nonempty baseline are one episode
-until a sort for that session has a different baseline; the first close stays
-visible. A changed baseline starts another episode. Asks without a baseline are kept. This uses recorded stall baselines,
-which have one-second precision.
-
 **`agent_ask_sort {ask, detail: "full"}`** reads one ask in full for the chief. It
 sorts nothing, and it takes only `ask`. The answer has `result` `read`, `next`,
 `state` and `full` with the whole question and detail, the recommendation and
@@ -2983,7 +2964,6 @@ Asks now carry `priority` (the chief's rank for an ask sent to the owner).
 
 The Desk shows what the chief did and lets the owner correct it. Each method is an operator method; the CTO can run the changing ones too.
 
-- **`chief_sorts`** (gateway `chief.sorts`, read) returns the chief's sorts of the last 24 hours, newest first. Each row has the sort fields, the ask's `question` and `undone`.
 - **`ask_undo` `{ask}`** (gateway `ask.undo`, owner or CTO) puts an ask back the way it was before the newest sort. It restores `next`, `status`, `answer` and `answered_at` from the sort's `prev_*` fields. A `next` of the chief becomes the owner, because the chief got its one batch and is not sent the ask again. `priority` and `why_you` are cleared. It writes an `ask_sorts` row with result `undo` and a log line from the owner (or the CTO). It is refused when the ask changed since the sort (for example, a session answered it), and when the sort is undone already. A merge also removes its `merged: <ask>` line from the ask it merged into. The chief has the same undo as `agent_ask_sort` with `result: "undo"`, with two differences: it undoes only its own newest sort, and the ask goes back to the chief, not to the owner, so the chief can sort it again. Its undo row names the chief as the sorter.
 - **`ask_mark` `{ask, mark, why}`** (gateway `ask.mark`, owner or CTO) stores a mark. On the Desk, `n` (didn't need me) works on a Needs you row. The TUI has no key for `should_have_asked` any more. `mark` is `didnt_need_me` (the owner did not need to see the ask) or `should_have_asked` (the chief should have sent it to the owner). `why` is optional, one line, up to 300 characters. The mark is stored in the owner judgment store (the standing orders memory) as a judgment with `kind` `correction`, `area` `chief` and `ref` set to the ask id. Its text says what the owner marked, gives the ask's first line and the `why`. A log line is written. The chief's next batch message lists the newest five of them under "Owner corrections". The old table `chief_corrections` is gone: a migration copied its rows into the judgment store, and a later migration dropped the table.
 - **`ask_discuss` `{ask}`** (gateway `ask.discuss`, owner) is "discuss" on a Desk item (decision 0150), key `d` on a question, approval, idea or check row. For an item the CTO owns it answers `{"open": "cto"}` and the TUI opens the CTO chat, as `c` does; nothing is woken, because CTO turns start only from the owner. For any other item it sends the chief a message that names the ask and asks for what it verified, its recommendation and the options, wakes the chief when it is offline (the owner asked, so the wake rules of a peer message do not apply), and answers `{"open": "chief", "session", "woken"}`; the TUI enters the chief's session through `session_enter`, as Enter does. It is refused when no chief is set.
@@ -2992,7 +2972,7 @@ The Desk shows what the chief did and lets the owner correct it. Each method is 
 - **Void state.** A judgment can be voided: `standing_orders.voided_at` (integer, `0` when the row is live) and `standing_orders.void_reason` (text) hold when and why. A voided row stays in the table and keeps its full text, but `agent_owner_judgments_find`, the CTO standing orders list and search, and the morning brief decision list skip it. A new answer to the same ask replaces the text and clears the void. A migration voids every judgment that holds agent-net's idle compaction command (`/compact Keep: the current task...`, with or without a leading backslash, bare or after a `Q: ... A: ` prefix) as the owner's words, with the reason `agent-net idle compaction prompt, not the owner (a_64e7e272d7794cec)`. No row is deleted.
 - **Slash commands are not owner words.** The gateway stores no answer judgment whose answer part starts with `/` (or `\/`). An ask that the owner's typed reply closes is still closed, but no judgment row is written for a slash command. `agent_owner_judgment_record` with such a text is refused with one line.
 
-The CTO lists have `chief_sorts` (read), and `ask_undo` and `ask_mark` (changes, in the `settings_change` area `operator`).
+The CTO lists have `ask_undo` and `ask_mark` (changes, in the `settings_change` area `operator`).
 
 **The Desk (tab 6).**
 

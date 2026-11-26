@@ -41,10 +41,10 @@ The CTO is an agent that runs the network for you. Press `c` and ask it in plain
 ## Desk
 
 <p align="center">
-  <img alt="The Desk: items that wait for the owner, grouped by urgency, and changes in flight" src="img/tui/desk.svg" width="900">
+  <img alt="The Desk: items that wait for the owner, grouped by urgency, with the log below" src="img/tui/desk.svg" width="900">
 </p>
 
-Everything that waits for you, and every change in flight, is on one screen, the Desk (tab 6): CTO proposals, sessions that ask you a question or stopped with work left, and written approvals. The tab shows the count. Select an item and approve or refuse it there. Press `n` on an item that reached you to mark "didn't need me". Press `m` on a handled item to mark "should have asked me". See [owner inbox](reference.md#owner-inbox-and-written-approvals).
+Everything that waits for you is on one screen, the Desk (tab 6): CTO proposals, sessions that ask you a question or stopped with work left, and written approvals. The tab shows the count. Select an item and approve or refuse it there. Press `n` on an item that reached you to mark "didn't need me". See [owner inbox](reference.md#owner-inbox-and-written-approvals).
 
 ## Connected apps
 

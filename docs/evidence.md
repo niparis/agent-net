@@ -131,11 +131,11 @@ Caller ratings (1 to 5) are stored with the run's facts and shown on the Quality
 
 ## What the owner sees
 
-The Desk has an In flight section. It lists each open change with its steps and what is waiting. The Needs you section holds only the approvals and decisions that the pipeline sends to the owner. Each of those is an Inbox item, and answering it records the owner's evidence.
+The Needs you section of the Desk holds the approvals and decisions that the pipeline sends to the owner. Each of those is an Inbox item, and answering it records the owner's evidence. A change's steps and what is waiting are on the Changes screen and in `agent_changes_find`.
 
 The owner can also report a verify step himself, on a merged change. The gateway takes that as a direct owner report.
 
-**Where:** `internal/tui/desk.go` (the In flight section); `answerDeliveryApproval` in `internal/gateway/delivery_approval.go`; `ownerVerify` in `ReportStep`.
+**Where:** `answerDeliveryApproval` in `internal/gateway/delivery_approval.go`; `ownerVerify` in `ReportStep`.
 
 ## Why this makes a swarm safe to supervise by exception
 
@@ -228,4 +228,4 @@ The lesson: evidence on the real setup caught two wrong conclusions that passing
 
 - `agent_changes_find` with a change ID reads one change in full: its revisions, its steps and its evidence.
 - `agent_step_report` and `agent_step_claim` are the calls a step owner makes.
-- The Desk's In flight section and the Quality tab show the same record in the TUI.
+- The Quality tab shows the same record in the TUI.
