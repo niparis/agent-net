@@ -152,7 +152,7 @@ func TestApplyIntegrationsInstallsAndRemovesInTheBackground(t *testing.T) {
 	_ = f
 }
 
-func TestQuotaSetupRecordsOwnerCopy(t *testing.T) {
+func TestQuotaSetupUsesOwnerCopy(t *testing.T) {
 	f := newFixture(t)
 	ensureQuotaAXI = quotaaxi.Ensure
 	bin, log := quotaPath(t, "22.19.0")
@@ -166,9 +166,9 @@ func TestQuotaSetupRecordsOwnerCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := runAskingAll(t, Options{Join: f.newJoin(t), All: AllYes})
-	choice, err := quotaaxi.LoadChoice(daemon.ConfigDir())
-	if err != nil || choice.Path != owner || choice.Version != "0.1.66" {
-		t.Fatalf("choice %+v %v; output %s", choice, err, out)
+	choice, ok := quotaaxi.Find("")
+	if !ok || choice.Path != owner || choice.Version != "0.1.66" {
+		t.Fatalf("choice %+v %v; output %s", choice, ok, out)
 	}
 	if _, err := os.Stat(log); !os.IsNotExist(err) {
 		t.Fatalf("npm ran: %v", err)
@@ -177,7 +177,11 @@ func TestQuotaSetupRecordsOwnerCopy(t *testing.T) {
 
 func TestUninstallRemovesQuotaChoice(t *testing.T) {
 	f := newFixture(t)
-	if _, err := quotaaxi.SaveChoice(daemon.ConfigDir(), []quotaaxi.Copy{{Path: "/fake/quota-axi", Version: quotaaxi.Version, Runs: true}}); err != nil {
+	choice := filepath.Join(daemon.ConfigDir(), "quota-axi-choice.json")
+	if err := os.MkdirAll(daemon.ConfigDir(), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(choice, []byte(`{"path":"/fake/quota-axi","version":"`+quotaaxi.Version+`"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	oldStop := stopWorkers
@@ -187,7 +191,7 @@ func TestUninstallRemovesQuotaChoice(t *testing.T) {
 	if err := Uninstall(Options{Out: &out, NoService: true, Exe: "/x"}); err != nil {
 		t.Fatalf("%v: %s", err, out.String())
 	}
-	if _, err := quotaaxi.LoadChoice(daemon.ConfigDir()); !os.IsNotExist(err) {
+	if _, err := os.Stat(choice); !os.IsNotExist(err) {
 		t.Fatalf("choice remains: %v", err)
 	}
 	_ = f
@@ -267,13 +271,11 @@ printf '%s\n' '{"auth":[{"provider":"claude","sources":[{"status":"available"}]}
 }
 
 func TestQuotaSetupPrintsOneLoginSummaryLine(t *testing.T) {
-	f := newFixture(t)
-	path := filepath.Join(f.home, "quota-axi")
+	newFixture(t)
+	bin, _ := quotaPath(t, "22.19.0")
+	path := filepath.Join(bin, "quota-axi")
 	script := "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 0.1.69; exit 0; fi\nprintf '%s\\n' '{\"auth\":[{\"provider\":\"claude\",\"sources\":[{\"status\":\"available\"}]},{\"provider\":\"codex\",\"sources\":[{\"status\":\"available\"}]},{\"provider\":\"gemini\",\"sources\":[{\"status\":\"missing\"}]}]}'\n"
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := quotaaxi.SaveChoice(daemon.ConfigDir(), []quotaaxi.Copy{{Path: path, Version: "0.1.69", Runs: true}}); err != nil {
 		t.Fatal(err)
 	}
 	answer(t, "n\n")
