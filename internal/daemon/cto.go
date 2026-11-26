@@ -66,6 +66,7 @@ const ctoMergerRecipe = `When the owner asks to set up a merger, a tester-merger
 type ctoRuntime struct {
 	pid               atomic.Int64
 	mu                sync.Mutex
+	gen               uint64
 	cmd               *exec.Cmd
 	exited            chan struct{}
 	run               *ctoProcess
@@ -165,11 +166,18 @@ func (c *ctoRuntime) apiTo(ctx context.Context, base, password, method, path str
 }
 
 func (d *Daemon) ctoOp(ctx context.Context, op opencodeapi.Operation, id, query string, body any) ([]byte, error) {
-	path, err := d.openCodePath(ctx, d.cto.base, d.cto.password, d.cto.version, d.cto.identity, op, id)
+	d.cto.mu.Lock()
+	base, password, version, identity := d.cto.base, d.cto.password, d.cto.version, d.cto.identity
+	d.cto.mu.Unlock()
+	return d.ctoOpAt(ctx, base, password, version, identity, op, id, query, body)
+}
+
+func (d *Daemon) ctoOpAt(ctx context.Context, base, password, version, identity string, op opencodeapi.Operation, id, query string, body any) ([]byte, error) {
+	path, err := d.openCodePath(ctx, base, password, version, identity, op, id)
 	if err != nil {
 		return nil, err
 	}
-	return d.cto.api(ctx, op.Method(), path+query, body)
+	return d.cto.apiTo(ctx, base, password, op.Method(), path+query, body)
 }
 
 func (d *Daemon) ctoConfigData(config string) ([]byte, error) {
@@ -302,7 +310,7 @@ func (d *Daemon) ctoModel(ctx context.Context) (string, error) {
 	}
 	return models[0], nil
 }
-func (d *Daemon) createCTOLocked(ctx context.Context) (string, error) {
+func (d *Daemon) createCTO(ctx context.Context, gen uint64, base, password, version, identity string) (string, error) {
 	model, err := d.ctoModel(ctx)
 	if err != nil {
 		return "", err
@@ -311,7 +319,7 @@ func (d *Daemon) createCTOLocked(ctx context.Context) (string, error) {
 	if !ok || provider == "" || id == "" {
 		return "", fmt.Errorf("invalid OpenCode model %q", model)
 	}
-	body, err := d.ctoOp(ctx, opencodeapi.CreateSession, "", "", map[string]any{"title": "agent-net CTO", "agent": "cto", "model": map[string]string{"providerID": provider, "id": id}})
+	body, err := d.ctoOpAt(ctx, base, password, version, identity, opencodeapi.CreateSession, "", "", map[string]any{"title": "agent-net CTO", "agent": "cto", "model": map[string]string{"providerID": provider, "id": id}})
 	if err != nil {
 		return "", err
 	}
@@ -322,6 +330,12 @@ func (d *Daemon) createCTOLocked(ctx context.Context) (string, error) {
 	}
 	if json.Unmarshal(body, &created) != nil || created.Data.ID == "" {
 		return "", errors.New("OpenCode did not return a session ID")
+	}
+	d.cto.mu.Lock()
+	same := d.cto.gen == gen
+	d.cto.mu.Unlock()
+	if !same {
+		return "", errCTONotRunning
 	}
 	tx, err := d.st.db.Begin()
 	if err != nil {
@@ -340,7 +354,15 @@ func (d *Daemon) createCTOLocked(ctx context.Context) (string, error) {
 	if err = tx.Commit(); err != nil {
 		return "", err
 	}
-	d.cto.model, d.cto.session = model, created.Data.ID
+	d.cto.mu.Lock()
+	same = d.cto.gen == gen
+	if same {
+		d.cto.model, d.cto.session = model, created.Data.ID
+	}
+	d.cto.mu.Unlock()
+	if !same {
+		return "", errCTONotRunning
+	}
 	return created.Data.ID, nil
 }
 
@@ -399,15 +421,15 @@ func (d *Daemon) openCodeCTOSessionSelectionAt(ctx context.Context, base, passwo
 	return modelRef(session.Data.Model.ProviderID, session.Data.Model.ID, session.Data.Model.ModelID), session.Data.Agent, nil
 }
 
-// syncOpenCodeCTOSelection keeps the live OpenCode session aligned with the
-// saved CTO model and agent. The caller must hold cto.mu.
-func (d *Daemon) syncOpenCodeCTOSelection(ctx context.Context, id string) (string, error) {
+// syncOpenCodeCTOSelectionAt keeps the live OpenCode session aligned with the
+// saved CTO model and agent without holding cto.mu across HTTP or gateway calls.
+func (d *Daemon) syncOpenCodeCTOSelectionAt(ctx context.Context, gen uint64, base, password, version, identity, memSession, memModel, id string) (string, error) {
 	c := &d.cto
 	model, err := d.ctoModel(ctx)
 	if err != nil {
 		return "", err
 	}
-	currentModel, currentAgent, err := d.openCodeCTOSessionSelection(ctx, id)
+	currentModel, currentAgent, err := d.openCodeCTOSessionSelectionAt(ctx, base, password, version, identity, id)
 	if err != nil {
 		return "", fmt.Errorf("read CTO OpenCode session: %w", err)
 	}
@@ -415,8 +437,8 @@ func (d *Daemon) syncOpenCodeCTOSelection(ctx context.Context, id string) (strin
 	if err != nil {
 		return "", err
 	}
-	if lastApplied == "" && c.session == id && c.model != "" {
-		lastApplied = c.model
+	if lastApplied == "" && memSession == id && memModel != "" {
+		lastApplied = memModel
 	}
 	if currentModel != "" && currentModel != model && currentModel != lastApplied {
 		model = currentModel
@@ -429,7 +451,7 @@ func (d *Daemon) syncOpenCodeCTOSelection(ctx context.Context, id string) (strin
 		}
 	}
 	if currentAgent != "cto" {
-		if _, err := d.ctoOp(ctx, opencodeapi.SetAgent, id, "", map[string]string{"agent": "cto"}); err != nil {
+		if _, err := d.ctoOpAt(ctx, base, password, version, identity, opencodeapi.SetAgent, id, "", map[string]string{"agent": "cto"}); err != nil {
 			return "", err
 		}
 	}
@@ -439,7 +461,7 @@ func (d *Daemon) syncOpenCodeCTOSelection(ctx context.Context, id string) (strin
 			return "", fmt.Errorf("invalid OpenCode model %q", model)
 		}
 		if currentModel != model {
-			if _, err := d.ctoOp(ctx, opencodeapi.SetModel, id, "", map[string]any{"model": map[string]string{"providerID": provider, "id": name}}); err != nil {
+			if _, err := d.ctoOpAt(ctx, base, password, version, identity, opencodeapi.SetModel, id, "", map[string]any{"model": map[string]string{"providerID": provider, "id": name}}); err != nil {
 				return "", err
 			}
 		}
@@ -447,16 +469,30 @@ func (d *Daemon) syncOpenCodeCTOSelection(ctx context.Context, id string) (strin
 			return "", err
 		}
 	}
-	c.session, c.model = id, model
+	c.mu.Lock()
+	same := c.gen == gen
+	if same {
+		c.session, c.model = id, model
+	}
+	c.mu.Unlock()
+	if !same {
+		return "", errCTONotRunning
+	}
 	return model, nil
 }
 
 func (d *Daemon) openCodeCTOSend(ctx context.Context, text string) (any, error) {
 	c := &d.cto
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if err := d.startOpenCodeRole(ctx, roleCTO); err != nil {
 		return nil, err
+	}
+	c.mu.Lock()
+	gen := c.gen
+	base, password, version, identity := c.base, c.password, c.version, c.identity
+	memSession, memModel := c.session, c.model
+	c.mu.Unlock()
+	if base == "" {
+		return nil, errCTONotRunning
 	}
 	id, err := d.ctoSession()
 	if err != nil {
@@ -464,7 +500,7 @@ func (d *Daemon) openCodeCTOSend(ctx context.Context, text string) (any, error) 
 	}
 	fresh := id == ""
 	if fresh {
-		id, err = d.createCTOLocked(ctx)
+		id, err = d.createCTO(ctx, gen, base, password, version, identity)
 		if err != nil {
 			return nil, err
 		}
@@ -475,12 +511,12 @@ func (d *Daemon) openCodeCTOSend(ctx context.Context, text string) (any, error) 
 	if d.takeStartContextDue(d.ctoSessionID()) && !fresh {
 		text = prependStartBlock(d.ctoStartBlock(ctx), text)
 	}
-	if _, err = d.syncOpenCodeCTOSelection(ctx, id); err != nil {
+	if _, err = d.syncOpenCodeCTOSelectionAt(ctx, gen, base, password, version, identity, memSession, memModel, id); err != nil {
 		return nil, err
 	}
-	before := d.openCodeSessionContext(ctx, c.base, c.password, c.version, c.identity, id)
+	before := d.openCodeSessionContext(ctx, base, password, version, identity, id)
 	var sent []byte
-	sent, err = d.ctoOp(ctx, opencodeapi.Prompt, id, "", map[string]string{"text": text, "delivery": "queue"})
+	sent, err = d.ctoOpAt(ctx, base, password, version, identity, opencodeapi.Prompt, id, "", map[string]string{"text": text, "delivery": "queue"})
 	if err == nil {
 		err = d.touchCTOConversation("opencode")
 	}
@@ -500,7 +536,7 @@ func (d *Daemon) openCodeCTOSend(ctx context.Context, text string) (any, error) 
 			} `json:"data"`
 		}
 		if json.Unmarshal(sent, &prompt) == nil && prompt.Data.Time.Created > 0 {
-			d.watchOpenCodeCTODelivery(id, c.base, c.password, c.version, c.identity, prompt.Data.Time.Created, prompt.Data.ID, text, msgID)
+			d.watchOpenCodeCTODelivery(id, base, password, version, identity, prompt.Data.Time.Created, prompt.Data.ID, text, msgID)
 		}
 	}
 	if err == nil {
@@ -627,12 +663,14 @@ func (d *Daemon) openCodeCTOEvents(ctx context.Context, index int) (protocol.CTO
 	if id == "" {
 		return out, nil
 	}
+	if err = d.startOpenCodeRole(ctx, roleCTO); err != nil {
+		return out, err
+	}
 	c.mu.Lock()
-	err = d.startOpenCodeRole(ctx, roleCTO)
 	base, password, version, identity := c.base, c.password, c.version, c.identity
 	c.mu.Unlock()
-	if err != nil {
-		return out, err
+	if base == "" {
+		return out, errCTONotRunning
 	}
 	if model, _, e := d.openCodeCTOSessionSelectionAt(ctx, base, password, version, identity, id); e == nil && model != "" {
 		out.Model = model

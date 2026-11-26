@@ -427,9 +427,11 @@ func (d *Daemon) ctoEnterOnce(ctx context.Context, trigger string) (plan protoco
 			return plan, e
 		}
 		d.cto.mu.Lock()
-		defer d.cto.mu.Unlock()
 		oldID := id
 		id = d.claudeCTO.sessionID()
+		ref := d.claudeCTO.ref
+		restarted := d.claudeCTO.restarted
+		d.cto.mu.Unlock()
 		if e = d.setCTOConversation("claude", id); e != nil {
 			return plan, e
 		}
@@ -443,31 +445,37 @@ func (d *Daemon) ctoEnterOnce(ctx context.Context, trigger string) (plan protoco
 		if dir := d.claudeRoleDir(roleCTO); isDir(dir) {
 			base.Dir = dir
 		}
-		plan = claudeAttachPlan(base, bin, d.claudeCTO.ref, ctoViewName)
-		if d.claudeCTO.restarted {
+		plan = claudeAttachPlan(base, bin, ref, ctoViewName)
+		if restarted {
 			plan.Note = claudeCTORestartNotice
 		}
 	} else {
-		d.cto.mu.Lock()
-		defer d.cto.mu.Unlock()
 		if err = d.startOpenCodeRole(ctx, roleCTO); err != nil {
 			return plan, err
+		}
+		d.cto.mu.Lock()
+		gen := d.cto.gen
+		base, password, version, identity := d.cto.base, d.cto.password, d.cto.version, d.cto.identity
+		memSession, memModel := d.cto.session, d.cto.model
+		d.cto.mu.Unlock()
+		if base == "" {
+			return plan, errCTONotRunning
 		}
 		id, e := d.ctoSession()
 		if e != nil {
 			return plan, e
 		}
 		if id == "" {
-			id, e = d.createCTOLocked(ctx)
+			id, e = d.createCTO(ctx, gen, base, password, version, identity)
 			if e != nil {
 				return plan, e
 			}
 		}
-		if _, e = d.syncOpenCodeCTOSelection(ctx, id); e != nil {
+		if _, e = d.syncOpenCodeCTOSelectionAt(ctx, gen, base, password, version, identity, memSession, memModel, id); e != nil {
 			return plan, e
 		}
-		plan.Argv = []string{bin, "--server", d.cto.base, "--session", id}
-		plan.Env = map[string]string{"OPENCODE_SERVER_PASSWORD": d.cto.password}
+		plan.Argv = []string{bin, "--server", base, "--session", id}
+		plan.Env = map[string]string{"OPENCODE_SERVER_PASSWORD": password}
 	}
 	return plan, nil
 }

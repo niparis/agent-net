@@ -39,21 +39,38 @@ func ctoPermissions() []ctoPermission {
 // appeared 1 to 3 s after the server started. The caller's context bounds the
 // wait; the start uses its startup deadline.
 func (d *Daemon) checkOpenCodeCTOAgent(ctx context.Context, info []byte) error {
-	var version struct {
+	d.cto.mu.Lock()
+	base, password, version, identity := d.cto.base, d.cto.password, d.cto.version, d.cto.identity
+	d.cto.mu.Unlock()
+	err := d.checkOpenCodeCTOAgentAt(ctx, base, password, &version, identity, info)
+	if version != "" {
+		d.cto.mu.Lock()
+		d.cto.version = version
+		d.cto.mu.Unlock()
+	}
+	return err
+}
+
+func (d *Daemon) checkOpenCodeCTOAgentAt(ctx context.Context, base, password string, version *string, identity string, info []byte) error {
+	var parsed struct {
 		Version string `json:"version"`
 	}
-	if json.Unmarshal(info, &version) != nil || version.Version == "" {
-		version.Version = "(unknown)"
+	if json.Unmarshal(info, &parsed) != nil || parsed.Version == "" {
+		parsed.Version = "(unknown)"
 	}
-	if version.Version != "(unknown)" {
-		d.cto.version = version.Version
+	if parsed.Version != "(unknown)" && version != nil {
+		*version = parsed.Version
 	}
 	if d.log != nil {
-		d.log.Printf("CTO OpenCode version: %s", version.Version)
+		d.log.Printf("CTO OpenCode version: %s", parsed.Version)
+	}
+	v := ""
+	if version != nil {
+		v = *version
 	}
 	var lastErr error
 	for {
-		listed, err := d.ctoAgentListed(ctx)
+		listed, err := d.ctoAgentListedAt(ctx, base, password, v, identity)
 		if err == nil && listed {
 			return nil
 		}
@@ -72,7 +89,14 @@ func (d *Daemon) checkOpenCodeCTOAgent(ctx context.Context, info []byte) error {
 // ctoAgentListed reports whether one listing of the private server has an
 // enabled cto agent.
 func (d *Daemon) ctoAgentListed(ctx context.Context) (bool, error) {
-	raw, err := d.ctoOp(ctx, opencodeapi.Agents, "", "", nil)
+	d.cto.mu.Lock()
+	base, password, version, identity := d.cto.base, d.cto.password, d.cto.version, d.cto.identity
+	d.cto.mu.Unlock()
+	return d.ctoAgentListedAt(ctx, base, password, version, identity)
+}
+
+func (d *Daemon) ctoAgentListedAt(ctx context.Context, base, password, version, identity string) (bool, error) {
+	raw, err := d.ctoOpAt(ctx, base, password, version, identity, opencodeapi.Agents, "", "", nil)
 	if err != nil {
 		return false, fmt.Errorf("CTO OpenCode: read agents: %w", err)
 	}

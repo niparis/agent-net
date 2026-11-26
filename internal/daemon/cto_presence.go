@@ -8,27 +8,28 @@ import (
 // ctoRunning reports whether this daemon currently supervises a live runtime.
 func (d *Daemon) ctoRunning() bool {
 	d.cto.mu.Lock()
-	defer d.cto.mu.Unlock()
 	if d.cto.cmd != nil && !d.ctoHandoverPendingLocked("opencode") {
 		select {
 		case <-d.cto.exited:
 		default:
+			d.cto.mu.Unlock()
 			return true
 		}
 	}
 	if d.codexCTORunningLocked() && !d.ctoHandoverPendingLocked("codex") {
+		d.cto.mu.Unlock()
 		return true
 	}
 	c := &d.claudeCTO
-	if c.ref == "" || d.ctoHandoverPendingLocked("claude") {
-		return false
-	}
+	ref := c.ref
+	handover := d.ctoHandoverPendingLocked("claude")
 	root := c.root.Load()
-	if root == nil {
+	d.cto.mu.Unlock()
+	if ref == "" || handover || root == nil {
 		return false
 	}
 	token, alive := procToken(root.pid)
-	state, _ := claudeCTOJobState(d.cfg.ClaudeSessionsDir, c.ref)
+	state, _ := claudeCTOJobState(d.cfg.ClaudeSessionsDir, ref)
 	return alive && token == root.token && !claudeJobEnded(state)
 }
 
@@ -59,6 +60,7 @@ func (d *Daemon) scheduleCTOPresence() {
 // Caller holds cto.mu. A process that already exited logs its own crash.
 func (d *Daemon) stopOpenCodeCTOLocked(reason string) {
 	c := &d.cto
+	c.gen++
 	if c.cmd == nil {
 		return
 	}
@@ -90,19 +92,22 @@ func (d *Daemon) monitorClaudeCTO(ctx context.Context, ref string, pid int, toke
 			d.cto.mu.Lock()
 			c := &d.claudeCTO
 			root := c.root.Load()
-			if c.ref != ref || root == nil || root.pid != pid || root.token != token {
-				d.cto.mu.Unlock()
+			same := c.ref == ref && root != nil && root.pid == pid && root.token == token
+			d.cto.mu.Unlock()
+			if !same {
 				return
 			}
 			actual, alive := procToken(pid)
 			state, _ := claudeCTOJobState(d.cfg.ClaudeSessionsDir, ref)
 			if !alive || actual != token || claudeJobEnded(state) {
-				reason := claudeCTOEndReason(state)
-				d.stopClaudeCTOLocked(reason)
+				d.cto.mu.Lock()
+				root = c.root.Load()
+				if c.ref == ref && root != nil && root.pid == pid && root.token == token {
+					d.stopClaudeCTOLocked(claudeCTOEndReason(state))
+				}
 				d.cto.mu.Unlock()
 				return
 			}
-			d.cto.mu.Unlock()
 		}
 	}
 }

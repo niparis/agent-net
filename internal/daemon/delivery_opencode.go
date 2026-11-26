@@ -203,21 +203,31 @@ func (d *Daemon) restartOpenCodeCTOForDelivery(ctx context.Context, id, text, ms
 	defer d.ctoDispatchMu.unlock()
 	c := &d.cto
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.session != id {
+		c.mu.Unlock()
 		d.Logf("cto.delivery_unconfirmed msg=%s reason=cto_changed", msgID)
 		return
 	}
 	d.stopOpenCodeCTOLocked("delivery_unconfirmed")
+	c.mu.Unlock()
 	if err := d.startOpenCodeRole(ctx, roleCTO); err != nil {
 		d.Logf("cto.delivery_unconfirmed msg=%s reason=restart_failed detail=%q", msgID, err.Error())
 		return
 	}
-	if _, err := d.syncOpenCodeCTOSelection(ctx, id); err != nil {
+	c.mu.Lock()
+	gen := c.gen
+	base, password, version, identity := c.base, c.password, c.version, c.identity
+	memSession, memModel := c.session, c.model
+	c.mu.Unlock()
+	if base == "" {
+		d.Logf("cto.delivery_unconfirmed msg=%s reason=restart_failed detail=%q", msgID, errCTONotRunning.Error())
+		return
+	}
+	if _, err := d.syncOpenCodeCTOSelectionAt(ctx, gen, base, password, version, identity, memSession, memModel, id); err != nil {
 		d.Logf("cto.delivery_unconfirmed msg=%s reason=restart_failed detail=%q", msgID, err.Error())
 		return
 	}
-	state, err := d.openCodePromptState(ctx, c.base, c.password, c.version, c.identity, id, sentIDs)
+	state, err := d.openCodePromptState(ctx, base, password, version, identity, id, sentIDs)
 	if err != nil {
 		d.Logf("cto.delivery_unconfirmed msg=%s reason=stored_unknown detail=%q", msgID, err.Error())
 		return
@@ -230,14 +240,14 @@ func (d *Daemon) restartOpenCodeCTOForDelivery(ctx context.Context, id, text, ms
 	case promptUnanswered:
 		// The prompt is stored with no reply. Nudge the conversation to answer it,
 		// rather than sending the full text again.
-		if _, err := d.ctoOp(ctx, opencodeapi.Prompt, id, "", map[string]string{"text": openCodeNudgeText, "delivery": "queue"}); err != nil {
+		if _, err := d.ctoOpAt(ctx, base, password, version, identity, opencodeapi.Prompt, id, "", map[string]string{"text": openCodeNudgeText, "delivery": "queue"}); err != nil {
 			d.Logf("cto.delivery_unconfirmed msg=%s reason=restart_failed detail=%q", msgID, err.Error())
 			return
 		}
 		d.Logf("cto.delivery_nudged msg=%s", msgID)
 		return
 	}
-	if _, err := d.ctoOp(ctx, opencodeapi.Prompt, id, "", map[string]string{"text": text, "delivery": "queue"}); err != nil {
+	if _, err := d.ctoOpAt(ctx, base, password, version, identity, opencodeapi.Prompt, id, "", map[string]string{"text": text, "delivery": "queue"}); err != nil {
 		d.Logf("cto.delivery_unconfirmed msg=%s reason=restart_failed detail=%q", msgID, err.Error())
 	}
 }

@@ -705,9 +705,7 @@ func testCTOOpenCodeBuiltinsStart(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startClaudeNode(t, g, shortSet)
 	n.d.cfg.HarnessPaths["opencode"] = os.Args[0]
-	n.d.cto.mu.Lock()
 	err := n.d.startOpenCodeRole(context.Background(), roleCTO)
-	n.d.cto.mu.Unlock()
 	t.Cleanup(func() {
 		n.d.cto.mu.Lock()
 		n.d.stopOpenCodeCTOLocked("test")
