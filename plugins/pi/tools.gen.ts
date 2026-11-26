@@ -2689,7 +2689,7 @@ export const TOOL_CATALOG = [
           "items": {
             "type": "string"
           },
-          "description": "The facts you already have, one line each."
+          "description": "The facts you already have, one line each. The difficulty judge reads only this brief, never the files it names: state the size here (new modules or files, tests, the spec's sections)."
         },
         "hypothesis": {
           "type": "string",
@@ -2780,7 +2780,7 @@ export const TOOL_CATALOG = [
           "items": {
             "type": "string"
           },
-          "description": "The facts you already have, one line each."
+          "description": "The facts you already have, one line each. The difficulty judge reads only this brief, never the files it names: state the size here (new modules or files, tests, the spec's sections)."
         },
         "hypothesis": {
           "type": "string",

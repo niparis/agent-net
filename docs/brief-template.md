@@ -17,8 +17,10 @@ out what does not.
 2. **`done` (required).** The outcomes the worker can check by itself, one line
    each. The accept and review steps check exactly this list, so write each
    line so that it can be true or false.
-3. **`evidence` (optional).** The facts you already have, one line each: the
-   failing test, the error text, the commit, the log line.
+3. **`evidence` (optional).** The facts you already have, one line each (the
+   failing test, the error text, the commit, the log line), plus the size of
+   the work (new modules or files, tests, the spec's sections), because the
+   difficulty judge reads only this brief and never the files it names.
 4. **`hypothesis` (optional).** Your guess at the cause or the fix. The brief
    marks it as yours, and the worker may drop it if it is wrong.
 5. **`scope` (optional).** What not to touch and the known traps, for example

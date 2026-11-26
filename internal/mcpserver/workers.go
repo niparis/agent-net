@@ -9,7 +9,7 @@ type startIn struct {
 	Project      string   `json:"project,omitempty" jsonschema:"The name of a project from agent_projects_find, or the absolute path of its folder (use a path when two folders share a name). Leave it empty to use the folder you are working in (on the machine that has the harness)"`
 	Task         string   `json:"task,omitempty" jsonschema:"what the worker should do, with everything it needs to know; it cannot ask you questions except by agent_message_reply. Optional only with continue"`
 	Problem      string   `json:"problem,omitempty" jsonschema:"What is wrong or wanted, in your owner's words, with who asked. Required for a new start."`
-	Evidence     []string `json:"evidence,omitempty" jsonschema:"The facts you already have, one line each."`
+	Evidence     []string `json:"evidence,omitempty" jsonschema:"The facts you already have, one line each. The difficulty judge reads only this brief, never the files it names: state the size here (new modules or files, tests, the spec's sections)."`
 	Done         []string `json:"done,omitempty" jsonschema:"Outcomes the worker can check itself, one line each. Required with problem. The accept and review tasks check exactly this list."`
 	Hypothesis   string   `json:"hypothesis,omitempty" jsonschema:"Your guess at the cause or the fix. The worker may drop it if wrong."`
 	Scope        string   `json:"scope,omitempty" jsonschema:"What not to touch and the known traps."`
