@@ -511,13 +511,14 @@ func (d *Daemon) resetClaudeCTOLocked(graphAfter int64) error {
 }
 
 func (claudeCTOHarness) events(ctx context.Context, d *Daemon, index int) (protocol.CTOEvents, error) {
-	d.cto.mu.Lock()
-	defer d.cto.mu.Unlock()
 	out := protocol.CTOEvents{Messages: []json.RawMessage{}, Actions: []protocol.CTOAction{}}
+	// The settings come from the gateway, so they are read before cto.mu.
 	settings, err := d.ctoSettings(ctx, protocol.CTOSettingsRequest{})
 	if err != nil {
 		return out, err
 	}
+	d.cto.mu.Lock()
+	defer d.cto.mu.Unlock()
 	out.Model = settings.ClaudeModel
 	id, err := d.claudeCTOSession()
 	if err != nil {

@@ -542,6 +542,9 @@ func (d *Daemon) sessionResumeLocal(ctx context.Context, sessionID string) (prot
 
 func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, pane string) (protocol.StartedSession, error) {
 	if a.SessionID != "" && a.SessionID == d.ctoSessionID() {
+		if err := refuseCTOSelfControl(ctx); err != nil {
+			return protocol.StartedSession{}, err
+		}
 		return d.resumeCTOSession(ctx, a)
 	}
 	if a.NativeID == "" || (a.Harness != "claude" && a.Harness != "pi" && a.Harness != "opencode" && a.Harness != "codex") {

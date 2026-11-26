@@ -229,8 +229,8 @@ func TestCTOSessionControlRefusesWorkersAndTheCTO(t *testing.T) {
 		if _, err := ctoControl(n, action, worker); err == nil || !strings.Contains(err.Error(), "worker") {
 			t.Errorf("%s accepted a worker: %v", action, err)
 		}
-		if _, err := ctoControl(n, action, cto); err == nil || !strings.Contains(err.Error(), "CTO") {
-			t.Errorf("%s accepted the CTO itself: %v", action, err)
+		if _, err := ctoControl(n, action, cto); !isCTOSelfControlRefusal(err) {
+			t.Errorf("%s on the CTO itself: %v, want %q", action, err, errCTOSelfControl)
 		}
 	}
 }
@@ -329,5 +329,36 @@ func TestOwnerStopsResumesAndRestartsTheCTO(t *testing.T) {
 	n.d.cto.mu.Unlock()
 	if !n.d.ctoRunning() || newJob == "" || newJob == job || n.d.ctoSessionID() != id {
 		t.Fatalf("restart: running=%v job %s -> %s, id %s -> %s", n.d.ctoRunning(), job, newJob, id, n.d.ctoSessionID())
+	}
+}
+
+// isCTOSelfControlRefusal says whether err is the one-line refusal of the CTO's
+// own stop, resume or restart.
+func isCTOSelfControlRefusal(err error) bool {
+	return err != nil && strings.Contains(err.Error(), errCTOSelfControl.Error()) && !strings.Contains(err.Error(), "\n")
+}
+
+// The CTO cannot stop or resume its own session through the owner operations,
+// whether it calls them with settings_change or with cto_op (decision 0157).
+// The refusal is one line, and no owner stop is recorded.
+func TestCTOCannotControlItsOwnSessionThroughTheOperator(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	ctx := context.Background()
+	if err := n.d.registerCTOSession(ctx); err != nil {
+		t.Fatal(err)
+	}
+	session, _ := json.Marshal(map[string]string{"session_id": n.d.ctoSessionID()})
+	for _, method := range []string{"session_stop", "session_resume"} {
+		viaSettings, _ := json.Marshal(map[string]any{"area": "operator", "method": method, "arguments": json.RawMessage(session)})
+		viaOp, _ := json.Marshal(map[string]any{"method": method, "args": json.RawMessage(session)})
+		for tool, raw := range map[string]json.RawMessage{"settings_change": viaSettings, "cto_op": viaOp} {
+			if _, err := n.d.runCTOTool(ctx, tool, raw); !isCTOSelfControlRefusal(err) {
+				t.Errorf("%s %s on the CTO itself: %v, want %q", tool, method, err, errCTOSelfControl)
+			}
+		}
+	}
+	if stopped, err := n.d.ctoStoppedByOwner(); err != nil || stopped {
+		t.Fatalf("a refused stop was recorded as the owner's: stopped=%t err=%v", stopped, err)
 	}
 }

@@ -99,8 +99,10 @@ too: `x` on its Sessions row stops it, Enter or resume starts it again on its
 conversation, and a restart waits until the gateway reports it dormant. The
 branch for the CTO sits at the entry of each ordinary function
 (`sessionStopLocal`, `resumeAgent`, `waitSessionEnded`) and calls the CTO's own
-stop and start. The CTO still cannot stop or restart its own session from its
-tools.
+stop and start. The CTO still cannot stop, resume or restart its own session
+from its tools. The check sits in the same two branches, for any call from
+the CTO's tools, so the operator methods reached through
+`settings_change` or `cto_op` are refused like `session_change`.
 
 ## What this supersedes
 

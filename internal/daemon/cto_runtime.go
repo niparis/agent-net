@@ -102,9 +102,13 @@ func (d *Daemon) selectedCTOHarness(ctx context.Context) (ctoHarness, error) {
 		return nil, err
 	}
 	if pick.Harness != settings.Harness {
-		// A fallback to another harness hands over like an owner switch, with
-		// the mechanical layer only: the old model has just failed (decision
-		// 0171). A handover that fails is logged, and the fallback goes on.
+		// A fallback to another harness saves the timeline and hands over like
+		// an owner switch, with the mechanical layer only: the old model has
+		// just failed (decision 0171). A save or handover that fails is logged,
+		// and the fallback goes on.
+		if err := d.snapshotCTOHarness(ctx, settings.Harness); err != nil {
+			d.Logf("cto.fallback save harness=%s: %v", settings.Harness, err)
+		}
 		if err := d.ctoHandover(ctx, settings.Harness, pick.Harness, false, false); err != nil {
 			d.Logf("cto.handover harness=%s to=%s: %v", settings.Harness, pick.Harness, err)
 		}
@@ -116,7 +120,14 @@ func (d *Daemon) selectedCTOHarness(ctx context.Context) (ctoHarness, error) {
 	}
 	if pick.NewConversation {
 		// The current model failed a locked check. The role falls to its list
-		// with a new conversation; the old one stays in the other harness.
+		// with a new conversation; the old one stays in the other harness. On
+		// the same harness the old one is saved first, so it stays in the
+		// timeline. Another harness's was saved when it was left.
+		if pick.Harness == settings.Harness {
+			if err := d.snapshotCTOHarness(ctx, pick.Harness); err != nil {
+				d.Logf("cto.fallback save harness=%s: %v", pick.Harness, err)
+			}
+		}
 		if err := d.clearCTOConversation(pick.Harness); err != nil {
 			return nil, err
 		}
@@ -266,6 +277,10 @@ func (d *Daemon) ctoNew(ctx context.Context) (any, error) {
 	h, err := d.selectedCTOHarness(ctx)
 	if err != nil {
 		return nil, err
+	}
+	// The conversation that ends stays in the timeline, as a switch keeps it.
+	if err := d.snapshotCTOHarness(ctx, h.name()); err != nil {
+		return nil, fmt.Errorf("save the CTO timeline before a new conversation: %w", err)
 	}
 	out, err := h.newConversation(ctx, d)
 	if err == nil {

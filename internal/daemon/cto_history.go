@@ -20,18 +20,28 @@ type ctoHistoryEntry struct {
 	isMsg   bool
 }
 
-// snapshotCTOHarness stores the session that is being left so a later events
-// request can read the full timeline without starting an inactive harness.
+// snapshotCTOHarness saves the conversation a harness holds before it is left
+// or ended (a switch, a fallback, cto_new), so a later events request shows it
+// without starting the harness again. A Codex or OpenCode harness that runs is
+// read with no lock held; one that is down is read the way a timeline read
+// does. A harness with no conversation has nothing to save.
 func (d *Daemon) snapshotCTOHarness(ctx context.Context, harness string) error {
+	conversation, err := d.ctoConversation(harness)
+	if err != nil || conversation == "" {
+		return err
+	}
 	var events protocol.CTOEvents
-	var err error
 	switch harness {
 	case "claude":
 		events, err = (claudeCTOHarness{}).events(ctx, d, 0)
 	case "codex":
-		events, err = d.codexCTOEvents(ctx, 0)
+		if events, err = d.codexCTORunningEvents(ctx); errors.Is(err, errCTONotRunning) {
+			events, err = d.codexCTOEvents(ctx, 0)
+		}
 	default:
-		events, err = d.openCodeCTOEvents(ctx, 0)
+		if events, err = d.openCodeCTORunningEvents(ctx); errors.Is(err, errCTONotRunning) {
+			events, err = d.openCodeCTOEvents(ctx, 0)
+		}
 	}
 	if err != nil {
 		return err
@@ -39,8 +49,10 @@ func (d *Daemon) snapshotCTOHarness(ctx context.Context, harness string) error {
 	return d.saveCTOHistory(harness, events)
 }
 
-// saveCTOHistory replaces the saved conversation of one harness in one
-// transaction, so a failed save leaves the earlier one as it was.
+// saveCTOHistory replaces the saved copy of the harness's current
+// conversation in one transaction, so a failed save leaves the earlier one as
+// it was. The rows of the harness's earlier conversations stay: they are the
+// only copy once a new conversation has replaced them.
 func (d *Daemon) saveCTOHistory(harness string, events protocol.CTOEvents) error {
 	events.Messages = dropHandoverExchange(events.Messages)
 	sessionID, err := d.ctoConversation(harness)
@@ -52,7 +64,7 @@ func (d *Daemon) saveCTOHistory(harness string, events protocol.CTOEvents) error
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.Exec(`DELETE FROM cto_history WHERE harness=? AND kind IN ('message','action')`, harness); err != nil {
+	if _, err = tx.Exec(`DELETE FROM cto_history WHERE harness=? AND session_id=? AND kind IN ('message','action')`, harness, sessionID); err != nil {
 		return err
 	}
 	for _, message := range events.Messages {
@@ -84,9 +96,20 @@ func ctoMessageAt(raw json.RawMessage) int64 {
 	return message.Time.Created * int64(time.Millisecond)
 }
 
+// mergeCTOHistory joins the live conversation of the active harness with the
+// saved rows and the switch dividers. The saved copy of the conversation read
+// live is left out; the saved rows of every other conversation, of any
+// harness, are shown. With no active harness every saved row is shown.
 func (d *Daemon) mergeCTOHistory(out protocol.CTOEvents, active string, index int) (protocol.CTOEvents, error) {
 	if index == -int(^uint(0)>>1)-1 {
 		return out, errors.New("invalid CTO history index")
+	}
+	live := ""
+	if active != "" {
+		var err error
+		if live, err = d.ctoConversation(active); err != nil {
+			return out, err
+		}
 	}
 	entries := make([]ctoHistoryEntry, 0, len(out.Messages)+len(out.Actions))
 	for _, message := range out.Messages {
@@ -95,7 +118,7 @@ func (d *Daemon) mergeCTOHistory(out protocol.CTOEvents, active string, index in
 	for _, action := range out.Actions {
 		entries = append(entries, ctoHistoryEntry{at: action.At, action: action})
 	}
-	rows, err := d.st.db.Query(`SELECT id,harness,kind,at,payload FROM cto_history WHERE (harness<>? AND kind IN ('message','action')) OR kind='switch' ORDER BY id`, active)
+	rows, err := d.st.db.Query(`SELECT id,harness,kind,at,payload FROM cto_history WHERE (kind IN ('message','action') AND NOT (harness=? AND session_id=?)) OR kind='switch' ORDER BY id`, active, live)
 	if err != nil {
 		return out, err
 	}

@@ -469,6 +469,11 @@ type Daemon struct {
 	// ctoSkillDone is set once this daemon has ensured the CTO's skill in the
 	// archive (decision 0171).
 	ctoSkillDone atomic.Bool
+	// ctoRestartPlan is the CTO harness this daemon starts again once it is
+	// connected, because it ran when the last daemon stopped. It is set in
+	// Start and not changed after. ctoRestartTaken makes the start run once.
+	ctoRestartPlan  string
+	ctoRestartTaken atomic.Bool
 	// deliveryReads counts the reads of harness events made by delivery checks
 	// (decision 0171, part b). The tests measure the cost with it.
 	deliveryReads atomic.Int64
@@ -807,6 +812,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 		d.cfg.RefreshAgentFiles(d.Logf, d.SettingsSnapshot())
 	}
 	d.adoptLiveClaudeCTO()
+	d.planCTORestart()
 	d.clearUrgentMarkers()
 	d.mcp.start(ctx)
 	ln, err := listenLocal(d, d.cfg.SocketPath)
@@ -891,6 +897,9 @@ func (d *Daemon) Stop() {
 	// Wait for canceled startup to finish publishing before stopping its runtime.
 	_ = d.ctoDispatchMu.lock(context.Background())
 	d.cto.mu.Lock()
+	// A Codex or OpenCode CTO ends with the daemon; the next daemon starts it
+	// again (planCTORestart). The record is written after cto.mu is released.
+	runningCTO := d.ctoRestartHarnessLocked()
 	// The CTO's Claude job outlives the daemon: an upgrade restarts the daemon
 	// often, and killing the job lost the owner's CTO conversation. The next
 	// daemon adopts the running job again (startClaudeRole).
@@ -905,6 +914,7 @@ func (d *Daemon) Stop() {
 	d.stopOpenCodeCTOLocked("daemon_shutdown")
 	d.stopCodexCTOLocked("daemon_shutdown")
 	d.cto.mu.Unlock()
+	d.recordCTORunningAtStop(runningCTO)
 	d.ctoDispatchMu.unlock()
 	d.mcp.stop()
 	d.wg.Wait()

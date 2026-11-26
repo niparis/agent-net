@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -127,8 +128,18 @@ type stopTarget struct {
 // are still alive.
 func (d *Daemon) processStopLocal(ctx context.Context, pids []int) (protocol.ProcessStopResult, error) {
 	res := protocol.ProcessStopResult{NodeID: d.cfg.NodeID, Hostname: d.hostName()}
+	// The CTO does not stop itself (decision 0157). The owner's own stop of
+	// the CTO's process carries no actor and goes through.
+	fromCTO := proposalActor(ctx) != ""
 	targets := make([]*stopTarget, len(pids))
 	for i, pid := range pids {
+		if fromCTO && d.isCTOHarnessProcess(pid) {
+			targets[i] = &stopTarget{out: protocol.ProcessOutcome{PID: pid, Outcome: protocol.ProcessRefused, Reason: "it is the CTO's own harness process"}}
+			if v, err := readProcView(pid); err == nil {
+				targets[i].fill(v)
+			}
+			continue
+		}
 		targets[i] = d.inspectForStop(pid)
 	}
 
@@ -399,4 +410,27 @@ func processOutcomeLine(p protocol.ProcessOutcome) string {
 		line += " (" + details + ")"
 	}
 	return line
+}
+
+// isCTOHarnessProcess says whether pid is the live process of the CTO: its
+// private OpenCode server, its Codex app server or its Claude job.
+func (d *Daemon) isCTOHarnessProcess(pid int) bool {
+	d.cto.mu.Lock()
+	defer d.cto.mu.Unlock()
+	alive := func(cmd *exec.Cmd, exited chan struct{}) bool {
+		if cmd == nil || cmd.Process == nil || cmd.Process.Pid != pid {
+			return false
+		}
+		select {
+		case <-exited:
+			return false
+		default:
+			return true
+		}
+	}
+	if alive(d.cto.cmd, d.cto.exited) || alive(d.codexCTO.cmd, d.codexCTO.exited) {
+		return true
+	}
+	root := d.claudeCTO.root.Load()
+	return root != nil && root.pid == pid
 }

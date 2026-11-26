@@ -48,6 +48,7 @@ func migrateCTOState(db *sql.DB) error {
 		{"setup_skill_listed", "setup_skill_listed INTEGER NOT NULL DEFAULT 0"},
 		{"codex_model", "codex_model TEXT NOT NULL DEFAULT ''"},
 		{"stopped_by_owner", "stopped_by_owner INTEGER NOT NULL DEFAULT 0"},
+		{"running_at_stop", "running_at_stop TEXT NOT NULL DEFAULT ''"},
 	} {
 		var has int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('cto') WHERE name = ?`, col.name).Scan(&has); err != nil {

@@ -63,6 +63,7 @@ func TestCTOWakeAfterCrashAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	peer.mustCall("reply", map[string]string{"message_id": root.ID, "body": "queued while offline"})
+	beforeRestart := len(logs.String())
 	n.restart()
 	eventually(t, "CTO reachable after restart", func() bool { a, _, _ := g.gw.Store().Agent(id); return a.Online })
 	eventually(t, "queued message delivered after restart", func() bool {
@@ -89,12 +90,23 @@ func TestCTOWakeAfterCrashAndRestart(t *testing.T) {
 		count int
 	}{
 		{"cto.start harness=opencode", 3}, {"cto.stop harness=opencode reason=daemon_shutdown", 1},
-		{"cto.stop harness=opencode reason=crash", 1}, {"cto.wake trigger=agent harness=opencode", 2},
+		{"cto.stop harness=opencode reason=crash", 1},
 		{"cto.wake trigger=owner harness=opencode", 1}, {"cto.crash harness=opencode", 1},
 	} {
 		if count := strings.Count(lines, want.text); count != want.count {
 			t.Errorf("%q occurred %d times, want %d:\n%s", want.text, count, want.count, lines)
 		}
+	}
+	// After the restart the daemon starts the CTO it stopped, and the queued
+	// message may get there first. Either one wakes it, never both.
+	before, after := lines[:beforeRestart], lines[beforeRestart:]
+	if count := strings.Count(before, "cto.wake trigger=agent harness=opencode"); count != 1 {
+		t.Errorf("agent wakes before the restart: %d, want 1:\n%s", count, lines)
+	}
+	agent := strings.Count(after, "cto.wake trigger=agent harness=opencode")
+	restart := strings.Count(after, "cto.wake trigger=daemon_restart harness=opencode")
+	if agent+restart != 1 {
+		t.Errorf("wakes after the restart: agent %d, daemon_restart %d, want one in total:\n%s", agent, restart, lines)
 	}
 }
 

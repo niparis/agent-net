@@ -56,6 +56,9 @@ func (d *Daemon) relaySessionStop(ctx context.Context, nodeID, id string) (proto
 func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.SessionStopResult, error) {
 	no := func(err error) (protocol.SessionStopResult, error) { return protocol.SessionStopResult{}, err }
 	if id != "" && id == d.ctoSessionID() {
+		if err := refuseCTOSelfControl(ctx); err != nil {
+			return no(err)
+		}
 		return d.stopCTOSession(ctx)
 	}
 	ls := d.sessionByID(id)

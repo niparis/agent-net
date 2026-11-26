@@ -348,6 +348,53 @@ func TestProcessStopRefusesLiveSessionsAndWorkers(t *testing.T) {
 	}
 }
 
+// ctoHarnessProcesses starts two throwaway processes and makes them the CTO's
+// OpenCode server and Codex app server. The guard allows no signal yet.
+func ctoHarnessProcesses(t *testing.T) (*Daemon, *signalGuard, *throwaway, *throwaway) {
+	t.Helper()
+	openCode, codex := startThrowaway(t, false), startThrowaway(t, false)
+	g := newSignalGuard()
+	d := processStopDaemon(g)
+	d.cto.cmd, d.cto.exited = openCode.cmd, make(chan struct{})
+	d.codexCTO.cmd, d.codexCTO.exited = codex.cmd, make(chan struct{})
+	return d, g, openCode, codex
+}
+
+// The CTO's own OpenCode server and Codex app server are its session, so the
+// CTO cannot stop itself with process_stop (decision 0157).
+func TestProcessStopRefusesTheCTOsOwnHarnessProcessToTheCTO(t *testing.T) {
+	d, g, openCode, codex := ctoHarnessProcesses(t)
+	ctx := context.WithValue(context.Background(), proposalActorKey{}, "cto")
+	res, err := d.processStop(ctx, protocol.ProcessStopRequest{NodeID: d.cfg.NodeID, PIDs: []int{openCode.pid, codex.pid}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.check(t)
+	if len(res.Processes) != 2 {
+		t.Fatalf("want 2 results, got %+v", res.Processes)
+	}
+	for _, outcome := range res.Processes {
+		if outcome.Outcome != protocol.ProcessRefused || outcome.Reason != "it is the CTO's own harness process" || !strings.Contains(outcome.Command, "sleep") {
+			t.Errorf("the CTO's own process must be refused to the CTO: %+v", outcome)
+		}
+	}
+}
+
+// The owner's own process_stop carries no actor and may stop the CTO's process.
+func TestProcessStopLetsTheOwnerStopTheCTOsHarnessProcess(t *testing.T) {
+	d, g, openCode, codex := ctoHarnessProcesses(t)
+	g.allow(openCode, codex)
+	got := stopLocal(t, d, openCode.pid, codex.pid)
+	g.check(t)
+	for _, outcome := range got {
+		if outcome.Outcome != protocol.ProcessStoppedTerm {
+			t.Errorf("the owner's stop must stop the CTO's process: %+v", outcome)
+		}
+	}
+	waitExited(t, openCode)
+	waitExited(t, codex)
+}
+
 func TestProcessStopRefusesAProcessOfAnotherUser(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("every process is the daemon user's when the tests run as root")
@@ -596,6 +643,12 @@ func startNamedThrowaway(t *testing.T, name string) *throwaway {
 		case <-time.After(5 * time.Second):
 			t.Errorf("throwaway process %d did not exit", s.pid)
 		}
+	})
+	// The process table can show the test binary's command line for a moment
+	// after Start, and a stop read then would not see the name.
+	eventually(t, "throwaway process shows "+name, func() bool {
+		v, err := readProcView(s.pid)
+		return err == nil && strings.HasPrefix(v.Command, name)
 	})
 	return s
 }

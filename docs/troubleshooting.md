@@ -222,7 +222,11 @@ grep 'cto\.' ~/Library/Logs/agent-net-daemon.log
 `cto.start` names the harness, `cto.wake` names the trigger, `cto.stop` gives
 the reason, and `cto.crash` records an unexpected process or job failure. A
 `daemon_shutdown` stop with `action=release` leaves the Claude job running for
-the next daemon to adopt. Older daemon versions did not log these events. If
+the next daemon to adopt. A Codex or OpenCode CTO that ran at the daemon stop is
+started again by the next daemon: `cto.wake trigger=daemon_restart`. When that
+start fails, `cto.restart harness=... failed` gives the reason, and the CTO
+waits for a message or Enter. `cto.restart skipped` says the owner had stopped
+it or another harness is selected. Older daemon versions did not log these events. If
 the CTO still fails to start, check the delivery error and the harness log or
 Claude job for the cause. Sending a new message retries a stopped runtime; a
 message whose delivery may have been interrupted is not blindly retried.
