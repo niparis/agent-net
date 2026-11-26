@@ -418,7 +418,6 @@ func TestAgyWorkerHandbackFilesAfterRestart(t *testing.T) {
 // A hand-back the tool call checked is not checked again after a restart: the
 // daemon sends the checked snapshot even when the original file is gone.
 func TestAgyCheckedHandbackSurvivesARestart(t *testing.T) {
-	t.Parallel()
 	set := shortSet
 	set.Idle, set.IdleNotice = time.Hour, time.Hour
 	w, dir, _ := startAgyNode(t, set)
