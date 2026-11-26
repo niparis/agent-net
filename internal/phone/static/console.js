@@ -1,7 +1,7 @@
 // Keys and small toggles for the console. Everything else is server-rendered
 // HTML with htmx and the SSE extension.
 (function () {
-  var ROUTES = { '1': '/', '2': '/sessions', '3': '/graph', '4': '/changes', '5': '/messages', '6': '/workers' };
+  var ROUTES = { '1': '/', '2': '/sessions', '3': '/graph', '4': '/changes', '5': '/messages' };
   var app = document.getElementById('app');
   var cto = document.getElementById('cto');
   var toggle = document.getElementById('toggleCTO');

@@ -1258,7 +1258,7 @@ against other local users on the gateway host.
 
 The web console on that listener (decision 0122) is read and answer only. The
 gateway lets a paired phone reach only the console screens (`/`, `/sessions`,
-`/graph`, `/changes`, `/messages`, `/workers`), `/session/{id}` (a redirect),
+`/graph`, `/changes`, `/messages`), `/session/{id}` (a redirect),
 `/events`, `/action`, the manifest and the static files. The one write route is
 `POST /action`, with the kinds `held`, `outcome`, `inbox`, `mark`, `send`,
 `reply`, `cto_send` and `proposal`. `reply` stays inside a conversation the

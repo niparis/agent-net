@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -102,62 +101,6 @@ func isOwnerGoBuildCache(cacheDir, homeDir string) bool {
 	return sameDir(cacheDir, ownerGoBuildCacheDir(homeDir))
 }
 
-// trimWorkerGoCache walks the worker Go build cache folder and removes old
-// files whose mtime is older than maxAge (Go touches entries when used).
-// README, trim.txt and the folder layout are preserved. The Go caches that
-// sandboxed workers make in their private /tmp are trimmed the same way, so a
-// running worker's cache cannot grow without limit either.
-func (d *Daemon) trimWorkerGoCache(now time.Time, maxAge time.Duration) uint64 {
-	if maxAge <= 0 {
-		return 0
-	}
-	cacheDir := d.workerGoCacheDir()
-	if isOwnerGoBuildCache(cacheDir, d.cfg.HomeDir) {
-		if d.log != nil {
-			d.Logf("worker cache: refuse to trim owner Go cache %s", cacheDir)
-		}
-		return 0
-	}
-	var freed uint64
-	for _, dir := range append([]string{cacheDir}, d.workerPerWorkerGoCacheDirs()...) {
-		freed += trimGoCacheDir(dir, now, maxAge)
-	}
-	return freed
-}
-
-// trimGoCacheDir removes the old files of one Go build cache folder.
-func trimGoCacheDir(cacheDir string, now time.Time, maxAge time.Duration) uint64 {
-	info, err := os.Stat(cacheDir)
-	if err != nil || !info.IsDir() {
-		return 0
-	}
-	var freed uint64
-	_ = filepath.WalkDir(cacheDir, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if entry.IsDir() {
-			return nil // Preserve the folder layout
-		}
-		name := entry.Name()
-		if name == "README" || name == "trim.txt" {
-			return nil
-		}
-		finfo, err := entry.Info()
-		if err != nil {
-			return nil
-		}
-		if now.Sub(finfo.ModTime()) > maxAge {
-			size := uint64(finfo.Size())
-			if err := os.Remove(path); err == nil {
-				freed += size
-			}
-		}
-		return nil
-	})
-	return freed
-}
-
 // goCacheEntry is one removable file of a Go build cache.
 type goCacheEntry struct {
 	path  string
@@ -185,19 +128,6 @@ func isGoCacheDir(dir string) bool {
 	}
 	_, err = os.Stat(filepath.Join(dir, "README"))
 	return err == nil
-}
-
-func goCacheBytes(dir string) int64 {
-	var size int64
-	_ = filepath.WalkDir(dir, func(_ string, entry fs.DirEntry, err error) error {
-		if err == nil && entry.Type().IsRegular() {
-			if info, ierr := entry.Info(); ierr == nil {
-				size += info.Size()
-			}
-		}
-		return nil
-	})
-	return size
 }
 
 // goCacheFiles counts a Go build cache and lists the files the daemon may
@@ -250,23 +180,30 @@ func sizeText(n int64) string {
 // that build with "no such file or directory" on import.
 const goCacheSizeTrimFloor = 70 * time.Minute
 
-// trimCacheSize applies one size cap to the worker Go build cache and the
-// owner's ~/.cache/go-build. When their combined size is over maxBytes it
-// removes the oldest entries across both caches (Go touches an entry when it
-// uses it) until the total is at or below lowBytes. It never removes an entry
-// younger than goCacheSizeTrimFloor: once only such entries are left, it stops
-// above lowBytes and the log line says so. The owner cache is trimmed by size
-// only, never by age. README, trim.txt and the folder layout are kept.
-func (d *Daemon) trimCacheSize(maxBytes, lowBytes int64) cacheTrimFreed {
+// trimCache removes worker cache entries older than maxAge (when it is above
+// zero) and applies one size cap to the worker Go build caches and the owner's
+// ~/.cache/go-build. When their combined size is over maxBytes it removes the
+// oldest entries across all of them (Go touches an entry when it uses it) until
+// the total is at or below lowBytes. It never removes an entry younger than
+// goCacheSizeTrimFloor: once only such entries are left, it stops above lowBytes
+// and the log line says so. The owner cache is trimmed by size only, never by
+// age. README, trim.txt and the folder layout are kept.
+func (d *Daemon) trimCache(maxAge time.Duration, maxBytes, lowBytes int64) cacheTrimFreed {
 	var freed cacheTrimFreed
-	if maxBytes <= 0 {
+	if maxAge <= 0 && maxBytes <= 0 {
 		return freed
 	}
-	if lowBytes <= 0 || lowBytes >= maxBytes {
+	if maxBytes > 0 && (lowBytes <= 0 || lowBytes >= maxBytes) {
 		lowBytes = maxBytes * 2 / 3
 	}
 	workerDir := d.workerGoCacheDir()
 	ownerDir := ownerGoBuildCacheDir(d.cfg.HomeDir)
+	if isOwnerGoBuildCache(workerDir, d.cfg.HomeDir) {
+		if d.log != nil {
+			d.Logf("worker cache: refuse to trim owner Go cache %s by age", workerDir)
+		}
+		workerDir = ""
+	}
 	var total int64
 	var entries []goCacheEntry
 	if isGoCacheDir(workerDir) {
@@ -282,12 +219,12 @@ func (d *Daemon) trimCacheSize(maxBytes, lowBytes int64) cacheTrimFreed {
 		total += size
 		entries = append(entries, list...)
 	}
-	if ownerDir != "" && !sameDir(workerDir, ownerDir) && isGoCacheDir(ownerDir) {
+	if ownerDir != "" && isGoCacheDir(ownerDir) {
 		size, list := goCacheFiles(ownerDir, true)
 		total += size
 		entries = append(entries, list...)
 	}
-	if total <= maxBytes {
+	if total == 0 {
 		return freed
 	}
 	sort.SliceStable(entries, func(i, j int) bool {
@@ -297,14 +234,23 @@ func (d *Daemon) trimCacheSize(maxBytes, lowBytes int64) cacheTrimFreed {
 		return entries[i].mtime.Before(entries[j].mtime)
 	})
 	now := time.Now()
+	overCap := maxBytes > 0 && total > maxBytes
 	stoppedForAge := false
 	for _, entry := range entries {
-		if total <= lowBytes {
-			break
+		ageOld := maxAge > 0 && !entry.owner && now.Sub(entry.mtime) > maxAge
+		wanted := ageOld || (overCap && total > lowBytes)
+		if !wanted {
+			// Sorted oldest first. An owner entry older than maxAge may still be
+			// followed by a worker entry to age out, so scan on for one.
+			if !overCap && (maxAge <= 0 || now.Sub(entry.mtime) <= maxAge) {
+				break
+			}
+			continue
 		}
-		// Sorted oldest first, so every entry from here on is younger.
 		if now.Sub(entry.mtime) < goCacheSizeTrimFloor {
-			stoppedForAge = true
+			if overCap && total > lowBytes {
+				stoppedForAge = true
+			}
 			break
 		}
 		if err := os.Remove(entry.path); err != nil {
@@ -316,9 +262,12 @@ func (d *Daemon) trimCacheSize(maxBytes, lowBytes int64) cacheTrimFreed {
 		} else {
 			freed.Worker += uint64(entry.size)
 		}
+		if total <= lowBytes {
+			overCap = false
+		}
 	}
 	if d.log != nil {
-		line := fmt.Sprintf("cache size trim: worker %d bytes freed, owner %d bytes freed (%d bytes left, cap %d, low %d)", freed.Worker, freed.Owner, total, maxBytes, lowBytes)
+		line := fmt.Sprintf("cache trim: worker %d bytes freed, owner %d bytes freed (%d bytes left, cap %d, low %d)", freed.Worker, freed.Owner, total, maxBytes, lowBytes)
 		if stoppedForAge {
 			line += fmt.Sprintf("; stopped: the %d bytes left are in entries newer than 70m", total)
 		}
@@ -327,29 +276,104 @@ func (d *Daemon) trimCacheSize(maxBytes, lowBytes int64) cacheTrimFreed {
 	return freed
 }
 
+// orphanAgentNetTmpAge is how long an agent-net-* temp folder next to the Go
+// temp folder must be idle before the sweep removes it. Sandboxes and test
+// scripts make these folders; a sandbox can leave them read-only.
+const orphanAgentNetTmpAge = 6 * time.Hour
+
+// workerTrimRoot is the folder whose agent-net-* entries the sweep removes:
+// /tmp, or the parent of a Go temp folder the owner named.
+func (d *Daemon) workerTrimRoot() string {
+	if d.cfg.testTrimRoot != "" {
+		return d.cfg.testTrimRoot
+	}
+	if dir := d.explicitGoTmpDir(); dir != "" {
+		return filepath.Dir(dir)
+	}
+	return filepath.Dir(gotmpDiskDir)
+}
+
 // cleanWorkerGoTmp removes subfolders of the worker test temp dir older than
-// maxAge that no running build uses. Checking open file handles across builds is
-// not checkable portably, so age limits and file mtimes inside each subfolder
-// guard active builds.
+// maxAge that no running build uses, and every other agent-net-* temp folder
+// idle for six hours. Checking open file handles across builds is not checkable
+// portably, so age limits and file mtimes inside each subfolder guard active
+// builds.
 func (d *Daemon) cleanWorkerGoTmp(now time.Time, maxAge time.Duration) uint64 {
-	if maxAge <= 0 {
-		return 0
-	}
-	// Both folders can hold worker test runs: the RAM one for unsandboxed
-	// workers and the disk one for sandboxed workers. The RAM TMPDIR folder holds
-	// the temp files of the same runs, unless a Go temp folder is named.
-	dirs := []string{d.workerGoTmpDir()}
-	if sandbox := d.workerSandboxGoTmpDir(); sandbox != dirs[0] {
-		dirs = append(dirs, sandbox)
-	}
-	if d.explicitGoTmpDir() == "" {
-		dirs = append(dirs, gotmpShmTmpDir)
-	}
 	var freed uint64
-	for _, dir := range dirs {
-		freed += cleanGoTmpFolder(dir, now, maxAge)
+	if maxAge > 0 {
+		// Both folders can hold worker test runs: the RAM one for unsandboxed
+		// workers and the disk one for sandboxed workers. The RAM TMPDIR folder
+		// holds the temp files of the same runs, unless a Go temp folder is named.
+		dirs := []string{d.workerGoTmpDir()}
+		if sandbox := d.workerSandboxGoTmpDir(); sandbox != dirs[0] {
+			dirs = append(dirs, sandbox)
+		}
+		if d.explicitGoTmpDir() == "" {
+			dirs = append(dirs, gotmpShmTmpDir)
+		}
+		for _, dir := range dirs {
+			freed += cleanGoTmpFolder(dir, now, maxAge)
+		}
+	}
+	freed += d.cleanOrphanAgentNetTmp(now)
+	if freed > 0 && d.log != nil {
+		d.Logf("worker tmp cleanup: %d bytes freed", freed)
 	}
 	return freed
+}
+
+// cleanOrphanAgentNetTmp removes the agent-net-* folders under the trim root
+// that no file was written in for six hours. It keeps the cache and the temp
+// folders themselves by name, which can look idle too.
+func (d *Daemon) cleanOrphanAgentNetTmp(now time.Time) uint64 {
+	entries, err := os.ReadDir(d.workerTrimRoot())
+	if err != nil {
+		return 0
+	}
+	keep := []string{d.workerGoCacheDir(), d.workerGoTmpDir(), d.workerSandboxGoTmpDir(), gotmpShmTmpDir}
+	var freed uint64
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "agent-net-") {
+			continue
+		}
+		dir := filepath.Join(d.workerTrimRoot(), entry.Name())
+		taken := false
+		for _, k := range keep {
+			if k != "" && sameDir(dir, k) {
+				taken = true
+				break
+			}
+		}
+		if taken || folderWrittenSince(dir, now.Add(-orphanAgentNetTmpAge)) {
+			continue
+		}
+		size := uint64(folderBytes(dir))
+		if err := removeWorkerFolder(dir); err == nil {
+			freed += size
+		}
+	}
+	return freed
+}
+
+// folderWrittenSince reports whether a file or folder under dir was written
+// after since.
+func folderWrittenSince(dir string, since time.Time) bool {
+	found := false
+	_ = filepath.WalkDir(dir, func(_ string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return nil
+		}
+		if info.ModTime().After(since) {
+			found = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found
 }
 
 // cleanGoTmpFolder removes the old subfolders of one Go temp folder (see
@@ -432,68 +456,9 @@ func (d *Daemon) diskMaxUsagePct() (float64, bool) {
 	return maxPct, found
 }
 
-func (d *Daemon) fetchOpenInboxItems(ctx context.Context) ([]protocol.InboxItem, error) {
-	raw, err := d.call(ctx, "inbox.list", struct{}{})
-	if err != nil {
-		return nil, err
-	}
-	var res struct {
-		Items []protocol.InboxItem `json:"items"`
-	}
-	if err := json.Unmarshal(raw, &res); err != nil {
-		return nil, err
-	}
-	return res.Items, nil
-}
-
-// After a warning is raised, a new one waits until usage reaches
-// diskRepeatPct or grows diskRepeatStepPts past the last warned percent. A
-// fall below the clear mark drops the record, so the next crossing asks again.
-const (
-	diskRepeatPct     = 92.0
-	diskRepeatStepPts = 3.0
-)
-
-// diskAlertDue tells whether a new warning is due at pct. last is the alert
-// record, when alerted is true.
-func diskAlertDue(pct float64, last diskAlert, alerted bool) bool {
-	if !alerted {
-		return true
-	}
-	return pct >= diskRepeatPct || pct >= last.Pct+diskRepeatStepPts
-}
-
-// lastDiskAlert reads the alert record. A read error is logged and reads as no
-// record, so the warning is raised rather than lost.
-func (d *Daemon) lastDiskAlert() (diskAlert, bool) {
-	if d.st == nil {
-		return diskAlert{}, false
-	}
-	a, ok, err := d.st.lastDiskAlert()
-	if err != nil {
-		d.Logf("disk.warning read alert record: %v", err)
-		return diskAlert{}, false
-	}
-	return a, ok
-}
-
-func (d *Daemon) saveDiskAlert(a diskAlert) {
-	if d.st == nil {
-		return
-	}
-	if err := d.st.setDiskAlert(a); err != nil {
-		d.Logf("disk.warning save alert record: %v", err)
-	}
-}
-
-func (d *Daemon) clearDiskAlert() {
-	if d.st == nil {
-		return
-	}
-	if err := d.st.clearDiskAlert(); err != nil {
-		d.Logf("disk.warning clear alert record: %v", err)
-	}
-}
+// diskIntakeSubject is the disk warning's intake subject. With the machine the
+// gateway adds, it deduplicates one entry per machine.
+const diskIntakeSubject = "disk"
 
 func (d *Daemon) checkDiskWarning(ctx context.Context, now time.Time) error {
 	pct, ok := d.diskMaxUsagePct()
@@ -505,13 +470,13 @@ func (d *Daemon) checkDiskWarning(ctx context.Context, now time.Time) error {
 		d.diskWarnMu.Unlock()
 		return nil
 	}
-	// Reserve the transition so concurrent checks cannot create duplicates.
+	// Reserve the transition so concurrent checks cannot report twice.
 	d.diskWarningUpdating = true
-	active, itemID := d.diskWarningActive, d.diskWarningItemID
+	active, checked := d.diskWarningActive, d.diskWarningChecked
 	d.diskWarnMu.Unlock()
 	defer func() {
 		d.diskWarnMu.Lock()
-		d.diskWarningActive, d.diskWarningItemID = active, itemID
+		d.diskWarningActive, d.diskWarningChecked = active, checked
 		d.diskWarningUpdating = false
 		d.diskWarnMu.Unlock()
 	}()
@@ -524,35 +489,14 @@ func (d *Daemon) checkDiskWarning(ctx context.Context, now time.Time) error {
 	if pct >= warnThreshold {
 		// Free space at once, not only at the next hourly cleanup.
 		settings := d.workerSettings("")
-		d.trimCacheSize(settings.CacheMaxBytes, settings.CacheLowBytes)
-		if active {
-			return nil
-		}
-		if itemID == "" {
-			if items, err := d.fetchOpenInboxItems(ctx); err == nil {
-				for _, item := range items {
-					if item.Kind == "check" && strings.HasPrefix(item.Text, "Disk space low on "+d.hostName()) && item.Status == "open" {
-						itemID = item.ID
-						active = true
-						// A warning raised before the alert record existed still needs one.
-						if _, alerted := d.lastDiskAlert(); !alerted {
-							d.saveDiskAlert(diskAlert{Pct: pct, At: now})
-						}
-						return nil
-					}
-				}
-			}
-		}
-		last, alerted := d.lastDiskAlert()
-		if !diskAlertDue(pct, last, alerted) {
-			return nil
-		}
+		d.trimCache(settings.CacheMaxAge, settings.CacheMaxBytes, settings.CacheLowBytes)
+		wasActive := active
 		workerDir := d.workerGoCacheDir()
 		ownerDir := ownerGoBuildCacheDir(d.cfg.HomeDir)
-		workerSize := goCacheBytes(workerDir)
+		workerSize := folderBytes(workerDir)
 		for _, dir := range d.workerPerWorkerGoCacheDirs() {
 			if !sameDir(dir, workerDir) {
-				workerSize += goCacheBytes(dir)
+				workerSize += folderBytes(dir)
 			}
 		}
 		ownerSize := int64(0)
@@ -560,71 +504,49 @@ func (d *Daemon) checkDiskWarning(ctx context.Context, now time.Time) error {
 		if ownerDir != "" && sameDir(workerDir, ownerDir) {
 			ownerText = "same as worker cache"
 		} else if ownerDir != "" {
-			ownerSize = goCacheBytes(ownerDir)
+			ownerSize = folderBytes(ownerDir)
 			ownerText = sizeText(ownerSize)
 		}
 		text := fmt.Sprintf("Disk space low on %s: %.0f%% used (worker Go cache %s, owner Go cache %s, total %s of %s cap)",
 			d.hostName(), pct, sizeText(workerSize), ownerText, sizeText(workerSize+ownerSize), sizeText(settings.CacheMaxBytes))
-		rec := "Free space by removing old worker files or enlarge the disk."
-		raw, err := d.call(ctx, "inbox.create", map[string]any{
-			"session_id":     d.cfg.NodeID,
-			"kind":           "check",
-			"text":           text,
-			"recommendation": rec,
-		})
-		if err != nil {
+		report := protocol.IntakeReport{Kind: protocol.IntakeDiskSpace, Subject: diskIntakeSubject, Text: text,
+			Detail: "Free space by removing old worker files or enlarge the disk."}
+		if _, err := d.call(ctx, "intake.report", report); err != nil {
 			if d.log != nil {
-				d.Logf("disk.warning create error: %v", err)
+				d.Logf("disk.warning report error: %v", err)
 			}
 			return err
 		}
-		var res struct {
-			Item protocol.InboxItem `json:"item"`
-		}
-		if err := json.Unmarshal(raw, &res); err == nil && res.Item.ID != "" {
-			itemID = res.Item.ID
-		}
-		active = true
-		d.saveDiskAlert(diskAlert{Pct: pct, At: now})
-		if d.log != nil {
+		active, checked = true, true
+		if !wasActive && d.log != nil {
 			d.Logf("disk.warning raised: %.1f%% used", pct)
 		}
 		return nil
 	}
 
-	if pct < clearThreshold {
-		// A restart leaves no warning in memory, but the record and any open
-		// warning from the earlier run still need clearing.
-		_, alerted := d.lastDiskAlert()
-		if alerted {
-			d.clearDiskAlert()
+	if pct < warnThreshold {
+		// A restart leaves no warning in memory. The first low check resolves an
+		// entry an earlier run left open; a warning this run raised stays until
+		// usage falls below the clear mark.
+		cleared := false
+		if active && pct < clearThreshold {
+			cleared = true
 		}
-		if !active && !alerted {
-			return nil
-		}
-		active = false
-		if itemID != "" {
-			_, _ = d.call(ctx, "inbox.answer", map[string]string{
-				"item_id": itemID,
-				"answer":  "dismiss",
-			})
-		} else {
-			if items, err := d.fetchOpenInboxItems(ctx); err == nil {
-				for _, item := range items {
-					if item.Kind == "check" && strings.HasPrefix(item.Text, "Disk space low on "+d.hostName()) && item.Status == "open" {
-						_, _ = d.call(ctx, "inbox.answer", map[string]string{
-							"item_id": item.ID,
-							"answer":  "dismiss",
-						})
-					}
+		if cleared || (!active && !checked) {
+			if _, err := d.call(ctx, "intake.report", protocol.IntakeReport{Kind: protocol.IntakeDiskSpace, Subject: diskIntakeSubject, Resolved: true}); err != nil {
+				if d.log != nil {
+					d.Logf("disk.warning clear error: %v", err)
 				}
+				return err
 			}
 		}
-		itemID = ""
-		if d.log != nil {
-			d.Logf("disk.warning cleared: %.1f%% used", pct)
+		if cleared {
+			active = false
+			if d.log != nil {
+				d.Logf("disk.warning cleared: %.1f%% used", pct)
+			}
 		}
-		return nil
+		checked = true
 	}
 
 	return nil
@@ -633,13 +555,13 @@ func (d *Daemon) checkDiskWarning(ctx context.Context, now time.Time) error {
 func (d *Daemon) cleanWorkerCachesAndDisk(ctx context.Context, now time.Time) uint64 {
 	snap := d.SettingsSnapshot()
 	settings := d.workerSettingsWith(snap, "")
-	cacheFreed := d.trimWorkerGoCache(now, settings.CacheMaxAge)
-	sizeFreed := d.trimCacheSize(settings.CacheMaxBytes, settings.CacheLowBytes)
+	cacheFreed := d.trimCache(settings.CacheMaxAge, settings.CacheMaxBytes, settings.CacheLowBytes)
 	tmpFreed := d.cleanWorkerGoTmp(now, settings.TmpMaxAge)
 	stateFreed := d.cleanEndedWorkerState(now)
-	totalFreed := cacheFreed + sizeFreed.total() + tmpFreed + stateFreed
+	totalFreed := cacheFreed.total() + tmpFreed + stateFreed
 	if d.log != nil {
-		d.Logf("cache cleanup: %d bytes freed", totalFreed)
+		d.Logf("cache cleanup: cache %d bytes freed, tmp %d bytes freed, state %d bytes freed, total %d bytes freed",
+			cacheFreed.total(), tmpFreed, stateFreed, totalFreed)
 	}
 	_ = d.checkDiskWarning(ctx, now)
 	return totalFreed

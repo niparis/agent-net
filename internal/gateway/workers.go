@@ -259,19 +259,7 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 				return nil, nil
 			}
 		}
-		// The run feeds the model track record (decision 0022). An older
-		// machine sends no start, model or hand-back status: the session row
-		// has what it stored, and a hand-back without a status counts complete.
-		started, storedHarness, storedModel, _, err := g.store.WorkerSessionFacts(p.SessionID)
-		if err != nil {
-			return nil, err
-		}
-		if p.Harness == "" {
-			p.Harness = storedHarness
-		}
-		if p.Model == "" {
-			p.Model = storedModel
-		}
+		// The run feeds the model track record (decision 0022).
 		if p.Reason == protocol.StopRunFailed && p.Model != "" && protocol.HarnessToolDenial(p.Failure) {
 			// The run ended on a refused tool action, so a retry on the same
 			// harness and model would end the same way. Record it like a
@@ -307,9 +295,6 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 			}
 			learnedBlock = &block
 			g.logLine("quota.blocked", "node", nc.id, "provider", provider, "window", block.WindowID, "until", until.UTC().Format(time.RFC3339), "session", p.SessionID)
-		}
-		if p.StartedAt == 0 {
-			p.StartedAt = started
 		}
 		end := g.store.now().Unix()
 		runSeconds := int64(0)

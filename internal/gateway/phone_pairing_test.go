@@ -125,7 +125,7 @@ func TestPhoneConsoleScreensSitBehindThePairing(t *testing.T) {
 	if w := phoneRequest(h, "GET", "/sessions", nil, ""); !phoneCodeRE.Match(w.Body.Bytes()) {
 		t.Errorf("/sessions without the cookie did not show the pairing page: %d", w.Code)
 	}
-	for _, path := range []string{"/sessions", "/graph", "/changes", "/messages", "/workers", "/session/s_1"} {
+	for _, path := range []string{"/sessions", "/graph", "/changes", "/messages", "/session/s_1"} {
 		if w := phoneRequest(h, "GET", path, cookie, ""); w.Code == 404 || phoneCodeRE.Match(w.Body.Bytes()) {
 			t.Errorf("%s with the cookie: %d", path, w.Code)
 		}
