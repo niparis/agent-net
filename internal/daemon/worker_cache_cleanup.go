@@ -244,11 +244,19 @@ func sizeText(n int64) string {
 	return fmt.Sprintf("%d bytes", n)
 }
 
+// goCacheSizeTrimFloor is the youngest entry the size trim may remove. Go
+// refreshes a cache file's mtime only when it is about an hour old, so a file a
+// running build is reading can look up to an hour old. Removing it would break
+// that build with "no such file or directory" on import.
+const goCacheSizeTrimFloor = 70 * time.Minute
+
 // trimCacheSize applies one size cap to the worker Go build cache and the
 // owner's ~/.cache/go-build. When their combined size is over maxBytes it
 // removes the oldest entries across both caches (Go touches an entry when it
-// uses it) until the total is at or below lowBytes. The owner cache is trimmed
-// by size only, never by age. README, trim.txt and the folder layout are kept.
+// uses it) until the total is at or below lowBytes. It never removes an entry
+// younger than goCacheSizeTrimFloor: once only such entries are left, it stops
+// above lowBytes and the log line says so. The owner cache is trimmed by size
+// only, never by age. README, trim.txt and the folder layout are kept.
 func (d *Daemon) trimCacheSize(maxBytes, lowBytes int64) cacheTrimFreed {
 	var freed cacheTrimFreed
 	if maxBytes <= 0 {
@@ -288,8 +296,15 @@ func (d *Daemon) trimCacheSize(maxBytes, lowBytes int64) cacheTrimFreed {
 		}
 		return entries[i].mtime.Before(entries[j].mtime)
 	})
+	now := time.Now()
+	stoppedForAge := false
 	for _, entry := range entries {
 		if total <= lowBytes {
+			break
+		}
+		// Sorted oldest first, so every entry from here on is younger.
+		if now.Sub(entry.mtime) < goCacheSizeTrimFloor {
+			stoppedForAge = true
 			break
 		}
 		if err := os.Remove(entry.path); err != nil {
@@ -303,7 +318,11 @@ func (d *Daemon) trimCacheSize(maxBytes, lowBytes int64) cacheTrimFreed {
 		}
 	}
 	if d.log != nil {
-		d.Logf("cache size trim: worker %d bytes freed, owner %d bytes freed (%d bytes left, cap %d, low %d)", freed.Worker, freed.Owner, total, maxBytes, lowBytes)
+		line := fmt.Sprintf("cache size trim: worker %d bytes freed, owner %d bytes freed (%d bytes left, cap %d, low %d)", freed.Worker, freed.Owner, total, maxBytes, lowBytes)
+		if stoppedForAge {
+			line += fmt.Sprintf("; stopped: the %d bytes left are in entries newer than 70m", total)
+		}
+		d.Logf("%s", line)
 	}
 	return freed
 }

@@ -106,6 +106,56 @@ func TestCacheSizeCapTrimsOldestAcrossCaches(t *testing.T) {
 	}
 }
 
+func TestCacheSizeCapKeepsEntriesYoungerThan70Minutes(t *testing.T) {
+	isolateDaemonCaches(t)
+	now := time.Now()
+	d, _, root := newStateCleanupDaemon(t)
+	shared := t.TempDir()
+	homeDir := t.TempDir()
+	ownerDir := filepath.Join(homeDir, ".cache", "go-build")
+	perWorker := filepath.Join(root, "workers", "w_active", "tmp", "agent-net-gocache")
+	for _, dir := range []string{shared, ownerDir, perWorker} {
+		writeGoCacheMarkers(t, dir)
+	}
+
+	// Go refreshes a cache file's mtime only when it is about an hour old, so a
+	// file a running build is reading can look 65 minutes old. A 90 minute old
+	// entry is safe to remove in every cache.
+	sharedYoung := writeCacheEntry(t, shared, filepath.Join("aa", "young"), 1024, now.Add(-65*time.Minute))
+	perWorkerYoung := writeCacheEntry(t, perWorker, filepath.Join("bb", "young"), 1024, now.Add(-65*time.Minute))
+	ownerYoung := writeCacheEntry(t, ownerDir, filepath.Join("cc", "young"), 1024, now.Add(-65*time.Minute))
+	sharedOld := writeCacheEntry(t, shared, filepath.Join("dd", "old"), 1024, now.Add(-90*time.Minute))
+	perWorkerOld := writeCacheEntry(t, perWorker, filepath.Join("ee", "old"), 1024, now.Add(-90*time.Minute))
+	ownerOld := writeCacheEntry(t, ownerDir, filepath.Join("ff", "old"), 1024, now.Add(-90*time.Minute))
+
+	var logs bytes.Buffer
+	d.cfg.WorkerGoCache = shared
+	d.cfg.HomeDir = homeDir
+	d.log = log.New(&logs, "", 0)
+
+	// 6 KiB total, cap 5 KiB, low mark 2 KiB. The three 90 minute old entries
+	// go. The trim then stops above the low mark, because only younger entries
+	// are left, and the log line says so.
+	freed := d.trimCacheSize(5*1024, 2*1024)
+	if freed.Worker != 2048 || freed.Owner != 1024 {
+		t.Fatalf("freed worker=%d owner=%d, want worker=2048 owner=1024", freed.Worker, freed.Owner)
+	}
+	for _, gone := range []string{sharedOld, perWorkerOld, ownerOld} {
+		if _, err := os.Stat(gone); !os.IsNotExist(err) {
+			t.Errorf("%s should be removed, stat error: %v", gone, err)
+		}
+	}
+	for _, kept := range []string{sharedYoung, perWorkerYoung, ownerYoung} {
+		if _, err := os.Stat(kept); err != nil {
+			t.Errorf("%s is younger than 70 minutes and should be kept: %v", kept, err)
+		}
+	}
+	line := logs.String()
+	if !strings.Contains(line, "stopped") || !strings.Contains(line, "newer than 70m") {
+		t.Fatalf("log line %q does not say the trim stopped for young entries", line)
+	}
+}
+
 func TestCacheSizeCapLeavesCachesUnderTheCap(t *testing.T) {
 	isolateDaemonCaches(t)
 	now := time.Now()
@@ -137,7 +187,7 @@ func TestCacheSizeCapSkipsOwnerFolderWithoutReadme(t *testing.T) {
 	ownerDir := filepath.Join(homeDir, ".cache", "go-build")
 	writeGoCacheMarkers(t, workerDir)
 	ownerFile := writeCacheEntry(t, ownerDir, filepath.Join("aa", "not-a-cache"), 1024, now.Add(-48*time.Hour))
-	workerFile := writeCacheEntry(t, workerDir, filepath.Join("bb", "entry"), 1024, now.Add(-1*time.Hour))
+	workerFile := writeCacheEntry(t, workerDir, filepath.Join("bb", "entry"), 1024, now.Add(-2*time.Hour))
 
 	d := &Daemon{cfg: Config{HomeDir: homeDir, WorkerGoCache: workerDir}}
 	freed := d.trimCacheSize(512, 256)
