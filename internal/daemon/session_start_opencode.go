@@ -290,6 +290,7 @@ func (d *Daemon) startOwnerOpenCode(ctx context.Context, r protocol.StartedSessi
 			}
 		}
 		if startErr == nil {
+			d.noteRequestedModel("opencode", r.NativeID, r.Model)
 			startErr = d.checkStartAgent(cctx, r)
 		}
 		if startErr == nil && r.AgentID != "" {

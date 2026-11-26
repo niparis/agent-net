@@ -13,18 +13,19 @@ import (
 // daemonFieldSamples are inputs that get a handler past its own checks. Every
 // other string field gets a marker of its own name.
 var daemonFieldSamples = map[string]map[string]any{
-	"agent_message_send":  {"to": "s01", "body": "BODY"},
-	"agent_message_reply": {"message": "MSG", "body": "BODY", "outcome": "accept"},
-	"agent_file_send":     {"to": "TO", "paths": []any{"/tmp/a"}, "note": "NOTE"},
-	"agent_owner_ask":     {"kind": "question", "text": "TEXT", "recommendation": "REC"},
-	"agent_worker_rate":   {"worker": "WORKER", "kind": "rating", "score": 4, "note": "NOTE"},
-	"agent_worker_start":  {"problem": "PROBLEM", "done": []any{"DONE"}},
-	"agent_step_claim":    {"change": "CHANGE", "step": "test", "commit": sampleCommit},
-	"agent_step_report":   {"change": "CHANGE", "step": "test", "result": "pass", "commit": sampleCommit},
-	"agent_note_write":    {"name": "NAME", "description": "DESC", "body": "BODY"},
-	"agent_messages_find": {"since": "2026-01-01T12:00:00Z", "conversation": "CONV", "with": "WITH", "id": "ID"},
-	"agent_sessions_find": {"kind": []any{"agent"}, "text": "TEXT", "project": "PROJ", "id": "ID"},
-	"agent_machines_find": {"id": "ID"},
+	"agent_message_send":    {"to": "s01", "body": "BODY"},
+	"agent_message_reply":   {"message": "MSG", "body": "BODY", "outcome": "accept"},
+	"agent_file_send":       {"to": "TO", "paths": []any{"/tmp/a"}, "note": "NOTE"},
+	"agent_owner_ask":       {"kind": "question", "text": "TEXT", "recommendation": "REC"},
+	"agent_worker_rate":     {"worker": "WORKER", "kind": "rating", "score": 4, "note": "NOTE"},
+	"agent_worker_start":    {"problem": "PROBLEM", "done": []any{"DONE"}},
+	"agent_step_claim":      {"change": "CHANGE", "step": "test", "commit": sampleCommit},
+	"agent_step_report":     {"change": "CHANGE", "step": "test", "result": "pass", "commit": sampleCommit},
+	"agent_friction_report": {"friction": []any{map[string]any{"area": "ci", "text": "TEXT"}}},
+	"agent_note_write":      {"name": "NAME", "description": "DESC", "body": "BODY"},
+	"agent_messages_find":   {"since": "2026-01-01T12:00:00Z", "conversation": "CONV", "with": "WITH", "id": "ID"},
+	"agent_sessions_find":   {"kind": []any{"agent"}, "text": "TEXT", "project": "PROJ", "id": "ID"},
+	"agent_machines_find":   {"id": "ID"},
 }
 
 const sampleCommit = "0123456789012345678901234567890123456789"

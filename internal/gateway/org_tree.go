@@ -428,6 +428,20 @@ func bindMergerAgentTx(tx *sql.Tx, project, session string, now int64) error {
 // question about it. The Agent is the only lead session (decision 0160); the
 // old Team and Repo copy columns are gone.
 func (s *Store) setAgentLeadSessionTx(tx *sql.Tx, agent, session string) error {
+	// The session that led before is stood down: its messages go to the new
+	// lead session.
+	var previous string
+	if err := tx.QueryRow(`SELECT COALESCE(lead_session,'') FROM agents WHERE id=?`, agent).Scan(&previous); err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if previous != session {
+		if err := standDownTx(tx, previous, stoodDownLead, session); err != nil {
+			return err
+		}
+		if err := clearStoodDownTx(tx, session); err != nil {
+			return err
+		}
+	}
 	if _, err := tx.Exec(`UPDATE agents SET lead_session=? WHERE id=?`, session, agent); err != nil {
 		return err
 	}

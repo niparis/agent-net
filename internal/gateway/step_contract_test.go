@@ -85,6 +85,9 @@ func TestStepTaskContracts(t *testing.T) {
 				if m.ID == "" || !strings.Contains(m.Body, want) {
 					t.Fatalf("batch=%t step=%s: %q; want %q", batch, step, m.Body, want)
 				}
+				if strings.Index(m.Body, protocol.FrictionReportLine) < strings.Index(m.Body, want) {
+					t.Fatalf("batch=%t step=%s: friction line must follow the contract: %q", batch, step, m.Body)
+				}
 			}
 			snap, err := r.s.SettingsSnapshot()
 			if err != nil {

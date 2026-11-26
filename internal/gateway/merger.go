@@ -25,6 +25,20 @@ func (s *Store) SetMerger(q protocol.MergerSetRequest, actor string) error {
 		return err
 	}
 	defer tx.Rollback()
+	// The session that held the role is stood down: its messages go to the
+	// new merger, or to the project lead when the role ends.
+	var previous string
+	if err = tx.QueryRow(`SELECT merger_session FROM repos WHERE id=?`, q.Project).Scan(&previous); err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if previous != q.SessionID {
+		if err = standDownTx(tx, previous, stoodDownMerger, q.SessionID); err != nil {
+			return err
+		}
+		if err = clearStoodDownTx(tx, q.SessionID); err != nil {
+			return err
+		}
+	}
 	if q.SessionID == "" {
 		err = s.stopMergerTx(tx, q.Project, actor)
 	} else {

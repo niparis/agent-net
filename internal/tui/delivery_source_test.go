@@ -337,11 +337,12 @@ func TestDeliveryDetailShowsEachStepOwnerAndState(t *testing.T) {
 	}
 }
 
-func TestDeliveryListShowsOfflineOwner(t *testing.T) {
+func TestDeliveryDetailShowsOfflineOwner(t *testing.T) {
 	v := listView(t0)
 	v.Steps[1].Note = "waiting for merger (offline)"
 	ch := deliveryChangeFromView(v, t0)
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: []deliveryChange{ch}}, 120, 30))
+	m.openDeskChange(ch.ID)
 	got := deliveryText(m, 120, 30)
 	if !strings.Contains(got, "waiting for merger (offline)") {
 		t.Fatalf("offline owner is not shown: %s", got)
@@ -546,19 +547,12 @@ func fullScenes() (*detailSource, []deliveryChange) {
 	return src, src.changes
 }
 
-func dpress(m Model, k tea.KeyPressMsg) (Model, tea.Cmd) {
-	next, cmd := m.Update(k)
-	return next.(Model), cmd
-}
-
 func TestDeliveryEnterFetchesTheFullChange(t *testing.T) {
 	src, _ := fullScenes()
 	m := openDelivery(t, deliveryModel(src, 120, 30))
-	m.delivery.row = visibleRow(m, "c_2")
-	m.inboxIndex = m.askRowCount() + m.delivery.row
-	m, cmd := dpress(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	cmd := m.openDeskChange("c_2")
 	if !m.delivery.detail || cmd == nil {
-		t.Fatal("enter should open the detail and fetch the change")
+		t.Fatal("the thread link should open the detail and fetch the change")
 	}
 	// Until the answer comes, the detail says the evidence is loading.
 	if got := deliveryText(m, 120, 30); !strings.Contains(got, "Loading") {
@@ -577,8 +571,10 @@ func TestDeliveryEnterFetchesTheFullChange(t *testing.T) {
 	}
 	// An error shows above the detail and keeps what is there.
 	src.err = errors.New("no such change")
-	m, cmd = dpress(m, tea.KeyPressMsg{Code: tea.KeyEsc})
-	m, cmd = dpress(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	cmd = m.openDeskChange("c_2")
+	if cmd == nil {
+		t.Fatal("the second open did not fetch the change")
+	}
 	next, _ = m.Update(cmd())
 	m = next.(Model)
 	if got := deliveryText(m, 120, 30); !strings.Contains(got, "Could not load change: no such change") || !strings.Contains(got, "verify") {
@@ -589,13 +585,11 @@ func TestDeliveryEnterFetchesTheFullChange(t *testing.T) {
 func TestDeliveryReloadKeepsTheSelectionAndTheFullDetail(t *testing.T) {
 	src, _ := fullScenes()
 	m := openDelivery(t, deliveryModel(src, 120, 30))
-	m.delivery.row = visibleRow(m, "c_2")
-	m.inboxIndex = m.askRowCount() + m.delivery.row
-	m, cmd := dpress(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	cmd := m.openDeskChange("c_2")
 	next, _ := m.Update(cmd())
 	m = next.(Model)
-	// A newer change arrives: the selected change keeps its place in the list
-	// (grouped), and stays selected.
+	// A newer change arrives: the selected change keeps its place, and stays
+	// selected.
 	fresh := deliveryChange{ID: "c_9", Repo: "new", Branch: "b", Head: "f00", Revision: 1, Step: "accept", StepOwner: "caller"}
 	list := append([]deliveryChange{fresh}, deliveryScenes()...)
 	for i := range list[1:] {
@@ -628,6 +622,7 @@ func TestDeliveryRefreshesEvery30SecondsWhileOpen(t *testing.T) {
 	src := &fakeDelivery{changes: deliveryScenes()}
 	clock := t0
 	m := deliveryModel(src, 120, 30)
+	m.tab = sessionsTab
 	m.now = func() time.Time { return clock }
 	m, cmd := m.startDeliveryLoad()
 	if cmd == nil || !m.delivery.loading {
@@ -670,6 +665,7 @@ func TestDeliveryTickMessageRefreshes(t *testing.T) {
 	src := &fakeDelivery{changes: deliveryScenes()}
 	clock := t0
 	m := openDelivery(t, deliveryModel(src, 120, 30))
+	m.tab = sessionsTab
 	m.now = func() time.Time { return clock }
 	m.delivery.loadedAt = t0
 	m.fetching = true // the tick must not start a snapshot fetch of its own
@@ -681,25 +677,22 @@ func TestDeliveryTickMessageRefreshes(t *testing.T) {
 	}
 }
 
-func TestDeliveryRefreshKeyAndOpenStartALoad(t *testing.T) {
+func TestDeliveryStartLoadsOnce(t *testing.T) {
 	src := &fakeDelivery{changes: deliveryScenes()}
 	m := deliveryModel(src, 120, 30)
 	m, cmd := m.startDeliveryLoad()
 	if cmd == nil || !m.delivery.loading {
-		t.Fatalf("opening the sub-tab: on %v loading %v cmd %v", m.delivery.on, m.delivery.loading, cmd != nil)
+		t.Fatalf("start: on %v loading %v cmd %v", m.delivery.on, m.delivery.loading, cmd != nil)
 	}
 	next, _ := m.Update(cmd())
 	m = next.(Model)
 	if m.delivery.loading || !m.delivery.loaded {
 		t.Fatal("the answer did not end the load")
 	}
-	m, cmd = dpress(m, tea.KeyPressMsg{Text: "R", Code: []rune("R")[0]})
-	if cmd == nil || !m.delivery.loading {
-		t.Fatal("R did not reload")
-	}
-	// R cannot overlap a load already in flight.
-	if _, again := dpress(m, tea.KeyPressMsg{Text: "R", Code: []rune("R")[0]}); again != nil {
-		t.Fatal("R overlapped a load")
+	// A second start cannot overlap a load already in flight.
+	m, _ = m.startDeliveryLoad()
+	if _, again := m.startDeliveryLoad(); again != nil {
+		t.Fatal("start overlapped a load")
 	}
 }
 
@@ -754,12 +747,10 @@ func TestDeliveryGoldenFromGatewayData(t *testing.T) {
 	}
 	full := deliveryChangeFromView(a, now)
 	for _, size := range [][2]int{{80, 24}, {120, 24}} {
-		m := openDelivery(t, deliveryModel(&fakeDelivery{changes: list}, size[0], size[1]))
-		golden(t, fmt.Sprintf("delivery_gateway_list_%dx%d", size[0], size[1]), m.testView())
 		list2 := append([]deliveryChange(nil), list...)
 		list2[2] = full
-		m = openDelivery(t, deliveryModel(&fakeDelivery{changes: list2}, size[0], size[1]))
-		m.delivery.row, m.delivery.detail = 2, true
+		m := openDelivery(t, deliveryModel(&fakeDelivery{changes: list2}, size[0], size[1]))
+		m.openDeskChange(full.ID)
 		golden(t, fmt.Sprintf("delivery_gateway_detail_%dx%d", size[0], size[1]), m.testView())
 	}
 }
@@ -835,15 +826,6 @@ func TestDeliveryRefreshUpdatesSessionsAndDoesNotOverlap(t *testing.T) {
 	if got := m.sessionTaskText(a); got != "" {
 		t.Fatalf("stale task %q", got)
 	}
-	m.tab = inboxTab
-	m, cmd = m.startDeliveryLoad()
-	if cmd == nil {
-		t.Fatal("load missing")
-	}
-	_, again = m.deliveryKey(tea.KeyPressMsg{Text: "R", Code: 'R'})
-	if again != nil {
-		t.Fatal("refresh key started overlapping load")
-	}
 }
 
 func TestDeliveryStartupUsesInflightGuard(t *testing.T) {
@@ -878,11 +860,12 @@ func TestDeliveryOwnerAndFailureTakePriority(t *testing.T) {
 			m := deliveryModel(nil, 120, 34)
 			m.snap.Agents = []protocol.AgentView{{SessionID: "s_author", Profile: protocol.Profile{Name: "entry worker"}, Online: true}, {SessionID: "s_caller", Profile: protocol.Profile{Name: "caller"}, Online: true}}
 			m.delivery.changes = []deliveryChange{ch}
+			m.openDeskChange(ch.ID)
 			if ch.Step != step {
 				t.Errorf("current step = %q, want %s", ch.Step, step)
 			}
 			if state == protocol.StepStateNeedsOwner {
-				if got := deliveryText(m, 120, 34); !strings.Contains(got, "Needs you · 1") || !strings.Contains(got, "waiting for you") {
+				if got := deliveryText(m, 120, 34); !strings.Contains(got, "waiting for you") {
 					t.Fatal(got)
 				}
 			} else {
@@ -896,26 +879,11 @@ func TestDeliveryOwnerAndFailureTakePriority(t *testing.T) {
 				if got, _ := m.deliveryStatusText(ch); got != "back to caller to restart the worker" {
 					t.Errorf("ended worker status: %q", got)
 				}
-				if got := deliveryText(m, 120, 34); !strings.Contains(got, "back to caller to restart the worker") {
+				if got := deliveryText(m, 120, 34); !strings.Contains(got, "back to caller to restart the") {
 					t.Fatal(got)
 				}
 			}
 		})
-	}
-}
-
-func TestDeliveryStoppedFailureHidden(t *testing.T) {
-	m := deliveryModel(nil, 120, 34)
-	m.delivery.changes = []deliveryChange{{ID: "ch_stopped", Title: "Stopped work", State: protocol.ChangeStopped, StepState: protocol.StepStateFailed}}
-	if got := m.deliveryVisible(); len(got) != 0 {
-		t.Errorf("stopped is visible: %+v", got)
-	}
-	if done, stale := m.deliveryHidden(); done+stale != 1 {
-		t.Errorf("hidden: %d done %d stale", done, stale)
-	}
-	m = keys(m, "v")
-	if got := m.deliveryVisible(); len(got) != 1 || got[0].Group == groupMoving {
-		t.Errorf("show all: %+v", got)
 	}
 }
 

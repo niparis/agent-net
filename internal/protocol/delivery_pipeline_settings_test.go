@@ -114,9 +114,12 @@ func TestWorkerNoticeTellsCallerToReportAccept(t *testing.T) {
 	if !strings.Contains(notice, want) {
 		t.Fatalf("notice does not tell the caller to report accept: %s", notice)
 	}
-	// The learning line stays last, and the accept line sits in the checklist.
-	if last := notice[strings.LastIndex(notice, "\n")+1:]; !strings.Contains(last, "agent_learn") {
-		t.Fatalf("the notice does not end with the learning line: %s", notice)
+	// The friction line stays last, and the accept line sits in the checklist.
+	if last := notice[strings.LastIndex(notice, "\n")+1:]; last != FrictionReportLine {
+		t.Fatalf("the notice does not end with the friction line: %s", notice)
+	}
+	if !strings.Contains(notice, "agent_learn") {
+		t.Fatalf("the notice lost the learning line: %s", notice)
 	}
 	if strings.Index(notice, want) < strings.Index(notice, ChecklistMarker) {
 		t.Fatalf("the accept line is above the checklist: %s", notice)

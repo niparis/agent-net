@@ -24,7 +24,7 @@ type gatedCaller struct {
 func (g *gatedCaller) Call(ctx context.Context, method string, _ any) (json.RawMessage, error) {
 	g.mu.Lock()
 	g.asked[method] = true
-	ready := g.asked[protocol.OpAsksList] && g.asked[protocol.OpChiefGet] && g.asked[protocol.OpChiefSorts]
+	ready := g.asked[protocol.OpAsksList] && g.asked[protocol.OpChiefGet]
 	if ready {
 		select {
 		case <-g.others:
@@ -45,8 +45,6 @@ func (g *gatedCaller) Call(ctx context.Context, method string, _ any) (json.RawM
 		return json.RawMessage(`[]`), nil
 	case protocol.OpAsksList:
 		return json.RawMessage(`{"asks":[]}`), nil
-	case protocol.OpChiefSorts:
-		return json.RawMessage(`{"sorts":[]}`), nil
 	}
 	return json.RawMessage(`{}`), nil
 }
@@ -61,9 +59,9 @@ func TestFetchAsksTheDeskListsTogether(t *testing.T) {
 	if !ok {
 		t.Fatal("fetch did not return a fetchedMsg")
 	}
-	if !got.listsAsked || !got.proposalsOK || !got.inboxOK || !got.chiefOK || !got.handledOK {
-		t.Fatalf("a list is missing from the answer: asked=%v proposals=%v asks=%v chief=%v sorts=%v",
-			got.listsAsked, got.proposalsOK, got.inboxOK, got.chiefOK, got.handledOK)
+	if !got.listsAsked || !got.proposalsOK || !got.inboxOK || !got.chiefOK {
+		t.Fatalf("a list is missing from the answer: asked=%v proposals=%v asks=%v chief=%v",
+			got.listsAsked, got.proposalsOK, got.inboxOK, got.chiefOK)
 	}
 }
 

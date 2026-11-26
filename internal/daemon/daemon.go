@@ -384,6 +384,10 @@ type localSession struct {
 	// is reported as tools: disconnected (toolsLinkInfoLocked).
 	mcpLinks int
 	mcpSince time.Time
+	// requestedModel is the model a start or resume of this daemon asked the
+	// harness for (noteRequestedModel), protected by d.mu. Discovery does not
+	// know it, so it lives here and not in info.
+	requestedModel string
 }
 
 type activityUpdate struct {
@@ -1294,6 +1298,9 @@ func (d *Daemon) infoLocked(ls *localSession) protocol.SessionInfo {
 		info.LimitedUntil, info.LimitedReason = ls.limitUntil, ls.limitReason
 	}
 	info.TurnError, info.TurnErrorAt = ls.turnError, ls.turnErrorAt
+	if ls.requestedModel != "" {
+		info.RequestedModel = ls.requestedModel
+	}
 	if !ls.harnessActivity.IsZero() {
 		info.HarnessActivity = ls.harnessActivity.Unix()
 	}

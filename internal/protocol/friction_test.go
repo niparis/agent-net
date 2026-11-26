@@ -106,6 +106,27 @@ func TestWorkerBriefAsksForFriction(t *testing.T) {
 	}
 }
 
+// A lead's notice asks for friction and names the tool that needs no step.
+func TestNoticeChecklistAsksForFrictionReport(t *testing.T) {
+	if !strings.Contains(noticeChecklist("", false), FrictionReportLine) {
+		t.Fatalf("the notice checklist does not ask for friction:\n%s", noticeChecklist("", false))
+	}
+}
+
+// The standalone friction tool checks entries the same way a step report does,
+// and an empty list means nothing to report.
+func TestFrictionReportArgsValidate(t *testing.T) {
+	if err := (FrictionReportArgs{}).Validate(); err != nil {
+		t.Fatalf("an empty report says nothing to report: %v", err)
+	}
+	if err := (FrictionReportArgs{Friction: []FrictionEntry{{Area: FrictionEnvironment, Text: "no local port"}}}).Validate(); err != nil {
+		t.Fatalf("valid report refused: %v", err)
+	}
+	if err := (FrictionReportArgs{Friction: []FrictionEntry{{Area: "mood", Text: "not an area"}}}).Validate(); err == nil {
+		t.Fatal("a bad area was accepted")
+	}
+}
+
 func TestFrictionFindQueryValidate(t *testing.T) {
 	if err := (FrictionQuery{Since: "2026-11-01T00:00:00Z", Limit: 20}).Validate(); err != nil {
 		t.Errorf("valid query refused: %v", err)

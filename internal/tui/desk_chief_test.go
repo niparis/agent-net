@@ -85,7 +85,7 @@ func deskAskOf(id, next, text string) protocol.Ask {
 }
 
 // deskChiefModel is the Desk as the owner sees it with a chief: the chief's
-// name, what it handled, and a digest of three hours away.
+// name and a digest of three hours away.
 func deskChiefModel(t *testing.T, w, h int) Model {
 	t.Helper()
 	m := deskModel(t, w, h)
@@ -93,12 +93,6 @@ func deskChiefModel(t *testing.T, w, h int) Model {
 	m.asks = append(m.asks, protocol.Ask{ID: "i_why", Kind: protocol.AskKindApproval, State: protocol.AskStateOpen, Next: protocol.AskNextOwner,
 		FromKind: protocol.AskFromSession, FromSession: "s_0000000000000004", From: "ingest-forge", Question: "Pay for the new model?",
 		Priority: 1, WhyYou: "the ingest-forge charter has no rule for spend", CreatedAt: t0.Add(-40 * time.Minute)})
-	m.handled = []protocol.ChiefSort{
-		{AskSort: protocol.AskSort{Ask: "i_c1", Result: protocol.AskSortClose, Reason: "CTO notice, moved to the log", At: t0.Add(-time.Hour)}, Question: "CTO applied graph edge set app -> ops"},
-		{AskSort: protocol.AskSort{Ask: "i_s1", Result: protocol.AskSortSend, To: "s_00000000000000f1", Reason: "homelab-agent owns the deploy", At: t0.Add(-2 * time.Hour)}, Question: "ingest-forge blocked on deploy sha-6a257e2"},
-		{AskSort: protocol.AskSort{Ask: "i_m1", Result: protocol.AskSortMerge, Into: "i_a", Reason: "same release", At: t0.Add(-3 * time.Hour)}, Question: "Release v1.2.3 to the machines again"},
-		{AskSort: protocol.AskSort{Ask: "i_u1", Result: protocol.AskSortSend, To: "s_00000000000000f1", Reason: "clear caches", At: t0.Add(-4 * time.Hour)}, Question: "Mac disk 90%", Undone: true},
-	}
 	m.digest = &deskDigest{since: t0.Add(-3 * time.Hour), away: 3 * time.Hour, loaded: true,
 		counts: deskCounts{closed: 22, sentOn: 4, answered: 2, forYou: 3}}
 	return m
@@ -129,38 +123,13 @@ func TestDeskNeedsYouShowsOnlyOwnerAsks(t *testing.T) {
 	}
 }
 
-// Handled for you lists the chief's sorts with the result, the reason and the
-// session a send went to. The header names the chief and counts its sorts.
-func TestDeskHandledListsChiefSorts(t *testing.T) {
-	m := deskChiefModel(t, 120, 40)
-	view := ansi.Strip(m.testView())
-	for _, want := range []string{
-		"Desk · chief of staff agent-net 2 on · sorted 4 asks today",
-		"Handled for you · 4",
-		"closed   CTO applied graph edge",
-		"CTO notice, moved to the log",
-		"sent     ingest-forge blocked on deploy",
-		"→ ingest-forge",
-		"merged   Release v1.2.3 to the machines again",
-		"undone   Mac disk 90%",
-	} {
-		if !strings.Contains(view, want) {
-			t.Errorf("missing %q:\n%s", want, view)
-		}
-	}
-	m.inboxIndex = m.askRowCount() + len(m.deliveryVisible())
-	if sort, ok := m.deskSelectedHandled(); !ok || sort.Ask != "i_c1" {
-		t.Fatalf("the cursor is not on the first handled sort: %+v %v", sort, ok)
-	}
-}
-
 // A chief that cannot work shows as one header line with the reason. A chief
 // that can work keeps today's header.
 func TestDeskHeaderShowsChiefOfflineReason(t *testing.T) {
 	m := deskChiefModel(t, 120, 40)
 	m.chief.Down = "codex quota exhausted (weekly window, until 2026-11-15 00:00 UTC)"
 	line := ansi.Strip(m.deskHeaderLine(120))
-	want := "Desk · chief of staff offline: codex quota exhausted (weekly window, until 2026-11-15 00:00 UTC) · sorted 4 asks today"
+	want := "Desk · chief of staff offline: codex quota exhausted (weekly window, until 2026-11-15 00:00 UTC)"
 	if !strings.HasPrefix(line, want) {
 		t.Fatalf("header = %q, want it to start with %q", line, want)
 	}
@@ -168,7 +137,7 @@ func TestDeskHeaderShowsChiefOfflineReason(t *testing.T) {
 		t.Fatalf("header is not one line: %q", line)
 	}
 	m.chief.Down = ""
-	if got := ansi.Strip(m.deskHeaderLine(120)); !strings.HasPrefix(got, "Desk · chief of staff agent-net 2 on · sorted 4 asks today") {
+	if got := ansi.Strip(m.deskHeaderLine(120)); !strings.HasPrefix(got, "Desk · chief of staff agent-net 2 on") {
 		t.Fatalf("a working chief changed the header: %q", got)
 	}
 }
@@ -222,81 +191,23 @@ func TestDeskDigestAfterAnHourAwayHidesWithX(t *testing.T) {
 	}
 }
 
-// u undoes a handled sort. m opens the one line of why and stores the mark.
 // n on a Needs you row stores a didn't-need-me mark with its why.
-func TestDeskUndoAndMarkKeys(t *testing.T) {
+func TestDidntNeedMeOnANeedsYouAsk(t *testing.T) {
 	src := &deskCallSource{}
 	m := deskModel(t, 120, 40)
 	m.src = src
 	m.tab = inboxTab
 	m.now = func() time.Time { return t0 }
-	m.handled = []protocol.ChiefSort{{AskSort: protocol.AskSort{Ask: "i_1", Result: protocol.AskSortClose, Reason: "answered", At: t0}, Question: "Is the thread answered?"}}
-	m.inboxIndex = m.askRowCount() + len(m.deliveryVisible())
-
-	m, cmd := deskPress(t, m, tea.KeyPressMsg{Text: "u", Code: 'u'})
-	m = deskRun(t, m, cmd)
-	if len(src.calls) != 1 || src.calls[0] != protocol.OpAskUndo || src.args[0] != (protocol.AskUndoRequest{Ask: "i_1"}) {
-		t.Fatalf("undo calls %v %v", src.calls, src.args)
-	}
-	if !strings.Contains(ansi.Strip(m.testView()), "undone") {
-		t.Fatal("the undone sort is not marked on screen")
-	}
-
-	m, _ = deskPress(t, m, tea.KeyPressMsg{Text: "m", Code: 'm'})
-	if m.deskPending == nil || !m.inboxEditing {
-		t.Fatal("m did not open the line of why")
-	}
-	for _, r := range "the thread" {
-		m, _ = deskPress(t, m, tea.KeyPressMsg{Text: string(r), Code: r})
-	}
-	m, cmd = deskPress(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	m = deskRun(t, m, cmd)
-	last := src.args[len(src.args)-1]
-	if src.calls[len(src.calls)-1] != protocol.OpAskMark || last != (protocol.AskMarkRequest{Ask: "i_1", Mark: protocol.MarkShouldHaveAsked, Why: "the thread"}) {
-		t.Fatalf("mark calls %v args %+v", src.calls, last)
-	}
-
 	m.inboxIndex = 0
 	m, _ = deskPress(t, m, tea.KeyPressMsg{Text: "n", Code: 'n'})
 	if m.deskPending == nil {
 		t.Fatal("n did not open the line of why on a Needs you row")
 	}
-	m, cmd = deskPress(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	m, cmd := deskPress(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = deskRun(t, m, cmd)
-	last = src.args[len(src.args)-1]
-	if last != (protocol.AskMarkRequest{Ask: "i_q", Mark: protocol.MarkDidntNeedMe}) {
+	last := src.args[len(src.args)-1]
+	if src.calls[len(src.calls)-1] != protocol.OpAskMark || last != (protocol.AskMarkRequest{Ask: "i_q", Mark: protocol.MarkDidntNeedMe}) {
 		t.Fatalf("n stored %+v", last)
-	}
-}
-
-// An ask the chief sent to the owner stays in Handled for you after he answers
-// it. There n stores a didn't-need-me mark (decision 0150, Desk marks on an
-// answered item). Run with -v to see the frames at 80x24 and 120x34.
-func TestDidntNeedMeOnAnAnsweredAskTheChiefSent(t *testing.T) {
-	for _, size := range [][2]int{{80, 24}, {120, 34}} {
-		src := &deskCallSource{}
-		m := deskModel(t, size[0], size[1])
-		m.src = src
-		m.tab = inboxTab
-		m.now = func() time.Time { return t0 }
-		m.asks = nil
-		m.handled = []protocol.ChiefSort{{AskSort: protocol.AskSort{Ask: "i_9", Result: protocol.AskSortOwner, Priority: 2, WhyYou: "spends money", Reason: "a purchase", At: t0.Add(-time.Hour)}, Question: "Buy more DeepSeek credit?"}}
-		m.inboxIndex = m.askRowCount() + len(m.deliveryVisible())
-		view := ansi.Strip(m.testView())
-		t.Logf("frame %dx%d:\n%s", size[0], size[1], view)
-		if !strings.Contains(view, "didn't need me") {
-			t.Fatalf("%dx%d: the answered ask offers no didn't-need-me mark:\n%s", size[0], size[1], view)
-		}
-		m, _ = deskPress(t, m, tea.KeyPressMsg{Text: "n", Code: 'n'})
-		if m.deskPending == nil || !m.inboxEditing {
-			t.Fatal("n did not open the line of why on a handled ask sent to the owner")
-		}
-		m, cmd := deskPress(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
-		m = deskRun(t, m, cmd)
-		last := src.args[len(src.args)-1]
-		if src.calls[len(src.calls)-1] != protocol.OpAskMark || last != (protocol.AskMarkRequest{Ask: "i_9", Mark: protocol.MarkDidntNeedMe}) {
-			t.Fatalf("mark calls %v args %+v", src.calls, last)
-		}
 	}
 }
 
@@ -375,37 +286,6 @@ func TestAnswerAlwaysSendsTheScope(t *testing.T) {
 		if src.calls[len(src.calls)-1] != "inbox_answer" || !strings.Contains(string(b), `"answer":"yes"`) ||
 			!strings.Contains(string(b), `"area":"repo:ingest-forge"`) || !strings.Contains(string(b), `"action":"merge"`) {
 			t.Fatalf("answer call %v %s", src.calls, b)
-		}
-	}
-}
-
-// An ask the chief handled (here sent to a session, which answered it) stays
-// in Handled for you; m stores a should-have-asked-me mark there. Run with -v
-// to see the frames at 80x24 and 120x34.
-func TestShouldHaveAskedOnAnAnsweredHandledAsk(t *testing.T) {
-	for _, size := range [][2]int{{80, 24}, {120, 34}} {
-		src := &deskCallSource{}
-		m := deskModel(t, size[0], size[1])
-		m.src = src
-		m.tab = inboxTab
-		m.now = func() time.Time { return t0 }
-		m.asks = nil
-		m.handled = []protocol.ChiefSort{{AskSort: protocol.AskSort{Ask: "i_7", Result: protocol.AskSortSend, To: "s_00000000000000f1", Reason: "ingest-forge owns the parser", At: t0.Add(-time.Hour)}, Question: "Drop the old parser?"}}
-		m.inboxIndex = m.askRowCount() + len(m.deliveryVisible())
-		view := ansi.Strip(m.testView())
-		t.Logf("frame %dx%d:\n%s", size[0], size[1], view)
-		if !strings.Contains(view, "m should have asked me") {
-			t.Fatalf("%dx%d: no should-have-asked mark on a handled ask:\n%s", size[0], size[1], view)
-		}
-		m, _ = deskPress(t, m, tea.KeyPressMsg{Text: "m", Code: 'm'})
-		if m.deskPending == nil || !m.inboxEditing {
-			t.Fatal("m did not open the line of why")
-		}
-		m, cmd := deskPress(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
-		m = deskRun(t, m, cmd)
-		last := src.args[len(src.args)-1]
-		if src.calls[len(src.calls)-1] != protocol.OpAskMark || last != (protocol.AskMarkRequest{Ask: "i_7", Mark: protocol.MarkShouldHaveAsked}) {
-			t.Fatalf("mark calls %v args %+v", src.calls, last)
 		}
 	}
 }

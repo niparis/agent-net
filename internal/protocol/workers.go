@@ -272,6 +272,8 @@ type WorkerInfo struct {
 	// Effort is the effort the worker was started with. A harness may report
 	// its live model without it (Claude does), so lists fall back to this.
 	Effort string `json:"effort,omitempty"`
+	// Model is the model the worker was started with, without its effort.
+	Model string `json:"model,omitempty"`
 	// StartRef is the reference of the start this worker belongs to.
 	StartRef string `json:"start_ref,omitempty"`
 	// Owner is the session that started the worker (the owner's own
@@ -1545,7 +1547,8 @@ func acceptReportLine(n WorkerNotice, snap settings.Snapshot) string {
 }
 
 // noticeChecklistWithSettings writes the checklist. extra lines go before the
-// learning line, which stays last.
+// learning line, and the friction line stays last so a caller that reports no
+// step still sees the route.
 func noticeChecklistWithSettings(worktree string, learned bool, snap settings.Snapshot, extra ...string) string {
 	where := "the changes in the project folder"
 	if worktree != "" {
@@ -1562,6 +1565,7 @@ func noticeChecklistWithSettings(worktree string, learned bool, snap settings.Sn
 	if learned {
 		line += "\nIf you learned something that would change how to pick or brief this model next time, record it with agent_learn."
 	}
+	line += "\n" + FrictionReportLine
 	return line
 }
 

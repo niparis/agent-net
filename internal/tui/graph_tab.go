@@ -465,13 +465,6 @@ func (m Model) graphKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "next link":
 		w, h := m.graphSize()
 		action = graphview.SelectNext{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}}
-	case "delivery":
-		name := m.graphState.Graph.Selected()
-		if node, ok := m.mapNode(name); ok && node.Kind == "component" {
-			m.tab, m.delivery.project, m.delivery.row, m.delivery.detail = inboxTab, name, 0, false
-			m.inboxIndex = m.askRowCount()
-			return m.startDeliveryLoad()
-		}
 	case "new session":
 		name := m.graphState.Graph.Selected()
 		if node, ok := m.mapNode(name); ok && node.Kind == "component" {

@@ -1335,7 +1335,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration, workerTablesMigration, machineTablesMigration, orgFoldMigration, toolsRetireMigration, oauthClientsMigration, deskTablesMigration, pickQuotaMigration, workerStartOwnerChoiceMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration, workerTablesMigration, machineTablesMigration, orgFoldMigration, toolsRetireMigration, oauthClientsMigration, deskTablesMigration, pickQuotaMigration, workerStartOwnerChoiceMigration, sessionRequestedModelMigration, stoodDownMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -2052,7 +2052,7 @@ func (s *Store) migrate() error {
 			return err
 		}
 		stmt := migrations[i]
-		for marker, cols := range map[string][]migrationColumn{learnedTablesMarker: learnedTablesColumns, settingsFoldMarker: settingsFoldColumns, sessionTablesMarker: sessionTablesColumns, stepTablesMarker: stepTablesColumns, toolsRetireMarker: toolsRetireColumns, oauthClientsMarker: oauthClientsColumns, deskTablesMarker: deskTablesColumns} {
+		for marker, cols := range map[string][]migrationColumn{learnedTablesMarker: learnedTablesColumns, settingsFoldMarker: settingsFoldColumns, sessionTablesMarker: sessionTablesColumns, stepTablesMarker: stepTablesColumns, toolsRetireMarker: toolsRetireColumns, oauthClientsMarker: oauthClientsColumns, deskTablesMarker: deskTablesColumns, stoodDownMarker: stoodDownColumns} {
 			if !strings.Contains(migrations[i], marker) {
 				continue
 			}
@@ -2532,6 +2532,19 @@ func (s *Store) migrate() error {
 						tx.Rollback()
 						return err
 					}
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "session requested model column") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='requested_model'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return err
+			}
+			if has == 0 {
+				if _, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN requested_model TEXT NOT NULL DEFAULT ''`); err != nil {
+					tx.Rollback()
+					return err
 				}
 			}
 		}
@@ -3801,8 +3814,8 @@ func (s *Store) upsertSession(q interface {
 	}
 	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, title, cwd, pid, status, delivery, last_seen, last_active, online,
 		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker, worker_title, repo_description, worker_started,
-tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harness_activity, idle_compacted_at, last_compacted_reason, limited_until, limited_reason, turn_error, turn_error_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harness_activity, idle_compacted_at, last_compacted_reason, limited_until, limited_reason, turn_error, turn_error_at, requested_model)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (node_id, harness, native_id) DO UPDATE SET
 		name=excluded.name, title=excluded.title, cwd=excluded.cwd, pid=excluded.pid,
 		-- A worker whose run is over stays ended. A late session sync from its
@@ -3830,15 +3843,22 @@ tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harne
 		last_compacted_reason=excluded.last_compacted_reason,
 		limited_until=excluded.limited_until, limited_reason=excluded.limited_reason,
 		turn_error=excluded.turn_error, turn_error_at=excluded.turn_error_at,
+		-- The daemon knows the model it asked for only while the start it
+		-- launched is in memory. A report without one keeps the stored ask.
+		requested_model=CASE WHEN excluded.requested_model<>'' THEN excluded.requested_model ELSE sessions.requested_model END,
 		worker_run_active=CASE WHEN sessions.worker<>'' AND sessions.worker_run_active=0 AND sessions.status='ended'
-			THEN 0 WHEN sessions.online=0 AND excluded.online=1 THEN 1 ELSE sessions.worker_run_active END`,
+			THEN 0 WHEN sessions.online=0 AND excluded.online=1 THEN 1 ELSE sessions.worker_run_active END,
+		-- A stood-down session that comes online again was started by the
+		-- owner or the CTO, since nothing wakes it: the mark is over.
+		stood_down=CASE WHEN sessions.online=0 AND excluded.online=1 THEN '' ELSE sessions.stood_down END,
+		stood_down_for=CASE WHEN sessions.online=0 AND excluded.online=1 THEN '' ELSE sessions.stood_down_for END`,
 		newID, nodeID, in.Harness, in.NativeID, name, title, in.Cwd, in.PID, in.Status, in.Delivery, now, lastActive, online,
 		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker, workerTitle,
 		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now, waiting,
 		graphExclusion(in.GraphExcluded, in.GraphChecked), boolInt(in.NoProject),
 		max(in.HarnessActivity*int64(time.Second), busyInitialActivity(in.Status, now)),
 		in.LastCompactedAt, in.LastCompactedReason, in.LimitedUntil, protocol.CleanModel(in.LimitedReason),
-		protocol.CleanWaitingText(in.TurnError), in.TurnErrorAt, in.HarnessActivity*int64(time.Second))
+		protocol.CleanWaitingText(in.TurnError), in.TurnErrorAt, protocol.CleanModel(in.RequestedModel), in.HarnessActivity*int64(time.Second))
 	if err != nil {
 		return "", false, err
 	}
@@ -4521,7 +4541,7 @@ var agentSelectTemplate = `SELECT s.id, s.node_id, COALESCE(n.hostname, '-'), s.
  @STALL@
  @HELD@
  @INSESSION@
- s.limited_until, s.limited_reason, s.turn_error, s.turn_error_at, s.replaced_by, s.busy_since
+ s.limited_until, s.limited_reason, s.turn_error, s.turn_error_at, s.replaced_by, s.busy_since, s.requested_model
 	FROM sessions s LEFT JOIN nodes n ON n.id = s.node_id@JOINS@`
 
 // agentListTables are the tables agentListSelect and its joins read, with the
@@ -4573,7 +4593,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
 		&trust, &a.Profile.Expertise, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName,
-		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.ReportsTo, &a.RepoLead, &a.RepoLeadExplicit, &a.TeamLead, &a.RepoMaxAgents, &a.RepoAgentCount, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.LastCompactedAt, &a.LastCompactedReason, &a.StalledSince, &a.GatewayHeld, &a.InSession, &a.LimitedUntil, &a.LimitedReason, &a.TurnError, &a.TurnErrorAt, &a.ReplacedBy, &a.BusySince)
+		&a.Type, &a.TaskStarted, &assessment, &a.RepoContext, &a.AgentID, &a.AgentName, &a.ReportsTo, &a.RepoLead, &a.RepoLeadExplicit, &a.TeamLead, &a.RepoMaxAgents, &a.RepoAgentCount, &a.OwnerUsedAt, &a.OwnerUses, &a.PinnedAt, &a.LastCompactedAt, &a.LastCompactedReason, &a.StalledSince, &a.GatewayHeld, &a.InSession, &a.LimitedUntil, &a.LimitedReason, &a.TurnError, &a.TurnErrorAt, &a.ReplacedBy, &a.BusySince, &a.RequestedModel)
 	if err != nil {
 		return a, err
 	}
@@ -4589,6 +4609,10 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 		var w protocol.WorkerInfo
 		if json.Unmarshal([]byte(worker), &w) == nil {
 			a.Worker = &w
+			if a.RequestedModel == "" {
+				// A worker's start model travels in its worker record.
+				a.RequestedModel = w.Model
+			}
 			if assessment != "" {
 				var v protocol.WorkerAssessment
 				if json.Unmarshal([]byte(assessment), &v) == nil {
@@ -6736,6 +6760,11 @@ func (s *Store) SetSessionClosed(nodeID, sessionID string, closed bool) error {
 	_, err := s.db.Exec(`UPDATE sessions SET closed_at=?, online=0, status='ended', harness_lost=0 WHERE id=? AND node_id=? AND harness='opencode' AND worker=''`, s.now().UnixMilli(), sessionID, nodeID)
 	return err
 }
+
+// sessionRequestedModelMigration marks the requested_model column of
+// sessions: the model agent-net asked the harness to run when it started or
+// resumed the session. The migration loop adds the column when it is missing.
+const sessionRequestedModelMigration = `SELECT 1 /* session requested model column */;`
 
 // sessionTurnErrorMigration marks the turn_error and turn_error_at columns of
 // sessions: the cause of a session's last failed turn and its time. The

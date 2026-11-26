@@ -44,7 +44,6 @@
   ★                      repo or team lead; dim when no lead session is live
 
  Graph
-  D                      delivery
   d                      show or hide dormant nodes
   f                      focus on a node and its neighbours, or zoom into a team
   esc                    go back one focus or team level
@@ -198,15 +197,9 @@ Legend ────────────────────────�
                          chief's session and wakes it; a Atlas item opens your
                          Atlas chat.
   u                      undo
-  n                      on an ask that reached you, open or answered (in
-                         Handled for you): the chief did not need to send it.
-                         Type one optional line of why; the chief reads it in
-                         its next batch.
-  m                      on a handled ask: the chief should have asked you. Type
-                         one optional line of why; the chief reads it in its
-                         next batch.
-  v                      show or hide the done and stale changes in the In
-                         flight section
+  n                      on an ask that reached you, open or answered: the chief
+                         did not need to send it. Type one optional line of why;
+                         the chief reads it in its next batch.
   l                      open or close the Log section: what the Atlas and the
                          gateway did, with the undo of a Atlas change
 
@@ -228,14 +221,9 @@ Legend ────────────────────────�
   r                      decline the change
   A                      approve all the changes
 
- On a change in flight
-  pgup                   ten changes up
-  pgdown                 ten changes down
-  a                      show all
-  y                      on a To try row, report that the check passed: the
-                         owner tried it and it works
-  n                      on a To try row, report that the check failed: type one
-                         line of what is wrong
+ On a change's evidence
+  pgup                   page up
+  pgdown                 page down
 
   in details             up and down choose an answer; enter answers the marked
                          one; digits still switch tabs

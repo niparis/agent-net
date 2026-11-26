@@ -1,19 +1,19 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk │ 5 online · 1 busy
 ╭─Change───────────────────────────────────────────────────────────────────────╮
-│ Fix the deploy gate                                                          │
-│ voicemechs  feature/deploy-gate                                              │
-│ head: cccccccccccc  revision: r1  state: open  step: review  owner: merger   │
-│ status: back to an unknown session to restart the worker  waiting: 5h0m      │
-│ a✓r✗t✓p-m·T·l·d·v·                                                           │
+│ Show the provider in each quota row                                          │
+│ agent-net  w_0123456789abcdef                                                │
+│ head: aaaaaaaaaaaa  revision: r2  state: open  step: approve  owner: owner   │
+│ status: waiting for you  waiting: 20m                                        │
+│ a✓r·t✓p·m·T·l·d·v·                                                           │
 │ a accept · r review · t test · p approve · m merge · T test after merge      │
 │ l release · d deploy · v verify. ✓ passed ✗ failed · waiting - not needed    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-╭─Steps and evidence (1-7 of 10)───────────────────────────────────────────────╮
+╭─Steps and evidence (1-7 of 20)───────────────────────────────────────────────╮
 │ Steps                                                                        │
 │ accept  caller  passed                                                       │
-│ review  merger  failed                                                       │
+│ review  merger  ready                                                        │
 │ test  github  passed                                                         │
-│ approve for merge  none  skipped                                             │
+│ approve for merge  owner  needs_owner                                        │
 │ merge  caller  waiting                                                       │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯

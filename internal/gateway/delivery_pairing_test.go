@@ -127,6 +127,9 @@ func TestStepPairReleaseVerifyOneMessage(t *testing.T) {
 	if !strings.Contains(body, "Claim and report each step in order: release, then verify.") {
 		t.Fatalf("order guidance missing from:\n%s", body)
 	}
+	if !strings.HasSuffix(strings.TrimSpace(body), protocol.FrictionReportLine) {
+		t.Fatalf("batched task does not end with the friction line:\n%s", body)
+	}
 	var tasks int
 	if err := r.s.db.QueryRow(`SELECT count(*) FROM delivery_step_tasks WHERE change_id=? AND revision=? AND owner_node=?`,
 		c.ID, c.Revision, callerTaskOwner).Scan(&tasks); err != nil || tasks != 2 {
