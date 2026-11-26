@@ -226,6 +226,8 @@ func sessionRow(a protocol.AgentView, full bool, now time.Time, name func(string
 		Status:     a.Status,
 		Task:       a.Profile.TaskLine(),
 		LastSeen:   rfc3339(a.LastSeen),
+		Parent:     a.Parent,
+		NoParent:   a.NoParent,
 	}
 	if a.Harness == "cto" && a.Online {
 		row.Availability = "wakes on message"
@@ -465,7 +467,7 @@ func (s *Store) GetSession(p protocol.SessionGetRequest) (protocol.SessionGetRes
 		}
 	}
 	row := sessionRow(a, true, s.now(), func(name string) string { return names[name] })
-	if row.ReportsTo, row.AlsoAnswersTo, err = s.sessionOrgLines(a.SessionID); err != nil {
+	if row.ReportsTo, row.AlsoAnswersTo, err = s.sessionOrgLines(a); err != nil {
 		return protocol.SessionGetResult{}, err
 	}
 	return protocol.SessionGetResult{Session: row}, nil

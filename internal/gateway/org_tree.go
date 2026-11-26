@@ -280,32 +280,6 @@ func agentParents(q leadDB, soloRepoLeadReportsToCTO bool) (map[string]string, e
 	return parents, nil
 }
 
-// fillReportsTo gives each row the parent the org tree computes for its Agent.
-// The one-row read and the list both use it, so a row says the same either way.
-// The tree is computed only when a row has an Agent.
-func fillReportsTo(q leadDB, rows []protocol.AgentView) error {
-	need := false
-	for i := range rows {
-		if rows[i].AgentID != "" {
-			need = true
-			break
-		}
-	}
-	if !need {
-		return nil
-	}
-	parents, err := agentParentsQ(q)
-	if err != nil {
-		return err
-	}
-	for i := range rows {
-		if rows[i].AgentID != "" {
-			rows[i].ReportsTo = parents[rows[i].AgentID]
-		}
-	}
-	return nil
-}
-
 // checkReportsToTarget holds the endpoint rules of a move: the source is a
 // live Agent, the target is a live Agent that is not a merger, or the root,
 // and the move makes no cycle with other explicit moves.
@@ -745,47 +719,29 @@ func (s *Store) GraphForRoot(ref *protocol.GraphRef, root string) (protocol.Grap
 	return out, nil
 }
 
-// sessionOrgLines are the two org lines of agent_session_get. A session that
-// is not its Agent's lead session reports to that lead session; the lead
-// session, or a session of an Agent with none, reports to the Agent's parent.
+// sessionOrgLines are the two org lines of agent_session_get. The session
+// reports to its parent in the Sessions tree (decision 0193), named by that
+// session's Agent; a root names its Agent's parent in the org tree.
 // Every scope another Agent holds over the session's Agent, Repo, one of
 // their Teams, or all, is someone it also answers to.
-func (s *Store) sessionOrgLines(session string) (reportsTo, also string, err error) {
-	var repo, agent, lead, leadName string
-	name := func(col string) string {
-		return `COALESCE((SELECT ` + orgSessionNameSQL + ` FROM sessions x WHERE x.id=` + col + `),'')`
-	}
-	err = s.db.QueryRow(`SELECT COALESCE(s.repo_id,''), COALESCE(a.id,''), COALESCE(a.lead_session,''), `+name("a.lead_session")+`
-		FROM sessions s
-		LEFT JOIN agents a ON a.id=s.agent_id AND a.tombstone=0
-		WHERE s.id=?`, session).Scan(&repo, &agent, &lead, &leadName)
-	if err != nil {
-		return "", "", err
-	}
-	line := func(who, lead, leadName string) string {
-		if lead == "" {
-			return who
-		}
-		if leadName == "" {
-			leadName = lead
-		}
-		return who + " (lead session " + leadName + ")"
-	}
+func (s *Store) sessionOrgLines(a protocol.AgentView) (reportsTo, also string, err error) {
+	agent, repo := a.AgentID, a.RepoContext
 	switch {
-	case lead != "" && lead != session:
-		reportsTo = line(agent, lead, leadName)
-	case agent != "":
-		parent, err := agentParentQ(s.db, agent)
-		if err != nil {
+	case a.NoParent != "":
+		reportsTo = "no parent: " + a.NoParent
+	case a.Parent != "":
+		var who, name string
+		err = s.db.QueryRow(`SELECT COALESCE(x.agent_id,''), `+orgSessionNameSQL+` FROM sessions x WHERE x.id=?`, a.Parent).Scan(&who, &name)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return "", "", err
 		}
-		if parent != "" {
-			var parentLead, parentLeadName string
-			if err := s.db.QueryRow(`SELECT COALESCE(lead_session,''), `+name("lead_session")+` FROM agents WHERE id=?`, parent).Scan(&parentLead, &parentLeadName); err != nil && !errors.Is(err, sql.ErrNoRows) {
-				return "", "", err
-			}
-			reportsTo = line(parent, parentLead, parentLeadName)
+		name = firstNonEmpty(name, a.Parent)
+		reportsTo = name
+		if who != "" && a.Worker == nil {
+			reportsTo = who + " (lead session " + name + ")"
 		}
+	default:
+		reportsTo = a.ReportsTo
 	}
 	rows, err := s.db.Query(`SELECT ns.node, ns.kind FROM node_scopes ns WHERE ns.node<>?1 AND (ns.over_ref='all'
 		OR ns.over_ref='agent:'||?1 OR ns.over_ref='repo:'||?2

@@ -13,8 +13,8 @@ func priorityModel() Model {
 	m := treeModel(120, 34, Snapshot{})
 	m.snap.Agents = []protocol.AgentView{
 		{SessionID: "lead", AgentID: "lead", NodeID: "one", Hostname: "desk", Online: true, Status: "idle", Harness: "claude", RepoLeadExplicit: true, Repo: protocol.RepoInfo{Project: "demo"}, Profile: protocol.Profile{Name: "lead"}},
-		{SessionID: "kid", NodeID: "two", Hostname: "build", Online: true, Status: "busy", Harness: "codex", Worker: &protocol.WorkerInfo{Owner: "lead"}, Profile: protocol.Profile{Name: "worker"}},
-		{SessionID: "merge", Online: true, Status: "idle", Harness: "claude", Type: "merger", ReportsTo: "lead", Repo: protocol.RepoInfo{Project: "demo"}},
+		{SessionID: "kid", NodeID: "two", Hostname: "build", Online: true, Status: "busy", Harness: "codex", Worker: &protocol.WorkerInfo{Owner: "lead"}, Parent: "lead", Profile: protocol.Profile{Name: "worker"}},
+		{SessionID: "merge", Online: true, Status: "idle", Harness: "claude", Type: "merger", ReportsTo: "lead", Parent: "lead", Repo: protocol.RepoInfo{Project: "demo"}},
 		{SessionID: "other", Online: true, Status: "idle", Harness: "claude"},
 		{SessionID: "pin", Online: true, Status: "idle", Harness: "claude", PinnedAt: 1},
 	}
@@ -120,8 +120,8 @@ func TestSessionsPriorityCollapse(t *testing.T) {
 func TestSessionsPriorityMergerFallback(t *testing.T) {
 	m := priorityModel()
 	m.snap.Agents[0].RepoLeadExplicit = false
-	// The tree still names the lead, so the merger stays under it after the
-	// explicit repo-lead mark is gone.
+	// The gateway's parent still names the lead, so the merger stays under it
+	// after the explicit repo-lead mark is gone.
 	m.activeOnly = false
 	found := false
 	for _, group := range m.groups() {
@@ -132,7 +132,7 @@ func TestSessionsPriorityMergerFallback(t *testing.T) {
 	if !found {
 		t.Fatalf("merger not under its tree lead: %v", ids(m))
 	}
-	m.snap.Agents[2].ReportsTo = ""
+	m.snap.Agents[2].Parent = ""
 	for _, g := range m.groups() {
 		if g.marks["merge"].prefix != "" {
 			t.Fatal("merger without a tree parent nested")
@@ -172,8 +172,8 @@ func groupOf(m Model, id string) group {
 	return group{}
 }
 
-// An idle merger with no explicit repo lead hangs under the online agent of its
-// project that called its open change, not under the session that started it.
+// An idle merger with no explicit repo lead stays under the parent the gateway
+// gave it; the caller of its project's open change does not move it.
 func TestIdleMergerFollowsProjectChangeCaller(t *testing.T) {
 	m := priorityModel()
 	m.snap.Agents[0].RepoLeadExplicit = false
@@ -293,21 +293,8 @@ func TestSessionsPriorityGoldens(t *testing.T) {
 	}
 }
 
-func TestSessionsPriorityLeadOfflineAndCollapseRefresh(t *testing.T) {
+func TestSessionsPriorityCollapseSurvivesRefresh(t *testing.T) {
 	m := priorityModel()
-	m.snap.Agents[0].Online = false
-	m.showOffline = true
-	m.activeOnly = false
-	var shown = map[string]protocol.AgentView{}
-	for _, a := range m.snap.Agents {
-		shown[a.SessionID] = a
-	}
-	// The tree keeps the merger under its lead when that lead is offline. The
-	// old guess fell back to the caller of an open change.
-	if p := m.reportParent(shown["merge"], shown); p != "lead" {
-		t.Fatalf("offline lead parent %s", p)
-	}
-	m = priorityModel()
 	m.selected = "kid"
 	m.ensureSelection()
 	m = keys(m, "z")
@@ -354,7 +341,7 @@ func TestSessionsPriorityCollapseSummaryFitsDoubleDigitsAt80(t *testing.T) {
 	m := priorityModel()
 	m.width, m.height = 80, 24
 	for i := 0; i < 10; i++ {
-		m.snap.Agents = append(m.snap.Agents, protocol.AgentView{SessionID: fmt.Sprintf("child-%d", i), Harness: "codex", Online: true, Status: "busy", Worker: &protocol.WorkerInfo{Owner: "lead"}})
+		m.snap.Agents = append(m.snap.Agents, protocol.AgentView{SessionID: fmt.Sprintf("child-%d", i), Harness: "codex", Online: true, Status: "busy", Worker: &protocol.WorkerInfo{Owner: "lead"}, Parent: "lead"})
 	}
 	m.selected = "lead"
 	m.ensureSelection()

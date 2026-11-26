@@ -34,6 +34,7 @@ func childOrderFixture() Snapshot {
 			a.Worker = &protocol.WorkerInfo{ID: fmt.Sprintf("w_child%d", i), Owner: childOrderLead, Project: "homelab",
 				StartedAt: t0.Add(time.Duration(i-5) * 10 * time.Minute).Unix(), Task: "task"}
 			a.FirstSeen = a.Worker.StartedAt
+			a.Parent = childOrderLead
 		}))
 	}
 	return snap

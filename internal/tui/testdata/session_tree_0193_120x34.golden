@@ -1,0 +1,34 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk │ 22 sessions, 18 online · 6 busy · workers 4 running, 0 queued
+╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  ● host-01 (here) v0.0.0 cpu ? mem ? disk ?                                                                          │
+│  ● host-02        v0.0.0 cpu ? mem ? disk ?                                                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  NAME                      MACHINE      PROJECT        MODEL                   STATUS    CPU   RAM TASK
+ 20 sessions · 12 busy                                                                                    view: all  (v)
+▸ ◐ ★ chief-of-staff        host-02      chief-of-staff claude · opus-5-5       idle        ?     ?
+  CTO cto                   host-01      -              cto                     idle        ?     ?
+  ├─ ◐ ★ team-c-lead        host-02      team-c-lead    claude · opus-5-5       offline             10h ago
+  │  └─ ★ proj-c            host-01      proj-c         opencode · deepseek-v4… idle        ?     ?
+  ├─ ◐ ★ proj-d lead        host-02      proj-d         claude · opus-5-5       busy        ?     ?
+  │  ├─ ◐ proj-d 2          host-02      proj-d         claude · opus-5-5       idle        ?     ? (no parent: no lead)
+  │  ├─ proj-d worker 3     host-02      proj-d         opencode · deepseek-v4… busy        ?     ? a task
+  │  ├─ proj-d worker 7     host-02      proj-d         claude · sonnet-5-5     busy        ?     ? a task
+  │  ├─ proj-d worker 8     host-02      proj-d         claude · sonnet-5-5     busy        ?     ? a task
+  │  └─ ◐ proj-d merger     host-02      proj-d         claude · sonnet-5-5     shell       ?     ? (no parent: no lead)
+  ├─ ★ proj-b - lead        host-01      proj-b         opencode · inkling-2-m… dormant
+  │  ├─ proj-b 2            host-01      proj-b         opencode · inkling-2-m… dormant             (no parent: no lead)
+  │  ├─ proj-b 3            host-01      proj-b         opencode · inkling-2-m… dormant             (no parent: no lead)
+  │  └─ proj-b 4            host-01      proj-b         opencode · inkling-2-m… dormant             (no parent: no lead)
+  └─ ◐ ★ proj-a - lead      host-01      proj-a         claude · opus-5-5       idle        ?     ?
+     ├─ proj-a - lead       host-01      proj-a         pi · opus-5-5           offline             3d ago
+     ├─ proj-a - reviewer   host-01      proj-a         opencode · gpt-6.1-ter… idle        ?     ? (no parent: no lead)
+     ├─ ◐ proj-a - database host-01      proj-a         claude · opus-5-5       busy        ?     ? (no parent: no lead)
+     │  └─ proj-g worker 1  host-01      proj-g         opencode · deepseek-v4… busy        ?     ? a task
+     └─ ◐ proj-a - storage  host-01      proj-a         claude · opus-5-5       shell       ?     ? (no parent: no lead)
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ c: open the CTO                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+up/down select  enter open (ctrl+] back)  m msg  x stop or remove  G groups  p pin  ? help  q quit

@@ -36,32 +36,33 @@ func layoutFixture() Snapshot {
 			a.AgentID = "chief-of-staff"
 		}),
 		agent(layoutStrategy, "n_mac", "Mac", "claude", "strategy lead", func(a *protocol.AgentView) {
-			a.AgentID, a.RepoLeadExplicit, a.ReportsTo = "org-strategy", true, protocol.CTONodeName
+			a.AgentID, a.RepoLeadExplicit, a.ReportsTo, a.Parent = "org-strategy", true, protocol.CTONodeName, layoutCTO
 			a.Status = "busy"
 		}),
 		agent(layoutBacktest, "n_mac", "Mac", "claude", "backtest", func(a *protocol.AgentView) {
-			a.AgentID, a.ReportsTo = "org-backtest", "org-strategy"
+			a.AgentID, a.ReportsTo, a.Parent = "org-backtest", "org-strategy", layoutStrategy
 		}),
 		agent(layoutResearch, "n_mac", "Mac", "claude", "research", func(a *protocol.AgentView) {
-			a.AgentID, a.ReportsTo = "org-research", "org-strategy"
+			a.AgentID, a.ReportsTo, a.Parent = "org-research", "org-strategy", layoutStrategy
 			a.Status = "busy"
 		}),
 		agent(layoutWorker, "n_mac", "Mac", "opencode", "strategy worker", func(a *protocol.AgentView) {
 			a.Status = "busy"
 			a.Worker = &protocol.WorkerInfo{ID: "w_layout", Owner: layoutStrategy, Project: "strategies", StartedAt: t0.Unix(), Task: "probe"}
+			a.Parent = layoutStrategy
 		}),
 		agent(layoutTenebrae, "n_mac", "Mac", "claude", "tenebrae lead", func(a *protocol.AgentView) {
-			a.AgentID, a.RepoLeadExplicit, a.ReportsTo = "org-tenebrae", true, protocol.CTONodeName
+			a.AgentID, a.RepoLeadExplicit, a.ReportsTo, a.Parent = "org-tenebrae", true, protocol.CTONodeName, layoutCTO
 		}),
 		agent(layoutTenebrae2, "n_mac", "Mac", "claude", "tenebrae 2", func(a *protocol.AgentView) {
-			a.AgentID, a.ReportsTo = "org-tenebrae-2", "org-tenebrae"
+			a.AgentID, a.ReportsTo, a.Parent = "org-tenebrae-2", "org-tenebrae", layoutTenebrae
 			a.Status = "busy"
 		}),
 		agent(layoutMerger, "n_mac", "Mac", "claude", "tenebrae merger", func(a *protocol.AgentView) {
-			a.Type, a.AgentID, a.ReportsTo = "merger", "org-tenebrae-merger", "org-tenebrae"
+			a.Type, a.AgentID, a.ReportsTo, a.Parent = "merger", "org-tenebrae-merger", "org-tenebrae", layoutTenebrae
 		}),
 		agent(layoutTenebrae3, "n_mac", "Mac", "claude", "tenebrae 3", func(a *protocol.AgentView) {
-			a.AgentID, a.ReportsTo = "org-tenebrae-3", "org-tenebrae"
+			a.AgentID, a.ReportsTo, a.Parent = "org-tenebrae-3", "org-tenebrae", layoutTenebrae
 		}),
 	}
 	return snap

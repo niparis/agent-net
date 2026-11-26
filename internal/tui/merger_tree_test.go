@@ -34,11 +34,13 @@ func mergerFixture() Snapshot {
 			a.Repo.Project, a.Profile.Project = "agent-net", "agent-net"
 			a.Worker = &protocol.WorkerInfo{ID: "w_fix", Owner: mainID, Project: "agent-net",
 				StartedAt: t0.Add(-5 * time.Minute).Unix(), Task: "fix-login"}
+			a.Parent = mainID
 		}),
 		agent(mergerID, "n_mac", "Mac", "claude", "agent-net merger", func(a *protocol.AgentView) {
 			a.AgentID = "agent-net-merger"
 			a.Type = "merger"
 			a.ReportsTo = "agent-net"
+			a.Parent = mainID
 			a.LastActive, a.LastSeen = t0.Add(-2*time.Minute).Unix(), t0.Add(-2*time.Minute).Unix()
 			a.Repo = protocol.RepoInfo{Root: "/Users/n/code/agent-net", Project: "agent-net", Branch: "main"}
 			a.Profile.Project = "agent-net"
@@ -60,15 +62,11 @@ func TestMergerHangsUnderProjectAgent(t *testing.T) {
 	if at < 0 {
 		t.Fatalf("no agent-net row: %v", order)
 	}
-	// ci-runner also belongs to project agent-net, so it sits under the pinned
-	// lead before the newer worker, and the merger stays last after the worker.
-	if got := order[at+1]; got != "ci-runner" {
-		t.Fatalf("after agent-net: %q in %v", got, order)
+	// The merger stays last, after the worker.
+	if got := order[at+1]; got != "fix-login" {
+		t.Fatalf("worker after agent-net: %q in %v", got, order)
 	}
-	if got := order[at+2]; got != "fix-login" {
-		t.Fatalf("worker after ci-runner: %q in %v", got, order)
-	}
-	if got := order[at+3]; got != "agent-net merger" {
+	if got := order[at+2]; got != "agent-net merger" {
 		t.Fatalf("merger is not after the worker: %q in %v", got, order)
 	}
 	marks := map[string]treeMark{}
@@ -98,21 +96,8 @@ func TestMergerHangsUnderProjectAgent(t *testing.T) {
 	}
 }
 
-func TestMergerExplicitLeadWinsDeliveryCaller(t *testing.T) {
-	m := treeModel(120, 34, mergerFixture())
-	m.delivery.changes = []deliveryChange{{Repo: "agent-net", Caller: secondMainID, State: "open"}}
-	shown := map[string]protocol.AgentView{}
-	for _, a := range m.snap.Agents {
-		shown[a.SessionID] = a
-	}
-	if got := m.reportParent(shown[mergerID], shown); got != mainID {
-		t.Fatalf("parent %s", got)
-	}
-}
-
-// The tree wins over the old guess. A merger reports to the Agent its stored
-// edge names, even when another Agent of the project is the explicit repo lead
-// and the repo owner.
+// The tree draws the parent the gateway computed (decision 0193), even when
+// another Agent of the project is the explicit repo lead and the repo owner.
 func TestMergerFollowsTheTreeNotTheRepoLead(t *testing.T) {
 	snap := fakeSnapshot()
 	const repoLeadID, treeLeadID = "s_0000000000000201", "s_0000000000000202"
@@ -129,16 +114,10 @@ func TestMergerFollowsTheTreeNotTheRepoLead(t *testing.T) {
 		agent(mergerID, "n_mac", "Mac", "claude", "agent-net merger", func(a *protocol.AgentView) {
 			a.Type = "merger"
 			a.ReportsTo = "agent-net-lead"
+			a.Parent = treeLeadID
 			a.Repo.Project, a.Profile.Project = "agent-net", "agent-net"
 		}))
 	m := treeModel(120, 34, snap)
-	shown := map[string]protocol.AgentView{}
-	for _, a := range m.snap.Agents {
-		shown[a.SessionID] = a
-	}
-	if got := m.reportParent(shown[mergerID], shown); got != treeLeadID {
-		t.Fatalf("merger parent %s, want the tree parent %s", got, treeLeadID)
-	}
 	order := ids(m)
 	if at := indexOfID(order, treeLeadID); at < 0 || order[at+1] != mergerID {
 		t.Fatalf("merger is not under its tree lead: %v", order)

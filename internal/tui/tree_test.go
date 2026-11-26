@@ -23,6 +23,7 @@ func kid(id, node, host, name string, started time.Duration) protocol.AgentView 
 		a.Mode, a.Model = protocol.ModeBackground, "anthropic/claude-haiku-4-5"
 		a.Profile.Task = "probe"
 		a.Worker = &protocol.WorkerInfo{ID: "w_" + id, Owner: callerID, Project: "strategies", StartedAt: t0.Add(started).Unix(), Task: name}
+		a.Parent = callerID
 	})
 }
 
@@ -101,7 +102,7 @@ func TestTreeNested(t *testing.T) {
 	snap := treeFixture()
 	// A worker of a worker, and a loop of two that must not vanish.
 	deep := kid("s_00000000000000b1", "n_mac", "Mac", "deep", -1*time.Minute)
-	deep.Worker.Owner = kidA
+	deep.Worker.Owner, deep.Parent = kidA, kidA
 	snap.Agents = append(snap.Agents, deep)
 	m := treeModel(120, 34, snap)
 	g := group{}
@@ -115,6 +116,7 @@ func TestTreeNested(t *testing.T) {
 	}
 	loopA, loopB := kid("s_00000000000000c1", "n_mac", "Mac", "loop-a", 0), kid("s_00000000000000c2", "n_mac", "Mac", "loop-b", 0)
 	loopA.Worker.Owner, loopB.Worker.Owner = loopB.SessionID, loopA.SessionID
+	loopA.Parent, loopB.Parent = loopB.SessionID, loopA.SessionID
 	snap.Agents = append(snap.Agents, loopA, loopB)
 	m = treeModel(120, 34, snap)
 	if got := len(m.visible()); got != len(snap.Agents)-1 { // no row for the owner

@@ -102,9 +102,16 @@ func (s *Store) placeText(session string) (string, error) {
 		return "", err
 	}
 	var parts []string
+	// A member names the lead session it sits under in the Sessions tree.
 	leadLabel := ""
-	if pin != "" {
-		leadLabel = sessionLabel(s.db, pin)
+	if pin != session {
+		view, ok, err := s.agentBase(session)
+		if err != nil {
+			return "", err
+		}
+		if ok && view.Parent != "" && view.NoParent == "" {
+			leadLabel = sessionLabel(s.db, view.Parent)
+		}
 	}
 
 	// Teams this session leads.

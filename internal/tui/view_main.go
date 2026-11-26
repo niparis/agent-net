@@ -1527,6 +1527,11 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 			if !a.Online {
 				v = offlineAge(m.now(), a.LastSeen)
 			}
+			if a.NoParent != "" {
+				// The gateway could not place the session and drew it under
+				// its project's lead (decision 0193); say which rule failed.
+				v = strings.TrimSpace("(no parent: " + a.NoParent + ") " + v)
+			}
 		}
 		if c.name != "TASK" {
 			v = dashIfEmpty(v)
