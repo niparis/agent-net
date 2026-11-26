@@ -1034,6 +1034,15 @@ func tokenText(in, out, reasoning, cacheRead, cacheWrite float64) string {
 	return s
 }
 
+// trimWorkerReport bounds a report kept in a notice or an idle report, so one
+// long message cannot grow the state database without limit.
+func trimWorkerReport(report string) string {
+	if len(report) > 48*1024 {
+		return strings.ToValidUTF8(report[:48*1024], "") + "\n[report cut at 48 KB]"
+	}
+	return report
+}
+
 // ---- notices ----
 
 // notice builds the facts of a completion notice.
@@ -1043,7 +1052,6 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 	cont, fix := w.continueCount, w.fixCount
 	auto := w.autoContinueCount
 	asked, used := w.difficultyAsked, w.difficultyUsed
-	quotaStart := w.quotaStart
 	struggle := w.runStruggle()
 	d.wmu.Unlock()
 	if model == "" {
@@ -1057,7 +1065,6 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 		Host: d.hostName(), RunTime: time.Since(started), Tokens: st.Tokens, Context: protocol.ContextText(st.ContextTokens, st.ContextLimit),
 		Cost: st.Cost, Worktree: wt, Branch: br, Continue: cont, Fix: fix, AutoContinue: auto, Difficulty: difficulty, Struggle: struggle}
 	n.APICost = d.apiCostText(harness, model, st.Usage)
-	n.Quota = d.workerQuotaLine(harness, model, quotaStart)
 	d.wmu.Lock()
 	n.Evidence = w.evidence
 	d.wmu.Unlock()
@@ -1071,44 +1078,10 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 	if excluded != "" {
 		n.Note += "\nnot committed (build output or large file): " + excluded
 	}
-	if auto := protocol.WorkerAutoContinueNote(n.AutoContinue); auto != "" {
-		n.Note = strings.TrimSpace(n.Note + " " + auto)
-	}
 	if leftAsIs {
 		n.Note = strings.TrimSpace(n.Note + " A git merge was in progress; the worktree was left as is.")
 	}
 	return n
-}
-
-// quotaWorkerReading is the cached provider quota reading for a worker's
-// model. It never runs quota-axi: the picker's floor reads the same copy.
-func (d *Daemon) quotaWorkerReading(harness, model string) quotaReading {
-	name, percent, ok := protocol.QuotaWorkerReading(d.quota.snapshot(), harness, model)
-	return quotaReading{name: name, percent: percent, ok: ok}
-}
-
-// workerQuotaLine puts the start and end readings on one line. A provider with
-// no reading says so; a harness with no quota provider has no line.
-func (d *Daemon) workerQuotaLine(harness, model string, start quotaReading) string {
-	endName, endPercent, endOK := protocol.QuotaWorkerReading(d.quota.snapshot(), harness, model)
-	if !start.ok && !endOK {
-		if start.name == "" && endName == "" {
-			return ""
-		}
-		return "no reading at start, no reading at end"
-	}
-	name := start.name
-	if !start.ok {
-		name = endName
-	}
-	startText, endText := "no reading", "no reading"
-	if start.ok {
-		startText = fmt.Sprintf("%.0f%%", start.percent)
-	}
-	if endOK {
-		endText = fmt.Sprintf("%.0f%%", endPercent)
-	}
-	return name + " " + startText + " at start, " + endText + " at end"
 }
 
 // queueWorkerEnd keeps end notices in decision order without holding up the
@@ -1192,9 +1165,7 @@ func (d *Daemon) sendNoticeToKeyWithFiles(ctx context.Context, w *worker, n prot
 	if final && d.rateOffer(ctx, w) {
 		n.RateAsk = true
 	}
-	if len(report) > 48*1024 {
-		report = strings.ToValidUTF8(report[:48*1024], "") + "\n[report cut at 48 KB]"
-	}
+	report = trimWorkerReport(report)
 	body := d.workerToolchainPermissions(w, protocol.FormatWorkerNoticeWithSettings(n, report, d.SettingsSnapshot())) + renamedFilesNote(files)
 	if strings.Contains(n.DeliveryError, handbackUncommittedPushProblem) {
 		body = strings.Replace(body, "\nstatus: "+n.Status+"\n", "\nstatus: "+n.Status+", NOT PUSHED: uncommitted changes in the worktree\n", 1)
@@ -1378,11 +1349,10 @@ type handbackTail struct {
 	frictionDropped int
 
 	// persisted is true when the hand-back is saved in the state database
-	// (handback_replay.go): head and noticeKey name it, and check and the
-	// record fields carry what it already did.
+	// (handback_replay.go): head and noticeKey name it, and the record fields
+	// carry what it already did.
 	persisted                 bool
 	head, noticeKey           string
-	check                     *protocol.HandbackCheck
 	recorded                  bool
 	changeID, deliveryProblem string
 	// stats is the worker's usage an older daemon read before ending it at
@@ -1543,13 +1513,12 @@ func (d *Daemon) finishHandback(ctx context.Context, w *worker, t *handbackTail)
 	req, to, replyTo, sandboxNote, end, files := t.req, t.to, t.replyTo, t.sandboxNote, t.end, t.files
 	sessionID, committed, wipDetail := t.sessionID, t.committed, t.wipDetail
 	changeID, deliveryProblem := "", ""
-	handbackCheck := t.check
 	var pick handbackHead
 	if t.complete {
 		if t.recorded {
 			changeID, deliveryProblem = t.changeID, t.deliveryProblem
 		} else {
-			rec := d.submitHandbackChange(ctx, w, handbackCheck, req.Report, req.VisualEvidence)
+			rec := d.submitHandbackChange(ctx, w, nil, req.Report, req.VisualEvidence)
 			changeID, deliveryProblem, pick = rec.changeID, rec.problem, rec.pick
 			if rec.offline && !t.persisted && harnessKeepsHandback(w.harness) {
 				// handbackFlow waits for the link and finishes this
@@ -1620,7 +1589,6 @@ func (d *Daemon) finishHandback(ctx context.Context, w *worker, t *handbackTail)
 	n.VisualEvidence = req.VisualEvidence
 	n.Committed = committed
 	n.KeptAside = t.keptAside
-	n.HandbackCheck = handbackCheck
 	n.WIPDetail = wipDetail
 	n.FrictionDropped = t.frictionDropped
 	n.Change, n.DeliveryError = changeID, deliveryProblem
@@ -1636,14 +1604,6 @@ func (d *Daemon) finishHandback(ctx context.Context, w *worker, t *handbackTail)
 			}
 			n.DeliveryClaim = pick.claimText()
 		}
-	}
-	n.DefectHint = d.defectHint(ctx, w)
-	if misplaced := d.misplacedCommitNote(w); misplaced != "" {
-		note := strings.TrimSpace(n.Note)
-		if note != "" && !strings.HasSuffix(note, ".") {
-			note += "."
-		}
-		n.Note = strings.TrimSpace(note + " " + misplaced)
 	}
 	noticeKey := t.noticeKey
 	if w.harness == "agy" {
@@ -2015,20 +1975,8 @@ func (d *Daemon) queueOpenCodeTurn(w *worker, m protocol.Message) (queued, retry
 		return true, false
 	}
 	if !w.turnActive {
-		if w.idleNoticeCancel != nil {
-			w.idleNoticeCancel()
-			w.idleNoticeCancel = nil
-		}
 		w.idleFollowUp = w.idleNoticeSent && m.From == w.owner
-		w.idleNoticeSince = time.Time{}
-		w.idleNoticeSent = false
-		w.idleNoticePending = false
-		w.idleNoticeGeneration++
-		w.idleNoticeReport = ""
-		w.idleNoticeKey = ""
-		if err := d.st.deleteWorkerIdleNotice(w.id); err != nil {
-			d.Logf("worker %s: reset idle notice: %v", w.id, err)
-		}
+		d.resetIdleNoticeLocked(w)
 		w.turnActive = true
 		return false, false
 	}

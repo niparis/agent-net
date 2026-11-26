@@ -149,9 +149,6 @@ func BenchmarkSideFoldAutoDefect(b *testing.B) {
 						b.Fatal(err)
 					}
 					rows.Close()
-					if _, err := s.defectsToMove(workers[0], "c"); err != nil {
-						b.Fatal(err)
-					}
 				}
 			})
 		})

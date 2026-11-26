@@ -97,7 +97,7 @@ Workers only: end your task with your report and status. This is how the caller 
 
 - **Reads:** `agents`, `deliveries`, `delivery_evidence`, `delivery_step_tasks`, `gateway_state`, `model_failures`, `model_prices`, `node_scopes`, `nodes`, `nudge_pauses`, `graph_outcomes`, `sessions`, `repos`, `quota_blocks`, `worker_defects`, `worker_ratings`, `worker_runs` (plus the common reads)
 - **Writes:** `ask_sorts`, `messages`, `inbox_items`, `delivery_changes`, `delivery_retries`, `delivery_revisions`, `delivery_step_tasks`, `desk_log`, `events`, `follow_ups`, `friction`, `graph_outcomes`, `learned_suggestions`, `nudge_fires`, `setting_values`, `permission_proposals`, `playbook`, `sessions`, `worker_defects`, `worker_runs`, `worker_starts`
-- **Gateway operations:** `msg.send`, `change.submit`, `change.list`, `change.get`, `friction.report`, `worker.recent_changes`, `worker.cost`, `rate.offer`, `delivery.needs_push`, `query.projects`, `query.agent`
+- **Gateway operations:** `msg.send`, `change.submit`, `change.list`, `change.get`, `friction.report`, `worker.cost`, `rate.offer`, `delivery.needs_push`, `query.projects`, `query.agent`
 
 ### `agent_learn`
 
@@ -380,7 +380,7 @@ List worker profiles: harness, model, effort and the machines that can run them.
 
 ### `agent_worker_rate`
 
-Rate a worker 1 to 5, or report a defect found later with severity 1 to 4. brief_defect charges rework from a bad brief to the briefing session, not the worker. move_to_brief_defect moves a defect you
+Rate a worker 1 to 5, or report a defect found later with severity 1 to 4. brief_defect charges rework from a bad brief to the briefing session, not the worker.
 
 - **Reads:** `agents`, `charter_values`, `delivery_changes`, `delivery_evidence`, `graph_edges`, `model_prices`, `setting_values`, `sessions`, `repos`, `gateway_state`, `teams`, `worker_assessments`, `worker_runs`
 - **Writes:** `worker_defects`, `worker_ratings`, `worker_runs`

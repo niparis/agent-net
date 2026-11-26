@@ -235,16 +235,12 @@ func TestResolveModelListsFiveAtMost(t *testing.T) {
 func TestNoticeEndsWithTheChecklist(t *testing.T) {
 	n := WorkerNotice{Status: StatusDone, Session: "s_1", Harness: "opencode", Project: "shop", Host: "h", Worktree: "/wt/w_1", Branch: "agent-net/w_1"}
 	body := FormatWorkerNotice(n, "I did it.")
-	last := body[strings.LastIndex(body, "\n")+1:]
-	if last != FrictionReportLine {
-		t.Errorf("last line: %q", last)
-	}
-	if !strings.Contains(body, "If you learned something") || !strings.Contains(body, "agent_learn") {
-		t.Error("the learning line is missing")
-	}
 	if !strings.Contains(body, ChecklistMarker+" Before you tell your user it is done: read the diff in /wt/w_1, follow the accept contract") ||
-		!strings.Contains(body, "Merge only if your user asked.") || !strings.Contains(body, "Test scope: delivery.contract.test") {
+		!strings.Contains(body, "Merge only if your user asked.") {
 		t.Errorf("checklist: %q", body)
+	}
+	if strings.Contains(body, "Test scope:") || strings.Contains(body, "agent_learn") || strings.Contains(body, FrictionReportLine) {
+		t.Errorf("the checklist keeps a line a caller does not act on: %q", body)
 	}
 	if strings.Index(body, ReportMarker) > strings.Index(body, ChecklistMarker) {
 		t.Error("the checklist is inside the worker's report")

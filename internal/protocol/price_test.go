@@ -124,14 +124,17 @@ func TestModelPriceCostPricesEachKind(t *testing.T) {
 	}
 }
 
-// The notice carries the cost at API prices next to the tokens, and keeps the
-// cost the harness reports on its own line.
+// The notice carries one cost line: the cost the harness reports and, when
+// known, the same run at API prices.
 func TestWorkerNoticeShowsTheCostAtAPIPrices(t *testing.T) {
 	n := WorkerNotice{Status: StatusDone, Session: "s_1", Harness: "opencode", Model: "m", Project: "p", Host: "h",
 		Tokens: "1000 in, 100 out", Cost: "0.0500 (as OpenCode reports it)", APICost: APICostText(0.4321, true)}
 	out := FormatWorkerNotice(n, "done")
-	if !strings.Contains(out, "tokens: 1000 in, 100 out\n") || !strings.Contains(out, "cost: 0.0500 (as OpenCode reports it)\ncost: $0.43 at API prices\n") {
+	if !strings.Contains(out, "tokens: 1000 in, 100 out\n") || !strings.Contains(out, "cost: 0.0500 (as OpenCode reports it), $0.43 at API prices\n") {
 		t.Errorf("notice:\n%s", out)
+	}
+	if strings.Count(out, "cost: ") != 1 {
+		t.Errorf("the notice carries more than one cost line:\n%s", out)
 	}
 	if got := APICostText(0.0004, false); got != "<$0.01 at API prices (price unknown, middle price used)" {
 		t.Errorf("small cost with no listed price: %q", got)

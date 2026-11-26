@@ -31,15 +31,11 @@ func TestWorkerDefaultsToAWorktreeInARepository(t *testing.T) {
 		t.Errorf("the worker runs in %s, not in the worktree %s", rec.Cwd, res.Worktree)
 	}
 	n := w.waitNotice(t, 1)[0]
-	last := n.Body[strings.LastIndex(n.Body, "\n")+1:]
-	if last != protocol.FrictionReportLine {
-		t.Errorf("the notice does not end with the friction line:\n%s", n.Body)
-	}
-	if !strings.Contains(n.Body, "agent_learn") {
-		t.Errorf("the notice lost the learning line:\n%s", n.Body)
+	if strings.Contains(n.Body, "agent_learn") || strings.Contains(n.Body, protocol.FrictionReportLine) {
+		t.Errorf("the notice keeps a line a caller does not act on:\n%s", n.Body)
 	}
 	if !strings.Contains(n.Body, protocol.ChecklistMarker) || !strings.Contains(n.Body, "read the diff in "+res.Worktree) ||
-		!strings.Contains(n.Body, "The test step owns test suites.") {
+		!strings.Contains(n.Body, "Merge only if your user asked.") {
 		t.Errorf("the notice has no checklist:\n%s", n.Body)
 	}
 }

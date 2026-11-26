@@ -87,33 +87,6 @@ func (c HandbackCheck) Validate() error {
 	return nil
 }
 
-// NoticeLine is the one line a worker notice shows for the check. A wait of a
-// second or more for the test slot is named, so a long run time is not blamed
-// on the check.
-func (c HandbackCheck) NoticeLine() string {
-	line := c.noticeLine()
-	if c.QueueWaitMS >= 1000 && (c.Status == HandbackCheckPassed || c.Status == HandbackCheckFailed || c.Status == HandbackCheckTimedOut) {
-		line += ", after " + checkDuration(c.QueueWaitMS) + " in the test queue"
-	}
-	return line
-}
-
-func (c HandbackCheck) noticeLine() string {
-	switch c.Status {
-	case HandbackCheckPassed:
-		return "hand-back check: passed in " + checkDuration(c.DurationMS)
-	case HandbackCheckFailed:
-		return fmt.Sprintf("hand-back check: failed (exit %d) in %s", c.ExitCode, checkDuration(c.DurationMS))
-	case HandbackCheckTimedOut:
-		return "hand-back check: timed out after " + checkDuration(c.DurationMS)
-	case HandbackCheckNotConfigured:
-		return "hand-back check: not configured"
-	case HandbackCheckCouldNotRun:
-		return "hand-back check: could not run: " + c.Detail
-	}
-	return "hand-back check: " + c.Status
-}
-
 // Signal is the change signal a failed or timed-out check raises, or false
 // when the check passed, was not configured or did not run.
 func (c HandbackCheck) Signal() (QualitySignal, bool) {

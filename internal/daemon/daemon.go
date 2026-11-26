@@ -627,12 +627,9 @@ type Daemon struct {
 	resumeMu sync.Mutex
 	// outcomeBusy holds the keys of start reports that a send is working on
 	// now, so one report is not sent twice at once.
-	// strandedStopped holds the Claude sessions whose job was stopped as
-	// stranded, so the stop is not repeated on every poll.
-	strandedStopped sync.Map
-	outcomeMu       sync.Mutex
-	outcomeBusy     map[string]bool
-	claudeStartMu   sync.Mutex
+	outcomeMu     sync.Mutex
+	outcomeBusy   map[string]bool
+	claudeStartMu sync.Mutex
 	// chiefStarting is set while the chief is being started (chief_start.go).
 	// It is a flag, not a lock: a start calls the gateway.
 	chiefStarting atomic.Bool
@@ -1003,9 +1000,6 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 			d.wmu.Unlock()
 			infos[i].Mode = protocol.ModeBackground
 			infos[i].Name = ""
-		}
-		if harness == "claude" && d.strandedWorkerSession(infos[i]) {
-			continue
 		}
 		infos[i].Type = protocol.SessionType(harness, infos[i].Worker, infos[i].Type)
 		// A session whose process asks to stay off the network is not

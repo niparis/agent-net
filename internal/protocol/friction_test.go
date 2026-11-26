@@ -106,13 +106,6 @@ func TestWorkerBriefAsksForFriction(t *testing.T) {
 	}
 }
 
-// A lead's notice asks for friction and names the tool that needs no step.
-func TestNoticeChecklistAsksForFrictionReport(t *testing.T) {
-	if !strings.Contains(noticeChecklist("", false), FrictionReportLine) {
-		t.Fatalf("the notice checklist does not ask for friction:\n%s", noticeChecklist("", false))
-	}
-}
-
 // The standalone friction tool checks entries the same way a step report does,
 // and an empty list means nothing to report.
 func TestFrictionReportArgsValidate(t *testing.T) {

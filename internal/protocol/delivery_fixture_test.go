@@ -31,8 +31,8 @@ func deliveryFixture() []byte {
 		}
 	}
 	out["no-node"] = MergeApprovalFor(Graph{}, "repo")
-	out["checklist-worktree"] = noticeChecklist("/tmp/worktree", true)
-	out["checklist-project"] = noticeChecklist("", false)
+	out["checklist-worktree"] = noticeChecklist("/tmp/worktree")
+	out["checklist-project"] = noticeChecklist("")
 	b, _ := json.MarshalIndent(out, "", "  ")
 	return append(b, '\n')
 }

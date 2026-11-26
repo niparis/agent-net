@@ -35,7 +35,7 @@ func TestAutoContinuePartialHandbackStopsAtTwo(t *testing.T) {
 	// can pass 1 and 2 between two polls on a busy machine. Wait for the count
 	// to reach each value, never to equal it. That no notice went out before
 	// the third hand-back is checked at the end: the caller must get exactly
-	// one, and it must say 2 automatic continues.
+	// one, and it must say 2 auto-continues.
 	eventually(t, "the first automatic continue", func() bool {
 		return reworkRow(t, w, res.SessionID).AutoContinueCount >= 1 && fakeAutoContinueCount(repo) >= 1
 	})
@@ -45,8 +45,8 @@ func TestAutoContinuePartialHandbackStopsAtTwo(t *testing.T) {
 
 	// The third partial hand-back is not continued: the caller is told.
 	n := w.waitNotice(t, 1)[0]
-	if !strings.Contains(n.Body, "status: done") || !strings.Contains(n.Body, "2 automatic continues") {
-		t.Errorf("the notice does not say how many automatic continues were sent:\n%s", n.Body)
+	if !strings.Contains(n.Body, "status: done") {
+		t.Errorf("the notice does not say the run is done:\n%s", n.Body)
 	}
 	if !strings.Contains(n.Body, "auto-continues: 2") {
 		t.Errorf("the notice facts do not carry the automatic continues:\n%s", n.Body)
@@ -139,12 +139,11 @@ func TestAutoContinueIdleWithoutHandback(t *testing.T) {
 	if got := fakeAutoContinueCount(repo); got != 2 {
 		t.Fatalf("the worker got %d automatic continues, want 2", got)
 	}
-	// Only the third idle period reaches the caller. A notice sent after the
-	// first continue would say "1 automatic continue", so the wording below
-	// also shows that the caller was not told early.
+	// Only the third idle period reaches the caller. The auto-continues line
+	// also shows that the caller was told once, at the end.
 	n := w.waitNotice(t, 1)[0]
-	if !strings.Contains(n.Body, "status: idle without hand-back") || !strings.Contains(n.Body, "2 automatic continues") {
-		t.Errorf("the idle notice does not say how many automatic continues were sent:\n%s", n.Body)
+	if !strings.Contains(n.Body, "status: idle without hand-back") || !strings.Contains(n.Body, "auto-continues: 2") {
+		t.Errorf("the idle notice does not carry the automatic continues:\n%s", n.Body)
 	}
 	if got := len(w.notices(t)); got != 1 {
 		t.Errorf("the caller got %d notices, want exactly one", got)

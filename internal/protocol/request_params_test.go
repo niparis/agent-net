@@ -28,7 +28,6 @@ var requestParams = []any{
 	AskSortRequest{},
 	AskIntakeRequest{},
 	OwnerBriefRequest{},
-	RecentWorkerChangesRequest{},
 	PolicyGet{},
 	QueryAgents{},
 	QueryAgent{},
