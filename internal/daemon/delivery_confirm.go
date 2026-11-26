@@ -361,8 +361,9 @@ func (d *Daemon) restartClaudeCTOForDelivery(ctx context.Context, w *ctoTranscri
 		return
 	}
 	d.cto.mu.Lock()
-	_, err = d.saveClaudeCTOSessionLocked(w.session)
+	id := d.claudeCTO.sessionID()
 	d.cto.mu.Unlock()
+	err = d.saveClaudeCTOSession(w.session, id)
 	if err != nil {
 		d.Logf("cto.restart_for_delivery msg=%s save_error=%q", msgID, err.Error())
 	}
