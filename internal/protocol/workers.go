@@ -1252,10 +1252,6 @@ type WorkerNotice struct {
 	// worker's leftover changes at a complete hand-back, empty when it made
 	// none.
 	Committed string
-	// KeptAside is "<short hash> in <ref>" when the daemon kept the worker's
-	// leftover changes off the branch, because the worker pushed or named its
-	// head; empty otherwise.
-	KeptAside string
 	// Continue and Fix are the worker's rework counters: the messages the
 	// caller sent after a hand-back with complete:no and complete:yes.
 	Continue int
@@ -1378,9 +1374,6 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 		}
 		if n.Committed != "" {
 			b.WriteString("the daemon committed your leftover changes as " + n.Committed + "\n")
-		}
-		if n.KeptAside != "" {
-			b.WriteString("the daemon kept your leftover changes as " + n.KeptAside + ", not on the branch; they are still in the worktree\n")
 		}
 		if n.Change != "" {
 			b.WriteString("change: " + n.Change + "\n")

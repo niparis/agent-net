@@ -171,9 +171,6 @@ type Config struct {
 	// returns handled, Daemon.call returns its answer and the real gateway
 	// never sees the frame.
 	testGatewayCall func(ctx context.Context, typ string, params any) (json.RawMessage, bool, error)
-	// testHandbackRefusedStep runs at each step of a refused agy or Codex
-	// hand-back (handback_refused.go), so a test can stop the daemon there.
-	testHandbackRefusedStep func(step string)
 	// testAfterSyncSnapshot runs in the gateway handshake after the session
 	// snapshot is taken and before it is sent, so a test can change the
 	// local sessions inside that window.
@@ -614,11 +611,9 @@ type Daemon struct {
 	workerSessionCleanupCursor  string
 	// reportMu guards reporting: the worker IDs that one caller is reporting
 	// now. The gateway link and the worker loop may report ended workers at the
-	// same time, and each worker must be reported once. It also guards
-	// replaying, the workers whose saved hand-back is being sent now.
+	// same time, and each worker must be reported once.
 	reportMu  sync.Mutex
 	reporting map[string]bool
-	replaying map[string]bool
 	// rmu guards recent, the workers that ended in the last two minutes.
 	rmu    sync.Mutex
 	recent map[string]recentWorker

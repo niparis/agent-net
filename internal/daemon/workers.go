@@ -186,9 +186,9 @@ type worker struct {
 	sendsInFlight int
 	stopping      bool
 	handingBack   bool // from the hand-back notice until the worker has ended
-	// handbackPending is true while a saved hand-back waits for the gateway
-	// (handback_replay.go). The hand-back ends the worker itself, so the tick
-	// must not race it with an end, a nudge or an idle notice.
+	// handbackPending is true while an agy or Codex hand-back waits for the
+	// gateway in the harness state. The hand-back ends the worker itself, so
+	// the tick must not race it with an end, a nudge or an idle notice.
 	handbackPending bool
 	// endedCh is closed when the worker starts to end (endWorker). Made on first use.
 	endedCh                           chan struct{}
@@ -262,9 +262,6 @@ type worker struct {
 	// revert in progress, so the daemon did not commit it.
 	leftAsIs          bool
 	excludedLeftovers string
-	// keptAside is "<short hash> in <ref>" when the last hand-back kept the
-	// leftovers off the branch, because the worker claimed its head.
-	keptAside string
 	// changeID is the delivery change of the worker's work: the one its last
 	// complete hand-back recorded, or the one a continue carried over.
 	changeID string
@@ -1217,10 +1214,7 @@ func (d *Daemon) beginWorkerEnd(w *worker, reason string, when func() bool) <-ch
 			if harness == "agy" {
 				result = d.saveAgyWorkerEnd(w, reason)
 			} else {
-				d.wmu.Lock()
-				report := w.handbackReport
-				d.wmu.Unlock()
-				result = d.commitWorkerEndWIP(context.Background(), w, reason, report)
+				result = d.saveWorkerEndWIP(w, reason)
 			}
 			unlock()
 		}
@@ -1241,11 +1235,8 @@ func (d *Daemon) beginWorkerEnd(w *worker, reason string, when func() bool) <-ch
 			n.WIPDetail = wipDetail
 			// Time waiting behind another notice is not worker run time.
 			n.RunTime = ran
-			report := d.refusedReportFor(id, &n)
-			if _, err := d.sendNotice(context.Background(), w, n, report); err != nil {
+			if _, err := d.sendNotice(context.Background(), w, n, ""); err != nil {
 				d.Logf("worker %s: notice: %v", id, err)
-			} else if report != "" {
-				d.dropRefusedHandback(id)
 			}
 		}
 		d.finishWorktree(w)
@@ -1910,15 +1901,10 @@ func (d *Daemon) adoptWorkers() {
 		d.Logf("workers: %v", err)
 		return
 	}
-	saved, err := d.st.pendingHandbacks()
-	if err != nil {
-		d.Logf("saved hand-backs: %v", err)
-	}
 	for _, r := range rows {
 		if r.EndedReason != "" {
 			continue // reported at the next connect
 		}
-		handback, hasHandback := saved[r.ID]
 		tok, alive := procToken(r.PID)
 		// agy may have written its last result while the daemon was down.
 		_, agyStreamErr := os.Stat(filepath.Join(d.cfg.StateDir, "workers", r.ID, "agy-stream.json"))
@@ -1926,14 +1912,6 @@ func (d *Daemon) adoptWorkers() {
 		if (!alive || tok != r.StartToken) && !agyRecoverable {
 			if err := d.st.deleteWorkerIdleNotice(r.ID); err != nil {
 				d.Logf("worker %s: remove idle notice: %v", r.ID, err)
-			}
-			if hasHandback {
-				// It handed back complete before it ended: the saved hand-back
-				// sends its notice at the next connect, not a lost notice.
-				adoptSavedHandback(&r, handback)
-				d.st.saveWorker(r)
-				d.Logf("worker.stopped worker=%s session=%s project=%s harness=%s reason=%s saved_handback=1", r.ID, r.SessionID, r.Project, r.Harness, protocol.StopHandback)
-				continue
 			}
 			r.EndedReason = protocol.StopLost
 			if r.DoneStatus == "" {
@@ -1943,7 +1921,7 @@ func (d *Daemon) adoptWorkers() {
 				d.saveUnfinished(lost, protocol.StopLost)
 			}
 			d.st.saveWorker(r)
-			d.removeLostWorkerFolder(r.ID)
+			os.RemoveAll(filepath.Join(d.cfg.StateDir, "workers", r.ID))
 			d.Logf("worker.stopped worker=%s session=%s project=%s harness=%s reason=%s", r.ID, r.SessionID, r.Project, r.Harness, protocol.StopLost)
 			continue
 		}
@@ -1981,14 +1959,7 @@ func (d *Daemon) adoptWorkers() {
 			}
 		}
 		d.Logf("worker.adopted worker=%s session=%s project=%s pid=%d", w.id, w.sessionID, w.project, w.pid)
-		switch {
-		case hasHandback:
-			// Its saved hand-back ends it after the notice. Until then the
-			// tick must not nudge it, report it idle, or end it.
-			d.wmu.Lock()
-			w.handbackPending = true
-			d.wmu.Unlock()
-		case w.doneStatus != "":
+		if w.doneStatus != "" {
 			// It handed back and its notice went out, but the daemon stopped
 			// before its end began. Nothing else ends it: a message from its
 			// owner waited for that end until the gateway gave up.

@@ -1,8 +1,12 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -131,7 +135,8 @@ type handbackHead struct {
 	// claimed says how the worker itself named this head: "pushed" when a
 	// remote-tracking branch that the worker pushed points at it, "named"
 	// when the report names it. A commit the daemon makes never replaces a
-	// claimed head: the daemon keeps leftovers off the branch instead.
+	// claimed head: the change records the claimed head, and the daemon's
+	// leftover commit stays on the branch.
 	claimed string
 	// remote is the remote-tracking branch of a pushed head.
 	remote string
@@ -150,8 +155,10 @@ var reportCommitPattern = regexp.MustCompile(`\b[0-9a-f]{7,64}\b`)
 // That second case is a worker whose work is on another branch it pushed
 // while its worktree went back to the start branch. A claimed head counts
 // only when it holds commits beyond the base: a report or a push that names
-// the base, or an ancestor of it, claims nothing.
-func pickHandbackHead(ctx context.Context, dir, start, base, report string) (handbackHead, error) {
+// the base, or an ancestor of it, claims nothing. before is the branch head
+// from before the daemon committed the hand-back's leftovers; a claim on it is
+// kept, because the daemon's commit sits on top of it.
+func pickHandbackHead(ctx context.Context, dir, start, base, report string, before ...string) (handbackHead, error) {
 	branch := handbackBranch(ctx, dir, start, base)
 	head, err := gitBranchHead(ctx, dir, branch)
 	if err != nil {
@@ -191,6 +198,23 @@ func pickHandbackHead(ctx context.Context, dir, start, base, report string) (han
 		}
 		return how, remote
 	}
+	// before is the branch head before the daemon committed the leftovers.
+	// When the worker claimed that head, or when it held no work of its own,
+	// the claim decides the change, as it did before the daemon committed.
+	if len(before) > 0 && before[0] != "" && before[0] != head {
+		if how, remote := claim(before[0]); how != "" {
+			branch := branchAt(ctx, dir, before[0], remote)
+			if branch == "" {
+				branch = out.branch
+			}
+			return handbackHead{branch: branch, head: before[0], claimed: how, remote: remote}, nil
+		}
+		if !commitsBeyond(ctx, dir, base, before[0]) {
+			if claimed, ok := reflogClaim(ctx, dir, claim); ok {
+				return claimed, nil
+			}
+		}
+	}
 	if how, remote := claim(head); how != "" {
 		out.claimed, out.remote = how, remote
 		return out, nil
@@ -198,9 +222,18 @@ func pickHandbackHead(ctx context.Context, dir, start, base, report string) (han
 	if commitsBeyond(ctx, dir, base, head) {
 		return out, nil
 	}
+	if claimed, ok := reflogClaim(ctx, dir, claim); ok {
+		return claimed, nil
+	}
+	return out, nil
+}
+
+// reflogClaim finds a claimed head among the commits the worktree's HEAD has
+// pointed at, for work that is on another branch than the delivered one.
+func reflogClaim(ctx context.Context, dir string, claim func(string) (string, string)) (handbackHead, bool) {
 	reflog, err := gitOut(ctx, dir, "reflog", "show", "--format=%H", "HEAD")
 	if err != nil {
-		return out, nil
+		return handbackHead{}, false
 	}
 	seen := map[string]bool{}
 	for _, sha := range strings.Fields(reflog) {
@@ -213,10 +246,10 @@ func pickHandbackHead(ctx context.Context, dir, start, base, report string) (han
 			continue
 		}
 		if b := branchAt(ctx, dir, sha, remote); b != "" {
-			return handbackHead{branch: b, head: sha, claimed: how, remote: remote}, nil
+			return handbackHead{branch: b, head: sha, claimed: how, remote: remote}, true
 		}
 	}
-	return out, nil
+	return handbackHead{}, false
 }
 
 // commitsBeyond tells whether head has commits that base does not.
@@ -319,73 +352,6 @@ func branchAt(ctx context.Context, dir, sha, remote string) string {
 	return ""
 }
 
-// leftoversRef is where the daemon keeps a worker's leftover changes when they
-// must not go on the branch: the worker claimed its head.
-func leftoversRef(workerID string) string {
-	return "refs/agent-net/leftovers/" + workerID
-}
-
-// aside is the ref a worker's leftovers go to instead of its branch, or "" to
-// commit them on the branch as usual. They go aside when the worker claimed a
-// head (see pickHandbackHead), so the branch and the recorded change stay at
-// the head the worker handed back.
-func (d *Daemon) leftoversAside(ctx context.Context, w *worker, report string) string {
-	d.wmu.Lock()
-	dir, start, base, id := w.worktree, w.branch, w.base, w.id
-	d.wmu.Unlock()
-	if dir == "" || start == "" {
-		return ""
-	}
-	pick, err := pickHandbackHead(ctx, dir, start, base, report)
-	if err != nil || pick.claimed == "" {
-		return ""
-	}
-	return leftoversRef(id)
-}
-
-// commitStagedAside makes a commit of the staged changes on top of HEAD and
-// points ref at it. HEAD, the branch and the worktree do not move. It returns
-// the short hash, or "" when nothing is staged.
-func commitStagedAside(ctx context.Context, dir, ref, subject string) (string, error) {
-	tree, err := gitOut(ctx, dir, "write-tree")
-	if err != nil {
-		return "", err
-	}
-	if headTree, err := gitOut(ctx, dir, "rev-parse", "HEAD^{tree}"); err == nil && headTree == tree {
-		return "", nil
-	}
-	sha, err := gitOut(ctx, dir, "-c", "user.name=agent-net", "-c", "user.email=agent-net@localhost", "-c", "commit.gpgsign=false", "commit-tree", tree, "-p", "HEAD", "-m", subject)
-	if err != nil {
-		return "", err
-	}
-	if _, err := gitOut(ctx, dir, "update-ref", ref, sha); err != nil {
-		return "", err
-	}
-	return gitOut(ctx, dir, "rev-parse", "--short", sha)
-}
-
-// withSavedIndex runs fn and then puts the index back as it was, so staging
-// for a commit aside leaves the worker's own staging untouched.
-func withSavedIndex(ctx context.Context, dir string, fn func() (string, error)) (string, error) {
-	indexPath, err := gitOut(ctx, dir, "rev-parse", "--git-path", "index")
-	if err != nil {
-		return "", err
-	}
-	if !filepath.IsAbs(indexPath) {
-		indexPath = filepath.Join(dir, indexPath)
-	}
-	before, readErr := os.ReadFile(indexPath)
-	info, statErr := os.Stat(indexPath)
-	out, err := fn()
-	switch {
-	case readErr == nil && statErr == nil:
-		_ = os.WriteFile(indexPath, before, info.Mode().Perm())
-	case os.IsNotExist(readErr):
-		_ = os.Remove(indexPath)
-	}
-	return out, err
-}
-
 // claimText says how the worker claimed the head, for the notice: "" when it
 // did not.
 func (h handbackHead) claimText() string {
@@ -404,4 +370,130 @@ func shortHash(sha string) string {
 		return sha[:7]
 	}
 	return sha
+}
+
+// workerLeftoverSkipped tells whether the worker-end commit leaves a file out
+// on purpose: a built tool, a compiled binary, a binary blob or a file over
+// 5 MB. Such a file is build output, not work. Cleanup uses the same answer.
+func workerLeftoverSkipped(dir, path string, info os.FileInfo) (bool, error) {
+	skip := path == "agent-net" || strings.HasSuffix(path, ".test") || strings.HasSuffix(path, ".exe") || info.Size() > 5_000_000
+	if !info.Mode().IsRegular() || skip {
+		return skip, nil
+	}
+	f, err := os.Open(filepath.Join(dir, path))
+	if err != nil {
+		return false, err
+	}
+	buf := make([]byte, 8192)
+	n, _ := f.Read(buf)
+	f.Close()
+	buf = buf[:n]
+	magic := string(buf)
+	skip = strings.HasPrefix(magic, "\x7fELF") || strings.HasPrefix(magic, "MZ")
+	if len(buf) >= 4 {
+		switch string(buf[:4]) {
+		case "\xfe\xed\xfa\xce", "\xce\xfa\xed\xfe", "\xfe\xed\xfa\xcf", "\xcf\xfa\xed\xfe", "\xca\xfe\xba\xbe", "\xbe\xba\xfe\xca":
+			skip = true
+		}
+	}
+	return skip || bytes.IndexByte(buf, 0) >= 0, nil
+}
+
+// ignoredForAdd is the set of paths git refuses to add: a path an exclude file
+// matches, which also covers a tracked file inside an ignored folder. Plain
+// check-ignore leaves tracked paths out, so --no-index is what makes this the
+// answer git add gives.
+func ignoredForAdd(ctx context.Context, dir string, paths []string) (map[string]bool, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	var in strings.Builder
+	for _, path := range paths {
+		in.WriteString(path)
+		in.WriteByte(0)
+	}
+	out, err := gitOutWithInput(ctx, dir, []byte(in.String()), "check-ignore", "--no-index", "--stdin", "-z")
+	if err != nil {
+		// check-ignore exits 1 when no path is ignored.
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() == 1 {
+			return nil, nil
+		}
+		return nil, err
+	}
+	ignored := map[string]bool{}
+	for _, path := range strings.Split(out, "\x00") {
+		if path != "" {
+			ignored[path] = true
+		}
+	}
+	return ignored, nil
+}
+
+// stageWorkerLeftovers stages the worker's leftovers: the paths that differ
+// from HEAD, staged or not. Files the harness made for itself are left alone
+// (notWorkerWork), a path git will not add because .gitignore matches it is
+// left out and listed, and build output and large files are unstaged and
+// listed. A tracked file that is the same as in HEAD is never listed, however
+// large it is: it is not a leftover.
+func stageWorkerLeftovers(ctx context.Context, dir string) (string, error) {
+	changes, err := worktreeChanges(ctx, dir)
+	if err != nil {
+		return "", err
+	}
+	var existing []string
+	for _, c := range changes {
+		if notWorkerWork(dir, c) {
+			continue
+		}
+		if _, err := os.Lstat(filepath.Join(dir, c.path)); err == nil {
+			existing = append(existing, c.path)
+		}
+	}
+	ignored, err := ignoredForAdd(ctx, dir, existing)
+	if err != nil {
+		return "", err
+	}
+	var excluded []string
+	for _, c := range changes {
+		if notWorkerWork(dir, c) {
+			continue
+		}
+		path := c.path
+		info, err := os.Lstat(filepath.Join(dir, path))
+		if os.IsNotExist(err) {
+			// A deletion, staged or not.
+			if _, err := gitOut(ctx, dir, "rm", "--cached", "-q", "--ignore-unmatch", "--", path); err != nil {
+				return "", err
+			}
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		if ignored[path] {
+			// A file the worker already staged stays in the commit; the
+			// daemon never adds one itself.
+			if !c.staged {
+				excluded = append(excluded, path+" (ignored)")
+			}
+			continue
+		}
+		skip, err := workerLeftoverSkipped(dir, path, info)
+		if err != nil {
+			return "", err
+		}
+		if skip {
+			// Reset also removes a file the worker had already staged.
+			if _, err := gitOut(ctx, dir, "reset", "-q", "HEAD", "--", path); err != nil {
+				return "", err
+			}
+			excluded = append(excluded, fmt.Sprintf("%s %.0f MB", path, float64(info.Size())/1_000_000))
+			continue
+		}
+		if _, err := gitOut(ctx, dir, "add", "-A", "--", path); err != nil {
+			return "", err
+		}
+	}
+	return strings.Join(excluded, ", "), nil
 }

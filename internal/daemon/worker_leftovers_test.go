@@ -142,57 +142,49 @@ func TestLeftoverListNamesOnlyChangedFiles(t *testing.T) {
 		t.Errorf("not committed list %q, want only the changed docs/img/b.png", got)
 	}
 	writeFiles(t, wt, map[string]string{"more.txt": "more\n"})
-	if got := commitWorkerEndWIP(context.Background(), wt, "feat/x", "stopped"); got.SHA == "" || got.Skipped != "docs/img/b.png 0 MB" {
+	if got := d.saveWorkerEndWIP(w, "stopped"); got.SHA == "" || got.Skipped != "docs/img/b.png 0 MB" {
 		t.Errorf("WIP commit %+v, want only the changed docs/img/b.png skipped", got)
 	}
 }
 
 // The worker pushed its head for a PR and left a real file uncommitted. The
-// daemon keeps the file safe in a commit off the branch, so the branch and
-// the change stay at the PR head. Before, the daemon committed the file on
-// the branch, and the change recorded a head that was not on GitHub.
+// leftover is committed on the branch; the change still records the PR head the
+// worker pushed, not the commit the daemon made on the branch.
 func TestPushedHeadStaysTheChangeHead(t *testing.T) {
 	w, repo, wt := leftoverWorker(t)
 	withOrigin(t, repo)
 	gitIn(t, wt, "push", "-q", "origin", "HEAD:refs/heads/fix/pr")
-	head := gitHead(t, wt, "HEAD")
+	pushed := gitHead(t, wt, "HEAD")
 	writeFiles(t, wt, map[string]string{"notes.txt": "notes\n"})
 	d, f := handbackRecordDaemon(t)
 
 	notice := handBack(t, d, w, handbackDone)
-	if got := gitHead(t, wt, "feat/x"); got != head {
-		t.Fatalf("the branch moved from the pushed head %s to %s", head, got)
+	head := gitHead(t, wt, "feat/x")
+	if head == pushed {
+		t.Fatal("the leftover was not committed on the branch")
 	}
-	ref := "refs/agent-net/leftovers/" + w.id
-	if files := gitOutT(t, wt, "diff-tree", "--no-commit-id", "--name-only", "-r", ref); files != "notes.txt" {
-		t.Errorf("kept files %q, want notes.txt", files)
-	}
-	if parent := gitHead(t, wt, ref+"^"); parent != head {
-		t.Errorf("the kept commit's parent is %s, want the head %s", parent, head)
+	if files := gitOutT(t, wt, "diff-tree", "--no-commit-id", "--name-only", "-r", head); files != "notes.txt" {
+		t.Errorf("committed files %q, want notes.txt", files)
 	}
 	if _, err := os.Stat(filepath.Join(wt, "notes.txt")); err != nil {
 		t.Errorf("the leftover left the worktree: %v", err)
 	}
-	if q := submitted(t, f); q.Branch != "feat/x" || q.HeadCommit != head || q.Uncommitted {
-		t.Errorf("submit branch=%q head=%q uncommitted=%t, want feat/x at %s, committed", q.Branch, q.HeadCommit, q.Uncommitted, head)
+	if q := submitted(t, f); q.Branch != "fix/pr" || q.HeadCommit != pushed || q.Uncommitted {
+		t.Errorf("submit branch=%q head=%q uncommitted=%t, want fix/pr at %s, committed", q.Branch, q.HeadCommit, q.Uncommitted, pushed)
 	}
 	for _, want := range []string{
-		"the daemon kept your leftover changes as " + gitOutT(t, wt, "rev-parse", "--short", ref) + " in " + ref + ", not on the branch",
-		"change: ch_1\nthe change records the head you pushed (origin/fix/pr)\n",
+		"the daemon committed your leftover changes as ",
+		"change: ch_1\nrecorded branch: fix/pr\nrecorded head: " + pushed[:7] + "\nthe change records the head you pushed (origin/fix/pr)\n",
 	} {
 		if !strings.Contains(notice, want) {
 			t.Errorf("notice lacks %q:\n%s", want, notice)
 		}
 	}
-	if strings.Contains(notice, "the daemon committed your leftover changes") {
-		t.Errorf("notice says the daemon committed on the branch:\n%s", notice)
-	}
 }
 
 // On 2026-11-19 a worker's work was a PR on another branch, and its worktree
-// was back on the start branch with 37 files left. The daemon committed them
-// and recorded that commit as the head. The change now records the PR head on
-// its branch, and the files are kept off both branches.
+// was back on the start branch with 37 files left. The daemon commits them on
+// the start branch, and the change records the PR head on its branch.
 func TestPushedWorkOnAnotherBranchIsTheChange(t *testing.T) {
 	w, repo, wt := leftoverWorker(t)
 	withOrigin(t, repo)
@@ -208,15 +200,15 @@ func TestPushedWorkOnAnotherBranchIsTheChange(t *testing.T) {
 	d, f := handbackRecordDaemon(t)
 
 	notice := handBack(t, d, w, handbackDone)
-	if got := gitHead(t, wt, "feat/x"); got != w.base {
-		t.Errorf("the start branch moved to %s", got)
+	if got := gitHead(t, wt, "feat/x"); got == w.base {
+		t.Errorf("the start branch still holds no commit for the leftovers")
 	}
 	if q := submitted(t, f); q.Branch != "fix/pr" || q.HeadCommit != pr || q.Uncommitted {
 		t.Errorf("submit branch=%q head=%q uncommitted=%t, want fix/pr at %s", q.Branch, q.HeadCommit, q.Uncommitted, pr)
 	}
 	want := "change: ch_1\nrecorded branch: fix/pr\nrecorded head: " + pr[:7] + "\nthe change records the head you pushed (origin/fix/pr)\n"
-	if !strings.Contains(notice, want) || !strings.Contains(notice, "kept your leftover changes as ") {
-		t.Errorf("notice lacks %q and the kept line:\n%s", want, notice)
+	if !strings.Contains(notice, want) || !strings.Contains(notice, "the daemon committed your leftover changes as ") {
+		t.Errorf("notice lacks %q and the committed line:\n%s", want, notice)
 	}
 }
 
@@ -228,12 +220,12 @@ func TestReportNamedHeadStaysTheChangeHead(t *testing.T) {
 	d, f := handbackRecordDaemon(t)
 	req := protocol.WorkerHandbackRequest{Report: "The work is commit " + head[:9] + " on feat/x.", Status: protocol.StatusDone}
 
-	if committed := d.commitAtHandback(w, req); committed != "" {
-		t.Errorf("the daemon committed on the named head as %s", committed)
+	if committed := d.commitAtHandback(w, req); committed == "" {
+		t.Fatal("the leftover was not committed on the branch")
 	}
-	rec := d.submitHandbackChange(context.Background(), w, nil, req.Report)
-	if rec.changeID == "" || rec.pick.claimed != "named" {
-		t.Fatalf("record %+v", rec)
+	rec := d.submitHandbackChangeFrom(context.Background(), w, nil, req.Report, head)
+	if rec.changeID == "" || rec.pick.claimed != "named" || rec.pick.head != head {
+		t.Fatalf("record %+v, want the named head %s", rec, head)
 	}
 	if q := submitted(t, f); q.HeadCommit != head {
 		t.Errorf("submit head %s, want the named %s", q.HeadCommit, head)
@@ -307,41 +299,22 @@ func TestPushesNotByTheWorkerClaimNothing(t *testing.T) {
 	}
 }
 
-// A hand-back made while the gateway link is down was sent to the outbox
-// without its change record, so the change stayed on its old head. It is now
-// saved, and the next connect records the change at the head the worktree
-// has then.
-func TestHandbackWhileGatewayDownRecordsTheHeadWhenSent(t *testing.T) {
-	w, _, wt := leftoverWorker(t)
+// A complete hand-back while the gateway link is down cannot record its
+// change. The worker is told to hand back again when the link is back, and no
+// notice goes out without the change.
+func TestHandbackWhileGatewayDownIsRefused(t *testing.T) {
+	w, _, _ := leftoverWorker(t)
 	d, f := handbackRecordDaemon(t)
 	d.workers = map[string]*worker{w.id: w}
-	submit := f.answers[protocol.FrameChangeSubmit]
 	f.answer(protocol.FrameChangeSubmit, func(json.RawMessage) (any, error) { return nil, errNotConnected })
 
 	tail := &handbackTail{req: handbackDone, sessionID: w.sessionID, complete: true}
-	if _, err := d.finishHandback(context.Background(), w, tail); !errors.Is(err, errHandbackDeferred) {
+	_, err := d.finishHandback(context.Background(), w, tail)
+	if err == nil || !strings.Contains(err.Error(), "hand back again") {
 		t.Fatalf("hand-back while the gateway is down: %v", err)
 	}
-	saved, ok := d.st.pendingHandback(w.id)
-	if !ok {
-		t.Fatal("the hand-back was not saved for the next connect")
-	}
-	if !w.handbackPending {
-		t.Error("the worker may get nudges while its hand-back waits")
-	}
-
-	// The worker commits once more before the link is back.
-	writeFiles(t, wt, map[string]string{"late.txt": "late\n"})
-	gitIn(t, wt, "add", "late.txt")
-	gitIn(t, wt, "commit", "-q", "-m", "late")
-	f.answer(protocol.FrameChangeSubmit, submit)
-	f.mu.Lock()
-	delete(f.sent, protocol.FrameChangeSubmit)
-	f.mu.Unlock()
-	d.replayHandback(w.id, saved)
-
-	if q := submitted(t, f); q.HeadCommit != gitHead(t, wt, "HEAD") {
-		t.Errorf("the change records %s, want the head %s", q.HeadCommit, gitHead(t, wt, "HEAD"))
+	if queued, _ := d.st.outbox(); len(queued) != 0 {
+		t.Fatalf("the notice went out without the change record: %s", queued[0].msg.Body)
 	}
 }
 
@@ -396,9 +369,6 @@ func TestCodexHandbackWhileGatewayDownLeavesTheTurnToTheThread(t *testing.T) {
 
 	if _, err := d.handbackFlow(context.Background(), w, handbackDone, "", "", "", false, nil); !errors.Is(err, errHandbackDeferred) {
 		t.Fatalf("hand-back while the gateway is down and the daemon stops: %v", err)
-	}
-	if _, ok := d.st.pendingHandback(w.id); ok {
-		t.Error("the Codex hand-back was saved as a row that the replay sends without ending the worker")
 	}
 	if queued, _ := d.st.outbox(); len(queued) != 0 {
 		t.Errorf("the notice went out without the change record: %s", queued[0].msg.Body)

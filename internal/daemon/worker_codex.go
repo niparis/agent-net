@@ -360,30 +360,14 @@ func (codexLauncher) adopt(ctx context.Context, d *Daemon, w *worker) error {
 	d.wmu.Lock()
 	hasIdleNotice := !w.idleNoticeSince.IsZero()
 	d.wmu.Unlock()
-	// A saved refusal means the caller may not have its notice yet. It goes
-	// out with the saved key, so the gateway keeps one if the old daemon sent
-	// it already (codexRefused lists the steps).
-	refused, wasRefused := d.loadRefusedHandback(w.id)
 	if thread.Status.Type == "active" {
 		if hasIdleNotice {
 			d.resetIdleNotice(w)
 		}
 		d.setWorkerStatus(w, "busy")
-		if wasRefused {
-			d.goBackground(func() { d.tellCallerRefused(d.streamCtx(), w, refused) })
-		}
 		return nil
 	}
-	if wasRefused {
-		if !hasIdleNotice {
-			// The old daemon stopped before it saved the idle period. Save it
-			// before the notice, so the turn stays handled once the record is
-			// gone.
-			d.noteCodexIdle(w, refused.Req.Report, true)
-		}
-		d.goBackground(func() { d.tellCallerRefused(d.streamCtx(), w, refused) })
-	}
-	if hasIdleNotice || wasRefused {
+	if hasIdleNotice {
 		// The turn already ended and its automatic hand-back failed. Keep the
 		// saved idle period instead of handing back again on adoption.
 		cc.mu.Lock()

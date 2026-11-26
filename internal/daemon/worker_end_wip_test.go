@@ -1,17 +1,14 @@
 package daemon
 
 import (
-	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
-func TestCommitWorkerEndWIP(t *testing.T) {
+func TestWorkerEndWIP(t *testing.T) {
 	repo := initWIPRepo(t)
 	branch := gitOutT(t, repo, "branch", "--show-current")
 	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("changed\n"), 0600); err != nil {
@@ -35,7 +32,9 @@ func TestCommitWorkerEndWIP(t *testing.T) {
 	// Make the ignore rule part of the baseline so only worker changes are tested.
 	gitRunT(t, repo, "add", ".gitignore")
 	gitRunT(t, repo, "commit", "-m", "ignore rule")
-	got := commitWorkerEndWIP(context.Background(), repo, branch, "stopped")
+	d := commitTestDaemon(t)
+	w := &worker{id: "w_end", worktree: repo, branch: branch}
+	got := d.saveWorkerEndWIP(w, "stopped")
 	if got.Failed != "" {
 		t.Fatal(got.Failed)
 	}
@@ -45,8 +44,8 @@ func TestCommitWorkerEndWIP(t *testing.T) {
 	if gitOutT(t, repo, "show", "-s", "--format=%an <%ae>") != "agent-net <agent-net@localhost>" {
 		t.Fatal("wrong WIP author")
 	}
-	if gitOutT(t, repo, "show", "-s", "--format=%B") != "WIP: uncommitted changes at worker end (stopped)" {
-		t.Fatal("wrong WIP subject")
+	if msg := gitOutT(t, repo, "show", "-s", "--format=%B"); !strings.HasPrefix(msg, "WIP: uncommitted changes at worker end (stopped)\n") || !strings.Contains(msg, "Agent-Net-Difficulty: normal") {
+		t.Fatalf("wrong WIP message:\n%s", msg)
 	}
 	if strings.Contains(gitOutT(t, repo, "show", "--format=", "--name-only", "HEAD"), "ignored.txt") {
 		t.Fatal("ignored file committed")
@@ -56,7 +55,7 @@ func TestCommitWorkerEndWIP(t *testing.T) {
 // A tracked file inside a folder that .gitignore matches still appears in git
 // status, but git add refuses it. The WIP save leaves it out and commits the
 // rest, instead of failing the whole commit.
-func TestCommitWorkerEndWIPSkipsTrackedFileInIgnoredFolder(t *testing.T) {
+func TestWorkerEndWIPSkipsTrackedFileInIgnoredFolder(t *testing.T) {
 	repo := t.TempDir()
 	gitRunT(t, repo, "init", "-b", "main")
 	gitRunT(t, repo, "config", "user.name", "Owner")
@@ -72,7 +71,9 @@ func TestCommitWorkerEndWIPSkipsTrackedFileInIgnoredFolder(t *testing.T) {
 	wt := filepath.Join(t.TempDir(), "w_1")
 	gitRunT(t, repo, "worktree", "add", "-q", "-b", "worker", wt)
 	writeFiles(t, wt, map[string]string{"tracked.txt": "work\n", "data/.gitkeep": "work\n"})
-	got := commitWorkerEndWIP(context.Background(), wt, "worker", "stopped")
+	d := commitTestDaemon(t)
+	w := &worker{id: "w_end", worktree: wt, branch: "worker"}
+	got := d.saveWorkerEndWIP(w, "stopped")
 	if got.Failed != "" {
 		t.Fatalf("the WIP save failed on an ignored leftover: %+v", got)
 	}
@@ -90,17 +91,20 @@ func TestCommitWorkerEndWIPSkipsTrackedFileInIgnoredFolder(t *testing.T) {
 	}
 }
 
-func TestCommitWorkerEndWIPEmptyDirDoesNothing(t *testing.T) {
-	got := commitWorkerEndWIP(context.Background(), "", "", "lost")
+func TestWorkerEndWIPEmptyDirDoesNothing(t *testing.T) {
+	d := commitTestDaemon(t)
+	got := d.saveWorkerEndWIP(&worker{id: "w_end"}, "lost")
 	if got.Failed != "" || got.SHA != "" {
 		t.Fatalf("a WIP save without a worktree did work: %+v", got)
 	}
 }
 
-func TestCommitWorkerEndWIPClean(t *testing.T) {
+func TestWorkerEndWIPClean(t *testing.T) {
 	repo := initWIPRepo(t)
 	before := gitOutT(t, repo, "rev-parse", "HEAD")
-	got := commitWorkerEndWIP(context.Background(), repo, gitOutT(t, repo, "branch", "--show-current"), "stopped")
+	d := commitTestDaemon(t)
+	w := &worker{id: "w_end", worktree: repo, branch: gitOutT(t, repo, "branch", "--show-current")}
+	got := d.saveWorkerEndWIP(w, "stopped")
 	if got.SHA != "" || got.Files != 0 || got.Failed != "" {
 		t.Fatalf("unexpected commit result: %+v", got)
 	}
@@ -109,7 +113,9 @@ func TestCommitWorkerEndWIPClean(t *testing.T) {
 	}
 }
 
-func TestCommitWorkerEndWIPFailureLeavesFiles(t *testing.T) {
+// A lock that a running git process holds is never removed: the WIP save
+// reports it and leaves the working file alone.
+func TestWorkerEndWIPReportsAnIndexLock(t *testing.T) {
 	repo := initWIPRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "change.txt"), []byte("change\n"), 0600); err != nil {
 		t.Fatal(err)
@@ -117,89 +123,17 @@ func TestCommitWorkerEndWIPFailureLeavesFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, ".git", "index.lock"), nil, 0600); err != nil {
 		t.Fatal(err)
 	}
-	got := commitWorkerEndWIP(context.Background(), repo, gitOutT(t, repo, "branch", "--show-current"), "failed")
+	d := commitTestDaemon(t)
+	w := &worker{id: "w_end", worktree: repo, branch: gitOutT(t, repo, "branch", "--show-current")}
+	got := d.saveWorkerEndWIP(w, "failed")
 	if got.Failed == "" {
 		t.Fatal("expected staging failure")
 	}
 	if got, _ := os.ReadFile(filepath.Join(repo, "change.txt")); string(got) != "change\n" {
 		t.Fatal("working file changed")
 	}
-}
-
-// A stale empty index lock in the worker's own worktree is removed, and the
-// WIP save is retried once.
-func TestCommitWorkerEndWIPRemovesStaleEmptyIndexLock(t *testing.T) {
-	root := t.TempDir()
-	repo := filepath.Join(root, "worktrees", "w_test")
-	if err := os.MkdirAll(repo, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	gitRunT(t, repo, "init", "-b", "worker")
-	gitRunT(t, repo, "config", "user.name", "Owner")
-	gitRunT(t, repo, "config", "user.email", "owner@example.test")
-	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("base\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	gitRunT(t, repo, "add", "README.md")
-	gitRunT(t, repo, "commit", "-q", "-m", "base")
-	if err := os.WriteFile(filepath.Join(repo, "change.txt"), []byte("change\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	lock := filepath.Join(repo, ".git", "index.lock")
-	if err := os.WriteFile(lock, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	old := time.Now().Add(-workerIndexLockStaleAfter - time.Minute)
-	if err := os.Chtimes(lock, old, old); err != nil {
-		t.Fatal(err)
-	}
-	var logs []string
-	got := commitWorkerEndWIPWithPolicy(context.Background(), repo, "worker", "lost", wipLockPolicy{
-		WorktreesRoot: filepath.Join(root, "worktrees"),
-		Logf:          func(format string, args ...any) { logs = append(logs, fmt.Sprintf(format, args...)) },
-	})
-	if got.Failed != "" || got.SHA == "" {
-		t.Fatalf("WIP save with a stale lock: %+v", got)
-	}
-	if _, err := os.Stat(lock); !os.IsNotExist(err) {
-		t.Fatalf("the stale index lock was left in place: %v", err)
-	}
-	if !strings.Contains(strings.Join(logs, "\n"), "removed stale index lock") {
-		t.Fatalf("the removal was not logged: %v", logs)
-	}
-}
-
-// A fresh lock may belong to a running git process, so it is left alone.
-func TestCommitWorkerEndWIPLeavesFreshIndexLock(t *testing.T) {
-	root := t.TempDir()
-	repo := filepath.Join(root, "worktrees", "w_test")
-	if err := os.MkdirAll(repo, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	gitRunT(t, repo, "init", "-b", "worker")
-	gitRunT(t, repo, "config", "user.name", "Owner")
-	gitRunT(t, repo, "config", "user.email", "owner@example.test")
-	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("base\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	gitRunT(t, repo, "add", "README.md")
-	gitRunT(t, repo, "commit", "-q", "-m", "base")
-	if err := os.WriteFile(filepath.Join(repo, "change.txt"), []byte("change\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	lock := filepath.Join(repo, ".git", "index.lock")
-	if err := os.WriteFile(lock, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	got := commitWorkerEndWIPWithPolicy(context.Background(), repo, "worker", "lost", wipLockPolicy{
-		WorktreesRoot: filepath.Join(root, "worktrees"),
-		Logf:          func(string, ...any) {},
-	})
-	if got.Failed == "" || !strings.Contains(got.Failed, "index.lock") {
-		t.Fatalf("a fresh lock was not reported: %+v", got)
-	}
-	if _, err := os.Stat(lock); err != nil {
-		t.Fatalf("the fresh index lock was removed: %v", err)
+	if _, err := os.Stat(filepath.Join(repo, ".git", "index.lock")); err != nil {
+		t.Fatalf("the index lock was removed: %v", err)
 	}
 }
 
@@ -217,7 +151,7 @@ func TestWorkerEndCommitResultControlsWorktreeRetention(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := tc.got.keepWorktree(); got != tc.keep {
-				t.Fatalf("keepWorktree() = %t, want %t", got, tc.keep)
+				t.Errorf("keepWorktree() = %t, want %t", got, tc.keep)
 			}
 		})
 	}
@@ -227,8 +161,6 @@ func initWIPRepo(t *testing.T) string {
 	t.Helper()
 	repo := t.TempDir()
 	gitRunT(t, repo, "init", "-b", "worker")
-	gitRunT(t, repo, "config", "user.name", "Owner")
-	gitRunT(t, repo, "config", "user.email", "owner@example.test")
 	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("base\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
