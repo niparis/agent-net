@@ -72,11 +72,19 @@ func SignInNeeded(provider, errText string) bool {
 }
 
 // SignInQuery asks the gateway which machine and provider an open sign-in ask
-// names. Only the ask's ID comes from the caller. A prepare also names the
-// owner session that clicked, so the gateway can check owner authority.
+// names. Only the ask's ID comes from the caller. The owner is the session the
+// gateway checks before it opens anything.
 type SignInQuery struct {
 	AskID string `json:"ask_id"`
 	Owner string `json:"owner,omitempty"`
+}
+
+// SignInPrepareRequest is the owner action that opens a login on one named
+// machine. It carries a provider key only: there is no command field.
+type SignInPrepareRequest struct {
+	Machine  string `json:"machine"`
+	Provider string `json:"provider"`
+	Owner    string `json:"owner,omitempty"`
 }
 
 // SignInTarget is the gateway's answer to SignInQuery.
@@ -88,15 +96,14 @@ type SignInTarget struct {
 	Hostname string `json:"hostname,omitempty"`
 }
 
-// FrameSignInPrepare tells the daemon of the machine an ask names to open the
-// login pane in its own herdr. The gateway sends it only after the owner
-// clicked the ask.
+// FrameSignInPrepare tells the daemon of the machine a sign-in names to open
+// the login pane in its own herdr. The gateway sends it only after the owner
+// opened the sign-in on the machine and provider the frame names.
 const FrameSignInPrepare = "node.sign_in_prepare"
 
 // SignInPrepare asks the target machine's daemon to open the login pane in its
 // own herdr. It names a provider key only: there is no argv field.
 type SignInPrepare struct {
-	AskID    string `json:"ask_id"`
 	Provider string `json:"provider"`
 }
 
@@ -129,21 +136,47 @@ type SignInClose struct {
 	Reason   string `json:"reason,omitempty"`
 }
 
-// SignInOpenRequest is the owner action on a sign_in ask. It carries no
-// command and no provider: the daemon reads both from the stored ask.
+// SignInOpenRequest is the owner action that opens a sign-in. The owner's own
+// TUI names a stored ask. The CTO names a machine, an allowlisted provider and
+// the owner's quoted words. Neither form carries a command: Command is present
+// only so an attempt to send one is refused instead of ignored.
 type SignInOpenRequest struct {
-	AskID       string `json:"ask_id"`
+	AskID       string `json:"ask_id,omitempty"`
 	Cancel      bool   `json:"cancel,omitempty"`
 	HerdrSocket string `json:"herdr_socket,omitempty"`
 	HerdrPaneID string `json:"herdr_pane_id,omitempty"`
+	// Machine is a node ID or hostname, for the CTO's sign_in_open.
+	Machine string `json:"machine,omitempty" jsonschema:"the machine to open the login on, by node ID or hostname"`
+	// Provider is one key of the fixed allowlist in protocol/signin.go.
+	Provider string `json:"provider,omitempty" jsonschema:"the allowlisted CLI, such as alibaba"`
+	// OwnerWords is the CTO's quote of the owner's instruction in the chat.
+	OwnerWords string   `json:"owner_words,omitempty" jsonschema:"a short quote of the owner's instruction in this chat"`
+	Command    []string `json:"command,omitempty"`
+}
+
+// FrameSignInOpen is the gateway frame behind the owner operation
+// sign_in_open. The daemon verifies the owner's quoted words and sends the
+// machine and provider; the gateway relays a prepare to that machine.
+const FrameSignInOpen = "signin.owner_open"
+
+// SignInOpenFrame is FrameSignInOpen. Owner is the owner session the gateway
+// checks, and WordsVerified says the daemon found the quote in the CTO chat.
+type SignInOpenFrame struct {
+	Request       SignInOpenRequest `json:"request"`
+	Owner         string            `json:"owner"`
+	Session       string            `json:"session,omitempty"`
+	By            string            `json:"by,omitempty"`
+	WordsVerified bool              `json:"words_verified,omitempty"`
 }
 
 // SignInTransfer carries a console token only in the encrypted node relay.
-// The gateway resolves the target and provider from the open ask.
+// The machine and provider come from the ask the owner opened, never from the
+// token's caller.
 type SignInTransfer struct {
-	AskID string `json:"ask_id"`
-	Owner string `json:"owner"`
-	Token string `json:"token"`
+	Machine  string `json:"machine"`
+	Provider string `json:"provider"`
+	Owner    string `json:"owner"`
+	Token    string `json:"token"`
 }
 
 const FrameSignInImport = "node.sign_in_import"

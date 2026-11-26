@@ -123,7 +123,7 @@ func TestRemoteViewHostsInAgentNetHerdr(t *testing.T) {
 func TestSignInPrepareHostsInAgentNetHerdr(t *testing.T) {
 	_, log := fakeOpenHerdr(t)
 	d := watchedDaemon(t, Config{NodeID: "n_mac", Hostname: "mac"})
-	raw, _ := json.Marshal(protocol.SignInPrepare{AskID: "i_signin", Provider: "alibaba"})
+	raw, _ := json.Marshal(protocol.SignInPrepare{Provider: "alibaba"})
 	res, err := d.signInPrepare(raw)
 	if err != nil || !res.Opened || res.Session != "agent-net" {
 		t.Fatalf("prepare %+v, error %v", res, err)

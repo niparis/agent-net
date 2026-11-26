@@ -180,6 +180,19 @@ func ownerItemBody(q askDB, item protocol.InboxItem, canReply bool) string {
 			end = "\nThe CTO completes it on the owner's words with " + ctoOpCallText(protocol.OpDeliveryOwnerAnswer, args)
 		}
 	}
+	if item.Kind == protocol.AskKindSignIn {
+		// The owner no longer has a Desk row to click (decision 0196). The
+		// chief asks him, then names the exact call that opens the login.
+		provider := strings.TrimPrefix(item.SourceRef, protocol.AskKindSignIn+":"+item.Node+":")
+		if provider != "" && provider != item.SourceRef {
+			host := item.Node
+			var h string
+			if q.QueryRow(`SELECT hostname FROM nodes WHERE id=?`, item.Node).Scan(&h) == nil && strings.TrimSpace(h) != "" {
+				host = h
+			}
+			end = fmt.Sprintf("\nIf the owner agrees, the CTO opens it with sign_in_open machine %s provider %s, quoting the owner's words.", host, provider)
+		}
+	}
 	body := b.String()
 	if limit := protocol.MaxBodyBytes - len(end); len(body) > limit {
 		body = strings.ToValidUTF8(body[:limit], "")

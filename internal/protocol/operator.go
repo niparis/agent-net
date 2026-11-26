@@ -140,9 +140,9 @@ const (
 	// process-checked operator path.
 	OpPermissionApply = "permission_apply" // takes PermissionOwnerApplyRequest, answers PermissionProposal
 
-	// OpSignInOpen is the owner's click on a sign-in ask. It opens the login
-	// pane for the ask's provider on the machine the ask names. Owner only:
-	// the CTO can raise a sign-in ask, never open the pane.
+	// OpSignInOpen opens a sign-in. The owner's own TUI names a stored ask.
+	// The CTO names a machine, an allowlisted provider and the owner's quoted
+	// words, and opens the login in that machine's herdr (decision 0196).
 	OpSignInOpen     = "sign_in_open"
 	OpSignInComplete = "sign_in_complete"
 

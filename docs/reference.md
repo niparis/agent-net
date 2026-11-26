@@ -619,7 +619,7 @@ no-op. This is not an arbitrary RPC passthrough. The available families are:
 | Session controls | `session_pin`, `sessions_archive` (including `restore` and `dry_run`), `session_stop`, `session_resume`, `session_agent_list`, `session_agent_set`, `notes_copy`, `notes_uncopy`, `session_enter`, `cto_enter`, `cto_send`, `loop_resume` |
 | Owner preferences and worker selection | `hidden_get/set`, `onboarding_get/set`, `timezone_get/set`, `worker_floors_get/set/reset`, `difficulty_get/set`, `integrations_get`, `protected_providers_get`, `worker_providers_get`, `scores_get`, `scores_weekly`, `worker_rotation_get`, `difficulty_judge_pick`, `settings_owner_read`, `playbook_get` |
 | Teams, delivery and merger | `team_write`, `delivery_owner_set`, `delivery_owner_answer`, `merger_get`, `merger_set`, `merger_restore`, `edge_set`, `changes_owner_find`, `changes_owner_report`, `worker_defect`, `learned_list`, `learned_view`, `learned_answer` |
-| Other owner operations | `apps.refuse`, `apps.public.url`, `apps.public.restore`, `gateway_backup`, `operator_undo`, `sign_in_raise`, `permission_reject` |
+| Other owner operations | `apps.refuse`, `apps.public.url`, `apps.public.restore`, `gateway_backup`, `operator_undo`, `sign_in_raise`, `sign_in_open`, `permission_reject` |
 
 Each call is audited, including reads and failures. Successful changes create
 an Inbox/Desk notice; archive previews do not create a change notice. Undo
@@ -2570,15 +2570,28 @@ configuration on the TUI machine. After it finishes, agent-net imports the
 console token into the local CLI and sends it to the target daemon. The target
 imports it with `bl auth login --console --token-stdin --console-region
 ap-southeast-1 --console-site international`. The temporary configuration is
-removed after completion or cancellation. A web Desk click delegates the login
-to an open owner TUI; an unavailable TUI is reported. Both daemons use the
-same CLI path and configuration environment as their quota readers. quota-axi
-reads the console login by running `bl usage token-plan --output json`.
+removed after completion or cancellation. A stored ask opened from an owner
+TUI delegates the login to that TUI; an unavailable TUI is reported. Both
+daemons use the same CLI path and configuration environment as their quota
+readers. quota-axi reads the console login by running `bl usage token-plan
+--output json`.
+
+A sign-in that needs the owner is one request to the chief of staff (decision
+[0196](decisions/0196-remove-the-desk.md)). The request ends with the exact
+call that acts on his answer: `sign_in_open machine <host> provider <p>`. The
+CTO's owner-gated `cto_op` is `sign_in_open {machine, provider, owner_words}`.
+It names a node ID or hostname and one allowlisted provider, checks the quote
+against what the owner typed in the CTO chat in the last 3 hours, and sends a
+prepare frame to that machine's daemon. The daemon opens the login in its own
+herdr. No stored ask is needed, and a command is never accepted: the daemon
+reads the argv from `internal/protocol/signin.go`. An unknown provider or an
+offline machine is refused with one plain line. A stored ask raised before
+decision 0196 can still be opened from the owner's TUI by its ID.
 
 The daemon raises one ask per machine and provider for a known quota login
-error. The CTO may raise or list sign-in asks, but cannot open one. After a
-successful import, each machine rechecks quota; the ask closes with `signed in`
-when the target's login error clears. A persisting error keeps it open.
+error, and the CTO may also raise or list them. After a successful import, each
+machine rechecks quota; the ask closes with `signed in` when the target's login
+error clears. A persisting error keeps it open.
 
 ## Automatic routes and the CTO intake queue
 
@@ -2596,11 +2609,12 @@ gateway writes the log line `route.missing`.
   first: approvals, questions, ideas, checks, waiting sessions, rejections,
   escalations, stalls, held requests, charter drafts, learned suggestions,
   CTO proposals, steps that need the owner, CTO alerts and quota stuck work.
-- **The owner directly.** Only sign-in asks and OAuth consents (the Connected
-  apps approval and the Tailscale public link consent) skip the chief, as
-  one-click asks. The chief's own daily brief and an agent's permission
-  proposal also show to the owner; neither is automatic. Nothing else that
-  agent-net makes by itself reaches the owner.
+- **The owner directly.** Only OAuth consents (the Connected apps approval and
+  the Tailscale public link consent) skip the chief, as one-click asks. A
+  sign-in ask does not: it goes to the chief with the exact `sign_in_open` call
+  that opens it on the owner's words. The chief's own daily brief also shows to
+  the owner; it is not automatic. Nothing else that agent-net makes by itself
+  reaches the owner.
 - **The CTO intake queue.** System-health alerts are stored in `inbox_items` with `owner='cto'` and a `dedupe_key` of `kind:subject`.
 
 ### The CTO intake queue

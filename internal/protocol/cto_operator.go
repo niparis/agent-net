@@ -34,7 +34,7 @@ sign_in_list nudge_stats friction_find`
 const CTOOperatorChanges = `operator_undo sessions_archive cto_enter cto_send session_enter apps.public.restore session_pin apps.refuse apps.public.url gateway_backup
 session_stop session_resume session_agent_set notes_copy notes_uncopy learned_answer hidden_set onboarding_set timezone_set
 worker_floors_set worker_floors_reset difficulty_set team_write delivery_owner_set merger_set merger_restore chief_set ask_undo ask_mark changes_owner_report worker_defect sign_in_raise bar_edit
-permission_apply permission_reject permission_undo friction_mark edge_set delivery_owner_answer loop_resume`
+permission_apply permission_reject permission_undo friction_mark edge_set delivery_owner_answer loop_resume sign_in_open`
 
 // CTOOperatorMethods is an explicit allowlist, shared by schema generation and
 // daemon dispatch. It never accepts arbitrary daemon methods or consent approval.

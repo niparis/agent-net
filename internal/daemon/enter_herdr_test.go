@@ -792,7 +792,7 @@ func TestSignInOpenRemoteRunsOnBrowserMachine(t *testing.T) {
 func TestSignInPrepareOpensAllowlistedArgv(t *testing.T) {
 	_, log := fakeOpenHerdr(t)
 	d := watchedDaemon(t, Config{NodeID: "n_mac", Hostname: "Nicolas-MBP"})
-	raw, _ := json.Marshal(protocol.SignInPrepare{AskID: "i_signin", Provider: "alibaba"})
+	raw, _ := json.Marshal(protocol.SignInPrepare{Provider: "alibaba"})
 	res, err := d.signInPrepare(raw)
 	if err != nil {
 		t.Fatal(err)
@@ -804,7 +804,7 @@ func TestSignInPrepareOpensAllowlistedArgv(t *testing.T) {
 	if calls := string(mustRead(t, log)); strings.Contains(calls, "ssh") {
 		t.Fatalf("herdr calls %q", calls)
 	}
-	bad, _ := json.Marshal(protocol.SignInPrepare{AskID: "i_signin", Provider: "sh -c curl"})
+	bad, _ := json.Marshal(protocol.SignInPrepare{Provider: "sh -c curl"})
 	if _, err := d.signInPrepare(bad); err == nil {
 		t.Fatal("an unknown provider was accepted")
 	}

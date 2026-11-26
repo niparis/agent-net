@@ -13,9 +13,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/niparis/agent-net/internal/client"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -206,7 +204,7 @@ func TestSignInRemoteRelaysFreshTokenThroughStdin(t *testing.T) {
 	if err := d.signInComplete(context.Background(), "i_test", false); err != nil {
 		t.Fatal(err)
 	}
-	if transfer.Token != fakeConsoleToken || transfer.AskID != "i_test" {
+	if transfer.Token != fakeConsoleToken || transfer.Machine != "remote" || transfer.Provider != "alibaba" {
 		t.Fatal("wrong credential relayed")
 	}
 	if _, err := os.Stat(plan.Env["BAILIAN_CONFIG_DIR"]); !os.IsNotExist(err) {
@@ -271,51 +269,53 @@ func TestSignInWebClickDelegatesToOwnerTUI(t *testing.T) {
 	}
 }
 
-func TestSignInWebClickReachesOneRemoteOwnerTUI(t *testing.T) {
-	// The click needs the id of a stored sign-in ask. A sign-in for the owner
-	// goes to the chief and is not stored (decision 0196); the follow-up of
-	// part 1b gives it its own stored ask and turns this test back on.
-	t.Skip("gap 2 of part 1b: a sign-in needs a stored ask, which decision 0196 no longer stores")
+// The CTO opens a login on the machine the owner names, on his quoted words,
+// with no stored ask. The login pane opens in that machine's own herdr.
+func TestCTOSignInOpenReachesNamedMachineHerdr(t *testing.T) {
+	_, log := fakeOpenHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
-	web := startNode(t, g, nodeOpts{})
-	browser := startNode(t, g, nodeOpts{})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	requests := make(chan protocol.UIRequest, 1)
-	c, err := client.DialPushData(browser.sock, func(method string, raw json.RawMessage) {
-		var q protocol.UIRequest
-		if method == "cto_ui" && json.Unmarshal(raw, &q) == nil && q.SignInAskID != "" {
-			requests <- q
-		}
+	ctoNode := startNode(t, g, nodeOpts{cmdline: "pi"})
+	target := startNode(t, g, nodeOpts{})
+	words := "open the Alibaba login on that machine"
+	ctoOwnerSays(t, ctoNode.d, "yes, "+words)
+	got, err := ctoOwnerOpFor(ctoNode, protocol.OpSignInOpen, map[string]any{
+		"machine": target.cfg.NodeID, "provider": "alibaba", "owner_words": words,
 	})
 	if err != nil {
+		t.Fatalf("sign_in_open: %v", err)
+	}
+	data, _ := json.Marshal(got)
+	var result protocol.SignInPrepareResult
+	if err := json.Unmarshal(data, &result); err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
-	if _, err := c.Call(ctx, "hello", map[string]any{"client": "cli", "tui": true}); err != nil {
-		t.Fatal(err)
+	if !result.Opened || result.Pane == "" {
+		t.Fatalf("result %s", data)
 	}
-	raw, err := web.d.call(ctx, "sign_in.raise", protocol.SignInRaise{Provider: "alibaba"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var created struct {
-		Ask protocol.Ask `json:"ask"`
-	}
-	if json.Unmarshal(raw, &created) != nil || created.Ask.ID == "" {
-		t.Fatal("missing ask")
-	}
-	_, err = web.d.signInOpen(withVia(ctx, protocol.ViaPhone), protocol.SignInOpenRequest{AskID: created.Ask.ID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case q := <-requests:
-		if q.SignInAskID != created.Ask.ID {
-			t.Fatalf("wrong ask: %+v", q)
-		}
-	case <-ctx.Done():
-		t.Fatal("request did not reach the browser machine's TUI")
+	requireHerdrOpened(t, log, "sign in: Alibaba Bailian CLI - Firefox, not Safari", "bl auth login --console --no-browser --console-site international")
+}
+
+// The CTO op is refused without the owner's quoted words, for a quote he did
+// not type, for a command and for an unknown provider.
+func TestCTOSignInOpenRefusals(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	ctoOwnerSays(t, n.d, "ok, open the login please")
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+		want string
+	}{
+		{"no words", map[string]any{"machine": "n_x", "provider": "alibaba"}, "owner_words is required"},
+		{"a quote he did not type", map[string]any{"machine": "n_x", "provider": "alibaba", "owner_words": "words I made up"}, "was not found"},
+		{"a command", map[string]any{"machine": "n_x", "provider": "alibaba", "owner_words": "open the login", "command": []string{"sh", "-c", "curl attacker"}}, "never a command"},
+		{"unknown provider", map[string]any{"machine": "n_x", "provider": "sh -c curl", "owner_words": "open the login"}, "unknown sign-in provider"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := ctoOwnerOpFor(n, protocol.OpSignInOpen, tc.args); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error %v, want %q", err, tc.want)
+			}
+		})
 	}
 }
 

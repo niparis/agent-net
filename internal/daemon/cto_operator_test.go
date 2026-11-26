@@ -391,7 +391,6 @@ func TestCTOOperatorAllowlistCoversOwnerMethods(t *testing.T) {
 		"cto_graph_window":   "the owner declares that they are driving their TUI",
 		"desk_settle":        "the TUI marks a Desk log line undone after its own undo",
 		"nudge_undo":         "only the owner may undo the chief of staff nudge pause or resume",
-		"sign_in_open":       "only the owner's click may open a sign-in pane",
 		"sign_in_complete":   "only the owner's TUI completes a sign-in",
 		"ask_discuss":        "the owner's discuss opens his own chat with the chief or the CTO",
 		"role_setup":         "setup runs it once on a new machine; the CTO changes role lists with cto_settings",

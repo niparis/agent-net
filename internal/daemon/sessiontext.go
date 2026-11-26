@@ -389,7 +389,15 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.call(ctx, "asks.list", struct{}{})
 	case protocol.OpSignInOpen:
 		var p protocol.SignInOpenRequest
-		if json.Unmarshal(raw, &p) != nil || p.AskID == "" {
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad sign_in_open arguments")
+		}
+		if proposalActor(ctx) == "cto" {
+			// The CTO opens a login on a named machine, on the owner's words.
+			res, err = d.ctoSignInOpen(ctx, p)
+			break
+		}
+		if p.AskID == "" {
 			return nil, true, errors.New("sign_in_open needs an ask")
 		}
 		res, err = d.signInOpen(ctx, p)
