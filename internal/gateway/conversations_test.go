@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 // conversationFixture makes one node with two sessions and returns their IDs.
@@ -185,7 +186,7 @@ func TestConversationsPageGroupsAnEndedWorkerAndNamesItFromTheTask(t *testing.T)
 	base := c.t
 	worker := endedWorker(t, s, node, alice, "nw", "Polish the sessions panel")
 
-	taskBody := protocol.WorkerTaskBody("Polish the sessions panel\nRun the checks.", "/tmp/wt", "agent-net/w_8")
+	taskBody := protocol.WorkerTaskBodyBriefBar("", protocol.WorkerBrief{Notes: "Polish the sessions panel\nRun the checks."}, "/tmp/wt", "agent-net/w_8", "", "", "", "", "", settings.Snapshot{}, "", nil)
 	insertConversationMessage(t, s, "m_task", "c_task", alice, worker, taskBody, base.Add(-10*time.Minute))
 	started := protocol.WorkerStartedText(worker, "opencode", "m1", "shop", "mac", time.Minute, "")
 	insertConversationMessage(t, s, "m_started", "c_started", worker, alice, started, base.Add(-9*time.Minute))
@@ -592,7 +593,7 @@ func conversationRealFixture(t *testing.T, s *Store, node, hub string) (total, t
 		worker := fmt.Sprintf("s_worker_%04d", w)
 		at := base.Add(-time.Duration(n) * time.Minute)
 		insert(fmt.Sprintf("m_wb%04d", w), fmt.Sprintf("c_w%04d_0", w), hub, worker,
-			protocol.WorkerTaskBody(pad("Task", 420), "", ""), at)
+			protocol.WorkerTaskBodyBriefBar("", protocol.WorkerBrief{Notes: pad("Task", 420)}, "", "", "", "", "", "", "", settings.Snapshot{}, "", nil), at)
 		n++
 		insert(fmt.Sprintf("m_ws%04d", w), fmt.Sprintf("c_w%04d_1", w), worker, hub,
 			"[agent-net worker notice]\nstatus: started\nworker: "+worker+"\n", at.Add(-time.Second))
@@ -681,7 +682,7 @@ func TestConversationsPageGroupsWorkerPagesAndTotals(t *testing.T) {
 		worker := endedWorker(t, s, node, alice, fmt.Sprintf("nw%d", i), fmt.Sprintf("Task %d", i))
 		at := base.Add(-time.Duration(10-i*2) * time.Minute)
 		insertConversationMessage(t, s, fmt.Sprintf("m_task_%d", i), fmt.Sprintf("c_task_%d", i), alice, worker,
-			protocol.WorkerTaskBody(fmt.Sprintf("Task %d", i), "", ""), at)
+			protocol.WorkerTaskBodyBriefBar("", protocol.WorkerBrief{Notes: fmt.Sprintf("Task %d", i)}, "", "", "", "", "", "", "", settings.Snapshot{}, "", nil), at)
 		insertConversationMessage(t, s, fmt.Sprintf("m_started_%d", i), fmt.Sprintf("c_started_%d", i), worker, alice,
 			protocol.WorkerStartedText(worker, "opencode", "m1", "shop", "mac", 0, ""), at.Add(time.Minute))
 		insertConversationMessage(t, s, fmt.Sprintf("m_done_%d", i), fmt.Sprintf("c_done_%d", i), worker, alice,
@@ -743,7 +744,7 @@ func TestConversationMessagesOpensAGroupedWorker(t *testing.T) {
 	base := c.t
 	worker := endedWorker(t, s, node, alice, "nw", "Polish the panels")
 	insertConversationMessage(t, s, "m_task", "c_task", alice, worker,
-		protocol.WorkerTaskBody("Polish the panels", "", ""), base.Add(-2*time.Minute))
+		protocol.WorkerTaskBodyBriefBar("", protocol.WorkerBrief{Notes: "Polish the panels"}, "", "", "", "", "", "", "", settings.Snapshot{}, "", nil), base.Add(-2*time.Minute))
 	insertConversationMessage(t, s, "m_started", "c_started", worker, alice,
 		protocol.WorkerStartedText(worker, "opencode", "m1", "shop", "mac", 0, ""), base.Add(-time.Minute))
 
@@ -797,7 +798,7 @@ func TestConversationsPageGroupsTenThousandWorkerMessagesFast(t *testing.T) {
 	for w := 0; w < workers; w++ {
 		worker := fmt.Sprintf("s_worker_%03d", w)
 		for n, body := range []string{
-			protocol.WorkerTaskBody(fmt.Sprintf("Task %d", w), "", ""),
+			protocol.WorkerTaskBodyBriefBar("", protocol.WorkerBrief{Notes: fmt.Sprintf("Task %d", w)}, "", "", "", "", "", "", "", settings.Snapshot{}, "", nil),
 			"[agent-net worker notice]\nstatus: started\nworker: " + worker + "\n",
 			"[agent-net worker notice]\nstatus: done\nrun time: 1m\n",
 		} {

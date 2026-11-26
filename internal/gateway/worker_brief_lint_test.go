@@ -11,9 +11,9 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// A check-mode start of a brief with two problems returns both flags, and the
-// gateway writes one log line with the checks that flagged it. Nothing is
-// refused: the start is only checked.
+// A start of a brief with a problem returns its flag, and the gateway
+// writes one log line with the checks that flagged it. Nothing is refused:
+// the flags are advisory.
 func TestWorkerStartLogsTheBriefLintChecks(t *testing.T) {
 	a := newAgyGate(t)
 	var logs bytes.Buffer
@@ -25,7 +25,7 @@ func TestWorkerStartLogsTheBriefLintChecks(t *testing.T) {
 
 	task := "Use the fixture as in the brief above.\nThe bug first showed at commit 3fa9c1e2b7.\n"
 	answer, err := a.g.workerStart(context.Background(), a.nc, protocol.WorkerStartFrame{Owner: a.owner, Level: "normal",
-		WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: task, Harness: "agy", Model: "gemini-3.8-flash-low", Mode: protocol.WorkerStartModeCheck}})
+		WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: task, Harness: "agy", Model: "gemini-3.8-flash-low"}})
 	if err != nil {
 		t.Fatalf("a flagged brief was refused: %v", err)
 	}
@@ -33,10 +33,10 @@ func TestWorkerStartLogsTheBriefLintChecks(t *testing.T) {
 	for _, f := range answer.BriefFlags {
 		checks = append(checks, f.Check)
 	}
-	if want := []string{protocol.BriefCheckReference, protocol.BriefCheckCommit}; !reflect.DeepEqual(checks, want) {
+	if want := []string{protocol.BriefCheckCommit}; !reflect.DeepEqual(checks, want) {
 		t.Fatalf("flags = %+v, want checks %v", answer.BriefFlags, want)
 	}
-	if line := logs.String(); !strings.Contains(line, "worker.brief_lint") || !strings.Contains(line, "checks=reference,commit") {
+	if line := logs.String(); !strings.Contains(line, "worker.brief_lint") || !strings.Contains(line, "checks=commit") {
 		t.Fatalf("log = %q, want one worker.brief_lint line with the checks", line)
 	}
 }

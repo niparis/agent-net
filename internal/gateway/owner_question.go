@@ -132,5 +132,5 @@ func (g *Gateway) withdrawAskByText(st *Store, session, id, reason string) (map[
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"item": protocol.InboxItem{ID: id, SessionID: session, Status: res.State}, "withdrawn": true, "reason": reason, "start_id": res.StartID}, nil
+	return map[string]any{"item": protocol.InboxItem{ID: id, SessionID: session, Status: res.State}, "withdrawn": true, "reason": reason}, nil
 }

@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/json"
+	"github.com/niparis/agent-net/internal/settings"
 	"reflect"
 	"strings"
 	"testing"
@@ -109,7 +110,7 @@ func TestWorkerNoticeContext(t *testing.T) {
 }
 
 func TestWorkerTaskBody(t *testing.T) {
-	b := WorkerTaskBody("  do it \n", "", "")
+	b := WorkerTaskBodyBriefBar("", WorkerBrief{Notes: "  do it \n"}, "", "", "", "", "", "", "", settings.Snapshot{}, "", nil)
 	if !strings.HasPrefix(b, WorkerPreamble) || !strings.HasSuffix(b, "\n\nTask:\ndo it") || strings.Contains(b, "You work in a git worktree") {
 		t.Errorf("plain: %q", b)
 	}
@@ -119,7 +120,7 @@ func TestWorkerTaskBody(t *testing.T) {
 			t.Errorf("the brief lacks %q", want)
 		}
 	}
-	b = WorkerTaskBody("x", "/state/worktrees/w_1", "agent-net/w_1")
+	b = WorkerTaskBodyBriefBar("", WorkerBrief{Notes: "x"}, "/state/worktrees/w_1", "agent-net/w_1", "", "", "", "", "", settings.Snapshot{}, "", nil)
 	if !strings.Contains(b, "git worktree of the project at /state/worktrees/w_1 on the branch agent-net/w_1") {
 		t.Errorf("worktree line: %q", b)
 	}
@@ -147,7 +148,7 @@ func TestWorkerBriefQualityRules(t *testing.T) {
 }
 
 func TestWorkerTaskSummary(t *testing.T) {
-	body := WorkerTaskBody("write the tests\nthen commit", "", "")
+	body := WorkerTaskBodyBriefBar("", WorkerBrief{Notes: "write the tests\nthen commit"}, "", "", "", "", "", "", "", settings.Snapshot{}, "", nil)
 	if got := WorkerTaskSummary(body); got != "write the tests" {
 		t.Errorf("summary %q", got)
 	}

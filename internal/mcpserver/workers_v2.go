@@ -65,7 +65,7 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		if in.Harness == "" && in.Model != "" && in.Model != "auto" {
 			in.Harness = "opencode"
 		}
-		m, err := workerStartCall(ctx, run, protocol.WorkerStartRequest{NotFamily: stringSlice(a["not_family"]), Project: in.Project, Machine: in.Machine, Harness: in.Harness, Model: in.Model, Provider: in.Provider, Effort: in.Effort, Task: in.Task, Problem: in.Problem, Evidence: in.Evidence, Done: in.Done, Hypothesis: in.Hypothesis, Scope: in.Scope, Title: in.Title, Isolation: in.Isolation, Base: in.Base, MCPServers: in.MCPServers, Mode: str("mode"), Fixes: str("fixes"), FixesSeverity: integer("fixes_severity"), Continue: in.Continue, AutoContinue: in.AutoContinue, OwnerWords: str("owner_words"), Reason: str("reason")})
+		m, err := workerStartCall(ctx, run, protocol.WorkerStartRequest{NotFamily: stringSlice(a["not_family"]), Project: in.Project, Machine: in.Machine, Harness: in.Harness, Model: in.Model, Provider: in.Provider, Effort: in.Effort, Task: in.Task, Problem: in.Problem, Evidence: in.Evidence, Done: in.Done, Hypothesis: in.Hypothesis, Scope: in.Scope, Title: in.Title, Isolation: in.Isolation, Base: in.Base, MCPServers: in.MCPServers, Fixes: str("fixes"), FixesSeverity: integer("fixes_severity"), Continue: in.Continue, AutoContinue: in.AutoContinue, OwnerWords: str("owner_words"), Reason: str("reason")})
 		if err != nil {
 			return nil, err
 		}
@@ -93,21 +93,8 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 			out["accepted"] = map[string]any{"start_id": m["start_id"], "note": m["note"]}
 			return out, nil
 		}
-		if status == "checked" {
-			// mode check: nothing started. The list is the same one a refusal
-			// gives, so a caller can fix the brief before it starts a worker.
-			out["brief"] = "ok"
-			if failures, ok := m["brief_failures"].([]any); ok && len(failures) > 0 {
-				out["brief"] = "refused"
-				out["missing"] = failures
-			}
-			return out, nil
-		}
 		if q, ok := m["queue_id"].(string); ok {
 			out["queued"] = map[string]any{"queue_id": q, "position": m["position"], "reason": firstValue(m, "queue_reason", "reason")}
-			if hint, ok := m["hint"].(string); ok && hint != "" {
-				out["hint"] = hint
-			}
 			return out, nil
 		}
 		// The daemon's answer does not repeat the request: fill the task from
@@ -129,9 +116,6 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 			worker["provider"] = protocol.ModelVendor(harness, selection.Model)
 		}
 		worker["model_selection"] = selection.Display()
-		if hint, ok := m["hint"].(string); ok && hint != "" {
-			out["hint"] = hint
-		}
 
 		out["worker"] = worker
 		return out, nil

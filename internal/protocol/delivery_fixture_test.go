@@ -3,6 +3,7 @@ package protocol
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/niparis/agent-net/internal/settings"
 	"os"
 	"testing"
 	"time"
@@ -26,7 +27,7 @@ func deliveryFixture() []byte {
 				}
 				d := NodeDefaults(maturity, overrides)
 				g := Graph{Nodes: []Node{{Name: "repo", Lead: &GraphRef{Kind: "agent", ID: "lead"}, Charter: Charter{Maturity: maturity}, Settings: overrides}}}
-				out[maturity+"/"+key+"/"+value] = map[string]any{"rules": d.RulesText(), "consumer": d.ConsumerText(), "approval": MergeApprovalFor(g, "repo"), "trust": AuthorityNote(true, false, d.MergeAuthority), "owner_note": OwnerInstructionNote("do work", "sender", time.Date(2026, 11, 8, 9, 0, 0, 0, time.UTC), d.MergeAuthority), "brief": WorkerTaskBodyWithCharter("codex", "do work", "/tmp/worktree", "agent-net/w_test", "", d.RulesText(), "sandboxed"), "autonomy": NodeAutonomy(overrides), "brief-claude": WorkerTaskBodyWithCharter("claude", "do work", "/tmp/worktree", "agent-net/w_test", "", d.RulesText(), "sandboxed"), "brief-agy": WorkerTaskBodyWithCharter("agy", "do work", "/tmp/worktree", "agent-net/w_test", "", d.RulesText(), "sandboxed"), "brief-opencode": WorkerTaskBodyWithCharter("opencode", "do work", "/tmp/worktree", "agent-net/w_test", "", d.RulesText(), "sandboxed"), "worker-deploy": WorkerDeployApprovalRules(Graph{Nodes: g.Nodes, Edges: []Edge{{From: "deployer", To: "repo", Kind: "deploys"}}}, "deployer")}
+				out[maturity+"/"+key+"/"+value] = map[string]any{"rules": d.RulesText(), "consumer": d.ConsumerText(), "approval": MergeApprovalFor(g, "repo"), "trust": AuthorityNote(true, false, d.MergeAuthority), "owner_note": OwnerInstructionNote("do work", "sender", time.Date(2026, 11, 8, 9, 0, 0, 0, time.UTC), d.MergeAuthority), "brief": WorkerTaskBodyBriefBar("codex", WorkerBrief{Notes: "do work"}, "/tmp/worktree", "agent-net/w_test", "", "", d.RulesText(), "sandboxed", "", settings.Snapshot{}, "", nil), "autonomy": NodeAutonomy(overrides), "brief-claude": WorkerTaskBodyBriefBar("claude", WorkerBrief{Notes: "do work"}, "/tmp/worktree", "agent-net/w_test", "", "", d.RulesText(), "sandboxed", "", settings.Snapshot{}, "", nil), "brief-agy": WorkerTaskBodyBriefBar("agy", WorkerBrief{Notes: "do work"}, "/tmp/worktree", "agent-net/w_test", "", "", d.RulesText(), "sandboxed", "", settings.Snapshot{}, "", nil), "brief-opencode": WorkerTaskBodyBriefBar("opencode", WorkerBrief{Notes: "do work"}, "/tmp/worktree", "agent-net/w_test", "", "", d.RulesText(), "sandboxed", "", settings.Snapshot{}, "", nil), "worker-deploy": WorkerDeployApprovalRules(Graph{Nodes: g.Nodes, Edges: []Edge{{From: "deployer", To: "repo", Kind: "deploys"}}}, "deployer")}
 			}
 		}
 	}

@@ -16,15 +16,14 @@ import (
 
 func devAssessmentFixture() difficulty.Assessment {
 	return difficulty.Assessment{
-		Scores:        difficulty.Scores{Reasoning: 4, Scope: 3, Coupling: 4, Uncertainty: 3, Verification: 3, Risk: 4},
-		Label:         "hard",
-		D:             3.6,
-		Bottleneck:    "risk",
-		Confidence:    "high",
-		Notes:         "fine",
-		AnalyzerModel: "codex:gpt-cheap",
-		JudgeModel:    "codex:gpt-cheap",
-		Elapsed:       1500 * time.Millisecond,
+		Scores:     difficulty.Scores{Reasoning: 4, Scope: 3, Coupling: 4, Uncertainty: 3, Verification: 3, Risk: 4},
+		Label:      "hard",
+		D:          3.6,
+		Bottleneck: "risk",
+		Confidence: "high",
+		Notes:      "fine",
+		JudgeModel: "codex:gpt-cheap",
+		Elapsed:    1500 * time.Millisecond,
 	}
 }
 

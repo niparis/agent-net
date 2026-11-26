@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 // runCommands runs the commands an update returned, including a batch, so a
@@ -272,7 +273,7 @@ func TestConversationEndedWorkerScreens(t *testing.T) {
 			{ID: "m_started_one", ConversationID: "c_started_one", From: first, To: caller, Type: protocol.TypeNotification,
 				Body: protocol.WorkerStartedText(first, "opencode", "m1", "shop", "mac", time.Minute, ""), CreatedAt: t0.Add(-5 * time.Minute)},
 			{ID: "m_task_one", ConversationID: "c_task_one", From: caller, To: first, Type: protocol.TypeRequest,
-				Body: protocol.WorkerTaskBody("Polish the sessions panel and make the long list readable", "", ""), CreatedAt: t0.Add(-10 * time.Minute)},
+				Body: protocol.WorkerTaskBodyBriefBar("", protocol.WorkerBrief{Notes: "Polish the sessions panel and make the long list readable"}, "", "", "", "", "", "", "", settings.Snapshot{}, "", nil), CreatedAt: t0.Add(-10 * time.Minute)},
 		},
 	}
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {

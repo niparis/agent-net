@@ -367,47 +367,6 @@ func TestWorkerBriefWithoutTheSixSectionsStarts(t *testing.T) {
 	if rejections != 0 {
 		t.Fatalf("the start counted %d refusals", rejections)
 	}
-	answer, err := a.g.workerStart(context.Background(), a.nc, protocol.WorkerStartFrame{Owner: a.owner, Level: "normal",
-		WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: task, Harness: "agy", Model: "gemini-3.8-flash-low", Mode: protocol.WorkerStartModeCheck}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !answer.Checked || len(answer.BriefFailures) != 0 {
-		t.Fatalf("check mode on a plain brief = %+v", answer)
-	}
-}
-
-// mode check returns the failures, or an empty list, and starts nothing.
-func TestWorkerStartCheckModeStartsNothing(t *testing.T) {
-	a := newAgyGate(t)
-	// Overlap names only files the base tree holds, so the node must serve it.
-	client, received := connectTestNode(t, a.g, a.node)
-	serveBriefRepo(t, client, received, briefTestRepo())
-	answer, err := a.g.workerStart(context.Background(), a.nc, protocol.WorkerStartFrame{Owner: a.owner, Level: "normal",
-		WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: gatewayBrief("internal/gateway/brief.go"), Harness: "agy", Model: "gemini-3.8-flash-low", Mode: protocol.WorkerStartModeCheck}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !answer.Checked || len(answer.BriefFailures) != 0 {
-		t.Fatalf("answer = %+v", answer)
-	}
-	var starts int
-	if err := a.g.store.db.QueryRow(`SELECT COUNT(*) FROM worker_starts`).Scan(&starts); err != nil {
-		t.Fatal(err)
-	}
-	if starts != 0 {
-		t.Fatalf("check mode tracked %d starts", starts)
-	}
-
-	insertOpenChangeIn(t, a.g.store, "alpha", "ch_open", "agent-net/x", "internal/gateway/brief.go")
-	answer, err = a.g.workerStart(context.Background(), a.nc, protocol.WorkerStartFrame{Owner: a.owner, Level: "normal",
-		WorkerStartRequest: protocol.WorkerStartRequest{Project: "alpha", Task: gatewayBrief("internal/gateway/brief.go"), Harness: "agy", Model: "gemini-3.8-flash-low", Mode: protocol.WorkerStartModeCheck}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !answer.Checked || len(answer.BriefFailures) == 0 {
-		t.Fatalf("answer = %+v", answer)
-	}
 }
 
 func TestWorkerBriefIgnoresPathsOutsideTheBase(t *testing.T) {
@@ -580,9 +539,12 @@ func serveBriefRepo(t *testing.T, client *websocket.Conn, received <-chan []byte
 				}
 				var res []byte
 				var err error
-				if h.Type == "worker.brief_repo" {
+				switch h.Type {
+				case "worker.brief_repo":
 					res, err = protocol.EncodeResult(h.ID, repo, nil)
-				} else {
+				case "worker.launch":
+					res, err = protocol.EncodeResult(h.ID, protocol.WorkerLaunched{SessionID: "s_brief_test"}, nil)
+				default:
 					res, err = protocol.EncodeResult(h.ID, nil, errors.New("test node runs no worker"))
 				}
 				if err == nil {

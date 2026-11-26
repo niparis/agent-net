@@ -261,14 +261,7 @@ func (d *Daemon) onStartDecision(p protocol.StartDecision) {
 	d.heldMu.Lock()
 	h := d.heldStarts[id]
 	delete(d.heldStarts, id)
-	_, withdrawn := d.withdrawnStarts[id]
-	delete(d.withdrawnStarts, id)
 	d.heldMu.Unlock()
-	if withdrawn {
-		// The caller took the ask back while this answer was on its way.
-		d.Logf("worker.held start=%s: answered %q after the caller withdrew it; nothing started", id, p.Answer)
-		return
-	}
 	if h == nil {
 		d.Logf("worker.held start=%s: answered %q but this daemon no longer holds it", id, p.Answer)
 		d.startReport(d.ctoCtx, protocol.WorkerStartReport{ID: id, Owner: p.Session, Status: protocol.StartReportNotStarted,
@@ -286,21 +279,11 @@ func (d *Daemon) onStartDecision(p protocol.StartDecision) {
 		d.reportAcceptedStart(id, h.caller, req, nil, errors.New("the choice of "+strings.Join(fieldNames(req.SelectionFields()), ", ")+" was not confirmed (answer: "+oneLineAnswer(p.Answer)+"). Start again without selection fields"))
 		return
 	}
-	// Recorded before the start begins, so a withdraw that follows the answer
-	// always finds it.
-	ctx := d.noteConfirmedStart(id)
 	d.goBackground(func() {
 		frame := protocol.WorkerStartFrame{WorkerStartRequest: req, Owner: h.caller, CallerProject: h.callerProject, CallerPath: h.callerPath}
-		res, err := d.runWorkerStartCall(ctx, h.caller, req, frame, h.callerPath, false, &callPhases{})
+		res, err := d.runWorkerStartCall(d.ctoCtx, h.caller, req, frame, h.callerPath, false, &callPhases{})
 		if res != nil {
 			res.OwnerLine = lead + res.OwnerLine
-		}
-		if d.settleConfirmedStart(id, res, err) {
-			// The withdraw already told the caller. A start that ran anyway
-			// still gets its notice, so the worker is never unannounced.
-			if err != nil || res == nil || res.Status == "queued" {
-				return
-			}
 		}
 		d.reportAcceptedStart(id, h.caller, req, res, err)
 	})

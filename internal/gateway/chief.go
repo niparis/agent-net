@@ -880,14 +880,14 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 			return out, none, err
 		}
 	}
-	// A held worker start keeps its start id in the source key. The caller may
-	// take the ask back after a confirm too, while the start has not run yet.
+	// A held worker start keeps a start id in the source key. A closed ask
+	// cannot be answered: the start will not run.
 	var startRef string
 	if err := tx.QueryRow(`SELECT source_ref FROM inbox_items WHERE id=? AND source_ref LIKE ?`, q.Ask, protocol.StartOverrideRefPrefix+"%").Scan(&startRef); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return out, none, err
 	}
-	if startRef != "" && (q.Result == protocol.AskSortConfirm || q.Result == protocol.AskSortPicker) && a.status == "closed" {
-		return out, none, withdrawnStartRefusal(tx, q.Ask)
+	if startRef != "" && a.status == "closed" {
+		return out, none, closedStartRefusal(q.Ask)
 	}
 	sorter, sorterName, source := chief, "chief", "chief"
 	switch {
@@ -900,7 +900,7 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 		if err != nil {
 			return out, none, err
 		}
-		if a.status != "open" && !(a.status == "answered" && startRef != "") {
+		if a.status != "open" {
 			return out, none, reject("ask %s is not open", q.Ask)
 		}
 		if a.session != q.SessionID && !relay {
@@ -1003,7 +1003,6 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 			return out, none, err
 		}
 		out.Next, out.State = "", protocol.AskClosed
-		out.StartID = strings.TrimPrefix(startRef, protocol.StartOverrideRefPrefix)
 		logText = who + " withdrew ask: " + text
 		if q.ReplacedBy != "" {
 			logText += " (replaced by " + q.ReplacedBy + ")"

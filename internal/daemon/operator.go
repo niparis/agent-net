@@ -10,6 +10,7 @@ import (
 
 	"github.com/niparis/agent-net/internal/gateway"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 // profileCallWait is how long the daemon waits for a profile add. The gateway
@@ -450,14 +451,6 @@ func checkedWorkerStart(p protocol.WorkerStartRequest) (protocol.WorkerStartRequ
 	if err := claudeStartChoiceValid(p.MCPServers); err != nil {
 		return p, err
 	}
-	switch p.Mode {
-	case "", protocol.WorkerStartModeCheck:
-	default:
-		return p, fmt.Errorf("mode can be %q or empty, not %q", protocol.WorkerStartModeCheck, p.Mode)
-	}
-	if p.Mode == protocol.WorkerStartModeCheck && p.Continue != "" {
-		return p, errors.New("mode check needs a task, not continue")
-	}
 	if p.MCPServers != "" {
 		if p.Continue != "" {
 			return p, errors.New("mcp_servers cannot be used with continue: a continued worker copies the choice of the main checkout; set it with session_change action mcp_servers")
@@ -466,7 +459,7 @@ func checkedWorkerStart(p protocol.WorkerStartRequest) (protocol.WorkerStartRequ
 			return p, errors.New("mcp_servers applies to Claude Code workers only")
 		}
 	}
-	if len(protocol.WorkerTaskBody(p.BriefText(), "/x", "b")) > protocol.MaxBodyBytes {
+	if len(protocol.WorkerTaskBodyBriefBar("", protocol.WorkerBrief{Notes: p.BriefText()}, "/x", "b", "", "", "", "", "", settings.Snapshot{}, "", nil)) > protocol.MaxBodyBytes {
 		return p, fmt.Errorf("the task is too long: the message limit is %d bytes", protocol.MaxBodyBytes)
 	}
 
@@ -505,7 +498,7 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 	}
 	frame := protocol.WorkerStartFrame{WorkerStartRequest: p, Owner: caller, CallerProject: callerProject, CallerPath: callerPath, FromCTO: cto,
 		OwnerSelected: selection == protocol.SelectionOwnerWords}
-	if p.Continue == "" && p.Mode != protocol.WorkerStartModeCheck {
+	if p.Continue == "" {
 		// Everything that needs no judge is checked first, in a moment: the
 		// project, the machine, the named model and its provider's allowance.
 		end := ph.begin("precheck")
@@ -515,14 +508,14 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 			return nil, err
 		}
 	}
-	if hold && p.Mode != protocol.WorkerStartModeCheck {
+	if hold {
 		return d.holdStart(ctx, caller, p, reason, callerProject, callerPath)
 	}
 	run := func(ctx context.Context) (*protocol.WorkerStartResult, error) {
 		return d.runWorkerStartCall(ctx, caller, p, frame, callerPath, cto, ph)
 	}
 	var res *protocol.WorkerStartResult
-	if !agent || cto || p.Mode == protocol.WorkerStartModeCheck {
+	if !agent || cto {
 		res, err = run(ctx)
 	} else {
 		res, err = d.startWithinBudget(ctx, caller, p, ph, run)
@@ -546,15 +539,6 @@ func (d *Daemon) runWorkerStartCall(ctx context.Context, caller string, p protoc
 		end()
 		frame.Level = protocol.WorkerLevel(frame.Assessment)
 	}
-	if ctx.Value(withdrawableKey{}) != nil {
-		// The caller may withdraw a confirmed start until the gateway has it.
-		// From there the call must end by itself: a cancel in flight would
-		// leave a worker that nobody knows about.
-		if err := ctx.Err(); err != nil {
-			return nil, errStartWithdrawn
-		}
-		ctx = context.WithoutCancel(ctx)
-	}
 	cctx := withCallWait(ctx, d.workerSettings("").StartTimeout+40e9)
 	var data json.RawMessage
 	end := ph.begin("gateway")
@@ -568,18 +552,10 @@ func (d *Daemon) runWorkerStartCall(ctx context.Context, caller string, p protoc
 		return nil, tooOldGateway(err)
 	}
 	var ans protocol.WorkerStartAnswer
-	if err := json.Unmarshal(data, &ans); err != nil || (ans.SessionID == "" && !ans.Queued && !ans.Checked) {
+	if err := json.Unmarshal(data, &ans); err != nil || (ans.SessionID == "" && !ans.Queued) {
 		return nil, errors.New("the gateway answered without a worker session")
 	}
 	ph.note("gateway", ans.Phases)
-	if ans.Checked {
-		note := "brief ok"
-		if len(ans.BriefFailures) > 0 {
-			note = strings.Join(ans.BriefFailures, "\n")
-		}
-		return &protocol.WorkerStartResult{Status: "checked", NodeID: ans.NodeID, Hostname: ans.Hostname, Project: ans.Project,
-			Path: ans.Path, Harness: ans.Harness, Model: ans.Model, ModelNote: ans.ModelNote, BriefFailures: ans.BriefFailures, BriefFlags: ans.BriefFlags, Note: note}, nil
-	}
 	selected := protocol.ParseModelSelection(ans.Harness, ans.Provider, ans.Model, ans.Effort)
 	ans.Provider, ans.Effort = selected.Provider, selected.Effort
 	if ans.Provider == "" {
@@ -592,12 +568,12 @@ func (d *Daemon) runWorkerStartCall(ctx context.Context, caller string, p protoc
 			NodeID: ans.NodeID, Hostname: ans.Hostname, Project: ans.Project, Path: ans.Path, Harness: ans.Harness,
 			Model: ans.Model, Provider: ans.Provider, Effort: ans.Effort, ModelNote: ans.ModelNote, Title: ans.Title, MachineNote: ans.MachineNote,
 			Permissions: ans.Permissions, Track: ans.Track, Playbooks: ans.Playbooks, OwnerLine: protocol.WorkerOwnerLine(frame.Assessment, protocol.ParseModelSelection(ans.Harness, "", ans.Model, "").Display()),
-			Hint: ans.Hint, BriefFlags: ans.BriefFlags}, nil
+			BriefFlags: ans.BriefFlags}, nil
 	}
 	out := &protocol.WorkerStartResult{Status: "started", MachineNote: ans.MachineNote, SessionID: ans.SessionID, NodeID: ans.NodeID, Hostname: ans.Hostname,
 		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, Provider: ans.Provider, Effort: ans.Effort, ModelNote: ans.ModelNote, Why: ans.Why, Title: ans.Title, Worktree: ans.Worktree, Branch: ans.Branch,
 		Permissions: ans.Permissions, OSSandbox: ans.OSSandbox, Track: ans.Track, Playbooks: ans.Playbooks, OwnerLine: protocol.WorkerOwnerLine(frame.Assessment, protocol.ParseModelSelection(ans.Harness, "", ans.Model, "").Display()),
-		Hint: ans.Hint, BriefFlags: ans.BriefFlags}
+		BriefFlags: ans.BriefFlags}
 	if ans.Starting {
 		out.Status = "starting"
 		return out, nil

@@ -35,8 +35,7 @@ example in `scope`.
 
 A change or worker the start itself targets is not an overlap: its id in the
 brief, an open change whose branch is the start's `base`, or the `continue` or
-`fixes` target. Use `mode: "check"` to run the overlap check and start
-nothing.
+`fixes` target.
 
 ## Example
 

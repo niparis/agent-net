@@ -42,15 +42,15 @@ func TestWorkerPermissionsLineNamesTheWrapper(t *testing.T) {
 
 // The brief of a wrapped worker says so, and says what fails.
 func TestWorkerBriefNamesTheWrapper(t *testing.T) {
-	body := WorkerTaskBodyOS("pi", "do it", "/wt", "agent-net/w_1", "", "", WorkersSandboxed, "bubblewrap", settings.Snapshot{}, "")
+	body := WorkerTaskBodyBriefBar("pi", WorkerBrief{Notes: "do it"}, "/wt", "agent-net/w_1", "", "", "", WorkersSandboxed, "bubblewrap", settings.Snapshot{}, "", nil)
 	if !strings.Contains(body, "\n- permissions: sandboxed (writes only in its worktree, network on) (sandboxed by bubblewrap): writes outside your worktree and /tmp fail (read-only file system)") {
 		t.Fatalf("brief:\n%s", body)
 	}
-	plain := WorkerTaskBodyWithSettings("pi", "do it", "/wt", "agent-net/w_1", "", "", WorkersSandboxed, settings.Snapshot{})
+	plain := WorkerTaskBodyBriefBar("pi", WorkerBrief{Notes: "do it"}, "/wt", "agent-net/w_1", "", "", "", WorkersSandboxed, "", settings.Snapshot{}, "", nil)
 	if strings.Contains(plain, "bubblewrap") || strings.Contains(plain, "enforced for claude, codex and agy only") || !strings.Contains(plain, "(no OS sandbox: turned off for this project in node.json)") {
 		t.Fatalf("brief without the wrapper:\n%s", plain)
 	}
-	ro := WorkerTaskBodyOS("opencode", "look", "", "", "", "", WorkersReadOnly, "bubblewrap", settings.Snapshot{}, "")
+	ro := WorkerTaskBodyBriefBar("opencode", WorkerBrief{Notes: "look"}, "", "", "", "", "", WorkersReadOnly, "bubblewrap", settings.Snapshot{}, "", nil)
 	if !strings.Contains(ro, "(sandboxed by bubblewrap): you cannot write files; report findings only") {
 		t.Fatalf("read-only brief:\n%s", ro)
 	}
@@ -97,7 +97,7 @@ func TestWorkerPermissionsLineSaysClaudeIsNotSandboxed(t *testing.T) {
 	if got := OSSandboxWrapper(missing); got != "" {
 		t.Errorf("wrapper of a Claude worker without its sandbox: %q", got)
 	}
-	body := WorkerTaskBodyOS("claude", "say ok", "/wt", "agent-net/w_1", "", "", WorkersSandboxed, missing, settings.Snapshot{}, "")
+	body := WorkerTaskBodyBriefBar("claude", WorkerBrief{Notes: "say ok"}, "/wt", "agent-net/w_1", "", "", "", WorkersSandboxed, missing, settings.Snapshot{}, "", nil)
 	if !strings.Contains(body, "\n- permissions: NOT sandboxed: Claude sandbox needs socat, install it on the worker's machine") {
 		t.Fatalf("brief:\n%s", body)
 	}

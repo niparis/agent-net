@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 // setWorkersLevel sets the workers level of the project that repo belongs to,
@@ -183,7 +184,7 @@ func TestCodexWorkerTurnsOffTheAgentNetMCPServer(t *testing.T) {
 // The brief for a Codex worker says the end of the turn is the report and
 // does not tell it to use agent-net tools (it names agent_announce only to say to ignore it).
 func TestCodexBriefHasNoAgentNetTools(t *testing.T) {
-	b := protocol.WorkerTaskBodyFor("codex", "do it", "", "")
+	b := protocol.WorkerTaskBodyBriefBar("codex", protocol.WorkerBrief{Notes: "do it"}, "", "", "", "", "", "", "", settings.Snapshot{}, "", nil)
 	for _, bad := range []string{"agent_handback", "agent_message_reply"} {
 		if strings.Contains(b, bad) {
 			t.Errorf("the Codex brief mentions %s", bad)

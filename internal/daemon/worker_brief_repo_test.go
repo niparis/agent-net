@@ -39,13 +39,7 @@ func TestWorkerBriefWarningsReachTheCaller(t *testing.T) {
 	task := "Goal: the owner asked to fix the parser.\nFiles or areas: README.md.\nLimits: temp dirs only, never the real setup.\nDefinition of done: the test passes.\nHow you are graded: the caller reads the diff.\nEvidence:\n- reproduction\n- failing test\n- diff\nRun GOCACHE=/tmp/agent-net-gocache go test.\n"
 	req := protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: task}
 	w.mustStart(t, req)
-	req.Mode = protocol.WorkerStartModeCheck
 	result, err := w.start(req)
-	if err != nil || len(result.BriefFailures) != 0 || !strings.Contains(result.ModelNote, "warning: overlaps running worker") || !strings.Contains(result.ModelNote, "readme.md") || strings.Contains(result.ModelNote, "gocache") {
-		t.Fatalf("check result: %+v, %v", result, err)
-	}
-	req.Mode = ""
-	result, err = w.start(req)
 	if err != nil || !strings.Contains(result.ModelNote, "warning: overlaps running worker") {
 		t.Fatalf("start result: %+v, %v", result, err)
 	}

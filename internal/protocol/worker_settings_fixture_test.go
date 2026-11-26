@@ -3,6 +3,7 @@ package protocol
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/niparis/agent-net/internal/settings"
 	"os"
 	"testing"
 )
@@ -13,7 +14,7 @@ func TestWorkerSettingsBaseline(t *testing.T) {
 	for _, harness := range []string{"", "codex", "claude", "opencode", "pi", "agy"} {
 		for _, level := range []string{"", WorkersSandboxed, WorkersNoNetwork, WorkersReadOnly} {
 			for _, worktree := range []string{"", "/tmp/worktree"} {
-				out[harness+"/"+level+"/"+worktree] = WorkerTaskBodyWithCharter(harness, "do work", worktree, "agent-net/w_test", "project rules", "charter rules", level)
+				out[harness+"/"+level+"/"+worktree] = WorkerTaskBodyBriefBar(harness, WorkerBrief{Notes: "do work"}, worktree, "agent-net/w_test", "", "project rules", "charter rules", level, "", settings.Snapshot{}, "", nil)
 			}
 		}
 	}

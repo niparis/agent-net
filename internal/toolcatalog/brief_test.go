@@ -6,7 +6,7 @@ import (
 )
 
 // Every caller reads the worker start description. It names the structured
-// fields, the one refusal left (overlap) and the check mode. The six format
+// fields and the one refusal left (overlap). The six format
 // items are retired and must not be listed as a rule again (decision 0145).
 func TestWorkerStartDescriptionNamesTheOverlapRefusalOnly(t *testing.T) {
 	var found *Tool
@@ -20,7 +20,7 @@ func TestWorkerStartDescriptionNamesTheOverlapRefusalOnly(t *testing.T) {
 	}
 	for _, want := range []string{
 		"structured brief", "problem and done required", "evidence", "hypothesis", "scope",
-		"extra notes", "overlap ok:", `mode "check"`,
+		"extra notes", "overlap ok:",
 		"For a feature with several tasks, list the tasks first, then group them into sessions",
 		"continue one session (continue) instead of starting new workers",
 	} {
@@ -40,13 +40,8 @@ func TestWorkerStartDescriptionNamesTheOverlapRefusalOnly(t *testing.T) {
 			t.Errorf("input has no %s field", field)
 		}
 	}
-	mode, ok := props["mode"].(map[string]any)
-	if !ok {
-		t.Fatal("input has no mode")
-	}
-	values, _ := mode["enum"].([]any)
-	if len(values) != 1 || values[0] != "check" {
-		t.Fatalf("mode enum = %v", mode["enum"])
+	if _, ok := props["mode"]; ok {
+		t.Fatal("input still has the removed check mode")
 	}
 }
 

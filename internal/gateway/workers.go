@@ -270,15 +270,6 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 				return nil, err
 			}
 		}
-		if p.Reason != protocol.StopRequested && p.Reason != protocol.StopOwnerGone && protocol.WorkerNotAttempted(p.Failure, p.Evidence) {
-			// The harness ended the run without trying the task. A retry of the
-			// same brief leaves this harness out, for every model. A stop the
-			// caller or owner chose reads as an early quit too, but it says
-			// nothing about the harness.
-			if err := g.store.markBriefNotAttempted(p.SessionID); err != nil {
-				return nil, err
-			}
-		}
 		if p.Reason == protocol.StopModelFails && p.Model != "" {
 			var err error
 			if protocol.ModelAuthFailure(p.Failure) {
@@ -755,9 +746,8 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	quotas = g.withQuotaBurn(quotas, agents)
 	// The brief checks run after the judge's pass and before any pick or
 	// launch. Validation calls and internal read-only phrasing workers skip
-	// them: they start no caller worker and count no rejection. A check mode
-	// returns the list and starts nothing.
-	briefNote := protocol.VisualBriefWarning(p.Task)
+	// them: they start no caller worker and count no rejection.
+	var briefNote string
 	// The brief lint's flags go back with the answer. They never refuse or hold.
 	var briefFlags []protocol.BriefFlag
 	if !(len(validate) > 0 && validate[0]) && !g.opts.TestNoBriefChecks && !p.RequireReadOnly {
@@ -780,10 +770,6 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		briefNote = strings.Join(warnings, "; ")
 		if err != nil {
 			return none, err
-		}
-		if p.Mode == protocol.WorkerStartModeCheck {
-			return protocol.WorkerStartAnswer{Checked: true, BriefFailures: append(failures, visualWarningLines(p.Task)...), BriefFlags: briefFlags, ModelNote: briefNote, NodeID: pick.NodeID, Hostname: pick.Hostname,
-				Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model}, nil
 		}
 		if len(failures) > 0 {
 			key := protocol.BriefTaskKey(p.Owner, pick.Name, p.Title, p.BriefText())
@@ -869,17 +855,6 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			if _, needs := protocol.BriefNeedsBrowser(p.WorkerStartRequest); needs && p.Harness == "" {
 				candidates, browserNote = filterBrowserCandidates(candidates, node.OS, roster)
 			}
-			// A harness that ended an earlier start of this brief without
-			// trying the task is left out, for every model. A caller who named
-			// the harness is not overridden.
-			var briefHarnessNote string
-			if p.Harness == "" {
-				failedHarnesses, err := g.store.briefFailedHarnesses(protocol.BriefHash(pick.Name, p.WorkerStartRequest))
-				if err != nil {
-					return none, err
-				}
-				candidates, briefHarnessNote = filterBriefFailedHarnesses(candidates, failedHarnesses, roster)
-			}
 			var protectionNote string
 			var chooseErr error
 			chosen, chooseErr = g.Choose(ChooseRequest{
@@ -931,9 +906,6 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			}
 			if browserNote != "" {
 				automaticNote += "; " + browserNote
-			}
-			if briefHarnessNote != "" {
-				automaticNote += "; " + briefHarnessNote
 			}
 			if protectionNote != "" {
 				automaticNote += "; " + protectionNote
@@ -1122,9 +1094,6 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if err := g.store.trackWorkerStart(startRef, pick.NodeID, p.Owner, pick.Name, p.Harness, perms, p.Done); err != nil {
 		return none, err
 	}
-	if err := g.store.trackBriefLaunch(startRef, protocol.BriefHash(pick.Name, p.WorkerStartRequest)); err != nil {
-		return none, err
-	}
 	if err := g.store.setStartOwnerChoice(startRef, ownerChoiceOf(asked, said, g.store.now(), p.Harness, p.Provider, p.Model, p.Effort)); err != nil {
 		return none, err
 	}
@@ -1197,10 +1166,6 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		// Nothing began: the caller is told, and the start ends here.
 		g.abandon(pick.NodeID, startRef)
 	}
-	hint := ""
-	if err == nil {
-		hint = g.store.WorkerStartHint(pick.Name, p.Title, p.BriefText(), p.Fixes)
-	}
 	if err == nil && launched.Queued && launched.QueueID != "" {
 		g.store.Event("worker.queued", pick.NodeID, p.Owner, "",
 			strings.TrimPrefix(pairs("project", pick.Name, "harness", p.Harness, "model", p.Model, "owner", p.Owner,
@@ -1211,7 +1176,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		return protocol.WorkerStartAnswer{NodeID: pick.NodeID, Hostname: pick.Hostname, Project: pick.Name, Path: pick.Path,
 			Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Why: choice.Why, Title: p.Title, Queued: true, QueueID: launched.QueueID,
 			Position: launched.Position, Reason: launched.Reason, MachineNote: machineNote, Permissions: perms, Base: p.Base,
-			Track: track, Playbooks: books, Hint: hint, Phases: phases, BriefFlags: briefFlags}, nil
+			Track: track, Playbooks: books, Phases: phases, BriefFlags: briefFlags}, nil
 	}
 	if err != nil || launched.SessionID == "" {
 		return none, reject("machine %s answered without a session", pick.Hostname)
@@ -1236,7 +1201,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	return protocol.WorkerStartAnswer{StartRef: startRef, Starting: launched.Starting, SessionID: launched.SessionID, NodeID: pick.NodeID, Hostname: pick.Hostname,
 		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, ModelNote: modelNote, Why: choice.Why, Title: p.Title,
 		Worktree: launched.Worktree, Branch: launched.Branch, Base: p.Base, ProjectRules: launched.ProjectRules, MachineNote: machineNote, Permissions: perms,
-		OSSandbox: launched.OSSandbox, Track: track, Playbooks: books, Hint: hint, Phases: phases, BriefFlags: briefFlags}, nil
+		OSSandbox: launched.OSSandbox, Track: track, Playbooks: books, Phases: phases, BriefFlags: briefFlags}, nil
 }
 
 // refuseWithAlternative refuses a start for want of a provider's allowance or
@@ -1345,8 +1310,11 @@ func (g *Gateway) workerStartReport(ctx context.Context, nc *nodeConn, p protoco
 	if !began && p.Status != protocol.StartReportNotStarted && p.Status != protocol.StartReportQueued {
 		return reject("unknown start report status %q", p.Status)
 	}
-	if began && (p.Body == "" || len(p.Body) > protocol.MaxBodyBytes) {
-		return reject("a %s start report needs its notice text, at most %d bytes", p.Status, protocol.MaxBodyBytes)
+	if began && p.Body == "" {
+		return reject("a %s start report needs its notice text", p.Status)
+	}
+	if p.Body != "" && len(p.Body) > protocol.MaxBodyBytes {
+		return reject("a %s start report's notice text must be at most %d bytes", p.Status, protocol.MaxBodyBytes)
 	}
 	owner, ok, err := g.store.Agent(p.Owner)
 	if err != nil {
@@ -1361,7 +1329,7 @@ func (g *Gateway) workerStartReport(ctx context.Context, nc *nodeConn, p protoco
 		return nil
 	}
 	text := p.Body
-	if !began {
+	if text == "" {
 		text = protocol.WorkerStartReportText(p.Status,
 			oneLine(p.Project, 100), oneLine(p.Harness, 40), oneLine(p.ID, 40), notStartedReasonText(p.Note))
 	}

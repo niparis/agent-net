@@ -14,7 +14,7 @@ func TestWorkerRecipeTextOverrides(t *testing.T) {
 		{Key: "workers.continue_prompt_text", Level: "repo", Scope: "shop", Value: json.RawMessage(`"Finish this task with {{complete_yes}}."`)},
 		{Key: "workers.continue_intro_branch", Level: "repo", Scope: "shop", Value: json.RawMessage(`"Inspect the branch carefully."`)},
 	}}
-	body := WorkerTaskBodyWithSettingsForRepo("codex", "task", "", "", "", "", "sandboxed", snap, "shop")
+	body := WorkerTaskBodyBriefBar("codex", WorkerBrief{Notes: "task"}, "", "", "", "", "", "sandboxed", "", snap, "shop", nil)
 	if !strings.HasPrefix(body, "[agent-net worker brief] Custom worker introduction.") || !strings.Contains(body, "\n- Do the whole task.") {
 		t.Fatalf("brief: %s", body)
 	}
@@ -59,9 +59,9 @@ func TestWorkerBriefProtocolTokensAreFixed(t *testing.T) {
 			if tc.key == "workers.continue_prompt_text" {
 				body = WorkerAutoContinueWithSettings(snap, "shop")
 			} else if tc.key == "workers.brief_codex_complete" {
-				body = WorkerTaskBodyWithSettingsForRepo("codex", "task", "", "", "", "", "sandboxed", snap, "shop")
+				body = WorkerTaskBodyBriefBar("codex", WorkerBrief{Notes: "task"}, "", "", "", "", "", "sandboxed", "", snap, "shop", nil)
 			} else {
-				body = WorkerTaskBodyWithSettingsForRepo("claude", "task", "", "", "", "", "sandboxed", snap, "shop")
+				body = WorkerTaskBodyBriefBar("claude", WorkerBrief{Notes: "task"}, "", "", "", "", "", "sandboxed", "", snap, "shop", nil)
 			}
 			if !strings.Contains(body, tc.want) {
 				t.Errorf("custom text was not rendered with fixed tokens: %s", body)
@@ -106,7 +106,7 @@ func TestWorkerBriefTestScopeFollowsTestStepOwner(t *testing.T) {
 		snap := settings.Snapshot{DeliveryPipelineCutover: true, DeliveryAssignments: tc.assignments}
 		for _, harness := range []string{"claude", "codex", "opencode", "pi", "agy"} {
 			t.Run(tc.name+"/"+harness, func(t *testing.T) {
-				body := WorkerTaskBodyWithSettingsForRepo(harness, "do work", "", "", "", "", "sandboxed", snap, tc.project)
+				body := WorkerTaskBodyBriefBar(harness, WorkerBrief{Notes: "do work"}, "", "", "", "", "", "sandboxed", "", snap, tc.project, nil)
 				if got := strings.Contains(body, line); got != tc.want {
 					t.Fatalf("test scope line present = %t, want %t: %s", got, tc.want, body)
 				}
@@ -122,7 +122,7 @@ func TestWorkerBriefTestScopeTextCanBeSet(t *testing.T) {
 	snap := settings.Snapshot{DeliveryPipelineCutover: true,
 		DeliveryAssignments: []settings.DeliveryAssignment{{Project: "shop", Step: StepTest, Node: "/delivery/merger", Kind: "tests"}},
 		Values:              []settings.Value{{Key: "workers.brief_tests", Level: "repo", Scope: "shop", Value: json.RawMessage(`"Run only your own tests."`)}}}
-	body := WorkerTaskBodyWithSettingsForRepo("claude", "task", "", "", "", "", "sandboxed", snap, "shop")
+	body := WorkerTaskBodyBriefBar("claude", WorkerBrief{Notes: "task"}, "", "", "", "", "", "sandboxed", "", snap, "shop", nil)
 	if !strings.Contains(body, "\n- Run only your own tests.\n") {
 		t.Fatalf("repo text for the test scope line was not used: %s", body)
 	}

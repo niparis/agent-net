@@ -53,18 +53,6 @@ func TestBriefWithoutAvoidedKeepsWhatTheWorkerChanges(t *testing.T) {
 	}
 }
 
-func TestBriefPathsShare(t *testing.T) {
-	if !BriefPathsShare("internal/gateway/brief.go", "repo/internal/gateway/brief.go") {
-		t.Fatal("the same file under a worktree path does not share")
-	}
-	if !BriefPathsShare("internal/gateway/brief.go", "internal/gateway/brief.go") {
-		t.Fatal("the same path does not share")
-	}
-	if BriefPathsShare("internal/gateway/brief.go", "internal/gateway/brief_test.go") {
-		t.Fatal("different files share")
-	}
-}
-
 func TestBriefOverlapAllowed(t *testing.T) {
 	if _, ok := BriefOverlapAllowed("Files: a.go"); ok {
 		t.Fatal("a brief with no statement allowed overlap")

@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"crypto/sha1"
-	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/niparis/agent-net/internal/harnesses"
 	"github.com/niparis/agent-net/internal/protocol"
-	"github.com/niparis/agent-net/internal/settings"
 )
 
 // fakeLoginShell is a login shell (named sh, as the lookup requires a known
@@ -352,122 +350,6 @@ func TestWorkerBranchWithoutOriginGetsNoUpstreamConfig(t *testing.T) {
 	w, _ := commitTestWorker(t, d)
 	if out, err := exec.Command("git", "-C", w.mainPath, "config", "--get", "branch."+w.branch+".remote").CombinedOutput(); err == nil {
 		t.Fatalf("a branch without an origin got an upstream: %s", out)
-	}
-}
-
-func bootstrapSnapshot(d *Daemon, command string) {
-	snap := settings.Snapshot{Values: []settings.Value{{Key: "workers.bootstrap_command", Level: "repo", Scope: "shop", Value: json.RawMessage(fmt.Sprintf("%q", command))}}}
-	d.settingsSnapshot.Store(&snap)
-}
-
-func bootstrapWorker(t *testing.T, d *Daemon) *worker {
-	t.Helper()
-	repo := newRepo(t, "shop")
-	w := &worker{id: protocol.NewID("w"), harness: "codex", project: "shop", path: repo, owner: "s_x", sessionID: "s_y", permissions: protocol.WorkersSandboxed}
-	if err := d.createWorktree(context.Background(), w); err != nil {
-		t.Fatal(err)
-	}
-	return w
-}
-
-func TestBootstrapRunsInTheWorktreeBeforeTheWorker(t *testing.T) {
-	d := commitTestDaemon(t)
-	d.cfg.Workers.OSSandboxOff = []string{"*"}
-	d.cfg.HarnessSearch = &harnesses.Options{LoginShellPATH: func(context.Context) string { return "" }}
-	bootstrapSnapshot(d, "pwd > bootstrap.txt && echo $UV_CACHE_DIR >> bootstrap.txt")
-	w := bootstrapWorker(t, d)
-	d.runWorkerBootstrap(context.Background(), w)
-	b, err := os.ReadFile(filepath.Join(w.worktree, "bootstrap.txt"))
-	if err != nil {
-		t.Fatalf("the bootstrap command did not run: %v", err)
-	}
-	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
-	if resolved(lines[0]) != resolved(w.worktree) {
-		t.Errorf("ran in %q, want %q", lines[0], w.worktree)
-	}
-	if want := filepath.Join(d.cfg.StateDir, "workers", w.id, "cache", "uv"); lines[1] != want {
-		t.Errorf("UV_CACHE_DIR = %q, want %q", lines[1], want)
-	}
-	if line := d.workerBootstrapLine(w); line != "" {
-		t.Errorf("a good run adds to the notice: %q", line)
-	}
-}
-
-func TestBootstrapFailureShowsInTheStartNotice(t *testing.T) {
-	d := commitTestDaemon(t)
-	d.cfg.Workers.OSSandboxOff = []string{"*"}
-	d.cfg.HarnessSearch = &harnesses.Options{LoginShellPATH: func(context.Context) string { return "" }}
-	bootstrapSnapshot(d, "echo installing; echo 'npm ERR! boom' >&2; exit 3")
-	w := bootstrapWorker(t, d)
-	d.runWorkerBootstrap(context.Background(), w)
-	line := d.workerBootstrapLine(w)
-	for _, want := range []string{"bootstrap command failed", "exit status 3", "npm ERR! boom"} {
-		if !strings.Contains(line, want) {
-			t.Errorf("the notice line lacks %q: %q", want, line)
-		}
-	}
-}
-
-func TestBootstrapWithNoCommandDoesNothing(t *testing.T) {
-	d := commitTestDaemon(t)
-	d.cfg.Workers.OSSandboxOff = []string{"*"}
-	w := bootstrapWorker(t, d)
-	d.runWorkerBootstrap(context.Background(), w)
-	if line := d.workerBootstrapLine(w); line != "" {
-		t.Fatalf("notice line without a command: %q", line)
-	}
-}
-
-func TestBootstrapIsSkippedForAReadOnlyWorker(t *testing.T) {
-	d := commitTestDaemon(t)
-	d.cfg.Workers.OSSandboxOff = []string{"*"}
-	bootstrapSnapshot(d, "touch should-not-exist")
-	w := bootstrapWorker(t, d)
-	w.permissions = protocol.WorkersReadOnly
-	d.runWorkerBootstrap(context.Background(), w)
-	if _, err := os.Stat(filepath.Join(w.worktree, "should-not-exist")); err == nil {
-		t.Fatal("a read-only worker's bootstrap ran")
-	}
-	if !strings.Contains(d.workerBootstrapLine(w), "read-only") {
-		t.Fatalf("no notice line: %q", d.workerBootstrapLine(w))
-	}
-}
-
-// With the OS sandbox on for the project the command that cannot be wrapped is
-// not run bare.
-func TestBootstrapNeverRunsUnsandboxedWhenTheSandboxIsOn(t *testing.T) {
-	d := commitTestDaemon(t)
-	d.cfg.testOSSandboxReady = func() error { return fmt.Errorf("user namespaces are off") }
-	bootstrapSnapshot(d, "touch ran")
-	w := bootstrapWorker(t, d)
-	d.runWorkerBootstrap(context.Background(), w)
-	if _, err := os.Stat(filepath.Join(w.worktree, "ran")); err == nil {
-		t.Fatal("the command ran without the sandbox")
-	}
-	if line := d.workerBootstrapLine(w); !strings.Contains(line, "user namespaces are off") {
-		t.Fatalf("notice line = %q", line)
-	}
-}
-
-// The real wrapper: the command writes the worktree and the worker's caches, and
-// cannot write outside them. Opt-in, like the other real sandbox tests.
-func TestRealSandboxBootstrap(t *testing.T) {
-	requireRealSandbox(t)
-	outside := outsideHome(t)
-	d, w, _ := sandboxWorker(t, protocol.WorkersSandboxed)
-	d.cfg.Workers.OSSandbox = []string{"*"}
-	w.harness, w.worktree = "codex", w.path
-	bootstrapSnapshot(d, `touch "$PWD/inside" && mkdir -p "$UV_CACHE_DIR" && touch "$UV_CACHE_DIR/x" && ! touch "$OUTSIDE/probe"`)
-	t.Setenv("OUTSIDE", outside)
-	d.runWorkerBootstrap(context.Background(), w)
-	if line := d.workerBootstrapLine(w); line != "" {
-		t.Fatalf("bootstrap failed in the wrapper: %s", line)
-	}
-	if _, err := os.Stat(filepath.Join(w.worktree, "inside")); err != nil {
-		t.Fatal("the command did not write the worktree")
-	}
-	if _, err := os.Stat(filepath.Join(outside, "probe")); err == nil {
-		t.Fatal("the command wrote outside the sandbox")
 	}
 }
 

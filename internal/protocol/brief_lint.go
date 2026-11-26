@@ -14,12 +14,10 @@ import (
 // flag.
 
 const (
-	BriefCheckReference     = "reference"
 	BriefCheckPath          = "path"
 	BriefCheckCommit        = "commit"
 	BriefCheckContradiction = "contradiction"
 	BriefCheckSandbox       = "sandbox"
-	BriefCheckStacked       = "stacked"
 	// BriefCheckBrowser flags a start whose Done needs a browser and whose
 	// harness cannot run one on its machine (see HarnessRunsBrowser).
 	BriefCheckBrowser = "browser"
@@ -48,11 +46,6 @@ type BriefLintFacts struct {
 
 var (
 	lintCommitIDExact = regexp.MustCompile(`^[0-9a-f]{7,40}$`)
-	// A pointer to another brief or message: the worker sees only this brief.
-	lintRefBriefRE = regexp.MustCompile(`(?i)\b(?:as in|as per|per|see)\s+(?:the|that|my|your|our)\s+(?:(?:previous|earlier|last|old|prior|original)\s+)?(?:brief|task|message|thread)\b|\bas (?:we )?discussed\b|\bas agreed\b`)
-	// A pointer to text below or above that the brief may not have.
-	lintRefBelowRE = regexp.MustCompile(`(?i)\b(?:the|this|these|those|following|listed|shown|see)\b[^.\n]{0,40}\bbelow\b`)
-	lintRefAboveRE = regexp.MustCompile(`(?i)\b(?:the|this|these|those|as|see|listed|shown)\b[^.\n]{0,40}\babove\b`)
 	// A token that starts like a path outside the project: home, a relative
 	// climb, or a user folder. System paths such as /usr/bin are not checked.
 	lintPathRE = regexp.MustCompile("(?:^|[\\s`\"'(\\[<])((?:~|\\$HOME|/|\\.\\./)[^\\s`\"'()\\[\\]<>,;]*)")
@@ -95,12 +88,10 @@ var briefDirectives = []briefDirective{
 func LintBrief(p WorkerStartRequest, facts BriefLintFacts) []BriefFlag {
 	lines := briefLintLines(p.BriefText())
 	var flags []BriefFlag
-	flags = append(flags, lintReferences(lines)...)
 	flags = append(flags, lintPaths(lines)...)
 	flags = append(flags, lintCommits(lines, facts.Commits)...)
 	flags = append(flags, lintContradictions(lines)...)
 	flags = append(flags, lintSandbox(cleanBriefLines(p.Done), facts.Sandbox)...)
-	flags = append(flags, lintStacked(lines)...)
 	return flags
 }
 
@@ -167,24 +158,6 @@ func briefFlag(check, line, reason string) BriefFlag {
 		line = string(r[:160]) + "..."
 	}
 	return BriefFlag{Check: check, Line: line, Reason: reason}
-}
-
-func lintReferences(lines []string) []BriefFlag {
-	var flags []BriefFlag
-	for i, line := range lines {
-		switch {
-		case lintRefBriefRE.MatchString(line):
-			flags = append(flags, briefFlag(BriefCheckReference, line,
-				"points at text that is not in this brief. The worker sees only this brief, so put the text in it."))
-		case i == len(lines)-1 && lintRefBelowRE.MatchString(line):
-			flags = append(flags, briefFlag(BriefCheckReference, line,
-				"points below, but nothing follows it in this brief."))
-		case i == 0 && lintRefAboveRE.MatchString(line):
-			flags = append(flags, briefFlag(BriefCheckReference, line,
-				"points above, but nothing comes before it in this brief."))
-		}
-	}
-	return flags
 }
 
 // briefOutsidePath tells whether a path token starts outside the project.
@@ -293,29 +266,4 @@ func lintSandbox(done []string, sandbox string) []BriefFlag {
 		}
 	}
 	return flags
-}
-
-// lintStacked flags a brief that holds a second Problem, Goal or Done section:
-// an old task is stacked above the current one. It flags the brief once.
-func lintStacked(lines []string) []BriefFlag {
-	seen := map[string]int{}
-	for _, line := range lines {
-		// A section heading always has its colon. A plain item such as "done"
-		// is not one, even though it reads as a label.
-		if !strings.Contains(line, ":") {
-			continue
-		}
-		label, _ := briefLineLabel(line)
-		switch label {
-		case "problem", "goal", "done":
-		default:
-			continue
-		}
-		seen[label]++
-		if seen[label] == 2 {
-			return []BriefFlag{briefFlag(BriefCheckStacked, line,
-				fmt.Sprintf("the brief has a second %q section, so an old task may be stacked above the current one. Send one task per start.", label))}
-		}
-	}
-	return nil
 }

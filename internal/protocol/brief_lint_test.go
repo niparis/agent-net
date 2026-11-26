@@ -44,23 +44,6 @@ func TestBriefLintLeavesANormalBriefAlone(t *testing.T) {
 	wantChecks(t, LintBrief(realBrief(), BriefLintFacts{}))
 }
 
-func TestBriefLintFlagsAReferenceToTextOutsideTheBrief(t *testing.T) {
-	p := realBrief()
-	p.Scope = "Use the same fields as in the brief."
-	wantChecks(t, LintBrief(p, BriefLintFacts{}), BriefCheckReference)
-
-	// A pointer to a list below is wrong when nothing follows it.
-	below := WorkerStartRequest{Project: "shop", Problem: "Fix the table export.",
-		Done: []string{"Every column matches the list below"}}
-	wantChecks(t, LintBrief(below, BriefLintFacts{}), BriefCheckReference)
-
-	// The same pointer is fine when the list is in the brief.
-	listed := WorkerStartRequest{Project: "shop", Problem: "Fix the table export.",
-		Done:  []string{"Every column matches the list below"},
-		Scope: "Columns: id, name, total."}
-	wantChecks(t, LintBrief(listed, BriefLintFacts{}))
-}
-
 func TestBriefLintFlagsPathsOutsideTheWorktree(t *testing.T) {
 	p := realBrief()
 	p.Scope = "Read /home/nicolas/code/niparis/a2a-ocs/AGENTS.md first. Do not touch the lexer."
@@ -124,18 +107,4 @@ func TestBriefLintFlagsBrowserChecksInASandbox(t *testing.T) {
 	frames := realBrief()
 	frames.Done = []string{"The text frame at 120x34 shows the new row."}
 	wantChecks(t, LintBrief(frames, BriefLintFacts{Sandbox: "bubblewrap"}))
-}
-
-func TestBriefLintFlagsOldTasksStackedInOneBrief(t *testing.T) {
-	p := realBrief()
-	p.Task = "Problem: Fix the old parser crash from last week.\nDone:\n- The old test passes."
-	// One flag for the brief, even though two labels repeat.
-	wantChecks(t, LintBrief(p, BriefLintFacts{}), BriefCheckStacked)
-}
-
-// A done item that happens to read "done" is an item, not a second section.
-func TestBriefLintDoesNotCountAPlainDoneItemAsASection(t *testing.T) {
-	p := realBrief()
-	p.Done = []string{"done"}
-	wantChecks(t, LintBrief(p, BriefLintFacts{}))
 }

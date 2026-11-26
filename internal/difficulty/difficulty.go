@@ -3,12 +3,9 @@
 package difficulty
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -43,121 +40,6 @@ func RubricText() string {
 			d.Name, d.Evidence, d.Anchors[0], d.Examples[0], d.Anchors[1], d.Examples[1], d.Anchors[2], d.Examples[2])
 	}
 	return strings.TrimSpace(b.String())
-}
-
-type ReasoningProfile struct {
-	ClosestPattern string   `json:"closest_pattern"`
-	NewLogic       string   `json:"new_logic"`
-	Evidence       []string `json:"evidence"`
-}
-type ScopeProfile struct {
-	Components      []string `json:"components"`
-	DistinctChanges []string `json:"distinct_changes"`
-	RepeatedChanges []string `json:"repeated_changes"`
-}
-type CouplingProfile struct {
-	Contracts  []string `json:"contracts"`
-	Invariants []string `json:"invariants"`
-	Evidence   []string `json:"evidence"`
-}
-type UncertaintyProfile struct {
-	OpenQuestions []string `json:"open_questions"`
-	Inspected     []string `json:"inspected"`
-}
-type VerificationProfile struct {
-	Tests        []string `json:"tests"`
-	NeededChecks []string `json:"needed_checks"`
-	Gaps         []string `json:"gaps"`
-}
-type RiskProfile struct {
-	Failures      []string `json:"failures"`
-	Reversibility string   `json:"reversibility"`
-	Evidence      []string `json:"evidence"`
-}
-
-// Profile is the analyzer output described in docs/design/task-difficulty.md.
-type Profile struct {
-	Reasoning    ReasoningProfile    `json:"reasoning"`
-	Scope        ScopeProfile        `json:"scope"`
-	Coupling     CouplingProfile     `json:"coupling"`
-	Uncertainty  UncertaintyProfile  `json:"uncertainty"`
-	Verification VerificationProfile `json:"verification"`
-	Risk         RiskProfile         `json:"risk"`
-	Confidence   string              `json:"confidence"`
-}
-
-// A file path with or without a line or line range, for example a.go, a.go:3 or a.go:3-9.
-var evidenceLocation = regexp.MustCompile(`^[^\s:]+\.[A-Za-z0-9]+(?::[0-9]+(?:-[0-9]+)?(?:, ?[0-9]+(?:-[0-9]+)?)*)?$|^[^\s:]+/[^\s]*$`)
-
-// ParseProfile decodes a complete profile, refusing extra and missing fields.
-func ParseProfile(raw []byte) (Profile, error) {
-	var p Profile
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&p); err != nil {
-		return Profile{}, fmt.Errorf("decode profile: %w", err)
-	}
-	if err := dec.Decode(new(any)); err != io.EOF {
-		return Profile{}, errors.New("profile must contain one JSON value")
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		return Profile{}, err
-	}
-	for _, key := range []string{"reasoning", "scope", "coupling", "uncertainty", "verification", "risk", "confidence"} {
-		if _, ok := fields[key]; !ok {
-			return Profile{}, fmt.Errorf("missing required field %q", key)
-		}
-	}
-	required := map[string][]string{
-		"reasoning":    {"closest_pattern", "new_logic", "evidence"},
-		"scope":        {"components", "distinct_changes", "repeated_changes"},
-		"coupling":     {"contracts", "invariants", "evidence"},
-		"uncertainty":  {"open_questions", "inspected"},
-		"verification": {"tests", "needed_checks", "gaps"},
-		"risk":         {"failures", "reversibility", "evidence"},
-	}
-	nested := make(map[string]map[string]json.RawMessage)
-	for section := range required {
-		var sectionFields map[string]json.RawMessage
-		if err := json.Unmarshal(fields[section], &sectionFields); err != nil {
-			return Profile{}, fmt.Errorf("decode %s: %w", section, err)
-		}
-		nested[section] = sectionFields
-	}
-	for section, keys := range required {
-		for _, key := range keys {
-			if _, ok := nested[section][key]; !ok {
-				return Profile{}, fmt.Errorf("missing required field %q.%q", section, key)
-			}
-		}
-	}
-	if p.Confidence != "low" && p.Confidence != "medium" && p.Confidence != "high" {
-		return Profile{}, fmt.Errorf("confidence must be low, medium, or high")
-	}
-	for field, entries := range map[string][]string{
-		"reasoning.evidence": p.Reasoning.Evidence,
-		"coupling.evidence":  p.Coupling.Evidence,
-		"risk.evidence":      p.Risk.Evidence,
-	} {
-		for i, entry := range entries {
-			if strings.HasPrefix(entry, "inspected:") {
-				if strings.TrimSpace(strings.TrimPrefix(entry, "inspected:")) == "" {
-					return Profile{}, fmt.Errorf("%s[%d] has empty inspection description", field, i)
-				}
-			} else if !evidenceLocation.MatchString(entry) {
-				return Profile{}, fmt.Errorf("%s[%d] must be path:line, path:start-end, or inspected: description", field, i)
-			}
-		}
-	}
-	// The inspected list names what the analyzer looked at: files, folders or
-	// searches, with or without lines. Any non-empty entry is fine.
-	for i, entry := range p.Uncertainty.Inspected {
-		if strings.TrimSpace(entry) == "" {
-			return Profile{}, fmt.Errorf("uncertainty.inspected[%d] is empty", i)
-		}
-	}
-	return p, nil
 }
 
 // Scores contains the judge's six scores and its evidence-based explanations.
@@ -258,18 +140,16 @@ var dimensionNames = []string{"reasoning", "scope", "coupling", "uncertainty", "
 // Assessment is the analyzer profile plus the judge scores and the label they
 // produce. Notes explains a fallback to "normal" when the run could not finish.
 type Assessment struct {
-	Profile       Profile       `json:"profile"`
-	Mode          string        `json:"mode"`
-	Scores        Scores        `json:"scores"`
-	Label         string        `json:"label"`
-	RulesVersion  string        `json:"rules_version"`
-	D             float64       `json:"d"`
-	Bottleneck    string        `json:"bottleneck,omitempty"`
-	Confidence    string        `json:"confidence,omitempty"`
-	Notes         string        `json:"notes,omitempty"`
-	AnalyzerModel string        `json:"analyzer_model,omitempty"`
-	JudgeModel    string        `json:"judge_model,omitempty"`
-	Elapsed       time.Duration `json:"elapsed"`
+	Mode         string        `json:"mode"`
+	Scores       Scores        `json:"scores"`
+	Label        string        `json:"label"`
+	RulesVersion string        `json:"rules_version"`
+	D            float64       `json:"d"`
+	Bottleneck   string        `json:"bottleneck,omitempty"`
+	Confidence   string        `json:"confidence,omitempty"`
+	Notes        string        `json:"notes,omitempty"`
+	JudgeModel   string        `json:"judge_model,omitempty"`
+	Elapsed      time.Duration `json:"elapsed"`
 }
 
 // RulesVersion identifies the weights, cut points and bottleneck rule below.
@@ -312,10 +192,4 @@ func Label(s Scores) (label string, d float64, bottleneck string, version string
 		}
 	}
 	return label, d, bottleneck, version
-}
-
-// Relabel applies the current rules to a previously stored assessment.
-func Relabel(a Assessment) Assessment {
-	a.Label, a.D, a.Bottleneck, a.RulesVersion = Label(a.Scores)
-	return a
 }

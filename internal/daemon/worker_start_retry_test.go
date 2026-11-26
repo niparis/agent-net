@@ -14,6 +14,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 // gatewayHook wraps chosen frames of the daemon's gateway link. fn returns
@@ -288,7 +289,7 @@ func TestRefusedLaunchLeavesNoStartOpen(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, ".agent-net", "worker.md"), []byte(strings.Repeat("rule\n", 3000)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	task := strings.Repeat("x", protocol.MaxBodyBytes-len(protocol.WorkerTaskBody("", "/x", "b"))-100)
+	task := strings.Repeat("x", protocol.MaxBodyBytes-len(protocol.WorkerTaskBodyBriefBar("", protocol.WorkerBrief{Notes: ""}, "/x", "b", "", "", "", "", "", settings.Snapshot{}, "", nil))-100)
 	_, err := pi.call("worker_start", protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: task, Isolation: protocol.IsolationNone})
 	if err == nil {
 		t.Fatal("the launch was not refused")

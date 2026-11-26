@@ -47,7 +47,7 @@ func TestWorkerBriefKeepsTheOldTaskText(t *testing.T) {
 
 func TestWorkerTaskBodyShowsTheStructuredBrief(t *testing.T) {
 	brief := WorkerBrief{Problem: "The parser drops the last line.", Done: []string{"the failing test passes"}}
-	body := WorkerTaskBodyBrief("opencode", brief, "", "", "", "", WorkersSandboxed, "", settings.Snapshot{}, "")
+	body := WorkerTaskBodyBriefBar("opencode", brief, "", "", "", "", "", WorkersSandboxed, "", settings.Snapshot{}, "", nil)
 	if !strings.HasSuffix(body, "\n\nTask:\nProblem:\nThe parser drops the last line.\n\nDone:\n- the failing test passes") {
 		t.Fatalf("body does not end with the structured brief:\n%s", body)
 	}

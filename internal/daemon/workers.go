@@ -288,9 +288,6 @@ type worker struct {
 	// portBase is the first port of the range this worker owns (WORKER_PORT_BASE),
 	// 0 until the first process of the worker starts. Guarded by Daemon.wmu.
 	portBase int
-	// bootstrap is the line for the start notice when the project's bootstrap
-	// command failed or was skipped. Guarded by Daemon.wmu.
-	bootstrap string
 	// toolchainDirs are the extra writable folders passed to agy.
 	toolchainDirs []string
 	// apiBase and apiPass reach the harness's own server, for its statistics.
@@ -820,7 +817,7 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 	if l.Isolation == protocol.IsolationWorktree {
 		worktree, branch = filepath.Join(d.cfg.StateDir, "worktrees", w.id), protocol.WorktreeBranchWithSettings(w.id, snap)
 	}
-	if len(protocol.WorkerTaskBodyWithSettingsForRepo(l.Harness, l.Task, worktree, branch, rules, "", "", snap, l.Project)) > protocol.MaxBodyBytes {
+	if len(protocol.WorkerTaskBodyBriefBar(l.Harness, protocol.WorkerBrief{Notes: l.Task}, worktree, branch, "", rules, "", "", "", snap, l.Project, nil)) > protocol.MaxBodyBytes {
 		return refuse("the task and project rules exceed the message limit")
 	}
 	w.lastActive = w.startedAt
@@ -869,7 +866,7 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 				d.notStarted(d.ctoCtx, e, "the worker started, but its task could not be sent: "+err.Error())
 				return
 			}
-			body := protocol.WorkerStartedText(out.SessionID, l.Harness, l.Model, l.Project, d.hostName(), time.Since(w.startedAt), l.Why) + protocol.WorkerPermissionsLine(l.Permissions, l.Harness, out.OSSandbox) + "\n" + d.workerBootstrapLine(w)
+			body := protocol.WorkerStartedText(out.SessionID, l.Harness, l.Model, l.Project, d.hostName(), time.Since(w.startedAt), l.Why) + protocol.WorkerPermissionsLine(l.Permissions, l.Harness, out.OSSandbox) + "\n"
 			if _, err := d.send(d.ctoCtx, protocol.MsgSend{Sender: out.SessionID, Recipient: l.Owner, Type: protocol.TypeNotification, Body: body}); err != nil {
 				d.Logf("worker %s: started notice: %v", w.id, err)
 			}
@@ -890,9 +887,6 @@ func (d *Daemon) finishWorkerStart(ctx context.Context, l protocol.WorkerLaunch,
 	var err2 error
 	if l.Isolation == protocol.IsolationWorktree {
 		err2 = d.createWorktree(cctx, w, l.Base)
-	}
-	if err2 == nil && l.Isolation == protocol.IsolationWorktree {
-		d.runWorkerBootstrap(cctx, w)
 	}
 	if err2 == nil {
 		err2 = ln.start(cctx, d, w)

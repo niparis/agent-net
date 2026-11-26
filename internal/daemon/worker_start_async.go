@@ -187,9 +187,19 @@ func (d *Daemon) reportAcceptedStart(id, caller string, p protocol.WorkerStartRe
 			note += ": " + res.QueueReason
 		}
 		note += ". A notice follows when it starts."
-		d.startReport(ctx, protocol.WorkerStartReport{ID: id, Owner: caller, Project: res.Project, Harness: res.Harness, Status: protocol.StartReportQueued, Note: note})
+		if res.ModelNote != "" {
+			note += "\nmodel note: " + res.ModelNote
+		}
+		if flags := protocol.BriefFlagsNote(res.BriefFlags); flags != "" {
+			note += "\n" + flags
+		}
+		// The note alone is cut to one short line at the gateway, which would
+		// drop the model note and the flags. The body keeps the whole notice;
+		// an older gateway falls back to the note.
+		body := protocol.WorkerStartReportText(protocol.StartReportQueued, res.Project, res.Harness, id, note)
+		d.startReport(ctx, protocol.WorkerStartReport{ID: id, Owner: caller, Project: res.Project, Harness: res.Harness, Status: protocol.StartReportQueued, Note: note, Body: body})
 	default:
-		body := protocol.WorkerAcceptedStartText(id, res.Status, res.SessionID, res.Harness, res.Model, res.Project, res.Hostname, res.Worktree, res.Branch, res.OwnerLine, res.Why)
+		body := protocol.WorkerAcceptedStartText(id, res.Status, res.SessionID, res.Harness, res.Model, res.Project, res.Hostname, res.Worktree, res.Branch, res.OwnerLine, res.Why, res.BriefFlags, res.ModelNote)
 		// The gateway makes the notice: the worker's own session may not be
 		// registered there yet, and a notice sent as that session is refused.
 		d.startReport(ctx, protocol.WorkerStartReport{ID: id, Owner: caller, Project: res.Project, Harness: res.Harness, Status: res.Status, Body: body})
@@ -210,12 +220,6 @@ func (d *Daemon) startReport(ctx context.Context, r protocol.WorkerStartReport) 
 type acceptedStart struct {
 	Queue, Session string
 	Settled        bool
-	// The next fields exist only for a start that a confirm released from the
-	// hold (worker_override_withdraw.go): its caller may still withdraw it.
-	cancel    context.CancelFunc
-	done      chan struct{} // closed when the start settles
-	withdrawn bool
-	cancelled bool // the start ended because of the withdraw, not on its own
 }
 
 // noteAccepted records an accepted start. It is called before the answer goes
@@ -238,10 +242,6 @@ func (d *Daemon) settleAccepted(id string, res *protocol.WorkerStartResult, err 
 		return
 	}
 	e.Settled = true
-	if e.done != nil {
-		close(e.done)
-		e.done = nil
-	}
 	switch {
 	case err != nil || res == nil:
 		// Did not start: nothing is queued and no worker exists.

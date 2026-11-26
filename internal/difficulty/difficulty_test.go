@@ -7,26 +7,6 @@ import (
 	"testing"
 )
 
-func TestParseProfile(t *testing.T) {
-	valid := []byte(`{"reasoning":{"closest_pattern":"copy","new_logic":"none","evidence":["internal/a.go:2-4"]},"scope":{"components":["a"],"distinct_changes":["one"],"repeated_changes":[]},"coupling":{"contracts":[],"invariants":[],"evidence":["inspected: no shared contract"]},"uncertainty":{"open_questions":[],"inspected":["inspected: config and callers"]},"verification":{"tests":["unit"],"needed_checks":[],"gaps":[]},"risk":{"failures":[],"reversibility":"easy","evidence":["docs/a.md:3"]},"confidence":"high"}`)
-	if _, err := ParseProfile(valid); err != nil {
-		t.Fatalf("valid profile: %v", err)
-	}
-	cases := []struct{ name, raw string }{
-		{"unknown field", strings.Replace(string(valid), `"confidence":"high"`, `"extra":1,"confidence":"high"`, 1)},
-		{"missing dimension", strings.Replace(string(valid), `"risk":{"failures":[],"reversibility":"easy","evidence":["docs/a.md:3"]},`, "", 1)},
-		{"bad confidence", strings.Replace(string(valid), `"confidence":"high"`, `"confidence":"maybe"`, 1)},
-		{"bad evidence", strings.Replace(string(valid), `"internal/a.go:2-4"`, `"a.go:lines"`, 1)},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if _, err := ParseProfile([]byte(tc.raw)); err == nil {
-				t.Fatal("expected error")
-			}
-		})
-	}
-}
-
 func TestParseScores(t *testing.T) {
 	got, insufficient, err := ParseScores([]byte(`{"reasoning":2,"scope":4,"coupling":2,"uncertainty":1,"verification":2,"risk":2,"reasons":{"reasoning":"internal/a.go:2"}}`))
 	if err != nil || len(insufficient) != 0 || got.Reasoning != 2 || got.Scope != 4 {
@@ -117,26 +97,6 @@ func TestLabel(t *testing.T) {
 }
 
 func labelForD(d float64) string { return labelNames[labelIndex(d)] }
-
-func TestParseProfileAcceptsFreeFormInspected(t *testing.T) {
-	raw := `{"reasoning":{"closest_pattern":"copy","new_logic":"none","evidence":["internal/a.go:2-4"]},"scope":{"components":["a"],"distinct_changes":["one"],"repeated_changes":[]},"coupling":{"contracts":[],"invariants":[],"evidence":["inspected: no shared contract"]},"uncertainty":{"open_questions":[],"inspected":["internal/tui/keys.go","searched for apps.rename"]},"verification":{"tests":["unit"],"needed_checks":[],"gaps":[]},"risk":{"failures":[],"reversibility":"easy","evidence":["docs/a.md:3"]},"confidence":"high"}`
-	if _, err := ParseProfile([]byte(raw)); err != nil {
-		t.Fatalf("free-form inspected entries refused: %v", err)
-	}
-}
-
-func TestEvidenceLocationForms(t *testing.T) {
-	for _, ok := range []string{"internal/a.go", "internal/a.go:3", "internal/a.go:3-9", "internal/a.go:3, 12-14", "plugins/pi/", "docs/design/x.md"} {
-		if !evidenceLocation.MatchString(ok) {
-			t.Errorf("refused %q", ok)
-		}
-	}
-	for _, bad := range []string{"", "the gateway", "see above", "a.go:x"} {
-		if evidenceLocation.MatchString(bad) {
-			t.Errorf("accepted %q", bad)
-		}
-	}
-}
 
 func TestRubricTextStartsAtOneWithExamples(t *testing.T) {
 	text := RubricText()

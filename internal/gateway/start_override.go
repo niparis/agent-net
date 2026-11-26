@@ -104,17 +104,9 @@ func (s *Store) startOverrideRef(id string) string {
 	return ref
 }
 
-// withdrawnStartRefusal is the refusal of an answer to a held start whose ask
-// is closed. The caller's withdraw is the usual cause, and it cancels the start
-// on the caller's machine, so an answer cannot bring it back.
-func withdrawnStartRefusal(q askDB, id string) error {
-	var n int
-	if err := q.QueryRow(`SELECT COUNT(*) FROM ask_sorts WHERE ask_id=? AND result=?`, id, protocol.AskSortWithdraw).Scan(&n); err != nil {
-		return err
-	}
-	if n > 0 {
-		return reject("ask %s was withdrawn by its caller, so its start was cancelled and will not run. The caller can start it again", id)
-	}
+// closedStartRefusal is the refusal of an answer to a held start whose ask is
+// closed: the start will not run, so an answer cannot bring it back.
+func closedStartRefusal(id string) error {
 	return reject("ask %s is closed, so its start will not run. The caller can start it again", id)
 }
 
@@ -142,7 +134,7 @@ func (s *Store) answerStartAsk(id, answer, actor string, validate ...bool) (item
 		return item, true, err
 	}
 	if status == "closed" {
-		return item, true, withdrawnStartRefusal(s.db, id)
+		return item, true, closedStartRefusal(id)
 	}
 	if status != "open" {
 		return item, false, nil
