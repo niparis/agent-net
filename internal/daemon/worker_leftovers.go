@@ -144,7 +144,9 @@ var reportCommitPattern = regexp.MustCompile(`\b[0-9a-f]{7,64}\b`)
 // beyond the base, for a commit the worker had checked out in this worktree
 // (its HEAD reflog) that is beyond the base and not on the default branch.
 // That second case is a worker whose work is on another branch it pushed
-// while its worktree went back to the start branch.
+// while its worktree went back to the start branch. A claimed head counts
+// only when it holds commits beyond the base: a report or a push that names
+// the base, or an ancestor of it, claims nothing.
 func pickHandbackHead(ctx context.Context, dir, start, base, report string) (handbackHead, error) {
 	branch := handbackBranch(ctx, dir, start, base)
 	head, err := gitBranchHead(ctx, dir, branch)
@@ -169,6 +171,12 @@ func pickHandbackHead(ctx context.Context, dir, start, base, report string) (han
 			}
 		}
 		if how == "" {
+			return "", ""
+		}
+		// Only a head with the worker's own commits is a claim. A report
+		// often cites the commit it started from, or an earlier worker's
+		// commit, and a push can name the base too: those hold no work.
+		if !commitsBeyond(ctx, dir, base, sha) {
 			return "", ""
 		}
 		if !defaultsRead {
@@ -197,7 +205,7 @@ func pickHandbackHead(ctx context.Context, dir, start, base, report string) (han
 		}
 		seen[sha] = true
 		how, remote := claim(sha)
-		if how == "" || !commitsBeyond(ctx, dir, base, sha) {
+		if how == "" {
 			continue
 		}
 		if b := branchAt(ctx, dir, sha, remote); b != "" {

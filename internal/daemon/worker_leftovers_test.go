@@ -240,6 +240,42 @@ func TestReportNamedHeadStaysTheChangeHead(t *testing.T) {
 	}
 }
 
+// On 2026-11-26 an agy worker that had made no commit reported its work as
+// "on top of 6116c4c8a7", its start commit. The daemon took that mention for
+// a claimed head, kept every edit aside and recorded no change. A report that
+// names the base, or an ancestor of it, names no work of the worker's: its
+// edits are committed on the branch and the change records that commit.
+func TestReportNamingTheStartCommitDoesNotClaimTheHead(t *testing.T) {
+	w, _, wt := leftoverWorker(t)
+	w.base = gitHead(t, wt, "HEAD") // the worker made no commit of its own
+	writeFiles(t, wt, map[string]string{"notes.txt": "notes\n"})
+	d, f := handbackRecordDaemon(t)
+	req := protocol.WorkerHandbackRequest{Report: "The notes sit on top of " + w.base[:9] + " on feat/x.", Status: protocol.StatusDone}
+
+	committed := d.commitAtHandback(w, req)
+	if committed == "" {
+		t.Fatal("the edits were not committed on the branch")
+	}
+	head := gitHead(t, wt, "HEAD")
+	if !strings.HasPrefix(head, committed) || head == w.base {
+		t.Errorf("the branch is at %s, want a new commit %s on top of the base", head, committed)
+	}
+	if files := gitOutT(t, wt, "diff-tree", "--no-commit-id", "--name-only", "-r", head); files != "notes.txt" {
+		t.Errorf("the new commit holds %q, want notes.txt", files)
+	}
+	if _, err := gitOut(context.Background(), wt, "rev-parse", "--verify", "--quiet", "refs/agent-net/leftovers/"+w.id); err == nil {
+		t.Errorf("the edits were kept aside instead of committed on the branch")
+	}
+
+	rec := d.submitHandbackChange(context.Background(), w, nil, req.Report)
+	if rec.changeID == "" || rec.pick.claimed != "" {
+		t.Fatalf("record %+v, want a change at the new head, not a claim", rec)
+	}
+	if q := submitted(t, f); q.HeadCommit != head {
+		t.Errorf("submit head %s, want the new commit %s", q.HeadCommit, head)
+	}
+}
+
 // A remote branch at the head that the worker did not push claims nothing: a
 // continued worker's uncommitted edits still go on the branch and into the
 // change, as before. The daemon pushed the branch for a remote step owner, or
