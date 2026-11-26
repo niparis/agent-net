@@ -13,7 +13,8 @@ import (
 // A worker start that a caller held back because it set selection fields
 // (protocol/worker_override.go) is one Desk ask. Its source key is
 // "wstart:<start id>". It goes straight to the owner: nobody confirms it for
-// him. "confirm" starts the worker with the fields, "picker" starts it with
+// him, though the CTO may answer the Desk on his instructions (decision 0194).
+// "confirm" starts the worker with the fields, "picker" starts it with
 // the picker's choice, and "dismiss" ends it. Any other text is refused with
 // the three answers and the start stays held, so free text that names two
 // options chooses neither. The answer goes to the machine that holds the start
@@ -107,8 +108,8 @@ func (s *Store) answerStartAsk(id, answer, actor string, validate ...bool) (item
 	if err := startAnswerCheck(answer); err != nil {
 		return item, true, err
 	}
-	if actor != "owner" {
-		return item, true, reject("only your owner answers a held worker start")
+	if actor != "owner" && actor != "cto" {
+		return item, true, reject("only your owner answers a held worker start, or the CTO answering the Desk for him")
 	}
 	if item, err = scanInbox(s.db.QueryRow(`SELECT `+inboxColumns+` FROM inbox_items WHERE id=?`, id)); err != nil {
 		return item, true, err
@@ -120,7 +121,7 @@ func (s *Store) answerStartAsk(id, answer, actor string, validate ...bool) (item
 	if answer == "dismiss" {
 		item.Status, item.Answer = "dismissed", "dismiss"
 	}
-	return item, true, s.closeAnsweredItem(item, item.Answer)
+	return item, true, s.closeAnsweredItem(item, item.Answer, actor)
 }
 
 // sendStartDecision tells the machine that holds a start what the owner

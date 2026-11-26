@@ -42,8 +42,9 @@ given.
    his own words (`owner_words`) found in what he typed in that session start
    the worker at once; otherwise one ask goes on his Desk, not to the chief.
 3. The chief no longer confirms a start. Decision 0151's confirm rule and its
-   chief sort actions are gone. The owner answers the one ask. Only the owner
-   may answer it.
+   chief sort actions are gone. The owner answers the one ask, or the CTO
+   answers it on his instructions (his Desk answer records that the CTO
+   answered for the owner); the chief and every other session are refused.
 4. Overlap no longer refuses a start. A file a running worker or an open change
    holds becomes one advisory `brief_flags` entry. The phrase `overlap ok:
    reason` still silences it. Rejection counting and the third-try brief defect
