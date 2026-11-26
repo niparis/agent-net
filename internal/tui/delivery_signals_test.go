@@ -22,20 +22,17 @@ func TestDeliveryChangeKeepsQualitySignals(t *testing.T) {
 	}
 }
 
-// The Desk shows each signal with its evidence where it shows the change.
-func TestDeskChangeShowsQualitySignals(t *testing.T) {
+// The change detail shows each signal with its evidence.
+func TestChangeDetailShowsQualitySignals(t *testing.T) {
 	ch := deliveryChange{ID: "ch_sig", Title: "Fix the deploy gate", Repo: "agent-net",
 		State: protocol.ChangeOpen, Step: "accept", StepOwner: "merger", OwnerKind: protocol.OwnerNode,
 		StepState: protocol.StepStateReady, Signals: uiSignals}
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: []deliveryChange{ch}}, 120, 40))
-	m.inboxIndex = 0
-	if sec, _ := m.deskPosition(); sec != deskSecChange {
-		t.Fatalf("cursor is in section %d", sec)
-	}
+	m.openDeskChange(ch.ID)
 	view := ansi.Strip(m.testView())
-	for _, want := range []string{"quality signals:", "strong: repeated line ×3:", "weak: heavy tests:"} {
+	for _, want := range []string{"Quality signals", "strong: repeated line ×3:", "weak: heavy tests:"} {
 		if !strings.Contains(view, want) {
-			t.Fatalf("Desk lacks %q:\n%s", want, view)
+			t.Fatalf("detail lacks %q:\n%s", want, view)
 		}
 	}
 }

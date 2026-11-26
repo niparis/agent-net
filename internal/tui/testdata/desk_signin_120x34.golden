@@ -1,5 +1,5 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk (8) │ 8 sessions, 6 online · 1 busy · 8 needs you    00:00:00
-Desk · chief of staff agent-net 2 on · sorted 4 asks today
+Desk · chief of staff agent-net 2 on
 While you were away (3 h)  closed 22 · sent on 4 · answered 2 · 3 for you                                         x hide
 ╭─Needs you · 8───────────────────────────────────────────────────────╮ ╭─agent-net────────────────────────────────────╮
 │ ▸ agent-net    [sign-in] Sign in to Alibaba Bailian CLI on…      5d │ │ Sign in to Alibaba Bailian CLI on research   │
@@ -13,18 +13,18 @@ While you were away (3 h)  closed 22 · sent on 4 · answered 2 · 3 for you    
 │   ci-runner    Newer ask number 2                                3m │ │                                              │
 │   Notice       Newer ask number 3                                4m │ │                                              │
 ╰─────────────────────────────────────────────────────────────────────╯ │                                              │
-╭─In flight · 5───────────────────────────────────────────────────────╮ │                                              │
-│   TITLE                     STEP     STATUS             AGE    DONE │ │                                              │
-│ … 5 more                                                            │ │                                              │
-╰─────────────────────────────────────────────────────────────────────╯ │                                              │
-╭─Handled for you · 4─────────────────────────────────────────────────╮ │                                              │
-│   closed   CTO applied graph edge…  CTO notice, moved to the log    │ │                                              │
-│ … 3 more                                                            │ │                                              │
-╰─────────────────────────────────────────────────────────────────────╯ │                                              │
 ╭─Log · 3─────────────────────────────────────────────────────────────╮ │                                              │
 │   cto      CTO applied graph edge set app -> ops                 5m │ │                                              │
-│ … 2 more                                                            │ │                                              │
+│   gateway  Reminded 2 sessions about messages they have not…    20m │ │                                              │
+│   apps     Connected: phone (owner_app, Phone, example.test)     3h │ │                                              │
 ╰─────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────────────╯
+
+
+
+
+
+
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │

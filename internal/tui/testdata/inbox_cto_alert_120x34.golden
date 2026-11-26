@@ -1,5 +1,5 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk (8) │ 12 online · 1 busy · 8 needs you       updated 14:05:00
-Desk · no chief of staff · sorted 0 asks today · log closed (l opens it)
+Desk · no chief of staff · log closed (l opens it)
 ╭─Needs you · 8───────────────────────────────────────────────────────╮ ╭─Notice───────────────────────────────────────╮
 │   ci-runner     [question] which branch?                        10m │ │ CTO alert: zai ran out (5h; resets 14:00)    │
 │   ci-runner     [approval] deploy abc                            9m │ │                                              │
@@ -10,12 +10,12 @@ Desk · no chief of staff · sorted 0 asks today · log closed (l opens it)
 │ ▸ Notice        CTO alert: zai ran out (5h; resets 14:00)        5m │ │                                              │
 │   Notice        checker is blocked on the deploy key            11m │ │                                              │
 ╰─────────────────────────────────────────────────────────────────────╯ │                                              │
-╭─In flight · 0───────────────────────────────────────────────────────╮ │                                              │
-│ Loading changes...                                                  │ │                                              │
-╰─────────────────────────────────────────────────────────────────────╯ │                                              │
-╭─Handled for you · 0─────────────────────────────────────────────────╮ │                                              │
-│ The chief of staff sorted nothing in the last day.                  │ │                                              │
-╰─────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────────────╯
+                                                                        │                                              │
+                                                                        ╰──────────────────────────────────────────────╯
+
+
+
+
 
 
 

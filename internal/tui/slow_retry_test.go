@@ -10,25 +10,22 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// A load that ends by its deadline shows "slow, retrying" where the raw error
-// used to be, keeps the last list on the Desk, and asks once more in the
-// background. A second timeout does not loop: the regular refresh goes on.
-func TestDeskSlowChangesLoadShowsRetryingAndKeepsTheList(t *testing.T) {
+// A load that ends by its deadline keeps the last changes and asks once more in
+// the background. A second timeout does not loop: the regular refresh goes on.
+func TestDeskSlowChangesLoadKeepsTheChangesAndRetries(t *testing.T) {
 	m := deskModel(t, 120, 40)
-	before := ansi.Strip(m.testView())
-	if !strings.Contains(before, "Say what a delivery row") && len(m.deliveryVisible()) == 0 {
-		t.Fatalf("fixture has no changes:\n%s", before)
+	changes := len(m.delivery.changes)
+	if changes == 0 {
+		t.Fatal("fixture has no changes")
 	}
-	changes := len(m.deliveryVisible())
 
 	next, cmd := m.Update(deliveryLoadedMsg{err: context.DeadlineExceeded})
 	m = next.(Model)
-	view := ansi.Strip(m.testView())
-	if !strings.Contains(view, slowText) || strings.Contains(view, "deadline exceeded") || strings.Contains(view, "Could not load changes") {
-		t.Fatalf("slow load text:\n%s", view)
+	if !m.delivery.slow || m.delivery.err != "" {
+		t.Fatalf("slow load: slow %v err %q", m.delivery.slow, m.delivery.err)
 	}
-	if len(m.deliveryVisible()) != changes {
-		t.Fatalf("the last list was dropped: %d, want %d", len(m.deliveryVisible()), changes)
+	if len(m.delivery.changes) != changes {
+		t.Fatalf("the last changes were dropped: %d, want %d", len(m.delivery.changes), changes)
 	}
 	if cmd == nil || !m.delivery.loading {
 		t.Fatal("no background retry after the first timeout")
@@ -40,30 +37,20 @@ func TestDeskSlowChangesLoadShowsRetryingAndKeepsTheList(t *testing.T) {
 	if cmd != nil && m.delivery.loading {
 		t.Fatal("a second timeout started another retry at once")
 	}
-	if view = ansi.Strip(m.testView()); !strings.Contains(view, slowText) || strings.Contains(view, "deadline exceeded") {
-		t.Fatalf("second timeout text:\n%s", view)
+	if !m.delivery.slow || m.delivery.err != "" {
+		t.Fatalf("second timeout: slow %v err %q", m.delivery.slow, m.delivery.err)
 	}
 
 	// An answer clears it, and a real failure still says what it is.
 	next, _ = m.Update(deliveryLoadedMsg{changes: deliveryScenes()})
 	m = next.(Model)
-	if view = ansi.Strip(m.testView()); strings.Contains(view, slowText) || strings.Contains(view, "Could not load changes") {
-		t.Fatalf("slow text stayed after an answer:\n%s", view)
+	if m.delivery.slow || m.delivery.err != "" {
+		t.Fatalf("slow state stayed after an answer: %v %q", m.delivery.slow, m.delivery.err)
 	}
 	next, _ = m.Update(deliveryLoadedMsg{err: errors.New("gateway said no")})
 	m = next.(Model)
-	if view = ansi.Strip(m.testView()); !strings.Contains(view, "Could not load changes: gateway said no") || strings.Contains(view, slowText) {
-		t.Fatalf("a real error must show as it is:\n%s", view)
-	}
-}
-
-func TestDeliveryViewSlowLoadKeepsTheList(t *testing.T) {
-	src := &fakeDelivery{changes: deliveryScenes()}
-	m := openDelivery(t, deliveryModel(src, 120, 30))
-	next, _ := m.Update(deliveryLoadedMsg{err: context.DeadlineExceeded})
-	got := deliveryText(next.(Model), 120, 30)
-	if !strings.Contains(got, slowText) || strings.Contains(got, "deadline exceeded") || !strings.Contains(got, "Say what a delivery row") {
-		t.Errorf("slow text above the old list:\n%s", got)
+	if m.delivery.err != "gateway said no" || m.delivery.slow {
+		t.Fatalf("a real error must be kept as it is: %q slow %v", m.delivery.err, m.delivery.slow)
 	}
 }
 

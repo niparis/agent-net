@@ -269,8 +269,8 @@ func TestDeliveryTickOnlyOnShowingScreens(t *testing.T) {
 		t.Fatal("Graph asked for delivery changes")
 	}
 	m.tab = inboxTab
-	if _, cmd := m.deliveryTick(); cmd == nil {
-		t.Fatal("the Desk did not ask for delivery changes")
+	if _, cmd := m.deliveryTick(); cmd != nil {
+		t.Fatal("the Desk asked for delivery changes")
 	}
 	m.tab = sessionsTab
 	if _, cmd := m.deliveryTick(); cmd == nil {

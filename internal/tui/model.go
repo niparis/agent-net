@@ -68,12 +68,10 @@ type Model struct {
 	asks                  []protocol.Ask
 	deskLog               []protocol.DeskLogEntry
 	deskLogOpen           bool
-	// The chief of staff (decision 0114, part 2): its status, what it handled
-	// in the last day, the digest of the Desk, the owner's last key and the mark
-	// whose why is being typed.
+	// The chief of staff (decision 0114, part 2): its status, the digest of the
+	// Desk, the owner's last key and the mark whose why is being typed.
 	chief                               protocol.ChiefStatus
 	chiefLoaded                         bool
-	handled                             []protocol.ChiefSort
 	digest                              *deskDigest
 	lastInput                           time.Time
 	asksVersion                         int64
@@ -366,8 +364,6 @@ type fetchedMsg struct {
 	inboxOK         bool
 	chief           protocol.ChiefStatus
 	chiefOK         bool
-	handled         []protocol.ChiefSort
-	handledOK       bool
 	deskLog         []protocol.DeskLogEntry
 	deskLogOK       bool
 	listsAsked      bool // the Inbox and proposals were asked for this refresh
@@ -709,12 +705,6 @@ func (m Model) fetchCmd() tea.Cmd {
 					res.chief, res.chiefOK = status, true
 				}
 			})
-			group(func(ctx context.Context) {
-				var sorts protocol.ChiefSortsResult
-				if raw, err := c.Call(ctx, protocol.OpChiefSorts, nil); err == nil && json.Unmarshal(raw, &sorts) == nil {
-					res.handled, res.handledOK = sorts.Sorts, true
-				}
-			})
 			if deskLogOpen {
 				group(func(ctx context.Context) {
 					var log protocol.DeskLogResult
@@ -984,13 +974,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.deliveryLoaded(msg)
 	case deliveryDetailMsg:
 		return m.deliveryDetailLoaded(msg), nil
-	case deliveryReportMsg:
-		if msg.err != nil {
-			m.failErr(msg.err, msg.err.Error())
-			return m, nil
-		}
-		m.say(msg.text)
-		return m.startDeliveryLoad()
 	case ctoPollMsg:
 		if m.cto == nil || m.cto.generation != msg.generation {
 			return m, nil
@@ -1225,9 +1208,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.chiefOK {
 			m.chief, m.chiefLoaded = msg.chief, true
-		}
-		if msg.handledOK {
-			m.handled = msg.handled
 		}
 		if msg.inboxOK {
 			m.inboxIndex = min(max(m.inboxIndex, 0), max(m.deskRowCount()-1, 0))
@@ -1971,9 +1951,9 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 			if i == inboxTab {
 				m.inboxDetail, m.inboxDetailOption, m.inboxEditing = false, 0, false
-				m.delivery.project, m.delivery.detail = "", false
+				m.delivery.detail = false
 				m.inboxIndex = min(max(m.inboxIndex, 0), max(m.deskRowCount()-1, 0))
-				return m.startDeliveryLoad()
+				return m, nil
 			}
 			if i == settingsTab {
 				m.settingsRow = 0

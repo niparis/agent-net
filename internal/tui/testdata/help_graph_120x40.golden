@@ -1,5 +1,4 @@
 Keys · Graph ───────────────────────────────────────────────────────────────────────────────────────────────────────────
-  D                      delivery
   d                      show or hide dormant nodes
   f                      focus on a node and its neighbours, or zoom into a team
   esc                    go back one focus or team level
@@ -35,6 +34,7 @@ Keys · Graph ──────────────────────
   y                      accept the selected charter draft (drafted from AGENTS.md)
   x                      reject the selected charter draft
   l                      choose or clear the repo lead
+  h                      hide or unhide this project
   more below
 
 up/down scroll  ? all screens  esc close

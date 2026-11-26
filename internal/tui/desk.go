@@ -13,14 +13,11 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// The Desk (tab 6, decision 0090) is one list in three sections: Needs you
-// (the asks), In flight (the delivery changes) and Log (the event log, closed
-// until the owner opens it). One cursor walks all three.
+// The Desk (tab 6, decision 0090) is one list: Needs you (the asks) and the
+// Log (the event log, closed until the owner opens it). One cursor walks both.
 
 const (
 	deskSecAsk = iota
-	deskSecChange
-	deskSecHandled
 	deskSecLog
 )
 
@@ -40,7 +37,7 @@ func (m Model) deskLogRows() []protocol.DeskLogEntry {
 
 // deskRowCount is every selectable row of the sections.
 func (m Model) deskRowCount() int {
-	return m.askRowCount() + len(m.deliveryVisible()) + len(m.handled) + len(m.deskLogRows())
+	return m.askRowCount() + len(m.deskLogRows())
 }
 
 // deskIndex is the cursor, kept inside the list.
@@ -54,27 +51,7 @@ func (m Model) deskPosition() (section, i int) {
 		return deskSecAsk, idx
 	}
 	idx -= asks
-	if changes := len(m.deliveryVisible()); idx < changes {
-		return deskSecChange, idx
-	} else {
-		idx -= changes
-	}
-	if handled := len(m.handled); idx < handled {
-		return deskSecHandled, idx
-	} else {
-		idx -= handled
-	}
 	return deskSecLog, idx
-}
-
-// deskOnChange tells whether the cursor is on a delivery change, or inside the
-// detail of one.
-func (m Model) deskOnChange() bool {
-	if m.delivery.detail || m.delivery.reporting {
-		return true
-	}
-	sec, _ := m.deskPosition()
-	return sec == deskSecChange && m.deskRowCount() > 0
 }
 
 func (m Model) deskSelectedLog() (protocol.DeskLogEntry, bool) {
@@ -84,17 +61,6 @@ func (m Model) deskSelectedLog() (protocol.DeskLogEntry, bool) {
 		return protocol.DeskLogEntry{}, false
 	}
 	return rows[i], true
-}
-
-// deskAsksAbout lists the open asks that are about one change.
-func (m Model) deskAsksAbout(change string) []protocol.Ask {
-	var out []protocol.Ask
-	for _, a := range m.asks {
-		if a.AboutKind == protocol.AskAboutChange && a.AboutID == change && a.State != protocol.AskWithSomeone {
-			out = append(out, a)
-		}
-	}
-	return out
 }
 
 // deskLogLine is one line of the open Log section.
@@ -240,7 +206,6 @@ func (m Model) deskWhyLineCached(row inboxRow, innerW int) string {
 // does not hold the cursor is cut first.
 func (m Model) deskBoxes(w, room int) ([]string, int) {
 	rows := m.inboxRows()
-	changes := m.deliveryVisible()
 	logRows := m.deskLogRows()
 	sec, at := m.deskPosition()
 	innerW := max(w-4, 4)
@@ -274,62 +239,6 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 		}
 	}
 	sections = append(sections, needs)
-
-	d := m.delivery
-	flight := deskSection{title: fmt.Sprintf("In flight · %d", len(changes)), color: roleAccent, sel: -1}
-	flight.itemCount = len(changes)
-	if d.err != "" {
-		for _, l := range wrap("Could not load changes: "+sanitize(d.err), innerW) {
-			flight.body = append(flight.body, sBad.Render(l))
-		}
-	} else if d.slow {
-		flight.body = append(flight.body, sDim.Render(clip(deliverySlowText(len(d.changes) > 0), innerW)))
-	}
-	switch {
-	case len(changes) > 0:
-		cols := m.deliveryLayout(innerW, changes)
-		flight.body = append(flight.body, cols.header())
-		for i, ch := range changes {
-			flight.itemStarts = append(flight.itemStarts, len(flight.body))
-			if sec == deskSecChange && i == at {
-				flight.sel = len(flight.body)
-			}
-			flight.body = append(flight.body, m.deliveryRow(cols, ch, sec == deskSecChange && i == at))
-			if finding := deliveryRowFinding(ch); finding != "" {
-				flight.body = append(flight.body, sDim.Render("    "+clip(sanitize(finding), max(innerW-4, 1))))
-			}
-			for _, a := range m.deskAsksAbout(ch.ID) {
-				flight.body = append(flight.body, sNeeds.Render("    asks you: "+clip(sanitize(inboxFirstLine(a.Question)), max(innerW-15, 1))))
-			}
-		}
-		if done, stale := m.deliveryHidden(); !d.showAll && done+stale > 0 {
-			flight.body = append(flight.body, sDim.Render(deliveryHiddenText(done, stale)))
-		}
-	case d.err != "" || d.slow:
-	case m.deliverySrc != nil && !d.loaded:
-		flight.body = append(flight.body, sDim.Render("Loading changes..."))
-	case len(d.changes) > 0:
-		done, stale := m.deliveryHidden()
-		flight.body = append(flight.body, "Nothing needs attention.", sDim.Render(deliveryHiddenText(done, stale)))
-	default:
-		flight.body = append(flight.body, sDim.Render("No open changes."))
-	}
-	sections = append(sections, flight)
-
-	handled := deskSection{title: fmt.Sprintf("Handled for you · %d", len(m.handled)), color: roleAccent, sel: -1}
-	handled.itemCount = len(m.handled)
-	if len(m.handled) == 0 {
-		handled.body = []string{sDim.Render("The chief of staff sorted nothing in the last day.")}
-	}
-	for i, h := range m.handled {
-		selected := sec == deskSecHandled && i == at
-		handled.itemStarts = append(handled.itemStarts, len(handled.body))
-		if selected {
-			handled.sel = len(handled.body)
-		}
-		handled.body = append(handled.body, m.deskHandledLine(h, innerW, selected))
-	}
-	sections = append(sections, handled)
 
 	if m.deskLogOpen {
 		logName := 8
@@ -427,14 +336,10 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 	return out, selected
 }
 
-// deskHeaderLine is the Desk's own title line: the chief and how many asks it
-// sorted in the last day. The log hint goes last, and only when it fits.
+// deskHeaderLine is the Desk's own title line: the chief and the log hint. The
+// log hint goes last, and only when it fits.
 func (m Model) deskHeaderLine(w int) string {
 	line := sBold.Render("Desk") + sDim.Render(" · ") + m.deskChiefText()
-	line += sDim.Render(" · sorted " + plural(len(m.handled), "ask") + " today")
-	if m.delivery.project != "" {
-		line += sDim.Render(" · changes of " + sanitize(m.delivery.project) + " (esc shows all)")
-	}
 	if !m.deskLogOpen {
 		hint := sDim.Render(" · log closed (l opens it)")
 		if ansi.StringWidth(line+hint) <= w {
@@ -449,42 +354,13 @@ func (m Model) deskPanel(w, h int) []string {
 	if h < 3 {
 		return nil
 	}
-	sec, i := m.deskPosition()
+	sec, _ := m.deskPosition()
 	innerW, innerH := max(w-4, 4), h-2
 	var title string
 	var body []string
 	switch sec {
 	case deskSecAsk:
 		return m.inboxPanel(w, h)
-	case deskSecHandled:
-		return m.deskHandledPanel(w, h)
-	case deskSecChange:
-		changes := m.deliveryVisible()
-		if i >= len(changes) {
-			return nil
-		}
-		ch := changes[i]
-		title = "Change " + sanitize(ch.ID)
-		status, _ := m.deliveryStatusText(ch)
-		body = append(body, wrapText(deliveryTitle(ch), innerW)...)
-		body = append(body, wrapText("step "+firstNonEmpty(ch.Step, "-")+": "+status, innerW)...)
-		if who := m.deliveryWho(ch); who != "" {
-			body = append(body, wrapText("with "+who, innerW)...)
-		}
-		if finding := deliveryRowFinding(ch); finding != "" {
-			body = append(body, wrapText(finding, innerW)...)
-		}
-		if lines := deliverySignalLines(ch.Signals); len(lines) > 0 {
-			body = append(body, wrapText("quality signals:", innerW)...)
-			for _, line := range lines {
-				body = append(body, wrapText(line, innerW)...)
-			}
-		}
-		for _, a := range m.deskAsksAbout(ch.ID) {
-			body = append(body, wrapText("Asks you: "+inboxFirstLine(a.Question), innerW)...)
-		}
-		body = append(body, "")
-		body = append(body, hintLines(m.deskChangeHints(ch), innerW)...)
 	default:
 		e, ok := m.deskSelectedLog()
 		if !ok {
@@ -508,16 +384,6 @@ func (m Model) deskPanel(w, h int) []string {
 	return panelWithBorder(title, body, w, roleAccent, roleFaint)
 }
 
-func (m Model) deskChangeHints(ch deliveryChange) []hint {
-	open := bindingHint(contextDelivery, "open")
-	open.label = "open the change"
-	h := []hint{open, bindingHint(contextInbox, "show all"), bindingHint(contextDelivery, "refresh")}
-	if ch.Group == groupToTry {
-		h = append(h, hint{key: "y", label: "it works", prio: 1}, hint{key: "n", label: "it fails", prio: 1})
-	}
-	return keepChoices(h)
-}
-
 func (m Model) deskLogHints(e protocol.DeskLogEntry) []hint {
 	h := []hint{bindingHint(contextInbox, "log")}
 	if _, _, ok := logUndo(e); ok {
@@ -528,9 +394,9 @@ func (m Model) deskLogHints(e protocol.DeskLogEntry) []hint {
 	return keepChoices(h)
 }
 
-// inboxTabView draws the Desk: a title, the three sections and a panel for
-// what the cursor is on. On a wide screen the panel sits on the right; on a
-// narrow one it sits under the sections.
+// inboxTabView draws the Desk: a title, Needs you and the Log, with a panel
+// for what the cursor is on. On a wide screen the panel sits on the right; on
+// a narrow one it sits under the sections.
 func (m Model) inboxTabView(w, h int) []string {
 	if m.delivery.detail {
 		return m.deliveryView(w, h)
@@ -542,9 +408,6 @@ func (m Model) inboxTabView(w, h int) []string {
 	}
 	if m.inboxNote != "" {
 		out = append(out, sDim.Render(clip("  "+m.inboxNote, w)))
-	}
-	if m.delivery.reporting {
-		out = append(out, sDim.Render(clip("  say what is wrong with the change below", w)))
 	}
 	if m.inboxDetail {
 		rows := m.inboxRows()
@@ -710,33 +573,14 @@ func (m Model) deskUndo(e protocol.DeskLogEntry) tea.Cmd {
 
 type deskUndoneMsg struct{ id int64 }
 
-// deskKey handles the keys of a row that is not an ask: a delivery change or
-// a log line. It reports false when the key is not for them.
+// deskRowKey handles the keys of a log line. It reports false when the key is
+// not for it.
 func (m Model) deskRowKey(k tea.KeyPressMsg, key actionID) (Model, tea.Cmd, bool) {
-	sec, i := m.deskPosition()
-	switch sec {
-	case deskSecChange:
-		m.delivery.row = i
-		mm, cmd := m.deliveryKey(k)
-		mm.inboxIndex = min(max(mm.inboxIndex, 0), max(mm.deskRowCount()-1, 0))
-		return mm, cmd, true
-	case deskSecHandled:
-		h, ok := m.deskSelectedHandled()
-		switch {
-		case !ok:
-		case key == "undo" && !h.Undone:
-			return m, m.deskAskUndo(h.Ask), true
-		case key == "should_have_asked":
-			return m.deskMarkStart(h.Ask, protocol.MarkShouldHaveAsked), nil, true
-		case key == "didnt_need" && h.Result == protocol.AskSortOwner:
-			return m.deskMarkStart(h.Ask, protocol.MarkDidntNeedMe), nil, true
-		}
-		return m, nil, true
-	case deskSecLog:
-		if e, ok := m.deskSelectedLog(); ok && key == "undo" {
-			return m, m.deskUndo(e), true
-		}
-		return m, nil, true
+	if sec, _ := m.deskPosition(); sec != deskSecLog {
+		return m, nil, false
 	}
-	return m, nil, false
+	if e, ok := m.deskSelectedLog(); ok && key == "undo" {
+		return m, m.deskUndo(e), true
+	}
+	return m, nil, true
 }

@@ -78,7 +78,6 @@ Key `2` opens it.
 
 | keys | what it does |
 |---|---|
-| D | delivery |
 | d | show or hide dormant nodes |
 | f | focus on a node and its neighbours, or zoom into a team |
 | esc | go back one focus or team level |
@@ -231,9 +230,8 @@ Key `6` opens it.
 ### Panels
 
 - `Needs you`
-- `Delivery`
-- `Change`, in On a change in flight
-- `Evidence`, in On a change in flight (or Steps and evidence for a change with steps)
+- `Change`, in On a change's evidence
+- `Evidence`, in On a change's evidence (or Steps and evidence for a change with steps)
 - `Inbox detail`, in Desk
 - `Log`, in Desk (Log · SOURCE for one log source)
 
@@ -256,9 +254,7 @@ Key `6` opens it.
 | w | in the details of a question or approval: answer the marked option and keep it as a standing rule. Type the action and its area: merge in repo:<name>, team:<name> or network. A rule applies only on an exact match; undo it on its Log line. |
 | d | on an open ask: talk it over. A chief item opens the chief's session and wakes it; a CTO item opens your CTO chat. |
 | u | undo |
-| n | on an ask that reached you, open or answered (in Handled for you): the chief did not need to send it. Type one optional line of why; the chief reads it in its next batch. |
-| m | on a handled ask: the chief should have asked you. Type one optional line of why; the chief reads it in its next batch. |
-| v | show or hide the done and stale changes in the In flight section |
+| n | on an ask that reached you, open or answered: the chief did not need to send it. Type one optional line of why; the chief reads it in its next batch. |
 | l | open or close the Log section: what the CTO and the gateway did, with the undo of a CTO change |
 
 #### On a held request row
@@ -291,15 +287,12 @@ Key `6` opens it.
 | r | decline the change |
 | A | approve all the changes |
 
-#### On a change in flight
+#### On a change's evidence
 
 | keys | what it does |
 |---|---|
-| pgup | ten changes up |
-| pgdown | ten changes down |
-| a | show all |
-| y | on a To try row, report that the check passed: the owner tried it and it works |
-| n | on a To try row, report that the check failed: type one line of what is wrong |
+| pgup | page up |
+| pgdown | page down |
 
 ## Global keys
 

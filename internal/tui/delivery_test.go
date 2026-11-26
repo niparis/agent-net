@@ -10,10 +10,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/termenv"
 
 	"github.com/niparis/agent-net/internal/protocol"
-	"github.com/niparis/agent-net/internal/tui/palette"
 )
 
 // fakeDelivery is the fake data for the Delivery view. A later step maps the
@@ -23,13 +21,7 @@ type fakeDelivery struct {
 	err     error
 	calls   int
 	repo    string
-
-	tries  []deliveryTry
-	tryErr error
-	onTry  func(id, result, note string)
 }
-
-type deliveryTry struct{ id, result, note string }
 
 func (f *fakeDelivery) Changes(_ context.Context, repo string) ([]deliveryChange, error) {
 	f.calls++
@@ -37,12 +29,13 @@ func (f *fakeDelivery) Changes(_ context.Context, repo string) ([]deliveryChange
 	return f.changes, f.err
 }
 
-func (f *fakeDelivery) ReportTry(_ context.Context, id, result, note string) error {
-	f.tries = append(f.tries, deliveryTry{id, result, note})
-	if f.onTry != nil {
-		f.onTry(id, result, note)
+func (f *fakeDelivery) Change(_ context.Context, id string) (deliveryChange, error) {
+	for _, ch := range f.changes {
+		if ch.ID == id {
+			return ch, nil
+		}
 	}
-	return f.tryErr
+	return deliveryChange{}, errors.New("no such change")
 }
 
 func dEv(step, result, commit, by, model string, at time.Time, fields map[string]string) deliveryEvidence {
@@ -142,85 +135,23 @@ func openDelivery(t *testing.T, m Model) Model {
 func deliveryText(m Model, w, h int) string {
 	return ansi.Strip(strings.Join(m.deliveryView(w, h), "\n"))
 }
-
-// visibleRow is the cursor position of a change in the grouped list, or -1.
-func visibleRow(m Model, id string) int {
-	for i, ch := range m.deliveryVisible() {
-		if ch.ID == id {
-			return i
-		}
-	}
-	return -1
-}
-
-func TestDeliveryReadableInDarkAndLight(t *testing.T) {
-	old := testColorProfile
-	defer setTestColorProfile(old)
-	defer palette.SetDark(true)
-	setTestColorProfile(termenv.TrueColor)
-	for _, dark := range []bool{true, false} {
-		palette.SetDark(dark)
-		m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 120, 24))
-		for _, w := range []int{80, 120} {
-			lines := m.deliveryView(w, 24)
-			for _, l := range lines {
-				if ansi.StringWidth(l) > w {
-					t.Errorf("dark %v width %d overflow: %q", dark, w, ansi.Strip(l))
-				}
-			}
-			got := ansi.Strip(strings.Join(lines, "\n"))
-			for _, want := range []string{"Needs you", "Moving", "Stuck", "merger", "ci-runner"} {
-				if !strings.Contains(got, want) {
-					t.Errorf("dark %v width %d missing %q:\n%s", dark, w, want, got)
-				}
-			}
-		}
-	}
-}
-
-func TestDeliveryTitleIsTheMainColumn(t *testing.T) {
+func TestChangeDetailIsTheMainColumn(t *testing.T) {
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 120, 30))
-	for _, w := range []int{80, 120} {
-		got := deliveryText(m, w, 30)
-		for _, want := range []string{"Show which", "Say what", "Fix the"} {
-			if !strings.Contains(got, want) {
-				t.Errorf("width %d: title missing %q:\n%s", w, want, got)
-			}
-		}
-		// The branch is for the detail view only.
-		for _, branch := range []string{"w_1bcfc4c4a93b2687", "delivery-pipeline", "feature/a-very-long"} {
-			if strings.Contains(got, branch) {
-				t.Errorf("width %d: branch %q is in the list:\n%s", w, branch, got)
-			}
-		}
-	}
-	m.delivery.row = visibleRow(m, "c_1")
-	m.inboxIndex = m.askRowCount() + m.delivery.row
-	m.delivery.detail = true
+	m.openDeskChange("c_1")
 	detail := deliveryText(m, 120, 30)
-	if !strings.Contains(detail, "delivery-pipeline") && !strings.Contains(detail, "w_1bcfc4c4a93b2687") {
+	if !strings.Contains(detail, "Show which provider each quota row belongs to") {
+		t.Errorf("detail does not show the title:\n%s", detail)
+	}
+	if !strings.Contains(detail, "w_1bcfc4c4a93b2687") {
 		t.Errorf("detail does not show the branch:\n%s", detail)
 	}
 	if !strings.Contains(detail, "a accept") || !strings.Contains(detail, "T test after merge") {
 		t.Errorf("detail lost the evidence legend:\n%s", detail)
 	}
-	if strings.Contains(deliveryText(openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 120, 30)), 120, 30), "a accept · r review") {
-		t.Error("list still shows the letter legend")
-	}
 }
 
 func TestDeliverySaysWhatItWaitsFor(t *testing.T) {
-	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 120, 30))
-	got := deliveryText(m, 120, 30)
-	for _, want := range []string{"merger", "ci-runner"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("missing %q:\n%s", want, got)
-		}
-	}
-	if strings.Contains(got, "running") {
-		t.Errorf("nothing is claimed, but the list says running:\n%s", got)
-	}
-
+	m := deliveryModel(nil, 120, 30)
 	// A ready step owned by the person, or by the owner's own session, waits
 	// for "you"; a claimed step is the only one that says running.
 	m.snap.OwnerSession = "s_owner"
@@ -245,159 +176,6 @@ func TestDeliverySaysWhatItWaitsFor(t *testing.T) {
 		t.Errorf("ready claimed status %q", status)
 	}
 }
-
-func TestDeliveryGroupsAndHidesDoneAndStale(t *testing.T) {
-	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 120, 24))
-	got := deliveryText(m, 120, 24)
-	for _, want := range []string{"Needs you", "Moving", "Stuck", "1 done and 1 stale hidden · v shows all"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("missing %q:\n%s", want, got)
-		}
-	}
-	for _, hidden := range []string{"Drop the old parser", "Import suppliers from the CSV"} {
-		if strings.Contains(got, hidden) {
-			t.Errorf("hidden change %q is on screen:\n%s", hidden, got)
-		}
-	}
-	// a shows everything, with the age of the stale change.
-	next, _ := m.Update(tea.KeyPressMsg{Text: "a", Code: 'a'})
-	m = next.(Model)
-	if !m.delivery.showAll {
-		t.Fatal("a did not show all")
-	}
-	got = deliveryText(m, 120, 24)
-	for _, want := range []string{"Moving", "Stuck", "Done · 1", "Drop the old parser", "Import suppliers", "1d6h"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("show all missing %q:\n%s", want, got)
-		}
-	}
-	// a again hides them.
-	next, _ = m.Update(tea.KeyPressMsg{Text: "a", Code: 'a'})
-	m = next.(Model)
-	if got := deliveryText(m, 120, 24); strings.Contains(got, "Drop the old parser") {
-		t.Errorf("a did not hide done changes again:\n%s", got)
-	}
-}
-
-func TestDeliveryStaleAndGroups(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		ch   deliveryChange
-	}{
-		{"open for a day", deliveryChange{State: "open", Waiting: 24 * time.Hour}},
-		{"open for 23h", deliveryChange{State: "open", Waiting: 23 * time.Hour}},
-		{"merged for a week", deliveryChange{State: "merged", Waiting: 7 * 24 * time.Hour}},
-		{"done", deliveryChange{State: "done", Waiting: 7 * 24 * time.Hour}},
-		{"stopped", deliveryChange{State: "stopped", Waiting: 7 * 24 * time.Hour}},
-		{"closed step", deliveryChange{State: "open", StepState: "closed", Waiting: 7 * 24 * time.Hour}},
-	} {
-		want := tc.ch.Waiting >= 24*time.Hour && tc.ch.State == "open" && tc.ch.StepState != "closed"
-		if got := deliveryStale(tc.ch); got != want {
-			t.Errorf("%s: stale %v, want %v", tc.name, got, want)
-		}
-	}
-	for _, tc := range []struct {
-		name string
-		ch   deliveryChange
-		want deliveryGroup
-	}{
-		{"person, ready", deliveryChange{State: "open", Step: "review", StepState: "ready", OwnerKind: "owner"}, groupNeedsYou},
-		{"failed goes back to caller", deliveryChange{State: "open", Step: "review", StepState: "failed", OwnerKind: "owner"}, groupMoving},
-		{"delegate needs owner", deliveryChange{State: "open", Step: "approve", StepState: "needs_owner", OwnerKind: "delegate"}, groupNeedsYou},
-		{"approval without inbox item", deliveryChange{State: "open", Step: "approve", StepState: "ready", OwnerKind: "node"}, groupMoving},
-		{"owner's caller", deliveryChange{State: "open", Step: "test", StepState: "ready", OwnerKind: "caller", Caller: "s_owner"}, groupNeedsYou},
-		{"other caller", deliveryChange{State: "open", Step: "test", StepState: "ready", OwnerKind: "caller", Caller: "s_agent"}, groupMoving},
-		{"node", deliveryChange{State: "open", Step: "review", StepState: "ready", OwnerKind: "node"}, groupMoving},
-		{"passed", deliveryChange{State: "open", Step: "review", StepState: "passed", OwnerKind: "owner"}, groupMoving},
-		{"done", deliveryChange{State: "done"}, groupDone},
-		{"stopped", deliveryChange{State: "stopped"}, groupDone},
-		{"closed step", deliveryChange{State: "open", StepState: "closed"}, groupDone},
-	} {
-		if got := deliveryGroupOf(tc.ch, "s_owner"); got != tc.want {
-			t.Errorf("%s: group %v, want %v", tc.name, got, tc.want)
-		}
-	}
-}
-
-func TestDeliveryCollapsesStuckAndExpandsWithEnter(t *testing.T) {
-	changes := []deliveryChange{
-		{ID: "a", Repo: "wbg-procurement", State: "open", Step: "accept", StepOwner: "wbg-procurement", OwnerKind: "node", StepState: "ready", Waiting: 15 * time.Hour},
-		{ID: "b", Repo: "wbg-procurement", State: "open", Step: "accept", StepOwner: "wbg-procurement", OwnerKind: "node", StepState: "ready", Waiting: 22 * time.Hour},
-	}
-	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: changes}, 120, 34))
-	visible := m.deliveryVisible()
-	if len(visible) != 1 || visible[0].Count != 2 {
-		t.Fatalf("expected collapsed pair: %#v", visible)
-	}
-	if !strings.Contains(visible[0].Title, "2 changes wait for accept by wbg-procurement (exited) · 15h-22h") {
-		t.Fatalf("bad summary: %q", visible[0].Title)
-	}
-	next, _ := m.Update(tea.KeyPressMsg{Text: "enter", Code: tea.KeyEnter})
-	m = next.(Model)
-	if len(m.deliveryVisible()) != 2 {
-		t.Fatalf("Enter did not expand stuck group: %#v", m.deliveryVisible())
-	}
-}
-
-func TestDeliveryEmptyStateAndErrorLine(t *testing.T) {
-	m := openDelivery(t, deliveryModel(&fakeDelivery{}, 80, 24))
-	got := deliveryText(m, 80, 24)
-	for _, want := range []string{"Delivery", "No open changes", "Quota"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("missing %q: %s", want, got)
-		}
-	}
-	m = openDelivery(t, deliveryModel(&fakeDelivery{err: errors.New("gateway said:\nno such thing")}, 80, 24))
-	got = deliveryText(m, 80, 24)
-	if !strings.Contains(got, "Could not load changes: gateway said: no such thing") {
-		t.Errorf("error line missing: %s", got)
-	}
-	if strings.Contains(got, "No open changes") {
-		t.Errorf("empty text beside an error: %s", got)
-	}
-}
-
-func TestDeliveryErrorKeepsTheLastList(t *testing.T) {
-	src := &fakeDelivery{changes: deliveryScenes()}
-	m := openDelivery(t, deliveryModel(src, 120, 30))
-	src.changes, src.err = nil, errors.New("gateway down")
-	next, _ := m.Update(m.deliveryLoad()())
-	got := deliveryText(next.(Model), 120, 30)
-	if !strings.Contains(got, "Could not load changes: gateway down") || !strings.Contains(got, "Say what a delivery row") {
-		t.Errorf("error should sit above the old list: %s", got)
-	}
-}
-
-func TestDeliveryRowsFitEveryWidth(t *testing.T) {
-	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 80, 30))
-	for _, w := range []int{80, 100, 120, 160, 200} {
-		lines := m.deliveryView(w, 30)
-		for _, l := range lines {
-			if ansi.StringWidth(l) > w {
-				t.Errorf("width %d overflow (%d): %q", w, ansi.StringWidth(l), ansi.Strip(l))
-			}
-		}
-		got := ansi.Strip(strings.Join(lines, "\n"))
-		for _, want := range []string{"Show which", "Say what", "Fix the", "merger", "ci-runner", "2h14m", "6m", "back to"} {
-			if !strings.Contains(got, want) {
-				t.Errorf("width %d missing %q: %s", w, want, got)
-			}
-		}
-		if w >= 96 {
-			for _, want := range []string{"agent-net", "voicemechs"} {
-				if !strings.Contains(got, want) {
-					t.Errorf("width %d missing repo %q: %s", w, want, got)
-				}
-			}
-		}
-		for _, branch := range []string{"w_1bcfc4c4a93b2687", "delivery-pipeline", "feature/a-very-long"} {
-			if strings.Contains(got, branch) {
-				t.Errorf("width %d: branch %q is in the list: %s", w, branch, got)
-			}
-		}
-	}
-}
-
 func TestDeliveryLegendNamesEveryLetter(t *testing.T) {
 	for _, w := range []int{80, 120, 200} {
 		inner := w - 4
@@ -415,36 +193,6 @@ func TestDeliveryLegendNamesEveryLetter(t *testing.T) {
 		}
 	}
 }
-
-func TestDeliveryColumnsAlign(t *testing.T) {
-	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 80, 30))
-	for _, w := range []int{80, 120, 200} {
-		cols := m.deliveryLayout(w-4, m.deliveryVisible())
-		if got := cols.width(); got > w-4 {
-			t.Errorf("width %d: columns take %d of %d", w, got, w-4)
-		}
-		header := ansi.Strip(cols.header())
-		stepAt := strings.Index(header, "STEP")
-		if stepAt < 0 {
-			t.Fatalf("width %d: no STEP header: %q", w, header)
-		}
-		for _, ch := range m.deliveryVisible() {
-			if len(ch.Children) > 1 {
-				continue
-			}
-			row := ansi.Strip(m.deliveryRow(cols, ch, false))
-			if ansi.StringWidth(row) != cols.width() {
-				t.Errorf("width %d: row %d wide, want %d: %q", w, ansi.StringWidth(row), cols.width(), row)
-			}
-			want := firstNonEmpty(ch.Step, "-")
-			prefix := ansi.Truncate(row, stepAt, "")
-			if got := row[len(prefix):]; !strings.HasPrefix(got, want) {
-				t.Errorf("width %d: step column shows %q, want %q in %q", w, got, want, row)
-			}
-		}
-	}
-}
-
 func TestShortBranch(t *testing.T) {
 	for in, want := range map[string]string{
 		"agent-net/w_1bcfc4c4a93b2687": "w_1bcfc4c4a93b2687",
@@ -497,61 +245,6 @@ func TestDeliveryStripStates(t *testing.T) {
 		t.Errorf("states %v", st)
 	}
 }
-
-func TestDeliveryProgressOnlyShowsConfiguredSteps(t *testing.T) {
-	c := deliveryChange{Marks: marks(stripPassed, stripWaiting, stripWaiting, stripWaiting, stripWaiting, stripWaiting, stripWaiting, stripWaiting), Steps: []deliveryStep{{Name: "accept", State: "passed"}, {Name: "approve for deploy", State: "ready"}, {Name: "test after merge", State: "running"}}}
-	got := ansi.Strip(deliveryProgress(c))
-	if got != "●○○" {
-		t.Fatalf("progress %q, want marks for accept, approve, after-merge test", got)
-	}
-}
-
-func TestDeliveryRevisionTwoLayoutAndOwnership(t *testing.T) {
-	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 80, 24))
-	visible := m.deliveryVisible()
-	cols := m.deliveryLayout(76, visible)
-	if cols.title <= 16 || cols.status > 34 {
-		t.Errorf("80-column layout title/status widths = %d/%d", cols.title, cols.status)
-	}
-	if !strings.Contains(ansi.Strip(cols.header()), "DONE") {
-		t.Errorf("progress header does not fit: %q", ansi.Strip(cols.header()))
-	}
-
-	failed := deliveryChange{State: "open", Step: "review", StepState: "failed", Caller: "s_0000000000000002", Waiting: time.Hour}
-	if got := deliveryGroupOf(failed, m.snap.OwnerSession); got != groupMoving {
-		t.Errorf("failed step grouped as %v", got)
-	}
-	m.snap.Agents[1].Profile.Name = "agent-net 2"
-	if got, _ := m.deliveryStatusText(failed); got != "back to agent-net 2 to restart the worker" {
-		t.Errorf("failed status %q", got)
-	}
-
-	unknown := deliveryChange{State: "open", Step: "test", StepState: "ready", OwnerKind: "caller", Caller: "s_unknown"}
-	if got := m.deliveryWho(unknown); strings.Contains(got, "s_unknown") || !strings.Contains(got, "unknown session") {
-		t.Errorf("unknown caller leaked ID: %q", got)
-	}
-
-	stuck := m.deliveryVisible()[len(m.deliveryVisible())-1]
-	if !strings.Contains(stuck.Title, "by wbg-procurement (exited) · 15h-22h") {
-		t.Errorf("collapsed owner or age missing: %q", stuck.Title)
-	}
-	if strings.Contains(deliveryText(m, 80, 24), "1d6h!") {
-		t.Error("stale age still has an exclamation mark")
-	}
-}
-
-func TestDeliveryInboxApprovalNeedsOwner(t *testing.T) {
-	m := deliveryModel(nil, 80, 24)
-	ch := deliveryChange{ID: "ch_approval", State: "open", Step: "approve", StepState: "ready", OwnerKind: protocol.OwnerNode}
-	if got := m.deliveryGroupFor(ch); got != groupMoving {
-		t.Fatalf("unlinked approval step is %v", got)
-	}
-	m.asks = askItems([]protocol.InboxItem{{Kind: "approval", Status: "open", Delivery: &protocol.InboxDelivery{ChangeID: ch.ID}}})
-	if got := m.deliveryGroupFor(ch); got != groupNeedsYou {
-		t.Fatalf("inbox approval is %v", got)
-	}
-}
-
 func TestDeliveryStripShowsGlyphsNotOnlyColour(t *testing.T) {
 	line := ansi.Strip(deliveryStrip(deliveryStripStates(deliveryScenes()[2]), false))
 	if line != "a✓r✗t·p-m·T·l·d·v·" {
@@ -579,33 +272,27 @@ func TestDeliverySubtabCycle(t *testing.T) {
 	}
 	next, cmd := m.Update(tea.KeyPressMsg{Text: "6", Code: '6'})
 	m = next.(Model)
-	if m.tab != inboxTab || cmd == nil {
-		t.Fatal("the Desk did not open and load the changes")
+	if m.tab != inboxTab || cmd != nil {
+		t.Fatal("the Desk did not open without loading changes")
 	}
 }
 
-func TestDeliveryEnterOpensDetailAndEscCloses(t *testing.T) {
+func TestThreadLinkOpensChangeDetailAndEscCloses(t *testing.T) {
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 120, 30))
-	press := func(k tea.KeyPressMsg) {
-		next, _ := m.Update(k)
-		m = next.(Model)
+	cmd := m.openDeskChange("c_2")
+	if cmd == nil || !m.delivery.detail {
+		t.Fatal("the thread link did not open the detail")
 	}
-	press(tea.KeyPressMsg{Code: tea.KeyDown})
-	press(tea.KeyPressMsg{Code: tea.KeyDown})
-	if m.delivery.row != 2 {
-		t.Fatalf("row %d", m.delivery.row)
-	}
-	press(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if !m.delivery.detail {
-		t.Fatal("enter did not open the detail")
-	}
+	next, _ := m.Update(cmd())
+	m = next.(Model)
 	got := deliveryText(m, 120, 30)
 	for _, want := range []string{"Say what a delivery row waits for", "delivery-pipeline", "0b77d4e91a22", "test", "caller", "waiting for ci-runner", "findings_open=0", "codex gpt-6.1-sol", "10-29 13:45"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("detail missing %q: %s", want, got)
 		}
 	}
-	press(tea.KeyPressMsg{Code: tea.KeyEsc})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+	m = next.(Model)
 	if m.delivery.detail || m.tab != inboxTab {
 		t.Fatal("esc should only close the detail")
 	}
@@ -614,7 +301,7 @@ func TestDeliveryEnterOpensDetailAndEscCloses(t *testing.T) {
 func TestDeliveryDetailUsesTheDisplayZone(t *testing.T) {
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 120, 30))
 	m.loc = time.FixedZone("CET", 3600)
-	m.delivery.row, m.delivery.detail = visibleRow(m, "c_1"), true
+	m.openDeskChange("c_1")
 	got := deliveryText(m, 120, 30)
 	// The first change's accept evidence is 11:05 UTC, so 12:05 in CET.
 	if !strings.Contains(got, "10-29 12:05") || strings.Contains(got, "10-29 11:05") {
@@ -633,7 +320,7 @@ func TestDeliveryDetailFillsAvailableHeight(t *testing.T) {
 
 func TestDeliveryDetailMarksOldEvidenceAndHidesNothing(t *testing.T) {
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 80, 40))
-	m.delivery.row, m.delivery.detail = visibleRow(m, "c_3"), true
+	m.openDeskChange("c_3")
 	for _, w := range []int{80, 120, 200} {
 		lines := m.deliveryView(w, 40)
 		for _, l := range lines {
@@ -655,314 +342,44 @@ func TestDeliverySanitizesText(t *testing.T) {
 	c.Repo = "bad\x1b[31mrepo"
 	c.StepOwner = "ow\nner"
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: []deliveryChange{c}}, 80, 24))
+	m.openDeskChange(c.ID)
 	for _, l := range m.deliveryView(80, 24) {
 		if strings.Contains(ansi.Strip(l), "\x1b") || strings.Contains(l, "\n") {
 			t.Fatalf("unsafe line %q", l)
 		}
 	}
 }
-
-func TestDeliveryNoSourceShowsTheEmptyState(t *testing.T) {
-	m := deliveryModel(nil, 80, 24)
-	m.delivery.on = true
-	if cmd := m.deliveryLoad(); cmd != nil {
-		t.Fatal("no source, no load")
-	}
-	if got := deliveryText(m, 80, 24); !strings.Contains(got, "No open changes") {
-		t.Fatal(got)
-	}
-}
-
 func TestDeliveryHelpAndHints(t *testing.T) {
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 120, 30))
+	m.openDeskChange("c_1")
 	hints := ""
 	for _, h := range m.hints() {
 		hints += h.key + " " + h.label + "|"
 	}
-	for _, want := range []string{"open the change", "show all changes", "refresh"} {
+	for _, want := range []string{"scroll", "back"} {
 		if !strings.Contains(hints, want) {
 			t.Errorf("hints %q missing %q", hints, want)
 		}
 	}
 	m.help = true
-	if got := ansi.Strip(strings.Join(m.helpContent(120), "\n")); !strings.Contains(got, "On a change in flight") {
-		t.Errorf("help has no section for a change in flight: %s", got)
+	if got := ansi.Strip(strings.Join(m.helpContent(120), "\n")); !strings.Contains(got, "On a change's evidence") {
+		t.Errorf("help has no section for a change detail: %s", got)
 	}
 }
-
-// deliveryActionScenes exercises the gateway mapping as well as the list.
-func deliveryActionScenes() []deliveryChange {
-	var changes []deliveryChange
-	for i, state := range []string{protocol.StepStateNeedsOwner, protocol.StepStateFailed, protocol.StepStateFailed, protocol.StepStateFailed} {
-		step := protocol.StepTest
-		if i == 0 {
-			step = protocol.StepVerify
-		}
-		v := protocol.ChangeView{Change: protocol.Change{ID: fmt.Sprintf("ch_action_%d", i), Title: []string{"Resume offline sessions", "Fix the entry test", "Repair worker restart", "Stopped entry work"}[i], Project: "demo", State: protocol.ChangeOpen, HeadCommit: hash('a'), Caller: "s_0000000000000002", Origin: protocol.ChangeOrigin{Kind: protocol.OriginWorker, SessionID: "s_0000000000000001"}},
-			Next: []protocol.StepRef{ref(protocol.StepAccept)}, Steps: []protocol.StepStatus{status(ref(protocol.StepAccept), ownCaller, protocol.StepStateReady, nil), status(ref(step), ownNode, state, nil)}}
-		if i >= 2 {
-			v.Change.Origin.SessionID = "s_ended"
-		}
-		if i == 3 {
-			v.Change.State = protocol.ChangeStopped
-		}
-		e := pev(v.Change.ID, 1, ref(step), protocol.StepResultFail, hash('a'), "s_merger", "", t0, nil)
-		e.Note = "Enter did not resume the offline session"
-		v.Steps[1].Evidence = &e
-		changes = append(changes, deliveryChangeFromView(v, t0))
-	}
-	return changes
-}
-
-// deliveryToTryScenes are the four changes the owner saw on 2026-11-08: the
-// last step is an after-merge verify that reported needs_owner, and the work
-// is already released. Nothing waits on them.
-func deliveryToTryScenes() []deliveryChange {
-	const merged = "7c694c974548e2bc7187113712bc64e07c5a7418"
-	note := func(text string) deliveryChange {
-		return deliveryChange{
-			ID: "ch_" + fmt.Sprintf("%x", len(text)), Title: "Change to try", Repo: "agent-net",
-			Head: "9121e244a7fb9447f79dfa815864370d92317ac9", MergedCommit: merged, Revision: 1,
-			State: protocol.ChangeMerged, Caller: "s_0000000000000002", Step: protocol.StepVerify,
-			StepOwner: "caller", OwnerKind: protocol.OwnerCaller, StepState: protocol.StepStateNeedsOwner,
-			Check: text, Waiting: 3 * time.Hour,
-			Marks: marks(stripPassed, stripPassed, stripPassed, stripNotNeeded, stripPassed, stripPassed, stripPassed, stripRunning),
-		}
-	}
-	first := note("The live check needs the owner: pressing Enter on one of his offline OpenCode or Codex sessions resumes his real session, which I will not do without him. The tests cover the behavior against fakes. Owner: in Sessions, press v, select an offline OpenCode session, press Enter, and confirm that it opens and comes online.")
-	first.ID, first.Title, first.Caller = "ch_1e511e8f2a1fa9c8", "Enter resumes offline OpenCode and Codex sessions", "s_0000000000000001"
-	second := note("The Enter half needs the owner: on the Mac TUI, press Enter on a background Claude session whose attach pane is already open in herdr. It should focus that pane, not open a second one.")
-	second.ID, second.Title = "ch_92c85a1c97c8a2c3", "Enter reuses bg attach pane"
-	third := note("Live in v0.4.183+. Checking it means stopping a real session, and I have no idle session of my own to stop. Owner check: in Sessions, select a session you want gone, press the stop key and confirm.")
-	third.ID, third.Title = "ch_435e5d277d4ac07b", "Stop shows at once in Sessions"
-	fourth := note("Live since v0.4.181. Checking it means removing a real offline session for good, which deletes data, so the owner should choose one. Owner check: in Sessions, press v to show idle and offline sessions, select an offline one you no longer want, and press x. It should ask to remove it and then be gone for good.")
-	fourth.ID, fourth.Title = "ch_c11297410a46aa78", "x removes an offline session for good"
-	return []deliveryChange{first, second, third, fourth}
-}
-
-func TestDeliveryToTrySpeaksOfTrying(t *testing.T) {
-	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryToTryScenes()}, 120, 34))
-	got := deliveryText(m, 120, 34)
-	if !strings.Contains(got, "To try · 4") {
-		t.Fatalf("the four checks are not under To try:\n%s", got)
-	}
-	if strings.Contains(got, "waiting for you") {
-		t.Fatalf("a released check still says waiting for you:\n%s", got)
-	}
-	if !strings.Contains(got, "try it") {
-		t.Fatalf("a To try row does not say try it:\n%s", got)
-	}
-	// The note says what to check: the Owner sentence when there is one,
-	// otherwise the note's last sentence.
-	for _, want := range []string{
-		"Owner: in Sessions, press v",
-		"Owner check: in Sessions, select a session you want gone",
-		"It should focus that pane, not open a second one.",
-		"It should ask to remove it and then be gone for good.",
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("missing what to check %q:\n%s", want, got)
-		}
-	}
-	for _, ch := range m.deliveryVisible() {
-		if ch.Group != groupToTry {
-			t.Errorf("%s is in group %v", ch.ID, ch.Group)
-		}
-	}
-	for _, w := range []int{80, 120} {
-		for _, l := range m.deliveryView(w, 34) {
-			if ansi.StringWidth(l) > w {
-				t.Errorf("width %d overflow (%d): %q", w, ansi.StringWidth(l), ansi.Strip(l))
-			}
-		}
-	}
-}
-
-func TestDeliveryApproveStepStaysNeedsYou(t *testing.T) {
-	beforeMerge := deliveryChange{ID: "ch_approve", State: protocol.ChangeOpen, Step: protocol.StepApprove, StepOwner: "owner", OwnerKind: protocol.OwnerPerson, StepState: protocol.StepStateNeedsOwner}
-	afterMerge := deliveryChange{ID: "ch_deploy", State: protocol.ChangeMerged, MergedCommit: "7c694c974548e2bc7187113712bc64e07c5a7418", Step: protocol.StepApprove, StepOwner: "owner", OwnerKind: protocol.OwnerPerson, StepState: protocol.StepStateNeedsOwner}
-	for _, ch := range []deliveryChange{beforeMerge, afterMerge} {
-		if got := deliveryGroupOf(ch, "s_owner"); got != groupNeedsYou {
-			t.Errorf("%s grouped as %v, want Needs you", ch.ID, got)
-		}
-		m := deliveryModel(nil, 120, 34)
-		if got, _ := m.deliveryStatusText(ch); got != "waiting for you" {
-			t.Errorf("%s status %q, want waiting for you", ch.ID, got)
-		}
-	}
-	// A verify step that is not after a merge is still a blocked decision.
-	open := deliveryChange{ID: "ch_open_verify", State: protocol.ChangeOpen, Step: protocol.StepVerify, StepOwner: "owner", OwnerKind: protocol.OwnerPerson, StepState: protocol.StepStateNeedsOwner}
-	if got := deliveryGroupOf(open, ""); got != groupNeedsYou {
-		t.Errorf("verify before merge grouped as %v, want Needs you", got)
-	}
-	// An open approval for the change blocks work even when its verify
-	// reported needs_owner.
-	m := deliveryModel(nil, 120, 34)
-	ch := deliveryToTryScenes()[0]
-	m.asks = askItems([]protocol.InboxItem{{Kind: "approval", Status: "open", Delivery: &protocol.InboxDelivery{ChangeID: ch.ID}}})
-	if got := m.deliveryGroupFor(ch); got != groupNeedsYou {
-		t.Errorf("a change with an open approval is %v, want Needs you", got)
-	}
-}
-
-func TestDeliveryToTryNeverCountsAsNeedingYou(t *testing.T) {
-	// Only To try rows: nothing needs the owner, so the header has no count.
-	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryToTryScenes()}, 120, 34))
-	if n := m.waitingCount(); n != 0 {
-		t.Errorf("waitingCount counts %d To try rows", n)
-	}
-	if got := ansi.Strip(m.testView()); strings.Contains(got, "needs you") {
-		t.Errorf("header counts To try rows as needing the owner:\n%s", got)
-	}
-	got := deliveryText(m, 120, 34)
-	if strings.Contains(got, "Needs you · 4") {
-		t.Errorf("Delivery Needs you counts To try rows:\n%s", got)
-	}
-	// One real approval still counts, beside the four checks.
-	m.asks = askItems([]protocol.InboxItem{{Kind: "approval", Status: "open", ID: "i_1", Delivery: &protocol.InboxDelivery{ChangeID: "ch_approve"}}})
-	if n := m.waitingCount(); n != 1 {
-		t.Errorf("waitingCount = %d, want 1", n)
-	}
-	ch := deliveryChange{ID: "ch_approve", Title: "Approve the merge", Repo: "agent-net", State: protocol.ChangeOpen, Step: protocol.StepApprove, StepOwner: "owner", OwnerKind: protocol.OwnerPerson, StepState: protocol.StepStateNeedsOwner}
-	m.delivery.changes = append(m.delivery.changes, ch)
-	got = deliveryText(m, 120, 34)
-	if !strings.Contains(got, "Needs you · 1") {
-		t.Errorf("Delivery Needs you count is not 1:\n%s", got)
-	}
-}
-
-// finishTries runs the report command and the reload it asks for.
-func finishTries(t *testing.T, m Model, cmd tea.Cmd) Model {
-	t.Helper()
-	if cmd == nil {
-		t.Fatal("no try command")
-	}
-	next, reload := m.Update(cmd())
-	m = next.(Model)
-	if reload == nil {
-		t.Fatal("a try did not reload the list")
-	}
-	next, _ = m.Update(reload())
-	return next.(Model)
-}
-
-func TestDeliveryTryKeysReportAndMoveTheRow(t *testing.T) {
-	// y: the check works. The owner's pass lands on the verify step at the
-	// merged commit and the change moves to Done.
-	src := &fakeDelivery{changes: deliveryToTryScenes()}
-	src.onTry = func(id, result, note string) {
-		for i := range src.changes {
-			if src.changes[i].ID == id {
-				src.changes[i].StepState = result
-				if result == protocol.StepResultPass {
-					src.changes[i].State = protocol.ChangeDone
-				}
-			}
-		}
-	}
-	m := openDelivery(t, deliveryModel(src, 120, 34))
-	const id = "ch_1e511e8f2a1fa9c8"
-	m.delivery.row = visibleRow(m, id)
-	m.inboxIndex = m.askRowCount() + m.delivery.row
-	if m.delivery.row < 0 {
-		t.Fatal("the To try row is not in the list")
-	}
-	if hints := m.deliveryHints(); !hasHint(hints, "y") || !hasHint(hints, "n") {
-		t.Fatalf("the To try key line does not offer y and n: %+v", hints)
-	}
-	next, cmd := m.Update(tea.KeyPressMsg{Text: "y", Code: 'y'})
-	m = finishTries(t, next.(Model), cmd)
-	if len(src.tries) != 1 {
-		t.Fatalf("tries %+v", src.tries)
-	}
-	if got := src.tries[0]; got.id != id || got.result != protocol.StepResultPass || got.note != "checked by the owner in the TUI" {
-		t.Fatalf("y recorded %+v", got)
-	}
-	if visibleRow(m, id) >= 0 {
-		t.Fatal("a tried change is still in the list")
-	}
-	m.delivery.showAll = true
-	if got := m.deliveryGroupFor(src.changes[0]); got != groupDone {
-		t.Fatalf("the tried change is %v, want Done", got)
-	}
-
-	// n: it does not work. One line is asked for, then sent as a fail.
-	src = &fakeDelivery{changes: deliveryToTryScenes()}
-	m = openDelivery(t, deliveryModel(src, 120, 34))
-	m.delivery.row = visibleRow(m, id)
-	m.inboxIndex = m.askRowCount() + m.delivery.row
-	next, _ = m.Update(tea.KeyPressMsg{Text: "n", Code: 'n'})
-	m = next.(Model)
-	if !m.delivery.reporting {
-		t.Fatal("n did not ask for the problem")
-	}
-	m.delivery.reportInput.SetValue("the Enter key does nothing")
-	next, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	m = finishTries(t, next.(Model), cmd)
-	if len(src.tries) != 1 {
-		t.Fatalf("tries %+v", src.tries)
-	}
-	if got := src.tries[0]; got.id != id || got.result != protocol.StepResultFail || got.note != "the Enter key does nothing" {
-		t.Fatalf("n recorded %+v", got)
-	}
-}
-
-func hasHint(hints []hint, key string) bool {
-	for _, h := range hints {
-		if h.key == key {
-			return true
-		}
-	}
-	return false
-}
-
 func TestDeliveryGoldens(t *testing.T) {
 	scenes := deliveryScenes()
-	waiting := scenes[1]
-	waiting.Step, waiting.StepState = protocol.StepVerify, protocol.StepStateWaiting
-	waiting.Wait = "waiting on owner opens console (until 2026-11-12T08:00:00Z)"
-	waiting.Steps = []deliveryStep{{Name: "verify (after merge)", State: protocol.StepStateWaiting, Note: waiting.Wait}}
-
 	type scene struct {
-		name   string
-		src    *fakeDelivery
-		rowID  string
-		detail bool
-		all    bool
+		name  string
+		rowID string
 	}
 	for _, s := range []scene{
-		{"delivery_waiting", &fakeDelivery{changes: []deliveryChange{waiting}}, "", false, false},
-		{"delivery_empty", &fakeDelivery{}, "", false, false},
-		{"delivery_error", &fakeDelivery{err: errors.New("the gateway did not type answer in time")}, "", false, false},
-		{"delivery_list", &fakeDelivery{changes: scenes}, "", false, false},
-		{"delivery_to_try", &fakeDelivery{changes: deliveryToTryScenes()}, "", false, false},
-		{"delivery_actions", &fakeDelivery{changes: deliveryActionScenes()}, "", false, false},
-		{"delivery_actions_all", &fakeDelivery{changes: deliveryActionScenes()}, "", false, true},
-		{"delivery_all", &fakeDelivery{changes: scenes}, "", false, true},
-		{"delivery_failed_review", &fakeDelivery{changes: scenes}, "c_3", false, false},
-		{"delivery_detail", &fakeDelivery{changes: scenes}, "c_1", true, false},
-		{"delivery_detail_failed", &fakeDelivery{changes: scenes}, "c_3", true, false},
+		{"delivery_detail", "c_1"},
+		{"delivery_detail_failed", "c_3"},
 	} {
 		for _, size := range [][2]int{{80, 24}, {120, 24}, {120, 34}} {
-			m := openDelivery(t, deliveryModel(s.src, size[0], size[1]))
-			m.delivery.detail, m.delivery.showAll = s.detail, s.all
-			if s.rowID != "" {
-				m.delivery.row = visibleRow(m, s.rowID)
-				m.inboxIndex = m.askRowCount() + m.delivery.row
-			}
+			m := openDelivery(t, deliveryModel(&fakeDelivery{changes: scenes}, size[0], size[1]))
+			m.openDeskChange(s.rowID)
 			golden(t, fmt.Sprintf("%s_%dx%d", s.name, size[0], size[1]), m.testView())
 		}
-	}
-}
-
-func TestDeliveryTopLevelAndProjectFilter(t *testing.T) {
-	m := deliveryModel(nil, 80, 24)
-	m.delivery.changes = []deliveryChange{{ID: "ch_a", Repo: "one"}, {ID: "ch_b", Repo: "two"}}
-	m.delivery.project = "one"
-	if got := m.deliveryVisible(); len(got) != 1 || got[0].ID != "ch_a" {
-		t.Fatalf("project filter: %+v", got)
-	}
-	if len(tabNames) != 6 || tabNames[5] != "Desk" {
-		t.Fatalf("tabs: %v", tabNames)
 	}
 }

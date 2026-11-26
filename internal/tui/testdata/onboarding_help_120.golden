@@ -27,14 +27,14 @@ Keys · all screens ────────────────────
   d                      on an open ask: talk it over. A chief item opens the chief's session and wakes it; a CTO item
                          opens your CTO chat.
   u                      undo
-  n                      on an ask that reached you, open or answered (in Handled for you): the chief did not need to
-                         send it. Type one optional line of why; the chief reads it in its next batch.
-  m                      on a handled ask: the chief should have asked you. Type one optional line of why; the chief
-                         reads it in its next batch.
-  v                      show or hide the done and stale changes in the In flight section
+  n                      on an ask that reached you, open or answered: the chief did not need to send it. Type one
+                         optional line of why; the chief reads it in its next batch.
   l                      open or close the Log section: what the CTO and the gateway did, with the undo of a CTO change
 
  On a held request row
   a                      approve the request
+  r                      refuse the request
+
+ On a learned suggestion row
   more below
 up/down scroll  ? this screen  esc close

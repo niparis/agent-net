@@ -10,10 +10,10 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Evidence─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ STEP     RESULT      COMMIT       BY            MODEL                   TIME         FIELDS                          │
+│ Loading all evidence...                                                                                              │
 │ accept   passed      9f3a1c2      caller        -                       10-29 11:05  -                               │
 │ test     passed      9f3a1c2      caller        -                       10-29 11:35  suite=changed tests_added=yes   │
 │ review   waiting     9f3a1c2      merger        -                       10-29 11:51  -                               │
-│                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │

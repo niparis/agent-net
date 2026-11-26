@@ -121,20 +121,6 @@ func TestGraphDeliveryListsAllConfiguredSteps(t *testing.T) {
 	}
 }
 
-func TestGraphOpensDeliveryForProject(t *testing.T) {
-	m := graphModel(80, 24)
-	m.tab = graphTab
-	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-02"})
-	m = keys(m, "D")
-	if m.tab != inboxTab || m.delivery.project != "project-02" {
-		t.Fatalf("tab %d project %q", m.tab, m.delivery.project)
-	}
-	m = keys(m, "esc")
-	if m.delivery.project != "" {
-		t.Fatal("escape did not clear project")
-	}
-}
-
 func TestGraphFooterHeightAndCaller(t *testing.T) {
 	m := graphModel(80, 24)
 	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-02"})

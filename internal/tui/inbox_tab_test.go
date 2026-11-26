@@ -167,7 +167,7 @@ func TestInboxListsEveryKindWithItsActions(t *testing.T) {
 		}
 	}
 	view := ansi.Strip(m.testView())
-	for _, heading := range []string{"Needs you · 7", "In flight · 0", "log closed"} {
+	for _, heading := range []string{"Needs you · 7", "log closed"} {
 		if !strings.Contains(view, heading) {
 			t.Errorf("missing box heading %q:\n%s", heading, view)
 		}

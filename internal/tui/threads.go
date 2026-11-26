@@ -652,13 +652,11 @@ func (m Model) threadLinkJump() (Model, tea.Cmd) {
 
 // openDeskChange selects a loaded change and opens its evidence.
 func (m *Model) openDeskChange(id string) tea.Cmd {
-	visible := m.deliveryVisible()
-	for i, ch := range visible {
+	for i, ch := range m.delivery.changes {
 		if ch.ID != id {
 			continue
 		}
 		m.tab = inboxTab
-		m.delivery.project = ""
 		m.delivery.detail = true
 		m.delivery.scroll = 0
 		m.delivery.row = i
