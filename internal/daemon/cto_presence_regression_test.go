@@ -89,7 +89,10 @@ func TestCTOWakeAfterCrashAndRestart(t *testing.T) {
 		count int
 	}{
 		{"cto.start harness=opencode", 3}, {"cto.stop harness=opencode reason=daemon_shutdown", 1},
-		{"cto.stop harness=opencode reason=crash", 1}, {"cto.wake trigger=agent harness=opencode", 2},
+		{"cto.stop harness=opencode reason=crash", 1}, {"cto.wake trigger=agent harness=opencode", 1},
+		// The daemon starts the CTO it stopped, so the message after the
+		// restart finds it running and wakes nothing.
+		{"cto.wake trigger=daemon_restart harness=opencode", 1},
 		{"cto.wake trigger=owner harness=opencode", 1}, {"cto.crash harness=opencode", 1},
 	} {
 		if count := strings.Count(lines, want.text); count != want.count {

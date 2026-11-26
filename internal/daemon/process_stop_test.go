@@ -348,23 +348,51 @@ func TestProcessStopRefusesLiveSessionsAndWorkers(t *testing.T) {
 	}
 }
 
-// The CTO's own OpenCode server and Codex app server are its session, so the
-// CTO cannot stop itself with process_stop (decision 0157).
-func TestProcessStopRefusesTheCTOsOwnHarnessProcess(t *testing.T) {
-	openCode := startThrowaway(t, false)
-	codex := startThrowaway(t, false)
-	g := newSignalGuard(openCode, codex)
+// ctoHarnessProcesses starts two throwaway processes and makes them the CTO's
+// OpenCode server and Codex app server. The guard allows no signal yet.
+func ctoHarnessProcesses(t *testing.T) (*Daemon, *signalGuard, *throwaway, *throwaway) {
+	t.Helper()
+	openCode, codex := startThrowaway(t, false), startThrowaway(t, false)
+	g := newSignalGuard()
 	d := processStopDaemon(g)
 	d.cto.cmd, d.cto.exited = openCode.cmd, make(chan struct{})
 	d.codexCTO.cmd, d.codexCTO.exited = codex.cmd, make(chan struct{})
+	return d, g, openCode, codex
+}
 
+// The CTO's own OpenCode server and Codex app server are its session, so the
+// CTO cannot stop itself with process_stop (decision 0157).
+func TestProcessStopRefusesTheCTOsOwnHarnessProcessToTheCTO(t *testing.T) {
+	d, g, openCode, codex := ctoHarnessProcesses(t)
+	ctx := context.WithValue(context.Background(), proposalActorKey{}, "cto")
+	res, err := d.processStop(ctx, protocol.ProcessStopRequest{NodeID: d.cfg.NodeID, PIDs: []int{openCode.pid, codex.pid}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.check(t)
+	if len(res.Processes) != 2 {
+		t.Fatalf("want 2 results, got %+v", res.Processes)
+	}
+	for _, outcome := range res.Processes {
+		if outcome.Outcome != protocol.ProcessRefused || outcome.Reason != "it is the CTO's own harness process" || !strings.Contains(outcome.Command, "sleep") {
+			t.Errorf("the CTO's own process must be refused to the CTO: %+v", outcome)
+		}
+	}
+}
+
+// The owner's own process_stop carries no actor and may stop the CTO's process.
+func TestProcessStopLetsTheOwnerStopTheCTOsHarnessProcess(t *testing.T) {
+	d, g, openCode, codex := ctoHarnessProcesses(t)
+	g.allow(openCode, codex)
 	got := stopLocal(t, d, openCode.pid, codex.pid)
 	g.check(t)
 	for _, outcome := range got {
-		if outcome.Outcome != protocol.ProcessRefused || outcome.Reason != "it is the CTO's own harness process" {
-			t.Errorf("the CTO's own process must be refused: %+v", outcome)
+		if outcome.Outcome != protocol.ProcessStoppedTerm {
+			t.Errorf("the owner's stop must stop the CTO's process: %+v", outcome)
 		}
 	}
+	waitExited(t, openCode)
+	waitExited(t, codex)
 }
 
 func TestProcessStopRefusesAProcessOfAnotherUser(t *testing.T) {

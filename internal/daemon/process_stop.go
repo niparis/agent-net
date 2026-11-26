@@ -128,8 +128,18 @@ type stopTarget struct {
 // are still alive.
 func (d *Daemon) processStopLocal(ctx context.Context, pids []int) (protocol.ProcessStopResult, error) {
 	res := protocol.ProcessStopResult{NodeID: d.cfg.NodeID, Hostname: d.hostName()}
+	// The CTO does not stop itself (decision 0157). The owner's own stop of
+	// the CTO's process carries no actor and goes through.
+	fromCTO := proposalActor(ctx) != ""
 	targets := make([]*stopTarget, len(pids))
 	for i, pid := range pids {
+		if fromCTO && d.isCTOHarnessProcess(pid) {
+			targets[i] = &stopTarget{out: protocol.ProcessOutcome{PID: pid, Outcome: protocol.ProcessRefused, Reason: "it is the CTO's own harness process"}}
+			if v, err := readProcView(pid); err == nil {
+				targets[i].fill(v)
+			}
+			continue
+		}
 		targets[i] = d.inspectForStop(pid)
 	}
 
@@ -345,8 +355,7 @@ func isAgentNetService(command string) bool {
 }
 
 // knownAgentNetProcess returns the reason for refusing pid when it is a live
-// session or worker known to this daemon, or the CTO's own harness process
-// (the CTO does not stop itself, decision 0157), or "".
+// session or worker known to this daemon, or "".
 func (d *Daemon) knownAgentNetProcess(pid int) string {
 	d.mu.Lock()
 	for _, ls := range d.sessions {
@@ -358,9 +367,6 @@ func (d *Daemon) knownAgentNetProcess(pid int) string {
 		}
 	}
 	d.mu.Unlock()
-	if d.isCTOHarnessProcess(pid) {
-		return "it is the CTO's own harness process"
-	}
 	d.wmu.Lock()
 	defer d.wmu.Unlock()
 	for id, w := range d.workers {
