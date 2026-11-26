@@ -43,9 +43,10 @@ func headerModel(w, h int) Model {
 	return withWaitingAsks(settle(refresh(m, src)))
 }
 
-func TestHeaderCountsOnlineBusyNeedsAndWorkers(t *testing.T) {
+// The needs you count went with the Desk (decision 0196).
+func TestHeaderCountsOnlineBusyAndWorkers(t *testing.T) {
 	head := lines(headerModel(160, 30).testView())[0]
-	want := "12 online · 3 busy · 1 needs you · workers 4 running, 1 queued"
+	want := "12 online · 3 busy · workers 4 running, 1 queued"
 	if !strings.Contains(head, want) {
 		t.Fatalf("header %q lacks %q", head, want)
 	}
@@ -61,16 +62,6 @@ func TestHeaderHidesNeedsYouAtZero(t *testing.T) {
 	}
 	if !strings.Contains(head, "12 online · 1 busy") {
 		t.Fatalf("header lacks the busy count: %q", head)
-	}
-}
-
-func TestHeaderNeedsYouUsesTheWarningColour(t *testing.T) {
-	old := testColorProfile
-	setTestColorProfile(termenv.TrueColor)
-	defer setTestColorProfile(old)
-	head := lines(headerModel(160, 30).testView())[0]
-	if !strings.Contains(head, sNeeds.Render("1 needs you")) {
-		t.Fatalf("needs you is not in the warning colour: %q", head)
 	}
 }
 

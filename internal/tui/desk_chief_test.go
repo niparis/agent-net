@@ -108,7 +108,7 @@ func TestDeskNeedsYouShowsOnlyOwnerAsks(t *testing.T) {
 		FromKind: protocol.AskFromSession, FromSession: "s_0000000000000004", From: "ingest-forge", Question: "Pay for the new model?",
 		Priority: 1, WhyYou: "no spend rule", CreatedAt: t0})
 	view := ansi.Strip(m.testView())
-	for _, want := range []string{"Needs you · 3", "Desk (3)", "priority 1 · why you: no spend rule"} {
+	for _, want := range []string{"Needs you · 3", "priority 1 · why you: no spend rule"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("missing %q:\n%s", want, view)
 		}

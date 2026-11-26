@@ -228,6 +228,9 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		// The team lead takes the question: say so, and what to do meanwhile.
 		if red, ok := top["redirected"].(map[string]any); ok {
 			out["state"] = "sent_to_lead"
+			if chief, _ := red["chief"].(bool); chief {
+				out["state"] = "sent_to_chief"
+			}
 			if id, _ := red["item_id"].(string); id != "" {
 				out["item_id"] = id
 			}

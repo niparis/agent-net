@@ -46,25 +46,37 @@ func overrideAsks(g *testGateway) []protocol.InboxItem {
 	items, _ := g.gw.Store().ListInbox()
 	var out []protocol.InboxItem
 	for _, it := range items {
-		if it.Status == "open" && strings.Contains(it.Text, "Confirm, or let the picker choose.") {
+		if it.Status == "open" && strings.HasPrefix(it.SourceRef, protocol.StartOverrideRefPrefix) {
 			out = append(out, it)
 		}
 	}
 	return out
 }
 
-func waitOverrideAsk(t *testing.T, g *testGateway) protocol.InboxItem {
+// heldBefore stands for a start this daemon held before decision 0196. Only
+// such a start is still answered; a new one is refused.
+func heldBefore(t *testing.T, w *workerNode, caller string) string {
 	t.Helper()
-	var ask protocol.InboxItem
-	eventually(t, "the override ask is on the Desk", func() bool {
-		asks := overrideAsks(g)
-		if len(asks) == 0 {
-			return false
-		}
-		ask = asks[0]
-		return true
-	})
-	return ask
+	id := protocol.NewID("a")
+	req := overrideRequest()
+	req.Reason = ""
+	w.d.heldMu.Lock()
+	if w.d.heldStarts == nil {
+		w.d.heldStarts = map[string]*heldStart{}
+	}
+	h := &heldStart{id: id, caller: caller, req: req}
+	w.d.heldStarts[id] = h
+	w.d.heldMu.Unlock()
+	// An earlier daemon saved it in daemon.db, so a restart still holds it.
+	if err := w.d.st.addHeldStart(h, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// answerHeld delivers the owner's answer to a held start, as the gateway does.
+func answerHeld(w *workerNode, caller, id, answer string) {
+	w.d.onStartDecision(protocol.StartDecision{Ref: protocol.StartOverrideRefPrefix + id, Session: caller, Answer: answer})
 }
 
 // noticeFor waits for the worker notice of an accepted start and returns it.
@@ -88,47 +100,51 @@ func overrideRequest() protocol.WorkerStartRequest {
 		Reason: "an independent look from another model", Isolation: protocol.IsolationNone}
 }
 
-// An agent that sets a selection field without owner words is held: one ask on
-// the Desk, the caller told at once, no worker. Confirm starts it with the
-// fields, and the caller gets the notice.
-func TestOverrideHeldThenConfirmedStartsWithTheFields(t *testing.T) {
+// An agent that sets a selection field without owner words is refused with
+// one line (decision 0196): no ask, no held start, no worker.
+func TestOverrideWithoutOwnerWordsIsRefused(t *testing.T) {
 	g, w, pi, piID := overrideNode(t)
-	res := startFrom(t, pi, overrideRequest())
-	if res.Status != "accepted" || res.StartID == "" || res.SessionID != "" || res.SelectionPath != protocol.SelectionHeld {
-		t.Fatalf("a start with a model and no owner words: %+v", res)
-	}
-	ask := waitOverrideAsk(t, g)
-	for _, want := range []string{"wants harness=opencode model=fake/m2", "for 'Do the work'", "an independent look from another model"} {
-		if !strings.Contains(ask.Text, want) {
-			t.Fatalf("ask text %q lacks %q", ask.Text, want)
+	w.d.rememberOwnerPrompt(piID, "fix the login page")
+	for _, words := range []string{"", "use a codex worker for this"} {
+		req := overrideRequest()
+		req.OwnerWords = words
+		_, err := pi.call("worker_start", req)
+		if err == nil || err.Error() != protocol.OverrideNeedsOwner {
+			t.Fatalf("owner words %q: %v", words, err)
 		}
 	}
-	if len(overrideAsks(g)) != 1 {
-		t.Fatalf("want one ask, got %d", len(overrideAsks(g)))
+	if n := len(overrideAsks(g)); n != 0 {
+		t.Fatalf("%d Desk asks for a refused start", n)
 	}
+	w.d.heldMu.Lock()
+	held := len(w.d.heldStarts)
+	w.d.heldMu.Unlock()
 	w.d.wmu.Lock()
 	running := len(w.d.workers)
 	w.d.wmu.Unlock()
-	if running != 0 {
-		t.Fatalf("%d workers started before the owner answered", running)
+	if held != 0 || running != 0 {
+		t.Fatalf("held %d, running %d after a refusal", held, running)
 	}
-	w.cli.mustCall("inbox_answer", map[string]string{"id": ask.ID, "answer": protocol.StartAnswerConfirm})
-	body := noticeFor(t, w, piID, res.StartID)
+}
+
+// A start held before decision 0196 is still answered: confirm starts it with
+// the fields, and the caller gets the notice.
+func TestOverrideHeldBeforeThenConfirmedStartsWithTheFields(t *testing.T) {
+	_, w, _, piID := overrideNode(t)
+	id := heldBefore(t, w, piID)
+	answerHeld(w, piID, id, protocol.StartAnswerConfirm)
+	body := noticeFor(t, w, piID, id)
 	if !strings.Contains(body, "status: started") || !strings.Contains(body, "fake/m2") {
 		t.Fatalf("confirmed start did not use the model:\n%s", body)
-	}
-	if len(overrideAsks(g)) != 0 {
-		t.Fatal("the ask is still open after the answer")
 	}
 }
 
 // "Let the picker choose" starts the worker without the fields.
-func TestOverrideHeldThenPickerStartsWithoutTheFields(t *testing.T) {
-	g, w, pi, piID := overrideNode(t)
-	res := startFrom(t, pi, overrideRequest())
-	ask := waitOverrideAsk(t, g)
-	w.cli.mustCall("inbox_answer", map[string]string{"id": ask.ID, "answer": protocol.StartAnswerPicker})
-	body := noticeFor(t, w, piID, res.StartID)
+func TestOverrideHeldBeforeThenPickerStartsWithoutTheFields(t *testing.T) {
+	_, w, _, piID := overrideNode(t)
+	id := heldBefore(t, w, piID)
+	answerHeld(w, piID, id, protocol.StartAnswerPicker)
+	body := noticeFor(t, w, piID, id)
 	if !strings.Contains(body, "status: started") || !strings.Contains(body, "fake/m1") || strings.Contains(body, "fake/m2") {
 		t.Fatalf("the picker's own choice was not used:\n%s", body)
 	}
@@ -136,12 +152,11 @@ func TestOverrideHeldThenPickerStartsWithoutTheFields(t *testing.T) {
 
 // Any other answer, and a dismissal, end the start with a notice. Nothing is
 // started and nothing is dropped silently.
-func TestOverrideDismissedIsNotStartedWithANotice(t *testing.T) {
-	g, w, pi, piID := overrideNode(t)
-	res := startFrom(t, pi, overrideRequest())
-	ask := waitOverrideAsk(t, g)
-	w.cli.mustCall("inbox_answer", map[string]string{"id": ask.ID, "answer": "dismiss"})
-	body := noticeFor(t, w, piID, res.StartID)
+func TestOverrideHeldBeforeDismissedIsNotStartedWithANotice(t *testing.T) {
+	_, w, _, piID := overrideNode(t)
+	id := heldBefore(t, w, piID)
+	answerHeld(w, piID, id, "dismiss")
+	body := noticeFor(t, w, piID, id)
 	if !strings.Contains(body, "status: not started") || !strings.Contains(body, "was not approved") {
 		t.Fatalf("notice:\n%s", body)
 	}
@@ -164,30 +179,6 @@ func TestOverrideOwnerWordsMatchGoesAheadAtOnce(t *testing.T) {
 	}
 	if n := len(overrideAsks(g)); n != 0 {
 		t.Fatalf("%d asks for a start the owner asked for", n)
-	}
-}
-
-// A quote that is not in his prompts does not count: with a reason the start
-// is held, without one the caller is told to give it.
-func TestOverrideOwnerWordsMismatchIsHeld(t *testing.T) {
-	g, w, pi, piID := overrideNode(t)
-	w.d.rememberOwnerPrompt(piID, "fix the login page")
-	req := overrideRequest()
-	req.OwnerWords = "use a codex worker for this"
-	res := startFrom(t, pi, req)
-	if res.Status != "accepted" || res.SelectionPath != protocol.SelectionHeld {
-		t.Fatalf("a quote the owner never typed: %+v", res)
-	}
-	waitOverrideAsk(t, g)
-
-	req.Reason = ""
-	req.Title = "Second"
-	res = startFrom(t, pi, req)
-	if res.Status != "accepted" || res.SelectionPath != protocol.SelectionHeld {
-		t.Fatalf("no match and no reason: %+v", res)
-	}
-	if n := len(overrideAsks(g)); n != 2 {
-		t.Fatalf("want one ask per held start, got %d", n)
 	}
 }
 
@@ -311,14 +302,13 @@ func TestAcceptedStartNoticeCarriesBriefFlagsAndModelNote(t *testing.T) {
 // A daemon that no longer holds the start tells the caller when the answer
 // arrives, instead of dropping it.
 func TestOverrideLostHeldStartTellsTheCaller(t *testing.T) {
-	g, w, pi, piID := overrideNode(t)
-	res := startFrom(t, pi, overrideRequest())
-	waitOverrideAsk(t, g)
+	_, w, _, piID := overrideNode(t)
+	id := heldBefore(t, w, piID)
 	w.d.heldMu.Lock()
-	delete(w.d.heldStarts, res.StartID)
+	delete(w.d.heldStarts, id)
 	w.d.heldMu.Unlock()
-	w.d.onStartDecision(protocol.StartDecision{Ref: protocol.StartOverrideRefPrefix + res.StartID, Session: piID, Answer: protocol.StartAnswerConfirm})
-	body := noticeFor(t, w, piID, res.StartID)
+	answerHeld(w, piID, id, protocol.StartAnswerConfirm)
+	body := noticeFor(t, w, piID, id)
 	if !strings.Contains(body, "status: not started") || !strings.Contains(body, "lost the held start") {
 		t.Fatalf("notice:\n%s", body)
 	}
@@ -343,20 +333,19 @@ func TestOwnerWordsCanNameAPausedModel(t *testing.T) {
 	}
 }
 
-// A held start is kept in daemon.db: an answer that arrives after a daemon
-// restart starts the worker, and the owner is not asked a second time.
+// A start held before decision 0196 is kept in daemon.db: an answer that
+// arrives after a daemon restart starts the worker with its fields.
 func TestOverrideHeldStartSurvivesADaemonRestart(t *testing.T) {
-	g, w, pi, piID := overrideNode(t)
-	res := startFrom(t, pi, overrideRequest())
-	ask := waitOverrideAsk(t, g)
+	g, w, _, piID := overrideNode(t)
+	id := heldBefore(t, w, piID)
 	w.restart()
 	w.cli = cliClient(t, w.node)
 	// The caller's session comes back with the new daemon, as a live one would.
 	if _, id := helloPi(t, w.node, "caller", t.TempDir(), true); id != piID {
 		t.Fatalf("the caller came back as %s, not %s", id, piID)
 	}
-	w.cli.mustCall("inbox_answer", map[string]string{"id": ask.ID, "answer": protocol.StartAnswerConfirm})
-	body := noticeFor(t, w, piID, res.StartID)
+	answerHeld(w, piID, id, protocol.StartAnswerConfirm)
+	body := noticeFor(t, w, piID, id)
 	if !strings.Contains(body, "status: started") || !strings.Contains(body, "fake/m2") {
 		t.Fatalf("the start held before the restart did not start with its fields:\n%s", body)
 	}

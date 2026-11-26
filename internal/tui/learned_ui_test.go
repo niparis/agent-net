@@ -150,6 +150,6 @@ func TestGoldenLearnedMapAndInbox(t *testing.T) {
 	golden(t, "map_learned_120x34", m.testView())
 	n := newModel(100, 30)
 	n.snap.Learned = []protocol.LearnedSuggestion{{ID: 7, Node: "ops", Field: "refuses", Phrase: "deploys", Kind: "add", NewValue: "deploys", Evidence: []protocol.LearnedEvidence{{Excerpt: "ops refuses deploys"}}, Status: "pending", Severity: "major"}}
-	n = keys(n, "6")
+	n = openDesk(n)
 	golden(t, "inbox_learned_100x30", n.testView())
 }

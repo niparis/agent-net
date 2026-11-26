@@ -1,4 +1,4 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk │ 25 sessions, 18 online · 6 busy · workers 4 running, 0 queued
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings │ 25 sessions, 18 online · 6 busy · workers 4 running, 0 queued
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  ● host-01 (here) v0.0.0 cpu ? mem ? disk ?                                                                          │
 │  ● host-02        v0.0.0 cpu ? mem ? disk ?                                                                          │

@@ -28,7 +28,7 @@ func TestGraphCardReturnKeepsSelection(t *testing.T) {
 }
 func TestNetworkTabUsesDigitOnly(t *testing.T) {
 	m := mapModel(120, 34, fakeGraph())
-	if len(tabNames) != 6 || !strings.Contains(ansi.Strip(m.titleLine(120)), "2 Graph 3 Quotas") || !strings.Contains(ansi.Strip(m.titleLine(120)), "6 Desk") {
+	if len(tabNames) != 5 || !strings.Contains(ansi.Strip(m.titleLine(120)), "2 Graph 3 Quotas") || strings.Contains(ansi.Strip(m.titleLine(120)), "Desk") {
 		t.Fatalf("wrong tabs: %v", tabNames)
 	}
 	for _, key := range []string{"2"} {

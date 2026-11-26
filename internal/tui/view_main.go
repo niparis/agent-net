@@ -343,6 +343,10 @@ const (
 	inboxTab    = 5 // the Desk (decision 0090); the Delivery tab is part of it
 )
 
+// deskShown is false since decision 0196: the Desk tab, its key and its counts
+// are hidden. The screen code stays until a later cleanup removes it.
+const deskShown = false
+
 func (m Model) composeView(w, room int) []string {
 	title := "Message"
 	if m.composeName != "" {
@@ -382,12 +386,8 @@ func (m Model) sessionViewName() string {
 func (m Model) titleLine(w int) string {
 
 	var tabs []string
-	count := m.waitingCount()
 	names := tabNames
 	fullWidth := ansi.StringWidth(strings.Join(tabNames, " ")) + len("1 2 3 4 5 6 7 ")
-	if count > 0 {
-		fullWidth += len(fmt.Sprintf(" (%d)", count))
-	}
 	onlineCount := 0
 	for _, a := range m.snap.Agents {
 		if !protocol.IsOwner(a.Harness) && a.Online {
@@ -413,14 +413,9 @@ func (m Model) titleLine(w int) string {
 
 	for i, name := range names {
 		label := fmt.Sprintf("%d %s", i+1, name)
-		if i == inboxTab && count > 0 {
-			label += fmt.Sprintf(" (%d)", count)
-		}
 		switch {
 		case i == m.tab:
 			tabs = append(tabs, sActiveTab.Render(label))
-		case i == inboxTab && count > 0:
-			tabs = append(tabs, sNeeds.Render(label))
 		default:
 			tabs = append(tabs, sDim.Render(label))
 		}
@@ -469,10 +464,6 @@ func (m Model) titleLine(w int) string {
 	if c := m.usage.counts; c != nil {
 		mid = fmt.Sprintf("%d online · %d busy", c.Online, busy)
 		compact = mid
-	}
-	if n := m.waitingCount(); n > 0 {
-		mid += " · " + sNeeds.Render(fmt.Sprintf("%d needs you", n))
-		compact += " · " + sNeeds.Render(fmt.Sprintf("%d needs you", n))
 	}
 	if q := m.queuedWorkers(); workers > 0 || q > 0 {
 		mid += fmt.Sprintf(" · workers %d running, %d queued", workers, q)
@@ -1262,9 +1253,7 @@ func (m Model) sessionsTable(w, n int) []string {
 		if r.header {
 			line := m.groupLine(r.g, w)
 			if indicator != "" && !viewShown {
-				if !r.g.first || m.waitingCount() == 0 {
-					line = ansi.Cut(line, 0, max(0, w-ansi.StringWidth(indicator)-1)) + sDim.Render(" "+indicator)
-				}
+				line = ansi.Cut(line, 0, max(0, w-ansi.StringWidth(indicator)-1)) + sDim.Render(" "+indicator)
 				viewShown = true
 			}
 			out = append(out, line)
@@ -1282,19 +1271,15 @@ func (m Model) sessionsTable(w, n int) []string {
 	return out
 }
 
-// groupLine names an urgency band and puts the Inbox count on the first one.
+// groupLine names an urgency band.
 func (m Model) groupLine(g group, w int) string {
 	label := fmt.Sprintf("%s (%d)", g.host, g.total)
 	if g.tree {
 		label = fmt.Sprintf("%d sessions · %d busy", g.total, g.busy)
 	}
 	head := " " + sBold.Render(label)
-	right := ""
-	if g.first && m.waitingCount() > 0 {
-		right = fmt.Sprintf("Desk: %d to decide", m.waitingCount())
-	}
-	room := max(0, w-ansi.StringWidth(head)-ansi.StringWidth(right))
-	return clip(head+sDim.Render(strings.Repeat(" ", room))+sAccent.Render(right), w)
+	room := max(0, w-ansi.StringWidth(head))
+	return clip(head+sDim.Render(strings.Repeat(" ", room)), w)
 }
 
 // repoLimitsLine shows network-wide counts once, above the session table.

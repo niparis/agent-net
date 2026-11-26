@@ -281,7 +281,7 @@ func (s *Store) blockedMemberNotice(p protocol.ProfileAnnounce) (*protocol.Messa
 		return nil, tx.Commit()
 	}
 	body := fmt.Sprintf("[agent-net] %s: %s (%s) is blocked or waiting, since %s.\n\nIts announce: %s\n\n"+
-		"It asked nothing, so nothing else reached you. Message it if you can unblock it, or ask the owner with agent_owner_ask.",
+		"It asked nothing, so nothing else reached you. Message it if you can unblock it. If only the owner can, send a request to the chief of staff with agent_message_send, saying what you need, why only the owner can decide, and your recommendation.",
 		scope, who, p.SessionID, clockText(started, now), line)
 	id := protocol.NewID("m")
 	m := protocol.Message{ID: id, ConversationID: protocol.NewID("c"),

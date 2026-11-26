@@ -70,7 +70,7 @@ var execRestart = syscall.Exec
 
 func restoreRestart(m *Model, version string) string {
 	attempted := os.Getenv(restartVersionEnv)
-	if n, err := strconv.Atoi(os.Getenv(restartTabEnv)); err == nil && n >= 0 && n <= inboxTab {
+	if n, err := strconv.Atoi(os.Getenv(restartTabEnv)); err == nil && n >= 0 && n < len(tabNames) {
 		m.tab = n
 	}
 	if v := os.Getenv(restartVersionEnv); v != "" {

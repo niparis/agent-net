@@ -13,7 +13,6 @@ Use these names for screens, panels, keys and tools. The owner may say "the Fric
 | `3` | Quotas | `quotas tab` |
 | `4` | Messages | `messages tab` |
 | `5` | Settings | `settings tab` |
-| `6` | Desk | `inbox tab` |
 
 The key `c` opens the CTO session from any tab. The CTO is not a tab.
 
@@ -223,82 +222,11 @@ Key `5` opens it.
 | n | rename the selected app |
 | r | rotate the selected online machine token |
 
-## 6. Desk
-
-Key `6` opens it.
-
-### Panels
-
-- `Needs you`
-- `Change`, in On a change's evidence
-- `Evidence`, in On a change's evidence (or Steps and evidence for a change with steps)
-- `Inbox detail`, in Desk
-- `Log`, in Desk (Log · SOURCE for one log source)
-
-### Keys
-
-#### Desk
-
-| keys | what it does |
-|---|---|
-| pgup/pgdn | page |
-| home/g, end | first, last row |
-| a | approve the request |
-| r | refuse the request |
-| s | keep the refusal |
-| O | grant the request |
-| A | approve all changes |
-| t | type answer |
-| x | dismiss the ask |
-| i | on a sign-in ask: open that CLI's login in a herdr pane on the machine that needs it |
-| w | in the details of a question or approval: answer the marked option and keep it as a standing rule. Type the action and its area: merge in repo:<name>, team:<name> or network. A rule applies only on an exact match; undo it on its Log line. |
-| d | on an open ask: talk it over. A chief item opens the chief's session and wakes it; a CTO item opens your CTO chat. |
-| u | undo |
-| n | on an ask that reached you, open or answered: the chief did not need to send it. Type one optional line of why; the chief reads it in its next batch. |
-| l | open or close the Log section: what the CTO and the gateway did, with the undo of a CTO change |
-
-#### On a held request row
-
-| keys | what it does |
-|---|---|
-| a | approve the request |
-| r | refuse the request |
-
-#### On a learned suggestion row
-
-| keys | what it does |
-|---|---|
-| a | accept it |
-| r | reject it |
-
-#### On an outcome row
-
-| keys | what it does |
-|---|---|
-| s | keep the refusal |
-| O | grant the request |
-
-#### On a CTO proposal row
-
-| keys | what it does |
-|---|---|
-| enter | open the proposal detail |
-| a | approve the change |
-| r | decline the change |
-| A | approve all the changes |
-
-#### On a change's evidence
-
-| keys | what it does |
-|---|---|
-| pgup | page up |
-| pgdown | page down |
-
 ## Global keys
 
 | keys | what it does |
 |---|---|
-| 1-6 | switch tabs: Sessions, Graph, Quotas, Messages, Settings, Desk |
+| 1-5 | switch tabs: Sessions, Graph, Quotas, Messages, Settings |
 | enter | go into the selected thing |
 | arrows, j/k | move |
 | esc | back; first clears a filter you typed |
@@ -483,7 +411,7 @@ Tools are listed by the roles that may call them. Actions are the values of the 
 | `agent_nudge_pauses_find` | agent | Chief of staff only: list nudge pauses, including when and why ended pauses ended. | - |
 | `agent_nudge_resume` | agent | Chief of staff only: end a nudge pause by id. Logs an owner-undoable resume. No backlog is sent. | - |
 | `agent_nudge_stats` | agent | Read the automatic nudge firing log: fires, followed and useful rate per kind by agent and by team, over the last 24 hours by default. A nudge counts as followed when a tool call, announce, step evidence or a message that is not an ack comes from its recipient within 30 minutes. | - |
-| `agent_owner_ask` | agent, cto | Ask the owner a question, an approval or an idea, with your recommendation and up to four answers. It goes to the chief of staff, who brings decisions to the owner; carry on, do not wait for the answer. A new ask adds to your pending ones; replaces retires one. | - |
+| `agent_owner_ask` | agent, cto | Prefer agent_message_send: when you need the owner, send a request to the chief of staff, saying what you need, why only the owner can decide, and your recommendation. This tool sends your question, recommendation and up to four answers to the chief as such a request; the reply comes as a message. Carry on, do not wait for the answer. | - |
 | `agent_owner_brief` | agent | Chief of staff only: deliver one informational daily brief to the owner's Desk. Give body (at most 15 lines) and the owner-local date as YYYY-MM-DD; the same date replaces it. Call with no body for the schedule. A brief never asks for an answer. | - |
 | `agent_owner_judgment_record` | agent, cto | Chief of staff and CTO only: record, in the same turn, a decision the owner made in your chat. area and action make it a standing rule. | - |
 | `agent_owner_judgments_find` | agent, worker, cto | Search the owner's past decisions, standing orders, rules, answers and corrections by text, id or ids. Ranked for a query, else newest first. marks: true returns only the Desk marks with their asks; offset pages. Agent notes show only with kind feedback, fact or reference (see agent_notes_find to read yours). | - |
@@ -502,7 +430,7 @@ Tools are listed by the roles that may call them. Actions are the values of the 
 | `agent_worker_profiles_find` | agent, cto | List worker profiles: harness, model, effort and the machines that can run them, or read one profile by id or name. Read before choosing a worker model. | - |
 | `agent_worker_rate` | agent | Rate a worker 1 to 5, or report a defect found later with severity 1 to 4. brief_defect charges rework from a bad brief to the briefing session, not the worker. Only the session that started it may rate it. | - |
 | `agent_worker_start` | agent | Start or continue a worker with a structured brief; the picker chooses the harness, model, effort and machine. Only if the owner or work mode asks. problem and done required; evidence, hypothesis, scope optional; task: extra notes. brief_flags never block a start; "overlap ok: reason" silences the overlap flag. For a feature with several tasks, list the tasks first, then group them into sessions: tasks that share code and design continue one session (continue) instead of starting new workers. | - |
-| `agent_worker_start_override` | agent | The exceptional worker route: start a worker with a harness, model, provider, effort, family or machine you choose. Full freedom, but always needs your owner's approval: a matching owner_words quote lets it start at once; otherwise one ask goes on his Desk and the start waits. Prefer agent_worker_start so the picker chooses. problem and done required; evidence, hypothesis, scope optional; task: extra notes. | - |
+| `agent_worker_start_override` | agent | The exceptional worker route: start a worker with a harness, model, provider, effort, family or machine you choose. Full freedom, but always needs your owner's approval: a matching owner_words quote lets it start at once; otherwise the start is refused: ask the chief of staff, then start again with owner_words quoting what he typed. Prefer agent_worker_start so the picker chooses. problem and done required; evidence, hypothesis, scope optional; task: extra notes. | - |
 | `agent_worker_stop` | agent | Stop a worker you started, or cancel a queued start. Its worktree is kept. | - |
 | `agent_workers_find` | agent, worker, cto | Find workers with their caller, model, difficulty, state and run time. detail full adds the start time, the struggle counts and the recorded cause of the latest run's failure or rework. Defaults to running workers you started. | - |
 | `answer` | cto | Apply the owner's answer to a held request, an inbox item or a contested outcome (let stand or overrule). | `a`, `A`, `r`, `R`, `let_stand`, `overrule` |

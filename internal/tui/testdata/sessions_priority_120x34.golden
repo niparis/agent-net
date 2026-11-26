@@ -1,10 +1,10 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk (1) │ 26 online · 1 busy · 1 needs you · 1 worker
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings │ 26 sessions, 26 online · 1 busy · workers 1 running, 0 queued
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  ● build cpu ? mem ? disk ?                                                                                          │
 │  ● desk  cpu ? mem ? disk ?                                                                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME               MACHINE      PROJECT   MODEL                    STATUS      CPU   RAM TASK
- 26 sessions · 1 busy                                                                                  Desk: 1 to decide
+ 26 sessions · 1 busy                                                                                  view: active  (v)
 ▸ video              desk         -         claude · opus            needs you     ?     ? Combine the recorded demos
   ★ pinned           desk         -         claude · gpt-6.1-sol     idle          ?     ? Review the next change
   ★ demo lead        desk         demo      claude · gpt-6.1-sol     idle          ?     ? Review the next change

@@ -69,21 +69,3 @@ func TestWorkerBriefRepoResolvesCommitIDs(t *testing.T) {
 		t.Fatalf("commits = %v, want %v", got.Commits, want)
 	}
 }
-
-// A held start gets no judge and no gateway, so its flags are the text checks
-// alone. They reach the caller in the start result and in the note it reads.
-func TestOverrideHeldStartReturnsBriefFlags(t *testing.T) {
-	_, _, pi, _ := overrideNode(t)
-	req := overrideRequest()
-	req.Task = "Read /home/nicolas/PLAN.md first."
-	res := startFrom(t, pi, req)
-	if res.Status != "accepted" || res.SelectionPath != protocol.SelectionHeld {
-		t.Fatalf("a held start: %+v", res)
-	}
-	if !reflect.DeepEqual(flagChecks(res.BriefFlags), []string{protocol.BriefCheckPath}) {
-		t.Fatalf("held flags = %+v", res.BriefFlags)
-	}
-	if !strings.Contains(res.Note, "brief flags") || !strings.Contains(res.Note, "outside") {
-		t.Fatalf("held note does not name the flag: %q", res.Note)
-	}
-}
