@@ -97,7 +97,12 @@ func (s *Store) setSessionAgent(node string, p protocol.SessionAgentSetRequest) 
 	if _, err = tx.Exec(`UPDATE sessions SET agent_id=? WHERE id=?`, p.Agent, p.SessionID); err != nil {
 		return res, err
 	}
-	if err = s.pinFirstLeadSessionQ(tx, p.SessionID); err != nil {
+	// The new Agent and the one the session left both keep I1: a lead that
+	// changes Agent hands its lead to a live session of the old one.
+	if err = s.keepLeadTx(tx, p.Agent); err != nil {
+		return res, err
+	}
+	if err = s.keepLeadTx(tx, old); err != nil {
 		return res, err
 	}
 	if err = checkActiveSessionIdentity(tx, p.SessionID); err != nil {

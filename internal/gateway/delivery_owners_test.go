@@ -456,7 +456,7 @@ func agentSessionOn(t *testing.T, r *deliveryRig, node, agent string) string {
 	if _, err = r.s.db.Exec(`UPDATE sessions SET agent_id=? WHERE id=?`, agent, sid); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.s.pinFirstLeadSessionQ(r.s.db, sid); err != nil {
+	if err := r.s.keepLeadOfSessionTx(r.s.db, sid); err != nil {
 		t.Fatal(err)
 	}
 	return sid

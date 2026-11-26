@@ -89,16 +89,19 @@ func (s *Store) RebindResumedSession(nodeID, sessionID, nativeID string) (bool, 
 // carries the name and the lead role.
 // The new record takes the old name only when no other live session holds it.
 func (s *Store) ReplaceSession(nodeID, sessionID, newSessionID string) (bool, error) {
-	return s.replaceSession(nodeID, sessionID, newSessionID, false)
+	moved, _, err := s.replaceSession(nodeID, sessionID, newSessionID, false)
+	return moved, err
 }
 
-func (s *Store) replaceSession(nodeID, sessionID, newSessionID string, allowBusy bool) (bool, error) {
+// replaceSession moves the work, or says in why what kept it from moving
+// (I3: a replace never answers moved:false without a reason).
+func (s *Store) replaceSession(nodeID, sessionID, newSessionID string, allowBusy bool) (moved bool, why string, err error) {
 	if !validSessionID(sessionID) || !validSessionID(newSessionID) || sessionID == newSessionID {
-		return false, reject("a replaced session needs its ID and a different new session")
+		return false, "", reject("a replaced session needs its ID and a different new session")
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	defer tx.Rollback()
 	var node, name, replaced, status string
@@ -106,13 +109,13 @@ func (s *Store) replaceSession(nodeID, sessionID, newSessionID string, allowBusy
 	err = tx.QueryRow(`SELECT node_id,name,replaced_by,online,status FROM sessions WHERE id=?`, sessionID).
 		Scan(&node, &name, &replaced, &online, &status)
 	if errors.Is(err, sql.ErrNoRows) {
-		return false, reject("unknown session %s", sessionID)
+		return false, "", reject("unknown session %s", sessionID)
 	}
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	if node != nodeID {
-		return false, reject("only the machine that holds a session can replace it")
+		return false, "", reject("only the machine that holds a session can replace it")
 	}
 	// The restart may be reported twice (a poll and a retry), and the owner may
 	// run the repair again for a pair that an earlier version moved only in
@@ -128,7 +131,7 @@ func (s *Store) replaceSession(nodeID, sessionID, newSessionID string, allowBusy
 		// holds both a stale and a current association keeps the current one.
 		repaired, err := moveStepNotices(tx, sessionID, newSessionID)
 		if err != nil {
-			return false, err
+			return false, "", err
 		}
 		for _, query := range []string{
 			"UPDATE delivery_changes SET caller=? WHERE caller=? AND state IN ('open','merged')",
@@ -136,35 +139,41 @@ func (s *Store) replaceSession(nodeID, sessionID, newSessionID string, allowBusy
 		} {
 			res, err := tx.Exec(query, newSessionID, sessionID)
 			if err != nil {
-				return false, err
+				return false, "", err
 			}
 			n, err := res.RowsAffected()
 			if err != nil {
-				return false, err
+				return false, "", err
 			}
 			repaired += n
 		}
 		if err := tx.Commit(); err != nil {
-			return false, err
+			return false, "", err
 		}
-		return repaired > 0, nil
+		if repaired == 0 {
+			return false, fmt.Sprintf("session %s was already replaced by %s; nothing was left to move", sessionID, newSessionID), nil
+		}
+		return true, "", nil
 	}
-	if replaced != "" || (!allowBusy && online != 0 && status == "busy") {
-		return false, nil
+	if replaced != "" {
+		return false, fmt.Sprintf("session %s was already replaced by %s", sessionID, replaced), nil
 	}
-	var newNode, newName, newWorker string
-	err = tx.QueryRow(`SELECT node_id,name,worker FROM sessions WHERE id=?`, newSessionID).Scan(&newNode, &newName, &newWorker)
+	if !allowBusy && online != 0 && status == "busy" {
+		return false, fmt.Sprintf("session %s is still working", sessionID), nil
+	}
+	var newNode, newName, newWorker, newAgentBefore string
+	err = tx.QueryRow(`SELECT node_id,name,worker,COALESCE(agent_id,'') FROM sessions WHERE id=?`, newSessionID).Scan(&newNode, &newName, &newWorker, &newAgentBefore)
 	if errors.Is(err, sql.ErrNoRows) {
-		return false, reject("unknown session %s", newSessionID)
+		return false, "", reject("unknown session %s", newSessionID)
 	}
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	if newNode != nodeID {
-		return false, reject("the replacing session is on another machine")
+		return false, "", reject("the replacing session is on another machine")
 	}
 	if newWorker != "" {
-		return false, reject("a worker does not take over a restarted session")
+		return false, "", reject("a worker does not take over a restarted session")
 	}
 	// The conversation takes the old name only when no other live session shows
 	// it. Two live sessions must not share a name, or the holder's next report
@@ -174,7 +183,7 @@ func (s *Store) replaceSession(nodeID, sessionID, newSessionID string, allowBusy
 	if name != newName {
 		held, err := liveNameHeld(tx, name, sessionID, newSessionID)
 		if err != nil {
-			return false, err
+			return false, "", err
 		}
 		if held {
 			name = newName
@@ -207,36 +216,44 @@ func (s *Store) replaceSession(nodeID, sessionID, newSessionID string, allowBusy
 	}
 	for _, step := range steps {
 		if _, err := tx.Exec(step.query, step.args...); err != nil {
-			return false, err
+			return false, "", err
 		}
 	}
 	// The step notices move before the inbox, so an old duplicate notice is
 	// expired here and not handed to the new session as well.
 	if _, err := moveStepNotices(tx, sessionID, newSessionID); err != nil {
-		return false, err
+		return false, "", err
 	}
 	// The inbox: anything the session has not been given yet follows the new
 	// record.
 	if _, err := tx.Exec(`UPDATE messages SET recipient=? WHERE recipient=? AND state IN `+undeliveredStates, newSessionID, sessionID); err != nil {
-		return false, err
+		return false, "", err
 	}
 	// The name belongs to the conversation, so both records carry it: the live
 	// one shows it, and the replaced one says it was replaced by it.
 	if _, err := tx.Exec(`UPDATE sessions SET function=o.function, announced_project=o.announced_project, capabilities=o.capabilities, task=o.task, expertise=o.expertise, announced_at=?
 		FROM sessions o WHERE o.id=? AND sessions.id=? AND sessions.announced_at=0`, now, sessionID, newSessionID); err != nil {
-		return false, err
+		return false, "", err
 	}
 	if _, err := tx.Exec(`UPDATE sessions SET name=?, name_fixed=CASE WHEN ?=? THEN (SELECT name_fixed FROM sessions WHERE id=?) ELSE name_fixed END WHERE id=?`, name, name, oldName, sessionID, newSessionID); err != nil {
-		return false, err
+		return false, "", err
 	}
 	if _, err := tx.Exec(`UPDATE sessions SET name='', name_fixed=0, replaced_by=?, online=0, status='replaced', waiting='' WHERE id=?`,
 		newSessionID, sessionID); err != nil {
-		return false, err
+		return false, "", err
+	}
+	// The lead moved with the conversation above; the Agent the new session
+	// held before keeps I1 too.
+	if err := s.keepLeadOfSessionTx(tx, newSessionID); err != nil {
+		return false, "", err
+	}
+	if err := s.keepLeadTx(tx, newAgentBefore); err != nil {
+		return false, "", err
 	}
 	if err := tx.Commit(); err != nil {
-		return false, err
+		return false, "", err
 	}
-	return true, nil
+	return true, "", nil
 }
 
 // undeliveredStates are the message states a session has not been given yet.
@@ -293,11 +310,11 @@ func (s *Store) ReplaceSessionForOwner(oldSessionID, newSessionID, actor string)
 	if !ok {
 		return res, reject("unknown session %s", oldSessionID)
 	}
-	moved, err := s.replaceSession(old.NodeID, oldSessionID, newSessionID, true)
+	moved, why, err := s.replaceSession(old.NodeID, oldSessionID, newSessionID, true)
 	if err != nil {
 		return res, err
 	}
-	res.Moved, res.OldName = moved, old.Profile.Name
+	res.Moved, res.Reason, res.OldName = moved, why, old.Profile.Name
 	if !moved {
 		return res, nil
 	}

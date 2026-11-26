@@ -51,11 +51,11 @@ func standDownTx(q interface {
 
 // clearStoodDownTx ends the mark of a session the owner or the CTO gives a
 // role again: his newest word is that it works.
-func clearStoodDownTx(tx *sql.Tx, session string) error {
+func clearStoodDownTx(q execer, session string) error {
 	if session == "" {
 		return nil
 	}
-	_, err := tx.Exec(`UPDATE sessions SET stood_down='', stood_down_for='' WHERE id=? AND stood_down<>''`, session)
+	_, err := q.Exec(`UPDATE sessions SET stood_down='', stood_down_for='' WHERE id=? AND stood_down<>''`, session)
 	return err
 }
 
@@ -73,7 +73,19 @@ func (s *Store) MarkSessionStopped(nodeID, session string) error {
 	if node != nodeID {
 		return reject("only the machine that holds a session can mark it stopped")
 	}
-	return standDownTx(s.db, session, stoodDownStopped, "")
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = standDownTx(tx, session, stoodDownStopped, ""); err != nil {
+		return err
+	}
+	// A stopped lead hands the lead to a live session of its Agent (I1).
+	if err = s.keepLeadOfSessionTx(tx, session); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // WakeBlocked tells whether nothing may wake the session: it is archived, or

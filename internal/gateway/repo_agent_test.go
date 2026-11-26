@@ -101,6 +101,12 @@ func TestRepoAgentMigrationPreservesGraphAndDelivery(t *testing.T) {
 	if err = r.s.Close(); err != nil {
 		t.Fatal(err)
 	}
+	// The opens stop before decision 0193's migration: it moves the rig's
+	// extra sessions of the lead Agent to a member Agent on purpose
+	// (TestTreeInvariantsMigration), which is not what this test checks.
+	full := migrations
+	migrations = full[:migrationVersion(t, treeInvariantsMarker)-1]
+	defer func() { migrations = full }()
 	for i := 0; i < 2; i++ {
 		s, err := OpenStore(path)
 		if err != nil {

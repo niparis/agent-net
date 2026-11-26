@@ -30,6 +30,10 @@ func orgReadRig(t *testing.T) (*Store, map[string]string) {
 		sql  string
 		args []any
 	}{
+		// The second sessions are started for their project's Agent; left to
+		// the default they would join as members (decision 0193 I2).
+		{`UPDATE sessions SET agent_id=repo_id WHERE id IN (?,?)`, []any{ids["lead-2"], ids["member-2"]}},
+		{`DELETE FROM agents WHERE id IN ('lead-agent','member-agent')`, nil},
 		{`UPDATE agents SET lead_session=? WHERE id='lead'`, []any{ids["lead"]}},
 		{`UPDATE agents SET lead_session=? WHERE id='member'`, []any{ids["member"]}},
 		{`UPDATE agents SET lead_session=NULL WHERE id='chief'`, nil},

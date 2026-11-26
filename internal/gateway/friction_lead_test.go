@@ -12,6 +12,11 @@ import (
 func TestFrictionMarkByLeadSessionOnly(t *testing.T) {
 	s := teamStore(t)
 	leads, _ := graphSessions(t, s, "demo", "other")
+	// teamStore already made a demo session; this second one joins as a member
+	// (decision 0193 I2), so it is named for the demo Agent before the pin.
+	if _, err := s.db.Exec(`UPDATE sessions SET agent_id='demo' WHERE id=?`, leads["demo"]); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.db.Exec(`UPDATE agents SET lead_session=? WHERE id=?`, leads["demo"], "demo"); err != nil {
 		t.Fatal(err)
 	}

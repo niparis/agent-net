@@ -63,6 +63,15 @@ func deliveryRigOn(t *testing.T, s *Store) *deliveryRig {
 	r.deepseek = session(r.b, protocol.SessionInfo{Harness: "opencode", NativeID: "deepseek", Model: "deepseek/deepseek-v4-pro", Repo: demo})
 	r.reviewer = session(r.b, protocol.SessionInfo{Harness: "codex", NativeID: "reviewer", Model: "gpt-5.5", Repo: demo,
 		Worker: &protocol.WorkerInfo{ID: "w_2", Owner: r.caller}})
+	// The rig's other two sessions are started for the demo Agent itself, so
+	// a caller step can reach any live session of the caller's Agent (0148).
+	// Without a named Agent they would join as members (decision 0193 I2).
+	if _, err := s.db.Exec(`UPDATE sessions SET agent_id='demo' WHERE id IN (?,?)`, r.sonnet, r.deepseek); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM agents WHERE id='demo-agent'`); err != nil {
+		t.Fatal(err)
+	}
 	return r
 }
 

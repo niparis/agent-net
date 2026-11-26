@@ -777,6 +777,8 @@ type SessionReplaceResult struct {
 	NewSession string `json:"new_session"`
 	OldName    string `json:"old_name,omitempty"`
 	NewName    string `json:"new_name,omitempty"`
+	// Reason says why nothing moved when Moved is false.
+	Reason string `json:"reason,omitempty"`
 }
 
 // NodeRenameRequest is OpNodeRename. An empty Name clears the display name.

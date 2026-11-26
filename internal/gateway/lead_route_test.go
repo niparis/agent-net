@@ -370,6 +370,11 @@ func twoRepoLeadSessions(t *testing.T, p *wakeProbe) (older, newer string) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// Both are sessions of the Repo lead: the second is started for the
+		// lead Agent, not left to join as a member (decision 0193 I2).
+		if _, err := p.s.db.Exec(`UPDATE sessions SET agent_id=(SELECT lead_agent_id FROM repos WHERE id='demo') WHERE id=?`, id); err != nil {
+			t.Fatal(err)
+		}
 		if err := p.s.SetSessionOffline(p.node, id); err != nil {
 			t.Fatal(err)
 		}

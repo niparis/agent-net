@@ -74,6 +74,10 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 			if q.Ref.Kind == "agent" && agent != q.Ref.ID {
 				return reject("session is not of this Agent")
 			}
+			// A member session named as the Repo's lead takes the lead Agent.
+			if agent, err = s.memberTakesLeadAgentTx(tx, q.Ref, q.Lead.ID, agent); err != nil {
+				return err
+			}
 			lead, session = agent, q.Lead.ID
 		case "agent":
 			lead = q.Lead.ID
@@ -146,15 +150,19 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 	if err != nil {
 		return err
 	}
+	// A named session is the CTO's override and leads as named. A lead named
+	// as an Agent keeps I1 like any other write: its live session leads.
 	if session != nil {
 		if err = s.setAgentLeadSessionTx(tx, lead.(string), session.(string)); err != nil {
 			return err
 		}
+	} else if lead != nil {
+		if err = s.keepLeadTx(tx, lead.(string)); err != nil {
+			return err
+		}
 	}
-	// A lead named as an Agent gets its one session pinned. With several
-	// sessions none is chosen here: the CTO is asked once which one leads.
-	if q.Lead != nil && q.Lead.Kind == "agent" {
-		if err = s.pinOrAskLeadSessionTx(tx, lead.(string)); err != nil {
+	if q.Ref.Kind == "agent" {
+		if err = s.keepLeadTx(tx, q.Ref.ID); err != nil {
 			return err
 		}
 	}
@@ -172,7 +180,7 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 		if err = tx.QueryRow(`SELECT COALESCE(lead_session,'') FROM agents WHERE id=?`, old.String).Scan(&before); err != nil && err != sql.ErrNoRows {
 			return err
 		}
-		if err = clearLostLeadSessionTx(tx, old.String); err != nil {
+		if err = s.keepLeadTx(tx, old.String); err != nil {
 			return err
 		}
 		// A lead session that lost its place is stood down for the new
@@ -206,4 +214,31 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 		return nil
 	}
 	return tx.Commit()
+}
+
+// memberTakesLeadAgentTx moves a session of a Repo's member Agent, named as
+// the Repo's lead, to the Repo's lead Agent, and returns the Agent the session
+// holds after it. The project keeps one lead Agent (I1, I2): the member Agent
+// never becomes a second lead. A session of any other Agent keeps it, and
+// that Agent becomes the lead as before.
+func (s *Store) memberTakesLeadAgentTx(tx *sql.Tx, ref protocol.GraphRef, session, agent string) (string, error) {
+	if ref.Kind != "repo" || (agent != ref.ID+"-agent" && agent != ref.ID) {
+		return agent, nil
+	}
+	var place sql.NullString
+	err := tx.QueryRow(`SELECT `+repoTopAgentExpr+` FROM repos WHERE id=? AND archived=0`, ref.ID).Scan(&place)
+	if err == sql.ErrNoRows || place.String == "" || place.String == agent {
+		return agent, nil
+	}
+	if err != nil {
+		return agent, err
+	}
+	leads, err := agentLeadsAnythingQ(tx, agent)
+	if err != nil || leads {
+		return agent, err
+	}
+	if _, err = tx.Exec(`UPDATE sessions SET agent_id=? WHERE id=?`, place.String, session); err != nil {
+		return agent, err
+	}
+	return place.String, nil
 }

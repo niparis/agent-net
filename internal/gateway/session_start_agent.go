@@ -73,14 +73,21 @@ func (s *Store) ReserveSessionAgent(node string, p protocol.SessionAgentReservat
 		return reject("Agent choice for %s failed; session uses the Repo-owner default", p.Ref)
 	}
 	var allowed, registered bool
-	var existing string
+	var existing, role string
 	if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM agents WHERE id=? AND tombstone=0),
 		EXISTS(SELECT 1 FROM sessions WHERE node_id=? AND harness=? AND native_id=?),
-		(SELECT COALESCE(json_group_array(id),'[]') FROM sessions WHERE node_id=?)`, p.AgentID, node, p.Harness, p.NativeID, node).Scan(&allowed, &registered, &existing); err != nil {
+		(SELECT COALESCE(json_group_array(id),'[]') FROM sessions WHERE node_id=?),
+		COALESCE((SELECT role FROM agents WHERE id=?),'')`, p.AgentID, node, p.Harness, p.NativeID, node, p.AgentID).Scan(&allowed, &registered, &existing, &role); err != nil {
 		return err
 	}
 	if !allowed {
 		return reject("unknown or tombstoned Agent %q", p.AgentID)
+	}
+	// I5 (decision 0193): the one start refused is one that breaks the tree.
+	// The CTO Agent has one session, the CTO, and a bot Agent belongs to its
+	// connected app, so a started session cannot hold either.
+	if role == "cto" || role == "bot" {
+		return reject("refused by rule I1 of decision 0193: a started session cannot hold the %s Agent %q", role, p.AgentID)
 	}
 	a := &agentStart{node: node, harness: p.Harness, native: p.NativeID, agent: p.AgentID, ref: p.Ref, cwd: p.Cwd, owner: p.Owner, project: p.Project,
 		expires: s.now().Add(sessionAgentStartTimeout)}
@@ -219,10 +226,12 @@ func (s *Store) bindStartedAgent(tx *sql.Tx, node string, p protocol.SessionAgen
 		return reject("start must bind its newly created session")
 	} else if _, err = tx.Exec(`UPDATE sessions SET agent_id=?, started_by=? WHERE id=?`, p.AgentID, protocol.StartedByAgentNet, id); err != nil {
 		return err
+	} else if err = s.keepLeadTx(tx, p.AgentID); err != nil {
+		return err
 	}
 	// Release unrelated new sessions to their ordinary default agent. The
 	// selected session already has its explicit Agent, or a native reservation.
-	if err = assignDefaultSessionAgentsQ(tx, `node_id=? AND harness=?`, node, p.Harness); err != nil {
+	if err = s.assignDefaultSessionAgentsQ(tx, `node_id=? AND harness=?`, node, p.Harness); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -257,7 +266,7 @@ func (s *Store) ExpireSessionAgentStarts() ([]string, error) {
 // held get their Repo-owner default, and a Desk item keeps the reason.
 func (s *Store) failAgentStart(tx *sql.Tx, a *agentStart, reason string) error {
 	held, args := s.heldSQL("sessions")
-	if err := assignDefaultSessionAgentsQ(tx, `node_id=? AND harness=? AND NOT `+held, append([]any{a.node, a.harness}, args...)...); err != nil {
+	if err := s.assignDefaultSessionAgentsQ(tx, `node_id=? AND harness=? AND NOT `+held, append([]any{a.node, a.harness}, args...)...); err != nil {
 		return err
 	}
 	var id string
@@ -312,7 +321,7 @@ func (s *Store) noteLateAgentNative(tx *sql.Tx, node string, p protocol.SessionA
 	}
 	held, args := s.heldSQL("sessions")
 	if err == nil {
-		err = assignDefaultSessionAgentsQ(tx, `id=? AND NOT `+held, append([]any{id}, args...)...)
+		err = s.assignDefaultSessionAgentsQ(tx, `id=? AND NOT `+held, append([]any{id}, args...)...)
 	}
 	if err != nil {
 		return err
