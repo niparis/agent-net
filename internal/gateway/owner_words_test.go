@@ -64,3 +64,25 @@ func TestOwnerWordsDropInjectedTurns(t *testing.T) {
 		t.Fatalf("an injected turn counted as the owner's words: %+v", got)
 	}
 }
+
+// A machine sends its words again when it reconnects. A prompt kept again is
+// kept once, so a refill never pushes his other prompts out of the store.
+func TestOwnerWordsKeptAgainAreKeptOnce(t *testing.T) {
+	s, c := newTestStore(t)
+	a, _ := twoSessions(t, s)
+	typed := c.now().Add(-time.Hour)
+	if err := s.KeepOwnerWords(a, "i want to try running it on m2max", typed); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < maxOwnerWordsPerSession; i++ {
+		if err := s.KeepOwnerWords(a, "fix the login page", typed.Add(time.Duration(i)*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, _ := s.FindOwnerWords("try running it on m2max"); !got.Found {
+		t.Fatal("words kept again pushed an older prompt out")
+	}
+	if got, _ := s.FindOwnerWords("fix the login page"); got.At != typed.Add(time.Duration(maxOwnerWordsPerSession-1)*time.Second).UnixNano() {
+		t.Fatalf("the prompt kept again does not have its latest time: %+v", got)
+	}
+}

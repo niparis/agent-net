@@ -21,8 +21,8 @@ import (
 // of a turn (the Stop hook). Nothing polls. Each transcript is read from the
 // byte where the last sweep stopped, so a sweep costs what was appended since.
 
-// queuedFirstRead caps the first read of a transcript. Older text is outside
-// the ownerPromptWindow in practice.
+// queuedFirstRead is the step back of the first read of a transcript
+// (transcriptWindowStart).
 const queuedFirstRead = 2 << 20
 
 // queuedAttachment is the part of a transcript line that tells what a queued
@@ -49,6 +49,7 @@ var queuedMark = []byte(`"queued_command"`)
 type queuedLine struct {
 	text  string
 	owner bool
+	at    time.Time
 }
 
 // queuedOwnerText returns what the owner typed when the line is a queued
@@ -128,6 +129,12 @@ func (d *Daemon) claudeNativeOf(session string) string {
 // a command with no origin is returned for presence alone. primed says whether
 // an earlier sweep had already read this transcript (the first read finds old
 // text, which is not news).
+//
+// The first read of a transcript in this daemon's life also keeps the prompts
+// the owner typed in the last ownerPromptWindow (rebuildTypedPrompts). The
+// prompt hook keeps them while the daemon runs, but they live in memory, so
+// after a restart this read is where his words come from again. Nothing is
+// written to disk: the transcript is Claude Code's own file.
 func (d *Daemon) sweepQueuedOwnerPrompts(session string) (fresh []queuedLine, primed bool) {
 	native := d.claudeNativeOf(session)
 	if native == "" || strings.ContainsAny(native, `/\`) {
@@ -139,36 +146,121 @@ func (d *Daemon) sweepQueuedOwnerPrompts(session string) (fresh []queuedLine, pr
 		return nil, false
 	}
 	path := matches[0]
+	now := d.ownerPromptNow()
+	var typed []typedTurn
 	d.ownerPrompts.sweepMu.Lock()
-	defer d.ownerPrompts.sweepMu.Unlock()
 	off, primed := d.ownerPrompts.scanned[path]
-	buf, end, err := readTranscriptFrom(path, off, primed)
+	buf, end, err := readTranscriptFrom(path, off, primed, now.Add(-ownerPromptWindow))
 	if err != nil {
+		d.ownerPrompts.sweepMu.Unlock()
 		return nil, primed
 	}
 	if d.ownerPrompts.scanned == nil {
 		d.ownerPrompts.scanned = map[string]int64{}
 	}
 	d.ownerPrompts.scanned[path] = end
-	now := d.ownerPromptNow()
 	for _, line := range bytes.Split(buf, []byte{'\n'}) {
-		text, at, owner, ok := queuedOwnerText(line)
-		if !ok || now.Sub(at) > ownerPromptWindow {
+		if text, at, owner, ok := queuedOwnerText(line); ok && now.Sub(at) <= ownerPromptWindow {
+			fresh = append(fresh, queuedLine{text: text, owner: owner, at: at})
 			continue
 		}
-		if owner {
-			d.rememberOwnerPromptAt(session, text, at)
+		if !primed {
+			if t, ok := typedUserTurn(line); ok && now.Sub(t.at) <= ownerPromptWindow {
+				typed = append(typed, t)
+			}
 		}
-		fresh = append(fresh, queuedLine{text: text, owner: owner})
+	}
+	// The first sweep of a transcript waits for the next one, so the
+	// transcript is read once. What is kept is kept outside the lock: the
+	// first message check may write daemon.db.
+	d.ownerPrompts.sweepMu.Unlock()
+	d.rebuildTypedPrompts(session, native, typed)
+	for _, q := range fresh {
+		if q.owner {
+			d.rememberOwnerPromptAt(session, q.text, q.at)
+		}
 	}
 	return fresh, primed
 }
 
+// sweepAllOwnerPrompts sweeps the transcript of every Claude session of this
+// machine, the CTO's too. A quote looked up in any session needs them all.
+func (d *Daemon) sweepAllOwnerPrompts() {
+	var ids []string
+	d.mu.Lock()
+	for _, ls := range d.sessions {
+		if ls.info.Harness == "claude" && ls.sessionID != "" {
+			ids = append(ids, ls.sessionID)
+		}
+	}
+	d.mu.Unlock()
+	if cto := d.ctoSessionID(); cto != "" {
+		ids = append(ids, cto)
+	}
+	for _, id := range ids {
+		d.sweepQueuedOwnerPrompts(id)
+	}
+}
+
+// typedTurn is a user entry of a transcript that the owner typed.
+type typedTurn struct {
+	promptID, text string
+	at             time.Time
+}
+
+// claudeUserTurn is the part of a transcript user entry that tells who sent
+// it, when, and what it says.
+type claudeUserTurn struct {
+	claudeTurn
+	Timestamp string `json:"timestamp"`
+	Message   struct {
+		Content json.RawMessage `json:"content"`
+	} `json:"message"`
+}
+
+var humanMark = []byte(`"human"`)
+
+// typedUserTurn reads a user entry the owner typed: Claude Code marks it with
+// turnOrigin "human" and no isMeta, as the prompt hook's check reads it. A
+// turn Claude Code injects and a slash command it wraps give nothing.
+func typedUserTurn(line []byte) (typedTurn, bool) {
+	if !bytes.Contains(line, humanMark) {
+		return typedTurn{}, false
+	}
+	var e claudeUserTurn
+	if json.Unmarshal(line, &e) != nil || e.Type != "user" || e.PromptID == "" || classifyClaudeTurn(e.claudeTurn) != senderOwner {
+		return typedTurn{}, false
+	}
+	text := strings.TrimSpace(queuedPromptText(e.Message.Content))
+	if text == "" || !isHumanClaudePrompt(text) || strings.HasPrefix(text, "<command-") || strings.HasPrefix(text, "<local-command") {
+		return typedTurn{}, false
+	}
+	at, err := time.Parse(time.RFC3339Nano, e.Timestamp)
+	if err != nil {
+		return typedTurn{}, false
+	}
+	return typedTurn{promptID: e.PromptID, text: text, at: at}, true
+}
+
+// rebuildTypedPrompts keeps the prompts the owner typed, read back from the
+// transcript. A first message that agent-net or an agent passed on the
+// command line is recorded as typed too; its mark in daemon.db says it is not
+// his, as it does for the prompt hook.
+func (d *Daemon) rebuildTypedPrompts(session, native string, typed []typedTurn) {
+	for _, t := range typed {
+		if first, wait := d.firstMessageMatch(native, t.promptID, firstMessageHash(t.text)); first || len(wait) > 0 {
+			continue
+		}
+		d.rememberOwnerPromptAt(session, t.text, t.at)
+	}
+}
+
 // readTranscriptFrom returns the whole lines of a transcript after offset and
 // the offset to continue from. A line still being written stays for the next
-// read. An unread transcript starts at its end minus queuedFirstRead, and one
-// that shrank starts again from its first byte.
-func readTranscriptFrom(path string, offset int64, primed bool) ([]byte, int64, error) {
+// read. An unread transcript starts far enough back to hold the entries
+// written since since (transcriptWindowStart), and one that shrank starts
+// again from its first byte.
+func readTranscriptFrom(path string, offset int64, primed bool, since time.Time) ([]byte, int64, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, 0, err
@@ -181,7 +273,7 @@ func readTranscriptFrom(path string, offset int64, primed bool) ([]byte, int64, 
 	size := fi.Size()
 	switch {
 	case !primed:
-		offset = max(size-queuedFirstRead, 0)
+		offset = transcriptWindowStart(f, size, since)
 	case offset > size:
 		offset = 0
 	}
@@ -191,6 +283,46 @@ func readTranscriptFrom(path string, offset int64, primed bool) ([]byte, int64, 
 	}
 	cut := bytes.LastIndexByte(buf, '\n') + 1
 	return buf[:cut], offset + int64(cut), nil
+}
+
+// transcriptProbe is how much is read at each step back to find a timestamp.
+const transcriptProbe = 64 << 10
+
+// transcriptWindowStart is where the first read of a transcript starts. It
+// steps back queuedFirstRead at a time and reads one probe at each step, until
+// an entry there is older than since. A busy session writes megabytes an hour,
+// so a fixed tail can miss a prompt typed within the window.
+func transcriptWindowStart(f *os.File, size int64, since time.Time) int64 {
+	for off := size - queuedFirstRead; off > 0; off -= queuedFirstRead {
+		if at, ok := transcriptTimeAt(f, off); ok && at.Before(since) {
+			return off
+		}
+	}
+	return 0
+}
+
+// transcriptTimeAt returns the timestamp of the first whole entry after off
+// that has one.
+func transcriptTimeAt(f *os.File, off int64) (time.Time, bool) {
+	buf := make([]byte, transcriptProbe)
+	n, err := f.ReadAt(buf, off)
+	if err != nil && err != io.EOF {
+		return time.Time{}, false
+	}
+	lines := bytes.Split(buf[:n], []byte{'\n'})
+	// The first line may start mid entry, and the last may be cut off.
+	for i := 1; i < len(lines)-1; i++ {
+		var e struct {
+			Timestamp string `json:"timestamp"`
+		}
+		if json.Unmarshal(lines[i], &e) != nil || e.Timestamp == "" {
+			continue
+		}
+		if at, err := time.Parse(time.RFC3339Nano, e.Timestamp); err == nil {
+			return at, true
+		}
+	}
+	return time.Time{}, false
 }
 
 // ownerTypedWhileBusy is the Stop hook's part: text the owner queued while the

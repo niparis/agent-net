@@ -18,9 +18,9 @@ const (
 // ownerWords keeps what the owner typed in each session for
 // protocol.OwnerWordsWindow, so a worker start's owner_words quote counts
 // whichever session or machine he typed it in. It lives in memory only: his
-// words are never written to gateway.db, so no backup copies them, and a
-// restart forgets them, like the machine does. mu is a leaf lock, never held
-// across a call.
+// words are never written to gateway.db, so no backup copies them. A restart
+// forgets them, and each machine sends its own again when it reconnects. mu
+// is a leaf lock, never held across a call.
 type ownerWords struct {
 	mu sync.Mutex
 	by map[string][]ownerWordsEntry
@@ -75,7 +75,16 @@ func (s *Store) KeepOwnerWords(session, text string, at time.Time) error {
 	if o.by == nil {
 		o.by = map[string][]ownerWordsEntry{}
 	}
-	list := append(o.by[session], ownerWordsEntry{at: at.UnixNano(), text: text})
+	list := o.by[session]
+	// A machine sends its words again when it reconnects: a prompt is kept
+	// once, at its latest time.
+	for i, e := range list {
+		if e.text == text {
+			list[i].at = max(e.at, at.UnixNano())
+			return nil
+		}
+	}
+	list = append(list, ownerWordsEntry{at: at.UnixNano(), text: text})
 	if len(list) > maxOwnerWordsPerSession {
 		list = append([]ownerWordsEntry(nil), list[len(list)-maxOwnerWordsPerSession:]...)
 	}

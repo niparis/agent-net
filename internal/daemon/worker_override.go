@@ -27,8 +27,9 @@ const (
 
 // ownerPrompts keeps what the owner typed in each session, for the last few
 // hours. It lives in memory only and is never logged: the daemon learns the
-// text from the Claude Code prompt hook (policyCall). A harness without that
-// hook has none, so its starts go through the Desk ask.
+// text from the Claude Code prompt hook (policyCall), and after a restart from
+// the Claude transcripts (sweepQueuedOwnerPrompts). A harness without those has
+// none, so its starts go through the Desk ask.
 type ownerPrompts struct {
 	mu sync.Mutex
 	by map[string][]ownerPrompt
@@ -118,11 +119,47 @@ func (d *Daemon) keepOwnerPrompt(session, text string, at, now time.Time) {
 			d.ownerPrompts.by[id] = fresh
 		}
 	}
-	list := append(d.ownerPrompts.by[session], ownerPrompt{at: at, text: text})
+	list := d.ownerPrompts.by[session]
+	// The hook and a transcript read can both keep one prompt: it is kept
+	// once, at its latest time.
+	for i, p := range list {
+		if p.text == text {
+			if at.After(p.at) {
+				list[i].at = at
+			}
+			return
+		}
+	}
+	list = append(list, ownerPrompt{at: at, text: text})
 	if len(list) > maxOwnerPromptsPerSession {
 		list = list[len(list)-maxOwnerPromptsPerSession:]
 	}
 	d.ownerPrompts.by[session] = list
+}
+
+// refillOwnerWords sends every prompt this machine keeps to the gateway. A
+// gateway keeps the words in memory only, so after it restarts it has them
+// again from the machines that reconnect. The transcripts are read first, so a
+// daemon that restarted too sends what the owner typed before.
+func (d *Daemon) refillOwnerWords(ctx context.Context) {
+	d.sweepAllOwnerPrompts()
+	now := d.ownerPromptNow()
+	var keep []protocol.OwnerWordsKeep
+	d.ownerPrompts.mu.Lock()
+	for session, list := range d.ownerPrompts.by {
+		for _, p := range freshPrompts(list, now) {
+			keep = append(keep, protocol.OwnerWordsKeep{Session: session, Text: p.text, At: p.at.UnixNano()})
+		}
+	}
+	d.ownerPrompts.mu.Unlock()
+	for _, k := range keep {
+		if _, err := d.call(ctx, protocol.FrameOwnerWordsKeep, k); err != nil {
+			if !strings.Contains(err.Error(), "unknown frame type") {
+				d.Logf("owner words: not sent to the gateway again: %v", err)
+			}
+			return
+		}
+	}
 }
 
 func freshPrompts(list []ownerPrompt, now time.Time) []ownerPrompt {
@@ -163,6 +200,8 @@ func (d *Daemon) localOwnerWords(quote, session string) (ownerWordsSource, bool)
 		// Text typed while a Claude turn runs fires no prompt hook: read it
 		// from the transcript now, when it is needed.
 		d.sweepQueuedOwnerPrompts(session)
+	} else {
+		d.sweepAllOwnerPrompts()
 	}
 	now := d.ownerPromptNow()
 	d.ownerPrompts.mu.Lock()
@@ -270,11 +309,17 @@ func (d *Daemon) holdStart(ctx context.Context, caller string, p protocol.Worker
 		}
 		return nil, err
 	}
+	h := &heldStart{id: id, caller: caller, req: p, callerProject: callerProject, callerPath: callerPath, cto: cto}
+	if d.st != nil {
+		if err := d.st.addHeldStart(h, time.Now()); err != nil {
+			d.Logf("worker.held start=%s: not saved, a daemon restart loses it: %v", id, err)
+		}
+	}
 	d.heldMu.Lock()
 	if d.heldStarts == nil {
 		d.heldStarts = map[string]*heldStart{}
 	}
-	d.heldStarts[id] = &heldStart{id: id, caller: caller, req: p, callerProject: callerProject, callerPath: callerPath, cto: cto}
+	d.heldStarts[id] = h
 	d.heldMu.Unlock()
 	d.Logf("worker.held start=%s project=%s fields=%q", id, p.Project, strings.Join(fieldNames(p.SelectionFields()), ","))
 	// A held start never reaches the gateway, so only the text checks run.
@@ -305,10 +350,15 @@ func (d *Daemon) onStartDecision(p protocol.StartDecision) {
 	h := d.heldStarts[id]
 	delete(d.heldStarts, id)
 	d.heldMu.Unlock()
+	if h != nil && d.st != nil {
+		if err := d.st.forgetHeldStart(id); err != nil {
+			d.Logf("worker.held start=%s: could not drop the saved start: %v", id, err)
+		}
+	}
 	if h == nil {
 		d.Logf("worker.held start=%s: answered %q but this daemon no longer holds it", id, p.Answer)
 		d.startReport(d.ctoCtx, protocol.WorkerStartReport{ID: id, Owner: p.Session, Status: protocol.StartReportNotStarted,
-			Note: "the machine lost the held start (it restarted while the owner's answer was pending): start it again"})
+			Note: "the machine lost the held start: start it again"})
 		return
 	}
 	req, lead := h.req, ""

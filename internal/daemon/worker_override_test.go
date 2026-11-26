@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -335,6 +337,80 @@ func TestOwnerWordsCanNameAPausedModel(t *testing.T) {
 	res := startFrom(t, pi, req)
 	if res.SelectionPath != protocol.SelectionOwnerWords || res.SessionID == "" || res.Model != "fake/m2" {
 		t.Fatalf("the owner's choice of a paused model: %+v", res)
+	}
+	if n := len(overrideAsks(g)); n != 0 {
+		t.Fatalf("%d asks for a start the owner asked for", n)
+	}
+}
+
+// A held start is kept in daemon.db: an answer that arrives after a daemon
+// restart starts the worker, and the owner is not asked a second time.
+func TestOverrideHeldStartSurvivesADaemonRestart(t *testing.T) {
+	g, w, pi, piID := overrideNode(t)
+	res := startFrom(t, pi, overrideRequest())
+	ask := waitOverrideAsk(t, g)
+	w.restart()
+	w.cli = cliClient(t, w.node)
+	// The caller's session comes back with the new daemon, as a live one would.
+	if _, id := helloPi(t, w.node, "caller", t.TempDir(), true); id != piID {
+		t.Fatalf("the caller came back as %s, not %s", id, piID)
+	}
+	w.cli.mustCall("inbox_answer", map[string]string{"id": ask.ID, "answer": protocol.StartAnswerConfirm})
+	body := noticeFor(t, w, piID, res.StartID)
+	if !strings.Contains(body, "status: started") || !strings.Contains(body, "fake/m2") {
+		t.Fatalf("the start held before the restart did not start with its fields:\n%s", body)
+	}
+	if n := len(overrideAsks(g)); n != 0 {
+		t.Fatalf("%d asks still open after the answer", n)
+	}
+}
+
+// The owner types a prompt in a Claude session; then the gateway and the
+// daemon restart. An override that quotes him from another session of the
+// machine still starts at once: the daemon reads his words back from the
+// transcript.
+func TestOverrideOwnerWordsSurviveADaemonAndGatewayRestart(t *testing.T) {
+	const native, words = "1f1f1f1f-0000-4000-8000-00000000bb01", "i want to try running it on m2max"
+	root := t.TempDir()
+	projects := filepath.Join(root, "projects", "-code-uadd3")
+	if err := os.MkdirAll(projects, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fa := &fakeAdapter{harness: "claude"}
+	g, w, _, _ := overrideNodeWith(t, shortSet, func(c *Config) {
+		c.ClaudeSessionsDir = filepath.Join(root, "sessions")
+		c.Adapters = append(c.Adapters, fa)
+	})
+	lead := func() string {
+		fa.setSessions(protocol.SessionInfo{Harness: "claude", NativeID: native, Cwd: "/code/uadd3", Status: "idle"})
+		var sid string
+		eventually(t, "the Claude session is registered", func() bool {
+			sid = w.d.SessionID("claude", native)
+			return sid != ""
+		})
+		return sid
+	}
+	sid := lead()
+	transcript := writeClaudeTranscript(t, projects, native, typedAt("p-owner", words, time.Now()))
+	askPolicy(t, w.cli, protocol.PolicyRequest{Harness: "claude", NativeID: native, Prompt: words, PromptID: "p-owner", TranscriptPath: transcript})
+	eventually(t, "the hook kept the owner's words", func() bool {
+		w.d.ownerPrompts.mu.Lock()
+		defer w.d.ownerPrompts.mu.Unlock()
+		return len(w.d.ownerPrompts.by[sid]) == 1
+	})
+
+	addr, dir := g.addr, g.dir
+	g.stop()
+	w.restartWith(func() { g = startGateway(t, dir, addr) }, true)
+	w.cli = cliClient(t, w.node)
+	lead()
+	caller, _ := helloPi(t, w.node, "caller-after-restart", t.TempDir(), true)
+	req := overrideRequest()
+	req.Reason = ""
+	req.OwnerWords = "I want to try running it on M2Max"
+	res := startFrom(t, caller, req)
+	if res.SelectionPath != protocol.SelectionOwnerWords || res.SessionID == "" || res.Model != "fake/m2" {
+		t.Fatalf("a quote of words typed before the restart did not go ahead: %+v", res)
 	}
 	if n := len(overrideAsks(g)); n != 0 {
 		t.Fatalf("%d asks for a start the owner asked for", n)
