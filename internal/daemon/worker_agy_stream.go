@@ -18,18 +18,27 @@ import (
 // acknowledged handback together. The child owns both ends of its stdin FIFO
 // and appends stdout directly to a file, so neither stream depends on us.
 type agyStreamState struct {
-	StreamID   string
-	Offset     int64
-	Usage      agyUsage
-	Completed  bool
-	Failure    string
-	Handback   *protocol.WorkerHandbackRequest
-	Pending    *protocol.WorkerHandbackRequest
-	PendingKey string
+	StreamID  string
+	Offset    int64
+	Usage     agyUsage
+	Completed bool
+	Failure   string
+	Handback  *protocol.WorkerHandbackRequest
+	// HandbackFiles and PendingFiles are the checked snapshots of the files a
+	// hand-back carries. They are saved with the request, so an adopted stream
+	// sends the files the tool call checked and never re-checks a file that
+	// left the worktree after the worker handed back.
+	HandbackFiles *OutgoingFiles
+	Pending       *protocol.WorkerHandbackRequest
+	PendingFiles  *OutgoingFiles
+	PendingKey    string
 }
 
 func (c *agyConn) saveStreamLocked() error {
-	b, err := json.Marshal(agyStreamState{c.streamID, c.offset, c.usage, c.completed, c.failure, c.handback, c.pending, c.pendingKey})
+	b, err := json.Marshal(agyStreamState{
+		StreamID: c.streamID, Offset: c.offset, Usage: c.usage, Completed: c.completed, Failure: c.failure,
+		Handback: c.handback, HandbackFiles: c.handbackFiles, Pending: c.pending, PendingFiles: c.pendingFiles, PendingKey: c.pendingKey,
+	})
 	if err != nil {
 		return err
 	}
@@ -55,7 +64,8 @@ func (agyLauncher) adopt(ctx context.Context, d *Daemon, w *worker) error {
 		return err
 	}
 	c := &agyConn{d: d, w: w, in: in, initialized: make(chan string, 1),
-		streamID: s.StreamID, offset: s.Offset, usage: s.Usage, completed: s.Completed, failure: s.Failure, handback: s.Handback, pending: s.Pending, pendingKey: s.PendingKey}
+		streamID: s.StreamID, offset: s.Offset, usage: s.Usage, completed: s.Completed, failure: s.Failure,
+		handback: s.Handback, handbackFiles: s.HandbackFiles, pending: s.Pending, pendingFiles: s.PendingFiles, pendingKey: s.PendingKey}
 	d.wmu.Lock()
 	w.agy = c
 	w.turnActive = !s.Completed
@@ -108,6 +118,7 @@ func (c *agyConn) publishHandback(req protocol.WorkerHandbackRequest) {
 			if c.pendingKey == key {
 				c.pending = nil
 				c.pendingKey = ""
+				c.pendingFiles = nil
 				_ = c.saveStreamLocked()
 			}
 			c.mu.Unlock()
@@ -123,13 +134,16 @@ func (c *agyConn) publishHandback(req protocol.WorkerHandbackRequest) {
 func (c *agyConn) refused(ctx context.Context, req protocol.WorkerHandbackRequest, key string, err error) {
 	d, w := c.d, c.w
 	c.mu.Lock()
+	var refusedFiles *OutgoingFiles
 	if c.pending != nil && c.pendingKey == key {
 		c.pending, c.pendingKey = nil, ""
+		refusedFiles, c.pendingFiles = c.pendingFiles, nil
 		if err := c.saveStreamLocked(); err != nil {
 			d.Logf("worker %s: save the Antigravity stream: %v", w.id, err)
 		}
 	}
 	c.mu.Unlock()
+	refusedFiles.Remove()
 	// The refused hand-back ended the turn: let the next message in.
 	d.openCodeTurnIdle(w.sessionID)
 	d.tellCallerRefused(ctx, w, req, cleanFailure(err.Error()))

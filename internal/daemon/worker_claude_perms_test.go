@@ -89,45 +89,6 @@ func TestClaudeWorkerLaunchRestrictsWritesToItsWorktree(t *testing.T) {
 	}
 }
 
-// The other levels keep their meaning: no-network blocks the sandbox's hosts,
-// and read-only also refuses writes inside the worktree.
-func TestClaudeWorkerPermissionLevels(t *testing.T) {
-	dir := "/state/worktrees/w_1"
-	writes := []string{dir, "/tmp/agent-net-gocache", "/tmp/agent-net-gotmp"}
-
-	sandboxed := claudeWorkerSandbox(protocol.WorkersSandboxed, dir, writes)
-	fs := sandboxed["filesystem"].(map[string]any)
-	if got := stringList(t, fs["allowWrite"], "allowWrite"); len(got) != len(writes) {
-		t.Errorf("sandboxed allowWrite = %v, want %v", got, writes)
-	}
-	if perms := claudeWorkerPermissions(protocol.WorkersSandboxed, dir); perms["allow"] == nil {
-		t.Error("a sandboxed worker's Bash has no host allowed")
-	}
-
-	offline := claudeWorkerPermissions(protocol.WorkersNoNetwork, dir)
-	if offline["allow"] != nil {
-		t.Errorf("a no-network worker's hosts are pre-allowed: %v", offline["allow"])
-	}
-	if fs := claudeWorkerSandbox(protocol.WorkersNoNetwork, dir, writes)["filesystem"].(map[string]any); fs["allowWrite"] == nil {
-		t.Error("a no-network worker lost its worktree writes")
-	}
-
-	readOnly := claudeWorkerPermissions(protocol.WorkersReadOnly, dir)
-	if deny := stringList(t, readOnly["deny"], "permissions.deny"); !hasString(deny, "Edit(//state/worktrees/w_1/**)") {
-		t.Errorf("a read-only worker may write its worktree with a file tool: %v", deny)
-	}
-	if readOnly["allow"] == nil {
-		t.Errorf("a read-only worker's network is on but its hosts are not pre-allowed: %v", readOnly["allow"])
-	}
-	fs = claudeWorkerSandbox(protocol.WorkersReadOnly, dir, writes)["filesystem"].(map[string]any)
-	if fs["allowWrite"] != nil {
-		t.Errorf("a read-only worker may write: %v", fs["allowWrite"])
-	}
-	if deny := stringList(t, fs["denyWrite"], "denyWrite"); !hasString(deny, dir) {
-		t.Errorf("a read-only worker may write its worktree with Bash: %v", deny)
-	}
-}
-
 // A worktree's git data lives in its repository, and a Go change may need a
 // module the machine has not downloaded: both stay writable, or git commit and
 // go mod download fail inside the sandbox. Hooks and config stay closed.

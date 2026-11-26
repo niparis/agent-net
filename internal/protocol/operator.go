@@ -509,8 +509,8 @@ type WorkerStartResult struct {
 	// Worktree and Branch are set when the worker got its own worktree.
 	Worktree string `json:"worktree,omitempty"`
 	Branch   string `json:"branch,omitempty"`
-	// Permissions is the level the worker runs with (sandboxed, no-network
-	// or read-only), set by the owner per project (decision 0020).
+	// Permissions is the level the worker runs with (sandboxed), set by the
+	// owner per project (decision 0020).
 	Permissions string `json:"permissions,omitempty"`
 	// OSSandbox is the OS wrapper the worker runs in ("bubblewrap"), or ""
 	// (docs/design/worker-os-sandbox.md).

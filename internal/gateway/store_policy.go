@@ -58,7 +58,7 @@ func (r *permissionReader) permissions(project string) (string, error) {
 	} else {
 		project = key
 	}
-	return r.snap.String(workerSandboxKey, settings.Where{Repo: project}), nil
+	return protocol.WorkerPermissionsOrDefault(r.snap.String(workerSandboxKey, settings.Where{Repo: project})), nil
 }
 
 // agentViewInputs is the graph and the settings snapshot an agent view is

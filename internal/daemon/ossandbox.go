@@ -136,9 +136,6 @@ func osSandboxDecideOn(defaultOn bool, mode osSandboxMode, harness, level string
 		}
 		return "", fmt.Errorf("%s, and it cannot wrap %s workers; or take the project out of workers.os_sandbox", where, harness)
 	}
-	if protocol.WorkerPermissionsOrDefault(level) == protocol.WorkersNoNetwork {
-		return "", fmt.Errorf("%s, and the workers level is no-network: the OS sandbox wraps the whole %s process, so no-network would also cut its connection to its model. Use a Codex worker for no-network, %s", where, harness, off)
-	}
 	if err := ready(); err != nil {
 		return "", fmt.Errorf("%s, but it cannot run here: %v. The worker was not started without it; %s", where, err, off)
 	}
@@ -270,7 +267,7 @@ type osSandboxInput struct {
 // buildOSSandboxPolicy turns the facts of a start into the wrapper's policy.
 func buildOSSandboxPolicy(in osSandboxInput) osSandboxPolicy {
 	p := osSandboxPolicy{
-		Network:   protocol.WorkerPermissionsOrDefault(in.Level) != protocol.WorkersNoNetwork,
+		Network:   true,
 		Tmp:       filepath.Join(in.WorkerDir, "tmp"),
 		Mask:      in.Masks,
 		Socket:    in.Socket,
@@ -293,14 +290,8 @@ func buildOSSandboxPolicy(in osSandboxInput) osSandboxPolicy {
 	if in.Bin != "" && underAny(in.Bin, hidden) {
 		p.Visible = append(p.Visible, in.Bin)
 	}
-	if protocol.WorkerPermissionsOrDefault(in.Level) != protocol.WorkersReadOnly {
-		p.Writable = append(p.Writable, in.Path)
-		p.Writable = append(p.Writable, in.GitRoots...)
-	} else {
-		// The real tree, read-only: in a hidden folder the worker would
-		// otherwise get an empty, writable stand-in.
-		p.Visible = append(p.Visible, in.Path)
-	}
+	p.Writable = append(p.Writable, in.Path)
+	p.Writable = append(p.Writable, in.GitRoots...)
 	p.Writable = append(p.Writable, in.State...)
 	// The .git file or folder of the working folder stays read-only, so the
 	// worker cannot point git at a folder it controls or add a hook.

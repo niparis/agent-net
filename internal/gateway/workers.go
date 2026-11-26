@@ -745,11 +745,10 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	quotas = in.quotas
 	protected, floors := in.protected, in.floors
 	// The brief checks run after the judge's pass and before any pick or
-	// launch. Validation calls and internal read-only phrasing workers skip
-	// them: they start no caller worker.
+	// launch. Validation calls skip them: they start no caller worker.
 	// The brief lint's flags go back with the answer. They never refuse or hold.
 	var briefFlags []protocol.BriefFlag
-	if !(len(validate) > 0 && validate[0]) && !g.opts.TestNoBriefChecks && !p.RequireReadOnly {
+	if !(len(validate) > 0 && validate[0]) && !g.opts.TestNoBriefChecks {
 		var repo protocol.WorkerBriefRepo
 		g.mu.Lock()
 		briefTarget := g.conns[pick.NodeID]
@@ -791,7 +790,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		} else {
 			roster := newNotStartedRoster()
 			candidateReads := &candidateFacts{}
-			candidates, skippedProfiles, resolutionNotes, err := in.candidates(g, candidateReads, roster, node, p.RequireReadOnly)
+			candidates, skippedProfiles, resolutionNotes, err := in.candidates(g, candidateReads, roster, node)
 			if err != nil {
 				return none, err
 			}
@@ -872,7 +871,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			automaticNote += ")"
 		}
 	} else if p.Harness == "" {
-		order, notes, err := g.workerHarnessOrder(node, p.Model, p.RequireReadOnly, quotas)
+		order, notes, err := g.workerHarnessOrder(node, p.Model, quotas)
 		if err != nil {
 			return none, err
 		}
@@ -889,7 +888,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	// The pick may still be a harness that cannot run a browser: the owner or
 	// the caller named it, or no candidate could. The start goes on and the
 	// flag says the browser checks must run after the hand-back (no refusal).
-	if line, needs := protocol.BriefNeedsBrowser(p.WorkerStartRequest); needs && !p.RequireReadOnly && !protocol.HarnessRunsBrowser(p.Harness, node.OS) {
+	if line, needs := protocol.BriefNeedsBrowser(p.WorkerStartRequest); needs && !protocol.HarnessRunsBrowser(p.Harness, node.OS) {
 		briefFlags = append(briefFlags, protocol.BrowserFlag(line, p.Harness, node.OS))
 	}
 	var hi *protocol.HarnessInfo
@@ -900,9 +899,6 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	}
 	if hi == nil {
 		return none, reject("%s is not installed on %s", p.Harness, node.Hostname)
-	}
-	if p.RequireReadOnly && (!automatic || !protocol.WorkerReadOnlySupported(p.Harness) || p.Model == "" || isProtected(p.Harness, p.Model, protected)) {
-		return none, reject("no safe automatic read-only worker is available")
 	}
 	lead := workerDifficultyLead(p.Assessment, difficultyUsed)
 
@@ -1004,15 +1000,14 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		return none, reject("machine %s is offline", pick.Hostname)
 	}
 	// A queued start must retain CTO attribution on the target machine.
-	if p.FromCTO || p.RequireReadOnly {
+	if p.FromCTO {
 		capCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		data, err := target.call(capCtx, "cto.worker_capabilities", nil)
 		cancel()
 		var caps struct {
 			Attribution bool `json:"attribution"`
-			ReadOnly    bool `json:"read_only_enforced"`
 		}
-		if err != nil || json.Unmarshal(data, &caps) != nil || (p.FromCTO && !caps.Attribution) || (p.RequireReadOnly && !caps.ReadOnly) {
+		if err != nil || json.Unmarshal(data, &caps) != nil || !caps.Attribution {
 			return none, reject("machine %s cannot preserve CTO attribution; upgrade its daemon", pick.Hostname)
 		}
 	}
@@ -1020,12 +1015,6 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	perms, err := g.store.WorkerPermissions(pick.NodeID, pick.Name)
 	if err != nil {
 		return none, err
-	}
-	if p.RequireReadOnly {
-		if perms == protocol.WorkersNoNetwork {
-			return none, reject("read-only phrasing would widen this project's no-network policy")
-		}
-		perms = protocol.WorkersReadOnly
 	}
 	if len(validate) > 0 && validate[0] {
 		return protocol.WorkerStartAnswer{NodeID: pick.NodeID, Hostname: pick.Hostname, Project: pick.Name, Path: pick.Path,
@@ -1054,7 +1043,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	var raw []byte
 	for {
 		raw, err = launchWorker(cctx, target, granted, protocol.WorkerLaunch{StartRef: startRef, Project: pick.Name, Path: pick.Path,
-			Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, Owner: p.Owner, OwnerName: g.store.displayName(p.Owner), Task: p.BriefText(), Title: p.Title, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly, Automatic: automatic,
+			Harness: p.Harness, Model: p.Model, Provider: p.Provider, Effort: p.Effort, Owner: p.Owner, OwnerName: g.store.displayName(p.Owner), Task: p.BriefText(), Title: p.Title, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, Automatic: automatic,
 			DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Assessment: launchAssessment, AutoContinue: p.AutoContinue, MCPServers: p.MCPServers, Fixes: p.Fixes,
 			Why: choice.Why, NotFamily: p.NotFamily})
 		if err == nil || errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
@@ -1447,7 +1436,7 @@ func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.Harne
 // pay-per-use provider is refused with the full id to use. Each entry carries
 // the harness's resolved model, so the gate can refuse an exhausted harness
 // and take the next one. quotas is the start's owner-wide reading.
-func (g *Gateway) workerHarnessOrder(node *protocol.NodeView, model string, requireReadOnly bool, quotas *protocol.Quotas) ([]protocol.WorkerModelCandidate, map[string]string, error) {
+func (g *Gateway) workerHarnessOrder(node *protocol.NodeView, model string, quotas *protocol.Quotas) ([]protocol.WorkerModelCandidate, map[string]string, error) {
 	type candidate struct {
 		harness      string
 		model        string
@@ -1475,9 +1464,6 @@ func (g *Gateway) workerHarnessOrder(node *protocol.NodeView, model string, requ
 	for i := range node.Harnesses {
 		h := &node.Harnesses[i]
 		if !protocol.WorkerHarnessSupported(h.Name) || h.SignedIn == "no" || profileHarness != "" && profileHarness != h.Name {
-			continue
-		}
-		if requireReadOnly && !protocol.WorkerReadOnlySupported(h.Name) {
 			continue
 		}
 		resolved, note, err := g.resolveWorkerModel(node, h, h.Name, model, "", quotas)
@@ -2413,9 +2399,9 @@ func workerChoiceNote(level string, choice protocol.WorkerModelChoice, candidate
 	return note
 }
 
-// workerModelCandidates builds the roster shared by starts and read-only previews.
-func (g *Gateway) workerModelCandidates(node *protocol.NodeView, profiles []protocol.WorkerProfile, providers protocol.WorkerProviders, quotas *protocol.Quotas, harness string, readOnly bool, protected protocol.ProtectedProviders) ([]protocol.WorkerModelCandidate, []string, map[string]string, error) {
-	return g.workerModelCandidatesWith(&candidateFacts{}, nil, node, profiles, providers, quotas, harness, readOnly, protected)
+// workerModelCandidates builds the roster shared by starts and previews.
+func (g *Gateway) workerModelCandidates(node *protocol.NodeView, profiles []protocol.WorkerProfile, providers protocol.WorkerProviders, quotas *protocol.Quotas, harness string) ([]protocol.WorkerModelCandidate, []string, map[string]string, error) {
+	return g.workerModelCandidatesWith(&candidateFacts{}, nil, node, profiles, providers, quotas, harness)
 }
 
 // candidateFacts holds what the roster reads about one machine. A caller that
@@ -2488,7 +2474,7 @@ func (f *candidateFacts) authBlocked(s *Store, node, harness, model string) (boo
 // workerModelCandidatesWith is workerModelCandidates with the reads the caller
 // already has. A non-nil roster records why each profile was left out, at the
 // place this build drops it.
-func (g *Gateway) workerModelCandidatesWith(facts *candidateFacts, roster *notStartedRoster, node *protocol.NodeView, profiles []protocol.WorkerProfile, providers protocol.WorkerProviders, quotas *protocol.Quotas, harness string, readOnly bool, protected protocol.ProtectedProviders) ([]protocol.WorkerModelCandidate, []string, map[string]string, error) {
+func (g *Gateway) workerModelCandidatesWith(facts *candidateFacts, roster *notStartedRoster, node *protocol.NodeView, profiles []protocol.WorkerProfile, providers protocol.WorkerProviders, quotas *protocol.Quotas, harness string) ([]protocol.WorkerModelCandidate, []string, map[string]string, error) {
 	tracks, err := facts.trackRecords(g.store, node.NodeID)
 	if err != nil {
 		return nil, nil, nil, err
@@ -2520,9 +2506,6 @@ func (g *Gateway) workerModelCandidatesWith(facts *candidateFacts, roster *notSt
 			continue
 		case harness != "" && harness != h.Name:
 			harnessReason[h.Name] = "harness " + h.Name + " was not asked for"
-			continue
-		case readOnly && !protocol.WorkerReadOnlySupported(h.Name):
-			harnessReason[h.Name] = "harness " + h.Name + " does not support read-only work"
 			continue
 		}
 		failures, err := facts.recentFailures(g.store, node.NodeID, h.Name)
@@ -2579,12 +2562,6 @@ func (g *Gateway) workerModelCandidatesWith(facts *candidateFacts, roster *notSt
 			if !protocol.WorkerProviderAllowed(h.Name, resolved, providers.Providers, quotas) {
 				if roster != nil {
 					roster.add(profileRosterName(profile), "provider "+protocol.ProfileProvider(h.Name, resolved)+" is not in your worker providers", rosterUnavailable)
-				}
-				continue
-			}
-			if readOnly && isProtected(h.Name, resolved, protected) {
-				if roster != nil {
-					roster.add(profileRosterName(profile), "protected provider, not for read-only work", rosterUnavailable)
 				}
 				continue
 			}

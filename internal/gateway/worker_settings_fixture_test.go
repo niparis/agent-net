@@ -19,11 +19,11 @@ func TestWorkerSandboxBaseline(t *testing.T) {
 		if err := s.seedLegacyCharter("shop", "maturity", maturity, "owner"); err != nil {
 			t.Fatal(err)
 		}
-		for _, override := range []string{"", protocol.WorkersSandboxed, protocol.WorkersNoNetwork, protocol.WorkersReadOnly} {
+		for _, override := range []string{"", protocol.WorkersSandboxed} {
 			if err := s.SetNodeSetting("shop", protocol.SettingWorkerSandbox, override, "owner"); err != nil {
 				t.Fatal(err)
 			}
-			for _, policy := range []string{"", protocol.WorkersSandboxed, protocol.WorkersNoNetwork, protocol.WorkersReadOnly} {
+			for _, policy := range []string{"", protocol.WorkersSandboxed} {
 				// Project policy and graph writes now address the same repo
 				// setting; reproduce the old winner for each fixture case.
 				winner := override

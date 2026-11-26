@@ -37,7 +37,7 @@ func TestCandidatesLeaveOutModelsTheMachineDoesNotList(t *testing.T) {
 	g := &Gateway{store: s}
 	n, profiles := unavailableNode()
 	roster := newNotStartedRoster()
-	candidates, skipped, _, err := g.workerModelCandidatesWith(&candidateFacts{}, roster, n, profiles, bothProviders, nil, "", false, protocol.ProtectedProviders{})
+	candidates, skipped, _, err := g.workerModelCandidatesWith(&candidateFacts{}, roster, n, profiles, bothProviders, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestCandidatesLeaveOutAModelThatFailedAtLaunchUntilTheNextInventory(t *test
 	n, profiles := unavailableNode()
 	n.Harnesses[0].Models = append(n.Harnesses[0].Models, "alibaba-token-plan/deepseek-v4.1-flash-1017")
 	s.markModelUnavailable(n.NodeID, "opencode", "alibaba-token-plan/deepseek-v4.1-flash-1017:high", "Model unavailable: alibaba-token-plan/deepseek-v4.1-flash-1017")
-	candidates, _, _, err := g.workerModelCandidates(n, profiles, bothProviders, nil, "", false, protocol.ProtectedProviders{})
+	candidates, _, _, err := g.workerModelCandidates(n, profiles, bothProviders, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestCandidatesLeaveOutAModelThatFailedAtLaunchUntilTheNextInventory(t *test
 		t.Fatalf("candidates after the mark = %v", got)
 	}
 	s.clearModelsUnavailable(n.NodeID)
-	candidates, _, _, err = g.workerModelCandidates(n, profiles, bothProviders, nil, "", false, protocol.ProtectedProviders{})
+	candidates, _, _, err = g.workerModelCandidates(n, profiles, bothProviders, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}

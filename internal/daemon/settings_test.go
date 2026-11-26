@@ -538,7 +538,7 @@ func TestSettingsWorkerSandboxCutoverSurvivesOfflineRestart(t *testing.T) {
 	}
 	defer st.close()
 	d := &Daemon{st: st}
-	raw := []byte(`{"revision":1,"recipe":"current","worker_sandbox_cutover":true,"values":[{"key":"workers.sandbox_level","level":"repo","scope":"repo","value":"read-only"}],"maturity":{}}`)
+	raw := []byte(`{"revision":1,"recipe":"current","worker_sandbox_cutover":true,"values":[{"key":"workers.sandbox_level","level":"repo","scope":"repo","value":"sandboxed"}],"maturity":{}}`)
 	if err = d.acceptSettingsSnapshot(raw, true); err != nil {
 		t.Fatal(err)
 	}
@@ -547,7 +547,7 @@ func TestSettingsWorkerSandboxCutoverSurvivesOfflineRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	snap := restarted.SettingsSnapshot()
-	if !snap.WorkerSandboxCutover || protocol.NodeDefaultsWithSettings("early", map[string]string{protocol.SettingWorkerSandbox: "no-network"}, snap, "repo").WorkerSandbox != "read-only" {
+	if !snap.WorkerSandboxCutover || protocol.NodeDefaultsWithSettings("early", map[string]string{protocol.SettingWorkerSandbox: protocol.WorkersSandboxed}, snap, "repo").WorkerSandbox != protocol.WorkersSandboxed {
 		t.Fatalf("lost sandbox snapshot: %+v", snap)
 	}
 }

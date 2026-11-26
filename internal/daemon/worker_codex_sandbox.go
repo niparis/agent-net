@@ -5,8 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // The permissions of a Codex worker (decision 0020, which amends 0002 W6).
@@ -64,14 +62,7 @@ type codexSandbox struct {
 	network bool
 }
 
-func newCodexSandbox(level string, roots []string) codexSandbox {
-	switch protocol.WorkerPermissionsOrDefault(level) {
-	case protocol.WorkersReadOnly:
-		return codexSandbox{mode: "read-only", network: true,
-			policy: map[string]any{"type": "readOnly", "networkAccess": true}}
-	case protocol.WorkersNoNetwork:
-		return writeSandbox(roots, false)
-	}
+func newCodexSandbox(roots []string) codexSandbox {
 	return writeSandbox(roots, true)
 }
 
@@ -96,10 +87,7 @@ func (s codexSandbox) threadParams(params map[string]any) {
 // codexSandboxFor works out the sandbox of a worker, with the git folders of
 // its project.
 func (d *Daemon) codexSandboxFor(ctx context.Context, w *worker) codexSandbox {
-	d.wmu.Lock()
-	level := w.permissions
-	d.wmu.Unlock()
-	return newCodexSandbox(level, d.codexRootsFor(ctx, w))
+	return newCodexSandbox(d.codexRootsFor(ctx, w))
 }
 
 // codexHome is the Codex home folder: the configured one, then CODEX_HOME,

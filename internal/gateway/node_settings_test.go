@@ -25,7 +25,7 @@ func TestNodeSettingsOverridesAreStoredOnTheNode(t *testing.T) {
 	if res.Overrides[protocol.SettingMergeAuthority] != protocol.MergeAsk {
 		t.Fatalf("overrides: %#v", res.Overrides)
 	}
-	if res.Defaults.MergeAuthority != protocol.MergeAsk || res.Effective.WorkerSandbox != protocol.WorkersNoNetwork {
+	if res.Defaults.MergeAuthority != protocol.MergeAsk || res.Effective.WorkerSandbox != protocol.WorkersSandboxed {
 		t.Fatalf("defaults/effective: %#v / %#v", res.Defaults, res.Effective)
 	}
 	g, err := s.Graph()
@@ -109,13 +109,13 @@ func TestWorkerPermissionsUseTheNodesMaturityUntilAProjectOverride(t *testing.T)
 		t.Fatal(err)
 	}
 	got, err := s.WorkerPermissions("n_test", "shop")
-	if err != nil || got != protocol.WorkersNoNetwork {
+	if err != nil || got != protocol.WorkersSandboxed {
 		t.Fatalf("critical maturity: %q %v", got, err)
 	}
-	if err := s.SetNodeSetting("shop", protocol.SettingWorkerSandbox, protocol.WorkersReadOnly, "owner"); err != nil {
+	if err := s.SetNodeSetting("shop", protocol.SettingWorkerSandbox, protocol.WorkersSandboxed, "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := s.WorkerPermissions("n_test", "shop"); got != protocol.WorkersReadOnly {
+	if got, _ := s.WorkerPermissions("n_test", "shop"); got != protocol.WorkersSandboxed {
 		t.Fatalf("node override: %q", got)
 	}
 	// The owner's project setting still wins over both.
@@ -144,7 +144,7 @@ func TestWorkerPermissionsUseTheNodesMaturityUntilAProjectOverride(t *testing.T)
 func TestNodeSettingsValuesAreClean(t *testing.T) {
 	for _, tc := range []struct{ setting, value string }{
 		{protocol.SettingMergeAuthority, protocol.MergeAsk},
-		{protocol.SettingWorkerSandbox, protocol.WorkersNoNetwork},
+		{protocol.SettingWorkerSandbox, protocol.WorkersSandboxed},
 		{protocol.SettingTestsBeforeMerge, protocol.TestsSuite},
 		{protocol.SettingJudgeConsumers, protocol.JudgeStrict},
 		{protocol.SettingDeployRule, protocol.DeployOwner},

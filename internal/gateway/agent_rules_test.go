@@ -18,7 +18,7 @@ func TestAgentGetShowsItsNodeRules(t *testing.T) {
 	if err := s.SetNodeSetting("p", protocol.SettingDeployRule, protocol.DeployOwner, "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetNodeSetting("p", protocol.SettingWorkerSandbox, protocol.WorkersNoNetwork, "owner"); err != nil {
+	if err := s.SetNodeSetting("p", protocol.SettingWorkerSandbox, protocol.WorkersSandboxed, "owner"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SetNodeSetting("p", protocol.SettingJudgeConsumers, protocol.JudgeStrict, "owner"); err != nil {
@@ -31,7 +31,7 @@ func TestAgentGetShowsItsNodeRules(t *testing.T) {
 	}
 	for name, want := range map[string]string{
 		protocol.SettingDeployRule:       protocol.DeployOwner,
-		protocol.SettingWorkerSandbox:    protocol.WorkersNoNetwork,
+		protocol.SettingWorkerSandbox:    protocol.WorkersSandboxed,
 		protocol.SettingJudgeConsumers:   protocol.JudgeStrict,
 		protocol.SettingMergeAuthority:   protocol.MergeDelegated,
 		protocol.SettingTestsBeforeMerge: protocol.TestsSuiteNewTests,

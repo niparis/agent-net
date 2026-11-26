@@ -27,7 +27,7 @@ func publicGraphFixture() Graph {
 				Settings: map[string]string{
 					SettingTestsBeforeMerge: TestsSuiteNewTests,
 					SettingMergeAuthority:   MergeDelegated,
-					SettingWorkerSandbox:    WorkersNoNetwork,
+					SettingWorkerSandbox:    WorkersSandboxed,
 					SettingJudgeConsumers:   JudgeStrict,
 					SettingDeployRule:       DeployOwner,
 					SettingAutonomy:         AutonomyWake,
@@ -112,7 +112,7 @@ func TestPublicGraphReturnsNodeRules(t *testing.T) {
 	want := map[string]string{
 		SettingTestsBeforeMerge: TestsSuiteNewTests,
 		SettingMergeAuthority:   MergeDelegated,
-		SettingWorkerSandbox:    WorkersNoNetwork,
+		SettingWorkerSandbox:    WorkersSandboxed,
 		SettingJudgeConsumers:   JudgeStrict,
 		SettingDeployRule:       DeployOwner,
 		SettingAutonomy:         AutonomyWake,

@@ -114,31 +114,6 @@ func TestOSSandboxKeepsWritesInTheWorktree(t *testing.T) {
 	}
 }
 
-// The read-only level writes nothing in the project, and still has its
-// private /tmp.
-func TestOSSandboxReadOnlyLevel(t *testing.T) {
-	requireBwrap(t)
-	home := outsideHome(t)
-	d, w, repo := sandboxWorker(t, protocol.WorkersReadOnly)
-	env := workerEnv(os.Environ(), map[string]string{"HOME": home, "COMMON": filepath.Join(resolved(repo), ".git")})
-	if err := d.spawnWorker(w, "/bin/sh", []string{"-c", sandboxProbeScript}, env); err != nil {
-		t.Fatal(err)
-	}
-	waitExit(t, w)
-	got := probeResults(t, d, w)
-	for _, k := range []string{"home", "worktree", "gitconfig"} {
-		if !strings.Contains(got[k], "Read-only file system") {
-			t.Errorf("%s: %q, want a read-only refusal", k, got[k])
-		}
-	}
-	if got["tmp"] != "written" || got["commit"] != "failed" {
-		t.Errorf("tmp %q (want written), commit %q (want failed)", got["tmp"], got["commit"])
-	}
-	if fileExists(filepath.Join(w.path, "probe")) || fileExists(filepath.Join(home, "probe")) {
-		t.Error("the read-only harness wrote in the worktree or the home folder")
-	}
-}
-
 // groupMembers lists the processes in a process group, as the daemon sees
 // them.
 func groupMembers(pgid int) []int {

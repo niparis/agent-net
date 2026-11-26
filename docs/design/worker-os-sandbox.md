@@ -6,7 +6,7 @@ Status: built for Pi and OpenCode workers on Linux ([decision 0059](../decisions
 
 A wrapper around the whole harness process of a Pi or OpenCode worker. Every child of the harness (shell commands, language servers, MCP servers) inherits it. It is on by default on Linux and macOS. The owner turns it off per project, on the machine that runs the workers (`workers.os_sandbox_off`).
 
-It does not change how the level (`sandboxed`, `no-network`, `read-only`) is chosen or stored. The level still comes from the project policy and the settings layer. The switch only says whether the OS wrapper is used.
+It does not change the level. A worker runs at `sandboxed`, from the settings layer. The switch only says whether the OS wrapper is used.
 
 ## Which tool
 
@@ -36,7 +36,7 @@ The daemon runs `bwrap <policy> -- <harness> <args>` instead of the harness. The
 - `$XDG_RUNTIME_DIR` (for example `/run/user/1000`) is hidden by an empty tmpfs. This hides the systemd user bus (`systemd-run --user` would start a process outside the sandbox), the user's Podman socket, keyring and agent sockets.
 - The agent-net socket is bound back from its own folder (`sock` next to the public socket path), so the harness's agent-net plugin or extension works, and it follows the socket across a daemon restart.
 - `/run/docker.sock` is hidden when it exists. Membership in the docker group gives root.
-- Writable: the worker's folder (`sandboxed` and `no-network` only), and the narrow git folders a commit needs (the worktree's own git folder and the common `objects`, `refs` and `logs`), as for Codex. The worktree's `.git` file or folder is bound read-only again, so a worker cannot point git at a folder it controls or plant a hook.
+- Writable: the worker's folder, and the narrow git folders a commit needs (the worktree's own git folder and the common `objects`, `refs` and `logs`), as for Codex. The worktree's `.git` file or folder is bound read-only again, so a worker cannot point git at a folder it controls or plant a hook.
 - Writable: the harness's private state (below).
 - `--chdir` the worker folder, `--setenv TMPDIR /tmp`. `HOME` is unchanged, so the harness finds its configuration, read-only.
 
@@ -56,17 +56,9 @@ Why Pi needs a private folder: Pi takes a lock by creating a folder next to `aut
 
 Both were checked with the real harness inside this policy, with a temporary home and no model call: `opencode serve` 2.2.5 started, created a session and loaded a project; `pi --mode rpc` 1.4 started and answered `get_state`.
 
-### Levels
+### The level
 
-| Level | Worker folder and git folders | Harness private state | Network |
-|---|---|---|---|
-| `sandboxed` | writable | writable | on |
-| `no-network` | start refused (below) | | |
-| `read-only` | read-only | writable | on |
-
-`read-only` keeps the harness's private state writable. Without it the harness cannot start. This is the clarification that [worker-sandbox.md](../archive/worker-sandbox.md) asked the owner to accept: no writes to the project or to shared host files.
-
-`no-network` is refused for a wrapped harness. The wrapper covers the whole harness, so a private network namespace also cuts the harness's own connection to its model, and the worker could do nothing. A model relay is a separate design. Use a Codex worker for `no-network`, whose sandbox covers commands only, or turn the switch off for that project.
+A worker runs at `sandboxed`: its folder and the narrow git folders are writable, and so is the harness's private state. The network is on.
 
 ## When the tool is missing
 
@@ -104,7 +96,7 @@ A Pi or OpenCode worker of a project in `os_sandbox_off` says `(no OS sandbox: t
 
 A Claude worker is `claude --bg`. The session runs inside Claude Code's own background service (`claude daemon run`, which starts a `bg-pty-host` and a pre-started spare process), not as a child of agent-net. A wrapper around `claude --bg` would sandbox only the short client that hands the job over. So with the switch on, a Claude worker start, and a Claude follow-up, are refused with this reason. A Claude worker that already runs keeps running.
 
-The follow-up for Claude, built for the write boundary: Claude Code has its own sandbox for its Bash tool (bubblewrap on Linux, Seatbelt on macOS). Claude Code 2.1.322 has the settings `sandbox.enabled`, `sandbox.filesystem.allowWrite`, `sandbox.network.allowedDomains`, `sandbox.allowUnsandboxedCommands` and `sandbox.failIfUnavailable`, and `permissions.blockWritesOutsideWorkingDirectories` for its file tools. The worker's `--settings` reach a `--bg` session, so the daemon sets them per worker, as it sets the level for Codex: the file-tool rule refuses writes outside the worktree in every mode, and the Bash sandbox keeps commands to the worktree, the git folders a commit writes (not hooks or config), the Go module cache, the shared Go caches and the temp folders. `read-only` denies the worktree too; `no-network` leaves the sandbox's hosts empty. When bubblewrap or socat is missing, Claude Code warns and runs the commands unsandboxed, while the file-tool rule still applies. The OS wrapper itself still refuses a Claude start. The other way, a Claude process started directly by the daemon inside bubblewrap, loses `claude attach` and needs a terminal holder that outlives the daemon, and Claude writes `~/.claude.json` and `~/.claude/settings.json`, which can define hooks and MCP servers that run unsandboxed in the owner's sessions.
+The follow-up for Claude, built for the write boundary: Claude Code has its own sandbox for its Bash tool (bubblewrap on Linux, Seatbelt on macOS). Claude Code 2.1.322 has the settings `sandbox.enabled`, `sandbox.filesystem.allowWrite`, `sandbox.network.allowedDomains`, `sandbox.allowUnsandboxedCommands` and `sandbox.failIfUnavailable`, and `permissions.blockWritesOutsideWorkingDirectories` for its file tools. The worker's `--settings` reach a `--bg` session, so the daemon sets them per worker, as it sets the level for Codex: the file-tool rule refuses writes outside the worktree in every mode, and the Bash sandbox keeps commands to the worktree, the git folders a commit writes (not hooks or config), the Go module cache, the shared Go caches and the temp folders. When bubblewrap or socat is missing, Claude Code warns and runs the commands unsandboxed, while the file-tool rule still applies. The OS wrapper itself still refuses a Claude start. The other way, a Claude process started directly by the daemon inside bubblewrap, loses `claude attach` and needs a terminal holder that outlives the daemon, and Claude writes `~/.claude.json` and `~/.claude/settings.json`, which can define hooks and MCP servers that run unsandboxed in the owner's sessions.
 
 ## macOS
 
@@ -121,7 +113,7 @@ The daemon runs `/usr/bin/sandbox-exec -p <profile> <harness> <args>`. `seatbelt
 (allow network-outbound (remote unix-socket (path-literal "<agent-net socket>")))
 ```
 
-Paths are resolved (`/private/var`, symlinks) and quoted before they go into the profile. `no-network` is refused for the same reason as on Linux. The start checks that `sandbox-exec` exists and a probe profile runs, and refuses otherwise.
+Paths are resolved (`/private/var`, symlinks) and quoted before they go into the profile. The start checks that `sandbox-exec` exists and a probe profile runs, and refuses otherwise.
 
 Known gaps on macOS, which the Linux wrapper does not have:
 
@@ -137,7 +129,6 @@ A worker that is prompt-injected or careless, running as the owner's user:
 - cannot plant code in the owner's harness configuration (Pi extensions and auth commands, OpenCode plugins and cache) that would run later outside the sandbox;
 - cannot reach the control sockets in `/tmp` and `$XDG_RUNTIME_DIR`: the systemd user manager, the Claude Code and Codex background services, tmux, ssh-agent;
 - cannot see, signal or trace the owner's other processes;
-- with `read-only`, cannot write the project at all.
 
 ## What it does not cover
 

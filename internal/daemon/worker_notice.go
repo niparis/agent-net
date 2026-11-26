@@ -218,6 +218,31 @@ func (d *Daemon) prepareHandbackFiles(w *worker, paths []string) (*OutgoingFiles
 	return PrepareFiles(paths, rules, filepath.Join(d.cfg.StateDir, fileOutgoingFolder))
 }
 
+// checkHandback sets the default status, checks the status and the report, and
+// prepares the files once. The agy tool call runs it before it acknowledges the
+// hand-back, so a refusal reaches the worker while it can hand back again in
+// the same turn.
+func (d *Daemon) checkHandback(w *worker, req *protocol.WorkerHandbackRequest, files *OutgoingFiles) (*OutgoingFiles, error) {
+	if req.Status == "" {
+		req.Status = protocol.StatusDone
+	}
+	if !protocol.ValidHandbackStatus(req.Status) {
+		return nil, fmt.Errorf("status must be done, blocked or failed, not %q", req.Status)
+	}
+	if strings.TrimSpace(req.Report) == "" {
+		return nil, errors.New("the report is empty: say what you did, or what blocks you")
+	}
+	if files != nil {
+		return files, nil
+	}
+	files, err := d.prepareHandbackFiles(w, handbackPaths(*req))
+	if err != nil {
+		// The worker can fix the path or hand back without the file.
+		return nil, err
+	}
+	return files, nil
+}
+
 // noticeFor maps why a worker ended to the status and note of its notice. An
 // empty status means no notice (the owner is gone, or there was never a session).
 func (d *Daemon) noticeFor(reason string) (status, note string) {
@@ -249,7 +274,7 @@ func (d *Daemon) handback(ctx context.Context, sessionID string, req protocol.Wo
 		return nil, errors.New("only a worker started by agent-net can hand back a report")
 	}
 	if w.harness == "agy" {
-		files, err := d.prepareHandbackFiles(w, handbackPaths(req))
+		files, err := d.checkHandback(w, &req, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -300,27 +325,16 @@ func (d *Daemon) handbackFlow(ctx context.Context, w *worker, req protocol.Worke
 	if stopping {
 		return nil, errors.New("the worker is ending")
 	}
-	if req.Status == "" {
-		req.Status = protocol.StatusDone
-	}
-	if !protocol.ValidHandbackStatus(req.Status) {
-		return nil, fmt.Errorf("status must be done, blocked or failed, not %q", req.Status)
-	}
-	if strings.TrimSpace(req.Report) == "" {
-		return nil, errors.New("the report is empty: say what you did, or what blocks you")
-	}
 	// Friction is optional: clean a bad entry instead of refusing the whole
 	// hand-back. The caller's notice says how many entries changed.
 	var frictionDropped int
 	req.Friction, frictionDropped = protocol.SanitizeFriction(req.Friction)
 	handedOver := false
-	if files == nil {
-		var err error
-		files, err = d.prepareHandbackFiles(w, handbackPaths(req))
-		if err != nil {
-			// The worker can fix the path or hand back without the file.
-			return nil, err
-		}
+	files, err := d.checkHandback(w, &req, files)
+	if err != nil {
+		return nil, err
+	}
+	if files != nil {
 		// The finish path takes over the snapshots and removes them.
 		defer func() {
 			if !handedOver {

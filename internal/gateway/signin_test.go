@@ -21,7 +21,7 @@ func TestWorkerSignInCandidates(t *testing.T) {
 	profiles := []protocol.WorkerProfile{{Name: "test", Harness: "codex", Model: "test-model"}}
 	for _, state := range []string{"no", "yes", ""} {
 		n := &protocol.NodeView{NodeID: "test-node", Hostname: "test-host", Harnesses: []protocol.HarnessInfo{{Name: "codex", SignedIn: state, Models: []string{"test-model"}}}}
-		candidates, notes, _, err := g.workerModelCandidates(n, profiles, protocol.WorkerProviders{}, nil, "", false, protocol.ProtectedProviders{})
+		candidates, notes, _, err := g.workerModelCandidates(n, profiles, protocol.WorkerProviders{}, nil, "")
 		if err != nil {
 			t.Fatal(err)
 		}

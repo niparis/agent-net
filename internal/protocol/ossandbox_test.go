@@ -13,14 +13,11 @@ import (
 func TestWorkerPermissionsLineNamesTheWrapper(t *testing.T) {
 	for _, tc := range []struct{ level, harness, os, want string }{
 		{WorkersSandboxed, "pi", "bubblewrap", "permissions: sandboxed (writes only in its worktree, network on) (sandboxed by bubblewrap)"},
-		{WorkersReadOnly, "opencode", "bubblewrap", "permissions: read-only (no writes) (sandboxed by bubblewrap)"},
 		{WorkersSandboxed, "pi", "", "permissions: sandboxed (writes only in its worktree, network on) (no OS sandbox: turned off for this project in node.json)"},
 		{WorkersSandboxed, "opencode", "sandbox-exec", "permissions: sandboxed (writes only in its worktree, network on) (sandboxed by sandbox-exec)"},
 		{WorkersSandboxed, "pi", OSSandboxNoneMacOS, "permissions: sandboxed (writes only in its worktree, network on) (no OS sandbox on macOS yet: opt in with workers.os_sandbox in node.json)"},
 		{WorkersSandboxed, "claude", "", "permissions: sandboxed (writes only in its worktree, network on)"},
-		{WorkersReadOnly, "codex", "", "permissions: read-only (no writes)"},
 		{WorkersSandboxed, "agy", "", "permissions: sandboxed (writes only in its worktree, network on)"},
-		{WorkersNoNetwork, "agy", "", "permissions: no-network (writes only in its worktree, network off) (enforced for claude and codex only for now)"},
 	} {
 		if got := WorkerPermissionsLine(tc.level, tc.harness, tc.os); got != tc.want {
 			t.Errorf("%s %s %q:\n got %q\nwant %q", tc.level, tc.harness, tc.os, got, tc.want)
@@ -50,10 +47,7 @@ func TestWorkerBriefNamesTheWrapper(t *testing.T) {
 	if strings.Contains(plain, "bubblewrap") || strings.Contains(plain, "enforced for claude, codex and agy only") || !strings.Contains(plain, "(no OS sandbox: turned off for this project in node.json)") {
 		t.Fatalf("brief without the wrapper:\n%s", plain)
 	}
-	ro := WorkerTaskBodyBriefBar("opencode", WorkerBrief{Notes: "look"}, "", "", "", "", "", WorkersReadOnly, "bubblewrap", settings.Snapshot{}, "", nil)
-	if !strings.Contains(ro, "(sandboxed by bubblewrap): you cannot write files; report findings only") {
-		t.Fatalf("read-only brief:\n%s", ro)
-	}
+
 }
 
 // The completion notice has the same line.
@@ -66,13 +60,10 @@ func TestWorkerNoticeNamesTheWrapper(t *testing.T) {
 }
 
 // The policy screen says what enforces a level. Pi and OpenCode are in the OS
-// sandbox by default; no-network is refused for them, so it stays unlisted.
+// sandbox by default.
 func TestWorkerEnforcedLine(t *testing.T) {
 	if got := WorkerEnforcedLine(WorkersSandboxed); !strings.Contains(got, "Pi and OpenCode (OS sandbox)") || strings.Contains(got, "only for now") {
 		t.Errorf("sandboxed: %q", got)
-	}
-	if got := WorkerEnforcedLine(WorkersNoNetwork); got != "Enforced for claude and codex only for now." {
-		t.Errorf("no-network: %q", got)
 	}
 }
 

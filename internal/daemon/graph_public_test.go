@@ -55,7 +55,7 @@ func TestAgentGraphReadsEveryCharterAndEdge(t *testing.T) {
 	}
 
 	cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingDeployRule, "value": protocol.DeployOwner})
-	cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingWorkerSandbox, "value": protocol.WorkersNoNetwork})
+	cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingWorkerSandbox, "value": protocol.WorkersSandboxed})
 	cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingJudgeConsumers, "value": protocol.JudgeStrict})
 
 	agent, _ := helloPi(t, n, "graph-reader", "/w/reader", true)
@@ -81,7 +81,7 @@ func TestAgentGraphReadsEveryCharterAndEdge(t *testing.T) {
 	}
 	for name, want := range map[string]string{
 		protocol.SettingDeployRule:     protocol.DeployOwner,
-		protocol.SettingWorkerSandbox:  protocol.WorkersNoNetwork,
+		protocol.SettingWorkerSandbox:  protocol.WorkersSandboxed,
 		protocol.SettingJudgeConsumers: protocol.JudgeStrict,
 		protocol.SettingMergeAuthority: protocol.MergeDelegated,
 		protocol.SettingAutonomy:       protocol.AutonomyOff,
@@ -118,7 +118,7 @@ func TestAgentGraphReadsEveryCharterAndEdge(t *testing.T) {
 	for _, r := range detail.Nodes[0].Rules {
 		detailRules[r.Name] = r.Value
 	}
-	if detailRules[protocol.SettingDeployRule] != protocol.DeployOwner || detailRules[protocol.SettingWorkerSandbox] != protocol.WorkersNoNetwork {
+	if detailRules[protocol.SettingDeployRule] != protocol.DeployOwner || detailRules[protocol.SettingWorkerSandbox] != protocol.WorkersSandboxed {
 		t.Fatalf("detail rules: %+v", detail.Nodes[0].Rules)
 	}
 	if len(detail.Edges) != 2 {
@@ -167,7 +167,7 @@ func TestAgentGraphAndCTOViewHideSecretsButShowRules(t *testing.T) {
 	graphFixtureNode(t, w.node, w.cli, "billing", "Takes money", "growing")
 	w.cli.mustCall("edge_set", map[string]any{"from": "shop", "to": "billing", "kind": "depends", "rule": "ask"})
 	w.cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingDeployRule, "value": protocol.DeployOwner})
-	w.cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingWorkerSandbox, "value": protocol.WorkersNoNetwork})
+	w.cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingWorkerSandbox, "value": protocol.WorkersSandboxed})
 	w.cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingMergeAuthority, "value": protocol.MergeAsk})
 	marker := "OWNER_ONLY_NODE_SETTING_CANARY"
 	injectNodeSetting(t, g.dir, "shop", "unknown_setting", marker)
@@ -181,7 +181,7 @@ func TestAgentGraphAndCTOViewHideSecretsButShowRules(t *testing.T) {
 		if !strings.Contains(raw, "Sells things") {
 			t.Fatalf("agent read has no charter: %s", raw)
 		}
-		for _, want := range []string{protocol.SettingDeployRule, protocol.DeployOwner, protocol.SettingWorkerSandbox, protocol.WorkersNoNetwork, protocol.SettingMergeAuthority, protocol.MergeAsk} {
+		for _, want := range []string{protocol.SettingDeployRule, protocol.DeployOwner, protocol.SettingWorkerSandbox, protocol.WorkersSandboxed, protocol.SettingMergeAuthority, protocol.MergeAsk} {
 			if !strings.Contains(raw, want) {
 				t.Errorf("agent read hides rule %q: %s", want, raw)
 			}
@@ -202,7 +202,7 @@ func TestAgentGraphAndCTOViewHideSecretsButShowRules(t *testing.T) {
 	if !strings.Contains(string(raw), "Sells things") || !strings.Contains(string(raw), "billing") {
 		t.Fatalf("CTO graph view lacks charters or edges: %s", raw)
 	}
-	for _, want := range []string{protocol.SettingDeployRule, protocol.DeployOwner, protocol.SettingWorkerSandbox, protocol.WorkersNoNetwork} {
+	for _, want := range []string{protocol.SettingDeployRule, protocol.DeployOwner, protocol.SettingWorkerSandbox, protocol.WorkersSandboxed} {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("CTO graph view hides rule %q: %s", want, raw)
 		}
@@ -253,7 +253,7 @@ func TestAgentGetShowsSessionNodeRules(t *testing.T) {
 	cli.mustCall("node_add", map[string]any{"name": "shop"})
 	cli.mustCall("charter_set", map[string]any{"node": "shop", "attr": "maturity", "value": "mature"})
 	cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingDeployRule, "value": protocol.DeployOwner})
-	cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingWorkerSandbox, "value": protocol.WorkersNoNetwork})
+	cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingWorkerSandbox, "value": protocol.WorkersSandboxed})
 	cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingJudgeConsumers, "value": protocol.JudgeStrict})
 	cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingAutonomy, "value": protocol.AutonomyWake})
 
@@ -275,7 +275,7 @@ func TestAgentGetShowsSessionNodeRules(t *testing.T) {
 	}
 	for name, want := range map[string]string{
 		protocol.SettingDeployRule:       protocol.DeployOwner,
-		protocol.SettingWorkerSandbox:    protocol.WorkersNoNetwork,
+		protocol.SettingWorkerSandbox:    protocol.WorkersSandboxed,
 		protocol.SettingJudgeConsumers:   protocol.JudgeStrict,
 		protocol.SettingMergeAuthority:   protocol.MergeDelegated,
 		protocol.SettingTestsBeforeMerge: protocol.TestsSuiteNewTests,

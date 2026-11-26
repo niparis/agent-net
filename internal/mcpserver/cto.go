@@ -274,7 +274,7 @@ func init() {
 	setProperties("session_change", "policy", map[string]any{
 		"delegate":    property("string", "Mode.", "", "off", "native", "workers"),
 		"coder_model": property("string", "Coder."), "main_model": property("string", "Main."),
-		"workers": property("string", "Sandbox.", "", "sandboxed", "no-network", "read-only"),
+		"workers": property("string", "Sandbox.", "", "sandboxed"),
 	})
 	setProperties("mcp_change", "server", map[string]any{
 		"name": property("string", "Server name."), "transport": property("string", "Transport.", "stdio", "http", "sse"),

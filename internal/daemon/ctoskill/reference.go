@@ -284,6 +284,10 @@ func settingDefaultText(def settings.Definition) string {
 }
 
 func settingLimitText(def settings.Definition) string {
+	if def.Key == "workers.sandbox_level" {
+		// The retired values stay in the recipe for the shipped cutover only.
+		return strings.Join(protocol.WorkersLevels, ", ")
+	}
 	if len(def.Values) > 0 {
 		return strings.Join(def.Values, ", ")
 	}

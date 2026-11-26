@@ -32,7 +32,7 @@ func TestWorkerCandidateUnknownQuotaStaysCandidate(t *testing.T) {
 		},
 	}
 
-	candidates, skipped, _, err := g.workerModelCandidates(n, profiles, protocol.WorkerProviders{}, quotas, "", false, protocol.ProtectedProviders{})
+	candidates, skipped, _, err := g.workerModelCandidates(n, profiles, protocol.WorkerProviders{}, quotas, "")
 	if err != nil {
 		t.Fatalf("workerModelCandidates error: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestWorkerCandidateExhaustedQuotaExcluded(t *testing.T) {
 		},
 	}
 
-	candidates, _, _, err := g.workerModelCandidates(n, profiles, protocol.WorkerProviders{}, quotas, "", false, protocol.ProtectedProviders{})
+	candidates, _, _, err := g.workerModelCandidates(n, profiles, protocol.WorkerProviders{}, quotas, "")
 	if err != nil {
 		t.Fatalf("workerModelCandidates error: %v", err)
 	}

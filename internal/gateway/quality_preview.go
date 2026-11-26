@@ -77,7 +77,7 @@ func (g *Gateway) qualityPreviewWith(in qualityPreviewInputs, node protocol.Node
 	// The start reads the owner's subscriptions once, with the burn of the
 	// workers that run now, so the preview decides on the same reading.
 	quotas := g.withQuotaBurn(g.ownerQuotas(node.NodeID), in.agents)
-	candidates, _, _, err := g.workerModelCandidatesWith(facts, nil, &node, in.profiles, in.providers, quotas, "", false, in.protected)
+	candidates, _, _, err := g.workerModelCandidatesWith(facts, nil, &node, in.profiles, in.providers, quotas, "")
 	if err != nil {
 		return nil, nil, nil, err
 	}

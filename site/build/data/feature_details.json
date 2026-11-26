@@ -360,7 +360,7 @@
 "Worker sandbox": {
  "lines": [
   "Limits what an unattended worker can write or reach, so nobody has to approve each command.",
-  "The owner sets a level per project (repo setting workers.sandbox_level, default sandboxed): writes limited to the worktree, temp folders and the git folders a commit needs. Other levels cover read-only and no-network.",
+  "A worker runs at the sandboxed level (repo setting workers.sandbox_level, default sandboxed): writes limited to the worktree, temp folders and the git folders a commit needs, network on. The read-only and no-network levels were retired on 2026-11-26.",
   "Codex gets approval never plus its sandbox. Claude gets the level in its --settings (writes outside the worktree blocked, Claude's Bash sandbox on).",
   "Pi and OpenCode workers run inside bubblewrap on Linux and Seatbelt on macOS. This is on by default; workers.os_sandbox_off in node.json turns it off per project. It fails closed: if the wrapper cannot run, the start is refused.",
   "Reads are not limited: a sandboxed worker can read what your user can read."

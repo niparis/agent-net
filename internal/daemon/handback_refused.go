@@ -6,12 +6,12 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// Antigravity and Codex hand back after the model's turn has ended: agy after
-// its agent_handback call was acknowledged, Codex from the turn's last
-// message. A refusal there is no tool error that the model sees, so the daemon
-// tells the caller itself: the worker's report, and why agent-net could not
-// take it. A hand-back refused for an ordinary tool call is returned to the
-// worker, which can correct it and hand back again.
+// Antigravity checks a hand-back when the tool is called, then publishes it
+// after the model's turn has ended; Codex hands back from the turn's last
+// message. A refusal from the publish step is no tool error that the model
+// sees, so the daemon tells the caller itself: the worker's report, and why
+// agent-net could not take it. A hand-back refused for an ordinary tool call is
+// returned to the worker, which can correct it and hand back again.
 
 // handbackRefusedStatus is the status line of the caller's notice.
 const handbackRefusedStatus = "hand-back refused"

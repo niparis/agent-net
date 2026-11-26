@@ -25,7 +25,6 @@ import (
 type agyLauncher struct{}
 
 const agyWorkerSettings = `{"permissions":{"allow":["command(*)","mcp(agent-net_agent-net/*)"]}}`
-const agyReadOnlySettings = `{"permissions":{"allow":["mcp(agent-net_agent-net/*)"]}}`
 
 // agyUsage is one result event's usage for its turn. Output is the model's
 // answer and Thinking its reasoning, which the Gemini API reports apart
@@ -63,8 +62,8 @@ type agyConn struct {
 	handback   *protocol.WorkerHandbackRequest
 	pending    *protocol.WorkerHandbackRequest
 	pendingKey string
-	// Snapshots are kept in memory until the result event. After a daemon
-	// restart the saved request is checked and prepared again instead.
+	// Snapshots are checked at the tool call and saved with the stream, so an
+	// adopted stream sends them instead of checking the files again.
 	handbackFiles, pendingFiles *OutgoingFiles
 	// processExited is the Wait of a process this daemon started, nil for an
 	// adopted one (agyConn.processEnded).
@@ -140,13 +139,10 @@ func (d *Daemon) startAgy(ctx context.Context, w *worker) error {
 		_ = json.Unmarshal(b, &c.usage)
 	}
 	d.wmu.Lock()
-	native, model, permissions := w.nativeID, w.model, w.permissions
+	native, model := w.nativeID, w.model
 	w.agy = c
 	d.wmu.Unlock()
-	mode, settings := "accept-edits", agyWorkerSettings
-	if permissions == protocol.WorkersReadOnly {
-		mode, settings = "plan", agyReadOnlySettings
-	}
+
 	env := d.workerGitEnv(w, os.Environ(), map[string]string{"AGENT_NET_WORKER": w.id, "AGENT_NET_SOCKET": d.cfg.SocketPath,
 		"AGENT_NET_WORKER_SESSION_FILE": filepath.Join(dir, "session")})
 	toolchains := d.workerToolchainDirs(ctx, w.path, env)
@@ -162,23 +158,17 @@ func (d *Daemon) startAgy(ctx context.Context, w *worker) error {
 	}
 	args = append(args, modelArgs...)
 
-	args = append(args, "--mode", mode, "--sandbox", "--settings", settings)
+	args = append(args, "--mode", "accept-edits", "--sandbox", "--settings", agyWorkerSettings)
 	// The linked worktree's git folders, the Go temp folder the worker's go
 	// command writes to (GOTMPDIR) and the package caches of the worker
 	// (UV_CACHE_DIR and the others) stay writable. agy needs the package cache
 	// last.
-	if permissions != protocol.WorkersReadOnly {
-		for _, path := range toolchains {
-			args = append(args, "--add-dir", path)
-		}
-		roots := d.workerWriteRootsThen(ctx, w.path, d.workerSandboxGoTmpDir(), d.workerCacheRoot(w))
-		for _, path := range roots {
-			args = append(args, "--add-dir", path)
-		}
-	} else {
-		for _, path := range toolchains {
-			args = append(args, "--add-dir", path)
-		}
+	for _, path := range toolchains {
+		args = append(args, "--add-dir", path)
+	}
+	roots := d.workerWriteRootsThen(ctx, w.path, d.workerSandboxGoTmpDir(), d.workerCacheRoot(w))
+	for _, path := range roots {
+		args = append(args, "--add-dir", path)
 	}
 	if native != "" {
 		args = append(args, "--conversation", native)
@@ -660,15 +650,6 @@ func (c *agyConn) send(line []byte) error {
 // agy sends usage only after the MCP handback call has returned. Acknowledge
 // the tool now and publish the report on result, before ending the process.
 func (d *Daemon) deferAgyHandback(w *worker, req protocol.WorkerHandbackRequest, files *OutgoingFiles) (*protocol.WorkerHandbackResult, error) {
-	if req.Status == "" {
-		req.Status = protocol.StatusDone
-	}
-	if !protocol.ValidHandbackStatus(req.Status) {
-		return nil, errors.New("status must be done, blocked or failed")
-	}
-	if strings.TrimSpace(req.Report) == "" {
-		return nil, errors.New("the report is empty: say what you did, or what blocks you")
-	}
 	d.wmu.Lock()
 	c, stopping := w.agy, w.stopping
 	d.wmu.Unlock()

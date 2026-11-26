@@ -9,9 +9,6 @@ func TestAgyWorkerHarness(t *testing.T) {
 	if !WorkerHarnessSupported("agy") {
 		t.Error("agy must be startable")
 	}
-	if !WorkerReadOnlySupported("agy") {
-		t.Error("agy plan workers must support read-only access")
-	}
 	for _, h := range WorkerHarnesses {
 		if !HarnessKnown(h) {
 			t.Errorf("%s is startable but not known", h)
