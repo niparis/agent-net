@@ -23,10 +23,13 @@ model would lose.
 
 1. When a caller continues an ended worker and names no model and no harness,
    the gateway checks the old model with the rules of today, at the level stored
-   with the worker (the judge's label of the run it continues). The checks are
-   those of an automatic start: the pause, the protected providers, the cell and
-   ceiling rules, the floors, the quota and cooling. The code is
-   `Gateway.repickContinue` in `internal/gateway/continue_repick.go`.
+   with the worker (the judge's label of the run it continues). When the caller
+   adds work to the brief, the changed brief is judged once on that machine
+   before the pick, and the check uses that new level and D (amended
+   2026-11-26). The checks are those of an automatic start: the pause, the
+   protected providers, the cell and ceiling rules, the floors, the quota and
+   cooling. The code is `Gateway.repickContinue` in
+   `internal/gateway/continue_repick.go`.
 2. A model that still qualifies stays. The check asks the gate for the old
    model first, so a model the rules allow is not moved by the rotation's next
    step.
@@ -80,9 +83,12 @@ picks them up.
 ## Not changed
 
 The exploration rules, the price rule, the scores, the floors and the settings
-stay as they are. The level is the one stored with the worker; when the caller
-adds work to the brief, the machine judges the new brief again for the record,
-but the gateway re-picks at the stored level.
+stay as they are. The level is the one stored with the worker. When the caller
+adds work to the brief, the machine that ran the worker judges the changed
+brief once before the gateway picks, and the gateway re-picks at that new level
+and D; the new run records the same result. (Amended 2026-11-26 for the owner's
+word through the uadd3 lead: before this, the machine judged the changed brief
+only for the record, and the gateway re-picked at the stored level.)
 
 ## Open point
 

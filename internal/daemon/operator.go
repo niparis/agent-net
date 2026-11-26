@@ -692,7 +692,7 @@ func (d *Daemon) onWorkerFrame(ctx context.Context, l *link, h protocol.Header, 
 	var err error
 	switch h.Type {
 	case "cto.worker_capabilities":
-		data = map[string]bool{"attribution": true, "read_only_enforced": true}
+		data = map[string]bool{"attribution": true, "read_only_enforced": true, "continue_judge": true}
 	case "worker.brief_repo":
 		var p protocol.WorkerBriefRepoRequest
 		if err = json.Unmarshal(raw, &p); err == nil {
@@ -722,6 +722,11 @@ func (d *Daemon) onWorkerFrame(ctx context.Context, l *link, h protocol.Header, 
 		var p protocol.WorkerContinue
 		if err = json.Unmarshal(raw, &p); err == nil {
 			data, err = d.continueWorker(ctx, p)
+		}
+	case "worker.continue_judge":
+		var p protocol.WorkerContinueJudge
+		if err = json.Unmarshal(raw, &p); err == nil {
+			data, err = d.judgeContinueBrief(ctx, p)
 		}
 	case "worker.resume":
 		var p protocol.WorkerResume

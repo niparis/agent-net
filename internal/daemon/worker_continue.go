@@ -148,6 +148,78 @@ func (d *Daemon) awaitWorkerEnd(ctx context.Context, id, session string) (*worke
 	return nil, fmt.Errorf("this machine has no record of worker %s any more", session)
 }
 
+// continueTaskText is the text a continue runs: the old first task with the
+// caller's added work, after the continue line. The judge reads the same text
+// when the caller adds work, and the start uses it.
+func (d *Daemon) continueTaskText(r *workerRow, where, added string) string {
+	text := protocol.ContinueIntroWithSettings(r.EndedReason, where, d.SettingsSnapshot(), r.Project) + "\n\n" + r.TaskFull
+	if added != "" {
+		text += "\n\nAlso: " + added
+	}
+	return text
+}
+
+// continueWhere is the place a continued worker starts: the old worker's
+// folder, or its branch. It is what the continue line says, and what
+// continueWorker sets when the branch is there.
+func continueWhere(r *workerRow) string {
+	if r.Worktree == "" {
+		return "folder"
+	}
+	if r.Branch != "" {
+		return "branch"
+	}
+	return ""
+}
+
+// continueRecord finds this machine's record of the worker a continue names,
+// and checks that the requester started it.
+func (d *Daemon) continueRecord(session, requester string) (*workerRow, error) {
+	rows, err := d.st.workers()
+	if err != nil {
+		return nil, err
+	}
+	var r *workerRow
+	for i := range rows {
+		if rows[i].SessionID == session {
+			r = &rows[i]
+		}
+	}
+	if r == nil {
+		return nil, fmt.Errorf("this machine has no record of worker %s any more", session)
+	}
+	if r.Owner != requester {
+		return nil, fmt.Errorf("worker %s ended, and only the session that started it can continue it", session)
+	}
+	return r, nil
+}
+
+// judgeContinueBrief handles "worker.continue_judge": the judge's result for
+// the brief a continue runs when the caller adds work to it. The gateway picks
+// the model at that level and D before it starts the worker, and the start
+// records the same result instead of judging the changed brief again.
+func (d *Daemon) judgeContinueBrief(ctx context.Context, p protocol.WorkerContinueJudge) (protocol.WorkerContinueBrief, error) {
+	var none protocol.WorkerContinueBrief
+	if p.Session == "" || p.Task == "" {
+		return none, fmt.Errorf("a continue judge needs the old worker and the work the caller adds")
+	}
+	r, err := d.continueRecord(p.Session, p.Requester)
+	if err != nil {
+		return none, err
+	}
+	d.wmu.Lock()
+	running := d.workers[r.ID] != nil
+	d.wmu.Unlock()
+	if running || r.EndedReason == "" {
+		return none, fmt.Errorf("worker %s is still running: wait for it to end, or stop it first", p.Session)
+	}
+	if r.TaskFull == "" {
+		return none, fmt.Errorf("the record of worker %s has no task (it was made by an older agent-net)", p.Session)
+	}
+	path := first(r.MainPath, r.Path)
+	return protocol.WorkerContinueBrief{Assessment: d.assessWorkerStart(ctx, path, d.continueTaskText(r, continueWhere(r), p.Task))}, nil
+}
+
 // continueWorker handles "worker.continue" from the gateway: it starts a new
 // worker from an ended one of this machine. The new worker has the same
 // project, harness and model unless the caller says otherwise, a new worktree
@@ -155,21 +227,9 @@ func (d *Daemon) awaitWorkerEnd(ctx context.Context, id, session string) (*worke
 // first task. Only the owner named in the old worker's record may ask.
 func (d *Daemon) continueWorker(ctx context.Context, p protocol.WorkerContinue) (protocol.WorkerContinued, error) {
 	var none protocol.WorkerContinued
-	rows, err := d.st.workers()
+	r, err := d.continueRecord(p.Session, p.Requester)
 	if err != nil {
 		return none, err
-	}
-	var r *workerRow
-	for i := range rows {
-		if rows[i].SessionID == p.Session {
-			r = &rows[i]
-		}
-	}
-	if r == nil {
-		return none, fmt.Errorf("this machine has no record of worker %s any more", p.Session)
-	}
-	if r.Owner != p.Requester {
-		return none, fmt.Errorf("worker %s ended, and only the session that started it can continue it", p.Session)
 	}
 	// A hand-back sends its notice to the owner before the worker is ended, and
 	// the notice says that a message from the owner starts the worker again. A
@@ -247,16 +307,17 @@ func (d *Daemon) continueWorker(ctx context.Context, p protocol.WorkerContinue) 
 		}
 	}
 	record := r.TaskFull
-	task := protocol.ContinueIntroWithSettings(r.EndedReason, where, d.SettingsSnapshot(), r.Project) + "\n\n" + r.TaskFull
+	task := d.continueTaskText(r, where, p.Task)
 	if p.Task != "" {
 		record += "\n\nAlso: " + p.Task
-		task += "\n\nAlso: " + p.Task
 	}
 	l.Task, l.RecordTask = task, record
 	// A continue keeps the judge label of the run it continues, unless the
-	// caller adds work to the brief. Then the new brief is assessed once,
-	// here, before the start is queued.
-	if p.Task == "" && p.Assessment != nil {
+	// caller adds work to the brief. Then the new brief is assessed once
+	// before the start: the gateway asks this machine for it before it picks,
+	// and the same result is recorded here. A machine that answers an older
+	// gateway assesses the changed brief now.
+	if p.Assessment != nil && (p.Task == "" || p.TaskJudged) {
 		kept := *p.Assessment
 		kept.RunID = protocol.NewID("k")
 		kept.SessionID = ""
