@@ -408,8 +408,14 @@ func (d *Daemon) executeApprovedCTOTool(ctx context.Context, name string, raw js
 		p.Folder, p.Branch, p.Create = "", "", false
 		p.FirstMessage, p.FirstMessageByOwner = MergerFirstMessage, false
 		// The merger is a role, not a special case: its ordered list goes
-		// through the one gate (decision 0162).
-		pick, err := d.pickRoleOnMachine(ctx, protocol.RoleMerger, node, nil, protocol.RoleModel{}, false)
+		// through the one gate (decision 0162). A model the CTO named is the
+		// only candidate, so the gate runs it or refuses it, never swaps it
+		// for the merger.models list.
+		var asked []protocol.RoleModel
+		if p.Model != "" || p.Harness != "" {
+			asked = []protocol.RoleModel{{Harness: firstNonEmpty(p.Harness, "claude"), Model: p.Model}}
+		}
+		pick, err := d.pickRoleOnMachine(ctx, protocol.RoleMerger, node, asked, protocol.RoleModel{}, false)
 		if err != nil {
 			return nil, errors.New("merger model: " + err.Error())
 		}

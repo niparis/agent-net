@@ -161,7 +161,8 @@ func (d *Daemon) wakeClaude(ctx context.Context, id, token string, autonomy bool
 	}
 	// This is the same background launcher as owner resume, without any view.
 	// The MCP choice of the folder goes in the launch settings, as on resume.
-	sf, err := d.startBackground(ctx, bin, launchDir, d.claudeResumeSpec(a), "", nil, nil)
+	spec, _ := d.claudeResumeSpec(a)
+	sf, err := d.startBackground(ctx, bin, launchDir, spec, "", nil, nil)
 	if err != nil {
 		return err
 	}

@@ -182,6 +182,11 @@ type SessionInfo struct {
 	// (for example "claude-opus-5-5" or "anthropic/claude-sonnet-5"). Empty
 	// when the harness does not say.
 	Model string `json:"model,omitempty"`
+	// RequestedModel is the model agent-net asked the harness to run when it
+	// started or resumed the session. Empty when it named none, and in a
+	// report from a daemon that no longer holds the start: the gateway then
+	// keeps the one it has.
+	RequestedModel string `json:"requested_model,omitempty"`
 	// Worker is set when agent-net started this session as a worker.
 	Worker *WorkerInfo `json:"worker,omitempty"`
 	// ToolsVersion is the agent-net version of the session's MCP tools (the
@@ -442,6 +447,9 @@ type AgentView struct {
 	// older daemon.
 	Mode  string `json:"mode,omitempty"`
 	Model string `json:"model,omitempty"`
+	// RequestedModel is the model agent-net asked for at the session's start
+	// or resume (SessionInfo.RequestedModel, or a worker's start model).
+	RequestedModel string `json:"requested_model,omitempty"`
 	// Worker is set for a session that agent-net started as a worker.
 	Worker *WorkerInfo `json:"worker,omitempty"`
 	// ToolsVersion and ToolsOld: see SessionInfo. Empty from an older daemon.

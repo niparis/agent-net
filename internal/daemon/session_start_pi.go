@@ -93,6 +93,7 @@ func (d *Daemon) launchOwnerPi(r protocol.StartedSession, first startFirstMessag
 			}
 		}
 		if startErr == nil {
+			d.noteRequestedModel("pi", r.NativeID, r.Model)
 			startErr = d.checkStartAgent(cctx, r)
 		}
 		if startErr == nil {
