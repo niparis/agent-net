@@ -45,6 +45,34 @@ func TestWorkerStartDescriptionNamesTheOverlapRefusalOnly(t *testing.T) {
 	}
 }
 
+// The difficulty judge runs in an empty folder and sees only the brief text, so
+// the evidence field must tell callers to state the size there. Otherwise a
+// brief that names a spec hides how big the work is.
+func TestBriefEvidenceTellsCallersTheJudgeReadsOnlyTheBrief(t *testing.T) {
+	for _, name := range []string{"agent_worker_start", "agent_worker_start_override"} {
+		var found *Tool
+		for i := range Tools {
+			if Tools[i].Name == name {
+				found = &Tools[i]
+			}
+		}
+		if found == nil {
+			t.Fatalf("%s missing", name)
+		}
+		props := decodeObject(t, name, found.InputSchema)["properties"].(map[string]any)
+		evidence, ok := props["evidence"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s has no evidence field", name)
+		}
+		text, _ := evidence["description"].(string)
+		for _, want := range []string{"difficulty judge reads only this brief", "state the size here"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s evidence does not contain %q: %s", name, want, text)
+			}
+		}
+	}
+}
+
 // The start result declares its brief flags, so the caller sees them, and the
 // description says they never block a start.
 func TestWorkerStartDeclaresBriefFlagsAsAdvisory(t *testing.T) {
