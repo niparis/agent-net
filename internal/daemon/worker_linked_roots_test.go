@@ -16,7 +16,7 @@ func TestCodexLinkedWorktreeWritableRoots(t *testing.T) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git worktree: %v: %s", err, out)
 	}
-	got := codexWritableRoots(context.Background(), &worker{path: linked})
+	got := workerGitRoots(context.Background(), linked)
 	common := filepath.Join(repo, ".git")
 	want := []string{filepath.Join(common, "worktrees", "checkout"), filepath.Join(common, "objects"), filepath.Join(common, "refs"), filepath.Join(common, "logs")}
 	sort.Strings(got)

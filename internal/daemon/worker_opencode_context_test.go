@@ -27,7 +27,7 @@ func TestOpenCodeContextNewestAssistant(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	got := opencodeSessionContext(context.Background(), server.URL, "", "ses_test")
+	got := (&Daemon{}).openCodeSessionContext(context.Background(), server.URL, "", "", "", "ses_test")
 	if got.Tokens != 84000 || got.Limit != 200000 || got.AssistantID != "msg_new" || got.Model != "opencode-go/deepseek-v4.1-flash" {
 		t.Fatalf("context = %+v", got)
 	}

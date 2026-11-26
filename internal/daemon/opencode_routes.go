@@ -19,6 +19,22 @@ func openCodeHTTPClient(timeout time.Duration) *http.Client {
 	}
 }
 
+// openCodeGet reads one JSON answer from a server. Anything but a 200 with a
+// small, valid body is false.
+func openCodeGet(ctx context.Context, base, password, path string, v any) bool {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path, nil)
+	if err != nil {
+		return false
+	}
+	req.SetBasicAuth("opencode", password)
+	resp, err := openCodeHTTPClient(10 * time.Second).Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK && json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(v) == nil
+}
+
 func (d *Daemon) openCodeVersion() string {
 	if d != nil {
 		installed, _ := d.inventory()

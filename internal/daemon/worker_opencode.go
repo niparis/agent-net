@@ -7,20 +7,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/daemon/opencodeapi"
-	"github.com/niparis/agent-net/internal/harnesses"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/providererr"
 	"github.com/niparis/agent-net/internal/redact"
 )
 
@@ -121,8 +119,8 @@ func (opencodeLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 // resume starts a new private server for the same session: the state folder
 // and data folders are the ones the worker had, so it opens the same conversation.
 func (opencodeLauncher) resume(ctx context.Context, d *Daemon, w *worker) error {
-	if w.nativeID == "" {
-		return errors.New("the OpenCode session of the worker is not known")
+	if _, err := w.nativeSessionID("OpenCode session"); err != nil {
+		return err
 	}
 	api, err := d.serveOpenCode(ctx, w)
 	if err != nil {
@@ -180,12 +178,16 @@ func (d *Daemon) loadOpenCodeProject(ctx context.Context, w *worker, api opencod
 	}
 	// The plugin registers the session. If it does not, the plugin is not
 	// installed, and the worker could never answer.
-	select {
-	case <-w.ready:
-		return nil
-	case <-ctx.Done():
+	return d.waitWorkerReady(ctx, w, func() bool {
+		select {
+		case <-w.ready:
+			return true
+		default:
+			return false
+		}
+	}, func() error {
 		return errors.New("the agent-net plugin did not register the worker session in time: is the OpenCode plugin installed? Run `agent-net setup` on that machine")
-	}
+	}, nil)
 }
 
 // writeWorkerSessionFile tells the plugin which session is the worker's. It
@@ -205,8 +207,8 @@ func (d *Daemon) serveOpenCode(ctx context.Context, w *worker) (opencodeAPI, err
 		return nil, err
 	}
 	password := protocol.NewToken()
-	dir := filepath.Join(d.cfg.StateDir, "workers", w.id)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	dir, err := d.workerDir(w)
+	if err != nil {
 		return nil, err
 	}
 	if err := os.WriteFile(filepath.Join(dir, "opencode-password"), []byte(password), 0o600); err != nil {
@@ -317,33 +319,15 @@ func copyOpenCodeAuth(ctx context.Context, bin, data, state string) error {
 // The context is the tokens of the latest assistant message (input plus cache
 // read and cache write), and the model's limit.context from GET /api/model.
 func (opencodeLauncher) stats(ctx context.Context, d *Daemon, w *worker) workerStats {
-	var base, pass, version, identity, nativeID string
-	if d != nil {
-		d.wmu.Lock()
-		base, pass, version, identity, nativeID = w.apiBase, w.apiPass, w.apiVersion, w.apiIdentity, w.nativeID
-		d.wmu.Unlock()
-	} else {
-		base, pass, version, identity, nativeID = w.apiBase, w.apiPass, w.apiVersion, w.apiIdentity, w.nativeID
-	}
+	d.wmu.Lock()
+	base, pass, version, identity, nativeID := w.apiBase, w.apiPass, w.apiVersion, w.apiIdentity, w.nativeID
+	d.wmu.Unlock()
 	if base == "" || nativeID == "" {
 		return workerStats{}
 	}
 	sessionPath, err := d.openCodePath(ctx, base, pass, version, identity, opencodeapi.GetSession, nativeID)
 	if err != nil {
 		return workerStats{}
-	}
-	get := func(method, path string, v any) bool {
-		req, err := http.NewRequestWithContext(ctx, method, base+path, nil)
-		if err != nil {
-			return false
-		}
-		req.SetBasicAuth("opencode", pass)
-		resp, err := openCodeHTTPClient(10 * time.Second).Do(req)
-		if err != nil {
-			return false
-		}
-		defer resp.Body.Close()
-		return resp.StatusCode == http.StatusOK && json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(v) == nil
 	}
 	var r struct {
 		Data struct {
@@ -358,7 +342,7 @@ func (opencodeLauncher) stats(ctx context.Context, d *Daemon, w *worker) workerS
 			} `json:"model"`
 		} `json:"data"`
 	}
-	if !get(opencodeapi.GetSession.Method(), sessionPath, &r) {
+	if !openCodeGet(ctx, base, pass, sessionPath, &r) {
 		return workerStats{}
 	}
 	t := r.Data.Tokens
@@ -388,10 +372,6 @@ type opencodeContextState struct {
 	AssistantID string
 }
 
-func opencodeSessionContext(ctx context.Context, base, pass, nativeID string) opencodeContextState {
-	return (*Daemon)(nil).openCodeSessionContext(ctx, base, pass, "", "", nativeID)
-}
-
 func (d *Daemon) openCodeSessionContext(ctx context.Context, base, pass, version, identity, nativeID string) opencodeContextState {
 	out := opencodeContextState{}
 	routes, err := d.discoverOpenCodeRoutes(ctx, base, pass, version, identity)
@@ -402,19 +382,6 @@ func (d *Daemon) openCodeSessionContext(ctx context.Context, base, pass, version
 	if err != nil {
 		return out
 	}
-	get := func(method, path string, v any) bool {
-		req, err := http.NewRequestWithContext(ctx, method, base+path, nil)
-		if err != nil {
-			return false
-		}
-		req.SetBasicAuth("opencode", pass)
-		resp, err := openCodeHTTPClient(10 * time.Second).Do(req)
-		if err != nil {
-			return false
-		}
-		defer resp.Body.Close()
-		return resp.StatusCode == http.StatusOK && json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(v) == nil
-	}
 	var sess struct {
 		Data struct {
 			Model struct {
@@ -423,7 +390,7 @@ func (d *Daemon) openCodeSessionContext(ctx context.Context, base, pass, version
 			} `json:"model"`
 		} `json:"data"`
 	}
-	if !get(opencodeapi.GetSession.Method(), sessionPath, &sess) {
+	if !openCodeGet(ctx, base, pass, sessionPath, &sess) {
 		return out
 	}
 	if sess.Data.Model.ID != "" {
@@ -439,7 +406,7 @@ func (d *Daemon) openCodeSessionContext(ctx context.Context, base, pass, version
 			} `json:"tokens"`
 		} `json:"data"`
 	}
-	if messagesPath, merr := routes.Path(opencodeapi.Messages, nativeID); merr == nil && get(opencodeapi.Messages.Method(), messagesPath+"?type=assistant&order=desc&limit=1", &msgs) {
+	if messagesPath, merr := routes.Path(opencodeapi.Messages, nativeID); merr == nil && openCodeGet(ctx, base, pass, messagesPath+"?type=assistant&order=desc&limit=1", &msgs) {
 		for _, m := range msgs.Data {
 			if m.Type != "assistant" {
 				continue
@@ -460,7 +427,7 @@ func (d *Daemon) openCodeSessionContext(ctx context.Context, base, pass, version
 				} `json:"limit"`
 			} `json:"data"`
 		}
-		if modelsPath, merr := routes.Path(opencodeapi.Models, ""); merr == nil && get(opencodeapi.Models.Method(), modelsPath, &models) {
+		if modelsPath, merr := routes.Path(opencodeapi.Models, ""); merr == nil && openCodeGet(ctx, base, pass, modelsPath, &models) {
 			for _, m := range models.Data {
 				if m.ProviderID == sess.Data.Model.ProviderID && (m.ID == sess.Data.Model.ID || m.ModelID == sess.Data.Model.ID) {
 					out.Limit = int64(m.Limit.Context)
@@ -478,14 +445,9 @@ func (d *Daemon) openCodeSessionContext(ctx context.Context, base, pass, version
 // same error is in the session.execution.failed event. Any failure to read it
 // gives "" (nothing known).
 func (opencodeLauncher) failure(ctx context.Context, d *Daemon, w *worker) (string, bool) {
-	var base, pass, version, identity, nativeID string
-	if d != nil {
-		d.wmu.Lock()
-		base, pass, version, identity, nativeID = w.apiBase, w.apiPass, w.apiVersion, w.apiIdentity, w.nativeID
-		d.wmu.Unlock()
-	} else {
-		base, pass, version, identity, nativeID = w.apiBase, w.apiPass, w.apiVersion, w.apiIdentity, w.nativeID
-	}
+	d.wmu.Lock()
+	base, pass, version, identity, nativeID := w.apiBase, w.apiPass, w.apiVersion, w.apiIdentity, w.nativeID
+	d.wmu.Unlock()
 	if base == "" || nativeID == "" {
 		return "", false
 	}
@@ -497,25 +459,12 @@ func (opencodeLauncher) failure(ctx context.Context, d *Daemon, w *worker) (stri
 	if err != nil {
 		return "", false
 	}
-	get := func(method, path string, v any) bool {
-		req, err := http.NewRequestWithContext(ctx, method, base+path, nil)
-		if err != nil {
-			return false
-		}
-		req.SetBasicAuth("opencode", pass)
-		resp, err := openCodeHTTPClient(10 * time.Second).Do(req)
-		if err != nil {
-			return false
-		}
-		defer resp.Body.Close()
-		return resp.StatusCode == http.StatusOK && json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(v) == nil
-	}
 	var sess struct {
 		Data struct {
 			Outcome string `json:"outcome"`
 		} `json:"data"`
 	}
-	if !get(opencodeapi.GetSession.Method(), sessionPath, &sess) || sess.Data.Outcome != "failed" {
+	if !openCodeGet(ctx, base, pass, sessionPath, &sess) || sess.Data.Outcome != "failed" {
 		return "", false
 	}
 	var msgs struct {
@@ -528,7 +477,7 @@ func (opencodeLauncher) failure(ctx context.Context, d *Daemon, w *worker) (stri
 		} `json:"data"`
 	}
 	text, typ := "", ""
-	if messagesPath, merr := routes.Path(opencodeapi.Messages, nativeID); merr == nil && get(opencodeapi.Messages.Method(), messagesPath, &msgs) { // newest first
+	if messagesPath, merr := routes.Path(opencodeapi.Messages, nativeID); merr == nil && openCodeGet(ctx, base, pass, messagesPath, &msgs) { // newest first
 		for _, m := range msgs.Data {
 			if m.Type == "idle" && m.Error != nil {
 				text, typ = m.Error.Message, m.Error.Type
@@ -539,29 +488,7 @@ func (opencodeLauncher) failure(ctx context.Context, d *Daemon, w *worker) (stri
 			}
 		}
 	}
-	return cleanFailure(text), openCodeProviderFailure(typ, text)
-}
-
-var providerStatus = regexp.MustCompile(`\b(401|402|403|429)\b`)
-
-// openCodeProviderFailure is deliberately conservative: unknown failures must
-// not penalize a model. An upstream wrapper alone is not proof of a provider error.
-func openCodeProviderFailure(typ, message string) bool {
-	s := strings.ToLower(typ + " " + message)
-	for _, local := range []string{"sqlerror", "sqlite", "database", "tool.error", "tool error"} {
-		if strings.Contains(s, local) {
-			return false
-		}
-	}
-	if providerStatus.MatchString(s) {
-		return true
-	}
-	for _, marker := range []string{"not logged in", "insufficient", "billing", "funds", "payment required", "unauthorized", "forbidden", "invalid api key", "invalid_api_key", "authentication", "quota", "rate limit", "rate_limit", "too many requests", "no route", "no-route", "model unavailable", "model not available", "model not found", "model_not_found", "provider.auth", "provider.quota", "provider.rate"} {
-		if strings.Contains(s, marker) {
-			return true
-		}
-	}
-	return false
+	return cleanFailure(text), providererr.UpstreamFailure(typ + " " + text)
 }
 
 // cleanFailure makes a provider error fit a notice: one line, secrets masked,
@@ -572,68 +499,6 @@ func cleanFailure(s string) string {
 		return "the harness reported a failed run with no error text"
 	}
 	return redact.Cut(s, 300)
-}
-
-// harnessBinary returns the path of an installed harness, from the inventory
-// or from the test overrides. When detection has not finished, or a run missed
-// the harness, it looks the harness up the same way detection does.
-func (d *Daemon) harnessBinary(name string) (string, error) {
-	if p := d.cfg.HarnessPaths[name]; p != "" {
-		return p, nil
-	}
-	list, _ := d.inventory()
-	for _, h := range list {
-		if h.Name == name && h.Path != "" {
-			return h.Path, nil
-		}
-	}
-	search := harnesses.Options{}
-	if d.cfg.HarnessSearch != nil {
-		search = *d.cfg.HarnessSearch
-	}
-	if p := harnesses.Locate(context.Background(), name, search); p != "" {
-		return p, nil
-	}
-	return "", fmt.Errorf("%s is not installed on this machine", name)
-}
-
-// workerEnv returns env with the given variables set and any inherited value
-// of them removed.
-func workerEnv(env []string, set map[string]string) []string {
-	out := make([]string, 0, len(env)+len(set))
-	for _, kv := range env {
-		k, _, _ := strings.Cut(kv, "=")
-		if _, replaced := set[k]; !replaced {
-			out = append(out, kv)
-		}
-	}
-	for k, v := range set {
-		out = append(out, k+"="+v)
-	}
-	return out
-}
-
-func (d *Daemon) workerFreePort() (int, error) {
-	if d.cfg.testFreePort != nil {
-		return d.cfg.testFreePort()
-	}
-	return freePort()
-}
-
-func freePort() (int, error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
-	}
-	defer ln.Close()
-	return ln.Addr().(*net.TCPAddr).Port, nil
-}
-
-func truncate(s string, n int) string {
-	if len(s) > n {
-		return s[:n] + "..."
-	}
-	return s
 }
 
 // reconcileOpenCode refreshes session status against their own server. The
@@ -719,115 +584,6 @@ func (d *Daemon) reconcileOpenCode(ctx context.Context) {
 		if next != nil {
 			d.goBackground(func() { d.deliverQueuedWorkerTurn(*next) })
 		}
-		if changed {
-			d.persistActivity(ls)
-			go d.pushSession(ls)
-		}
-	}
-}
-
-// reconcileSharedOpenCode checks sessions belonging to OpenCode's shared local
-// service. Confirm the session belongs to that server before trusting absence
-// from its active map: other OpenCode servers may have their own sessions.
-func (d *Daemon) reconcileSharedOpenCode(ctx context.Context) {
-	d.mu.Lock()
-	var sessions []*localSession
-	for _, ls := range d.sessions {
-		if ls.info.Harness == "opencode" && ls.info.Worker == nil {
-			sessions = append(sessions, ls)
-		}
-	}
-	d.mu.Unlock()
-	service, err := d.ownerOpenCodeService()
-	if err != nil {
-		return
-	}
-	base := strings.TrimRight(service.URL, "/")
-	if len(sessions) == 0 {
-		// The service outlives the daemon, but OpenCode can dispose its
-		// project contexts (and their plugins) independently. With no plugin
-		// running there is nothing left to reconnect to our new socket.
-		// Loading a location boots the plugin, whose discovery re-registers
-		// sessions across all directories. Keep retrying until it connects;
-		// do not invent presence without a real plugin hello.
-		check, cancel := context.WithTimeout(ctx, time.Second)
-		defer cancel()
-		path, err := d.openCodePath(check, base, service.Password, "", service.identity, opencodeapi.Location, "")
-		if err == nil {
-			api := openCodeWorkerAPI(check, base, service.Password)
-			_, _, _ = api(opencodeapi.Location.Method(), path, nil)
-		}
-		return
-	}
-	for _, ls := range sessions {
-		d.mu.Lock()
-		native, rev, status := ls.info.NativeID, ls.statusRevision, ls.info.Status
-		d.mu.Unlock()
-		if d.workerByNative("opencode", native) != nil {
-			continue
-		}
-		check, cancel := context.WithTimeout(ctx, time.Second)
-		busy, known := d.openCodeSessionBusy(check, base, service.Password, "", service.identity, native)
-		if !known {
-			cancel()
-			return
-		}
-		if busy {
-			cancel()
-			d.mu.Lock()
-			changed := d.sessions[key("opencode", native)] == ls && ls.info.Status == status && ls.statusRevision == rev && status != "busy"
-			if changed {
-				ls.info.Status = "busy"
-				ls.info.Waiting = nil
-				d.recordActivityLocked(ls, time.Now())
-			}
-			d.mu.Unlock()
-			if changed {
-				d.persistActivity(ls)
-				go d.pushSession(ls)
-			}
-			continue
-		}
-		if status != "busy" {
-			cancel()
-			continue
-		}
-		sessionPath, err := d.openCodePath(check, base, service.Password, "", service.identity, opencodeapi.GetSession, native)
-		if err != nil {
-			cancel()
-			continue
-		}
-		req, err := http.NewRequestWithContext(check, opencodeapi.GetSession.Method(), base+sessionPath, nil)
-		if err != nil {
-			cancel()
-			continue
-		}
-		if service.Password != "" {
-			req.SetBasicAuth("opencode", service.Password)
-		}
-		resp, err := openCodeHTTPClient(10 * time.Second).Do(req)
-		if err != nil {
-			cancel()
-			return
-		}
-		var body struct {
-			Data struct {
-				ID string `json:"id"`
-			} `json:"data"`
-		}
-		ok := resp.StatusCode == http.StatusOK && json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body) == nil && body.Data.ID == native
-		resp.Body.Close()
-		cancel()
-		if !ok {
-			continue
-		}
-		d.mu.Lock()
-		changed := d.sessions[key("opencode", native)] == ls && ls.info.Status == "busy" && ls.statusRevision == rev
-		if changed {
-			ls.info.Status = "idle"
-			d.recordActivityLocked(ls, time.Now())
-		}
-		d.mu.Unlock()
 		if changed {
 			d.persistActivity(ls)
 			go d.pushSession(ls)

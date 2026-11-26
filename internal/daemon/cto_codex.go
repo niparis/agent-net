@@ -90,7 +90,7 @@ func (d *Daemon) codexCTOArgs(addr, tokenPath string) []string {
 		"-c", server + `.args=["cto-mcp"]`,
 		"-c", server + ".env={AGENT_NET_SOCKET=" + q(d.cfg.SocketPath) + `,AGENT_NET_CTO="1"}`,
 		"-c", server + `.default_tools_approval_mode="approve"`}
-	if codexConfigDefinesAgentNet() {
+	if codexConfigDefinesAgentNet(codexHome(d.cfg)) {
 		args = append(args, "-c", "mcp_servers.agent-net.enabled=false")
 	}
 	return args
