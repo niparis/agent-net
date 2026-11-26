@@ -107,6 +107,9 @@ type Store struct {
 	// repoFolded is set once migrate has run, so the repo columns exist.
 	// Readers that run later use the columns without asking the schema.
 	repoFolded atomic.Bool
+
+	// ownerWords holds what the owner typed, in memory only (owner_words.go).
+	ownerWords ownerWords
 }
 
 type bucket struct {
