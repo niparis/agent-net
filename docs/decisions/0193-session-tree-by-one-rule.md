@@ -1,7 +1,7 @@
 # 0193 - The session tree is computed by one rule and cannot be wrong
 
 Date: 2026-11-26
-Status: Proposed. Asked for by the CTO on the owner's instructions (message m_3ac935db643ccd78). Waits for the owner's go before any code.
+Status: Approved by the owner on 2026-11-26 ("go 0193", through the CTO, message m_9d47e62900aa8b07), as written: the Agent graph of 0160 stays the one stored hierarchy, with no separate per-session parent. Asked for by the CTO on the owner's instructions (message m_3ac935db643ccd78).
 
 ## Context
 
@@ -59,9 +59,9 @@ One migration, appended at the end, applies I1, I2 and I4 to the stored data onc
 
 The placement guesses in internal/tui/model.go (`reportParent`, `pinnedLeadOfAgent`, `projectLeadSession`, the merger special case), the lazy pin and the "which lead" CTO question in internal/gateway/lead_session.go, and the separate parent logic in the web console and `place.go`. Rough size: a few hundred lines out, one function in.
 
-## Open question for the owner
+## The question that was settled
 
-The CTO's goal was that Agent ids, `reports_to` and team membership stop deciding placement, and that each session store its own parent. That conflicts with the owner's own design in 0160, where the Agent graph is the one stored hierarchy and Sessions and Graph are two views of it. This file keeps 0160 and makes placement a function of it. If the owner prefers a stored parent per session that ignores the Agent graph, the rule above changes and 0160's "two views of the same" no longer holds.
+The CTO had proposed that each session store its own parent and that Agent ids, `reports_to` and team membership stop deciding placement. That conflicted with the owner's design in 0160. The owner chose 0160: placement is a function of the Agent graph.
 
 ## Parts
 
