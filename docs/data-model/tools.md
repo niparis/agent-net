@@ -611,14 +611,6 @@ Run the owner operation chief_set.
 - **Writes:** `delivery_step_tasks`, `inbox_items`, `graph_edges`, `graph_history`, `messages`, `setting_values`, `sessions`, `setting_history`
 - **Gateway operations:** `chief.set`
 
-### `cto_op:chief_sorts`
-
-Read chief sorts through the owner operation.
-
-- **Reads:** `ask_sorts`, `inbox_items`
-- **Writes:** none found
-- **Gateway operations:** `chief.sorts`
-
 ### `cto_op:conversation_messages`
 
 Read conversation messages through the owner operation.

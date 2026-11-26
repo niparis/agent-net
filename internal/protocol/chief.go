@@ -69,13 +69,12 @@ const (
 )
 
 // Operator methods of the owner's TUI and the CTO: the chief's status and
-// setting, the sort history of one ask, the sorts of the last day (the Desk's
-// Handled for you list), and the owner's undo and marks of the Desk.
+// setting, the sort history of one ask, and the owner's undo and marks of the
+// Desk.
 const (
 	OpChiefGet   = "chief_get"
 	OpChiefSet   = "chief_set"
 	OpAskHistory = "ask_history"
-	OpChiefSorts = "chief_sorts"
 	OpAskUndo    = "ask_undo"
 	OpAskMark    = "ask_mark"
 	// OpAskDiscuss is the owner's "discuss" on a Desk item (decision 0150).
@@ -97,15 +96,13 @@ type AskDiscussResult struct {
 }
 
 // The two marks of the Desk (decision 0114, part 2). The owner puts one on an
-// ask that reached him (didnt_need_me) or on a handled ask (should_have_asked).
-// Each mark is stored as a correction the chief reads in its next batch.
+// ask that reached him (didnt_need_me) or on an ask the chief already sorted
+// (should_have_asked). Each mark is stored as a correction the chief reads in
+// its next batch.
 const (
 	MarkDidntNeedMe     = "didnt_need_me"
 	MarkShouldHaveAsked = "should_have_asked"
 )
-
-// ChiefSortsWindow is how far back the Desk's Handled for you list reaches.
-const ChiefSortsWindow = 24 * time.Hour
 
 // OpAskSort is the agent tool agent_ask_sort. FrameAskSort carries it from the
 // daemon to the gateway, with the caller's session in the request.
@@ -124,18 +121,11 @@ const MaxChiefReasonChars = 300
 // in Unix seconds) or an id range (FromID, ToID). Detail "full" reads one ask
 // instead of sorting it, and then only Ask is required.
 type AskSortArgs struct {
-	Mode        string `json:"mode,omitempty"`
-	Kind        string `json:"kind,omitempty"`
-	HideResult  string `json:"hide_result,omitempty"`
-	Before      string `json:"before,omitempty"`
-	RepeatsOnly bool   `json:"repeats_only,omitempty"`
-	Token       string `json:"token,omitempty"`
-	Receipt     string `json:"receipt,omitempty"`
-	Ask         string `json:"ask"`
-	Result      string `json:"result"`
-	Into        string `json:"into,omitempty"`
-	To          string `json:"to,omitempty"`
-	Reason      string `json:"reason"`
+	Ask    string `json:"ask"`
+	Result string `json:"result"`
+	Into   string `json:"into,omitempty"`
+	To     string `json:"to,omitempty"`
+	Reason string `json:"reason"`
 	// ReplacedBy names the newer ask of the same asker that takes this ask's
 	// place. It lets the chief withdraw an ask that is on the owner's Desk.
 	ReplacedBy string `json:"replaced_by,omitempty"`
@@ -173,18 +163,6 @@ type AskSortArgs struct {
 // Validate checks a sort before the gateway looks at the ask. A full read is
 // one ask id and nothing else. A list may choose its sorter and ranges.
 func (a AskSortArgs) Validate() error {
-	if a.Result == "hide" {
-		if a.Mode != "preview" && a.Mode != "apply" && a.Mode != "undo" {
-			return errors.New("hide mode must be preview, apply or undo")
-		}
-		if a.Mode == "undo" && a.Receipt == "" {
-			return errors.New("undo needs receipt")
-		}
-		if a.Mode == "apply" && a.Token == "" {
-			return errors.New("apply needs token")
-		}
-		return nil
-	}
 	if a.Result == AskSortList {
 		if a.Since < 0 || a.Until < 0 {
 			return errors.New("since and until are Unix seconds and cannot be negative")
@@ -286,18 +264,13 @@ type AskSortRequest struct {
 // asks that wait for the chief in Asks and the counts of one sorter's sorts in
 // Stats, and changes nothing. A full read has Result "read" and fills Full.
 type AskSortResult struct {
-	HiddenIDs     *[]int64      `json:"hidden_ids,omitempty"`
-	VisibleBefore int           `json:"visible_before"`
-	VisibleAfter  int           `json:"visible_after"`
-	Token         string        `json:"token,omitempty"`
-	Receipt       string        `json:"receipt,omitempty"`
-	Ask           string        `json:"ask"`
-	Result        string        `json:"result"`
-	Next          string        `json:"next"`
-	State         string        `json:"state"`
-	Asks          []AskWaiting  `json:"asks,omitempty"`
-	Stats         *AskSortStats `json:"stats,omitempty"`
-	Full          *AskFull      `json:"full,omitempty"`
+	Ask    string        `json:"ask"`
+	Result string        `json:"result"`
+	Next   string        `json:"next"`
+	State  string        `json:"state"`
+	Asks   []AskWaiting  `json:"asks,omitempty"`
+	Stats  *AskSortStats `json:"stats,omitempty"`
+	Full   *AskFull      `json:"full,omitempty"`
 	// StartID is the start id of a held worker start whose ask a withdraw took
 	// back. The caller's machine reads it to cancel the start (decision 0151).
 	StartID string `json:"start_id,omitempty"`
@@ -309,7 +282,6 @@ type AskSortResult struct {
 // LastID are the smallest and largest sort id that matched, and are zero when
 // none did. The counts hold only the results that occurred.
 type AskSortStats struct {
-	Hidden  int            `json:"hidden_count"`
 	Sorter  string         `json:"sorter"`
 	Counts  map[string]int `json:"counts"`
 	FirstID int64          `json:"first_id"`
@@ -521,19 +493,6 @@ func (m AskMarkRequest) Validate() error {
 		return errors.New("why is limited to 300 characters")
 	}
 	return nil
-}
-
-// ChiefSort is one sort of the chief in the Desk's Handled for you list. Undone
-// says that the owner put it back since.
-type ChiefSort struct {
-	AskSort
-	Question string `json:"question"`
-	Undone   bool   `json:"undone"`
-}
-
-// ChiefSortsResult is the chief's sorts of the last day, newest first.
-type ChiefSortsResult struct {
-	Sorts []ChiefSort `json:"sorts"`
 }
 
 // WakeHarness tells whether a message can wake an offline session of this

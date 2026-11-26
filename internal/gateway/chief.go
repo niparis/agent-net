@@ -698,7 +698,7 @@ func (s *Store) waitingChiefAsks(q askDB, now time.Time) ([]protocol.AskWaiting,
 // open. FirstID and LastID cover every row that matched.
 func askSortStats(q askDB, sorter string, since, until, fromID, toID int64) (protocol.AskSortStats, error) {
 	out := protocol.AskSortStats{Sorter: sorter, Counts: map[string]int{}}
-	query := `SELECT result, COUNT(*), MIN(id), MAX(id), SUM(CASE WHEN hidden_at<>0 THEN 1 ELSE 0 END) FROM ask_sorts WHERE sorter=?`
+	query := `SELECT result, COUNT(*), MIN(id), MAX(id) FROM ask_sorts WHERE sorter=?`
 	args := []any{sorter}
 	if since > 0 {
 		query += ` AND at>=?`
@@ -724,13 +724,12 @@ func askSortStats(q askDB, sorter string, since, until, fromID, toID int64) (pro
 	defer rows.Close()
 	for rows.Next() {
 		var result string
-		var n, hidden int
+		var n int
 		var first, last int64
-		if err := rows.Scan(&result, &n, &first, &last, &hidden); err != nil {
+		if err := rows.Scan(&result, &n, &first, &last); err != nil {
 			return out, err
 		}
 		out.Counts[result] = n
-		out.Hidden += hidden
 		if out.FirstID == 0 || first < out.FirstID {
 			out.FirstID = first
 		}
@@ -788,50 +787,20 @@ func (s *Store) SortAskWith(node string, q protocol.AskSortRequest, confirm *pro
 	if err != nil {
 		return out, none, err
 	}
-	owner := false
-	if q.Result == "hide" {
-		var n int
-		if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id=? AND node_id=? AND harness=? AND online=1 AND archived_at=0`, q.SessionID, node, protocol.OwnerHarness).Scan(&n); err != nil {
-			return out, none, err
-		}
-		owner = n > 0
-	}
 	// The session that holds a routed ask may close it (decision 0150): either
 	// side of a routed item may close it. It may not sort it any other way.
-	holder := !owner && q.Result == protocol.AskSortClose && q.SessionID != "" && q.SessionID != chief
+	holder := q.Result == protocol.AskSortClose && q.SessionID != "" && q.SessionID != chief
 	// The asker or a session that relayed the ask may withdraw it. The check
 	// needs the ask itself, so it runs below, after the ask is read.
-	selfWithdraw := !owner && q.Result == protocol.AskSortWithdraw && q.SessionID != "" && q.SessionID != chief
-	if !owner && !holder && !selfWithdraw && (chief == "" || chief != q.SessionID) {
+	selfWithdraw := q.Result == protocol.AskSortWithdraw && q.SessionID != "" && q.SessionID != chief
+	if !holder && !selfWithdraw && (chief == "" || chief != q.SessionID) {
 		return out, none, reject("only the chief of staff may sort asks")
 	}
 	var chiefNode string
-	if !owner && !holder && !selfWithdraw {
+	if !holder && !selfWithdraw {
 		if err := tx.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, chief).Scan(&chiefNode); err != nil || chiefNode != node {
 			return out, none, reject("the chief of staff is not on this machine")
 		}
-	}
-	if q.Result == "hide" {
-		f := hideFilter{Kind: q.Kind, Result: q.HideResult, Before: q.Before, RepeatsOnly: q.RepeatsOnly}
-		var h hideResult
-		switch q.Mode {
-		case "preview":
-			h, err = hidePreview(tx, f)
-		case "apply":
-			h, err = s.hideApply(tx, f, q.Token)
-		case "undo":
-			h, err = s.hideUndo(tx, q.Receipt)
-		}
-		if err != nil {
-			return out, none, reject("%v", err)
-		}
-		if err = tx.Commit(); err != nil {
-			return out, none, err
-		}
-		if q.Mode != "preview" {
-			s.logf("ask sort hide %s receipt=%s before=%d after=%d ids=%d", q.Mode, h.Receipt, h.Before, h.After, len(h.IDs))
-		}
-		return protocol.AskSortResult{Result: "hide", HiddenIDs: &h.IDs, VisibleBefore: h.Before, VisibleAfter: h.After, Token: h.Token, Receipt: h.Receipt}, none, nil
 	}
 	if q.Result == protocol.AskSortList {
 		asks, err := s.waitingChiefAsks(tx, s.now())
@@ -1809,34 +1778,6 @@ func (s *Store) recentCorrections() string {
 		fmt.Fprintf(&b, "- %s\n", j.Text)
 	}
 	return b.String()
-}
-
-// ChiefSorts returns the sorts of the chief since a time, newest first. An undo
-// row is not a row of its own: a sort that the owner undid is marked Undone.
-func (s *Store) ChiefSorts(since time.Time) ([]protocol.ChiefSort, error) {
-	rows, err := s.db.Query(`SELECT r.id,r.ask_id,r.at,r.sorter,r.result,r.into_id,r.to_id,r.reason,r.priority,r.why_you,
-		COALESCE(i.text,''),
-		EXISTS (SELECT 1 FROM ask_sorts u WHERE u.ask_id=r.ask_id AND u.id>r.id AND u.result=?)
-		FROM ask_sorts r LEFT JOIN inbox_items i ON i.id=r.ask_id
-		WHERE r.at>=? AND r.result<>? AND r.hidden_at=0 ORDER BY r.id DESC LIMIT 100`, protocol.AskSortUndo, since.UnixNano(), protocol.AskSortUndo)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []protocol.ChiefSort{}
-	for rows.Next() {
-		var c protocol.ChiefSort
-		var at int64
-		var undone bool
-		if err := rows.Scan(&c.ID, &c.Ask, &at, &c.Sorter, &c.Result, &c.Into, &c.To, &c.Reason, &c.Priority, &c.WhyYou, &c.Question, &undone); err != nil {
-			return nil, err
-		}
-		c.At = time.Unix(0, at).UTC()
-		c.Question = askFirstLine(c.Question, 200)
-		c.Undone = undone
-		out = append(out, c)
-	}
-	return out, rows.Err()
 }
 
 // askProposalText is what a message about a charter draft or a learned ask

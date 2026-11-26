@@ -154,40 +154,6 @@ func TestAskMarkRefusesUnknownMark(t *testing.T) {
 	}
 }
 
-// The Handled for you list is the chief's sorts of the last day, newest first.
-// An undone sort is marked as undone, and the undo row is not a row of its own.
-func TestChiefSortsListsTheLastDay(t *testing.T) {
-	s, c, chief, asker, node := chiefRig(t)
-	other, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "codex", NativeID: "nc", Name: "carol"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	closeID := chiefAsk(t, s, asker, "Is the thread answered?")
-	sortAsk(t, s, chief, node, protocol.AskSortArgs{Ask: closeID, Result: protocol.AskSortClose, Reason: "answered in the thread"})
-	sendID := chiefAskKind(t, s, asker, "feature_idea", "Who owns the cache?")
-	sortAsk(t, s, chief, node, protocol.AskSortArgs{Ask: sendID, Result: protocol.AskSortSend, To: other, Reason: "carol runs the cache"})
-	if _, err := s.UndoAsk(sendID, "owner"); err != nil {
-		t.Fatal(err)
-	}
-
-	list, err := s.ChiefSorts(c.now().Add(-protocol.ChiefSortsWindow))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(list) != 2 {
-		t.Fatalf("sorts %+v, want 2", list)
-	}
-	if list[0].Ask != sendID || list[0].Result != protocol.AskSortSend || !list[0].Undone || list[0].Question != "Who owns the cache?" {
-		t.Fatalf("newest sort %+v", list[0])
-	}
-	if list[1].Ask != closeID || list[1].Result != protocol.AskSortClose || list[1].Undone {
-		t.Fatalf("older sort %+v", list[1])
-	}
-	if late, _ := s.ChiefSorts(c.now().Add(time.Minute)); len(late) != 0 {
-		t.Fatalf("sorts after the window: %+v", late)
-	}
-}
-
 // The batch reads the newest five marks from the judgment store, newest first,
 // even when they were all made in the same second.
 func TestChiefBatchReadsNewestFiveCorrectionsFromJudgments(t *testing.T) {

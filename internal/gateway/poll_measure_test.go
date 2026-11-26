@@ -50,7 +50,6 @@ func TestMeasureTUIPollingBytes(t *testing.T) {
 		{"change.list", "change.list", protocol.ChangeListRequest{Lite: true}},
 		{"query.projects", "query.projects", protocol.QueryProjects{}},
 		{"asks.list", "asks.list", nil},
-		{"chief.sorts", "chief.sorts", nil},
 		{"query.counts", "query.counts", nil},
 		{"query.usage", "query.usage", nil},
 		{"query.events", "query.events", protocol.QueryEvents{Limit: 100}},

@@ -3224,10 +3224,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return g.discussAsk(ctx, p.Ask)
 
-	case "chief.sorts":
-		sorts, err := st.ChiefSorts(st.now().Add(-protocol.ChiefSortsWindow))
-		return protocol.ChiefSortsResult{Sorts: sorts}, err
-
 	case "inbox.answer":
 		var p struct {
 			ID      string `json:"item_id"`

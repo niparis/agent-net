@@ -102,7 +102,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_ask_sort",
-    "description": "Chief of staff: sort waiting asks (close, merge, send, owner), withdraw an ask the asker took back or a newer ask replaces, undo its own newest sort, list asks and sort counts, or read an ask with detail full. Result hide (preview, apply, undo) hides sort history reversibly. When a close or send rests on something that has not happened yet, set follow_up_at: you have no timer. Close an owner-held ask with owner_words_message (his message or the CTO's on his word). Never answer for the owner.",
+    "description": "Chief of staff: sort waiting asks (close, merge, send, owner), withdraw an ask the asker took back or a newer ask replaces, undo its own newest sort, list asks and sort counts, or read an ask with detail full. When a close or send rests on something that has not happened yet, set follow_up_at: you have no timer. Close an owner-held ask with owner_words_message (his message or the CTO's on his word). Never answer for the owner.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -129,7 +129,6 @@ export const TOOL_CATALOG = [
             "done",
             "withdraw",
             "list",
-            "hide",
             "undo"
           ],
           "description": "close: the ask is done. merge: it is the same as another open ask. send: a session should answer it. owner: the owner must decide it. withdraw: the asker (or a session that relayed it) takes the ask back; the chief uses it when a newer ask replaces one on the owner's Desk, and names that ask in replaced_by. list: show the asks waiting for you, with the sorter's counts by result. confirm or picker: answer a held worker start (decision 0151). done: the answer of an answered ask was carried out; its askers are told."
@@ -149,7 +148,7 @@ export const TOOL_CATALOG = [
         "reason": {
           "type": "string",
           "maxLength": 300,
-          "description": "Why, in one line. Required for close, merge, send and owner; not for list, hide or undo."
+          "description": "Why, in one line. Required for close, merge, send and owner; not for list or undo."
         },
         "priority": {
           "type": "integer",
@@ -181,39 +180,6 @@ export const TOOL_CATALOG = [
         "to_id": {
           "type": "integer",
           "description": "For list: only count sorts with an id at or before this."
-        },
-        "mode": {
-          "type": "string",
-          "enum": [
-            "preview",
-            "apply",
-            "undo"
-          ],
-          "description": "Hide history mode."
-        },
-        "kind": {
-          "type": "string",
-          "description": "Hide filter: ask kind."
-        },
-        "hide_result": {
-          "type": "string",
-          "description": "Hide filter: sort result."
-        },
-        "before": {
-          "type": "string",
-          "description": "Hide filter: UTC RFC3339 exclusive cutoff."
-        },
-        "repeats_only": {
-          "type": "boolean",
-          "description": "Hide only repeated stall closes."
-        },
-        "token": {
-          "type": "string",
-          "description": "Preview token for apply."
-        },
-        "receipt": {
-          "type": "string",
-          "description": "Receipt for undo."
         },
         "options": {
           "type": "array",

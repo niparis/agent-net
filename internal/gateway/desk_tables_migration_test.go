@@ -129,14 +129,6 @@ func seedPreDeskReworkDB(t *testing.T, s *Store, now int64) {
 		// delivery_step_inbox row.
 		`INSERT INTO delivery_step_inbox(change_id,revision,step,for_step,after_merge,commit_hash,item_id)
 			VALUES('ch_mig',2,'approve','merge',0,'deadbeef','i_step_1')`,
-		// ask_sorts + ask_sort_hide_receipts (one active, one already undone).
-		`INSERT INTO ask_sorts(id,ask_id,at,sorter,result,reason,hidden_at) VALUES
-			(10,'i_closed',65,'s_chief','close','done',100),
-			(11,'i_closed',66,'s_chief','close','done',100),
-			(12,'i_closed',67,'s_chief','close','done',0)`,
-		`INSERT INTO ask_sort_hide_receipts(id,ids,undone) VALUES
-			('rcpt_active','[10,11]',0),
-			('rcpt_undone','[12]',1)`,
 	} {
 		if _, err := s.db.Exec(q); err != nil {
 			t.Fatalf("seed %q: %v", q, err)
@@ -272,18 +264,6 @@ func TestDeskTablesMigrationCopiesAndDrops(t *testing.T) {
 		t.Errorf("i_back_2 detail = %q (%v)", d2, err)
 	}
 
-	// ask_sort_hide_receipts moved to desk_log: active receipt undoes, undone receipt refused.
-	if _, _, err := s.SortAsk("n1", protocol.AskSortRequest{SessionID: "s_chief", AskSortArgs: protocol.AskSortArgs{Result: "hide", Mode: "undo", Receipt: "rcpt_undone"}}); err == nil {
-		t.Error("already-undone migrated receipt was accepted")
-	}
-	undoRes, _, err := s.SortAsk("n1", protocol.AskSortRequest{SessionID: "s_chief", AskSortArgs: protocol.AskSortArgs{Result: "hide", Mode: "undo", Receipt: "rcpt_active"}})
-	if err != nil {
-		t.Fatalf("undo migrated receipt: %v", err)
-	}
-	if undoRes.HiddenIDs == nil || !reflect.DeepEqual(*undoRes.HiddenIDs, []int64{10, 11}) {
-		t.Errorf("undo hidden_ids = %+v, want [10 11]", undoRes.HiddenIDs)
-	}
-
 	// Replaying the migration is idempotent.
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version >= ?`, v); err != nil {
 		t.Fatal(err)
@@ -338,9 +318,9 @@ func TestDeskTablesFreshMatchesUpgradedSchema(t *testing.T) {
 }
 
 // Exercises Desk operations across ask kinds and states after the rework:
-// owner asks, sort (owner, send, close, merge, withdraw, done, undo, hide),
-// inbox_list, asks_list, inbox_answer, chief_sorts, ask_history, ask_undo,
-// desk_log, and cto_intake_find (single-row dedupe, wake, quota_stuck, close).
+// owner asks, sort (owner, send, close, merge, withdraw, done, undo),
+// inbox_list, asks_list, inbox_answer, ask_history, ask_undo, desk_log, and
+// cto_intake_find (single-row dedupe, wake, quota_stuck, close).
 func TestDeskOperationsAfterRework(t *testing.T) {
 	s, c, chief, asker, cto, node := deskRig(t)
 	if _, err := s.db.Exec(`INSERT INTO agents(id,display_name,created_at,updated_at) VALUES('a-net','agent-net lead',0,0);
@@ -369,7 +349,7 @@ func TestDeskOperationsAfterRework(t *testing.T) {
 		t.Fatalf("done sort = %+v, %v", res, err)
 	}
 
-	// 2. Sort send to CTO -> chief_sorts + ask_history + ask_undo.
+	// 2. Sort send to CTO -> ask_history + ask_undo.
 	q2, err := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: asker, Node: "demo", Text: "Upgrade Go?", Options: []string{"yes", "no"}})
 	if err != nil {
 		t.Fatal(err)
@@ -383,34 +363,11 @@ func TestDeskOperationsAfterRework(t *testing.T) {
 	if hist, err := s.AskSortHistory(q2.ID); err != nil || len(hist) != 1 {
 		t.Fatalf("AskSortHistory = %+v, %v", hist, err)
 	}
-	if sorts, err := s.ChiefSorts(time.Time{}); err != nil || len(sorts) < 2 {
-		t.Fatalf("ChiefSorts = %+v, %v", sorts, err)
-	}
 	if _, err := s.UndoAsk(q2.ID, "owner"); err != nil {
 		t.Fatalf("UndoAsk: %v", err)
 	}
 	if asks, err := s.ListAsks(); err != nil || len(asks) != 1 || asks[0].Owner != protocol.DeskOwnerChief || asks[0].DeskState != protocol.DeskReady {
 		t.Fatalf("ListAsks after undo = %+v, %v", asks, err)
-	}
-
-	// 3. Batch hide + undo via desk_log.
-	stall := chiefAskKind(t, s, asker, "session_stall", "stalled")
-	sortAsk(t, s, chief, node, protocol.AskSortArgs{Ask: stall, Result: protocol.AskSortClose, Reason: "handled"})
-	hideArgs := protocol.AskSortArgs{Result: "hide", Mode: "preview", Kind: "session_stall", HideResult: "close", Before: c.now().Add(time.Hour).UTC().Format(time.RFC3339)}
-	prev, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: hideArgs})
-	if err != nil || prev.Token == "" {
-		t.Fatalf("hide preview: %+v %v", prev, err)
-	}
-	hideArgs.Mode, hideArgs.Token = "apply", prev.Token
-	app, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: hideArgs})
-	if err != nil || app.Receipt == "" {
-		t.Fatalf("hide apply: %+v %v", app, err)
-	}
-	if _, _, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{Result: "hide", Mode: "undo", Receipt: app.Receipt}}); err != nil {
-		t.Fatalf("hide undo: %v", err)
-	}
-	if log, err := s.DeskLog(20); err != nil || len(log) == 0 {
-		t.Fatalf("DeskLog = %+v, %v", log, err)
 	}
 
 	// 4. CTO intake lives in one inbox_items row through dedupe, wake and close.
