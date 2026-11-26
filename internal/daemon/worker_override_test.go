@@ -55,7 +55,8 @@ func overrideAsks(g *testGateway) []protocol.InboxItem {
 
 // heldBefore stands for a start this daemon held before decision 0196. Only
 // such a start is still answered; a new one is refused.
-func heldBefore(w *workerNode, caller string) string {
+func heldBefore(t *testing.T, w *workerNode, caller string) string {
+	t.Helper()
 	id := protocol.NewID("a")
 	req := overrideRequest()
 	req.Reason = ""
@@ -63,8 +64,13 @@ func heldBefore(w *workerNode, caller string) string {
 	if w.d.heldStarts == nil {
 		w.d.heldStarts = map[string]*heldStart{}
 	}
-	w.d.heldStarts[id] = &heldStart{id: id, caller: caller, req: req}
+	h := &heldStart{id: id, caller: caller, req: req}
+	w.d.heldStarts[id] = h
 	w.d.heldMu.Unlock()
+	// An earlier daemon saved it in daemon.db, so a restart still holds it.
+	if err := w.d.st.addHeldStart(h, time.Now()); err != nil {
+		t.Fatal(err)
+	}
 	return id
 }
 
@@ -125,7 +131,7 @@ func TestOverrideWithoutOwnerWordsIsRefused(t *testing.T) {
 // the fields, and the caller gets the notice.
 func TestOverrideHeldBeforeThenConfirmedStartsWithTheFields(t *testing.T) {
 	_, w, _, piID := overrideNode(t)
-	id := heldBefore(w, piID)
+	id := heldBefore(t, w, piID)
 	answerHeld(w, piID, id, protocol.StartAnswerConfirm)
 	body := noticeFor(t, w, piID, id)
 	if !strings.Contains(body, "status: started") || !strings.Contains(body, "fake/m2") {
@@ -136,7 +142,7 @@ func TestOverrideHeldBeforeThenConfirmedStartsWithTheFields(t *testing.T) {
 // "Let the picker choose" starts the worker without the fields.
 func TestOverrideHeldBeforeThenPickerStartsWithoutTheFields(t *testing.T) {
 	_, w, _, piID := overrideNode(t)
-	id := heldBefore(w, piID)
+	id := heldBefore(t, w, piID)
 	answerHeld(w, piID, id, protocol.StartAnswerPicker)
 	body := noticeFor(t, w, piID, id)
 	if !strings.Contains(body, "status: started") || !strings.Contains(body, "fake/m1") || strings.Contains(body, "fake/m2") {
@@ -148,7 +154,7 @@ func TestOverrideHeldBeforeThenPickerStartsWithoutTheFields(t *testing.T) {
 // started and nothing is dropped silently.
 func TestOverrideHeldBeforeDismissedIsNotStartedWithANotice(t *testing.T) {
 	_, w, _, piID := overrideNode(t)
-	id := heldBefore(w, piID)
+	id := heldBefore(t, w, piID)
 	answerHeld(w, piID, id, "dismiss")
 	body := noticeFor(t, w, piID, id)
 	if !strings.Contains(body, "status: not started") || !strings.Contains(body, "was not approved") {
@@ -297,7 +303,7 @@ func TestAcceptedStartNoticeCarriesBriefFlagsAndModelNote(t *testing.T) {
 // arrives, instead of dropping it.
 func TestOverrideLostHeldStartTellsTheCaller(t *testing.T) {
 	_, w, _, piID := overrideNode(t)
-	id := heldBefore(w, piID)
+	id := heldBefore(t, w, piID)
 	w.d.heldMu.Lock()
 	delete(w.d.heldStarts, id)
 	w.d.heldMu.Unlock()
@@ -327,20 +333,19 @@ func TestOwnerWordsCanNameAPausedModel(t *testing.T) {
 	}
 }
 
-// A held start is kept in daemon.db: an answer that arrives after a daemon
-// restart starts the worker, and the owner is not asked a second time.
+// A start held before decision 0196 is kept in daemon.db: an answer that
+// arrives after a daemon restart starts the worker with its fields.
 func TestOverrideHeldStartSurvivesADaemonRestart(t *testing.T) {
-	g, w, pi, piID := overrideNode(t)
-	res := startFrom(t, pi, overrideRequest())
-	ask := waitOverrideAsk(t, g)
+	g, w, _, piID := overrideNode(t)
+	id := heldBefore(t, w, piID)
 	w.restart()
 	w.cli = cliClient(t, w.node)
 	// The caller's session comes back with the new daemon, as a live one would.
 	if _, id := helloPi(t, w.node, "caller", t.TempDir(), true); id != piID {
 		t.Fatalf("the caller came back as %s, not %s", id, piID)
 	}
-	w.cli.mustCall("inbox_answer", map[string]string{"id": ask.ID, "answer": protocol.StartAnswerConfirm})
-	body := noticeFor(t, w, piID, res.StartID)
+	answerHeld(w, piID, id, protocol.StartAnswerConfirm)
+	body := noticeFor(t, w, piID, id)
 	if !strings.Contains(body, "status: started") || !strings.Contains(body, "fake/m2") {
 		t.Fatalf("the start held before the restart did not start with its fields:\n%s", body)
 	}

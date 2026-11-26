@@ -136,11 +136,17 @@ func ownerItemBody(q askDB, item protocol.InboxItem, canReply bool) string {
 	} else {
 		b.WriteString("agent-net sent this as a notice. Ask the owner in your chat only what only he can decide.")
 	}
-	body := b.String()
-	if len(body) > protocol.MaxBodyBytes {
-		body = strings.ToValidUTF8(body[:protocol.MaxBodyBytes], "")
+	// A held message has nobody to release it but the CTO, so the request ends
+	// with how. The end is kept when a long held body is cut.
+	var end string
+	if item.Kind == protocol.AskKindHeld && item.MessageID != "" {
+		end = fmt.Sprintf("\nIf the owner agrees, the CTO answers it with held_answer, message_id %s, action a to deliver or r to refuse.", item.MessageID)
 	}
-	return body
+	body := b.String()
+	if limit := protocol.MaxBodyBytes - len(end); len(body) > limit {
+		body = strings.ToValidUTF8(body[:limit], "")
+	}
+	return body + end
 }
 
 // logOwnerItem writes the log line of an owner item. It never logs the text
