@@ -233,11 +233,17 @@ func SetNoAutoUpgrade(dir string, disabled bool) error {
 	} else {
 		delete(fields, "no_auto_upgrade")
 	}
+	return writeNodeJSON(filepath.Join(dir, "node.json"), fields)
+}
+
+// writeNodeJSON replaces node.json atomically with the given fields. It keeps
+// every field the caller did not set.
+func writeNodeJSON(path string, fields map[string]json.RawMessage) error {
 	out, err := json.MarshalIndent(fields, "", "  ")
 	if err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(dir, ".node.json.*")
+	f, err := os.CreateTemp(filepath.Dir(path), ".node.json.*")
 	if err != nil {
 		return err
 	}
@@ -299,6 +305,33 @@ func ParseJoinString(s string) (url, code, fp string, err error) {
 	return strings.TrimRight(parts[0], "/"), parts[1], strings.ToLower(parts[2]), nil
 }
 
+// fetchCA reads the CA certificate a gateway serves. It is not trusted until
+// its fingerprint matches the one this machine already knows.
+func fetchCA(ctx context.Context, url string) ([]byte, string, error) {
+	bootstrap := &http.Client{
+		Timeout:   15 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", url+"/v1/ca", nil)
+	if err != nil {
+		return nil, "", err
+	}
+	resp, err := bootstrap.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("fetch CA: %w", err)
+	}
+	caPEM, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	resp.Body.Close()
+	if err != nil {
+		return nil, "", err
+	}
+	fp, err := protocol.CertFingerprint(caPEM)
+	if err != nil {
+		return nil, "", fmt.Errorf("gateway sent a bad CA: %w", err)
+	}
+	return caPEM, fp, nil
+}
+
 // Join fetches the gateway CA, checks it against the fingerprint in the join
 // string, enrolls this node and writes node.json and ca.pem into dir.
 func Join(ctx context.Context, joinString, dir string) (NodeConfig, error) {
@@ -306,25 +339,9 @@ func Join(ctx context.Context, joinString, dir string) (NodeConfig, error) {
 	if err != nil {
 		return NodeConfig{}, err
 	}
-	// Only the CA certificate is fetched without verification. It is not
-	// trusted until its fingerprint matches.
-	bootstrap := &http.Client{
-		Timeout:   15 * time.Second,
-		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
-	}
-	req, _ := http.NewRequestWithContext(ctx, "GET", url+"/v1/ca", nil)
-	resp, err := bootstrap.Do(req)
-	if err != nil {
-		return NodeConfig{}, fmt.Errorf("fetch CA: %w", err)
-	}
-	caPEM, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
-	resp.Body.Close()
+	caPEM, got, err := fetchCA(ctx, url)
 	if err != nil {
 		return NodeConfig{}, err
-	}
-	got, err := protocol.CertFingerprint(caPEM)
-	if err != nil {
-		return NodeConfig{}, fmt.Errorf("gateway sent a bad CA: %w", err)
 	}
 	if got != fp {
 		return NodeConfig{}, fmt.Errorf("CA fingerprint mismatch: join string has %s, gateway presented %s", fp, got)
@@ -343,9 +360,9 @@ func Join(ctx context.Context, joinString, dir string) (NodeConfig, error) {
 	}
 	host := Hostname(old.Hostname)
 	body, _ := json.Marshal(map[string]string{"code": code, "hostname": host, "os": runtime.GOOS})
-	req, _ = http.NewRequestWithContext(ctx, "POST", url+"/v1/enroll", bytes.NewReader(body))
+	req, _ := http.NewRequestWithContext(ctx, "POST", url+"/v1/enroll", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err = client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return NodeConfig{}, fmt.Errorf("enroll: %w", err)
 	}
@@ -373,4 +390,77 @@ func Join(ctx context.Context, joinString, dir string) (NodeConfig, error) {
 	}
 	raw, _ := json.MarshalIndent(nc, "", "  ")
 	return nc, os.WriteFile(filepath.Join(dir, "node.json"), raw, 0o600)
+}
+
+// ChangeGateway points an already joined machine at another gateway URL. The
+// new address must serve the CA this machine pinned and accept its token, so
+// the machine keeps its node ID and token. It writes node.json and returns the
+// previous and new gateway URLs. Nothing is written when a check fails.
+func ChangeGateway(ctx context.Context, gatewayURL, dir string) (oldURL, newURL string, err error) {
+	nc, _, err := LoadNode(dir)
+	if err != nil {
+		return "", "", err
+	}
+	url := strings.TrimRight(strings.TrimSpace(gatewayURL), "/")
+	if !strings.HasPrefix(url, "https://") || len(url) == len("https://") {
+		return "", "", errors.New("gateway URL must look like https://host:7420")
+	}
+	caPEM, fp, err := fetchCA(ctx, url)
+	if err != nil {
+		return "", "", err
+	}
+	if fp != nc.CASHA256 {
+		return "", "", fmt.Errorf("the gateway at %s has a different CA (sha256 %s, this machine has %s); nothing changed", url, fp, nc.CASHA256)
+	}
+	client, err := PinnedClient(caPEM)
+	if err != nil {
+		return "", "", err
+	}
+	if err := checkNodeToken(ctx, client, url, nc.NodeID, nc.Token); err != nil {
+		return "", "", err
+	}
+	path := filepath.Join(dir, "node.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", "", err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return "", "", err
+	}
+	if fields == nil {
+		return "", "", errors.New("node.json is not an object")
+	}
+	value, _ := json.Marshal(url)
+	fields["gateway_url"] = value
+	if err := writeNodeJSON(path, fields); err != nil {
+		return "", "", err
+	}
+	return nc.GatewayURL, url, nil
+}
+
+// checkNodeToken asks a gateway whether it knows this machine's token. The
+// integrations read is a small authenticated route that changes nothing.
+func checkNodeToken(ctx context.Context, client *http.Client, url, nodeID, token string) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", url+"/v1/integrations", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("X-Agent-Net-Node-ID", nodeID)
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("reach the gateway at %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, io.LimitReader(resp.Body, 512))
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return nil
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return fmt.Errorf("the gateway at %s does not accept this machine's token; nothing changed", url)
+	case http.StatusGone:
+		return fmt.Errorf("the gateway at %s says this machine was removed from the network; join again with a join string", url)
+	}
+	return fmt.Errorf("the gateway at %s answered HTTP %d; nothing changed", url, resp.StatusCode)
 }

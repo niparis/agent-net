@@ -1,0 +1,51 @@
+package setup
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"runtime"
+	"strings"
+)
+
+// RestartDaemon restarts the daemon service so it reads a changed node.json.
+// The note says what happened for the command's one line.
+func RestartDaemon() (string, error) {
+	return restartService("daemon", runtime.GOOS)
+}
+
+// RestartGateway restarts the gateway service on the machine that runs it.
+func RestartGateway() (string, error) {
+	return restartService("gateway", runtime.GOOS)
+}
+
+func restartService(name, platform string) (string, error) {
+	if os.Getenv("AGENT_NET_NO_SERVICE") == "1" {
+		return name + " not restarted (AGENT_NET_NO_SERVICE=1)", nil
+	}
+	service := Service{Name: name}
+	switch platform {
+	case "linux":
+		path, err := exec.LookPath("systemctl")
+		if err != nil {
+			return name + " not restarted (systemctl not found)", nil
+		}
+		out, err := exec.Command(path, "--user", "--no-block", "restart", service.UnitName()).CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("systemctl --user restart %s: %s", service.UnitName(), firstLine(strings.TrimSpace(string(out)), err))
+		}
+		return name + " restarted", nil
+	case "darwin":
+		path, err := exec.LookPath("launchctl")
+		if err != nil {
+			return name + " not restarted (launchctl not found)", nil
+		}
+		target := fmt.Sprintf("gui/%d/%s", os.Getuid(), service.Label())
+		out, err := exec.Command(path, "kickstart", "-k", target).CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("launchctl kickstart %s: %s", target, firstLine(strings.TrimSpace(string(out)), err))
+		}
+		return name + " restarted", nil
+	}
+	return name + " not restarted (no service support on " + platform + ")", nil
+}

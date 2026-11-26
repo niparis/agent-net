@@ -45,7 +45,9 @@ const usage = `usage: agent-net <command>
   invite     print the one-line installer for a new machine (run on the gateway host)
   uninstall  remove services and integrations (--purge also removes credentials)
   enroll     print a one-time join string (run on the gateway host)
-  join       join this machine to a gateway: agent-net join <join-string>
+  join       join this machine to a gateway: agent-net join <join-string>;
+             on a machine that already joined: agent-net join --gateway URL
+  restart    restart this machine's daemon service; --gateway on the gateway machine also restarts the gateway
   daemon     run the per-machine daemon
   mcp        stdio MCP server for a Claude Code session; with a subcommand (add, list, test,
              remove, enable, disable) manages the MCP server registry
@@ -124,6 +126,8 @@ func run(ctx context.Context, argv []string, stderr io.Writer) int {
 		err = cmdEnroll(args)
 	case "join":
 		err = cmdJoin(ctx, args)
+	case "restart":
+		err = cmdRestart(args)
 	case "daemon":
 		err = cmdDaemon(ctx, args)
 	case "cto-mcp":
@@ -328,21 +332,6 @@ func cmdEnroll(args []string) error {
 	}
 	fmt.Printf("https://%s:%s#%s#%s\n", *host, *port, code, fp)
 	fmt.Fprintln(os.Stderr, "valid for 10 minutes, usable once. Run on the other machine: agent-net join '<the line above>'")
-	return nil
-}
-
-func cmdJoin(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("join", flag.ExitOnError)
-	dir := fs.String("config-dir", daemon.ConfigDir(), "where to save node.json and ca.pem")
-	fs.Parse(args)
-	if fs.NArg() != 1 {
-		return errors.New("usage: agent-net join <join-string>")
-	}
-	nc, err := daemon.Join(ctx, fs.Arg(0), *dir)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("joined %s as node %s (credentials in %s)\n", nc.GatewayURL, nc.NodeID, *dir)
 	return nil
 }
 
