@@ -110,6 +110,92 @@ func TestHarnessBinaryMissingGivesClearMessage(t *testing.T) {
 	}
 }
 
+// TestHarnessCheckFindsAHarnessInstalledAfterStart drops a harness binary in a
+// folder on the search path after detection ran, and expects the periodic check
+// to list it. While nothing changes the check only stats files.
+func TestHarnessCheckFindsAHarnessInstalledAfterStart(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	dir := t.TempDir()
+	search := &harnesses.Options{PATH: dir, Dirs: []string{}, LoginShellPATH: func(context.Context) string { return "" }}
+	var runs atomic.Int32
+	detect := func(ctx context.Context) []protocol.HarnessInfo {
+		runs.Add(1)
+		if p := harnesses.Executable(ctx, "codex", *search); p != "" {
+			return []protocol.HarnessInfo{{Name: "codex", Path: p, Version: "fake"}}
+		}
+		return []protocol.HarnessInfo{}
+	}
+	logger := log.New(&logBuf{}, "", 0)
+	d := &Daemon{cfg: Config{DetectHarnesses: detect, HarnessSearch: search, HarnessCheckInterval: 5 * time.Millisecond, Logger: logger}, log: logger}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); d.harnessLoop(ctx) }()
+	defer func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(scaled(5 * time.Second)):
+			t.Fatal("the harness loop did not stop")
+		}
+	}()
+	eventually(t, "the first detection", func() bool {
+		list, _ := d.inventory()
+		return list != nil
+	})
+	if d.harnessCheck(ctx) {
+		t.Fatal("the check refreshed while no harness was installed")
+	}
+	if got := runs.Load(); got != 1 {
+		t.Fatalf("detection ran %d times while nothing changed, want 1", got)
+	}
+	fakeHarnessScript(t, dir, "codex")
+	eventually(t, "codex in the inventory", func() bool {
+		list, _ := d.inventory()
+		for _, h := range list {
+			if h.Name == "codex" && h.Path != "" {
+				return true
+			}
+		}
+		return false
+	})
+	if got := runs.Load(); got != 2 {
+		t.Fatalf("detection ran %d times, want 2 (the check and the new binary)", got)
+	}
+}
+
+// TestHarnessBinaryDetectsAHarnessInstalledAfterStart covers a start that asks
+// for a harness the inventory does not list: the daemon looks it up, detects
+// again, and later starts find it in the inventory.
+func TestHarnessBinaryDetectsAHarnessInstalledAfterStart(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	dir := t.TempDir()
+	search := &harnesses.Options{PATH: dir, Dirs: []string{}, LoginShellPATH: func(context.Context) string { return "" }}
+	detect := func(ctx context.Context) []protocol.HarnessInfo {
+		if p := harnesses.Executable(ctx, "codex", *search); p != "" {
+			return []protocol.HarnessInfo{{Name: "codex", Path: p, Version: "fake"}}
+		}
+		return []protocol.HarnessInfo{}
+	}
+	logger := log.New(&logBuf{}, "", 0)
+	d := &Daemon{cfg: Config{DetectHarnesses: detect, HarnessSearch: search, Logger: logger}, log: logger}
+	d.refreshHarnessInventory(context.Background())
+	bin := fakeHarnessScript(t, dir, "codex")
+	got, err := d.harnessBinary("codex")
+	if err != nil {
+		t.Fatalf("harnessBinary: %v", err)
+	}
+	if got != bin {
+		t.Fatalf("harnessBinary = %q, want %q", got, bin)
+	}
+	list, _ := d.inventory()
+	for _, h := range list {
+		if h.Name == "codex" && h.Path == bin {
+			return
+		}
+	}
+	t.Fatalf("the start did not refresh the inventory: %+v", list)
+}
+
 // TestHarnessLoopListsModelsOnce verifies the loop detects the harness once and
 // never runs a periodic model scan again.
 func TestHarnessLoopListsModelsOnce(t *testing.T) {
@@ -121,8 +207,19 @@ func TestHarnessLoopListsModelsOnce(t *testing.T) {
 	}
 	logger := log.New(&logBuf{}, "", 0)
 	d := &Daemon{cfg: Config{DetectHarnesses: detect, Logger: logger}, log: logger}
-	d.harnessLoop(context.Background())
-	time.Sleep(100 * time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); d.harnessLoop(ctx) }()
+	eventually(t, "the first detection", func() bool {
+		list, _ := d.inventory()
+		return list != nil
+	})
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(scaled(5 * time.Second)):
+		t.Fatal("the harness loop did not stop")
+	}
 	if got := runs.Load(); got != 1 {
 		t.Fatalf("detection ran %d times, want exactly 1 (no periodic model scan)", got)
 	}

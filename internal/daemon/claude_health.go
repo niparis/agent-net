@@ -3,7 +3,7 @@ package daemon
 import "github.com/niparis/agent-net/internal/protocol"
 
 // checkClaudeDelivery runs on each inventory refresh, at startup, after managed
-// updates, and when periodic detection sees an external version change. Recheck
+// updates, and when detection finds a harness that was installed later. Recheck
 // even the same version so a repaired socket clears a previous warning.
 func (d *Daemon) checkClaudeDelivery(list []protocol.HarnessInfo) {
 	checker, ok := d.adapters["claude"].(interface{ CheckDelivery(string) string })
