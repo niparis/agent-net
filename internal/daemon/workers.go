@@ -1257,7 +1257,7 @@ func (d *Daemon) beginWorkerEnd(w *worker, reason string, when func() bool) <-ch
 		// resume that starts it again finds the data folder it kept and no
 		// removal runs against the new run's private tmp.
 		if dir != "" && !resumable && !keepDirtyWorktree {
-			os.RemoveAll(dir)
+			_ = removeWorkerFolder(dir)
 		} else {
 			// A kept folder keeps only what a resume or the record cleanup
 			// reads. Its tmp and package caches can be gigabytes.
