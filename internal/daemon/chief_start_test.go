@@ -171,10 +171,10 @@ func TestResumedChiefKeepsItsMemoryOff(t *testing.T) {
 	if err := g.gw.Store().SetChief(protocol.ChiefSetRequest{SessionID: chief}, "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if spec := n.d.claudeResumeSpec(protocol.AgentView{SessionID: chief, NativeID: "chief-native", Cwd: "/w/chief"}); !strings.Contains(spec.Settings, `"autoMemoryEnabled":false`) {
+	if spec, _ := n.d.claudeResumeSpec(protocol.AgentView{SessionID: chief, NativeID: "chief-native", Cwd: "/w/chief"}); !strings.Contains(spec.Settings, `"autoMemoryEnabled":false`) {
 		t.Fatalf("chief resume settings = %q, want autoMemoryEnabled false", spec.Settings)
 	}
-	if spec := n.d.claudeResumeSpec(protocol.AgentView{SessionID: other, NativeID: "other-native", Cwd: "/w/other"}); strings.Contains(spec.Settings, "autoMemoryEnabled") {
+	if spec, _ := n.d.claudeResumeSpec(protocol.AgentView{SessionID: other, NativeID: "other-native", Cwd: "/w/other"}); strings.Contains(spec.Settings, "autoMemoryEnabled") {
 		t.Fatalf("another session's resume settings = %q, want no memory setting", spec.Settings)
 	}
 }
