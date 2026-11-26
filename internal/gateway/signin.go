@@ -110,30 +110,65 @@ func (g *Gateway) signInTarget(raw []byte) (json.RawMessage, error) {
 	})
 }
 
-// signInPrepare asks the machine the ask names to open the login in its own
-// herdr. It runs only from an ask the owner clicked, so it checks owner
-// authority before any frame goes to the target machine.
+// signInPrepare asks a named machine to open the login in its own herdr. It
+// checks owner authority before any frame goes to the target machine, and the
+// provider must be on the allowlist. No stored ask is needed.
 func (g *Gateway) signInPrepare(ctx context.Context, nc *nodeConn, raw []byte) (json.RawMessage, error) {
-	var q protocol.SignInQuery
-	if json.Unmarshal(raw, &q) != nil || q.AskID == "" {
+	var q protocol.SignInPrepareRequest
+	if json.Unmarshal(raw, &q) != nil || strings.TrimSpace(q.Machine) == "" || strings.TrimSpace(q.Provider) == "" {
 		return nil, reject("bad sign-in prepare")
 	}
 	if !g.validToolOwner(nc, q.Owner) {
 		return nil, reject("owner authority required")
 	}
-	a, provider, err := g.store.SignInAsk(q.AskID)
+	return g.openSignInOnMachine(ctx, q.Machine, q.Provider)
+}
+
+// openSignInOnMachine resolves a machine and allowlisted provider and asks that
+// machine's daemon to open the login in its own herdr. A caller never supplies
+// a command: the daemon reads it from the fixed table.
+func (g *Gateway) openSignInOnMachine(ctx context.Context, machine, provider string) (json.RawMessage, error) {
+	info, ok := protocol.SignInProvider(provider)
+	if !ok {
+		return nil, reject("unknown sign-in provider")
+	}
+	node, err := g.store.NodeByHostOrID(strings.TrimSpace(machine))
 	if err != nil {
 		return nil, err
 	}
-	target := g.conn(a.Node)
+	target := g.conn(node)
 	if target == nil {
 		return nil, reject("the machine for this sign-in is offline")
 	}
-	data, err := target.request(ctx, protocol.FrameSignInPrepare, protocol.SignInPrepare{AskID: a.ID, Provider: provider}, relayUsageTopWait)
+	data, err := target.request(ctx, protocol.FrameSignInPrepare, protocol.SignInPrepare{Provider: info.Provider}, relayUsageTopWait)
 	if err != nil {
 		return nil, reject("%s", err.Error())
 	}
 	return data, nil
+}
+
+// signInOpen is FrameSignInOpen: the CTO opens a login on a named machine on
+// the owner's quoted words, through the owner operation sign_in_open. The
+// daemon verifies the words and names the owner session; the gateway refuses
+// anything without that proof.
+func (g *Gateway) signInOpen(ctx context.Context, nc *nodeConn, raw []byte) (json.RawMessage, error) {
+	var p protocol.SignInOpenFrame
+	if json.Unmarshal(raw, &p) != nil {
+		return nil, reject("bad sign-in open")
+	}
+	if len(p.Request.Command) != 0 {
+		return nil, reject("sign_in_open takes a provider, never a command")
+	}
+	if !g.validToolOwner(nc, p.Owner) {
+		return nil, reject("owner authority required")
+	}
+	if strings.TrimSpace(p.Request.OwnerWords) == "" || !p.WordsVerified {
+		return nil, reject("owner_words were not verified: the owner must have typed them")
+	}
+	if strings.TrimSpace(p.Request.Machine) == "" || strings.TrimSpace(p.Request.Provider) == "" {
+		return nil, reject("sign_in_open needs a machine and a provider")
+	}
+	return g.openSignInOnMachine(ctx, p.Request.Machine, p.Request.Provider)
 }
 
 // signInRaise raises one sign-in ask for a known provider on a machine. The
@@ -181,25 +216,30 @@ func (g *Gateway) signInClose(nc *nodeConn, raw []byte) error {
 	return g.store.CloseSignIn(nc.id, p.Provider, p.Reason)
 }
 
-// signInTransfer relays credentials only to the node named by the open ask.
-// Neither the token nor the other node's output is written to the store or log.
+// signInTransfer relays credentials only to the named machine and allowlisted
+// provider. Neither the token nor the other node's output is written to the
+// store or log.
 func (g *Gateway) signInTransfer(ctx context.Context, nc *nodeConn, raw []byte) (json.RawMessage, error) {
 	var p protocol.SignInTransfer
-	if json.Unmarshal(raw, &p) != nil || p.AskID == "" || p.Token == "" {
+	if json.Unmarshal(raw, &p) != nil || strings.TrimSpace(p.Machine) == "" || p.Provider == "" || p.Token == "" {
 		return nil, reject("bad sign-in transfer")
 	}
 	if !g.validToolOwner(nc, p.Owner) {
 		return nil, reject("owner authority required")
 	}
-	a, provider, err := g.store.SignInAsk(p.AskID)
+	info, ok := protocol.SignInProvider(p.Provider)
+	if !ok {
+		return nil, reject("unknown sign-in provider")
+	}
+	node, err := g.store.NodeByHostOrID(strings.TrimSpace(p.Machine))
 	if err != nil {
 		return nil, err
 	}
-	target := g.conn(a.Node)
+	target := g.conn(node)
 	if target == nil {
 		return nil, reject("the machine for this sign-in is offline")
 	}
-	_, err = target.request(ctx, protocol.FrameSignInImport, protocol.SignInImport{Provider: provider, Token: p.Token}, defaultRelayWait)
+	_, err = target.request(ctx, protocol.FrameSignInImport, protocol.SignInImport{Provider: info.Provider, Token: p.Token}, defaultRelayWait)
 	if err != nil {
 		return nil, reject("the target could not complete sign-in")
 	}

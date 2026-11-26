@@ -230,8 +230,8 @@ func (s *Store) insertPermissionProposal(tx *sql.Tx, p protocol.PermissionPropos
 		}
 	}
 	// The proposal reaches the chief as a request (decision 0196). The CTO
-	// applies it by id once the owner says yes, quoting his words.
-	text := permissionAskText(p) + fmt.Sprintf("\nIf the owner agrees, the CTO applies it with permission_apply id %s, quoting the owner's words in owner_words.", p.ID)
+	// applies or rejects it by id once the owner answers, quoting his words.
+	text := permissionAskText(p) + fmt.Sprintf("\nIf the owner agrees, the CTO applies it with permission_apply id %s, quoting the owner's words in owner_words. If he refuses, the CTO rejects it with permission_reject id %s, a reason, and the same owner_words.", p.ID, p.ID)
 	item := protocol.InboxItem{
 		Kind: protocol.AskKindPermission, SessionID: session, FromKind: protocol.AskFromSession,
 		AskerName: p.ProposedName, SourceRef: permissionAskPrefix + p.ID,
@@ -472,7 +472,7 @@ func (s *Store) RaiseTrustAsk(session, nodeID, hostname, path, project, reason s
 	return true, nil
 }
 
-const permissionColumns = `id,kind,rules,targets,reason,proposed_by,proposed_name,status,created_at,decided_at,decided_by,results,desk_log_id,dedupe_key,owner_words`
+const permissionColumns = `id,kind,rules,targets,reason,proposed_by,proposed_name,status,created_at,decided_at,decided_by,results,desk_log_id,dedupe_key,owner_words,decided_reason`
 
 // PermissionProposal reads one proposal, including the results of its apply.
 func (s *Store) PermissionProposal(id string) (protocol.PermissionProposal, error) {
@@ -503,7 +503,7 @@ func scanPermissionProposal(row interface{ Scan(...any) error }) (protocol.Permi
 	var p protocol.PermissionProposal
 	var rules, targets, results string
 	err := row.Scan(&p.ID, &p.Kind, &rules, &targets, &p.Reason, &p.ProposedBy, &p.ProposedName,
-		&p.Status, &p.CreatedAt, &p.DecidedAt, &p.DecidedBy, &results, &p.DeskLogID, &p.DedupeKey, &p.OwnerWords)
+		&p.Status, &p.CreatedAt, &p.DecidedAt, &p.DecidedBy, &results, &p.DeskLogID, &p.DedupeKey, &p.OwnerWords, &p.DecidedReason)
 	if err != nil {
 		return p, err
 	}
@@ -686,6 +686,59 @@ func (s *Store) ApprovePermissionOnOwnerWords(frame protocol.PermissionOwnerAppl
 		return "", err
 	}
 	return p.ID, tx.Commit()
+}
+
+// RejectPermissionOnOwnerWords records the owner's refusal of one pending
+// proposal from his quoted chat words (decision 0196). The proposal leaves
+// the pending list and keeps the reason. Nothing is written to a machine.
+func (s *Store) RejectPermissionOnOwnerWords(frame protocol.PermissionRejectFrame) (protocol.PermissionProposal, error) {
+	req := frame.Request
+	words := strings.TrimSpace(req.OwnerWords)
+	if words == "" {
+		return protocol.PermissionProposal{}, reject("owner_words is required: quote the owner's instruction from this chat")
+	}
+	if !frame.WordsVerified {
+		return protocol.PermissionProposal{}, reject("owner_words were not verified: the owner must have typed them")
+	}
+	id := strings.TrimSpace(req.ID)
+	if id == "" {
+		return protocol.PermissionProposal{}, reject("permission_reject needs the id of a pending proposal")
+	}
+	by := "owner"
+	if frame.By == "cto" {
+		by = "cto"
+	}
+	now := s.now()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return protocol.PermissionProposal{}, err
+	}
+	defer tx.Rollback()
+	var status string
+	if err := tx.QueryRow(`SELECT status FROM permission_proposals WHERE id=?`, id).Scan(&status); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return protocol.PermissionProposal{}, reject("unknown permission proposal %s", id)
+		}
+		return protocol.PermissionProposal{}, err
+	}
+	if status != "pending" {
+		return protocol.PermissionProposal{}, reject("permission proposal %s is %s, not pending", id, status)
+	}
+	reason := strings.TrimSpace(req.Reason)
+	if _, err := tx.Exec(`UPDATE permission_proposals SET status='rejected',decided_at=?,decided_by=?,owner_words=?,decided_reason=? WHERE id=?`,
+		now.UnixNano(), by, words, reason, id); err != nil {
+		return protocol.PermissionProposal{}, err
+	}
+	// An ask stored before decision 0196 is closed too. New proposals reach
+	// the chief as a message and store nothing here.
+	if _, err := tx.Exec(`UPDATE inbox_items SET status='dismissed',answer=?,answered_at=? WHERE source_ref=? AND status='open'`,
+		"reject: "+reason, now.UTC().UnixNano(), permissionAskPrefix+id); err != nil {
+		return protocol.PermissionProposal{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return protocol.PermissionProposal{}, err
+	}
+	return s.PermissionProposal(id)
 }
 
 // permissionResultLine says what happened to one target, in the owner's words.

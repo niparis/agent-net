@@ -1339,7 +1339,19 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration, workerTablesMigration, machineTablesMigration, orgFoldMigration, toolsRetireMigration, oauthClientsMigration, deskTablesMigration, pickQuotaMigration, workerStartOwnerChoiceMigration, sessionRequestedModelMigration, stoodDownMigration, deskHideRemovalMigration, treeInvariantsMigration, sessionStallColumnsMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration, workerTablesMigration, machineTablesMigration, orgFoldMigration, toolsRetireMigration, oauthClientsMigration, deskTablesMigration, pickQuotaMigration, workerStartOwnerChoiceMigration, sessionRequestedModelMigration, stoodDownMigration, deskHideRemovalMigration, treeInvariantsMigration, sessionStallColumnsMigration, permissionDecidedReasonMigration}
+
+// MigrationVersion returns the 1-based version of the migration whose text
+// contains marker. A test that must replay one migration finds it by name, so
+// a migration appended later cannot make it replay the wrong one.
+func MigrationVersion(marker string) (int, bool) {
+	for i, migration := range migrations {
+		if strings.Contains(migration, marker) {
+			return i + 1, true
+		}
+	}
+	return 0, false
+}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -2091,7 +2103,7 @@ func (s *Store) migrate() error {
 				}
 			}
 		}
-		if strings.Contains(migrations[i], treeInvariantsMarker) {
+		if strings.Contains(migrations[i], TreeInvariantsMarker) {
 			if _, err := s.applyTreeInvariantsTx(tx); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("migration %d: %w", i+1, err)
@@ -2232,6 +2244,17 @@ func (s *Store) migrate() error {
 			err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('permission_proposals') WHERE name='owner_words'`).Scan(&has)
 			if err == nil && has == 0 {
 				_, err = tx.Exec(`ALTER TABLE permission_proposals ADD COLUMN owner_words TEXT NOT NULL DEFAULT ''`)
+			}
+			if err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+		}
+		if strings.Contains(migrations[i], "permission decided reason column") {
+			var has int
+			err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('permission_proposals') WHERE name='decided_reason'`).Scan(&has)
+			if err == nil && has == 0 {
+				_, err = tx.Exec(`ALTER TABLE permission_proposals ADD COLUMN decided_reason TEXT NOT NULL DEFAULT ''`)
 			}
 			if err != nil {
 				tx.Rollback()
@@ -6818,6 +6841,11 @@ const sessionTurnErrorMigration = `SELECT 1 /* session turn error columns */;`
 // logged, which keeps the log line to one per stall. The migration loop adds
 // the columns when they are missing.
 const sessionStallColumnsMigration = `SELECT 1 /* session stall columns */;`
+
+// permissionDecidedReasonMigration records why the CTO rejected a pending
+// permission proposal on the owner's words (decision 0196). The migration loop
+// adds the column when it is missing.
+const permissionDecidedReasonMigration = `SELECT 1 /* permission decided reason column */;`
 
 // deadTablesDropMigration drops the tables that no code reads or writes
 // (schema reduction, part 1). The older migrations that name them run before

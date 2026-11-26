@@ -39,6 +39,33 @@ const (
 	LoopAnswerStop   = "stop"
 )
 
+// FrameLoopResume is the gateway frame behind the owner operation loop_resume.
+// It restarts a paused loop on the owner's quoted words (decision 0196).
+const FrameLoopResume = "loop.resume"
+
+// LoopResumeRequest is cto_op loop_resume. Node is the loop's id.
+type LoopResumeRequest struct {
+	Node       string `json:"node" jsonschema:"the loop id, which is the node name"`
+	OwnerWords string `json:"owner_words" jsonschema:"a short quote of the owner's instruction in this chat"`
+}
+
+// LoopResumeFrame carries the daemon's checked owner words to the gateway.
+type LoopResumeFrame struct {
+	Node string `json:"node"`
+	// Owner and By name the owner session that was checked and who acted.
+	Owner      string `json:"owner"`
+	By         string `json:"by,omitempty"`
+	OwnerWords string `json:"owner_words"`
+	// WordsVerified is set by the daemon when the quote is the owner's own.
+	WordsVerified bool `json:"words_verified,omitempty"`
+}
+
+// LoopResumeResult answers loop_resume.
+type LoopResumeResult struct {
+	Node   string `json:"node"`
+	Status string `json:"status"`
+}
+
 // LoopView is what the Graph card, the CTO's graph read and the session views
 // show of a node's loop. LastTick and NextTick are Unix seconds; 0 means never
 // or not scheduled. Tokens is 0 when agent-net does not know.

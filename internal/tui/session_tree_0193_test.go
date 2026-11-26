@@ -45,11 +45,15 @@ func fixtureTreeSnapshot(t *testing.T, migrate bool) Snapshot {
 		t.Fatal(err)
 	}
 	if migrate {
-		// The tree migration of decision 0193 is the one before the stall
-		// columns. OpenStore ran it on an empty database before the fixture
-		// rows were inserted, so undo the two last versions and let both run
-		// on the fixture. The stall migration only adds columns that exist.
-		if _, err := db.Exec(`DELETE FROM schema_version WHERE version IN (SELECT version FROM schema_version ORDER BY version DESC LIMIT 2)`); err != nil {
+		// OpenStore ran the tree migration of decision 0193 on an empty
+		// database before the fixture rows were inserted. Find it by name and
+		// undo it and every later version, so any migration appended after it
+		// still runs on the fixture and cannot hide the tree migration.
+		from, ok := gateway.MigrationVersion(gateway.TreeInvariantsMarker)
+		if !ok {
+			t.Fatal("the decision 0193 tree migration is missing")
+		}
+		if _, err := db.Exec(`DELETE FROM schema_version WHERE version >= ?`, from); err != nil {
 			t.Fatal(err)
 		}
 		if err := s.Close(); err != nil {

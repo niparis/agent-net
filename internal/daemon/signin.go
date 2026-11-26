@@ -41,8 +41,8 @@ type signInState struct {
 }
 
 type signInPending struct {
-	provider, tempDir string
-	timer             *time.Timer
+	provider, machine, tempDir string
+	timer                      *time.Timer
 }
 
 func (s *signInState) ids() map[string]string {
@@ -217,7 +217,7 @@ func (d *Daemon) signInOpen(ctx context.Context, q protocol.SignInOpenRequest) (
 		return protocol.EnterPlan{}, errors.New("unknown sign-in provider")
 	}
 
-	pending := &signInPending{provider: info.Provider}
+	pending := &signInPending{provider: info.Provider, machine: target.NodeID}
 	plan := protocol.EnterPlan{Argv: append([]string(nil), info.Argv...), Host: d.hostName(), SignInAskID: q.AskID}
 	env := d.signInEnv()
 	plan.Env = map[string]string{"HOME": envValue(env, "HOME"), "BAILIAN_CONFIG_DIR": envValue(env, "BAILIAN_CONFIG_DIR"), "PATH": envValue(env, "PATH")}
@@ -321,7 +321,7 @@ func (d *Daemon) signInComplete(ctx context.Context, askID string, cancel bool) 
 	if err := d.importSignIn(ctx, credential.Token); err != nil {
 		return err
 	}
-	_, err = d.call(ctx, "query.sign_in_transfer", protocol.SignInTransfer{AskID: askID, Owner: d.ownerSessionID(), Token: credential.Token})
+	_, err = d.call(ctx, "query.sign_in_transfer", protocol.SignInTransfer{Machine: p.machine, Provider: p.provider, Owner: d.ownerSessionID(), Token: credential.Token})
 	if err != nil {
 		return errors.New("could not complete sign-in on the target machine")
 	}
@@ -382,11 +382,50 @@ func importSignInWithEnv(ctx context.Context, token string, env []string) error 
 	return nil
 }
 
+// ctoSignInOpen is the CTO's sign_in_open: it opens a login on a named machine
+// for an allowlisted provider, on the owner's quoted words. It needs no stored
+// ask and never accepts a command.
+func (d *Daemon) ctoSignInOpen(ctx context.Context, q protocol.SignInOpenRequest) (protocol.SignInPrepareResult, error) {
+	if len(q.Command) != 0 {
+		return protocol.SignInPrepareResult{}, errors.New("sign_in_open takes a provider, never a command")
+	}
+	machine := strings.TrimSpace(q.Machine)
+	if machine == "" {
+		return protocol.SignInPrepareResult{}, errors.New("sign_in_open needs a machine")
+	}
+	info, ok := protocol.SignInProvider(q.Provider)
+	if !ok {
+		return protocol.SignInPrepareResult{}, errors.New("unknown sign-in provider")
+	}
+	q.Provider = info.Provider
+	words := strings.TrimSpace(q.OwnerWords)
+	if words == "" {
+		return protocol.SignInPrepareResult{}, errors.New("owner_words is required: quote the owner's instruction from this chat")
+	}
+	verified, err := d.verifyCTOOwnerWords(words)
+	if err != nil {
+		return protocol.SignInPrepareResult{}, err
+	}
+	frame := protocol.SignInOpenFrame{Request: q, Owner: d.ownerSessionID(), By: "cto", WordsVerified: verified != ""}
+	if cto := d.ctoSessionID(); cto != "" {
+		frame.Session = cto
+	}
+	raw, err := d.call(ctx, protocol.FrameSignInOpen, frame)
+	if err != nil {
+		return protocol.SignInPrepareResult{}, err
+	}
+	var out protocol.SignInPrepareResult
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return protocol.SignInPrepareResult{}, errors.New("bad sign-in answer")
+	}
+	return out, nil
+}
+
 // signInPrepare opens the login pane on this machine for the gateway. The
 // frame carries a provider key only, so no caller can choose the command.
 func (d *Daemon) signInPrepare(raw []byte) (protocol.SignInPrepareResult, error) {
 	var p protocol.SignInPrepare
-	if json.Unmarshal(raw, &p) != nil || p.AskID == "" {
+	if json.Unmarshal(raw, &p) != nil || p.Provider == "" {
 		return protocol.SignInPrepareResult{}, errors.New("bad sign-in prepare")
 	}
 	info, ok := protocol.SignInProvider(p.Provider)

@@ -102,9 +102,11 @@ type PermissionProposal struct {
 	Results      []PermissionApplyResult `json:"results,omitempty"`
 	DeskLogID    int64                   `json:"desk_log_id,omitempty"`
 	DedupeKey    string                  `json:"dedupe_key,omitempty"`
-	// OwnerWords quotes the owner's chat instruction when the CTO applied the
-	// proposal on his words instead of a Desk answer.
+	// OwnerWords quotes the owner's chat instruction when the CTO applied or
+	// rejected the proposal on his words instead of a Desk answer.
 	OwnerWords string `json:"owner_words,omitempty"`
+	// DecidedReason is why the proposal was rejected on the owner's words.
+	DecidedReason string `json:"decided_reason,omitempty"`
 }
 
 // PermissionApplyFrame asks one daemon to add rules to one repository's
@@ -155,6 +157,27 @@ type PermissionApplyResult struct {
 // through the same per-machine frames as a Desk approval. Only the owner's own
 // operator path, or the CTO's process-checked one, reaches it.
 const FramePermissionOwnerApply = "permission.owner_apply"
+
+// FramePermissionReject is the gateway frame behind the owner operation
+// permission_reject. The CTO rejects a pending proposal on the owner's quoted
+// words, with no stored Desk item (decision 0196).
+const FramePermissionReject = "permission.reject"
+
+// PermissionRejectRequest is cto_op permission_reject.
+type PermissionRejectRequest struct {
+	ID         string `json:"id" jsonschema:"the pending proposal (pp_...) to reject"`
+	Reason     string `json:"reason,omitempty" jsonschema:"why the owner refuses it"`
+	OwnerWords string `json:"owner_words" jsonschema:"a short quote of the owner's instruction in this chat"`
+}
+
+// PermissionRejectFrame is FramePermissionReject. The daemon adds the owner
+// session it checked, who acted and whether the words are the owner's own.
+type PermissionRejectFrame struct {
+	Request       PermissionRejectRequest `json:"request"`
+	Owner         string                  `json:"owner"`
+	By            string                  `json:"by,omitempty"`
+	WordsVerified bool                    `json:"words_verified,omitempty"`
+}
 
 // FramePermissionGet reads one stored proposal for the owner or the CTO.
 const FramePermissionGet = "permission.get"

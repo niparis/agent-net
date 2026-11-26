@@ -157,7 +157,7 @@ func TestPermissionProposalIsARequestToTheChief(t *testing.T) {
 		t.Fatalf("messages to the chief: %+v", got)
 	}
 	for _, want := range []string{"Bash(gh pr merge *)", "Bash(gh pr close *)", "forge", "/tmp/forge", "the forge repos need PR merges",
-		"forge-agent", "permission_apply id " + res.ID, "owner_words"} {
+		"forge-agent", "permission_apply id " + res.ID, "permission_reject id " + res.ID, "owner_words"} {
 		if !strings.Contains(got[0].body, want) {
 			t.Errorf("request does not name %q:\n%s", want, got[0].body)
 		}

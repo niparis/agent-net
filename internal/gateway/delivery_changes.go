@@ -59,6 +59,17 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 			return nil, true, reject("bad %s", typ)
 		}
 		data, err = g.store.ReportStep(nc.id, q)
+	case protocol.FrameDeliveryOwnerAnswer:
+		p, derr := decode[protocol.DeliveryOwnerAnswerFrame](raw)
+		if derr != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, true, reject("owner authority required")
+		}
+		if !p.WordsVerified {
+			return nil, true, reject("owner_words were not verified: the owner must have typed them")
+		}
+		q := protocol.StepReportRequest{SessionID: p.Session, ChangeID: p.Request.Change, StepRef: p.Request.StepRef,
+			Result: p.Request.Result, Commit: p.Request.Commit, Fields: p.Request.Fields, DoneBy: protocol.EvidenceByOwner, Note: p.Request.Note}
+		data, err = g.store.ReportOwnerStep(nc.id, q, p.Request.OwnerWords)
 	case protocol.FrameStepClaim:
 		q, derr := decode[protocol.StepClaimRequest](raw)
 		if derr != nil {
@@ -216,10 +227,16 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 			g.recordSessionReport(q.SessionID)
 		}
 	}
-	if typ == protocol.FrameChangeSubmit || typ == protocol.FrameStepReport {
+	if typ == protocol.FrameDeliveryOwnerAnswer {
+		p, derr := decode[protocol.DeliveryOwnerAnswerFrame](raw)
+		if derr == nil && p.Session != "" {
+			g.recordSessionReport(p.Session)
+		}
+	}
+	if typ == protocol.FrameChangeSubmit || typ == protocol.FrameStepReport || typ == protocol.FrameDeliveryOwnerAnswer {
 		g.dispatchStepTasks(ctx)
 	}
-	if typ == protocol.FrameStepReport {
+	if typ == protocol.FrameStepReport || typ == protocol.FrameDeliveryOwnerAnswer {
 		result := data.(protocol.StepReportResult)
 		if node, err := g.store.SessionNode(result.Change.Change.Caller); err == nil && node != "" {
 			g.dispatchPending(ctx, node, false)
@@ -574,6 +591,20 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 // Stored evidence never changes: a merger's pass that confirms a merge the
 // daemon saw from git is a newer report, and the pipeline reads that one.
 func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protocol.StepReportResult, error) {
+	return s.reportStep(machine, q, false)
+}
+
+// ReportOwnerStep is the owner operation delivery_owner_answer: it completes an
+// @owner step or an owner merge approval on the owner's quoted words, with no
+// stored Desk item (decision 0196). The quote is checked by the daemon.
+func (s *Store) ReportOwnerStep(machine string, q protocol.StepReportRequest, ownerWords string) (protocol.StepReportResult, error) {
+	if strings.TrimSpace(ownerWords) == "" {
+		return protocol.StepReportResult{}, reject("owner_words is required: quote the owner's instruction from this chat")
+	}
+	return s.reportStep(machine, q, true)
+}
+
+func (s *Store) reportStep(machine string, q protocol.StepReportRequest, ownerWordsApproval bool) (protocol.StepReportResult, error) {
 	if err := q.Validate(); err != nil {
 		return protocol.StepReportResult{}, reject("%s", err.Error())
 	}
@@ -643,13 +674,20 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 	// from the TUI and reports pass or fail as themselves, without being the
 	// caller or the step's owner.
 	ownerVerify := directOwner && reporter.harness == "owner" && c.State == protocol.ChangeMerged && q.StepRef == (protocol.StepRef{Step: protocol.StepVerify, AfterMerge: true})
+	// The CTO completes an @owner step on the owner's quoted words (decision
+	// 0196). The daemon has already matched the quote; here it stands where
+	// the owner's written approval stood, so no Desk item is needed.
+	ownerWordsApproval = ownerWordsApproval && directOwner
 	if !closeAnyStep {
-		if err := checkApprovalTaskPolicy(tx, c, p, q.StepRef); err != nil {
-			return protocol.StepReportResult{}, err
+		if !ownerWordsApproval {
+			if err := checkApprovalTaskPolicy(tx, c, p, q.StepRef); err != nil {
+				return protocol.StepReportResult{}, err
+			}
 		}
 		if step, ok := p.Find(q.StepRef); ok {
-			if directOwner && !ownerVerify && (step.Owner.Kind != protocol.OwnerDelegate || step.Step != protocol.StepApprove) {
-				return protocol.StepReportResult{}, reject("direct owner approval is only for a delegated approval step or an after-merge verify")
+			if directOwner && !ownerVerify && (step.Owner.Kind != protocol.OwnerDelegate || step.Step != protocol.StepApprove) &&
+				!(ownerWordsApproval && step.Owner.Kind == protocol.OwnerPerson) {
+				return protocol.StepReportResult{}, reject("direct owner approval is only for a delegated approval step, an after-merge verify, or an @owner step with the owner's quoted words")
 			}
 			switch step.Owner.Kind {
 			case protocol.OwnerCaller:
@@ -663,7 +701,9 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 					}
 				}
 			case protocol.OwnerPerson:
-				return protocol.StepReportResult{}, reject("%s is owned by the person: answer its Inbox approval", q.StepRef)
+				if !ownerWordsApproval {
+					return protocol.StepReportResult{}, reject("%s is owned by the person: quote the owner's words to complete it", q.StepRef)
+				}
 			case protocol.OwnerGitHub:
 				return protocol.StepReportResult{}, reject("%s is owned by GitHub", q.StepRef)
 			case protocol.OwnerDelegate:
@@ -723,10 +763,17 @@ func (s *Store) ReportStep(machine string, q protocol.StepReportRequest) (protoc
 				return protocol.StepReportResult{}, err
 			}
 		}
+		ownerPerson := false
+		if step, ok := p.Find(q.StepRef); ok && step.Owner.Kind == protocol.OwnerPerson {
+			ownerPerson = true
+		}
 		switch {
 		case ownerVerify:
 			// The owner check is reported on its own, not claimed as a task.
 			found = false
+		case ownerWordsApproval && ownerPerson:
+			// The owner's quoted words are the approval: queuing made no task.
+			found = true
 		case directOwner:
 			found, err = claimDirectOwnerApproval(tx, c, q.StepRef, q.SessionID, machine)
 		default:
