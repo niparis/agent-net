@@ -56,12 +56,16 @@ func inHarnessFolder(path string) bool {
 type worktreeChange struct {
 	path      string
 	untracked bool
+	// staged is true when the index differs from HEAD at this path, so the
+	// path is committed without an add.
+	staged bool
 }
 
 // worktreeChanges lists the paths that differ from HEAD: staged, unstaged and
-// untracked files, with the files .gitignore matches left out. Only these can
-// be leftovers: a tracked file that is the same as in HEAD is not one, however
-// large or binary it is.
+// untracked files, with untracked files .gitignore matches left out. A tracked
+// file inside an ignored folder is still listed, so staging asks git which
+// paths it will add (ignoredForAdd). Only these can be leftovers: a tracked
+// file that is the same as in HEAD is not one, however large or binary it is.
 func worktreeChanges(ctx context.Context, dir string) ([]worktreeChange, error) {
 	out, err := gitOut(ctx, dir, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames")
 	if err != nil {
@@ -72,7 +76,7 @@ func worktreeChanges(ctx context.Context, dir string) ([]worktreeChange, error) 
 		if len(entry) < 4 {
 			continue
 		}
-		changes = append(changes, worktreeChange{path: entry[3:], untracked: entry[:2] == "??"})
+		changes = append(changes, worktreeChange{path: entry[3:], untracked: entry[:2] == "??", staged: entry[:2] != "??" && entry[0] != ' '})
 	}
 	return changes, nil
 }

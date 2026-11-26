@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -127,6 +128,38 @@ func TestWorkerHandbackTool(t *testing.T) {
 	}
 	if res.StructuredContent == nil {
 		t.Fatal("agent_handback has no structured result")
+	}
+}
+
+// The hand-back tool carries the proof fields its schema advertises. Claude
+// and Codex workers reach the daemon only through this tool, so a field it
+// drops never arrives.
+func TestWorkerHandbackToolKeepsVisualProof(t *testing.T) {
+	t.Setenv("AGENT_NET_WORKER", "1")
+	var input protocol.WorkerHandbackRequest
+	cs := connectServer(t, func(_ context.Context, _ string, p any) (json.RawMessage, error) {
+		b, _ := json.Marshal(p)
+		_ = json.Unmarshal(b, &input)
+		return json.RawMessage(`{"sent":true,"status":"done","complete":true,"queued":false}`), nil
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_handback",
+		Arguments: map[string]any{"report": "done", "status": "done", "complete": true,
+			"user_visible":      "yes",
+			"proof_unavailable": "no screen in this environment",
+			"visual_proof":      []any{map[string]any{"file": "/work/worktree/frame.txt", "caption": "scroll: last row visible", "manifest": map[string]any{"id": "1", "name": "frame.txt", "size": 120, "sha256": strings.Repeat("a", 64)}}},
+		}})
+	if err != nil || res.IsError {
+		t.Fatalf("agent_handback: %v %+v", err, res)
+	}
+	if input.UserVisible != "yes" {
+		t.Errorf("user_visible lost: %+v", input.VisualEvidence)
+	}
+	if input.ProofUnavailable != "no screen in this environment" {
+		t.Errorf("proof_unavailable lost: %+v", input.VisualEvidence)
+	}
+	if len(input.VisualProof) != 1 || input.VisualProof[0].File != "/work/worktree/frame.txt" || input.VisualProof[0].Caption != "scroll: last row visible" ||
+		input.VisualProof[0].Manifest == nil || input.VisualProof[0].Manifest.Name != "frame.txt" {
+		t.Errorf("visual_proof lost: %+v", input.VisualProof)
 	}
 }
 
