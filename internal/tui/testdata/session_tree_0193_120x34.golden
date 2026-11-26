@@ -14,17 +14,17 @@
   │  ├─ proj-d worker 3     host-02      proj-d         opencode · deepseek-v4… busy        ?     ? a task
   │  ├─ proj-d worker 7     host-02      proj-d         claude · sonnet-5-5     busy        ?     ? a task
   │  ├─ proj-d worker 8     host-02      proj-d         claude · sonnet-5-5     busy        ?     ? a task
-  │  └─ ◐ proj-d merger     host-02      proj-d         claude · sonnet-5-5     shell       ?     ? (no parent: no lead)
+  │  └─ ◐ proj-d merger     host-02      proj-d         claude · sonnet-5-5     shell       ?     ?
   ├─ ★ proj-b - lead        host-01      proj-b         opencode · inkling-2-m… dormant
-  │  ├─ proj-b 2            host-01      proj-b         opencode · inkling-2-m… dormant             (no parent: no lead)
-  │  ├─ proj-b 3            host-01      proj-b         opencode · inkling-2-m… dormant             (no parent: no lead)
-  │  └─ proj-b 4            host-01      proj-b         opencode · inkling-2-m… dormant             (no parent: no lead)
+  │  ├─ proj-b 2            host-01      proj-b         opencode · inkling-2-m… dormant
+  │  ├─ proj-b 3            host-01      proj-b         opencode · inkling-2-m… dormant
+  │  └─ proj-b 4            host-01      proj-b         opencode · inkling-2-m… dormant
   └─ ◐ ★ proj-a - lead      host-01      proj-a         claude · opus-5-5       idle        ?     ?
      ├─ proj-a - lead       host-01      proj-a         pi · opus-5-5           offline             3d ago
-     ├─ proj-a - reviewer   host-01      proj-a         opencode · gpt-6.1-ter… idle        ?     ? (no parent: no lead)
-     ├─ ◐ proj-a - database host-01      proj-a         claude · opus-5-5       busy        ?     ? (no parent: no lead)
+     ├─ proj-a - reviewer   host-01      proj-a         opencode · gpt-6.1-ter… idle        ?     ?
+     ├─ ◐ proj-a - database host-01      proj-a         claude · opus-5-5       busy        ?     ?
      │  └─ proj-g worker 1  host-01      proj-g         opencode · deepseek-v4… busy        ?     ? a task
-     └─ ◐ proj-a - storage  host-01      proj-a         claude · opus-5-5       shell       ?     ? (no parent: no lead)
+     └─ ◐ proj-a - storage  host-01      proj-a         claude · opus-5-5       shell       ?     ?
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │

@@ -50,15 +50,20 @@ func leadSessionCandidatesQ(q leadDB, agent string) ([]leadSessionRef, error) {
 	return out, rows.Err()
 }
 
-// agentLeadsAnythingQ says whether an Agent leads a Repo or an active Team, or
-// holds a lead-level grant. Only such an Agent gets a lead session pinned.
+// leadingAgentsSQL lists the Agents that lead something: a Repo, an active
+// Team, or a lead-level grant (a merger's grant does not count). Only such an
+// Agent gets a lead session pinned, and the session tree (sessionParent)
+// reads the same list.
+var leadingAgentsSQL = `SELECT agent FROM (
+	SELECT ` + repoTopAgentOfSQL("r.id") + ` AS agent FROM repos r WHERE r.archived=0
+	UNION SELECT owner_agent_id FROM teams WHERE active=1
+	UNION SELECT id FROM agents WHERE lead_level<>0 AND role<>'merger')
+	WHERE agent IS NOT NULL AND agent<>''`
+
+// agentLeadsAnythingQ says whether an Agent is in leadingAgentsSQL.
 func agentLeadsAnythingQ(q leadDB, agent string) (bool, error) {
 	var leads bool
-	err := q.QueryRow(`SELECT EXISTS(
-		SELECT 1 FROM repos r WHERE r.archived=0
-			AND `+repoTopAgentOfSQL("r.id")+`=?
-		UNION ALL SELECT 1 FROM teams t WHERE t.active=1 AND t.owner_agent_id=?
-		UNION ALL SELECT 1 FROM agents a WHERE a.id=? AND a.lead_level<>0 AND a.role<>'merger')`, agent, agent, agent).Scan(&leads)
+	err := q.QueryRow(`SELECT EXISTS(SELECT 1 FROM (`+leadingAgentsSQL+`) WHERE agent=?)`, agent).Scan(&leads)
 	return leads, err
 }
 

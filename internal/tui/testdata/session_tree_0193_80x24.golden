@@ -14,9 +14,9 @@
   │  ├─ proj-d … host-02 proj-d    opencode · … busy        ?     ? a task
   │  ├─ proj-d … host-02 proj-d    claude · so… busy        ?     ? a task
   │  ├─ proj-d … host-02 proj-d    claude · so… busy        ?     ? a task
-  │  └─ … merger host-02 proj-d    claude · so… shell       ?     ? (no parent:…
+  │  └─ … merger host-02 proj-d    claude · so… shell       ?     ?
   ├─ ★ proj-b -… host-01 proj-b    opencode · … dormant
-  │  ├─ proj-b 2 host-01 proj-b    opencode · … dormant             (no parent:…
+  │  ├─ proj-b 2 host-01 proj-b    opencode · … dormant
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │
