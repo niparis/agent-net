@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -49,30 +47,10 @@ func TestDeskSignInWebProofScenario(t *testing.T) {
 	f.asks = []protocol.Ask{{ID: "i_signin", Kind: protocol.AskKindSignIn, State: protocol.AskStateOpen, From: "agent-net", FromKind: protocol.AskFromGateway, Node: "n_test", Question: "Sign in to Alibaba Bailian CLI on work-box", Detail: "the Alibaba token-plan quota needs your console login", Next: protocol.AskNextOwner, CreatedAt: time.Time{}}}
 	body := page1(t, f, "/")
 	mustContain(t, "sign-in desk", body, "Firefox", "Safari", "owner TUI")
-	css, err := os.ReadFile("static/console.css")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body = strings.Replace(body, `<link rel="stylesheet" href="/static/console.css">`, "<style>"+string(css)+"</style>", 1)
-	for _, name := range []string{"htmx.min.js", "sse.js", "console.js"} {
-		body = strings.Replace(body, `<script src="/static/`+name+`" defer></script>`, "", 1)
-	}
-	page := filepath.Join(t.TempDir(), "signin.html")
-	if err := os.WriteFile(page, []byte(body), 0600); err != nil {
-		t.Fatal(err)
-	}
+	page := proofPage(t, body)
 	shot := filepath.Join(out, "signin-web-390x844.png")
-	cmd := exec.Command(chrome, "--headless", "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage", "--disable-background-networking", "--host-resolver-rules=MAP * ~NOTFOUND", "--user-data-dir="+filepath.Join(t.TempDir(), "chrome"), "--lang=en-US", "--force-device-scale-factor=1", "--window-size=390,844", "--screenshot="+shot, "file://"+page)
-	chromeHome := t.TempDir()
-	cmd.Env = append(os.Environ(), "HOME="+chromeHome, "XDG_CONFIG_HOME="+filepath.Join(chromeHome, "config"), "XDG_CACHE_HOME="+filepath.Join(chromeHome, "cache"), "XDG_DATA_HOME="+filepath.Join(chromeHome, "data"))
-	log, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("capture web Desk: %v\n%s", err, log)
-	}
-	if _, err := os.Stat(shot); err != nil {
-		t.Fatal(err)
-	}
-	meta := fmt.Sprintf("build: %s\nsize: 390x844\nstep: open\naction: open the web Desk with the sign-in ask\nexpected: the ask names the owner TUI and says Firefox, not Safari\nerrors: %s\n", os.Getenv("AGENT_NET_PROOF_BUILD"), strings.TrimSpace(string(log)))
+	log := proofScreenshot(t, chrome, page, 390, 844, shot)
+	meta := fmt.Sprintf("build: %s\nsize: 390x844\nstep: open\naction: open the web Desk with the sign-in ask\nexpected: the ask names the owner TUI and says Firefox, not Safari\nerrors: %s\n", os.Getenv("AGENT_NET_PROOF_BUILD"), log)
 	if err := os.WriteFile(filepath.Join(out, "signin-web-390x844.txt"), []byte(meta), 0600); err != nil {
 		t.Fatal(err)
 	}
