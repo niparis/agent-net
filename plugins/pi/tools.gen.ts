@@ -124,14 +124,12 @@ export const TOOL_CATALOG = [
             "merge",
             "send",
             "owner",
-            "confirm",
-            "picker",
             "done",
             "withdraw",
             "list",
             "undo"
           ],
-          "description": "close: the ask is done. merge: it is the same as another open ask. send: a session should answer it. owner: the owner must decide it. withdraw: the asker (or a session that relayed it) takes the ask back; the chief uses it when a newer ask replaces one on the owner's Desk, and names that ask in replaced_by. list: show the asks waiting for you, with the sorter's counts by result. confirm or picker: answer a held worker start (decision 0151). done: the answer of an answered ask was carried out; its askers are told."
+          "description": "close: the ask is done. merge: it is the same as another open ask. send: a session should answer it. owner: the owner must decide it. withdraw: the asker (or a session that relayed it) takes the ask back; the chief uses it when a newer ask replaces one on the owner's Desk, and names that ask in replaced_by. list: show the asks waiting for you, with the sorter's counts by result. done: the answer of an answered ask was carried out; its askers are told."
         },
         "into": {
           "type": "string",
