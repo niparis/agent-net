@@ -123,8 +123,14 @@ func (d *Daemon) changeWorkerStatus(w *worker, status string) *localSession {
 // path: the git folders of a commit in its worktree, its package caches, and
 // the Go build and temp folders. A folder that cannot be made is left out.
 func (d *Daemon) workerWriteRoots(ctx context.Context, w *worker) []string {
-	paths := workerGitRoots(ctx, w.path)
-	for _, p := range []string{d.workerCacheRoot(w), d.workerGoCacheDir(), d.workerSandboxGoTmpDir()} {
+	return d.workerWriteRootsThen(ctx, w.path, d.workerCacheRoot(w), d.workerGoCacheDir(), d.workerSandboxGoTmpDir())
+}
+
+// workerWriteRootsThen is workerWriteRoots for a harness that needs the folders
+// after the git roots in its own order: agy keeps the package cache last.
+func (d *Daemon) workerWriteRootsThen(ctx context.Context, path string, then ...string) []string {
+	paths := workerGitRoots(ctx, path)
+	for _, p := range then {
 		if err := os.MkdirAll(p, 0o700); err == nil {
 			paths = append(paths, p)
 		}

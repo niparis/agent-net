@@ -177,17 +177,15 @@ func (d *Daemon) loadOpenCodeProject(ctx context.Context, w *worker, api opencod
 		return fmt.Errorf("cannot load the project in the worker (HTTP %d): %v", code, err)
 	}
 	// The plugin registers the session. If it does not, the plugin is not
-	// installed, and the worker could never answer.
-	return d.waitWorkerReady(ctx, w, func() bool {
-		select {
-		case <-w.ready:
-			return true
-		default:
-			return false
-		}
-	}, func() error {
+	// installed, and the worker could never answer. Wait on the channel itself:
+	// the resume must return as soon as the session is ready, not a poll tick
+	// later, or the gateway can deliver the message and its answer first.
+	select {
+	case <-w.ready:
+		return nil
+	case <-ctx.Done():
 		return errors.New("the agent-net plugin did not register the worker session in time: is the OpenCode plugin installed? Run `agent-net setup` on that machine")
-	}, nil)
+	}
 }
 
 // writeWorkerSessionFile tells the plugin which session is the worker's. It

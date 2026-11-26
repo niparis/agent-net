@@ -165,9 +165,14 @@ func (d *Daemon) startAgy(ctx context.Context, w *worker) error {
 	args = append(args, "--mode", mode, "--sandbox", "--settings", settings)
 	// The linked worktree's git folders, the Go temp folder the worker's go
 	// command writes to (GOTMPDIR) and the package caches of the worker
-	// (UV_CACHE_DIR and the others) stay writable.
+	// (UV_CACHE_DIR and the others) stay writable. agy needs the package cache
+	// last.
 	if permissions != protocol.WorkersReadOnly {
-		for _, path := range append(toolchains, d.workerWriteRoots(ctx, w)...) {
+		for _, path := range toolchains {
+			args = append(args, "--add-dir", path)
+		}
+		roots := d.workerWriteRootsThen(ctx, w.path, d.workerSandboxGoTmpDir(), d.workerCacheRoot(w))
+		for _, path := range roots {
 			args = append(args, "--add-dir", path)
 		}
 	} else {
