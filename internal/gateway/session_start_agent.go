@@ -220,9 +220,9 @@ func (s *Store) bindStartedAgent(tx *sql.Tx, node string, p protocol.SessionAgen
 	} else if _, err = tx.Exec(`UPDATE sessions SET agent_id=?, started_by=? WHERE id=?`, p.AgentID, protocol.StartedByAgentNet, id); err != nil {
 		return err
 	}
-	// Release unrelated new sessions to their ordinary Repo-owner default. The
+	// Release unrelated new sessions to their ordinary default agent. The
 	// selected session already has its explicit Agent, or a native reservation.
-	if _, err = tx.Exec(`UPDATE sessions SET agent_id=(SELECT lead_agent_id FROM repos WHERE id=sessions.repo_id) WHERE node_id=? AND harness=? AND worker='' AND agent_id IS NULL`, node, p.Harness); err != nil {
+	if err = assignDefaultSessionAgentsQ(tx, `node_id=? AND harness=?`, node, p.Harness); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -257,7 +257,7 @@ func (s *Store) ExpireSessionAgentStarts() ([]string, error) {
 // held get their Repo-owner default, and a Desk item keeps the reason.
 func (s *Store) failAgentStart(tx *sql.Tx, a *agentStart, reason string) error {
 	held, args := s.heldSQL("sessions")
-	if _, err := tx.Exec(`UPDATE sessions SET agent_id=(SELECT lead_agent_id FROM repos WHERE id=sessions.repo_id) WHERE node_id=? AND harness=? AND worker='' AND agent_id IS NULL AND NOT `+held, append([]any{a.node, a.harness}, args...)...); err != nil {
+	if err := assignDefaultSessionAgentsQ(tx, `node_id=? AND harness=? AND NOT `+held, append([]any{a.node, a.harness}, args...)...); err != nil {
 		return err
 	}
 	var id string
@@ -312,7 +312,7 @@ func (s *Store) noteLateAgentNative(tx *sql.Tx, node string, p protocol.SessionA
 	}
 	held, args := s.heldSQL("sessions")
 	if err == nil {
-		_, err = tx.Exec(`UPDATE sessions SET agent_id=(SELECT lead_agent_id FROM repos WHERE id=sessions.repo_id) WHERE id=? AND worker='' AND agent_id IS NULL AND NOT `+held, append([]any{id}, args...)...)
+		err = assignDefaultSessionAgentsQ(tx, `id=? AND NOT `+held, append([]any{id}, args...)...)
 	}
 	if err != nil {
 		return err

@@ -60,10 +60,15 @@ func TestMergerHangsUnderProjectAgent(t *testing.T) {
 	if at < 0 {
 		t.Fatalf("no agent-net row: %v", order)
 	}
-	if got := order[at+1]; got != "fix-login" {
+	// ci-runner also belongs to project agent-net, so it sits under the pinned
+	// lead before the newer worker, and the merger stays last after the worker.
+	if got := order[at+1]; got != "ci-runner" {
 		t.Fatalf("after agent-net: %q in %v", got, order)
 	}
-	if got := order[at+2]; got != "agent-net merger" {
+	if got := order[at+2]; got != "fix-login" {
+		t.Fatalf("worker after ci-runner: %q in %v", got, order)
+	}
+	if got := order[at+3]; got != "agent-net merger" {
 		t.Fatalf("merger is not after the worker: %q in %v", got, order)
 	}
 	marks := map[string]treeMark{}

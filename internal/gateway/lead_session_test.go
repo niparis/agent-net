@@ -180,6 +180,71 @@ func TestRepeatedUnpinnedLeadSessionAsksOneCTOQuestion(t *testing.T) {
 	}
 }
 
+// The automatic default gives a second session in a project the project's
+// member agent while the pinned lead is live. Explicit start reservations and
+// session_agent_set calls still succeed and keep the lead pin on the lead.
+func TestOnlyPinnedLeadSessionGetsLeadAgentID(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, err := s.CreateNode("homelab", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := s.UpsertSession(node, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: protocol.OwnerNativeID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddProjects(node, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "homelab-agent", Path: "/srv/homelab"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddArchitect("homelab-lead", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE repos SET lead_agent_id='homelab-lead' WHERE id='homelab-agent'`); err != nil {
+		t.Fatal(err)
+	}
+	// First session becomes the pinned lead of homelab-lead.
+	lead, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "lead",
+		Repo: protocol.RepoInfo{Root: "/srv/homelab", Project: "homelab-agent"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leadView, ok, err := s.Agent(lead)
+	if err != nil || !ok || leadView.AgentID != "homelab-lead" || !leadView.RepoLeadExplicit {
+		t.Fatalf("first session: %+v %v", leadView, err)
+	}
+	// A second live session registering in the same repo gets the project's
+	// member agent (homelab-agent), not homelab-lead.
+	second, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "storage",
+		Repo: protocol.RepoInfo{Root: "/srv/homelab", Project: "homelab-agent"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondView, ok, err := s.Agent(second)
+	if err != nil || !ok || secondView.AgentID != "homelab-agent" {
+		t.Fatalf("second session agent_id = %q, want homelab-agent", secondView.AgentID)
+	}
+	// Explicit start reservation for homelab-lead while lead is live succeeds.
+	if err := s.ReserveSessionAgent(node, protocol.SessionAgentReservation{
+		Owner: owner, AgentID: "homelab-lead", Harness: "claude", NativeID: "third",
+	}); err != nil {
+		t.Fatalf("ReserveSessionAgent for taken lead agent: %v", err)
+	}
+	// Explicit bind of second live session to homelab-lead succeeds and keeps
+	// the lead pin on the pinned lead.
+	if _, err := s.setSessionAgent(node, protocol.SessionAgentSetRequest{
+		Owner: owner, SessionID: second, Agent: "homelab-lead",
+	}); err != nil {
+		t.Fatalf("setSessionAgent for taken lead agent: %v", err)
+	}
+	secondView, ok, err = s.Agent(second)
+	if err != nil || !ok || secondView.AgentID != "homelab-lead" || secondView.RepoLeadExplicit {
+		t.Fatalf("second session after explicit bind: %+v %v", secondView, err)
+	}
+	if got := agentLeadSession(t, s, "homelab-lead"); got != lead {
+		t.Fatalf("lead_session moved to %q, want %q", got, lead)
+	}
+}
+
 // A lead_set that names an Agent with exactly one session pins that session.
 func TestLeadSetAgentPinsItsOnlySession(t *testing.T) {
 	s := teamStore(t)
