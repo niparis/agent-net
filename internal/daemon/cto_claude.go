@@ -34,6 +34,7 @@ type claudeCTOState struct {
 	root         atomic.Pointer[claudeCTORoot]
 	starting     atomic.Bool
 	capMu        sync.Mutex
+	gen          uint64
 	token        string
 	ref, model   string
 	session      atomic.Pointer[string]
@@ -93,6 +94,7 @@ func (d *Daemon) stopClaudeCTOLocked(reasons ...string) {
 		reason = reasons[0]
 	}
 	c := &d.claudeCTO
+	c.gen++
 	root := c.root.Load()
 	wasRunning := c.ref != ""
 	var crashState, crashDetail string
@@ -384,8 +386,10 @@ func (d *Daemon) claudeCTOSend(ctx context.Context, text, label string) (any, er
 		return nil, err
 	}
 	d.cto.mu.Lock()
-	defer d.cto.mu.Unlock()
-	if id, err = d.saveClaudeCTOSessionLocked(id); err != nil {
+	oldID := id
+	id = d.claudeCTO.sessionID()
+	d.cto.mu.Unlock()
+	if err = d.saveClaudeCTOSession(oldID, id); err != nil {
 		return nil, err
 	}
 	a, err := d.claudeCTODeliverer()
@@ -422,16 +426,14 @@ func (d *Daemon) claudeCTOSend(ctx context.Context, text, label string) (any, er
 	}
 }
 
-// saveClaudeCTOSessionLocked stores the conversation the CTO's Claude runs
-// now, which a resume can change from oldID, and moves the recorded actions to
-// it. The caller holds cto.mu.
-func (d *Daemon) saveClaudeCTOSessionLocked(oldID string) (string, error) {
-	id := d.claudeCTO.sessionID()
+// saveClaudeCTOSession stores the conversation the CTO's Claude runs now,
+// which a resume can change from oldID, and moves the recorded actions to it.
+func (d *Daemon) saveClaudeCTOSession(oldID, id string) error {
 	if err := d.setCTOConversation("claude", id); err != nil {
-		return id, err
+		return err
 	}
 	_, err := d.st.db.Exec(`UPDATE cto_actions SET session_id=? WHERE (session_id='' OR session_id=?) AND harness='claude'`, id, oldID)
-	return id, err
+	return err
 }
 
 type claudeCTODeliverer interface {
@@ -517,8 +519,6 @@ func (claudeCTOHarness) events(ctx context.Context, d *Daemon, index int) (proto
 	if err != nil {
 		return out, err
 	}
-	d.cto.mu.Lock()
-	defer d.cto.mu.Unlock()
 	out.Model = settings.ClaudeModel
 	id, err := d.claudeCTOSession()
 	if err != nil {
@@ -748,12 +748,18 @@ func parseCTOTranscriptLine(raw []byte, lastCmd *string) (json.RawMessage, bool)
 	return b, true
 }
 
-func (d *Daemon) bindClaudeCTO(sf claudeSessionFile, model, id, mode string) bool {
+func (d *Daemon) bindClaudeCTO(sf claudeSessionFile, model, id, mode string, expectedGen uint64) bool {
 	token, alive := procToken(sf.PID)
 	if !alive {
 		return false
 	}
 	d.cto.mu.Lock()
+	if d.claudeCTO.gen != expectedGen {
+		d.cto.mu.Unlock()
+		(claudeLauncher{}).stopID(d, sf.JobID)
+		_ = syscall.Kill(sf.PID, syscall.SIGKILL)
+		return false
+	}
 	if mode == "adopted" && d.claudeCTO.root.Load() != nil {
 		d.cto.mu.Unlock()
 		return true
@@ -780,6 +786,7 @@ func (d *Daemon) adoptLiveClaudeCTO() bool {
 	}
 	d.cto.mu.Lock()
 	bound := d.claudeCTO.root.Load() != nil
+	gen := d.claudeCTO.gen
 	d.cto.mu.Unlock()
 	if bound {
 		return false
@@ -796,5 +803,5 @@ func (d *Daemon) adoptLiveClaudeCTO() bool {
 	if err != nil {
 		return false
 	}
-	return d.bindClaudeCTO(sf, models.Claude, "", "adopted")
+	return d.bindClaudeCTO(sf, models.Claude, "", "adopted", gen)
 }

@@ -145,34 +145,52 @@ func (d *Daemon) startClaudeRoleWith(ctx context.Context, role sessionRole, id, 
 
 func (d *Daemon) startClaudeRoleOnce(ctx context.Context, role sessionRole, id, model, first string) error {
 	dir := d.claudeRoleDir(role)
-	d.cto.mu.Lock()
 	c := &d.claudeCTO
-	canAdopt := c.ref == "" && first == ""
-	if c.ref != "" {
-		sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, dir, c.ref)
+	var startGen uint64
+	var canAdopt bool
+	for {
+		d.cto.mu.Lock()
+		ref := c.ref
 		root := c.root.Load()
+		cToken, cSession, cModel := c.token, c.sessionID(), c.model
+		startGen = c.gen
+		d.cto.mu.Unlock()
+		canAdopt = ref == "" && first == ""
+		if ref == "" {
+			break
+		}
+		sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, dir, ref)
 		tok, alive := "", false
 		if root != nil {
 			tok, alive = procToken(root.pid)
 		}
-		status, _ := claudeCTOJobState(d.cfg.ClaudeSessionsDir, c.ref)
-		if first == "" && ok && !claudeJobEnded(status) && root != nil && alive && tok == c.token && sf.PID == root.pid && c.sessionID() == id && c.model == model {
+		status, _ := claudeCTOJobState(d.cfg.ClaudeSessionsDir, ref)
+		keep := first == "" && ok && !claudeJobEnded(status) && root != nil && alive && tok == cToken && sf.PID == root.pid && cSession == id && cModel == model
+
+		d.cto.mu.Lock()
+		if c.ref != ref || c.root.Load() != root || c.token != cToken || c.sessionID() != cSession || c.model != cModel {
+			d.cto.mu.Unlock()
+			continue
+		}
+		if keep {
 			d.cto.mu.Unlock()
 			return nil
 		}
 		reason := "configuration_change"
-		if !alive || root == nil || tok != c.token || claudeJobEnded(status) {
+		if !alive || root == nil || tok != cToken || claudeJobEnded(status) {
 			reason = claudeCTOEndReason(status)
 		}
 		d.stopClaudeCTOLocked(reason)
+		startGen = c.gen
+		d.cto.mu.Unlock()
+		break
 	}
-	d.cto.mu.Unlock()
 	// A daemon restart loses the in-memory job ref, but the private background
 	// session may still be alive. Bind it before launching another copy.
 	if sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, dir, ""); canAdopt && ok && func() bool {
 		status, _ := claudeCTOJobState(d.cfg.ClaudeSessionsDir, sf.JobID)
 		return !claudeJobEnded(status)
-	}() && d.bindClaudeCTO(sf, model, id, "adopted") {
+	}() && d.bindClaudeCTO(sf, model, id, "adopted", startGen) {
 		return nil
 	}
 	bin, err := d.harnessBinary("claude")
@@ -204,27 +222,33 @@ func (d *Daemon) startClaudeRoleOnce(ctx context.Context, role sessionRole, id, 
 		}
 		return fmt.Errorf("start CTO Claude: %w", err)
 	}
-	if !d.bindClaudeCTO(sf, model, id, "started") {
+	if !d.bindClaudeCTO(sf, model, id, "started", startGen) {
 		return errors.New("CTO Claude session did not start: its process is gone")
 	}
 	return nil
 }
 
 // startOpenCodeRole starts, or keeps, the private OpenCode server of a role.
-// The caller holds cto.mu. A role needs its own server: its agent, system
-// prompt, permissions and MCP server are OpenCode configuration, which the
-// owner's shared service must not carry. It is the same launcher that starts a
-// worker's private server (serveOpenCodePrivate).
+// The caller must not hold cto.mu: spawning and polling run without the lock,
+// and the server is published only if the generation did not change in between.
+// A role needs its own server: its agent, system prompt, permissions and MCP
+// server are OpenCode configuration, which the owner's shared service must not
+// carry. It is the same launcher that starts a worker's private server
+// (serveOpenCodePrivate).
 func (d *Daemon) startOpenCodeRole(ctx context.Context, role sessionRole) error {
 	c := &d.cto
+	c.mu.Lock()
 	if c.cmd != nil {
 		select {
 		case <-c.exited:
 			d.stopOpenCodeCTOLocked("crash")
 		default:
+			c.mu.Unlock()
 			return nil
 		}
 	}
+	startGen := c.gen
+	c.mu.Unlock()
 	bin, err := d.harnessBinary("opencode")
 	if err != nil {
 		return err
@@ -264,7 +288,27 @@ func (d *Daemon) startOpenCodeRole(ctx context.Context, role sessionRole) error 
 	defer logf.Close()
 	startup, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	var run *ctoProcess
+	var (
+		localCmd                         *exec.Cmd
+		localExited                      chan struct{}
+		localRun                         *ctoProcess
+		localBase, localVersion, localID string
+	)
+	killLocal := func() {
+		if localCmd == nil {
+			return
+		}
+		select {
+		case <-localExited:
+		default:
+			localRun.expected.Store(true)
+			_ = syscall.Kill(-localCmd.Process.Pid, syscall.SIGKILL)
+			<-localExited
+		}
+		localCmd = nil
+		localExited = nil
+		localRun = nil
+	}
 	_, err = d.serveOpenCodePrivate(startup, openCodeServe{
 		label: "CTO OpenCode", password: pass,
 		spawn: func(attempt, port int) (string, string, string, error) {
@@ -276,14 +320,13 @@ func (d *Daemon) startOpenCodeRole(ctx context.Context, role sessionRole) error 
 			if err := cmd.Start(); err != nil {
 				return "", "", "", fmt.Errorf("start CTO OpenCode: %w", err)
 			}
-			c.cmd = cmd
-			c.pid.Store(int64(cmd.Process.Pid))
-			c.exited = make(chan struct{})
-			c.base, c.password, c.version = portURL(port), pass, d.openCodeVersion()
-			c.identity = fmt.Sprintf("cto:%d:%d", cmd.Process.Pid, attempt)
-			exited := c.exited
-			run = &ctoProcess{}
-			c.run = run
+			localCmd = cmd
+			localExited = make(chan struct{})
+			localBase, localVersion = portURL(port), d.openCodeVersion()
+			localID = fmt.Sprintf("cto:%d:%d", cmd.Process.Pid, attempt)
+			exited := localExited
+			run := &ctoProcess{}
+			localRun = run
 			go func(run *ctoProcess) {
 				err := cmd.Wait()
 				c.pid.CompareAndSwap(int64(cmd.Process.Pid), 0)
@@ -298,26 +341,51 @@ func (d *Daemon) startOpenCodeRole(ctx context.Context, role sessionRole) error 
 				close(exited)
 				d.scheduleCTOPresence()
 			}(run)
-			return c.base, c.version, c.identity, nil
+			return localBase, localVersion, localID, nil
 		},
-		setVersion: func(v string) { c.version = v },
+		setVersion: func(v string) { localVersion = v },
 		gone: func() bool {
+			c.mu.Lock()
+			stopped := c.gen != startGen
+			c.mu.Unlock()
+			if stopped {
+				cancel()
+				return true
+			}
 			select {
-			case <-c.exited:
+			case <-localExited:
 				return true
 			default:
 				return false
 			}
 		},
-		kill: d.stopOpenCodeCTOLocked,
+		kill: func(string) { killLocal() },
 		ready: func(info []byte) error {
-			return d.checkOpenCodeCTOAgent(startup, info)
+			return d.checkOpenCodeCTOAgentAt(startup, localBase, pass, &localVersion, localID, info)
 		},
 	})
 	if err != nil {
+		killLocal()
 		return err
 	}
-	run.started.Store(true)
+	c.mu.Lock()
+	if c.gen != startGen {
+		c.mu.Unlock()
+		killLocal()
+		return errCTONotRunning
+	}
+	if c.cmd != nil {
+		c.mu.Unlock()
+		killLocal()
+		return nil
+	}
+	c.cmd = localCmd
+	c.pid.Store(int64(localCmd.Process.Pid))
+	c.exited = localExited
+	c.base, c.password, c.version, c.identity = localBase, pass, localVersion, localID
+	c.run = localRun
+	c.mu.Unlock()
+	localRun.started.Store(true)
 	d.Logf("cto.start harness=opencode")
 	d.scheduleCTOPresence()
 	d.startCTOCompactionLoop()
