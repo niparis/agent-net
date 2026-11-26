@@ -104,6 +104,7 @@ func (s *silentDaemon) answerNow() {
 // startup timeout. The server answers with the fixed instructions and the
 // built-in tools, and a tool call works once the daemon answers again.
 func TestInitializeAndToolsListAnswerWhileTheDaemonIsHung(t *testing.T) {
+	testsock.Skip(t)
 	t.Setenv("AGENT_NET_WORKER", "")
 	socket := t.TempDir() + "/d.sock"
 	daemon := newSilentDaemon(t, socket)

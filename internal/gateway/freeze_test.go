@@ -64,6 +64,38 @@ func waitForFreezeLog(t *testing.T, logs *syncLogBuffer, timeout time.Duration) 
 	return ""
 }
 
+func waitForFreezeProfile(t *testing.T, dir string, timeout time.Duration) []string {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	pattern := filepath.Join(dir, "freeze-profiles", "freeze-*.txt")
+	for time.Now().Before(deadline) {
+		files, err := filepath.Glob(pattern)
+		if err != nil {
+			t.Fatalf("glob freeze profiles: %v", err)
+		}
+		var complete []string
+		for _, path := range files {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read freeze profile %s: %v", path, err)
+			}
+			if strings.Contains(string(data), "goroutine ") {
+				complete = append(complete, path)
+			}
+		}
+		if len(complete) > 0 {
+			return complete
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	files, err := filepath.Glob(pattern)
+	if err != nil {
+		t.Fatalf("glob freeze profiles: %v", err)
+	}
+	t.Fatalf("timed out waiting for a complete freeze profile in %s; got %v", dir, files)
+	return nil
+}
+
 func TestFreezeDumpWhenBothStuck(t *testing.T) {
 	g, logs := newFreezeTestGateway(t, 100*time.Millisecond, 15*time.Millisecond, 10*time.Minute)
 
@@ -180,9 +212,9 @@ func TestFreezeDumpWhenBothStuck(t *testing.T) {
 	}
 
 	// Verify profile file exists under DataDir and contains debug=2 goroutine text.
-	files, err := filepath.Glob(filepath.Join(g.opts.DataDir, "freeze-profiles", "freeze-*.txt"))
-	if err != nil || len(files) != 1 {
-		t.Fatalf("expected 1 freeze profile file, got %v (err=%v)", files, err)
+	files := waitForFreezeProfile(t, g.opts.DataDir, time.Second)
+	if len(files) != 1 {
+		t.Fatalf("expected 1 freeze profile file, got %v", files)
 	}
 	profBytes, err := os.ReadFile(files[0])
 	if err != nil {
