@@ -3,6 +3,7 @@ package gateway
 import (
 	"database/sql"
 	"errors"
+	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -21,8 +22,9 @@ type placeGraph struct {
 	reportsTo map[string]string
 	// lead is the live lead session of each Agent (agents.lead_session, not
 	// archived and not replaced). The CTO Agent's lead session is the CTO
-	// session the gateway stores (gateway_state cto_session). An Agent without
-	// one is missing.
+	// session the gateway stores (gateway_state cto_session). An Agent with no
+	// live session at all has its drawn lead here (rule 5). An Agent without
+	// either is missing.
 	lead map[string]string
 	// leads holds the Agents that lead something (leadingAgentsSQL). Only
 	// they have lead sessions; the sessions of any other Agent sit under the
@@ -55,6 +57,9 @@ type placeSession struct {
 //  4. A session of an Agent that leads nothing (a member or merger Agent)
 //     sits under the lead session of the Agent it reports to, beside its
 //     peers. It is a root only when that edge points to the owner.
+//  5. An Agent that leads something and has no live session at all is drawn
+//     with its most recently active session as its lead (loadDrawnLeads), so
+//     rules 2 to 4 place its sessions as if that session were pinned.
 //
 // When the rule cannot place a session, noParent names the missing piece:
 // "no Agent", "no reports_to" when an Agent that leads nothing reports to no
@@ -137,6 +142,9 @@ func loadPlaceGraph(q leadDB, reportsTo map[string]string) (placeGraph, error) {
 	if err := rows.Close(); err != nil {
 		return g, err
 	}
+	if err := loadDrawnLeads(q, g); err != nil {
+		return g, err
+	}
 	var cto string
 	err = q.QueryRow(`SELECT s.id FROM gateway_state st JOIN sessions s ON s.id=st.value
 		WHERE st.key='cto_session' AND s.archived_at=0 AND s.replaced_by=''`).Scan(&cto)
@@ -161,6 +169,67 @@ func loadPlaceGraph(q leadDB, reportsTo map[string]string) (placeGraph, error) {
 		}
 	}
 	return g, rows.Err()
+}
+
+// loadDrawnLeads applies rule 5 for drawing only: an Agent that leads
+// something, has no live lead session and no online session at all, gets its
+// most recently active session as its lead in g.lead. Nothing is pinned, so
+// I1 pins a real lead once one of its sessions is live again. Without this,
+// a project whose sessions are all offline would draw as several roots or
+// "no lead" markers.
+func loadDrawnLeads(q leadDB, g placeGraph) error {
+	var missing []string
+	for agent := range g.leads {
+		if g.lead[agent] == "" {
+			missing = append(missing, agent)
+		}
+	}
+	// A tree where every leading Agent has its lead session costs no query.
+	if len(missing) == 0 {
+		return nil
+	}
+	live := map[string]bool{}
+	rows, err := q.Query(`SELECT DISTINCT agent_id FROM sessions WHERE online=1 AND archived_at=0 AND replaced_by='' AND agent_id<>''`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var agent string
+		if err := rows.Scan(&agent); err != nil {
+			rows.Close()
+			return err
+		}
+		live[agent] = true
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	var args []any
+	for _, agent := range missing {
+		if !live[agent] {
+			args = append(args, agent)
+		}
+	}
+	if len(args) == 0 {
+		return nil
+	}
+	rows, err = q.Query(`SELECT s.agent_id, s.id FROM sessions s WHERE s.agent_id IN (?`+strings.Repeat(",?", len(args)-1)+`)
+		AND `+leadCandidateOfSQL("s.agent_id")+`
+		ORDER BY MAX(s.last_active, s.last_seen) DESC, s.id`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var agent, session string
+		if err := rows.Scan(&agent, &session); err != nil {
+			return err
+		}
+		if g.lead[agent] == "" {
+			g.lead[agent] = session
+		}
+	}
+	return rows.Err()
 }
 
 // placeOf is what the rule reads from a session row.

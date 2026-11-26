@@ -31,6 +31,7 @@ Every session has exactly one parent, computed in one gateway function (`session
 2. A session that is the lead session of its Agent has, as its parent, the lead session of the Agent it `reports_to`. When that Agent has no live lead session, or the edge points to the root, the parent is the root (owner, then CTO and chief, as today).
 3. Any other session of an Agent that leads something (a Repo, an active Team, or a lead-level grant) has the Agent's lead session as its parent.
 4. A session of an Agent that leads nothing (a member Agent such as `<project>-agent`, or a merger Agent) has, as its parent, the lead session of the Agent it `reports_to`, the same as rule 2. Such an Agent has no lead session of its own, so its sessions sit side by side under their lead, never under one of their peers.
+5. When an Agent that leads something has no live session at all, the tree draws its most recently active session as its lead for placement, and its other sessions sit under it. That is only for drawing: nothing is pinned, and I1 pins a real lead as soon as one of its sessions is live again. So a project whose sessions are all offline still shows as one row, not as several roots or "(no parent)" markers. Added on 2026-11-26 after the part 2 release.
 
 There is no fallback chain, and no rule reads team membership, repo columns or names. A lead whose `reports_to` is the CTO Agent sits under the CTO session (0160, 0184); only the owner edge is a root.
 

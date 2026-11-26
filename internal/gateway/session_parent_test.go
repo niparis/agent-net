@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"database/sql"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -84,4 +85,71 @@ func TestAgentListCarriesTheSessionParent(t *testing.T) {
 	if got := parents()[ids["member-2"]]; got[1] != "no lead" {
 		t.Fatalf("member-2 with a replaced lead session placed %v, want the no lead marker", got)
 	}
+}
+
+// Rule 5: a leading Agent with no lead pin and no live session draws its most
+// recently active session as its lead, without writing anything; once a
+// session is live and pinned, the pin places the tree.
+func TestAllOfflineLeadingAgentDrawsAsOneRow(t *testing.T) {
+	s, ids := orgReadRig(t)
+	node := ""
+	if err := s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, ids["lead"]).Scan(&node); err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "lead-3", Repo: protocol.RepoInfo{Root: "/w/lead", Project: "lead"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids["lead-3"] = id
+	// lead-2 was active last, by last_active for one and last_seen for another.
+	for _, q := range []struct {
+		sql  string
+		args []any
+	}{
+		{`UPDATE sessions SET agent_id='lead', online=0, last_active=CASE id WHEN ? THEN 300 ELSE 100 END,
+			last_seen=CASE id WHEN ? THEN 200 ELSE 100 END WHERE id IN (?,?,?)`,
+			[]any{ids["lead-2"], ids["lead-3"], ids["lead"], ids["lead-2"], ids["lead-3"]}},
+		{`UPDATE agents SET lead_session=NULL WHERE id='lead'`, nil},
+	} {
+		if _, err := s.db.Exec(q.sql, q.args...); err != nil {
+			t.Fatalf("%s: %v", q.sql, err)
+		}
+	}
+	placed := func() map[string][2]string {
+		agents, err := s.Agents(protocol.QueryAgents{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string][2]string{}
+		for _, a := range agents {
+			out[a.SessionID] = [2]string{a.Parent, a.NoParent}
+		}
+		return out
+	}
+	want := func(got map[string][2]string, lead string) {
+		t.Helper()
+		if got[lead][1] != "" {
+			t.Fatalf("drawn lead %s has marker %q (all: %v)", lead, got[lead][1], got)
+		}
+		for _, session := range []string{"lead", "lead-2", "lead-3", "member"} {
+			if ids[session] == lead {
+				continue
+			}
+			if got[ids[session]] != [2]string{lead, ""} {
+				t.Fatalf("session %s placed %v, want under %s (all: %v)", session, got[ids[session]], lead, got)
+			}
+		}
+	}
+	want(placed(), ids["lead-2"])
+	var pin sql.NullString
+	if err := s.db.QueryRow(`SELECT lead_session FROM agents WHERE id='lead'`).Scan(&pin); err != nil || pin.Valid {
+		t.Fatalf("drawing pinned a lead: %v %v", pin, err)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET online=1 WHERE id=?`, ids["lead-3"]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE agents SET lead_session=? WHERE id='lead'`, ids["lead-3"]); err != nil {
+		t.Fatal(err)
+	}
+	want(placed(), ids["lead-3"])
 }
