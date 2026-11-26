@@ -46,7 +46,7 @@ var quotaArgs = []string{"--json", "--max-age", "5m", "--no-credential-refresh"}
 // ensureQuotaAXI installs the private copy. Tests replace it so they never
 // run npm.
 var ensureQuotaAXI = quotaaxi.Ensure
-var discoverQuotaChoice = quotaaxi.DiscoverChoice
+var quotaChoice = quotaaxi.Find
 
 type quotaState struct {
 	mu   sync.Mutex
@@ -190,12 +190,7 @@ func (d *Daemon) startQuota(ctx context.Context) {
 	if every <= 0 {
 		every = defaultQuotaInterval
 	}
-	choice, err := discoverQuotaChoice(ConfigDir(), d.cfg.QuotaAXIPath)
-	if err != nil {
-		d.Logf("quota-axi: cannot record choice: %v", err)
-		return
-	}
-	path, ok := choice.Path, choice.Path != ""
+	choice, ok := quotaChoice(d.cfg.QuotaAXIPath)
 	if !ok {
 		d.wg.Add(1)
 		go func() {
@@ -207,18 +202,13 @@ func (d *Daemon) startQuota(ctx context.Context) {
 				}
 				return
 			}
-			choice, err := discoverQuotaChoice(ConfigDir(), d.cfg.QuotaAXIPath)
-			if err != nil {
-				d.Logf("quota-axi: cannot record choice: %v", err)
-				return
-			}
-			p, ok := choice.Path, choice.Path != ""
+			choice, ok := quotaChoice(d.cfg.QuotaAXIPath)
 			if !ok {
 				return
 			}
 			d.quota.setNote("")
 			d.setQuotaChoice(choice)
-			d.quotaLoop(ctx, p, every)
+			d.quotaLoop(ctx, choice.Path, every)
 		}()
 		return
 	}
@@ -227,7 +217,7 @@ func (d *Daemon) startQuota(ctx context.Context) {
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
-		d.quotaLoop(ctx, path, every)
+		d.quotaLoop(ctx, choice.Path, every)
 	}()
 }
 

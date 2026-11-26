@@ -324,7 +324,7 @@ func TestFindMacOSNVMAndNPMGlobalCopies(t *testing.T) {
 		t.Fatal(err)
 	}
 	nvmQuota := filepath.Join(nvm, "quota-axi")
-	if err := os.WriteFile(nvmQuota, []byte("#!/bin/sh\n"), 0o755); err != nil {
+	if err := os.WriteFile(nvmQuota, []byte("#!/bin/sh\necho 0.1.66\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	fakeNode(t, nvm, "22.20.0")
@@ -348,7 +348,7 @@ func TestFindMacOSNVMAndNPMGlobalCopies(t *testing.T) {
 		t.Fatal(err)
 	}
 	npmQuota := filepath.Join(global, "bin", "quota-axi")
-	if err := os.WriteFile(npmQuota, []byte("#!/bin/sh\n"), 0o755); err != nil {
+	if err := os.WriteFile(npmQuota, []byte("#!/bin/sh\necho 0.1.66\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	bin := t.TempDir()
@@ -746,20 +746,18 @@ func TestDecision(t *testing.T) {
 	tests := []struct {
 		name      string
 		copies    []Copy
-		previous  string
 		want, why string
 	}{
-		{"owner before private", []Copy{{Path: "private", Version: Version, Runs: true, Private: true}, {Path: "owner", Version: "0.1.66", Runs: true}}, "", "owner", "supported owner copy"},
-		{"old owner", []Copy{{Path: "old", Version: "0.1.65", Runs: true}, {Path: "private", Version: Version, Runs: true, Private: true}}, "", "private", "no usable owner copy"},
-		{"invalid and broken", []Copy{{Path: "bad", Version: "invalid", Runs: true}, {Path: "broken", Version: Version}, {Path: "good", Version: "0.1.66", Runs: true}}, "", "good", "supported owner copy"},
-		{"keep running private", []Copy{{Path: "owner", Version: "0.1.66", Runs: true}, {Path: "private", Version: Version, Runs: true, Private: true}}, "private", "private", "previous choice still runs"},
-		{"replace broken", []Copy{{Path: "owner", Version: "0.1.66", Runs: true}, {Path: "private", Version: Version, Private: true}}, "private", "owner", "supported owner copy"},
-		{"none", nil, "", "", ""},
-		{"prerelease unsupported", []Copy{{Path: "pre", Version: "0.1.66-rc.1", Runs: true}}, "", "", ""},
+		{"owner before private", []Copy{{Path: "private", Version: Version, Runs: true, Private: true}, {Path: "owner", Version: "0.1.66", Runs: true}}, "owner", "supported owner copy"},
+		{"old owner", []Copy{{Path: "old", Version: "0.1.65", Runs: true}, {Path: "private", Version: Version, Runs: true, Private: true}}, "private", "no usable owner copy"},
+		{"invalid and broken", []Copy{{Path: "bad", Version: "invalid", Runs: true}, {Path: "broken", Version: Version}, {Path: "good", Version: "0.1.66", Runs: true}}, "good", "supported owner copy"},
+		{"broken private", []Copy{{Path: "owner", Version: "0.1.66", Runs: true}, {Path: "private", Version: Version, Private: true}}, "owner", "supported owner copy"},
+		{"none", nil, "", ""},
+		{"prerelease unsupported", []Copy{{Path: "pre", Version: "0.1.66-rc.1", Runs: true}}, "", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := Decide(tt.copies, tt.previous)
+			got := Decide(tt.copies)
 			if got.Path != tt.want || got.Why != tt.why {
 				t.Fatalf("got %+v", got)
 			}
@@ -767,26 +765,36 @@ func TestDecision(t *testing.T) {
 	}
 }
 
-func TestChoicePersistsAndRechecks(t *testing.T) {
-	dir := t.TempDir()
-	copies := []Copy{{Path: "private", Version: Version, Runs: true, Private: true}}
-	c, err := SaveChoice(dir, copies)
-	if err != nil || c.Path != "private" {
-		t.Fatalf("first: %+v %v", c, err)
+// An old choice record that named the private copy no longer decides: a
+// supported owner copy wins by the one rule.
+func TestOwnerCopyWinsOverAnOldRecordedPrivateChoice(t *testing.T) {
+	home, _ := setupPath(t, "22.19.0")
+	owner := filepath.Join(home, ".local", "bin", quotaCommand)
+	if err := os.MkdirAll(filepath.Dir(owner), 0755); err != nil {
+		t.Fatal(err)
 	}
-	copies = append([]Copy{{Path: "owner", Version: "0.1.66", Runs: true}}, copies...)
-	c, err = SaveChoice(dir, copies)
-	if err != nil || c.Path != "private" {
-		t.Fatalf("preserve: %+v %v", c, err)
+	ownerScript := "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 0.1.66; exit 0; fi\nexit 0\n"
+	if err := os.WriteFile(owner, []byte(ownerScript), 0755); err != nil {
+		t.Fatal(err)
 	}
-	copies[1].Runs = false
-	c, err = SaveChoice(dir, copies)
-	if err != nil || c.Path != "owner" {
-		t.Fatalf("replace: %+v %v", c, err)
+	if err := os.MkdirAll(filepath.Dir(Binary()), 0755); err != nil {
+		t.Fatal(err)
 	}
-	c, err = LoadChoice(dir)
-	if err != nil || c.Path != "owner" || c.Version != "0.1.66" || c.Why == "" {
-		t.Fatalf("record: %+v %v", c, err)
+	privateScript := "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo " + Version + "; exit 0; fi\nexit 0\n"
+	if err := os.WriteFile(Binary(), []byte(privateScript), 0755); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(home, "config")
+	if err := os.MkdirAll(config, 0700); err != nil {
+		t.Fatal(err)
+	}
+	record := `{"path":"` + Binary() + `","version":"` + Version + `","why":"previous choice still runs","private":true}`
+	if err := os.WriteFile(filepath.Join(config, "quota-axi-choice.json"), []byte(record), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := Find("")
+	if !ok || got.Path != owner || got.Private {
+		t.Fatalf("old record still decides: %+v %v", got, ok)
 	}
 }
 
@@ -807,39 +815,6 @@ func TestEnsureUsesSupportedOwnerBelowPin(t *testing.T) {
 	}
 	if _, err := os.Stat(log); !os.IsNotExist(err) {
 		t.Fatalf("npm ran: %v", err)
-	}
-}
-
-func TestDiscoverChoiceKeepsRecordedCopyOffPath(t *testing.T) {
-	home, _ := setupPath(t, "22.19.0")
-	config := filepath.Join(home, "config")
-	first := filepath.Join(home, "first")
-	second := filepath.Join(home, "second")
-	for _, dir := range []string{first, second} {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, "quota-axi"), []byte("#!/bin/sh\necho 0.1.66\n"), 0755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	nodePath := os.Getenv("PATH")
-	fakeLoginPath(t, first+string(os.PathListSeparator)+nodePath)
-	c, err := DiscoverChoice(config, "")
-	if err != nil || c.Path != filepath.Join(first, "quota-axi") {
-		t.Fatalf("first: %+v %v", c, err)
-	}
-	fakeLoginPath(t, second+string(os.PathListSeparator)+nodePath)
-	c, err = DiscoverChoice(config, "")
-	if err != nil || c.Path != filepath.Join(first, "quota-axi") {
-		t.Fatalf("retained: %+v %v", c, err)
-	}
-	if err := os.Remove(filepath.Join(first, "quota-axi")); err != nil {
-		t.Fatal(err)
-	}
-	c, err = DiscoverChoice(config, "")
-	if err != nil || c.Path != filepath.Join(second, "quota-axi") {
-		t.Fatalf("replacement: %+v %v", c, err)
 	}
 }
 
@@ -864,15 +839,15 @@ func TestEnsureReplacesBrokenPrivateCopy(t *testing.T) {
 
 func TestEnsureChoiceKeepsOwnerOffPath(t *testing.T) {
 	home, log := setupPath(t, "22.19.0")
-	owner := filepath.Join(t.TempDir(), "quota-axi")
-	if err := os.WriteFile(owner, []byte("#!/bin/sh\necho 0.1.66\n"), 0755); err != nil {
+	owner := filepath.Join(home, ".local", "bin", quotaCommand)
+	if err := os.MkdirAll(filepath.Dir(owner), 0755); err != nil {
 		t.Fatal(err)
 	}
-	config := filepath.Join(home, "config")
-	if _, err := SaveChoice(config, []Copy{{Path: owner, Version: "0.1.66", Runs: true}}); err != nil {
+	script := "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 0.1.66; exit 0; fi\nexit 0\n"
+	if err := os.WriteFile(owner, []byte(script), 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := EnsureChoice(context.Background(), config, "", nil); err != nil {
+	if err := EnsureChoice(context.Background(), "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(log); !os.IsNotExist(err) {

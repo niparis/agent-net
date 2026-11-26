@@ -470,10 +470,10 @@ func TestUsageReportCarriesQuotaError(t *testing.T) {
 	}
 }
 
-func TestQuotaUsesRecordedChoiceAtStart(t *testing.T) {
+func TestQuotaUsesChosenCopyAtStart(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
-	old := discoverQuotaChoice
-	t.Cleanup(func() { discoverQuotaChoice = old })
+	old := quotaChoice
+	t.Cleanup(func() { quotaChoice = old })
 	got := make(chan string, 1)
 	dir := t.TempDir()
 	choice := writeQuotaCandidate(t, dir)
@@ -481,9 +481,9 @@ func TestQuotaUsesRecordedChoiceAtStart(t *testing.T) {
 	if err := os.WriteFile(choice, []byte("#!/bin/sh\nprintf yes > '"+marker+"'\necho '{}'\n"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	discoverQuotaChoice = func(dir, configured string) (quotaaxi.Choice, error) {
+	quotaChoice = func(configured string, _ ...func(format string, args ...any)) (quotaaxi.Choice, bool) {
 		got <- configured
-		return quotaaxi.Choice{Path: choice, Version: "0.1.66"}, nil
+		return quotaaxi.Choice{Path: choice, Version: "0.1.66"}, true
 	}
 	d := &Daemon{cfg: Config{QuotaAXIPath: "configured"}, log: log.New(io.Discard, "", 0)}
 	ctx, cancel := context.WithCancel(context.Background())

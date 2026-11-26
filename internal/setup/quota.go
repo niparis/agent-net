@@ -25,7 +25,7 @@ var (
 	ensureQuotaAXIAsync = func(logf func(string, ...any)) {
 		go func() {
 			nc, _, _ := daemon.LoadNode(daemon.ConfigDir())
-			if err := quotaaxi.EnsureChoice(context.Background(), daemon.ConfigDir(), nc.QuotaAXI, logf); err != nil && logf != nil {
+			if err := quotaaxi.EnsureChoice(context.Background(), nc.QuotaAXI, logf); err != nil && logf != nil {
 				logf("quota-axi: %v", err)
 			}
 		}()
@@ -53,12 +53,8 @@ func (r *runner) quotaAXI(ctx context.Context) {
 	}
 	nc, _, _ := daemon.LoadNode(daemon.ConfigDir())
 	r.offerQuotaUpgrade(ctx, quotaaxi.Discover(nc.QuotaAXI))
-	choice, err := quotaaxi.DiscoverChoice(daemon.ConfigDir(), nc.QuotaAXI)
-	if err != nil {
-		r.quotaWarning(err)
-		return
-	}
-	if choice.Path != "" {
+	choice, ok := quotaaxi.Find(nc.QuotaAXI)
+	if ok {
 		r.quotaAuth(ctx, choice)
 		r.quotaStep(choice.Version)
 		return
@@ -71,12 +67,8 @@ func (r *runner) quotaAXI(ctx context.Context) {
 		r.quotaWarning(err)
 		return
 	}
-	choice, err = quotaaxi.DiscoverChoice(daemon.ConfigDir(), nc.QuotaAXI)
-	if err != nil {
-		r.quotaWarning(err)
-		return
-	}
-	if choice.Path == "" {
+	choice, ok = quotaaxi.Find(nc.QuotaAXI)
+	if !ok {
 		r.step(quotaStepName, "skipped (install failed earlier today, trying again tomorrow)", nil)
 		return
 	}

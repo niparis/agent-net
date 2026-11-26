@@ -32,42 +32,17 @@ type continueRepick struct {
 // onlyHarness keeps the roster to the harness the owner named at the worker's
 // first start (decision 0191); empty is the whole roster. persist is false for
 // a validation call: it moves no rotation.
-func (g *Gateway) repickContinue(node *protocol.NodeView, a *protocol.WorkerAssessment, oldHarness, oldModel, onlyHarness string, quotas *protocol.Quotas, floors protocol.WorkerFloors, scores []protocol.ModelScore, persist bool) (continueRepick, error) {
+func (g *Gateway) repickContinue(node *protocol.NodeView, a *protocol.WorkerAssessment, oldHarness, oldModel, onlyHarness string, persist bool) (continueRepick, error) {
 	kept := continueRepick{harness: oldHarness, model: oldModel}
-	profiles, err := g.store.WorkerProfiles()
-	if err != nil || len(profiles) == 0 {
+	in, err := g.pickInputs(node, onlyHarness)
+	if err != nil || len(in.profiles) == 0 {
 		// No profiles: automatic starts do not run, so there is no roster to
 		// meet, and the continue keeps its model as before.
 		return kept, err
 	}
 	level := protocol.WorkerLevel(a)
-	providers, err := g.store.workerProviders()
-	if err != nil {
-		return kept, err
-	}
-	minimums, err := g.store.difficultyMinimums()
-	if err != nil {
-		return kept, err
-	}
-	protected, err := g.store.protectedProviders()
-	if err != nil {
-		return kept, err
-	}
-	agents, err := g.store.Agents(protocol.QueryAgents{OnlineOnly: true})
-	if err != nil {
-		return kept, err
-	}
-	// The same reading an automatic start makes: the owner's quotas with the
-	// burn of the running workers, and the workers running on this machine.
-	quotas = g.withQuotaBurn(quotas, agents)
-	running := map[string]int{}
-	for _, ag := range agents {
-		if ag.NodeID == node.NodeID && ag.Worker != nil {
-			running[protocol.QuotaProviderForStart(ag.Harness, ag.Model)]++
-		}
-	}
 	reads := &candidateFacts{}
-	candidates, _, _, err := g.workerModelCandidatesWith(reads, nil, node, profiles, providers, quotas, onlyHarness, false, protected)
+	candidates, _, _, err := in.candidates(g, reads, nil, node, false)
 	if err != nil {
 		return kept, err
 	}
@@ -79,12 +54,12 @@ func (g *Gateway) repickContinue(node *protocol.NodeView, a *protocol.WorkerAsse
 		Difficulty:     level,
 		D:              protocol.PickerD(a, level),
 		DifficultyNote: workerDifficultyWhy(a, level),
-		Scores:         scores,
-		Minimums:       minimums,
-		Quotas:         quotas,
-		Running:        running,
-		Protected:      protected,
-		Floors:         floors,
+		Scores:         in.scores,
+		Minimums:       in.minimums,
+		Quotas:         in.quotas,
+		Running:        in.running,
+		Protected:      in.protected,
+		Floors:         in.floors,
 		Auth:           reads.auth,
 	}
 	// The check asks the gate for the old model first, without a fresh
@@ -98,7 +73,7 @@ func (g *Gateway) repickContinue(node *protocol.NodeView, a *protocol.WorkerAsse
 		check.Prefer = old.Key()
 		checked, cerr := g.Choose(check)
 		if cerr == nil && checked.Choice.Key() == old.Key() {
-			if !isProtected(old.Harness, old.Model, protected) {
+			if !isProtected(old.Harness, old.Model, in.protected) {
 				return kept, nil
 			}
 			why = fmt.Sprintf("protected provider (%s), saved for your orchestrator", protocol.ProfileProvider(old.Harness, old.Model))

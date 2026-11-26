@@ -739,14 +739,6 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	case node.Harnesses == nil:
 		return none, reject("machine %s has not reported its harnesses yet", node.Hostname)
 	}
-	protected, err := g.store.protectedProviders()
-	if err != nil {
-		return none, err
-	}
-	floors, err := g.store.workerFloors()
-	if err != nil {
-		return none, err
-	}
 	// The subscriptions belong to the owner, not to one machine: read them
 	// once, and let every quota decision of this start use that one reading.
 	quotas := g.ownerQuotas(pick.NodeID)
@@ -768,12 +760,14 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		return protocol.WorkerStartAnswer{NodeID: pick.NodeID, Hostname: pick.Hostname, Project: pick.Name, Path: pick.Path}, nil
 	}
 	// One owner reading for the whole start: the subscriptions with the burn
-	// of the running workers (decision 0162).
-	agents, err := g.store.Agents(protocol.QueryAgents{OnlineOnly: true})
+	// of the running workers (decision 0162), and every other input of the
+	// pick loaded once.
+	in, err := g.pickInputs(node, p.Harness)
 	if err != nil {
 		return none, err
 	}
-	quotas = g.withQuotaBurn(quotas, agents)
+	quotas = in.quotas
+	protected, floors := in.protected, in.floors
 	// The brief checks run after the judge's pass and before any pick or
 	// launch. Validation calls and internal read-only phrasing workers skip
 	// them: they start no caller worker and count no rejection. A check mode
@@ -843,34 +837,13 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	var namedNotes map[string]string
 	if automatic {
 		difficulty := difficultyUsed
-		providers, err := g.store.workerProviders()
-		if err != nil {
-			return none, err
-		}
-		scores, err := g.store.scores()
-		if err != nil {
-			return none, err
-		}
-		minimums, err := g.store.difficultyMinimums()
-		if err != nil {
-			return none, err
-		}
-		running := map[string]int{}
-		for _, a := range agents {
-			if a.NodeID == pick.NodeID && a.Worker != nil {
-				running[protocol.QuotaProviderForStart(a.Harness, a.Model)]++
-			}
-		}
-		profiles, err := g.store.WorkerProfiles()
-		if err != nil {
-			return none, err
-		}
-		if len(profiles) == 0 {
+		scores, minimums, running := in.scores, in.minimums, in.running
+		if len(in.profiles) == 0 {
 			return none, reject("no registered workers qualify for %s; register a profile for %s, or pass model explicitly", difficulty, difficulty)
 		} else {
 			roster := newNotStartedRoster()
 			candidateReads := &candidateFacts{}
-			candidates, skippedProfiles, resolutionNotes, err := g.workerModelCandidatesWith(candidateReads, roster, node, profiles, providers, quotas, p.Harness, p.RequireReadOnly, protected)
+			candidates, skippedProfiles, resolutionNotes, err := in.candidates(g, candidateReads, roster, node, p.RequireReadOnly)
 			if err != nil {
 				return none, err
 			}
@@ -1017,12 +990,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		// The named route goes through the one gate too (decision 0162). An
 		// agent's pick gets the worker checks; the owner's own start turns the
 		// floor and the other optional steps off.
-		if namedScores, err = g.store.scores(); err != nil {
-			return none, err
-		}
-		if namedMinimums, err = g.store.difficultyMinimums(); err != nil {
-			return none, err
-		}
+		namedScores, namedMinimums = in.scores, in.minimums
 		purpose := model.PurposeWorkerNamed
 		if protocol.IsOwner(owner.Harness) && !p.FromCTO {
 			purpose = model.PurposeOwnerNamed
@@ -1819,7 +1787,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	// replaced; one the caller or the owner named is kept (decision 0189).
 	var repick continueRepick
 	if p.Model == "" && p.Harness == "" && old.Worker.Assessment != nil {
-		repick, err = g.repickContinue(node, old.Worker.Assessment, harness, continuedModel, heldHarness, quotas, floors, scores, !(len(validate) > 0 && validate[0]))
+		repick, err = g.repickContinue(node, old.Worker.Assessment, harness, continuedModel, heldHarness, !(len(validate) > 0 && validate[0]))
 		if err != nil {
 			return none, err
 		}

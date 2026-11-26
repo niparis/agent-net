@@ -27,24 +27,11 @@ func (g *Gateway) pickDifficultyJudge(nodeID string, req protocol.DifficultyJudg
 		return out, reject("unknown node")
 	}
 	out.Machine = node.Hostname
-	profiles, err := g.store.WorkerProfiles()
+	in, err := g.pickInputs(node, "")
 	if err != nil {
 		return out, err
 	}
-	providers, err := g.store.workerProviders()
-	if err != nil {
-		return out, err
-	}
-	protected, err := g.store.protectedProviders()
-	if err != nil {
-		return out, err
-	}
-	floors, err := g.store.workerFloors()
-	if err != nil {
-		return out, err
-	}
-	quotas := g.ownerQuotas(nodeID)
-	candidates, _, _, err := g.workerModelCandidates(node, profiles, providers, quotas, "", false, protected)
+	candidates, _, _, err := in.candidates(g, &candidateFacts{}, nil, node, false)
 	if err != nil {
 		return out, err
 	}
@@ -55,37 +42,18 @@ func (g *Gateway) pickDifficultyJudge(nodeID string, req protocol.DifficultyJudg
 		}
 		filtered = append(filtered, c)
 	}
-	scores, err := g.store.scores()
-	if err != nil {
-		return out, err
-	}
-	minimums, err := g.store.difficultyMinimums()
-	if err != nil {
-		return out, err
-	}
-	agents, err := g.store.Agents(protocol.QueryAgents{OnlineOnly: true})
-	if err != nil {
-		return out, err
-	}
-	running := map[string]int{}
-	for _, a := range agents {
-		if a.NodeID == nodeID && a.Worker != nil {
-			running[protocol.QuotaProviderForStart(a.Harness, a.Model)]++
-		}
-	}
-	quotas = g.withQuotaBurn(quotas, agents)
 	chosen, err := g.Choose(ChooseRequest{
 		Purpose:    model.PurposeDifficultyJudge,
 		Node:       node,
 		Candidates: filtered,
 		Difficulty: "normal",
 		D:          protocol.PickerD(nil, "normal"),
-		Scores:     scores,
-		Minimums:   minimums,
-		Quotas:     quotas,
-		Running:    running,
-		Protected:  protected,
-		Floors:     floors,
+		Scores:     in.scores,
+		Minimums:   in.minimums,
+		Quotas:     in.quotas,
+		Running:    in.running,
+		Protected:  in.protected,
+		Floors:     in.floors,
 	})
 	if err != nil {
 		// No judge model can run now is not a judge error: the task starts at
