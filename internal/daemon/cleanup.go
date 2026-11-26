@@ -122,6 +122,12 @@ func (d *Daemon) cleanupProjects(ctx context.Context) {
 		return
 	}
 	for _, p := range result.Projects {
+		if ctx.Err() != nil {
+			// The daemon is shutting down. A canceled git command is not a
+			// cleanup failure, and repeating it for every project and worktree
+			// would fill the log with one line each.
+			return
+		}
 		if p.NodeID != d.cfg.NodeID {
 			continue
 		}
@@ -158,6 +164,9 @@ func (d *Daemon) cleanupProjects(ctx context.Context) {
 		}
 		ready := make([]cleanupWorktree, 0, len(rows))
 		for _, row := range rows {
+			if ctx.Err() != nil {
+				return
+			}
 			row.DefaultBranch = defaultBranch
 			row.RemoteDefaultRef = remoteRef
 			if err := d.cleanupChange(ctx, p.Name, &row); err != nil {
@@ -169,6 +178,9 @@ func (d *Daemon) cleanupProjects(ctx context.Context) {
 			ready = append(ready, row)
 		}
 		for i := range ready {
+			if ctx.Err() != nil {
+				return
+			}
 			if err := cleanupPrepareProof(ctx, &ready[i]); err != nil {
 				if d.log != nil {
 					d.Logf("worker.worktree_cleanup path=%q prepare_error=%v", ready[i].Path, err)

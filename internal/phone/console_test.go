@@ -296,7 +296,7 @@ func TestDeskRendersAsksWithRecommendationAndWhyYou(t *testing.T) {
 		"Keep the escalation: the requester does not get do the thing",
 		"Overrule: the requester gets do the thing")
 	// The rail, the CTO button and the bottom bar.
-	for _, name := range []string{"Desk", "Sessions", "Graph", "Changes", "Messages", "Workers"} {
+	for _, name := range []string{"Desk", "Sessions", "Graph", "Changes", "Messages"} {
 		mustContain(t, "rail "+name, body, ">"+name+"<")
 	}
 	mustContain(t, "shell", body, `id="toggleCTO"`, `class="bottomnav"`, `id="ctobody"`, `id="cto" hidden`, `class="live"`)
@@ -398,9 +398,9 @@ func TestSessionsGroupsByStateAndShowsDetail(t *testing.T) {
 	mustNotContain(t, "ids", body, "n_secretnode")
 }
 
-func TestNoActionRoutesForWorkersCharterOrSettings(t *testing.T) {
+func TestNoActionRoutesForCharterOrSettings(t *testing.T) {
 	f := newConsoleOperator()
-	for _, path := range []string{"/workers/start", "/workers/stop", "/worker", "/charter", "/settings", "/graph/edge", "/sessions/start", "/sessions/stop", "/session/s_busy/stop", "/changes/merge", "/cto/send"} {
+	for _, path := range []string{"/charter", "/settings", "/graph/edge", "/sessions/start", "/sessions/stop", "/session/s_busy/stop", "/changes/merge", "/cto/send"} {
 		if code := post(t, f, path, url.Values{"id": {"x"}}); code != 404 && code != 405 {
 			t.Errorf("POST %s: %d, want 404 or 405", path, code)
 		}
@@ -417,13 +417,10 @@ func TestNoActionRoutesForWorkersCharterOrSettings(t *testing.T) {
 	}
 }
 
-func TestGraphAndWorkersAreNoLongerComingSoon(t *testing.T) {
-	f := newConsoleOperator()
-	for _, tc := range []struct{ path, title, panel string }{{"/graph", "Graph", "Network"}, {"/workers", "Workers", "Subscriptions"}} {
-		body := page1(t, f, tc.path)
-		mustContain(t, tc.path, body, "<h1", tc.title, tc.panel)
-		mustNotContain(t, tc.path, body, "coming in the next update", "<form")
-	}
+func TestGraphIsNoLongerComingSoon(t *testing.T) {
+	body := page1(t, newConsoleOperator(), "/graph")
+	mustContain(t, "/graph", body, "<h1", "Graph", "Network")
+	mustNotContain(t, "/graph", body, "coming in the next update", "<form")
 }
 
 func TestOldSessionRouteRedirects(t *testing.T) {
@@ -491,9 +488,9 @@ func TestKeysSwitchScreens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mustContain(t, "console.js", string(js), "keydown", "/sessions", "/graph", "/changes", "/messages", "/workers")
+	mustContain(t, "console.js", string(js), "keydown", "/sessions", "/graph", "/changes", "/messages")
 	body := page1(t, newConsoleOperator(), "/")
-	mustContain(t, "keys", body, `src="/static/console.js"`, `data-key="1"`, `data-key="6"`)
+	mustContain(t, "keys", body, `src="/static/console.js"`, `data-key="1"`, `data-key="5"`)
 }
 
 func TestDaemonDownIsVisible(t *testing.T) {

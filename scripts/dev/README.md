@@ -3,42 +3,6 @@
 These scripts are for machines where agent-net itself is developed. Users of
 agent-net never need them.
 
-## gocache-trim.sh
-
-Workers that build agent-net share one Go build cache, `/tmp/agent-net-gocache`,
-and one build temp folder, `/dev/shm/agent-net-gotmp` when that tmpfs has room, else `/tmp/agent-net-gotmp` (see `scripts/gotmpdir.sh` and `.agent-net/worker.md`).
-Go never trims its cache by size, so the script:
-
-- deletes cache files unused for two hours;
-- above 15 GiB, deletes the least recently used files until the cache is under 10 GiB, but never one used in the last 70 minutes. Go refreshes a cache file's time only when it is about an hour old, so a file a build is reading can look up to an hour old. When only files used in the last 70 minutes are left, the pass stops and says so in one line;
-- deletes build temp folders with nothing written in the last two hours;
-- deletes every other `/tmp/agent-net-*` folder with nothing written in the last six hours, after making it writable. A sandbox can leave read-only folders behind, and they would otherwise grow back.
-
-`AGENT_NET_GOCACHE`, `AGENT_NET_GOTMPDIR` and `AGENT_NET_TRIM_ROOT` name the cache, the build temp folder and the folder the last rule scans. `AGENT_NET_GOCACHE_MAX_BYTES` (15 GiB) and `AGENT_NET_GOCACHE_LOW_BYTES` (10 GiB) are the two size limits; keep the low one below the high one. The test script sets these with temporary folders.
-
-Run it every hour with a systemd user timer:
-
-```
-install -m 755 scripts/dev/gocache-trim.sh ~/.local/bin/agent-net-gocache-trim
-mkdir -p ~/.config/systemd/user
-printf '[Unit]\nDescription=Trim the agent-net dev Go cache\n\n[Service]\nType=oneshot\nExecStart=%%h/.local/bin/agent-net-gocache-trim\n' > ~/.config/systemd/user/agent-net-gocache-trim.service
-printf '[Unit]\nDescription=Trim the agent-net dev Go cache every hour\n\n[Timer]\nOnBootSec=10min\nOnUnitActiveSec=1h\n\n[Install]\nWantedBy=timers.target\n' > ~/.config/systemd/user/agent-net-gocache-trim.timer
-systemctl --user daemon-reload
-systemctl --user enable --now agent-net-gocache-trim.timer
-```
-
-To stop it: `systemctl --user disable --now agent-net-gocache-trim.timer`.
-
-## gocache-trim-test.sh
-
-Checks what `gocache-trim.sh` removes, on temporary folders with mtimes set by
-`touch -d`. It never runs the trim on the real `/tmp/agent-net-*` folders. CI
-runs it:
-
-```
-sh scripts/dev/gocache-trim-test.sh
-```
-
 ## difficulty-backtest.sh
 
 Compares the task-difficulty analyzer with workers that already ran. It reads

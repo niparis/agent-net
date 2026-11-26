@@ -246,7 +246,7 @@ func TestWorkerStoppedClearsBusySessionStatus(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			raw, _ := json.Marshal(protocol.WorkerStopped{SessionID: id, WorkerID: "w_test", Reason: reason})
+			raw, _ := json.Marshal(protocol.WorkerStopped{SessionID: id, WorkerID: "w_test", Harness: "opencode", Reason: reason})
 			if _, err := g.handleWorker(context.Background(), &nodeConn{id: node}, "worker.stopped", raw); err != nil {
 				t.Fatal(err)
 			}

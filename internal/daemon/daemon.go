@@ -339,6 +339,8 @@ type Config struct {
 	testWorkerCacheCleanFirst time.Duration
 	// testWorkerCacheCleanEvery overrides the interval of worker cache cleanup in tests.
 	testWorkerCacheCleanEvery time.Duration
+	// testTrimRoot replaces /tmp as the root of the agent-net-* temp folder sweep.
+	testTrimRoot string
 }
 
 type localSession struct {
@@ -553,7 +555,6 @@ type Daemon struct {
 	cancel          context.CancelFunc
 	workerStreamCtx context.Context
 	topics          topicHub
-	panel           workersPanelCache // kept answers of the workers panel query, see workers_panel_cache.go
 	ln              *localServer
 	mcp             *mcpHost
 	catalog         mcpCatalogCache // kept answers to mcp.catalog, see mcp_catalog_cache.go
@@ -678,7 +679,7 @@ type Daemon struct {
 	diskWarnMu          sync.Mutex
 	diskWarningUpdating bool
 	diskWarningActive   bool
-	diskWarningItemID   string
+	diskWarningCleared  bool
 }
 
 // defaultDetect looks for the harnesses in the usual places. Tests replace it so

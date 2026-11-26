@@ -45,7 +45,6 @@ func TestLoadReadsOnlyVisibleScreen(t *testing.T) {
 		{"changes", []string{protocol.OpAgents, protocol.OpChangesOwnerFind}},
 		{"messages", []string{protocol.OpAgents, protocol.OpConversations, protocol.OpConversationMessages}},
 		{"graph", []string{protocol.OpAgents, protocol.OpGraphView, protocol.OpChiefGet, protocol.OpConversations}},
-		{"workers", []string{protocol.OpAgents, protocol.OpNodes, protocol.OpWorkerProfiles, protocol.OpScoresGet, protocol.OpWorkerRotationGet, protocol.OpProtectedProvidersGet, protocol.OpUsage}},
 	} {
 		t.Run(tc.screen, func(t *testing.T) {
 			f := &countingSource{richOperator: newRichOperator(), calls: map[string]int{}}
@@ -167,31 +166,5 @@ func TestScreenReadsShareBaseAndExpire(t *testing.T) {
 	a.load(context.Background(), "messages", query{})
 	if f.calls[protocol.OpAgents] != 3 {
 		t.Errorf("invalidated agents read %d times", f.calls[protocol.OpAgents])
-	}
-}
-
-func TestWorkersUseLiveSessionsWithoutHistory(t *testing.T) {
-	snap := operator.Snapshot{
-		Agents: []protocol.AgentView{
-			{SessionID: "s_live", Harness: "codex", Online: true, Status: "busy", Profile: protocol.Profile{Name: "live worker"}, Worker: &protocol.WorkerInfo{Task: "live task", Tokens: 1234}},
-			{SessionID: "s_offline", Harness: "codex", Worker: &protocol.WorkerInfo{Task: "old task"}},
-			{SessionID: "s_ended", Harness: "codex", Online: true, Status: "ended", Worker: &protocol.WorkerInfo{Task: "ended task"}},
-		},
-		WorkerLog: []protocol.WorkerLogEntry{{SessionID: "s_old", Status: "running", Title: "stale log"}},
-	}
-	rows := runningWorkers(snap)
-	if len(rows) != 1 || rows[0].Name != "live worker" || rows[0].Task != "live task" {
-		t.Fatalf("running rows=%+v", rows)
-	}
-}
-
-func TestRunningWorkersStayNewestFirst(t *testing.T) {
-	snap := operator.Snapshot{Agents: []protocol.AgentView{
-		{SessionID: "s_older", Harness: "codex", Online: true, Profile: protocol.Profile{Name: "older"}, Worker: &protocol.WorkerInfo{StartedAt: 1}},
-		{SessionID: "s_newer", Harness: "codex", Online: true, Profile: protocol.Profile{Name: "newer"}, Worker: &protocol.WorkerInfo{StartedAt: 2}},
-	}}
-	rows := runningWorkers(snap)
-	if len(rows) != 2 || rows[0].Name != "newer" {
-		t.Fatalf("running order=%+v", rows)
 	}
 }

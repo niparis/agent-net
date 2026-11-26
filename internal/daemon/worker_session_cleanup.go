@@ -56,7 +56,7 @@ func (d *Daemon) deleteWorkerHarnessSession(ctx context.Context, r workerRow) er
 			if codexWorkerThreadNotFound(text, r.NativeID) {
 				return nil
 			}
-			return &codexWorkerDeleteError{cause: err, unsupported: codexWorkerDeleteUnsupported(text)}
+			return &codexWorkerDeleteError{cause: err}
 		}
 		if d.log != nil {
 			d.Logf("worker.session.deleted worker=%s harness=codex session=%s bytes_freed=%d", r.ID, r.NativeID, before-codexWorkerBytes(home, r.NativeID))
@@ -163,9 +163,9 @@ func removeWorkerFolder(dir string) error {
 	return os.RemoveAll(dir)
 }
 
-// workerFolderBytes counts only the private worker folder. Shared harness
-// database free pages cannot be reported as reclaimed filesystem space.
-func workerFolderBytes(dir string) int64 {
+// folderBytes counts the regular files under dir. Shared harness database free
+// pages cannot be reported as reclaimed filesystem space.
+func folderBytes(dir string) int64 {
 	var size int64
 	_ = filepath.WalkDir(dir, func(_ string, e fs.DirEntry, err error) error {
 		if err == nil && e.Type().IsRegular() {
@@ -197,8 +197,7 @@ func codexWorkerBytes(home, id string) int64 {
 // Do not expose harness stderr, which may contain paths or credentials, in logs.
 // Keep the classification separate from safety errors such as a live worker.
 type codexWorkerDeleteError struct {
-	cause       error
-	unsupported bool
+	cause error
 }
 
 func (e *codexWorkerDeleteError) Error() string { return fmt.Sprintf("codex delete: %v", e.cause) }
@@ -207,16 +206,6 @@ func (e *codexWorkerDeleteError) Unwrap() error { return e.cause }
 func codexWorkerThreadNotFound(text, id string) bool {
 	for _, subject := range []string{"thread", "session"} {
 		if strings.Contains(text, subject+" not found") || strings.Contains(text, subject+" "+id+" not found") || strings.Contains(text, "no "+subject+" found") {
-			return true
-		}
-	}
-	return false
-}
-
-func codexWorkerDeleteUnsupported(text string) bool {
-	text = strings.NewReplacer("\"", "'", "`", "'").Replace(text)
-	for _, prefix := range []string{"unrecognized subcommand", "unknown subcommand", "unknown command"} {
-		if strings.Contains(text, prefix+" 'delete'") {
 			return true
 		}
 	}
@@ -313,11 +302,8 @@ func (d *Daemon) cleanupWorkerSessionRow(ctx context.Context, r workerRow) bool 
 				d.Logf("worker.cleanup refused worker=%s harness=%s: %v", r.ID, r.Harness, err)
 				return false
 			}
-			var failure *codexWorkerDeleteError
 			reason := ""
-			if errors.As(err, &failure) && failure.unsupported {
-				reason = "delete_unsupported"
-			} else if !time.Now().Before(r.StartedAt.Add(set.MaxAge).Add(7 * 24 * time.Hour)) {
+			if !time.Now().Before(r.StartedAt.Add(set.MaxAge).Add(7 * 24 * time.Hour)) {
 				reason = "retry_expired"
 			}
 			if reason == "" {

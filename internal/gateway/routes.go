@@ -98,6 +98,7 @@ var routes = []route{
 	{Class: routeIntake, Kind: protocol.IntakeClaudeMouse, To: routeCTO, Auto: true, Wake: wakeNever, Note: "one digest line"},
 	{Class: routeIntake, Kind: protocol.IntakeClaudePeerMessages, To: routeCTO, Auto: true, Wake: wakeNever, Note: "one digest line"},
 	{Class: routeIntake, Kind: protocol.IntakePhonePaired, To: routeCTO, Auto: true, Wake: wakeNever, Note: "one digest line"},
+	{Class: routeIntake, Kind: protocol.IntakeDiskSpace, To: routeCTO, Auto: true, Wake: wakeRepeatHour, Note: "one entry per machine while disk use stays high"},
 }
 
 var routeIndex = func() map[string]route {
