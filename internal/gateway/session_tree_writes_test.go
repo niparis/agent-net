@@ -285,7 +285,8 @@ func TestTreeInvariantsMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A lead Agent whose only session is offline has no lead session; the
-	// migration leaves that session alone.
+	// migration leaves that session alone, and the tree draws it as the
+	// Agent's lead without a marker (rule 5).
 	if _, err := s.db.Exec(`INSERT INTO agents(id,display_name,role,created_at,updated_at,tombstone,lead_level) VALUES('idle-lead','idle-lead','',0,0,0,1);
 		INSERT INTO sessions(id,node_id,harness,native_id,name,status,last_seen,online,agent_id) VALUES('s_i01','n_01','claude','native-s_i01','idle','idle',0,0,'idle-lead')`); err != nil {
 		t.Fatal(err)
@@ -324,8 +325,8 @@ func TestTreeInvariantsMigration(t *testing.T) {
 	if !slices.Equal(report, want) {
 		t.Fatalf("report:\n%s\nwant:\n%s", strings.Join(report, "\n"), strings.Join(want, "\n"))
 	}
-	if got := markers(); len(got) != 1 || got["s_i01"] != "no lead" {
-		t.Fatalf("markers left after the migration: %v, want only the offline s_i01", got)
+	if got := markers(); len(got) != 0 {
+		t.Fatalf("markers left after the migration: %v, want none", got)
 	}
 	var archived, idle int64
 	if err := s.db.QueryRow(`SELECT (SELECT archived_at FROM sessions WHERE id='s_h02'),(SELECT archived_at FROM sessions WHERE id='s_i01')`).Scan(&archived, &idle); err != nil || archived == 0 || idle != 0 {

@@ -4,19 +4,19 @@
 │  ● host-02        v0.0.0 cpu ? mem ? disk ?                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME           MACHINE PROJECT   MODEL        STATUS    CPU   RAM TASK
- 20 sessions · 12 busy                                                   all (v)
+ 23 sessions · 12 busy                                                   all (v)
 ▸ ◐ ★ chief-of-… host-02 chief-of… claude · op… idle        ?     ?
   CTO cto        host-01 -         cto          idle        ?     ?
   ├─ ◐ ★ team-c… host-02 team-c-l… claude · op… offline             10h ago
-  │  └─ ★ proj-c host-01 proj-c    opencode · … idle        ?     ?
+  │  ├─ ★ proj-c host-01 proj-c    opencode · … idle        ?     ?
+  │  └─ proj-e 2 host-02 proj-e    claude · op… offline             8h ago
+  │     ├─ proj… host-02 proj-e    claude · op… offline             22h ago
+  │     └─ proj… host-02 proj-e    claude · op… offline             14h ago
   ├─ ◐ ★ proj-d… host-02 proj-d    claude · op… busy        ?     ?
   │  ├─ ◐ proj-… host-02 proj-d    claude · op… idle        ?     ? (no parent:…
   │  ├─ proj-d … host-02 proj-d    opencode · … busy        ?     ? a task
   │  ├─ proj-d … host-02 proj-d    claude · so… busy        ?     ? a task
   │  ├─ proj-d … host-02 proj-d    claude · so… busy        ?     ? a task
-  │  └─ … merger host-02 proj-d    claude · so… shell       ?     ?
-  ├─ ★ proj-b -… host-01 proj-b    opencode · … dormant
-  │  ├─ proj-b 2 host-01 proj-b    opencode · … dormant
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │ c: open the CTO                                                              │
