@@ -186,17 +186,6 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		}
 		return g.workerStop(ctx, nc, p)
 
-	case protocol.FrameRecentWorkerChanges:
-		p, err := decode[protocol.RecentWorkerChangesRequest](raw)
-		if err != nil {
-			return nil, reject("bad worker.recent_changes")
-		}
-		changes, err := g.store.RecentWorkerChanges(p.Project, p.ExcludeSession, p.ExcludeChange, p.Limit)
-		if err != nil {
-			return nil, err
-		}
-		return protocol.RecentWorkerChangesResult{Changes: changes}, nil
-
 	case "worker.assessment":
 		p, err := decode[protocol.WorkerAssessment](raw)
 		if err != nil || p.RunID == "" || p.SessionID == "" {

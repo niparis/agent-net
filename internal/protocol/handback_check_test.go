@@ -20,17 +20,11 @@ func TestHandbackCheckSignalAndNotice(t *testing.T) {
 	if strings.ContainsRune(signal.Evidence, 0) {
 		t.Errorf("evidence keeps a control character: %q", signal.Evidence)
 	}
-	if line := failed.NoticeLine(); !strings.HasPrefix(line, "hand-back check: failed (exit 3) in ") {
-		t.Errorf("failed notice line: %q", line)
-	}
 
 	timedOut := HandbackCheck{Status: HandbackCheckTimedOut, DurationMS: 30000}
 	signal, ok = timedOut.Signal()
 	if !ok || signal.Code != SignalHandbackCheckTimedOut {
 		t.Fatalf("timeout signal: %+v %v", signal, ok)
-	}
-	if line := timedOut.NoticeLine(); line != "hand-back check: timed out after 30.0s" {
-		t.Errorf("timeout notice line: %q", line)
 	}
 
 	for _, check := range []HandbackCheck{
@@ -40,9 +34,6 @@ func TestHandbackCheckSignalAndNotice(t *testing.T) {
 		if _, ok := check.Signal(); ok {
 			t.Errorf("%s raised a signal", check.Status)
 		}
-	}
-	if line := (HandbackCheck{Status: HandbackCheckNotConfigured}).NoticeLine(); line != "hand-back check: not configured" {
-		t.Errorf("not configured notice line: %q", line)
 	}
 }
 

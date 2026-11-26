@@ -46,7 +46,7 @@ var parallelFrames = map[string]bool{
 	"cto.graph_latest": true, "cto.graph_history": true,
 	"charter.history": true, "edge.history": true, "settings.history": true,
 	"change.list": true, "change.get": true,
-	"worker.recent_changes": true, "workers.watch": true,
+	"workers.watch": true,
 	// The Desk reads these every refresh. They only read (the settings come
 	// from the read cache), so one slow write in the lane must not hold them.
 	"chief.get": true, "chief.sorts": true, "ask.history": true, protocol.OpRoleNetwork: true,

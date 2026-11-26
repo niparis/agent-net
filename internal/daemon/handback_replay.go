@@ -36,13 +36,10 @@ type pendingHandback struct {
 	FrictionDropped int                            `json:"friction_dropped,omitempty"`
 	Head            string                         `json:"head"`
 	NoticeKey       string                         `json:"notice_key"`
-	// Check is the hand-back check of an older daemon, kept so an upgrade
-	// still reads the row. New hand-backs carry none (decision 2026-11-14).
-	Check           *protocol.HandbackCheck `json:"check,omitempty"`
-	Recorded        bool                    `json:"recorded,omitempty"`
-	ChangeID        string                  `json:"change_id,omitempty"`
-	DeliveryProblem string                  `json:"delivery_problem,omitempty"`
-	Stats           *workerStats            `json:"stats,omitempty"`
+	Recorded        bool                           `json:"recorded,omitempty"`
+	ChangeID        string                         `json:"change_id,omitempty"`
+	DeliveryProblem string                         `json:"delivery_problem,omitempty"`
+	Stats           *workerStats                   `json:"stats,omitempty"`
 }
 
 // errHandbackDeferred ends a hand-back that is saved for the next connect.
@@ -51,13 +48,13 @@ var errHandbackDeferred = errors.New("the hand-back is saved; the next connectio
 func (t *handbackTail) saved() pendingHandback {
 	return pendingHandback{Req: t.req, To: t.to, ReplyTo: t.replyTo, SandboxNote: t.sandboxNote, End: t.end, Files: t.files,
 		SessionID: t.sessionID, Committed: t.committed, KeptAside: t.keptAside, WIPDetail: t.wipDetail, FrictionDropped: t.frictionDropped, Head: t.head, NoticeKey: t.noticeKey,
-		Check: t.check, Recorded: t.recorded, ChangeID: t.changeID, DeliveryProblem: t.deliveryProblem, Stats: t.stats}
+		Recorded: t.recorded, ChangeID: t.changeID, DeliveryProblem: t.deliveryProblem, Stats: t.stats}
 }
 
 func (p pendingHandback) tail() *handbackTail {
 	return &handbackTail{req: p.Req, to: p.To, replyTo: p.ReplyTo, sandboxNote: p.SandboxNote, end: p.End, files: p.Files,
 		sessionID: p.SessionID, committed: p.Committed, keptAside: p.KeptAside, wipDetail: p.WIPDetail, complete: true, frictionDropped: p.FrictionDropped,
-		head: p.Head, noticeKey: p.NoticeKey, persisted: true, check: p.Check,
+		head: p.Head, noticeKey: p.NoticeKey, persisted: true,
 		recorded: p.Recorded, changeID: p.ChangeID, deliveryProblem: p.DeliveryProblem, stats: p.Stats}
 }
 

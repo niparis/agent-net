@@ -61,19 +61,6 @@ func WorkerAutoContinueWithSettings(snap settings.Snapshot, repo string) string 
 	return "[agent-net] continue: " + renderWorkerText(snap, "workers.continue_prompt_text", settings.Where{Repo: repo})
 }
 
-// WorkerAutoContinueNote says how many automatic continues were sent before a
-// worker stopped, for the caller's notice. Empty when there were none.
-func WorkerAutoContinueNote(n int) string {
-	switch {
-	case n <= 0:
-		return ""
-	case n == 1:
-		return "1 automatic continue was sent."
-	default:
-		return fmt.Sprintf("%d automatic continues were sent.", n)
-	}
-}
-
 // AutoContinueEnabled tells whether a start asked for automatic continues. An
 // absent value (nil, from a caller that does not know the setting) means yes.
 func AutoContinueEnabled(p *bool) bool { return p == nil || *p }
@@ -1299,11 +1286,6 @@ type WorkerNotice struct {
 	Title   string
 	RunTime time.Duration
 	Tokens  string // "1200 in, 340 out", empty when the harness does not say
-	// Quota is the provider quota the worker's model draws on when the worker
-	// started and when it ended, as the picker's floor reads it: "agy Gemini
-	// Argon weekly 0% at start, 12% at end". Empty when the harness names no
-	// quota provider.
-	Quota string
 	// Context is the context at the end of the run, as ContextText writes it
 	// ("210k / 1M"), empty when the harness does not say.
 	Context string
@@ -1347,10 +1329,6 @@ type WorkerNotice struct {
 	// RateAsk adds the one-line satisfaction ask to the notice (difficulty
 	// calibration, part 4).
 	RateAsk bool
-	// DefectHint is one line about a recent change by another worker that
-	// touched the same files, so the caller can record the defect it fixes.
-	// Empty when nothing overlaps or the start already named `fixes`.
-	DefectHint string
 
 	// Struggle counts what the run's own tool record showed (decision 0133).
 	// Empty for a run with no trace or a harness the daemon cannot read.
@@ -1373,11 +1351,6 @@ type WorkerNotice struct {
 	// your report names"; empty when the head is the branch head as usual.
 	DeliveryHead  string
 	DeliveryClaim string
-
-	// HandbackCheck is the project's pre-hand-back check, nil when it did not
-	// run (nothing changed, or the worker had no worktree). A hand-back since
-	// decision 0164 carries none; a saved row of an older daemon still does.
-	HandbackCheck *HandbackCheck
 }
 
 // ReportMarker separates the facts from the worker's report in a notice.
@@ -1390,6 +1363,20 @@ func frictionDroppedLine(n int) string {
 		return "friction: 1 entry was dropped or shortened before it was stored"
 	}
 	return fmt.Sprintf("friction: %d entries were dropped or shortened before they were stored", n)
+}
+
+// workerNoticeCost puts a run's cost on one line. Cost is what the harness
+// reported; APICost is the same run at API prices when a price list is known.
+func workerNoticeCost(n WorkerNotice) string {
+	switch {
+	case n.Cost != "" && n.APICost != "":
+		return "cost: " + n.Cost + ", " + n.APICost
+	case n.Cost != "":
+		return "cost: " + n.Cost
+	case n.APICost != "":
+		return "cost: " + n.APICost
+	}
+	return ""
 }
 
 // FormatWorkerNotice renders the completion notice and, if there is one, the
@@ -1412,7 +1399,7 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 	if t := strings.TrimSpace(n.Title); t != "" {
 		b.WriteString(" · " + t)
 	}
-	b.WriteString("\nmodel: " + ParseModelSelection(n.Harness, "", n.Model, "").Display() + "\n")
+	b.WriteString("\n")
 	b.WriteString(WorkerPermissionsLine(n.Permissions, n.Harness, n.OSSandbox) + "\n")
 	b.WriteString("run time: " + n.RunTime.Round(time.Second).String() + "\n")
 	if e := n.Evidence; e != nil && e.EarlyQuit {
@@ -1428,14 +1415,8 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 	if n.Context != "" {
 		b.WriteString("context at end: " + n.Context + "\n")
 	}
-	if n.Quota != "" {
-		b.WriteString("quota: " + n.Quota + "\n")
-	}
-	if n.Cost != "" {
-		b.WriteString("cost: " + n.Cost + "\n")
-	}
-	if n.APICost != "" {
-		b.WriteString("cost: " + n.APICost + "\n")
+	if cost := workerNoticeCost(n); cost != "" {
+		b.WriteString(cost + "\n")
 	}
 	if n.Continue > 0 || n.Fix > 0 {
 		// A first run has no rework; the line appears once there is one.
@@ -1476,16 +1457,6 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 		if n.DeliveryError != "" {
 			b.WriteString("delivery record: " + n.DeliveryError + "\n")
 		}
-		if n.HandbackCheck != nil {
-			b.WriteString(n.HandbackCheck.NoticeLine() + "\n")
-			if n.HandbackCheck.Status == HandbackCheckFailed || n.HandbackCheck.Status == HandbackCheckTimedOut {
-				if tail := strings.TrimRight(n.HandbackCheck.OutputTail, "\n"); tail != "" {
-					// The command runs project code; its output must not pass
-					// for agent-net's own markers.
-					b.WriteString("hand-back check output:\n" + NeutralizeMarkers(tail) + "\n")
-				}
-			}
-		}
 		if n.Saved {
 			b.WriteString("unfinished changes were saved as a commit on branch " + n.Branch + "\n")
 		}
@@ -1499,16 +1470,13 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 		}
 	}
 	b.WriteString(n.VisualEvidence.Lines())
-	if n.DefectHint != "" {
-		b.WriteString(n.DefectHint + "\n")
-	}
 	if n.RateAsk {
 		b.WriteString(FormatRateAsk(n.Session, n.Model, n.Difficulty, n.RunTime) + "\n")
 	}
 	if strings.TrimSpace(report) != "" {
 		b.WriteString("\n" + ReportMarker + "\n" + strings.TrimSpace(report) + "\n")
 	}
-	b.WriteString("\n" + noticeChecklistWithSettings(n.Worktree, strings.TrimSpace(report) != "", snap, acceptReportLine(n, snap)))
+	b.WriteString("\n" + noticeChecklistWithSettings(n.Worktree, snap, acceptReportLine(n, snap)))
 	if snap.DeliveryPipelineCutover && n.Project != "" {
 		if p, err := PipelineFromSettings(snap, n.Project); err == nil {
 			if merge, ok := p.Find(StepRef{Step: StepMerge}); ok && merge.Owner.Kind != OwnerCaller {
@@ -1523,8 +1491,8 @@ func FormatWorkerNoticeWithSettings(n WorkerNotice, report string, snap settings
 // notice (W17). It is agent-net's own text, not the worker's.
 const ChecklistMarker = "[agent-net checklist]"
 
-func noticeChecklist(worktree string, learned bool) string {
-	return noticeChecklistWithSettings(worktree, learned, settings.Snapshot{})
+func noticeChecklist(worktree string) string {
+	return noticeChecklistWithSettings(worktree, settings.Snapshot{})
 }
 
 // acceptReportLine tells a caller who owns the accept step what to do. Callers
@@ -1546,26 +1514,19 @@ func acceptReportLine(n WorkerNotice, snap settings.Snapshot) string {
 		" step=accept result=pass commit=<head>, or result=close with a one-line reason if nothing will be merged."
 }
 
-// noticeChecklistWithSettings writes the checklist. extra lines go before the
-// learning line, and the friction line stays last so a caller that reports no
-// step still sees the route.
-func noticeChecklistWithSettings(worktree string, learned bool, snap settings.Snapshot, extra ...string) string {
+// noticeChecklistWithSettings writes the lines of the checklist that a caller
+// acts on. extra lines follow the review and merge line.
+func noticeChecklistWithSettings(worktree string, snap settings.Snapshot, extra ...string) string {
 	where := "the changes in the project folder"
 	if worktree != "" {
 		where = "the diff in " + worktree
 	}
 	line := ChecklistMarker + " " + strings.ReplaceAll(snap.String("delivery.caller_review_and_merge", settings.Where{}), "{{where}}", NeutralizeMarkers(where))
-	line += "\nTest scope: delivery.contract.test (the test step owns suites and CI)."
-	line += "\nFound a defect in earlier work? Set fixes=<change> on the fix, or file defect_found_later. Rework from your own brief: brief_defect."
 	for _, e := range extra {
 		if e != "" {
 			line += "\n" + e
 		}
 	}
-	if learned {
-		line += "\nIf you learned something that would change how to pick or brief this model next time, record it with agent_learn."
-	}
-	line += "\n" + FrictionReportLine
 	return line
 }
 
@@ -1626,21 +1587,7 @@ type WorkerRunState struct {
 	Ended         bool   `json:"ended,omitempty"`
 }
 
-// FrameRecentWorkerChanges is the daemon to gateway read a worker hand-back
-// makes: the merged changes of a project that another worker made recently.
-const FrameRecentWorkerChanges = "worker.recent_changes"
-
-// RecentWorkerChangesRequest asks for the merged changes of one project in a
-// window. ExcludeSession leaves out the worker that is handing back itself,
-// and ExcludeChange leaves out the change it is working on. Limit is 1 to 5.
-type RecentWorkerChangesRequest struct {
-	Project        string `json:"project"`
-	ExcludeSession string `json:"exclude_session,omitempty"`
-	ExcludeChange  string `json:"exclude_change,omitempty"`
-	Limit          int    `json:"limit,omitempty"`
-}
-
-// RecentWorkerChange is one merged change a hand-back may be fixing.
+// RecentWorkerChange is one merged change a start hint may name.
 type RecentWorkerChange struct {
 	ChangeID      string `json:"change_id"`
 	Title         string `json:"title,omitempty"`
@@ -1648,9 +1595,4 @@ type RecentWorkerChange struct {
 	WorkerSession string `json:"worker_session,omitempty"`
 	MergedAt      int64  `json:"merged_at"`
 	MergedCommit  string `json:"merged_commit,omitempty"`
-}
-
-// RecentWorkerChangesResult answers FrameRecentWorkerChanges, newest first.
-type RecentWorkerChangesResult struct {
-	Changes []RecentWorkerChange `json:"changes"`
 }

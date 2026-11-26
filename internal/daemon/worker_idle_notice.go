@@ -15,6 +15,13 @@ import (
 // resetIdleNotice starts a new period when the harness starts another turn.
 func (d *Daemon) resetIdleNotice(w *worker) {
 	d.wmu.Lock()
+	d.resetIdleNoticeLocked(w)
+	d.wmu.Unlock()
+}
+
+// resetIdleNoticeLocked is resetIdleNotice for a caller that already holds
+// wmu.
+func (d *Daemon) resetIdleNoticeLocked(w *worker) {
 	if w.idleNoticeCancel != nil {
 		w.idleNoticeCancel()
 		w.idleNoticeCancel = nil
@@ -28,7 +35,6 @@ func (d *Daemon) resetIdleNotice(w *worker) {
 	if err := d.st.deleteWorkerIdleNotice(w.id); err != nil {
 		d.Logf("worker %s: reset idle notice: %v", w.id, err)
 	}
-	d.wmu.Unlock()
 }
 
 // noteCodexIdle keeps the final text if an automatic hand-back failed, so
@@ -38,9 +44,7 @@ func (d *Daemon) noteCodexIdle(w *worker, report string, told bool) {
 	if strings.TrimSpace(report) == "" {
 		report = "(Codex ended the turn with no message.)"
 	}
-	if len(report) > 48*1024 {
-		report = strings.ToValidUTF8(report[:48*1024], "") + "\n[report cut at 48 KB]"
-	}
+	report = trimWorkerReport(report)
 	d.wmu.Lock()
 	defer d.wmu.Unlock()
 	if w.stopping {
@@ -79,19 +83,7 @@ func (d *Daemon) checkIdleNotice(ctx context.Context, w *worker, now time.Time, 
 	// after a turn ended, while the daemon saves that turn as handled, and a
 	// reset here would delete that mark.
 	if busy && (harness == "opencode" || harness == "claude") && !w.idleNoticeSince.IsZero() {
-		if w.idleNoticeCancel != nil {
-			w.idleNoticeCancel()
-			w.idleNoticeCancel = nil
-		}
-		w.idleNoticeSince = time.Time{}
-		w.idleNoticeSent = false
-		w.idleNoticePending = false
-		w.idleNoticeReport = ""
-		w.idleNoticeKey = ""
-		w.idleNoticeGeneration++
-		if err := d.st.deleteWorkerIdleNotice(w.id); err != nil {
-			d.Logf("worker %s: reset idle notice: %v", w.id, err)
-		}
+		d.resetIdleNoticeLocked(w)
 	}
 	eligible := idle && !w.stopping && !w.handbackPending && w.doneStatus == "" && w.taskMsg != "" &&
 		((harness == "opencode" && !w.turnActive && !w.turnAwaitingStart && len(w.turnQueue) == 0) ||

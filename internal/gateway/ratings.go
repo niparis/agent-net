@@ -4,10 +4,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/redact"
@@ -226,8 +224,6 @@ func (s *Store) AddRating(f protocol.RateFrame) (protocol.RateResult, error) {
 		return s.addDefect(f)
 	case protocol.RateKindBriefDefect:
 		return s.addBriefDefect(f)
-	case protocol.RateKindMoveToBriefDefect:
-		return s.moveToBriefDefect(f)
 	default:
 		return protocol.RateResult{}, reject("unknown rating kind %q", f.Kind)
 	}
@@ -394,147 +390,6 @@ func (s *Store) addBriefDefect(f protocol.RateFrame) (protocol.RateResult, error
 	out.Accepted, out.BriefDefect, out.Model, out.Harness, out.Effort, out.Difficulty, out.At =
 		true, id, facts.model, facts.harness, facts.effort, facts.difficulty, at
 	return out, nil
-}
-
-// moveToBriefDefect reclassifies one late defect as rework from the caller's
-// own brief. Only the session that filed the row may move it, and only once.
-// The row changes its blame to 'brief' and is charged to the worker's caller,
-// so the worker's quality data stops counting it.
-func (s *Store) moveToBriefDefect(f protocol.RateFrame) (protocol.RateResult, error) {
-	worker := strings.TrimSpace(f.Worker)
-	rater := strings.TrimSpace(f.Rater)
-	out := protocol.RateResult{Worker: worker, Kind: protocol.RateKindMoveToBriefDefect, Defect: f.Defect}
-	if worker == "" || rater == "" {
-		return out, reject("a move needs a worker session and the session that moves it")
-	}
-	defectID := f.Defect
-	if defectID <= 0 {
-		candidates, err := s.defectsToMove(worker, rater)
-		if err != nil {
-			return out, err
-		}
-		switch len(candidates) {
-		case 0:
-			out.Reason = "no unmoved defect filed by this session on that worker"
-			return out, nil
-		case 1:
-			defectID = candidates[0].id
-		default:
-			out.Reason = severalDefectsReason(candidates)
-			return out, nil
-		}
-	}
-	out.Defect = defectID
-	var sessionID, filer, blame string
-	var auto bool
-	err := s.db.QueryRow(`SELECT session_id, caller, blame, auto_change_id IS NOT NULL FROM worker_defects WHERE id = ?`, defectID).
-		Scan(&sessionID, &filer, &blame, &auto)
-	if errors.Is(err, sql.ErrNoRows) {
-		out.Reason = "no defect with that id"
-		return out, nil
-	}
-	if err != nil {
-		return out, err
-	}
-	if sessionID != worker {
-		out.Reason = "that defect belongs to another worker"
-		return out, nil
-	}
-	if blame == "brief" {
-		out.Reason = "this defect was already moved to a brief defect"
-		out.BriefDefect = defectID
-		return out, nil
-	}
-	if filer != rater {
-		out.Reason = "only the session that filed this defect may move it"
-		return out, nil
-	}
-	if auto {
-		out.Reason = "agent-net recorded this defect itself; it cannot be moved to a brief defect"
-		return out, nil
-	}
-	facts, ok, err := s.workerRatingFacts(worker)
-	if err != nil {
-		return out, err
-	}
-	if !ok {
-		out.Reason = "the worker's run is gone: there is no caller to charge the brief defect to"
-		return out, nil
-	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return out, err
-	}
-	defer tx.Rollback()
-	res, err := tx.Exec(`UPDATE worker_defects SET blame = 'brief', caller = ? WHERE id = ? AND blame = 'worker'`, facts.caller, defectID)
-	if err != nil {
-		return out, err
-	}
-	if n, err := res.RowsAffected(); err != nil || n == 0 {
-		out.Reason = "this defect was already moved to a brief defect"
-		return out, err
-	}
-	if err := setWorkerRunCauseTx(tx, worker, protocol.CauseBriefDefect); err != nil {
-		return out, err
-	}
-	if err := tx.Commit(); err != nil {
-		return out, err
-	}
-	// The worker's severity leaves the picker and the quality fit.
-	if err := s.refreshQuality(); err != nil {
-		return out, err
-	}
-	out.Accepted, out.BriefDefect = true, defectID
-	out.Model, out.Harness, out.Effort, out.Difficulty, out.At =
-		facts.model, facts.harness, facts.effort, facts.difficulty, s.now().Unix()
-	return out, nil
-}
-
-// defectToMove is one unmoved, non-automatic late defect the filer can name in
-// a move.
-type defectToMove struct {
-	id       int64
-	severity int
-	note     string
-	at       int64
-}
-
-// defectsToMove finds the rows a move without a defect id can choose: the
-// caller's own late defects on the worker, not moved yet and not recorded by
-// agent-net itself.
-func (s *Store) defectsToMove(worker, rater string) ([]defectToMove, error) {
-	rows, err := s.db.Query(`SELECT id, severity, note, at FROM worker_defects
-		WHERE session_id = ? AND caller = ? AND blame = 'worker'
-		  AND auto_change_id IS NULL
-		ORDER BY at, id`, worker, rater)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []defectToMove
-	for rows.Next() {
-		var d defectToMove
-		if err := rows.Scan(&d.id, &d.severity, &d.note, &d.at); err != nil {
-			return nil, err
-		}
-		out = append(out, d)
-	}
-	return out, rows.Err()
-}
-
-// severalDefectsReason lists the candidates so the caller can retry with one
-// id. The date is UTC and the note is cut to 60 characters.
-func severalDefectsReason(candidates []defectToMove) string {
-	parts := make([]string, 0, len(candidates))
-	for _, d := range candidates {
-		note := []rune(d.note)
-		if len(note) > 60 {
-			note = note[:60]
-		}
-		parts = append(parts, fmt.Sprintf("%d severity %d, %s, %s",
-			d.id, d.severity, time.Unix(d.at, 0).UTC().Format("2006-01-02"), string(note)))
-	}
-	return "several defects match; retry with defect=<id>: " + strings.Join(parts, "; ")
 }
 
 // sessionOwner tells whether a session is a machine's owner pseudo-session.

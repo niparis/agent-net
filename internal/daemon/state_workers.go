@@ -72,8 +72,7 @@ type workerRow struct {
 	// ChangeID is the delivery change of the worker's work: the one its last
 	// complete hand-back recorded, or the one a continue carried over.
 	ChangeID string
-	// Fixes is the change ID the start named as one it fixes. A hand-back of
-	// a worker with one gets no defect hint.
+	// Fixes is the change ID the start named as one it fixes.
 	Fixes string
 	// Struggle is the sign count of this run, from its own trace. Nil for an
 	// older record or a run that ended before the daemon read it.
