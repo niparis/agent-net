@@ -36,6 +36,10 @@ const (
 	FrameSessionOwnerGet           = "session.owner_get"
 )
 
+// FrameSessionStopped tells the gateway that the owner or the CTO stopped a
+// session of this machine on purpose, so no message wakes it.
+const FrameSessionStopped = "session.stopped"
+
 // The Folder choices of the New session form. Empty means FolderProject, so
 // a request from an older TUI still starts in the project folder. FolderWorktree
 // makes a new git worktree next to the project and starts the session there.

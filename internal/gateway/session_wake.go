@@ -90,7 +90,13 @@ func (g *Gateway) wakeReceiptNote(m protocol.Message, route string, started bool
 		return route
 	}
 	line := ""
+	if moved, err := g.store.redirectReceipt(m); err != nil {
+		g.logLine("error", "where", "redirect receipt", "msg", m.ID, "err", err)
+	} else {
+		line = moved
+	}
 	switch {
+	case line != "":
 	case a.Harness == "pi" && g.autonomyWake(a):
 		line = "Pi sessions are not woken by messages"
 	case wakeHarness(a.Harness):
@@ -137,6 +143,9 @@ func (g *Gateway) wakeForMessage(ctx context.Context, a protocol.AgentView, m pr
 func (g *Gateway) waitingReason(a protocol.AgentView, m protocol.Message) string {
 	if a.Online || m.State != protocol.StateStored || !m.ExpiresAt.After(g.store.now()) {
 		return ""
+	}
+	if d, ok, err := readStoodDown(g.store.db, a.SessionID); err == nil && ok && a.Worker == nil && d.reason() != "" {
+		return "it is offline and is not woken, because " + d.reason() + ", and no other session could take the message. It is delivered when the session starts again"
 	}
 	switch {
 	case a.Worker != nil:
@@ -230,8 +239,9 @@ func (g *Gateway) wakeSession(ctx context.Context, a protocol.AgentView) {
 // started a wake: the claim is taken and the call to the machine is under way.
 func (g *Gateway) wakeSessionAs(ctx context.Context, a protocol.AgentView, loop bool, fromMessage bool) bool {
 	// A replaced session was stopped on purpose: its work and its messages
-	// belong to the session that replaced it.
-	if !wakeHarness(a.Harness) || a.Worker != nil || a.Online || a.ReplacedBy != "" {
+	// belong to the session that replaced it. An archived or stood-down
+	// session is never woken either (see stood_down.go).
+	if !wakeHarness(a.Harness) || a.Worker != nil || a.Online || a.ReplacedBy != "" || g.store.WakeBlocked(a.SessionID) {
 		return false
 	}
 	// A role session is woken whatever the autonomy setting. The frame carries

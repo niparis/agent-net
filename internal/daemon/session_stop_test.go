@@ -57,6 +57,10 @@ func TestSessionStopClaudeBackground(t *testing.T) {
 	if err != nil || string(got) != "stop\nabcd1234\n" {
 		t.Fatalf("stop command %q: %v", got, err)
 	}
+	// The gateway knows the owner stopped it, so no message wakes it.
+	if !g.gw.Store().WakeBlocked(id) {
+		t.Fatal("the gateway was not told of the owner stop")
+	}
 }
 
 func TestSessionStopTerminal(t *testing.T) {

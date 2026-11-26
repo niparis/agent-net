@@ -168,8 +168,28 @@ func (s *Store) SetLead(q protocol.LeadSetRequest, actor string, validate bool) 
 	// once it leads no other one; the pin would name a session from the place
 	// it just left.
 	if q.Ref.Kind != "agent" && old.String != "" && old.String != newLead {
+		var before, after string
+		if err = tx.QueryRow(`SELECT COALESCE(lead_session,'') FROM agents WHERE id=?`, old.String).Scan(&before); err != nil && err != sql.ErrNoRows {
+			return err
+		}
 		if err = clearLostLeadSessionTx(tx, old.String); err != nil {
 			return err
+		}
+		// A lead session that lost its place is stood down for the new
+		// lead's session, so its late messages reach the new lead.
+		if err = tx.QueryRow(`SELECT COALESCE(lead_session,'') FROM agents WHERE id=?`, old.String).Scan(&after); err != nil && err != sql.ErrNoRows {
+			return err
+		}
+		if before != "" && after == "" {
+			successor := ""
+			if newLead != "" {
+				if err = tx.QueryRow(`SELECT COALESCE(lead_session,'') FROM agents WHERE id=?`, newLead).Scan(&successor); err != nil && err != sql.ErrNoRows {
+					return err
+				}
+			}
+			if err = standDownTx(tx, before, stoodDownLead, successor); err != nil {
+				return err
+			}
 		}
 	}
 	next := ""

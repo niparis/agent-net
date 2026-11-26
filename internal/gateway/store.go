@@ -1335,7 +1335,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration, workerTablesMigration, machineTablesMigration, orgFoldMigration, toolsRetireMigration, oauthClientsMigration, deskTablesMigration, pickQuotaMigration, workerStartOwnerChoiceMigration, sessionRequestedModelMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration, workerTablesMigration, machineTablesMigration, orgFoldMigration, toolsRetireMigration, oauthClientsMigration, deskTablesMigration, pickQuotaMigration, workerStartOwnerChoiceMigration, sessionRequestedModelMigration, stoodDownMigration}
 
 // workerVisualProofMigration adds proof reports to stores already at version 187.
 const workerVisualProofMigration = `
@@ -2052,7 +2052,7 @@ func (s *Store) migrate() error {
 			return err
 		}
 		stmt := migrations[i]
-		for marker, cols := range map[string][]migrationColumn{learnedTablesMarker: learnedTablesColumns, settingsFoldMarker: settingsFoldColumns, sessionTablesMarker: sessionTablesColumns, stepTablesMarker: stepTablesColumns, toolsRetireMarker: toolsRetireColumns, oauthClientsMarker: oauthClientsColumns, deskTablesMarker: deskTablesColumns} {
+		for marker, cols := range map[string][]migrationColumn{learnedTablesMarker: learnedTablesColumns, settingsFoldMarker: settingsFoldColumns, sessionTablesMarker: sessionTablesColumns, stepTablesMarker: stepTablesColumns, toolsRetireMarker: toolsRetireColumns, oauthClientsMarker: oauthClientsColumns, deskTablesMarker: deskTablesColumns, stoodDownMarker: stoodDownColumns} {
 			if !strings.Contains(migrations[i], marker) {
 				continue
 			}
@@ -3847,7 +3847,11 @@ tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harne
 		-- launched is in memory. A report without one keeps the stored ask.
 		requested_model=CASE WHEN excluded.requested_model<>'' THEN excluded.requested_model ELSE sessions.requested_model END,
 		worker_run_active=CASE WHEN sessions.worker<>'' AND sessions.worker_run_active=0 AND sessions.status='ended'
-			THEN 0 WHEN sessions.online=0 AND excluded.online=1 THEN 1 ELSE sessions.worker_run_active END`,
+			THEN 0 WHEN sessions.online=0 AND excluded.online=1 THEN 1 ELSE sessions.worker_run_active END,
+		-- A stood-down session that comes online again was started by the
+		-- owner or the CTO, since nothing wakes it: the mark is over.
+		stood_down=CASE WHEN sessions.online=0 AND excluded.online=1 THEN '' ELSE sessions.stood_down END,
+		stood_down_for=CASE WHEN sessions.online=0 AND excluded.online=1 THEN '' ELSE sessions.stood_down_for END`,
 		newID, nodeID, in.Harness, in.NativeID, name, title, in.Cwd, in.PID, in.Status, in.Delivery, now, lastActive, online,
 		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker, workerTitle,
 		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now, waiting,
