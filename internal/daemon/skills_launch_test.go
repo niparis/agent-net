@@ -185,7 +185,7 @@ func TestClaudeResumeAsksTheSessionNode(t *testing.T) {
 	g := &skillFolderGateway{folder: protocol.SkillFolder{Level: "agent", Scope: "ag"}}
 	g.folder.Skills = []protocol.EffectiveSkill{addSkill(t, g, "alpha", 1, "alpha body")}
 	d, _ := skillFolderDaemon(t, g)
-	spec := d.claudeResumeSpec(protocol.AgentView{SessionID: "s1", NativeID: "n1", Cwd: t.TempDir()})
+	spec, _ := d.claudeResumeSpec(protocol.AgentView{SessionID: "s1", NativeID: "n1", Cwd: t.TempDir()})
 	assertSkillFolder(t, argValue(spec.Flags, "--plugin-dir"))
 	if len(g.reqs) != 1 || g.reqs[0].Session != "s1" || g.reqs[0].Repo != "" {
 		t.Fatalf("resume target: %+v", g.reqs)

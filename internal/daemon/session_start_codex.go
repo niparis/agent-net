@@ -100,6 +100,7 @@ func (d *Daemon) prepareOwnerCodexThread(ctx context.Context, r protocol.Started
 	for {
 		r.SessionID = d.SessionID("codex", r.NativeID)
 		if r.SessionID != "" {
+			d.noteRequestedModel("codex", r.NativeID, r.Model)
 			return r, d.checkStartAgent(ctx, r)
 		}
 		select {

@@ -636,6 +636,7 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 			}
 			ls.workerWaiting = old.workerWaiting
 			ls.harnessActivity = old.harnessActivity
+			ls.requestedModel = old.requestedModel
 			if old.lastActive.After(ls.lastActive) {
 				ls.lastActive = old.lastActive
 			}

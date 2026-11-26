@@ -592,7 +592,9 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, 
 	if err != nil {
 		return protocol.StartedSession{}, err
 	}
-	return d.launchOwnerClaude(r, bin, d.claudeResumeSpec(a), startView{socket: socket, pane: pane}, false, startFirstMessage{}), nil
+	spec, model := d.claudeResumeSpec(a)
+	r.Model = model
+	return d.launchOwnerClaude(r, bin, spec, startView{socket: socket, pane: pane}, false, startFirstMessage{}), nil
 }
 
 func (d *Daemon) resumeRecord(a protocol.AgentView) protocol.StartedSession {
@@ -650,21 +652,33 @@ func (d *Daemon) moveToBackground(ctx context.Context, a protocol.AgentView, soc
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
-	return d.launchOwnerClaude(d.resumeRecord(a), bin, d.claudeResumeSpec(a), startView{socket: socket, pane: pane}, false, startFirstMessage{}), nil
+	spec, model := d.claudeResumeSpec(a)
+	r := d.resumeRecord(a)
+	r.Model = model
+	return d.launchOwnerClaude(r, bin, spec, startView{socket: socket, pane: pane}, false, startFirstMessage{}), nil
 }
 
 // claudeResumeSpec is the owner resume. The wake fallback uses the same spec,
-// so a wake and session_change resume open the same way.
-func (d *Daemon) claudeResumeSpec(a protocol.AgentView) claudeBackground {
+// so a wake and session_change resume open the same way. model is the model
+// the spec names, empty when Claude keeps its own choice.
+func (d *Daemon) claudeResumeSpec(a protocol.AgentView) (spec claudeBackground, model string) {
 	settings := ""
+	role := a.Type == "merger" || a.Harness == "cto" || (a.SessionID != "" && a.SessionID == d.ctoSessionID())
 	if a.Type == "merger" {
 		settings = mergerClaudeSettings(d.workerGoCacheDir())
 	}
 	// A resumed chief keeps what its start had: no harness memory.
 	if d.isChiefSession(context.Background(), a.SessionID) {
-		settings = chiefClaudeSettings()
+		settings, role = chiefClaudeSettings(), true
 	}
-	return d.claudeStartSpec(context.Background(), claudeStartInput{Resume: a.NativeID, Settings: claudeSettingsWithMCPAnswers(settings, a.Cwd), Skills: skillNode{Session: a.SessionID}})
+	// Claude Code resumes a conversation on its own default model unless told
+	// otherwise. A role session goes back to the model it was asked to run,
+	// or else the one it runs, never to that default.
+	if role {
+		model = firstNonEmpty(a.RequestedModel, a.Model)
+	}
+	spec = d.claudeStartSpec(context.Background(), claudeStartInput{Resume: a.NativeID, Model: model, Settings: claudeSettingsWithMCPAnswers(settings, a.Cwd), Skills: skillNode{Session: a.SessionID}})
+	return spec, model
 }
 
 func (d *Daemon) relaySessionResume(ctx context.Context, a protocol.AgentView, sessionID, socket, pane string) (protocol.StartedSession, error) {
@@ -782,6 +796,7 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, spec c
 			// A new conversation that could not keep the old ID hands its work
 			// over to the record it registered.
 			d.adoptResumedSession(cctx, r.Resumes, r.SessionID)
+			d.noteRequestedModel("claude", sf.SessionID, r.Model)
 		}
 		if err == nil {
 			err = d.checkStartAgent(cctx, r)
@@ -834,6 +849,24 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, spec c
 		}
 	}(r)
 	return r
+}
+
+// noteRequestedModel records on a registered session the model its start or
+// resume asked for, and reports it at once, so a later resume and the session
+// list know what the session should run.
+func (d *Daemon) noteRequestedModel(harness, nativeID, model string) {
+	if model == "" {
+		return
+	}
+	d.mu.Lock()
+	ls := d.sessions[key(harness, nativeID)]
+	if ls != nil {
+		ls.requestedModel = model
+	}
+	d.mu.Unlock()
+	if ls != nil {
+		d.goBackground(func() { d.pushSession(ls) })
+	}
 }
 
 // sessionStartGet answers for a local start or asks the machine that holds a
