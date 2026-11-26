@@ -59,8 +59,6 @@ func (c *deskCaller) Call(_ context.Context, method string, _ any) (json.RawMess
 	switch method {
 	case protocol.OpAsksList:
 		return json.RawMessage(`{"asks":[]}`), nil
-	case protocol.OpChiefSorts:
-		return json.RawMessage(`{"sorts":[]}`), nil
 	case protocol.OpProposalList:
 		return json.RawMessage(`[]`), nil
 	}

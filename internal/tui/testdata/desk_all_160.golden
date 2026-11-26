@@ -1,5 +1,5 @@
 1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk (3) │ 8 sessions, 6 online · 1 busy · 3 needs you                                    updated 00:00:00
-Desk · chief of staff agent-net 2 on · sorted 4 asks today
+Desk · chief of staff agent-net 2 on
 While you were away (3 h)  closed 22 · sent on 4 · answered 2 · 3 for you                                                                                 x hide
 ╭─Needs you · 3───────────────────────────────────────────────────────────────────────────────────────────────╮ ╭─ingest-forge asks────────────────────────────╮
 │ ▸ ingest-forge [question] Merge PR #3? CI green.                                                         2h │ │ Merge PR #3? CI green.                       │
@@ -17,17 +17,17 @@ While you were away (3 h)  closed 22 · sent on 4 · answered 2 · 3 for you    
 │   wbg-procurement · 2 changes wait for accept by wbg-procurement (exited) · 15h-22h                         │ │                                              │
 │ 1 done and 1 stale hidden · v shows all                                                                     │ │                                              │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────╯ │                                              │
-╭─Handled for you · 4─────────────────────────────────────────────────────────────────────────────────────────╮ │                                              │
-│   closed   CTO applied graph edge set app -> ops  CTO notice, moved to the log                              │ │                                              │
-│   sent     ingest-forge blocked on deploy sha-6a257e2  homelab-agent owns the deploy  → ingest-forge        │ │                                              │
-│   merged   Release v1.2.3 to the machines again  same release                                               │ │                                              │
-│   undone   Mac disk 90%  clear caches  → ingest-forge                                                       │ │                                              │
-╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────╯ │                                              │
 ╭─Log · 3─────────────────────────────────────────────────────────────────────────────────────────────────────╮ │                                              │
 │   cto      CTO applied graph edge set app -> ops                                                         5m │ │                                              │
 │   gateway  Reminded 2 sessions about messages they have not type answered                               20m │ │                                              │
 │   apps     Connected: phone (owner_app, Phone, example.test)                                             3h │ │                                              │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────────────╯
+
+
+
+
+
+
 
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮

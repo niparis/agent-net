@@ -68,12 +68,10 @@ type Model struct {
 	asks                  []protocol.Ask
 	deskLog               []protocol.DeskLogEntry
 	deskLogOpen           bool
-	// The chief of staff (decision 0114, part 2): its status, what it handled
-	// in the last day, the digest of the Desk, the owner's last key and the mark
-	// whose why is being typed.
+	// The chief of staff (decision 0114, part 2): its status, the digest of the
+	// Desk, the owner's last key and the mark whose why is being typed.
 	chief                               protocol.ChiefStatus
 	chiefLoaded                         bool
-	handled                             []protocol.ChiefSort
 	digest                              *deskDigest
 	lastInput                           time.Time
 	asksVersion                         int64
@@ -366,8 +364,6 @@ type fetchedMsg struct {
 	inboxOK         bool
 	chief           protocol.ChiefStatus
 	chiefOK         bool
-	handled         []protocol.ChiefSort
-	handledOK       bool
 	deskLog         []protocol.DeskLogEntry
 	deskLogOK       bool
 	listsAsked      bool // the Inbox and proposals were asked for this refresh
@@ -707,12 +703,6 @@ func (m Model) fetchCmd() tea.Cmd {
 				var status protocol.ChiefStatus
 				if raw, err := c.Call(ctx, protocol.OpChiefGet, nil); err == nil && json.Unmarshal(raw, &status) == nil {
 					res.chief, res.chiefOK = status, true
-				}
-			})
-			group(func(ctx context.Context) {
-				var sorts protocol.ChiefSortsResult
-				if raw, err := c.Call(ctx, protocol.OpChiefSorts, nil); err == nil && json.Unmarshal(raw, &sorts) == nil {
-					res.handled, res.handledOK = sorts.Sorts, true
 				}
 			})
 			if deskLogOpen {
@@ -1225,9 +1215,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.chiefOK {
 			m.chief, m.chiefLoaded = msg.chief, true
-		}
-		if msg.handledOK {
-			m.handled = msg.handled
 		}
 		if msg.inboxOK {
 			m.inboxIndex = min(max(m.inboxIndex, 0), max(m.deskRowCount()-1, 0))

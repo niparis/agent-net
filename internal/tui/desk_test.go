@@ -34,10 +34,13 @@ func deskModel(t *testing.T, w, h int) Model {
 func TestDeskShowsThreeSectionsAndOneCursor(t *testing.T) {
 	m := deskModel(t, 120, 40)
 	view := ansi.Strip(m.testView())
-	for _, want := range []string{"Desk · chief of staff · sorted 0 asks today", "Needs you · 2", "In flight · ", "Log · 3", "Merge PR #3? CI green.", "CTO applied graph edge set", "Reminded 2 sessions"} {
+	for _, want := range []string{"Desk · chief of staff", "Needs you · 2", "In flight · ", "Log · 3", "Merge PR #3? CI green.", "CTO applied graph edge set", "Reminded 2 sessions"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("missing %q:\n%s", want, view)
 		}
+	}
+	if strings.Contains(view, "sorted ") || strings.Contains(view, "Handled for you") {
+		t.Fatalf("the Desk still shows Handled for you:\n%s", view)
 	}
 	asks, changes := m.askRowCount(), len(m.deliveryVisible())
 	if asks != 2 || changes == 0 {
@@ -103,8 +106,26 @@ func TestDeskGoldens(t *testing.T) {
 		m := deskChiefModel(t, size[0], size[1])
 		golden(t, "desk_all_"+itoa(size[0]), m.testView())
 		m.inboxIndex = m.askRowCount() + len(m.deliveryVisible())
-		golden(t, "desk_handled_selected_"+itoa(size[0]), m.testView())
-		m.inboxIndex = m.askRowCount() + len(m.deliveryVisible()) + len(m.handled)
 		golden(t, "desk_log_selected_"+itoa(size[0]), m.testView())
+	}
+}
+
+// Handled for you and its should-have-asked key are gone. Run with -v to see
+// the frames at 80x24 and 120x34.
+func TestDeskHasNoHandledForYou(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := deskChiefModel(t, size[0], size[1])
+		view := ansi.Strip(m.testView())
+		t.Logf("frame %dx%d:\n%s", size[0], size[1], view)
+		for _, gone := range []string{"Handled for you", "sorted ", "should have asked"} {
+			if strings.Contains(view, gone) {
+				t.Errorf("%dx%d: the Desk still shows %q:\n%s", size[0], size[1], gone, view)
+			}
+		}
+		m.inboxIndex = 0
+		m, _ = deskPress(t, m, tea.KeyPressMsg{Text: "m", Code: 'm'})
+		if m.deskPending != nil || m.inboxEditing {
+			t.Errorf("%dx%d: m still starts a mark", size[0], size[1])
+		}
 	}
 }

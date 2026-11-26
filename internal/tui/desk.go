@@ -13,14 +13,13 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// The Desk (tab 6, decision 0090) is one list in three sections: Needs you
-// (the asks), In flight (the delivery changes) and Log (the event log, closed
-// until the owner opens it). One cursor walks all three.
+// The Desk (tab 6, decision 0090) is one list in two sections: Needs you (the
+// asks) and Log (the event log, closed until the owner opens it). One cursor
+// walks both.
 
 const (
 	deskSecAsk = iota
 	deskSecChange
-	deskSecHandled
 	deskSecLog
 )
 
@@ -40,7 +39,7 @@ func (m Model) deskLogRows() []protocol.DeskLogEntry {
 
 // deskRowCount is every selectable row of the sections.
 func (m Model) deskRowCount() int {
-	return m.askRowCount() + len(m.deliveryVisible()) + len(m.handled) + len(m.deskLogRows())
+	return m.askRowCount() + len(m.deliveryVisible()) + len(m.deskLogRows())
 }
 
 // deskIndex is the cursor, kept inside the list.
@@ -58,11 +57,6 @@ func (m Model) deskPosition() (section, i int) {
 		return deskSecChange, idx
 	} else {
 		idx -= changes
-	}
-	if handled := len(m.handled); idx < handled {
-		return deskSecHandled, idx
-	} else {
-		idx -= handled
 	}
 	return deskSecLog, idx
 }
@@ -316,21 +310,6 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 	}
 	sections = append(sections, flight)
 
-	handled := deskSection{title: fmt.Sprintf("Handled for you · %d", len(m.handled)), color: roleAccent, sel: -1}
-	handled.itemCount = len(m.handled)
-	if len(m.handled) == 0 {
-		handled.body = []string{sDim.Render("The chief of staff sorted nothing in the last day.")}
-	}
-	for i, h := range m.handled {
-		selected := sec == deskSecHandled && i == at
-		handled.itemStarts = append(handled.itemStarts, len(handled.body))
-		if selected {
-			handled.sel = len(handled.body)
-		}
-		handled.body = append(handled.body, m.deskHandledLine(h, innerW, selected))
-	}
-	sections = append(sections, handled)
-
 	if m.deskLogOpen {
 		logName := 8
 		for _, e := range logRows {
@@ -427,11 +406,10 @@ func (m Model) deskBoxes(w, room int) ([]string, int) {
 	return out, selected
 }
 
-// deskHeaderLine is the Desk's own title line: the chief and how many asks it
-// sorted in the last day. The log hint goes last, and only when it fits.
+// deskHeaderLine is the Desk's own title line: the chief and the log hint. The
+// log hint goes last, and only when it fits.
 func (m Model) deskHeaderLine(w int) string {
 	line := sBold.Render("Desk") + sDim.Render(" · ") + m.deskChiefText()
-	line += sDim.Render(" · sorted " + plural(len(m.handled), "ask") + " today")
 	if m.delivery.project != "" {
 		line += sDim.Render(" · changes of " + sanitize(m.delivery.project) + " (esc shows all)")
 	}
@@ -456,8 +434,6 @@ func (m Model) deskPanel(w, h int) []string {
 	switch sec {
 	case deskSecAsk:
 		return m.inboxPanel(w, h)
-	case deskSecHandled:
-		return m.deskHandledPanel(w, h)
 	case deskSecChange:
 		changes := m.deliveryVisible()
 		if i >= len(changes) {
@@ -720,18 +696,6 @@ func (m Model) deskRowKey(k tea.KeyPressMsg, key actionID) (Model, tea.Cmd, bool
 		mm, cmd := m.deliveryKey(k)
 		mm.inboxIndex = min(max(mm.inboxIndex, 0), max(mm.deskRowCount()-1, 0))
 		return mm, cmd, true
-	case deskSecHandled:
-		h, ok := m.deskSelectedHandled()
-		switch {
-		case !ok:
-		case key == "undo" && !h.Undone:
-			return m, m.deskAskUndo(h.Ask), true
-		case key == "should_have_asked":
-			return m.deskMarkStart(h.Ask, protocol.MarkShouldHaveAsked), nil, true
-		case key == "didnt_need" && h.Result == protocol.AskSortOwner:
-			return m.deskMarkStart(h.Ask, protocol.MarkDidntNeedMe), nil, true
-		}
-		return m, nil, true
 	case deskSecLog:
 		if e, ok := m.deskSelectedLog(); ok && key == "undo" {
 			return m, m.deskUndo(e), true

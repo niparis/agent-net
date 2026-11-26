@@ -1678,9 +1678,6 @@ func (m Model) inboxHints() []hint {
 	if e, ok := m.deskSelectedLog(); ok {
 		return append(m.deskLogHints(e), move, help)
 	}
-	if h, ok := m.deskSelectedHandled(); ok {
-		return append(m.deskHandledHints(h), move, logHint, help)
-	}
 	rows := m.inboxRows()
 	row, ok := m.inboxSelected(rows)
 	if !ok {
