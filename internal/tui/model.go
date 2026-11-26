@@ -2758,11 +2758,26 @@ func projectOf(a protocol.AgentView) string {
 }
 
 // reportParent is the shown session a session nests under: the session of the
-// Agent the stored tree says its Agent reports to (decision 0160). That holds
-// for a merger and for any other session. A session whose parent has no shown
-// session stays at the top level.
+// Agent the stored tree says its Agent reports to (decision 0160). A non-lead
+// session that shares a lead Agent with its pinned lead sits under that pinned
+// lead instead of becoming a sibling root. Any other non-lead session of a
+// project with a pinned lead sits under that lead when it has no other shown
+// parent in the tree.
 func (m Model) reportParent(a protocol.AgentView, shown map[string]protocol.AgentView) string {
-	return m.sessionOfAgent(a.ReportsTo, a.SessionID, shown)
+	if !isPinnedLead(a) && a.AgentID != "" {
+		if lead := m.pinnedLeadOfAgent(a.AgentID, a.SessionID, a.AgentLeadSession, shown); lead != "" {
+			return lead
+		}
+	}
+	if p := m.sessionOfAgent(a.ReportsTo, a.SessionID, shown); p != "" {
+		return p
+	}
+	if !isPinnedLead(a) && a.Harness != "cto" && !m.isChief(a) {
+		if lead := m.projectLeadSession(projectOf(a), a.SessionID, shown); lead != "" {
+			return lead
+		}
+	}
+	return ""
 }
 
 // sessionParent is the shown session a session nests under. A worker nests
@@ -2851,9 +2866,47 @@ func standsFor(a protocol.AgentView, aID string, b protocol.AgentView, bID strin
 	return aID < bID
 }
 
+// pinnedLeadOfAgent returns the shown pinned lead session for agent, if any
+// session other than self holds the pin.
+func (m Model) pinnedLeadOfAgent(agent, self, pin string, shown map[string]protocol.AgentView) string {
+	if pin != "" && pin != self {
+		if s, ok := shown[pin]; ok && s.Worker == nil && !isMerger(s) {
+			return pin
+		}
+	}
+	best := ""
+	for id, s := range shown {
+		if id == self || s.AgentID != agent || s.Worker != nil || isMerger(s) || !isPinnedLead(s) {
+			continue
+		}
+		if best == "" || standsFor(s, id, shown[best], best) {
+			best = id
+		}
+	}
+	return best
+}
+
+// projectLeadSession returns the shown pinned lead session of project, if any
+// session other than self holds it.
+func (m Model) projectLeadSession(project, self string, shown map[string]protocol.AgentView) string {
+	if project == "" {
+		return ""
+	}
+	best := ""
+	for id, s := range shown {
+		if id == self || projectOf(s) != project || s.Worker != nil || isMerger(s) || !isPinnedLead(s) {
+			continue
+		}
+		if best == "" || standsFor(s, id, shown[best], best) {
+			best = id
+		}
+	}
+	return best
+}
+
 // isPinnedLead tells whether a session is its Agent's pinned lead session.
 func isPinnedLead(a protocol.AgentView) bool {
-	return a.RepoLeadExplicit || a.TeamLead
+	return a.RepoLeadExplicit || a.TeamLead || a.RepoLead
 }
 
 // mergerWorking tells whether a merger holds a ready or running step of one of

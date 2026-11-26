@@ -3882,10 +3882,15 @@ tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harne
 	// A sync may update the repo context but must not replace a selected agent.
 	_, err = q.Exec(`UPDATE sessions SET
 		repo_id=CASE WHEN harness IN ('cto','owner') THEN NULL ELSE (SELECT id FROM repos WHERE id=COALESCE(NULLIF(repo_project,''),announced_project)) END,
-		agent_id=CASE WHEN harness='cto' THEN 'cto' WHEN harness='owner' OR worker<>'' THEN NULL ELSE COALESCE(agent_id,(SELECT lead_agent_id FROM repos WHERE id=COALESCE(NULLIF(repo_project,''),announced_project))) END
+		agent_id=CASE WHEN harness='cto' THEN 'cto' WHEN harness='owner' OR worker<>'' THEN NULL ELSE agent_id END
 		WHERE id=?`, id)
 	if err != nil {
 		return "", false, err
+	}
+	if in.Worker == nil && in.Harness != "cto" && !protocol.IsOwner(in.Harness) {
+		if err = assignDefaultSessionAgentsQ(q, `id=?`, id); err != nil {
+			return "", false, err
+		}
 	}
 	// A new session ends the launch hold it used. Codex can hand a terminal to
 	// the owner before it has a native ID, so a new session without a match
