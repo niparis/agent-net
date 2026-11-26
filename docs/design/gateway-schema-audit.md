@@ -2,6 +2,8 @@
 
 Date: 2026-11-20. Read-only analysis for the agent-net lead. No product code changed.
 
+Superseded in part: decision [0192](../decisions/0192-remove-desk-in-flight-and-handled.md) (2026-11-26) removed the Desk's In flight and Handled for you lists, the sort-history hiding feature and its data. The rows below that name `chief_hide.go` and `ask_sort_hide_receipts` describe the schema as it was on 2026-11-20, before that removal; the table and the column it used are now gone.
+
 ## Summary
 
 | | Tables | Columns |

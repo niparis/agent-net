@@ -333,26 +333,25 @@ One team: a name, purpose, owner, authority mode, held-back text, where asks go,
 
 ### `ask_sorts`
 
-One sort decision the chief of staff made on an ask (answer, route, merge, close, hide), with what it replaced so it can be undone.
+One sort decision the chief of staff made on an ask (answer, route, merge, close), with what it replaced so it can be undone.
 
-- **Columns:** `id`, `ask_id`, `at`, `sorter`, `result`, `into_id`, `to_id`, `reason`, `priority`, `why_you`, `prev_next`, `prev_status`, `prev_answer`, `prev_answered_at`, `hidden_at`, `rule_id`, `owner_message`
+- **Columns:** `id`, `ask_id`, `at`, `sorter`, `result`, `into_id`, `to_id`, `reason`, `priority`, `why_you`, `prev_next`, `prev_status`, `prev_answer`, `prev_answered_at`, `rule_id`, `owner_message`
 - **Rows on 2026-11-22:** 1637
-- **Written by:** `gateway/chief.go:SortAskWith`, `gateway/chief.go:commitSort`, `gateway/chief.go:reopenOrMoveMergedAsks`, `gateway/chief_hide.go:hideApply`, `gateway/chief_hide.go:hideUndo`
-- **Read by:** `gateway/asks.go:closeWaitingAsk`, `gateway/chief.go:AskSortHistory`, `gateway/chief.go:ChiefSorts`, `gateway/chief.go:adoptChiefAsks`, `gateway/chief.go:askSortStats`, `gateway/chief.go:chiefMaySort`, `gateway/chief.go:reopenOrMoveMergedAsks`, `gateway/chief.go:replacementCheck`, `gateway/chief.go:undoAsk`, `gateway/chief_health.go:chiefSilent`, `gateway/chief_hide.go:hidePreview`, `gateway/chief_hide.go:hideUndo`, `gateway/chief_stuck.go:stuckItems`, `gateway/standing.go:askDisposition`
-- **Shown in:** TUI: Desk, tool: agent_ask_sort, CTO: chief_sorts, CTO: ask_history, CTO: ask_undo
+- **Written by:** `gateway/chief.go:SortAskWith`, `gateway/chief.go:commitSort`, `gateway/chief.go:reopenOrMoveMergedAsks`
+- **Read by:** `gateway/asks.go:closeWaitingAsk`, `gateway/chief.go:AskSortHistory`, `gateway/chief.go:adoptChiefAsks`, `gateway/chief.go:askSortStats`, `gateway/chief.go:chiefMaySort`, `gateway/chief.go:reopenOrMoveMergedAsks`, `gateway/chief.go:replacementCheck`, `gateway/chief.go:undoAsk`, `gateway/chief_health.go:chiefSilent`, `gateway/chief_stuck.go:stuckItems`, `gateway/standing.go:askDisposition`
+- **Shown in:** TUI: Desk, tool: agent_ask_sort, CTO: ask_history, CTO: ask_undo
 - **Kept:** for ever
 
 ### `desk_log`
 
-One log line about something that happened on the Desk (an ask sorted, a permission applied, a batch hide undo receipt), with what undoes it.
+One log line about something that happened on the Desk (an ask sorted, a permission applied), with what undoes it.
 
 - **Columns:** `id`, `at`, `source`, `about_kind`, `about_id`, `text`, `detail`, `options`
 - **Rows on 2026-11-22:** 2184
-- **Written by:** `gateway/asks.go`, `gateway/chief_hide.go`, `gateway/permissions.go`, `gateway/store.go`
-- **Read by:** `gateway/asks.go`, `gateway/chief_hide.go`, `gateway/permissions.go`, `gateway/server.go`, `gateway/store.go`
+- **Written by:** `gateway/asks.go`, `gateway/permissions.go`, `gateway/store.go`
+- **Read by:** `gateway/asks.go`, `gateway/permissions.go`, `gateway/server.go`, `gateway/store.go`
 - **Shown in:** TUI, Desk, tool `agent_ask_sort`, CTO op `desk_log`, CTO op `desk_settle`
-- **Kept:** The newest 2000 lines, trimmed on every 200th insert (active hide undo receipts stay until undone).
-- **Note:** Also holds the hide receipts of the Desk (about_kind hide_receipt), for undo.
+- **Kept:** The newest 2000 lines, trimmed on every 200th insert.
 
 ### `follow_ups`
 

@@ -14,7 +14,7 @@ const (
 )
 
 const CTOOperatorReads = `info nodes list projects events message_status workers project_display_get sessions_archived worker_log apps.pending
-merger_get session_start_get inbox_list asks_list chief_get chief_sorts ask_history desk_log outcome_inbox learned_list learned_view
+merger_get session_start_get inbox_list asks_list chief_get ask_history desk_log outcome_inbox learned_list learned_view
 usage usage_top session_text counts conversations conversation_messages graph_view graph_talk
 session_agent_list integrations_get hidden_get onboarding_get timezone_get
 protected_providers_get worker_floors_get worker_providers_get difficulty_get scores_get scores_weekly

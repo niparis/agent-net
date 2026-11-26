@@ -21,10 +21,10 @@ func TestAskSortSchemaMatchesProtocolResults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, result := range []string{protocol.AskSortClose, protocol.AskSortMerge, protocol.AskSortSend, protocol.AskSortOwner, protocol.AskSortList, "hide", protocol.AskSortUndo, protocol.AskSortWithdraw} {
+	for _, result := range []string{protocol.AskSortClose, protocol.AskSortMerge, protocol.AskSortSend, protocol.AskSortOwner, protocol.AskSortList, protocol.AskSortUndo, protocol.AskSortWithdraw} {
 		t.Run(result, func(t *testing.T) {
 			args := protocol.AskSortArgs{Ask: "ask_test", Result: result}
-			if result != protocol.AskSortUndo && result != protocol.AskSortList && result != "hide" {
+			if result != protocol.AskSortUndo && result != protocol.AskSortList {
 				args.Reason = "test"
 				args.Into = "ask_other"
 				args.To = "session_test"
@@ -36,9 +36,6 @@ func TestAskSortSchemaMatchesProtocolResults(t *testing.T) {
 			}
 			if result == protocol.AskSortClose {
 				args.OwnerWordsMessage = "m_owner"
-			}
-			if result == "hide" {
-				args.Mode = "preview"
 			}
 			if err := args.Validate(); err != nil {
 				t.Fatal(err)

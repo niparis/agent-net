@@ -169,7 +169,7 @@ func TestCTOOpsListPinsNoAliases(t *testing.T) {
 		}
 	}
 	ops := mcpserver.CTOOps()
-	if len(ops) != 96 {
-		t.Fatalf("expected 96 ops, got %d", len(ops))
+	if len(ops) != 95 {
+		t.Fatalf("expected 95 ops, got %d", len(ops))
 	}
 }

@@ -269,13 +269,6 @@ func TestChiefSetAdoptsAsksOpenBeforeIt(t *testing.T) {
 		Ask: first, Result: protocol.AskSortClose, Reason: "answered in the thread"}}); err != nil {
 		t.Fatalf("sort an ask opened before chief_set: %v", err)
 	}
-	sorts, err := s.ChiefSorts(c.now().Add(-time.Hour))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(sorts) != 1 || sorts[0].Ask != first {
-		t.Fatalf("chief sorts = %+v, want the sort of %s", sorts, first)
-	}
 	if next := askNext(t, s, second); next != protocol.AskNextChief {
 		t.Fatalf("an ask opened before chief_set is next %q, want chief", next)
 	}

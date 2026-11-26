@@ -62,7 +62,7 @@ func (s *Store) deskLog(q askDB, source, aboutKind, aboutID, text, detail string
 	}
 	// Keep the log short: a few hundred inserts at most between two prunes.
 	if id, err := res.LastInsertId(); err == nil && id%200 == 0 {
-		_, err = q.Exec(`DELETE FROM desk_log WHERE id<=? AND NOT (about_kind='hide_receipt' AND options<>'[]')`, id-deskLogKeep)
+		_, err = q.Exec(`DELETE FROM desk_log WHERE id<=?`, id-deskLogKeep)
 		return err
 	}
 	return nil

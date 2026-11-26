@@ -45,6 +45,7 @@ These files record how the project was planned and built. They are kept for cont
 - [archive/brief.md](archive/brief.md): the original brief.
 - [archive/review.md](archive/review.md): review of the brief and the build order.
 - [decisions/](decisions/): decisions taken, one file each. [0003](decisions/0003-gateway-record-and-inventory.md) covers the gateway log, repo info, harness inventory and retention. [0005](decisions/0005-registered-projects.md) covers registered projects. [0004](decisions/0004-tui-and-event-feed.md) covers the TUI, session mode and model, and the event feed.
+- [0192](decisions/0192-remove-desk-in-flight-and-handled.md): the Desk's In flight and Handled for you lists are removed, with the gateway read, the sort-history hiding feature and the data it stored.
 - [0177](decisions/0177-owed-replies.md): open requests and orders with no final reply get one automatic reminder nudge to the recipient after an idle duration, then one ask routed to the chief of staff.
 - [0178](decisions/0178-gateway-network.md): proposed, not scheduled. A network of gateways: each owner keeps one gateway, gateways link through a separate listener, only messages cross, repos are private, shared or public.
 - [0179](decisions/0179-gateway-schema-reduction.md): approved 2026-11-20. Reduce the gateway schema from 155 to 118 tables in 10 parts; the audit in `docs/design/gateway-schema-audit.md` is the evidence. Measured 2026-11-26 with later work: 67 tables.

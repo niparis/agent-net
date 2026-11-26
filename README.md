@@ -75,7 +75,7 @@ Ranked by how much they set it apart:
 - **The chief of staff** reads every ask meant for you first. It closes what it can, sends the rest to the agent that should answer, and leaves only real decisions on your Desk.
 
 <p align="center">
-  <img alt="The Desk in the agent-net TUI: While you were away (3 h): closed 22, sent on 4, answered 2, 3 for you. Below it, a short Needs you list, changes in flight with their steps, what was handled for you, and the log." src="docs/img/tui/desk.svg" width="900">
+  <img alt="The Desk in the agent-net TUI: While you were away (3 h): closed 22, sent on 4, answered 2, 3 for you. Below it, a short Needs you list and the log." src="docs/img/tui/desk.svg" width="900">
 </p>
 
 Both are yours to shape. You choose their role, harness, model and rules. For example, run the CTO in Claude Code on Opus with the standing order "never remove a machine without asking me", and the chief of staff in Codex on a small model with the rule "anything that costs money goes to the owner".

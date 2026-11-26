@@ -49,7 +49,7 @@ var parallelFrames = map[string]bool{
 	"worker.recent_changes": true, "workers.watch": true,
 	// The Desk reads these every refresh. They only read (the settings come
 	// from the read cache), so one slow write in the lane must not hold them.
-	"chief.get": true, "chief.sorts": true, "ask.history": true, protocol.OpRoleNetwork: true,
+	"chief.get": true, "ask.history": true, protocol.OpRoleNetwork: true,
 	// A failure report is a counter bump: it must not wait behind a write.
 	protocol.FrameClientError: true,
 }
