@@ -1000,8 +1000,7 @@ sheet on a phone. It stays open across screen changes, remembered in
 `localStorage` and in a cookie of the same name.
 
 - **Desk** shows Needs you (the open asks of the TUI Desk, with the
-  recommendation and the "why you" line), In flight (open delivery changes that
-  moved in the last day, read only), Handled for you and the Log. The owner
+  recommendation and the "why you" line) and the Log. The owner
   answers an ask with the buttons of its kind: approve, reject, dismiss, an
   option, typed text, let stand or overrule, and "didn't need me". Proposals,
   learned suggestions, charter drafts and delivery steps are answered in the
@@ -1028,8 +1027,8 @@ sheet on a phone. It stays open across screen changes, remembered in
   (name, model, task, run time and tokens, from `worker_log`; the cost shows a
   dash because a run in progress has none). It is read only: protecting a
   provider and starting or stopping a worker stay in the TUI.
-- **Changes** (`/changes?f=open|mine|all&s=<change>`) lists the delivery changes
-  of the Desk's In flight section, read with `changes_owner_find`. Each row has the
+- **Changes** (`/changes?f=open|mine|all&s=<change>`) lists the delivery changes,
+  read with `changes_owner_find`. Each row has the
   title, the id, the revision, the risk, the step strip, a status line and the
   age. The filters are open (open and merged changes), mine to do (the change
   needs the owner: a step that needs the owner, or a step the owner owns) and

@@ -129,8 +129,6 @@ func (f *consoleOperator) Call(ctx context.Context, method string, params any) (
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		return json.Marshal(protocol.ChiefStatus{SessionID: "s_chief", Name: "chief of staff", Online: true, Down: f.chiefDown})
-	case protocol.OpChiefSorts:
-		return json.Marshal(protocol.ChiefSortsResult{Sorts: []protocol.ChiefSort{{AskSort: protocol.AskSort{Ask: "i_old", At: now.Add(-time.Hour), Result: "close", Reason: "answered by the lead"}, Question: "handled question text"}}})
 	case protocol.OpDeskLog:
 		return json.Marshal(protocol.DeskLogResult{Entries: []protocol.DeskLogEntry{{ID: 1, At: now.Add(-3 * time.Minute), Source: "release", Text: "log line text"}}})
 	case protocol.OpUsage:
@@ -308,11 +306,11 @@ func TestDeskRendersAsksWithRecommendationAndWhyYou(t *testing.T) {
 	mustContain(t, "desk proposal", body, "Answer from the TUI")
 }
 
-func TestDeskShowsInFlightHandledAndLog(t *testing.T) {
+func TestDeskShowsNeedsYouAndLog(t *testing.T) {
 	body := page1(t, newConsoleOperator(), "/")
-	mustContain(t, "desk", body, "In flight", "Push updates part 1", "ch_flight1", "merger-node", "Handled for you", "handled question text", "answered by the lead", "Log", "log line text", "release")
-	// The pipeline strip has a class per step state.
-	mustContain(t, "pipeline", body, `class="pipe"`, `<i class="p">`, `<i class="r">`)
+	mustContain(t, "desk", body, "Needs you", "Allow the record tools for every session?", "Log", "log line text", "release")
+	// The Desk no longer lists delivery changes or the chief's sorts.
+	mustNotContain(t, "desk", body, "In flight", "Handled for you", "Push updates part 1", "ch_flight1", "handled question text", `class="pipe"`)
 }
 
 // A chief that cannot work shows as one line above the asks, with the reason.

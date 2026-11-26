@@ -276,7 +276,7 @@ func TestEachScreenLoadsOnlyWhatItShows(t *testing.T) {
 	f := newConsoleOperator()
 	page1(t, f, "/changes?s=ch_flight1")
 	f.mu.Lock()
-	for _, m := range []string{protocol.OpConversations, protocol.OpConversationMessages, protocol.OpUsage, protocol.OpChiefSorts, protocol.OpDeskLog, protocol.OpGraphView} {
+	for _, m := range []string{protocol.OpConversations, protocol.OpConversationMessages, protocol.OpUsage, protocol.OpDeskLog, protocol.OpGraphView} {
 		if f.reads[m] != 0 {
 			t.Errorf("the Changes screen read %s", m)
 		}
@@ -286,7 +286,7 @@ func TestEachScreenLoadsOnlyWhatItShows(t *testing.T) {
 	page1(t, f, "/messages?s=c_3")
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	for _, m := range []string{protocol.OpChangesOwnerFind, protocol.OpUsage, protocol.OpChiefSorts, protocol.OpDeskLog, protocol.OpGraphView} {
+	for _, m := range []string{protocol.OpChangesOwnerFind, protocol.OpUsage, protocol.OpDeskLog, protocol.OpGraphView} {
 		if f.reads[m] != 0 {
 			t.Errorf("the Messages screen read %s", m)
 		}
