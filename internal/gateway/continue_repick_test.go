@@ -259,12 +259,17 @@ func TestContinueMovesAProtectedModel(t *testing.T) {
 	if err := cf.g.store.setOwner(protectedProvidersKey, protocol.ProtectedProviders{Providers: []string{"anthropic"}}); err != nil {
 		t.Fatal(err)
 	}
+	// Protection is a floor of 100 percent left, so it needs a reading.
+	now := cf.clock.now()
+	cf.g.usage.set(cf.nc.id, now, protocol.UsageReport{Quotas: &protocol.Quotas{GeneratedAt: now.Unix(), Providers: []protocol.QuotaProvider{
+		{Provider: "claude", Windows: []protocol.QuotaWindow{{Kind: "weekly", PercentUsed: 10, ResetsAt: now.Add(7 * 24 * time.Hour).Unix()}}},
+	}}})
 	worker := cf.endedWorker(t, "claude", opusModel, "normal")
 	ans, f, err := cf.continueWorker(t, worker, "")
 	if err != nil {
 		t.Fatalf("continue: %v", err)
 	}
-	if f.Harness == "" || f.Harness == "claude" || !strings.Contains(ans.ModelNote, "protected provider (anthropic)") {
+	if f.Harness == "" || f.Harness == "claude" || !strings.Contains(ans.ModelNote, "under your 100% worker floor") {
 		t.Fatalf("the machine was asked to run %q %q; note %q", f.Harness, f.Model, ans.ModelNote)
 	}
 }

@@ -1,11 +1,14 @@
 package protocol
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
 )
+
+var updateGolden = flag.Bool("update", false, "rewrite golden files")
 
 // pickFixture is one fixed scenario: the roster, the scores, the quotas and
 // the picker input, and how many picks to make in a row. The rotation state
@@ -22,9 +25,8 @@ type pickFixture struct {
 
 // pickFixtures covers each branch of the picker: the cost rule with a thin
 // cell and its exploration share, the cost rule with prices, the quota pace
-// either way, the rotation with no qualifying model, the level rule when no
-// model is allowed, the level rule without a picker input, the notes that name
-// the left out and the benchmark models, and a provider out of quota.
+// either way, the rotation with no qualifying model, the notes that name the
+// left out and the benchmark models, and a provider out of quota.
 func pickFixtures() []pickFixture {
 	var thinTasks []PickerTask
 	thinTasks = append(thinTasks, pickTasks("good", 2.5, repeat(15, 1, .5)...)...)
@@ -89,11 +91,6 @@ func pickFixtures() []pickFixture {
 		{"rotation over the allowed set when none qualifies", pickCandidates("x", "y"), "normal",
 			pickScores(map[string]float64{"x": 39, "y": 39}), nil,
 			paceInput(append(pickTasks("x", 2.5, 1, 0), pickTasks("y", 2.5, 1, 1)...)), 12},
-		{"level rule when no model is allowed", pickCandidates("a", "b"), "normal",
-			pickScores(map[string]float64{"a": 39, "b": 39}), nil,
-			&PickerInput{D: 4.5, Table: BuildPickerTable(nil, DefaultPickerSettings())}, 12},
-		{"level rule without a picker input", pickCandidates("a"), "normal",
-			pickScores(map[string]float64{"a": 39}), nil, nil, 3},
 		{"note names the left out models", leftCandidates, "normal",
 			pickScores(map[string]float64{"deepseek": 51, "flash": 51, "terra:medium": 51}), nil,
 			&PickerInput{D: 2.5, Table: BuildPickerTable(leftTasks, DefaultPickerSettings())}, 12},
@@ -101,7 +98,7 @@ func pickFixtures() []pickFixture {
 			pickScores(map[string]float64{"cheap": 29, "strong": 51, "fresh": 51}), nil,
 			&PickerInput{D: 1.8, Table: BuildPickerTable(priorTasks, lenient)}, 12},
 		{"a provider out of quota stays last", exhaustedCandidates, "hard",
-			exhaustedScores, exhausted, nil, 3},
+			exhaustedScores, exhausted, &PickerInput{D: 2.5, Table: BuildPickerTable(nil, DefaultPickerSettings())}, 3},
 	}
 }
 
@@ -155,6 +152,12 @@ func TestPicksOnFixedFixturesAreUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := pickFixtureDump(t)
+	if *updateGolden {
+		if err := os.WriteFile("testdata/pick_fixtures_before.txt", []byte(got), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
 	if got != string(want) {
 		t.Fatalf("the picks changed on the fixed fixtures; first difference:\n%s", firstDifference(string(want), got))
 	}

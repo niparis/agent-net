@@ -58,7 +58,7 @@ The picker reads the machine, quota, past results and prices to choose a model, 
 6. `worker_runs` (reads): It reads the track record of past worker runs (complete, partial, failed, fixes needed) per model, which scores each model on tasks of this difficulty.
 7. `worker_assessments` (reads): It reads the difficulty the judge gave to past tasks, to place each past run in the right difficulty bucket.
 8. `worker_runs` (reads): It reads the tokens past runs used, to turn token counts into a cost per run.
-9. `model_failures` (reads): It reads which models recently failed or lost sign-in on this machine, to skip models that are cooling down.
+9. `model_failures` (reads): It reads which models recently failed or lost sign-in on this machine, to mark them in the screens and the start notes.
 10. `gateway_state` (writes): The rotation counter is saved, so the next start spreads work across models instead of always picking the same one.
 11. `worker_starts` (writes): The gateway records the start (reference, machine, who asked, project, harness, permissions, the 'done' list, and what the owner named, so a continue keeps it) before it asks the machine to launch.
 12. `worker_assessments` (writes): The judge's difficulty result and the picker's explanation are saved under the new worker session.

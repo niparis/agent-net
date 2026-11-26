@@ -48,7 +48,7 @@ brief
   3. rank         cost rule: lowest expected cost of one clean result
   |               (a fixed list for the judge and the role sessions)
   |
-  4. reorder      pace; protected providers last
+  4. reorder      pace; floors, with protection as a 100% floor
   |
   5. gate         first candidate that can run now; a reason for each skip
   |
@@ -149,8 +149,8 @@ often.
 
 The draw is a weighted rotation, so each candidate's share of the picks follows
 its weight over time. The start note says `none qualified; fallback draw by
-expected cost`. When no candidate is allowed, the level rule takes over:
-candidates whose benchmark meets the level, in order.
+expected cost`. When no candidate is allowed, the start fails with the level
+and the reason no profile was allowed; there is no second rule.
 
 Where: `internal/protocol/picker.go` (cell, `ExpectedCost`),
 `internal/protocol/picker_choose.go` (`PickerBucketVerdicts`,
@@ -186,11 +186,14 @@ Modifiers move candidates. They never remove one.
   and 4 times. A provider ahead of pace costs more on paper. Each worker
   already running on a provider takes 5 points off its room, so a burst of
   starts spreads out.
-- **Protected last.** Providers you protect go to the end of the list. They run
-  only when no other candidate can run now. The note says they were saved for
-  your orchestrator.
+- **Floors.** A provider under a worker floor is left to the gate, which skips
+  it before it can run. Protection is folded into this one mechanism: a
+  protected provider reads as a floor of 100 percent left, so the gate holds it
+  while its reading shows any use. A missing reading applies no floor. A
+  protected provider that the ranker allowed is therefore refused at the gate
+  with the floor sentence.
 - **Fixed lists** keep the order you wrote. The judge is the one fixed list that
-  is paced and has protected providers last.
+  is paced.
 
 Behind the pick, the gate tries the other qualified models by the same cost
 rule, then the exploration pool of this task, then the remaining allowed
@@ -198,7 +201,7 @@ models, then a thin model left out with `explore is up only`, then the blocked
 models. So when the gate refuses the winner, a model in the exploration pool is
 tried before a thin model the rule had left out.
 
-Where: `internal/gateway/choose.go` (`paceOrder`, `protectedLastOrder`),
+Where: `internal/gateway/choose.go` (`paceOrder`, `floorsWithProtected`),
 `internal/protocol/chooser.go` (`quotaPaceFactor`, `WorkerQuotaPace`).
 
 ### 6. The gate
@@ -218,30 +221,27 @@ Some checks are optional. Each kind of start turns on the ones it needs (see
 the table below):
 
 - **Floor.** A share of each provider that you keep for yourself. You set it
-  per provider, from 0 to 95 percent, where 0 is off. A start is skipped when
-  any window of the provider has less left than the floor. With no quota reading,
-  the floor cannot apply. The note says so.
+  per provider, from 0 to 95 percent, where 0 is off. A protected provider is
+  read as a floor of 100 percent left, so it is held while its reading shows any
+  use. A start is skipped when any window of the provider has less left than the
+  floor. With no quota reading, the floor cannot apply. The note says so.
 - **90% block.** A provider with a window above 90% used is skipped for this
   start.
 - **Burn hold.** The gate projects how fast the running workers use each window.
   It holds back a start that would empty the window before it resets. It never
   holds the first worker of a provider, because there is no rate yet.
-- **Cooling.** Infrastructure failures of a model are counted over two hours.
-  Two failures within 15 minutes, or three or more in the window, cool the
-  model. The cooling lasts 15 minutes and doubles with each further failure, up
-  to two hours. A cooling model is skipped, unless nothing else can run.
 
 The checks each kind of start uses are one table in code, and a test pins it:
 
-| Start | Ranker | Floor | 90% | Burn | Cooling | Pace | Protected last |
-|---|---|---|---|---|---|---|---|
-| Worker, chosen by agent-net | cost rule | yes | yes | yes | yes | yes | yes |
-| Worker, model named by an agent | the agent's list | yes | yes | yes | yes | no | no |
-| Worker, model named by you | your list | no | no | no | no | no | no |
-| Continue or resume a worker | same model | no | no | no | no | no | no |
-| Continue whose old model no longer qualifies | cost rule | yes | yes | yes | yes | yes | yes |
-| Difficulty judge | worker profiles | yes | yes | yes | yes | yes | yes |
-| CTO, chief of staff, merger | role list | no | no | no | yes | no | no |
+| Start | Ranker | Floor | 90% | Burn | Pace |
+|---|---|---|---|---|---|
+| Worker, chosen by agent-net | cost rule | yes | yes | yes | yes |
+| Worker, model named by an agent | the agent's list | yes | yes | yes | no |
+| Worker, model named by you | your list | no | no | no | no |
+| Continue or resume a worker | same model | no | no | no | no |
+| Continue whose old model no longer qualifies | cost rule | yes | yes | yes | yes |
+| Difficulty judge | worker profiles | yes | yes | yes | yes |
+| CTO, chief of staff, merger | role list | no | no | no | no |
 
 A preview or backtest uses the same checks as the row it previews. It decides
 and starts nothing, so the preview shows the choice a real start would make.
@@ -274,7 +274,7 @@ Where: `internal/model/model.go` (`Gate`, `lockedSkip`, `optionalSkip`),
 `internal/model/policy.go` (`PolicyFor`), `internal/protocol/worker_floors.go`
 (`CheckWorkerFloor`), `internal/protocol/chooser.go` (`QuotaRoomForProvider`),
 `internal/protocol/quota_burn.go` (`QuotaBurnHold`),
-`internal/gateway/model_health.go`, `internal/gateway/role_picker.go`.
+`internal/gateway/role_picker.go`.
 
 ### 7. The start, its note, and the refusal
 
@@ -331,7 +331,6 @@ Every candidate the gate skipped gets its own clause, `skipped <candidate>:
 - `<provider> is exhausted (<window>; <reset>)`: the provider has no quota left.
 - `<provider> has 14% left in its week window, under your 20% worker floor`: the floor.
 - `held back for quota: ...`: the burn hold.
-- `cooling down after 2 infrastructure failures (until 14:30 UTC)`: cooling.
 - `harness claude is not signed in on <machine>`: the locked sign-in check.
 
 ## How results feed back
@@ -369,7 +368,8 @@ decisions [0103](decisions/0103-agent-net-records-late-defects.md) and
 - **Worker floor.** Per provider, in the TUI Quotas tab: select the subscription
   and press `f`. 0 turns it off.
 - **Protected providers.** In the TUI Quotas tab: select the subscription and
-  press `p`.
+  press `p`. A protected provider is stored as a floor of 100 percent left, so
+  the floors section above applies to it too.
 - **Role lists.** `cto.models`, `chief.model` and `merger.models` are ordered
   lists, one candidate per line: harness, provider, model and effort. The first
   one that can run now is used. The CTO can change its list with its settings

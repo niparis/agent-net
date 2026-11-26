@@ -166,17 +166,6 @@ func TestGateOptionalChecks(t *testing.T) {
 			broken: Candidate{Name: "hot", Harness: "opencode", Model: "deepseek/deepseek-v4.1-flash"},
 			want:   "95% used",
 		},
-		{
-			name:   "cooling",
-			checks: Checks{Cooling: true},
-			facts: func() Facts {
-				facts := gateFacts()
-				facts.Cooling = map[string]CoolingFact{"opencode\x00deepseek/deepseek-v4.1-flash": {Failures: 2, Until: now.Add(10 * time.Minute)}}
-				return facts
-			},
-			broken: Candidate{Name: "cool", Harness: "opencode", Model: "deepseek/deepseek-v4.1-flash"},
-			want:   "cooling down",
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

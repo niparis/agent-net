@@ -76,7 +76,7 @@ A worker profile is a named harness, model and effort in the network roster, add
 
 ## Worker providers and protected providers
 
-A start's provider is the quota provider of its model id, or the harness name when the id names none. With no explicit allowlist, workers may use the subscription providers: the `claude`, `codex` and `agy` harnesses, the `codex`, `opencode-go` and `alibaba` quota providers, and any provider with a fresh quota reading. Pay-per-use providers, such as `openrouter` and the `opencode/` provider, need an explicit list. `settings_change` area `worker_providers` sets the list; an empty list restores the defaults. `settings_change` area `protected_providers` reserves providers for the owner's orchestrator, with a reason; a protected provider is never chosen for a worker.
+A start's provider is the quota provider of its model id, or the harness name when the id names none. With no explicit allowlist, workers may use the subscription providers: the `claude`, `codex` and `agy` harnesses, the `codex`, `opencode-go` and `alibaba` quota providers, and any provider with a fresh quota reading. Pay-per-use providers, such as `openrouter` and the `opencode/` provider, need an explicit list. `settings_change` area `worker_providers` sets the list; an empty list restores the defaults. `settings_change` area `protected_providers` reserves providers for the owner's orchestrator, with a reason; protection is read as a floor of 100 percent left, so the gate holds a protected provider while its reading shows any use.
 
 ## Quotas
 

@@ -2,7 +2,6 @@ package protocol
 
 import (
 	"math"
-	"strings"
 	"testing"
 )
 
@@ -130,41 +129,6 @@ func TestPickRowsRecordAnExplorationPickAndItsShares(t *testing.T) {
 	// weights: t1 is behind pace by 20 points, t2 has no pace reading.
 	near(t, "t1 share", rows[1].Probability, math.E/(math.E+1))
 	near(t, "t1 weight over t2 weight", rows[1].Weight/rows[2].Weight, math.E)
-}
-
-// The level rule keeps a weight and a share for each candidate it may choose.
-// Its rows name the fallback and carry no cell terms.
-func TestPickRowsRecordTheLevelRuleFallback(t *testing.T) {
-	scores := pickScores(map[string]float64{"a": 39, "b": 39})
-	table := BuildPickerTable(nil, DefaultPickerSettings())
-	choice, err := chooseFirst(pickCandidates("a", "b"), "normal", scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: 4.5, Table: table})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(choice.PickRows) != 2 {
-		t.Fatalf("rows: %+v", choice.PickRows)
-	}
-	var share float64
-	chosen := 0
-	for _, r := range choice.PickRows {
-		if r.Rule != "level" || !strings.Contains(r.Fallback, "fallback to the level rule") {
-			t.Fatalf("row %s: rule %q, fallback %q", r.Name, r.Rule, r.Fallback)
-		}
-		if r.Weight <= 0 {
-			t.Fatalf("row %s has no rotation weight", r.Name)
-		}
-		if r.Chosen {
-			chosen++
-			if r.Probability == 0 {
-				t.Fatalf("the chosen row %s has no share", r.Name)
-			}
-		}
-		share += r.Probability
-	}
-	if chosen != 1 {
-		t.Fatalf("%d rows are chosen, want 1", chosen)
-	}
-	near(t, "shares", share, 1)
 }
 
 // The note is written from the rows: for every pick the fixtures make, the rows

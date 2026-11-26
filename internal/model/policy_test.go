@@ -5,17 +5,17 @@ import "testing"
 // PolicyFor is the one table that says which optional steps each caller gets.
 // Each case pins one row of the table in decision 0162.
 func TestPolicyForPinsEveryRow(t *testing.T) {
-	all := Checks{Floor: true, Block90: true, Burn: true, Cooling: true}
+	all := Checks{Floor: true, Block90: true, Burn: true}
 	tests := []struct {
 		purpose Purpose
 		want    Policy
 	}{
-		{PurposeWorkerAutomatic, Policy{Ranker: RankCost, Checks: all, Pace: true, ProtectedLast: true, Rotation: true}},
+		{PurposeWorkerAutomatic, Policy{Ranker: RankCost, Checks: all, Pace: true, Rotation: true}},
 		{PurposeWorkerNamed, Policy{Ranker: RankFixed, Checks: all}},
 		{PurposeOwnerNamed, Policy{Ranker: RankFixed}},
 		{PurposeContinueOrResume, Policy{Ranker: RankSame}},
-		{PurposeDifficultyJudge, Policy{Ranker: RankFixed, Checks: all, Pace: true, ProtectedLast: true}},
-		{PurposeRole, Policy{Ranker: RankFixed, Checks: Checks{Cooling: true}}},
+		{PurposeDifficultyJudge, Policy{Ranker: RankFixed, Checks: all, Pace: true}},
+		{PurposeRole, Policy{Ranker: RankFixed}},
 	}
 	for _, tt := range tests {
 		if got := PolicyFor(tt.purpose); got != tt.want {

@@ -26,7 +26,6 @@ type Checks struct {
 	Floor   bool
 	Block90 bool
 	Burn    bool
-	Cooling bool
 }
 
 // HarnessFact says whether one harness is installed and signed in on the
@@ -43,15 +42,9 @@ type Limit struct {
 	Reason string
 }
 
-// CoolingFact is a model that is cooling down after infrastructure failures.
-type CoolingFact struct {
-	Failures int
-	Until    time.Time
-}
-
 // Facts is one snapshot that a whole start decides on: the one owner quota
-// reading with burn, the machine's harnesses, auth blocks, model health and
-// the provider limits live sessions reported.
+// reading with burn, the machine's harnesses, auth blocks and the provider
+// limits live sessions reported.
 type Facts struct {
 	Now         time.Time
 	Hostname    string
@@ -60,7 +53,6 @@ type Facts struct {
 	Limits      map[string]Limit
 	Quotas      *protocol.Quotas
 	Floors      protocol.WorkerFloors
-	Cooling     map[string]CoolingFact
 }
 
 // Skip is one candidate the gate left out, with the reason it did.
@@ -202,14 +194,6 @@ func optionalSkip(c Candidate, checks Checks, facts Facts) (Skip, bool) {
 		if reason, hold := protocol.QuotaBurnHold(facts.Quotas, c.QuotaProvider(), c.Model); hold {
 			skip.Check = "burn"
 			skip.Reason = "held back for quota: " + reason
-			return skip, true
-		}
-	}
-	if checks.Cooling {
-		if cool, ok := facts.Cooling[c.Key()]; ok && cool.Until.After(facts.Now) {
-			skip.Check = "cooling"
-			skip.Reason = fmt.Sprintf("cooling down after %d infrastructure failures (until %s UTC)",
-				cool.Failures, cool.Until.UTC().Format("15:04"))
 			return skip, true
 		}
 	}

@@ -106,7 +106,7 @@ func TestChooseHandsTheRowsOfThePick(t *testing.T) {
 	}
 	scores := []protocol.ModelScore{{Match: "gpt-6.1-sol", Score: 45}, {Match: "opencode-go/deepseek-v4.1-flash", Score: 45}}
 	quotas := &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "opencode-go", Windows: []protocol.QuotaWindow{{Kind: "monthly", Exhausted: true}}}}}
-	facts, _, err := g.chooseFacts(node, candidates, quotas, protocol.WorkerFloors{}, nil, nil)
+	facts, err := g.chooseFacts(node, candidates, quotas, protocol.WorkerFloors{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

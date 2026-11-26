@@ -12,11 +12,12 @@ func TestWorkerPickOrderAgreesWithTheChooserAndKeepsBlockedInTheList(t *testing.
 	}
 	scores := []ModelScore{{Match: "gpt-6.1-terra", Score: 51}, {Match: "deepseek/deepseek-v4.1-flash", Score: 45}, {Match: "opencode-go/deepseek-v4.1-flash", Score: 45}}
 	quotas := &Quotas{Providers: []QuotaProvider{{Provider: "opencode-go", Windows: []QuotaWindow{{Kind: "monthly", Exhausted: true}}}}}
-	want, err := chooseFirst(candidates, "hard", scores, nil, quotas, nil, &WorkerRotation{})
+	in := &PickerInput{D: 3.75, Table: BuildPickerTable(nil, DefaultPickerSettings())}
+	want, err := chooseFirst(candidates, "hard", scores, nil, quotas, nil, &WorkerRotation{}, in)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, _, err := WorkerPickOrder(candidates, "hard", scores, nil, quotas, nil, &WorkerRotation{}, nil)
+	got, _, err := WorkerPickOrder(candidates, "hard", scores, nil, quotas, nil, &WorkerRotation{}, in)
 	if err != nil {
 		t.Fatal(err)
 	}

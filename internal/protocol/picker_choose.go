@@ -12,7 +12,7 @@ import (
 // the rescue of the next dearer model when it fails (decision 0161). Allowed
 // thin cells receive an exploration share. When no candidates qualify, the
 // allowed set is drawn by the expected cost of each run (FallbackDrawWeight).
-// When nothing is allowed the caller falls back to the level rule.
+// A start the rule cannot allow has no order: the caller reports why.
 
 // PickerCandidateFacts is what the cell rule reads about one candidate in one
 // bucket. The TUI builds these from picker_get and the picker builds them from
@@ -268,7 +268,7 @@ func FallbackDrawWeight(expected float64) float64 {
 // another of its windows.
 //
 // The second return value is empty when the cell rule picked. Otherwise it is
-// the reason the level rule makes the pick, for the note.
+// the reason no candidate can be allowed.
 func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation, in *PickerInput) ([]WorkerModelChoice, string) {
 	table, set := in.Table, in.Table.Settings()
 	bucket := table.Bucket(in.D)
@@ -301,7 +301,7 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 		entries = append(entries, e)
 	}
 	if len(entries) == 0 {
-		return nil, "fallback to the level rule (no candidate)"
+		return nil, "no candidate"
 	}
 
 	// 1-3. The same decision the Quality subtab shows, one verdict per entry.
@@ -320,7 +320,15 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 		facts = append(facts, PickerCandidateFacts{Key: e.key, Cell: e.cell, Scored: e.scored, Benchmark: e.bench, Ceiling: e.ceiling})
 	}
 	if len(live) == 0 {
-		return nil, "fallback to the level rule (every candidate is out of quota)"
+		// Nothing can run, but the gate owns the refusal and its reason: hand
+		// it every blocked candidate instead of choosing one the gate refuses.
+		order := make([]WorkerModelChoice, 0, len(entries))
+		for _, e := range entries {
+			ch := WorkerModelChoice{WorkerModelCandidate: e.c, Fit: "cell", QuotaNote: e.quotaNote}
+			ch.Why = WhyLine(level, ch)
+			order = append(order, ch)
+		}
+		return order, ""
 	}
 	verdicts, bestIdx := PickerBucketVerdicts(facts, bucketLo, table.BucketMean(bucket), bucket, set)
 	var bestEntry *pickerEntry
@@ -397,7 +405,7 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 			eligible = append(eligible, rankedChoice{choice: choice, weight: weight})
 		}
 		if len(final) == 0 {
-			return nil, "fallback to the level rule (no profile is allowed by its record or its benchmark)"
+			return nil, "no profile is allowed by its record or its benchmark"
 		}
 	} else {
 		// The proven model with the lowest expected cost per accepted result
@@ -459,7 +467,7 @@ func pickOrderByCells(candidates []WorkerModelCandidate, level string, scores []
 		lvl.ExploreCurrent, lvl.Current = lvl.Current, saved
 	}
 	if err != nil {
-		return nil, "fallback to the level rule (" + err.Error() + ")"
+		return nil, err.Error()
 	}
 	pickedKey := picked.WorkerModelCandidate.Key()
 	var chosen *pickerEntry

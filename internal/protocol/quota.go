@@ -101,6 +101,13 @@ func (q *Quotas) ExhaustedWindow(provider string) (QuotaWindow, bool) {
 	return q.ExhaustedWindowFor(provider, "")
 }
 
+// QuotaWindowUsedUp is the one exhaustion test: a window has no allowance
+// left. The ranker, the gate and the floor read it, so they cannot disagree
+// about which window is out.
+func QuotaWindowUsedUp(w QuotaWindow) bool {
+	return w.Exhausted || w.PercentUsed >= 100
+}
+
 // ExhaustedWindowFor looks only at the windows that limit model (see
 // QuotaWindowServes); an empty model means every window.
 func (q *Quotas) ExhaustedWindowFor(provider, model string) (QuotaWindow, bool) {
@@ -112,7 +119,7 @@ func (q *Quotas) ExhaustedWindowFor(provider, model string) (QuotaWindow, bool) 
 		if !QuotaWindowServes(w, model) {
 			continue
 		}
-		if w.Exhausted || w.PercentUsed >= 100 {
+		if QuotaWindowUsedUp(w) {
 			return w, true
 		}
 	}
@@ -329,7 +336,7 @@ func QuotaHarnessRefusal(quotas *Quotas, harness string) string {
 		return ""
 	}
 	for _, w := range p.Windows {
-		if quotaWindowFamily(w.ID) == "" && (w.Exhausted || w.PercentUsed >= 100) {
+		if quotaWindowFamily(w.ID) == "" && QuotaWindowUsedUp(w) {
 			return quotaExhaustedText(qp, w)
 		}
 	}

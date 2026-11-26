@@ -123,7 +123,7 @@ func (g *Gateway) repickContinue(node *protocol.NodeView, a *protocol.WorkerAsse
 	}
 	if chosen.Choice.Key() == old.Key() {
 		// The pick chose the old model again: the only one left was the
-		// protected one, or the check met a cooling-down model the gate
+		// protected one, or the check met a model the gate
 		// still allows as a last resort.
 		return kept, nil
 	}
@@ -149,7 +149,7 @@ func continueCandidate(candidates []protocol.WorkerModelCandidate, harness, mode
 }
 
 // continueLeftOutReason is why the check did not keep the old model: the
-// gate's skip (paused, floor, quota, cooling), else the ranker's reason.
+// gate's skip (paused, floor, quota), else the ranker's reason.
 func continueLeftOutReason(checked ChooseResult, old protocol.WorkerModelCandidate, level string, err error) string {
 	for _, s := range checked.Skips {
 		if s.Candidate.Key() == old.Key() {

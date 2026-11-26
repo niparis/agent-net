@@ -522,7 +522,7 @@ One row per worker start holding the difficulty judge's verdict on the task: sco
 - **Columns:** `run_id`, `session_id`, `started_at`, `assessed_at`, `reasoning`, `scope`, `coupling`, `uncertainty`, `verification`, `risk`, `d`, `label`, `bottleneck`, `confidence`, `rules_version`, `judge_harness`, `judge_model`, `reasons`, `picker_label`, `error`, `picker_note`
 - **Rows on 2026-11-22:** 2218
 - **Written by:** `gateway/worker_assessment.go:recordWorkerAssessment`
-- **Read by:** `gateway/model_health.go:ModelHealth`, `gateway/model_health.go:load`, `gateway/picker.go:pickerTaskRecordsUsing`, `gateway/store.go:AnnounceNotify`, `gateway/worker_assessment.go:WorkerAssessment`, `gateway/worker_log.go:workerRunLookups`
+- **Read by:** `gateway/picker.go:pickerTaskRecordsUsing`, `gateway/store.go:AnnounceNotify`, `gateway/worker_assessment.go:WorkerAssessment`, `gateway/worker_log.go:workerRunLookups`
 - **Shown in:** TUI: Quotas (Workers log, Difficulty details), tool: agent_workers_find
 - **Kept:** for ever
 
@@ -555,7 +555,7 @@ One row per worker run: which machine, harness and model, how it ended, how long
 - **Columns:** `id`, `node_id`, `session_id`, `harness`, `model`, `outcome`, `started_at`, `ended_at`, `run_seconds`, `continue_count`, `fix_count`, `caller`, `difficulty`, `counters_known`, `touches`, `difficulty_used`, `auto_continue_count`, `task_id`, `midrun_count`, `caller_session_id`, `caller_agent_id`, `files_changed`, `lines_changed`, `worker_complete`, `early_quit`, `struggle_failed`, `struggle_repeats`, `struggle_retries`, `struggle_exploration`, `struggle_env`, `struggle_top`, `struggle_trace`, `struggle_capped`, `cause`, `usage_in`, `usage_out`, `usage_reasoning`, `usage_cache_read`, `usage_cache_write`, `cost_usd`, `run_generation`, `proof_unavailable`, `offered_at`, `rate_asked`
 - **Rows on 2026-11-22:** 2637
 - **Written by:** `gateway/ratings.go`, `gateway/rework_backfill.go`, `gateway/session_replace.go`, `gateway/store_record.go`, `gateway/task_rework_backfill.go`, `gateway/track.go`, `gateway/worker_cause.go`
-- **Read by:** `gateway/context_resolver.go`, `gateway/delivery_tasks.go`, `gateway/intake_feeds.go`, `gateway/loop.go`, `gateway/member_loop.go`, `gateway/model_health.go`, `gateway/quota_burn.go`, `gateway/ratings.go`, `gateway/rework_backfill.go`, `gateway/runs_snapshot.go`, `and others`
+- **Read by:** `gateway/context_resolver.go`, `gateway/delivery_tasks.go`, `gateway/intake_feeds.go`, `gateway/loop.go`, `gateway/member_loop.go`, `gateway/quota_burn.go`, `gateway/ratings.go`, `gateway/rework_backfill.go`, `gateway/runs_snapshot.go`, `and others`
 - **Shown in:** TUI, Quotas (Workers log), tool `agent_workers_find`
 - **Kept:** Forever by default; the gateway flag keep-worker-runs can prune runs older than a set time.
 

@@ -37,11 +37,10 @@ const (
 // its row at run time; the owner's own start is the one exception, and the
 // start turns the floor off before it asks for the row.
 type Policy struct {
-	Ranker        Ranker
-	Checks        Checks
-	Pace          bool
-	ProtectedLast bool
-	Rotation      bool
+	Ranker   Ranker
+	Checks   Checks
+	Pace     bool
+	Rotation bool
 	// DecideOnly is set for a preview or backtest: the path returns the
 	// candidate but starts nothing.
 	DecideOnly bool
@@ -54,16 +53,15 @@ func PolicyFor(purpose Purpose) Policy {
 	switch purpose {
 	case PurposeWorkerAutomatic:
 		return Policy{
-			Ranker:        RankCost,
-			Checks:        Checks{Floor: true, Block90: true, Burn: true, Cooling: true},
-			Pace:          true,
-			ProtectedLast: true,
-			Rotation:      true,
+			Ranker:   RankCost,
+			Checks:   Checks{Floor: true, Block90: true, Burn: true},
+			Pace:     true,
+			Rotation: true,
 		}
 	case PurposeWorkerNamed:
 		return Policy{
 			Ranker: RankFixed,
-			Checks: Checks{Floor: true, Block90: true, Burn: true, Cooling: true},
+			Checks: Checks{Floor: true, Block90: true, Burn: true},
 		}
 	case PurposeOwnerNamed:
 		return Policy{Ranker: RankFixed}
@@ -71,16 +69,12 @@ func PolicyFor(purpose Purpose) Policy {
 		return Policy{Ranker: RankSame}
 	case PurposeDifficultyJudge:
 		return Policy{
-			Ranker:        RankFixed,
-			Checks:        Checks{Floor: true, Block90: true, Burn: true, Cooling: true},
-			Pace:          true,
-			ProtectedLast: true,
+			Ranker: RankFixed,
+			Checks: Checks{Floor: true, Block90: true, Burn: true},
+			Pace:   true,
 		}
 	case PurposeRole:
-		return Policy{
-			Ranker: RankFixed,
-			Checks: Checks{Cooling: true},
-		}
+		return Policy{Ranker: RankFixed}
 	case PurposePreview:
 		policy := PolicyFor(PurposeWorkerAutomatic)
 		policy.DecideOnly = true
