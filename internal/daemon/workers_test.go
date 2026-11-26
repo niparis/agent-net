@@ -517,6 +517,10 @@ func TestWorkerStopKillsAProcessThatIgnoresTerm(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.KillGrace = 300 * time.Millisecond
+	// The fake server is a whole test binary. Under a large test set on a
+	// loaded machine its start can exceed the short default, so give it the
+	// same wider bound as the other harness tests. It only delays a failure.
+	set.StartTimeout = scaled(30 * time.Second)
 	w := startWorkerNode(t, g, set, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)

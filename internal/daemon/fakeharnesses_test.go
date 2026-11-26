@@ -444,9 +444,17 @@ func fakeClaudeCLI() {
 		os.Exit(1)
 	}
 	spid := cmd.Process.Pid
-	cmd.Process.Release()
+	exited := make(chan struct{})
+	go func() {
+		cmd.Wait()
+		close(exited)
+	}()
 	var sf claudeSessionFile
-	deadline := time.Now().Add(scaled(5 * time.Second))
+	// The daemon owns the start deadline, so the fake must not give up on a
+	// loaded machine before the daemon does. It fails here only when the
+	// session process itself is gone without writing its file.
+	deadline := time.Now().Add(scaled(2 * time.Minute))
+	sawExit := false
 	for time.Now().Before(deadline) {
 		if raw, err := os.ReadFile(filepath.Join(dir, strconv.Itoa(spid)+".json")); err == nil && json.Unmarshal(raw, &sf) == nil && (sf.JobID != "" || os.Getenv("FAKE_CLAUDE_NO_JOB_ID") != "" && len(sf.SessionID) >= 8) {
 			job := sf.JobID
@@ -472,7 +480,16 @@ func fakeClaudeCLI() {
 			}
 			return
 		}
-		time.Sleep(10 * time.Millisecond)
+		select {
+		case <-exited:
+			if sawExit {
+				fmt.Println("the session did not start")
+				os.Exit(1)
+			}
+			// The session may have written its file just before it exited.
+			sawExit = true
+		case <-time.After(10 * time.Millisecond):
+		}
 	}
 	fmt.Println("the session did not start")
 	os.Exit(1)
@@ -1522,5 +1539,36 @@ func fakeCodex() {
 	if err := http.ListenAndServe(listen, handler); err != nil {
 		fmt.Fprintln(os.Stderr, "fake codex:", err)
 		os.Exit(1)
+	}
+}
+
+// The fake `claude --bg` reports a session process that is gone at once,
+// instead of waiting out a timer while the daemon still waits for it.
+func TestFakeClaudeReportsASessionThatExitsAtOnce(t *testing.T) {
+	dir := t.TempDir()
+	sessions := filepath.Join(dir, "sessions")
+	if err := os.MkdirAll(sessions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envFakeClaude, "1")
+	t.Setenv(envFakeClaudeSessions, sessions)
+	// A folder that does not exist makes the session process exit before it
+	// writes its session file.
+	t.Setenv(envFakeClaudeSockets, filepath.Join(dir, "missing"))
+	cmd := exec.Command(os.Args[0], "--bg", "--name", "test")
+	cmd.Dir = dir
+	out := make(chan []byte, 1)
+	go func() {
+		b, _ := cmd.CombinedOutput()
+		out <- b
+	}()
+	select {
+	case b := <-out:
+		if !strings.Contains(string(b), "the session did not start") {
+			t.Fatalf("the fake claude said %q", b)
+		}
+	case <-time.After(2 * time.Second):
+		cmd.Process.Kill()
+		t.Fatal("the fake claude kept waiting after its session process exited")
 	}
 }

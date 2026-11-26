@@ -8,6 +8,39 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// stopAndCleanWorkerRecord stops the daemon and deletes the worker's gateway
+// record the way gateway cleanup does. The gateway answers each request in its
+// own goroutine, so a late update from the stopped daemon can land after Stop
+// returns and write the record again. Wait until the node is offline, then
+// repeat the cleanup until the record stays deleted.
+func stopAndCleanWorkerRecord(t *testing.T, g *testGateway, d *Daemon, sessionID string) {
+	t.Helper()
+	d.Stop()
+	eventually(t, "the gateway sees the node offline", func() bool {
+		info, err := g.gw.NodesInfo()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range info.Nodes {
+			if n.NodeID == d.NodeID() {
+				return !n.Online
+			}
+		}
+		return true
+	})
+	st := g.gw.Store()
+	eventually(t, "the worker record stays deleted", func() bool {
+		if err := st.SetSessionOffline(d.NodeID(), sessionID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.CleanWorkers(d.NodeID(), time.Nanosecond, nil); err != nil {
+			t.Fatal(err)
+		}
+		_, ok, err := st.Agent(sessionID)
+		return err == nil && !ok
+	})
+}
+
 // An adopted worker keeps its session ID across a daemon restart, even when
 // its gateway record is old-style (no start time) and offline at the first
 // cleanup, and even when the gateway lost the record.
@@ -35,33 +68,10 @@ func TestAdoptedWorkerKeepsItsSessionID(t *testing.T) {
 	if _, err := st.UpsertSession(w.d.NodeID(), info); err != nil {
 		t.Fatal(err)
 	}
-	w.d.Stop()
 	// The gateway answers each request in its own goroutine, so a late update
 	// from the stopped daemon can bring the record back. Wait until the node is
 	// gone, then repeat the cleanup until the record stays deleted.
-	eventually(t, "the gateway sees the node offline", func() bool {
-		info, err := g.gw.NodesInfo()
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, n := range info.Nodes {
-			if n.NodeID == w.d.NodeID() {
-				return !n.Online
-			}
-		}
-		return true
-	})
-	// What the broken cleanup did: the offline record is gone.
-	eventually(t, "setup: the record is deleted", func() bool {
-		if err := st.SetSessionOffline(w.d.NodeID(), res.SessionID); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := st.CleanWorkers(w.d.NodeID(), time.Nanosecond, nil); err != nil {
-			t.Fatal(err)
-		}
-		_, ok, _ := st.Agent(res.SessionID)
-		return !ok
-	})
+	stopAndCleanWorkerRecord(t, g, w.d, res.SessionID)
 	w.node.restart()
 	w.cli = cliClient(t, w.node)
 	eventually(t, "the adopted worker is back under its session ID", func() bool {
@@ -104,17 +114,7 @@ func TestAdoptedCodexKeepsItsSessionIDAfterRecordCleanup(t *testing.T) {
 	w.register(t, repo)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: "FAKE:slow"})
 	readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 1 })
-	w.d.Stop()
-	st := g.gw.Store()
-	if err := st.SetSessionOffline(w.d.NodeID(), res.SessionID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.CleanWorkers(w.d.NodeID(), time.Nanosecond, nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok, err := st.Agent(res.SessionID); err != nil || ok {
-		t.Fatalf("worker record remains: exists=%v err=%v", ok, err)
-	}
+	stopAndCleanWorkerRecord(t, g, w.d, res.SessionID)
 	w.node.restart()
 	w.cli = cliClient(t, w.node)
 	eventually(t, "adopted Codex keeps its session ID", func() bool {
