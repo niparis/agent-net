@@ -202,7 +202,7 @@ func leadAskBody(s *Store, item protocol.InboxItem, team string) string {
 		b.WriteString("\n\nOptions: " + strings.Join(item.Options, " | "))
 	}
 	b.WriteString("\n\nAnswer with agent_message_reply to this message. The owner always holds back " + protocol.AlwaysHeldBack +
-		": if this needs the owner, ask them yourself with agent_owner_ask.")
+		": if this needs the owner, send a request to the chief of staff with agent_message_send, saying what you need, why only the owner can decide, and your recommendation.")
 	return b.String()
 }
 

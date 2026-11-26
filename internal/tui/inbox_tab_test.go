@@ -11,7 +11,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/termenv"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -109,7 +108,7 @@ func inboxAllKindsModel(w, h int) (Model, *inboxOpsSource) {
 	return m, src
 }
 
-func openInbox(m Model) Model { return keys(m, "6") }
+func openInbox(m Model) Model { return openDesk(m) }
 
 func inboxRowIndex(m Model, kind string) int {
 	for i, row := range m.inboxRows() {
@@ -118,43 +117,6 @@ func inboxRowIndex(m Model, kind string) int {
 		}
 	}
 	return -1
-}
-
-func TestInboxTabOpensWithSeven(t *testing.T) {
-	m := openInbox(newModel(100, 30))
-	if m.tab != inboxTab {
-		t.Fatalf("7 opened tab %d, want Inbox", m.tab)
-	}
-	if !strings.Contains(ansi.Strip(m.testView()), "Desk · ") {
-		t.Fatal("the Desk view is missing")
-	}
-}
-
-func TestInboxTabLabelShowsTheCount(t *testing.T) {
-	m := newModel(120, 34)
-	title := ansi.Strip(m.titleLine(120))
-	if !strings.Contains(title, "6 Desk") || strings.Contains(title, "6 Desk (") {
-		t.Fatalf("zero count label: %q", title)
-	}
-
-	m, _ = inboxAllKindsModel(120, 34)
-	title = ansi.Strip(m.titleLine(120))
-	want := fmt.Sprintf("6 Desk (%d)", m.waitingCount())
-	if !strings.Contains(title, want) {
-		t.Fatalf("label %q does not hold %q", title, want)
-	}
-}
-
-func TestInboxTabLabelUsesTheWarningColour(t *testing.T) {
-	old := testColorProfile
-	setTestColorProfile(termenv.TrueColor)
-	defer setTestColorProfile(old)
-	m, _ := inboxAllKindsModel(120, 34)
-	title := m.titleLine(120)
-	want := sNeeds.Render(fmt.Sprintf("6 Desk (%d)", m.waitingCount()))
-	if !strings.Contains(title, want) {
-		t.Fatalf("count label is not in the warning colour: %q", ansi.Strip(title))
-	}
 }
 
 func TestInboxListsEveryKindWithItsActions(t *testing.T) {
@@ -390,9 +352,9 @@ func TestSessionsShowsTheInboxSummaryAndNoNeedsRows(t *testing.T) {
 	m, _ := inboxAllKindsModel(120, 34)
 	m = keys(m, "1")
 	view := ansi.Strip(m.testView())
-	want := fmt.Sprintf("Desk: %d to decide", m.waitingCount())
-	if !strings.Contains(view, want) {
-		t.Fatalf("Sessions lacks %q:\n%s", want, view)
+	// The Desk count is hidden since decision 0196.
+	if strings.Contains(view, "to decide") {
+		t.Fatalf("Sessions shows a Desk count:\n%s", view)
 	}
 	if strings.Contains(view, "deploy abc") {
 		// The waiting text belongs to the Inbox tab, not the Sessions table.
@@ -748,8 +710,8 @@ func TestInboxAlreadyAnsweredIsNotGone(t *testing.T) {
 // selected ask: a tab switch that silently answers in the owner's name is
 // worse than a lost key.
 func TestDeskDigitsSwitchTabsOnAQuestion(t *testing.T) {
-	want := []int{sessionsTab, graphTab, quotasTab, messagesTab, settingsTab, inboxTab}
-	for i, key := range []string{"1", "2", "3", "4", "5", "6"} {
+	want := []int{sessionsTab, graphTab, quotasTab, messagesTab, settingsTab}
+	for i, key := range []string{"1", "2", "3", "4", "5"} {
 		m, src := inboxAllKindsModel(120, 34)
 		setAskOptions(t, &m, "i_question", []string{"one", "two", "three", "four"})
 		m = openInbox(m)
@@ -768,8 +730,8 @@ func TestDeskDigitsSwitchTabsOnAQuestion(t *testing.T) {
 }
 
 func TestDeskDigitsSwitchTabsOnAnApproval(t *testing.T) {
-	want := []int{sessionsTab, graphTab, quotasTab, messagesTab, settingsTab, inboxTab}
-	for i, key := range []string{"1", "2", "3", "4", "5", "6"} {
+	want := []int{sessionsTab, graphTab, quotasTab, messagesTab, settingsTab}
+	for i, key := range []string{"1", "2", "3", "4", "5"} {
 		m, src := inboxAllKindsModel(120, 34)
 		setAskOptions(t, &m, "i_app", []string{"one", "two", "three", "four"})
 		m = openInbox(m)
@@ -789,8 +751,8 @@ func TestDeskDigitsSwitchTabsOnAnApproval(t *testing.T) {
 
 // The details are not a modal, so the tab keys stay live there too.
 func TestDeskDetailDigitsSwitchTabs(t *testing.T) {
-	want := []int{sessionsTab, graphTab, quotasTab, messagesTab, settingsTab, inboxTab}
-	for i, key := range []string{"1", "2", "3", "4", "5", "6"} {
+	want := []int{sessionsTab, graphTab, quotasTab, messagesTab, settingsTab}
+	for i, key := range []string{"1", "2", "3", "4", "5"} {
 		m, src := inboxAllKindsModel(120, 34)
 		setAskOptions(t, &m, "i_question", []string{"one", "two", "three", "four"})
 		m = openInbox(m)

@@ -259,4 +259,7 @@ type AskRedirect struct {
 	MessageID   string `json:"message_id"`
 	ItemID      string `json:"item_id"`
 	Note        string `json:"note"`
+	// Chief is true when the ask went to the chief of staff as a request
+	// (decision 0196), not to a team lead.
+	Chief bool `json:"chief,omitempty"`
 }

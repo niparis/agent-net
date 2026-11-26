@@ -53,10 +53,9 @@ func TestAnnounceRuleIsMandatory(t *testing.T) {
 			"At the start of every session, before other work, call `agent_announce` with your current task in one short line.",
 			"Call it again whenever your task changes.",
 			"AGENTS.md automatically",
-			// The owner's words, 2026-11-12: "the question should be in the
-			// chat AND follow the route".
-			"Ask me an owner question in your chat, on a line that starts with \"Owner question:\", and also send it with `agent_owner_ask`",
-			"it goes to the chief of staff and the Desk",
+			// The owner's words, 2026-11-26 (decision 0196): "why cant agents
+			// just use messages to send their asks to chief".
+			"When you need me, send a request to the chief of staff with `agent_message_send`, saying what you need, why only I can decide, and your recommendation.",
 			"Before asking the owner, search what he already decided: agent_owner_judgments_find",
 		} {
 			if !strings.Contains(b, want) {

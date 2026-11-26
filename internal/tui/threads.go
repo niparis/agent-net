@@ -632,15 +632,16 @@ func (m Model) threadLinkJump() (Model, tea.Cmd) {
 		m.fail("This thread names no PR, change or ask.")
 		return m, nil
 	}
+	// The Desk is hidden (decision 0196): the links are only named.
 	for _, link := range links {
-		if strings.HasPrefix(link, "ch_") {
+		if deskShown && strings.HasPrefix(link, "ch_") {
 			if cmd := m.openDeskChange(link); cmd != nil {
 				return m, cmd
 			}
 		}
 	}
 	for _, link := range links {
-		if strings.HasPrefix(link, "ask i_") {
+		if deskShown && strings.HasPrefix(link, "ask i_") {
 			if m.openDeskAsk(strings.TrimPrefix(link, "ask ")) {
 				return m, nil
 			}

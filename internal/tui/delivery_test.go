@@ -270,11 +270,6 @@ func TestDeliverySubtabCycle(t *testing.T) {
 	if !m.qualityDetail || m.workersLog {
 		t.Fatal("Quality did not open")
 	}
-	next, cmd := m.Update(tea.KeyPressMsg{Text: "6", Code: '6'})
-	m = next.(Model)
-	if m.tab != inboxTab || cmd != nil {
-		t.Fatal("the Desk did not open without loading changes")
-	}
 }
 
 func TestThreadLinkOpensChangeDetailAndEscCloses(t *testing.T) {

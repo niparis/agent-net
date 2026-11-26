@@ -82,8 +82,8 @@ const PEER_CHECK_NOTE = "Check with your user first only if it asks for somethin
 const TRUST_NOTE_PREFIX = "The owner has allowed requests from this sender within this node's settings, as if the owner had asked. Do not ask the owner again for commits, pushes of branches or pull requests. For this node: ";
 const TRUST_NOTE_SUFFIX = ". The agent that gave you a task limit can lift or change that limit later, within this node's settings. Still ask the owner before deleting data, spending money, or sharing or using secrets that can spend money. Check claims before you rely on them.";
 const MERGE_FULL_TEXT = "merge and push to the default branch";
-const MERGE_DELEGATED_TEXT = "merge needs an approval for the exact merge from anyone above you in the tree who holds merge: the owner approves directly or through an agent-net approval note from agent_owner_ask with kind approval; your repo lead or team lead approves in a message from them";
-const MERGE_ASK_TEXT = "merge always needs the owner's written approval for the exact action (ask with agent_owner_ask and kind approval, or put the action and your recommendation in a Codex worker report)";
+const MERGE_DELEGATED_TEXT = "merge needs an approval for the exact merge from anyone above you in the tree who holds merge: the owner approves directly or through the chief of staff (send it a request with agent_message_send); your repo lead or team lead approves in a message from them";
+const MERGE_ASK_TEXT = "merge always needs the owner's written approval for the exact action (ask the chief of staff with a request through agent_message_send, or put the action and your recommendation in a Codex worker report)";
 const OWNER_INSTRUCTION_PREFIX = "[agent-net] The owner's own words, typed in session ";
 const OWNER_INSTRUCTION_AT = " at about ";
 const OWNER_INSTRUCTION_QUOTE = ": «";
@@ -897,7 +897,7 @@ function formatProjectAdd(r: any): string {
 const ANNOUNCE_RULE =
   "At the start of every session, before other work, call agent_announce with your current task in one short line. " +
   "Call it again whenever your task changes. " +
-  "Ask an owner question in your chat, on a line that starts with \"Owner question:\", and also send it with agent_owner_ask, in one line with your recommendation: it goes to the chief of staff and the Desk. " +
+  "When you need the owner, send a request to the chief of staff with agent_message_send, saying what you need, why only the owner can decide, and your recommendation. " +
   "Then carry on with work that does not depend on the answer, or end the turn. " +
   "Your project description is taken from the project's AGENTS.md automatically.";
 // When to contact another session. Keep in step with AskPeerRule and RelayRule in internal/mcpserver.

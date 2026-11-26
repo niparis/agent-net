@@ -76,7 +76,7 @@ func withLocal(b keyBinding) keyBinding {
 // globalHelpRows is the fixed Global keys list. It is written once here and
 // never built by joining other contexts' labels.
 var globalHelpRows = []struct{ keys, help string }{
-	{"1-6", "switch tabs: Sessions, Graph, Quotas, Messages, Settings, Desk"},
+	{"1-5", "switch tabs: Sessions, Graph, Quotas, Messages, Settings"},
 	{"enter", "go into the selected thing"},
 	{"arrows, j/k", "move"},
 	{"esc", "back; first clears a filter you typed"},
@@ -92,7 +92,7 @@ var globalHelpRows = []struct{ keys, help string }{
 // globalSameKeys are the keys the Global list describes. A tab section hides
 // one unless the binding is marked local and so means something different.
 var globalSameKeys = []string{
-	"1", "2", "3", "4", "5", "6", "enter", "up", "down", "left", "right", "j", "k",
+	"1", "2", "3", "4", "5", "enter", "up", "down", "left", "right", "j", "k",
 	"esc", "/", "R", "c", "C", "?", "q", "ctrl+c", "ctrl+p",
 }
 
@@ -134,7 +134,6 @@ var keyBindings = []keyBinding{
 	bind(contextGlobal, "3", "quotas tab", "Quotas", -1),
 	bind(contextGlobal, "4", "messages tab", "Messages", -1),
 	bind(contextGlobal, "5", "settings tab", "Settings", -1),
-	bind(contextGlobal, "6", "inbox tab", "Desk", -1),
 	withHelp(bind(contextGlobal, tabs.CTOKey, "open CTO", "open CTO", -1), "open the CTO session"),
 	withHelp(bind(contextGlobal, "C", "focus CTO", "focus CTO box", -1), "focus the CTO box for its own keys: enter opens the full CTO, ctrl+] returns, esc skips a tip"),
 	withHelp(bind(contextGlobal, "ctrl+p", "find session", "find session", -1), "find a session by name, project, folder, machine or task"),

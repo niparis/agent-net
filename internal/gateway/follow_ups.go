@@ -185,7 +185,7 @@ func (s *Store) checkFollowUps() error {
 			var node string
 			_ = tx.QueryRow(`SELECT COALESCE(repo_project,'') FROM sessions WHERE id=?`, f.waiter).Scan(&node)
 			item := protocol.InboxItem{
-				Kind: protocol.AskKindQuestion, SessionID: f.waiter, Node: node, NextWho: protocol.AskNextChief,
+				Kind: protocol.AskKindQuestion, FromKind: protocol.AskFromGateway, SessionID: f.waiter, Node: node, NextWho: protocol.AskNextChief,
 				SourceRef: "follow-up:" + f.id, MessageID: f.messageID, ConversationID: f.conversationID,
 				Text: text, Options: []string{"wait", "close"},
 			}

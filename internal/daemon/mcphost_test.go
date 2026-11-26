@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/niparis/agent-net/internal/gateway"
 	"github.com/niparis/agent-net/internal/integrations"
 	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -27,6 +28,9 @@ const helperEnv = "AGENT_NET_TEST_MCP_SERVER"
 // TestMain lets the test binary double as a stdio MCP server: a hosted server
 // is started with this binary and the helper variable set.
 func TestMain(m *testing.M) {
+	// The tests of the Desk code that stays run through a real gateway
+	// (decision 0196). Override starts are refused before the gateway.
+	gateway.KeepDeskItemsForTests()
 	// A test daemon must never run npm. The quota tests use a fake binary.
 	ensureQuotaAXI = func(context.Context, func(string, ...any)) error { return nil }
 

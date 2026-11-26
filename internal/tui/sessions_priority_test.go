@@ -148,7 +148,8 @@ func TestSessionsPriorityIdleAndInbox(t *testing.T) {
 	}
 	m.asks = askItems([]protocol.InboxItem{{ID: "q", SessionID: "kid", Kind: "question", Status: "open"}})
 	view = ansi.Strip(m.testView())
-	if !strings.Contains(view, fmt.Sprintf("Desk: %d to decide", m.waitingCount())) || strings.Contains(view, "waiting in Inbox") {
+	// The Desk count is hidden since decision 0196.
+	if strings.Contains(view, "to decide") || strings.Contains(view, "waiting in Inbox") {
 		t.Fatal(view)
 	}
 	m = keys(m, "v")

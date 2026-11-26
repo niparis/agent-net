@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -166,9 +165,6 @@ func TestFetchPicksUpAChangedInboxMarkerOnAnyTab(t *testing.T) {
 	if got := m.waitingCount(); got != 1 {
 		t.Fatalf("badge = %d, want 1", got)
 	}
-	if line := m.titleLine(160); !strings.Contains(line, "Desk (1)") {
-		t.Fatalf("title %q", line)
-	}
 
 	// The next refresh is quiet again.
 	src.resetCalls()
@@ -209,9 +205,6 @@ func TestFetchChecksGatewayInboxOnAnotherTabEveryTenSeconds(t *testing.T) {
 	}
 	if got := m.waitingCount(); got != 1 {
 		t.Fatalf("badge = %d, want 1", got)
-	}
-	if line := m.titleLine(160); !strings.Contains(line, "Desk (1)") {
-		t.Fatalf("title %q", line)
 	}
 }
 

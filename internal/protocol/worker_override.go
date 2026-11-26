@@ -9,7 +9,14 @@ import (
 // fields are harness, model, provider, effort, not_family and machine on a
 // worker start. A start that sets one goes ahead only when the owner's own
 // words are found in what he typed in any session (owner_words, see
-// owner_words.go), or after one ask on his Desk. The owner's own command line and TUI need no such proof.
+// owner_words.go). Without them the start is refused with OverrideNeedsOwner
+// (decision 0196): there is no Desk ask and no held start. A start held before
+// that change is still answered. The owner's own command line and TUI need no
+// such proof.
+
+// OverrideNeedsOwner is the one line that refuses a start with selection
+// fields and no matching owner words.
+const OverrideNeedsOwner = "model choice needs the owner: ask the chief of staff, then start again with owner_words quoting what he typed"
 
 // How a start with selection fields went ahead, in WorkerStartResult.SelectionPath.
 const (
