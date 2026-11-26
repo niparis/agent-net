@@ -36,7 +36,6 @@ var requestParams = []any{
 	QueryMessage{},
 	QueryConversations{},
 	QueryTeamLead{},
-	WorkersWatch{},
 	MCPCall{},
 	MCPSync{},
 	OwnerSendRequest{},

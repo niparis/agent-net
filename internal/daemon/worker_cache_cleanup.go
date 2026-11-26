@@ -472,11 +472,11 @@ func (d *Daemon) checkDiskWarning(ctx context.Context, now time.Time) error {
 	}
 	// Reserve the transition so concurrent checks cannot report twice.
 	d.diskWarningUpdating = true
-	active, checked := d.diskWarningActive, d.diskWarningChecked
+	active, cleared := d.diskWarningActive, d.diskWarningCleared
 	d.diskWarnMu.Unlock()
 	defer func() {
 		d.diskWarnMu.Lock()
-		d.diskWarningActive, d.diskWarningChecked = active, checked
+		d.diskWarningActive, d.diskWarningCleared = active, cleared
 		d.diskWarningUpdating = false
 		d.diskWarnMu.Unlock()
 	}()
@@ -517,36 +517,27 @@ func (d *Daemon) checkDiskWarning(ctx context.Context, now time.Time) error {
 			}
 			return err
 		}
-		active, checked = true, true
+		active, cleared = true, false
 		if !wasActive && d.log != nil {
 			d.Logf("disk.warning raised: %.1f%% used", pct)
 		}
 		return nil
 	}
 
-	if pct < warnThreshold {
-		// A restart leaves no warning in memory. The first low check resolves an
-		// entry an earlier run left open; a warning this run raised stays until
-		// usage falls below the clear mark.
-		cleared := false
-		if active && pct < clearThreshold {
-			cleared = true
-		}
-		if cleared || (!active && !checked) {
-			if _, err := d.call(ctx, "intake.report", protocol.IntakeReport{Kind: protocol.IntakeDiskSpace, Subject: diskIntakeSubject, Resolved: true}); err != nil {
-				if d.log != nil {
-					d.Logf("disk.warning clear error: %v", err)
-				}
-				return err
-			}
-		}
-		if cleared {
-			active = false
+	// Between the marks the warning keeps its state. Below the clear mark it is
+	// resolved once: either this run raised it, or a restart lost that fact and
+	// an earlier run may have left the entry open.
+	if pct < clearThreshold && (active || !cleared) {
+		if _, err := d.call(ctx, "intake.report", protocol.IntakeReport{Kind: protocol.IntakeDiskSpace, Subject: diskIntakeSubject, Resolved: true}); err != nil {
 			if d.log != nil {
-				d.Logf("disk.warning cleared: %.1f%% used", pct)
+				d.Logf("disk.warning clear error: %v", err)
 			}
+			return err
 		}
-		checked = true
+		if active && d.log != nil {
+			d.Logf("disk.warning cleared: %.1f%% used", pct)
+		}
+		active, cleared = false, true
 	}
 
 	return nil

@@ -2614,6 +2614,7 @@ yet, 3 for a digest line. The CTO reads the open rows, newest first, with
 | `quota` | provider | the gateway: a usage report with a used-up window, a start refused by the worker floor, or a start refused because the provider has no quota left; a usable reading with room closes it | the alert repeats for over an hour |
 | `claude_mouse` | machine/claude | the daemon's mouse notice (one per key per day); it no longer goes to the Desk log or the CTO chat | never: a digest line |
 | `phone_paired` | the device | a phone paired by Tailscale sign-in; it is no longer an owner notice. The device shows in Connected apps | never: a digest line |
+| `disk_warning` | machine | the daemon, when the filesystem holding the daemon state directory or either Go build cache is 85% used; a drop below 80% resolves it | the alert repeats for over an hour |
 | `picker_override` | the start | reserved; held overrides go to the chief first (decision 0151) | never |
 
 A daemon reports its kinds with the frame `intake.report` (`kind`, `subject`,

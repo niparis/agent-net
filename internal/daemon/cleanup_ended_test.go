@@ -291,3 +291,25 @@ func TestCleanupEndedWorkerEveryHarness(t *testing.T) {
 		})
 	}
 }
+
+// A cleanup pass in flight when the daemon shuts down stops at the next
+// project or worktree. A canceled git command is expected then, not a cleanup
+// failure, so it must not add one "context canceled" line per unit.
+func TestCleanupStopsAtShutdownWithoutCanceledGitErrors(t *testing.T) {
+	f := newEndedFixture(t)
+	f.endWorker("w_shutdown", "opencode")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	answer := f.d.cfg.testGatewayCall
+	f.d.cfg.testGatewayCall = func(c context.Context, typ string, params any) (json.RawMessage, bool, error) {
+		raw, ok, err := answer(c, typ, params)
+		if typ == "query.projects" {
+			cancel()
+		}
+		return raw, ok, err
+	}
+	f.d.cleanupProjects(ctx)
+	if got := f.logs.String(); strings.Contains(got, "context canceled") {
+		t.Fatalf("a shutdown logged canceled git commands:\n%s", got)
+	}
+}

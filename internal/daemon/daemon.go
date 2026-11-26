@@ -556,7 +556,6 @@ type Daemon struct {
 	cancel          context.CancelFunc
 	workerStreamCtx context.Context
 	topics          topicHub
-	panel           workersPanelCache // kept answers of the workers panel query, see workers_panel_cache.go
 	ln              *localServer
 	mcp             *mcpHost
 	catalog         mcpCatalogCache // kept answers to mcp.catalog, see mcp_catalog_cache.go
@@ -684,7 +683,7 @@ type Daemon struct {
 	diskWarnMu          sync.Mutex
 	diskWarningUpdating bool
 	diskWarningActive   bool
-	diskWarningChecked  bool
+	diskWarningCleared  bool
 }
 
 // defaultDetect looks for the harnesses in the usual places. Tests replace it so

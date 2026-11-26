@@ -585,6 +585,57 @@ func TestDiskWarningHysteresis(t *testing.T) {
 	}
 }
 
+// A daemon that restarts with an open entry and finds the disk between the
+// marks leaves it open. Only a drop below the clear mark resolves it, once.
+func TestDiskWarningRestartKeepsOpenEntryBetweenMarks(t *testing.T) {
+	isolateDaemonCaches(t)
+	var reports []protocol.IntakeReport
+	var simPct float64
+	d := &Daemon{
+		cfg: Config{
+			NodeID:   "n_test",
+			Hostname: "test-node",
+			StateDir: t.TempDir(),
+			testGatewayCall: func(ctx context.Context, typ string, params any) (json.RawMessage, bool, error) {
+				if typ == "intake.report" {
+					reports = append(reports, params.(protocol.IntakeReport))
+					return nil, true, nil
+				}
+				return nil, false, nil
+			},
+			testDiskPercent: func(string) (float64, bool) { return simPct, true },
+		},
+	}
+	resolved := func() int {
+		n := 0
+		for _, r := range reports {
+			if r.Resolved {
+				n++
+			}
+		}
+		return n
+	}
+	check := func(pct float64) {
+		t.Helper()
+		simPct = pct
+		if err := d.checkDiskWarning(context.Background(), time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check(84)
+	if resolved() != 0 {
+		t.Fatalf("84%% resolved an entry the earlier daemon may have left open")
+	}
+	check(79)
+	if resolved() != 1 {
+		t.Fatalf("79%% resolves %d times, want 1", resolved())
+	}
+	check(79)
+	if resolved() != 1 {
+		t.Fatalf("a later low check resolved again: %d", resolved())
+	}
+}
+
 // An agent-net-* temp folder the test scripts or a sandbox left behind is
 // removed after six idle hours, while the cache, the Go temp folder and a
 // recent folder stay.
