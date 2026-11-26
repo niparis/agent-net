@@ -87,6 +87,18 @@ func gitOutWithContext(ctx context.Context, dir string, args ...string) (string,
 // gitOutWithEnv is gitOut with extra environment entries for the command, such
 // as a worker's commit hook settings.
 func gitOutWithEnv(ctx context.Context, dir string, extra []string, args ...string) (string, error) {
+	return gitWithInput(ctx, dir, extra, nil, args...)
+}
+
+// gitOutWithInput is gitOut with stdin, for a command that reads paths such as
+// check-ignore --stdin.
+func gitOutWithInput(ctx context.Context, dir string, stdin []byte, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(workerGitCommandTimeout.Load()))
+	defer cancel()
+	return gitWithInput(ctx, dir, nil, stdin, args...)
+}
+
+func gitWithInput(ctx context.Context, dir string, extra []string, stdin []byte, args ...string) (string, error) {
 	path := worktreeGitPath()
 	git := "git"
 	for _, dir := range filepath.SplitList(path) {
@@ -97,6 +109,9 @@ func gitOutWithEnv(ctx context.Context, dir string, extra []string, args ...stri
 		}
 	}
 	cmd := exec.CommandContext(ctx, git, append([]string{"-C", dir}, args...)...)
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
 	base := os.Environ()
 	if len(extra) > 0 {
 		// Extra entries replace inherited command-scope git config and worker
@@ -2118,13 +2133,58 @@ func workerLeftoverSkipped(dir, path string, info os.FileInfo) (bool, error) {
 	return skip || bytes.IndexByte(buf, 0) >= 0, nil
 }
 
+// ignoredForAdd is the set of paths git refuses to add: a path an exclude file
+// matches, which also covers a tracked file inside an ignored folder. Plain
+// check-ignore leaves tracked paths out, so --no-index is what makes this the
+// answer git add gives.
+func ignoredForAdd(ctx context.Context, dir string, paths []string) (map[string]bool, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	var in strings.Builder
+	for _, path := range paths {
+		in.WriteString(path)
+		in.WriteByte(0)
+	}
+	out, err := gitOutWithInput(ctx, dir, []byte(in.String()), "check-ignore", "--no-index", "--stdin", "-z")
+	if err != nil {
+		// check-ignore exits 1 when no path is ignored.
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() == 1 {
+			return nil, nil
+		}
+		return nil, err
+	}
+	ignored := map[string]bool{}
+	for _, path := range strings.Split(out, "\x00") {
+		if path != "" {
+			ignored[path] = true
+		}
+	}
+	return ignored, nil
+}
+
 // stageWorkerLeftovers stages the worker's leftovers: the paths that differ
 // from HEAD, staged or not. Files the harness made for itself are left alone
-// (notWorkerWork), and build output and large files are unstaged and listed.
-// A tracked file that is the same as in HEAD is never listed, however large it
-// is: it is not a leftover.
+// (notWorkerWork), a path git will not add because .gitignore matches it is
+// left out and listed, and build output and large files are unstaged and
+// listed. A tracked file that is the same as in HEAD is never listed, however
+// large it is: it is not a leftover.
 func stageWorkerLeftovers(ctx context.Context, dir string) (string, error) {
 	changes, err := worktreeChanges(ctx, dir)
+	if err != nil {
+		return "", err
+	}
+	var existing []string
+	for _, c := range changes {
+		if notWorkerWork(dir, c) {
+			continue
+		}
+		if _, err := os.Lstat(filepath.Join(dir, c.path)); err == nil {
+			existing = append(existing, c.path)
+		}
+	}
+	ignored, err := ignoredForAdd(ctx, dir, existing)
 	if err != nil {
 		return "", err
 	}
@@ -2144,6 +2204,14 @@ func stageWorkerLeftovers(ctx context.Context, dir string) (string, error) {
 		}
 		if err != nil {
 			return "", err
+		}
+		if ignored[path] {
+			// A file the worker already staged stays in the commit; the
+			// daemon never adds one itself.
+			if !c.staged {
+				excluded = append(excluded, path+" (ignored)")
+			}
+			continue
 		}
 		skip, err := workerLeftoverSkipped(dir, path, info)
 		if err != nil {

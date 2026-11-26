@@ -53,6 +53,43 @@ func TestCommitWorkerEndWIP(t *testing.T) {
 	}
 }
 
+// A tracked file inside a folder that .gitignore matches still appears in git
+// status, but git add refuses it. The WIP save leaves it out and commits the
+// rest, instead of failing the whole commit.
+func TestCommitWorkerEndWIPSkipsTrackedFileInIgnoredFolder(t *testing.T) {
+	repo := t.TempDir()
+	gitRunT(t, repo, "init", "-b", "main")
+	gitRunT(t, repo, "config", "user.name", "Owner")
+	gitRunT(t, repo, "config", "user.email", "owner@example.test")
+	writeFiles(t, repo, map[string]string{"tracked.txt": "base\n", "data/.gitkeep": "base\n"})
+	gitRunT(t, repo, "add", "-A")
+	gitRunT(t, repo, "commit", "-q", "-m", "base")
+	// The ignore rule comes later, as it does in a repository where the folder
+	// is ignored after its placeholder was tracked.
+	writeFiles(t, repo, map[string]string{".gitignore": "data\n"})
+	gitRunT(t, repo, "add", ".gitignore")
+	gitRunT(t, repo, "commit", "-q", "-m", "ignore data")
+	wt := filepath.Join(t.TempDir(), "w_1")
+	gitRunT(t, repo, "worktree", "add", "-q", "-b", "worker", wt)
+	writeFiles(t, wt, map[string]string{"tracked.txt": "work\n", "data/.gitkeep": "work\n"})
+	got := commitWorkerEndWIP(context.Background(), wt, "worker", "stopped")
+	if got.Failed != "" {
+		t.Fatalf("the WIP save failed on an ignored leftover: %+v", got)
+	}
+	if got.SHA == "" || got.Files != 1 {
+		t.Fatalf("unexpected commit result: %+v", got)
+	}
+	if files := gitOutT(t, wt, "show", "--format=", "--name-only", "HEAD"); files != "tracked.txt" {
+		t.Fatalf("committed files: %q", files)
+	}
+	if !strings.Contains(got.Skipped, "data/.gitkeep") {
+		t.Fatalf("the ignored leftover is not named: %+v", got)
+	}
+	if st := gitOutT(t, wt, "status", "--porcelain", "--", "data/.gitkeep"); !strings.Contains(st, "data/.gitkeep") {
+		t.Fatalf("the ignored file was staged or changed: %q", st)
+	}
+}
+
 func TestCommitWorkerEndWIPEmptyDirDoesNothing(t *testing.T) {
 	got := commitWorkerEndWIP(context.Background(), "", "", "lost")
 	if got.Failed != "" || got.SHA != "" {

@@ -184,7 +184,11 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 		if v, ok := a["complete"].(bool); ok {
 			complete = &v
 		}
-		m, err := handbackCall(ctx, run, protocol.WorkerHandbackRequest{Report: str("report"), Status: str("status"), Complete: complete, Files: stringSlice(a["files"]), Friction: frictionList(a["friction"])})
+		evidence, err := visualEvidence(str("user_visible"), str("proof_unavailable"), a["visual_proof"])
+		if err != nil {
+			return nil, err
+		}
+		m, err := handbackCall(ctx, run, protocol.WorkerHandbackRequest{VisualEvidence: evidence, Report: str("report"), Status: str("status"), Complete: complete, Files: stringSlice(a["files"]), Friction: frictionList(a["friction"])})
 		if err != nil {
 			return nil, err
 		}
@@ -429,6 +433,24 @@ func stringSlice(v any) []string {
 	return out
 }
 func boolValue(v any) bool { b, _ := v.(bool); return b }
+
+// visualEvidence reads the proof fields agent_handback advertises. The daemon
+// attaches each frame's manifest when it receives the file; a manifest a
+// worker sends anyway is passed through.
+func visualEvidence(userVisible, proofUnavailable string, proof any) (protocol.VisualEvidence, error) {
+	ev := protocol.VisualEvidence{UserVisible: userVisible, ProofUnavailable: proofUnavailable}
+	if proof == nil {
+		return ev, nil
+	}
+	raw, err := json.Marshal(proof)
+	if err != nil {
+		return ev, fmt.Errorf("visual_proof: %w", err)
+	}
+	if err := json.Unmarshal(raw, &ev.VisualProof); err != nil {
+		return ev, fmt.Errorf("visual_proof: %w", err)
+	}
+	return ev, nil
+}
 
 // frictionList reads the friction entries of a hand-back. The daemon cleans
 // the list: an entry the harness sent with an unknown area or no text is
