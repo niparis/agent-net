@@ -15,9 +15,17 @@ import (
 // be the lead session of the Agent given as its one argument: a lasting
 // session of that Agent, not archived or replaced, not the owner, the CTO, a
 // bot or a merger.
-const leadCandidateSQL = `s.agent_id=? AND s.worker='' AND s.archived_at=0 AND s.replaced_by=''
+var leadCandidateSQL = leadCandidateOfSQL("?")
+
+// leadCandidateOfSQL is leadCandidateSQL for the Agent the SQL expression
+// agent names, so the tree self-check reads the same condition in a join.
+// The test that merger_session is not empty lets SQLite use the partial
+// index repos_merger_session instead of scanning repos for each session.
+func leadCandidateOfSQL(agent string) string {
+	return `s.agent_id=` + agent + ` AND s.worker='' AND s.archived_at=0 AND s.replaced_by=''
 	AND s.harness NOT IN ('owner','cto','bot')
-	AND NOT EXISTS(SELECT 1 FROM repos pm WHERE pm.merger_session=s.id)`
+	AND NOT EXISTS(SELECT 1 FROM repos pm WHERE pm.merger_session=s.id AND pm.merger_session<>'')`
+}
 
 // keepLeadTx holds I1 for one Agent. An Agent that leads nothing has no lead
 // session. An Agent that leads something keeps its lead session while that
