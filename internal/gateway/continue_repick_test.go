@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,6 +36,50 @@ type continueFixture struct {
 	agent  string
 	clock  *clock
 	frames chan protocol.WorkerContinue
+	judge  *continueJudge
+	caps   *machineCaps
+}
+
+// machineCaps is what the fake machine says it supports. The judge capability
+// is on unless a test turns it off, as a daemon from before the changed brief
+// was judged before the pick does.
+type machineCaps struct {
+	mu    sync.Mutex
+	judge bool
+}
+
+func (c *machineCaps) setContinueJudge(on bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.judge = on
+}
+
+func (c *machineCaps) continueJudge() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.judge
+}
+
+// continueJudge is the judge's answer for worker.continue_judge, the call the
+// gateway makes before it picks when the caller adds work to a continue.
+type continueJudge struct {
+	mu sync.Mutex
+	a  protocol.WorkerAssessment
+}
+
+func (j *continueJudge) set(a protocol.WorkerAssessment) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.a = a
+}
+
+func (j *continueJudge) get() protocol.WorkerAssessment {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.a.Label == "" {
+		return protocol.WorkerAssessment{Label: "normal", PickerLabel: "normal", D: protocol.PickerD(nil, "normal"), Confidence: "high", AssessedAt: 1}
+	}
+	return j.a
 }
 
 func continueGateway(t *testing.T) continueFixture {
@@ -58,6 +103,8 @@ func continueGateway(t *testing.T) continueFixture {
 	nc := &nodeConn{id: node, ws: <-accepted, dead: make(chan struct{}), cancel: cancel}
 	setTestConn(t, g, node, nc)
 	frames := make(chan protocol.WorkerContinue, 4)
+	judge := &continueJudge{}
+	caps := &machineCaps{judge: true}
 	go func() {
 		for {
 			_, raw, e := client.Read(ctx)
@@ -66,6 +113,25 @@ func continueGateway(t *testing.T) continueFixture {
 			}
 			var h protocol.Header
 			if json.Unmarshal(raw, &h) != nil {
+				continue
+			}
+			if h.Type == "cto.worker_capabilities" {
+				answer := map[string]bool{"attribution": true, "read_only_enforced": true}
+				if caps.continueJudge() {
+					answer["continue_judge"] = true
+				}
+				b, _ := protocol.EncodeResult(h.ID, answer, nil)
+				var reply protocol.Header
+				_ = json.Unmarshal(b, &reply)
+				nc.answer(reply)
+				continue
+			}
+			if h.Type == "worker.continue_judge" {
+				a := judge.get()
+				b, _ := protocol.EncodeResult(h.ID, protocol.WorkerContinueBrief{Assessment: &a}, nil)
+				var reply protocol.Header
+				_ = json.Unmarshal(b, &reply)
+				nc.answer(reply)
 				continue
 			}
 			if h.Type == "worker.launch" {
@@ -97,7 +163,7 @@ func continueGateway(t *testing.T) continueFixture {
 			nc.answer(reply)
 		}
 	}()
-	return continueFixture{g: g, nc: nc, owner: owner, agent: agent, clock: c, frames: frames}
+	return continueFixture{g: g, nc: nc, owner: owner, agent: agent, clock: c, frames: frames, judge: judge, caps: caps}
 }
 
 // endedWorker is an ended worker of the owner that ran harness and model, and
@@ -158,6 +224,18 @@ func (cf continueFixture) continueAs(t *testing.T, g *Gateway, caller, worker, m
 	t.Helper()
 	ans, err := g.workerStart(t.Context(), cf.nc, protocol.WorkerStartFrame{Owner: caller,
 		WorkerStartRequest: protocol.WorkerStartRequest{Continue: worker, Model: model}})
+	if err != nil {
+		return ans, protocol.WorkerContinue{}, err
+	}
+	return ans, <-cf.frames, nil
+}
+
+// continueWithWork continues the worker with work added to its brief, as a
+// caller does when it adds a task after the old one.
+func (cf continueFixture) continueWithWork(t *testing.T, worker, work string) (protocol.WorkerStartAnswer, protocol.WorkerContinue, error) {
+	t.Helper()
+	ans, err := cf.g.workerStart(t.Context(), cf.nc, protocol.WorkerStartFrame{Owner: cf.owner,
+		WorkerStartRequest: protocol.WorkerStartRequest{Continue: worker, Task: work}})
 	if err != nil {
 		return ans, protocol.WorkerContinue{}, err
 	}
@@ -281,6 +359,70 @@ func TestContinueKeepsAModelThatQualifies(t *testing.T) {
 	}
 	if f.Harness != "" || f.Model != "" || strings.Contains(ans.ModelNote, "continue ") {
 		t.Fatalf("the machine was asked to run %q %q; note %q", f.Harness, f.Model, ans.ModelNote)
+	}
+}
+
+// A continue the caller adds work to is judged again, and the pick meets that
+// new level and D: a model that does not qualify there is replaced, and the
+// note names the new level (amended 0189).
+func TestContinueMeetsThePickerAtTheRejudgedLevel(t *testing.T) {
+	cf := continueGateway(t)
+	cf.setScores(t)
+	worker := cf.endedWorker(t, "opencode", deepseekModel, "normal")
+	cf.judge.set(protocol.WorkerAssessment{Label: "very_complex", PickerLabel: "very_complex", D: protocol.PickerD(nil, "very_complex"), Confidence: "high", AssessedAt: 1})
+	ans, f, err := cf.continueWithWork(t, worker, "also update the docs")
+	if err != nil {
+		t.Fatalf("continue: %v", err)
+	}
+	if f.Harness == "" || f.Model == deepseekModel {
+		t.Fatalf("the machine was asked to run %q %q; note %q", f.Harness, f.Model, ans.ModelNote)
+	}
+	want := "continue moved from opencode " + deepseekModel + " to " + f.Harness + " " + f.Model + " at very_complex"
+	if !strings.Contains(ans.ModelNote, want) {
+		t.Fatalf("note %q lacks %q", ans.ModelNote, want)
+	}
+	if f.Assessment == nil || protocol.WorkerLevel(f.Assessment) != "very_complex" || !f.TaskJudged {
+		t.Fatalf("the re-judged level does not travel with the start: %+v", f.Assessment)
+	}
+}
+
+// The same continue judged at the old label keeps its model: only a new level
+// that leaves the old model out moves the continue.
+func TestContinueAtTheRejudgedOldLabelKeepsTheModel(t *testing.T) {
+	cf := continueGateway(t)
+	cf.setScores(t)
+	worker := cf.endedWorker(t, "opencode", deepseekModel, "normal")
+	cf.judge.set(protocol.WorkerAssessment{Label: "normal", PickerLabel: "normal", D: protocol.PickerD(nil, "normal"), Confidence: "high", AssessedAt: 1})
+	ans, f, err := cf.continueWithWork(t, worker, "also update the docs")
+	if err != nil {
+		t.Fatalf("continue: %v", err)
+	}
+	if f.Harness != "" || f.Model != "" || strings.Contains(ans.ModelNote, "continue moved") {
+		t.Fatalf("the machine was asked to run %q %q; note %q", f.Harness, f.Model, ans.ModelNote)
+	}
+	if f.Assessment == nil || !f.TaskJudged {
+		t.Fatalf("the re-judged level does not travel with the start: %+v", f.Assessment)
+	}
+}
+
+// A machine whose daemon does not judge a changed continue brief before the
+// pick keeps the stored label, as decision 0189 first said: the gateway does
+// not wait for a frame that machine does not know.
+func TestContinueOfAnOlderMachineKeepsTheStoredLabel(t *testing.T) {
+	cf := continueGateway(t)
+	cf.setScores(t)
+	cf.caps.setContinueJudge(false)
+	worker := cf.endedWorker(t, "opencode", deepseekModel, "normal")
+	cf.judge.set(protocol.WorkerAssessment{Label: "very_complex", PickerLabel: "very_complex", D: protocol.PickerD(nil, "very_complex"), Confidence: "high", AssessedAt: 1})
+	ans, f, err := cf.continueWithWork(t, worker, "also update the docs")
+	if err != nil {
+		t.Fatalf("continue: %v", err)
+	}
+	if f.Harness != "" || f.Model != "" || strings.Contains(ans.ModelNote, "continue moved") {
+		t.Fatalf("the machine was asked to run %q %q; note %q", f.Harness, f.Model, ans.ModelNote)
+	}
+	if f.TaskJudged {
+		t.Fatal("the start says a brief was judged that the machine cannot judge before the pick")
 	}
 }
 

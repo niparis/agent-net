@@ -120,10 +120,31 @@ type WorkerContinue struct {
 	// change. The machine that starts the new worker records it with a new
 	// run ID, or assesses the changed brief itself.
 	Assessment *WorkerAssessment `json:"assessment,omitempty"`
+	// TaskJudged says Assessment is the judge's result for the brief with Task
+	// added, made by this machine before the gateway picked. The machine
+	// records it instead of assessing the changed brief again.
+	TaskJudged bool `json:"task_judged,omitempty"`
 	// Task is the extra text of the caller, added after the old first task.
 	Task string `json:"task,omitempty"`
 	// Title replaces the old worker's title when it is set.
 	Title string `json:"title,omitempty"`
+}
+
+// WorkerContinueJudge is "worker.continue_judge", gateway to the machine that
+// ran an ended worker: judge the brief the continue runs when the caller adds
+// work to it, before the gateway picks a model. It starts nothing.
+type WorkerContinueJudge struct {
+	// Session is the old worker's session ID.
+	Session   string `json:"session"`
+	Requester string `json:"requester_session"`
+	// Task is the extra text of the caller, added after the old first task.
+	Task string `json:"task,omitempty"`
+}
+
+// WorkerContinueBrief answers "worker.continue_judge": the judge result the
+// gateway picks the model at, and sends back with worker.continue.
+type WorkerContinueBrief struct {
+	Assessment *WorkerAssessment `json:"assessment,omitempty"`
 }
 
 // WorkerContinued answers "worker.continue".

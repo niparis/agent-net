@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -296,6 +297,38 @@ func TestWorkerContinueKeepsJudgeLabelUnlessBriefChanges(t *testing.T) {
 	changed := startContinue("also update the docs")
 	if a := storedAssessment(t, g, changed.SessionID); a.Label != "trivial" {
 		t.Fatalf("continue with new work kept the old label: %+v", a)
+	}
+}
+
+// A continue whose brief changed is judged once, before the pick. The machine
+// records the result the gateway picked with, and does not judge it again.
+func TestContinueJudgedBriefIsRecordedWithoutJudgingAgain(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	var calls atomic.Int32
+	w := startWorkerNode(t, g, shortSet, withDifficulty(func(c *Config) {
+		c.testAssess = func(context.Context, string, string) *protocol.WorkerAssessment {
+			calls.Add(1)
+			return &protocol.WorkerAssessment{RunID: protocol.NewID("k"), Label: "normal", PickerLabel: "normal", D: protocol.PickerD(nil, "normal"), Confidence: "high", AssessedAt: 1}
+		}
+	}))
+	w.register(t, newRepo(t, "shop"))
+	first := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "FAKE:handback first"})
+	eventually(t, "the first worker ended and was reported", func() bool {
+		rows, _ := w.d.st.workers()
+		return w.d.workerCount() == 0 && len(rows) == 1 && rows[0].Reported
+	})
+	before := calls.Load()
+	judged := protocol.WorkerAssessment{RunID: "k_brief", Label: "hard", PickerLabel: "hard", D: protocol.PickerD(nil, "hard"), Confidence: "high", AssessedAt: 1}
+	out, err := w.d.continueWorker(t.Context(), protocol.WorkerContinue{Session: first.SessionID, Requester: w.ownerID(),
+		Task: "also update the docs", Assessment: &judged, TaskJudged: true})
+	if err != nil {
+		t.Fatalf("continue: %v", err)
+	}
+	if a := storedAssessment(t, g, out.SessionID); a.Label != "hard" {
+		t.Fatalf("the machine judged the changed brief again: %+v", a)
+	}
+	if n := calls.Load() - before; n != 0 {
+		t.Fatalf("the judge ran %d times for the changed brief", n)
 	}
 }
 

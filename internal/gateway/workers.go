@@ -23,6 +23,11 @@ import (
 // launchWait is how long the gateway waits for a machine to start a worker.
 const launchWait = 75 * time.Second
 
+// continueJudgeWait is how long the gateway waits for the machine that ran a
+// worker to judge the changed brief of a continue. It is the judge's share of
+// a start, the same wait the launch gets.
+const continueJudgeWait = 75 * time.Second
+
 // WorkerSessionOwner returns the session that started a worker, from the
 // worker part of its session record. The record is still there when the end
 // report arrives; the run keeps the caller after the session is cleaned. A
@@ -1552,6 +1557,49 @@ func (g *Gateway) workerHarnessOrder(node *protocol.NodeView, model string, requ
 	return out, notes, nil
 }
 
+// supportsContinueJudge asks the machine whether its daemon judges a changed
+// continue brief before the pick. An older daemon answers without the field,
+// so the continue keeps the stored label as before instead of waiting for a
+// frame that daemon does not know.
+func (g *Gateway) supportsContinueJudge(ctx context.Context, target *nodeConn) bool {
+	if target == nil {
+		return false
+	}
+	cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	raw, err := target.call(cctx, "cto.worker_capabilities", nil)
+	if err != nil {
+		return false
+	}
+	var caps struct {
+		ContinueJudge bool `json:"continue_judge"`
+	}
+	return json.Unmarshal(raw, &caps) == nil && caps.ContinueJudge
+}
+
+// judgeContinuedBrief asks the machine that ran the worker to judge the brief
+// a continue runs with the caller's added work, before the pick. It reports
+// false when the machine cannot answer: the continue then keeps the stored
+// label as before.
+func (g *Gateway) judgeContinuedBrief(ctx context.Context, target *nodeConn, session, requester, added string) (*protocol.WorkerAssessment, bool) {
+	if target == nil || added == "" {
+		return nil, false
+	}
+	cctx, cancel := context.WithTimeout(ctx, continueJudgeWait)
+	defer cancel()
+	raw, err := target.call(cctx, "worker.continue_judge", protocol.WorkerContinueJudge{Session: session, Requester: requester, Task: added})
+	if err != nil {
+		g.logLine("worker.continue_judge", "session", session, "err", err)
+		return nil, false
+	}
+	answer, err := decode[protocol.WorkerContinueBrief](raw)
+	if err != nil || answer.Assessment == nil || answer.Assessment.Label == "" {
+		g.logLine("worker.continue_judge", "session", session, "note", "no assessment in the answer")
+		return nil, false
+	}
+	return answer.Assessment, true
+}
+
 // workerContinue starts a new worker from an ended one. The gateway knows the
 // node of each worker session, so it asks the machine that ran the old worker.
 // The machine holds the old task and branch and checks the owner again.
@@ -1658,12 +1706,22 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	if err != nil {
 		return none, err
 	}
-	// A continue that names no model meets the picker's rules of today at the
-	// level stored with the worker. A model that no longer qualifies is
-	// replaced; one the caller named is kept (decision 0189).
+	// A continue that names no model meets the picker's rules of today. A
+	// continue that reused the old label uses the level stored with the
+	// worker. When the caller adds work to the brief, the machine that ran the
+	// worker judges the changed brief first, and the pick meets that level and
+	// D; the machine records the same result, so the brief is judged once
+	// (decision 0189, amended). A model the caller named is kept (decision 0188).
 	var repick continueRepick
-	if p.Model == "" && p.Harness == "" && old.Worker.Assessment != nil {
-		repick, err = g.repickContinue(node, old.Worker.Assessment, harness, continuedModel, "", !(len(validate) > 0 && validate[0]))
+	assessment := old.Worker.Assessment
+	taskJudged := false
+	if p.Model == "" && p.Harness == "" && assessment != nil {
+		if added := p.BriefText(); added != "" && !(len(validate) > 0 && validate[0]) && g.supportsContinueJudge(ctx, target) {
+			if judged, ok := g.judgeContinuedBrief(ctx, target, old.SessionID, p.Owner, added); ok {
+				assessment, taskJudged = judged, true
+			}
+		}
+		repick, err = g.repickContinue(node, assessment, harness, continuedModel, "", !(len(validate) > 0 && validate[0]))
 		if err != nil {
 			return none, err
 		}
@@ -1677,7 +1735,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 		Purpose:    model.PurposeContinueOrResume,
 		Node:       withHarnessInstalled(node, harness),
 		Candidates: []protocol.WorkerModelCandidate{{Name: harness + " " + continuedModel, Harness: harness, Model: continuedModel}},
-		Difficulty: protocol.WorkerLevel(old.Worker.Assessment),
+		Difficulty: protocol.WorkerLevel(assessment),
 		Quotas:     quotas,
 		Floors:     floors,
 		Scores:     scores,
@@ -1694,7 +1752,6 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 		return protocol.WorkerStartAnswer{NodeID: old.NodeID, Hostname: old.Hostname, Project: old.Worker.Project,
 			Harness: harness, Model: continuedModel, ModelNote: repick.note}, nil
 	}
-	assessment := old.Worker.Assessment
 	if repick.moved {
 		// The pick's note and rows travel with the start, so a queued
 		// continue records them when it runs, as a new start does.
@@ -1718,7 +1775,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	}
 	raw, err := target.call(cctx, "worker.continue", protocol.WorkerContinue{StartRef: startRef, Session: old.SessionID, Requester: p.Owner, FromCTO: p.FromCTO, TaskID: taskID,
 		Harness: p.Harness, Model: p.Model, Task: p.BriefText(), Title: p.Title,
-		Assessment: assessment})
+		Assessment: assessment, TaskJudged: taskJudged})
 	if err != nil {
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
 			_ = g.store.markStartUnknown(old.NodeID, startRef)
