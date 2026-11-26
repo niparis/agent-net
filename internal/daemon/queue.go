@@ -133,9 +133,21 @@ func (d *Daemon) queueLoop(ctx context.Context) {
 	}
 }
 
+// stopInterruptedStartNote is the reason the caller gets when a daemon stop
+// interrupts a start that had left the queue. The harness error such a stop
+// causes, like a plugin that did not register or a live model lookup that
+// failed, would read as a broken install. This says only what happened.
+const stopInterruptedStartNote = "a daemon restart interrupted this start while it was launching, so the worker did not run. Start it again when the machine is back"
+
 // processQueue ends the starts that waited too long or lost their owner, then
 // starts the head of the queue if it fits.
 func (d *Daemon) processQueue(ctx context.Context) {
+	// A stop that has begun leaves the queue for the next daemon. A start it
+	// took on its way out could not be looked after, and its launch failure
+	// would read as a broken harness install.
+	if d.stopping() {
+		return
+	}
 	snap := d.SettingsSnapshot()
 	entries, err := d.st.queue()
 	if err != nil || len(entries) == 0 {
@@ -218,21 +230,46 @@ func (d *Daemon) processQueue(ctx context.Context) {
 		return
 	}
 	head := kept[0]
-	d.qmu.Lock()
-	if dec := d.admission(head.Harness, head.Model); !dec.OK || !d.st.removeQueued(head.ID) {
-		d.qmu.Unlock()
+	if !d.takeQueuedHead(head) {
 		return
+	}
+	d.startQueued(ctx, head)
+}
+
+// takeQueuedHead removes a start from the queue when it may go now, and
+// reserves its branch and start time. It takes nothing once Stop has begun:
+// that start stays queued for the next daemon.
+func (d *Daemon) takeQueuedHead(head queuedStart) bool {
+	d.qmu.Lock()
+	defer d.qmu.Unlock()
+	if d.stopping() {
+		return false
+	}
+	if dec := d.admission(head.Harness, head.Model); !dec.OK || !d.st.removeQueued(head.ID) {
+		return false
 	}
 	d.lastStart = time.Now()
 	d.reserveWorkerBaseLocked(head.Base)
 	delete(d.qGone, head.ID)
-	d.qmu.Unlock()
-	d.startQueued(ctx, head)
+	return true
 }
 
 // startQueued starts the worker for a queue entry that has room. The owner's
 // machine sends the task; this machine tells the owner it started.
 func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
+	if d.stopping() {
+		// The stop began after the head left the queue but before anything
+		// launched. Put it back, in its place, for the next daemon.
+		if err := d.st.putQueuedBack(e); err != nil {
+			d.clearStartReservation()
+			d.Logf("worker.not_started queue=%s project=%s harness=%s owner=%s reason=%q", e.ID, e.Project, e.Harness, e.Owner, err.Error())
+			d.notStarted(ctx, e, "the daemon stopped before the start began, and it could not be put back in the queue: "+err.Error())
+			return
+		}
+		d.clearStartReservation()
+		d.Logf("worker.requeued queue=%s project=%s harness=%s owner=%s reason=%q", e.ID, e.Project, e.Harness, e.Owner, "the daemon stopped before the start began")
+		return
+	}
 	if e.ResumeSession != "" {
 		d.startQueuedResume(ctx, e)
 		return
@@ -259,6 +296,14 @@ func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
 	out, err := d.runWorkerStart(ctx, l)
 	if err != nil {
 		d.clearStartReservation()
+		if d.stopping() {
+			// The stop canceled the launch, so the harness error it caused
+			// (a plugin that "did not register", a live model lookup that
+			// failed) is not a reason to reinstall anything.
+			d.Logf("worker.not_started queue=%s project=%s harness=%s owner=%s reason=%q", e.ID, e.Project, e.Harness, e.Owner, stopInterruptedStartNote)
+			d.notStarted(ctx, e, stopInterruptedStartNote)
+			return
+		}
 		d.Logf("worker.not_started queue=%s project=%s harness=%s owner=%s reason=%q", e.ID, e.Project, e.Harness, e.Owner, err.Error())
 		d.notStarted(ctx, e, "the machine had room, but the start failed: "+err.Error())
 		return
@@ -294,6 +339,12 @@ func (d *Daemon) finishQueuedStart(ctx context.Context, e queuedStart, out proto
 	if err != nil {
 		if w != nil {
 			d.endWorker(w, protocol.StopStartFails)
+		}
+		if d.stopping() {
+			// The stop cut the task send, not the harness. The worker has no
+			// task, so it is stopped, and the caller hears what happened.
+			d.notStarted(ctx, e, stopInterruptedStartNote)
+			return
 		}
 		d.notStarted(ctx, e, "the worker started, but its task could not be sent, so it was stopped: "+err.Error())
 		return
@@ -370,6 +421,11 @@ func (d *Daemon) startQueuedResume(ctx context.Context, e queuedStart) {
 	d.resumeMu.Unlock()
 	if err != nil {
 		d.clearStartReservation()
+		if d.stopping() {
+			d.Logf("worker.not_started queue=%s session=%s harness=%s owner=%s reason=%q", e.ID, e.ResumeSession, e.Harness, e.Owner, stopInterruptedStartNote)
+			d.notStarted(ctx, e, stopInterruptedStartNote)
+			return
+		}
 		d.Logf("worker.not_started queue=%s session=%s harness=%s owner=%s reason=%q", e.ID, e.ResumeSession, e.Harness, e.Owner, err.Error())
 		d.notStarted(ctx, e, "the machine had room, but the restart failed: "+err.Error())
 		return
@@ -407,6 +463,10 @@ func (d *Daemon) finishQueuedResume(ctx context.Context, e queuedStart, row work
 	if err != nil {
 		if w != nil {
 			d.endWorker(w, protocol.StopStartFails)
+		}
+		if d.stopping() {
+			d.notStarted(ctx, e, stopInterruptedStartNote)
+			return
 		}
 		d.notStarted(ctx, e, "the worker restarted, but the gateway could not be told: "+err.Error())
 		return
