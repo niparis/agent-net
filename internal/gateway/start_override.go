@@ -20,9 +20,15 @@ import (
 // options chooses neither. The answer goes to the machine that holds the start
 // as a FrameStartDecision, not to the asking session as a message.
 
-// CreateStartOverrideAsk puts the ask on the Desk for a session of the node and
-// keeps its facts on the ask. It stays open when the owner types in the asking session.
+// CreateStartOverrideAsk refuses the ask of an older machine that holds a
+// start (decision 0196): there is no Desk to hold it on. The machine passes the
+// refusal to the caller, so the caller learns to ask the chief and start again
+// with the owner's words. An ask stored before that change is still answered;
+// the Desk tests (keepDeskItems) store one the old way to stand for it.
 func (s *Store) CreateStartOverrideAsk(node string, p protocol.StartOverrideAsk) (protocol.InboxItem, error) {
+	if !s.keepDeskItems {
+		return protocol.InboxItem{}, reject("%s", protocol.OverrideNeedsOwner)
+	}
 	agent, project, name, err := s.askingSession(node, p.Session)
 	if err != nil {
 		return protocol.InboxItem{}, err

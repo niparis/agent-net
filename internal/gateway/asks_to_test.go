@@ -149,7 +149,7 @@ func TestRedirectedAskTellsTheLeadWhatStaysWithTheOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(msg.Body, protocol.AlwaysHeldBack) || !strings.Contains(msg.Body, "agent_owner_ask") {
+	if !strings.Contains(msg.Body, protocol.AlwaysHeldBack) || !strings.Contains(msg.Body, "send a request to the chief of staff with agent_message_send") {
 		t.Fatalf("body lacks the held back line: %q", msg.Body)
 	}
 }

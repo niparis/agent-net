@@ -1701,7 +1701,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_owner_ask",
-    "description": "Ask the owner a question, an approval or an idea, with your recommendation and up to four answers. It goes to the chief of staff, who brings decisions to the owner; carry on, do not wait for the answer. A new ask adds to your pending ones; replaces retires one.",
+    "description": "Prefer agent_message_send: when you need the owner, send a request to the chief of staff, saying what you need, why only the owner can decide, and your recommendation. This tool sends your question, recommendation and up to four answers to the chief as such a request; the reply comes as a message. Carry on, do not wait for the answer.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2759,7 +2759,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_worker_start_override",
-    "description": "The exceptional worker route: start a worker with a harness, model, provider, effort, family or machine you choose. Full freedom, but always needs your owner's approval: a matching owner_words quote lets it start at once; otherwise one ask goes on his Desk and the start waits. Prefer agent_worker_start so the picker chooses. problem and done required; evidence, hypothesis, scope optional; task: extra notes.",
+    "description": "The exceptional worker route: start a worker with a harness, model, provider, effort, family or machine you choose. Full freedom, but always needs your owner's approval: a matching owner_words quote lets it start at once; otherwise the start is refused: ask the chief of staff, then start again with owner_words quoting what he typed. Prefer agent_worker_start so the picker chooses. problem and done required; evidence, hypothesis, scope optional; task: extra notes.",
     "inputSchema": {
       "type": "object",
       "properties": {

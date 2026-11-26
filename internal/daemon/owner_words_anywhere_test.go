@@ -60,21 +60,21 @@ func TestOverrideOwnerWordsTypedOnAnotherMachine(t *testing.T) {
 }
 
 // Words typed four hours ago on another machine are out of the window, and a
-// quote found nowhere is held with one ask, as before.
-func TestOverrideOwnerWordsOldOrNowhereIsHeld(t *testing.T) {
+// quote found nowhere does not count: the start is refused (decision 0196).
+func TestOverrideOwnerWordsOldOrNowhereIsRefused(t *testing.T) {
 	g, w, pi, _ := overrideNode(t)
 	other := startNode(t, g, nodeOpts{cmdline: "pi"})
 	_, leadID := helloPi(t, other, "lead", newRepo(t, "lab"), true)
 	other.d.rememberOwnerPromptAt(leadID, "please start a Codex worker on M2Max for this", time.Now().Add(-4*time.Hour))
 	ctoOwnerSays(t, w.d, "fix the login page first")
-	for i, quote := range []string{"codex worker on m2max", "an opus worker on the mac"} {
+	for _, quote := range []string{"codex worker on m2max", "an opus worker on the mac"} {
 		req := overrideRequest()
-		req.Title = "Held " + string(rune('A'+i))
 		req.OwnerWords = quote
-		res := startFrom(t, pi, req)
-		if res.Status != "accepted" || res.SelectionPath != protocol.SelectionHeld || strings.Contains(res.OwnerLine, "owner_words found") {
-			t.Fatalf("quote %q went ahead: %+v", quote, res)
+		if _, err := pi.call("worker_start", req); err == nil || err.Error() != protocol.OverrideNeedsOwner {
+			t.Fatalf("quote %q: %v", quote, err)
 		}
-		eventually(t, "one ask per held start", func() bool { return len(overrideAsks(g)) == i+1 })
+	}
+	if n := len(overrideAsks(g)); n != 0 {
+		t.Fatalf("%d Desk asks", n)
 	}
 }

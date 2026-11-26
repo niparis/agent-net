@@ -65,7 +65,7 @@ func (s *Store) agentNetReply(tx *sql.Tx, p protocol.MsgSend) (protocol.Message,
 		return none, false, err
 	}
 	if routeFixed != 0 {
-		return none, false, reject("ask %s is a decision only the owner can answer; a reply cannot close it. If it needs the owner, tell them with agent_owner_ask.", askID)
+		return none, false, reject("ask %s is a decision only the owner can answer; a reply cannot close it. If it needs the owner, send a request to the chief of staff with agent_message_send.", askID)
 	}
 	now := s.now()
 	typ := protocol.TypeReply

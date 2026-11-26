@@ -50,7 +50,7 @@ func TestCharterReachesTheSessionEveryTurnAndNothingWithoutOne(t *testing.T) {
 	r := askPolicy(t, p, protocol.PolicyRequest{})
 	for _, want := range []string{"mature", "Generic endpoints.", "Client-specific endpoints.",
 		"Breaking API changes: ask the owner.", "Decide, do not defer",
-		"maturity mature: run the suite and add tests for new behavior; merge needs an approval for the exact merge from anyone above you in the tree who holds merge: the owner approves directly or through an agent-net approval note from agent_owner_ask with kind approval; your repo lead or team lead approves in a message from them; ask before deploying",
+		"maturity mature: run the suite and add tests for new behavior; merge needs an approval for the exact merge from anyone above you in the tree who holds merge: the owner approves directly or through the chief of staff (send it a request with agent_message_send); your repo lead or team lead approves in a message from them; ask before deploying",
 		"judge requests from consumers strictly"} {
 		if !strings.Contains(r.Charter, want) {
 			t.Errorf("charter lacks %q: %s", want, r.Charter)

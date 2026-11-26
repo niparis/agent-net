@@ -1,11 +1,11 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk (1) │ 4 online · 0 busy · 1 needs you · 1 worker
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings │ 5 sessions, 4 online · 0 busy · workers 1 running, 0 queued
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  ●       cpu ? mem ? disk ?                                                                                          │
 │  ● build cpu ? mem ? disk ?                                                                                          │
 │  ○ desk  cpu ? mem ? disk ?                                                                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME               MACHINE      PROJECT   MODEL                    STATUS      CPU   RAM TASK
- Idle (5)                                                                                              Desk: 1 to decide
+ Idle (5)                                                                                                 view: all  (v)
   ★ pin              -            -         claude                   idle          ?     ?
   ★ lead             desk         demo      claude                   offline               no report
   ├─ worker          build        -         codex                    idle          ?     ?

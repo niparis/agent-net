@@ -92,7 +92,7 @@ func TestDeliveryAssignedDeployerGetsTargetApprovalRule(t *testing.T) {
 	g := Graph{Nodes: []Node{{Name: "deployer", Kind: "architect"}, {Name: "app", Kind: "component", Charter: Charter{Maturity: "critical"}}},
 		Edges: []Edge{{From: "deployer", To: "app", Kind: "delivery_deploys"}}}
 	for _, text := range []string{NodeContext(g, "deployer"), WorkerDeployApprovalRules(g, "deployer")} {
-		if !strings.Contains(text, "app") || !strings.Contains(text, "agent_owner_ask") {
+		if !strings.Contains(text, "app") || !strings.Contains(text, "agent_message_send") {
 			t.Fatalf("assigned deployer does not get target's approval rule: %q", text)
 		}
 	}

@@ -82,7 +82,7 @@ type LoopPrompt struct {
 }
 
 // LoopOwnerLine tells the agent not to wait for the owner.
-const LoopOwnerLine = "If you need the owner, ask once with agent_owner_ask and carry on with work that does not depend on the answer; do not wait."
+const LoopOwnerLine = "If you need the owner, send one request to the chief of staff with agent_message_send, saying what you need, why only the owner can decide, and your recommendation; carry on with work that does not depend on the answer; do not wait."
 
 // LoopMessage builds the tick's prompt. The changes line comes first, then
 // the Members part when there is one, then the purpose, then the middle

@@ -15,6 +15,9 @@ import (
 // older schema.
 func TestMain(m *testing.M) {
 	freshDatabaseSeed = seedFromTemplate
+	// The Desk tests test the Desk code that stays for now (decision 0196).
+	// Tests of the new owner item path clear it on their store.
+	keepDeskItems = true
 	os.Exit(m.Run())
 }
 

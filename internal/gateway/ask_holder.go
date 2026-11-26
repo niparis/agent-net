@@ -59,13 +59,13 @@ func (s *Store) holderAskBody(q askDB, item protocol.InboxItem) string {
 		sessionLabel(q, item.SessionID), item.ID, strings.TrimSpace(item.Text))
 }
 
-// flushHolderAsks delivers the messages stored for scope holders. A store call
-// cannot dispatch, so a held ask's message waits as stored until this tick,
-// which runs every second. The query is one indexed read of the stored
-// messages from agent-net.
+// flushHolderAsks delivers the messages stored for scope holders, and the owner
+// items sent to the chief (owner_items.go). A store call cannot dispatch, so
+// such a message waits as stored until this tick, which runs every second. The
+// query is one read of the stored messages through their state index.
 func (g *Gateway) flushHolderAsks(ctx context.Context) {
 	rows, err := g.store.db.Query(`SELECT DISTINCT s.node_id FROM messages m JOIN sessions s ON s.id=m.recipient
-		WHERE m.state=? AND m.sender=? AND m.idem_key LIKE ?`, protocol.StateStored, agentNetSender, chiefAskKeyPrefix+"%")
+		WHERE m.state=? AND ((m.sender=? AND m.idem_key LIKE ?) OR m.idem_key LIKE ?)`, protocol.StateStored, agentNetSender, chiefAskKeyPrefix+"%", ownerItemKeyPrefix+"%")
 	if err != nil {
 		g.logLine("error", "where", "holder asks", "err", err)
 		return

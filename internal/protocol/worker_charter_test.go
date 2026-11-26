@@ -32,7 +32,7 @@ func TestWorkerBriefStatesTheNodesMaturityRules(t *testing.T) {
 	n := Node{Name: "cogforge", Kind: "component", Charter: Charter{Maturity: "mature - careful."}}
 	body := WorkerTaskBodyBriefBar("opencode", WorkerBrief{Notes: "fix the tests"}, "", "", "", "", CharterBrief(n), WorkersSandboxed, "", settings.Snapshot{}, "", nil)
 	for _, want := range []string{
-		"maturity mature: run the suite and add tests for new behavior; merge needs an approval for the exact merge from anyone above you in the tree who holds merge: the owner approves directly or through an agent-net approval note from agent_owner_ask with kind approval; your repo lead or team lead approves in a message from them; ask before deploying",
+		"maturity mature: run the suite and add tests for new behavior; merge needs an approval for the exact merge from anyone above you in the tree who holds merge: the owner approves directly or through the chief of staff (send it a request with agent_message_send); your repo lead or team lead approves in a message from them; ask before deploying",
 		"judge requests from consumers strictly",
 		"permissions: sandboxed",
 	} {

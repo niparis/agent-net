@@ -317,6 +317,7 @@ func (s *Store) checkOwedReplies() ([]protocol.Message, error) {
 
 			item := protocol.InboxItem{
 				Kind:           protocol.AskKindQuestion,
+				FromKind:       protocol.AskFromGateway,
 				SessionID:      c.sender,
 				Node:           node,
 				NextWho:        protocol.AskNextChief,

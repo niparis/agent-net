@@ -242,7 +242,7 @@ func (s *Store) raiseDueAsk(tx askDB, d sessionDue, why string) error {
 	text := fmt.Sprintf("%s (%s) %s. Item %s: %s. Due: %s.",
 		sessionLabel(tx, d.session), d.session, why, d.id, d.what, d.expectedText())
 	_, err := s.createInboxItem(tx, protocol.InboxItem{
-		Kind: protocol.AskKindQuestion, SessionID: d.session, Node: node, NextWho: protocol.AskNextChief,
+		Kind: protocol.AskKindQuestion, FromKind: protocol.AskFromGateway, SessionID: d.session, Node: node, NextWho: protocol.AskNextChief,
 		SourceRef: "due:" + d.id, Text: text, Options: []string{"wait", "close"},
 	})
 	return err

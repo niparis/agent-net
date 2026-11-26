@@ -1,10 +1,10 @@
-1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings 6 Desk (1) │ 26 online
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings │ 26 online · 1 busy
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
 │  ● build cpu ? mem ? disk ?                                                  │
 │  ● desk  cpu ? mem ? disk ?                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME           MACHINE PROJECT MODEL        STATUS      CPU   RAM TASK
- 26 sessions · 1 busy                                          Desk: 1 to decide
+ 26 sessions · 1 busy                                                 active (v)
 ▸ video          desk    -       claude · op… needs you     ?     ? Combine the…
   ★ pinned       desk    -       claude · gp… idle          ?     ? Review the …
   ★ demo lead    desk    demo    claude · gp… idle          ?     ? Review the …

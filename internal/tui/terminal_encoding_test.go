@@ -318,7 +318,6 @@ func TestNumberKeysEncodings(t *testing.T) {
 		{quotasTab, "3_quotas", "3", "\x1b[27;1;51~", "\x1b[51u"},
 		{messagesTab, "4_messages", "4", "\x1b[27;1;52~", "\x1b[52u"},
 		{settingsTab, "5_settings", "5", "\x1b[27;1;53~", "\x1b[53u"},
-		{inboxTab, "6_desk", "6", "\x1b[27;1;54~", "\x1b[54u"},
 	}
 
 	for _, tc := range cases {
