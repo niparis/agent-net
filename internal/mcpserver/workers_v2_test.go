@@ -225,9 +225,6 @@ func TestAgentWorkerStartFillsTheCaller(t *testing.T) {
 	if line, _ := out["owner_line"].(string); !strings.HasPrefix(line, "Tell your user: worker on deepseek-v4.1-flash, difficulty normal") {
 		t.Fatalf("owner line: %q", line)
 	}
-	if out["selection_path"] != "owner_words" {
-		t.Fatalf("selection_path: %v", out["selection_path"])
-	}
 	if _, ok := out["reminder"]; ok {
 		t.Fatal("the soft reminder is gone: the daemon holds an override instead")
 	}
@@ -244,7 +241,7 @@ func TestAgentWorkerStartPassesOwnerWordsAndReason(t *testing.T) {
 		}
 		return json.RawMessage(`{}`), nil
 	})
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_start",
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_start_override",
 		Arguments: map[string]any{"task": "do it", "model": "gpt-6", "owner_words": "use gpt-6 for this", "reason": "second opinion"}})
 	if err != nil || res.IsError {
 		t.Fatalf("agent_worker_start: %v %+v", err, res)

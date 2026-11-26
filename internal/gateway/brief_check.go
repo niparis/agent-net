@@ -6,36 +6,28 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// briefRetryWindow is how long a refused brief is remembered for its task.
-// After it, a caller gets two fresh rejections.
-const briefRetryWindow = 24 * time.Hour
-
 // checkWorkerBrief runs the brief check that needs the store: overlap. The
-// six format rules were retired (decision 0145); a brief is refused only for
-// a file it shares with a running worker or an open change in the same
-// project. Overlap compares the paths named in this brief with the briefs of
-// running workers in the same project and the changed files of open changes
-// there. A brief that says "overlap ok: reason" passes. A file that a clause
-// tells the worker to leave alone ("do not touch X") does not count, in the
-// new brief or in a running worker's brief. A change or worker
-// this start itself targets is not an overlap: the change's id or the worker's
-// id named in the brief, an open change whose branch is the start's base, or
-// the continue or fixes target. A fix round starts from its own change's
-// branch and names its files.
-func (s *Store) checkWorkerBrief(p protocol.WorkerStartFrame, project string, repo protocol.WorkerBriefRepo) ([]string, []string, error) {
+// overlap is an advisory brief flag, never a refusal. It compares the paths
+// named in this brief with the briefs of running workers in the same project
+// and the changed files of open changes there. A brief that says
+// "overlap ok: reason" silences the flag. A file that a clause tells the
+// worker to leave alone ("do not touch X") does not count, in the new brief or
+// in a running worker's brief. A change or worker this start itself targets is
+// not an overlap: the change's id or the worker's id named in the brief, an
+// open change whose branch is the start's base, or the continue or fixes
+// target. A fix round starts from its own change's branch and names its files.
+func (s *Store) checkWorkerBrief(p protocol.WorkerStartFrame, project string, repo protocol.WorkerBriefRepo) ([]protocol.BriefFlag, error) {
 	text := p.BriefText()
-	var failures []string
 	if _, ok := protocol.BriefOverlapAllowed(text); ok {
-		return failures, nil, nil
+		return nil, nil
 	}
 	mine := repo.Paths(protocol.BriefWithoutAvoided(text))
 	if len(mine) == 0 {
-		return failures, nil, nil
+		return nil, nil
 	}
 	mineSet := map[string]bool{}
 	for _, file := range mine {
@@ -50,13 +42,13 @@ func (s *Store) checkWorkerBrief(p protocol.WorkerStartFrame, project string, re
 	base := strings.TrimSpace(p.Base)
 	running, err := s.runningWorkerBriefs(project)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	changes, err := s.openChangeBriefs(project)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	var overlaps, warnings []string
+	var flags []protocol.BriefFlag
 	seen := map[string]bool{}
 	for _, other := range append(running, changes...) {
 		if targets[strings.ToLower(other.id)] || (base != "" && other.kind == "open change" && other.branch == base) {
@@ -74,20 +66,24 @@ func (s *Store) checkWorkerBrief(p protocol.WorkerStartFrame, project string, re
 			if !mineSet[shared] {
 				continue
 			}
-			msg := fmt.Sprintf("overlaps %s %s on %s", other.kind, other.id, shared)
-			if !seen[msg] {
-				seen[msg] = true
-				if protocol.BriefSharedIndex(shared) {
-					warnings = append(warnings, "warning: "+msg)
-				} else {
-					overlaps = append(overlaps, msg)
-				}
+			reason := fmt.Sprintf("overlaps %s %s on %s", other.kind, other.id, shared)
+			if protocol.BriefSharedIndex(shared) {
+				reason += " (shared documentation; check before editing)"
 			}
+			if seen[reason] {
+				continue
+			}
+			seen[reason] = true
+			flags = append(flags, protocol.BriefFlag{Check: protocol.BriefCheckOverlap, Line: shared, Reason: reason})
 		}
 	}
-	sort.Strings(overlaps)
-	sort.Strings(warnings)
-	return append(failures, overlaps...), warnings, nil
+	sort.Slice(flags, func(i, j int) bool {
+		if flags[i].Line != flags[j].Line {
+			return flags[i].Line < flags[j].Line
+		}
+		return flags[i].Reason < flags[j].Reason
+	})
+	return flags, nil
 }
 
 type briefOverlap struct {
@@ -173,31 +169,6 @@ func (s *Store) openChangeBriefs(project string) ([]briefOverlap, error) {
 		out = append(out, briefOverlap{kind: "open change", id: id, branch: branch, paths: paths})
 	}
 	return out, rows.Err()
-}
-
-// recordBriefRejection stores one refused start as a closed worker_starts row in
-// state 'refused'. The row's age is the 24 hour window the retry rule counts in.
-func (s *Store) recordBriefRejection(caller, taskKey string, failures []string) error {
-	at := s.now().UnixNano()
-	_, err := s.db.Exec(`INSERT INTO worker_starts(ref,node_id,owner,state,created_at,closed_at,task_key,failures) VALUES(?,'',?,'refused',?,?,?,?)`,
-		protocol.NewID("refused"), caller, at, at, taskKey, strings.Join(failures, "\n"))
-	return err
-}
-
-// briefRejectionCount counts the refused starts of one task since cut.
-func (s *Store) briefRejectionCount(caller, taskKey string, cut int64) (int, error) {
-	var n int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_starts WHERE state='refused' AND owner=? AND task_key=? AND created_at>=?`,
-		caller, taskKey, cut*int64(time.Second)).Scan(&n)
-	return n, err
-}
-
-// recordBriefDefectFromBrief charges one brief defect to the caller when the
-// third attempt starts with overlaps still there.
-func (s *Store) recordBriefDefectFromBrief(caller string, failures []string) error {
-	note := "brief started after 2 rejections: " + strings.Join(failures, "; ")
-	_, err := s.db.Exec(`INSERT INTO worker_defects(session_id,caller,severity,note,at,blame) VALUES('',?,2,?,?,'brief')`, caller, note, s.now().Unix())
-	return err
 }
 
 // osSandboxOf names the OS sandbox a machine's daemon runs its workers in, by

@@ -10,6 +10,26 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// answerSource is the source of an ask's answer judgment: the owner, or the
+// CTO who answered for him.
+func answerSource(t *testing.T, s *Store, askID string) string {
+	t.Helper()
+	var source string
+	if err := s.db.QueryRow(`SELECT source FROM standing_orders WHERE kind=? AND ref=?`, protocol.StandingKindAnswer, askID).Scan(&source); err != nil {
+		t.Fatal(err)
+	}
+	return source
+}
+
+func askStatus(t *testing.T, s *Store, id string) string {
+	t.Helper()
+	var status string
+	if err := s.db.QueryRow(`SELECT status FROM inbox_items WHERE id=?`, id).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	return status
+}
+
 // The ask that holds a worker start is answered like any ask, but its answer
 // reaches the daemon as a decision, not the asking session as a message.
 func TestStartOverrideAskAnswers(t *testing.T) {
@@ -35,7 +55,7 @@ func TestStartOverrideAskAnswers(t *testing.T) {
 		return item
 	}
 	item := mk("a_1")
-	// With no chief of staff the ask goes to the owner (decision 0151).
+	// The ask goes to the owner, never to the chief (decision 0194).
 	var next string
 	if err := s.db.QueryRow(`SELECT next_who FROM inbox_items WHERE id=?`, item.ID).Scan(&next); err != nil {
 		t.Fatal(err)
@@ -60,9 +80,28 @@ func TestStartOverrideAskAnswers(t *testing.T) {
 	if got, err = s.AnswerInboxAs(item.ID, "dismiss", "owner"); err != nil || got.Status != "dismissed" || got.Answer != "dismiss" {
 		t.Fatalf("dismiss: %+v, %v", got, err)
 	}
+	// The CTO answers the Desk for the owner, on his instructions (decision
+	// 0194), and the ask records that it was the CTO.
 	item = mk("a_3")
 	if got, err = s.AnswerInboxAs(item.ID, protocol.StartAnswerPicker, "cto"); err != nil || got.Answer != protocol.StartAnswerPicker {
-		t.Fatalf("the CTO chose the picker: %+v, %v", got, err)
+		t.Fatalf("the CTO answered for the owner: %+v, %v", got, err)
+	}
+	if src := answerSource(t, s, item.ID); src != protocol.StandingSourceCTO {
+		t.Fatalf("the ask records the answer by %q, want the CTO", src)
+	}
+	// A chief or any other session cannot answer it.
+	item = mk("a_5")
+	if _, err = s.AnswerInboxAs(item.ID, protocol.StartAnswerPicker, "s_chief"); err == nil {
+		t.Fatal("a chief session answered a held start")
+	}
+	if status := askStatus(t, s, item.ID); status != "open" {
+		t.Fatalf("the chief's answer changed the ask to %q", status)
+	}
+	if got, err = s.AnswerInboxAs(item.ID, protocol.StartAnswerPicker, "owner"); err != nil || got.Answer != protocol.StartAnswerPicker {
+		t.Fatalf("the owner chose the picker: %+v, %v", got, err)
+	}
+	if src := answerSource(t, s, item.ID); src != protocol.StandingSourceOwner {
+		t.Fatalf("the ask records the answer by %q, want the owner", src)
 	}
 	// The ask is not closed when the owner types in the asking session.
 	item = mk("a_4")
@@ -76,6 +115,23 @@ func TestStartOverrideAskAnswers(t *testing.T) {
 	}
 	if !open {
 		t.Fatal("typing in the asking session closed the override ask")
+	}
+}
+
+// The one ask of an exceptional start goes to the owner even when a live
+// chief could adopt it. The chief does not confirm starts.
+func TestStartOverrideAskGoesToTheOwnerNotTheChief(t *testing.T) {
+	s, _, _, asker, node := chiefRig(t)
+	if err := s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, asker).Scan(&node); err != nil {
+		t.Fatal(err)
+	}
+	item, err := s.CreateStartOverrideAsk(node, protocol.StartOverrideAsk{Session: asker, StartID: "a_owner",
+		Text: "an agent wants model=m. Confirm, or let the picker choose.", OverrideFacts: protocol.OverrideFacts{Harness: "opencode", Model: "fake/m2"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next := askNext(t, s, item.ID); next != protocol.AskNextOwner {
+		t.Fatalf("held start next = %q, want the owner", next)
 	}
 }
 

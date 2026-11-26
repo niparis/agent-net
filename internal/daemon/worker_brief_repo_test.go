@@ -40,7 +40,16 @@ func TestWorkerBriefWarningsReachTheCaller(t *testing.T) {
 	req := protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: task}
 	w.mustStart(t, req)
 	result, err := w.start(req)
-	if err != nil || !strings.Contains(result.ModelNote, "warning: overlaps running worker") {
+	if err != nil {
 		t.Fatalf("start result: %+v, %v", result, err)
+	}
+	var overlap *protocol.BriefFlag
+	for i := range result.BriefFlags {
+		if result.BriefFlags[i].Check == protocol.BriefCheckOverlap {
+			overlap = &result.BriefFlags[i]
+		}
+	}
+	if overlap == nil || !strings.Contains(overlap.Reason, "overlaps running worker") {
+		t.Fatalf("overlap flag missing from the start result: %+v", result.BriefFlags)
 	}
 }

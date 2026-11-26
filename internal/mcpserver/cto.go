@@ -159,16 +159,13 @@ var ctoTools = map[string]ctoToolDef{
 		},
 	},
 	"worker_change": {
-		desc: "Change a worker: start or stop.",
+		desc: "Change a worker: start with the picker, or stop.",
 		fields: map[string]ctoField{
 			"action":         {typ: "string", enum: []string{"start", "stop"}},
 			"project":        {typ: "string", desc: "Project."},
-			"harness":        {typ: "string", desc: "Harness; empty is auto.", enum: protocol.WorkerHarnesses},
-			"model":          {typ: "string", desc: "Model; empty is auto."},
 			"base":           {typ: "string", desc: "Branch."},
-			"continue":       {typ: "string", desc: "Worker ID."},
+			"continue":       {typ: "string", desc: "Worker ID or start ID."},
 			"task":           {typ: "string", desc: "Brief and limits."},
-			"machine":        {typ: "string", desc: "Machine."},
 			"isolation":      {typ: "string", desc: "None reads only; default worktree.", enum: []string{"worktree", "none"}},
 			"mcp_servers":    {typ: "string", desc: "Claude: approve or disable the .mcp.json servers of the worker's folder.", enum: []string{"approve", "disable"}},
 			"session":        {typ: "string", desc: "Worker or queue ID."},

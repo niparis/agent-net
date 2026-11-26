@@ -1,25 +1,20 @@
 package protocol
 
 import (
-	"errors"
 	"strings"
 	"unicode/utf8"
 )
 
-// A caller (an agent) cannot override the worker picker without a human
-// confirming it. Selection fields are harness, model, provider, effort,
-// not_family and machine on a worker start. An agent that sets one has the
-// start go ahead only when the owner's own words are found in his prompts of
-// that session (owner_words), or when the owner confirms the override on the
-// Desk. The CTO and the owner's own command line and TUI are not agents here.
+// A caller cannot override the worker picker without the owner. Selection
+// fields are harness, model, provider, effort, not_family and machine on a
+// worker start. A start that sets one goes ahead only when the owner's own
+// words are found in his prompts of that session (owner_words), or after one
+// ask on his Desk. The owner's own command line and TUI need no such proof.
 
 // How a start with selection fields went ahead, in WorkerStartResult.SelectionPath.
 const (
 	SelectionOwnerWords = "owner_words"
-	// SelectionScope: the caller's role node holds the admin scope over the
-	// project (decision 0166), so the owner already delegated the choice.
-	SelectionScope = "scope"
-	SelectionHeld  = "held"
+	SelectionHeld       = "held"
 )
 
 // The answers of the Desk ask that holds an override. Only these are answers:
@@ -59,110 +54,12 @@ type StartOverrideAsk struct {
 	OverrideFacts
 }
 
-// OverrideFacts are what the confirm rule checks (decision 0151): the
-// override's harness, model and effort, the provider it picks, the model
-// family of the caller and of the override, the level the start runs at
-// (empty when the caller set none), and whether the task reviews work.
+// OverrideFacts are the facts of a held override the owner reads and the
+// notice on a lost start names: the selection the caller wants.
 type OverrideFacts struct {
-	Harness        string `json:"harness,omitempty"`
-	Model          string `json:"model,omitempty"`
-	Effort         string `json:"effort,omitempty"`
-	Level          string `json:"level,omitempty"`
-	Provider       string `json:"provider,omitempty"`
-	CallerFamily   string `json:"caller_family,omitempty"`
-	OverrideFamily string `json:"override_family,omitempty"`
-	Review         bool   `json:"review,omitempty"`
-}
-
-// OverrideProvider is the provider a held start picks, as the start resolves
-// it: the named provider, else the one of the model, else the one a harness
-// fixes by itself. It is "" when only a start could tell.
-func OverrideProvider(p WorkerStartRequest) string {
-	if provider := strings.TrimSpace(p.Provider); provider != "" {
-		return strings.ToLower(provider)
-	}
-	if model := strings.TrimSpace(p.Model); model != "" && model != "auto" {
-		return ProfileProvider(p.Harness, model)
-	}
-	switch strings.ToLower(strings.TrimSpace(p.Harness)) {
-	case "claude":
-		return "anthropic"
-	case "codex":
-		return "openai"
-	}
-	return ""
-}
-
-// ConfirmContext is what the gateway reads when a confirm comes: the
-// protected providers and the scores and level minimums the picker uses. The
-// quota, floor and burn checks belong to the start's gate, not to the confirm.
-type ConfirmContext struct {
-	Protected []string
-	Scores    []ModelScore
-	Minimums  map[string]float64
-}
-
-// ConfirmOverride checks a confirm of a held override (decision 0151).
-//
-// Nobody confirms an override that picks the caller's own model family for a
-// review of its own work. The chief confirms only when all of these hold, and
-// otherwise the ask goes to the CTO: the provider is known and not protected,
-// and the override is the same tier or cheaper: the highest level its score
-// meets is at or below the level the start runs at. A fact that is missing (an
-// unknown provider, caller family, level or score) never opens the gate: the
-// chief sends the ask to the CTO. The start's gate still refuses a model whose
-// quota cannot run now.
-func ConfirmOverride(f OverrideFacts, c ConfirmContext, chief bool) error {
-	if f.Review && f.OverrideFamily != "" && f.OverrideFamily == f.CallerFamily {
-		if chief {
-			return errors.New("this override picks the caller's own model family (" + f.OverrideFamily + ") for a review of its own work: nobody confirms it. Send it to the CTO, or answer picker")
-		}
-		return errors.New("this override picks the caller's own model family (" + f.OverrideFamily + ") for a review of its own work: nobody confirms it; answer picker")
-	}
-	if !chief {
-		return nil
-	}
-	route := func(why string) error { return errors.New(why + ": the chief does not confirm it. Send it to the CTO") }
-	if f.Review && (f.CallerFamily == "" || f.OverrideFamily == "") {
-		return route("the task reviews work and the caller's or the override's model family is unknown")
-	}
-	if f.Provider == "" {
-		return route("the override's provider is unknown")
-	}
-	for _, p := range c.Protected {
-		if strings.EqualFold(strings.TrimSpace(p), f.Provider) {
-			return route("provider " + f.Provider + " is protected")
-		}
-	}
-	model := strings.TrimSpace(f.Model)
-	if model == "" || model == "auto" {
-		return route("the override names no model, so its tier is unknown")
-	}
-	start := levelIndex(f.Level)
-	if start < 0 {
-		return route("the start's level is not known")
-	}
-	_, level, _, scored := WorkerBenchmarkCeiling(WorkerModelCandidate{Harness: f.Harness, Model: model, Effort: f.Effort}, c.Scores, c.Minimums)
-	if !scored {
-		return route("model " + model + " has no score")
-	}
-	if levelIndex(level) > start {
-		return route("model " + model + " meets " + level + ", above the " + f.Level + " level of the start")
-	}
-	return nil
-}
-
-// DifficultyLevels is the tier order, weakest first.
-var DifficultyLevels = []string{"trivial", "simple", "normal", "hard", "very_complex"}
-
-// levelIndex is the place of a level in DifficultyLevels, or -1.
-func levelIndex(level string) int {
-	for i, l := range DifficultyLevels {
-		if l == level {
-			return i
-		}
-	}
-	return -1
+	Harness string `json:"harness,omitempty"`
+	Model   string `json:"model,omitempty"`
+	Effort  string `json:"effort,omitempty"`
 }
 
 // MinOwnerWordsRunes and MaxOwnerWordsRunes bound the quote of owner_words. A
@@ -241,4 +138,17 @@ func StartOverrideText(caller string, fields []string, title, reason string) str
 		text = string(r[:MaxOwnerAskChars])
 	}
 	return text
+}
+
+// DifficultyLevels is the tier order, weakest first.
+var DifficultyLevels = []string{"trivial", "simple", "normal", "hard", "very_complex"}
+
+// levelIndex is the place of a level in DifficultyLevels, or -1.
+func levelIndex(level string) int {
+	for i, l := range DifficultyLevels {
+		if l == level {
+			return i
+		}
+	}
+	return -1
 }

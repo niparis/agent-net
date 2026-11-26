@@ -86,20 +86,34 @@ func (s *Store) recordOwnerAnswer(q askDB, item protocol.InboxItem, answer strin
 	return s.recordOwnerWords(q, item, s.ownerAnswerWords(q, item, answer))
 }
 
+// recordAnswerSource writes an ask's answer judgment and names who answered:
+// the owner, or the CTO answering the Desk for him (decision 0194).
+func (s *Store) recordAnswerSource(q askDB, item protocol.InboxItem, answer, actor string) error {
+	source := protocol.StandingSourceOwner
+	if actor == "cto" {
+		source = protocol.StandingSourceCTO
+	}
+	return s.recordOwnerWordsAs(q, item, s.ownerAnswerWords(q, item, answer), source)
+}
+
 // recordOwnerWords writes the answer judgment of one ask with the words of the
 // decision. An ask has one row: a second answer updates it.
 func (s *Store) recordOwnerWords(q askDB, item protocol.InboxItem, words string) error {
+	return s.recordOwnerWordsAs(q, item, words, protocol.StandingSourceOwner)
+}
+
+func (s *Store) recordOwnerWordsAs(q askDB, item protocol.InboxItem, words, source string) error {
 	savedAt := s.now().Unix()
 	if !item.AnsweredAt.IsZero() {
 		savedAt = item.AnsweredAt.Unix()
 	}
-	return upsertAnswerJudgment(q, s.askArea(q, item), item, words, savedAt, "so")
+	return upsertAnswerJudgment(q, s.askArea(q, item), item, words, savedAt, "so", source)
 }
 
 // upsertAnswerJudgment inserts the answer row of an ask, or updates it when
 // the words or the area changed. The triggers of standing_orders keep the
 // search index and the history in step.
-func upsertAnswerJudgment(q askDB, area string, item protocol.InboxItem, words string, savedAt int64, idPrefix string) error {
+func upsertAnswerJudgment(q askDB, area string, item protocol.InboxItem, words string, savedAt int64, idPrefix, source string) error {
 	// A slash command is never the owner's decision: an idle session's
 	// "/compact ..." line once landed here as an answer.
 	if isSlashCommand(words) {
@@ -110,7 +124,7 @@ func upsertAnswerJudgment(q askDB, area string, item protocol.InboxItem, words s
 	err := q.QueryRow(`SELECT id,text FROM standing_orders WHERE kind=? AND ref=? ORDER BY rowid LIMIT 1`, protocol.StandingKindAnswer, item.ID).Scan(&id, &oldText)
 	if errors.Is(err, sql.ErrNoRows) {
 		_, err = q.Exec(`INSERT INTO standing_orders(id,text,saved_at,source,tags,pinned,updated_at,kind,area,ref) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-			protocol.NewID(idPrefix), text, savedAt, protocol.StandingSourceOwner, "[]", 0, 0, protocol.StandingKindAnswer, area, item.ID)
+			protocol.NewID(idPrefix), text, savedAt, source, "[]", 0, 0, protocol.StandingKindAnswer, area, item.ID)
 		return err
 	}
 	if err != nil {
@@ -120,7 +134,7 @@ func upsertAnswerJudgment(q askDB, area string, item protocol.InboxItem, words s
 		return nil
 	}
 	// New words replace the old ones, so a voided row is the owner's again.
-	_, err = q.Exec(`UPDATE standing_orders SET text=?,area=?,saved_at=?,updated_at=?,voided_at=0,void_reason='' WHERE id=?`, text, area, savedAt, savedAt, id)
+	_, err = q.Exec(`UPDATE standing_orders SET text=?,area=?,saved_at=?,updated_at=?,source=?,voided_at=0,void_reason='' WHERE id=?`, text, area, savedAt, savedAt, source, id)
 	return err
 }
 
@@ -147,7 +161,7 @@ func (s *Store) BackfillAnswerJudgments() error {
 		if item.AnsweredAt.IsZero() {
 			savedAt = item.CreatedAt.Unix()
 		}
-		if err := upsertAnswerJudgment(tx, s.askArea(tx, item), item, s.ownerAnswerWords(tx, item, item.Answer), savedAt, "so_b"); err != nil {
+		if err := upsertAnswerJudgment(tx, s.askArea(tx, item), item, s.ownerAnswerWords(tx, item, item.Answer), savedAt, "so_b", protocol.StandingSourceOwner); err != nil {
 			return err
 		}
 	}
@@ -157,8 +171,13 @@ func (s *Store) BackfillAnswerJudgments() error {
 // closeAnsweredItem sets an ask to its answered status and writes its
 // judgment, in one transaction. It is for the paths that decide a charter
 // draft or a loop ask, which run their own work before the ask closes. The
-// store has one connection: the caller holds no transaction.
-func (s *Store) closeAnsweredItem(item protocol.InboxItem, answer string) error {
+// store has one connection: the caller holds no transaction. A non-empty actor
+// names who answered: the CTO answering the Desk for the owner (decision 0194).
+func (s *Store) closeAnsweredItem(item protocol.InboxItem, answer string, actor ...string) error {
+	by := "owner"
+	if len(actor) > 0 && actor[0] != "" {
+		by = actor[0]
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -167,7 +186,7 @@ func (s *Store) closeAnsweredItem(item protocol.InboxItem, answer string) error 
 	if _, err := tx.Exec(`UPDATE inbox_items SET status=?,answer=?,answered_at=? WHERE id=?`, item.Status, answer, item.AnsweredAt.UnixNano(), item.ID); err != nil {
 		return err
 	}
-	if err := s.recordOwnerAnswer(tx, item, answer); err != nil {
+	if err := s.recordAnswerSource(tx, item, answer, by); err != nil {
 		return err
 	}
 	return tx.Commit()

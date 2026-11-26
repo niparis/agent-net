@@ -562,7 +562,7 @@ One row per worker run: which machine, harness and model, how it ended, how long
 
 One row per request to start a worker, with the machine, project, harness, session, whether it is open or closed, and the brief's done list. A start that the brief check refused is a closed row in state `refused`, with the task key and the failures, so the third attempt of a task can start.
 
-- **Columns:** `ref`, `node_id`, `owner`, `project`, `harness`, `permissions`, `session_id`, `state`, `created_at`, `closed_at`, `legacy_ref`, `launch_state`, `caller_agent_id`, `done`, `brief_hash`, `not_attempted_at`, `task_key`, `failures`, `owner_choice` (what the owner named at the start, decision 0191)
+- **Columns:** `ref`, `node_id`, `owner`, `project`, `harness`, `permissions`, `session_id`, `state`, `created_at`, `closed_at`, `legacy_ref`, `launch_state`, `caller_agent_id`, `done`, `brief_hash`, `not_attempted_at`, `task_key`, `failures`, `owner_choice` (legacy; no code writes it since decision 0194)
 - **Rows on 2026-11-22:** 1643
 - **Written by:** `gateway/brief_check.go`, `gateway/session_replace.go`, `gateway/store.go`, `gateway/worker_starts.go`
 - **Read by:** `gateway/brief_check.go`, `gateway/context_resolver.go`, `gateway/graph_lifecycle.go`, `gateway/track.go`, `gateway/worker_starts.go`

@@ -124,14 +124,12 @@ export const TOOL_CATALOG = [
             "merge",
             "send",
             "owner",
-            "confirm",
-            "picker",
             "done",
             "withdraw",
             "list",
             "undo"
           ],
-          "description": "close: the ask is done. merge: it is the same as another open ask. send: a session should answer it. owner: the owner must decide it. withdraw: the asker (or a session that relayed it) takes the ask back; the chief uses it when a newer ask replaces one on the owner's Desk, and names that ask in replaced_by. list: show the asks waiting for you, with the sorter's counts by result. confirm or picker: answer a held worker start (decision 0151). done: the answer of an answered ask was carried out; its askers are told."
+          "description": "close: the ask is done. merge: it is the same as another open ask. send: a session should answer it. owner: the owner must decide it. withdraw: the asker (or a session that relayed it) takes the ask back; the chief uses it when a newer ask replaces one on the owner's Desk, and names that ask in replaced_by. list: show the asks waiting for you, with the sorter's counts by result. done: the answer of an answered ask was carried out; its askers are told."
         },
         "into": {
           "type": "string",
@@ -2670,7 +2668,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_worker_start",
-    "description": "Start or continue a worker with a structured brief. Only if the owner or work mode asks. problem and done required; evidence, hypothesis, scope optional; task: extra notes. Refused only for a file a running worker or open change holds, unless \"overlap ok: reason\". brief_flags never block. For a feature with several tasks, list the tasks first, then group them into sessions: tasks that share code and design continue one session (continue) instead of starting new workers.",
+    "description": "Start or continue a worker with a structured brief; the picker chooses the harness, model, effort and machine. Only if the owner or work mode asks. problem and done required; evidence, hypothesis, scope optional; task: extra notes. brief_flags never block a start; \"overlap ok: reason\" silences the overlap flag. For a feature with several tasks, list the tasks first, then group them into sessions: tasks that share code and design continue one session (continue) instead of starting new workers.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2706,7 +2704,98 @@ export const TOOL_CATALOG = [
         "task": {
           "type": "string",
           "maxLength": 65536,
-          "description": "Extra notes only: the old free-text task. Optional now. A call with only task still works for older callers. The whole brief is refused when it names a file a running worker or open change in the project holds, unless it says \"overlap ok: reason\". The change or worker this start targets (continue, fixes, base) is not an overlap."
+          "description": "Extra notes only: the old free-text task. Optional now. A call with only task still works for older callers. A file a running worker or open change holds is reported in brief_flags; it never refuses the start. The change or worker this start targets (continue, fixes, base) is not an overlap."
+        },
+        "project": {
+          "type": "string",
+          "description": "Project name."
+        },
+        "isolation": {
+          "type": "string",
+          "enum": [
+            "worktree",
+            "none"
+          ],
+          "description": "Worktree or read-only none.",
+          "default": "worktree"
+        },
+        "base": {
+          "type": "string",
+          "description": "Base branch for the worktree."
+        },
+        "continue": {
+          "type": "string",
+          "description": "ID of an ended worker to continue."
+        },
+        "auto_continue": {
+          "type": "boolean",
+          "description": "Whether the daemon may continue unfinished work.",
+          "default": true
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "One short line naming the worker, at most 60 characters, with no newlines. Leave it empty to derive a title from the task."
+        },
+        "fixes": {
+          "type": "string",
+          "description": "Change ID (ch_...) of a shipped change this worker fixes. agent-net records a defect on the worker that made that change, so do not file it yourself."
+        },
+        "fixes_severity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4,
+          "description": "Severity of that defect, 1 to 4. Default 2."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "roles": [
+      "agent"
+    ],
+    "method": "worker_start",
+    "daemon_fields": {}
+  },
+  {
+    "name": "agent_worker_start_override",
+    "description": "The exceptional worker route: start a worker with a harness, model, provider, effort, family or machine you choose. Full freedom, but always needs your owner's approval: a matching owner_words quote lets it start at once; otherwise one ask goes on his Desk and the start waits. Prefer agent_worker_start so the picker chooses. problem and done required; evidence, hypothesis, scope optional; task: extra notes.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "problem": {
+          "type": "string",
+          "maxLength": 65536,
+          "description": "What is wrong or wanted, in your owner's words, with who asked. Required for a new start, unless you send only the old task."
+        },
+        "done": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Outcomes the worker can check itself, one line each. Required with problem. The accept and review tasks check exactly this list."
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The facts you already have, one line each."
+        },
+        "hypothesis": {
+          "type": "string",
+          "maxLength": 65536,
+          "description": "Your guess at the cause or the fix. The brief marks it as the worker's to drop if it is wrong."
+        },
+        "scope": {
+          "type": "string",
+          "maxLength": 65536,
+          "description": "What not to touch and the known traps."
+        },
+        "task": {
+          "type": "string",
+          "maxLength": 65536,
+          "description": "Extra notes only: the old free-text task. Optional now. A file a running worker or open change holds is reported in brief_flags; it never refuses the start. The change or worker this start targets (continue, fixes, base) is not an overlap."
         },
         "project": {
           "type": "string",
@@ -2786,12 +2875,12 @@ export const TOOL_CATALOG = [
         "owner_words": {
           "type": "string",
           "maxLength": 300,
-          "description": "A short quote of your owner's own request that names harness, model, provider, effort, family or machine, for example \"use a codex worker for this\". Needed to set any of those: agent-net checks it appears in what he typed in this session in the last 3 hours. Leave them empty otherwise."
+          "description": "A short quote of your owner's own request that names harness, model, provider, effort, family or machine, for example \"use a codex worker for this\". agent-net checks it appears in what he typed in this session in the last 3 hours. If it does not, the start waits for one ask on his Desk."
         },
         "reason": {
           "type": "string",
           "maxLength": 400,
-          "description": "Why you set selection fields without owner_words. The start then waits for your owner to confirm it or let the picker choose."
+          "description": "Why this worker needs these fields. It appears in the ask on your owner's Desk when owner_words is empty or does not match."
         }
       },
       "required": [],

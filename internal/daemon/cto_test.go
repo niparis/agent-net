@@ -664,6 +664,10 @@ func testCTOToolsThroughFakeOpenCode(t *testing.T) {
 	w := startWorkerNode(t, g, WorkerSettings{}, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
+	w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Harness: "opencode", Model: "fake/m1"})
+	score := 51.0
+	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/m1", Score: &score})
+	w.cli.mustCall(protocol.OpWorkerProvidersSet, protocol.WorkerProviders{Providers: []string{"fake"}})
 	peer, _ := helloPi(t, w.node, "target", "/w/target", true)
 	w.cli.mustCall("cto_send", map[string]string{"text": "start"})
 	rec := readFake(t, filepath.Join(w.cfg.StateDir, "cto"))
@@ -768,7 +772,7 @@ func testCTOToolsThroughFakeOpenCode(t *testing.T) {
 	}
 	call("agent_sessions_find", map[string]any{"session": target})
 	call("agent_learn", map[string]any{"subject_kind": "model", "subject": "fake/m1", "finding": "Needs clear tasks", "evidence": []string{"two runs"}})
-	call("worker_change", map[string]any{"action": "start", "project": "shop", "harness": "opencode", "model": "fake/m1", "task": "test"})
+	call("worker_change", map[string]any{"action": "start", "project": "shop", "task": "test"})
 	eventually(t, "approved worker task comes from the owner", func() bool {
 		workers := w.workers(t)
 		if len(workers) != 1 {

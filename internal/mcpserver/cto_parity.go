@@ -79,16 +79,16 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("process_stop", "Stop processes on a machine: SIGTERM, then SIGKILL. No undo. Live Claude and agent-net sessions are refused.", map[string]ctoField{"node_id": s("Machine; required."), "pids": {typ: "array", desc: "Process IDs.", items: map[string]any{"type": "integer"}}})
 	add("node_rename", "Set machine name.", map[string]ctoField{"node_id": s("Machine."), "name": s("Empty clears.")})
 
-	add("worker_start", "Start a worker.", map[string]ctoField{
-		"project": s("Default CTO project."), "harness": en("Harness; empty is auto.", protocol.WorkerHarnesses...),
-		"model": s("Model; empty is auto."),
-		"base":  s("Branch."), "continue": s("Worker ID."), "task": s("Brief and limits."), "machine": s("Machine."),
+	add("worker_start", "Start a worker; the picker chooses the harness and model.", map[string]ctoField{
+		"project": s("Default CTO project."),
+		"base":    s("Branch."), "continue": s("Worker ID or start ID."), "task": s("Brief and limits."),
 		"isolation":      en("None reads only; default worktree.", "worktree", "none"),
 		"mcp_servers":    en("Claude: approve or disable the .mcp.json servers of the worker's folder.", "approve", "disable"),
 		"auto_continue":  b("Default true: agent-net continues a worker that stops early."),
 		"fixes":          s("Shipped change ID this worker fixes; agent-net records the defect."),
 		"fixes_severity": {typ: "integer", desc: "Defect severity 1 to 4; default 2."},
 	})
+
 	add("worker_stop", "Stop a worker or queued start.", map[string]ctoField{"session": s("Worker ID.")})
 
 	add("held_answer", "Answer held request.", map[string]ctoField{"message_id": s("Message ID."), "action": en("a once, A and auto, r once, R and never.", "a", "A", "r", "R")})
