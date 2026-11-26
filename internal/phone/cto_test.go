@@ -128,7 +128,7 @@ func TestCTOStreamSendsThePanelSection(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	w := &cancelFlusher{ResponseRecorder: httptest.NewRecorder(), cancel: cancel}
-	New(newConsoleOperator()).ServeHTTP(w, httptest.NewRequest("GET", "/events?section=cto&screen=desk&cto=1", nil).WithContext(ctx))
+	New(newConsoleOperator()).ServeHTTP(w, httptest.NewRequest("GET", "/events?section=cto&screen=sessions&cto=1", nil).WithContext(ctx))
 	body := w.Body.String()
 	mustContain(t, "cto stream", body, "event: cto", "Good morning, CTO.", ">Apply<", `id="ctoform"`)
 	// The screen section is a separate event, so the two update independently.

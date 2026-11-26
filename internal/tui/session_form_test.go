@@ -48,10 +48,6 @@ func TestSKeyLinesGoldenAt80And120Columns(t *testing.T) {
 		quota.tab = quotasTab
 		golden(t, "keyline_quotas_"+itoa(size.w), quota.helpLine(size.w))
 
-		outcome := newModel(size.w, size.h)
-		outcome.tab = inboxTab
-		outcome.asks = []protocol.Ask{askFromOutcome(protocol.OutcomeInboxEntry{EdgeOutcome: protocol.EdgeOutcome{ReplyID: "r"}, Sender: "sender", Recipient: "receiver"})}
-		golden(t, "keyline_outcome_"+itoa(size.w), outcome.helpLine(size.w))
 	}
 }
 

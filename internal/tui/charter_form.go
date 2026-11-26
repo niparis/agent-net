@@ -82,7 +82,7 @@ func (m Model) charterFormKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		q := protocol.CharterSetRequest{Level: f.level, Node: f.scope, Attr: attr, Value: value}
 		src := m.src
 		return m, func() tea.Msg {
-			caller, ok := src.(inboxCaller)
+			caller, ok := src.(localCaller)
 			if !ok {
 				return charterSavedMsg{ErrTooOld}
 			}

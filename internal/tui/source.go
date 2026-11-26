@@ -7,11 +7,19 @@
 package tui
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/niparis/agent-net/internal/operator"
 	"github.com/niparis/agent-net/internal/protocol"
 )
+
+// localCaller is the daemon call that live screens make for lists and
+// settings. A source that does not keep the local channel lacks it.
+type localCaller interface {
+	Call(context.Context, string, any) (json.RawMessage, error)
+}
 
 // The TUI's names for the operator's types. They are aliases, so the TUI has
 // no types of its own for data that the phone shares.

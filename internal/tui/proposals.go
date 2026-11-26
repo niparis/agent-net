@@ -30,15 +30,6 @@ type proposalAnswerMsg struct {
 	sessionBefore    uint64
 }
 
-func proposalKey(p protocol.CTOProposal) string { return "proposal:" + p.NodeID + ":" + p.ID }
-func (m Model) selectedProposal() (protocol.CTOProposal, bool) {
-	for _, p := range m.proposals {
-		if p.Status == "open" && proposalKey(p) == m.selected {
-			return p, true
-		}
-	}
-	return protocol.CTOProposal{}, false
-}
 func proposalSummary(p protocol.CTOProposal) string {
 	var a map[string]any
 	_ = json.Unmarshal(p.Args, &a)
@@ -110,7 +101,7 @@ func proposalSummary(p protocol.CTOProposal) string {
 }
 
 func (m Model) proposalDetailCmd(p protocol.CTOProposal) tea.Cmd {
-	c, ok := m.src.(inboxCaller)
+	c, ok := m.src.(localCaller)
 	return func() tea.Msg {
 		out := proposalDetailMsg{node: p.NodeID, id: p.ID}
 		if !ok {
@@ -176,7 +167,7 @@ func proposalGraphDiff(p protocol.CTOProposal, g protocol.Graph) []string {
 	return []string{"- (no edge)", "+ " + string(p.Args)}
 }
 func (m Model) proposalAnswerCmd(p protocol.CTOProposal, action string) tea.Cmd {
-	c, ok := m.src.(inboxCaller)
+	c, ok := m.src.(localCaller)
 	socket, pane := m.herdrSocket, m.herdrPaneID
 	sessionBefore := m.sessionNoticeSerial
 	var confirmed []protocol.CTOProposalRef

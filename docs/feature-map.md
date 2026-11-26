@@ -181,7 +181,7 @@ Key `4` opens it.
 | tab/shift+tab | sub tab |
 | p | filter the threads by project |
 | t | filter the threads by team |
-| o | open the thread's change or Desk ask |
+| o | name the thread's change or ask links |
 | e | expand or collapse the selected worker run |
 | l | filter |
 | m | send a message to the session as yourself |

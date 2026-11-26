@@ -15,28 +15,19 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/niparis/agent-net/internal/operator"
 	"github.com/niparis/agent-net/internal/phone"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-type e2ePhoneOperator struct{ actions chan protocol.HeldAnswer }
+type e2ePhoneOperator struct{ cto chan protocol.CTOSendRequest }
 
-func (*e2ePhoneOperator) Snapshot(context.Context) (operator.Snapshot, error) {
-	return operator.Snapshot{Connected: true}, nil
-}
-func (*e2ePhoneOperator) SessionText(context.Context, protocol.TextQuery) (protocol.TextPage, error) {
-	return protocol.TextPage{}, nil
-}
-func (o *e2ePhoneOperator) AnswerHeld(_ context.Context, q protocol.HeldAnswer) error {
-	o.actions <- q
-	return nil
-}
-func (*e2ePhoneOperator) ResolveOutcome(context.Context, string, string) error { return nil }
 func (*e2ePhoneOperator) SendAsOwner(context.Context, string, string) (protocol.MessageSent, error) {
 	return protocol.MessageSent{}, nil
 }
-func (*e2ePhoneOperator) Call(context.Context, string, any) (json.RawMessage, error) {
+func (o *e2ePhoneOperator) Call(_ context.Context, method string, params any) (json.RawMessage, error) {
+	if method == protocol.OpCTOSend {
+		o.cto <- params.(protocol.CTOSendRequest)
+	}
 	return json.RawMessage(`{"items":[]}`), nil
 }
 
@@ -52,7 +43,7 @@ func (x e2eTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 func TestAppsEndToEnd(t *testing.T) {
 	runner := &publicRunner{}
-	phoneOperator := &e2ePhoneOperator{actions: make(chan protocol.HeldAnswer, 1)}
+	phoneOperator := &e2ePhoneOperator{cto: make(chan protocol.CTOSendRequest, 1)}
 	g, err := New(Options{DataDir: seededDataDir(t), AppsListen: "127.0.0.1:0", FunnelRunner: runner, PhoneApp: phone.New(phoneOperator)})
 	if err != nil {
 		t.Fatal(err)
@@ -249,14 +240,14 @@ func TestAppsEndToEnd(t *testing.T) {
 	if resp.StatusCode != 200 || !strings.Contains(body, "<!doctype html>") {
 		t.Fatalf("phone home %d %s", resp.StatusCode, body)
 	}
-	resp, _ = request("POST", "/action", "kind=held&id=m_test&action=a", "application/x-www-form-urlencoded", "https://test.example.ts.net:8443", cookie)
+	resp, _ = request("POST", "/action", "kind=cto_send&text=hello+from+the+phone", "application/x-www-form-urlencoded", "https://test.example.ts.net:8443", cookie)
 	if resp.StatusCode != 303 {
 		t.Fatalf("phone action %d", resp.StatusCode)
 	}
 	select {
-	case action := <-phoneOperator.actions:
-		if action.MessageID != "m_test" || action.Action != "a" {
-			t.Fatal(action)
+	case sent := <-phoneOperator.cto:
+		if sent.Text != "hello from the phone" {
+			t.Fatal(sent)
 		}
 	default:
 		t.Fatal("phone action not delivered")

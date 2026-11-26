@@ -4,8 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/x/ansi"
-
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -28,8 +26,8 @@ func TestChangeDetailShowsQualitySignals(t *testing.T) {
 		State: protocol.ChangeOpen, Step: "accept", StepOwner: "merger", OwnerKind: protocol.OwnerNode,
 		StepState: protocol.StepStateReady, Signals: uiSignals}
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: []deliveryChange{ch}}, 120, 40))
-	m.openDeskChange(ch.ID)
-	view := ansi.Strip(m.testView())
+	openChangeDetail(t, &m, ch.ID)
+	view := deliveryText(m, 120, 40)
 	for _, want := range []string{"Quality signals", "strong: repeated line ×3:", "weak: heavy tests:"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("detail lacks %q:\n%s", want, view)

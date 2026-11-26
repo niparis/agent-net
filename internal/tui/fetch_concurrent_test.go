@@ -11,57 +11,45 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// gatedCaller answers the Desk lists. proposal_list does not answer until the
-// other three lists were asked, so a refresh that asks them one after the
-// other waits for it for ever, as it did when one slow list held the rest.
+// gatedCaller answers the two CTO box lists. proposal_list does not answer
+// until chief_get was asked, so a refresh that asks them one after the other
+// waits for it for ever, as it did when one slow list held the rest.
 type gatedCaller struct {
 	*fakeSource
-	mu     sync.Mutex
-	asked  map[string]bool
-	others chan struct{}
+	once  sync.Once
+	chief chan struct{}
 }
 
 func (g *gatedCaller) Call(ctx context.Context, method string, _ any) (json.RawMessage, error) {
-	g.mu.Lock()
-	g.asked[method] = true
-	ready := g.asked[protocol.OpAsksList] && g.asked[protocol.OpChiefGet]
-	if ready {
-		select {
-		case <-g.others:
-		default:
-			close(g.others)
-		}
-	}
-	g.mu.Unlock()
 	switch method {
+	case protocol.OpChiefGet:
+		g.once.Do(func() { close(g.chief) })
+		return json.RawMessage(`{}`), nil
 	case protocol.OpProposalList:
 		select {
-		case <-g.others:
+		case <-g.chief:
 		case <-time.After(1500 * time.Millisecond):
-			return nil, errors.New("proposal_list waited for the other lists: they were asked one after the other")
+			return nil, errors.New("proposal_list waited for chief_get: they were asked one after the other")
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
 		return json.RawMessage(`[]`), nil
-	case protocol.OpAsksList:
-		return json.RawMessage(`{"asks":[]}`), nil
 	}
 	return json.RawMessage(`{}`), nil
 }
 
-// The Desk lists of one refresh are independent reads. They run together, so
-// one slow list does not make the others wait, and each has its own deadline.
-func TestFetchAsksTheDeskListsTogether(t *testing.T) {
-	src := &gatedCaller{fakeSource: &fakeSource{snap: fakeSnapshot()}, asked: map[string]bool{}, others: make(chan struct{})}
+// The CTO box lists of one refresh are independent reads. They run together,
+// so one slow list does not make the other wait, and each has its own deadline.
+func TestFetchAsksTheCTOBoxListsTogether(t *testing.T) {
+	src := &gatedCaller{fakeSource: &fakeSource{snap: fakeSnapshot()}, chief: make(chan struct{})}
 	m := New(src)
-	m.tab = inboxTab
 	got, ok := m.fetchCmd()().(fetchedMsg)
 	if !ok {
 		t.Fatal("fetch did not return a fetchedMsg")
 	}
-	if !got.listsAsked || !got.proposalsOK || !got.inboxOK || !got.chiefOK {
-		t.Fatalf("a list is missing from the answer: asked=%v proposals=%v asks=%v chief=%v",
-			got.listsAsked, got.proposalsOK, got.inboxOK, got.chiefOK)
+	if !got.proposalsAsked || !got.proposalsOK || !got.chiefOK {
+		t.Fatalf("a list is missing from the answer: asked=%v proposals=%v chief=%v",
+			got.proposalsAsked, got.proposalsOK, got.chiefOK)
 	}
 }
 

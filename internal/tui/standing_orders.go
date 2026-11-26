@@ -70,7 +70,7 @@ func (m Model) loadStandingOrders() tea.Cmd {
 }
 
 func (m Model) standingCall(q protocol.StandingOrdersRequest, notice string) tea.Cmd {
-	src, ok := m.src.(inboxCaller)
+	src, ok := m.src.(localCaller)
 	return func() tea.Msg {
 		if !ok {
 			return standingMsg{err: fmt.Errorf("unavailable")}
