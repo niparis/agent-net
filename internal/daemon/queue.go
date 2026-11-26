@@ -35,11 +35,7 @@ func (d *Daemon) admitOrQueue(l protocol.WorkerLaunch) *protocol.WorkerLaunched 
 	if l.RequireReadOnly {
 		return &protocol.WorkerLaunched{Reason: "no room for a read-only background worker"}
 	}
-	q := queuedStart{ID: queueIDFor(l), Owner: l.Owner, OwnerName: l.OwnerName, Project: l.Project, Path: l.Path, Harness: l.Harness,
-		Model: l.Model, Task: l.Task, Title: l.Title, Isolation: l.Isolation, Base: l.Base, RecordTask: l.RecordTask, Permissions: l.Permissions,
-		DifficultyAsked: l.DifficultyAsked, DifficultyUsed: l.DifficultyUsed, Touches: strings.Join(l.Touches, ","), FromCTO: l.FromCTO, QueuedAt: time.Now(),
-		Assessment: l.Assessment, AutoContinue: protocol.AutoContinueEnabled(l.AutoContinue), TaskID: l.TaskID, ContinuationPartial: l.ContinuationPartial, ChangeID: l.ChangeID, MCPServers: l.MCPServers, Fixes: l.Fixes,
-		Why: l.Why, NotFamily: l.NotFamily, Automatic: l.Automatic}
+	q := queuedFromLaunch(l, queueIDFor(l))
 	if err := d.st.addQueued(q); err != nil {
 		// Without a queue the old behaviour is the safe one: refuse.
 		return &protocol.WorkerLaunched{Reason: "cannot queue: " + err.Error()}
@@ -52,6 +48,16 @@ func (d *Daemon) admitOrQueue(l protocol.WorkerLaunch) *protocol.WorkerLaunched 
 	d.Logf("worker.queued queue=%s position=%d project=%s harness=%s owner=%s room=%s reason=%q",
 		q.ID, ahead+1, l.Project, l.Harness, l.Owner, dec.Room, why)
 	return &protocol.WorkerLaunched{Queued: true, QueueID: q.ID, Position: ahead + 1, Reason: reason}
+}
+
+// queuedFromLaunch is the queue entry of a launch frame, under the start
+// reference id.
+func queuedFromLaunch(l protocol.WorkerLaunch, id string) queuedStart {
+	return queuedStart{ID: id, Owner: l.Owner, OwnerName: l.OwnerName, Project: l.Project, Path: l.Path, Harness: l.Harness,
+		Model: l.Model, Task: l.Task, Title: l.Title, Isolation: l.Isolation, Base: l.Base, RecordTask: l.RecordTask, Permissions: l.Permissions,
+		DifficultyAsked: l.DifficultyAsked, DifficultyUsed: l.DifficultyUsed, Touches: strings.Join(l.Touches, ","), FromCTO: l.FromCTO, QueuedAt: time.Now(),
+		Assessment: l.Assessment, AutoContinue: protocol.AutoContinueEnabled(l.AutoContinue), TaskID: l.TaskID, ContinuationPartial: l.ContinuationPartial, ChangeID: l.ChangeID, MCPServers: l.MCPServers, Fixes: l.Fixes,
+		Why: l.Why, NotFamily: l.NotFamily, Automatic: l.Automatic}
 }
 
 // admitOrQueueResume lets a resume through, or queues it. It returns nil, nil

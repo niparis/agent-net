@@ -49,6 +49,12 @@ import (
 var fakeOCFailed atomic.Bool
 var fakeOCLocalFailed atomic.Bool
 
+// fakeOCSessionModel is the "provider/model" of the session the daemon
+// created. FAKE:unavailable-first=<file> fails the run as OpenCode does when
+// it cannot use its model, in the first worker that creates <file>: the start
+// that follows on another model runs. The failed model is in fakeOCUnavailable.
+var fakeOCSessionModel, fakeOCUnavailable atomic.Value
+
 // fakeOCHandoverAnswer is the model layer the fake gives a handover request.
 const fakeOCHandoverAnswer = "Promise: finish the migration plan."
 
@@ -203,7 +209,7 @@ func runFakeOpenCode() {
 			http.Error(w, `{"_tag":"UnauthorizedError"}`, 401)
 			return
 		}
-		if fakeOCFailed.Load() || fakeOCLocalFailed.Load() {
+		if fakeOCFailed.Load() || fakeOCLocalFailed.Load() || fakeOCUnavailable.Load() != nil {
 			fmt.Fprint(w, `{"data":{"outcome":"failed","cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"model":{"providerID":"fake","id":"m1"}}}`)
 			return
 		}
@@ -367,10 +373,13 @@ func runFakeOpenCode() {
 				"input": 100, "output": 0, "reasoning": 0, "cache": map[string]any{"read": 0, "write": 0},
 			}},
 		}
-		if fakeOCFailed.Load() || fakeOCLocalFailed.Load() {
+		if fakeOCFailed.Load() || fakeOCLocalFailed.Load() || fakeOCUnavailable.Load() != nil {
 			typ, message := "provider.upstream", fakeOCError
 			if fakeOCLocalFailed.Load() {
 				typ, message = "effect/sql/SqlError", "Failed to execute statement"
+			}
+			if m := fakeOCUnavailable.Load(); m != nil {
+				typ, message = "provider.model", "Model unavailable: "+m.(string)
 			}
 			items = append([]map[string]any{{"id": "msg_idle", "type": "idle", "outcome": "failed",
 				"error": map[string]any{"type": typ, "message": message}}}, items...)
@@ -412,6 +421,9 @@ func runFakeOpenCode() {
 				http.Error(w, err.Error(), 500)
 				return
 			}
+		}
+		if m, ok := body["model"].(map[string]any); ok {
+			fakeOCSessionModel.Store(fmt.Sprint(m["providerID"]) + "/" + fmt.Sprint(m["id"]))
 		}
 		mu.Lock()
 		rec.SessionID, rec.SessionBody = id, body
@@ -797,6 +809,14 @@ func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, pre
 		case strings.Contains(body, "FAKE:ignore"):
 		case strings.Contains(body, "FAKE:localfail"):
 			fakeOCLocalFailed.Store(true)
+		case strings.Contains(body, "FAKE:unavailable-first="):
+			_, rest, _ := strings.Cut(body, "FAKE:unavailable-first=")
+			path := strings.Fields(rest)[0]
+			if f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600); err == nil {
+				f.Close()
+				model, _ := fakeOCSessionModel.Load().(string)
+				fakeOCUnavailable.Store(model)
+			}
 		case strings.Contains(body, "FAKE:modelfail"):
 			// The provider refuses at once: no reply, no hand-back.
 			fakeOCFailed.Store(true)

@@ -477,3 +477,22 @@ func TestVersionProbeReportsAVersion(t *testing.T) {
 		t.Fatalf("probe = %q, err = %v", got, err)
 	}
 }
+
+// The JSON below is what OpenCode 2 prints with one stored key and one key
+// from the environment. Its free "opencode" models need no login.
+func TestDetectReportsOpenCodeProvidersWithoutLogin(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "bin")
+	script(t, bin, "opencode", `case "$1" in
+--version) echo 2.2.0;;
+models) printf 'opencode/free-one\ndeepseek/flash\nexample-plan/demo-1\nexample-plan/demo-2\nopenrouter/x/y\n';;
+auth) printf '%s\n' '[{"id":"deepseek","name":"DeepSeek","connections":[{"type":"credential","id":"a1","label":"x","method":"key"}]},' \
+  '{"id":"openrouter","name":"OpenRouter","connections":[{"type":"env","name":"OPENROUTER_API_KEY"}]}]';;
+esac`)
+	got := Detect(context.Background(), Options{PATH: bin, Dirs: []string{}, LoginShellPATH: func(context.Context) string { return "" }})
+	if len(got) != 1 || got[0].Name != "opencode" {
+		t.Fatalf("got %+v", got)
+	}
+	if !reflect.DeepEqual(got[0].NoLogin, []string{"example-plan"}) {
+		t.Fatalf("no login = %v, want [example-plan]", got[0].NoLogin)
+	}
+}

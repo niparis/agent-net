@@ -700,6 +700,12 @@ func (g *Gateway) MachineGet(ctx context.Context, p protocol.MachineGetRequest) 
 		}
 		var rows []protocol.MachineModelRow
 		var harnessErrors []string
+		// The login of a provider comes from the machine's inventory: the
+		// live list names models only.
+		inventory := map[string]protocol.HarnessInfo{}
+		for _, h := range node.Harnesses {
+			inventory[h.Name] = h
+		}
 		for _, h := range live.Harnesses {
 			if h.Error != "" {
 				if p.Harness != "" {
@@ -712,7 +718,11 @@ func (g *Gateway) MachineGet(ctx context.Context, p protocol.MachineGetRequest) 
 				if p.ModelFilter != "" && !containsFold(id, p.ModelFilter) {
 					continue
 				}
-				rows = append(rows, protocol.MachineModelRow{Harness: h.Name, ID: id, Scores: protocol.ModelScoresFor(id, scores)})
+				row := protocol.MachineModelRow{Harness: h.Name, ID: id, Scores: protocol.ModelScoresFor(id, scores)}
+				if inventory[h.Name].LoginMissing(id) {
+					row.Login = protocol.LoginMissingLabel
+				}
+				rows = append(rows, row)
 			}
 		}
 		sort.SliceStable(rows, func(i, j int) bool {

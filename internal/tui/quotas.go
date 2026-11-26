@@ -285,6 +285,10 @@ type quotaModel struct {
 	stale, protected                                 bool
 	provider                                         string
 	track                                            protocol.TrackRecord
+
+	// noLogin are the machines whose harness reports no login for the
+	// model's provider.
+	noLogin []string
 }
 
 // quotaModels lists only registered profiles, including unavailable profiles.
@@ -334,6 +338,9 @@ func (m Model) quotaModels() []quotaModel {
 					continue
 				}
 				delete(missingMachines, machine)
+				if h.LoginMissing(resolved) && machine != "" {
+					row.noLogin = append(row.noLogin, machine)
+				}
 				trackedModel := resolved
 				if p.Effort != "" {
 					trackedModel += ":" + p.Effort
@@ -376,6 +383,7 @@ func (m Model) quotaModels() []quotaModel {
 			row.notOn = append(row.notOn, machine)
 		}
 		sort.Strings(row.notOn)
+		sort.Strings(row.noLogin)
 		row.score, row.scored = protocol.LookupModelScoreWithDefaultEffort(model, row.defaultEffort, m.snap.Scores)
 		if row.stale {
 			row.available = false
@@ -689,6 +697,13 @@ func (m Model) quotaModelsView(w int) []string {
 					machines[i] = sanitize(machine)
 				}
 				body = append(body, sDim.Render(clip("  not on "+strings.Join(machines, ", "), w-4)))
+			}
+			if len(r.noLogin) > 0 {
+				machines := make([]string, len(r.noLogin))
+				for i, machine := range r.noLogin {
+					machines[i] = sanitize(machine)
+				}
+				body = append(body, sDim.Render(clip("  "+protocol.LoginMissingLabel+" on "+strings.Join(machines, ", "), w-4)))
 			}
 			if !r.available || !r.allowed {
 				reason := "not available on an online machine"

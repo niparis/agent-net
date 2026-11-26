@@ -165,7 +165,7 @@ func keepMissingHarnesses(prev, next []protocol.HarnessInfo, logf func(string, .
 			continue
 		}
 		if old := previous[h.Name]; h.Path != "" && modelsProbed(h.Name) && len(h.Models) == 0 && len(old.Models) > 0 {
-			h.Models = old.Models
+			h.Models, h.NoLogin = old.Models, old.NoLogin
 			if logf != nil {
 				logf("harnesses: %s model probe failed; keeping the previous models", h.Name)
 			}
