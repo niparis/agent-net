@@ -9,19 +9,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/niparis/agent-net/internal/difficulty"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// difficultyProfileJSON is a complete evidence profile that ParseProfile
-// accepts. Tests change only the confidence.
-func difficultyProfileJSON(confidence string) string {
-	return `{"reasoning":{"closest_pattern":"internal/daemon/workers.go:700-710","new_logic":"none","evidence":["internal/daemon/workers.go:700-710"]},` +
-		`"scope":{"components":["internal/daemon"],"distinct_changes":["one change"],"repeated_changes":[]},` +
-		`"coupling":{"contracts":[],"invariants":[],"evidence":["inspected: no shared contract"]},` +
-		`"uncertainty":{"open_questions":[],"inspected":["inspected: the worker start path"]},` +
-		`"verification":{"tests":["unit"],"needed_checks":[],"gaps":[]},` +
-		`"risk":{"failures":[],"reversibility":"easy","evidence":["docs/reference.md:1"]},` +
-		`"confidence":"` + confidence + `"}`
+// assessDifficulty runs the daemon's assessor as a worker start does.
+func (d *Daemon) assessDifficulty(ctx context.Context, project, task string) (difficulty.Assessment, error) {
+	return NewDifficultyAssessor(d.cfg, DifficultySources{
+		PickJudge: d.pickDifficultyJudge,
+		Binary:    d.harnessBinary,
+		Logf:      d.safeLogf,
+	}).Assess(ctx, project, task)
 }
 
 const difficultyScoresJSON = `{"reasoning":4,"scope":3,"coupling":4,"uncertainty":3,"verification":3,"risk":4,` +
@@ -100,8 +98,8 @@ func TestAssessDifficultyHappyPath(t *testing.T) {
 	if a.Label != "hard" || a.Bottleneck != "" || a.Confidence != "unknown" {
 		t.Fatalf("assessment: %+v", a)
 	}
-	if a.JudgeModel != "codex:gpt-cheap" || a.AnalyzerModel != "" {
-		t.Fatalf("models: %q %q", a.AnalyzerModel, a.JudgeModel)
+	if a.JudgeModel != "codex:gpt-cheap" {
+		t.Fatalf("judge model: %q", a.JudgeModel)
 	}
 	if a.Scores.Reasoning != 4 || a.Scores.Risk != 4 {
 		t.Fatalf("scores: %+v", a.Scores)
@@ -145,7 +143,7 @@ func TestAssessDifficultyUsesOpenCodeJudgeAndExtractsNoisyJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.Label != "hard" || a.AnalyzerModel != "" || a.JudgeModel != "opencode:opencode-go/deepseek-v4.1-flash" {
+	if a.Label != "hard" || a.JudgeModel != "opencode:opencode-go/deepseek-v4.1-flash" {
 		t.Fatalf("assessment: %+v", a)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "calls.jsonl")); !os.IsNotExist(err) {

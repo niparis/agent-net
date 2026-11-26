@@ -13,12 +13,6 @@ import (
 // the same project is already working on, unless it says "overlap ok: reason".
 // docs/brief-template.md stays as optional advice.
 
-// WorkerStartModeCheck is the mode value that runs the overlap check and
-// starts nothing.
-const (
-	WorkerStartModeCheck = "check"
-)
-
 var (
 	briefPathRE    = regexp.MustCompile(`(?:\$[A-Za-z_][A-Za-z0-9_]*|[A-Za-z0-9_.@+~\-]*)(?:/[A-Za-z0-9_.@+~\-]+)+`)
 	briefFileRE    = regexp.MustCompile(`(?i)\b(?:[A-Za-z0-9_\-]+\.(go|ts|tsx|js|jsx|mjs|cjs|md|markdown|py|rs|sql|sh|bash|json|yaml|yml|toml|html|css|scss|c|cc|cpp|h|hpp|java|kt|rb|php|swift|lock)|README(?:\.[A-Za-z0-9_\-]+)?)\b`)
@@ -304,19 +298,6 @@ func briefLineLabel(line string) (label, rest string) {
 		label = strings.Trim(s, "*_# \t")
 	}
 	return strings.ToLower(strings.TrimSpace(label)), strings.TrimSpace(rest)
-}
-
-// BriefPathsShare reports whether two brief paths name the same file or a
-// folder that holds the other.
-func BriefPathsShare(a, b string) bool {
-	a, b = normalizeBriefPath(a), normalizeBriefPath(b)
-	if a == "" || b == "" {
-		return false
-	}
-	if a == b {
-		return true
-	}
-	return strings.HasSuffix(a, "/"+b) || strings.HasSuffix(b, "/"+a)
 }
 
 // WorkerBriefRepoRequest asks the selected daemon for the worker base tree.

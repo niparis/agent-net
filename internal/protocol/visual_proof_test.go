@@ -5,23 +5,6 @@ import (
 	"testing"
 )
 
-func TestVisualBriefWarning(t *testing.T) {
-	for _, task := range []string{"Goal: owner asks to fix TUI scrolling", "Goal: owner asks to restyle templates/page.html"} {
-		if VisualBriefWarning(task) == "" {
-			t.Fatal("missing visible outcome must warn")
-		}
-		if VisualBriefWarning(task+"\nExpected visible outcome: last message stays visible") != "" {
-			t.Fatal("explicit outcome warned")
-		}
-	}
-	if VisualBriefWarning("Goal: owner asks for an intuitive database API") != "" {
-		t.Fatal("intuitive matched tui")
-	}
-	if VisualBriefWarning("Goal: owner asks to fix database compaction") != "" {
-		t.Fatal("backend warned")
-	}
-}
-
 func TestVisualProofNotice(t *testing.T) {
 	n := WorkerNotice{VisualEvidence: VisualEvidence{UserVisible: "yes", VisualProof: []VisualProof{{File: "frame.txt", Caption: "scroll: last row visible"}}}}
 	body := FormatWorkerNotice(n, "done")

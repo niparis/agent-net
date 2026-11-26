@@ -1173,22 +1173,11 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		// A text that takes an ask back withdraws it. It is not a new wait: a
 		// withdrawal must not become the question the session waits on.
 		var withdrawn struct {
-			Withdrawn bool   `json:"withdrawn"`
-			StartID   string `json:"start_id"`
+			Withdrawn bool `json:"withdrawn"`
 		}
 		if json.Unmarshal(res, &withdrawn) == nil && withdrawn.Withdrawn {
 			if ls != nil {
 				d.setWaiting(ls, nil)
-			}
-			if withdrawn.StartID != "" {
-				// The ask held a worker start: stop it and tell the caller.
-				var all map[string]any
-				if json.Unmarshal(res, &all) == nil {
-					all["note"] = d.withdrawnStartNote(ctx, sid, withdrawn.StartID)
-					if out, err := json.Marshal(all); err == nil {
-						return out, nil
-					}
-				}
 			}
 			return res, nil
 		}

@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 func TestMessageConversationsGroupAndSort(t *testing.T) {
@@ -47,7 +48,7 @@ func TestFeedGroupsAnEndedWorkerByItsTaskAndNotice(t *testing.T) {
 		{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "task", Time: t0.Add(-2 * time.Minute)}, ConversationID: "c_task", From: owner, To: ended, Type: protocol.TypeRequest},
 		{Event: protocol.Event{ID: 2, Kind: "msg.stored", MessageID: "started", Time: t0.Add(-time.Minute)}, ConversationID: "c_started", From: ended, To: owner, Type: protocol.TypeNotification},
 	})
-	m.feed.byMsg["task"].Body = protocol.WorkerTaskBody("Polish the sessions panel\nRun the checks.", "", "")
+	m.feed.byMsg["task"].Body = protocol.WorkerTaskBodyBriefBar("", protocol.WorkerBrief{Notes: "Polish the sessions panel\nRun the checks."}, "", "", "", "", "", "", "", settings.Snapshot{}, "", nil)
 	m.feed.byMsg["started"].Body = protocol.WorkerStartedText(ended, "opencode", "m1", "shop", "mac", time.Minute, "")
 	rows := m.messageConversations()
 	if len(rows) != 1 || !rows[0].worker || rows[0].workerSession != ended {
@@ -470,8 +471,8 @@ func TestMessageWorkerTaskFieldSeparatesQuotedBrief(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"worker_task":true}`), &task); err != nil {
 		t.Fatal(err)
 	}
-	quote.Body = protocol.WorkerTaskBody("quoted", "", "")
-	task.Body = protocol.WorkerTaskBody("real", "", "")
+	quote.Body = protocol.WorkerTaskBodyBriefBar("", protocol.WorkerBrief{Notes: "quoted"}, "", "", "", "", "", "", "", settings.Snapshot{}, "", nil)
+	task.Body = protocol.WorkerTaskBodyBriefBar("", protocol.WorkerBrief{Notes: "real"}, "", "", "", "", "", "", "", settings.Snapshot{}, "", nil)
 	m.applySnippet(snippetMsg{id: "quote", msg: quote})
 	m.applySnippet(snippetMsg{id: "task", msg: task})
 	workers := m.feedWorkers()

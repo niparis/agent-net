@@ -30,8 +30,8 @@ func flagChecks(flags []protocol.BriefFlag) []string {
 	return out
 }
 
-// A brief with three problems starts anyway. The flags come back on the check
-// and on the start, with the commit checked by the machine's own git.
+// A brief with two problems starts anyway. The flags come back on the start,
+// with the commit checked by the machine's own git.
 func TestWorkerBriefFlagsReachTheCallerAndDoNotStopTheStart(t *testing.T) {
 	g := startGatewayWith(t, t.TempDir(), "", 0, func(opts *gateway.Options) { opts.TestNoBriefChecks = false })
 	w := startWorkerNode(t, g, shortSet, nil)
@@ -44,17 +44,7 @@ func TestWorkerBriefFlagsReachTheCallerAndDoNotStopTheStart(t *testing.T) {
 			"The crash first showed at commit 0123456789abcdef0123456789abcdef01234567.\n" +
 			"The fix is at commit " + gitHeadOf(t, repo) + "."}
 
-	req.Mode = protocol.WorkerStartModeCheck
-	checked, err := w.start(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []string{protocol.BriefCheckReference, protocol.BriefCheckCommit, protocol.BriefCheckSandbox}
-	if !reflect.DeepEqual(flagChecks(checked.BriefFlags), want) {
-		t.Fatalf("check flags = %+v, want checks %v", checked.BriefFlags, want)
-	}
-
-	req.Mode = ""
+	want := []string{protocol.BriefCheckCommit, protocol.BriefCheckSandbox}
 	started := w.mustStart(t, req)
 	if started.Status != "started" || started.SessionID == "" {
 		t.Fatalf("a flagged brief did not start: %+v", started)
@@ -85,15 +75,15 @@ func TestWorkerBriefRepoResolvesCommitIDs(t *testing.T) {
 func TestOverrideHeldStartReturnsBriefFlags(t *testing.T) {
 	_, _, pi, _ := overrideNode(t)
 	req := overrideRequest()
-	req.Task = "Use the fixture as in the brief above."
+	req.Task = "Read /home/nicolas/PLAN.md first."
 	res := startFrom(t, pi, req)
 	if res.Status != "accepted" || res.SelectionPath != protocol.SelectionHeld {
 		t.Fatalf("a held start: %+v", res)
 	}
-	if !reflect.DeepEqual(flagChecks(res.BriefFlags), []string{protocol.BriefCheckReference}) {
+	if !reflect.DeepEqual(flagChecks(res.BriefFlags), []string{protocol.BriefCheckPath}) {
 		t.Fatalf("held flags = %+v", res.BriefFlags)
 	}
-	if !strings.Contains(res.Note, "brief flags") || !strings.Contains(res.Note, "as in the brief") {
+	if !strings.Contains(res.Note, "brief flags") || !strings.Contains(res.Note, "outside") {
 		t.Fatalf("held note does not name the flag: %q", res.Note)
 	}
 }

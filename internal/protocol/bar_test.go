@@ -12,7 +12,7 @@ import (
 func TestWorkerBriefHeaderListsTheBar(t *testing.T) {
 	bar := []BarRule{{ID: "B1", Text: "Performance first."}, {ID: "B2", Text: "Migrations are append-only."}}
 	for _, harness := range []string{"opencode", "claude", "codex"} {
-		body := WorkerTaskBodyBar(harness, "fix it", "/wt", "agent-net/w1", "", "", WorkersSandboxed, "", settings.Snapshot{}, "demo", bar)
+		body := WorkerTaskBodyBriefBar(harness, WorkerBrief{Notes: "fix it"}, "/wt", "agent-net/w1", "", "", "", WorkersSandboxed, "", settings.Snapshot{}, "demo", bar)
 		header := "Project rules (check your diff against each before you hand back; list each as met or not applicable in your report):\n- B1: Performance first.\n- B2: Migrations are append-only."
 		at := strings.Index(body, header)
 		shared := strings.Index(body, "Put a check in one place")
@@ -26,11 +26,11 @@ func TestWorkerBriefHeaderListsTheBar(t *testing.T) {
 
 func TestWorkerBriefWithoutABarHasNoSection(t *testing.T) {
 	for _, bar := range [][]BarRule{nil, {}} {
-		body := WorkerTaskBodyBar("opencode", "fix it", "", "", "", "", WorkersSandboxed, "", settings.Snapshot{}, "demo", bar)
+		body := WorkerTaskBodyBriefBar("opencode", WorkerBrief{Notes: "fix it"}, "", "", "", "", "", WorkersSandboxed, "", settings.Snapshot{}, "demo", bar)
 		if strings.Contains(body, "Project rules (") {
 			t.Fatalf("an empty bar added a section:\n%s", body)
 		}
-		if want := WorkerTaskBodyOS("opencode", "fix it", "", "", "", "", WorkersSandboxed, "", settings.Snapshot{}, "demo"); body != want {
+		if want := WorkerTaskBodyBriefBar("opencode", WorkerBrief{Notes: "fix it"}, "", "", "", "", "", WorkersSandboxed, "", settings.Snapshot{}, "demo", nil); body != want {
 			t.Fatalf("a brief without a bar changed:\n%s", body)
 		}
 	}

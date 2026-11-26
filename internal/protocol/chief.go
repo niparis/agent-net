@@ -271,11 +271,6 @@ type AskSortResult struct {
 	Asks   []AskWaiting  `json:"asks,omitempty"`
 	Stats  *AskSortStats `json:"stats,omitempty"`
 	Full   *AskFull      `json:"full,omitempty"`
-	// StartID is the start id of a held worker start whose ask a withdraw took
-	// back. The caller's machine reads it to cancel the start (decision 0151).
-	StartID string `json:"start_id,omitempty"`
-	// Note says what became of that start, in words for the caller.
-	Note string `json:"note,omitempty"`
 }
 
 // AskSortStats counts the successful sorts of one sorter by result. FirstID and

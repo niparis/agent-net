@@ -212,10 +212,3 @@ func osSandboxOf(goos string) string {
 	}
 	return ""
 }
-
-func visualWarningLines(task string) []string {
-	if warning := protocol.VisualBriefWarning(task); warning != "" {
-		return []string{warning}
-	}
-	return nil
-}

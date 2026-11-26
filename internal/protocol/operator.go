@@ -468,9 +468,6 @@ type WorkerStartRequest struct {
 	// top of the choice copied from the project's main checkout. Empty records
 	// nothing. Not allowed with Continue.
 	MCPServers string `json:"mcp_servers,omitempty"`
-	// Mode "check" runs the brief checks and starts nothing. Empty starts a
-	// worker.
-	Mode string `json:"mode,omitempty"`
 	// OwnerWords is a short quote of the owner's own request that names the
 	// harness, model, provider, effort, family or machine. It is read only from
 	// an agent's start. The daemon checks that the quote appears in what the
@@ -509,10 +506,6 @@ type WorkerStartResult struct {
 	// SelectionHeld (the start waits for the owner's answer on the Desk). Empty
 	// when the caller set no selection field.
 	SelectionPath string `json:"selection_path,omitempty"`
-	// Hint is one line about a defect this start may fix: the recent changes
-	// in the project that `fixes` can name. Empty when the task does not sound
-	// like a fix or when `fixes` was set.
-	Hint string `json:"hint,omitempty"`
 	// Worktree and Branch are set when the worker got its own worktree.
 	Worktree string `json:"worktree,omitempty"`
 	Branch   string `json:"branch,omitempty"`
@@ -529,13 +522,10 @@ type WorkerStartResult struct {
 	Title string `json:"title,omitempty"`
 	// Queued is true when the task message waits in the outbox.
 	Queued bool `json:"queued,omitempty"`
-	// BriefFailures lists the overlaps that refuse the brief in a
-	// mode "check" request.
-	BriefFailures []string `json:"brief_failures,omitempty"`
 	// BriefFlags are the advisory notes of the brief lint. They never refuse
 	// a start.
 	BriefFlags []BriefFlag `json:"brief_flags,omitempty"`
-	// Status is "starting", "started", "queued" or "checked". A starting worker has a
+	// Status is "starting", "started" or "queued". A starting worker has a
 	// session ID and receives its task after checkout and launch. A queued
 	// start has no SessionID yet:
 	// the machine has no room now, QueueID names the start (agent_worker_stop takes

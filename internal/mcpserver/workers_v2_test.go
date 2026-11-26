@@ -202,7 +202,7 @@ func TestAgentWorkerStartFillsTheCaller(t *testing.T) {
 	cs := connect(t, func(_ context.Context, method string, _ any) (json.RawMessage, error) {
 		switch method {
 		case "worker_start":
-			return json.RawMessage(`{"status":"started","session_id":"s_w1","harness":"opencode","model":"deepseek-v4.1-flash","project":"shop","hostname":"research","permissions":"sandboxed","owner_line":"Tell your user: worker on deepseek-v4.1-flash, difficulty normal (D 2.60; R3 S2 C3 U2 V2 K2).","selection_path":"owner_words","hint":"If this fixes earlier work, pass fixes=<change id> so agent-net counts the defect. Recent changes in shop: ch_1"}`), nil
+			return json.RawMessage(`{"status":"started","session_id":"s_w1","harness":"opencode","model":"deepseek-v4.1-flash","project":"shop","hostname":"research","permissions":"sandboxed","owner_line":"Tell your user: worker on deepseek-v4.1-flash, difficulty normal (D 2.60; R3 S2 C3 U2 V2 K2).","selection_path":"owner_words"}`), nil
 		case "list":
 			return list, nil
 		}
@@ -230,9 +230,6 @@ func TestAgentWorkerStartFillsTheCaller(t *testing.T) {
 	}
 	if _, ok := out["reminder"]; ok {
 		t.Fatal("the soft reminder is gone: the daemon holds an override instead")
-	}
-	if h, _ := out["hint"].(string); !strings.Contains(h, "fixes=<change id>") || !strings.Contains(h, "ch_1") {
-		t.Fatalf("hint: %q", h)
 	}
 }
 
@@ -265,47 +262,6 @@ func TestAgentWorkerStartPassesOwnerWordsAndReason(t *testing.T) {
 }
 
 func mustJSON(v any) string { b, _ := json.Marshal(v); return fmt.Sprint(string(b)) }
-
-// mode check answers with the brief list and starts nothing.
-func TestAgentWorkerStartCheckModeReturnsTheBriefList(t *testing.T) {
-	calls := 0
-	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
-		if method == "worker_start" {
-			in, _ := params.(protocol.WorkerStartRequest)
-			if in.Mode != "check" {
-				t.Fatalf("mode did not reach the daemon: %q", in.Mode)
-			}
-			calls++
-			if calls == 1 {
-				return json.RawMessage(`{"status":"checked","project":"shop","brief_failures":["Evidence: add this section with at least 3 lines"]}`), nil
-			}
-			return json.RawMessage(`{"status":"checked","project":"shop"}`), nil
-		}
-		return json.RawMessage(`{}`), nil
-	})
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_start",
-		Arguments: map[string]any{"task": "do it", "mode": "check"}})
-	if err != nil || res.IsError {
-		t.Fatalf("agent_worker_start: %v %+v", err, res)
-	}
-	out, _ := res.StructuredContent.(map[string]any)
-	if out["brief"] != "refused" {
-		t.Fatalf("brief = %v", out["brief"])
-	}
-	missing, _ := out["missing"].([]any)
-	if len(missing) != 1 {
-		t.Fatalf("missing = %v", out["missing"])
-	}
-	res, err = cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_start",
-		Arguments: map[string]any{"task": "do it", "mode": "check"}})
-	if err != nil || res.IsError {
-		t.Fatalf("agent_worker_start ok: %v %+v", err, res)
-	}
-	out, _ = res.StructuredContent.(map[string]any)
-	if out["brief"] != "ok" {
-		t.Fatalf("brief = %v", out["brief"])
-	}
-}
 
 func findCatalogTool(name string) *toolcatalog.Tool {
 	for i := range toolcatalog.Tools {

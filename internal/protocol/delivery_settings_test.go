@@ -23,7 +23,7 @@ func TestDeliveryUsesLiveRecipe(t *testing.T) {
 	if got := MergeApprovalForWithSettings(Graph{}, "missing", snap); got.Authority != "ask" || got.Text != "custom merge approval" {
 		t.Fatalf("no graph node: %+v", got)
 	}
-	if got := WorkerTaskBodyWithSettings("codex", "task", "/tmp/worktree", "branch", "", "", "sandboxed", snap); !strings.Contains(got, " Prepare this branch.") {
+	if got := WorkerTaskBodyBriefBar("codex", WorkerBrief{Notes: "task"}, "/tmp/worktree", "branch", "", "", "", "sandboxed", "", snap, "", nil); !strings.Contains(got, " Prepare this branch.") {
 		t.Fatalf("brief: %s", got)
 	}
 	if got := FormatWorkerNoticeWithSettings(WorkerNotice{Worktree: "/tmp/worktree"}, "", snap); !strings.Contains(got, "review the diff in /tmp/worktree carefully") {

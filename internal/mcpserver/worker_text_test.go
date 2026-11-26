@@ -61,7 +61,7 @@ func TestWorkerFacingTextNamesOnlyWorkerTools(t *testing.T) {
 	}
 	snap := settings.Snapshot{}
 	for _, harness := range []string{"claude", "codex", "opencode", "pi"} {
-		texts = append(texts, protocol.WorkerTaskBodyWithSettingsForRepo(harness, "do the task", "/work/wt", "agent-net/w_1", "", "", "", snap, ""))
+		texts = append(texts, protocol.WorkerTaskBodyBriefBar(harness, protocol.WorkerBrief{Notes: "do the task"}, "/work/wt", "agent-net/w_1", "", "", "", "", "", snap, "", nil))
 	}
 	texts = append(texts,
 		protocol.ContinueIntroWithSettings("the owner replied", "the branch", snap, ""),

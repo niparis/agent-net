@@ -314,6 +314,35 @@ func TestOverrideAcceptedStartErrorTellsTheCaller(t *testing.T) {
 	}
 }
 
+// An accepted start's notice carries the brief flags and the model note. The
+// accepted answer came before either was known, so the notice is the only
+// place the caller sees them.
+func TestAcceptedStartNoticeCarriesBriefFlagsAndModelNote(t *testing.T) {
+	_, w, _, piID := overrideNode(t)
+	flags := []protocol.BriefFlag{{Check: protocol.BriefCheckPath, Line: "Read /home/owner/PLAN.md",
+		Reason: "names a path outside the worker's own copy of the project."}}
+	res := &protocol.WorkerStartResult{Status: "started", SessionID: "s_notice", Harness: "opencode", Model: "fake/m1",
+		Project: "shop", Hostname: "box", ModelNote: "fake/m1 (30, good enough)", BriefFlags: flags}
+	req := protocol.WorkerStartRequest{Project: "shop", Harness: "opencode"}
+	w.d.reportAcceptedStart("a_notice", piID, req, res, nil)
+	body := noticeFor(t, w, piID, "a_notice")
+	for _, want := range []string{"status: started", "model note: fake/m1 (30, good enough)", "brief flags", protocol.BriefCheckPath, "PLAN.md"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("started notice lacks %q:\n%s", want, body)
+		}
+	}
+
+	queued := *res
+	queued.Status, queued.QueueID, queued.Position = "queued", "q_notice", 2
+	w.d.reportAcceptedStart("a_queued_notice", piID, req, &queued, nil)
+	qbody := noticeFor(t, w, piID, "a_queued_notice")
+	for _, want := range []string{"status: queued", "model note: fake/m1 (30, good enough)", "brief flags", "PLAN.md"} {
+		if !strings.Contains(qbody, want) {
+			t.Fatalf("queued notice lacks %q:\n%s", want, qbody)
+		}
+	}
+}
+
 // A daemon that no longer holds the start tells the caller when the answer
 // arrives, instead of dropping it.
 func TestOverrideLostHeldStartTellsTheCaller(t *testing.T) {

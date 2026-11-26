@@ -2670,7 +2670,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_worker_start",
-    "description": "Start or continue a worker with a structured brief. Only if the owner or work mode asks. problem and done required; evidence, hypothesis, scope optional; task: extra notes. Refused only for a file a running worker or open change holds, unless \"overlap ok: reason\". mode \"check\" checks only. brief_flags never block. For a feature with several tasks, list the tasks first, then group them into sessions: tasks that share code and design continue one session (continue) instead of starting new workers.",
+    "description": "Start or continue a worker with a structured brief. Only if the owner or work mode asks. problem and done required; evidence, hypothesis, scope optional; task: extra notes. Refused only for a file a running worker or open change holds, unless \"overlap ok: reason\". brief_flags never block. For a feature with several tasks, list the tasks first, then group them into sessions: tasks that share code and design continue one session (continue) instead of starting new workers.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2782,13 +2782,6 @@ export const TOOL_CATALOG = [
           "minimum": 1,
           "maximum": 4,
           "description": "Severity of that defect, 1 to 4. Default 2."
-        },
-        "mode": {
-          "type": "string",
-          "enum": [
-            "check"
-          ],
-          "description": "check runs the brief checks and starts nothing."
         },
         "owner_words": {
           "type": "string",

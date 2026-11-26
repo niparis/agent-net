@@ -1,8 +1,6 @@
 package protocol
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -182,8 +180,10 @@ func WorkerStartReportText(status, project, harness, startID, note string) strin
 }
 
 // WorkerAcceptedStartText is the notice for a start that was accepted without
-// an answer and then became a worker. status is "started" or "starting".
-func WorkerAcceptedStartText(startID, status, session, harness, model, project, host, worktree, branch, ownerLine, why string) string {
+// an answer and then became a worker. status is "started" or "starting". The
+// brief flags and the model note travel with it, because the accepted answer
+// came before either was known.
+func WorkerAcceptedStartText(startID, status, session, harness, model, project, host, worktree, branch, ownerLine, why string, briefFlags []BriefFlag, modelNote string) string {
 	note := "the accepted start has begun; the task has been sent to the worker"
 	if status == "starting" {
 		note = "the accepted start has begun; the worker is being set up and gets its task when it is ready"
@@ -205,6 +205,12 @@ func WorkerAcceptedStartText(startID, status, session, harness, model, project, 
 	if why != "" {
 		b += "\nwhy: " + why
 		b += "\nfull: agent_workers_find {worker, detail:full}"
+	}
+	if modelNote != "" {
+		b += "\nmodel note: " + modelNote
+	}
+	if note := BriefFlagsNote(briefFlags); note != "" {
+		b += "\n" + note
 	}
 	return b + "\n"
 }
@@ -379,7 +385,9 @@ type (
 		// Note is the reason, or the queue facts, as one short line.
 		Note string `json:"note"`
 		// Body is the whole notice text of a start that began (StartReportStarted
-		// and StartReportStarting), which the machine writes from the worker's facts.
+		// and StartReportStarting) or waits in a queue (StartReportQueued), which
+		// the machine writes from the worker's facts. A gateway that does not know
+		// this for a queued start falls back to Note.
 		Body string `json:"body,omitempty"`
 		// ID is the start id the caller was given; it makes the notice unique.
 		ID string `json:"start_id"`
@@ -428,9 +436,6 @@ type (
 		// MachineNote says why the gateway picked this machine when the
 		// project is on several.
 		MachineNote string `json:"machine_note,omitempty"`
-		// Hint is one line about a defect this start may fix (see
-		// WorkerStartResult.Hint).
-		Hint string `json:"hint,omitempty"`
 		// Phases is how long the gateway spent on each part of the start, for
 		// the daemon's slow log ("picker=12 launch=40", milliseconds).
 		Phases string `json:"phases,omitempty"`
@@ -443,12 +448,6 @@ type (
 		// and model, and the fresh notes about it (decision 0022).
 		Track     *TrackRecord   `json:"track,omitempty"`
 		Playbooks []PlaybookNote `json:"playbooks,omitempty"`
-		// Checked means the start was mode "check": the overlap check ran and
-		// no worker started.
-		Checked bool `json:"checked,omitempty"`
-		// BriefFailures lists the overlaps that refuse a brief, one per line
-		// when it is shown. Empty means the brief passed.
-		BriefFailures []string `json:"brief_failures,omitempty"`
 		// BriefFlags are the advisory notes of the brief lint. They never refuse
 		// a start.
 		BriefFlags []BriefFlag `json:"brief_flags,omitempty"`
@@ -869,21 +868,6 @@ func cleanBriefLines(lines []string) []string {
 	return out
 }
 
-// WorkerTaskBody builds the body of the task message for an OpenCode worker.
-func WorkerTaskBody(task, worktree, branch string) string {
-	return WorkerTaskBodyFor("", task, worktree, branch)
-}
-
-// WorkerTaskBodyFor builds the body of the task message: the brief of the
-// harness, a line about the worktree if there is one, then the task.
-func WorkerTaskBodyFor(harness, task, worktree, branch string) string {
-	return WorkerTaskBodyWithRules(harness, task, worktree, branch, "")
-}
-
-func WorkerTaskBodyWithRules(harness, task, worktree, branch, rules string) string {
-	return WorkerTaskBodyWithPermissions(harness, task, worktree, branch, rules, "")
-}
-
 // WorkerPermissionsText describes the effective project level of a worker
 // that runs without the OS sandbox.
 func WorkerPermissionsText(level, harness string) string {
@@ -1022,50 +1006,6 @@ func WorkerPermissionsLine(level, harness, osSandbox string) string {
 		text += " (enforced for " + WorkerEnforcedBy(level) + " only for now)"
 	}
 	return text
-}
-
-func WorkerTaskBodyWithPermissions(harness, task, worktree, branch, rules, level string) string {
-	return WorkerTaskBodyWithCharter(harness, task, worktree, branch, rules, "", level)
-}
-
-// WorkerTaskBodyWithCharter is WorkerTaskBodyWithPermissions with the charter
-// of the worker's node. The charter section follows the project rules and
-// comes before the task (decision 0022).
-func WorkerTaskBodyWithCharter(harness, task, worktree, branch, rules, charter, level string) string {
-	return WorkerTaskBodyWithSettings(harness, task, worktree, branch, rules, charter, level, settings.Snapshot{})
-}
-
-func WorkerTaskBodyWithSettings(harness, task, worktree, branch, rules, charter, level string, snap settings.Snapshot) string {
-	return WorkerTaskBodyWithSettingsForRepo(harness, task, worktree, branch, rules, charter, level, snap, "")
-}
-
-// WorkerTaskBodyWithSettingsForRepo resolves advice for the worker's repo.
-func WorkerTaskBodyWithSettingsForRepo(harness, task, worktree, branch, rules, charter, level string, snap settings.Snapshot, repo string) string {
-	return WorkerTaskBodyOS(harness, task, worktree, branch, rules, charter, level, "", snap, repo)
-}
-
-// WorkerTaskBodyOS is WorkerTaskBodyWithSettingsForRepo for a worker that may
-// run in the OS sandbox: osSandbox names the wrapper, "" when there is none.
-func WorkerTaskBodyOS(harness, task, worktree, branch, rules, charter, level, osSandbox string, snap settings.Snapshot, repo string) string {
-	return WorkerTaskBodyBriefBar(harness, WorkerBrief{Notes: task}, worktree, branch, "", rules, charter, level, osSandbox, snap, repo, nil)
-}
-
-// WorkerTaskBodyOSBase is WorkerTaskBodyOS with the branch the worker was
-// based on. When that branch is another worker's, the brief says the worker's
-// own worktree already starts at its head and that only that worktree is the
-// worker's to edit.
-func WorkerTaskBodyOSBase(harness, task, worktree, branch, base, rules, charter, level, osSandbox string, snap settings.Snapshot, repo string) string {
-	return WorkerTaskBodyBriefBar(harness, WorkerBrief{Notes: task}, worktree, branch, base, rules, charter, level, osSandbox, snap, repo, nil)
-}
-
-// WorkerTaskBodyBar is WorkerTaskBodyOS with the project's bar in the header.
-func WorkerTaskBodyBar(harness, task, worktree, branch, rules, charter, level, osSandbox string, snap settings.Snapshot, repo string, bar []BarRule) string {
-	return WorkerTaskBodyBriefBar(harness, WorkerBrief{Notes: task}, worktree, branch, "", rules, charter, level, osSandbox, snap, repo, bar)
-}
-
-// WorkerTaskBodyBrief is WorkerTaskBodyOS for a structured brief.
-func WorkerTaskBodyBrief(harness string, brief WorkerBrief, worktree, branch, rules, charter, level, osSandbox string, snap settings.Snapshot, repo string) string {
-	return WorkerTaskBodyBriefBar(harness, brief, worktree, branch, "", rules, charter, level, osSandbox, snap, repo, nil)
 }
 
 // WorkerTaskBodyBriefBar renders a structured brief with the project's bar in
@@ -1555,28 +1495,6 @@ const ToolDenialMarker = "denied a tool action in headless mode"
 // model for the next start, but it is not an infrastructure failure.
 func HarnessToolDenial(detail string) bool {
 	return strings.Contains(detail, ToolDenialMarker)
-}
-
-// WorkerNotAttempted tells whether a run ended without attempting its task: the
-// harness denied a tool action, or the run quit early with no file and no line
-// changed. It is the case where the harness, not the task, is what failed.
-func WorkerNotAttempted(failure string, e *WorkerEvidence) bool {
-	if HarnessToolDenial(failure) {
-		return true
-	}
-	return e != nil && e.EarlyQuit && e.FilesChanged == 0 && e.LinesChanged == 0
-}
-
-// BriefHash identifies one brief across starts: the project and the problem
-// and task text, with case and spacing ignored. The caller is not part of it,
-// so a retry by another agent is the same brief.
-func BriefHash(project string, p WorkerStartRequest) string {
-	norm := func(s string) string { return strings.ToLower(strings.Join(strings.Fields(s), " ")) }
-	if norm(p.Problem) == "" && norm(p.Task) == "" {
-		return ""
-	}
-	sum := sha256.Sum256([]byte(norm(project) + "\x1f" + norm(p.Problem) + "\x1f" + norm(p.Task)))
-	return hex.EncodeToString(sum[:16])
 }
 
 // WorkerRunState announces a new run before its harness registers, or rolls

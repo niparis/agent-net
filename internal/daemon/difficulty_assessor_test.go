@@ -65,7 +65,7 @@ func TestJudgeOnlyDefaultUsesBriefAndDoesNotRunCodex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.Mode != "judge-only" || a.Confidence != "low" || a.Label != "trivial" || a.Profile.Confidence != "" {
+	if a.Mode != "judge-only" || a.Confidence != "low" || a.Label != "trivial" {
 		t.Fatalf("assessment: %+v", a)
 	}
 	prompt, err := os.ReadFile(promptFile)

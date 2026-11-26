@@ -54,7 +54,7 @@ func TestBarRequestEditAndBriefReachTheDaemon(t *testing.T) {
 		t.Fatalf("edit result: %s %v", raw, err)
 	}
 	eventually(t, "the daemon reads the bar", func() bool { return len(n.d.barOf(context.Background(), "demo")) == 2 })
-	body := protocol.WorkerTaskBodyBar("opencode", "fix it", "", "", "", "", protocol.WorkersSandboxed, "", n.d.SettingsSnapshot(), "demo", n.d.barOf(context.Background(), "demo"))
+	body := protocol.WorkerTaskBodyBriefBar("opencode", protocol.WorkerBrief{Notes: "fix it"}, "", "", "", "", "", protocol.WorkersSandboxed, "", n.d.SettingsSnapshot(), "demo", n.d.barOf(context.Background(), "demo"))
 	if !strings.Contains(body, "\n- B1: Performance first.\n- B2: No scratch files.") {
 		t.Fatalf("brief:\n%s", body)
 	}

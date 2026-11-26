@@ -49,17 +49,16 @@ func TestWorkerStartForwardsStructuredBrief(t *testing.T) {
 // undeclared field, so this also checks the catalog declares them.
 func TestWorkerStartReturnsBriefFlags(t *testing.T) {
 	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
-		return json.RawMessage(`{"status":"checked","brief_flags":[{"check":"reference","line":"Use the fixture as in the brief above.","reason":"points at text that is not in this brief."}]}`), nil
+		return json.RawMessage(`{"status":"started","session_id":"s_w1","harness":"opencode","model":"deepseek-v4.1-flash","project":"shop","hostname":"research","brief_flags":[{"check":"path","line":"Read /home/owner/PLAN.md first.","reason":"names a path outside the worker's own copy of the project."}]}`), nil
 	})
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_start", Arguments: map[string]any{
 		"project": "shop", "problem": "the login fails after a restart", "done": []string{"the login test passes"},
-		"task": "Use the fixture as in the brief above.", "mode": "check",
+		"task": "Read /home/owner/PLAN.md first.",
 	}})
 	if err != nil || res.IsError {
 		t.Fatalf("agent_worker_start: %v %+v", err, res)
 	}
 	var out struct {
-		Brief      string `json:"brief"`
 		BriefFlags []struct {
 			Check  string `json:"check"`
 			Line   string `json:"line"`
@@ -73,7 +72,7 @@ func TestWorkerStartReturnsBriefFlags(t *testing.T) {
 	if err := json.Unmarshal(raw, &out); err != nil {
 		t.Fatalf("structured content: %v", err)
 	}
-	if out.Brief != "ok" || len(out.BriefFlags) != 1 || out.BriefFlags[0].Check != "reference" || out.BriefFlags[0].Line != "Use the fixture as in the brief above." {
+	if len(out.BriefFlags) != 1 || out.BriefFlags[0].Check != "path" || out.BriefFlags[0].Line != "Read /home/owner/PLAN.md first." {
 		t.Fatalf("output = %+v", out)
 	}
 }

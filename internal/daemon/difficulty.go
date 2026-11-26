@@ -27,17 +27,6 @@ const defaultDifficultyTimeout = 3 * time.Minute
 // cannot hold a worker start past the run limits.
 const difficultyLookupTimeout = 10 * time.Second
 
-// assessDifficulty analyzes task and has a judge score the evidence. It is the
-// daemon's call: the same work runs outside a daemon through
-// NewDifficultyAssessor (see difficulty_assessor.go).
-func (d *Daemon) assessDifficulty(ctx context.Context, project, task string) (difficulty.Assessment, error) {
-	return NewDifficultyAssessor(d.cfg, DifficultySources{
-		PickJudge: d.pickDifficultyJudge,
-		Binary:    d.harnessBinary,
-		Logf:      d.safeLogf,
-	}).Assess(ctx, project, task)
-}
-
 func (d *Daemon) safeLogf(format string, args ...any) {
 	if d != nil && d.log != nil {
 		d.Logf(format, args...)

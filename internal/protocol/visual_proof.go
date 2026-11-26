@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"regexp"
 	"strings"
 )
 
@@ -36,29 +35,6 @@ func (v VisualEvidence) Lines() string {
 		b.WriteString("proof unavailable: " + v.ProofUnavailable + "\n")
 	}
 	return b.String()
-}
-
-var visualTUIWord = regexp.MustCompile(`\btui\b`)
-
-// VisualBriefWarning is separate from CheckWorkerBrief: it never refuses a start.
-func VisualBriefWarning(task string) string {
-	lower := strings.ToLower(task)
-	visible := visualTUIWord.MatchString(lower)
-	for _, term := range []string{"user-visible", "user visible", "frontend", "front-end", "screen", "scroll", "layout", "template", ".css", ".tsx", ".html"} {
-		if strings.Contains(lower, term) {
-			visible = true
-			break
-		}
-	}
-	if !visible {
-		return ""
-	}
-	for _, term := range []string{"expected visible outcome:", "expected appearance:", "should display", "should show", "must display", "must show"} {
-		if strings.Contains(lower, term) {
-			return ""
-		}
-	}
-	return "WARNING: user-visible task has no expected visible outcome; describe what the reviewer should see"
 }
 
 func (o ChangeOrigin) Visual() VisualEvidence {
