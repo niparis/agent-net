@@ -8,32 +8,6 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// Owner dismisses a merge approval, then the caller reports an unrelated step on
-// the same revision. Does the dismissed item stay dismissed?
-func TestDeliveryDismissedApprovalPersistsOnRefresh(t *testing.T) {
-	r := newDeliveryRig(t)
-	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"ask"`)}}, "owner", "test"); err != nil {
-		t.Fatal(err)
-	}
-	id := r.submit(r.a, r.workerSubmit("feature/dismissed", commitA)).Change.Change.ID
-	items, err := r.s.ListInbox()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("approval inbox: %+v, %v", items, err)
-	}
-	if _, err := r.s.AnswerInbox(items[0].ID, "dismiss"); err != nil {
-		t.Fatal(err)
-	}
-	// An unrelated step of the same revision is reported next.
-	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: stepAccept, Result: protocol.StepResultPass, Commit: commitA})
-	items, err = r.s.ListInbox()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("after report: %+v, %v", items, err)
-	}
-	if items[0].Status != "dismissed" {
-		t.Fatalf("dismissed approval reopened after an unrelated report: status=%q", items[0].Status)
-	}
-}
-
 // A change closed while an owner approval is open: what happens to the item?
 func TestDeliveryClosedChangeClosesApprovalItem(t *testing.T) {
 	r := newDeliveryRig(t)
@@ -99,63 +73,6 @@ func TestDeliveryUnclaimedTaskMovesToNewOwner(t *testing.T) {
 	_ = strings.TrimSpace
 }
 
-// A new revision of the same change: does the old revision's open approval stay?
-func TestDeliveryNewRevisionClosesOldApproval(t *testing.T) {
-	r := newDeliveryRig(t)
-	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"ask"`)}}, "owner", "test"); err != nil {
-		t.Fatal(err)
-	}
-	r.submit(r.a, r.workerSubmit("feature/rev", commitA))
-	r.submit(r.a, r.workerSubmit("feature/rev", commitB))
-	items, err := r.s.ListInbox()
-	if err != nil {
-		t.Fatal(err)
-	}
-	open := 0
-	for _, item := range items {
-		if item.Status == "open" && item.Delivery != nil {
-			open++
-		}
-	}
-	if open != 1 {
-		t.Fatalf("%d open approval items after a new revision; want only the current one", open)
-	}
-}
-
-// A node task queued, then the step is reassigned to the person. Does the old
-// node keep the step?
-func TestDeliveryPersonReassignmentRetiresQueuedTask(t *testing.T) {
-	r := newDeliveryRig(t)
-	if err := r.s.AddArchitect("first", "owner"); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.s.SetDeliveryOwner(protocol.DeliveryOwnerSetRequest{Project: "demo", Step: "accept", Node: "first"}, "owner"); err != nil {
-		t.Fatal(err)
-	}
-	id := r.submit(r.a, r.workerSubmit("feature/person-move", commitA)).Change.Change.ID
-	if err := r.s.SetDeliveryOwner(protocol.DeliveryOwnerSetRequest{Project: "demo", Step: "accept", Node: "@owner", Expect: "first"}, "owner"); err != nil {
-		t.Fatal(err)
-	}
-	var owner string
-	_ = r.s.db.QueryRow(`SELECT owner_node FROM delivery_step_tasks WHERE change_id=? AND step='accept'`, id).Scan(&owner)
-	if owner == "first" {
-		t.Fatalf("the old node still owns accept after the step moved to the person")
-	}
-	items, err := r.s.ListInbox()
-	if err != nil {
-		t.Fatal(err)
-	}
-	found := false
-	for _, item := range items {
-		if item.Delivery != nil && item.Delivery.Step == protocol.StepAccept {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatal("no owner inbox item after the step moved to the person")
-	}
-}
-
 // The caller owns the steps but runs on another machine than the worker.
 func TestDeliveryRemoteCallerRequiresPush(t *testing.T) {
 	r := newDeliveryRig(t)
@@ -179,32 +96,6 @@ func TestDeliveryRemoteCallerRequiresPush(t *testing.T) {
 	}
 	if !needs {
 		t.Fatal("the caller owns the steps on another machine, but the branch is not pushed")
-	}
-}
-
-// The restart path: backfill runs at every OpenStore.
-func TestDeliveryDismissedApprovalPersistsOnBackfill(t *testing.T) {
-	r := newDeliveryRig(t)
-	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"ask"`)}}, "owner", "test"); err != nil {
-		t.Fatal(err)
-	}
-	r.submit(r.a, r.workerSubmit("feature/restart", commitA))
-	items, err := r.s.ListInbox()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("approval inbox: %+v, %v", items, err)
-	}
-	if _, err := r.s.AnswerInbox(items[0].ID, "dismiss"); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.s.backfillDeliveryTasks(); err != nil {
-		t.Fatal(err)
-	}
-	items, err = r.s.ListInbox()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("after backfill: %+v, %v", items, err)
-	}
-	if items[0].Status != "dismissed" {
-		t.Fatalf("dismissed approval reopened at startup: status=%q", items[0].Status)
 	}
 }
 
@@ -286,47 +177,5 @@ func TestDeliveryReassignmentBackToNode(t *testing.T) {
 	var count int
 	if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM delivery_step_tasks WHERE change_id=? AND step='accept' AND owner_node='first'`, id).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("active node task = %d, %v", count, err)
-	}
-}
-
-func TestDeliveryReassignApprovalToNoneClosesInbox(t *testing.T) {
-	r := newDeliveryRig(t)
-	q := protocol.DeliveryOwnerSetRequest{Project: "demo", Step: "approve", For: "merge", Node: "@owner"}
-	if err := r.s.SetDeliveryOwner(q, "owner"); err != nil {
-		t.Fatal(err)
-	}
-	r.submit(r.a, r.workerSubmit("feature/none", commitA))
-	q.Node, q.Expect = "@none", "@owner"
-	if err := r.s.SetDeliveryOwner(q, "owner"); err != nil {
-		t.Fatal(err)
-	}
-	items, err := r.s.ListInbox()
-	if err != nil || len(items) != 1 || items[0].Status != "dismissed" {
-		t.Fatalf("obsolete approval: %+v, %v", items, err)
-	}
-}
-
-func TestDeliveryRuleDisabledApprovalReopensWhenRuleReenabled(t *testing.T) {
-	r := newDeliveryRig(t)
-	q := protocol.DeliveryOwnerSetRequest{Project: "demo", Step: "approve", For: "merge", Node: "@owner"}
-	if err := r.s.SetDeliveryOwner(q, "owner"); err != nil {
-		t.Fatal(err)
-	}
-	r.submit(r.a, r.workerSubmit("feature/reenable", commitA))
-	items, err := r.s.ListInbox()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("items: %+v, %v", items, err)
-	}
-	q.Node, q.Expect = "@none", "@owner"
-	if err = r.s.SetDeliveryOwner(q, "owner"); err != nil {
-		t.Fatal(err)
-	}
-	q.Node, q.Expect = "@owner", "@none"
-	if err = r.s.SetDeliveryOwner(q, "owner"); err != nil {
-		t.Fatal(err)
-	}
-	items, err = r.s.ListInbox()
-	if err != nil || len(items) != 1 || items[0].Status != "open" {
-		t.Fatalf("re-enabled approval: %+v, %v", items, err)
 	}
 }

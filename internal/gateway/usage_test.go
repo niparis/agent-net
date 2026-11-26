@@ -85,7 +85,7 @@ func TestConsoleHeaderCountsMatchVisibleSessions(t *testing.T) {
 		{Kind: "question", Text: "question"}, {Kind: "approval", Text: "approval"}, {Kind: "feature_idea", Text: "hidden idea"},
 	} {
 		item.SessionID = session
-		if _, err := s.CreateInboxItem(item); err != nil {
+		if _, err := storeOldItem(t, s, item); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -31,20 +32,15 @@ func tickDues(t *testing.T, s *Store) []protocol.Message {
 	return msgs
 }
 
-func dueAsks(t *testing.T, s *Store) []followUpAsk {
-	t.Helper()
-	rows, err := s.db.Query(`SELECT id, next_who, session_id, text, source_ref FROM inbox_items WHERE source_ref LIKE 'due:%' ORDER BY created_at, id`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
+// dueAsks returns the due items agent-net raised. They are its own items, so
+// each is a log line, not a stored ask (decision 0196).
+func dueAsks(logs *[]string) []followUpAsk {
+	line := regexp.MustCompile(`^desk\.dropped kind \S+ from_kind \S+ session (\S+) ref (due:\S+) text (.*)\n$`)
 	var out []followUpAsk
-	for rows.Next() {
-		var a followUpAsk
-		if err := rows.Scan(&a.id, &a.next, &a.session, &a.text, &a.ref); err != nil {
-			t.Fatal(err)
+	for _, l := range *logs {
+		if m := line.FindStringSubmatch(l); m != nil {
+			out = append(out, followUpAsk{session: m[1], ref: m[2], text: m[3]})
 		}
-		out = append(out, a)
 	}
 	return out
 }
@@ -94,6 +90,7 @@ func TestDueAfterReplyWakesOnlyAfterTheReply(t *testing.T) {
 
 func TestDueIdleAfterWakeRaisesOneChiefAsk(t *testing.T) {
 	s, c, _, a, _, _ := followUpRig(t)
+	logs := captureLog(s)
 	item := dueAdd(t, s, a, protocol.DueArgs{What: "Flip ch_1", Due: "10m"})
 	c.advance(11 * time.Minute)
 	if got := tickDues(t, s); len(got) != 1 {
@@ -103,21 +100,21 @@ func TestDueIdleAfterWakeRaisesOneChiefAsk(t *testing.T) {
 
 	c.set(woke.Add(14 * time.Minute))
 	tickDues(t, s)
-	if got := dueAsks(t, s); len(got) != 0 {
+	if got := dueAsks(logs); len(got) != 0 {
 		t.Fatalf("asked before 15 minutes without activity: %+v", got)
 	}
 
 	c.set(woke.Add(16 * time.Minute))
 	tickDues(t, s)
 	tickDues(t, s)
-	got := dueAsks(t, s)
+	got := dueAsks(logs)
 	if len(got) != 1 {
 		t.Fatalf("got %d asks, want exactly 1: %+v", len(got), got)
 	}
-	if got[0].next != protocol.AskNextChief || got[0].session != a || got[0].ref != "due:"+item.ID {
-		t.Errorf("ask = next %q session %q ref %q", got[0].next, got[0].session, got[0].ref)
+	if got[0].session != a || got[0].ref != "due:"+item.ID {
+		t.Errorf("ask = session %q ref %q", got[0].session, got[0].ref)
 	}
-	for _, want := range []string{item.ID, "Flip ch_1", woke.UTC().Format(time.RFC3339)} {
+	for _, want := range []string{item.ID, "Flip ch_1"} {
 		if !strings.Contains(got[0].text, want) {
 			t.Errorf("ask text %q lacks %q", got[0].text, want)
 		}
@@ -126,6 +123,7 @@ func TestDueIdleAfterWakeRaisesOneChiefAsk(t *testing.T) {
 
 func TestDueSessionActivityAfterWakeRaisesNoAsk(t *testing.T) {
 	s, c, _, a, b, _ := followUpRig(t)
+	logs := captureLog(s)
 	dueAdd(t, s, a, protocol.DueArgs{What: "Flip ch_1", Due: "10m"})
 	c.advance(11 * time.Minute)
 	tickDues(t, s)
@@ -137,13 +135,14 @@ func TestDueSessionActivityAfterWakeRaisesNoAsk(t *testing.T) {
 	c.advance(30 * time.Minute)
 	tickDues(t, s)
 	tickDues(t, s)
-	if got := dueAsks(t, s); len(got) != 0 {
+	if got := dueAsks(logs); len(got) != 0 {
 		t.Fatalf("asked although the session sent a message after the wake: %+v", got)
 	}
 }
 
 func TestDueDoneBeforeTheAskRaisesNothing(t *testing.T) {
 	s, c, _, a, _, _ := followUpRig(t)
+	logs := captureLog(s)
 	item := dueAdd(t, s, a, protocol.DueArgs{What: "Flip ch_1", Due: "10m"})
 	c.advance(11 * time.Minute)
 	tickDues(t, s)
@@ -154,7 +153,7 @@ func TestDueDoneBeforeTheAskRaisesNothing(t *testing.T) {
 	}
 	c.advance(30 * time.Minute)
 	tickDues(t, s)
-	if got := dueAsks(t, s); len(got) != 0 {
+	if got := dueAsks(logs); len(got) != 0 {
 		t.Fatalf("asked after the item was done: %+v", got)
 	}
 	open, err := s.SessionDue(a, protocol.DueArgs{Action: protocol.DueActionList})
@@ -177,6 +176,7 @@ func TestDueDoneOfAnotherSessionIsRefused(t *testing.T) {
 
 func TestDueOwnerBlockedRaisesOneChiefAskAndNoWake(t *testing.T) {
 	s, c, _, a, _, _ := followUpRig(t)
+	logs := captureLog(s)
 	item := dueAdd(t, s, a, protocol.DueArgs{What: "Decide the merge", Due: "10m", Blocker: protocol.DueBlockerOwner})
 	c.advance(11 * time.Minute)
 	wakes := tickDues(t, s)
@@ -186,11 +186,11 @@ func TestDueOwnerBlockedRaisesOneChiefAskAndNoWake(t *testing.T) {
 	if len(wakes) != 0 {
 		t.Fatalf("an owner-blocked item woke a session: %+v", wakes)
 	}
-	got := dueAsks(t, s)
+	got := dueAsks(logs)
 	if len(got) != 1 {
 		t.Fatalf("got %d asks, want exactly 1: %+v", len(got), got)
 	}
-	if got[0].next != protocol.AskNextChief || !strings.Contains(got[0].text, item.ID) {
-		t.Errorf("ask = next %q text %q", got[0].next, got[0].text)
+	if !strings.Contains(got[0].text, item.ID) {
+		t.Errorf("ask text %q", got[0].text)
 	}
 }

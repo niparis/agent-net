@@ -159,10 +159,15 @@ func proposeRules(t *testing.T, s *Store, session string, rules ...string) proto
 // still waits for the owner, exactly as before.
 func TestPermissionProposalApprovedByScope(t *testing.T) {
 	s, session := permissionScopeRig(t)
+	logs := captureLog(s)
+	// A proposal that waits for the owner goes to the chief, or to the log
+	// when there is no chief (decision 0196).
 	asks := func() int {
-		var n int
-		if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items`).Scan(&n); err != nil {
-			t.Fatal(err)
+		n := 0
+		for _, line := range *logs {
+			if strings.HasPrefix(line, "desk.") && strings.Contains(line, " kind permission ") {
+				n++
+			}
 		}
 		return n
 	}
@@ -196,61 +201,8 @@ func TestPermissionProposalApprovedByScope(t *testing.T) {
 	}
 }
 
-// An ask from a repo that a node's asks scope covers goes to a live session of
-// that node, with a message, before the chief or the Desk. An ask from a repo
-// no asks scope covers is routed as before.
-func TestAskGoesToTheAsksScopeHolderFirst(t *testing.T) {
-	s := teamStore(t)
-	var asker, holder string
-	if err := s.db.QueryRow(`SELECT id FROM sessions WHERE native_id='n-demo'`).Scan(&asker); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.db.QueryRow(`SELECT id FROM sessions WHERE native_id='n-other'`).Scan(&holder); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.db.Exec(`UPDATE sessions SET agent_id=CASE id WHEN ? THEN 'demo' ELSE 'other' END, online=1 WHERE id IN (?,?)`, asker, asker, holder); err != nil {
-		t.Fatal(err)
-	}
-	ask := func(text string) protocol.InboxItem {
-		t.Helper()
-		item, err := s.createInboxItem(s.db, protocol.InboxItem{Kind: "question", SessionID: asker, Node: "demo", Text: text, Options: []string{"yes", "no"}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		var next string
-		if err := s.db.QueryRow(`SELECT next_who FROM inbox_items WHERE id=?`, item.ID).Scan(&next); err != nil {
-			t.Fatal(err)
-		}
-		item.NextWho = next
-		return item
-	}
-	if got := ask("first question").NextWho; got != protocol.AskNextOwner {
-		t.Fatalf("with no scope the ask went to %q", got)
-	}
-	if _, err := s.SetScope(scopeSet("other", protocol.ScopeAsks, "repo:other", ""), "owner", false); err != nil {
-		t.Fatal(err)
-	}
-	if got := ask("second question").NextWho; got != protocol.AskNextOwner {
-		t.Fatalf("a scope over another repo sent the ask to %q", got)
-	}
-	if _, err := s.SetScope(scopeSet("other", protocol.ScopeAsks, "repo:demo", ""), "owner", false); err != nil {
-		t.Fatal(err)
-	}
-	item := ask("third question")
-	if item.NextWho != holder {
-		t.Fatalf("the ask went to %q, want the holder %s", item.NextWho, holder)
-	}
-	var body string
-	if err := s.db.QueryRow(`SELECT body FROM messages WHERE recipient=? AND idem_key LIKE ?`, holder, chiefAskKeyPrefix+item.ID+"%").Scan(&body); err != nil {
-		t.Fatalf("no message for the holder: %v", err)
-	}
-	if !strings.Contains(body, "third question") || !strings.Contains(body, "agent_ask_sort") {
-		t.Fatalf("message %q", body)
-	}
-}
-
 // The CTO holds permissions over everything, "on owner words". Its own proposal
-// with no owner words is not approved by that scope: it waits on the Desk. Its
+// with no owner words is not approved by that scope: it waits for the owner. Its
 // owner-words path is separate (ApprovePermissionOnOwnerWords). A session that
 // is the CTO by harness is refused the same way.
 func TestPermissionProposalFromTheCTOIsNotApprovedByScope(t *testing.T) {
@@ -260,6 +212,7 @@ func TestPermissionProposalFromTheCTOIsNotApprovedByScope(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, session := permissionScopeRig(t)
+			logs := captureLog(s)
 			if _, err := s.SetScope(scopeSet("forge", protocol.ScopePermissions, "all", "on owner words"), "owner", false); err != nil {
 				t.Fatal(err)
 			}
@@ -270,9 +223,8 @@ func TestPermissionProposalFromTheCTOIsNotApprovedByScope(t *testing.T) {
 			if res.Status != "pending" {
 				t.Fatalf("the CTO's proposal: %+v, want pending", res)
 			}
-			var asks int
-			if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref=?`, permissionAskPrefix+res.ID).Scan(&asks); err != nil || asks != 1 {
-				t.Fatalf("Desk asks for the proposal: %d %v", asks, err)
+			if got := strings.Join(*logs, ""); strings.Count(got, " ref "+permissionAskPrefix+res.ID+"\n") != 1 {
+				t.Fatalf("owner items for the proposal: %q", got)
 			}
 		})
 	}

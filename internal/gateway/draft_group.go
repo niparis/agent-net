@@ -126,10 +126,9 @@ func (g draftGroup) fieldLines() []string {
 	return out
 }
 
-// reconcileDraftAsks opens the one ask of each draft group, sends it to the
-// team lead when the node's team asks to the lead, and closes the asks that no
-// longer have drafts. The old asks of one field close as "grouped" once the
-// grouped ask exists, so no draft is left without an ask.
+// reconcileDraftAsks sends the one ask of each draft group to the team lead
+// when the node's team asks to the lead, and closes the stored asks that no
+// longer have drafts. The old stored asks of one field close as "grouped".
 func (s *Store) reconcileDraftAsks(drafts []protocol.CharterDraft) error {
 	type openRow struct{ id, ref, about string }
 	rows, err := s.db.Query(`SELECT id,source_ref,about_id FROM inbox_items WHERE status='open' AND kind='draft'`)
@@ -137,7 +136,7 @@ func (s *Store) reconcileDraftAsks(drafts []protocol.CharterDraft) error {
 		return err
 	}
 	var open []openRow
-	ownerOpen, leadOpen := map[string]bool{}, map[string]bool{}
+	leadOpen := map[string]bool{}
 	for rows.Next() {
 		var r openRow
 		if err := rows.Scan(&r.id, &r.ref, &r.about); err != nil {
@@ -145,10 +144,7 @@ func (s *Store) reconcileDraftAsks(drafts []protocol.CharterDraft) error {
 			return err
 		}
 		open = append(open, r)
-		switch {
-		case strings.HasPrefix(r.ref, draftGroupRefPrefix):
-			ownerOpen[r.ref] = true
-		case strings.HasPrefix(r.ref, leadAskRefPrefix):
+		if strings.HasPrefix(r.ref, leadAskRefPrefix) {
 			leadOpen[r.about] = true
 		}
 	}
@@ -162,47 +158,31 @@ func (s *Store) reconcileDraftAsks(drafts []protocol.CharterDraft) error {
 		item := protocol.InboxItem{
 			Kind: protocol.AskKindDraft, SessionID: gatewayAsker, FromKind: protocol.AskFromGateway, Node: g.scope, AskerName: "charter draft",
 			SourceRef: g.ref(), AboutKind: protocol.AskAboutProject, AboutID: g.scope,
-			Text: g.text(), Detail: g.detail(), Options: []string{"accept", "reject"},
+			Text: g.text(), Detail: g.detail(),
 		}
-		if ownerOpen[g.ref()] {
-			// Refresh the text and the field list.
-			if _, err := s.createInboxItem(s.db, item); err != nil {
-				return err
-			}
+		// A team's draft and a node with no lead to send it to make no item:
+		// the owner has no Desk (decision 0196).
+		if g.team || leadOpen[g.scope] {
 			continue
 		}
-		if !g.team {
-			if leadOpen[g.scope] {
-				continue
-			}
-			seen, err := s.leadSawDrafts(g)
-			if err != nil {
-				return err
-			}
-			if seen {
-				continue
-			}
-			prefer := g.drafts[len(g.drafts)-1].DraftedBy
-			routed, err := s.nodeRoutesToLead(g.scope, prefer)
-			if err != nil {
-				return err
-			}
-			// A session submits its fields one after another, and the lead gets
-			// one request. Wait until the fields stop coming.
-			if routed && s.now().UnixNano()-g.newest() < int64(draftSettle) {
-				continue
-			}
-			item.Options = nil
-			sent, err := s.redirectNodeAsk(g.scope, prefer, item)
-			if err != nil {
-				return err
-			}
-			if sent {
-				continue
-			}
-			item.Options = []string{"accept", "reject"}
+		seen, err := s.leadSawDrafts(g)
+		if err != nil {
+			return err
 		}
-		if _, err := s.createInboxItem(s.db, item); err != nil {
+		if seen {
+			continue
+		}
+		prefer := g.drafts[len(g.drafts)-1].DraftedBy
+		routed, err := s.nodeRoutesToLead(g.scope, prefer)
+		if err != nil {
+			return err
+		}
+		// A session submits its fields one after another, and the lead gets
+		// one request. Wait until the fields stop coming.
+		if !routed || s.now().UnixNano()-g.newest() < int64(draftSettle) {
+			continue
+		}
+		if err := s.redirectNodeAsk(g.scope, prefer, item); err != nil {
 			return err
 		}
 	}
@@ -308,30 +288,27 @@ func (s *Store) nodeRoutesToLead(node, prefer string) (bool, error) {
 }
 
 // redirectNodeAsk sends the ask of a node to its team lead when the node's
-// team has asks_to=lead. It reports false, and does nothing, when the ask
-// belongs to the owner. The request to the lead is queued for delivery.
-func (s *Store) redirectNodeAsk(node, prefer string, item protocol.InboxItem) (bool, error) {
+// team has asks_to=lead, and does nothing otherwise. The request to the lead
+// is queued for delivery.
+func (s *Store) redirectNodeAsk(node, prefer string, item protocol.InboxItem) error {
 	session, err := s.nodeAskSession(node, prefer)
 	if err != nil || session == "" {
-		return false, err
+		return err
 	}
 	item.SessionID = session
 	red, m, err := s.RedirectOwnerAsk(item)
 	if err != nil {
 		if _, ok := err.(Rejection); ok {
-			return false, nil
+			return nil
 		}
-		return false, err
+		return err
 	}
-	if red == nil {
-		return false, nil
-	}
-	if m.State != protocol.StateHeld {
+	if red != nil && m.State != protocol.StateHeld {
 		s.leadOutMu.Lock()
 		s.leadOut = append(s.leadOut, m)
 		s.leadOutMu.Unlock()
 	}
-	return true, nil
+	return nil
 }
 
 // TakeLeadRequests returns the requests that the asks reconcile sent to team

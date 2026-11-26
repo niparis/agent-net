@@ -171,10 +171,9 @@ func TestCTOPermissionApplyRefusesWordsNeverTyped(t *testing.T) {
 	}
 }
 
-// A proposal already on the Desk, filed for the owner's own chat instruction,
-// is applied by id on his words. Its Desk item closes with an answer that
-// names the CTO and his words, and the CTO sees it in cto_proposals_find and
-// proposal_ask by its pp_ id.
+// A pending proposal, filed for the owner's own chat instruction, is applied
+// by id on his words. The CTO sees it in cto_proposals_find and proposal_ask
+// by its pp_ id.
 func TestCTOPermissionApplyApprovesDeskProposal(t *testing.T) {
 	r := newCTOPermissionRig(t)
 	pi, _ := helloPi(t, r.n, "np", r.repo, false)
@@ -233,19 +232,6 @@ func TestCTOPermissionApplyApprovesDeskProposal(t *testing.T) {
 		if a.Kind == protocol.AskKindPermission {
 			t.Fatalf("Desk item still open: %+v", a)
 		}
-	}
-	items, err := r.g.gw.Store().ListInbox()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var closed protocol.InboxItem
-	for _, item := range items {
-		if item.Kind == protocol.AskKindPermission {
-			closed = item
-		}
-	}
-	if closed.Status != "approved" || !strings.Contains(closed.Answer, "CTO") || !strings.Contains(closed.Answer, words) {
-		t.Fatalf("Desk item closed as %q with answer %q", closed.Status, closed.Answer)
 	}
 	if _, err := r.ctoApply(map[string]any{"id": proposed.ID, "owner_words": words}); err == nil || !strings.Contains(err.Error(), "not pending") {
 		t.Fatalf("second approve: %v", err)

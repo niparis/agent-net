@@ -155,7 +155,8 @@ func TestOwnerAskGoesToTheTeamLeadEndToEnd(t *testing.T) {
 		t.Fatalf("member got: %+v", back)
 	}
 
-	// The lead's own question is not redirected: it waits for the owner.
+	// The lead's own question is not redirected to a lead: it goes to the chief
+	// for the owner (decision 0196), and the lead waits for him.
 	raw, err = lead.call("ask_question", map[string]any{"text": "Spend money?", "recommendation": "no"})
 	if err != nil {
 		t.Fatal(err)
@@ -164,7 +165,7 @@ func TestOwnerAskGoesToTheTeamLeadEndToEnd(t *testing.T) {
 		Redirected *protocol.AskRedirect `json:"redirected"`
 		Item       protocol.InboxItem    `json:"item"`
 	}
-	if err := json.Unmarshal(raw, &own); err != nil || own.Redirected != nil || own.Item.ID == "" {
+	if err := json.Unmarshal(raw, &own); err != nil || (own.Redirected != nil && !own.Redirected.Chief) {
 		t.Fatalf("lead's ask: %s %v", raw, err)
 	}
 	eventually(t, "lead waits for the owner", func() bool {

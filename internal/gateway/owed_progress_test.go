@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -16,22 +17,27 @@ func tickOwed(t *testing.T, s *Store, c *clock, at time.Time) {
 	}
 }
 
-// owedCounts returns how many nudges and asks one request has.
-func owedCounts(t *testing.T, s *Store, reqID string) (nudges, asks int) {
+// owedCounts returns how many nudges one request has, and 1 once its owed
+// reply reached the ask: agent-net raised it, so it is a log line, not a
+// stored item (decision 0196).
+func owedCounts(t *testing.T, s *Store, logs *[]string, reqID string) (nudges, asks int) {
 	t.Helper()
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE parent_id=? AND sender='agent-net'`, reqID).Scan(&nudges); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref=?`, "owed-ask:"+reqID).Scan(&asks); err != nil {
-		t.Fatal(err)
+	for _, line := range *logs {
+		if strings.HasPrefix(line, "desk.dropped ") && strings.Contains(line, " ref owed-ask:"+reqID+" ") {
+			return nudges, 1
+		}
 	}
-	return nudges, asks
+	return nudges, 0
 }
 
 // A progress reply with follow_up_at holds the chase until that time. The
 // nudge comes at the time, and the ask ten minutes after the nudge.
 func TestOwedReplyProgressFollowUpDefersNudgeAndAsk(t *testing.T) {
 	s, c := newTestStore(t)
+	logs := captureLog(s)
 	a, b := twoSessions(t, s)
 
 	req, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "Run the release", Type: protocol.TypeRequest})
@@ -50,25 +56,25 @@ func TestOwedReplyProgressFollowUpDefersNudgeAndAsk(t *testing.T) {
 
 	// 30 minutes in: the promised time (46 minutes) has not come.
 	tickOwed(t, s, c, start.Add(30*time.Minute))
-	if nudges, asks := owedCounts(t, s, req.ID); nudges != 0 || asks != 0 {
+	if nudges, asks := owedCounts(t, s, logs, req.ID); nudges != 0 || asks != 0 {
 		t.Fatalf("before the promised time: %d nudges, %d asks; want none", nudges, asks)
 	}
 
 	// At the promised time: one nudge.
 	tickOwed(t, s, c, start.Add(46*time.Minute))
-	if nudges, asks := owedCounts(t, s, req.ID); nudges != 1 || asks != 0 {
+	if nudges, asks := owedCounts(t, s, logs, req.ID); nudges != 1 || asks != 0 {
 		t.Fatalf("at the promised time: %d nudges, %d asks; want 1 nudge and no ask", nudges, asks)
 	}
 
 	// Nine minutes after the nudge: no ask yet.
 	tickOwed(t, s, c, start.Add(55*time.Minute))
-	if _, asks := owedCounts(t, s, req.ID); asks != 0 {
+	if _, asks := owedCounts(t, s, logs, req.ID); asks != 0 {
 		t.Fatalf("nine minutes after the nudge: %d asks, want 0", asks)
 	}
 
 	// Ten minutes after the nudge: one ask.
 	tickOwed(t, s, c, start.Add(56*time.Minute))
-	if nudges, asks := owedCounts(t, s, req.ID); nudges != 1 || asks != 1 {
+	if nudges, asks := owedCounts(t, s, logs, req.ID); nudges != 1 || asks != 1 {
 		t.Fatalf("ten minutes after the nudge: %d nudges, %d asks; want 1 and 1", nudges, asks)
 	}
 }
@@ -77,6 +83,7 @@ func TestOwedReplyProgressFollowUpDefersNudgeAndAsk(t *testing.T) {
 // that the nudge had started, and the chase resumes after that time.
 func TestOwedReplyProgressFollowUpStopsAskAfterNudge(t *testing.T) {
 	s, c := newTestStore(t)
+	logs := captureLog(s)
 	a, b := twoSessions(t, s)
 
 	req, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "Run the release", Type: protocol.TypeRequest})
@@ -89,7 +96,7 @@ func TestOwedReplyProgressFollowUpStopsAskAfterNudge(t *testing.T) {
 	}
 
 	tickOwed(t, s, c, start.Add(15*time.Minute))
-	if nudges, _ := owedCounts(t, s, req.ID); nudges != 1 {
+	if nudges, _ := owedCounts(t, s, logs, req.ID); nudges != 1 {
 		t.Fatalf("at 15 minutes: %d nudges, want 1", nudges)
 	}
 
@@ -100,17 +107,17 @@ func TestOwedReplyProgressFollowUpStopsAskAfterNudge(t *testing.T) {
 
 	// The ask would have been due at 25 minutes. The promise holds it.
 	tickOwed(t, s, c, start.Add(25*time.Minute))
-	if _, asks := owedCounts(t, s, req.ID); asks != 0 {
+	if _, asks := owedCounts(t, s, logs, req.ID); asks != 0 {
 		t.Fatalf("at 25 minutes, under the promise: %d asks, want 0", asks)
 	}
 
 	// The promised time (76 minutes) passed: the ask comes ten minutes later.
 	tickOwed(t, s, c, start.Add(76*time.Minute))
-	if _, asks := owedCounts(t, s, req.ID); asks != 0 {
+	if _, asks := owedCounts(t, s, logs, req.ID); asks != 0 {
 		t.Fatalf("at the promised time: %d asks, want 0", asks)
 	}
 	tickOwed(t, s, c, start.Add(86*time.Minute))
-	if nudges, asks := owedCounts(t, s, req.ID); nudges != 1 || asks != 1 {
+	if nudges, asks := owedCounts(t, s, logs, req.ID); nudges != 1 || asks != 1 {
 		t.Fatalf("ten minutes after the promised time: %d nudges, %d asks; want 1 and 1", nudges, asks)
 	}
 }
@@ -119,6 +126,7 @@ func TestOwedReplyProgressFollowUpStopsAskAfterNudge(t *testing.T) {
 // counted from that reply. The default grace is two hours.
 func TestOwedReplyProgressWithoutFollowUpDefersByGrace(t *testing.T) {
 	s, c := newTestStore(t)
+	logs := captureLog(s)
 	a, b := twoSessions(t, s)
 
 	req, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "Run the release", Type: protocol.TypeRequest})
@@ -137,17 +145,17 @@ func TestOwedReplyProgressWithoutFollowUpDefersByGrace(t *testing.T) {
 
 	// One hour after the reply: still inside the grace.
 	tickOwed(t, s, c, start.Add(61*time.Minute))
-	if nudges, asks := owedCounts(t, s, req.ID); nudges != 0 || asks != 0 {
+	if nudges, asks := owedCounts(t, s, logs, req.ID); nudges != 0 || asks != 0 {
 		t.Fatalf("inside the grace: %d nudges, %d asks; want none", nudges, asks)
 	}
 
 	// Two hours after the reply: one nudge, then one ask ten minutes later.
 	tickOwed(t, s, c, start.Add(121*time.Minute))
-	if nudges, asks := owedCounts(t, s, req.ID); nudges != 1 || asks != 0 {
+	if nudges, asks := owedCounts(t, s, logs, req.ID); nudges != 1 || asks != 0 {
 		t.Fatalf("after the grace: %d nudges, %d asks; want 1 nudge and no ask", nudges, asks)
 	}
 	tickOwed(t, s, c, start.Add(131*time.Minute))
-	if nudges, asks := owedCounts(t, s, req.ID); nudges != 1 || asks != 1 {
+	if nudges, asks := owedCounts(t, s, logs, req.ID); nudges != 1 || asks != 1 {
 		t.Fatalf("ten minutes after the grace nudge: %d nudges, %d asks; want 1 and 1", nudges, asks)
 	}
 }
@@ -156,6 +164,7 @@ func TestOwedReplyProgressWithoutFollowUpDefersByGrace(t *testing.T) {
 // without follow_up_at gets.
 func TestOwedReplyProgressGraceSetting(t *testing.T) {
 	s, c := newTestStore(t)
+	logs := captureLog(s)
 	a, b := twoSessions(t, s)
 	if _, err := s.WriteSettings([]SettingsChange{{Key: "messages.owed_reply_progress_grace", Level: "network", Scope: "network", Value: settingValue(`"30m"`)}}, "owner", "test grace"); err != nil {
 		t.Fatal(err)
@@ -176,11 +185,11 @@ func TestOwedReplyProgressGraceSetting(t *testing.T) {
 	}
 
 	tickOwed(t, s, c, start.Add(30*time.Minute))
-	if nudges, _ := owedCounts(t, s, req.ID); nudges != 0 {
+	if nudges, _ := owedCounts(t, s, logs, req.ID); nudges != 0 {
 		t.Fatalf("inside the 30 minute grace: %d nudges, want 0", nudges)
 	}
 	tickOwed(t, s, c, start.Add(31*time.Minute))
-	if nudges, _ := owedCounts(t, s, req.ID); nudges != 1 {
+	if nudges, _ := owedCounts(t, s, logs, req.ID); nudges != 1 {
 		t.Fatalf("after the 30 minute grace: %d nudges, want 1", nudges)
 	}
 }
@@ -189,6 +198,7 @@ func TestOwedReplyProgressGraceSetting(t *testing.T) {
 // earlier promise.
 func TestOwedReplyLatestProgressReplyDecides(t *testing.T) {
 	s, c := newTestStore(t)
+	logs := captureLog(s)
 	a, b := twoSessions(t, s)
 
 	req, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "Run the release", Type: protocol.TypeRequest})
@@ -211,11 +221,11 @@ func TestOwedReplyLatestProgressReplyDecides(t *testing.T) {
 
 	// The later reply's grace (two hours from minute 2) decides, not the three hour promise.
 	tickOwed(t, s, c, start.Add(121*time.Minute))
-	if nudges, _ := owedCounts(t, s, req.ID); nudges != 0 {
+	if nudges, _ := owedCounts(t, s, logs, req.ID); nudges != 0 {
 		t.Fatalf("at 121 minutes: %d nudges, want 0", nudges)
 	}
 	tickOwed(t, s, c, start.Add(122*time.Minute))
-	if nudges, _ := owedCounts(t, s, req.ID); nudges != 1 {
+	if nudges, _ := owedCounts(t, s, logs, req.ID); nudges != 1 {
 		t.Fatalf("at 122 minutes: %d nudges, want 1", nudges)
 	}
 }

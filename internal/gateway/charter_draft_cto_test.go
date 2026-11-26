@@ -3,8 +3,6 @@ package gateway
 import (
 	"context"
 	"encoding/json"
-	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -79,51 +77,6 @@ func TestCtoRejectsADraftWithoutWriting(t *testing.T) {
 	}
 	if _, err := s.DecideCharterDraftRow(id, "accept", "cto"); err == nil {
 		t.Fatal("decided a draft twice")
-	}
-}
-
-// The chief sends a draft ask to the CTO. The message carries each draft's
-// id, level, scope, attribute and text, so the CTO needs no other read.
-func TestChiefSendOfADraftAskCarriesTheDraftFields(t *testing.T) {
-	old := readPoolMax
-	readPoolMax = 0
-	defer func() { readPoolMax = old }()
-	s := teamStore(t)
-	asker := draftSession(t, s, "demo")
-	sevenFieldDrafts(t, s, asker)
-	chief := draftSession(t, s, "other")
-	var node string
-	if err := s.db.QueryRow(`SELECT node_id FROM sessions WHERE id=?`, chief).Scan(&node); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.db.Exec(`UPDATE sessions SET online=1, archived_at=0 WHERE id IN (?,?)`, chief, asker); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.SetChief(protocol.ChiefSetRequest{SessionID: chief}, "owner"); err != nil {
-		t.Fatal(err)
-	}
-	cto, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "codex", NativeID: "ncto", Name: "cto-stand-in"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	asks := draftAsks(t, s)
-	if len(asks) != 1 {
-		t.Fatalf("asks: %+v", asks)
-	}
-	_, msg, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{
-		Ask: asks[0].ID, Result: protocol.AskSortSend, To: cto, Reason: "charters are yours"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	id := draftIDOf(t, s, "repo", "purpose")
-	for _, want := range []string{
-		"draft " + strconv.FormatInt(id, 10) + ", level repo, scope demo, purpose = Demo service",
-		"level agent, scope demo, accepts = bug fixes",
-		"cto_proposals_find", "learned_answer",
-	} {
-		if !strings.Contains(msg.Body, want) {
-			t.Fatalf("message lacks %q:\n%s", want, msg.Body)
-		}
 	}
 }
 

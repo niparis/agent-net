@@ -129,28 +129,6 @@ func TestSessionAgentAssignmentSurvivesOldDaemonSyncForEveryHarness(t *testing.T
 	}
 }
 
-func TestSessionAgentOutcomeInboxUsesRepoContext(t *testing.T) {
-	r := newDeliveryRig(t)
-	if _, err := r.s.AddProjects(r.a, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "other", Path: "/code/other"}}}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := r.s.db.Exec(`UPDATE sessions SET repo_id='other' WHERE id=?`, r.sonnet); err != nil {
-		t.Fatal(err)
-	}
-	req, _, err := r.s.StoreMessage(protocol.MsgSend{Sender: r.caller, Recipient: r.sonnet, Body: "request"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _, err = r.s.StoreMessage(protocol.MsgSend{Sender: r.sonnet, Recipient: r.caller, ParentID: req.ID, Body: "no", ReplyOutcome: protocol.ReplyOutcome{Outcome: "reject", Reason: "outside charter"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var node string
-	if err := r.s.db.QueryRow(`SELECT node FROM inbox_items WHERE session_id=? ORDER BY created_at DESC LIMIT 1`, r.sonnet).Scan(&node); err != nil || node != "other" {
-		t.Fatalf("inbox node %q: %v", node, err)
-	}
-}
-
 func TestSessionAgentOwnerCanAssignRemoteSession(t *testing.T) {
 	r := newDeliveryRig(t)
 	if err := r.s.AddArchitect("advisor", "owner"); err != nil {

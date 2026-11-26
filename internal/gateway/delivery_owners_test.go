@@ -177,30 +177,6 @@ func TestDeliverySpecialOwners(t *testing.T) {
 	if err := r.s.SetDeliveryOwner(protocol.DeliveryOwnerSetRequest{Project: "demo", Step: "accept", Node: "@github", Expect: "@owner"}, "owner"); err == nil {
 		t.Fatal("GitHub was accepted as accept owner")
 	}
-	id := r.submit(r.a, r.workerSubmit("feature/person", commitA)).Change.Change.ID
-	items, err := r.s.ListInbox()
-	if err != nil || len(items) != 1 || !strings.Contains(items[0].Text, id) || !strings.Contains(items[0].Text, "accept") {
-		t.Fatalf("person step task = %+v, %v", items, err)
-	}
-	if _, err := r.s.AnswerInbox(items[0].ID, "approve"); err != nil {
-		t.Fatal(err)
-	}
-	view := r.get(id)
-	var githubWaiting, personPassed bool
-	for _, step := range view.Steps {
-		if step.Step == "test" && strings.Contains(step.Note, "waiting for GitHub") {
-			githubWaiting = true
-		}
-		if step.Step == "accept" && step.State == protocol.StepStatePassed && step.Evidence.By == protocol.EvidenceByOwner {
-			personPassed = true
-		}
-	}
-	if !githubWaiting {
-		t.Fatalf("GitHub task did not show its waiting state: %+v", view.Steps)
-	}
-	if !personPassed {
-		t.Fatalf("owner task did not record evidence: %+v", view.Steps)
-	}
 }
 
 func TestDeliverySpecialApproverReadsBackThroughShorthand(t *testing.T) {
@@ -306,30 +282,6 @@ func TestDeliverySpecialOwnerGraphUndo(t *testing.T) {
 	}
 }
 
-func TestDeliveryOwnerMergeNeedsMergedCommit(t *testing.T) {
-	r := newDeliveryRig(t)
-	if err := r.s.SetDeliveryOwner(protocol.DeliveryOwnerSetRequest{Project: "demo", Step: "merge", Node: "@owner"}, "owner"); err != nil {
-		t.Fatal(err)
-	}
-	id := r.submit(r.a, r.workerSubmit("feature/owner-merge", commitA)).Change.Change.ID
-	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: stepAccept, Result: protocol.StepResultPass, Commit: commitA})
-	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: protocol.StepRef{Step: protocol.StepTest}, Result: protocol.StepResultPass, Commit: commitA, Fields: map[string]string{protocol.FieldSuite: protocol.SuiteChanged}})
-	items, err := r.s.ListInbox()
-	if err != nil || len(items) != 1 || items[0].Delivery == nil || items[0].Delivery.Step != protocol.StepMerge {
-		t.Fatalf("owner merge item = %+v, %v", items, err)
-	}
-	if _, err := r.s.AnswerInbox(items[0].ID, "approve"); err == nil {
-		t.Fatal("owner merge passed without a merged commit")
-	}
-	if _, err := r.s.AnswerInbox(items[0].ID, `approve {"merged_commit":"`+commitMerged+`"}`); err != nil {
-		t.Fatal(err)
-	}
-	change := r.get(id).Change
-	if change.State != protocol.ChangeMerged || change.MergedCommit != commitMerged {
-		t.Fatalf("owner merge result = %+v", change)
-	}
-}
-
 func TestDeliveryNodeAssignmentCannotReplaceWrittenApproval(t *testing.T) {
 	r := newDeliveryRig(t)
 	if err := r.s.AddArchitect("reviewer", "owner"); err != nil {
@@ -364,10 +316,6 @@ func TestDeliveryTightenedApprovalRejectsQueuedNodeReport(t *testing.T) {
 	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "network", Scope: "network", Value: json.RawMessage(`"ask"`)}}, "owner", "tighten"); err != nil {
 		t.Fatal(err)
 	}
-	items, err := r.s.ListInbox()
-	if err != nil || len(items) != 1 || !strings.Contains(items[0].Text, id) {
-		t.Fatalf("tightened approval was not queued for the owner: %+v, %v", items, err)
-	}
 	ref := protocol.StepRef{Step: protocol.StepApprove, For: protocol.StepMerge}
 	if _, err := r.s.ClaimStep(r.b, protocol.StepClaimRequest{SessionID: sid, ChangeID: id, StepRef: ref, Commit: commitA}); err == nil {
 		t.Error("a queued node approval could be claimed after the written rule was tightened")
@@ -397,17 +345,6 @@ func TestDeliveryUndoTightenedApprovalRestoresNodeTask(t *testing.T) {
 	err = r.s.db.QueryRow(`SELECT owner_node FROM delivery_step_tasks WHERE change_id=? AND step='approve' AND for_step='merge'`, id).Scan(&owner)
 	if err != nil || owner != "reviewer" {
 		t.Fatalf("restored task = %q, %v", owner, err)
-	}
-	items, err := r.s.ListInbox()
-	if err != nil || len(items) != 1 || items[0].Status != "dismissed" {
-		t.Fatalf("obsolete approval = %+v, %v", items, err)
-	}
-	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "network", Scope: "network", Value: json.RawMessage(`"ask"`)}}, "owner", "tighten again"); err != nil {
-		t.Fatal(err)
-	}
-	items, err = r.s.ListInbox()
-	if err != nil || len(items) != 1 || items[0].Status != "open" {
-		t.Fatalf("reopened approval = %+v, %v", items, err)
 	}
 }
 
@@ -1032,99 +969,6 @@ func TestDeliveryNodeFailureNotifiesCaller(t *testing.T) {
 	}
 }
 
-func TestDeliveryOwnerApprovalRecordsExactCommit(t *testing.T) {
-	r := newDeliveryRig(t)
-	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"ask"`)}}, "owner", "test"); err != nil {
-		t.Fatal(err)
-	}
-	submitted := r.submit(r.a, r.workerSubmit("feature/approval", commitA)).Change
-	id := submitted.Change.ID
-	for _, step := range submitted.Steps {
-		if step.Step == protocol.StepApprove && step.For == protocol.StepMerge && step.State != protocol.StepStateNeedsOwner {
-			t.Fatalf("approval state: %+v", step)
-		}
-	}
-	items, err := r.s.ListInbox()
-	if err != nil || len(items) != 1 || items[0].Kind != "approval" || !strings.Contains(items[0].Text, id) || !strings.Contains(items[0].Text, commitA) {
-		t.Fatalf("approval inbox: %+v, %v", items, err)
-	}
-	if _, err := r.report(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: protocol.StepRef{Step: protocol.StepApprove, For: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitA}); err == nil {
-		t.Fatal("a session reported an owner-only approval")
-	}
-	if _, err := r.report(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: protocol.StepRef{Step: protocol.StepApprove, For: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitA, DoneBy: protocol.EvidenceByOwner}); err == nil {
-		t.Fatal("a session reported an unwritten owner-only approval")
-	}
-	if _, err := r.s.AnswerInbox(items[0].ID, "approve"); err != nil {
-		t.Fatal(err)
-	}
-	v := r.get(id)
-	if len(v.Evidence) != 1 || v.Evidence[0].By != protocol.EvidenceByOwner || v.Evidence[0].Result != protocol.StepResultPass || v.Evidence[0].Commit != commitA || v.Evidence[0].For != protocol.StepMerge {
-		t.Fatalf("approval evidence: %+v", v.Evidence)
-	}
-}
-
-func TestDeliveryStaleOwnerApprovalCannotApproveNewRevision(t *testing.T) {
-	r := newDeliveryRig(t)
-	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"ask"`)}}, "owner", "test"); err != nil {
-		t.Fatal(err)
-	}
-	id := r.submit(r.a, r.workerSubmit("feature/stale-approval", commitA)).Change.Change.ID
-	items, err := r.s.ListInbox()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("approval inbox: %+v, %v", items, err)
-	}
-	r.submit(r.a, r.workerSubmit("feature/stale-approval", commitB))
-	if _, err := r.s.AnswerInbox(items[0].ID, "approve"); err == nil {
-		t.Fatal("approved an old revision")
-	}
-	v := r.get(id)
-	if len(v.Evidence) != 0 {
-		t.Fatalf("stale approval recorded: %+v", v.Evidence)
-	}
-	oldID := items[0].ID
-	items, err = r.s.ListInbox()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, item := range items {
-		if item.ID == oldID && item.Status != "dismissed" {
-			t.Fatalf("stale approval was not closed: %+v", item)
-		}
-	}
-}
-
-func TestDeliveryOwnerRefusalNotifiesCaller(t *testing.T) {
-	r := newDeliveryRig(t)
-	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"ask"`)}}, "owner", "test"); err != nil {
-		t.Fatal(err)
-	}
-	id := r.submit(r.a, r.workerSubmit("feature/refused", commitA)).Change.Change.ID
-	items, err := r.s.ListInbox()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("approval inbox: %+v, %v", items, err)
-	}
-	if _, err := r.s.AnswerInbox(items[0].ID, "some text"); err == nil {
-		t.Fatal("free text counted as a delivery decision")
-	}
-	if _, err := r.s.AnswerInbox(items[0].ID, "refuse"); err != nil {
-		t.Fatal(err)
-	}
-	v := r.get(id)
-	if len(v.Evidence) != 1 || v.Evidence[0].By != protocol.EvidenceByOwner || v.Evidence[0].Result != protocol.StepResultFail {
-		t.Fatalf("refusal evidence: %+v", v.Evidence)
-	}
-	msgs, err := r.s.Messages(r.a, protocol.QueryMessages{SessionID: r.caller})
-	var notices []protocol.Message
-	for _, m := range msgs {
-		if strings.HasPrefix(m.Body, "[agent-net step result]") {
-			notices = append(notices, m)
-		}
-	}
-	if err != nil || len(notices) != 1 || !strings.Contains(notices[0].Body, "result: fail") {
-		t.Fatalf("caller notice: %+v, %v", msgs, err)
-	}
-}
-
 func TestDeliveryDelegatedApprovalRoutesAndCanBeClaimed(t *testing.T) {
 	r := newDeliveryRig(t)
 	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"delegated"`)}}, "owner", "test"); err != nil {
@@ -1133,10 +977,6 @@ func TestDeliveryDelegatedApprovalRoutesAndCanBeClaimed(t *testing.T) {
 	leadDemoWith(t, r, "architect")
 	sid := agentSessionOn(t, r, r.b, "architect")
 	id := r.submit(r.a, r.workerSubmit("feature/delegate", commitA)).Change.Change.ID
-	items, err := r.s.ListInbox()
-	if err != nil || len(items) != 1 || !strings.Contains(items[0].Text, commitA) {
-		t.Fatalf("owner fallback approval: %+v, %v", items, err)
-	}
 	msgs, err := r.s.Messages(r.b, protocol.QueryMessages{SessionID: sid})
 	if err != nil || len(msgs) != 1 || !strings.Contains(msgs[0].Body, "step: approve for merge") {
 		t.Fatalf("delegate task: %+v, %v", msgs, err)
@@ -1152,9 +992,6 @@ func TestDeliveryDelegatedApprovalRoutesAndCanBeClaimed(t *testing.T) {
 	if err != nil || result.Evidence.By != sid {
 		t.Fatalf("delegate report: %+v, %v", result, err)
 	}
-	if _, err := r.s.AnswerInbox(items[0].ID, "approve"); err == nil {
-		t.Fatal("owner approved a task already reported by a delegate")
-	}
 }
 
 func TestDeliveryDelegateOwnerCanApproveFirst(t *testing.T) {
@@ -1169,11 +1006,7 @@ func TestDeliveryDelegateOwnerCanApproveFirst(t *testing.T) {
 	if _, err := deliveryCall[protocol.StepClaimResult](r, r.b, "step.claim", claim); err != nil {
 		t.Fatal(err)
 	}
-	items, err := r.s.ListInbox()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("owner fallback approval: %+v, %v", items, err)
-	}
-	if _, err := r.s.AnswerInbox(items[0].ID, "approve"); err != nil {
+	if _, err := r.report(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: claim.StepRef, Result: protocol.StepResultPass, Commit: commitA, DoneBy: protocol.EvidenceByOwner}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.report(r.b, protocol.StepReportRequest{SessionID: sid, ChangeID: id, StepRef: claim.StepRef, Result: protocol.StepResultPass, Commit: commitA}); err == nil {
@@ -1195,10 +1028,6 @@ func TestDeliveryDelegateDirectOwnerApproval(t *testing.T) {
 	result, err := r.report(r.a, q)
 	if err != nil || result.Evidence.By != protocol.EvidenceByOwner || result.Evidence.ReportedBy != r.caller || result.Evidence.Fields[protocol.FieldIndependent] != protocol.IndependentFamily {
 		t.Fatalf("direct owner approval: %+v, %v", result, err)
-	}
-	items, err := r.s.ListInbox()
-	if err != nil || len(items) != 1 || items[0].Status != "dismissed" {
-		t.Fatalf("owner inbox after direct approval: %+v, %v", items, err)
 	}
 }
 
@@ -1251,25 +1080,5 @@ func TestDeliveryDelegateIsTheTeamLead(t *testing.T) {
 	claim := protocol.StepClaimRequest{SessionID: sid, ChangeID: id, StepRef: protocol.StepRef{Step: protocol.StepApprove, For: protocol.StepMerge}, Commit: commitA}
 	if _, err := deliveryCall[protocol.StepClaimResult](r, r.b, "step.claim", claim); err != nil {
 		t.Fatalf("team lead claim: %v", err)
-	}
-}
-
-func TestInboxApprovalClosesAfterStep(t *testing.T) {
-	r := newDeliveryRig(t)
-	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"delegated"`)}}, "owner", "test"); err != nil {
-		t.Fatal(err)
-	}
-	id := r.submit(r.a, r.workerSubmit("feature/inbox-step", commitA)).Change.Change.ID
-	items, err := r.s.ListInbox()
-	if err != nil || len(items) != 1 || items[0].Status != "open" {
-		t.Fatalf("before: %+v %v", items, err)
-	}
-	q := protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: protocol.StepRef{Step: protocol.StepApprove, For: protocol.StepMerge}, Result: protocol.StepResultPass, Commit: commitA, DoneBy: protocol.EvidenceByOwner}
-	if _, err := r.report(r.a, q); err != nil {
-		t.Fatal(err)
-	}
-	items, err = r.s.ListInbox()
-	if err != nil || len(items) != 1 || items[0].Status == "open" {
-		t.Fatalf("after: %+v %v", items, err)
 	}
 }

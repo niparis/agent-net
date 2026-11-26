@@ -1,6 +1,10 @@
 package gateway
 
 import (
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -21,25 +25,11 @@ const ownerItemKeyPrefix = "owner_item:"
 // Item states that say where an owner item went instead of the Desk.
 const (
 	ownerItemSentToChief = "sent_to_chief"
+	// ownerItemAlreadySent is an item the chief already has from the same
+	// source with the same text: nothing new was sent.
+	ownerItemAlreadySent = "already_sent"
 	ownerItemLogged      = "logged"
 )
-
-// keepDeskItems makes new stores keep owner items on the Desk as before
-// decision 0196. Only tests set it, in TestMain: they test the Desk code that
-// stays until a later part deletes it. A store copies it when it
-// opens, so a test of the new behaviour clears it on its own store.
-var keepDeskItems = false
-
-// KeepDeskItemsForTests sets keepDeskItems for the stores opened after it.
-// Only the TestMain of a package whose tests run the Desk code through a real
-// gateway calls it (the daemon's). Production never does.
-func KeepDeskItemsForTests() { keepDeskItems = true }
-
-// ownerItemToChiefOrLog tells whether createInboxItem sends the item to the
-// chief or the log instead of storing it.
-func (s *Store) ownerItemToChiefOrLog(item protocol.InboxItem) bool {
-	return ownerBound(item) && !s.keepDeskItems
-}
 
 // ownerBound tells whether an item would wait for the owner. A Connected apps
 // consent stays stored: the owner started it on his own device, and his
@@ -97,8 +87,20 @@ func (s *Store) ownerItemToChief(db askDB, item protocol.InboxItem) (protocol.In
 		// A machine or agent-net itself asked: nobody can read a reply.
 		from, typ = agentNetSender, protocol.TypeNotification
 	}
+	key := ownerItemKey(item)
+	var sent string
+	err = db.QueryRow(`SELECT id FROM messages WHERE sender=? AND idem_key=?`, from, key).Scan(&sent)
+	if err == nil {
+		// The minute reconcile raises the same held or waiting item again
+		// on every tick: the chief already has it.
+		item.Status, item.NextWho, item.MessageID = ownerItemAlreadySent, chief, sent
+		return item, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return item, err
+	}
 	m := protocol.Message{ID: protocol.NewID("m"), ConversationID: protocol.NewID("c"), From: from, To: chief, Type: typ,
-		Body: ownerItemBody(db, item, typ == protocol.TypeRequest), IdempotencyKey: ownerItemKeyPrefix + protocol.NewID("k"),
+		Body: ownerItemBody(db, item, typ == protocol.TypeRequest), IdempotencyKey: key,
 		CreatedAt: now, ExpiresAt: now.Add(protocol.DefaultTTL), State: protocol.StateStored}
 	if _, err := db.Exec(`INSERT INTO messages(id,conversation_id,parent_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state)
 		VALUES(?,?,?,?,?,?,?,0,?,?,?,?)`, m.ID, m.ConversationID, m.ParentID, m.From, m.To, m.Type, m.Body,
@@ -108,6 +110,18 @@ func (s *Store) ownerItemToChief(db askDB, item protocol.InboxItem) (protocol.In
 	s.logOwnerItem("desk.to_chief", item, "message", m.ID)
 	item.Status, item.NextWho, item.MessageID, item.CreatedAt = ownerItemSentToChief, chief, m.ID, now
 	return item, nil
+}
+
+// ownerItemKey is the idempotency key of the request an owner item sends. An
+// item with a source is sent once for each text it has from that source, so a
+// held message is sent once and a session's wait once for each thing it waits
+// on. An item without a source is sent each time.
+func ownerItemKey(item protocol.InboxItem) string {
+	if item.SourceRef == "" {
+		return ownerItemKeyPrefix + protocol.NewID("k")
+	}
+	sum := sha256.Sum256([]byte(protocol.NormalizeAskText(item.Text)))
+	return ownerItemKeyPrefix + item.SourceRef + ":" + hex.EncodeToString(sum[:6])
 }
 
 // ownerItemBody is the request the chief reads: who asks, what, why only the

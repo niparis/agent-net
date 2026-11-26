@@ -104,27 +104,6 @@ func graphCutoverBackup(t *testing.T, g *Gateway) string {
 	return backup
 }
 
-func openGraphCutoverNotices(t *testing.T, g *Gateway, marker string) []string {
-	t.Helper()
-	rows, err := g.store.db.Query(`SELECT text FROM inbox_items WHERE message_id=? AND status='open' ORDER BY created_at`, marker)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	var out []string
-	for rows.Next() {
-		var text string
-		if err := rows.Scan(&text); err != nil {
-			t.Fatal(err)
-		}
-		out = append(out, text)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	return out
-}
-
 func TestGraphCutoverAutoEnablesAtStart(t *testing.T) {
 	now := time.Date(2026, 11, 7, 10, 0, 0, 0, time.UTC)
 	g, logs := autoCutoverGateway(t, now)
@@ -190,7 +169,7 @@ func TestGraphCutoverEnablesWhenTheLastNodeUpgrades(t *testing.T) {
 	waitGraphCutoverOn(t, g)
 }
 
-func TestGraphCutoverFailureKeepsBackupAndRaisesOneInboxItem(t *testing.T) {
+func TestGraphCutoverFailureKeepsBackup(t *testing.T) {
 	now := time.Date(2026, 11, 7, 10, 0, 5, 0, time.UTC)
 	g, _ := autoCutoverGateway(t, now)
 	reportGraphNode(t, g, "fixture", "v0.4.145", true)
@@ -207,14 +186,10 @@ func TestGraphCutoverFailureKeepsBackupAndRaisesOneInboxItem(t *testing.T) {
 	if err != nil || len(backups) == 0 {
 		t.Fatalf("backup not kept after failure: %v %v", backups, err)
 	}
-	items := openGraphCutoverNotices(t, g, graphCutoverFailureMarker)
-	if len(items) != 1 || !strings.Contains(items[0], "fixture failure") {
-		t.Fatalf("failure inbox: %v", items)
-	}
-
+	// A retry while the cause is still there fails the same way.
 	g.checkGraphCutover(context.Background())
-	if items = openGraphCutoverNotices(t, g, graphCutoverFailureMarker); len(items) != 1 {
-		t.Fatalf("retry raised a second inbox item: %v", items)
+	if on, err := g.store.graphRefsEnabled(); err != nil || on {
+		t.Fatalf("retry changed the gate: %v %v", on, err)
 	}
 
 	if _, err := g.store.db.Exec(`DROP TRIGGER fail_graph_cutover`); err != nil {
@@ -222,49 +197,6 @@ func TestGraphCutoverFailureKeepsBackupAndRaisesOneInboxItem(t *testing.T) {
 	}
 	g.checkGraphCutover(context.Background())
 	waitGraphCutoverOn(t, g)
-	if items = openGraphCutoverNotices(t, g, graphCutoverFailureMarker); len(items) != 0 {
-		t.Fatalf("failure inbox not cleared: %v", items)
-	}
-}
-
-func TestGraphCutoverStaleBlockersRaiseOneInboxItem(t *testing.T) {
-	now := time.Date(2026, 11, 7, 10, 0, 0, 0, time.UTC)
-	g, _ := autoCutoverGateway(t, now)
-	node := reportGraphNode(t, g, "behind", "v0.4.144", false)
-
-	if _, err := g.store.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_cutover_upgraded_at',CAST(?1 AS TEXT),?1)`, now.Add(-23*time.Hour).UnixNano()); err != nil {
-		t.Fatal(err)
-	}
-	g.checkGraphCutover(context.Background())
-	if items := openGraphCutoverNotices(t, g, graphCutoverBlockerMarker); len(items) != 0 {
-		t.Fatalf("notice before 24 hours: %v", items)
-	}
-
-	if _, err := g.store.db.Exec(`INSERT OR REPLACE INTO gateway_state(key,value,updated_at) VALUES('graph_cutover_upgraded_at',CAST(?1 AS TEXT),?1)`, now.Add(-25*time.Hour).UnixNano()); err != nil {
-		t.Fatal(err)
-	}
-	g.checkGraphCutover(context.Background())
-	items := openGraphCutoverNotices(t, g, graphCutoverBlockerMarker)
-	if len(items) != 1 || !strings.Contains(items[0], "behind") {
-		t.Fatalf("stale blocker notice: %v", items)
-	}
-
-	g.checkGraphCutover(context.Background())
-	if items = openGraphCutoverNotices(t, g, graphCutoverBlockerMarker); len(items) != 1 {
-		t.Fatalf("stale blocker notice repeated: %v", items)
-	}
-
-	if err := g.store.SetNodeGraphRefs(node, "v0.4.145", true); err != nil {
-		t.Fatal(err)
-	}
-	if err := g.store.SetNodeHello(node, "behind", "v0.4.145"); err != nil {
-		t.Fatal(err)
-	}
-	g.checkGraphCutover(context.Background())
-	waitGraphCutoverOn(t, g)
-	if items = openGraphCutoverNotices(t, g, graphCutoverBlockerMarker); len(items) != 0 {
-		t.Fatalf("stale blocker notice not cleared: %v", items)
-	}
 }
 
 func TestGraphCutoverBackupDoesNotBlockHello(t *testing.T) {

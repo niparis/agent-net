@@ -93,8 +93,6 @@ type Store struct {
 	// logf writes a structured log line; the gateway sets it. Never pass a
 	// message body to it.
 	logf func(event string, kv ...any)
-	// keepDeskItems is the package value when the store opened (owner_items.go).
-	keepDeskItems bool
 
 	// path is the gateway.db file, for the size before and after a vacuum.
 	path string
@@ -1950,7 +1948,7 @@ func openStoreWith(path string, o storeOpen) (*Store, error) {
 	// One connection keeps writes serialized and avoids lock errors. Reads run
 	// on a pool of read-only connections that opens at the end (see openReadPool).
 	wdb.SetMaxOpenConns(1)
-	s := &Store{db: &storeDB{w: wdb}, connector: connector, convEpoch: newConversationEpoch(), path: path, now: o.now, logf: o.logf, buckets: map[string]*bucket{}, keepDeskItems: keepDeskItems}
+	s := &Store{db: &storeDB{w: wdb}, connector: connector, convEpoch: newConversationEpoch(), path: path, now: o.now, logf: o.logf, buckets: map[string]*bucket{}}
 	db := s.db
 	if o.upgradeBackup {
 		if err := s.backupOldStoreBeforeUpgrade(o.version); err != nil {

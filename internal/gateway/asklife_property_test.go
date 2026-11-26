@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"math/rand"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -14,23 +12,18 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// Property test for the ask and wait lifecycle (docs/design/ask-wait-lifecycle.md).
+// Replays of the ask and wait lifecycle (docs/design/ask-wait-lifecycle.md).
 //
-// It applies random event sequences to a real store on a fake clock and
-// checks the invariants of the chart after every event. The bugs that gave it
-// its shape were each found live, one at a time:
+// Each replay applies an event list to a real store on a fake clock and checks
+// the invariants of the chart after every event. The bugs that gave it its
+// shape were each found live, one at a time:
 //
 //   - an announce closed approvals (ch_b1ef03bb)
 //   - an identical wait raised an ask every hour (ch_383b1a13, ch_1df063de)
 //   - a blocked answer made a check row for a wait that had its ask
 //
-// A failing run prints the seed, the step and a short event list. Paste the
-// list into TestAskLifecycleReplay to keep it as a regular test.
-//
-// Environment:
-//
-//	AGENT_NET_PROPERTY_LONG=1   many more seeds and steps
-//	AGENT_NET_PROPERTY_SEED=n   run only seed n (a printed failing seed)
+// The random generator that found them is gone with the owner Desk (decision
+// 0196): owner asks are no longer stored, so it reached no situation.
 
 // lifeEvent is one step. It names its targets by number, never by id, so a
 // list stays valid when events are removed (the shrinker) or pasted.
@@ -79,43 +72,6 @@ var (
 )
 
 const lifeSessions = 3
-
-// genLife makes a list of n events from a seed. It holds no state: the
-// numbers are reduced to what exists when the event is applied.
-func genLife(seed int64, n int) []lifeEvent {
-	rng := rand.New(rand.NewSource(seed))
-	pick := func(k int) int { return rng.Intn(k) }
-	out := make([]lifeEvent, 0, n)
-	for len(out) < n {
-		e := lifeEvent{Sess: pick(lifeSessions)}
-		switch r := pick(100); {
-		case r < 14:
-			e.Op, e.Flag, e.Arg = opAsk, pick(2), pick(2)
-		case r < 19:
-			e.Op, e.Arg, e.Flag = opAnswer, pick(50), pick(4)
-		case r < 23:
-			e.Op, e.Arg = opWithdraw, pick(50)
-		case r < 27:
-			e.Op, e.Arg = opChief, pick(50)
-		case r < 47:
-			e.Op, e.Flag, e.Arg = opAnnounce, pick(len(announceTasks)), pick(len(lifeWaits)+1)-1
-		case r < 62:
-			e.Op, e.Arg, e.Flag = opWait, pick(len(lifeWaits)), pick(2)
-		case r < 72:
-			e.Op = opBusy
-		case r < 77:
-			e.Op = opCheck
-		case r < 81:
-			e.Op = opTyped
-		case r < 83:
-			e.Op = opEnd
-		default:
-			e.Op, e.Arg = opTick, pick(len(lifeSteps))
-		}
-		out = append(out, e)
-	}
-	return out
-}
 
 // lifeEpoch is one stretch in which a session reports the same wait. The
 // daemon keeps its start across a busy turn, so the start does not move
@@ -622,20 +578,6 @@ func runLife(t testing.TB, events []lifeEvent, stats map[string]int) *lifeFailur
 	return nil
 }
 
-// shrinkLife drops events one at a time while the run still fails, so the
-// replay that is printed is short.
-func shrinkLife(t *testing.T, f *lifeFailure) *lifeFailure {
-	best := f
-	for i := len(best.events) - 2; i >= 0; i-- {
-		try := append(append([]lifeEvent{}, best.events[:i]...), best.events[i+1:]...)
-		if g := runLife(t, try, nil); g != nil {
-			g.found = best.found
-			best = g
-		}
-	}
-	return best
-}
-
 func (f *lifeFailure) replay(seed int64) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "seed %d, found at step %d, cut down to %d events: %s\nreplay (paste into TestAskLifecycleReplay):\n", seed, f.found, len(f.events), f.msg)
@@ -643,57 +585,6 @@ func (f *lifeFailure) replay(seed int64) string {
 		b.WriteString("\t" + e.String() + ",\n")
 	}
 	return b.String()
-}
-
-// lifePlan is the seeds and the length of one run. The fixed seeds are the
-// default run; the long run adds many more.
-func lifePlan(t *testing.T) (seeds []int64, steps int) {
-	seeds = []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
-	steps = 120
-	if only := os.Getenv("AGENT_NET_PROPERTY_SEED"); only != "" {
-		n, err := strconv.ParseInt(only, 10, 64)
-		if err != nil {
-			t.Fatalf("AGENT_NET_PROPERTY_SEED: %v", err)
-		}
-		return []int64{n}, steps
-	}
-	if os.Getenv("AGENT_NET_PROPERTY_LONG") != "" {
-		for s := int64(13); s <= 400; s++ {
-			seeds = append(seeds, s)
-		}
-		steps = 400
-	}
-	// One random seed in every default run. It is printed with a failure.
-	return append(seeds, time.Now().UnixNano()%1_000_000), steps
-}
-
-func TestAskLifecycleProperty(t *testing.T) {
-	seeds, steps := lifePlan(t)
-	stats := map[string]int{}
-	for _, seed := range seeds {
-		t.Run("seed"+strconv.FormatInt(seed, 10), func(t *testing.T) {
-			if f := runLife(t, genLife(seed, steps), stats); f != nil {
-				t.Fatal(shrinkLife(t, f).replay(seed))
-			}
-		})
-	}
-	t.Logf("situations reached over %d seeds of %d steps: %v", len(seeds), steps, stats)
-	if len(seeds) < 2 || t.Failed() {
-		return
-	}
-	// A run that never meets the situations the rules are about proves nothing.
-	for _, want := range []string{
-		"event with an open approval (announce)",
-		"event with an open approval (busy)",
-		"event with an open approval (tick)",
-		"same wait reported again, ask open",
-		"same wait reported again, ask settled",
-		"blocked answer repeating a wait that has an ask",
-	} {
-		if stats[want] == 0 {
-			t.Errorf("no run reached %q: the property is not tested there", want)
-		}
-	}
 }
 
 // TestAskLifecycleReplay holds the sequences that failed once. Each entry

@@ -57,7 +57,7 @@ func TestAnswerThroughTheGatewayFrameIsFoundByJudgmentSearch(t *testing.T) {
 			node, _, _ := s.CreateNode("test", "linux")
 			_, _ = s.UpsertSession(node, owner("test"))
 			agent, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p", Repo: protocol.RepoInfo{Project: "tradedesk"}})
-			item, err := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: agent, Text: "May forge merge its own PRs?"})
+			item, err := storeOldItem(t, s, protocol.InboxItem{Kind: "question", SessionID: agent, Text: "May forge merge its own PRs?"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -91,7 +91,7 @@ func TestButtonAnswersStoreTheDecisionInPlainWords(t *testing.T) {
 			node, _, _ := s.CreateNode("test", "linux")
 			_, _ = s.UpsertSession(node, owner("test"))
 			agent, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p"})
-			item, err := s.CreateInboxItem(protocol.InboxItem{Kind: tc.kind, SessionID: agent, Node: "video", Text: tc.text})
+			item, err := storeOldItem(t, s, protocol.InboxItem{Kind: tc.kind, SessionID: agent, Node: "video", Text: tc.text})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -106,68 +106,6 @@ func TestButtonAnswersStoreTheDecisionInPlainWords(t *testing.T) {
 				t.Fatalf("the ask keeps its code %q, got %q (%v)", tc.code, answer, err)
 			}
 		})
-	}
-}
-
-func TestCharterDraftAnswerIsIndexed(t *testing.T) {
-	s := teamStore(t)
-	sevenFieldDrafts(t, s, draftSession(t, s, "demo"))
-	asks := draftAsks(t, s)
-	if len(asks) != 1 {
-		t.Fatalf("draft asks: %+v", asks)
-	}
-	if _, err := s.AnswerInbox(asks[0].ID, "accept"); err != nil {
-		t.Fatal(err)
-	}
-	want := "Q: Charter draft for demo: 7 fields / A: accepted: Charter draft for demo: 7 fields"
-	if got := oneAnswer(t, s, asks[0].ID).Text; got != want {
-		t.Fatalf("judgment text:\n got %q\nwant %q", got, want)
-	}
-}
-
-func TestSingleCharterDraftAnswerIsIndexed(t *testing.T) {
-	s := teamStore(t)
-	sid := draftSession(t, s, "demo")
-	res, err := s.db.Exec(`INSERT INTO charter_drafts(level,scope,attr,value,source,source_hash,drafted_by,created_at) VALUES('repo','demo','purpose','Demo','AGENTS.md','h',?,?)`, sid, s.now().UnixNano())
-	if err != nil {
-		t.Fatal(err)
-	}
-	id, _ := res.LastInsertId()
-	item, err := s.createInboxItem(s.db, protocol.InboxItem{
-		Kind: protocol.AskKindDraft, SessionID: gatewayAsker, FromKind: protocol.AskFromGateway, Node: "demo", AskerName: "charter draft",
-		SourceRef: "draft:" + itoa(id), AboutKind: protocol.AskAboutProject, AboutID: "demo",
-		Text: "Draft repo purpose for demo", Options: []string{"accept", "reject"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.AnswerInboxAs(item.ID, "reject", "cto"); err != nil {
-		t.Fatal(err)
-	}
-	if got := oneAnswer(t, s, item.ID).Text; got != "Q: Draft repo purpose for demo / A: rejected: Draft repo purpose for demo" {
-		t.Fatalf("judgment text: %q", got)
-	}
-}
-
-func TestLoopAnswerIsIndexed(t *testing.T) {
-	s, c := newTestStore(t)
-	_, b := twoSessions(t, s)
-	loopNode(t, s, c, b)
-	loopTicks(t, s)
-	for i := 0; i < 4 && len(openLoopAsks(t, s)) == 0; i++ {
-		idleSince(t, s, c, b, 0)
-		runLoops(t, s, c)
-	}
-	asks := openLoopAsks(t, s)
-	if len(asks) != 1 {
-		t.Fatalf("loop asks: %+v", asks)
-	}
-	if _, err := s.AnswerInbox(asks[0].ID, protocol.LoopAnswerStop); err != nil {
-		t.Fatal(err)
-	}
-	row := oneAnswer(t, s, asks[0].ID)
-	if !strings.Contains(row.Text, "/ A: stopped the loop: ") {
-		t.Fatalf("judgment text: %q", row.Text)
 	}
 }
 
@@ -191,7 +129,7 @@ func TestOutcomeAnswerStoresWhatWasDecided(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			item, err := s.CreateInboxItem(protocol.InboxItem{Kind: "rejection", SessionID: a, MessageID: rep.ID, Text: "Request: deploy research service X, Y, Z"})
+			item, err := storeOldItem(t, s, protocol.InboxItem{Kind: "rejection", SessionID: a, MessageID: rep.ID, Text: "Request: deploy research service X, Y, Z"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -213,7 +151,7 @@ func TestOwnerReplyInTheSessionStoresHisText(t *testing.T) {
 	node, _, _ := s.CreateNode("test", "linux")
 	_, _ = s.UpsertSession(node, owner("test"))
 	agent, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "c"})
-	item, err := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: agent, Node: "forge", Text: "Merge permission in forge sessions?"})
+	item, err := storeOldItem(t, s, protocol.InboxItem{Kind: "approval", SessionID: agent, Node: "forge", Text: "Merge permission in forge sessions?"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +175,7 @@ func TestOwnerReplyWithoutTextSaysSo(t *testing.T) {
 	s, _ := newTestStore(t)
 	node, _, _ := s.CreateNode("test", "linux")
 	agent, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p"})
-	item, err := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: agent, Node: "forge", Text: "Which token?"})
+	item, err := storeOldItem(t, s, protocol.InboxItem{Kind: "question", SessionID: agent, Node: "forge", Text: "Which token?"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,32 +292,6 @@ func TestOpenStoreBackfillsMissingAnswers(t *testing.T) {
 	}
 	defer s.Close()
 	oneAnswer(t, s, "i_late")
-}
-
-// The owner marks a sort on the Desk (n or m) through the gateway frame, and
-// the judgment search with marks:true returns it with its ask.
-func TestDeskMarkIsFoundByMarksSearch(t *testing.T) {
-	s, _, chief, asker, node := chiefRig(t)
-	ask := chiefAsk(t, s, asker, "Rotate the staging token?")
-	sortAsk(t, s, chief, node, protocol.AskSortArgs{Ask: ask, Result: protocol.AskSortClose, Reason: "routine"})
-	g := &Gateway{store: s}
-	raw, _ := json.Marshal(protocol.AskMarkRequest{Ask: ask, Mark: protocol.MarkDidntNeedMe, Why: "routine rotation"})
-	if _, err := g.handle(context.Background(), &nodeConn{id: node}, "ask.mark", raw); err != nil {
-		t.Fatal(err)
-	}
-	raw, _ = json.Marshal(protocol.JudgmentsFindRequest{Marks: true})
-	res, err := g.handle(context.Background(), &nodeConn{id: node}, "judgment.find", raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m := res.(map[string]any)
-	items := m["items"].([]protocol.StandingOrder)
-	if len(items) != 1 || items[0].Ask != ask || items[0].Mark != protocol.MarkDidntNeedMe || items[0].Question != "Rotate the staging token?" {
-		t.Fatalf("marks: %+v", items)
-	}
-	if m["marks_stored"] != 1 {
-		t.Fatalf("marks_stored: %v", m["marks_stored"])
-	}
 }
 
 // With no marks the answer says so, and says how many marks storage holds, so

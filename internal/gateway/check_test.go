@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -125,64 +124,6 @@ func TestCheckAnswerDone(t *testing.T) {
 	counts, err := s.SessionCounts(24 * time.Hour)
 	if err != nil || counts.ChecksSent != 2 {
 		t.Fatalf("counts = %+v, %v", counts, err)
-	}
-}
-
-func TestCheckAnswerMoreLeavesOneNeedsYouRow(t *testing.T) {
-	s, c := newTestStore(t)
-	a, b := twoSessions(t, s)
-	if _, _, err := send(s, a, b, "req", ""); err != nil {
-		t.Fatal(err)
-	}
-	idleSince(t, s, c, b, 21*time.Minute)
-	if got := checks(t, s); len(got) != 1 {
-		t.Fatalf("check = %+v", got)
-	}
-	c.advance(time.Minute)
-	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "more: write the docs"}); err != nil {
-		t.Fatal(err)
-	}
-	items, err := s.ListInbox()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var open []protocol.InboxItem
-	for _, item := range items {
-		if item.Kind == "check" && item.Status == "open" {
-			open = append(open, item)
-		}
-	}
-	if len(open) != 1 || !strings.Contains(open[0].Text, "stopped with work left: write the docs") {
-		t.Fatalf("Needs you rows = %+v", open)
-	}
-}
-
-func TestCheckAnswerBlockedNamesTheBlocker(t *testing.T) {
-	s, c := newTestStore(t)
-	a, b := twoSessions(t, s)
-	if _, _, err := send(s, a, b, "req", ""); err != nil {
-		t.Fatal(err)
-	}
-	idleSince(t, s, c, b, 21*time.Minute)
-	if got := checks(t, s); len(got) != 1 {
-		t.Fatalf("check = %+v", got)
-	}
-	c.advance(time.Minute)
-	if _, err := s.Announce(mustNode(t, s, b), protocol.ProfileAnnounce{SessionID: b, Task: "blocked on the deploy key"}); err != nil {
-		t.Fatal(err)
-	}
-	items, err := s.ListInbox()
-	if err != nil {
-		t.Fatal(err)
-	}
-	found := false
-	for _, item := range items {
-		if item.Kind == "check" && item.Status == "open" && strings.Contains(item.Text, "the deploy key") {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("no blocked row: %+v", items)
 	}
 }
 
@@ -328,7 +269,7 @@ func TestCheckSkipsSessionWithOpenOwnerQuestion(t *testing.T) {
 			t.Fatal(err)
 		}
 		idleSince(t, s, c, b, 21*time.Minute)
-		item, err := s.CreateInboxItem(protocol.InboxItem{Kind: kind, SessionID: b, Text: "deploy?"})
+		item, err := storeOldItem(t, s, protocol.InboxItem{Kind: kind, SessionID: b, Text: "deploy?"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -651,143 +592,5 @@ func TestCheckAnnounceWorkerEndedChangesFingerprint(t *testing.T) {
 	}
 	if got := checks(t, s); len(got) != 1 || got[0].To != b {
 		t.Fatalf("worker ending did not re-arm check: %+v", got)
-	}
-}
-
-// The hourly check's "blocked on ..." answer repeats the wait the session
-// already has on the Desk. When the chief already closed that wait as the
-// same question, the answer must not make another check row.
-func TestBlockedAnswerRepeatingASettledWaitMakesNoCheckRow(t *testing.T) {
-	s, c := newTestStore(t)
-	node, _, _ := s.CreateNode("box", "linux")
-	const wait = "owner's word on the TRUNCATE reset, then the lead's order to open the pin PR and deploy"
-	sid, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p",
-		Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: wait}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	c.advance(waitingAskDebounce)
-	if err := s.reconcileAsks(); err != nil {
-		t.Fatal(err)
-	}
-	// The chief closed the wait as the same question as the open Desk ask.
-	if _, err := s.db.Exec(`UPDATE inbox_items SET status='closed', answer='chief: same wait' WHERE source_ref=?`, "waiting:"+sid); err != nil {
-		t.Fatal(err)
-	}
-	// An hour later the check asks, and the session answers blocked.
-	if _, err := s.db.Exec(`UPDATE sessions SET check_active=?,check_waiting=1 WHERE id=?`, c.t.Unix(), sid); err != nil {
-		t.Fatal(err)
-	}
-	c.advance(time.Hour)
-	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: sid, Task: "blocked on the owner's TRUNCATE decision"}); err != nil {
-		t.Fatal(err)
-	}
-	if rows := openCheckRows(t, s); len(rows) != 0 {
-		t.Fatalf("check rows after the same wait: %+v", rows)
-	}
-	var open, all int
-	if err := s.db.QueryRow(`SELECT COALESCE(SUM(status='open'),0), COUNT(*) FROM inbox_items WHERE source_ref=?`, "waiting:"+sid).Scan(&open, &all); err != nil {
-		t.Fatal(err)
-	}
-	if open != 0 || all != 1 {
-		t.Fatalf("waiting rows = %d open of %d, want the closed one only", open, all)
-	}
-}
-
-// A wait whose text really changes is a new wait and raises a new ask.
-func TestChangedWaitAfterAClosedAskRaisesANewAsk(t *testing.T) {
-	s, c := newTestStore(t)
-	node, _, _ := s.CreateNode("box", "linux")
-	sid, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p",
-		Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: "Delete worktree w_1?"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	c.advance(waitingAskDebounce)
-	if err := s.reconcileAsks(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.db.Exec(`UPDATE inbox_items SET status='closed', answer='chief: done' WHERE source_ref=?`, "waiting:"+sid); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p",
-		Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: "Delete worktree w_2?"}}); err != nil {
-		t.Fatal(err)
-	}
-	c.advance(waitingAskDebounce)
-	if err := s.reconcileAsks(); err != nil {
-		t.Fatal(err)
-	}
-	var open, all int
-	if err := s.db.QueryRow(`SELECT COALESCE(SUM(status='open'),0), COUNT(*) FROM inbox_items WHERE source_ref=?`, "waiting:"+sid).Scan(&open, &all); err != nil {
-		t.Fatal(err)
-	}
-	if open != 1 || all != 2 {
-		t.Fatalf("waiting rows = %d open of %d, want a new ask", open, all)
-	}
-}
-
-// A session goes busy to answer the check, and busy clears its stored wait
-// (decision 0016). Its answer then repeats the wait in the announce itself.
-// The chief already closed that wait, so neither a second waiting row nor a
-// check row is raised.
-func TestBlockedAnswerRepeatingItsOwnWaitAfterBusyMakesNoAsk(t *testing.T) {
-	s, c := newTestStore(t)
-	node, _, _ := s.CreateNode("box", "linux")
-	const wait = "owner's yes on the TRUNCATE, relayed by the lead, then pg_dump, truncate, merge and deploy"
-	sid, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p",
-		Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: wait}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	since := c.t.Unix()
-	c.advance(waitingAskDebounce)
-	if err := s.reconcileAsks(); err != nil {
-		t.Fatal(err)
-	}
-	// The chief closed the wait as the same question.
-	if _, err := s.db.Exec(`UPDATE inbox_items SET status='closed', answer='chief: same wait' WHERE source_ref=?`, "waiting:"+sid); err != nil {
-		t.Fatal(err)
-	}
-	// An hour later the check arrives and the session goes busy to answer it.
-	c.advance(time.Hour)
-	if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p", Status: "busy"}); err != nil {
-		t.Fatal(err)
-	}
-	var raw string
-	if err := s.db.QueryRow(`SELECT waiting FROM sessions WHERE id=?`, sid).Scan(&raw); err != nil {
-		t.Fatal(err)
-	}
-	if raw != "" {
-		t.Fatalf("the busy turn kept the wait: %s", raw)
-	}
-	// The check is out and waits for the answer.
-	if _, err := s.db.Exec(`UPDATE sessions SET check_active=?,check_waiting=1 WHERE id=?`, c.t.Unix(), sid); err != nil {
-		t.Fatal(err)
-	}
-	// The answer names the same wait again. The daemon kept its original start
-	// across the busy turn.
-	reported := &protocol.Waiting{Kind: protocol.WaitingInput, Text: wait, Since: since}
-	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: sid,
-		Task: "blocked on the owner's TRUNCATE reset", Waiting: reported}); err != nil {
-		t.Fatal(err)
-	}
-	if rows := openCheckRows(t, s); len(rows) != 0 {
-		t.Fatalf("check rows after the same wait: %+v", rows)
-	}
-	// The daemon reports the wait again, as it does after the announce.
-	if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p", Waiting: reported}); err != nil {
-		t.Fatal(err)
-	}
-	c.advance(waitingAskDebounce)
-	if err := s.reconcileAsks(); err != nil {
-		t.Fatal(err)
-	}
-	var open, all int
-	if err := s.db.QueryRow(`SELECT COALESCE(SUM(status='open'),0), COUNT(*) FROM inbox_items WHERE source_ref=?`, "waiting:"+sid).Scan(&open, &all); err != nil {
-		t.Fatal(err)
-	}
-	if open != 0 || all != 1 {
-		t.Fatalf("waiting rows = %d open of %d, want the closed one only", open, all)
 	}
 }

@@ -3126,13 +3126,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		entries, err := st.DeskLog(p.Limit)
 		return protocol.DeskLogResult{Entries: entries}, err
 
-	case "desk.note":
-		var p protocol.DeskNote
-		if json.Unmarshal(raw, &p) != nil || strings.TrimSpace(p.Text) == "" {
-			return nil, reject("bad desk.note")
-		}
-		return map[string]bool{"ok": true}, st.AddDeskNote(nc.id, p.Text, p.Detail)
-
 	case "intake.report":
 		var p protocol.IntakeReport
 		if json.Unmarshal(raw, &p) != nil {
@@ -3146,15 +3139,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("bad %s", protocol.FrameIntakeFind)
 		}
 		return st.CTOIntake(p.Limit)
-
-	case "desk.settle":
-		var p struct {
-			ID int64 `json:"id"`
-		}
-		if json.Unmarshal(raw, &p) != nil || p.ID <= 0 {
-			return nil, reject("bad desk.settle")
-		}
-		return map[string]bool{"ok": true}, st.SettleDeskLog(p.ID)
 
 	case "ask.open":
 		var p protocol.AskOpen
@@ -3246,24 +3230,12 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]bool{"ok": true}, st.MarkAsk(p, graphActor(raw))
 
-	case "ask.discuss":
-		p, err := decodeOperator[protocol.AskDiscussRequest](raw)
-		if err != nil {
-			return nil, err
-		}
-		if !actorAllowed(graphActor(raw), "rule") {
-			return nil, reject("only the owner discusses a Desk item")
-		}
-		return g.discussAsk(ctx, p.Ask)
-
 	case "inbox.answer":
 		var p struct {
 			ID      string `json:"item_id"`
 			Answer  string `json:"answer"`
 			FromCTO bool   `json:"from_cto"`
 			Actor   string `json:"actor"`
-			// A scope makes the answer a standing rule (decision 0150).
-			Scope protocol.RuleScope `json:"scope"`
 		}
 		if json.Unmarshal(raw, &p) != nil || p.ID == "" {
 			g.logLine("inbox.answer.refused", "id", p.ID, "reason", "bad inbox.answer")
@@ -3276,7 +3248,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if handled, err := st.answerAppConsent(p.ID, p.Answer, owner, p.FromCTO); handled {
 			return map[string]bool{"answered": err == nil}, err
 		}
-		item, err := st.AnswerInboxScoped(p.ID, p.Answer, p.Actor, p.Scope)
+		item, err := st.AnswerInboxAs(p.ID, p.Answer, p.Actor)
 		if err != nil {
 			g.logLine("inbox.answer.refused", "id", p.ID, "reason", err.Error())
 			return nil, err

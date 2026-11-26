@@ -274,6 +274,15 @@ func (g *Gateway) askIntakeImport(ctx context.Context, q protocol.AskIntakeReque
 		}
 		return protocol.AskIntakeResult{}, err
 	}
+	if item.ID == "" {
+		// The question is for the owner, so it is a request to the chief and
+		// no ask is stored (decision 0196). The request is the ask's id.
+		out.Ask.ID, out.Ask.Next, out.Ask.State = item.MessageID, item.NextWho, protocol.AskIntakeCreated
+		if item.Status == ownerItemAlreadySent {
+			out.Ask.State = protocol.AskIntakeAlreadyImported
+		}
+		return out, tx.Commit()
+	}
 	if err := tx.QueryRow(`SELECT next_who FROM inbox_items WHERE id=?`, item.ID).Scan(&out.Ask.Next); err != nil {
 		return protocol.AskIntakeResult{}, err
 	}

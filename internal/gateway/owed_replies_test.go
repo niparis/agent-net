@@ -14,6 +14,7 @@ import (
 
 func TestOwedReplyNudgeAndAskLifecycle(t *testing.T) {
 	s, c := newTestStore(t)
+	logs := captureLog(s)
 	a, b := twoSessions(t, s)
 
 	req, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "Fix the gateway stall bug", Type: protocol.TypeRequest})
@@ -76,32 +77,16 @@ func TestOwedReplyNudgeAndAskLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var asks []protocol.InboxItem
-	rows, err = s.db.Query(`SELECT id, next_who, text, detail FROM inbox_items WHERE source_ref=?`, "owed-ask:"+req.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for rows.Next() {
-		var item protocol.InboxItem
-		if err := rows.Scan(&item.ID, &item.NextWho, &item.Text, &item.Detail); err != nil {
-			t.Fatal(err)
+	// agent-net raised the ask, so it is one log line, not a stored item
+	// (decision 0196).
+	asks := 0
+	for _, line := range *logs {
+		if strings.HasPrefix(line, "desk.dropped ") && strings.Contains(line, " ref owed-ask:"+req.ID+" ") {
+			asks++
 		}
-		asks = append(asks, item)
 	}
-	rows.Close()
-
-	if len(asks) != 1 {
-		t.Fatalf("got %d asks, want 1", len(asks))
-	}
-	ask := asks[0]
-	if ask.NextWho != protocol.AskNextChief {
-		t.Errorf("ask next_who = %q, want %q", ask.NextWho, protocol.AskNextChief)
-	}
-	// Check that the ask names sender, recipient, message id, since-time and nudge time.
-	for _, want := range []string{a, b, req.ID, start.UTC().Format(time.RFC3339), nudge.CreatedAt.Format(time.RFC3339)} {
-		if !strings.Contains(ask.Text, want) {
-			t.Errorf("ask text %q missing %q", ask.Text, want)
-		}
+	if asks != 1 {
+		t.Fatalf("got %d asks, want 1: %q", asks, *logs)
 	}
 
 	// A later tick adds nothing more.
@@ -111,10 +96,6 @@ func TestOwedReplyNudgeAndAskLifecycle(t *testing.T) {
 	}
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE parent_id=? AND sender='agent-net'`, req.ID).Scan(&nudgeCount); err != nil || nudgeCount != 1 {
 		t.Fatalf("nudgeCount after later tick = %d, want 1", nudgeCount)
-	}
-	var askCount int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref=?`, "owed-ask:"+req.ID).Scan(&askCount); err != nil || askCount != 1 {
-		t.Fatalf("askCount after later tick = %d, want 1", askCount)
 	}
 }
 
@@ -200,7 +181,7 @@ func TestOwedReplySkips(t *testing.T) {
 		{
 			name: "waiting_owner_open_ask",
 			setup: func(t *testing.T, s *Store, c *clock, a, b, reqID string) {
-				if _, err := s.createInboxItem(s.db, protocol.InboxItem{
+				if _, err := storeOldItem(t, s, protocol.InboxItem{
 					Kind:      protocol.AskKindQuestion,
 					SessionID: b,
 					Text:      "what database to use?",
@@ -418,51 +399,6 @@ func TestOwedReplyReplyInSameConversationNoParentCountsAsFinal(t *testing.T) {
 	}
 	if len(nudges) != 0 {
 		t.Fatalf("got %d nudges after reply with no parent_id, want 0", len(nudges))
-	}
-
-	// Also check that if an ask was open, sending a message in the same conversation closes it.
-	c.set(start.Add(20 * time.Minute))
-	req2, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "Second task", Type: protocol.TypeRequest})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.db.Exec("UPDATE sessions SET status='idle', last_active=? WHERE id=?", c.t.UnixNano(), b); err != nil {
-		t.Fatal(err)
-	}
-
-	// Advance to nudge time (15m later)
-	c.advance(15 * time.Minute)
-	if _, err := s.checkOwedReplies(); err != nil {
-		t.Fatal(err)
-	}
-
-	// Advance to ask time (10m later)
-	c.advance(10 * time.Minute)
-	if _, err := s.checkOwedReplies(); err != nil {
-		t.Fatal(err)
-	}
-
-	// Verify ask exists and is open
-	var askStatus string
-	if err := s.db.QueryRow(`SELECT status FROM inbox_items WHERE source_ref=?`, "owed-ask:"+req2.ID).Scan(&askStatus); err != nil || askStatus != "open" {
-		t.Fatalf("ask status = %q (err %v), want open", askStatus, err)
-	}
-
-	// Now recipient b sends non-progress reply in same conversation with no parent_id
-	c.advance(time.Minute)
-	if _, _, err := s.StoreMessage(protocol.MsgSend{
-		Sender:         b,
-		Recipient:      a,
-		ConversationID: req2.ConversationID,
-		Type:           protocol.TypeReply,
-		Body:           "Late answer closing the ask",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	// Verify ask was closed
-	if err := s.db.QueryRow(`SELECT status FROM inbox_items WHERE source_ref=?`, "owed-ask:"+req2.ID).Scan(&askStatus); err != nil || askStatus != "closed" {
-		t.Fatalf("ask status after reply = %q (err %v), want closed", askStatus, err)
 	}
 }
 

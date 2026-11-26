@@ -15,7 +15,8 @@ func TestOwnerAskRoutesByKind(t *testing.T) {
 	t.Parallel()
 	n, lead, member, _, memberID, _ := forgeNodes(t)
 
-	// A question makes an ask item for the owner, the same as ask_question.
+	// A question goes to the chief for the owner (decision 0196), the same as
+	// ask_question.
 	raw, err := lead.call(protocol.MethodOwnerAsk, map[string]any{"kind": "question", "text": "Spend money?", "recommendation": "no", "options": []string{"yes", "no"}})
 	if err != nil {
 		t.Fatal(err)
@@ -23,7 +24,7 @@ func TestOwnerAskRoutesByKind(t *testing.T) {
 	var q struct {
 		Item protocol.InboxItem `json:"item"`
 	}
-	if err := json.Unmarshal(raw, &q); err != nil || q.Item.ID == "" || q.Item.Kind != "question" {
+	if err := json.Unmarshal(raw, &q); err != nil || q.Item.Kind != "question" {
 		t.Fatalf("question answer: %s %v", raw, err)
 	}
 
@@ -47,18 +48,6 @@ func TestOwnerAskRoutesByKind(t *testing.T) {
 	}
 	if err := json.Unmarshal(raw, &i); err != nil || i.Item.Kind != "feature_idea" {
 		t.Fatalf("idea answer: %s %v", raw, err)
-	}
-
-	// replaces with no kind retires a question.
-	raw, err = lead.call(protocol.MethodOwnerAsk, map[string]any{"replaces": q.Item.ID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var r struct {
-		Item protocol.InboxItem `json:"item"`
-	}
-	if err := json.Unmarshal(raw, &r); err != nil || r.Item.Status != "replaced" {
-		t.Fatalf("replaces answer: %s %v", raw, err)
 	}
 
 	if _, err := lead.call(protocol.MethodOwnerAsk, map[string]any{"kind": "wish", "text": "x"}); err == nil || !strings.Contains(err.Error(), "kind must be question, approval or idea") {

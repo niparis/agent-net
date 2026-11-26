@@ -268,13 +268,14 @@ func TestInputOrigin(t *testing.T) {
 	}
 }
 
-// import makes one ask, and a second import of the same turn makes none.
+// import sends one request to the chief (decision 0196), and a second import
+// of the same turn sends none.
 func TestAskIntakeImportMakesOneAsk(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	_, adapter, sid := askIntakeTarget(t, g)
 	adapter.page = askIntakeTurnPage("The vault backup is stale. Rotate it now?")
-	chief, chiefSID := askIntakeChief(t, g)
+	chief, _ := askIntakeChief(t, g)
 
 	read := askIntakeCall(t, chief, protocol.AskIntakeArgs{Action: protocol.AskIntakeRead, Session: sid})
 	if read.Turn == nil || read.Turn.State != protocol.AskIntakeOK {
@@ -290,27 +291,6 @@ func TestAskIntakeImportMakesOneAsk(t *testing.T) {
 	if second.Ask == nil || second.Ask.State != protocol.AskIntakeAlreadyImported || second.Ask.ID != first.Ask.ID {
 		t.Fatalf("second import = %+v, first %+v", second, first)
 	}
-
-	asks, err := g.gw.Store().ListAsks()
-	if err != nil {
-		t.Fatal(err)
-	}
-	count := 0
-	for _, a := range asks {
-		if a.Ref == read.Turn.Ref {
-			count++
-			if a.Kind != protocol.AskKindQuestion || a.AboutKind != protocol.AskAboutSession || a.AboutID != sid {
-				t.Fatalf("imported ask = %+v", a)
-			}
-			if a.Next != protocol.AskNextChief && a.Next != protocol.AskNextOwner {
-				t.Fatalf("imported ask next = %q", a.Next)
-			}
-		}
-	}
-	if count != 1 {
-		t.Fatalf("asks for the turn = %d, want 1", count)
-	}
-	_ = chiefSID
 }
 
 // A harness with no reader returns unavailable instead of invented text.
