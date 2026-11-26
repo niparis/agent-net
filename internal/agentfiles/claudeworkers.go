@@ -15,24 +15,42 @@ import (
 	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/claudesettings"
 	agentnetworkers "github.com/niparis/agent-net/plugins/claude/agent-net-workers"
 )
 
 // The Claude Code "agent-net workers" plugin: a band above the prompt with the
 // workers the session started, a status line entry, and a line when a worker
-// ends. Claude Code installs plugins from a marketplace, so setup writes a
-// small local marketplace and the mod beside it, then registers both with the
-// claude CLI. The daemon refreshes the same folder on every start, so the
-// mod always matches the binary, also after an upgrade that did not run setup.
+// ends. Claude Code loads a plugin from the skills folder of its config
+// directory with no marketplace and no settings entry, so agent-net writes the
+// plugin files in its own folder and puts one link to them in that folder. The
+// link stays all the time: Claude Code itself enables only one copy while an
+// enabled marketplace copy is installed, so the two copies do not show two
+// windows. The daemon restores the link when the owner once said yes.
+//
+// An older agent-net put the same plugin in a local marketplace and enabled it
+// in the user's settings file. That file may belong to another tool (the owner
+// keeps his in a dotfiles repository), so this code never writes it when it is
+// a link or not writable. The old marketplace entry then stays, and Claude Code
+// runs the old copy until the owner moves that entry out. The link is already
+// there for the day the old entry is lost, and the daemon refreshes the old
+// copy as long as it runs. When the enabled entry alone is lost, the installed
+// old copy blocks the skills copy; the daemon removes that installed copy,
+// which writes no settings file.
 
-// The marketplace and plugin names Claude Code knows.
-const ClaudeWorkersMarketplace = "agent-net"
-const ClaudeWorkersPlugin = "agent-net-workers"
+// The marketplace, plugin and skills ids Claude Code knows.
+const (
+	ClaudeWorkersMarketplace = "agent-net"
+	ClaudeWorkersPlugin      = "agent-net-workers"
+	ClaudeWorkersSkillsID    = "agent-net-workers@skills-dir"
+	ClaudeWorkersOldID       = "agent-net-workers@agent-net"
+)
 
 const claudeWorkersPluginManifest = ".claude-plugin/plugin.json"
 
 // ClaudeWorkersDir is the local marketplace folder. It sits beside the gateway
-// binaries in ~/.local/share/agent-net.
+// binaries in ~/.local/share/agent-net. The plugin files stay here; the skills
+// folder only holds a link to them.
 func ClaudeWorkersDir() string {
 	return filepath.Join(home(), ".local", "share", "agent-net", "claude-plugins")
 }
@@ -42,7 +60,19 @@ func ClaudeWorkersPluginDir() string {
 	return filepath.Join(ClaudeWorkersDir(), ClaudeWorkersPlugin)
 }
 
-// claudeMarketplaceJSON lists the one plugin in the local marketplace.
+// ClaudeWorkersSkillsLink is the one entry agent-net puts in the skills folder
+// of Claude Code's config directory.
+func ClaudeWorkersSkillsLink() string {
+	dir := claudesettings.Dir()
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "skills", ClaudeWorkersPlugin)
+}
+
+// claudeMarketplaceJSON lists the one plugin in the local marketplace. An older
+// agent-net registered it with Claude Code; a new install does not, but the
+// file stays so an old registration still finds its plugin after an upgrade.
 const claudeMarketplaceJSON = `{
   "name": "agent-net",
   "owner": {
@@ -176,6 +206,603 @@ func WriteClaudeWorkersAt(exe string) (changed bool, err error) {
 	return changed, nil
 }
 
+// claudeWorkersSkillsExclude is the one line agent-net adds to the skills
+// repository's info/exclude, so the link is never committed to the owner's
+// skills repository. info/exclude belongs to the clone and is not .gitignore.
+const claudeWorkersSkillsExclude = "/agent-net-workers"
+
+// gitInfoExclude returns the info/exclude path of the work tree that holds dir,
+// or "" when dir is not in one or git is not available. A linked worktree
+// resolves to the common git directory, where info/exclude lives.
+func gitInfoExclude(dir string) string {
+	if _, err := os.Stat(dir); err != nil {
+		return ""
+	}
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "--git-path", "info/exclude").Output()
+	if err != nil {
+		return ""
+	}
+	p := strings.TrimSpace(string(out))
+	if p == "" {
+		return ""
+	}
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(dir, p)
+	}
+	return filepath.Clean(p)
+}
+
+// ensureClaudeWorkersSkillsExclude adds the line once. A repository that
+// already has it, a folder outside a work tree and a machine without git all
+// need no write.
+func ensureClaudeWorkersSkillsExclude(dir string) error {
+	path := gitInfoExclude(dir)
+	if path == "" {
+		return nil
+	}
+	existing, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	for _, line := range strings.Split(string(existing), "\n") {
+		if strings.TrimSuffix(line, "\r") == claudeWorkersSkillsExclude {
+			return nil
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	prefix := ""
+	if len(existing) > 0 && !strings.HasSuffix(string(existing), "\n") {
+		prefix = "\n"
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.WriteString(prefix + claudeWorkersSkillsExclude + "\n")
+	return err
+}
+
+// removeClaudeWorkersSkillsExclude removes agent-net's one line and keeps every
+// other line. A folder outside a work tree and a machine without git need no
+// write.
+func removeClaudeWorkersSkillsExclude(dir string) error {
+	path := gitInfoExclude(dir)
+	if path == "" {
+		return nil
+	}
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(b), "\n")
+	kept := make([]string, 0, len(lines))
+	removed := false
+	for _, line := range lines {
+		if strings.TrimSuffix(line, "\r") == claudeWorkersSkillsExclude {
+			removed = true
+			continue
+		}
+		kept = append(kept, line)
+	}
+	if !removed {
+		return nil
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(strings.Join(kept, "\n")), st.Mode().Perm())
+}
+
+// EnsureClaudeWorkersLink puts the link to the plugin in Claude Code's skills
+// folder. A foreign entry with that name is never replaced: foreign is set to
+// its path and the caller reports it. changed says whether the link was made.
+func EnsureClaudeWorkersLink() (changed bool, foreign string, err error) {
+	link := ClaudeWorkersSkillsLink()
+	if link == "" {
+		return false, "", fmt.Errorf("no Claude Code config directory")
+	}
+	dir := ClaudeWorkersPluginDir()
+	st, lerr := os.Lstat(link)
+	switch {
+	case lerr == nil && st.Mode()&os.ModeSymlink != 0:
+		target, rerr := os.Readlink(link)
+		if rerr != nil {
+			return false, "", rerr
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(filepath.Dir(link), target)
+		}
+		if filepath.Clean(target) == filepath.Clean(dir) {
+			if _, serr := os.Stat(filepath.Join(dir, claudeWorkersPluginManifest)); serr == nil {
+				// The link may predate this binary, or the folder became a git
+				// work tree later, so the exclude is checked every time.
+				return false, "", ensureClaudeWorkersSkillsExclude(filepath.Dir(link))
+			}
+			// Our link points at a folder that is gone or incomplete. Replace it
+			// after the files are written.
+		} else {
+			return false, link, nil
+		}
+	case lerr == nil:
+		return false, link, nil
+	case !os.IsNotExist(lerr):
+		return false, "", lerr
+	}
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		return false, "", err
+	}
+	if st != nil {
+		if err := os.Remove(link); err != nil {
+			return false, "", err
+		}
+	}
+	if err := os.Symlink(dir, link); err != nil {
+		return false, "", err
+	}
+	if err := ensureClaudeWorkersSkillsExclude(filepath.Dir(link)); err != nil {
+		return true, "", err
+	}
+	return true, "", nil
+}
+
+// RemoveClaudeWorkersLink removes the link only when it is agent-net's. A
+// foreign entry is never removed; foreign is set to its path.
+func RemoveClaudeWorkersLink() (removed bool, foreign string, err error) {
+	link := ClaudeWorkersSkillsLink()
+	if link == "" {
+		return false, "", nil
+	}
+	st, err := os.Lstat(link)
+	if os.IsNotExist(err) {
+		return false, "", removeClaudeWorkersSkillsExclude(filepath.Dir(link))
+	}
+	if err != nil {
+		return false, "", err
+	}
+	if st.Mode()&os.ModeSymlink == 0 {
+		return false, link, nil
+	}
+	target, err := os.Readlink(link)
+	if err != nil {
+		return false, "", err
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(filepath.Dir(link), target)
+	}
+	if filepath.Clean(target) != filepath.Clean(ClaudeWorkersPluginDir()) {
+		return false, link, nil
+	}
+	if err := os.Remove(link); err != nil {
+		return false, "", err
+	}
+	if err := removeClaudeWorkersSkillsExclude(filepath.Dir(link)); err != nil {
+		return true, "", err
+	}
+	return true, "", nil
+}
+
+// ClaudeWorkersStatus is what Claude Code can load right now. It is read from
+// the files and the user settings file, with no claude call, so a daemon start
+// does not wait for one.
+type ClaudeWorkersStatus struct {
+	Link             string // ClaudeWorkersSkillsLink
+	LinkOK           bool   // the link is agent-net's and its plugin files exist
+	Foreign          string // a non-link entry, or a link to somewhere else, has the link's name
+	SkillsOn         bool   // enabledPlugins says the skills copy is on
+	SkillsOff        bool   // enabledPlugins says the skills copy is off
+	OldEnabled       bool   // enabledPlugins says the old marketplace copy is on
+	OldOff           bool   // enabledPlugins says the old marketplace copy is off
+	OldInstalled     bool   // the old marketplace copy is in Claude's installed list
+	OldVersion       string // the version Claude Code installed of the old copy
+	OldMarketplace   bool   // the old marketplace is registered in settings or Claude's own list
+	Marketplace      bool   // the settings file registers the old marketplace
+	KnownMarketplace bool   // Claude Code's own list registers the old marketplace
+	OldRegistered    bool   // the old marketplace or plugin entry is present
+	Disabled         bool   // the user turned the window off in Claude Code
+	SettingsLinked   bool   // settings.json is a link, so agent-net does not write it
+	SettingsWritable bool   // agent-net may use the claude CLI on settings.json
+}
+
+// OldRuns says the old marketplace copy is the one Claude Code loads.
+func (s ClaudeWorkersStatus) OldRuns() bool { return s.OldEnabled && s.OldInstalled }
+
+// BlockedByInstalledCopy says the old copy is in Claude's installed list and
+// its marketplace is known, but its enabled entry is gone. In that state
+// Claude Code loads neither copy: the installed old copy shadows the skills
+// one, and no entry turns it on. Removing the installed old copy brings the
+// skills copy back, and it writes no settings file while the enabled entry is
+// still missing.
+func (s ClaudeWorkersStatus) BlockedByInstalledCopy() bool {
+	return s.LinkOK && !s.OldEnabled && !s.OldOff && s.OldInstalled && s.OldMarketplace
+}
+
+// DisabledByUser resolves the two enabledPlugins ids. An explicit false turns
+// the window off unless the other id is explicitly on. A missing entry is not
+// a disable: it is the state in which the owner's dotfiles lost the entries.
+func (s ClaudeWorkersStatus) DisabledByUser() bool {
+	return (s.OldOff && !s.SkillsOn) || (s.SkillsOff && !s.OldEnabled)
+}
+
+// Live reports whether Claude Code can show one of agent-net's copies now. An
+// installed old copy whose enabled entry is lost blocks the skills copy until
+// the old copy is uninstalled, so that state is not live.
+func (s ClaudeWorkersStatus) Live() bool {
+	return s.OldRuns() || (s.LinkOK && !s.DisabledByUser() && !s.BlockedByInstalledCopy())
+}
+
+// OldNeedsRefresh says the old marketplace copy runs and Claude Code installed
+// a different panel version than this binary writes.
+func (s ClaudeWorkersStatus) OldNeedsRefresh() bool {
+	return s.OldRuns() && s.OldMarketplace && s.OldVersion != ClaudeWorkersPanelVersion()
+}
+
+// ClaudeWorkersStatusNow reads the live state. It never writes anything.
+func ClaudeWorkersStatusNow() ClaudeWorkersStatus {
+	s := ClaudeWorkersStatus{Link: ClaudeWorkersSkillsLink()}
+	if s.Link == "" {
+		return s
+	}
+	if st, err := os.Lstat(s.Link); err == nil {
+		if st.Mode()&os.ModeSymlink != 0 {
+			if target, err := os.Readlink(s.Link); err == nil {
+				if !filepath.IsAbs(target) {
+					target = filepath.Join(filepath.Dir(s.Link), target)
+				}
+				if filepath.Clean(target) == filepath.Clean(ClaudeWorkersPluginDir()) {
+					_, err := os.Stat(filepath.Join(ClaudeWorkersPluginDir(), claudeWorkersPluginManifest))
+					s.LinkOK = err == nil
+				} else {
+					s.Foreign = s.Link
+				}
+			}
+		} else {
+			s.Foreign = s.Link
+		}
+	}
+	settings := readClaudeWorkersSettings()
+	s.SkillsOn = settings.skillsOn
+	s.SkillsOff = settings.skillsOff
+	s.OldEnabled = settings.oldOn
+	s.OldOff = settings.oldOff
+	s.OldInstalled, s.OldVersion = claudeWorkersOldInstall()
+	s.Marketplace = settings.oldMarketplace
+	s.KnownMarketplace = claudeWorkersKnownMarketplace()
+	s.OldMarketplace = s.Marketplace || s.KnownMarketplace
+	s.OldRegistered = settings.oldOn || settings.oldOff || s.OldMarketplace
+	s.Disabled = s.DisabledByUser()
+	s.SettingsLinked = settings.linked
+	s.SettingsWritable = settings.writable
+	return s
+}
+
+// ClaudeWorkersLiveInstalled reports whether Claude Code can show one of
+// agent-net's copies now. It replaces the old record that said installed after
+// the plugin had been turned off.
+func ClaudeWorkersLiveInstalled() bool { return ClaudeWorkersStatusNow().Live() }
+
+// ClaudeWorkersWarning is the short line the Machines screen and `agent-net
+// nodes` show when the owner asked for the window and Claude Code cannot load
+// it. It reads files only. It is empty when the window is on, when the owner
+// turned it off, and when setup was never asked.
+func ClaudeWorkersWarning() string {
+	if !loadClaudeWorkersState().Installed {
+		return ""
+	}
+	return ClaudeWorkersProblem(ClaudeWorkersStatusNow())
+}
+
+// ClaudeWorkersProblem names the one step that fixes this state, or is empty
+// when the window loads or the owner turned it off.
+func ClaudeWorkersProblem(s ClaudeWorkersStatus) string {
+	if s.Live() {
+		return ""
+	}
+	// Claude Code writes an explicit false for an installed old copy whose
+	// enabled entry was lost. That false is not a user choice, and on a linked
+	// settings file the owner has to run the removal that lets the skills copy
+	// load. A false next to a marketplace entry in settings is the user's own
+	// disable and is respected below.
+	if s.OldOff && !s.OldEnabled && !s.Marketplace && s.KnownMarketplace && s.OldInstalled {
+		return "worker window off: run claude plugin uninstall " + ClaudeWorkersOldID + " -s user"
+	}
+	if s.DisabledByUser() {
+		return ""
+	}
+	switch {
+	case s.Foreign != "":
+		return "worker window off: " + DisplayPath(s.Foreign) + " is not agent-net's link; move it away, then run agent-net setup --claude-workers-mod"
+	case s.BlockedByInstalledCopy():
+		return "worker window off: run claude plugin uninstall " + ClaudeWorkersOldID + " -s user"
+	default:
+		return "worker window off: run agent-net setup --claude-workers-mod"
+	}
+}
+
+type claudeWorkersSettings struct {
+	skillsOn       bool
+	skillsOff      bool
+	oldOn          bool
+	oldOff         bool
+	oldMarketplace bool
+	linked         bool
+	writable       bool
+}
+
+// readClaudeWorkersSettings reads only the two keys this feature cares about.
+// A missing file is writable and has no entries. A file that is not valid JSON
+// is reported as neither enabled nor writable, so agent-net leaves it alone.
+func readClaudeWorkersSettings() claudeWorkersSettings {
+	var s claudeWorkersSettings
+	path := claudesettings.File()
+	if path == "" {
+		return s
+	}
+	if st, err := os.Lstat(path); err == nil {
+		s.linked = st.Mode()&os.ModeSymlink != 0
+		s.writable = !s.linked && st.Mode().IsRegular() && st.Mode().Perm()&0o200 != 0
+	} else if os.IsNotExist(err) {
+		s.writable = true
+	} else {
+		return s
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return s
+	}
+	var doc struct {
+		EnabledPlugins         map[string]json.RawMessage `json:"enabledPlugins"`
+		ExtraKnownMarketplaces map[string]json.RawMessage `json:"extraKnownMarketplaces"`
+	}
+	if err := json.Unmarshal(b, &doc); err != nil {
+		s.writable = false
+		return s
+	}
+	readEnabled := func(id string) (on, off bool) {
+		raw, ok := doc.EnabledPlugins[id]
+		if !ok {
+			return false, false
+		}
+		var v bool
+		if json.Unmarshal(raw, &v) != nil {
+			return false, false
+		}
+		return v, !v
+	}
+	s.skillsOn, s.skillsOff = readEnabled(ClaudeWorkersSkillsID)
+	s.oldOn, s.oldOff = readEnabled(ClaudeWorkersOldID)
+	_, s.oldMarketplace = doc.ExtraKnownMarketplaces[ClaudeWorkersMarketplace]
+	return s
+}
+
+// MigrateClaudeWorkers is the setup migration: it refreshes the old
+// marketplace copy while it runs, then moves or repairs it. The daemon never
+// calls it, because moving or uninstalling the old copy changes Claude Code's
+// plugin state and needs the owner's setup answer. It returns a line for the
+// log when it did not finish or a command failed; an empty line means nothing
+// needed doing or the work succeeded. ctx cancels its claude commands.
+func MigrateClaudeWorkers(ctx context.Context) string {
+	s := ClaudeWorkersStatusNow()
+	if s.Link == "" {
+		return ""
+	}
+	if !s.LinkOK {
+		if s.OldRegistered {
+			return "the old marketplace plugin stays: the skills link is not in place"
+		}
+		return ""
+	}
+	refreshNote := refreshOldClaudeWorkers(ctx)
+	s = ClaudeWorkersStatusNow()
+	var notes []string
+	if s.BlockedByInstalledCopy() {
+		// No enabled entry is present, so the uninstall has no settings key to
+		// remove. This is safe also when the settings file is a link.
+		if note := uninstallOldClaudeWorkers(ctx); note != "" {
+			notes = append(notes, note)
+		}
+		s = ClaudeWorkersStatusNow()
+	}
+	if s.SettingsWritable {
+		if note := removeOldClaudeWorkers(ctx, true); note != "" {
+			notes = append(notes, note)
+		}
+	}
+	// The refresh only matters when the old copy still runs after the move.
+	if ClaudeWorkersStatusNow().OldNeedsRefresh() {
+		notes = append([]string{refreshNote}, notes...)
+	}
+	return joinNotes(notes...)
+}
+
+// refreshOldClaudeWorkers updates the running old marketplace copy when its
+// panel is stale. A command that succeeds without changing the installed panel
+// still counts as a failure: the daemon must not run it at every integrations
+// tick. It returns one line for the log, or "" when the copy is current.
+func refreshOldClaudeWorkers(ctx context.Context) string {
+	if !ClaudeWorkersStatusNow().OldNeedsRefresh() {
+		return ""
+	}
+	if failures := RefreshClaudeWorkers(ctx); len(failures) != 0 {
+		return strings.Join(failures, "; ")
+	}
+	if ClaudeWorkersStatusNow().OldNeedsRefresh() {
+		return "the old marketplace plugin did not update: Claude Code still lists the old panel"
+	}
+	return ""
+}
+
+// MigrateClaudeWorkersOnce is the daemon's background check. It only refreshes
+// an old marketplace copy that is the one running. It never moves or removes
+// that copy: setup --claude-workers-mod and the off switch do that. Without the
+// stored setup answer it runs no claude command at all. A failed run, including
+// a refresh that left the panel unchanged, is recorded against the binary
+// version, so it is tried once per version and not at every tick.
+func MigrateClaudeWorkersOnce(ctx context.Context, version string) string {
+	if !loadClaudeWorkersState().Installed {
+		return ""
+	}
+	st := loadClaudeWorkersMigrateState()
+	if st.Failed && st.Version == version {
+		return ""
+	}
+	note := refreshOldClaudeWorkers(ctx)
+	if note == "" {
+		if st.Failed {
+			os.Remove(claudeWorkersMigrateStatePath())
+		}
+		return ""
+	}
+	if ctx.Err() != nil {
+		// Daemon stop interrupted the run. Recording it would stop a fresh
+		// start of the same version from refreshing the panel again.
+		return ""
+	}
+	b, _ := json.MarshalIndent(claudeWorkersMigrateState{Version: version, Failed: true}, "", "  ")
+	_ = os.WriteFile(claudeWorkersMigrateStatePath(), append(b, '\n'), 0o600)
+	return note
+}
+
+type claudeWorkersMigrateState struct {
+	Version string `json:"version"`
+	Failed  bool   `json:"failed"`
+}
+
+func claudeWorkersMigrateStatePath() string {
+	return filepath.Join(filepath.Dir(ClaudeWorkersStatePath()), "claude-workers-migrate.json")
+}
+
+func loadClaudeWorkersMigrateState() claudeWorkersMigrateState {
+	var st claudeWorkersMigrateState
+	if b, err := os.ReadFile(claudeWorkersMigrateStatePath()); err == nil {
+		json.Unmarshal(b, &st)
+	}
+	return st
+}
+
+// claudeCommand builds a claude command for the background plugin work. The
+// WaitDelay bounds a child that keeps the output pipe open after the command
+// exits or its context is cancelled, so daemon stop never waits for it.
+func claudeCommand(ctx context.Context, claude string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, claude, args...)
+	cmd.Dir = home()
+	cmd.WaitDelay = time.Second
+	return cmd
+}
+
+// RefreshClaudeWorkers updates Claude Code's copy of the old marketplace
+// plugin. The two commands write Claude Code's own plugin state, not
+// settings.json, so they are safe on a settings file that is a link. Each
+// failure is returned as one line; both commands are attempted.
+func RefreshClaudeWorkers(ctx context.Context) []string {
+	claude := ClaudePath()
+	if claude == "" {
+		return []string{"the old marketplace plugin was not updated: claude not found"}
+	}
+	var failures []string
+	for _, args := range [][]string{{"plugin", "marketplace", "update", ClaudeWorkersMarketplace}, {"plugin", "update", ClaudeWorkersOldID, "-s", "user"}} {
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		out, err := claudeCommand(ctx, claude, args...).CombinedOutput()
+		cancel()
+		if err != nil {
+			line := strings.TrimSpace(string(out))
+			if line == "" {
+				line = err.Error()
+			}
+			failures = append(failures, "claude "+strings.Join(args[:len(args)-1], " ")+" failed: "+strings.SplitN(line, "\n", 2)[0])
+		}
+	}
+	return failures
+}
+
+// uninstallOldClaudeWorkers removes the old copy from Claude Code's installed
+// list when its enabled entry is lost. That entry is missing, so the command
+// has no settings key to remove and writes no settings file, also when that
+// file is a link.
+func uninstallOldClaudeWorkers(ctx context.Context) string {
+	claude := ClaudePath()
+	if claude == "" {
+		return "worker window off: claude not found"
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	out, err := claudeCommand(ctx, claude, "plugin", "uninstall", ClaudeWorkersOldID, "-s", "user").CombinedOutput()
+	cancel()
+	if err != nil {
+		line := strings.TrimSpace(string(out))
+		if line == "" {
+			line = err.Error()
+		}
+		return "worker window off: claude plugin uninstall " + ClaudeWorkersOldID + " -s user failed: " + strings.SplitN(line, "\n", 2)[0]
+	}
+	if installed, _ := claudeWorkersOldInstall(); installed {
+		return "worker window off: the old installed copy is still there"
+	}
+	return ""
+}
+
+// RemoveOldClaudeWorkers removes the old marketplace registration when the
+// settings file is agent-net's to write. It is the off switch, so it does not
+// need the skills link.
+func RemoveOldClaudeWorkers(ctx context.Context) string { return removeOldClaudeWorkers(ctx, false) }
+
+func removeOldClaudeWorkers(ctx context.Context, requireSkills bool) string {
+	s := readClaudeWorkersSettings()
+	if !s.oldOn && !s.oldMarketplace {
+		return ""
+	}
+	// An explicit false is the user's own disable. Removing the installed copy
+	// would let the skills copy load and bring the window back against it.
+	if s.oldOff && !s.oldOn {
+		return ""
+	}
+	if s.linked || !s.writable {
+		return "the old marketplace plugin stays: " + DisplayPath(claudesettings.File()) + " is not agent-net's to write"
+	}
+	claude := ClaudePath()
+	if claude == "" {
+		return "the old marketplace plugin stays: claude not found"
+	}
+	var failures []string
+	if requireSkills {
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		out, err := claudeCommand(ctx, claude, "plugin", "list", "--json").Output()
+		cancel()
+		if err != nil || !strings.Contains(string(out), ClaudeWorkersSkillsID) {
+			return "the old marketplace plugin stays: Claude Code does not list " + ClaudeWorkersSkillsID + " yet"
+		}
+	}
+	for _, args := range [][]string{
+		{"plugin", "uninstall", ClaudeWorkersOldID, "-s", "user"},
+		{"plugin", "marketplace", "remove", ClaudeWorkersMarketplace},
+	} {
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		if out, err := claudeCommand(ctx, claude, args...).CombinedOutput(); err != nil {
+			line := strings.TrimSpace(string(out))
+			if line == "" {
+				line = err.Error()
+			}
+			failures = append(failures, "claude "+strings.Join(args, " ")+": "+strings.SplitN(line, "\n", 2)[0])
+		}
+		cancel()
+	}
+	if s := readClaudeWorkersSettings(); s.oldOn || s.oldMarketplace {
+		if len(failures) == 0 {
+			failures = append(failures, "the old marketplace entries are still in "+DisplayPath(claudesettings.File()))
+		}
+		return strings.Join(failures, "; ")
+	}
+	if requireSkills && !ClaudeWorkersStatusNow().LinkOK {
+		return "the old marketplace plugin was removed, but the skills link is not in place"
+	}
+	return ""
+}
+
 // ClaudeWorkersStatePath is the setup record shared with the daemon sync.
 func ClaudeWorkersStatePath() string {
 	d := os.Getenv("AGENT_NET_CONFIG_DIR")
@@ -202,46 +829,29 @@ func ClaudePath() string {
 	return ""
 }
 
-// RefreshClaudeWorkers updates Claude Code's cached marketplace and plugin.
-// Each failure is returned as one line; both commands are attempted.
-func RefreshClaudeWorkers() []string {
-	claude := ClaudePath()
-	if claude == "" {
-		return []string{"claude not found"}
-	}
-	var failures []string
-	for _, args := range [][]string{{"plugin", "marketplace", "update", ClaudeWorkersMarketplace}, {"plugin", "update", "agent-net-workers@agent-net", "-s", "user"}} {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		cmd := exec.CommandContext(ctx, claude, args...)
-		cmd.Dir = home()
-		out, err := cmd.CombinedOutput()
-		cancel()
-		if err != nil {
-			line := strings.TrimSpace(string(out))
-			if line == "" {
-				line = err.Error()
-			}
-			line = strings.SplitN(line, "\n", 2)[0]
-			failures = append(failures, "claude "+strings.Join(args[:len(args)-1], " ")+" failed: "+line)
-		}
-	}
-	return failures
+type claudeWorkersState struct {
+	Asked     bool   `json:"asked"`
+	Installed bool   `json:"installed"`
+	Dir       string `json:"dir,omitempty"`
 }
 
-func claudeWorkersInstalled() bool {
-	var st struct {
-		Installed bool `json:"installed"`
+func loadClaudeWorkersState() claudeWorkersState {
+	var st claudeWorkersState
+	if b, err := os.ReadFile(ClaudeWorkersStatePath()); err == nil {
+		json.Unmarshal(b, &st)
 	}
-	b, err := os.ReadFile(ClaudeWorkersStatePath())
-	return err == nil && json.Unmarshal(b, &st) == nil && st.Installed
+	return st
 }
 
-// SyncClaudeWorkers refreshes the marketplace only when setup already wrote
-// it. A machine where setup was never asked for the mod gets no folder.
+// SyncClaudeWorkers refreshes the plugin files and puts the skills link back
+// when the owner's stored answer is yes. It writes files only: the Claude
+// commands that move or refresh an old marketplace copy run off the start path,
+// in MigrateClaudeWorkersOnce. A missing or blocked window is reported once per
+// state change, with the one command that fixes it.
 func SyncClaudeWorkers() Result {
-	r := Result{Name: "claude workers mod", Path: ClaudeWorkersDir()}
-	if !exists(r.Path) {
-		r.Text = "skipped (" + DisplayPath(r.Path) + " not found)"
+	r := Result{Name: "claude workers mod", Path: ClaudeWorkersSkillsLink()}
+	if !loadClaudeWorkersState().Installed {
+		r.Text = "skipped (not installed)"
 		return r
 	}
 	changed, err := WriteClaudeWorkers()
@@ -249,15 +859,152 @@ func SyncClaudeWorkers() Result {
 	if err != nil {
 		return r
 	}
-	r.Text = fileResult(changed, true)
-	if changed && claudeWorkersInstalled() {
-		r.Note = strings.Join(RefreshClaudeWorkers(), "; ")
-		if r.Note != "" {
-			r.Note += "; "
-		}
-		r.Note += "open Claude Code sessions: run /reload-plugins"
+	linkChanged, _, err := EnsureClaudeWorkersLink()
+	r.Changed = r.Changed || linkChanged
+	if err != nil {
+		r.Err = err
+		return r
+	}
+	if r.Changed {
+		r.Note = "open Claude Code sessions: run /reload-plugins"
+	}
+	status := ClaudeWorkersStatusNow()
+	switch {
+	case status.Foreign != "":
+		r.Text = "off (a foreign entry has the name)"
+	case status.OldRuns():
+		r.Text = "on (old marketplace copy)"
+	case status.Disabled:
+		r.Text = "off (disabled in Claude Code)"
+	case status.BlockedByInstalledCopy():
+		r.Text = "off (the old installed copy blocks the skills plugin)"
+	case !status.LinkOK:
+		r.Text = "off (link missing)"
+	default:
+		r.Text = fileResult(r.Changed, true)
+	}
+	key := claudeWorkersNoticeKey(status)
+	if key != loadClaudeWorkersNotice().State {
+		r.Note = joinNotes(r.Note, ClaudeWorkersProblem(status))
+		saveClaudeWorkersNotice(key)
 	}
 	return r
+}
+
+func claudeWorkersNoticeKey(s ClaudeWorkersStatus) string {
+	switch {
+	case s.Foreign != "":
+		return "foreign"
+	case s.Live():
+		return "on"
+	case s.OldOff && !s.Marketplace && s.KnownMarketplace && s.OldInstalled:
+		return "off-lost"
+	case s.DisabledByUser():
+		return "off-by-user"
+	case s.BlockedByInstalledCopy():
+		return "blocked"
+	case !s.LinkOK:
+		return "missing"
+	}
+	return "off"
+}
+
+type claudeWorkersNotice struct {
+	State string `json:"state"`
+}
+
+func claudeWorkersNoticePath() string {
+	return filepath.Join(filepath.Dir(ClaudeWorkersStatePath()), "claude-workers-notice.json")
+}
+
+func loadClaudeWorkersNotice() claudeWorkersNotice {
+	var st claudeWorkersNotice
+	if b, err := os.ReadFile(claudeWorkersNoticePath()); err == nil {
+		json.Unmarshal(b, &st)
+	}
+	return st
+}
+
+func saveClaudeWorkersNotice(state string) {
+	b, _ := json.MarshalIndent(claudeWorkersNotice{State: state}, "", "  ")
+	_ = os.WriteFile(claudeWorkersNoticePath(), append(b, '\n'), 0o600)
+}
+
+// RemoveClaudeWorkersRecords removes the daemon's notice and migration
+// records. Setup calls it when the owner turns the window off or uninstalls it.
+func RemoveClaudeWorkersRecords() {
+	os.Remove(claudeWorkersNoticePath())
+	os.Remove(claudeWorkersMigrateStatePath())
+}
+
+// claudeWorkersOldInstall reads Claude Code's installed plugin list and the
+// version it installed of the old copy. The old record is a fast file read,
+// not a claude call.
+func claudeWorkersOldInstall() (installed bool, version string) {
+	dir := claudesettings.Dir()
+	if dir == "" {
+		return false, ""
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "plugins", "installed_plugins.json"))
+	if err != nil {
+		return false, ""
+	}
+	var doc struct {
+		Plugins map[string]json.RawMessage `json:"plugins"`
+	}
+	if json.Unmarshal(b, &doc) != nil {
+		return false, ""
+	}
+	raw, ok := doc.Plugins[ClaudeWorkersOldID]
+	if !ok {
+		return false, ""
+	}
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "[]" || trimmed == "null" || trimmed == "false" {
+		return false, ""
+	}
+	var entries []struct {
+		Version string `json:"version"`
+	}
+	if json.Unmarshal(raw, &entries) == nil {
+		for _, e := range entries {
+			if e.Version != "" {
+				return true, e.Version
+			}
+		}
+	}
+	return true, ""
+}
+
+// claudeWorkersKnownMarketplace says Claude Code's own list still registers the
+// old marketplace. That list is Claude Code's state, not the settings file, so
+// it survives a settings loss and decides whether an installed old copy still
+// shadows the skills copy.
+func claudeWorkersKnownMarketplace() bool {
+	dir := claudesettings.Dir()
+	if dir == "" {
+		return false
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "plugins", "known_marketplaces.json"))
+	if err != nil {
+		return false
+	}
+	var doc map[string]json.RawMessage
+	if json.Unmarshal(b, &doc) != nil {
+		return false
+	}
+	_, ok := doc[ClaudeWorkersMarketplace]
+	return ok
+}
+
+func joinNotes(parts ...string) string {
+	var kept []string
+	for _, p := range parts {
+		if p != "" {
+			kept = append(kept, p)
+		}
+	}
+	return strings.Join(kept, "; ")
 }
 
 // ClaudeWorkersPanelVersion identifies the panel installed by this binary.

@@ -856,11 +856,15 @@ type HarnessInfo struct {
 	MissingOperations []string `json:"missing_operations,omitempty"`
 	// DeliveryWarning is a failed harness transport check, empty when healthy or unknown.
 	DeliveryWarning string `json:"delivery_warning,omitempty"`
-	SignedIn        string `json:"signed_in,omitempty"` // "yes", "no", or empty (unknown).
-	SignIn          string `json:"sign_in,omitempty"`
-	Name            string `json:"name"` // claude | opencode | pi | codex | agy
-	Path            string `json:"path"`
-	Version         string `json:"version"`
+	// WorkersWarning says the owner asked for the Claude worker window and
+	// Claude Code cannot load it, with the one step that fixes it. Empty when
+	// the window is on, when the owner turned it off, or for other harnesses.
+	WorkersWarning string `json:"workers_warning,omitempty"`
+	SignedIn       string `json:"signed_in,omitempty"` // "yes", "no", or empty (unknown).
+	SignIn         string `json:"sign_in,omitempty"`
+	Name           string `json:"name"` // claude | opencode | pi | codex | agy
+	Path           string `json:"path"`
+	Version        string `json:"version"`
 	// Models lists the models the harness can use: "provider/model" where the
 	// harness has a provider, plain ids for Codex and Claude's aliases. It is
 	// empty when the harness did not report a list.

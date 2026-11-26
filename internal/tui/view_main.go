@@ -939,6 +939,9 @@ func (m Model) machineHarnessNote(r machineRow, rows []machineRow) string {
 		if h.DeliveryWarning != "" {
 			return sanitize(h.DeliveryWarning)
 		}
+		if h.WorkersWarning != "" {
+			return sanitize(h.WorkersWarning)
+		}
 		if h.Update != nil && h.Update.Result == "failed" {
 			return sanitize(h.Name + " update failed: " + h.Update.Detail)
 		}
