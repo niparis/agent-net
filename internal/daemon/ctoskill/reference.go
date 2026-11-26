@@ -188,7 +188,8 @@ func Reference() string {
 	w("A value holds at most %d bytes. Budget about 1200 characters for the whole charter because the project's agent reads it every turn. Neighbours see only the first %d characters of `accepts` and `refuses`, so put the main item first. `purpose` is one sentence up to 160 characters. `accepts`, `refuses` and `escalate` hold at most 6 items. A value that looks like an IP address, a token or an absolute path gets a warning; never put secrets in a charter. Put detail in the project's AGENTS.md.\n\n", protocol.CharterValueMaxBytes, protocol.NeighborFieldChars)
 
 	w("## Permissions, tools and the rest\n\n")
-	w("- `cto_op` method `permission_apply` with the owner's words in `owner_words`, or `agent_permission_propose` for the Desk.\n")
+	w("- `cto_op` method `permission_apply` with the owner's words in `owner_words`, or `agent_permission_propose` to ask the chief. The owner operation `permission_reject` refuses a pending pp_ proposal on his words, with a reason.\n")
+	w("- `cto_op` method `delivery_owner_answer` completes an @owner delivery step or an owner merge approval on the owner's words. `loop_resume` restarts a paused loop by its node id on his words.\n")
 	w("- `session_change` action `trust` for a folder, and `mcp_servers` to approve or disable a folder's `.mcp.json` servers. Shared MCP servers use `mcp_change`.\n")
 	w("- `bar_edit` adds, edits or removes a project's bar rules; one rule is one line of at most %d characters.\n", protocol.MaxBarRuleLen)
 	w("- `agent_owner_judgment_record` stores a standing rule: text, area (`network`, `repo:X` or `team:X`) and action. Both must match for the rule to apply.\n")

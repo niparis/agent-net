@@ -2084,6 +2084,24 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return g.ownerApplyPermission(ctx, p)
 
+	case protocol.FramePermissionReject:
+		// The owner's operator path, or the CTO's process-checked one, on the
+		// owner's quoted words. Nothing is written to a machine.
+		var p protocol.PermissionRejectFrame
+		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		return st.RejectPermissionOnOwnerWords(p)
+
+	case protocol.FrameLoopResume:
+		// The owner's operator path, or the CTO's process-checked one, on the
+		// owner's quoted words.
+		var p protocol.LoopResumeFrame
+		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		return st.ResumeLoopOnOwnerWords(p)
+
 	case protocol.FramePermissionGet:
 		var p protocol.PermissionGetFrame
 		if json.Unmarshal(raw, &p) != nil || p.ProposalID == "" || !g.validToolOwner(nc, p.Owner) {

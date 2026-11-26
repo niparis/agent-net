@@ -1562,6 +1562,10 @@ const (
 	FrameStepReport        = "step.report"
 	FrameStepTask          = "step.task"
 	FrameDeliveryNeedsPush = "delivery.needs_push"
+	// FrameDeliveryOwnerAnswer carries the CTO's owner answer for an @owner
+	// step (decision 0196). It is separate from step.report so that only the
+	// owner operation path can stand in for the owner's written approval.
+	FrameDeliveryOwnerAnswer = "delivery.owner_answer"
 )
 
 type DeliveryNeedsPushRequest struct {

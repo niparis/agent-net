@@ -181,3 +181,40 @@ func TestCTOOpPermissionApplyNeedsOwnerWords(t *testing.T) {
 		t.Errorf("approve by id: %v", err)
 	}
 }
+
+// The three owner answers that lost their Desk path (decision 0196) are ops
+// with strict schemas and an owner_words quote.
+func TestCTOOpOwnerAnswersNeedOwnerWords(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		good string
+	}{
+		{"permission_reject", []string{`{"id":"pp_1"}`, `{"id":"pp_1","reason":"too broad"}`, `{"id":"pp_1","owner_words":"no","bogus":1}`},
+			`{"id":"pp_1","reason":"too broad","owner_words":"no"}`},
+		{"delivery_owner_answer", []string{
+			`{"change":"ch_1","step":"approve","for":"merge","commit":"0123456789012345678901234567890123456789","result":"pass"}`,
+			`{"change":"ch_1","step":"approve","for":"merge","result":"pass","owner_words":"go"}`,
+			`{"change":"ch_1","step":"approve","for":"merge","commit":"0123456789012345678901234567890123456789","result":"pass","owner_words":"go","bogus":1}`},
+			`{"change":"ch_1","step":"approve","for":"merge","commit":"0123456789012345678901234567890123456789","result":"pass","owner_words":"go on"}`},
+		{"loop_resume", []string{`{"node":"demo"}`, `{"node":"demo","owner_words":"resume","bogus":1}`},
+			`{"node":"demo","owner_words":"resume it"}`},
+	}
+	for _, tc := range cases {
+		op, ok := CTOOpByName(tc.name)
+		if !ok {
+			t.Fatalf("%s is not a cto_op", tc.name)
+		}
+		if err := ValidateCTOOpArgs(op, json.RawMessage(op.Example)); err != nil {
+			t.Errorf("%s example does not validate: %v", tc.name, err)
+		}
+		if err := ValidateCTOOpArgs(op, json.RawMessage(tc.good)); err != nil {
+			t.Errorf("%s good args: %v", tc.name, err)
+		}
+		for _, args := range tc.args {
+			if err := ValidateCTOOpArgs(op, json.RawMessage(args)); err == nil {
+				t.Errorf("%s %s validated", tc.name, args)
+			}
+		}
+	}
+}

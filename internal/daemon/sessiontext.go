@@ -959,6 +959,62 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			frame.WordsVerified = words != ""
 		}
 		res, err = d.call(ctx, protocol.FramePermissionOwnerApply, frame)
+	case protocol.OpPermissionReject:
+		var q protocol.PermissionRejectRequest
+		if err := decodeCTOArgs(method, raw, &q, "id", "owner_words"); err != nil {
+			return nil, true, err
+		}
+		frame := protocol.PermissionRejectFrame{Request: q, Owner: d.ownerSessionID(), By: "owner", WordsVerified: true}
+		if proposalActor(ctx) == "cto" {
+			frame.By, frame.WordsVerified = "cto", false
+			words, verr := d.verifyCTOOwnerWords(q.OwnerWords)
+			if verr != nil {
+				return nil, true, verr
+			}
+			frame.WordsVerified = words != ""
+		}
+		res, err = d.call(ctx, protocol.FramePermissionReject, frame)
+	case protocol.OpDeliveryOwnerAnswer:
+		var q protocol.DeliveryOwnerAnswerRequest
+		if err := decodeCTOArgs(method, raw, &q, "change", "step", "result", "commit", "owner_words"); err != nil {
+			return nil, true, err
+		}
+		if err := q.Validate(); err != nil {
+			return nil, true, err
+		}
+		frame := protocol.DeliveryOwnerAnswerFrame{Request: q, Owner: d.ownerSessionID(), Session: d.ownerSessionID(), By: "owner", WordsVerified: true}
+		if proposalActor(ctx) == "cto" {
+			cto := d.ctoSessionID()
+			if cto == "" {
+				return nil, true, errors.New("the CTO session is not registered yet")
+			}
+			frame.By, frame.Session, frame.WordsVerified = "cto", cto, false
+			words, verr := d.verifyCTOOwnerWords(q.OwnerWords)
+			if verr != nil {
+				return nil, true, verr
+			}
+			frame.WordsVerified = words != ""
+		}
+		var out protocol.StepReportResult
+		if err := d.deliveryCall(ctx, protocol.FrameDeliveryOwnerAnswer, frame, &out); err != nil {
+			return nil, true, err
+		}
+		res = out
+	case protocol.OpLoopResume:
+		var q protocol.LoopResumeRequest
+		if err := decodeCTOArgs(method, raw, &q, "node", "owner_words"); err != nil {
+			return nil, true, err
+		}
+		frame := protocol.LoopResumeFrame{Node: q.Node, Owner: d.ownerSessionID(), By: "owner", OwnerWords: q.OwnerWords, WordsVerified: true}
+		if proposalActor(ctx) == "cto" {
+			frame.By, frame.WordsVerified = "cto", false
+			words, verr := d.verifyCTOOwnerWords(q.OwnerWords)
+			if verr != nil {
+				return nil, true, verr
+			}
+			frame.WordsVerified = words != ""
+		}
+		res, err = d.call(ctx, protocol.FrameLoopResume, frame)
 	case protocol.OpLeadSet, protocol.OpTeamWrite, protocol.OpTeamHistory, protocol.OpGraphGet, protocol.OpCharterSet, protocol.OpCharterHistory, protocol.OpNodeAdd, protocol.OpNodeRemove, protocol.OpEdgeSet, protocol.OpEdgeRemove, protocol.OpEdgeHistory, protocol.OpDeliveryOwnerSet, protocol.OpMergerSet, protocol.OpGraphUndo, protocol.OpRepoCreate, protocol.OpRepoArchive, protocol.OpAgentCreate, protocol.OpAgentTombstone, protocol.OpScopeSet, protocol.OpScopeRemove, protocol.OpNodeSettingsGet, protocol.OpNodeSettingsSet:
 		// The gateway trusts enrolled daemons as with session.policy. The owner
 		// gate above must run before forwarding any graph operation.
