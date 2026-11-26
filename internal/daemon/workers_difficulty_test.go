@@ -85,8 +85,11 @@ func TestWorkerAutomaticLeavesOutProfileMissingFromTheMachineList(t *testing.T) 
 		}
 	}
 	w.cli.mustCall(protocol.OpWorkerProvidersSet, protocol.WorkerProviders{Providers: []string{"fake"}})
+	// Both are scored, so only the machine's list decides between them.
 	score := 42.3
-	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/deleted", Score: &score})
+	for _, model := range []string{"fake/deleted", "fake/m1"} {
+		w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: model, Score: &score})
+	}
 
 	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "auto", Task: "x"})
 	if err != nil || res.Model != "fake/m1" {
