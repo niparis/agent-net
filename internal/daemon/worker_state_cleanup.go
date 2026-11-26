@@ -38,7 +38,7 @@ func removeWorkerBuildState(dir string) uint64 {
 			continue
 		}
 		freed += uint64(workerFolderBytes(path))
-		_ = os.RemoveAll(path)
+		_ = removeWorkerFolder(path)
 	}
 	return freed
 }
@@ -138,7 +138,7 @@ func (d *Daemon) cleanEndedWorkerState(now time.Time) uint64 {
 			continue
 		}
 		freed += uint64(workerFolderBytes(dir))
-		if err := os.RemoveAll(dir); err != nil {
+		if err := removeWorkerFolder(dir); err != nil {
 			continue
 		}
 		folders++
