@@ -230,7 +230,7 @@ func TestPickerNoDatabaseReadPerPick(t *testing.T) {
 	}
 	nodeView := &protocol.NodeView{NodeID: node, Hostname: "h", Harnesses: []protocol.HarnessInfo{{Name: "codex", SignedIn: "yes"}}}
 	candidates := []protocol.WorkerModelCandidate{{Name: "sol low", Harness: "codex", Model: "gpt-6.1-sol:low"}, {Name: "sol medium", Harness: "codex", Model: "gpt-6.1-sol:medium"}}
-	facts, _, err := g.chooseFacts(nodeView, candidates, nil, protocol.WorkerFloors{}, nil, nil)
+	facts, err := g.chooseFacts(nodeView, candidates, nil, protocol.WorkerFloors{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +271,7 @@ func BenchmarkPickTwentyProfilesGateway(b *testing.B) {
 	}
 	g := &Gateway{store: s}
 	nodeView := &protocol.NodeView{NodeID: node, Hostname: "h", Harnesses: []protocol.HarnessInfo{{Name: "codex", SignedIn: "yes"}}}
-	facts, _, err := g.chooseFacts(nodeView, candidates, nil, protocol.WorkerFloors{}, nil, nil)
+	facts, err := g.chooseFacts(nodeView, candidates, nil, protocol.WorkerFloors{}, nil)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -547,6 +547,9 @@ func chooseModelTest(candidates []protocol.WorkerModelCandidate, level string, s
 	if len(pick) > 0 {
 		in = pick[0]
 	}
+	if in == nil {
+		in = &protocol.PickerInput{D: protocol.PickerD(nil, level), Table: protocol.BuildPickerTable(nil, protocol.DefaultPickerSettings())}
+	}
 	order, _, err := protocol.WorkerPickOrder(candidates, level, scores, minimums, quotas, running, rotation, in)
 	if err != nil {
 		return protocol.WorkerModelChoice{}, err
@@ -591,7 +594,7 @@ func TestPickAfterTheGateRefusesTheCostWinnerTriesTheExplorationPool(t *testing.
 	nodeView := &protocol.NodeView{NodeID: node, Hostname: "h", Harnesses: []protocol.HarnessInfo{
 		{Name: "codex", SignedIn: "yes"}, {Name: "agy", SignedIn: "yes"}}}
 	g := &Gateway{store: s}
-	facts, _, err := g.chooseFacts(nodeView, candidates, quotas, floors, nil, nil)
+	facts, err := g.chooseFacts(nodeView, candidates, quotas, floors, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

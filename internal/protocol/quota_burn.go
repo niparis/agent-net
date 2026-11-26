@@ -162,7 +162,7 @@ func QuotaBurnHold(q *Quotas, provider, model string) (string, bool) {
 	var tests []burnTest
 	if p, ok := q.Provider(provider); ok && p.usable() {
 		for _, w := range p.Windows {
-			if !QuotaWindowServes(w, model) || w.Exhausted || w.PercentUsed >= 100 {
+			if !QuotaWindowServes(w, model) || QuotaWindowUsedUp(w) {
 				continue
 			}
 			duration := quotaWindowDuration(w)

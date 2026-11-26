@@ -702,31 +702,6 @@ func TestPickKeepsEffortsOfOneModelApart(t *testing.T) {
 	}
 }
 
-func TestPickFallsBackToTheLevelRule(t *testing.T) {
-	// Neither candidate has a record at D 4.5 and both benchmark under it, so
-	// the cell rule allows none. The level rule still takes them for "normal".
-	scores := pickScores(map[string]float64{"a": 39, "b": 39})
-	table := BuildPickerTable(nil, DefaultPickerSettings())
-	choice, err := chooseFirst(pickCandidates("a", "b"), "normal", scores, nil, nil, nil, &WorkerRotation{}, &PickerInput{D: 4.5, Table: table})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(choice.PickNote, "fallback to the level rule") {
-		t.Fatalf("note: %q", choice.PickNote)
-	}
-	if choice.Model != "a" && choice.Model != "b" {
-		t.Fatalf("choice: %+v", choice)
-	}
-}
-
-func TestPickWithoutAPickerInputUsesTheLevelRule(t *testing.T) {
-	scores := pickScores(map[string]float64{"a": 39})
-	choice, err := chooseFirst(pickCandidates("a"), "normal", scores, nil, nil, nil, &WorkerRotation{})
-	if err != nil || choice.Model != "a" || choice.PickNote != "" {
-		t.Fatalf("choice: %+v %v", choice, err)
-	}
-}
-
 func TestPickNoteNamesTheCellsAndWhatWasLeftOut(t *testing.T) {
 	var tasks []PickerTask
 	tasks = append(tasks, pickTasks("deepseek", 2.5, repeat(15, 1, .5)...)...)

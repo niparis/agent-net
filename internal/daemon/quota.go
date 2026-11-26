@@ -255,7 +255,6 @@ func (d *Daemon) refreshQuota(ctx context.Context, path string) *protocol.Quotas
 		d.Logf("quota-axi: %v", err)
 		return nil
 	}
-	d.fillAlibabaFromBL(ctx, path, q)
 	if version, err := quotaaxi.InstalledVersion(path); err == nil {
 		q.Copy = &protocol.QuotaCopy{Version: version, Dir: filepath.Dir(path), Private: path == quotaaxi.Binary()}
 	}

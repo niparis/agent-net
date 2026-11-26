@@ -117,139 +117,6 @@ func (r *WorkerRotation) level(name string) *WorkerRotationLevel {
 	return state
 }
 
-// levelOrder returns the level rule's whole order. The first choice is the one
-// the rotation picked; the rest follow by rotation weight, so the gate can try
-// them in the same order. keepBlocked leaves a candidate whose provider has no
-// room at the end, for the gate to refuse; without it the candidate leaves the
-// order, as the routes part 3 has not moved yet expect. The third return value
-// is the pick's row for each candidate, in roster order.
-func levelOrder(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation) ([]WorkerModelChoice, []WorkerLeftOut, []PickCandidate, error) {
-	if level == "" {
-		level = "normal"
-	}
-	if _, err := DifficultyFit(0, level, minimums); err != nil {
-		return nil, nil, nil, err
-	}
-	state := rotation
-	if state == nil {
-		state = &WorkerRotation{}
-	}
-	// Over-qualification is measured from the weakest adequate candidate of
-	// this start, so every difficulty fills from the bottom of its adequate
-	// range and the strong models stay available for harder work.
-	weakestAdequate := math.Inf(1)
-	for _, c := range candidates {
-		score, _, adequate, ok := WorkerCandidateFit(c, level, scores, minimums)
-		if ok && adequate && score < weakestAdequate {
-			weakestAdequate = score
-		}
-	}
-	var eligible []rankedChoice
-	// eligibleRow is the row of each eligible candidate, lined up with eligible.
-	var eligibleRow []int
-	var reasons []string
-	var leftOut []WorkerLeftOut
-	rows := make([]PickCandidate, 0, len(candidates))
-	for _, c := range candidates {
-		score, fit, isAdequate, ok := WorkerCandidateFit(c, level, scores, minimums)
-		name := c.Name
-		if name == "" {
-			name = c.Harness + " " + c.Model
-		}
-		// The gate owns the quota check. The ranker only needs a pace for its
-		// order, so a used-up window is left out of that reading.
-		provider := c.Provider
-		if provider == "" {
-			provider = QuotaProviderForStart(c.Harness, c.Model)
-		}
-		room, note, measured := WorkerQuotaPace(quotas, provider, c.Model)
-		servedRoom := room
-		if measured {
-			servedRoom -= 5 * float64(running[provider])
-		}
-		rows = append(rows, levelPickRow(c, servedRoom, measured))
-		at := len(rows) - 1
-		if !ok {
-			reasons = append(reasons, name+" (max unknown: unscored)")
-			leftOut = append(leftOut, WorkerLeftOut{Name: name, Reason: "unscored (no benchmark or rating)", Rank: LeftOutNoScore})
-			rows[at].LeftOutReason = "unscored (no benchmark or rating)"
-			continue
-		}
-		scoreText := fmt.Sprintf("%g", score)
-		if s, sOk := workerCandidateScore(c, scores); sOk && s.FallbackEffort != "" {
-			scoreText = fmt.Sprintf("%g via %s", score, s.FallbackEffort)
-		}
-		reasons = append(reasons, fmt.Sprintf("%s (max %s, score %s, %s)", name, WorkerMaximumLevel(score, minimums), scoreText, fit))
-		if !isAdequate {
-			reason := fmt.Sprintf("max %s, score %g, %s", WorkerMaximumLevel(score, minimums), score, fit)
-			leftOut = append(leftOut, WorkerLeftOut{Name: name, Reason: reason, Rank: LeftOutFit})
-			rows[at].LeftOutReason = reason
-			continue
-		}
-		// An early quit is one failed attempt, with the existing failure weight.
-		c.Failed = c.Failed || c.EarlyQuitLevels[level]
-		weight := workerRotationWeight(c, score, weakestAdequate, servedRoom, measured)
-		rows[at].Allowed = true
-		rows[at].Weight = weight
-		eligibleRow = append(eligibleRow, at)
-		eligible = append(eligible, rankedChoice{
-			choice: WorkerModelChoice{WorkerModelCandidate: c, Score: score, Fit: fit, QuotaNote: note},
-			weight: weight,
-			poor:   poorTrack(c.Track),
-		})
-	}
-	if len(eligible) == 0 {
-		sort.Strings(reasons)
-		roster := strings.Join(reasons, ", ")
-		if roster == "" {
-			roster = "none"
-		}
-		return nil, leftOut, rows, fmt.Errorf("no model qualifies for %s under the max-or-one-level-below rule (or eligible providers are out of quota); registered profiles: %s; register a profile for %s, or pass model explicitly", level, roster, level)
-	}
-	// keys are the candidate of each eligible row before rotateRanked may
-	// reorder eligible.
-	keys := make([]string, len(eligible))
-	for i, e := range eligible {
-		keys[i] = e.choice.WorkerModelCandidate.Key()
-	}
-	picked, shares, err := rotateRanked(state, level, eligible)
-	if err != nil {
-		return nil, leftOut, rows, err
-	}
-	pickedKey := picked.WorkerModelCandidate.Key()
-	chosenSet := false
-	for i, at := range eligibleRow {
-		rows[at].Probability = shares[i]
-		if !chosenSet && keys[i] == pickedKey {
-			rows[at].Chosen = true
-			chosenSet = true
-		}
-	}
-	order := []WorkerModelChoice{picked}
-	seen := map[string]bool{picked.WorkerModelCandidate.Key(): true}
-	rest := append([]rankedChoice(nil), eligible...)
-	sort.SliceStable(rest, func(i, j int) bool {
-		if rest[i].poor != rest[j].poor {
-			return !rest[i].poor
-		}
-		if rest[i].weight != rest[j].weight {
-			return rest[i].weight > rest[j].weight
-		}
-		return rest[i].choice.WorkerModelCandidate.Key() < rest[j].choice.WorkerModelCandidate.Key()
-	})
-	for _, e := range rest {
-		key := e.choice.WorkerModelCandidate.Key()
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		ch := e.choice
-		ch.Why = WhyLine(level, ch)
-		order = append(order, ch)
-	}
-	return order, leftOut, rows, nil
-}
-
 // rankedChoice is a candidate that passed the rules of a pick, with its
 // rotation weight.
 type rankedChoice struct {
@@ -353,12 +220,6 @@ func rotateRanked(state *WorkerRotation, level string, eligible []rankedChoice) 
 	return out, shares, nil
 }
 
-// workerOverQualificationScale is the score gap above the weakest adequate
-// candidate at which a model's rotation weight falls to 1/e. A small scale
-// reduces over-qualification among eligible candidates. Models more than one
-// level below their maximum are excluded before weights are calculated.
-const workerOverQualificationScale = 8.0
-
 // WorkerCandidateFit looks up a candidate's score and classifies it against a
 // difficulty. ok is false when the model has no score or the level is unknown;
 // adequate requires a good or excellent fit and a task at the model's maximum
@@ -400,17 +261,6 @@ func WorkerMaximumLevel(score float64, minimums map[string]float64) string {
 	return maxLevel
 }
 
-// workerRotationWeight is the level rule's weight. Fit decays with the distance
-// above the weakest adequate score. The weakest adequate model keeps the full
-// weight, and a model 8 points stronger gets about a third of it.
-func workerRotationWeight(c WorkerModelCandidate, score, weakestAdequate, room float64, measured bool) float64 {
-	fit := 1.0
-	if !math.IsInf(weakestAdequate, 1) {
-		fit = math.Exp(-math.Max(0, score-weakestAdequate) / workerOverQualificationScale)
-	}
-	return rotationWeight(c, fit, room, measured)
-}
-
 // quotaPaceFactor is the rotation weight a provider's quota pace gives.
 // Room is percentage points behind pace. Five points behind is about a quarter
 // more weight, and a lagging provider can lean further. Ahead of pace keeps
@@ -424,8 +274,8 @@ func quotaPaceFactor(room float64, measured bool) float64 {
 
 // rotationWeight turns quota room, a fit term and track record into a positive
 // weight. Every candidate that passes the rules of a pick keeps a positive
-// weight, so none is starved. The fit term is the caller's: the level rule
-// passes its over-qualification decay, the cell rule its cell score.
+// weight, so none is starved. The fit term is the caller's: the fallback draw
+// passes its cost weight, the cell rotation its cell score.
 func rotationWeight(c WorkerModelCandidate, fit, room float64, measured bool) float64 {
 	weight := quotaPaceFactor(room, measured)
 	weight *= fit
@@ -515,7 +365,7 @@ func quotaPaceRead(q *Quotas, provider, model string, skipBlocked bool) (room fl
 		if !QuotaWindowServes(w, model) {
 			continue
 		}
-		if w.Exhausted || w.PercentUsed > 90 {
+		if QuotaWindowUsedUp(w) || w.PercentUsed > 90 {
 			if skipBlocked {
 				continue
 			}
@@ -548,7 +398,7 @@ func quotaPaceRead(q *Quotas, provider, model string, skipBlocked bool) (room fl
 // It names the provider and the window so the why line never prints an empty
 // reason. A window whose reading is at or over its limit is reported as used up.
 func quotaWindowBlockedReason(provider string, w QuotaWindow) string {
-	if w.Exhausted || w.PercentUsed >= 100 {
+	if QuotaWindowUsedUp(w) {
 		return fmt.Sprintf("%s %s used up", provider, QuotaWindowName(w))
 	}
 	return fmt.Sprintf("%s %s at %.0f%% used", provider, QuotaWindowName(w), w.PercentUsed)

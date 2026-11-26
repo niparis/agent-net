@@ -136,7 +136,7 @@ func TestWorkerChoiceMarksStayOnTheirHarness(t *testing.T) {
 		}
 		weights[harness] = choice.Weight
 	}
-	if weights["codex"] != 1 || weights["opencode"] != .5 {
-		t.Fatalf("weights: %v", weights)
+	if weights["codex"] <= 0 || weights["opencode"]/weights["codex"] != .5 {
+		t.Fatalf("weights: %v, want the failed model at half the other's weight", weights)
 	}
 }

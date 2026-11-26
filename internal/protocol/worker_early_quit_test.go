@@ -6,8 +6,8 @@ import (
 )
 
 func TestPickerEarlyQuitFailureWeight(t *testing.T) {
-	good := workerRotationWeight(WorkerModelCandidate{}, 30, 30, 0, false)
-	quit := workerRotationWeight(WorkerModelCandidate{Failed: true}, 30, 30, 0, false)
+	good := rotationWeight(WorkerModelCandidate{}, 1, 0, false)
+	quit := rotationWeight(WorkerModelCandidate{Failed: true}, 1, 0, false)
 	if math.Abs(quit-good*.5) > 1e-9 {
 		t.Fatalf("weights: %v %v", good, quit)
 	}

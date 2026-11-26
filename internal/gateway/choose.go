@@ -34,9 +34,6 @@ type ChooseRequest struct {
 	// Persist saves the rotation state after a real start. A preview passes
 	// false, and DecideOnly forces it false.
 	Persist bool
-	// Health is the model health the caller already read for a run of many
-	// decisions, so a preview does not read the same rows once per level.
-	Health func(harness, model string) (ModelHealth, error)
 	// Rotation is a snapshot to decide on instead of the stored one: a preview
 	// passes its own copy, so its pick matches a start without moving the
 	// rotation the gateway will use next.
@@ -96,7 +93,7 @@ func (r ChooseResult) Next() (ChooseResult, bool) {
 		return ChooseResult{}, false
 	}
 	rest := r.list[at+1:]
-	granted, skips, err := gateWithCoolingLast(rest, r.checks, r.facts)
+	granted, skips, err := model.Gate(orderCandidates(rest), r.checks, r.facts)
 	if err != nil {
 		return ChooseResult{}, false
 	}
@@ -167,7 +164,7 @@ func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 	if req.Facts != nil {
 		facts = *req.Facts
 	} else {
-		facts, _, err = g.chooseFacts(req.Node, candidates, req.Quotas, req.Floors, req.Auth, req.Health)
+		facts, err = g.chooseFacts(req.Node, candidates, req.Quotas, req.Floors, req.Auth)
 		if err != nil {
 			return refuse(err)
 		}
@@ -224,8 +221,7 @@ func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 		return refuse(fmt.Errorf("no model qualifies for %s; register a profile for %s, or pass model explicitly", level, level))
 	}
 	// The ranker's note explains the whole pick: the bucket, the cells and the
-	// cost terms. Keep it when the gate moves to another candidate, or the
-	// start reads like the old level rule.
+	// cost terms. Keep it when the gate moves to another candidate.
 	rankerNote := order[0].PickNote
 	rankerRows := order[0].PickRows
 	if policy.ProtectedLast {
@@ -234,7 +230,7 @@ func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 	if req.Prefer != "" {
 		order = preferFirst(order, req.Prefer)
 	}
-	granted, skips, gateErr := gateWithCoolingLast(order, policy.Checks, facts)
+	granted, skips, gateErr := model.Gate(orderCandidates(order), policy.Checks, facts)
 	pickRows := protocol.PausedPickRows(markPickSkips(rankerRows, skips), paused)
 	skips = append(append([]model.Skip(nil), pausedSkips...), skips...)
 	result := ChooseResult{Skips: skips, LeftOut: resultLeftOut, Pick: pickRows, facts: facts, checks: policy.Checks, list: order, level: level, paused: pausedSkips}
@@ -264,9 +260,6 @@ func (g *Gateway) Choose(req ChooseRequest) (ChooseResult, error) {
 		}
 	}
 	var notes []string
-	if pickedCooling(result.Choice, facts) && hasHealthy(order, result.Choice, facts) {
-		notes = append(notes, "used model cooling down because no healthy alternative is adequate")
-	}
 	notes = append(notes, protectionNotes(order, result.Choice, level, req.Scores, req.Minimums, req.Protected)...)
 	if result.Granted.FloorUnread() {
 		notes = append(notes, "no quota reading, floor not applied")
@@ -348,74 +341,6 @@ func skipNotes(skips []model.Skip) []string {
 	return out
 }
 
-// pickedCooling reports whether the chosen candidate is cooling down.
-func pickedCooling(choice protocol.WorkerModelChoice, facts model.Facts) bool {
-	cool, ok := facts.Cooling[choice.Key()]
-	return ok && cool.Until.After(facts.Now)
-}
-
-// hasHealthy reports whether another candidate is not cooling down.
-func hasHealthy(order []protocol.WorkerModelChoice, choice protocol.WorkerModelChoice, facts model.Facts) bool {
-	for _, c := range order {
-		if c.Key() == choice.Key() {
-			continue
-		}
-		cool, ok := facts.Cooling[c.Key()]
-		if !ok || !cool.Until.After(facts.Now) {
-			return true
-		}
-	}
-	return false
-}
-
-// protectionNotes is the protected-provider note: a protected candidate that
-// was skipped for an ordinary one, or the note that only a protected one was
-// left. It is a modifier note, not a check.
-func protectionNotes(order []protocol.WorkerModelChoice, choice protocol.WorkerModelChoice, level string, scores []protocol.ModelScore, minimums map[string]float64, setting protocol.ProtectedProviders) []string {
-	if len(setting.Providers) == 0 {
-		return nil
-	}
-	if isProtected(choice.Harness, choice.Model, setting) {
-		reason := setting.Reason
-		if reason == "" {
-			reason = "your orchestrator's provider"
-		}
-		return []string{fmt.Sprintf("used %s %s (protected: %s) because no other profile meets %s, or the others are out of quota", choice.Harness, choice.Model, reason, level)}
-	}
-	var notes []string
-	for _, c := range order {
-		if !isProtected(c.Harness, c.Model, setting) {
-			continue
-		}
-		if _, _, eligible, _ := protocol.WorkerCandidateFit(c.WorkerModelCandidate, level, scores, minimums); eligible {
-			notes = append(notes, fmt.Sprintf("skipped %s: protected provider (%s), saved for your orchestrator", c.Name, protocol.ProfileProvider(c.Harness, c.Model)))
-		}
-	}
-	return notes
-}
-
-// gateWithCoolingLast asks the gate twice when cooling is on: a model that is
-// cooling down is used only when no other candidate can run, as before
-// decision 0162.
-func gateWithCoolingLast(order []protocol.WorkerModelChoice, checks model.Checks, facts model.Facts) (model.Granted, []model.Skip, error) {
-	list := make([]model.Candidate, len(order))
-	for i := range order {
-		list[i] = order[i].WorkerModelCandidate
-	}
-	picked, skips, err := model.Gate(list, checks, facts)
-	if err == nil || !checks.Cooling {
-		return picked, skips, err
-	}
-	lastResort := checks
-	lastResort.Cooling = false
-	if retried, _, retryErr := model.Gate(list, lastResort, facts); retryErr == nil {
-		// Keep the first skips: they say which models were set aside for
-		// cooling, and the note must still name them.
-		return retried, skips, nil
-	}
-	return picked, skips, err
-}
-
 // paceOrder reorders a fixed list by quota pace: a provider behind its pace
 // comes first. It is a modifier, so it never removes a candidate.
 func paceOrder(order []protocol.WorkerModelChoice, quotas *protocol.Quotas) []protocol.WorkerModelChoice {
@@ -443,6 +368,41 @@ func paceOrder(order []protocol.WorkerModelChoice, quotas *protocol.Quotas) []pr
 		out[i] = p.choice
 	}
 	return out
+}
+
+// orderCandidates is the gate's candidate list from a ranker's order.
+func orderCandidates(order []protocol.WorkerModelChoice) []model.Candidate {
+	list := make([]model.Candidate, len(order))
+	for i := range order {
+		list[i] = order[i].WorkerModelCandidate
+	}
+	return list
+}
+
+// protectionNotes is the protected-provider note: a protected candidate that
+// was skipped for an ordinary one, or the note that only a protected one was
+// left. It is a modifier note, not a check.
+func protectionNotes(order []protocol.WorkerModelChoice, choice protocol.WorkerModelChoice, level string, scores []protocol.ModelScore, minimums map[string]float64, setting protocol.ProtectedProviders) []string {
+	if len(setting.Providers) == 0 {
+		return nil
+	}
+	if isProtected(choice.Harness, choice.Model, setting) {
+		reason := setting.Reason
+		if reason == "" {
+			reason = "your orchestrator's provider"
+		}
+		return []string{fmt.Sprintf("used %s %s (protected: %s) because no other profile meets %s, or the others are out of quota", choice.Harness, choice.Model, reason, level)}
+	}
+	var notes []string
+	for _, c := range order {
+		if !isProtected(c.Harness, c.Model, setting) {
+			continue
+		}
+		if _, _, eligible, _ := protocol.WorkerCandidateFit(c.WorkerModelCandidate, level, scores, minimums); eligible {
+			notes = append(notes, fmt.Sprintf("skipped %s: protected provider (%s), saved for your orchestrator", c.Name, protocol.ProfileProvider(c.Harness, c.Model)))
+		}
+	}
+	return notes
 }
 
 // protectedLastOrder moves protected providers after the others without
@@ -499,10 +459,9 @@ func (s *Store) providerLimits(now time.Time) (map[string]providerLimit, error) 
 }
 
 // chooseFacts is the one snapshot a start decides on. It reads the machine's
-// harnesses, the auth and health of each candidate, and the provider limits
-// that live sessions reported. The model health it reads is passed back, so
-// the ranker reuses it instead of reading again.
-func (g *Gateway) chooseFacts(node *protocol.NodeView, candidates []protocol.WorkerModelCandidate, quotas *protocol.Quotas, floors protocol.WorkerFloors, auth map[string]authIndex, health func(harness, model string) (ModelHealth, error)) (model.Facts, map[string]ModelHealth, error) {
+// harnesses, the auth of each candidate, and the provider limits that live
+// sessions reported.
+func (g *Gateway) chooseFacts(node *protocol.NodeView, candidates []protocol.WorkerModelCandidate, quotas *protocol.Quotas, floors protocol.WorkerFloors, auth map[string]authIndex) (model.Facts, error) {
 	now := g.store.now()
 	facts := model.Facts{
 		Now:         now,
@@ -510,7 +469,6 @@ func (g *Gateway) chooseFacts(node *protocol.NodeView, candidates []protocol.Wor
 		Floors:      floors,
 		Harnesses:   map[string]model.HarnessFact{},
 		AuthBlocked: map[string]bool{},
-		Cooling:     map[string]model.CoolingFact{},
 	}
 	if node != nil {
 		facts.Hostname = node.Hostname
@@ -520,17 +478,12 @@ func (g *Gateway) chooseFacts(node *protocol.NodeView, candidates []protocol.Wor
 	}
 	limits, err := g.store.providerLimits(now)
 	if err != nil {
-		return model.Facts{}, nil, err
+		return model.Facts{}, err
 	}
 	facts.Limits = make(map[string]model.Limit, len(limits))
 	for provider, limit := range limits {
 		facts.Limits[provider] = model.Limit{Until: limit.until, Reason: limit.reason}
 	}
-	readHealth := health
-	if readHealth == nil {
-		readHealth = g.store.ModelHealth
-	}
-	healths := make(map[string]ModelHealth, len(candidates))
 	if auth == nil {
 		auth = map[string]authIndex{}
 	}
@@ -541,7 +494,7 @@ func (g *Gateway) chooseFacts(node *protocol.NodeView, candidates []protocol.Wor
 			if !ok {
 				idx, err = g.store.modelAuthIndex(node.NodeID, c.Harness)
 				if err != nil {
-					return model.Facts{}, nil, err
+					return model.Facts{}, err
 				}
 				auth[c.Harness] = idx
 			}
@@ -549,16 +502,8 @@ func (g *Gateway) chooseFacts(node *protocol.NodeView, candidates []protocol.Wor
 				facts.AuthBlocked[key] = true
 			}
 		}
-		h, err := readHealth(c.Harness, c.Model)
-		if err != nil {
-			return model.Facts{}, nil, err
-		}
-		healths[key] = h
-		if h.Cooling {
-			facts.Cooling[key] = model.CoolingFact{Failures: h.Failures, Until: h.Until}
-		}
 	}
-	return facts, healths, nil
+	return facts, nil
 }
 
 // checkPaused names the skip of a model the owner paused (decision 0188).

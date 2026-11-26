@@ -10,38 +10,28 @@ import (
 // order the gate should try them. The ranker removes no candidate: a provider
 // who has no room is at the end, and the gate refuses it with its own reason.
 //
-// The cell rule orders by the expected cost of one accepted result, with the
-// level rule as its fallback. Pace is part of the weight; protected providers
-// last and rotation are modifiers the caller applies to this list.
+// The cell rule orders by the expected cost of one accepted result. Pace is
+// part of the weight; rotation and the floors modify the list the caller
+// applies. A start with no candidate the cell rule can allow has no order: the
+// caller reports why instead of falling back to another rule.
 //
 // The first choice of a pick carries the pick's rows (PickRows) and its note,
 // written from the rows.
 func WorkerPickOrder(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation, in *PickerInput) ([]WorkerModelChoice, []WorkerLeftOut, error) {
-	if in != nil && in.usable() {
-		if level == "" {
-			level = "normal"
-		}
-		if _, err := DifficultyFit(0, level, minimums); err != nil {
-			return nil, nil, err
-		}
-		order, fallback := pickOrderByCells(candidates, level, scores, minimums, quotas, running, rotation, in)
-		if fallback == "" {
-			return order, leftOutAfter(candidates, order, level, scores, minimums), nil
-		}
-		order, leftOut, rows, err := levelOrder(candidates, level, scores, minimums, quotas, running, rotation)
-		if err == nil && len(order) > 0 {
-			lo, hi := in.Table.BucketRange(in.Table.Bucket(in.D))
-			for i := range rows {
-				rows[i].BucketLo, rows[i].BucketHi, rows[i].Fallback = lo, hi, fallback
-			}
-			order[0].PickRows = rows
-			order[0].PickNote = PickNote(rows, in.Table.Settings().ExploreShare)
-			order[0].Fallback = true
-		}
-		return order, leftOut, err
+	if level == "" {
+		level = "normal"
 	}
-	order, leftOut, _, err := levelOrder(candidates, level, scores, minimums, quotas, running, rotation)
-	return order, leftOut, err
+	if _, err := DifficultyFit(0, level, minimums); err != nil {
+		return nil, nil, err
+	}
+	if !in.usable() {
+		return nil, nil, fmt.Errorf("no model qualifies for %s: the picker has no table", level)
+	}
+	order, reason := pickOrderByCells(candidates, level, scores, minimums, quotas, running, rotation, in)
+	if reason != "" {
+		return nil, nil, fmt.Errorf("no model qualifies for %s: %s", level, reason)
+	}
+	return order, leftOutAfter(candidates, order, level, scores, minimums), nil
 }
 
 // leftOutAfter names each candidate the ranker did not put in the order, and

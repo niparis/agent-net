@@ -27,7 +27,7 @@ func refQualityPreview(g *Gateway, in qualityPreviewInputs, node protocol.NodeVi
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	snapshot, _, err := g.chooseFacts(&node, candidates, quotas, in.floors, nil, in.health.health)
+	snapshot, err := g.chooseFacts(&node, candidates, quotas, in.floors, nil)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -202,12 +202,6 @@ func previewFixture(t *testing.T) (*Gateway, string, *clock) {
 		{Provider: "codex", Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 20}}},
 	}}
 	g.usage.set(node, c.now(), protocol.UsageReport{Quotas: quotas})
-	// Two infrastructure failures cool one model down.
-	for i := 0; i < 2; i++ {
-		if err := g.store.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: "w" + string(rune('a'+i)), Harness: "opencode", Model: "deepseek/deepseek-v4.1-flash", Outcome: protocol.OutcomeInfra, StartedAt: c.now().Add(-30 * time.Minute).Unix(), EndedAt: c.now().Add(-time.Duration(10+i) * time.Minute).Unix()}); err != nil {
-			t.Fatal(err)
-		}
-	}
 	if err := g.store.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: "wc", Harness: "codex", Model: "gpt-6.1-terra", Outcome: protocol.OutcomeComplete, StartedAt: c.now().Add(-3 * time.Hour).Unix(), EndedAt: c.now().Add(-2 * time.Hour).Unix()}); err != nil {
 		t.Fatal(err)
 	}
@@ -319,17 +313,7 @@ func TestNodesInfoPreviewFollowsItsInputsAtOnce(t *testing.T) {
 			{Provider: "codex", Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 100}}},
 		}}})
 	})
-	// A model that goes into cooldown after two infrastructure failures.
-	changed("model health", func() {
-		for i := 0; i < 2; i++ {
-			if err := g.store.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: "x" + string(rune('a'+i)), Harness: "opencode", Model: "deepseek/deepseek-v4.1-flash", Outcome: protocol.OutcomeInfra, StartedAt: c.now().Add(-5 * time.Minute).Unix(), EndedAt: c.now().Add(-time.Duration(i+1) * time.Minute).Unix()}); err != nil {
-				t.Fatal(err)
-			}
-		}
-		// The first failures were 10 minutes ago, so the model is cooling
-		// now whatever the new ones are. Move the clock past the cooldown.
-		c.advance(5 * time.Hour)
-	})
+
 }
 
 func TestNodesInfoPreviewFollowsRotationAndFailures(t *testing.T) {
@@ -368,31 +352,6 @@ func TestNodesInfoPreviewFollowsRotationAndFailures(t *testing.T) {
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("step %d:\n got %+v\nwant %+v", i, got.Nodes, want.Nodes)
-		}
-	}
-}
-
-// The health of a model from one read of the window is what Store.ModelHealth
-// says for the same model.
-func TestHealthReaderSameAsModelHealth(t *testing.T) {
-	g, node, c := previewFixture(t)
-	// A judge that timed out, and one that ran well.
-	if _, err := g.store.db.Exec(`INSERT INTO worker_assessments (session_id, started_at, assessed_at, judge_harness, judge_model, error, reasons, reasoning) VALUES ('j1', ?, ?, 'codex', 'gpt-6.1-terra', 'judge codex gpt-6.1-terra timed out after 5m', '{}', 0)`, c.now().Add(-20*time.Minute).Unix(), c.now().Add(-19*time.Minute).Unix()); err != nil {
-		t.Skipf("assessment table layout differs: %v", err)
-	}
-	_ = node
-	r := g.store.newHealthReader()
-	for _, hm := range [][2]string{{"opencode", "deepseek/deepseek-v4.1-flash"}, {"codex", "gpt-6.1-terra"}, {"claude", "claude-opus-5-5"}, {"codex", "unknown"}} {
-		want, err := g.store.ModelHealth(hm[0], hm[1])
-		if err != nil {
-			t.Fatal(err)
-		}
-		got, err := r.health(hm[0], hm[1])
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("%v: got %+v want %+v", hm, got, want)
 		}
 	}
 }

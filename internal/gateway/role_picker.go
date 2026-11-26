@@ -11,7 +11,7 @@ import (
 // pickRole asks the one gate for a role start: the CTO, the chief of staff or
 // the merger (decision 0162). A role's ordered list is a setting, except the
 // CTO's, which is local daemon state and arrives in the request. Roles get the
-// locked checks and cooling only, so a failing model falls to the next entry
+// locked checks only, so a failing model falls to the next entry
 // and the system roles do not use the worker's quota protections.
 func (g *Gateway) pickRole(nodeID string, req protocol.RolePickRequest) (protocol.RolePickResult, error) {
 	out := protocol.RolePickResult{}

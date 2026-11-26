@@ -2392,8 +2392,8 @@ func appendModelNote(note, more string) string {
 // workerChoiceNote leaves the parenthesis open for resolution and protection notes.
 //
 // A pick by cell record says which bucket it read, the chosen cell, the best
-// cell and what was left out (decision 0105). A pick that fell back to the level
-// rule says so first and then gives the level rule's own note.
+// cell and what was left out (decision 0105). A row recorded before the level
+// rule was removed says so first and then gives that rule's own note.
 func workerChoiceNote(level string, choice protocol.WorkerModelChoice, candidates []protocol.WorkerModelCandidate, scores []protocol.ModelScore, minimums map[string]float64) string {
 	if choice.PickNote != "" && !choice.Fallback {
 		note := choice.PickNote

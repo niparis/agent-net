@@ -107,19 +107,6 @@ func TestPausedModelIsNotInTheAllowedDraw(t *testing.T) {
 	}
 }
 
-// When neither record nor benchmark allows a model at the start's D, the pick
-// falls back to the level rule. A paused model is not in its draw. The active
-// model's benchmark score is 0 too, but not the owner's: it is not paused.
-func TestPausedModelIsNotInTheLevelRule(t *testing.T) {
-	counts, last, note := pausedPicks(t, nil, "trivial", 2.5, []protocol.ModelScore{{Match: "active", Score: 0, Source: "artificialanalysis"}}, 20)
-	if counts["paused"] != 0 || counts["active"] != 20 {
-		t.Fatalf("picks %v; a pick of the paused model said: %s", counts, note)
-	}
-	if !strings.Contains(last.Choice.PickNote, "level rule") {
-		t.Fatalf("the pick did not use the level rule: %s", last.Choice.PickNote)
-	}
-}
-
 // pausedStartGateway is the floor gateway with the owner's scores: Opus is
 // paused, the other profiles are not.
 func pausedStartGateway(t *testing.T) (*Gateway, *nodeConn, string, string) {

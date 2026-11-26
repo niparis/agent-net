@@ -149,8 +149,8 @@ often.
 
 The draw is a weighted rotation, so each candidate's share of the picks follows
 its weight over time. The start note says `none qualified; fallback draw by
-expected cost`. When no candidate is allowed, the level rule takes over:
-candidates whose benchmark meets the level, in order.
+expected cost`. When no candidate is allowed, the start fails with the level
+and the reason no profile was allowed; there is no second rule.
 
 Where: `internal/protocol/picker.go` (cell, `ExpectedCost`),
 `internal/protocol/picker_choose.go` (`PickerBucketVerdicts`,
@@ -226,22 +226,18 @@ the table below):
 - **Burn hold.** The gate projects how fast the running workers use each window.
   It holds back a start that would empty the window before it resets. It never
   holds the first worker of a provider, because there is no rate yet.
-- **Cooling.** Infrastructure failures of a model are counted over two hours.
-  Two failures within 15 minutes, or three or more in the window, cool the
-  model. The cooling lasts 15 minutes and doubles with each further failure, up
-  to two hours. A cooling model is skipped, unless nothing else can run.
 
 The checks each kind of start uses are one table in code, and a test pins it:
 
-| Start | Ranker | Floor | 90% | Burn | Cooling | Pace | Protected last |
-|---|---|---|---|---|---|---|---|
-| Worker, chosen by agent-net | cost rule | yes | yes | yes | yes | yes | yes |
-| Worker, model named by an agent | the agent's list | yes | yes | yes | yes | no | no |
-| Worker, model named by you | your list | no | no | no | no | no | no |
-| Continue or resume a worker | same model | no | no | no | no | no | no |
-| Continue whose old model no longer qualifies | cost rule | yes | yes | yes | yes | yes | yes |
-| Difficulty judge | worker profiles | yes | yes | yes | yes | yes | yes |
-| CTO, chief of staff, merger | role list | no | no | no | yes | no | no |
+| Start | Ranker | Floor | 90% | Burn | Pace | Protected last |
+|---|---|---|---|---|---|---|
+| Worker, chosen by agent-net | cost rule | yes | yes | yes | yes | yes |
+| Worker, model named by an agent | the agent's list | yes | yes | yes | no | no |
+| Worker, model named by you | your list | no | no | no | no | no |
+| Continue or resume a worker | same model | no | no | no | no | no |
+| Continue whose old model no longer qualifies | cost rule | yes | yes | yes | yes | yes |
+| Difficulty judge | worker profiles | yes | yes | yes | yes | yes |
+| CTO, chief of staff, merger | role list | no | no | no | no | no |
 
 A preview or backtest uses the same checks as the row it previews. It decides
 and starts nothing, so the preview shows the choice a real start would make.
@@ -274,7 +270,7 @@ Where: `internal/model/model.go` (`Gate`, `lockedSkip`, `optionalSkip`),
 `internal/model/policy.go` (`PolicyFor`), `internal/protocol/worker_floors.go`
 (`CheckWorkerFloor`), `internal/protocol/chooser.go` (`QuotaRoomForProvider`),
 `internal/protocol/quota_burn.go` (`QuotaBurnHold`),
-`internal/gateway/model_health.go`, `internal/gateway/role_picker.go`.
+`internal/gateway/role_picker.go`.
 
 ### 7. The start, its note, and the refusal
 
@@ -331,7 +327,6 @@ Every candidate the gate skipped gets its own clause, `skipped <candidate>:
 - `<provider> is exhausted (<window>; <reset>)`: the provider has no quota left.
 - `<provider> has 14% left in its week window, under your 20% worker floor`: the floor.
 - `held back for quota: ...`: the burn hold.
-- `cooling down after 2 infrastructure failures (until 14:30 UTC)`: cooling.
 - `harness claude is not signed in on <machine>`: the locked sign-in check.
 
 ## How results feed back

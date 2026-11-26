@@ -156,7 +156,7 @@ func (d *Daemon) writeCTOModelsSetting(ctx context.Context, models []protocol.Ro
 }
 
 // ctoPick asks the one gate which CTO model may start. The CTO is a role, so
-// it gets the locked checks and cooling only (decision 0162).
+// it gets the locked checks only (decision 0162).
 func (d *Daemon) ctoPick(ctx context.Context, models []protocol.RoleModel, current protocol.RoleModel, resume bool) (protocol.RolePickResult, error) {
 	return d.pickRoleOnMachine(ctx, protocol.RoleCTO, "", models, current, resume)
 }

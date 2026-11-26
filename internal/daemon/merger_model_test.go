@@ -26,7 +26,7 @@ func mergerPickDaemon(t *testing.T, asked *[]protocol.RolePickRequest) *Daemon {
 			return raw, true, nil
 		case "worker.role.pick":
 			*asked = append(*asked, params.(protocol.RolePickRequest))
-			raw, _ := json.Marshal(protocol.RolePickResult{Refused: "claude-sonnet-5-5 is cooling down"})
+			raw, _ := json.Marshal(protocol.RolePickResult{Refused: "claude-sonnet-5-5 is not signed in"})
 			return raw, true, nil
 		}
 		return nil, false, nil
@@ -41,8 +41,8 @@ func TestMergerStartAsksGateForNamedModelOnly(t *testing.T) {
 		want  []protocol.RoleModel
 		error string
 	}{
-		{"named", `{"project":"garden","model":"claude-sonnet-5-5"}`, []protocol.RoleModel{{Harness: "claude", Model: "claude-sonnet-5-5"}}, "merger model: claude-sonnet-5-5 is cooling down"},
-		{"setting", `{"project":"garden"}`, nil, "merger model: claude-sonnet-5-5 is cooling down"},
+		{"named", `{"project":"garden","model":"claude-sonnet-5-5"}`, []protocol.RoleModel{{Harness: "claude", Model: "claude-sonnet-5-5"}}, "merger model: claude-sonnet-5-5 is not signed in"},
+		{"setting", `{"project":"garden"}`, nil, "merger model: claude-sonnet-5-5 is not signed in"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var asked []protocol.RolePickRequest

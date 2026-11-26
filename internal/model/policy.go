@@ -55,7 +55,7 @@ func PolicyFor(purpose Purpose) Policy {
 	case PurposeWorkerAutomatic:
 		return Policy{
 			Ranker:        RankCost,
-			Checks:        Checks{Floor: true, Block90: true, Burn: true, Cooling: true},
+			Checks:        Checks{Floor: true, Block90: true, Burn: true},
 			Pace:          true,
 			ProtectedLast: true,
 			Rotation:      true,
@@ -63,7 +63,7 @@ func PolicyFor(purpose Purpose) Policy {
 	case PurposeWorkerNamed:
 		return Policy{
 			Ranker: RankFixed,
-			Checks: Checks{Floor: true, Block90: true, Burn: true, Cooling: true},
+			Checks: Checks{Floor: true, Block90: true, Burn: true},
 		}
 	case PurposeOwnerNamed:
 		return Policy{Ranker: RankFixed}
@@ -72,15 +72,12 @@ func PolicyFor(purpose Purpose) Policy {
 	case PurposeDifficultyJudge:
 		return Policy{
 			Ranker:        RankFixed,
-			Checks:        Checks{Floor: true, Block90: true, Burn: true, Cooling: true},
+			Checks:        Checks{Floor: true, Block90: true, Burn: true},
 			Pace:          true,
 			ProtectedLast: true,
 		}
 	case PurposeRole:
-		return Policy{
-			Ranker: RankFixed,
-			Checks: Checks{Cooling: true},
-		}
+		return Policy{Ranker: RankFixed}
 	case PurposePreview:
 		policy := PolicyFor(PurposeWorkerAutomatic)
 		policy.DecideOnly = true

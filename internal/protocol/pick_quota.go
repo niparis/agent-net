@@ -54,7 +54,7 @@ type PickQuotaCandidate struct {
 	// back (floor, 90 percent, used up), else the one that set its pace room.
 	Decided string `json:"decided,omitempty"`
 	// Check is the gate step that held it back: floor, block90, burn,
-	// exhausted, cooling, limit and the others of the gate. Empty when none.
+	// exhausted, limit and the others of the gate. Empty when none.
 	Check string `json:"check,omitempty"`
 	// Floor is the owner's worker floor for its provider, in percent left.
 	Floor int `json:"floor,omitempty"`
@@ -108,8 +108,8 @@ func PickQuotaRead(q *Quotas, floors WorkerFloors, rows []PickCandidate, checks 
 					read.Windows = append(read.Windows, w.ID)
 				}
 			}
-			// The level rule reads its pace without the blocked windows; the
-			// cell rule and the gate read them.
+			// A row recorded before the level rule was removed reads its pace
+			// without the blocked windows; a cell row and the gate read them.
 			if w, ok := QuotaPaceWindow(q, provider, r.Model, r.Rule == PickRuleLevel); ok {
 				read.Decided = w.ID
 			}

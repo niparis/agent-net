@@ -220,53 +220,6 @@ pick 11: first=x weight=1.5 share="x: 5, y: 5 of the last 10 normal starts" quot
 pick 12: first=y weight=1.5 share="x: 5, y: 5 of the last 10 normal starts" quota="" why="difficulty normal (D 2.50); y 0.82 (n2); none qualified; fallback draw by expected cost" fallback=false
   note: bucket 2.33-2.67: y 0.82 [0.59-1.00] n2, chosen (benchmark); x 0.68 [0.40-0.96] n2 allowed (benchmark)
   order: y, x
-== level rule when no model is allowed
-pick 1: first=a weight=1 share="a: 1 of the last 1 normal starts" quota="" why="" fallback=true
-  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
-  order: a, b
-pick 2: first=b weight=1 share="a: 1, b: 1 of the last 2 normal starts" quota="" why="" fallback=true
-  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
-  order: b, a
-pick 3: first=a weight=1 share="a: 2, b: 1 of the last 3 normal starts" quota="" why="" fallback=true
-  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
-  order: a, b
-pick 4: first=b weight=1 share="a: 2, b: 2 of the last 4 normal starts" quota="" why="" fallback=true
-  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
-  order: b, a
-pick 5: first=a weight=1 share="a: 3, b: 2 of the last 5 normal starts" quota="" why="" fallback=true
-  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
-  order: a, b
-pick 6: first=b weight=1 share="a: 3, b: 3 of the last 6 normal starts" quota="" why="" fallback=true
-  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
-  order: b, a
-pick 7: first=a weight=1 share="a: 4, b: 3 of the last 7 normal starts" quota="" why="" fallback=true
-  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
-  order: a, b
-pick 8: first=b weight=1 share="a: 4, b: 4 of the last 8 normal starts" quota="" why="" fallback=true
-  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
-  order: b, a
-pick 9: first=a weight=1 share="a: 5, b: 4 of the last 9 normal starts" quota="" why="" fallback=true
-  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
-  order: a, b
-pick 10: first=b weight=1 share="a: 5, b: 5 of the last 10 normal starts" quota="" why="" fallback=true
-  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
-  order: b, a
-pick 11: first=a weight=1 share="a: 5, b: 5 of the last 10 normal starts" quota="" why="" fallback=true
-  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
-  order: a, b
-pick 12: first=b weight=1 share="a: 5, b: 5 of the last 10 normal starts" quota="" why="" fallback=true
-  note: bucket 4.33-4.67: fallback to the level rule (no profile is allowed by its record or its benchmark)
-  order: b, a
-== level rule without a picker input
-pick 1: first=a weight=1 share="a: 1 of the last 1 normal starts" quota="" why="" fallback=false
-  note: 
-  order: a
-pick 2: first=a weight=1 share="a: 2 of the last 2 normal starts" quota="" why="" fallback=false
-  note: 
-  order: a
-pick 3: first=a weight=1 share="a: 3 of the last 3 normal starts" quota="" why="" fallback=false
-  note: 
-  order: a
 == note names the left out models
 pick 1: first=deepseek weight=0 share="deepseek: 1 of the last 1 normal starts" quota="" why="difficulty normal (D 2.50); deepseek 0.73 (n30); 1 other qualifying; left out: terra:medium (below 0.9×best)" fallback=false
   note: bucket 2.33-2.67: deepseek 0.73 [0.65-0.80] n30, best; qualifying: deepseek 0.73 [0.65-0.80] n30, flash 0.63 [0.44-0.81] n6; terra:medium 0.19 [0.07-0.31] n10 left out (below 0.9×best)
@@ -354,12 +307,12 @@ pick 12: first=cheap weight=0 share="cheap: 10 of the last 10 simple starts" quo
   note: bucket 1.67-2.00: cheap 0.90 [0.86-0.95] n30, best; qualifying: cheap 0.90 [0.86-0.95] n30, strong 0.53 [0.49-0.58] n30; fresh n0 left out (explore is up only)
   order: cheap, strong, fresh
 == a provider out of quota stays last
-pick 1: first=deepseek weight=1 share="deepseek: 1 of the last 1 hard starts" quota="" why="" fallback=false
-  note: 
-  order: deepseek, go, terra
-pick 2: first=go weight=1 share="deepseek: 1, go: 1 of the last 2 hard starts" quota="" why="" fallback=false
-  note: 
-  order: go, deepseek, terra
-pick 3: first=terra weight=0.472367 share="deepseek: 1, go: 1, terra: 1 of the last 3 hard starts" quota="" why="" fallback=false
-  note: 
+pick 1: first=terra weight=0.53538 share="terra: 1 of the last 1 hard starts" quota="" why="difficulty hard (D 2.50); terra (score 51.0); none qualified; fallback draw by expected cost; left out: go (opencode-go monthly used up)" fallback=false
+  note: bucket 2.33-2.67: terra n0, chosen (benchmark); deepseek n0 allowed (benchmark); go n0 left out (opencode-go monthly used up)
+  order: terra, deepseek, go
+pick 2: first=deepseek weight=0.53538 share="deepseek: 1, terra: 1 of the last 2 hard starts" quota="" why="difficulty hard (D 2.50); deepseek (score 45.0); none qualified; fallback draw by expected cost; left out: go (opencode-go monthly used up)" fallback=false
+  note: bucket 2.33-2.67: deepseek n0, chosen (benchmark); terra n0 allowed (benchmark); go n0 left out (opencode-go monthly used up)
+  order: deepseek, terra, go
+pick 3: first=terra weight=0.53538 share="terra: 2, deepseek: 1 of the last 3 hard starts" quota="" why="difficulty hard (D 2.50); terra (score 51.0); none qualified; fallback draw by expected cost; left out: go (opencode-go monthly used up)" fallback=false
+  note: bucket 2.33-2.67: terra n0, chosen (benchmark); deepseek n0 allowed (benchmark); go n0 left out (opencode-go monthly used up)
   order: terra, deepseek, go

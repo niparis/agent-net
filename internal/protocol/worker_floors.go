@@ -122,7 +122,7 @@ func WorkerFloorRead(quotas *Quotas, floors WorkerFloors, harness, model string)
 			continue
 		}
 		var remaining int
-		if w.Exhausted || w.PercentUsed >= 100 {
+		if QuotaWindowUsedUp(w) {
 			remaining = 0
 		} else {
 			remaining = int(math.Round(math.Max(0, math.Min(100, 100-w.PercentUsed))))
