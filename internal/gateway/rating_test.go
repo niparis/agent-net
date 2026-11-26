@@ -302,31 +302,6 @@ func TestRateNoteIsCutAndSanitized(t *testing.T) {
 	}
 }
 
-func TestRateCountsReachCalibration(t *testing.T) {
-	s, _ := newTestStore(t)
-	node, _, _ := s.CreateNode("mac", "linux")
-	caller := ratingCaller(t, s, node, "caller", "claude-opus-5-5")
-	for i := 0; i < 2; i++ {
-		wid := ratingRun(t, s, node, caller, "p/m:high", "normal")
-		if _, err := s.AddRating(protocol.RateFrame{RateRequest: protocol.RateRequest{Worker: wid, Score: 4}, Rater: caller}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	cal, err := s.Calibration()
-	if err != nil {
-		t.Fatal(err)
-	}
-	found := false
-	for _, r := range cal.Ratings {
-		if r.Model == "p/m" && r.Count == 2 {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("calibration ratings: %+v", cal.Ratings)
-	}
-}
-
 // Part 4 is read only too: ratings must not change the rotation state or the
 // model a start would pick.
 func TestRatingsChangeNoChooserBehavior(t *testing.T) {
@@ -352,9 +327,6 @@ func TestRatingsChangeNoChooserBehavior(t *testing.T) {
 		if _, err := s.AddRating(protocol.RateFrame{RateRequest: protocol.RateRequest{Worker: wid, Score: 1, Note: "bad"}, Rater: caller}); err != nil {
 			t.Fatal(err)
 		}
-	}
-	if _, err := s.Calibration(); err != nil {
-		t.Fatal(err)
 	}
 	after, err := s.WorkerRotation()
 	if err != nil {
@@ -394,7 +366,7 @@ func TestRateRejectsBadInput(t *testing.T) {
 
 // A caller can rate right after the hand-back notice, before the run is
 // recorded. The rating has no run to read its model from, so the run adopts it
-// when it is recorded, and the quality fit counts it then.
+// when it is recorded.
 func TestRatingBeforeItsRunIsAdoptedByTheRun(t *testing.T) {
 	s, _ := newTestStore(t)
 	node, _, _ := s.CreateNode("mac", "linux")
@@ -404,14 +376,21 @@ func TestRatingBeforeItsRunIsAdoptedByTheRun(t *testing.T) {
 	if err != nil || !out.Accepted {
 		t.Fatalf("rating: %+v %v", out, err)
 	}
-	if got := s.QualityAnalysis().Ratings; got != 0 {
-		t.Fatalf("a rating with no run counted: %d", got)
+	var runID int64
+	if err := s.db.QueryRow(`SELECT run_id FROM worker_ratings WHERE session_id=?`, wid).Scan(&runID); err != nil {
+		t.Fatal(err)
+	}
+	if runID != 0 {
+		t.Fatalf("a rating with no run was adopted early: %d", runID)
 	}
 	if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: wid, Harness: "opencode", Model: "p/m:high",
 		Outcome: protocol.OutcomeComplete, EndedAt: s.now().Unix(), Caller: caller, Difficulty: "hard"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := s.QualityAnalysis().Ratings; got != 1 {
-		t.Fatalf("ratings after the run: %d, want 1", got)
+	if err := s.db.QueryRow(`SELECT run_id FROM worker_ratings WHERE session_id=?`, wid).Scan(&runID); err != nil {
+		t.Fatal(err)
+	}
+	if runID == 0 {
+		t.Fatal("the run did not adopt its rating")
 	}
 }

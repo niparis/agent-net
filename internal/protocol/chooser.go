@@ -378,22 +378,20 @@ func WorkerCandidateFit(c WorkerModelCandidate, level string, scores []ModelScor
 	}
 	maxLevel := WorkerMaximumLevel(s.Score, minimums)
 	eligible := false
-	for i, name := range workerDifficultyLevels {
+	for i, name := range DifficultyLevels {
 		if name == maxLevel {
-			eligible = level == name || i > 0 && level == workerDifficultyLevels[i-1]
+			eligible = level == name || i > 0 && level == DifficultyLevels[i-1]
 			break
 		}
 	}
 	return s.Score, fit, eligible && (fit == "good" || fit == "excellent"), true
 }
 
-var workerDifficultyLevels = []string{"trivial", "simple", "normal", "hard", "very_complex"}
-
 // WorkerMaximumLevel is the highest level whose minimum the score meets.
 // It returns "none" when the score meets no minimum.
 func WorkerMaximumLevel(score float64, minimums map[string]float64) string {
 	maxLevel := "none"
-	for _, level := range workerDifficultyLevels {
+	for _, level := range DifficultyLevels {
 		fit, _ := DifficultyFit(score, level, minimums)
 		if fit == "good" || fit == "excellent" {
 			maxLevel = level

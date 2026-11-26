@@ -55,7 +55,7 @@ func (g *Gateway) handleScoresSet(w http.ResponseWriter, r *http.Request) {
 	}
 	err = g.store.setOwner(scoresKey, out)
 	if err == nil {
-		err = g.store.refreshQuality()
+		err = g.store.refreshPicker()
 		g.store.Event("scores.set", node, "", "", "")
 	}
 	writeJSON(w, out, err)

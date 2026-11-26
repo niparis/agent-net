@@ -127,7 +127,6 @@ type Snapshot struct {
 	Scores             []protocol.ModelScore
 	DifficultyMinimums map[string]float64
 	WorkerRotation     protocol.WorkerRotation
-	Calibration        protocol.Calibration
 	GatewayWarnings    []string
 	Nodes              []protocol.NodeView
 	// Agents are the sessions, with the owner pseudo-sessions.

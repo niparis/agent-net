@@ -15,27 +15,6 @@ func defectFrame(worker, rater, note string) protocol.RateFrame {
 	}
 }
 
-// defectTaskCalibration returns the one caller's single task's median.
-func defectTaskCalibration(t *testing.T, s *Store, caller string) (tasks int, median float64) {
-	t.Helper()
-	cal, err := s.Calibration()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, c := range cal.Callers {
-		if c.Caller != caller {
-			continue
-		}
-		for _, l := range c.Levels {
-			if l.Difficulty == "hard" {
-				return l.Tasks, l.Median
-			}
-		}
-	}
-	t.Fatalf("caller %s is not in the calibration: %+v", caller, cal.Callers)
-	return 0, 0
-}
-
 // A defect reported after the hand-back is stored and counts as one fix on
 // the task, even though the caller sent the worker no follow-up.
 func TestDefectAfterHandbackCountsOneFix(t *testing.T) {
@@ -57,26 +36,6 @@ func TestDefectAfterHandbackCountsOneFix(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatalf("defects stored %d times", n)
-	}
-	tasks, median := defectTaskCalibration(t, s, caller)
-	if tasks != 1 || median != 1 {
-		t.Fatalf("calibration after one defect: tasks %d median %v, want 1 and 1", tasks, median)
-	}
-	cal, err := s.Calibration()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cal.Defects != 1 {
-		t.Fatalf("calibration defects = %d, want 1", cal.Defects)
-	}
-	found := false
-	for _, r := range cal.Ratings {
-		if r.Model == "p/m" && r.Count == 0 && r.Defects == 1 {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("model defect count missing from the ratings line: %+v", cal.Ratings)
 	}
 }
 
@@ -106,10 +65,6 @@ func TestSecondDefectCountsAgain(t *testing.T) {
 	}
 	if n != 2 {
 		t.Fatalf("defects stored %d times, want 2", n)
-	}
-	tasks, median := defectTaskCalibration(t, s, caller)
-	if tasks != 1 || median != 2 {
-		t.Fatalf("calibration after two defects: tasks %d median %v, want 1 and 2", tasks, median)
 	}
 }
 
@@ -231,10 +186,6 @@ func TestDefectSeverityAddsPoints(t *testing.T) {
 	if stored != 3 {
 		t.Fatalf("stored severity = %d, want 3", stored)
 	}
-	tasks, median := defectTaskCalibration(t, s, caller)
-	if tasks != 1 || median != 3 {
-		t.Fatalf("calibration after a severity 3 defect: tasks %d median %v, want 1 and 3", tasks, median)
-	}
 }
 
 func TestDefectSeverityMustBeOneToFour(t *testing.T) {
@@ -255,22 +206,6 @@ func TestDefectSeverityMustBeOneToFour(t *testing.T) {
 	}
 	if n != 0 {
 		t.Fatalf("an invalid severity was stored")
-	}
-}
-
-// A continue now weighs 0.33 in the task's rework, and a fix stays 1.
-func TestContinueWeighsThirtyThreeHundredths(t *testing.T) {
-	s, _ := newTestStore(t)
-	node, _, _ := s.CreateNode("mac", "linux")
-	caller := ratingCaller(t, s, node, "caller", "claude-opus-5-5")
-	if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: "s_cont", Harness: "opencode",
-		Model: "p/m", Outcome: protocol.OutcomeComplete, EndedAt: s.now().Unix(), Caller: caller,
-		Difficulty: "hard", Continue: 1}); err != nil {
-		t.Fatal(err)
-	}
-	tasks, median := defectTaskCalibration(t, s, caller)
-	if tasks != 1 || median != 0.33 {
-		t.Fatalf("one continue: tasks %d median %v, want 1 and 0.33", tasks, median)
 	}
 }
 
@@ -298,9 +233,6 @@ func TestDefectsChangeNoChooserBehavior(t *testing.T) {
 		if _, err := s.AddRating(defectFrame(wid, caller, "bad")); err != nil {
 			t.Fatal(err)
 		}
-	}
-	if _, err := s.Calibration(); err != nil {
-		t.Fatal(err)
 	}
 	after, err := s.WorkerRotation()
 	if err != nil {

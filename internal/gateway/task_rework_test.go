@@ -81,62 +81,6 @@ func TestTaskReworkBackfillLinksChainAndCountsMidrun(t *testing.T) {
 	check()
 }
 
-func TestTaskQualityAndCalibrationGroupStoppedContinuation(t *testing.T) {
-	s, _ := newTestStore(t)
-	// Add the columns to an old schema too, so this test exposes grouping before
-	// the migration exists rather than failing on a missing column.
-	for _, c := range []struct{ name, spec string }{{"task_id", "TEXT NOT NULL DEFAULT ''"}, {"midrun_count", "INTEGER NOT NULL DEFAULT 0"}} {
-		var n int
-		if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_runs') WHERE name=?`, c.name).Scan(&n); err != nil {
-			t.Fatal(err)
-		}
-		if n == 0 {
-			if _, err := s.db.Exec(fmt.Sprintf("ALTER TABLE worker_runs ADD COLUMN %s %s", c.name, c.spec)); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-	now := s.now().Unix()
-	for _, r := range []struct {
-		sid, root, model, harness, difficulty, outcome string
-		fix, cont, mid                                 int
-	}{
-		{"root", "", "gpt-terra:high", "codex", "hard", "stopped", 1, 1, 1},
-		{"second", "root", "gpt-sol:low", "opencode", "normal", "complete", 1, 0, 2},
-		{"third", "root", "other", "pi", "simple", "complete", 0, 1, 3},
-		{"stopped", "", "gpt-luna", "codex", "normal", "stopped", 9, 9, 9},
-	} {
-		_, err := s.db.Exec(`INSERT INTO worker_runs(node_id,session_id,task_id,model,harness,difficulty,outcome,ended_at,caller,counters_known,fix_count,continue_count,midrun_count) VALUES ('node',?,?,?,?,?,?,?,'caller',1,?,?,?)`, r.sid, r.root, r.model, r.harness, r.difficulty, r.outcome, now, r.fix, r.cont, r.mid)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err := s.db.Exec(`INSERT INTO worker_defects(session_id,severity,at) VALUES('third',2,?)`, now); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.refreshQuality(); err != nil {
-		t.Fatal(err)
-	}
-	q := s.QualityAnalysis()
-	if len(q.Levels) != 1 || q.Levels[0].Difficulty != "hard" || len(q.Levels[0].Families) != 1 {
-		t.Fatalf("task must use root difficulty and family: %+v", q.Levels)
-	}
-	f := q.Levels[0].Families[0]
-	if f.Family != "terra" || f.Tasks != 1 || f.Fixes != 2 || f.Continues != 2 || f.Midrun != 6 || f.LateDefects != 1 || f.Headache != 54 {
-		t.Fatalf("task totals: %+v", f)
-	}
-	if q.ReworkAverage != protocol.ReworkWeight(4, 2) {
-		t.Errorf("fit rework %v", q.ReworkAverage)
-	}
-	cal, err := s.Calibration()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(cal.Callers) != 1 || len(cal.Callers[0].Levels) != 1 || cal.Callers[0].Levels[0].Tasks != 1 || cal.Callers[0].Levels[0].Median != protocol.ReworkWeight(4, 2) {
-		t.Fatalf("calibration: %+v", cal.Callers)
-	}
-}
-
 func TestTaskReworkBackfillContinuationOutcomes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "gateway.db")
 	s, err := OpenStore(path)
@@ -214,44 +158,5 @@ func TestTaskReworkBackfillUsesOutcomeAtContinuation(t *testing.T) {
 	}
 	if cont != 1 || fix != 0 {
 		t.Fatalf("continued the earlier partial run: continue=%d fix=%d", cont, fix)
-	}
-}
-
-func TestTaskQualityUsesFirstRunByEndTime(t *testing.T) {
-	s, _ := newTestStore(t)
-	now := s.now().Unix()
-	for _, r := range []struct {
-		model, difficulty string
-		ended             int64
-	}{{"gpt-sol", "hard", now + 10}, {"gpt-terra", "normal", now}} {
-		if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: "node", SessionID: "root", Harness: "codex", Model: r.model, Difficulty: r.difficulty, Caller: "caller", Outcome: protocol.OutcomeComplete, EndedAt: r.ended}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	q := s.QualityAnalysis()
-	if len(q.Levels) != 1 || q.Levels[0].Difficulty != "normal" || len(q.Levels[0].Families) != 1 || q.Levels[0].Families[0].Family != "terra" {
-		t.Fatalf("first root run was not used: %+v", q.Levels)
-	}
-}
-
-func TestTaskQualityKeepsNonStoppedUnknownCounters(t *testing.T) {
-	s, _ := newTestStore(t)
-	now := s.now().Unix()
-	if _, err := s.db.Exec(`INSERT INTO worker_runs(node_id,session_id,caller,model,harness,difficulty,outcome,ended_at,counters_known) VALUES('node','root','caller','gpt-terra','codex','normal','complete',?,0)`, now); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.refreshQuality(); err != nil {
-		t.Fatal(err)
-	}
-	q := s.QualityAnalysis()
-	if len(q.Levels) != 1 || q.Levels[0].Tasks != 1 {
-		t.Fatalf("non-stopped task was excluded: %+v", q.Levels)
-	}
-	cal, err := s.Calibration()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(cal.Callers) != 1 || cal.Callers[0].Levels[0].Tasks != 1 {
-		t.Fatalf("non-stopped task missing from calibration: %+v", cal.Callers)
 	}
 }

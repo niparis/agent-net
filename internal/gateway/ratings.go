@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"sort"
 	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -268,9 +267,6 @@ func (s *Store) addRating(f protocol.RateFrame) (protocol.RateResult, error) {
 		return protocol.RateResult{Worker: worker, Score: f.Score,
 			Reason: "this worker already has a rating"}, nil
 	}
-	if err := s.refreshQuality(); err != nil {
-		return protocol.RateResult{}, err
-	}
 	return protocol.RateResult{Accepted: true, Worker: worker, Kind: protocol.RateKindRating, Score: f.Score,
 		Model: facts.model, Harness: facts.harness, Effort: facts.effort, Difficulty: facts.difficulty, At: at}, nil
 }
@@ -320,7 +316,7 @@ func (s *Store) addDefect(f protocol.RateFrame) (protocol.RateResult, error) {
 	if err != nil {
 		return out, err
 	}
-	if err := s.refreshQuality(); err != nil {
+	if err := s.refreshPicker(); err != nil {
 		return out, err
 	}
 	out.Accepted, out.Defect, out.Model, out.Harness, out.Effort, out.Difficulty, out.At =
@@ -382,7 +378,7 @@ func (s *Store) addBriefDefect(f protocol.RateFrame) (protocol.RateResult, error
 	if err != nil {
 		return out, err
 	}
-	// No refreshQuality: the worker's quality and the picker read only rows
+	// No refreshPicker: the worker's quality and the picker read only rows
 	// with blame 'worker'.
 	if err := s.setWorkerRunCause(worker, protocol.CauseBriefDefect); err != nil {
 		return out, err
@@ -403,115 +399,4 @@ func (s *Store) sessionOwner(sessionID string) (bool, error) {
 		return false, err
 	}
 	return protocol.IsOwner(harness), nil
-}
-
-// RatingCounts is how many ratings and late defect reports each model has, for
-// the read-only Quotas table. A model with defects and no rating still shows.
-func (s *Store) RatingCounts() ([]protocol.CalibrationRating, error) {
-	type counts struct{ ratings, defects int }
-	byModel := map[string]*counts{}
-	// The runs name the model with its effort; the table counts the model.
-	collect := func(query string, add func(*counts, int)) error {
-		rows, err := s.db.Query(query)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var model string
-			var n int
-			if err := rows.Scan(&model, &n); err != nil {
-				return err
-			}
-			model, _ = protocol.SplitModelLevel(model)
-			c := byModel[model]
-			if c == nil {
-				c = &counts{}
-				byModel[model] = c
-			}
-			add(c, n)
-		}
-		return rows.Err()
-	}
-	if err := collect(`SELECT r.model, COUNT(*) FROM worker_ratings w JOIN worker_runs r ON r.id = w.run_id WHERE r.model <> '' GROUP BY r.model`,
-		func(c *counts, n int) { c.ratings += n }); err != nil {
-		return nil, err
-	}
-	if err := collect(`SELECT r.model, COUNT(*) FROM worker_defects d JOIN worker_runs r ON r.id = d.run_id WHERE r.model <> '' AND d.blame = 'worker' GROUP BY r.model`,
-		func(c *counts, n int) { c.defects += n }); err != nil {
-		return nil, err
-	}
-	models := make([]string, 0, len(byModel))
-	for model := range byModel {
-		models = append(models, model)
-	}
-	sort.Strings(models)
-	out := make([]protocol.CalibrationRating, 0, len(models))
-	for _, model := range models {
-		c := byModel[model]
-		out = append(out, protocol.CalibrationRating{Model: model, Count: c.ratings, Defects: c.defects})
-	}
-	return out, nil
-}
-
-// DefectCountsBySession counts the late defects of each worker session, for
-// the Quotas count. It is one helper so the per-session sum can add them
-// wherever the samples are built.
-func (s *Store) DefectCountsBySession(cut int64) (map[string]int, error) {
-	rows, err := s.db.Query(`SELECT session_id, COUNT(*) FROM worker_defects WHERE at >= ? AND blame = 'worker' GROUP BY session_id`, cut)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]int{}
-	for rows.Next() {
-		var session string
-		var n int
-		if err := rows.Scan(&session, &n); err != nil {
-			return nil, err
-		}
-		out[session] = n
-	}
-	return out, rows.Err()
-}
-
-// BriefDefectCountsByCaller counts the brief defects charged to each briefing
-// session since cut. They are the caller's rework and are never added to a
-// worker's score.
-func (s *Store) BriefDefectCountsByCaller(cut int64) (map[string]int, error) {
-	rows, err := s.db.Query(`SELECT caller, COUNT(*) FROM worker_defects WHERE blame = 'brief' AND at >= ? GROUP BY caller`, cut)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]int{}
-	for rows.Next() {
-		var caller string
-		var n int
-		if err := rows.Scan(&caller, &n); err != nil {
-			return nil, err
-		}
-		out[caller] = n
-	}
-	return out, rows.Err()
-}
-
-// DefectReworkBySession sums the severity points of each worker session's late
-// defects. The calibration adds this to the task's fix count.
-func (s *Store) DefectReworkBySession(cut int64) (map[string]int, error) {
-	rows, err := s.db.Query(`SELECT session_id, SUM(severity) FROM worker_defects WHERE at >= ? AND blame = 'worker' GROUP BY session_id`, cut)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]int{}
-	for rows.Next() {
-		var session string
-		var n int
-		if err := rows.Scan(&session, &n); err != nil {
-			return nil, err
-		}
-		out[session] = n
-	}
-	return out, rows.Err()
 }

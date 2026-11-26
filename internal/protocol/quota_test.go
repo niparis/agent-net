@@ -42,48 +42,11 @@ func TestQuotaProviderMapping(t *testing.T) {
 	}
 }
 
-func TestQuotaSummary(t *testing.T) {
-	q := &Quotas{Providers: []QuotaProvider{
-		quotaAt("cursor", window("included_usage", "monthly", 100, "")),
-		quotaAt("codex", window("weekly", "weekly", 90, QuotaPaceAhead)),
-		quotaAt("claude", window("seven_day", "weekly", 59, QuotaPaceOnPace)),
-		quotaAt("opencode-go", window("weekly", "weekly", 76, QuotaPaceBehind)),
-		quotaAt("empty"),
-	}}
-	got := QuotaSummary(q)
-	want := "claude 59%w · codex 90%w · opencode-go 76%w · cursor exhausted"
-	if got != want {
-		t.Fatalf("QuotaSummary:\n got %q\nwant %q", got, want)
-	}
-	if QuotaSummary(nil) != "" {
-		t.Error("nil quotas gave a line")
-	}
-}
-
-func TestQuotaStaleIsShownButNotUsed(t *testing.T) {
+func TestQuotaStaleIsNotUsed(t *testing.T) {
 	q := &Quotas{Providers: []QuotaProvider{{Provider: "codex", Stale: true,
 		Windows: []QuotaWindow{window("weekly", "weekly", 100, "")}}}}
 	if _, ok := q.ExhaustedWindow("codex"); ok {
 		t.Error("a stale exhaustion stopped a start")
-	}
-	if !strings.Contains(QuotaSummary(q), "codex exhausted") {
-		t.Errorf("stale provider missing from the line: %q", QuotaSummary(q))
-	}
-}
-
-// Quota no longer takes part in resolving a name: the gate refuses a model
-// that cannot run (decision 0162).
-func TestResolveModelQuotaLeavesTheNameAlone(t *testing.T) {
-	models := []string{"openai/gpt-6", "opencode-go/deepseek-v4.1-flash"}
-	got, err := ResolveModelQuota("openai/gpt-6", models, nil, nil, nil)
-	if err != nil || got.Model != "openai/gpt-6" || !got.Exact {
-		t.Fatalf("exact id: %+v %v", got, err)
-	}
-	if got.QuotaNote != "" {
-		t.Errorf("quota note %q", got.QuotaNote)
-	}
-	if _, err := ResolveModelQuota("opencode-go/deepseek-v4.1-flash", models, nil, nil, nil); err != nil {
-		t.Errorf("other exact id: %v", err)
 	}
 }
 

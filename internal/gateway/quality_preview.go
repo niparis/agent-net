@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/niparis/agent-net/internal/model"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -270,4 +271,42 @@ func (s *Store) onlineWorkerCounts() (map[string]map[string]int, error) {
 		out[node][protocol.QuotaProviderForStart(harness, model)]++
 	}
 	return out, rows.Err()
+}
+
+// qualityModel folds a model name into its lower case base name without the
+// effort suffix.
+func qualityModel(model string) string {
+	model, _ = protocol.SplitModelLevel(model)
+	if i := strings.LastIndexByte(model, '/'); i >= 0 {
+		model = model[i+1:]
+	}
+	return strings.ToLower(model)
+}
+
+// qualityModelFamily folds a model name into the family the owner reads:
+// deepseek, luna, sol, terra, sonnet or opus. An unknown name is its own row.
+func qualityModelFamily(model string) string {
+	name := qualityModel(model)
+	if name == "" {
+		return "default"
+	}
+	for _, token := range strings.FieldsFunc(name, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		switch token {
+		case "deepseek", "luna", "sol", "terra", "sonnet", "opus":
+			return token
+		}
+	}
+	return name
+}
+
+// qualityModelKey is a model's row name in the preview: its family and, when
+// the model names one, its effort ("gpt-6.1-terra:high" is "terra high").
+func qualityModelKey(model string) string {
+	family := qualityModelFamily(model)
+	if i := strings.LastIndex(model, ":"); i >= 0 && i < len(model)-1 {
+		return family + " " + model[i+1:]
+	}
+	return family
 }

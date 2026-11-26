@@ -368,7 +368,6 @@ Every key in standard.yaml, grouped by the part before its first dot. Each row i
 | key | levels | default | values or range | tier | description |
 |---|---|---|---|---|---|
 | `picker.weaker_bias` | network | 1.0 | min 0.01, max 10 | 3 | Exponent of the inverse benchmark factor in the picker rotation. The weight of a qualifying model is its quota pace factor times (highest benchmark / its benchmark) to this power, so 0.01 is nearly even and a higher value favours the weaker benchmark. |
-| `picker.quality_v2` | network | false | - | 3 | Enable the experimental picker quality rule. |
 | `picker.ceiling_rule` | network | false | - | 3 | Make the benchmark ceiling a limit. A model whose benchmark ceiling is below the work takes it only when the low end of its own record is at least the low end of the best proven model's. Otherwise it is left out for that bucket. |
 | `picker.explore_share` | network | 0.1 | min 0.01, max 1 | 3 | Share of picks that go to an allowed thin cell (fewer than 3 tasks in the bucket) while proven models qualify. Counted from the rotation, not random. 0.1 is about one pick in ten. |
 | `picker.bucket_width` | network | 0.3333333333 | min 0.05, max 2 | 3 | Width of a judge D bucket for the worker picker, starting at 1.0. One third gives the buckets 1.00, 1.33, 1.67, 2.00. |

@@ -10,6 +10,13 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// replayOptions are the cost rule and its weights for one replay run.
+type replayOptions struct {
+	protocol.PickerCostOptions
+	// qualityV2 selects the run cost divided by p rule.
+	qualityV2 bool
+}
+
 // pickerTasks converts snapshot tasks into the live table's input.
 func pickerTasks(tasks []Task, cut int64, score func(Task) float64) []protocol.PickerTask {
 	out := make([]protocol.PickerTask, 0, len(tasks))
@@ -49,7 +56,7 @@ type candEval struct {
 // replayCandidates applies the selected live cell and cost rule to one
 // pick, exactly as protocol.pickOrderByCells does, with the candidate roster
 // the gateway recorded.
-func replayCandidates(p Pick, table *protocol.PickerTable, prices *protocol.PriceBook, scores []protocol.ModelScore, minimums map[string]float64, s *Snapshot, opt protocol.PickerCostOptions) ([]*candEval, int) {
+func replayCandidates(p Pick, table *protocol.PickerTable, prices *protocol.PriceBook, scores []protocol.ModelScore, minimums map[string]float64, s *Snapshot, opt replayOptions) ([]*candEval, int) {
 	set := table.Settings()
 	bucket := table.Bucket(p.D)
 	bucketLo, _ := table.BucketRange(bucket)
@@ -88,7 +95,17 @@ func replayCandidates(p Pick, table *protocol.PickerTable, prices *protocol.Pric
 	if !math.IsInf(best, -1) {
 		opt.BestQuality = best
 	}
-	protocol.PickerExpectedCosts(costs, table, bucket, prices, set, opt)
+	protocol.PickerExpectedCosts(costs, table, bucket, prices, set, opt.PickerCostOptions)
+	if opt.qualityV2 {
+		for _, c := range costs {
+			if c.Pass == 0 {
+				c.Expected = math.Inf(1)
+			} else {
+				c.Expected = c.Cost / c.Pass
+			}
+			c.Rank = c.Expected * math.Exp(opt.Alpha*(opt.BestQuality-c.Quality))
+		}
+	}
 	for i, e := range es {
 		c := costs[i]
 		e.cost, e.pass, e.rescue, e.expected = c.Cost, c.Pass, c.Rescue, c.Expected
@@ -410,28 +427,26 @@ func RunReplay(s *Snapshot, alphas []float64, floors []floorSet) *Report {
 	for _, p := range picks {
 		tasks := s.TasksAt(p.At)
 		tableToday := protocol.BuildPickerTable(pickerTasks(tasks, math.MaxInt64, func(t Task) float64 { return t.ScoreToday }), protocol.DefaultPickerSettings())
-		v2set := protocol.DefaultPickerSettings()
-		v2set.QualityV2 = true
-		tableA := protocol.BuildPickerTable(pickerTasks(tasks, math.MaxInt64, OptionAScore), v2set)
-		ceilingSet := v2set
+		tableA := protocol.BuildPickerTable(pickerTasks(tasks, math.MaxInt64, OptionAScore), protocol.DefaultPickerSettings())
+		ceilingSet := protocol.DefaultPickerSettings()
 		ceilingSet.CeilingRule = true
 		tableC := protocol.BuildPickerTable(pickerTasks(tasks, math.MaxInt64, OptionAScore), ceilingSet)
 		// The check compares today's rule with the recorded roster as it was.
-		esCheck, _ := replayCandidates(p, tableToday, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{})
+		esCheck, _ := replayCandidates(p, tableToday, s.Prices, s.Scores, s.Minimums, s, replayOptions{})
 		winnerCheck := pickToday(esCheck)
 		// Every method competes on the roster without the exhausted providers.
 		gp, _ := s.gate(p)
-		esToday, _ := replayCandidates(gp, tableToday, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{})
+		esToday, _ := replayCandidates(gp, tableToday, s.Prices, s.Scores, s.Minimums, s, replayOptions{})
 		winnerToday := pickToday(esToday)
 		// Every row is priced from the V2 candidates of this pick.
-		v2es, _ := replayCandidates(gp, tableA, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true})
+		v2es, _ := replayCandidates(gp, tableA, s.Prices, s.Scores, s.Minimums, s, replayOptions{qualityV2: true})
 		level := levelForD(p.D)
 		w2 := pickV2(v2es, 0)
 		r.V2.noteFallback(level, v2es)
 		if w2 == nil {
 			w2 = winnerToday
 		}
-		cs := protocol.PickerCostOptions{QualityV2: true}
+		cs := replayOptions{qualityV2: true}
 		esC, _ := replayCandidates(gp, tableC, s.Prices, s.Scores, s.Minimums, s, cs)
 		wc := pickV2(esC, 0)
 		r.V2Ceiling.noteFallback(level, esC)
@@ -491,12 +506,12 @@ func RunReplay(s *Snapshot, alphas []float64, floors []floorSet) *Report {
 		}
 
 		for i, a := range alphas {
-			es, _ := replayCandidates(gp, tableA, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true, Alpha: a})
+			es, _ := replayCandidates(gp, tableA, s.Prices, s.Scores, s.Minimums, s, replayOptions{qualityV2: true, PickerCostOptions: protocol.PickerCostOptions{Alpha: a}})
 			w := pickV2(es, 0)
 			r.OptionsA[i].add(w, viewOf(v2es, w), commonQ(w), level)
 		}
 		for i, f := range floors {
-			es, _ := replayCandidates(gp, tableA, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true, CleanFloor: f.floor(level)})
+			es, _ := replayCandidates(gp, tableA, s.Prices, s.Scores, s.Minimums, s, replayOptions{qualityV2: true, PickerCostOptions: protocol.PickerCostOptions{CleanFloor: f.floor(level)}})
 			w, fallback := pickWithFloor(es, winnerToday, f.floor(level))
 			if fallback {
 				r.Floors[i].Fallback++
@@ -602,8 +617,8 @@ func (r *Report) caseReport(p Pick, tableToday, tableA, tableC *protocol.PickerT
 	s := r.Snapshot
 	c := &CaseReport{Pick: p}
 	p, c.Exhausted = s.gate(p)
-	esToday, _ := replayCandidates(p, tableToday, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{})
-	v2es, _ := replayCandidates(p, tableA, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true})
+	esToday, _ := replayCandidates(p, tableToday, s.Prices, s.Scores, s.Minimums, s, replayOptions{})
+	v2es, _ := replayCandidates(p, tableA, s.Prices, s.Scores, s.Minimums, s, replayOptions{qualityV2: true})
 	for _, e := range esToday {
 		c.Roster = append(c.Roster, CaseRoster{
 			Name: e.row.Name, Model: protocol.PickerModelDisplay(e.key), Quality: e.cell.Score,
@@ -636,7 +651,7 @@ func (r *Report) caseReport(p Pick, tableToday, tableA, tableC *protocol.PickerT
 		name  string
 		table *protocol.PickerTable
 	}{{"V2", tableA}, {"V2 + ceiling rule", tableC}} {
-		es, _ := replayCandidates(p, v.table, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true})
+		es, _ := replayCandidates(p, v.table, s.Prices, s.Scores, s.Minimums, s, replayOptions{qualityV2: true})
 		w, rank := pickV2(es, 0), 0.0
 		if w == nil {
 			add(v.name+" (fallback)", pickToday(esToday), 0, esToday)
@@ -646,7 +661,7 @@ func (r *Report) caseReport(p Pick, tableToday, tableA, tableC *protocol.PickerT
 		add(v.name, w, rank, es)
 	}
 	for _, a := range alphas {
-		esA, _ := replayCandidates(p, tableA, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true, Alpha: a})
+		esA, _ := replayCandidates(p, tableA, s.Prices, s.Scores, s.Minimums, s, replayOptions{qualityV2: true, PickerCostOptions: protocol.PickerCostOptions{Alpha: a}})
 		w := pickV2(esA, 0)
 		rank := 0.0
 		if w != nil {
@@ -655,7 +670,7 @@ func (r *Report) caseReport(p Pick, tableToday, tableA, tableC *protocol.PickerT
 		add(fmt.Sprintf("V2 alpha %.0f", a), w, rank, esA)
 	}
 	for _, f := range floors {
-		es, _ := replayCandidates(p, tableA, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{QualityV2: true, CleanFloor: f.floor(levelForD(p.D))})
+		es, _ := replayCandidates(p, tableA, s.Prices, s.Scores, s.Minimums, s, replayOptions{qualityV2: true, PickerCostOptions: protocol.PickerCostOptions{CleanFloor: f.floor(levelForD(p.D))}})
 		w, fallback := pickWithFloor(es, pickToday(esToday), f.floor(levelForD(p.D)))
 		if fallback {
 			add(f.name+" (fallback)", w, 0, esToday)

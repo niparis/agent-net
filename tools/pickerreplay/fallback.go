@@ -58,7 +58,7 @@ func RunFallback(s *Snapshot) *FallbackReport {
 		set := table.Settings()
 		bucket := table.Bucket(p.D)
 		replayed := map[string]*candEval{}
-		es, _ := replayCandidates(p, table, s.Prices, s.Scores, s.Minimums, s, protocol.PickerCostOptions{})
+		es, _ := replayCandidates(p, table, s.Prices, s.Scores, s.Minimums, s, replayOptions{})
 		for _, e := range es {
 			replayed[e.key] = e
 		}

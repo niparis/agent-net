@@ -498,7 +498,7 @@ func (s *Store) Prune(r Retention) (PruneResult, error) {
 		return res, err
 	}
 	if res.WorkerRuns > 0 {
-		if err := s.refreshQuality(); err != nil {
+		if err := s.refreshPicker(); err != nil {
 			return res, err
 		}
 	}
@@ -665,8 +665,8 @@ func (s *Store) SucceededModels(nodeID, harness string) (map[string]time.Time, e
 	return out, rows.Err()
 }
 
-// failedSet is the model IDs of a FailedModels result, as ResolveModelFailed
-// takes them.
+// failedSet is the model IDs of a FailedModels result, as the ranked
+// resolvers take them.
 func failedSet(m map[string]time.Time) map[string]bool {
 	out := make(map[string]bool, len(m))
 	for k := range m {

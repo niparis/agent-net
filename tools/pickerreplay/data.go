@@ -156,7 +156,10 @@ func OpenSnapshot(path string) (*Snapshot, error) {
 // failed review 0.3, and a later defect costs 0.25 to 1.0 by severity, counted
 // once. A task that did not end complete scores 0 unless its work was reusable.
 func OptionAScore(t Task) float64 {
-	return protocol.PickerTaskScoreV2(protocol.PickerTaskFacts{Complete: t.Complete, Merged: t.Reusable, FixRounds: t.FixRounds, FailedAccept: t.FailedAccept, FailedTest: t.FailedTest, FailedReview: t.FailedReview, Defects: t.Defects, DefectSeverity: t.DefectSeverity})
+	if !t.Complete && !t.Reusable {
+		return 0
+	}
+	return math.Max(0, 1-.2*float64(t.FailedTest+t.FailedAccept)-.3*float64(t.FailedReview)-.25*float64(t.DefectSeverity))
 }
 
 // TasksAt rebuilds the task list as it stood at cut (unix seconds): only runs

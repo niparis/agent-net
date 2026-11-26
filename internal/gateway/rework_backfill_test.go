@@ -69,17 +69,6 @@ func TestReworkBackfill(t *testing.T) {
 			if err := s.db.QueryRow(`SELECT counters_known FROM worker_runs WHERE session_id='unknown'`).Scan(&known); err != nil || known != 0 {
 				t.Fatalf("unknown = %d, %v", known, err)
 			}
-			cal, err := s.Calibration()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(cal.Callers) != 1 || len(cal.Callers[0].Levels) != 1 {
-				t.Fatalf("calibration: %+v", cal)
-			}
-			level := cal.Callers[0].Levels[0]
-			if level.Tasks != 2 || level.Median != (protocol.CalibrationFixWeight*float64(tc.fix)+protocol.CalibrationContinueWeight*float64(tc.cont))/2 {
-				t.Fatalf("level: %+v", level)
-			}
 			// Even a newly inserted unknown session is not visited after the marker.
 			legacyReworkRun(t, s, "later", "caller")
 			reworkMessage(t, s, "caller", "later", protocol.TypeRequest, "task", 8)

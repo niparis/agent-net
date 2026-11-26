@@ -210,7 +210,7 @@ func TestTasksAtLeavesOutWhatDidNotExistYet(t *testing.T) {
 	}
 }
 
-func TestQualityV2FloorsAndFallback(t *testing.T) {
+func TestV2FloorsAndFallback(t *testing.T) {
 	cheap := ev("cheap", .6, .5, .5, .4, .5)
 	strong := ev("strong", .8, 1, 1, .8, 1)
 	cheap.rank, strong.rank = .5, 1

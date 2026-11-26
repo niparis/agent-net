@@ -15,8 +15,8 @@ import (
 // reads used by the screen. Column keys keep session activity from moving graph.
 var topicTables = map[string][]string{
 	protocol.TopicAgents:   agentsTables,
-	protocol.TopicNodes:    tableUnion(nodesTables, calibrationTables, []string{"quota_blocks", "nodes.health_report", "nodes.health_reported_at", "playbook", "setting_values"}),
-	protocol.TopicWorkers:  tableUnion(workerLogTables, calibrationTables, []string{"worker_starts", "quota_blocks", "setting_values"}),
+	protocol.TopicNodes:    tableUnion(nodesTables, pickerTables, []string{"quota_blocks", "nodes.health_report", "nodes.health_reported_at", "playbook", "setting_values"}),
+	protocol.TopicWorkers:  tableUnion(workerLogTables, pickerTables, []string{"worker_starts", "quota_blocks", "setting_values"}),
 	protocol.TopicGraph:    graphTables,
 	protocol.TopicInbox:    tableUnion(inboxTables, []string{"messages", "ask_sorts", "desk_log", "charter_drafts", "setting_values"}),
 	protocol.TopicChanges:  []string{"delivery_changes", "delivery_revisions", "delivery_evidence", "delivery_step_tasks", "inbox_items", "events", "messages"},
@@ -26,11 +26,9 @@ var topicTables = map[string][]string{
 }
 
 // No screen topic follows gateway_state, even if a cached read declares it by
-// table or by column (calibration reads gateway_state.key and .value for the
-// worker_runs_version counter, which moves in the same transaction as the
-// worker_runs write that the topic already follows). A value there that a
-// screen does show moves its topics through bumpStateTopics instead, because
-// most keys of gateway_state are markers that no screen shows.
+// table or by column. A value there that a screen does show moves its topics
+// through bumpStateTopics instead, because most keys of gateway_state are
+// markers that no screen shows.
 func init() {
 	for topic, tables := range topicTables {
 		topicTables[topic] = slices.DeleteFunc(slices.Clone(tables), func(t string) bool {
