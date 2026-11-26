@@ -342,7 +342,7 @@ func TestDeliveryDetailShowsOfflineOwner(t *testing.T) {
 	v.Steps[1].Note = "waiting for merger (offline)"
 	ch := deliveryChangeFromView(v, t0)
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: []deliveryChange{ch}}, 120, 30))
-	m.openDeskChange(ch.ID)
+	openChangeDetail(t, &m, ch.ID)
 	got := deliveryText(m, 120, 30)
 	if !strings.Contains(got, "waiting for merger (offline)") {
 		t.Fatalf("offline owner is not shown: %s", got)
@@ -550,7 +550,7 @@ func fullScenes() (*detailSource, []deliveryChange) {
 func TestDeliveryEnterFetchesTheFullChange(t *testing.T) {
 	src, _ := fullScenes()
 	m := openDelivery(t, deliveryModel(src, 120, 30))
-	cmd := m.openDeskChange("c_2")
+	cmd := openChangeDetail(t, &m, "c_2")
 	if !m.delivery.detail || cmd == nil {
 		t.Fatal("the thread link should open the detail and fetch the change")
 	}
@@ -571,7 +571,7 @@ func TestDeliveryEnterFetchesTheFullChange(t *testing.T) {
 	}
 	// An error shows above the detail and keeps what is there.
 	src.err = errors.New("no such change")
-	cmd = m.openDeskChange("c_2")
+	cmd = openChangeDetail(t, &m, "c_2")
 	if cmd == nil {
 		t.Fatal("the second open did not fetch the change")
 	}
@@ -585,7 +585,7 @@ func TestDeliveryEnterFetchesTheFullChange(t *testing.T) {
 func TestDeliveryReloadKeepsTheSelectionAndTheFullDetail(t *testing.T) {
 	src, _ := fullScenes()
 	m := openDelivery(t, deliveryModel(src, 120, 30))
-	cmd := m.openDeskChange("c_2")
+	cmd := openChangeDetail(t, &m, "c_2")
 	next, _ := m.Update(cmd())
 	m = next.(Model)
 	// A newer change arrives: the selected change keeps its place, and stays
@@ -750,8 +750,8 @@ func TestDeliveryGoldenFromGatewayData(t *testing.T) {
 		list2 := append([]deliveryChange(nil), list...)
 		list2[2] = full
 		m := openDelivery(t, deliveryModel(&fakeDelivery{changes: list2}, size[0], size[1]))
-		m.openDeskChange(full.ID)
-		golden(t, fmt.Sprintf("delivery_gateway_detail_%dx%d", size[0], size[1]), m.testView())
+		openChangeDetail(t, &m, full.ID)
+		golden(t, fmt.Sprintf("delivery_gateway_detail_%dx%d", size[0], size[1]), deliveryText(m, size[0], size[1]))
 	}
 }
 
@@ -860,7 +860,7 @@ func TestDeliveryOwnerAndFailureTakePriority(t *testing.T) {
 			m := deliveryModel(nil, 120, 34)
 			m.snap.Agents = []protocol.AgentView{{SessionID: "s_author", Profile: protocol.Profile{Name: "entry worker"}, Online: true}, {SessionID: "s_caller", Profile: protocol.Profile{Name: "caller"}, Online: true}}
 			m.delivery.changes = []deliveryChange{ch}
-			m.openDeskChange(ch.ID)
+			openChangeDetail(t, &m, ch.ID)
 			if ch.Step != step {
 				t.Errorf("current step = %q, want %s", ch.Step, step)
 			}

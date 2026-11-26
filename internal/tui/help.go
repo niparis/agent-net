@@ -93,8 +93,6 @@ func (m Model) hints() []hint {
 		open := bindingHint(contextCTO, "open CTO")
 		open.label = "open " + m.ctoTitle()
 		return []hint{open, bindingHint(contextCTO, "back"), bindingHint(contextCTO, "model"), bindingHint(contextCTO, "new conversation"), bindingHint(contextCTO, "undo")}
-	case m.tab == inboxTab:
-		return m.inboxHints()
 	case m.tab == messagesTab:
 		move := bindingPairHint(contextMessages, actUp, actDown)
 		msg := bindingPairHint(contextMessages, "previous message", "next message")
@@ -132,12 +130,6 @@ func (m Model) hints() []hint {
 	case m.tab == graphTab:
 		tabs := hint{key: bindingHint(contextGlobal, "sessions tab").key + "-" + bindingHint(contextGlobal, "settings tab").key, label: "tabs", prio: 1}
 		return []hint{tabs, cto, bindingHint(contextGraph, "help"), bindingHint(contextGraph, actQuit)}
-	}
-	if _, ok := m.selectedProposal(); ok {
-		return []hint{bindingHint(contextProposal, "detail"), bindingHint(contextProposal, "approve"), bindingHint(contextProposal, "decline"), bindingHint(contextProposal, "approve all"), sessionHelp}
-	}
-	if strings.HasPrefix(m.selected, "learned:") {
-		return []hint{bindingPairHint(contextSessions, actUp, actDown), bindingHint(contextSuggestion, "accept"), bindingHint(contextSuggestion, "reject"), sessionHelp, sessionQuit}
 	}
 	if m.tab == sessionsTab && m.sessionCell > 0 {
 		if a, ok := m.selectedAgent(); ok && !protocol.IsOwner(a.Harness) && a.Harness != "bot" {
@@ -196,10 +188,6 @@ func (m Model) helpLine(w int) string {
 	if m.tab == graphTab && m.mp.finding {
 		return clip("find: "+sanitize(m.mp.findQuery)+sDim.Render("  enter focus  esc cancel"), w)
 	}
-	if m.tab == inboxTab && m.inboxEditing {
-		return clip(m.inboxInput.View()+sDim.Render("   enter sends, esc cancels"), w)
-	}
-
 	if m.filtering {
 		return clip(m.input.View()+sDim.Render("   enter keeps the filter, esc clears and leaves"), w)
 	}
@@ -375,10 +363,6 @@ func (m Model) helpSectionContent(section helpSection, w int) []string {
 		out = append(out, m.helpRow("dormant", "no online session or activity in 30 days, archived, or a temporary name", w)...)
 		out = append(out, mapLegendLines(w)...)
 	}
-	if section.title == "Desk" {
-		out = append(out, "")
-		out = append(out, m.helpRow("in details", "up and down choose an answer; enter answers the marked one; digits still switch tabs", w)...)
-	}
 	return out
 }
 
@@ -413,8 +397,6 @@ func (m Model) currentHelpSection() helpSection {
 		return m.helpContextSection(contextCTO)
 	case m.open != nil:
 		return m.helpContextSection(contextBody)
-	case m.tab == inboxTab && m.delivery.detail:
-		return m.helpContextSection(contextDelivery)
 	case m.tab == quotasTab && m.workersLog:
 		return m.helpContextSection(contextWorkersLog)
 	case m.mapOn:
@@ -436,7 +418,6 @@ func helpSections() []helpSection {
 		{"Quotas", []keyContext{contextQuotas, contextWorkersLog}},
 		{"Messages", []keyContext{contextMessages}},
 		{"Settings", []keyContext{contextSettings}},
-		{"Desk", []keyContext{contextInbox, contextHeld, contextSuggestion, contextOutcome, contextProposal, contextDelivery}},
 	}
 }
 
@@ -481,20 +462,10 @@ func (m Model) globalHelpLines(w int) []string {
 
 func (m Model) helpSubsectionTitle(context keyContext) string {
 	switch context {
-	case contextHeld:
-		return "On a held request row"
-	case contextSuggestion:
-		return "On a learned suggestion row"
-	case contextOutcome:
-		return "On an outcome row"
-	case contextProposal:
-		return "On a " + m.ctoTitle() + " proposal row"
 	case contextCard:
 		return "Agent card"
 	case contextBody:
 		return "Message body"
-	case contextInbox:
-		return "Desk"
 	case contextDelivery:
 		return "On a change's evidence"
 	case contextApps:

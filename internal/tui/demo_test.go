@@ -14,7 +14,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// The README animation: five frames of the real screen, in four beats. The
+// The README animation: three frames of the real screen, in three beats. The
 // data is invented but fixed, and it never names a real machine, host or path:
 // two machines (laptop and build-box) and six sessions.
 const demoWidth, demoHeight = 100, 28
@@ -114,28 +114,6 @@ func demoMessages(m Model, reply bool) Model {
 	return m
 }
 
-// demoDesk is the Desk with a digest, and optionally the decision that reached
-// the owner.
-func demoDesk(t *testing.T, digest, ask bool) Model {
-	t.Helper()
-	m := openDelivery(t, deliveryModel(&fakeDelivery{}, demoWidth, demoHeight))
-	m.snap = demoSnapshot()
-	m.cto = nil
-	if digest {
-		m.digest = &deskDigest{away: 3 * time.Hour, loaded: true,
-			counts: deskCounts{closed: 22, sentOn: 4, answered: 2, forYou: 1}}
-	}
-	if ask {
-		m.asks = []protocol.Ask{{
-			ID: "a_1", Kind: protocol.AskKindStep, State: protocol.AskStateOpen,
-			FromKind: protocol.AskFromSession, From: "forge",
-			AboutKind: protocol.AskAboutChange, AboutID: "c_1", AboutTitle: "Merge PR #212?",
-			Question: "CI green. Recommended: yes", Recommendation: "yes", CreatedAt: t0.Add(-time.Minute),
-		}}
-	}
-	return m
-}
-
 // demoFrame is one rendered beat frame and how long it holds. The durations
 // add up to the 12 seconds the README animation loops.
 type demoFrame struct {
@@ -151,27 +129,22 @@ func demoFrames(t *testing.T) []demoFrame {
 	sessions := demoBase(t, snap)
 	messages := demoBase(t, snap)
 	return []demoFrame{
-		{name: "demo_00_sessions", duration: 3 * time.Second, view: sessions.testView(),
+		{name: "demo_00_sessions", duration: 4 * time.Second, view: sessions.testView(),
 			want: []string{"6 online", "3 busy", "billing", "invoices-app", "shared-auth", "homelab", "forge", "laptop", "build-box"}},
-		{name: "demo_01_request", duration: 1500 * time.Millisecond, view: demoMessages(messages, false).testView(),
+		{name: "demo_01_request", duration: 4 * time.Second, view: demoMessages(messages, false).testView(),
 			want: []string{"shared-auth", "invoices-app", "token field renamed: user_id is now", "account_id in shared-auth v2.3"}},
-		{name: "demo_02_reply", duration: 1500 * time.Millisecond, view: demoMessages(messages, true).testView(),
+		{name: "demo_02_reply", duration: 4 * time.Second, view: demoMessages(messages, true).testView(),
 			want: []string{"shared-auth", "invoices-app", "updated to v2.3, commit 3f2a91c"}},
-		{name: "demo_03_digest", duration: 3 * time.Second, view: demoDesk(t, true, false).testView(),
-			want: []string{"While you were away (3 h)", "closed 22 · sent on 4", "Nothing is waiting for you."}},
-		{name: "demo_04_decision", duration: 3 * time.Second, view: demoDesk(t, true, true).testView(),
-			want: []string{"closed 22 · sent on 4", "Merge PR #212?", "CI green. Recommended: yes"}},
 	}
 }
 
 // TestDemoScenes is the golden screen harness for the README animation. It
 // writes one .ansi per beat frame, and checks that every frame says what its
-// beat is about. The beats are: sessions, a message exchange, the digest of an
-// absence, and one decision that reaches the owner.
+// beat is about. The beats are: sessions and a message exchange.
 func TestDemoScenes(t *testing.T) {
 	frames := demoFrames(t)
-	if len(frames) != 5 {
-		t.Fatalf("%d frames, want 5", len(frames))
+	if len(frames) != 3 {
+		t.Fatalf("%d frames, want 3", len(frames))
 	}
 	var total time.Duration
 	for _, f := range frames {

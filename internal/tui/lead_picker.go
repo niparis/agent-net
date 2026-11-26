@@ -106,7 +106,7 @@ func (m Model) leadPickerKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		q := protocol.LeadSetRequest{Ref: p.target, Lead: p.choices[p.index].ref}
 		m.mode = p.back
-		src, ok := m.src.(inboxCaller)
+		src, ok := m.src.(localCaller)
 		if !ok {
 			m.fail("Lead settings unavailable.")
 			return m, nil

@@ -40,7 +40,7 @@ func headerModel(w, h int) Model {
 	m := New(src)
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: w, Height: h})
-	return withWaitingAsks(settle(refresh(m, src)))
+	return settle(refresh(m, src))
 }
 
 // The needs you count went with the Desk (decision 0196).

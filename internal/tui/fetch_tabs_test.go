@@ -16,7 +16,6 @@ type fetchCountSource struct {
 	*fakeSource
 	mu         sync.Mutex // a refresh asks its reads together
 	calls      map[string]int
-	inbox      []protocol.InboxItem
 	proposals  []protocol.CTOProposal
 	onboarding protocol.Onboarding
 }
@@ -31,8 +30,6 @@ func (f *fetchCountSource) Call(_ context.Context, method string, _ any) (json.R
 			f.onboarding.Steps = map[string]string{}
 		}
 		return json.Marshal(f.onboarding)
-	case protocol.OpAsksList:
-		return json.Marshal(map[string]any{"asks": append(askItems(f.inbox), openProposalAsks(f.proposals)...)})
 	case protocol.OpProposalList:
 		return json.Marshal(f.proposals)
 	case protocol.OpFrictionFind:
@@ -99,10 +96,10 @@ func refreshTimes(m Model, n int) Model {
 	return m
 }
 
-// The Inbox and the proposals are only asked for on the screen that shows
-// them. The first refresh seeds the change marker, then a quiet Sessions tab
-// makes no such calls for a whole minute.
-func TestFetchAsksForInboxListsOnlyWhereNeeded(t *testing.T) {
+// The proposals are only asked for on the screen that shows them. The first
+// refresh seeds the change marker, then a quiet Sessions tab makes no such
+// calls for a whole minute.
+func TestFetchProposalsOnlyWhereNeeded(t *testing.T) {
 	tests := []struct {
 		name          string
 		tab           int
@@ -113,7 +110,6 @@ func TestFetchAsksForInboxListsOnlyWhereNeeded(t *testing.T) {
 		{"Sessions", sessionsTab, focusSessions, false, 6},
 		{"Graph", graphTab, focusSessions, false, 6},
 		{"Messages", messagesTab, focusFeed, false, 6},
-		{"Inbox", inboxTab, focusSessions, false, 60},
 		{"CTO pane focused", sessionsTab, focusCTO, false, 60},
 		{"Quotas workers log", quotasTab, focusSessions, true, 6},
 	}
@@ -130,28 +126,26 @@ func TestFetchAsksForInboxListsOnlyWhereNeeded(t *testing.T) {
 				clock = clock.Add(time.Second)
 				m = send(m, m.fetchCmd()())
 			}
-			for _, method := range []string{protocol.OpAsksList, protocol.OpProposalList} {
-				if got := src.count(method); got != tc.wantPerMinute {
-					t.Errorf("%s: %d calls per minute, want %d", method, got, tc.wantPerMinute)
-				}
+			if got := src.count(protocol.OpProposalList); got != tc.wantPerMinute {
+				t.Errorf("%d proposal_list calls per minute, want %d", got, tc.wantPerMinute)
 			}
-			t.Logf("%s per minute: Snapshot=%d worker_log=%d Events=%d hidden_get=%d onboarding_get=%d usage=%d counts=%d inbox_list=%d proposal_list=%d tools_differences=%d",
+			t.Logf("%s per minute: Snapshot=%d worker_log=%d Events=%d hidden_get=%d onboarding_get=%d usage=%d counts=%d proposal_list=%d tools_differences=%d",
 				tc.name, src.count("Snapshot"), src.count("worker_log"), src.count("Events"), src.count("hidden_get"), src.count("onboarding_get"),
-				src.count("usage"), src.count("counts"), src.count(protocol.OpAsksList), src.count(protocol.OpProposalList), src.count("tools_differences"))
+				src.count("usage"), src.count("counts"), src.count(protocol.OpProposalList), src.count("tools_differences"))
 		})
 	}
 }
 
-// A changed count in the Snapshot brings the lists back even on Sessions, so
-// the Inbox badge and the CTO box stay correct.
-func TestFetchPicksUpAChangedInboxMarkerOnAnyTab(t *testing.T) {
+// A changed count in the Snapshot brings the proposals back even on Sessions,
+// so the CTO box stays correct.
+func TestFetchPicksUpAChangedProposalMarkerOnAnyTab(t *testing.T) {
 	src := &fetchCountSource{fakeSource: &fakeSource{snap: fakeSnapshot()}}
 	m := New(src)
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m.tab, m.focus = sessionsTab, focusSessions
 	m = refreshTimes(m, 1)
-	if got := m.waitingCount(); got != 0 {
-		t.Fatalf("badge starts at %d", got)
+	if got := m.openProposals(); got != 0 {
+		t.Fatalf("count starts at %d", got)
 	}
 
 	src.proposals = []protocol.CTOProposal{{ID: "p_1", Status: "open", CreatedAt: t0}}
@@ -159,71 +153,18 @@ func TestFetchPicksUpAChangedInboxMarkerOnAnyTab(t *testing.T) {
 	src.resetCalls()
 	m = refreshTimes(m, 1)
 
-	if src.count(protocol.OpProposalList) != 1 || src.count(protocol.OpAsksList) != 1 {
-		t.Fatalf("lists were not fetched after the count changed: %v", src.calls)
+	if src.count(protocol.OpProposalList) != 1 {
+		t.Fatalf("proposals were not fetched after the count changed: %v", src.calls)
 	}
-	if got := m.waitingCount(); got != 1 {
-		t.Fatalf("badge = %d, want 1", got)
+	if got := m.openProposals(); got != 1 {
+		t.Fatalf("count = %d, want 1", got)
 	}
 
 	// The next refresh is quiet again.
 	src.resetCalls()
 	m = refreshTimes(m, 1)
-	if src.count(protocol.OpProposalList) != 0 || src.count(protocol.OpAsksList) != 0 {
-		t.Fatalf("lists fetched again without a change: %v", src.calls)
-	}
-}
-
-// A gateway inbox item does not change the Snapshot. Away from Inbox the
-// screen still checks the list every ten seconds, so the tab count does not
-// stay stale until the owner opens it.
-func TestFetchChecksGatewayInboxOnAnotherTabEveryTenSeconds(t *testing.T) {
-	src := &fetchCountSource{fakeSource: &fakeSource{snap: fakeSnapshot()}}
-	m := New(src)
-	clock := t0
-	m.loc, m.now = time.UTC, func() time.Time { return clock }
-	m.tab, m.focus = sessionsTab, focusSessions
-	m = refreshTimes(m, 1)
-	if got := m.waitingCount(); got != 0 {
-		t.Fatalf("badge starts at %d", got)
-	}
-
-	src.inbox = []protocol.InboxItem{{ID: "i_1", Kind: "check", Status: "open", SessionID: "s_1", Text: "a check", CreatedAt: t0}}
-	src.resetCalls()
-	for i := 0; i < 9; i++ {
-		clock = clock.Add(time.Second)
-		m = send(m, m.fetchCmd()())
-	}
-	if src.count(protocol.OpAsksList) != 0 || m.waitingCount() != 0 {
-		t.Fatalf("checked too early: calls %d, badge %d", src.count(protocol.OpAsksList), m.waitingCount())
-	}
-
-	clock = clock.Add(time.Second) // ten seconds after the last check
-	m = send(m, m.fetchCmd()())
-	if src.count(protocol.OpAsksList) != 1 {
-		t.Fatalf("inbox_list calls = %d, want 1", src.count(protocol.OpAsksList))
-	}
-	if got := m.waitingCount(); got != 1 {
-		t.Fatalf("badge = %d, want 1", got)
-	}
-}
-
-// A session that starts waiting is a change in the Snapshot and brings the
-// Inbox list back while the owner is on another tab.
-func TestFetchPicksUpANewWaitingSession(t *testing.T) {
-	snap := fakeSnapshot()
-	src := &fetchCountSource{fakeSource: &fakeSource{snap: snap}}
-	m := New(src)
-	m.loc, m.now = time.UTC, func() time.Time { return t0 }
-	m.tab = sessionsTab
-	m = refreshTimes(m, 1)
-
-	src.snap.Agents[0].Online = true
-	src.snap.Agents[0].Waiting = &protocol.Waiting{Kind: protocol.WaitingQuestion, Text: "may I?", Since: t0.Unix()}
-	src.resetCalls()
-	m = refreshTimes(m, 1)
-	if src.count(protocol.OpAsksList) != 1 {
-		t.Fatalf("inbox not fetched after a wait appeared: %v", src.calls)
+	if src.count(protocol.OpProposalList) != 0 {
+		t.Fatalf("proposals fetched again without a change: %v", src.calls)
 	}
 }
 
@@ -249,8 +190,8 @@ func TestTickPollsCTOOnlyWhenItsBoxIsVisible(t *testing.T) {
 	}
 }
 
-// Delivery changes feed the Sessions task column and the Delivery tab. Other
-// tabs do not ask for them.
+// Delivery changes feed the Sessions task column. Other tabs do not ask for
+// them.
 func TestDeliveryTickOnlyOnShowingScreens(t *testing.T) {
 	clock := t0
 	m := treeModel(80, 24, mergerFixture())
@@ -260,10 +201,6 @@ func TestDeliveryTickOnlyOnShowingScreens(t *testing.T) {
 	m.tab = graphTab
 	if _, cmd := m.deliveryTick(); cmd != nil {
 		t.Fatal("Graph asked for delivery changes")
-	}
-	m.tab = inboxTab
-	if _, cmd := m.deliveryTick(); cmd != nil {
-		t.Fatal("the Desk asked for delivery changes")
 	}
 	m.tab = sessionsTab
 	if _, cmd := m.deliveryTick(); cmd == nil {

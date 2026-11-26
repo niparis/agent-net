@@ -112,7 +112,6 @@ func deliveryModel(src deliverySource, w, h int) Model {
 	m.snap.Agents = append(m.snap.Agents, protocol.AgentView{SessionID: "s_wbg", Profile: protocol.Profile{Name: "wbg-procurement"}, Online: false})
 	m.haveData = true
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
-	m.tab = inboxTab
 	m.width, m.height = w, h
 	m = m.withDeliverySource(src)
 	return m
@@ -123,7 +122,6 @@ func openDelivery(t *testing.T, m Model) Model {
 	t.Helper()
 	m.workersLog = false
 	m.delivery.on = true
-	m.tab = inboxTab
 	cmd := m.deliveryLoad()
 	if cmd == nil {
 		t.Fatal("no load command")
@@ -135,9 +133,25 @@ func openDelivery(t *testing.T, m Model) Model {
 func deliveryText(m Model, w, h int) string {
 	return ansi.Strip(strings.Join(m.deliveryView(w, h), "\n"))
 }
+
+// openChangeDetail selects a loaded change and opens its evidence.
+func openChangeDetail(t *testing.T, m *Model, id string) tea.Cmd {
+	t.Helper()
+	for i, ch := range m.delivery.changes {
+		if ch.ID != id {
+			continue
+		}
+		m.delivery.detail = true
+		m.delivery.scroll = 0
+		m.delivery.row = i
+		m.delivery.detailLoading = true
+		return m.deliveryDetailCmd(id)
+	}
+	return nil
+}
 func TestChangeDetailIsTheMainColumn(t *testing.T) {
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 120, 30))
-	m.openDeskChange("c_1")
+	openChangeDetail(t, &m, "c_1")
 	detail := deliveryText(m, 120, 30)
 	if !strings.Contains(detail, "Show which provider each quota row belongs to") {
 		t.Errorf("detail does not show the title:\n%s", detail)
@@ -272,9 +286,9 @@ func TestDeliverySubtabCycle(t *testing.T) {
 	}
 }
 
-func TestThreadLinkOpensChangeDetailAndEscCloses(t *testing.T) {
+func TestChangeDetailAndEscCloses(t *testing.T) {
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 120, 30))
-	cmd := m.openDeskChange("c_2")
+	cmd := openChangeDetail(t, &m, "c_2")
 	if cmd == nil || !m.delivery.detail {
 		t.Fatal("the thread link did not open the detail")
 	}
@@ -286,9 +300,8 @@ func TestThreadLinkOpensChangeDetailAndEscCloses(t *testing.T) {
 			t.Errorf("detail missing %q: %s", want, got)
 		}
 	}
-	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
-	m = next.(Model)
-	if m.delivery.detail || m.tab != inboxTab {
+	m, _ = m.deliveryKey(tea.KeyPressMsg{Code: tea.KeyEsc})
+	if m.delivery.detail {
 		t.Fatal("esc should only close the detail")
 	}
 }
@@ -296,7 +309,7 @@ func TestThreadLinkOpensChangeDetailAndEscCloses(t *testing.T) {
 func TestDeliveryDetailUsesTheDisplayZone(t *testing.T) {
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 120, 30))
 	m.loc = time.FixedZone("CET", 3600)
-	m.openDeskChange("c_1")
+	openChangeDetail(t, &m, "c_1")
 	got := deliveryText(m, 120, 30)
 	// The first change's accept evidence is 11:05 UTC, so 12:05 in CET.
 	if !strings.Contains(got, "10-29 12:05") || strings.Contains(got, "10-29 11:05") {
@@ -315,7 +328,7 @@ func TestDeliveryDetailFillsAvailableHeight(t *testing.T) {
 
 func TestDeliveryDetailMarksOldEvidenceAndHidesNothing(t *testing.T) {
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 80, 40))
-	m.openDeskChange("c_3")
+	openChangeDetail(t, &m, "c_3")
 	for _, w := range []int{80, 120, 200} {
 		lines := m.deliveryView(w, 40)
 		for _, l := range lines {
@@ -337,7 +350,7 @@ func TestDeliverySanitizesText(t *testing.T) {
 	c.Repo = "bad\x1b[31mrepo"
 	c.StepOwner = "ow\nner"
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: []deliveryChange{c}}, 80, 24))
-	m.openDeskChange(c.ID)
+	openChangeDetail(t, &m, c.ID)
 	for _, l := range m.deliveryView(80, 24) {
 		if strings.Contains(ansi.Strip(l), "\x1b") || strings.Contains(l, "\n") {
 			t.Fatalf("unsafe line %q", l)
@@ -346,9 +359,9 @@ func TestDeliverySanitizesText(t *testing.T) {
 }
 func TestDeliveryHelpAndHints(t *testing.T) {
 	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 120, 30))
-	m.openDeskChange("c_1")
+	openChangeDetail(t, &m, "c_1")
 	hints := ""
-	for _, h := range m.hints() {
+	for _, h := range m.deliveryHints() {
 		hints += h.key + " " + h.label + "|"
 	}
 	for _, want := range []string{"scroll", "back"} {
@@ -356,8 +369,7 @@ func TestDeliveryHelpAndHints(t *testing.T) {
 			t.Errorf("hints %q missing %q", hints, want)
 		}
 	}
-	m.help = true
-	if got := ansi.Strip(strings.Join(m.helpContent(120), "\n")); !strings.Contains(got, "On a change's evidence") {
+	if got := strings.Join(m.helpSectionContent(m.helpContextSection(contextDelivery), 120), "\n"); !strings.Contains(got, "On a change's evidence") {
 		t.Errorf("help has no section for a change detail: %s", got)
 	}
 }
@@ -373,8 +385,8 @@ func TestDeliveryGoldens(t *testing.T) {
 	} {
 		for _, size := range [][2]int{{80, 24}, {120, 24}, {120, 34}} {
 			m := openDelivery(t, deliveryModel(&fakeDelivery{changes: scenes}, size[0], size[1]))
-			m.openDeskChange(s.rowID)
-			golden(t, fmt.Sprintf("%s_%dx%d", s.name, size[0], size[1]), m.testView())
+			openChangeDetail(t, &m, s.rowID)
+			golden(t, fmt.Sprintf("%s_%dx%d", s.name, size[0], size[1]), deliveryText(m, size[0], size[1]))
 		}
 	}
 }

@@ -47,7 +47,7 @@ func (m Model) startSessionsArchive() (Model, tea.Cmd) {
 }
 
 func (m Model) sessionsArchiveCall(method string, q protocol.SessionsArchiveRequest, applied bool) tea.Cmd {
-	c, ok := m.src.(inboxCaller)
+	c, ok := m.src.(localCaller)
 	return func() tea.Msg {
 		if !ok {
 			return sessionsArchiveMsg{err: fmt.Errorf("session archive unavailable")}
@@ -335,7 +335,7 @@ func (m Model) startRemoveOffline() (Model, tea.Cmd) {
 }
 
 func (m Model) removeSessionsCmd(ids []string, name string, all bool) tea.Cmd {
-	c, ok := m.src.(inboxCaller)
+	c, ok := m.src.(localCaller)
 	return func() tea.Msg {
 		result := removeSessionsMsg{ids: ids, name: name, all: all}
 		if !ok {

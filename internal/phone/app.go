@@ -29,8 +29,6 @@ var files embed.FS
 var shell = sync.OnceValue(func() *template.Template { return template.Must(template.ParseFS(files, "templates/*.html")) })
 
 type source interface {
-	AnswerHeld(context.Context, protocol.HeldAnswer) error
-	ResolveOutcome(context.Context, string, string) error
 	SendAsOwner(context.Context, string, string) (protocol.MessageSent, error)
 	Call(context.Context, string, any) (json.RawMessage, error)
 }
@@ -53,8 +51,8 @@ func New(src source) http.Handler {
 		w.Header().Set("Content-Type", "application/manifest+json")
 		http.ServeFileFS(w, r, files, "static/manifest.webmanifest")
 	})
-	mux.HandleFunc("GET /{$}", a.screen("desk"))
-	for _, s := range screens[1:] {
+	mux.HandleFunc("GET /{$}", a.screen("sessions"))
+	for _, s := range screens {
 		mux.HandleFunc("GET "+s.Path, a.screen(s.ID))
 	}
 	// The phone app of the first version linked to /session/{id}.
@@ -86,7 +84,7 @@ func queryFrom(r *http.Request) query {
 }
 
 // localBack is the page a form returns to. Anything that is not a path on this
-// console returns to the Desk, so a form cannot send the owner outside.
+// console returns to Sessions, so a form cannot send the owner outside.
 func localBack(v string) string {
 	if v == "" || !strings.HasPrefix(v, "/") || strings.HasPrefix(v, "//") || strings.Contains(v, `\`) {
 		return "/"
@@ -114,9 +112,9 @@ func (a *app) screen(id string) http.HandlerFunc {
 	}
 }
 
-// action answers one ask or writes one reply. Only these kinds exist: an answer
-// to something that waits for the owner, or the owner's own words in a thread.
-// Never a start, a stop, a step of a change or a change of settings.
+// action writes one reply or one CTO answer. Only these kinds exist: the
+// owner's own words in a thread, a step of a change, one CTO proposal, or a
+// message to the CTO. Never a start, a stop or a change of settings.
 func (a *app) action(w http.ResponseWriter, r *http.Request) {
 	origin, err := url.Parse(r.Header.Get("Origin"))
 	if err != nil || origin.Host != r.Host || (origin.Scheme != "https" && origin.Scheme != "http") {
@@ -145,44 +143,6 @@ func (a *app) action(w http.ResponseWriter, r *http.Request) {
 	defer a.clearReads()
 	back := localBack(r.PostForm.Get("back"))
 	switch kind {
-	case "held":
-		if act != "a" && act != "A" && act != "r" && act != "R" {
-			err = fmt.Errorf("invalid action")
-		} else {
-			err = a.src.AnswerHeld(ctx, protocol.HeldAnswer{MessageID: id, Action: act})
-		}
-	case "outcome":
-		if act != "let_stand" && act != "overrule" {
-			err = fmt.Errorf("invalid action")
-		} else {
-			err = a.src.ResolveOutcome(ctx, id, act)
-		}
-	case "inbox":
-		_, err = a.src.Call(ctx, "inbox_answer", map[string]string{"id": id, "answer": act})
-		// The gateway closed the ask meanwhile: it is gone, which is what the
-		// owner wanted.
-		if err != nil && err.Error() == "inbox item not found" {
-			err = nil
-		}
-	case "signin":
-		// The owner's click opens the CLI's login in a herdr pane on the
-		// machine the ask names. The web sends no command and no provider.
-		var raw json.RawMessage
-		raw, err = a.src.Call(ctx, protocol.OpSignInOpen, protocol.SignInOpenRequest{AskID: id})
-		if err == nil {
-			var plan protocol.EnterPlan
-			if json.Unmarshal(raw, &plan) == nil && !plan.OpenedHerdr && plan.Note != "" {
-				err = fmt.Errorf("%s", plan.Note)
-			}
-		}
-	case "mark":
-		if act != protocol.MarkDidntNeedMe {
-			err = fmt.Errorf("invalid action")
-		} else {
-			_, err = a.src.Call(ctx, protocol.OpAskMark, protocol.AskMarkRequest{Ask: id, Mark: act})
-		}
-	case "send":
-		_, err = a.src.SendAsOwner(ctx, id, act)
 	case "reply":
 		// A written reply of the owner into a conversation of the Messages
 		// screen (conversation id, recipient session, text).

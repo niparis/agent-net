@@ -231,8 +231,6 @@ func (m Model) renderView() string {
 			out = append(out, m.quotasView(w, contentHeight)...)
 		case m.tab == settingsTab:
 			out = append(out, m.settingsView(w, contentHeight)...)
-		case m.tab == inboxTab:
-			out = append(out, m.inboxTabView(w, contentHeight)...)
 		default:
 			out = append(out, m.mainView(w, contentHeight)...)
 		}
@@ -340,12 +338,7 @@ const (
 	quotasTab   = 2
 	messagesTab = 3
 	settingsTab = 4
-	inboxTab    = 5 // the Desk (decision 0090); the Delivery tab is part of it
 )
-
-// deskShown is false since decision 0196: the Desk tab, its key and its counts
-// are hidden. The screen code stays until a later cleanup removes it.
-const deskShown = false
 
 func (m Model) composeView(w, room int) []string {
 	title := "Message"

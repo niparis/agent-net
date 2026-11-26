@@ -93,7 +93,7 @@ func mapWhyLines(why string, w int) []string {
 	return out
 }
 func (m Model) mapUndoLearned() tea.Cmd {
-	c, ok := m.src.(inboxCaller)
+	c, ok := m.src.(localCaller)
 	changes := m.mapLearned(m.mp.selected)
 	if !ok || len(changes) == 0 {
 		return nil
@@ -114,7 +114,7 @@ func (m Model) mapUndoLearned() tea.Cmd {
 	}
 }
 func (m Model) markMapViewed(node string) tea.Cmd {
-	c, ok := m.src.(inboxCaller)
+	c, ok := m.src.(localCaller)
 	if !ok || node == "" {
 		return nil
 	}

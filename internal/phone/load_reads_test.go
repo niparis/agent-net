@@ -40,7 +40,6 @@ func TestLoadReadsOnlyVisibleScreen(t *testing.T) {
 		screen string
 		reads  []string
 	}{
-		{"desk", []string{protocol.OpAsksList, protocol.OpAgents, protocol.OpChiefGet, protocol.OpDeskLog}},
 		{"sessions", []string{protocol.OpAgents, protocol.OpNodes, protocol.OpUsage, protocol.OpGraphView, protocol.OpConversations}},
 		{"changes", []string{protocol.OpAgents, protocol.OpChangesOwnerFind}},
 		{"messages", []string{protocol.OpAgents, protocol.OpConversations, protocol.OpConversationMessages}},
@@ -99,20 +98,6 @@ func snapshotFixtureRead(ctx context.Context, f interface {
 		v = protocol.OperatorInfo{Connected: snap.Connected, NodeID: snap.NodeID, OwnerSession: snap.OwnerSession}
 	case protocol.OpCounts:
 		counts := protocol.SessionCounts{}
-		if cf, ok := f.(*consoleOperator); ok {
-			for _, ask := range cf.asks {
-				if ask.State != protocol.AskWithSomeone && askRank(ask) != 9 {
-					counts.ConsoleAsks++
-				}
-			}
-		}
-		if rf, ok := f.(*richOperator); ok {
-			for _, ask := range rf.asks {
-				if ask.State != protocol.AskWithSomeone && askRank(ask) != 9 {
-					counts.ConsoleAsks++
-				}
-			}
-		}
 		for _, n := range snap.Nodes {
 			if n.Online {
 				counts.MachinesOnline++
@@ -146,7 +131,7 @@ func snapshotFixtureRead(ctx context.Context, f interface {
 func TestScreenReadsShareBaseAndExpire(t *testing.T) {
 	f := &countingSource{richOperator: newRichOperator(), calls: map[string]int{}}
 	a := &app{src: f}
-	a.load(context.Background(), "desk", query{})
+	a.load(context.Background(), "sessions", query{})
 	a.load(context.Background(), "messages", query{})
 	for _, method := range []string{protocol.OpInfo, protocol.OpAgents, protocol.OpCounts} {
 		if f.calls[method] != 1 {

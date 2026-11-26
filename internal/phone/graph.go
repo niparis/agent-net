@@ -596,7 +596,7 @@ func graphDetail(g protocol.GraphView, snap operator.Snapshot, selected string,
 		} else {
 			d.Model = chief.Model
 		}
-		d.Place, d.Purpose = "answers to you", "Sorts what waits for you before it reaches the Desk."
+		d.Place, d.Purpose = "answers to you", "Sorts what waits for you."
 		return d
 	}
 	n, ok := byKey[selected]

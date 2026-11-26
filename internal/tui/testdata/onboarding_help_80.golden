@@ -11,14 +11,14 @@ Keys · all screens ────────────────────
   n                      rename the selected app
   r                      rotate the selected online machine token
 
- Desk
+ In overlays
+ Message body
+  esc, enter             close
+  ?                      help
+  q                      quit
+  up/down, j/k           scroll
   pgup/pgdn              page
-  home/g, end            first, last row
-  a                      approve the request
-  r                      refuse the request
-  s                      keep the refusal
-  O                      grant the request
-  A                      approve all changes
-  t                      type answer
+
+ Connected apps
   more below
 up/down scroll  ? this screen  esc close
