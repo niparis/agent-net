@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -53,17 +52,6 @@ func TestWorkerSandboxCutover(t *testing.T) {
 	if err := s.db.QueryRow(`SELECT cause,actor FROM setting_history WHERE key='workers.sandbox_level' AND scope='Shop'`).Scan(&cause, &actor); err != nil || cause != "cutover" || actor != settingsCutoverActor {
 		t.Errorf("history = %q %q %v", cause, actor, err)
 	}
-	inbox, err := s.ListInbox()
-	if err != nil {
-		t.Fatal(err)
-	}
-	notices := ""
-	for _, item := range inbox {
-		notices += item.Text + "\n"
-	}
-	if !strings.Contains(notices, "Shop") || !strings.Contains(notices, "twins") {
-		t.Errorf("missing notices: %s", notices)
-	}
 	restoreOldCharterTables(t, s)
 	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
 		t.Fatal(err)
@@ -74,10 +62,6 @@ func TestWorkerSandboxCutover(t *testing.T) {
 	again, _ := s.SettingsSnapshot()
 	if again.Revision != snap.Revision {
 		t.Errorf("replay revision %d -> %d", snap.Revision, again.Revision)
-	}
-	inbox2, _ := s.ListInbox()
-	if len(inbox2) != len(inbox) {
-		t.Errorf("replay duplicated notices")
 	}
 }
 
@@ -105,9 +89,9 @@ func TestWorkerSandboxLegacyBackupDoesNotOverrideSettings(t *testing.T) {
 }
 
 func TestWorkerSandboxCutoverPreservesMachineFallback(t *testing.T) {
-	for _, tc := range []struct{ name, maturity, override, want string }{
-		{"critical maturity", "critical", "", legacyWorkersNoNetwork},
-		{"graph override", "growing", legacyWorkersReadOnly, legacyWorkersReadOnly},
+	for _, tc := range []struct{ name, maturity, override string }{
+		{"critical maturity", "critical", ""},
+		{"graph override", "growing", legacyWorkersReadOnly},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, _ := newTestStore(t)
@@ -154,13 +138,6 @@ func TestWorkerSandboxCutoverPreservesMachineFallback(t *testing.T) {
 					t.Errorf("machine sandbox = %q, want %q: %v", got, protocol.WorkersSandboxed, err)
 				}
 			}
-			inbox, err := s.ListInbox()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(inbox) != 1 || !strings.Contains(inbox[0].Text, "host-a") || !strings.Contains(inbox[0].Text, "sandboxed") || !strings.Contains(inbox[0].Text, tc.want) || strings.Contains(inbox[0].Text, "An existing setting is kept") {
-				t.Fatalf("notice: %+v", inbox)
-			}
 		})
 	}
 }
@@ -205,52 +182,6 @@ func TestWorkerSandboxCutoverTightensUnsafeExistingValue(t *testing.T) {
 	after, err := s.SettingsSnapshot()
 	if err != nil || after.Revision != before.Revision {
 		t.Fatalf("replay revision: %d %d %v", before.Revision, after.Revision, err)
-	}
-}
-
-func TestWorkerSandboxCutoverNoticesMachineWithoutPolicy(t *testing.T) {
-	s, _ := newTestStore(t)
-	if err := s.AddArchitect("shop", "owner"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.seedLegacyCharter("shop", "maturity", "critical", "owner"); err != nil {
-		t.Fatal(err)
-	}
-	a, _, err := s.CreateNode("host-a", "linux")
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, _, err := s.CreateNode("host-b", "darwin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, id := range []string{a, b} {
-		if _, err := s.AddProjects(id, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "shop", Path: "/work/shop", GraphChecked: true}}}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	raw, _ := legacyPolicy(legacyWorkersReadOnly)
-	if _, err := legacyPolicyDB(t, s).Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, a, string(raw)); err != nil {
-		t.Fatal(err)
-	}
-	restoreOldCharterTables(t, s)
-	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
-		t.Fatal(err)
-	}
-	if err := migrateOldFixture(t, s); err != nil {
-		t.Fatal(err)
-	}
-	for _, id := range []string{a, b} {
-		if got, err := s.WorkerPermissions(id, "shop"); err != nil || got != protocol.WorkersSandboxed {
-			t.Fatalf("effective: %q %v", got, err)
-		}
-	}
-	inbox, err := s.ListInbox()
-	if err != nil || len(inbox) != 1 {
-		t.Fatalf("notice: %+v %v", inbox, err)
-	}
-	if !strings.Contains(inbox[0].Text, "host-b: no-network") || strings.Contains(inbox[0].Text, "host-a:") {
-		t.Fatalf("old machine values: %q", inbox[0].Text)
 	}
 }
 
@@ -355,86 +286,6 @@ func TestWorkerSandboxCutoverPreservesExactMachineProjectFallback(t *testing.T) 
 	}
 }
 
-func TestWorkerSandboxCutoverPreservesMultipleOldNamesOnMachine(t *testing.T) {
-	s, _ := newTestStore(t)
-	if err := s.AddArchitect("shop", "owner"); err != nil {
-		t.Fatal(err)
-	}
-	id, _, err := s.CreateNode("host-a", "linux")
-	if err != nil {
-		t.Fatal(err)
-	}
-	entries := []protocol.ProjectEntry{{Name: "shop", Path: "/work/lower", GraphChecked: true}, {Name: "SHOP", Path: "/work/upper", GraphExcluded: true}}
-	if _, err = s.AddProjects(id, protocol.ProjectAdd{Projects: entries}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.db.Exec(`INSERT INTO charter_values VALUES('repo','SHOP','maturity','critical',1,'owner')`); err != nil {
-		t.Fatal(err)
-	}
-	restoreOldCharterTables(t, s)
-	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
-		t.Fatal(err)
-	}
-	if err = migrateOldFixture(t, s); err != nil {
-		t.Fatal(err)
-	}
-	mustExec(t, s, `DELETE FROM charter_values WHERE level='repo' AND scope='SHOP'`)
-	for _, project := range []string{"shop", "SHOP"} {
-		got, err := s.WorkerPermissions(id, project)
-		if err != nil || got != protocol.WorkersSandboxed {
-			t.Errorf("%s became %q: %v", project, got, err)
-		}
-	}
-	inbox, err := s.ListInbox()
-	if err != nil || len(inbox) != 1 || !strings.Contains(inbox[0].Text, "host-a: sandboxed") {
-		t.Fatalf("old values notice: %+v %v", inbox, err)
-	}
-}
-
-func TestWorkerSandboxCutoverNoticeListsAllAffectedMachines(t *testing.T) {
-	s, _ := newTestStore(t)
-	if err := s.AddArchitect("shop", "owner"); err != nil {
-		t.Fatal(err)
-	}
-	a, _, err := s.CreateNode("host-a", "linux")
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, _, err := s.CreateNode("host-b", "darwin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	c, _, err := s.CreateNode("host-c", "linux")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, id := range []string{a, b, c} {
-		if _, err = s.AddProjects(id, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "shop", Path: "/work/shop", GraphChecked: true}}}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, p := range []struct{ id, value string }{{a, legacyWorkersNoNetwork}, {c, legacyWorkersReadOnly}} {
-		raw, _ := legacyPolicy(p.value)
-		if _, err = legacyPolicyDB(t, s).Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, p.id, string(raw)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	restoreOldCharterTables(t, s)
-	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
-		t.Fatal(err)
-	}
-	if err = migrateOldFixture(t, s); err != nil {
-		t.Fatal(err)
-	}
-	inbox, err := s.ListInbox()
-	if err != nil || len(inbox) != 1 {
-		t.Fatalf("expected one notice for the project: %+v %v", inbox, err)
-	}
-	if text := inbox[0].Text; !strings.Contains(text, "host-a: no-network") || !strings.Contains(text, "host-b: sandboxed") || strings.Contains(text, "host-c:") {
-		t.Fatalf("incorrect affected machines: %q", text)
-	}
-}
-
 func TestWorkerSandboxCutoverNoticeUsesActualProjectCase(t *testing.T) {
 	s, _ := newTestStore(t)
 	if err := s.AddArchitect("Shop", "owner"); err != nil {
@@ -468,91 +319,6 @@ func TestWorkerSandboxCutoverNoticeUsesActualProjectCase(t *testing.T) {
 	inbox, err := s.ListInbox()
 	if err != nil || len(inbox) != 0 {
 		t.Fatalf("unchanged machine got a notice: %+v %v", inbox, err)
-	}
-}
-
-func TestWorkerSandboxCutoverNoticesSessionInferredProject(t *testing.T) {
-	s, _ := newTestStore(t)
-	if err := s.AddArchitect("shop", "owner"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.seedLegacyCharter("shop", "maturity", "critical", "owner"); err != nil {
-		t.Fatal(err)
-	}
-	a, _, err := s.CreateNode("host-a", "linux")
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, _, err := s.CreateNode("host-b", "linux")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.AddProjects(a, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "shop", Path: "/work/shop", GraphChecked: true}}}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.UpsertSession(b, protocol.SessionInfo{Harness: "claude", NativeID: "test", Cwd: "/work/shop"}); err != nil {
-		t.Fatal(err)
-	}
-	raw, _ := legacyPolicy(legacyWorkersReadOnly)
-	if _, err = legacyPolicyDB(t, s).Exec(`INSERT INTO project_policies VALUES(?,'shop',?,1)`, a, string(raw)); err != nil {
-		t.Fatal(err)
-	}
-	restoreOldCharterTables(t, s)
-	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
-		t.Fatal(err)
-	}
-	if err = migrateOldFixture(t, s); err != nil {
-		t.Fatal(err)
-	}
-	got, err := s.WorkerPermissions(b, "shop")
-	if err != nil || got != protocol.WorkersSandboxed {
-		t.Fatalf("effective: %q %v", got, err)
-	}
-	inbox, err := s.ListInbox()
-	if err != nil || len(inbox) != 1 || !strings.Contains(inbox[0].Text, "host-b: no-network") {
-		t.Fatalf("missing session machine: %+v %v", inbox, err)
-	}
-}
-
-func TestWorkerSandboxCutoverNoticesSeenProjectWithDifferentRegistrationName(t *testing.T) {
-	s, _ := newTestStore(t)
-	if err := s.AddArchitect("other", "owner"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.seedLegacyCharter("other", "maturity", "critical", "owner"); err != nil {
-		t.Fatal(err)
-	}
-	a, _, err := s.CreateNode("host-a", "linux")
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, _, err := s.CreateNode("host-b", "linux")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.AddProjects(a, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "other", Path: "/work/other", GraphChecked: true}}}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.AddProjects(b, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "different", Path: "/work/other", GraphChecked: true}}}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.UpsertSession(b, protocol.SessionInfo{Harness: "claude", NativeID: "test", Cwd: "/work/other", Repo: protocol.RepoInfo{Project: "other", Root: "/work/other"}}); err != nil {
-		t.Fatal(err)
-	}
-	raw, _ := legacyPolicy(legacyWorkersReadOnly)
-	if _, err = legacyPolicyDB(t, s).Exec(`INSERT INTO project_policies VALUES(?,'other',?,1)`, a, string(raw)); err != nil {
-		t.Fatal(err)
-	}
-	restoreOldCharterTables(t, s)
-	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, migrationVersion(t, "worker sandbox cutover")); err != nil {
-		t.Fatal(err)
-	}
-	if err = migrateOldFixture(t, s); err != nil {
-		t.Fatal(err)
-	}
-	inbox, err := s.ListInbox()
-	if err != nil || len(inbox) != 1 || !strings.Contains(inbox[0].Text, "host-b: no-network") {
-		t.Fatalf("missing seen project machine: %+v %v", inbox, err)
 	}
 }
 

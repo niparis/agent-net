@@ -616,7 +616,7 @@ func TestIntakeReportFrame(t *testing.T) {
 // The morning brief gains one system-health line and the day's recorded
 // decisions.
 func TestBriefCarriesHealthLineAndDecisions(t *testing.T) {
-	s, c, chief, _ := briefRig(t)
+	s, c, _, _ := briefRig(t)
 	if _, err := s.RecordIntake(intakeEvent{Kind: protocol.IntakePhonePaired, Subject: "p", Text: "Paired"}); err != nil {
 		t.Fatal(err)
 	}
@@ -627,15 +627,11 @@ func TestBriefCarriesHealthLineAndDecisions(t *testing.T) {
 		c.t.Add(-2*time.Hour).Unix(), c.t.Add(-30*time.Hour).Unix(), c.t.Add(-time.Hour).Unix()); err != nil {
 		t.Fatal(err)
 	}
-	res, err := s.putOwnerBrief(chief, protocol.OwnerBriefArgs{Body: "Two fixes shipped.", Date: "2026-10-28"}, c.t)
+	text, err := s.briefFacts(c.t)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var text string
-	if err := s.db.QueryRow(`SELECT text FROM inbox_items WHERE id=?`, res.ItemID).Scan(&text); err != nil {
-		t.Fatal(err)
-	}
-	want := "Two fixes shipped.\n\nSystem health: 1 open alert, none woke the CTO (phone paired).\nDecisions recorded today:\n- Q: merge the picker fix? / A: yes"
+	want := "System health: 1 open alert, none woke the CTO (phone paired).\nDecisions recorded today:\n- Q: merge the picker fix? / A: yes"
 	if text != want {
 		t.Fatalf("brief =\n%s\nwant\n%s", text, want)
 	}
@@ -685,22 +681,6 @@ func TestQuotaFailureMidRunJoinsTheProviderThread(t *testing.T) {
 	}
 	if res, _ := s.CTOIntake(0); res.Total != 1 {
 		t.Fatalf("%d entries, want only the zai thread", res.Total)
-	}
-}
-
-// A kind the route table does not list keeps today's default: the chief.
-func TestUnroutedAskKindGoesToTheChief(t *testing.T) {
-	s, _, chief, other := briefRig(t)
-	_ = chief
-	saved := routeIndex[routeAsk+":"+protocol.AskKindHeld]
-	delete(routeIndex, routeAsk+":"+protocol.AskKindHeld)
-	t.Cleanup(func() { routeIndex[routeAsk+":"+protocol.AskKindHeld] = saved })
-	item, err := s.CreateInboxItem(protocol.InboxItem{Kind: protocol.AskKindHeld, SessionID: other, Text: "held request"})
-	if err != nil {
-		t.Fatalf("an unrouted kind was refused: %v", err)
-	}
-	if next := askNext(t, s, item.ID); next != protocol.AskNextChief {
-		t.Fatalf("unrouted kind next = %q, want chief", next)
 	}
 }
 

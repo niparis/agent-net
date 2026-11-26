@@ -12,11 +12,14 @@ import (
 // A member that waits on its own lead is in an ordinary wait inside its team.
 // The owner has nothing to do with it (decision 0126).
 
-func openWaitingAsks(t *testing.T, s *Store) int {
-	t.Helper()
-	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE kind='waiting' AND status='open'`).Scan(&n); err != nil {
-		t.Fatal(err)
+// openWaitingAsks counts the waits that went to the chief, or to the log when
+// there is no chief: the owner has no Desk (decision 0196).
+func openWaitingAsks(logs *[]string) int {
+	n := 0
+	for _, line := range *logs {
+		if strings.HasPrefix(line, "desk.no_chief kind waiting ") || strings.HasPrefix(line, "desk.to_chief kind waiting ") {
+			n++
+		}
 	}
 	return n
 }
@@ -39,11 +42,12 @@ func TestMemberWaitingOnItsLeadMakesNoOwnerAskAndOneMessageToTheLead(t *testing.
 	for _, asksTo := range []string{protocol.AsksToLead, protocol.AsksToOwner} {
 		t.Run("team asks "+asksTo, func(t *testing.T) {
 			s, c, member, lead := leadTeamRig(t)
+			logs := captureLog(s)
 			teamWrite(t, s, protocol.TeamWrite{Action: "asks_to", ID: "forge", AsksTo: asksTo})
 			const text = "other confirming the schema change"
 			announce(t, s, member, protocol.ProfileAnnounce{Task: "T2b worker running", Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: text}})
 			reportWait(t, s, member, text, c.t)
-			if n := openWaitingAsks(t, s); n != 0 {
+			if n := openWaitingAsks(logs); n != 0 {
 				t.Fatalf("a wait on the lead made %d owner asks", n)
 			}
 			got := blockedNotices(t, s)
@@ -54,8 +58,8 @@ func TestMemberWaitingOnItsLeadMakesNoOwnerAskAndOneMessageToTheLead(t *testing.
 			c.advance(time.Minute)
 			announce(t, s, member, protocol.ProfileAnnounce{Task: "T2b worker running", Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: text}})
 			reportWait(t, s, member, text, c.t)
-			if got := blockedNotices(t, s); len(got) != 1 || openWaitingAsks(t, s) != 0 {
-				t.Fatalf("a repeat wait: %d messages, %d asks", len(got), openWaitingAsks(t, s))
+			if got := blockedNotices(t, s); len(got) != 1 || openWaitingAsks(logs) != 0 {
+				t.Fatalf("a repeat wait: %d messages, %d asks", len(got), openWaitingAsks(logs))
 			}
 		})
 	}
@@ -63,6 +67,7 @@ func TestMemberWaitingOnItsLeadMakesNoOwnerAskAndOneMessageToTheLead(t *testing.
 
 func TestMemberWaitingOnItsRepoLeadMakesNoOwnerAsk(t *testing.T) {
 	s := teamStore(t)
+	logs := captureLog(s)
 	var member, lead, leadAgent string
 	if err := s.db.QueryRow(`SELECT id FROM sessions WHERE repo_id='demo'`).Scan(&member); err != nil {
 		t.Fatal(err)
@@ -76,7 +81,7 @@ func TestMemberWaitingOnItsRepoLeadMakesNoOwnerAsk(t *testing.T) {
 	const text = "other confirming the plan"
 	announce(t, s, member, protocol.ProfileAnnounce{Task: "T2b", Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: text}})
 	reportWait(t, s, member, text, s.now())
-	if n := openWaitingAsks(t, s); n != 0 {
+	if n := openWaitingAsks(logs); n != 0 {
 		t.Fatalf("a wait on the repo lead made %d owner asks", n)
 	}
 	if got := blockedNotices(t, s); len(got) != 1 || got[0].To != lead {
@@ -89,8 +94,9 @@ func TestMemberWaitThatNamesTheOwnerOrNobodyStillMakesAnAsk(t *testing.T) {
 	for _, text := range []string{"the owner choosing the database", "which database?", "other and the owner agreeing on the plan"} {
 		t.Run(text, func(t *testing.T) {
 			s, c, member, _ := leadTeamRig(t)
+			logs := captureLog(s)
 			reportWait(t, s, member, text, c.t)
-			if n := openWaitingAsks(t, s); n != 1 {
+			if n := openWaitingAsks(logs); n != 1 {
 				t.Fatalf("owner asks = %d, want 1", n)
 			}
 		})
@@ -226,6 +232,7 @@ func TestAnnounceNoticeFollowsTheWaitTextNotTheTask(t *testing.T) {
 // commas, colons and spaces still end a word.
 func TestWaitNamesLeadOnlyAsAWholeHyphenatedName(t *testing.T) {
 	s, c, member, lead := leadTeamRig(t)
+	logs := captureLog(s)
 	if _, err := s.db.Exec(`UPDATE agents SET display_name='tenebrae' WHERE id=(SELECT agent_id FROM sessions WHERE id=?)`, lead); err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +252,7 @@ func TestWaitNamesLeadOnlyAsAWholeHyphenatedName(t *testing.T) {
 		}
 	}
 	reportWait(t, s, member, "tenebrae-strats deploy of X", c.t)
-	if n := openWaitingAsks(t, s); n != 1 {
+	if n := openWaitingAsks(logs); n != 1 {
 		t.Fatalf("a wait on a repo with the lead's prefix closed the owner ask: %d asks", n)
 	}
 }

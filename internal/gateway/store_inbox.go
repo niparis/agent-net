@@ -3,7 +3,6 @@ package gateway
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -53,7 +52,7 @@ func (s *Store) CreateInboxItem(item protocol.InboxItem) (protocol.InboxItem, er
 	// becomes one item per question. The first one is returned. An ask that
 	// goes to the chief stays one request.
 	parts := []string{item.Text}
-	toChief := s.ownerItemToChiefOrLog(item)
+	toChief := ownerBound(item)
 	if item.Kind == protocol.AskKindQuestion && item.SourceRef == "" && !toChief {
 		if split := protocol.SplitQuestions(item.Text); split != nil {
 			parts = split
@@ -108,7 +107,7 @@ func (s *Store) RequestWrittenApproval(session, node string, req protocol.Approv
 // line when agent-net raised it itself (owner_items.go). Other items are
 // stored as before.
 func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.InboxItem, error) {
-	if s.ownerItemToChiefOrLog(item) {
+	if ownerBound(item) {
 		return s.ownerItemToChief(db, item)
 	}
 	switch item.Kind {
@@ -169,11 +168,6 @@ func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.Inb
 		return item, reject("too many options")
 	}
 	fromSession := item.FromKind == "" || item.FromKind == protocol.AskFromSession
-	// An item an agent sends to the owner must be a decision he can take on the
-	// spot (decision 0150). Generated notices keep their fixed actions.
-	if item.NextWho == protocol.AskNextOwner && fromSession && protocol.KindNeedsOptions(item.Kind) && len(item.Options) == 0 {
-		return item, reject("an owner-bound item needs options: give the answers the owner can pick")
-	}
 	item.Category = itemCategory(item)
 	options, err := json.Marshal(item.Options)
 	if err != nil {
@@ -479,31 +473,11 @@ func (s *Store) AnswerInbox(id, answer string, validate ...bool) (protocol.Inbox
 // AnswerInboxAs records an answer from the owner or the CTO and queues its
 // delivery in one transaction.
 func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (protocol.InboxItem, error) {
-	return s.answerInbox(id, answer, actor, nil, validate...)
-}
-
-// answerInbox records an answer. A rule scope makes the answer a standing rule
-// too, written in the same transaction (decision 0150): a refused rule stores
-// no answer. Only the answer of a plain question, approval or idea carries a
-// scope.
-func (s *Store) answerInbox(id, answer, actor string, scope *protocol.RuleScope, validate ...bool) (protocol.InboxItem, error) {
 	if actor == "" {
 		actor = "owner"
 	}
 	if actor != "owner" && actor != "cto" {
 		return protocol.InboxItem{}, reject("unknown answer actor")
-	}
-	if scope != nil {
-		// The answers of these asks run their own operation; none keeps a rule.
-		for _, special := range []func() (protocol.InboxItem, bool, error){
-			func() (protocol.InboxItem, bool, error) { return s.answerDeliveryApproval(id, answer, true) },
-			func() (protocol.InboxItem, bool, error) { return s.answerLoopAsk(id, answer, true) },
-			func() (protocol.InboxItem, bool, error) { return s.answerStartAsk(id, answer, actor, true) },
-		} {
-			if _, handled, _ := special(); handled {
-				return protocol.InboxItem{}, reject("a standing rule comes only from the answer of a question, approval or idea")
-			}
-		}
 	}
 	if item, handled, err := s.answerDeliveryApproval(id, answer, validate...); handled || err != nil {
 		return item, err
@@ -539,9 +513,6 @@ func (s *Store) answerInbox(id, answer, actor string, scope *protocol.RuleScope,
 	// an old approval can outlive the session that asked for it, and the owner
 	// must still be able to clear it from the Inbox. "seen" is the older
 	// notice answer and means the same thing.
-	if scope != nil && (answer == "dismiss" || answer == "seen" || item.Kind == protocol.AskKindPermission || item.Kind == protocol.AskKindDraft || item.Kind == protocol.AskKindBrief) {
-		return item, reject("a standing rule comes only from the answer of a question, approval or idea")
-	}
 	if answer == "dismiss" || answer == "seen" {
 		item.Status = "dismissed"
 		item.Answer = ""
@@ -676,13 +647,6 @@ func (s *Store) answerInbox(id, answer, actor string, scope *protocol.RuleScope,
 	}
 	if item.Kind == "rejection" || item.Kind == "escalation" {
 		if _, err = tx.Exec(`UPDATE graph_outcomes SET resolution='answered' WHERE reply_id=? AND resolution=''`, item.MessageID); err != nil {
-			return item, err
-		}
-	}
-	if scope != nil {
-		text := fmt.Sprintf("Always %s for %s in %s. From ask %s: %s", strings.TrimSpace(answer), scope.Action, scope.Area, id, askFirstLine(item.Text, 120))
-		if _, err = s.addRuleTx(tx, protocol.JudgmentAddRequest{Kind: protocol.StandingKindRule, Text: text, Ref: id,
-			Area: scope.Area, Action: scope.Action, Category: scope.Category}, deskSource(actor)); err != nil {
 			return item, err
 		}
 	}

@@ -207,58 +207,6 @@ func TestOutcomeMigrationsAfterGraph(t *testing.T) {
 	}
 }
 
-func TestOutcomeCreatesAndResolvesUnifiedInboxItem(t *testing.T) {
-	s, _ := newTestStore(t)
-	a, b := twoSessions(t, s)
-	req, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "request context"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	rep, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: req.ID, Body: "refused", ReplyOutcome: protocol.ReplyOutcome{Outcome: "reject", Reason: "outside charter"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	items, err := s.ListInbox()
-	if err != nil || len(items) != 1 || items[0].Kind != "rejection" || items[0].SessionID != b || items[0].MessageID != rep.ID || items[0].ConversationID != req.ConversationID || !strings.Contains(items[0].Text, "request context") || !strings.Contains(items[0].Text, "outside charter") {
-		t.Fatalf("items %+v, %v", items, err)
-	}
-	node, _, _ := s.CreateNode("owner", "linux")
-	oid, _ := s.UpsertSession(node, owner("owner"))
-	if _, err = s.ResolveOutcome(rep.ID, oid, "let_stand"); err != nil {
-		t.Fatal(err)
-	}
-	items, err = s.ListInbox()
-	if err != nil || items[0].Status == "open" {
-		t.Fatalf("unresolved %+v, %v", items, err)
-	}
-}
-
-func TestAnswerUnifiedOutcomeClearsOutcomeInbox(t *testing.T) {
-	s, _ := newTestStore(t)
-	a, b := twoSessions(t, s)
-	node := mustNode(t, s, b)
-	_, err := s.UpsertSession(node, owner("test"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	req, _, _ := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "question"})
-	_, _, err = s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: req.ID, Body: "no", ReplyOutcome: protocol.ReplyOutcome{Outcome: "reject", Reason: "no"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	items, err := s.ListInbox()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("items %v %v", items, err)
-	}
-	if _, err = s.AnswerInbox(items[0].ID, "please reconsider"); err != nil {
-		t.Fatal(err)
-	}
-	rows, err := s.OutcomeInbox()
-	if err != nil || len(rows) != 0 {
-		t.Fatalf("outcomes: %+v %v", rows, err)
-	}
-}
-
 func TestExistingOutcomesMigrateToInbox(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "old.db")
 	s, err := OpenStore(path)
@@ -323,30 +271,6 @@ func TestExistingOutcomesMigrateToInbox(t *testing.T) {
 	items, err := s.ListInbox()
 	if err != nil || len(items) != 1 || items[0].MessageID != rep.ID {
 		t.Fatalf("items %+v, %v", items, err)
-	}
-}
-
-func TestOutcomeInboxFailureRollsBackReply(t *testing.T) {
-	s, _ := newTestStore(t)
-	a, b := twoSessions(t, s)
-	req, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "request"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.db.Exec(`CREATE TRIGGER fail_outcome_inbox BEFORE INSERT ON inbox_items BEGIN SELECT RAISE(ABORT,'fail'); END`); err != nil {
-		t.Fatal(err)
-	}
-	_, _, err = s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: req.ID, Body: "no", ReplyOutcome: protocol.ReplyOutcome{Outcome: "reject", Reason: "no"}})
-	if err == nil {
-		t.Fatal("expected inbox failure")
-	}
-	outcomes, err := s.Outcomes("", "", 10)
-	if err != nil || len(outcomes) != 0 {
-		t.Fatalf("outcomes %+v %v", outcomes, err)
-	}
-	req, ok, err := s.Message(req.ID)
-	if err != nil || !ok || req.State != protocol.StateStored {
-		t.Fatalf("request %+v %v", req, err)
 	}
 }
 

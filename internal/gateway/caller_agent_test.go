@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"strings"
@@ -271,57 +270,6 @@ func (r *callerAgentRig) deskLines() []string {
 		out = append(out, text)
 	}
 	return out
-}
-
-func TestWaitingWorkDeskLineCountsUpdatesAndCloses(t *testing.T) {
-	r := newCallerAgentRig(t)
-	caller := r.onlyOfflineSession("pi")
-	leadDemoWith(t, r.deliveryRig, "lead")
-	commits := []string{commitA, commitB, commitC, strings.Repeat("d", 40)}
-	var ids []string
-	for i := 0; i < 3; i++ {
-		ids = append(ids, r.submitAs(caller, fmt.Sprintf("feature/desk-%d", i), commits[i]))
-	}
-	r.clk.advance(23 * time.Hour)
-	r.g.dispatchStepTasks(context.Background())
-	if lines := r.deskLines(); len(lines) != 0 {
-		t.Fatalf("a line before 24 hours: %v", lines)
-	}
-	r.clk.advance(2 * time.Hour)
-	r.g.dispatchStepTasks(context.Background())
-	want := "demo: 3 finished changes waiting for accept, oldest 25 hours, lead offline"
-	if lines := r.deskLines(); len(lines) != 1 || lines[0] != want {
-		t.Fatalf("desk lines = %q, want [%q]", lines, want)
-	}
-	var item string
-	if err := r.s.db.QueryRow(`SELECT id FROM inbox_items WHERE source_ref='waiting-work:demo' AND status='open'`).Scan(&item); err != nil {
-		t.Fatal(err)
-	}
-	// A fourth change updates the same line.
-	ids = append(ids, r.submitAs(caller, "feature/desk-3", commits[3]))
-	r.clk.advance(24 * time.Hour)
-	r.g.dispatchStepTasks(context.Background())
-	want = "demo: 4 finished changes waiting for accept, oldest 2 days, lead offline"
-	var again, text string
-	if err := r.s.db.QueryRow(`SELECT id,text FROM inbox_items WHERE source_ref='waiting-work:demo' AND status='open'`).Scan(&again, &text); err != nil {
-		t.Fatal(err)
-	}
-	if again != item || text != want {
-		t.Fatalf("line not updated in place: id %s -> %s, %q, want %q", item, again, text, want)
-	}
-	// The agent comes back and accepts everything: the line closes.
-	if _, err := r.s.UpsertSession(r.a, protocol.SessionInfo{Harness: "pi", NativeID: "only-pi", Repo: protocol.RepoInfo{Project: "demo"}}); err != nil {
-		t.Fatal(err)
-	}
-	for i, id := range ids {
-		if _, err := r.accept(caller, id, commits[i]); err != nil {
-			t.Fatal(err)
-		}
-	}
-	r.g.dispatchStepTasks(context.Background())
-	if lines := r.deskLines(); len(lines) != 0 {
-		t.Fatalf("desk line stayed open at zero: %v", lines)
-	}
 }
 
 // callerTaskOwner of a step, or "" when the step has no task.

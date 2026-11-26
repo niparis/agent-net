@@ -58,19 +58,16 @@ func wakeMessages(t *testing.T, s *Store) []protocol.Message {
 	return out
 }
 
-func openCheckRows(t *testing.T, s *Store) []protocol.InboxItem {
-	t.Helper()
-	items, err := s.ListInbox()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var open []protocol.InboxItem
-	for _, item := range items {
-		if item.Kind == "check" && item.Status == "open" {
-			open = append(open, item)
+// openCheckRows returns the Needs you rows agent-net raised. A check is
+// agent-net's own item, so it is a log line, not a stored row (decision 0196).
+func openCheckRows(logs *[]string) []string {
+	var rows []string
+	for _, line := range *logs {
+		if strings.HasPrefix(line, "desk.dropped kind check ") {
+			rows = append(rows, line)
 		}
 	}
-	return open
+	return rows
 }
 
 func wantWakeBody(line string) string {
@@ -89,6 +86,7 @@ func ruleValue(rules []protocol.PublicRule, name string) string {
 func TestWakeAutonomySendsOneContinueMessage(t *testing.T) {
 	s, c := newTestStore(t)
 	a, b := twoSessions(t, s)
+	logs := captureLog(s)
 	setAutonomy(t, s, b, protocol.AutonomyWake)
 	if _, _, err := send(s, a, b, "req", ""); err != nil {
 		t.Fatal(err)
@@ -109,7 +107,7 @@ func TestWakeAutonomySendsOneContinueMessage(t *testing.T) {
 	if m.From != "agent-net" || m.To != b || m.Type != protocol.TypeNotification || m.Body != wantWakeBody("finish the parser") {
 		t.Fatalf("wake = %+v", m)
 	}
-	if rows := openCheckRows(t, s); len(rows) != 0 {
+	if rows := openCheckRows(logs); len(rows) != 0 {
 		t.Fatalf("autonomy wake left a Needs you row: %+v", rows)
 	}
 	counts, err := s.SessionCounts(24 * time.Hour)
@@ -121,6 +119,7 @@ func TestWakeAutonomySendsOneContinueMessage(t *testing.T) {
 func TestAutonomyOffLeavesTheNeedsYouRow(t *testing.T) {
 	s, c := newTestStore(t)
 	a, b := twoSessions(t, s)
+	logs := captureLog(s)
 	setAutonomy(t, s, b, protocol.AutonomyOff)
 	if _, _, err := send(s, a, b, "req", ""); err != nil {
 		t.Fatal(err)
@@ -136,8 +135,8 @@ func TestAutonomyOffLeavesTheNeedsYouRow(t *testing.T) {
 	if wakes := wakeMessages(t, s); len(wakes) != 0 {
 		t.Fatalf("autonomy off woke the session: %+v", wakes)
 	}
-	rows := openCheckRows(t, s)
-	if len(rows) != 1 || !strings.Contains(rows[0].Text, "stopped with work left: finish the parser") {
+	rows := openCheckRows(logs)
+	if len(rows) != 1 || !strings.Contains(rows[0], "stopped with work left: finish the parser") {
 		t.Fatalf("Needs you rows = %+v", rows)
 	}
 }
@@ -145,6 +144,7 @@ func TestAutonomyOffLeavesTheNeedsYouRow(t *testing.T) {
 func TestAutonomyWakeDoesNothingOffline(t *testing.T) {
 	s, c := newTestStore(t)
 	a, b := twoSessions(t, s)
+	logs := captureLog(s)
 	setAutonomy(t, s, b, protocol.AutonomyWake)
 	if _, _, err := send(s, a, b, "req", ""); err != nil {
 		t.Fatal(err)
@@ -163,7 +163,7 @@ func TestAutonomyWakeDoesNothingOffline(t *testing.T) {
 	if wakes := wakeMessages(t, s); len(wakes) != 0 {
 		t.Fatalf("offline session was woken: %+v", wakes)
 	}
-	if rows := openCheckRows(t, s); len(rows) != 0 {
+	if rows := openCheckRows(logs); len(rows) != 0 {
 		t.Fatalf("offline wake left a Needs you row: %+v", rows)
 	}
 }
@@ -171,6 +171,7 @@ func TestAutonomyWakeDoesNothingOffline(t *testing.T) {
 func TestAutonomyWakeStillLeavesABlockedRow(t *testing.T) {
 	s, c := newTestStore(t)
 	a, b := twoSessions(t, s)
+	logs := captureLog(s)
 	setAutonomy(t, s, b, protocol.AutonomyWake)
 	if _, _, err := send(s, a, b, "req", ""); err != nil {
 		t.Fatal(err)
@@ -186,8 +187,8 @@ func TestAutonomyWakeStillLeavesABlockedRow(t *testing.T) {
 	if wakes := wakeMessages(t, s); len(wakes) != 0 {
 		t.Fatalf("blocked session was woken: %+v", wakes)
 	}
-	rows := openCheckRows(t, s)
-	if len(rows) != 1 || !strings.Contains(rows[0].Text, "the deploy key") {
+	rows := openCheckRows(logs)
+	if len(rows) != 1 || !strings.Contains(rows[0], "the deploy key") {
 		t.Fatalf("Needs you rows = %+v", rows)
 	}
 }
@@ -240,6 +241,7 @@ func TestWakeDailyCapIsSeparateFromTheCheckCap(t *testing.T) {
 func TestTwoWakeUpsWithoutProgressStopWakingWithOneRow(t *testing.T) {
 	s, c := newTestStore(t)
 	a, b := twoSessions(t, s)
+	logs := captureLog(s)
 	setAutonomy(t, s, b, protocol.AutonomyWake)
 	if _, _, err := send(s, a, b, "req", ""); err != nil {
 		t.Fatal(err)
@@ -268,8 +270,8 @@ func TestTwoWakeUpsWithoutProgressStopWakingWithOneRow(t *testing.T) {
 	if wakes := wakeMessages(t, s); len(wakes) != 2 {
 		t.Fatalf("wake messages = %d, want 2", len(wakes))
 	}
-	rows := openCheckRows(t, s)
-	if len(rows) != 1 || !strings.Contains(rows[0].Text, "was woken twice with no progress") {
+	rows := openCheckRows(logs)
+	if len(rows) != 1 || !strings.Contains(rows[0], "was woken twice with no progress") {
 		t.Fatalf("Needs you rows = %+v", rows)
 	}
 	// A third "more" answer with no progress must not wake again or add a row.
@@ -284,7 +286,7 @@ func TestTwoWakeUpsWithoutProgressStopWakingWithOneRow(t *testing.T) {
 	if wakes := wakeMessages(t, s); len(wakes) != 2 {
 		t.Fatalf("waking did not stop: %d", len(wakes))
 	}
-	if rows := openCheckRows(t, s); len(rows) != 1 {
+	if rows := openCheckRows(logs); len(rows) != 1 {
 		t.Fatalf("rows = %d, want one: %+v", len(rows), rows)
 	}
 	// Progress allows waking again.

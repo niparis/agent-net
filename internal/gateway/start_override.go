@@ -23,29 +23,9 @@ import (
 // CreateStartOverrideAsk refuses the ask of an older machine that holds a
 // start (decision 0196): there is no Desk to hold it on. The machine passes the
 // refusal to the caller, so the caller learns to ask the chief and start again
-// with the owner's words. An ask stored before that change is still answered;
-// the Desk tests (keepDeskItems) store one the old way to stand for it.
-func (s *Store) CreateStartOverrideAsk(node string, p protocol.StartOverrideAsk) (protocol.InboxItem, error) {
-	if !s.keepDeskItems {
-		return protocol.InboxItem{}, reject("%s", protocol.OverrideNeedsOwner)
-	}
-	agent, project, name, err := s.askingSession(node, p.Session)
-	if err != nil {
-		return protocol.InboxItem{}, err
-	}
-	item, err := s.CreateInboxItem(protocol.InboxItem{Kind: protocol.AskKindQuestion, SessionID: agent.SessionID, Node: project, Text: p.Text,
-		Recommendation: "let the picker choose", Options: []string{protocol.StartAnswerConfirm, protocol.StartAnswerPicker},
-		AskerName: name, FromKind: protocol.AskFromGateway, SourceRef: protocol.StartOverrideRefPrefix + p.StartID,
-		NextWho: protocol.AskNextOwner, WhyYou: "a caller wants a worker the picker did not choose"})
-	if err != nil {
-		return item, err
-	}
-	raw, err := json.Marshal(p.OverrideFacts)
-	if err != nil {
-		return item, err
-	}
-	_, err = s.db.Exec(`UPDATE inbox_items SET override_facts=? WHERE id=?`, string(raw), item.ID)
-	return item, err
+// with the owner's words. An ask stored before that change is still answered.
+func (s *Store) CreateStartOverrideAsk(string, protocol.StartOverrideAsk) (protocol.InboxItem, error) {
+	return protocol.InboxItem{}, reject("%s", protocol.OverrideNeedsOwner)
 }
 
 // overrideFacts reads the facts of a held override ask. An ask from before

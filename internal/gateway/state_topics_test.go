@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"testing"
-	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -56,24 +55,6 @@ func TestChiefClearMovesTheInbox(t *testing.T) {
 	before := s.topicVersions()
 	if err := s.SetChief(protocol.ChiefSetRequest{Clear: true}, "owner"); err != nil {
 		t.Fatal(err)
-	}
-	after := s.topicVersions()
-	requireMoved(t, before, after, protocol.TopicInbox)
-}
-
-// The Inbox screen shows the chief as silent, and the silence mark is written
-// by the health check alone, with no inbox row write beside it.
-func TestChiefSilenceMovesTheInbox(t *testing.T) {
-	s, c, chief, asker, _ := chiefRig(t)
-	chiefAsk(t, s, asker, "Ship it?")
-	c.advance(time.Minute)
-	if _, ok := sendDueChief(t, s, c.t); !ok {
-		t.Fatal("no batch went to the chief")
-	}
-	c.advance(protocol.ChiefSilentAfter + time.Minute)
-	before := s.topicVersions()
-	if silent, err := s.chiefSilent(s.db, chief, c.t); err != nil || !silent {
-		t.Fatalf("chiefSilent = %t, %v", silent, err)
 	}
 	after := s.topicVersions()
 	requireMoved(t, before, after, protocol.TopicInbox)

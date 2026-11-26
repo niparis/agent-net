@@ -45,8 +45,11 @@ func fixtureTreeSnapshot(t *testing.T, migrate bool) Snapshot {
 		t.Fatal(err)
 	}
 	if migrate {
-		// The last migration is decision 0193's (I1, I2, I4 on stored data).
-		if _, err := db.Exec(`DELETE FROM schema_version WHERE version=(SELECT MAX(version) FROM schema_version)`); err != nil {
+		// The tree migration of decision 0193 is the one before the stall
+		// columns. OpenStore ran it on an empty database before the fixture
+		// rows were inserted, so undo the two last versions and let both run
+		// on the fixture. The stall migration only adds columns that exist.
+		if _, err := db.Exec(`DELETE FROM schema_version WHERE version IN (SELECT version FROM schema_version ORDER BY version DESC LIMIT 2)`); err != nil {
 			t.Fatal(err)
 		}
 		if err := s.Close(); err != nil {

@@ -472,12 +472,37 @@ func (s *Store) RaiseTrustAsk(session, nodeID, hostname, path, project, reason s
 	return true, nil
 }
 
+const permissionColumns = `id,kind,rules,targets,reason,proposed_by,proposed_name,status,created_at,decided_at,decided_by,results,desk_log_id,dedupe_key,owner_words`
+
 // PermissionProposal reads one proposal, including the results of its apply.
 func (s *Store) PermissionProposal(id string) (protocol.PermissionProposal, error) {
+	return scanPermissionProposal(s.db.QueryRow(`SELECT `+permissionColumns+` FROM permission_proposals WHERE id=?`, id))
+}
+
+// PendingPermissionProposals lists the proposals that wait for the owner,
+// newest first. With no Desk (decision 0196) this list is how the CTO finds
+// one to apply on the owner's yes.
+func (s *Store) PendingPermissionProposals() ([]protocol.PermissionProposal, error) {
+	rows, err := s.db.Query(`SELECT ` + permissionColumns + ` FROM permission_proposals WHERE status='pending' ORDER BY created_at DESC,id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []protocol.PermissionProposal{}
+	for rows.Next() {
+		p, err := scanPermissionProposal(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+func scanPermissionProposal(row interface{ Scan(...any) error }) (protocol.PermissionProposal, error) {
 	var p protocol.PermissionProposal
 	var rules, targets, results string
-	err := s.db.QueryRow(`SELECT id,kind,rules,targets,reason,proposed_by,proposed_name,status,created_at,decided_at,decided_by,results,desk_log_id,dedupe_key,owner_words
-		FROM permission_proposals WHERE id=?`, id).Scan(&p.ID, &p.Kind, &rules, &targets, &p.Reason, &p.ProposedBy, &p.ProposedName,
+	err := row.Scan(&p.ID, &p.Kind, &rules, &targets, &p.Reason, &p.ProposedBy, &p.ProposedName,
 		&p.Status, &p.CreatedAt, &p.DecidedAt, &p.DecidedBy, &results, &p.DeskLogID, &p.DedupeKey, &p.OwnerWords)
 	if err != nil {
 		return p, err

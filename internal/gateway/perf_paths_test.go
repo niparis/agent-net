@@ -38,7 +38,7 @@ func TestInboxAskerNamesMatchAgentView(t *testing.T) {
 		}
 	}
 	for _, session := range []string{named, "s_gone"} {
-		if _, err := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: session, Text: "q " + session}); err != nil {
+		if _, err := storeOldItem(t, s, protocol.InboxItem{Kind: "question", SessionID: session, Text: "q " + session}); err != nil {
 			t.Fatal(err)
 		}
 	}

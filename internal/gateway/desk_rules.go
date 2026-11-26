@@ -1,12 +1,9 @@
 package gateway
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -70,31 +67,6 @@ func (s *Store) ruleApplies(q askDB, ask, category, ruleID, action string) error
 		return reject("rule %s holds for the network; a %s ask needs a rule that names its repo or team", ruleID, category)
 	}
 	return nil
-}
-
-// AnswerInboxScoped records an answer. A scope (area and action) also makes
-// the answer a standing rule, shown on the Desk with its undo. The scope is
-// checked before the answer is stored, so a refused scope answers nothing.
-func (s *Store) AnswerInboxScoped(id, answer, actor string, scope protocol.RuleScope) (protocol.InboxItem, error) {
-	if scope.Area == "" && scope.Action == "" {
-		return s.AnswerInboxAs(id, answer, actor)
-	}
-	var category string
-	err := s.db.QueryRow(`SELECT category FROM inbox_items WHERE id=?`, id).Scan(&category)
-	if errors.Is(err, sql.ErrNoRows) {
-		return protocol.InboxItem{}, reject("inbox item not found")
-	}
-	if err != nil {
-		return protocol.InboxItem{}, err
-	}
-	if scope.Category == "" {
-		scope.Category = category
-	}
-	scope = scope.Normalize()
-	if err := scope.Validate(); err != nil {
-		return protocol.InboxItem{}, reject("%v", err)
-	}
-	return s.answerInbox(id, answer, actor, &scope)
 }
 
 // addRule stores a judgment and its Desk log line with the undo that removes
@@ -180,52 +152,4 @@ func (s *Store) joinedNodes(id string) ([]string, error) {
 		}
 	}
 	return out, nil
-}
-
-// discussAsk is the owner's "discuss" on a Desk item (decision 0150). For a CTO
-// item it changes nothing: the owner opens his CTO chat, and CTO turns start
-// only from him. For a chief item it stores a message to the chief that names
-// the item; the caller dispatches it and wakes the chief.
-func (s *Store) discussAsk(id string) (protocol.AskDiscussResult, protocol.Message, error) {
-	var out protocol.AskDiscussResult
-	var none protocol.Message
-	var owner, text, status string
-	err := s.db.QueryRow(`SELECT owner,text,status FROM inbox_items WHERE id=?`, id).Scan(&owner, &text, &status)
-	if errors.Is(err, sql.ErrNoRows) {
-		return out, none, reject("unknown ask %q", id)
-	}
-	if err != nil {
-		return out, none, err
-	}
-	if owner == protocol.DeskOwnerCTO {
-		return protocol.AskDiscussResult{Open: protocol.DeskOwnerCTO}, none, nil
-	}
-	chief, err := chiefSession(s.db)
-	if err != nil {
-		return out, none, err
-	}
-	if chief == "" {
-		return out, none, reject("no chief of staff is set: open the asking session instead")
-	}
-	body := fmt.Sprintf("The owner wants to discuss ask %s with you now, in your session: %s\nGive him what you verified, your recommendation and the options.", id, strings.TrimSpace(text))
-	m, err := s.storeAgentNetMessage(s.db, chief, body, id, s.now())
-	if err != nil {
-		return out, none, err
-	}
-	return protocol.AskDiscussResult{Open: protocol.DeskOwnerChief, Session: chief}, m, nil
-}
-
-// discussAsk dispatches the chief's message and wakes the chief when it is
-// offline: the owner asked for it, so the wake rules of a peer message do not
-// apply.
-func (g *Gateway) discussAsk(ctx context.Context, id string) (protocol.AskDiscussResult, error) {
-	res, m, err := g.store.discussAsk(id)
-	if err != nil || m.ID == "" {
-		return res, err
-	}
-	g.dispatch(ctx, m)
-	if a, ok, aerr := g.store.Agent(res.Session); aerr == nil && ok && !a.Online {
-		res.Woken = g.wakeSessionAs(ctx, a, false, true)
-	}
-	return res, nil
 }
