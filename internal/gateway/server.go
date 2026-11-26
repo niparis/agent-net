@@ -2095,6 +2095,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return res, err
 
+	case protocol.FramePermissionPending:
+		var p protocol.PermissionGetFrame
+		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		return st.PendingPermissionProposals()
+
 	case "rate.offer":
 		p, err := decode[protocol.RateOfferFrame](raw)
 		if err != nil || p.SessionID == "" {

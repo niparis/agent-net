@@ -112,7 +112,7 @@ func (g *Gateway) askIntakeList(ctx context.Context, q protocol.AskIntakeRequest
 			continue
 		}
 		ref := protocol.AskIntakeSourceRef(c.id, turn.Ref)
-		if id, _, err := g.askIntakeImportedAsk(ref); err != nil {
+		if id, _, err := g.askIntakeImportedAsk(c.id, ref); err != nil {
 			return protocol.AskIntakeResult{}, err
 		} else if id != "" {
 			continue
@@ -218,7 +218,7 @@ func (g *Gateway) askIntakeImport(ctx context.Context, q protocol.AskIntakeReque
 		return protocol.AskIntakeResult{}, reject("turn %q does not belong to session %q; use the reference from list or read", q.Turn, a.SessionID)
 	}
 	out := protocol.AskIntakeResult{Action: protocol.AskIntakeImport, State: protocol.AskIntakeOK, Ask: &protocol.AskIntakeAsk{}}
-	if id, status, err := g.askIntakeImportedAsk(turn); err != nil {
+	if id, status, err := g.askIntakeImportedAsk(a.SessionID, turn); err != nil {
 		return protocol.AskIntakeResult{}, err
 	} else if id != "" {
 		out.Ask.ID, out.Ask.State = id, protocol.AskIntakeAlreadyImported
@@ -267,7 +267,7 @@ func (g *Gateway) askIntakeImport(ctx context.Context, q protocol.AskIntakeReque
 		// A concurrent import of the same turn hit the open source index.
 		// Close this transaction before reading again on the store's handle.
 		_ = tx.Rollback()
-		if id, status, qerr := g.askIntakeImportedAsk(turn); qerr == nil && id != "" {
+		if id, status, qerr := g.askIntakeImportedAsk(a.SessionID, turn); qerr == nil && id != "" {
 			out.Ask.ID, out.Ask.State = id, protocol.AskIntakeAlreadyImported
 			out.Ask.Detail = "this turn was imported already; that ask is " + status
 			return out, nil
@@ -345,13 +345,20 @@ func askIntakeWaiting(raw string) *protocol.AskIntakeWaiting {
 }
 
 // askIntakeImportedAsk returns the ask id and status of a source key, or "".
-func (g *Gateway) askIntakeImportedAsk(ref string) (string, string, error) {
+// An import for the owner is a request from the session to the chief, not a
+// stored ask (decision 0196): its message id stands for the ask.
+func (g *Gateway) askIntakeImportedAsk(session, ref string) (string, string, error) {
 	var id, status string
 	err := g.store.db.QueryRow(`SELECT id,status FROM inbox_items WHERE source_ref=? ORDER BY created_at DESC LIMIT 1`, ref).Scan(&id, &status)
+	if !errors.Is(err, sql.ErrNoRows) {
+		return id, status, err
+	}
+	lo, hi := ownerItemKeyRange(ref)
+	err = g.store.db.QueryRow(`SELECT id FROM messages WHERE sender=? AND idem_key>=? AND idem_key<? ORDER BY created_at DESC LIMIT 1`, session, lo, hi).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", nil
 	}
-	return id, status, err
+	return id, ownerItemSentToChief, err
 }
 
 // askIntakeExistingAsk returns the newest open ask from a session with its text.

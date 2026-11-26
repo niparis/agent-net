@@ -121,7 +121,16 @@ func ownerItemKey(item protocol.InboxItem) string {
 		return ownerItemKeyPrefix + protocol.NewID("k")
 	}
 	sum := sha256.Sum256([]byte(protocol.NormalizeAskText(item.Text)))
-	return ownerItemKeyPrefix + item.SourceRef + ":" + hex.EncodeToString(sum[:6])
+	lo, _ := ownerItemKeyRange(item.SourceRef)
+	return lo + hex.EncodeToString(sum[:6])
+}
+
+// ownerItemKeyRange is the range of the keys ownerItemKey gives the items of
+// one source, whatever their text: lo is their common start, and hi the first
+// key after them, so a lookup uses the (sender, idem_key) index.
+func ownerItemKeyRange(sourceRef string) (lo, hi string) {
+	base := ownerItemKeyPrefix + sourceRef
+	return base + ":", base + ";"
 }
 
 // ownerItemBody is the request the chief reads: who asks, what, why only the

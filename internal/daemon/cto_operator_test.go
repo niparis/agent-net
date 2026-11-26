@@ -415,7 +415,10 @@ func TestCTOOperatorOwnerReadStaysPrivate(t *testing.T) {
 		t.Fatal(err)
 	}
 	caller, _ := helloPi(t, n, "ordinary", "/fixture", true)
-	_, err := g.gw.Store().CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: n.d.ownerSessionID(), Text: "OWNER_OPERATOR_READ_CANARY"})
+	// A Connected apps consent is owner data that is still stored (decision
+	// 0196 sends other owner items to the chief).
+	_, err := g.gw.Store().CreateInboxItem(protocol.InboxItem{Kind: protocol.AskKindApproval, SessionID: n.d.ownerSessionID(), Node: "apps",
+		FromKind: protocol.AskFromApps, SourceRef: "app-consent:canary", Text: "OWNER_OPERATOR_READ_CANARY"})
 	if err != nil {
 		t.Fatal(err)
 	}

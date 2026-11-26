@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -72,5 +74,39 @@ func TestPermissionResultLogSettlesOnUndo(t *testing.T) {
 	log, err = s.DeskLog(5)
 	if err != nil || len(log) != 1 || !strings.HasPrefix(log[0].Text, "Undone: ") || len(log[0].Options) != 0 {
 		t.Fatalf("log after the undo: %+v %v", log, err)
+	}
+}
+
+// With no Desk (decision 0196) the owner's yes reaches the CTO in its chat,
+// and the CTO finds the proposal to apply in the pending list. A decided
+// proposal is not in it, and only the owner's machine may read it.
+func TestPendingPermissionProposalsFrame(t *testing.T) {
+	s, node, session := permissionRig(t)
+	owner, err := s.UpsertSession(node, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: protocol.OwnerNativeID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	propose := func(rule string) string {
+		t.Helper()
+		res, err := s.ProposePermission(protocol.PermissionProposeFrame{SessionID: session,
+			PermissionProposeRequest: protocol.PermissionProposeRequest{Rules: []string{rule}, Targets: []string{"forge"}, Reason: "merge PRs"}}, node)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.ID
+	}
+	decided, pending := propose("Bash(gh pr merge *)"), propose("Bash(gh pr view *)")
+	if _, err := s.db.Exec(`UPDATE permission_proposals SET status='rejected' WHERE id=?`, decided); err != nil {
+		t.Fatal(err)
+	}
+	g := &Gateway{store: s}
+	if _, err := g.handle(context.Background(), &nodeConn{id: node}, protocol.FramePermissionPending, []byte(`{}`)); err == nil {
+		t.Fatal("pending proposals listed without the owner")
+	}
+	raw, _ := json.Marshal(protocol.PermissionGetFrame{Owner: owner})
+	out, err := g.handle(context.Background(), &nodeConn{id: node}, protocol.FramePermissionPending, raw)
+	got, ok := out.([]protocol.PermissionProposal)
+	if err != nil || !ok || len(got) != 1 || got[0].ID != pending || got[0].Status != "pending" || got[0].Rules[0] != "Bash(gh pr view *)" {
+		t.Fatalf("pending proposals: %#v %v", out, err)
 	}
 }

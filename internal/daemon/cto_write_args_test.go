@@ -434,17 +434,6 @@ func TestCTOMergedToolsTakeReasonAndOwnerWords(t *testing.T) {
 	if _, err := g.gw.Store().AddProjects(n.cfg.NodeID, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "display-project", Path: "/work/display-project"}}}); err != nil {
 		t.Fatal(err)
 	}
-	questionSession, err := g.gw.Store().UpsertSession(n.cfg.NodeID, protocol.SessionInfo{Harness: "pi", NativeID: "offline-question"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	question, err := g.gw.Store().CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: questionSession, Text: "Can you check this?"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := g.gw.Store().SetSessionOffline(n.cfg.NodeID, questionSession); err != nil {
-		t.Fatal(err)
-	}
 
 	// owner_words is allowed only on the tools in ctoWordsTools.
 	withWords := func(args map[string]any) map[string]any {
@@ -485,9 +474,11 @@ func TestCTOMergedToolsTakeReasonAndOwnerWords(t *testing.T) {
 				t.Fatalf("worker_change: %v", err)
 			}
 		}},
-		{"answer", map[string]any{"kind": "inbox", "id": question.ID, "answer": "yes"}, func(t *testing.T, _ any, err error) {
-			if err != nil {
-				t.Fatal(err)
+		// An owner question is no stored item since decision 0196. An unknown
+		// item still reaches the gateway's answer, so its error proves the same.
+		{"answer", map[string]any{"kind": "inbox", "id": "i_not_stored", "answer": "yes"}, func(t *testing.T, _ any, err error) {
+			if err == nil || !strings.Contains(err.Error(), "inbox item not found") {
+				t.Fatalf("answer: %v", err)
 			}
 		}},
 	}
@@ -533,7 +524,7 @@ func TestCTOMergedToolsTakeReasonAndOwnerWords(t *testing.T) {
 // mcp_servers_by_path is filled by the daemon from the folder's own .mcp.json
 // (trustMCPNames), so the owner's ask names the servers the click approves. It
 // is not an argument of the tool, so a CTO call that names it is refused and
-// opens no ask.
+// stores no proposal.
 func TestCTOWritePermissionProposeRefusesDaemonField(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")
@@ -542,30 +533,21 @@ func TestCTOWritePermissionProposeRefusesDaemonField(t *testing.T) {
 	if err := n.d.registerCTOSession(ctx); err != nil {
 		t.Fatal(err)
 	}
-	cli := cliClient(t, n)
-	asks := func(t *testing.T) int {
+	pending := func(t *testing.T) int {
 		t.Helper()
-		var box struct {
-			Items []protocol.InboxItem `json:"items"`
-		}
-		if err := json.Unmarshal(cli.mustCall("inbox_list", nil), &box); err != nil {
+		out, err := n.d.readCTOTool(ctx, "cto_proposals_find", json.RawMessage(`{"kind":"permission"}`))
+		if err != nil {
 			t.Fatal(err)
 		}
-		count := 0
-		for _, item := range box.Items {
-			if item.Kind == protocol.AskKindPermission {
-				count++
-			}
-		}
-		return count
+		return out.(ctoList[map[string]any]).Total
 	}
-	before := asks(t)
+	before := pending(t)
 	args := fmt.Sprintf(`{"kind":"trust","machine":%q,"targets":["/work/permission-test"],"reason":"Claude Code cannot start here","mcp_servers_by_path":{"/work/permission-test":["forged"]}}`, n.cfg.Hostname)
 	if _, err := n.d.runCTOToolRaw(ctx, "agent_permission_propose", json.RawMessage(args)); err == nil || !strings.Contains(err.Error(), "mcp_servers_by_path") {
 		t.Fatalf("daemon-only field: %v", err)
 	}
-	if got := asks(t); got != before {
-		t.Fatalf("refused call opened an ask: %d -> %d", before, got)
+	if got := pending(t); got != before {
+		t.Fatalf("refused call stored a proposal: %d -> %d", before, got)
 	}
 
 	// The same call without the daemon field reaches the gateway.
@@ -573,8 +555,8 @@ func TestCTOWritePermissionProposeRefusesDaemonField(t *testing.T) {
 	if _, err := n.d.runCTOToolRaw(ctx, "agent_permission_propose", json.RawMessage(right)); err != nil {
 		t.Fatalf("right call: %v", err)
 	}
-	if got := asks(t); got != before+1 {
-		t.Fatalf("right call did not open an ask: %d -> %d", before, got)
+	if got := pending(t); got != before+1 {
+		t.Fatalf("right call did not store a pending proposal: %d -> %d", before, got)
 	}
 }
 

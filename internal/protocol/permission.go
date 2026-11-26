@@ -159,6 +159,10 @@ const FramePermissionOwnerApply = "permission.owner_apply"
 // FramePermissionGet reads one stored proposal for the owner or the CTO.
 const FramePermissionGet = "permission.get"
 
+// FramePermissionPending lists the pending proposals, newest first, for the
+// owner or the CTO. It takes a PermissionGetFrame without a proposal_id.
+const FramePermissionPending = "permission.pending"
+
 // PermissionOwnerApplyRequest is cto_op permission_apply. Give id alone to
 // approve a proposal that waits on the Desk, or kind, rules, targets and
 // machine as agent_permission_propose takes them for a new grant.

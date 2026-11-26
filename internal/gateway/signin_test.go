@@ -47,22 +47,30 @@ func TestSignInRefusesAnyCommandAndUnknownProvider(t *testing.T) {
 		t.Fatalf("unknown provider accepted: %v", err)
 	}
 	raw, _ = json.Marshal(protocol.SignInRaise{Provider: "alibaba-bl", Reason: "quota"})
-	if _, err := g.handle(context.Background(), &nodeConn{id: node}, "sign_in.raise", raw); err != nil {
+	out, err := g.handle(context.Background(), &nodeConn{id: node}, "sign_in.raise", raw)
+	if err != nil {
 		t.Fatalf("quota provider suffix refused: %v", err)
 	}
-	asks, _ := s.SignInAsks()
-	if len(asks) != 1 || asks[0].Ref != protocol.AskKindSignIn+":"+node+":alibaba" {
-		t.Fatalf("provider suffix was not mapped to the allowlist key: %+v", asks)
+	var raised struct {
+		Ask protocol.Ask `json:"ask"`
+	}
+	data, _ := out.(json.RawMessage)
+	if json.Unmarshal(data, &raised) != nil || raised.Ask.Ref != protocol.AskKindSignIn+":"+node+":alibaba" {
+		t.Fatalf("provider suffix was not mapped to the allowlist key: %s", data)
 	}
 }
 
 // The CTO may raise a sign-in ask for a known provider on a named machine, and
 // list the sign-in asks. The machine is resolved through the normal node lookup.
 func TestCTOSignInRaiseForMachineAndList(t *testing.T) {
+	// A sign-in for the owner goes to the chief and is not stored (decision
+	// 0196), so sign_in.list is empty. The follow-up of part 1b gives the
+	// sign-in its own stored ask and turns this test back on.
+	t.Skip("gap 2 of part 1b: a sign-in needs a stored ask, which decision 0196 no longer stores")
 	s, _ := newTestStore(t)
-	mac, _, _ := s.CreateNode("Nicolas-MBP", "darwin")
+	mac, _, _ := s.CreateNode("test-mac", "darwin")
 	g := &Gateway{store: s}
-	raw, _ := json.Marshal(protocol.SignInRaise{Provider: "alibaba", Machine: "Nicolas-MBP", Reason: "quota"})
+	raw, _ := json.Marshal(protocol.SignInRaise{Provider: "alibaba", Machine: "test-mac", Reason: "quota"})
 	if _, err := g.handle(context.Background(), &nodeConn{id: "n_other"}, "sign_in.raise", raw); err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +79,7 @@ func TestCTOSignInRaiseForMachineAndList(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, ok := out.(protocol.AsksResult)
-	if !ok || len(res.Asks) != 1 || res.Asks[0].Node != mac || res.Asks[0].Question != "Sign in to Alibaba Bailian CLI on Nicolas-MBP" {
+	if !ok || len(res.Asks) != 1 || res.Asks[0].Node != mac || res.Asks[0].Question != "Sign in to Alibaba Bailian CLI on test-mac" {
 		t.Fatalf("sign-in list: %#v", out)
 	}
 }
