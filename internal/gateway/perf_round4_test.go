@@ -105,11 +105,7 @@ func refNodesInfo(g *Gateway) (protocol.NodesInfo, error) {
 	if err != nil {
 		return protocol.NodesInfo{}, err
 	}
-	calibration, err := g.store.Calibration()
-	if err != nil {
-		return protocol.NodesInfo{}, err
-	}
-	return protocol.NodesInfo{GatewayVersion: g.opts.Version, Nodes: nodes, Playbook: notes, Calibration: calibration, GatewayWarnings: g.ExposureWarnings()}, nil
+	return protocol.NodesInfo{GatewayVersion: g.opts.Version, Nodes: nodes, Playbook: notes, GatewayWarnings: g.ExposureWarnings()}, nil
 }
 
 // refApplyPending is applyPending as it was: all requests of the last day.

@@ -232,7 +232,7 @@ func (s *Store) editWorkerProfiles(edit func([]protocol.WorkerProfile) ([]protoc
 	if changed {
 		s.settingsNotify()
 	}
-	return s.refreshQuality()
+	return s.refreshPicker()
 }
 
 func (s *Store) AddWorkerProfile(p protocol.WorkerProfile) error {

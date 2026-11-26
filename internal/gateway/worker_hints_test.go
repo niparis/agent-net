@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -81,7 +80,6 @@ func TestBriefDefectChargedToCallerNotWorker(t *testing.T) {
 	node, _, _ := s.CreateNode("mac", "linux")
 	caller := ratingCaller(t, s, node, "caller", "claude-opus-5-5")
 	worker := ratingRun(t, s, node, caller, "p/m:high", "hard")
-	before := s.QualityAnalysis()
 
 	out, err := s.AddRating(protocol.RateFrame{RateRequest: protocol.RateRequest{
 		Worker: worker, Kind: protocol.RateKindBriefDefect, Severity: 2, Note: "the brief named the wrong branch",
@@ -114,28 +112,6 @@ func TestBriefDefectChargedToCallerNotWorker(t *testing.T) {
 	}
 	if n != 0 {
 		t.Fatalf("the brief defect also counted against the worker: %d worker defects", n)
-	}
-	if after := s.QualityAnalysis(); !reflect.DeepEqual(before, after) {
-		t.Fatalf("the picker quality changed after a brief defect:\nbefore %+v\nafter  %+v", before, after)
-	}
-	cal, err := s.Calibration()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cal.Defects != 0 {
-		t.Fatalf("calibration defects = %d, want 0", cal.Defects)
-	}
-	found := false
-	for _, c := range cal.Callers {
-		if c.Caller == caller {
-			found = true
-			if c.BriefDefects != 1 {
-				t.Fatalf("caller brief defects = %d, want 1", c.BriefDefects)
-			}
-		}
-	}
-	if !found {
-		t.Fatalf("the caller is not in the calibration: %+v", cal.Callers)
 	}
 }
 

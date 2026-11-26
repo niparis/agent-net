@@ -41,7 +41,6 @@ func readCases() []readCase {
 		{"agent", agentOneTables, func(s *Store) { s.Agent(richAgentID) }},
 		{"visible graph", visibleTables, func(s *Store) { s.visibleGraph(false) }},
 		{"worker failures", failuresTables, func(s *Store) { s.RecentWorkerFailures("n_readcase", "opencode") }},
-		{"calibration", calibrationTables, func(s *Store) { s.Calibration() }},
 		{"learned list", learnedListTables, func(s *Store) { s.OwnerLearned() }},
 	}
 }

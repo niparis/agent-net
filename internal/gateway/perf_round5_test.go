@@ -6,7 +6,6 @@ import (
 	"os"
 	"reflect"
 	"sort"
-	"strings"
 	"testing"
 	"time"
 
@@ -14,80 +13,6 @@ import (
 )
 
 // ---- the code as it was before round 5, kept here as the reference ----
-
-// refTaskRuns is taskRuns as it was.
-type refTaskRuns struct {
-	caller, model, harness, difficulty string
-	continueCount, fixCount, midrun    int
-	endedAt                            int64
-	nonStopped, recent, hasRoot        bool
-	sessions                           map[string]bool
-	touches                            map[string]bool
-}
-
-// refReworkTasks is reworkTasks as it was: it scanned worker_runs.
-func refReworkTasks(s *Store, cut int64) ([]*refTaskRuns, []string, error) {
-	rows, err := s.db.Query(`SELECT session_id,task_id,caller,model,harness,difficulty,touches,outcome,ended_at,continue_count,fix_count,midrun_count FROM worker_runs ORDER BY ended_at,id`)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer rows.Close()
-	tasks := map[string]*refTaskRuns{}
-	var order, callers []string
-	seenCaller := map[string]bool{}
-	for rows.Next() {
-		var sid, root, caller, model, harness, difficulty, touches, outcome string
-		var ended int64
-		var cont, fix, mid int
-		if err := rows.Scan(&sid, &root, &caller, &model, &harness, &difficulty, &touches, &outcome, &ended, &cont, &fix, &mid); err != nil {
-			return nil, nil, err
-		}
-		if ended >= cut && caller != "" && !seenCaller[caller] {
-			seenCaller[caller] = true
-			callers = append(callers, caller)
-		}
-		if sid == "" {
-			continue
-		}
-		if root == "" {
-			root = sid
-		}
-		t := tasks[root]
-		if t == nil {
-			t = &refTaskRuns{caller: caller, model: model, harness: harness, difficulty: difficulty, sessions: map[string]bool{}, touches: map[string]bool{}}
-			tasks[root] = t
-			order = append(order, root)
-		}
-		if sid == root && !t.hasRoot {
-			t.caller, t.model, t.harness, t.difficulty = caller, model, harness, difficulty
-			t.hasRoot = true
-		}
-		for _, area := range strings.Split(touches, ",") {
-			if area != "" {
-				t.touches[area] = true
-			}
-		}
-		t.sessions[sid] = true
-		t.continueCount += cont
-		t.fixCount += fix
-		t.midrun += mid
-		t.nonStopped = t.nonStopped || outcome != protocol.OutcomeStopped && outcome != protocol.OutcomeInfra
-		t.recent = t.recent || ended >= cut
-		if ended > t.endedAt {
-			t.endedAt = ended
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, nil, err
-	}
-	out := make([]*refTaskRuns, 0, len(order))
-	for _, root := range order {
-		if t := tasks[root]; t.recent && t.nonStopped {
-			out = append(out, t)
-		}
-	}
-	return out, callers, nil
-}
 
 // refTrackRecords is TrackRecords as it was: it queried worker_runs.
 func refTrackRecords(s *Store, nodeID string, window time.Duration) ([]protocol.TrackRecord, error) {
@@ -176,109 +101,6 @@ func refMedian(values []int64) int64 {
 	return int64(math.Round(float64(v[m-1]+v[m]) / 2))
 }
 
-// refCalibration is Calibration as it was, with the old reworkTasks.
-func refCalibration(s *Store) (protocol.Calibration, error) {
-	cut := s.now().Add(-calibrationWindow).Unix()
-	tasks, _, err := refReworkTasks(s, cut)
-	if err != nil {
-		return protocol.Calibration{}, err
-	}
-	defects, err := s.DefectCountsBySession(cut)
-	if err != nil {
-		return protocol.Calibration{}, err
-	}
-	defectRework, err := s.DefectReworkBySession(cut)
-	if err != nil {
-		return protocol.Calibration{}, err
-	}
-	totalDefects := 0
-	for _, n := range defects {
-		totalDefects += n
-	}
-	samples := []protocol.CalibrationSample{}
-	for _, task := range tasks {
-		if task.caller == "" {
-			continue
-		}
-		difficulty := task.difficulty
-		if difficulty == "" {
-			difficulty = "normal"
-		}
-		fix := task.fixCount
-		for session := range task.sessions {
-			fix += defectRework[session]
-		}
-		samples = append(samples, protocol.CalibrationSample{Caller: task.caller, Difficulty: difficulty,
-			Continue: task.continueCount, Fix: fix, EndedAt: task.endedAt})
-	}
-	scores, err := s.scores()
-	if err != nil {
-		return protocol.Calibration{}, err
-	}
-	callers := []string{}
-	seen := map[string]bool{}
-	for _, sample := range samples {
-		if !seen[sample.Caller] {
-			seen[sample.Caller] = true
-			callers = append(callers, sample.Caller)
-		}
-	}
-	names, models, strong, err := s.callerFacts(scores, callers)
-	if err != nil {
-		return protocol.Calibration{}, err
-	}
-	cal := protocol.BuildCalibration(samples, strong)
-	ratings, err := s.RatingCounts()
-	if err != nil {
-		return protocol.Calibration{}, err
-	}
-	cal.Ratings = ratings
-	cal.Defects = totalDefects
-	cal.Quality = s.QualityAnalysis()
-	for i := range cal.Callers {
-		cal.Callers[i].Name = names[cal.Callers[i].Caller]
-		cal.Callers[i].Model = models[cal.Callers[i].Caller]
-	}
-	sort.SliceStable(cal.Callers, func(i, j int) bool {
-		a, b := cal.Callers[i], cal.Callers[j]
-		if a.Name != b.Name {
-			return a.Name < b.Name
-		}
-		return a.Caller < b.Caller
-	})
-	return cal, nil
-}
-
-// ---- helpers ----
-
-// sameTasks fails unless the tasks are what the old reworkTasks gave.
-func sameTasks(t *testing.T, s *Store, cut int64) {
-	t.Helper()
-	got, gotCallers, err := s.reworkTasks(cut)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want, wantCallers, err := refReworkTasks(s, cut)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(gotCallers, wantCallers) {
-		t.Fatalf("cut %d callers: got %v want %v", cut, gotCallers, wantCallers)
-	}
-	if len(got) != len(want) {
-		t.Fatalf("cut %d: %d tasks, want %d", cut, len(got), len(want))
-	}
-	for i := range got {
-		g, w := got[i], want[i]
-		if g.caller != w.caller || g.model != w.model || g.harness != w.harness || g.difficulty != w.difficulty ||
-			g.continueCount != w.continueCount || g.fixCount != w.fixCount || g.midrun != w.midrun ||
-			g.endedAt != w.endedAt || g.nonStopped != w.nonStopped || g.hasRoot != w.hasRoot ||
-			!reflect.DeepEqual(g.sessions, w.sessions) || !reflect.DeepEqual(g.touches, w.touches) {
-			t.Fatalf("cut %d task %d: got %+v want %+v", cut, i, *g, *w)
-		}
-	}
-}
-
 // sameTracks fails unless TrackRecords is what the old query gave.
 func sameTracks(t *testing.T, s *Store, nodeID string, window time.Duration) {
 	t.Helper()
@@ -293,23 +115,6 @@ func sameTracks(t *testing.T, s *Store, nodeID string, window time.Duration) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("node %q window %v:\n got %+v\nwant %+v", nodeID, window, got, want)
 	}
-}
-
-// sameCalibration fails unless Calibration is what the old code gave.
-func sameCalibration(t *testing.T, s *Store) protocol.Calibration {
-	t.Helper()
-	got, err := s.Calibration()
-	if err != nil {
-		t.Fatal(err)
-	}
-	want, err := refCalibration(s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("calibration:\n got %+v\nwant %+v", got, want)
-	}
-	return got
 }
 
 type runsFixture struct {
@@ -376,20 +181,6 @@ func runsFix(t *testing.T) *runsFixture {
 	return f
 }
 
-// ---- the copy of worker_runs ----
-
-func TestReworkTasksSameAsBefore(t *testing.T) {
-	f := runsFix(t)
-	now := f.c.now()
-	for _, cut := range []int64{0, now.Add(-45 * 24 * time.Hour).Unix(), now.Add(-calibrationWindow).Unix(), now.Add(-6 * time.Hour).Unix(), now.Add(-110 * time.Minute).Unix(), now.Add(time.Hour).Unix()} {
-		sameTasks(t, f.s, cut)
-	}
-	tasks, _, err := f.s.reworkTasks(now.Add(-calibrationWindow).Unix())
-	if err != nil || len(tasks) < 5 {
-		t.Fatalf("the fixture gave %d tasks: %v", len(tasks), err)
-	}
-}
-
 func TestTrackRecordsSameAsBefore(t *testing.T) {
 	f := runsFix(t)
 	for _, node := range []string{"", f.node1, f.node2, "no-such-node"} {
@@ -403,57 +194,37 @@ func TestTrackRecordsSameAsBefore(t *testing.T) {
 	}
 }
 
-func TestCalibrationSameAsBefore(t *testing.T) {
-	f := runsFix(t)
-	for i := 0; i < 3; i++ {
-		cal := sameCalibration(t, f.s)
-		if i == 0 && len(cal.Callers) == 0 {
-			t.Fatal("the fixture gave no callers")
-		}
-	}
-}
-
 // Time passing moves the window without any write: the copy holds no cut.
 func TestRunsCopyFollowsTheClock(t *testing.T) {
 	f := runsFix(t)
-	before := sameCalibration(t, f.s)
 	trackBefore, _ := f.s.TrackRecords("", 0)
 	f.c.advance(30*24*time.Hour - 12*time.Hour)
-	after := sameCalibration(t, f.s)
 	sameTracks(t, f.s, "", 0)
-	sameTasks(t, f.s, f.c.now().Add(-calibrationWindow).Unix())
 	trackAfter, _ := f.s.TrackRecords("", 0)
-	if reflect.DeepEqual(before, after) && reflect.DeepEqual(trackBefore, trackAfter) {
+	if reflect.DeepEqual(trackBefore, trackAfter) {
 		t.Fatal("time passing did not move the window")
 	}
 }
 
-// Each kind of write to worker_runs, and to the ratings and defects that
-// Calibration adds, reaches the next call.
+// Each kind of write to worker_runs reaches the next call.
 func TestRunsCopyFollowsEveryWrite(t *testing.T) {
 	f := runsFix(t)
 	s := f.s
-	snapshots := func() (protocol.Calibration, []protocol.TrackRecord) {
+	tracks := func() []protocol.TrackRecord {
 		t.Helper()
-		cal := sameCalibration(t, s)
 		sameTracks(t, s, "", 0)
 		sameTracks(t, s, f.node1, 0)
-		sameTasks(t, s, s.now().Add(-calibrationWindow).Unix())
 		tr, err := s.TrackRecords("", 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return cal, tr
+		return tr
 	}
-	step := func(name string, change func(), calChanges, trackChanges bool) {
+	step := func(name string, change func()) {
 		t.Helper()
-		calBefore, trBefore := snapshots()
+		before := tracks()
 		change()
-		calAfter, trAfter := snapshots()
-		if calChanges && reflect.DeepEqual(calBefore, calAfter) {
-			t.Fatalf("%s did not change the calibration", name)
-		}
-		if trackChanges && reflect.DeepEqual(trBefore, trAfter) {
+		if reflect.DeepEqual(before, tracks()) {
 			t.Fatalf("%s did not change the track records", name)
 		}
 	}
@@ -465,34 +236,19 @@ func TestRunsCopyFollowsEveryWrite(t *testing.T) {
 			t.Fatal(err)
 		}
 		f.workers = append(f.workers, wid)
-	}, true, true)
-	wid := f.workers[len(f.workers)-1]
-	// A rating of that worker.
-	step("a rating", func() {
-		out, err := s.AddRating(protocol.RateFrame{RateRequest: protocol.RateRequest{Worker: wid, Score: 5, Note: "fine"}, Rater: f.callerA})
-		if err != nil || !out.Accepted {
-			t.Fatalf("rating: %+v %v", out, err)
-		}
-	}, true, false)
-	// A defect found later adds its severity as rework.
-	step("a defect", func() {
-		out, err := s.AddRating(defectFrame(wid, f.callerA, "broke the merge"))
-		if err != nil || !out.Accepted {
-			t.Fatalf("defect: %+v %v", out, err)
-		}
-	}, true, false)
+	})
 	// A change of an existing run, as a backfill makes.
 	step("an update", func() {
 		if _, err := s.db.Exec(`UPDATE worker_runs SET fix_count = fix_count + 7, outcome = ?, run_seconds = 4000 WHERE session_id = ?`, protocol.OutcomeFailed, f.workers[0]); err != nil {
 			t.Fatal(err)
 		}
-	}, true, true)
+	})
 	// A delete, as the retention does.
 	step("a delete", func() {
 		if _, err := s.db.Exec(`DELETE FROM worker_runs WHERE session_id = ?`, f.workers[1]); err != nil {
 			t.Fatal(err)
 		}
-	}, true, true)
+	})
 }
 
 // The copy is read once for as many calls as there are with no write between.
@@ -546,17 +302,11 @@ func TestReadsSameOnDatabaseCopy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, back := range []time.Duration{0, 24 * time.Hour, 7 * 24 * time.Hour, 20 * 24 * time.Hour} {
-		cut := s.now().Add(-back).Unix()
-		sameTasks(t, s, cut)
-	}
-	sameTasks(t, s, s.now().Add(-calibrationWindow).Unix())
 	for _, n := range append([]protocol.NodeView{{}}, nodes...) {
 		for _, window := range []time.Duration{0, 24 * time.Hour, 3 * 24 * time.Hour} {
 			sameTracks(t, s, n.NodeID, window)
 		}
 	}
-	sameCalibration(t, s)
 	for _, f := range []protocol.QueryAgents{{}, {IncludeOwners: true}, {OnlineOnly: true}, {Harness: "claude"}} {
 		want, err := s.agentsBaseWith(agentSelect, f)
 		if err != nil {

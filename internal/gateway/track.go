@@ -133,7 +133,7 @@ func (s *Store) RecordWorkerRun(r protocol.WorkerRun) error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	if err := s.refreshQuality(); err != nil {
+	if err := s.refreshPicker(); err != nil {
 		return err
 	}
 	// A clearly bad track record promotes a note on its own (decision 0022).

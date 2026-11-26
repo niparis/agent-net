@@ -343,9 +343,8 @@ Every candidate the gate skipped gets its own clause, `skipped <candidate>:
   itself. It records a failed verify after merge, a failed test before merge
   (not a flake), and a fix of a shipped change. A failed merger test step counts
   once.
-- **Caller ratings** are stored with each run and feed the quality analysis.
-  The picker does not read them. The ratings code says so, and a test pins the
-  rule.
+- **Caller ratings** are stored with each run. The picker does not read them.
+  The ratings code says so, and a test pins the rule.
 - **Brief defects** (a caller finding that its own brief was poor) are kept apart.
   They never enter the picker.
 - **Playbook notes** are written per model, harness, project and machine. Agent
@@ -377,8 +376,8 @@ decisions [0103](decisions/0103-agent-net-records-late-defects.md) and
   tools, and can undo a change.
 - **Picker settings.** `picker.explore_share` (0.1), `picker.allowed_fraction`
   (0.9), `picker.k` (5), `picker.bucket_width`, `picker.uncertain_n` and
-  `picker.uncertain_boost`, and `picker.weaker_bias`. Two switches from decision
-  0173 are in code and off: `picker.quality_v2` and `picker.ceiling_rule`.
+  `picker.uncertain_boost`, and `picker.weaker_bias`. The switch from decision
+  0173 in code and off is `picker.ceiling_rule`.
 - **Playbook notes.** Write a note for a model, harness, project or machine, and
   pin it so that no later finding changes it.
 - **Pause a model.** Give it a score of 0 in the model scores. No automatic
@@ -436,7 +435,7 @@ These are true of the code today. Some differ from decision 0162 or the README.
   the same proven model wins until its numbers change. The README's "rotates so
   no model takes every job" does not describe a cost pick.
 - **Decision 0173 is a proposal.** It changes how the picker weighs quality. Its
-  two switches are in code and off.
+  ceiling switch is in code and off.
 - **The judge reads only the brief.** A vague brief gives a low-confidence
   score, which means the start runs at normal.
 

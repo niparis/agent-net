@@ -13,7 +13,7 @@ import (
 const ModelUsageDays = 30
 
 // ModelFailureHours is how long a model that failed a worker (provider, billing
-// or auth error) is ranked last by ResolveModelFailed.
+// or auth error) is ranked last by the ranked resolvers.
 const ModelFailureHours = 24
 
 // ModelSuccessDays is how far back a worker that finished with a hand-back
@@ -173,7 +173,7 @@ func (e *NoModelMatchError) Error() string {
 //  2. Otherwise the query is split into words (case does not matter, "4.1"
 //     matches "v4.1"), and the candidates are the ids that contain all words.
 //  3. The candidates are ranked by: a recent successful worker
-//     (ResolveModelRanked), no recent worker failure (ResolveModelFailed), how
+//     (ResolveModelRanked), no recent worker failure (failed), how
 //     many sessions on the machine used the model in the last ModelUsageDays
 //     days (usage), how many used any model of the same provider in that time
 //     (provider usage), the position of its provider in the owner's providers
@@ -199,19 +199,6 @@ type ModelResolution struct {
 	// failed a worker recently. It includes Model when that one failed too and
 	// nothing better matched.
 	Demoted []string
-	// QuotaNote warns that an exact model id draws on a provider that is
-	// exhausted or above QuotaHighPercent. Empty otherwise (decision 0022).
-	QuotaNote string
-}
-
-// ResolveModelFailed is ResolveModelRanked without the recent successes.
-func ResolveModelFailed(query string, models []string, usage map[string]int, providers []string, failed map[string]bool) (ModelResolution, error) {
-	return ResolveModelRanked(query, models, usage, providers, failed, nil)
-}
-
-// ResolveModelQuota is ResolveModelRankedQuota without the recent successes.
-func ResolveModelQuota(query string, models []string, usage map[string]int, providers []string, failed map[string]bool) (ModelResolution, error) {
-	return ResolveModelRankedQuota(query, models, usage, providers, failed, nil)
 }
 
 // ResolveModelRanked is ResolveModelRankedQuota without quotas.

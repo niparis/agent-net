@@ -2,15 +2,12 @@ package gateway
 
 import (
 	"path/filepath"
-	"reflect"
 	"testing"
 )
 
 // The worker tables rework (owner review 2026-11-21) folds nine tables into the
 // rows they describe. This seeds an older database with a row in every one of
-// them, replays the newest migration, and checks where each fact landed. The
-// ratings read their model through the run now, so the test also compares the
-// quality fit before and after.
+// them, replays the newest migration, and checks where each fact landed.
 func TestWorkerTablesMigrationMovesEachFact(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "old.db")
 	s := migrateOnly(t, path, migrationVersion(t, workerTablesMarker)-1)
@@ -51,23 +48,6 @@ func TestWorkerTablesMigrationMovesEachFact(t *testing.T) {
 	exec(`INSERT INTO worker_brief_rejections(caller,task_key,failures,at) VALUES('s_caller','key-1','Limits: missing',600)`)
 	exec(`INSERT INTO table_versions(name,n) VALUES('worker_runs',41) ON CONFLICT(name) DO UPDATE SET n=41`)
 	exec(`INSERT INTO project_policies(node_id,project,policy,updated_at) VALUES('n1','shop','{"delegate":"off"}',1)`)
-
-	// The fit as the old code read it: the copies on the rating rows.
-	var before []qualitySample
-	rows, err := s.db.Query(`SELECT model,harness,effort,difficulty,score FROM worker_ratings ORDER BY id`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for rows.Next() {
-		var x qualitySample
-		if err := rows.Scan(&x.Model, &x.Harness, &x.Effort, &x.Difficulty, &x.Value); err != nil {
-			t.Fatal(err)
-		}
-		x.Model, x.Weight = qualityModel(x.Model), .5
-		before = append(before, x)
-	}
-	rows.Close()
-	want := fitQuality(before)
 
 	if err := replayMigrations(t, s); err != nil {
 		t.Fatal(err)
@@ -160,12 +140,4 @@ func TestWorkerTablesMigrationMovesEachFact(t *testing.T) {
 		}
 	}
 
-	// The ratings read their model through the run: the fit does not move.
-	if err := s.refreshQuality(); err != nil {
-		t.Fatal(err)
-	}
-	got := s.QualityAnalysis()
-	if got.Ratings != len(before) || !reflect.DeepEqual(got.Summary, qualitySummary(want)) || got.Average != want.Average {
-		t.Fatalf("quality moved: ratings %d average %v summary %+v, want %d %v %+v", got.Ratings, got.Average, got.Summary, len(before), want.Average, qualitySummary(want))
-	}
 }

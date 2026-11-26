@@ -443,9 +443,6 @@ func TestQuotaRefusalAgyPerFamily(t *testing.T) {
 	if r := QuotaRefusal(q, "agy", "claude-opus-5-5-high"); !strings.Contains(r, "Claude/GPT") && !strings.Contains(r, "claude_gpt_5h") {
 		t.Fatalf("opus not refused: %q", r)
 	}
-	if w := QuotaWarning(q, "agy", "gemini-3.8-flash-low"); w != "" {
-		t.Fatalf("flash warned: %s", w)
-	}
 }
 
 func TestWorkerCandidateFallbackRoster(t *testing.T) {

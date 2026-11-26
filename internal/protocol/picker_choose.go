@@ -159,9 +159,8 @@ type PickerCost struct {
 	CostKnown, Recorded, PriceUnknown, MeetsFloor bool
 }
 
-// PickerCostOptions select the experimental cost and optional replay policy.
+// PickerCostOptions select the cost replay policy and its weights.
 type PickerCostOptions struct {
-	QualityV2                      bool
 	Alpha, BestQuality, CleanFloor float64
 }
 
@@ -216,16 +215,7 @@ func PickerExpectedCosts(entries []*PickerCost, table *PickerTable, bucket int, 
 		if c.N < set.UncertainN {
 			e.Pass = c.Lo
 		}
-		if options.QualityV2 {
-			// Independent retries have a geometric mean of 1/p runs per acceptance.
-			if e.Pass == 0 {
-				e.Expected = math.Inf(1)
-			} else {
-				e.Expected = e.Cost / e.Pass
-			}
-		} else {
-			e.Expected = e.Cost + (1-e.Pass)*e.Rescue
-		}
+		e.Expected = e.Cost + (1-e.Pass)*e.Rescue
 		e.Rank = e.Expected * math.Exp(options.Alpha*(options.BestQuality-e.Quality))
 		e.MeetsFloor = e.Pass >= options.CleanFloor
 	}
@@ -236,7 +226,7 @@ func expectedCosts(entries []*pickerEntry, table *PickerTable, bucket int, price
 	for i, e := range entries {
 		costs[i] = &PickerCost{Key: e.key, Name: e.name, Quality: e.cell.Score}
 	}
-	PickerExpectedCosts(costs, table, bucket, prices, set, PickerCostOptions{QualityV2: set.QualityV2})
+	PickerExpectedCosts(costs, table, bucket, prices, set, PickerCostOptions{})
 	for i, e := range entries {
 		c := costs[i]
 		e.cost, e.pass, e.rescue, e.expected = c.Cost, c.Pass, c.Rescue, c.Expected
@@ -256,8 +246,8 @@ const (
 // proven: 1 divided by its expected cost (cost plus rework, decision 0161). A
 // cheaper run is drawn more often. The cost is held inside the fallback bounds,
 // so the weight is never zero and every allowed candidate keeps a chance to
-// build a record. An unbounded expected cost (the quality v2 rule, no clean run
-// yet) reads as the top bound, and a zero cost as the bottom one.
+// build a record. A cost above the top bound reads as the top bound, and a
+// zero cost as the bottom one.
 func FallbackDrawWeight(expected float64) float64 {
 	if math.IsNaN(expected) || expected > fallbackCostMax {
 		expected = fallbackCostMax
@@ -778,44 +768,4 @@ func cellPickRows(entries []*pickerEntry, p cellPick) []PickCandidate {
 		}
 	}
 	return rows
-}
-
-// PickerCostRow is the cost terms of one candidate in one bucket.
-type PickerCostRow struct {
-	Name, Key              string
-	N                      int
-	Cost, Pass, Rescue     float64
-	Expected               float64
-	Recorded, PriceUnknown bool
-	CostKnown              bool
-	CostUnbounded          bool `json:"cost_unbounded,omitempty"`
-}
-
-// PickerCostRows gives the cost terms the pick compares for each candidate at
-// the D of the input, dearest last. It applies no quota and no allowed test: it
-// is for reports.
-func PickerCostRows(candidates []WorkerModelCandidate, in *PickerInput) []PickerCostRow {
-	table := in.Table
-	bucket := table.Bucket(in.D)
-	var entries []*pickerEntry
-	for _, c := range candidates {
-		key := PickerModelKey(c.Harness, c.Model)
-		e := &pickerEntry{c: c, key: key, name: c.Name, cell: table.Cell(key, bucket), allowed: true}
-		if e.name == "" {
-			e.name = PickerModelDisplay(key)
-		}
-		entries = append(entries, e)
-	}
-	expectedCosts(entries, table, bucket, in.Prices, table.Settings())
-	sort.SliceStable(entries, func(i, j int) bool { return entries[i].expected < entries[j].expected })
-	out := make([]PickerCostRow, len(entries))
-	for i, e := range entries {
-		out[i] = PickerCostRow{Name: e.name, Key: e.key, N: e.cell.N, Cost: e.cost, Pass: e.pass, Rescue: e.rescue, Expected: e.expected,
-			Recorded: e.recorded, PriceUnknown: e.priceUnknown, CostKnown: e.costKnown}
-		if math.IsInf(e.expected, 1) {
-			out[i].Expected = 0
-			out[i].CostUnbounded = true
-		}
-	}
-	return out
 }

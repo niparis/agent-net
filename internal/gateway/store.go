@@ -45,15 +45,10 @@ type Store struct {
 	// stateTopicBumps counts the writes of gateway_state values that a screen
 	// shows, one counter per topic (see bumpStateTopics).
 	stateTopicBumps sync.Map
-	qualityMu       sync.Mutex
 	picker          pickerState
 	prices          priceState
 	runsMu          sync.Mutex
 	runs            *runsSnapshot
-	quality         protocol.QualityAnalysis
-	qualityFit      qualityFit
-	reworkFit       qualityFit
-	qualityStrong   map[string]int
 	reminderMu      sync.Mutex
 	// chiefQuota is the quota verdict on the chief session (chief_health.go).
 	chiefQuota atomic.Pointer[chiefQuotaReading]
@@ -2018,7 +2013,7 @@ func openStoreWith(path string, o storeOpen) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if err := s.refreshQuality(); err != nil {
+	if err := s.refreshPicker(); err != nil {
 		db.Close()
 		return nil, err
 	}

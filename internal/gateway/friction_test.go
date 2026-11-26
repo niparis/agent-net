@@ -114,19 +114,11 @@ func TestFrictionFindFiltersAndCounts(t *testing.T) {
 	}
 }
 
-// Friction never scores anyone: the picker's inputs, the calibration and the
-// defect counts are the same before and after rows are stored.
+// Friction never scores anyone: the picker's inputs are the same before and
+// after rows are stored.
 func TestFrictionDoesNotChangePickerOrWorkerCounts(t *testing.T) {
 	s, _ := newTestStore(t)
 	beforePicker := s.pickerTable()
-	beforeDefects, err := s.DefectCountsBySession(0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	beforeCalibration, err := s.Calibration()
-	if err != nil {
-		t.Fatal(err)
-	}
 	if _, err := s.db.Exec(`INSERT INTO worker_ratings(session_id,caller,score,at) VALUES('s_rated','s_caller',5,?)`, s.now().Unix()); err != nil {
 		t.Fatal(err)
 	}
@@ -140,20 +132,6 @@ func TestFrictionDoesNotChangePickerOrWorkerCounts(t *testing.T) {
 	}
 	if got := s.pickerTable(); !reflect.DeepEqual(got, beforePicker) {
 		t.Fatalf("picker rows changed: %+v -> %+v", beforePicker, got)
-	}
-	afterDefects, err := s.DefectCountsBySession(0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(afterDefects, beforeDefects) {
-		t.Fatalf("defect counts changed: %+v -> %+v", beforeDefects, afterDefects)
-	}
-	afterCalibration, err := s.Calibration()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(afterCalibration, beforeCalibration) {
-		t.Fatal("calibration changed after a friction report")
 	}
 	afterScores, err := s.scores()
 	if err != nil {

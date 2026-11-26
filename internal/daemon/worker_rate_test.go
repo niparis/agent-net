@@ -66,20 +66,6 @@ func TestWorkerDefectOwnerPath(t *testing.T) {
 	if !out.Accepted || out.Kind != protocol.RateKindDefectLater || out.Worker != wid || out.Severity != 3 {
 		t.Fatalf("owner defect: %+v", out)
 	}
-	defects, err := g.gw.Store().DefectCountsBySession(0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if defects[wid] != 1 {
-		t.Fatalf("defects: %v", defects)
-	}
-	rework, err := g.gw.Store().DefectReworkBySession(0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if rework[wid] != 3 {
-		t.Fatalf("defect severity points: %v", rework)
-	}
 	// The agent tool is still closed to the command line: the owner has its
 	// own call, so a score cannot arrive this way.
 	if _, err := w.cli.call("agent_rate", protocol.RateRequest{Worker: wid, Score: 4}); err == nil {

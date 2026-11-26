@@ -401,7 +401,6 @@ func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapsh
 					snap.Unchanged = append(snap.Unchanged, c.method)
 				} else {
 					snap.Nodes, snap.NodesETag = v.Nodes, v.ETag
-					snap.Calibration = v.Calibration
 					snap.GatewayWarnings = v.GatewayWarnings
 				}
 			case protocol.OpWorkerProfiles:

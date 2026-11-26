@@ -152,6 +152,9 @@ func ConfirmOverride(f OverrideFacts, c ConfirmContext, chief bool) error {
 	return nil
 }
 
+// DifficultyLevels is the tier order, weakest first.
+var DifficultyLevels = []string{"trivial", "simple", "normal", "hard", "very_complex"}
+
 // levelIndex is the place of a level in DifficultyLevels, or -1.
 func levelIndex(level string) int {
 	for i, l := range DifficultyLevels {

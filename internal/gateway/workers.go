@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +22,26 @@ import (
 
 // launchWait is how long the gateway waits for a machine to start a worker.
 const launchWait = 75 * time.Second
+
+// WorkerSessionOwner returns the session that started a worker, from the
+// worker part of its session record. The record is still there when the end
+// report arrives; the run keeps the caller after the session is cleaned. A
+// missing session or an older machine gives an empty owner.
+func (s *Store) WorkerSessionOwner(sessionID string) (string, error) {
+	var raw string
+	err := s.db.QueryRow(`SELECT worker FROM sessions WHERE id = ?`, sessionID).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) || raw == "" {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	var w protocol.WorkerInfo
+	if json.Unmarshal([]byte(raw), &w) != nil {
+		return "", nil
+	}
+	return w.Owner, nil
+}
 
 func (g *Gateway) serveWorker(ctx context.Context, nc *nodeConn, h protocol.Header, raw []byte) {
 	start, sent := time.Now(), 0
@@ -1509,13 +1530,6 @@ func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.Harne
 		resolved := res.Model
 		if resolved != asked || len(res.Demoted) > 0 {
 			modelNote = appendModelNote(modelNote, asked+" -> "+resolved)
-		}
-		if res.QuotaNote != "" {
-			if modelNote == "" {
-				modelNote = asked + " (" + res.QuotaNote + ")"
-			} else {
-				modelNote += " (" + res.QuotaNote + ")"
-			}
 		}
 		if len(res.Demoted) > 0 {
 			var parts []string

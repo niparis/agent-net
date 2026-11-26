@@ -188,16 +188,6 @@ func BenchmarkRealGraphContext(b *testing.B) {
 	}
 }
 
-func BenchmarkRealCalibration(b *testing.B) {
-	g := benchRealGateway(b)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		if _, err := g.store.Calibration(); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
 func BenchmarkRealTrackRecords(b *testing.B) {
 	g := benchRealGateway(b)
 	nodes, err := g.store.Nodes()

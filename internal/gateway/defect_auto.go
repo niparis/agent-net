@@ -175,18 +175,18 @@ func (s *Store) RecordFixDefect(fixed string, severity int) (bool, error) {
 		return false, err
 	}
 	if recorded {
-		if err := s.refreshQuality(); err != nil {
+		if err := s.refreshPicker(); err != nil {
 			return true, fmt.Errorf("refresh quality: %w", err)
 		}
 	}
 	return recorded, nil
 }
 
-// refreshAfterAutoDefect refreshes the quality data and the picker table once
-// a transaction that recorded an automatic defect has committed. A failure
-// here is logged: the defect is stored, and the next write refreshes again.
+// refreshAfterAutoDefect refreshes the picker table once a transaction that
+// recorded an automatic defect has committed. A failure here is logged: the
+// defect is stored, and the next write refreshes again.
 func (s *Store) refreshAfterAutoDefect() {
-	if err := s.refreshQuality(); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if err := s.refreshPicker(); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		s.logf("quality.refresh after an automatic defect: %v", err)
 	}
 }

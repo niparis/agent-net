@@ -708,30 +708,3 @@ func TestQualityAgyRowUsesColonEffort(t *testing.T) {
 		t.Fatalf("agy row still uses the dash key:\n%s", body)
 	}
 }
-
-func TestPickerQualityV2Scenario(t *testing.T) {
-	const parent = "gpt-6.1-sol:high"
-	const child = "gpt-6.2-sol:high"
-	var tasks []protocol.PickerTask
-	for i := 0; i < 8; i++ {
-		tasks = append(tasks, protocol.PickerTask{Key: parent, D: 2.5, Score: .8})
-	}
-	set := protocol.DefaultPickerSettings()
-	set.QualityV2 = true
-	table := protocol.BuildPickerTable(tasks, set)
-	analysis := table.Analysis(child)
-	analysis.Profiles = []protocol.PickerProfileRow{{Name: "sol high", Key: child, Model: "gpt-6.2-sol", Scored: false}}
-	for _, size := range [][2]int{{80, 24}, {120, 34}} {
-		m := newModel(size[0], size[1])
-		m.tab = quotasTab
-		m.qualityDetail = true
-		m.picker, m.pickerLoaded = analysis, true
-		m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "sol high", Harness: "codex", Model: "gpt-6.2-sol", Effort: "high"}}
-		m.defaultPickerSelection()
-		view := ansi.Strip(m.testView())
-		if !strings.Contains(view, "gpt-6.2-sol") {
-			t.Fatalf("%dx%d missing child:\n%s", size[0], size[1], view)
-		}
-		writeScreen(t, fmt.Sprintf("picker_quality_v2_%dx%d", size[0], size[1]), view)
-	}
-}

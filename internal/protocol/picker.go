@@ -3,9 +3,7 @@ package protocol
 import (
 	"fmt"
 	"math"
-	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/niparis/agent-net/internal/difficulty"
@@ -36,7 +34,6 @@ const (
 // PickerSettings are the owner and CTO settings of the picker (picker.* in the
 // settings recipe). A zero field takes its default.
 type PickerSettings struct {
-	QualityV2 bool `json:"quality_v2"`
 	// CeilingRule makes the benchmark ceiling a limit: a model whose ceiling
 	// is below the bucket takes work there only when its own record is clearly
 	// as good as the best proven model's (its Lo is at least the best Lo).
@@ -102,14 +99,6 @@ type PickerTaskFacts struct {
 	DefectSeverity                         int
 	FailedTest, FailedAccept, FailedReview int
 	Merged                                 bool
-}
-
-// PickerTaskScoreV2 weights each recorded failure once.
-func PickerTaskScoreV2(f PickerTaskFacts) float64 {
-	if !f.Complete && !f.Merged {
-		return 0
-	}
-	return math.Max(0, 1-.2*float64(f.FailedTest+f.FailedAccept)-.3*float64(f.FailedReview)-.25*float64(f.DefectSeverity))
 }
 
 // PickerTaskScore is 0 for a task that did not end complete. Otherwise it is
@@ -377,36 +366,6 @@ func (t *PickerTable) BucketMean(i int) float64 {
 	return m
 }
 
-var pickerVersion = regexp.MustCompile(`^(.*?)([0-9]+)\.([0-9]+)(-[^:]+:[^:]+)$`)
-
-// pickerParent finds the nearest earlier version of the same model and effort.
-func (t *PickerTable) pickerParent(key string) string {
-	// Astra 6.2 is a new class even if an older similarly named key exists.
-	if strings.Contains(PickerModelDisplay(key), "gpt-6.2-astra:") {
-		return ""
-	}
-	m := pickerVersion.FindStringSubmatch(key)
-	if m == nil || len(t.cells[key]) != 0 {
-		return ""
-	}
-	major, _ := strconv.Atoi(m[2])
-	minor, _ := strconv.Atoi(m[3])
-	parent := ""
-	bestMajor, bestMinor := -1, -1
-	for candidate := range t.cells {
-		p := pickerVersion.FindStringSubmatch(candidate)
-		if p == nil || p[1] != m[1] || p[4] != m[4] {
-			continue
-		}
-		a, _ := strconv.Atoi(p[2])
-		b, _ := strconv.Atoi(p[3])
-		if (a < major || a == major && b < minor) && (a > bestMajor || a == bestMajor && b > bestMinor) {
-			parent, bestMajor, bestMinor = candidate, a, b
-		}
-	}
-	return parent
-}
-
 // Cell is the shrunk score and interval of a key in a bucket.
 //
 //	score    = (sum of the cell's scores + k x bucket mean) / (n + k)
@@ -417,16 +376,6 @@ func (t *PickerTable) pickerParent(key string) string {
 // An empty cell takes the bucket mean.
 func (t *PickerTable) Cell(key string, bucket int) PickerCell {
 	cs := t.cells[key][bucket]
-	if t.settings.QualityV2 && len(t.cells[key]) == 0 {
-		if parent := t.pickerParent(key); parent != "" {
-			source := t.cells[parent][bucket]
-			if source.n > 0 {
-				// Five pseudo-tasks balance the parent's record against the five-task bucket prior.
-				parentScore := t.Cell(parent, bucket).Score
-				cs = pickerStat{n: 5, sum: parentScore * 5, sumSq: (source.variance() + parentScore*parentScore) * 5}
-			}
-		}
-	}
 	mean, bucketVar := t.bucketMeanVariance(bucket)
 	_, allVar := t.allMeanVariance()
 	k, n := t.settings.K, float64(cs.n)

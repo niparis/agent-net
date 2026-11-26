@@ -11,10 +11,14 @@ import (
 )
 
 // The picker table (decision 0105) is built from the whole data set and cached.
-// refreshPicker runs on the same writes as refreshQuality (a worker run, a
-// rating, a defect, a score or profile change) and when a failed accept,
-// review or test step is recorded. A pick reads the cache and never the
-// database.
+// refreshPicker runs on a worker run, a defect, a score or profile change and
+// when a failed accept, review or test step is recorded. A pick reads the
+// cache and never the database.
+
+// pickerTables are the tables the cached table is built from, so a change in
+// any of them moves the screens that show a pick.
+var pickerTables = []string{"worker_runs", "worker_assessments", "worker_defects",
+	"delivery_changes", "delivery_evidence", "model_prices", "setting_values"}
 
 // pickerState is the cached table. The table is immutable once built, so a
 // reader keeps using the pointer it got.
@@ -49,7 +53,6 @@ func (s *Store) pickerSettings() (protocol.PickerSettings, error) {
 	}
 	w := settings.Where{}
 	return protocol.PickerSettings{
-		QualityV2:       snap.Bool("picker.quality_v2", w),
 		CeilingRule:     snap.Bool("picker.ceiling_rule", w),
 		BucketWidth:     snap.Float("picker.bucket_width", w),
 		K:               snap.Float("picker.k", w),
@@ -85,13 +88,13 @@ type pickerTaskRecord struct {
 // once per chain; a continuation costs nothing. Stopped and infrastructure runs
 // do not contribute. No time cut is applied.
 func (s *Store) pickerTaskRecords() ([]pickerTaskRecord, error) {
-	return s.pickerTaskRecordsUsing(nil, false)
+	return s.pickerTaskRecordsUsing(nil)
 }
 
 // pickerTaskRecordsUsing is pickerTaskRecords with the usage of each session
 // given. Nil reads the usage of the runs. The backtest passes the usage it parsed from
 // stored notices for runs that have none recorded.
-func (s *Store) pickerTaskRecordsUsing(usage map[string]protocol.RunTokens, qualityV2 bool) ([]pickerTaskRecord, error) {
+func (s *Store) pickerTaskRecordsUsing(usage map[string]protocol.RunTokens) ([]pickerTaskRecord, error) {
 	snap, err := s.runsSnapshot()
 	if err != nil {
 		return nil, err
@@ -174,30 +177,6 @@ func (s *Store) pickerTaskRecordsUsing(usage map[string]protocol.RunTokens, qual
 		return nil, err
 	}
 
-	merged := map[string]bool{}
-	if qualityV2 {
-		rows, err = s.db.Query(`SELECT json_extract(origin, '$.session_id') FROM delivery_changes WHERE state IN ('merged','done')`)
-		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
-			var session *string
-			if err := rows.Scan(&session); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			if session != nil {
-				merged[*session] = true
-			}
-		}
-		err = rows.Err()
-		rows.Close()
-		if err != nil {
-			return nil, err
-		}
-
-	}
-
 	if usage == nil {
 		if usage, err = s.workerUsage(); err != nil {
 			return nil, err
@@ -253,7 +232,6 @@ func (s *Store) pickerTaskRecordsUsing(usage map[string]protocol.RunTokens, qual
 			c.facts.FailedAccept += failed[session]["accept"]
 			c.facts.FailedReview += failed[session]["review"]
 			c.facts.FailedSteps += failed[session]["test"] + failed[session]["accept"] + failed[session]["review"]
-			c.facts.Merged = c.facts.Merged || merged[session]
 			c.facts.Defects += defects[session][0]
 			c.facts.DefectSeverity += defects[session][1]
 			if d <= 0 {
@@ -268,7 +246,7 @@ func (s *Store) pickerTaskRecordsUsing(usage map[string]protocol.RunTokens, qual
 
 // pickerTasksFrom turns task records into picker tasks, pricing each one's
 // tokens with the book.
-func pickerTasksFrom(records []pickerTaskRecord, book *protocol.PriceBook, qualityV2 bool) []protocol.PickerTask {
+func pickerTasksFrom(records []pickerTaskRecord, book *protocol.PriceBook) []protocol.PickerTask {
 	out := make([]protocol.PickerTask, 0, len(records))
 	for _, r := range records {
 		if r.d <= 0 || r.key == "" {
@@ -276,9 +254,6 @@ func pickerTasksFrom(records []pickerTaskRecord, book *protocol.PriceBook, quali
 		}
 		t := protocol.PickerTask{Key: r.key, D: r.d, Score: protocol.PickerTaskScore(r.facts), Tokens: r.tokens,
 			Dirty: !r.facts.Complete || r.facts.FailedSteps > 0 || r.facts.Defects > 0}
-		if qualityV2 {
-			t.Score = protocol.PickerTaskScoreV2(r.facts)
-		}
 		if p, _, ok := book.PriceOf(r.key); ok && !r.tokens.Zero() {
 			t.Cost = p.Cost(r.tokens)
 		}
@@ -294,7 +269,7 @@ func (s *Store) pickerTasks() ([]protocol.PickerTask, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pickerTasksFrom(records, s.priceBook(), false), nil
+	return pickerTasksFrom(records, s.priceBook()), nil
 }
 
 // refreshPicker rebuilds the cached table from the whole data set.
@@ -305,11 +280,11 @@ func (s *Store) refreshPicker() error {
 	if err != nil {
 		return err
 	}
-	records, err := s.pickerTaskRecordsUsing(nil, set.QualityV2)
+	records, err := s.pickerTaskRecordsUsing(nil)
 	if err != nil {
 		return err
 	}
-	tasks := pickerTasksFrom(records, s.priceBook(), set.QualityV2)
+	tasks := pickerTasksFrom(records, s.priceBook())
 	table := protocol.BuildPickerTable(tasks, set)
 	s.picker.mu.Lock()
 	s.picker.rev++

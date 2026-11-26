@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"encoding/json"
 	"math"
 	"strings"
 	"testing"
@@ -1236,120 +1235,6 @@ func TestPickerCleanCellIsShrunkLikeTheScore(t *testing.T) {
 	}
 }
 
-func TestPickerTaskScoreV2(t *testing.T) {
-	f := PickerTaskFacts{Complete: true, FixRounds: 2, FailedTest: 1, FailedAccept: 1, FailedReview: 1, DefectSeverity: 1}
-	if got := PickerTaskScoreV2(f); math.Abs(got-.05) > 1e-9 {
-		t.Fatalf("score = %v, want 0.05", got)
-	}
-	f.Complete = false
-	if got := PickerTaskScoreV2(f); got != 0 {
-		t.Fatalf("unfinished = %v", got)
-	}
-	f.Merged = true
-	if got := PickerTaskScoreV2(f); math.Abs(got-.05) > 1e-9 {
-		t.Fatalf("merged = %v", got)
-	}
-}
-
-func TestPickerQualityV2Parent(t *testing.T) {
-	tasks := pickTasks("gpt-6.1-sol:high", 2.5, repeat(8, .8, .4)...)
-	tasks = append(tasks, pickTasks("gpt-6.1-astra:high", 2.5, repeat(8, .8)...)...)
-	s := DefaultPickerSettings()
-	s.QualityV2 = true
-	table := BuildPickerTable(tasks, s)
-	b := table.Bucket(2.5)
-	parent := table.Cell("gpt-6.1-sol:high", b)
-	want := (parent.Score + table.BucketMean(b)) / 2
-	if c := table.Cell("gpt-6.2-sol:high", b); c.N != 5 || math.Abs(c.Score-want) > 1e-9 {
-		t.Fatalf("inherited cell: %+v, want score %v", c, want)
-	}
-	facts := []PickerCandidateFacts{{Key: "gpt-6.2-sol:high", Cell: table.Cell("gpt-6.2-sol:high", b)}}
-	verdicts, _ := PickerBucketVerdicts(facts, 2.33, table.BucketMean(b), b, s)
-	if !verdicts[0].Allowed {
-		t.Fatalf("inherited model is not a candidate: %+v", verdicts[0])
-	}
-	astra := table.Cell("gpt-6.2-astra:high", b)
-	if astra.N != 0 {
-		t.Fatalf("new class has parent: %+v", astra)
-	}
-	verdicts, _ = PickerBucketVerdicts([]PickerCandidateFacts{{Key: "gpt-6.2-astra:high", Cell: astra, Scored: true, Ceiling: 3}}, 2.33, table.BucketMean(b), b, s)
-	if !verdicts[0].Allowed || !verdicts[0].Prior {
-		t.Fatalf("new class benchmark prior: %+v", verdicts[0])
-	}
-}
-
-func TestPickerQualityV2Cost(t *testing.T) {
-	tasks := append(costTasks("terra", 2.5, .69, repeat(20, 1)...), costTasks("rescue", 2.5, 3.923, repeat(20, 1)...)...)
-	tasks = append(tasks, costTasks("sol", 2.5, 1.04, repeat(20, 1)...)...)
-	for i := 0; i < 8; i++ {
-		tasks[i].Dirty = true
-	}
-	set := DefaultPickerSettings()
-	table := BuildPickerTable(tasks, set)
-	b := table.Bucket(2.5)
-	prices := priceLadder("terra", "rescue", "sol")
-	legacy := []*PickerCost{{Key: "terra", Name: "terra"}, {Key: "rescue", Name: "rescue"}, {Key: "sol", Name: "sol"}}
-	PickerExpectedCosts(legacy, table, b, prices, set, PickerCostOptions{})
-	if math.Abs(legacy[0].Expected-2.05) > .01 || math.Abs(legacy[2].Expected-1.06) > .02 {
-		t.Fatalf("legacy jump: %+v %+v", legacy[0], legacy[2])
-	}
-	costs := []*PickerCost{{Key: "terra", Name: "terra"}, {Key: "rescue", Name: "rescue"}, {Key: "sol", Name: "sol"}}
-	PickerExpectedCosts(costs, table, b, prices, set, PickerCostOptions{QualityV2: true})
-	for _, c := range costs {
-		if math.Abs(c.Expected-c.Cost/c.Pass) > 1e-9 {
-			t.Fatalf("cost: %+v", c)
-		}
-	}
-	if costs[0].Expected >= costs[2].Expected {
-		t.Fatalf("terra retains ladder jump: %+v %+v", costs[0], costs[2])
-	}
-}
-
-func TestPickerQualityV2OffUnchanged(t *testing.T) {
-	tasks := append(costTasks("terra", 2.5, .69, repeat(10, 1)...), costTasks("sol", 2.5, 1.04, repeat(10, 1)...)...)
-	for i := 0; i < 3; i++ {
-		tasks[i].Dirty = true
-	}
-	set := DefaultPickerSettings()
-	table := BuildPickerTable(tasks, set)
-	b := table.Bucket(2.5)
-	entries := []*PickerCost{{Key: "terra", Name: "terra"}, {Key: "sol", Name: "sol"}}
-	PickerExpectedCosts(entries, table, b, priceLadder("terra", "sol"), set, PickerCostOptions{})
-	for _, e := range entries {
-		if math.Abs(e.Expected-(e.Cost+(1-e.Pass)*e.Rescue)) > 1e-9 {
-			t.Fatalf("legacy cost: %+v", e)
-		}
-	}
-	c := pickWith(t, tasks, priceLadder("terra", "sol"), "terra", "sol")
-	// This fixture was captured from the picker before quality_v2 was added.
-	got, err := json.Marshal(struct {
-		Name  string
-		Note  string
-		Costs []float64
-	}{c.Name, c.PickNote, []float64{c.PickRows[0].ExpectedCost, c.PickRows[1].ExpectedCost}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	const want = `{"Name":"terra","Note":"bucket 2.33-2.67: terra 1.00 [1.00-1.00] n10, best; qualifying: terra 1.00 [1.00-1.00] n10 $0.69/run, p 0.75, $0.95 expected, sol 1.00 [1.00-1.00] n10 $1.04/run, p 0.95, $1.09 expected","Costs":[0.9499999999999997,1.0919999999999999]}`
-	if string(got) != want {
-		t.Fatalf("legacy pick changed: %s", got)
-	}
-}
-
-func TestPickerQualityV2ZeroCleanCostIsSerializable(t *testing.T) {
-	tasks := costTasks("bad", 2.5, .69, repeat(8, 0)...)
-	for i := range tasks {
-		tasks[i].Dirty = true
-	}
-	set := DefaultPickerSettings()
-	set.QualityV2 = true
-	table := BuildPickerTable(tasks, set)
-	rows := PickerCostRows(pickCandidates("bad"), &PickerInput{D: 2.5, Table: table, Prices: priceLadder("bad")})
-	if _, err := json.Marshal(rows); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestPickerCostReplayOptions(t *testing.T) {
 	tasks := costTasks("m", 2.5, 1, repeat(10, 1)...)
 	for i := range tasks[:4] {
@@ -1358,7 +1243,7 @@ func TestPickerCostReplayOptions(t *testing.T) {
 	set := DefaultPickerSettings()
 	table := BuildPickerTable(tasks, set)
 	cost := &PickerCost{Key: "m", Name: "m", Quality: .6}
-	PickerExpectedCosts([]*PickerCost{cost}, table, table.Bucket(2.5), priceLadder("m"), set, PickerCostOptions{QualityV2: true, Alpha: 2, BestQuality: .8, CleanFloor: .8})
+	PickerExpectedCosts([]*PickerCost{cost}, table, table.Bucket(2.5), priceLadder("m"), set, PickerCostOptions{Alpha: 2, BestQuality: .8, CleanFloor: .8})
 	if cost.MeetsFloor || math.Abs(cost.Rank-cost.Expected*math.Exp(.4)) > 1e-9 {
 		t.Fatalf("options: %+v", cost)
 	}

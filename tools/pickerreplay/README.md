@@ -2,9 +2,9 @@
 
 An offline replay of the worker picker against a read-only copy of the gateway
 store. It exists for decision [0173](../../docs/decisions/0173-picker-quality.md):
-it runs today's rule, V2 (`picker.quality_v2`) and V2 with the ceiling rule
+it runs today's rule, the V2 cost rule and V2 with the ceiling rule
 (`picker.ceiling_rule`), and optionally alpha values and clean-rate floors, and prints the tables
-that decision reports.
+that decision reports. V2 is the tool's own replay rule: run cost divided by p.
 
 It is not wired into the daemon or the gateway, and it adds nothing to the
 agent-net binary: it is its own Go module.
@@ -38,9 +38,10 @@ a replay to pin this.
 For each recorded pick it rebuilds the picker table as it stood at that moment:
 only runs that had ended, judge results that had arrived, and defects, failed
 steps and merges that had been recorded by then. It reuses the live scoring code
-where it can: `protocol.PickerTaskScore`, `protocol.PickerTaskScoreV2`, `protocol.BuildPickerTable`,
-`protocol.PickerBucketVerdicts` and `protocol.WorkerBenchmarkCeiling`. The cost
-rule is shared with the live picker through `protocol.PickerExpectedCosts`.
+where it can: `protocol.PickerTaskScore`, `protocol.BuildPickerTable`,
+`protocol.PickerBucketVerdicts` and `protocol.WorkerBenchmarkCeiling`. The run
+cost, pass rate and rescue come from the live picker through
+`protocol.PickerExpectedCosts`; the V2 expected cost is computed here.
 
 The output starts with the replay check (how many recorded picks the rule
 reproduces and why the rest differ), then the model counts per method with the

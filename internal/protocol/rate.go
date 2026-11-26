@@ -175,11 +175,3 @@ type RateOfferResult struct {
 	Harness    string `json:"harness,omitempty"`
 	Difficulty string `json:"difficulty,omitempty"`
 }
-
-// CalibrationRating is one model's rating count in the read-only table, with
-// how many defects were reported later on its tasks.
-type CalibrationRating struct {
-	Model   string `json:"model"`
-	Count   int    `json:"count"`
-	Defects int    `json:"defects,omitempty"`
-}

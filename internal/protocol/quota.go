@@ -119,55 +119,6 @@ func (q *Quotas) ExhaustedWindowFor(provider, model string) (QuotaWindow, bool) 
 	return QuotaWindow{}, false
 }
 
-// HighWindow returns the most used window when it is above QuotaHighPercent.
-func (q *Quotas) HighWindow(provider string) (QuotaWindow, bool) {
-	return q.HighWindowFor(provider, "")
-}
-
-// HighWindowFor is HighWindow over the windows that limit model.
-func (q *Quotas) HighWindowFor(provider, model string) (QuotaWindow, bool) {
-	p, ok := q.Provider(provider)
-	if !ok || !p.usable() {
-		return QuotaWindow{}, false
-	}
-	w, ok := p.worstWindowFor(model)
-	if !ok || w.PercentUsed <= QuotaHighPercent {
-		return QuotaWindow{}, false
-	}
-	return w, true
-}
-
-// Ahead tells whether a provider is ahead of its reset clock in any window.
-// A provider on pace or behind it does not rank lower.
-func (q *Quotas) Ahead(provider string) bool {
-	p, ok := q.Provider(provider)
-	if !ok || !p.usable() {
-		return false
-	}
-	for _, w := range p.Windows {
-		if w.Pace == QuotaPaceAhead {
-			return true
-		}
-	}
-	return false
-}
-
-func (p QuotaProvider) worstWindow() (QuotaWindow, bool) { return p.worstWindowFor("") }
-
-func (p QuotaProvider) worstWindowFor(model string) (QuotaWindow, bool) {
-	var best QuotaWindow
-	found := false
-	for _, w := range p.Windows {
-		if !QuotaWindowServes(w, model) {
-			continue
-		}
-		if !found || w.PercentUsed > best.PercentUsed {
-			best, found = w, true
-		}
-	}
-	return best, found
-}
-
 // QuotaProviderForModelProvider maps the provider part of a model id to the
 // quota-axi provider that serves it. The table is documented in
 // docs/reference.md; keep the two in step.
@@ -293,6 +244,20 @@ func QuotaWindowName(w QuotaWindow) string {
 	return "quota"
 }
 
+func (p QuotaProvider) worstWindowFor(model string) (QuotaWindow, bool) {
+	var best QuotaWindow
+	found := false
+	for _, w := range p.Windows {
+		if !QuotaWindowServes(w, model) {
+			continue
+		}
+		if !found || w.PercentUsed > best.PercentUsed {
+			best, found = w, true
+		}
+	}
+	return best, found
+}
+
 // QuotaWorkerReading names the provider and window that the picker's floor
 // reads for a worker's model, and how much of it is used. ok is false when
 // there is no usable reading or no window serves the model; name is "" when
@@ -319,23 +284,6 @@ func QuotaResetText(w QuotaWindow) string {
 		return "its reset time is unknown"
 	}
 	return "it resets at " + time.Unix(w.ResetsAt, 0).UTC().Format("2006-01-02 15:04 UTC")
-}
-
-// QuotaWarning returns the note for an exact model id whose provider is
-// exhausted or above QuotaHighPercent. It is "" when the model may be used
-// without a warning.
-func QuotaWarning(quotas *Quotas, provider, model string) string {
-	qp := QuotaProviderForStart(provider, model)
-	if qp == "" {
-		return ""
-	}
-	if w, ok := quotas.ExhaustedWindowFor(qp, model); ok {
-		return quotaExhaustedText(qp, w)
-	}
-	if w, ok := quotas.HighWindowFor(qp, model); ok {
-		return fmt.Sprintf("%s is at %.0f%% of its %s window", qp, w.PercentUsed, QuotaWindowName(w))
-	}
-	return ""
 }
 
 // QuotaRefusal is the admission reason when a start's provider is exhausted.
@@ -402,78 +350,6 @@ func quotaExhaustedText(provider string, w QuotaWindow) string {
 		return fmt.Sprintf("%s %s used up until %s; other %s models may still be used", provider, QuotaWindowName(w), until, provider)
 	}
 	return fmt.Sprintf("%s is exhausted (%s; %s)", provider, QuotaWindowName(w), QuotaResetText(w))
-}
-
-// quotaExhaustedForDisplay tells whether a provider has no allowance left,
-// including a stale reading: the line reports what was last seen.
-func quotaExhaustedForDisplay(p QuotaProvider) bool {
-	for _, w := range p.Windows {
-		if w.Exhausted || w.PercentUsed >= 100 {
-			return true
-		}
-	}
-	return false
-}
-
-// quotaSuffix writes a window kind compactly for the header line.
-func quotaSuffix(kind string) string {
-	switch strings.ToLower(kind) {
-	case "weekly", "week":
-		return "w"
-	case "session", "five_hour", "5h":
-		return "s"
-	case "monthly", "month":
-		return "m"
-	case "daily", "day":
-		return "d"
-	case "credits":
-		return "c"
-	}
-	if kind == "" {
-		return "w"
-	}
-	return kind[:1]
-}
-
-// QuotaSummary writes one compact line for every provider that has a reading,
-// for example "claude 59%w · codex 90%w · cursor exhausted". Providers with a
-// window above QuotaHighPercent are still shown: the line reports facts.
-func QuotaSummary(q *Quotas) string {
-	if q == nil || len(q.Providers) == 0 {
-		return ""
-	}
-	order := []string{"claude", "codex", "opencode-go", "cursor", "copilot", "grok", "kimi", "zai", "agy", "alibaba", "minimax", "mimo", "deepseek", "openrouter"}
-	rank := map[string]int{}
-	for i, p := range order {
-		rank[p] = i
-	}
-	providers := append([]QuotaProvider(nil), q.Providers...)
-	sort.SliceStable(providers, func(i, j int) bool {
-		ri, iok := rank[providers[i].Provider]
-		rj, jok := rank[providers[j].Provider]
-		switch {
-		case iok && jok:
-			return ri < rj
-		case iok:
-			return true
-		case jok:
-			return false
-		}
-		return providers[i].Provider < providers[j].Provider
-	})
-	var parts []string
-	for _, p := range providers {
-		w, ok := p.worstWindow()
-		if !ok {
-			continue
-		}
-		if quotaExhaustedForDisplay(p) {
-			parts = append(parts, p.Provider+" exhausted")
-			continue
-		}
-		parts = append(parts, fmt.Sprintf("%s %.0f%%%s", p.Provider, w.PercentUsed, quotaSuffix(w.Kind)))
-	}
-	return strings.Join(parts, " · ")
 }
 
 // QuotaAccountWindowID names the window of a block that covers a whole provider:

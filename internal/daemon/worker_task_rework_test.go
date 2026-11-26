@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -82,22 +81,7 @@ func TestWorkerMidrunFollowUpsReachGateway(t *testing.T) {
 	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "FAKE:handback finish"}), &sent)
 	w.workerStopped(t, g, protocol.StopHandback)
 	eventually(t, "midrun count reaches gateway", func() bool {
-		q := g.gw.Store().QualityAnalysis()
-		b, _ := json.Marshal(q.Levels)
-		var levels []struct {
-			Families []struct {
-				Midrun int `json:"midrun"`
-			} `json:"families"`
-		}
-		_ = json.Unmarshal(b, &levels)
-		for _, l := range levels {
-			for _, f := range l.Families {
-				if f.Midrun == 2 {
-					return true
-				}
-			}
-		}
-		return false
+		return reworkRow(t, w, res.SessionID).MidrunCount == 2
 	})
 }
 

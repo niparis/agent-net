@@ -420,7 +420,7 @@ func TestFakeQuotaAXIDrivesModelChoiceAndAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	models := []string{"cursor/flash", "opencode-go/flash"}
-	got, err := protocol.ResolveModelQuota("opencode-go/flash", models, nil, nil, nil)
+	got, err := protocol.ResolveModelRanked("opencode-go/flash", models, nil, nil, nil, nil)
 	if err != nil || got.Model != "opencode-go/flash" {
 		t.Fatalf("model choice with the fake reading: %+v %v", got, err)
 	}
