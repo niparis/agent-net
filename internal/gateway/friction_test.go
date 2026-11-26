@@ -164,6 +164,38 @@ func TestFrictionDoesNotChangePickerOrWorkerCounts(t *testing.T) {
 	}
 }
 
+// The weekly digest reads the friction table and takes rows whose digest_id is
+// empty. The standalone tool sends this same request through ReportFriction, so
+// its report is a row the next digest carries, with the group and new status
+// the digest uses.
+func TestFrictionReportIsReadyForTheDigest(t *testing.T) {
+	s, _ := newTestStore(t)
+	const text = "the sandbox cannot bind a local port"
+	if _, err := s.ReportFriction(protocol.FrictionReportRequest{
+		SessionID: "s_1", Project: "demo", ChangeID: "ch_1234", Harness: "claude", Model: "m",
+		Entries: []protocol.FrictionEntry{{Area: protocol.FrictionEnvironment, Text: text}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var digest string
+	if err := s.db.QueryRow(`SELECT digest_id FROM friction`).Scan(&digest); err != nil {
+		t.Fatal(err)
+	}
+	if digest != "" {
+		t.Fatalf("digest_id = %q, want empty so the next digest carries the report", digest)
+	}
+	got, err := s.FrictionFind(protocol.FrictionQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Entries) != 1 {
+		t.Fatalf("rows: %+v", got.Entries)
+	}
+	if e := got.Entries[0]; e.Group != protocol.FrictionGroup(protocol.FrictionEnvironment, text) || e.Status != protocol.FrictionNew {
+		t.Fatalf("digest fields: group %q, status %q", e.Group, e.Status)
+	}
+}
+
 // FrictionFind's main page read must use a covering index on friction and
 // never do a full table scan of friction.
 func TestFrictionFindUsesCoveringIndex(t *testing.T) {

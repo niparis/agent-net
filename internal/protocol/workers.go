@@ -1547,7 +1547,8 @@ func acceptReportLine(n WorkerNotice, snap settings.Snapshot) string {
 }
 
 // noticeChecklistWithSettings writes the checklist. extra lines go before the
-// learning line, which stays last.
+// learning line, and the friction line stays last so a caller that reports no
+// step still sees the route.
 func noticeChecklistWithSettings(worktree string, learned bool, snap settings.Snapshot, extra ...string) string {
 	where := "the changes in the project folder"
 	if worktree != "" {
@@ -1564,6 +1565,7 @@ func noticeChecklistWithSettings(worktree string, learned bool, snap settings.Sn
 	if learned {
 		line += "\nIf you learned something that would change how to pick or brief this model next time, record it with agent_learn."
 	}
+	line += "\n" + FrictionReportLine
 	return line
 }
 

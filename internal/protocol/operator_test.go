@@ -170,7 +170,8 @@ func TestFormatWorkerNotice(t *testing.T) {
 		"tokens: 10 in, 5 out\ncost: 0.0100\nworktree: /w (branch agent-net/w_1)\nchanges (git diff --stat):\n x.go | 2 ++\n 1 file changed, 2 insertions(+)\n\n" +
 		ReportMarker + "\nthe report\n\n" + ChecklistMarker + " Before you tell your user it is done: read the diff in /w, follow the accept contract, then report what you checked. The test step owns test suites. Merge only if your user asked.\nTest scope: delivery.contract.test (the test step owns suites and CI).\n" +
 		"Found a defect in earlier work? Set fixes=<change> on the fix, or file defect_found_later. Rework from your own brief: brief_defect.\n" +
-		"If you learned something that would change how to pick or brief this model next time, record it with agent_learn."
+		"If you learned something that would change how to pick or brief this model next time, record it with agent_learn.\n" +
+		FrictionReportLine
 	if out != want {
 		t.Errorf("got:\n%s\nwant:\n%s", out, want)
 	}

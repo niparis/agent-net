@@ -41,6 +41,7 @@ func addDeliveryTools(s *mcp.Server, call Caller) {
 	deliveryTool[protocol.NudgeResumeArgs, protocol.NudgeResult](s, call, "agent_nudge_resume", protocol.OpNudgeResume)
 	deliveryTool[protocol.NudgePausesFindArgs, protocol.NudgeResult](s, call, "agent_nudge_pauses_find", protocol.OpNudgePausesFind)
 	deliveryTool[protocol.NudgeStatsArgs, protocol.NudgeStatsResult](s, call, "agent_nudge_stats", protocol.OpNudgeStats)
+	deliveryTool[protocol.FrictionReportArgs, protocol.FrictionReportResult](s, call, "agent_friction_report", protocol.OpFrictionReport)
 	deliveryTool[protocol.FrictionMarkRequest, protocol.FrictionMarkResult](s, call, "agent_friction_mark", protocol.OpFrictionMarkLead)
 	deliveryTool[protocol.AskSortArgs, protocol.AskSortResult](s, call, "agent_ask_sort", protocol.OpAskSort)
 	deliveryTool[protocol.AskIntakeArgs, protocol.AskIntakeResult](s, call, "agent_ask_intake", protocol.OpAskIntake)

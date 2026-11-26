@@ -32,6 +32,28 @@ var FrictionAreas = []string{FrictionTooling, FrictionPermissions, FrictionBrief
 // MaxFrictionText is the longest friction line, in characters.
 const MaxFrictionText = 200
 
+// FrictionReportLine asks a session to file friction with the standalone tool,
+// so a lead that reports no step still has a route.
+const FrictionReportLine = "Something slowed you down? File it with agent_friction_report; no step is needed."
+
+// OpFrictionReport files friction from a session with no step.
+const OpFrictionReport = "friction_report"
+
+// FrictionReportArgs is agent_friction_report as the caller sends it. The
+// entries are the step report's friction field; Change and Project are
+// optional metadata.
+type FrictionReportArgs struct {
+	Friction []FrictionEntry `json:"friction"`
+	Change   string          `json:"change,omitempty"`
+	Project  string          `json:"project,omitempty"`
+}
+
+// Validate checks a report before it is sent. An empty list says nothing to
+// report, the same as an empty hand-back list.
+func (a FrictionReportArgs) Validate() error {
+	return ValidateFriction(a.Friction)
+}
+
 // FrictionEntry is one thing that slowed an agent down.
 type FrictionEntry struct {
 	Area string `json:"area"`

@@ -1564,7 +1564,11 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 				body += "\n" + stLine
 				line += " | " + stLine
 			}
-			notices = append(notices, notice{targets: group, body: body, line: line + "\n" + s.stepContract(c.Project, t.ref.Step), isReminder: t.isReminder})
+			if !isBatch {
+				body += "\n" + protocol.FrictionReportLine
+			}
+			line += "\n" + s.stepContract(c.Project, t.ref.Step) + "\n" + protocol.FrictionReportLine
+			notices = append(notices, notice{targets: group, body: body, line: line, isReminder: t.isReminder})
 			continue
 		}
 		isReminder, allReminder := false, true
@@ -1643,7 +1647,9 @@ func (s *Store) storeStepTaskMessagesInternal(targets []nodeTaskTarget, forceBat
 			body += "\n" + stLine
 			line += " | " + stLine
 		}
-		notices = append(notices, notice{targets: group, body: body, line: line + "\n" + s.stepContracts(c.Project, run), order: order, isReminder: isReminder})
+		body += "\n" + protocol.FrictionReportLine
+		line += "\n" + s.stepContracts(c.Project, run) + "\n" + protocol.FrictionReportLine
+		notices = append(notices, notice{targets: group, body: body, line: line, order: order, isReminder: isReminder})
 	}
 	if len(notices) == 0 {
 		return protocol.Message{}, nil

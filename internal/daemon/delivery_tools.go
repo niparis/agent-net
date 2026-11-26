@@ -29,7 +29,7 @@ import (
 // other methods.
 func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string, raw json.RawMessage) (res any, handled bool, err error) {
 	switch method {
-	case protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport, protocol.OpChangesFind, protocol.OpAskSort, protocol.OpAskIntake, protocol.OpOwnerBrief, protocol.OpNudgePause, protocol.OpNudgeResume, protocol.OpNudgePausesFind, protocol.OpNudgeStats, protocol.OpJudgmentRecord, protocol.OpFrictionMarkLead, protocol.OpDue:
+	case protocol.OpChangeSubmit, protocol.OpStepClaim, protocol.OpStepReport, protocol.OpChangesFind, protocol.OpAskSort, protocol.OpAskIntake, protocol.OpOwnerBrief, protocol.OpNudgePause, protocol.OpNudgeResume, protocol.OpNudgePausesFind, protocol.OpNudgeStats, protocol.OpJudgmentRecord, protocol.OpFrictionMarkLead, protocol.OpFrictionReport, protocol.OpDue:
 	default:
 		return nil, false, nil
 	}
@@ -159,6 +159,23 @@ func (lc *localConn) dispatchDelivery(ctx context.Context, client, method string
 		// The gateway checks that this session is a lead; the session is also the actor.
 		var out protocol.FrictionMarkResult
 		err := d.deliveryCall(ctx, protocol.FrameFrictionMark, protocol.FrictionMarkCall{Actor: sid, SessionID: sid, FrictionMarkRequest: a}, &out)
+		return out, true, err
+	case protocol.OpFrictionReport:
+		var a protocol.FrictionReportArgs
+		if err := decodeDeliveryArgs(method, raw, &a); err != nil {
+			return nil, true, err
+		}
+		if err := a.Validate(); err != nil {
+			return nil, true, err
+		}
+		project := strings.TrimSpace(a.Project)
+		if project == "" {
+			project = info.Repo.Project
+		}
+		q := protocol.FrictionReportRequest{SessionID: sid, Project: project, ChangeID: strings.TrimSpace(a.Change),
+			Harness: info.Harness, Model: info.Model, Entries: a.Friction}
+		var out protocol.FrictionReportResult
+		err := d.deliveryCall(ctx, protocol.FrameFrictionReport, q, &out)
 		return out, true, err
 	case protocol.OpJudgmentRecord:
 		if info.Worker != nil {
