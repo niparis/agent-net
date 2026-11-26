@@ -94,11 +94,6 @@ func (s *Store) setSessionAgent(node string, p protocol.SessionAgentSetRequest) 
 	if old == p.Agent {
 		return res, tx.Commit()
 	}
-	if holder, err := leadAgentHolderQ(tx, p.Agent, p.SessionID); err != nil {
-		return res, err
-	} else if holder != "" {
-		return res, reject("agent %q is already held by live lead session %s", p.Agent, holder)
-	}
 	if _, err = tx.Exec(`UPDATE sessions SET agent_id=? WHERE id=?`, p.Agent, p.SessionID); err != nil {
 		return res, err
 	}

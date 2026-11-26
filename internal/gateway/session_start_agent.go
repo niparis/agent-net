@@ -82,11 +82,6 @@ func (s *Store) ReserveSessionAgent(node string, p protocol.SessionAgentReservat
 	if !allowed {
 		return reject("unknown or tombstoned Agent %q", p.AgentID)
 	}
-	if holder, err := leadAgentHolderQ(tx, p.AgentID, ""); err != nil {
-		return err
-	} else if holder != "" {
-		return reject("agent %q is already held by live lead session %s", p.AgentID, holder)
-	}
 	a := &agentStart{node: node, harness: p.Harness, native: p.NativeID, agent: p.AgentID, ref: p.Ref, cwd: p.Cwd, owner: p.Owner, project: p.Project,
 		expires: s.now().Add(sessionAgentStartTimeout)}
 	switch {

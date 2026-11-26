@@ -180,10 +180,9 @@ func TestRepeatedUnpinnedLeadSessionAsksOneCTOQuestion(t *testing.T) {
 	}
 }
 
-// Only the pinned lead session holds a lead agent_id: a second session starting
-// in the project defaults to the project's member agent instead of the lead
-// agent, and explicit start/bind attempts to assign a second live session to
-// the lead agent are refused while the pinned lead is live.
+// The automatic default gives a second session in a project the project's
+// member agent while the pinned lead is live. Explicit start reservations and
+// session_agent_set calls still succeed and keep the lead pin on the lead.
 func TestOnlyPinnedLeadSessionGetsLeadAgentID(t *testing.T) {
 	s, _ := newTestStore(t)
 	node, _, err := s.CreateNode("homelab", "linux")
@@ -224,26 +223,25 @@ func TestOnlyPinnedLeadSessionGetsLeadAgentID(t *testing.T) {
 	if err != nil || !ok || secondView.AgentID != "homelab-agent" {
 		t.Fatalf("second session agent_id = %q, want homelab-agent", secondView.AgentID)
 	}
-	// Explicit start reservation for homelab-lead while lead is live is refused.
+	// Explicit start reservation for homelab-lead while lead is live succeeds.
 	if err := s.ReserveSessionAgent(node, protocol.SessionAgentReservation{
 		Owner: owner, AgentID: "homelab-lead", Harness: "claude", NativeID: "third",
-	}); err == nil || !strings.Contains(err.Error(), "homelab-lead") {
-		t.Fatalf("ReserveSessionAgent for taken lead agent: err=%v, want refusal", err)
+	}); err != nil {
+		t.Fatalf("ReserveSessionAgent for taken lead agent: %v", err)
 	}
-	// Explicit bind of second live session to homelab-lead is refused.
-	if _, err := s.setSessionAgent(node, protocol.SessionAgentSetRequest{
-		Owner: owner, SessionID: second, Agent: "homelab-lead",
-	}); err == nil || !strings.Contains(err.Error(), "homelab-lead") {
-		t.Fatalf("setSessionAgent for taken lead agent: err=%v, want refusal", err)
-	}
-	// Once the pinned lead goes offline, binding a replacement session succeeds.
-	if err := s.SetSessionOffline(node, lead); err != nil {
-		t.Fatal(err)
-	}
+	// Explicit bind of second live session to homelab-lead succeeds and keeps
+	// the lead pin on the pinned lead.
 	if _, err := s.setSessionAgent(node, protocol.SessionAgentSetRequest{
 		Owner: owner, SessionID: second, Agent: "homelab-lead",
 	}); err != nil {
-		t.Fatalf("setSessionAgent after lead offline: %v", err)
+		t.Fatalf("setSessionAgent for taken lead agent: %v", err)
+	}
+	secondView, ok, err = s.Agent(second)
+	if err != nil || !ok || secondView.AgentID != "homelab-lead" || secondView.RepoLeadExplicit {
+		t.Fatalf("second session after explicit bind: %+v %v", secondView, err)
+	}
+	if got := agentLeadSession(t, s, "homelab-lead"); got != lead {
+		t.Fatalf("lead_session moved to %q, want %q", got, lead)
 	}
 }
 
