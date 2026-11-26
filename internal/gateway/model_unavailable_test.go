@@ -79,7 +79,7 @@ func TestCandidatesLeaveOutAModelThatFailedAtLaunchUntilTheNextInventory(t *test
 func TestModelUnavailableReportMarksTheModelAndTracksANewStart(t *testing.T) {
 	s, _ := newTestStore(t)
 	g := &Gateway{store: s}
-	if err := s.trackWorkerStart("q-old", "n-new", "s-owner", "demo", "opencode", protocol.WorkersReadOnly, []string{"tests pass"}); err != nil {
+	if err := s.trackWorkerStart("q-old", "n-new", "s-owner", "demo", "opencode", protocol.WorkersSandboxed, []string{"tests pass"}); err != nil {
 		t.Fatal(err)
 	}
 	nc := &nodeConn{id: "n-new"}
@@ -98,7 +98,7 @@ func TestModelUnavailableReportMarksTheModelAndTracksANewStart(t *testing.T) {
 		t.Fatal("the model is not marked unavailable on the machine")
 	}
 	project, perms, done, err := s.startFacts(answer.Ref)
-	if err != nil || project != "demo" || perms != protocol.WorkersReadOnly || !reflect.DeepEqual(done, []string{"tests pass"}) {
+	if err != nil || project != "demo" || perms != protocol.WorkersSandboxed || !reflect.DeepEqual(done, []string{"tests pass"}) {
 		t.Fatalf("new start = %q %q %v %v", project, perms, done, err)
 	}
 	if err := s.verifyRecheckStart("n-new", answer.Ref, "s-owner"); err != nil {
