@@ -636,16 +636,19 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		}
 	}
 	var machineNote string
+	loadReportsMissing := false
 	if len(nodes) > 1 {
 		// Several machines can run it: the one with the most room wins, when
 		// every one of them reports its room (decision 0018).
-		if keep, note := g.mostHeadroom(cands, nodeByID, p.Harness); len(keep) > 0 {
+		keep, note, missing := g.mostHeadroom(cands, nodeByID, p.Harness)
+		if len(keep) > 0 {
 			cands, machineNote = keep, note
 			nodes = map[string]bool{}
 			for _, v := range cands {
 				nodes[v.NodeID] = true
 			}
 		}
+		loadReportsMissing = missing
 	}
 	if len(nodes) > 1 {
 		// Missing load reports must not make the caller choose a machine.
@@ -682,7 +685,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			}
 		}
 		cands = keep
-		machineNote = "picked " + chosen.Hostname + ": automatic choice without complete load reports"
+		if loadReportsMissing {
+			machineNote = "picked " + chosen.Hostname + ": automatic choice without complete load reports"
+		}
 	}
 	// One machine. Prefer the registered folder when seen folders also exist.
 	pick := cands[0]
@@ -1839,10 +1844,13 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 }
 
 // mostHeadroom picks, among the machines that hold the project, the one with
-// the most room for a worker. It returns nothing unless at least two machines
-// can run the harness now and every one of them reported its room recently.
-// The note says why the machine won.
-func (g *Gateway) mostHeadroom(cands []protocol.ProjectView, nodeByID func(string) *protocol.NodeView, harness string) ([]protocol.ProjectView, string) {
+// the most room for a worker. A start that names no harness may run any
+// harness, so every launcher that has one is a candidate; a named harness
+// keeps only the machines that have it. It returns nothing unless at least two
+// machines can run the work now. missing says a machine that could run it has
+// no fresh load report, so the old rule has to choose. The note says why the
+// machine won.
+func (g *Gateway) mostHeadroom(cands []protocol.ProjectView, nodeByID func(string) *protocol.NodeView, harness string) (keep []protocol.ProjectView, note string, missing bool) {
 	have := g.usage.all()
 	now := g.store.now()
 	type scored struct {
@@ -1859,10 +1867,13 @@ func (g *Gateway) mostHeadroom(cands []protocol.ProjectView, nodeByID func(strin
 		if n == nil || !n.Online || n.Launch == nil || !*n.Launch {
 			continue
 		}
-		has := false
-		for _, h := range n.Harnesses {
-			if h.Name == harness {
-				has = true
+		has := len(n.Harnesses) > 0
+		if harness != "" {
+			has = false
+			for _, h := range n.Harnesses {
+				if h.Name == harness {
+					has = true
+				}
 			}
 		}
 		if !has {
@@ -1871,12 +1882,12 @@ func (g *Gateway) mostHeadroom(cands []protocol.ProjectView, nodeByID func(strin
 		seen[v.NodeID] = true
 		e, fresh := have[v.NodeID]
 		if !fresh || now.Sub(e.at) > protocol.UsageStaleSeconds*time.Second || e.rep.Workers == nil || e.rep.Workers.Headroom < -0.999 {
-			return nil, "" // one machine cannot say: keep the old rule
+			return nil, "", true // one machine cannot say: keep the old rule
 		}
 		ok = append(ok, scored{v, *e.rep.Workers})
 	}
 	if len(ok) < 2 {
-		return nil, ""
+		return nil, "", false
 	}
 	sort.SliceStable(ok, func(i, j int) bool {
 		a, b := ok[i].load, ok[j].load
@@ -1890,9 +1901,9 @@ func (g *Gateway) mostHeadroom(cands []protocol.ProjectView, nodeByID func(strin
 	for _, o := range ok[1:] {
 		others = append(others, fmt.Sprintf("%s %s, %d queued", o.view.Hostname, roomWord(o.load), o.load.Queued))
 	}
-	note := fmt.Sprintf("picked %s: most room for a worker (%s, %d running, %d queued; %s)",
+	note = fmt.Sprintf("picked %s: most room for a worker (%s, %d running, %d queued; %s)",
 		best.view.Hostname, roomWord(best.load), best.load.Running, best.load.Queued, strings.Join(others, "; "))
-	return []protocol.ProjectView{best.view}, note
+	return []protocol.ProjectView{best.view}, note, false
 }
 
 func roomWord(l protocol.WorkerLoad) string {
