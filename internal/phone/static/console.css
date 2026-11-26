@@ -72,7 +72,7 @@ a { color: inherit; }
 .chip { display: inline-flex; align-items: center; gap: 5px; font: 500 11.5px var(--f-mono); padding: 1px 7px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
 .chip.you { color: var(--you); border-color: var(--you); background: var(--you-soft); }
 .chip.bad { color: var(--bad); border-color: var(--bad); background: var(--bad-soft); }
-.chip.vers { color: var(--ok); border-color: var(--ok); background: var(--ok-soft); }
+.chip.ok { color: var(--ok); border-color: var(--ok); background: var(--ok-soft); }
 .chip.busy { color: var(--busy); border-color: var(--busy); background: var(--accent-soft); }
 .btn { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 7px 12px; min-height: 36px; cursor: pointer; font-size: 13px; list-style: none; }
 .btn:hover { border-color: var(--muted); }
