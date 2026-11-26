@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"syscall"
 	"time"
 )
 
@@ -57,12 +58,31 @@ func (d *Daemon) scheduleCTOPresence() {
 	d.goBackground(d.publishCTOPresence)
 }
 
-// Caller holds cto.mu. A process that already exited logs its own crash.
-func (d *Daemon) stopOpenCodeCTOLocked(reason string) {
+// ctoStop is the part of a CTO stop that calls other processes: `claude
+// stop`, a kill and the wait for the exit, closing a connection. A stop first
+// detaches the run from memory under cto.mu, so every reader sees it stopped
+// at once, and runs its ctoStop after cto.mu is released (B12). Each step
+// acts only on the run it detached: its own process, job and connection.
+type ctoStop []func()
+
+// add appends the steps of another stop.
+func (s *ctoStop) add(other ctoStop) { *s = append(*s, other...) }
+
+// run runs the steps in order. The caller does not hold cto.mu.
+func (s ctoStop) run() {
+	for _, step := range s {
+		step()
+	}
+}
+
+// detachOpenCodeCTOLocked forgets the private OpenCode server under cto.mu
+// and returns the kill and the wait for its exit. A process that already
+// exited logs its own crash.
+func (d *Daemon) detachOpenCodeCTOLocked(reason string) ctoStop {
 	c := &d.cto
 	c.gen++
 	if c.cmd == nil {
-		return
+		return nil
 	}
 	intentional := false
 	select {
@@ -71,12 +91,29 @@ func (d *Daemon) stopOpenCodeCTOLocked(reason string) {
 		intentional = true
 		c.run.expected.Store(true)
 	}
-	run := c.run
-	c.stopLocked()
-	if intentional && run.started.Load() {
-		d.Logf("cto.stop harness=opencode reason=%s", reason)
-	}
-	d.scheduleCTOPresence()
+	cmd, exited, run := c.cmd, c.exited, c.run
+	c.clearLocked()
+	return ctoStop{func() {
+		select {
+		case <-exited:
+		default:
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			<-exited
+		}
+		if intentional && run.started.Load() {
+			d.Logf("cto.stop harness=opencode reason=%s", reason)
+		}
+		d.scheduleCTOPresence()
+	}}
+}
+
+// stopOpenCodeCTO stops the private OpenCode server. The caller does not hold
+// cto.mu.
+func (d *Daemon) stopOpenCodeCTO(reason string) {
+	d.cto.mu.Lock()
+	stop := d.detachOpenCodeCTOLocked(reason)
+	d.cto.mu.Unlock()
+	stop.run()
 }
 
 // Claude's background process is not our child, so watch its recorded job and
@@ -100,12 +137,14 @@ func (d *Daemon) monitorClaudeCTO(ctx context.Context, ref string, pid int, toke
 			actual, alive := procToken(pid)
 			state, _ := claudeCTOJobState(d.cfg.ClaudeSessionsDir, ref)
 			if !alive || actual != token || claudeJobEnded(state) {
+				var stop ctoStop
 				d.cto.mu.Lock()
 				root = c.root.Load()
 				if c.ref == ref && root != nil && root.pid == pid && root.token == token {
-					d.stopClaudeCTOLocked(claudeCTOEndReason(state))
+					stop = d.detachClaudeCTOLocked(claudeCTOEndReason(state))
 				}
 				d.cto.mu.Unlock()
+				stop.run()
 				return
 			}
 		}

@@ -180,9 +180,11 @@ func (d *Daemon) startClaudeRoleOnce(ctx context.Context, role sessionRole, id, 
 		if !alive || root == nil || tok != cToken || claudeJobEnded(status) {
 			reason = claudeCTOEndReason(status)
 		}
-		d.stopClaudeCTOLocked(reason)
+		stop := d.detachClaudeCTOLocked(reason)
 		startGen = c.gen
 		d.cto.mu.Unlock()
+		// The old job ends before the new one launches, so both never run.
+		stop.run()
 		break
 	}
 	// A daemon restart loses the in-memory job ref, but the private background
@@ -237,11 +239,12 @@ func (d *Daemon) startClaudeRoleOnce(ctx context.Context, role sessionRole, id, 
 // (serveOpenCodePrivate).
 func (d *Daemon) startOpenCodeRole(ctx context.Context, role sessionRole) error {
 	c := &d.cto
+	var stop ctoStop
 	c.mu.Lock()
 	if c.cmd != nil {
 		select {
 		case <-c.exited:
-			d.stopOpenCodeCTOLocked("crash")
+			stop = d.detachOpenCodeCTOLocked("crash")
 		default:
 			c.mu.Unlock()
 			return nil
@@ -249,6 +252,7 @@ func (d *Daemon) startOpenCodeRole(ctx context.Context, role sessionRole) error 
 	}
 	startGen := c.gen
 	c.mu.Unlock()
+	stop.run()
 	bin, err := d.harnessBinary("opencode")
 	if err != nil {
 		return err

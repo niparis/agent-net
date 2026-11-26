@@ -47,8 +47,9 @@ func (d *Daemon) ctoHandover(ctx context.Context, from, to string, ownerStarted,
 	// A switch back to a harness that is still answering an earlier handover
 	// ends that one: its conversation continues, so there is nothing to hand over.
 	d.cto.mu.Lock()
-	d.endHandoverLocked(to)
+	stop := d.endHandoverLocked(to)
 	d.cto.mu.Unlock()
+	stop.run()
 	sid := d.ctoSessionID()
 	if sid == "" {
 		d.Logf("cto.handover skipped: the CTO network session is not registered")
@@ -115,12 +116,14 @@ func (d *Daemon) startModelHandover(ctx context.Context, sid, name, from, to str
 				d.Logf("cto.handover model layer from=%s to=%s: %v", from, to, err)
 			}
 		}
+		var stop ctoStop
 		d.cto.mu.Lock()
-		defer d.cto.mu.Unlock()
 		d.dropHandoverFlightLocked(flight)
 		if !flight.cancelled {
-			d.stopCTOHarnessLocked(from, "handover_done")
+			stop = d.detachCTOHarnessLocked(from, "handover_done")
 		}
+		d.cto.mu.Unlock()
+		stop.run()
 	})
 	if !started {
 		cancel()
@@ -152,8 +155,9 @@ func (d *Daemon) ctoHandoverPendingLocked(harness string) bool {
 }
 
 // endHandoverLocked ends the handover of a harness the CTO moves back to and
-// stops its process, as a switch away used to. Caller holds cto.mu.
-func (d *Daemon) endHandoverLocked(harness string) {
+// detaches its process, as a switch away used to stop it. Caller holds cto.mu
+// and runs the returned stop after releasing it.
+func (d *Daemon) endHandoverLocked(harness string) ctoStop {
 	ended := false
 	for _, f := range d.ctoHandovers {
 		if f.from == harness && !f.cancelled {
@@ -162,20 +166,22 @@ func (d *Daemon) endHandoverLocked(harness string) {
 			ended = true
 		}
 	}
-	if ended {
-		d.stopCTOHarnessLocked(harness, "harness_switch")
+	if !ended {
+		return nil
 	}
+	return d.detachCTOHarnessLocked(harness, "harness_switch")
 }
 
-// stopCTOHarnessLocked stops one harness's process. Caller holds cto.mu.
-func (d *Daemon) stopCTOHarnessLocked(harness, reason string) {
+// detachCTOHarnessLocked detaches one harness's process. Caller holds cto.mu
+// and runs the returned stop after releasing it.
+func (d *Daemon) detachCTOHarnessLocked(harness, reason string) ctoStop {
 	switch harness {
 	case "claude":
-		d.stopClaudeCTOLocked(reason)
+		return d.detachClaudeCTOLocked(reason)
 	case "codex":
-		d.stopCodexCTOLocked(reason)
+		return d.detachCodexCTOLocked(reason)
 	default:
-		d.stopOpenCodeCTOLocked(reason)
+		return d.detachOpenCodeCTOLocked(reason)
 	}
 }
 

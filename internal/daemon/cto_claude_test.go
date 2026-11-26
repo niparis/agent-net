@@ -112,9 +112,7 @@ func TestClaudeCTOBackgroundAndResume(t *testing.T) {
 	if err != nil || len(events.Messages) != 1 || !strings.Contains(string(events.Messages[0]), "reply") {
 		t.Fatalf("events: %+v %v", events, err)
 	}
-	n.d.cto.mu.Lock()
-	n.d.stopClaudeCTOLocked()
-	n.d.cto.mu.Unlock()
+	n.d.stopClaudeCTO("requested")
 	if _, err := h.send(ctx, n.d, "second"); err != nil {
 		t.Fatal(err)
 	}
@@ -427,9 +425,7 @@ func TestClaudeCTOStopIgnored(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := readClaude(t, filepath.Join(n.cfg.StateDir, "cto", "claude"))
-	n.d.cto.mu.Lock()
-	n.d.stopClaudeCTOLocked()
-	n.d.cto.mu.Unlock()
+	n.d.stopClaudeCTO("requested")
 	eventually(t, "stopped Claude process", func() bool { _, alive := procToken(rec.Pid); return !alive })
 }
 
@@ -707,9 +703,7 @@ func testCTOOpenCodeBuiltinsStart(t *testing.T) {
 	n.d.cfg.HarnessPaths["opencode"] = os.Args[0]
 	err := n.d.startOpenCodeRole(context.Background(), roleCTO)
 	t.Cleanup(func() {
-		n.d.cto.mu.Lock()
-		n.d.stopOpenCodeCTOLocked("test")
-		n.d.cto.mu.Unlock()
+		n.d.stopOpenCodeCTO("test")
 	})
 	if err != nil {
 		t.Fatalf("a CTO with a built-in tool must start: %v", err)
@@ -834,8 +828,9 @@ func TestClaudeCTOAdoptionRestartHello(t *testing.T) {
 				// End the surviving fake job even in the ended-state case.
 				d.cto.mu.Lock()
 				d.claudeCTO.ref = ref
-				d.stopClaudeCTOLocked()
+				stop := d.detachClaudeCTOLocked("requested")
 				d.cto.mu.Unlock()
+				stop.run()
 				d.Stop()
 			})
 			if mode == "startup" && !d.isCTOPeer(root.pid) {
@@ -914,8 +909,9 @@ func TestClaudeCTOStartupAdoptsWithoutGatewayOrHello(t *testing.T) {
 	t.Cleanup(func() {
 		d.cto.mu.Lock()
 		d.claudeCTO.ref = ref
-		d.stopClaudeCTOLocked()
+		stop := d.detachClaudeCTOLocked("requested")
 		d.cto.mu.Unlock()
+		stop.run()
 		d.Stop()
 	})
 	if err := d.Start(context.Background()); err != nil {

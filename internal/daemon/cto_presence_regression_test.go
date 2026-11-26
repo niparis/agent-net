@@ -224,9 +224,7 @@ func TestCTOWakeForOwnerPhoneAndBot(t *testing.T) {
 	rec := readFake(t, filepath.Join(n.cfg.StateDir, "cto"))
 	path := filepath.Join(rec.Env["XDG_DATA_HOME"], "fake-session-"+session+".json")
 	stop := func() {
-		n.d.cto.mu.Lock()
-		n.d.stopOpenCodeCTOLocked("test")
-		n.d.cto.mu.Unlock()
+		n.d.stopOpenCodeCTO("test")
 		eventually(t, "stopped CTO reachable", func() bool { a, _, _ := g.gw.Store().Agent(id); return a.Online && a.Status == "dormant" })
 	}
 	for _, name := range []string{"owner", "phone"} {

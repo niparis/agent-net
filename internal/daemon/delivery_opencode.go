@@ -208,8 +208,9 @@ func (d *Daemon) restartOpenCodeCTOForDelivery(ctx context.Context, id, text, ms
 		d.Logf("cto.delivery_unconfirmed msg=%s reason=cto_changed", msgID)
 		return
 	}
-	d.stopOpenCodeCTOLocked("delivery_unconfirmed")
+	stop := d.detachOpenCodeCTOLocked("delivery_unconfirmed")
 	c.mu.Unlock()
+	stop.run()
 	if err := d.startOpenCodeRole(ctx, roleCTO); err != nil {
 		d.Logf("cto.delivery_unconfirmed msg=%s reason=restart_failed detail=%q", msgID, err.Error())
 		return

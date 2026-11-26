@@ -93,9 +93,7 @@ func TestCTOResumeFallsToTheListWithANewConversation(t *testing.T) {
 	if got := argValue(first.Args, "--model"); got != "opus" {
 		t.Fatalf("first start model = %q, want opus", got)
 	}
-	n.d.cto.mu.Lock()
-	n.d.stopClaudeCTOLocked("test")
-	n.d.cto.mu.Unlock()
+	n.d.stopClaudeCTO("test")
 	if _, err := n.d.ctoSend(ctx, "second"); err != nil {
 		t.Fatal(err)
 	}

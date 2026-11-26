@@ -230,9 +230,7 @@ func testStopDuringSlowOpenCodeStartLeavesNoPublishedServer(t *testing.T) {
 	base := d.cto.base
 	d.cto.mu.Unlock()
 	t.Cleanup(func() {
-		d.cto.mu.Lock()
-		d.stopOpenCodeCTOLocked("test")
-		d.cto.mu.Unlock()
+		d.stopOpenCodeCTO("test")
 	})
 	if cmd != nil || base != "" {
 		t.Fatalf("stop during slow start left published server: cmd=%v base=%q", cmd != nil, base)

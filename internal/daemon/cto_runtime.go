@@ -177,16 +177,17 @@ func (d *Daemon) prepareCTOHarness(settings protocol.CTOSettings) (ctoHarness, e
 	}
 	h := ctoHarnessFor(settings.Harness)
 	d.cto.mu.Lock()
-	defer d.cto.mu.Unlock()
 	// A harness that is still writing its handover note stays up until the note
 	// is written (ctoHandover). One the CTO moves back to is stopped now, as a
 	// switch away used to stop it.
-	d.endHandoverLocked(h.name())
+	stop := d.endHandoverLocked(h.name())
 	for _, other := range protocol.CTOHarnesses {
 		if other != h.name() && !d.ctoHandoverPendingLocked(other) {
-			d.stopCTOHarnessLocked(other, "harness_switch")
+			stop.add(d.detachCTOHarnessLocked(other, "harness_switch"))
 		}
 	}
+	d.cto.mu.Unlock()
+	stop.run()
 	_, err := d.st.db.Exec(`INSERT INTO cto(id,session_id,active_harness) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET active_harness=excluded.active_harness`, h.name())
 	return h, err
 }

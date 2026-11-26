@@ -43,6 +43,10 @@ type claudeCTOState struct {
 	// that arrive meanwhile wait for it, so a binary is probed once at a time.
 	capProbing map[string]chan struct{}
 	restarted  bool
+	// stopping holds the jobs whose stop runs outside cto.mu. Their process
+	// and session file live until `claude stop` returns, and an adoption must
+	// not bind them again in that time.
+	stopping map[string]bool
 }
 
 func (c *claudeCTOState) setSession(id string) { c.session.Store(&id) }
@@ -88,44 +92,61 @@ func (d *Daemon) releaseClaudeCTOLocked() {
 	c.setSession("")
 }
 
-func (d *Daemon) stopClaudeCTOLocked(reasons ...string) {
-	reason := "requested"
-	if len(reasons) > 0 {
-		reason = reasons[0]
-	}
+// detachClaudeCTOLocked forgets the Claude run under cto.mu and returns the
+// rest of its stop: `claude stop` and the kill, which call other processes and
+// run after cto.mu is released (B12). The generation changes at once, so a
+// start or a write back that began before the stop drops its result.
+func (d *Daemon) detachClaudeCTOLocked(reason string) ctoStop {
 	c := &d.claudeCTO
 	c.gen++
 	root := c.root.Load()
-	wasRunning := c.ref != ""
-	var crashState, crashDetail string
-	if wasRunning && reason == "crash" {
-		crashState, crashDetail = claudeCTOJobState(d.cfg.ClaudeSessionsDir, c.ref)
-		crashState = claudeCTOErrorOutput([]byte(crashState))
-	}
-	if c.ref != "" {
-		(claudeLauncher{}).stopID(d, c.ref)
-	}
-	if root != nil {
-		token, alive := procToken(root.pid)
-		if alive && token == root.token {
-			pgid, err := syscall.Getpgid(root.pid)
-			if err == nil && pgid == root.pid {
-				_ = syscall.Kill(-root.pid, syscall.SIGKILL)
-			} else {
-				_ = syscall.Kill(root.pid, syscall.SIGKILL)
-			}
-		}
-	}
+	ref := c.ref
 	c.root.Store(nil)
 	c.ref, c.model, c.token = "", "", ""
 	c.setSession("")
-	if wasRunning {
-		if reason == "crash" {
-			d.Logf("cto.crash harness=claude reason=job_ended state=%q detail=%q", crashState, crashDetail)
+	if ref == "" && root == nil {
+		return nil
+	}
+	if ref != "" {
+		if c.stopping == nil {
+			c.stopping = map[string]bool{}
 		}
+		c.stopping[ref] = true
+	}
+	return ctoStop{func() {
+		if ref != "" && reason == "crash" {
+			state, detail := claudeCTOJobState(d.cfg.ClaudeSessionsDir, ref)
+			d.Logf("cto.crash harness=claude reason=job_ended state=%q detail=%q", claudeCTOErrorOutput([]byte(state)), detail)
+		}
+		(claudeLauncher{}).stopID(d, ref)
+		if root != nil {
+			token, alive := procToken(root.pid)
+			if alive && token == root.token {
+				pgid, err := syscall.Getpgid(root.pid)
+				if err == nil && pgid == root.pid {
+					_ = syscall.Kill(-root.pid, syscall.SIGKILL)
+				} else {
+					_ = syscall.Kill(root.pid, syscall.SIGKILL)
+				}
+			}
+		}
+		if ref == "" {
+			return
+		}
+		d.cto.mu.Lock()
+		delete(c.stopping, ref)
+		d.cto.mu.Unlock()
 		d.Logf("cto.stop harness=claude reason=%s", reason)
 		d.scheduleCTOPresence()
-	}
+	}}
+}
+
+// stopClaudeCTO stops the Claude CTO. The caller does not hold cto.mu.
+func (d *Daemon) stopClaudeCTO(reason string) {
+	d.cto.mu.Lock()
+	stop := d.detachClaudeCTOLocked(reason)
+	d.cto.mu.Unlock()
+	stop.run()
 }
 
 func sameCTODir(a, b string) bool {
@@ -482,19 +503,20 @@ func (claudeCTOHarness) newConversation(ctx context.Context, d *Daemon) (any, er
 			}
 			return nil, errors.New("the CTO conversation changed while a new one was starting; try again")
 		}
-		err = d.resetClaudeCTOLocked(latest.ID)
+		stop := d.detachClaudeCTOLocked("new_conversation")
 		d.cto.mu.Unlock()
-		if err != nil {
+		stop.run()
+		if err = d.resetClaudeCTO(latest.ID); err != nil {
 			return nil, err
 		}
 		return struct{}{}, nil
 	}
 }
 
-// resetClaudeCTOLocked stops the Claude CTO and records the graph id that the
-// next conversation starts after. The caller holds d.cto.mu.
-func (d *Daemon) resetClaudeCTOLocked(graphAfter int64) error {
-	d.stopClaudeCTOLocked("new_conversation")
+// resetClaudeCTO records the graph id that the next conversation starts after
+// and drops the stored conversation. The run is already detached and stopped;
+// ctoDispatchMu keeps a send from storing a conversation in between.
+func (d *Daemon) resetClaudeCTO(graphAfter int64) error {
 	tx, err := d.st.db.Begin()
 	if err != nil {
 		return err
@@ -754,6 +776,11 @@ func (d *Daemon) bindClaudeCTO(sf claudeSessionFile, model, id, mode string, exp
 		return false
 	}
 	d.cto.mu.Lock()
+	if d.claudeCTO.stopping[sf.JobID] {
+		// A stop outside cto.mu is ending this job and its process.
+		d.cto.mu.Unlock()
+		return false
+	}
 	if d.claudeCTO.gen != expectedGen {
 		d.cto.mu.Unlock()
 		(claudeLauncher{}).stopID(d, sf.JobID)

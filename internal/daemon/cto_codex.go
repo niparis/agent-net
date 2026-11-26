@@ -105,21 +105,23 @@ func (d *Daemon) codexCTOConn(ctx context.Context, model string, load bool) (rpc
 		return nil, "", false, err
 	}
 	defer c.start.unlock()
+	var stop ctoStop
 	d.cto.mu.Lock()
 	if c.cmd != nil {
 		select {
 		case <-c.exited:
-			d.stopCodexCTOLocked("crash")
+			stop = d.detachCodexCTOLocked("crash")
 		default:
 			if c.rpc == nil {
-				d.stopCodexCTOLocked("start_failed")
+				stop = d.detachCodexCTOLocked("start_failed")
 			} else if c.rpc.isDead() {
-				d.stopCodexCTOLocked("connection_lost")
+				stop = d.detachCodexCTOLocked("connection_lost")
 			}
 		}
 	}
 	rpc, thread = c.rpc, c.thread
 	d.cto.mu.Unlock()
+	stop.run()
 	if rpc == nil {
 		if rpc, err = d.spawnCodexCTO(ctx); err != nil {
 			return nil, "", false, err
@@ -214,10 +216,12 @@ func (d *Daemon) spawnCodexCTO(ctx context.Context) (*codexRPC, error) {
 			rpc.close()
 			return nil, errors.New("the CTO's Codex server was stopped while it started")
 		}
+		var stop ctoStop
 		if c.cmd == cmd {
-			d.stopCodexCTOLocked("start_failed")
+			stop = d.detachCodexCTOLocked("start_failed")
 		}
 		d.cto.mu.Unlock()
+		stop.run()
 		if !errors.Is(err, errCodexExited) {
 			return nil, err
 		}
@@ -240,12 +244,13 @@ func (d *Daemon) waitCodexCTO(cmd *exec.Cmd, run *ctoProcess, exited chan struct
 	d.scheduleCTOPresence()
 }
 
-// stopCodexCTOLocked stops the app server and its MCP servers. The thread
-// stays on disk, so the next start resumes it. The caller holds cto.mu.
-func (d *Daemon) stopCodexCTOLocked(reason string) {
+// detachCodexCTOLocked forgets the app server under cto.mu and returns the
+// kill of it and its MCP servers, the wait for its exit and the close of its
+// connection. The thread stays on disk, so the next start resumes it.
+func (d *Daemon) detachCodexCTOLocked(reason string) ctoStop {
 	c := &d.codexCTO
 	if c.cmd == nil {
-		return
+		return nil
 	}
 	intentional := false
 	select {
@@ -253,22 +258,35 @@ func (d *Daemon) stopCodexCTOLocked(reason string) {
 	default:
 		intentional = true
 		c.run.expected.Store(true)
-		_ = syscall.Kill(-c.cmd.Process.Pid, syscall.SIGKILL)
-		<-c.exited
 	}
-	if c.rpc != nil {
-		c.rpc.close()
-	}
-	if intentional && c.run.started.Load() {
-		d.Logf("cto.stop harness=codex reason=%s", reason)
-	}
+	cmd, exited, run, rpc := c.cmd, c.exited, c.run, c.rpc
 	c.pid.Store(0)
 	c.cmd, c.exited, c.run, c.rpc = nil, nil, nil, nil
 	c.addr, c.token, c.thread = "", "", ""
 	c.nmu.Lock()
 	c.busy, c.taken = false, nil
 	c.nmu.Unlock()
-	d.scheduleCTOPresence()
+	return ctoStop{func() {
+		if intentional {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			<-exited
+		}
+		if rpc != nil {
+			rpc.close()
+		}
+		if intentional && run.started.Load() {
+			d.Logf("cto.stop harness=codex reason=%s", reason)
+		}
+		d.scheduleCTOPresence()
+	}}
+}
+
+// stopCodexCTO stops the app server. The caller does not hold cto.mu.
+func (d *Daemon) stopCodexCTO(reason string) {
+	d.cto.mu.Lock()
+	stop := d.detachCodexCTOLocked(reason)
+	d.cto.mu.Unlock()
+	stop.run()
 }
 
 // codexCTORunningLocked says whether the app server is alive. The caller
@@ -600,11 +618,18 @@ func (d *Daemon) codexCTONew(ctx context.Context) (any, error) {
 	if err = json.Unmarshal(data, &latest); err != nil {
 		return nil, err
 	}
+	// The thread loaded before the reset is the one it ends. A thread loaded
+	// after it is a new conversation and stays.
+	d.cto.mu.Lock()
+	rpc, thread := d.codexCTO.rpc, d.codexCTO.thread
+	d.cto.mu.Unlock()
 	if err := d.endCTOConversation("codex", latest.ID); err != nil {
 		return nil, err
 	}
 	d.cto.mu.Lock()
-	d.codexCTO.thread = ""
+	if d.codexCTO.rpc == rpc && d.codexCTO.thread == thread {
+		d.codexCTO.thread = ""
+	}
 	d.cto.mu.Unlock()
 	return struct{}{}, nil
 }

@@ -368,9 +368,7 @@ func codexCTOWithOneMessage(t *testing.T, n *node, cli *localClient) {
 		raw, err := os.ReadFile(fakeCodexThreadsFile(codexCTODir(n)))
 		return err == nil && strings.Contains(string(raw), "codex one")
 	})
-	n.d.cto.mu.Lock()
-	n.d.stopCodexCTOLocked("idle")
-	n.d.cto.mu.Unlock()
+	n.d.stopCodexCTO("idle")
 }
 
 // The real case: a Codex CTO that did work and then idled still writes its model
@@ -406,9 +404,7 @@ func TestCTOCodexThreadWithoutTurnsHasNoModelLayer(t *testing.T) {
 		if _, _, _, err := n.d.codexCTOConn(context.Background(), "", true); err != nil {
 			t.Fatal(err)
 		}
-		n.d.cto.mu.Lock()
-		n.d.stopCodexCTOLocked("idle")
-		n.d.cto.mu.Unlock()
+		n.d.stopCodexCTO("idle")
 		switchCTOHarness(t, cli, "claude")
 		waitHandoverSettled(t, n.d)
 		body := handoverNotes(t, n.d)[n.d.latestHandoverNote()]
