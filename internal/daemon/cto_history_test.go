@@ -95,9 +95,7 @@ func ctoTimelineShows(t *testing.T, cli *localClient, texts ...string) {
 // stopCodexCTOQuietly ends the Codex app server the way an idle stop or a
 // crash does, not the owner's stop.
 func stopCodexCTOQuietly(n *node) {
-	n.d.cto.mu.Lock()
-	n.d.stopCodexCTOLocked("idle")
-	n.d.cto.mu.Unlock()
+	n.d.stopCodexCTO("idle")
 }
 
 // cto_new starts a new conversation, and the messages of the one before stay in

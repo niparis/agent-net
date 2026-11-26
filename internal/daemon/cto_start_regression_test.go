@@ -179,9 +179,7 @@ func TestCTOClaudeFailedResumeFallback(t *testing.T) {
 			if argValue(rec.Args, "--resume") != "" {
 				t.Fatalf("fallback resumed: %v", rec.Args)
 			}
-			n.d.cto.mu.Lock()
-			n.d.stopClaudeCTOLocked()
-			n.d.cto.mu.Unlock()
+			n.d.stopClaudeCTO("requested")
 			t.Setenv("FAKE_CLAUDE_RESUME_FAILURE", "")
 			if _, err := n.d.ctoEnter(context.Background()); err != nil {
 				t.Fatal(err)

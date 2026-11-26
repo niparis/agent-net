@@ -185,10 +185,11 @@ func (d *Daemon) stopCTOSession(ctx context.Context) (protocol.SessionStopResult
 	defer d.ctoDispatchMu.unlock()
 	d.saveCTOBeforeStop(ctx)
 	d.cto.mu.Lock()
-	d.stopClaudeCTOLocked("owner_stop")
-	d.stopOpenCodeCTOLocked("owner_stop")
-	d.stopCodexCTOLocked("owner_stop")
+	stop := d.detachClaudeCTOLocked("owner_stop")
+	stop.add(d.detachOpenCodeCTOLocked("owner_stop"))
+	stop.add(d.detachCodexCTOLocked("owner_stop"))
 	d.cto.mu.Unlock()
+	stop.run()
 	if err := d.setCTOStoppedByOwner(true); err != nil {
 		d.Logf("cto.stop owner flag: %v", err)
 	}

@@ -354,8 +354,9 @@ func (d *Daemon) restartClaudeCTOForDelivery(ctx context.Context, w *ctoTranscri
 		d.Logf("cto.delivery_unconfirmed msg=%s reason=cto_changed", msgID)
 		return
 	}
-	d.stopClaudeCTOLocked("delivery_unconfirmed")
+	stop := d.detachClaudeCTOLocked("delivery_unconfirmed")
 	d.cto.mu.Unlock()
+	stop.run()
 	if err := d.startClaudeRoleWith(ctx, roleCTO, w.session, settings.ClaudeModel, CTOFirstPrompt(msgID, label, text)); err != nil {
 		d.Logf("cto.delivery_unconfirmed msg=%s reason=restart_failed detail=%q", msgID, claudeCTOErrorOutput([]byte(err.Error())))
 		return

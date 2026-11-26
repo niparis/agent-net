@@ -907,17 +907,20 @@ func (d *Daemon) Stop() {
 	// The CTO's Claude job outlives the daemon: an upgrade restarts the daemon
 	// often, and killing the job lost the owner's CTO conversation. The next
 	// daemon adopts the running job again (startClaudeRole).
+	var stop ctoStop
 	if d.cfg.testStopCTOOnExit {
-		d.stopClaudeCTOLocked("daemon_shutdown")
+		stop = d.detachClaudeCTOLocked("daemon_shutdown")
 	} else {
 		if d.claudeCTO.ref != "" {
 			d.Logf("cto.stop harness=claude reason=daemon_shutdown action=release")
 		}
 		d.releaseClaudeCTOLocked()
 	}
-	d.stopOpenCodeCTOLocked("daemon_shutdown")
-	d.stopCodexCTOLocked("daemon_shutdown")
+	stop.add(d.detachOpenCodeCTOLocked("daemon_shutdown"))
+	stop.add(d.detachCodexCTOLocked("daemon_shutdown"))
 	d.cto.mu.Unlock()
+	// The processes end before the state closes, without cto.mu (B12).
+	stop.run()
 	d.recordCTORunningAtStop(runningCTO)
 	d.ctoDispatchMu.unlock()
 	d.mcp.stop()

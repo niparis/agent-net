@@ -14,7 +14,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/niparis/agent-net/internal/authority"
@@ -105,15 +104,9 @@ func (s *ctoCompactState) reset(sessionID string) {
 	s.pendingBefore = 0
 }
 
-func (c *ctoRuntime) stopLocked() {
-	if c.cmd != nil {
-		select {
-		case <-c.exited:
-		default:
-			_ = syscall.Kill(-c.cmd.Process.Pid, syscall.SIGKILL)
-			<-c.exited
-		}
-	}
+// clearLocked forgets the server in memory. The caller holds mu and ends the
+// process itself (detachOpenCodeCTOLocked).
+func (c *ctoRuntime) clearLocked() {
 	c.pid.Store(0)
 	c.cmd = nil
 	c.exited = nil
@@ -561,7 +554,7 @@ func (d *Daemon) openCodeCTONew(ctx context.Context) (any, error) {
 	c := &d.cto
 	for attempt := 1; ; attempt++ {
 		c.mu.Lock()
-		session, model := c.session, c.model
+		gen, session, model := c.gen, c.session, c.model
 		c.mu.Unlock()
 
 		data, err := d.call(ctx, "cto.graph_latest", nil)
@@ -576,34 +569,29 @@ func (d *Daemon) openCodeCTONew(ctx context.Context) (any, error) {
 		}
 
 		c.mu.Lock()
-		if c.session != session || c.model != model {
-			c.mu.Unlock()
+		moved := c.gen != gen || c.session != session || c.model != model
+		c.mu.Unlock()
+		if moved {
 			if attempt == 1 {
 				continue
 			}
 			return nil, errors.New("the CTO conversation changed while a new one was starting; try again")
 		}
-		err = d.resetOpenCodeCTOLocked(latest.ID)
-		c.mu.Unlock()
-		if err != nil {
+		if err = d.endCTOConversation("opencode", latest.ID); err != nil {
 			return nil, err
 		}
+		// The memory forgets the conversation only if it is still the one read
+		// above. A stop in between already cleared it.
+		c.mu.Lock()
+		if c.gen == gen && c.session == session && c.model == model {
+			c.session, c.model = "", ""
+			c.compact.mu.Lock()
+			c.compact.reset("")
+			c.compact.mu.Unlock()
+		}
+		c.mu.Unlock()
 		return struct{}{}, nil
 	}
-}
-
-// resetOpenCodeCTOLocked ends the OpenCode conversation and records the graph id
-// that the next one starts after. The caller holds c.mu.
-func (d *Daemon) resetOpenCodeCTOLocked(graphAfter int64) error {
-	c := &d.cto
-	if err := d.endCTOConversation("opencode", graphAfter); err != nil {
-		return err
-	}
-	c.session, c.model = "", ""
-	c.compact.mu.Lock()
-	c.compact.reset("")
-	c.compact.mu.Unlock()
-	return nil
 }
 
 // endCTOConversation ends one harness's conversation and records the graph id
