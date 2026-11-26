@@ -508,7 +508,8 @@ func (s *Store) loopPause(r loopRow, res loopTickResult, target protocol.AgentVi
 		return res, err
 	}
 	res.Outcome = protocol.LoopPaused
-	return res, s.loopLog(r.node, "Loop "+r.node+": "+protocol.LoopPaused+" ("+why+")")
+	call := ctoOpCallText(protocol.OpLoopResume, map[string]any{"node": r.node, "owner_words": "<quote the owner's words>"})
+	return res, s.loopLog(r.node, "Loop "+r.node+": "+protocol.LoopPaused+" ("+why+"). The CTO resumes it with "+call)
 }
 
 // loopAnnounce attaches the next announce after a tick to its Desk log as the
@@ -587,6 +588,51 @@ func (s *Store) answerLoopAsk(id, answer string, validate ...bool) (protocol.Inb
 		return item, true, err
 	}
 	return item, true, s.loopLog(node, "Loop "+node+": "+answer+" by the owner")
+}
+
+// ResumeLoopOnOwnerWords restarts a paused loop on the owner's quoted chat
+// words (decision 0196). It needs no stored ask and clears the streak and the
+// clock so the next tick starts fresh, like the Desk resume did.
+func (s *Store) ResumeLoopOnOwnerWords(frame protocol.LoopResumeFrame) (protocol.LoopResumeResult, error) {
+	node := strings.TrimSpace(frame.Node)
+	if node == "" {
+		return protocol.LoopResumeResult{}, reject("loop_resume needs the loop id")
+	}
+	words := strings.TrimSpace(frame.OwnerWords)
+	if words == "" {
+		return protocol.LoopResumeResult{}, reject("owner_words is required: quote the owner's instruction from this chat")
+	}
+	if !frame.WordsVerified {
+		return protocol.LoopResumeResult{}, reject("owner_words were not verified: the owner must have typed them")
+	}
+	var paused int
+	err := s.db.QueryRow(`SELECT COALESCE(paused,0) FROM agent_loops WHERE node=?`, node).Scan(&paused)
+	if errors.Is(err, sql.ErrNoRows) {
+		return protocol.LoopResumeResult{}, reject("unknown loop %q", node)
+	}
+	if err != nil {
+		return protocol.LoopResumeResult{}, err
+	}
+	if paused == loopRunning {
+		return protocol.LoopResumeResult{}, reject("loop %q is not paused", node)
+	}
+	s.checkMu.Lock()
+	_, err = s.db.Exec(`UPDATE agent_loops SET paused=0,streak=0,announced=0,counted=1,last_at=0,started_at=0 WHERE node=?`, node)
+	s.checkMu.Unlock()
+	if err != nil {
+		return protocol.LoopResumeResult{}, err
+	}
+	if err := s.closeAskRef(s.db, loopRef(node), protocol.AskReasonResolved); err != nil {
+		return protocol.LoopResumeResult{}, err
+	}
+	by := "the owner"
+	if frame.By == "cto" {
+		by = "the CTO on the owner's words"
+	}
+	if err := s.loopLog(node, "Loop "+node+": resume by "+by); err != nil {
+		return protocol.LoopResumeResult{}, err
+	}
+	return protocol.LoopResumeResult{Node: node, Status: "resumed"}, nil
 }
 
 // loopTick runs the standing loops' clock and dispatches what it stored. A

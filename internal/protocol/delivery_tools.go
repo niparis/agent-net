@@ -103,6 +103,54 @@ type CTOStepReportArgs struct {
 	Friction []FrictionEntry `json:"friction,omitempty"`
 }
 
+// DeliveryOwnerAnswerRequest is the CTO's cto_op delivery_owner_answer: it
+// completes an @owner step, or an owner merge approval, on the owner's quoted
+// words (decision 0196). Result is pass when the owner approves, fail when he
+// refuses.
+type DeliveryOwnerAnswerRequest struct {
+	Change string `json:"change" jsonschema:"the change id"`
+	StepRef
+	Result     string            `json:"result" jsonschema:"pass when the owner approves, fail when he refuses"`
+	Commit     string            `json:"commit" jsonschema:"the full commit hash the owner approved"`
+	Fields     map[string]string `json:"fields,omitempty" jsonschema:"evidence fields for the step, such as the merge commit"`
+	Note       string            `json:"note,omitempty" jsonschema:"a short note from the owner's answer"`
+	OwnerWords string            `json:"owner_words" jsonschema:"a short quote of the owner's instruction in this chat"`
+}
+
+// DeliveryOwnerAnswerFrame is FrameDeliveryOwnerAnswer. Owner is the owner
+// session the gateway checks, Session is the CTO session that reported, and
+// WordsVerified says the daemon found the quote in the CTO chat.
+type DeliveryOwnerAnswerFrame struct {
+	Request       DeliveryOwnerAnswerRequest `json:"request"`
+	Owner         string                     `json:"owner"`
+	Session       string                     `json:"session,omitempty"`
+	By            string                     `json:"by,omitempty"`
+	WordsVerified bool                       `json:"words_verified,omitempty"`
+}
+
+// Validate checks an owner answer before the daemon sends it.
+func (a DeliveryOwnerAnswerRequest) Validate() error {
+	if err := validChangeID(a.Change); err != nil {
+		return err
+	}
+	if err := a.StepRef.Validate(); err != nil {
+		return err
+	}
+	if a.Result != StepResultPass && a.Result != StepResultFail {
+		return errors.New("result must be pass or fail")
+	}
+	if !ValidCommit(a.Commit) {
+		return errors.New("commit must be the full hash of the exact commit the owner approved")
+	}
+	if strings.TrimSpace(a.OwnerWords) == "" {
+		return errors.New("owner_words is required: quote the owner's instruction from this chat")
+	}
+	if len(a.Note) > MaxEvidenceNoteBytes {
+		return fmt.Errorf("note is longer than %d bytes", MaxEvidenceNoteBytes)
+	}
+	return nil
+}
+
 // OpChangesOwnerFind is the owner's read of the same data, for the TUI: it
 // takes ChangesFindArgs and answers ChangesFindResult, for every change of the
 // network and without a session. Only the owner's command line or TUI may call

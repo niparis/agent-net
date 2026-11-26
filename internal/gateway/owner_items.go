@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -159,17 +160,41 @@ func ownerItemBody(q askDB, item protocol.InboxItem, canReply bool) string {
 	} else {
 		b.WriteString("agent-net sent this as a notice. Ask the owner in your chat only what only he can decide.")
 	}
-	// A held message has nobody to release it but the CTO, so the request ends
-	// with how. The end is kept when a long held body is cut.
+	// A held message and an @owner step have nobody to answer them but the
+	// CTO, so the request ends with how. The end is kept when a long body is
+	// cut.
 	var end string
 	if item.Kind == protocol.AskKindHeld && item.MessageID != "" {
 		end = fmt.Sprintf("\nIf the owner agrees, the CTO answers it with held_answer, message_id %s, action a to deliver or r to refuse.", item.MessageID)
+	}
+	if item.AboutKind == protocol.AskAboutStep {
+		if change, _, ref, commit, ok := parseStepAboutID(item.AboutID); ok {
+			args := map[string]any{"change": change, "step": ref.Step, "commit": commit,
+				"result": protocol.StepResultPass, "owner_words": "<quote the owner's words>"}
+			if ref.For != "" {
+				args["for"] = ref.For
+			}
+			if ref.AfterMerge {
+				args["after_merge"] = true
+			}
+			end = "\nThe CTO completes it on the owner's words with " + ctoOpCallText(protocol.OpDeliveryOwnerAnswer, args)
+		}
 	}
 	body := b.String()
 	if limit := protocol.MaxBodyBytes - len(end); len(body) > limit {
 		body = strings.ToValidUTF8(body[:limit], "")
 	}
 	return body + end
+}
+
+// ctoOpCallText is the exact CTO call a chief request or log line names:
+// cto_op with the method and its arguments.
+func ctoOpCallText(method string, args map[string]any) string {
+	raw, _ := json.Marshal(struct {
+		Method string         `json:"method"`
+		Args   map[string]any `json:"args"`
+	}{method, args})
+	return "cto_op " + string(raw)
 }
 
 // logOwnerItem writes the log line of an owner item. It never logs the text
