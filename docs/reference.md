@@ -3646,6 +3646,32 @@ session says which of three cases applies:
   also gets one notice with the same reason. It says that the next message sent
   after the 10 minute wake backoff asks for a wake again.
 
+**Stopped, stood-down and archived sessions are never woken.** A message, a
+ready step or a loop tick never wakes these sessions:
+
+- An archived session.
+- A session the owner or the CTO stopped (`session_change` stop, or Stop in the
+  TUI). After the stop, the session's machine sends `session.stopped`, and the
+  gateway records the stop in `sessions.stood_down`. Only that machine can send
+  it. A CTO stop of its own session is not recorded here: the CTO has its own
+  stop flag.
+- A session whose role moved to another session. This is a `merger_set` that
+  names a new merger or clears the merger, or a `lead_set` that moves the lead
+  session. The gateway records the new holder in `sessions.stood_down_for`.
+
+A message for such a session, while it is offline, goes to the session that
+took over its work. A replacement of that session is followed. If no session
+took over its work, the message goes to the lead session of the project. The
+message carries one agent-net note for the recipient. The note names the session
+the message was sent to, why that session is not woken, and why the recipient
+got the message. The sender's receipt says where the message went. Messages that
+already wait when the stop is recorded are moved in the same way. When no other
+session can take the message, it waits. This happens when the stopped session is
+its project's own lead. The sender is told at once that the session is not
+woken, and why. A session that comes online again was started by the owner or
+the CTO, so its mark is cleared and the normal wake rules apply. A session that
+is named merger or lead again is cleared too.
+
 What each harness does:
 
 - Claude, interactive: `claude --bg --resume <session id>` in the recorded

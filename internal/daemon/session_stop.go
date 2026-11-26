@@ -53,14 +53,33 @@ func (d *Daemon) relaySessionStop(ctx context.Context, nodeID, id string) (proto
 
 // sessionStopLocal stops a session on this machine. It is also the gateway's
 // path, so it refuses a session that is not here instead of relaying again.
+// Every stop that reaches it is the owner's or the CTO's, so after the stop it
+// tells the gateway, which then never wakes the session for a message until
+// it is started again.
 func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.SessionStopResult, error) {
-	no := func(err error) (protocol.SessionStopResult, error) { return protocol.SessionStopResult{}, err }
 	if id != "" && id == d.ctoSessionID() {
 		if err := refuseCTOSelfControl(ctx); err != nil {
-			return no(err)
+			return protocol.SessionStopResult{}, err
 		}
+		// The CTO keeps its own stop flag (setCTOStoppedByOwner), and the
+		// daemon, not the gateway, starts it for a message.
 		return d.stopCTOSession(ctx)
 	}
+	res, err := d.stopLocalHarness(ctx, id)
+	if err != nil {
+		return res, err
+	}
+	// The stop holds daemon locks, so the gateway is told after it returns.
+	// An older gateway does not know the frame: the stop itself still stands.
+	if _, merr := d.call(ctx, protocol.FrameSessionStopped, protocol.SessionRemove{SessionID: id}); merr != nil {
+		d.Logf("session.stop: the gateway did not record the stop of %s: %v", id, merr)
+	}
+	return res, nil
+}
+
+// stopLocalHarness ends the harness of a session on this machine.
+func (d *Daemon) stopLocalHarness(ctx context.Context, id string) (protocol.SessionStopResult, error) {
+	no := func(err error) (protocol.SessionStopResult, error) { return protocol.SessionStopResult{}, err }
 	ls := d.sessionByID(id)
 	if ls == nil {
 		return no(errors.New("session is not known on this machine"))

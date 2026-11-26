@@ -1795,6 +1795,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return nil, st.SetSessionOffline(nc.id, p.SessionID)
 
+	case protocol.FrameSessionStopped:
+		p, err := decode[protocol.SessionRemove](raw)
+		if err != nil || p.SessionID == "" {
+			return nil, reject("bad " + protocol.FrameSessionStopped)
+		}
+		return nil, g.standDownStopped(ctx, nc.id, p.SessionID)
+
 	case "session.archive":
 		p, err := decode[protocol.SessionRemove](raw)
 		if err != nil || p.SessionID == "" {
@@ -3745,6 +3752,17 @@ func (g *Gateway) dispatch(ctx context.Context, m protocol.Message) bool {
 	if a.Harness == "bot" {
 		return false
 	}
+	// A stood-down session is not woken: its messages go to the session
+	// that took over its work, or else to its project lead.
+	if !a.Online && a.Worker == nil {
+		moved := false
+		if m, moved, err = g.store.redirectStoodDown(m); err != nil {
+			g.logLine("error", "where", "redirect stood-down recipient", "msg", m.ID, "err", err)
+		}
+		if moved {
+			return g.dispatch(ctx, m)
+		}
+	}
 	if !a.Online {
 		started := g.wakeForMessage(ctx, a, m)
 		if !started {
@@ -3864,12 +3882,18 @@ func (g *Gateway) prepareDelivery(ctx context.Context, nodeID string, m protocol
 	} else {
 		m.AuthorityNote = note
 	}
-	// The notes on cited messages are agent-net's own text (decision 0121).
+	// The notes on cited messages are agent-net's own text (decision 0121),
+	// and so is the note on a message moved from a stood-down session.
 	m.CitedNotes = nil
 	if notes, err := g.store.citedNotes(m); err != nil {
 		g.logLine("error", "where", "cited notes", "err", err)
 	} else {
 		m.CitedNotes = notes
+	}
+	if note, err := g.store.redirectNoteOf(m.ID); err != nil {
+		g.logLine("error", "where", "redirect note", "err", err)
+	} else if note != "" {
+		m.CitedNotes = append([]string{note}, m.CitedNotes...)
 	}
 	authority, rule, err := g.store.MergeRuleForSession(m.To)
 	if err != nil {
