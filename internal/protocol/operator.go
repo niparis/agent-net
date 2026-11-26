@@ -471,7 +471,7 @@ type WorkerStartRequest struct {
 	// OwnerWords is a short quote of the owner's own request that names the
 	// harness, model, provider, effort, family or machine. It is read only from
 	// an agent's start. The daemon checks that the quote appears in what the
-	// owner typed in the caller's session in the last hours (OwnerWordsMatch).
+	// owner typed in any session in the last OwnerWordsWindow (OwnerWordsMatch).
 	OwnerWords string `json:"owner_words,omitempty"`
 	// Reason is why the caller sets selection fields without the owner's
 	// words. It is read only from an agent's start, and only when OwnerWords is

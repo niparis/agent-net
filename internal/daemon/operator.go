@@ -492,7 +492,7 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 	// answer on the Desk (worker_override.go). The owner's own command line and
 	// TUI are not callers here. The CTO is one.
 	agent, _ := ctx.Value(answerEarlyKey{}).(bool)
-	selection, hold, reason := d.checkOverride(caller, &p, agent)
+	selection, hold, reason, receipt := d.checkOverride(ctx, caller, &p, agent)
 	if p.Continue != "" && protocol.IsStartID(p.Continue) {
 		target, err := d.startTarget(p.Continue)
 		if err != nil {
@@ -519,7 +519,13 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		return d.holdStart(ctx, caller, p, reason, callerProject, callerPath, cto)
 	}
 	run := func(ctx context.Context) (*protocol.WorkerStartResult, error) {
-		return d.runWorkerStartCall(ctx, caller, p, frame, callerPath, cto, ph)
+		res, err := d.runWorkerStartCall(ctx, caller, p, frame, callerPath, cto, ph)
+		// The receipt reaches both the answer and the notice of an accepted
+		// start, which is built from this result.
+		if res != nil && receipt != "" {
+			res.OwnerLine = strings.TrimSpace(receipt + " " + res.OwnerLine)
+		}
+		return res, err
 	}
 	var res *protocol.WorkerStartResult
 	if !agent || cto {
@@ -529,6 +535,9 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 	}
 	if res != nil && selection != "" {
 		res.SelectionPath = selection
+		if receipt != "" && !strings.Contains(res.OwnerLine, receipt) {
+			res.OwnerLine = strings.TrimSpace(receipt + " " + res.OwnerLine)
+		}
 	}
 	return res, err
 }

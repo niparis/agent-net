@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -18,7 +19,7 @@ import (
 
 const (
 	// ownerPromptWindow is how long a prompt of the owner counts as his words.
-	ownerPromptWindow = 3 * time.Hour
+	ownerPromptWindow = protocol.OwnerWordsWindow
 	// maxOwnerPromptsPerSession and maxOwnerPromptBytes bound the memory used.
 	maxOwnerPromptsPerSession = 20
 	maxOwnerPromptBytes       = 16 * 1024
@@ -85,6 +86,26 @@ func (d *Daemon) rememberOwnerPromptAt(session, text string, at time.Time) {
 		return
 	}
 	now := d.ownerPromptNow()
+	if now.Sub(at) > ownerPromptWindow {
+		return
+	}
+	d.keepOwnerPrompt(session, text, at, now)
+	// The gateway keeps the words too, so a quote counts on every machine.
+	// The call runs outside every lock: this runs under the sweep's lock. A
+	// daemon that has not started has no gateway link.
+	if d.ctoCtx == nil {
+		return
+	}
+	d.goBackground(func() {
+		ctx, cancel := context.WithTimeout(d.ctoCtx, 30*time.Second)
+		defer cancel()
+		if _, err := d.call(ctx, protocol.FrameOwnerWordsKeep, protocol.OwnerWordsKeep{Session: session, Text: text, At: at.UnixNano()}); err != nil && !strings.Contains(err.Error(), "unknown frame type") {
+			d.Logf("owner words: not kept at the gateway: %v", err)
+		}
+	})
+}
+
+func (d *Daemon) keepOwnerPrompt(session, text string, at, now time.Time) {
 	d.ownerPrompts.mu.Lock()
 	defer d.ownerPrompts.mu.Unlock()
 	if d.ownerPrompts.by == nil {
@@ -117,46 +138,105 @@ func freshPrompts(list []ownerPrompt, now time.Time) []ownerPrompt {
 // ownerWordsMatch tells whether the quote is in what the owner typed in the
 // session in the last ownerPromptWindow, ignoring case and white space.
 func (d *Daemon) ownerWordsMatch(session, quote string) bool {
-	// A prompt whose transcript entry was missing when the wait ended may have
-	// one now. Read it again before matching.
-	d.resolvePendingOwnerWords(session)
-	// Text typed while a Claude turn runs fires no prompt hook: read it from
-	// the transcript now, when it is needed.
-	d.sweepQueuedOwnerPrompts(session)
+	if session == "" {
+		return false
+	}
+	_, ok := d.localOwnerWords(quote, session)
+	return ok
+}
+
+// ownerWordsSource is the session and the time of the prompt that holds a
+// quote of the owner.
+type ownerWordsSource struct {
+	session string
+	at      time.Time
+}
+
+// localOwnerWords finds the quote in the prompts this machine keeps: in the
+// session when one is named, else in every session. It returns the latest
+// prompt that holds it.
+func (d *Daemon) localOwnerWords(quote, session string) (ownerWordsSource, bool) {
+	if session != "" {
+		// A prompt whose transcript entry was missing when the wait ended
+		// may have one now. Read it again before matching.
+		d.resolvePendingOwnerWords(session)
+		// Text typed while a Claude turn runs fires no prompt hook: read it
+		// from the transcript now, when it is needed.
+		d.sweepQueuedOwnerPrompts(session)
+	}
 	now := d.ownerPromptNow()
 	d.ownerPrompts.mu.Lock()
-	var texts []string
-	for _, p := range freshPrompts(d.ownerPrompts.by[session], now) {
-		texts = append(texts, p.text)
+	defer d.ownerPrompts.mu.Unlock()
+	var best ownerWordsSource
+	found := false
+	for id, list := range d.ownerPrompts.by {
+		if session != "" && id != session {
+			continue
+		}
+		for _, p := range freshPrompts(list, now) {
+			if (!found || p.at.After(best.at)) && protocol.OwnerWordsMatch(quote, []string{p.text}) {
+				best, found = ownerWordsSource{session: id, at: p.at}, true
+			}
+		}
 	}
-	d.ownerPrompts.mu.Unlock()
-	return protocol.OwnerWordsMatch(quote, texts)
+	return best, found
+}
+
+// findOwnerWords finds the quote in what the owner typed in the last
+// ownerPromptWindow: first in the caller's session, then in any session of
+// this machine, then in the gateway's store of every machine.
+func (d *Daemon) findOwnerWords(ctx context.Context, caller, quote string) (ownerWordsSource, bool) {
+	if src, ok := d.localOwnerWords(quote, caller); ok {
+		return src, true
+	}
+	if src, ok := d.localOwnerWords(quote, ""); ok {
+		return src, true
+	}
+	data, err := d.call(ctx, protocol.FrameOwnerWordsFind, protocol.OwnerWordsFind{Quote: quote})
+	if err != nil {
+		if !strings.Contains(err.Error(), "unknown frame type") {
+			d.Logf("owner words: the gateway could not look up the quote: %v", err)
+		}
+		return ownerWordsSource{}, false
+	}
+	var found protocol.OwnerWordsFound
+	if json.Unmarshal(data, &found) != nil || !found.Found || found.Session == "" {
+		return ownerWordsSource{}, false
+	}
+	at := time.Unix(0, found.At)
+	if d.ownerPromptNow().Sub(at) > ownerPromptWindow {
+		return ownerWordsSource{}, false
+	}
+	return ownerWordsSource{session: found.Session, at: at}, true
 }
 
 // checkOverride decides what a start with selection fields needs. It clears
 // owner_words and reason from the request: they stop here. For a caller that
 // sets a selection field it returns:
-//   - selection SelectionOwnerWords when the quote is in the owner's own words:
-//     the start goes ahead;
+//   - selection SelectionOwnerWords when the quote is in the owner's own words,
+//     with the receipt that names where he typed them: the start goes ahead;
 //   - hold true with the caller's reason when the owner must approve it;
 //   - no hold for the owner's own command line and TUI.
-func (d *Daemon) checkOverride(caller string, p *protocol.WorkerStartRequest, callerIsAgent bool) (selection string, hold bool, reason string) {
+func (d *Daemon) checkOverride(ctx context.Context, caller string, p *protocol.WorkerStartRequest, callerIsAgent bool) (selection string, hold bool, reason, receipt string) {
 	words, why := strings.TrimSpace(p.OwnerWords), strings.TrimSpace(p.Reason)
 	p.OwnerWords, p.Reason = "", ""
 	if !callerIsAgent || d.cfg.testOpenSelection {
-		return "", false, ""
+		return "", false, "", ""
 	}
 	fields := p.SelectionFields()
 	if len(fields) == 0 {
-		return "", false, ""
+		return "", false, "", ""
 	}
-	if words != "" && d.ownerWordsMatch(caller, words) {
-		return protocol.SelectionOwnerWords, false, ""
+	if words != "" {
+		if src, ok := d.findOwnerWords(ctx, caller, words); ok {
+			d.Logf("worker.owner_words project=%s typed_in=%s", p.Project, src.session)
+			return protocol.SelectionOwnerWords, false, "", protocol.OwnerWordsReceipt(d.sessionName(ctx, src.session), src.at)
+		}
 	}
 	if why == "" {
 		why = "the caller did not say why"
 	}
-	return "", true, why
+	return "", true, why, ""
 }
 
 func fieldNames(fields []string) []string {

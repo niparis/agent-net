@@ -8,8 +8,8 @@ import (
 // A caller cannot override the worker picker without the owner. Selection
 // fields are harness, model, provider, effort, not_family and machine on a
 // worker start. A start that sets one goes ahead only when the owner's own
-// words are found in his prompts of that session (owner_words), or after one
-// ask on his Desk. The owner's own command line and TUI need no such proof.
+// words are found in what he typed in any session (owner_words, see
+// owner_words.go), or after one ask on his Desk. The owner's own command line and TUI need no such proof.
 
 // How a start with selection fields went ahead, in WorkerStartResult.SelectionPath.
 const (

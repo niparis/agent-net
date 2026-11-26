@@ -2652,6 +2652,27 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return nil, st.RememberOwnerPrompt(p.SessionID, p.Prompt)
 
+	case protocol.FrameOwnerWordsKeep:
+		var p protocol.OwnerWordsKeep
+		if json.Unmarshal(raw, &p) != nil || p.Session == "" {
+			return nil, reject("bad " + protocol.FrameOwnerWordsKeep)
+		}
+		a, ok, err := st.Agent(p.Session)
+		if err != nil {
+			return nil, err
+		}
+		if !ok || a.NodeID != nc.id {
+			return nil, reject("session does not belong to this node")
+		}
+		return map[string]bool{"ok": true}, st.KeepOwnerWords(p.Session, p.Text, time.Unix(0, p.At))
+
+	case protocol.FrameOwnerWordsFind:
+		var p protocol.OwnerWordsFind
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad " + protocol.FrameOwnerWordsFind)
+		}
+		return st.FindOwnerWords(p.Quote)
+
 	case "signal.list":
 		var p struct {
 			Owner string `json:"owner"`
