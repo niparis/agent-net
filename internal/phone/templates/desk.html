@@ -1,4 +1,4 @@
-{{define "desk"}}{{if .ChiefLine}}<p class="chiefline" role="status">{{.ChiefLine}}</p>{{end}}<div class="split"><div class="stack">
+{{define "desk"}}{{if .ChiefLine}}<p class="chiefline" role="status">{{.ChiefLine}}</p>{{end}}<div class="split">
 <section class="box"><header><h2>Needs you</h2><span class="meta">{{len .Asks}} open</span></header>
 {{range .Asks}}<div class="ask" data-ask="{{.ID}}"><span class="stripe"></span><div>
 <div class="head"><b>{{.From}}</b><span class="chip{{if or (eq .Kind "held request") (eq .Kind "approval")}} you{{end}}">{{.Kind}}</span>{{if .Age}}<span>{{.Age}}{{if ne .Age "now"}} ago{{end}}</span>{{end}}{{if .Priority}}<span class="chip">priority {{.Priority}}</span>{{end}}</div>
@@ -22,15 +22,7 @@
 </div>
 {{else}}<div class="body muted">Nothing is waiting for you.</div>{{end}}
 </section>
-<section class="box"><header><h2>In flight</h2><span class="meta">{{len .Changes}} change{{if ne (len .Changes) 1}}s{{end}}{{if .More}} · {{.More}} more in the Changes screen{{end}}</span></header>
-{{if .Changes}}<div class="tablewrap"><table><thead><tr><th>Change</th><th>Steps</th><th class="hide-sm">Status</th><th>Age</th></tr></thead><tbody>
-{{range .Changes}}<tr><td><a href="/changes?s={{.ID}}#detail"><b>{{.Title}}</b></a><div class="mono muted">{{.ID}} · rev {{.Revision}}</div><div class="muted show-sm">{{.Status}}</div></td><td><span class="pipe" role="img" aria-label="{{.Aria}}">{{range .Marks}}<i{{if .}} class="{{.}}"{{end}}></i>{{end}}</span></td><td class="muted hide-sm">{{.Status}}</td><td class="num muted">{{.Age}}</td></tr>{{end}}
-</tbody></table></div>{{else}}<div class="body muted">No open changes moved in the last day.</div>{{end}}
-</section></div>
-<div class="stack">
-<section class="box"><header><h2>Handled for you</h2><span class="meta">the chief of staff, last day</span></header>
-{{if .Handled}}<div class="tablewrap"><table><tbody>{{range .Handled}}<tr><td><span class="chip{{if eq .Label "merged"}} ok{{end}}">{{.Label}}</span></td><td{{if .Undone}} class="muted"{{end}}>{{.Question}}{{if .Reason}}<div class="muted small">{{.Reason}}</div>{{end}}</td><td class="num muted">{{.Age}}</td></tr>{{end}}</tbody></table></div>{{else}}<div class="body muted">The chief of staff sorted nothing in the last day.</div>{{end}}
-</section>
 <section class="box"><header><h2>Log</h2><span class="meta">CTO, gateway and release notices</span></header>
 {{if .Log}}<div class="tablewrap"><table><tbody>{{range .Log}}<tr><td class="num muted mono">{{.Age}}</td><td><span class="chip">{{.Source}}</span></td><td>{{.Text}}</td></tr>{{end}}</tbody></table></div>{{else}}<div class="body muted">Nothing logged yet.</div>{{end}}
-</section></div></div>{{end}}
+</section>
+</div>{{end}}
