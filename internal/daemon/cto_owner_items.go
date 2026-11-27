@@ -380,3 +380,10 @@ func ctoCharterDraftRow(draft protocol.CharterDraft) map[string]any {
 	}
 	return row
 }
+
+func ctoCatalogTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}

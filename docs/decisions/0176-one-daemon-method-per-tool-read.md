@@ -44,8 +44,19 @@ cursor made through one path works through the other.
 The old `messages`, `message_status`, `list` and `mcp_list` methods stay as
 they were. The TUI, the CLI and the CTO read them.
 
-## Left as it was
+## The CTO reads (2026-11-28)
 
-The CTO has its own copy of these reads in `internal/daemon/cto_catalog_reads.go`.
-It is a third copy of the same logic. Moving it onto `ServeRead` would change
-its output and its cursors, so it is a separate task.
+The CTO had its own copy of these reads in `internal/daemon/cto_catalog_reads.go`,
+a third copy of the same logic. That file is gone. The CTO's
+`agent_workers_find`, `agent_messages_find`, `agent_mcp_servers_find`,
+`agent_graph_read` and `agent_worker_profiles_find` now run `ServeRead` for the
+CTO's session, so the CTO gets the agent's rows and the agent's opaque cursors.
+An old offset cursor such as `"25"` is refused; start again without a cursor.
+
+`ServeRead` also answers `graph_read` and `worker_profiles_find` for this. They
+are not daemon methods: an ordinary agent's MCP server still runs those two
+itself, through the same functions.
+
+Two things stay CTO only. `agent_workers_find` defaults to workers started by
+anyone, not by the caller. `agent_graph_read` with `view: guide` returns the
+charter guide.

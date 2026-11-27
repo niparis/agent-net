@@ -124,8 +124,12 @@ func addReadTools(s *mcp.Server, call Caller) {
 	addMCPReadTools(s, call)
 }
 
-// roCursorCaller is the caller a public cursor is bound to.
+// roCursorCaller is the caller a public cursor is bound to. In the daemon it
+// is the session bound to the connection, not the daemon's own environment.
 func roCursorCaller(ctx context.Context) string {
+	if who, ok := ctx.Value(readCallerKey{}).(ReadCaller); ok && who.SessionID != "" {
+		return who.SessionID
+	}
 	if id := roNativeID(ctx); id != "" {
 		return id
 	}

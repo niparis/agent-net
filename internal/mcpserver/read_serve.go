@@ -14,7 +14,15 @@ import (
 // The MCP handlers only forward their input to the daemon method; a native
 // plugin sends the same input to the same method.
 
-// ServeRead answers one of those four daemon methods. raw is the tool input.
+// ReadGraph and ReadWorkerProfiles name the two other shared reads that
+// ServeRead answers. They are not daemon methods: an ordinary agent's MCP
+// server runs them itself, and the CTO runs them here, through the same code.
+const (
+	ReadGraph          = "graph_read"
+	ReadWorkerProfiles = "worker_profiles_find"
+)
+
+// ServeRead answers one of those reads. raw is the tool input.
 // who is the session bound to the connection; call reaches the other daemon
 // methods the read needs, as that session.
 func ServeRead(ctx context.Context, method string, raw json.RawMessage, who ReadCaller, call Caller) (any, error) {
@@ -47,6 +55,19 @@ func ServeRead(ctx context.Context, method string, raw json.RawMessage, who Read
 		}
 		in.Detail = roDetailDefault(in.Detail)
 		return roFindMCPServers(ctx, call, in)
+	case ReadGraph:
+		var in roGraphReadIn
+		if err := decodeReadInput(raw, &in); err != nil {
+			return nil, err
+		}
+		return roReadGraph(ctx, call, in)
+	case ReadWorkerProfiles:
+		var in roProfileFindIn
+		if err := decodeReadInput(raw, &in); err != nil {
+			return nil, err
+		}
+		in.Detail = roDetailDefault(in.Detail)
+		return roFindWorkerProfiles(ctx, call, in)
 	}
 	return nil, fmt.Errorf("unknown read method %q", method)
 }
