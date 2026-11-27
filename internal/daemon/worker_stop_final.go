@@ -220,6 +220,13 @@ func (d *Daemon) startedByAgentNet(pid, self int) bool {
 			return true
 		}
 		if h, ok := herdrServerArgs(processArgs(p)); ok {
+			// The daemon starts agent-net's server as `herdr --session
+			// agent-net server`, and herdr picks the socket itself, so those
+			// arguments carry none. The session name alone identifies it. Any
+			// other server is the owner's.
+			if h.session == agentNetHerdrSession {
+				return true
+			}
 			return d.isAgentNetHerdr(h.bin, h.socket)
 		}
 		parent, err := processParentPID(p)

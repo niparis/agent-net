@@ -45,6 +45,109 @@ func closed(ch chan struct{}) bool {
 	}
 }
 
+// startFakeHerdr starts a fake herdr server whose arguments are args and, in a
+// pane under it, a fake agy view of native. It returns the view's process ID
+// and a channel closed when the server exits. The server is a herdr by name,
+// so the daemon finds it the way it finds the real one up a process tree.
+func startFakeHerdr(t *testing.T, args []string, native string) (view int, serverDone chan struct{}) {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(t.TempDir(), "herdr")
+	if err := os.Symlink(exe, bin); err != nil {
+		t.Fatal(err)
+	}
+	records := t.TempDir()
+	cmd := exec.Command(bin, append([]string{"-test.run", "^TestFakeHerdrServerProcess$", "--"}, args...)...)
+	cmd.Env = append(os.Environ(), "FAKE_HERDR_SERVER=1", "FAKE_HERDR_NATIVE="+native, "FAKE_AGY_RECORDS="+records)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	serverDone = make(chan struct{})
+	go func() { cmd.Wait(); close(serverDone) }()
+	var recs []fakeAgyRecord
+	eventually(t, "the view of the conversation runs", func() bool { recs = agyRecords(records); return len(recs) == 1 })
+	view = recs[0].PID
+	t.Cleanup(func() {
+		syscall.Kill(view, syscall.SIGKILL)
+		syscall.Kill(cmd.Process.Pid, syscall.SIGKILL)
+		<-serverDone
+	})
+	return view, serverDone
+}
+
+// TestFakeHerdrServerProcess runs only as the fake herdr server that
+// startFakeHerdr starts: it starts the fake agy view of FAKE_HERDR_NATIVE and
+// stays alive as its parent until the view ends, as a server with a pane does.
+func TestFakeHerdrServerProcess(t *testing.T) {
+	if os.Getenv("FAKE_HERDR_SERVER") != "1" {
+		return
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		os.Exit(1)
+	}
+	view := exec.Command(exe, "-test.run", "^TestAgyProcess$", "--", "--conversation", os.Getenv("FAKE_HERDR_NATIVE"))
+	view.Env = append(os.Environ(), "FAKE_AGY_PROCESS=1")
+	stdin, err := view.StdinPipe() // an open input keeps the view waiting, as a view does
+	if err != nil {
+		os.Exit(1)
+	}
+	if err := view.Start(); err != nil {
+		os.Exit(1)
+	}
+	view.Wait()
+	stdin.Close()
+}
+
+// The daemon starts agent-net's own herdr server as `herdr --session agent-net
+// server`, and herdr picks the socket, so those arguments carry none. A stop
+// must still end a view in a pane of that server. A view under the owner's
+// default session, or another named session, is left alone.
+func TestStopEndsAViewUnderAgentNetsHerdrServer(t *testing.T) {
+	const native = "0f7c6b9a-2d3e-4f50-8a91-b2c3d4e5f601"
+	for _, tc := range []struct {
+		name string
+		args []string
+		ends bool
+	}{
+		{"agent-net's session", []string{"--session", agentNetHerdrSession, "server"}, true},
+		{"the default session", []string{"server"}, false},
+		{"another session", []string{"--session", "work", "server"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st, err := openState(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { st.close() })
+			d := &Daemon{st: st, workers: map[string]*worker{}, cfg: Config{Workers: shortSet}}
+			row := workerRow{ID: "w_1", Harness: "agy", Owner: "s_owner", NativeID: native, SessionID: "s_worker",
+				EndedReason: protocol.StopHandback, Resumable: true, Reported: true}
+			if err := st.saveWorker(row); err != nil {
+				t.Fatal(err)
+			}
+			view, serverDone := startFakeHerdr(t, tc.args, native)
+
+			if err := d.stopWorkerSession(protocol.WorkerKill{Session: "s_worker", Requester: "s_owner"}); err != nil {
+				t.Fatalf("stop: %v", err)
+			}
+			if tc.ends {
+				eventually(t, "the view in agent-net's herdr ends", func() bool { return !alive(view) })
+				return
+			}
+			if !alive(view) {
+				t.Fatal("the stop ended a view under another herdr session")
+			}
+			if closed(serverDone) {
+				t.Fatal("the stop ended a herdr server that is not agent-net's")
+			}
+		})
+	}
+}
+
 // The M2Max case: an agy worker has ended, so the daemon no longer runs it,
 // but a view of its conversation (agy --conversation <id>, from a herdr pane)
 // and a program in its worktree are still running. The stop answers ok, ends
