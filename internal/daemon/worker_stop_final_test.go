@@ -1,6 +1,8 @@
 package daemon
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -200,5 +202,36 @@ func TestPendingStopAnswerReachesTheCaller(t *testing.T) {
 	got := workerStopResult("s_1", raw)
 	if !got.Pending || !strings.Contains(got.Note, "pending") || !got.Stopped {
 		t.Fatalf("stop answer = %+v", got)
+	}
+}
+
+// A worker whose model this machine cannot run moves its task to the next
+// model. When a stop came while the gateway answered, the task does not go
+// on: no start is queued, and the caller is told the worker was stopped.
+func TestStoppedWorkerDoesNotMoveToTheNextModel(t *testing.T) {
+	st, err := openState(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.close() })
+	var reasons []string
+	d := &Daemon{st: st, workers: map[string]*worker{}, cfg: Config{testGatewayCall: func(_ context.Context, typ string, params any) (json.RawMessage, bool, error) {
+		if p, ok := params.(protocol.WorkerNotStarted); ok && typ == "worker.not_started" {
+			reasons = append(reasons, p.Reason)
+		}
+		return json.RawMessage(`{}`), true, nil
+	}}}
+	if err := st.markNoRestart("s_worker", noRestartStopped); err != nil {
+		t.Fatal(err)
+	}
+	e := queuedStart{ID: "q_next", Owner: "s_owner", Project: "shop", Harness: "opencode", Task: "the task"}
+	if d.queueNextModelStart(t.Context(), "s_worker", "fake/m1", e) {
+		t.Fatal("the stopped worker's task moved to the next model")
+	}
+	if n, _ := st.queueLen(); n != 0 {
+		t.Fatalf("%d starts queued", n)
+	}
+	if len(reasons) != 1 || !strings.Contains(reasons[0], "was stopped") {
+		t.Fatalf("not-started reports: %q", reasons)
 	}
 }
