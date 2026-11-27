@@ -6,22 +6,108 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// Each view is derived from ordinary dispatch with the CTO session, or from
-// the CTO's own proposal store and static guidance. A read whose sources
-// depend on its detail names the extra source after a semicolon.
+// Each view is derived from ordinary dispatch with the CTO session, from the
+// shared reads of mcpserver.ServeRead run for that session, or from the CTO's
+// own proposal store and static guidance. A read whose sources depend on its
+// detail names the extra source after a semicolon.
 var ctoReadSources = map[string]string{
 	"cto_proposals_find":  "own proposals,asks.list,permission.get,permission.pending",
 	"cto_intake_find":     protocol.FrameIntakeFind,
 	"agent_sessions_find": "sessions_find",
 	"agent_machines_find": "machines_find", "agent_machine_log": "machine_log",
-	"agent_projects_find": "projects_find", "agent_workers_find": "list,get; detail full adds pick_quota",
-	"agent_messages_find": "messages",
-	"agent_graph_read":    "agent_graph", "agent_settings_read": "settings_read", "agent_mcp_servers_find": "mcp_list",
-	"agent_worker_profiles_find": "worker_profiles", "agent_owner_judgments_find": "judgments_find", "projects_layout": "projects_layout",
+	"agent_projects_find": "projects_find", "agent_workers_find": protocol.MethodWorkersFind,
+	"agent_messages_find": protocol.MethodMessagesFind,
+	"agent_graph_read":    mcpserver.ReadGraph, "agent_settings_read": "settings_read", "agent_mcp_servers_find": protocol.MethodMCPServersFind,
+	"agent_worker_profiles_find": mcpserver.ReadWorkerProfiles, "agent_owner_judgments_find": "judgments_find", "projects_layout": "projects_layout",
 	"agent_protected_providers_get": protocol.OpProtectedProvidersGet,
+}
+
+// ctoDispatchReads are the catalog reads that are one ordinary daemon method.
+var ctoDispatchReads = map[string]string{
+	"agent_sessions_find": "sessions_find", "agent_machines_find": "machines_find", "agent_machine_log": "machine_log",
+	"agent_projects_find": "projects_find", "agent_owner_judgments_find": "judgments_find", "projects_layout": "projects_layout",
+}
+
+// ctoSharedReads are the catalog reads that filter and page. They run the
+// ordinary agent's code (decision 0176), so the CTO gets the agent's rows and
+// cursors.
+var ctoSharedReads = map[string]string{
+	"agent_workers_find": protocol.MethodWorkersFind, "agent_messages_find": protocol.MethodMessagesFind,
+	"agent_mcp_servers_find": protocol.MethodMCPServersFind, "agent_graph_read": mcpserver.ReadGraph,
+	"agent_worker_profiles_find": mcpserver.ReadWorkerProfiles,
+}
+
+func (d *Daemon) readCTOCatalogTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
+	if method := ctoDispatchReads[name]; method != "" {
+		return d.ctoReadConn().dispatch(ctx, method, raw)
+	}
+	switch name {
+	case "agent_protected_providers_get":
+		return d.protectedProviders(ctx, nil)
+	case "agent_settings_read":
+		var q protocol.SettingsReadRequest
+		if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {
+			return nil, errors.New("bad settings arguments")
+		}
+		rows, err := d.readSettings(ctx, q, false)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"settings": rows}, nil
+	case "agent_graph_read":
+		if guide, ok, err := ctoGraphGuide(raw); ok || err != nil {
+			return guide, err
+		}
+	case "agent_workers_find":
+		// The CTO's default is every worker, not the ones it started.
+		raw = ctoDefaultArg(raw, "started_by", "anyone")
+	}
+	if method := ctoSharedReads[name]; method != "" {
+		return d.ctoReadConn().serveRead(ctx, method, raw)
+	}
+	return nil, errors.New("CTO read has no ordinary-agent source")
+}
+
+// ctoGraphGuide answers agent_graph_read view guide: the CTO's guide to
+// writing charters and edges, kept out of the schemas. ok is false for an
+// ordinary graph read.
+func ctoGraphGuide(raw json.RawMessage) (any, bool, error) {
+	var q struct {
+		View string `json:"view"`
+	}
+	if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &q) != nil {
+		return nil, false, errors.New("bad agent_graph_read arguments")
+	}
+	switch q.View {
+	case "":
+		return nil, false, nil
+	case "guide":
+		note := protocol.CharterGuideText() + "\n\nEdges: depends goes from consumer to provider; deploys from deployer to app. Delivery owner edges accepts, reviews, tests, tests_after_merge, approves, approves_deploy, merges, releases, delivery_deploys and verifies go from the owner node to the repo. Request rules: " + protocol.EdgeRulesText() + "."
+		return map[string]any{"nodes": []any{}, "edges": []any{}, "note": note}, true, nil
+	}
+	return nil, false, errors.New(`unknown agent_graph_read view; the only view is guide, for example {"view":"guide"}`)
+}
+
+// ctoDefaultArg sets one argument the CTO leaves out. Bad JSON is passed on
+// unchanged, so the shared read reports it.
+func ctoDefaultArg(raw json.RawMessage, key, value string) json.RawMessage {
+	args := map[string]any{}
+	if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &args) != nil {
+		return raw
+	}
+	if _, ok := args[key]; ok {
+		return raw
+	}
+	args[key] = value
+	out, err := json.Marshal(args)
+	if err != nil {
+		return raw
+	}
+	return out
 }
 
 func (d *Daemon) ctoReadConn() *localConn {

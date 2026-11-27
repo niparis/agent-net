@@ -43,17 +43,23 @@ func TestCTOWorkersFindFullShowsTheQuotaRead(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		items := out.(map[string]any)["items"].([]map[string]any)
-		if len(items) != 1 {
-			t.Fatalf("items: %+v", items)
+		raw, err := json.Marshal(out)
+		if err != nil {
+			t.Fatal(err)
 		}
-		return items[0]
+		var page struct {
+			Items []map[string]any `json:"items"`
+		}
+		if err := json.Unmarshal(raw, &page); err != nil || len(page.Items) != 1 {
+			t.Fatalf("items: %s %v", raw, err)
+		}
+		return page.Items[0]
 	}
 	if row := read("concise"); row["quota_read"] != nil || len(asked) != 0 {
 		t.Fatalf("concise read the quota: %+v %v", row, asked)
 	}
 	row := read("full")
-	got, _ := row["quota_read"].([]string)
+	got, _ := row["quota_read"].([]any)
 	if len(got) != 1 || got[0] != lines[0] || len(asked) != 1 || len(asked[0]) != 1 || asked[0][0] != "s_w" {
 		t.Fatalf("quota_read %v, asked %v", row["quota_read"], asked)
 	}

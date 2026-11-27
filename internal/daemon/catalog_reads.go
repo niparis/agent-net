@@ -11,17 +11,24 @@ import (
 // dispatchCatalogRead serves the four read tools that filter, page or fetch:
 // messages_find, message_get, workers_find and servers_find. The input is
 // the tool input and the answer is the tool output, so the MCP server and the
-// native plugins get one answer (principle 18). The reads go through this
-// connection's own methods, so the bound session decides what they may see.
+// native plugins get one answer (principle 18).
 func (lc *localConn) dispatchCatalogRead(ctx context.Context, method string, raw json.RawMessage) (res any, handled bool, err error) {
 	switch method {
 	case protocol.MethodMessagesFind, protocol.MethodMessageGet, protocol.MethodWorkersFind, protocol.MethodMCPServersFind:
 	default:
 		return nil, false, nil
 	}
+	res, err = lc.serveRead(ctx, method, raw)
+	return res, true, err
+}
+
+// serveRead runs one shared read (mcpserver.ServeRead) for the session bound
+// to this connection. The reads go through this connection's own methods, so
+// the bound session decides what they may see.
+func (lc *localConn) serveRead(ctx context.Context, method string, raw json.RawMessage) (any, error) {
 	sid, err := lc.boundID()
 	if err != nil {
-		return nil, true, err
+		return nil, err
 	}
 	who := mcpserver.ReadCaller{SessionID: sid, Sessions: lc.d.Sessions()}
 	for _, s := range who.Sessions {
@@ -40,6 +47,5 @@ func (lc *localConn) dispatchCatalogRead(ctx context.Context, method string, raw
 		}
 		return json.Marshal(out)
 	}
-	res, err = mcpserver.ServeRead(ctx, method, raw, who, call)
-	return res, true, err
+	return mcpserver.ServeRead(ctx, method, raw, who, call)
 }

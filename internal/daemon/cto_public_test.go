@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -18,10 +19,10 @@ var wantCTOReads = map[string]string{
 	"cto_intake_find":     protocol.FrameIntakeFind,
 	"agent_sessions_find": "sessions_find",
 	"agent_machines_find": "machines_find", "agent_machine_log": "machine_log",
-	"agent_projects_find": "projects_find", "agent_workers_find": "list,get; detail full adds pick_quota",
-	"agent_messages_find": "messages",
-	"agent_graph_read":    "agent_graph", "agent_settings_read": "settings_read", "agent_mcp_servers_find": "mcp_list",
-	"agent_worker_profiles_find": "worker_profiles", "agent_owner_judgments_find": "judgments_find", "projects_layout": "projects_layout",
+	"agent_projects_find": "projects_find", "agent_workers_find": protocol.MethodWorkersFind,
+	"agent_messages_find": protocol.MethodMessagesFind,
+	"agent_graph_read":    mcpserver.ReadGraph, "agent_settings_read": "settings_read", "agent_mcp_servers_find": protocol.MethodMCPServersFind,
+	"agent_worker_profiles_find": mcpserver.ReadWorkerProfiles, "agent_owner_judgments_find": "judgments_find", "projects_layout": "projects_layout",
 	"agent_protected_providers_get": protocol.OpProtectedProvidersGet,
 }
 
