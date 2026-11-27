@@ -27,10 +27,22 @@ type agyAdapter struct {
 	mu        sync.Mutex
 	peers     map[string]protocol.SessionInfo
 	pending   map[string][]protocol.Message
+	saved     map[string]agyMainRow // rows in the state database; guarded by refreshMu
 }
 
 func newAgyAdapter(d *Daemon) *agyAdapter {
-	return &agyAdapter{d: d, summaries: d.cfg.AgySummaries, kick: make(chan struct{}, 1), peers: map[string]protocol.SessionInfo{}, pending: map[string][]protocol.Message{}}
+	a := &agyAdapter{d: d, summaries: d.cfg.AgySummaries, kick: make(chan struct{}, 1), peers: map[string]protocol.SessionInfo{}, pending: map[string][]protocol.Message{}, saved: map[string]agyMainRow{}}
+	// loadAgyMains ran first: every event now is a row of the state database.
+	d.mu.Lock()
+	for id, e := range d.agyEvents {
+		a.saved[id] = agyMainRow{ConversationID: id, PID: e.PID, ProcessStart: e.ProcessStart, WorkspacePaths: e.WorkspacePaths, StartRef: e.StartRef, At: e.Time}
+	}
+	restored := len(d.agyEvents) > 0
+	d.mu.Unlock()
+	if restored {
+		a.wake()
+	}
+	return a
 }
 func (a *agyAdapter) Harness() string { return "agy" }
 func (a *agyAdapter) Start(ctx context.Context, _ Host) error {
@@ -203,9 +215,12 @@ func (a *agyAdapter) refresh() {
 	}
 	sort.Slice(infos, func(i, j int) bool { return infos[i].NativeID < infos[j].NativeID })
 	peers := map[string]protocol.SessionInfo{}
+	registered := map[string]bool{}
 	for _, info := range infos {
 		peers[info.NativeID] = info
+		registered[info.NativeID] = true
 	}
+	a.saveAgyMains(events, registered)
 	a.mu.Lock()
 	a.peers = peers
 	a.mu.Unlock()

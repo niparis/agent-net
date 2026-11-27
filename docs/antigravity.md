@@ -32,9 +32,13 @@ its SessionStart hook reports its conversation. The daemon checks the hook's
 process ancestry and working folder, and removes the session when that process
 ends. It reads the local conversation summaries database for a title and to
 exclude conversations with a parent. Worker conversations are not main
-sessions. A session started before the plugin was enabled must be restarted to
-be discovered. The daemon keeps start hooks in memory, so an existing session
-needs a new SessionStart hook after a daemon restart. If the summaries database
+sessions. agy sends SessionStart only on the first prompt of a process, so a
+session that began before the plugin was enabled is discovered at its next
+turn: its PreInvocation or Stop hook goes through the same process and folder
+checks. The daemon saves each discovered session in its state database. After
+a daemon restart or upgrade it brings the session back while the same agy
+process still runs, with the same session ID, and its MCP tools bind again.
+The saved session is dropped when that process ends. If the summaries database
 or its parent column is unavailable, agy does not provide enough information to
 identify sub-conversations from it.
 
