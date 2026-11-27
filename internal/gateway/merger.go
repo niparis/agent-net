@@ -127,7 +127,7 @@ func (s *Store) SetMerger(q protocol.MergerSetRequest, actor string) error {
 				return err
 			}
 		}
-		if err := resetConfiguredMergerTasks(tx, q.Project, q.NodeID); err != nil {
+		if err := resetConfiguredMergerTasks(tx, q.Project); err != nil {
 			return err
 		}
 	}
@@ -140,9 +140,10 @@ func (s *Store) SetMerger(q protocol.MergerSetRequest, actor string) error {
 }
 
 // mergerSessionSQL is true when session alias s is the merger registered for
-// change alias c: the repo's merger session, on the machine of the change.
+// change alias c: the repo's one merger session. The change's machine does
+// not matter, since every change branch is pushed to origin.
 func mergerSessionSQL(s string) string {
-	return `EXISTS(SELECT 1 FROM repos pm WHERE pm.id=c.project AND pm.merger_node=c.machine AND pm.merger_session=` + s + `.id)`
+	return `EXISTS(SELECT 1 FROM repos pm WHERE pm.id=c.project AND pm.merger_session=` + s + `.id)`
 }
 
 // MergerNeedsDefault detects projects where testing was optional. All projects
@@ -284,7 +285,7 @@ func expireStepNotices(tx *sql.Tx, where string, args ...any) error {
 
 // Starting routing moves unfinished tasks whose configured pipeline owner is merger.
 // Existing pre-merge claims are released as before; after-merge claims stay put.
-func resetConfiguredMergerTasks(tx *sql.Tx, project, node string) error {
+func resetConfiguredMergerTasks(tx *sql.Tx, project string) error {
 	snap, err := settingsSnapshotTx(tx)
 	if err != nil {
 		return err
@@ -297,13 +298,13 @@ func resetConfiguredMergerTasks(tx *sql.Tx, project, node string) error {
 		if step.Owner.Kind != protocol.OwnerMerger {
 			continue
 		}
-		if err := expireStepNotices(tx, `c.project=? AND c.machine=? AND t.step=? AND t.for_step=? AND t.after_merge=? AND (t.after_merge=0 OR t.claimed_by='')`,
-			project, node, step.Step, step.For, boolInt(step.AfterMerge)); err != nil {
+		if err := expireStepNotices(tx, `c.project=? AND t.step=? AND t.for_step=? AND t.after_merge=? AND (t.after_merge=0 OR t.claimed_by='')`,
+			project, step.Step, step.For, boolInt(step.AfterMerge)); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(`UPDATE delivery_step_tasks SET owner_node='/merger',notices='{}',claimed_by='',urgent=1 WHERE change_id IN
-    (SELECT id FROM delivery_changes WHERE project=? AND machine=?) AND step=? AND for_step=? AND after_merge=? AND (after_merge=0 OR claimed_by='')`,
-			project, node, step.Step, step.For, boolInt(step.AfterMerge)); err != nil {
+    (SELECT id FROM delivery_changes WHERE project=?) AND step=? AND for_step=? AND after_merge=? AND (after_merge=0 OR claimed_by='')`,
+			project, step.Step, step.For, boolInt(step.AfterMerge)); err != nil {
 			return err
 		}
 	}

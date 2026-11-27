@@ -1178,7 +1178,7 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 		}
 		if st.Owner.Kind == protocol.OwnerMerger {
 			var online int
-			if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos pm JOIN sessions s ON s.id=pm.merger_session WHERE pm.id=? AND pm.merger_node=? AND s.online=1)`, c.Project, c.Machine).Scan(&online); err != nil {
+			if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos pm JOIN sessions s ON s.id=pm.merger_session WHERE pm.id=? AND s.online=1)`, c.Project).Scan(&online); err != nil {
 				return protocol.ChangeView{}, err
 			}
 			if online == 0 {
@@ -1196,7 +1196,7 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 		}
 		var online int
 		if st.Owner.Kind == protocol.OwnerMerger {
-			err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos pm JOIN sessions s ON s.id=pm.merger_session WHERE pm.id=? AND pm.merger_node=? AND s.online=1)`, c.Project, c.Machine).Scan(&online)
+			err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos pm JOIN sessions s ON s.id=pm.merger_session WHERE pm.id=? AND s.online=1)`, c.Project).Scan(&online)
 		} else if st.Owner.Kind == protocol.OwnerCaller {
 			err = s.db.QueryRow(`SELECT `+callerOwnerLiveSQL+` FROM delivery_changes c WHERE c.id=?`, c.ID).Scan(&online)
 		} else {
