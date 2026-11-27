@@ -63,12 +63,29 @@ session a local herdr client opens the remote herdr when available.
 agent-net can also start and resume an agy session, from the TUI's
 new-session form (`n`) or from the CTO with `session_change`. A start opens
 `agy` in the project folder in a pane of agent-net's own herdr. agy creates the
-conversation ID, so the start waits for the SessionStart hook of that pane,
-which names it; the session is then discovered like any other. A first message
-goes through the receive path above, with the writer the request named. A
-resume runs `agy --conversation <id>` in the project folder the same way. Both
-need herdr, as Pi does, because an interactive agy session has no attach client
-and needs a terminal.
+conversation ID itself, and the SessionStart hook of that pane names it. The
+session is then discovered like any other, and an Agent or lead role asked for
+in the start is bound to that conversation.
+
+A start with a first message passes it to agy as the `-i` prompt, so agy runs
+it at once. This prompt is not an agent-net message, so it is not in the
+message history. When the owner did not write the text, it begins with a line
+that names the writer and says it is not from the owner. The owner's own words
+go through unchanged. A writer agent-net does not know is refused. If the
+SessionStart hook does not name the conversation within the start timeout, the
+start fails. A start that another machine runs passes its first message the
+same way.
+
+A start without a first message is answered as started, and its note says so.
+It waits in the pane. agy creates the conversation with its first prompt, so
+the session shows up in Sessions after the owner sends one. The first time agy
+runs in a new folder, it asks whether to trust the project, and nothing runs
+until that is answered in the pane. If the pane closes before a first prompt,
+the start fails and its Agent choice is released.
+
+A resume runs `agy --conversation <id>` in the project folder the same way.
+Both need herdr, as Pi does, because an interactive agy session has no attach
+client and needs a terminal.
 
 The vendor in an agy model id is used for display: `gemini` to Google,
 `claude` to Anthropic and `gpt` to OpenAI. A Claude model through agy draws on

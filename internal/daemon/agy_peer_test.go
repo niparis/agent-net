@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -178,6 +179,14 @@ func TestAgyPeerDeliveryHooks(t *testing.T) {
 
 func fakeInteractiveAgy(t *testing.T, cwd string, env []string) *exec.Cmd {
 	t.Helper()
+	cmd, _ := startFakeAgy(t, cwd, env)
+	return cmd
+}
+
+// startFakeAgy runs a process named agy that reads its standard input. A test
+// types a first line into it to stand for the owner's first prompt.
+func startFakeAgy(t *testing.T, cwd string, env []string) (*exec.Cmd, io.WriteCloser) {
+	t.Helper()
 	cmd := exec.Command("bash", "-c", "exec -a agy /bin/cat")
 	cmd.Dir = cwd
 	cmd.Env = append(os.Environ(), env...)
@@ -190,7 +199,7 @@ func fakeInteractiveAgy(t *testing.T, cwd string, env []string) *exec.Cmd {
 	}
 	t.Cleanup(func() { in.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() })
 	eventually(t, "fake agy process", func() bool { args := osProcessArgs(cmd.Process.Pid); return len(args) > 0 && args[0] == "agy" })
-	return cmd
+	return cmd, in
 }
 func fakeAgySummaries(t *testing.T) string {
 	t.Helper()

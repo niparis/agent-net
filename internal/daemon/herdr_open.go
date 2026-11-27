@@ -216,6 +216,14 @@ func (d *Daemon) hostedSocket(key string) string {
 	return d.herdrOpened[key].socket
 }
 
+// hostedPane is the herdr server and pane that openInHerdr made for key.
+func (d *Daemon) hostedPane(key string) (herdrOpenedPane, bool) {
+	d.herdrOpenMu.Lock()
+	defer d.herdrOpenMu.Unlock()
+	p, ok := d.herdrOpened[key]
+	return p, ok
+}
+
 const herdrViewMarker = "agent-net-view"
 
 // herdrViewID names a view in the argv of the shell that runs it. It is a
