@@ -287,6 +287,10 @@ func hasControl(s string) bool {
 	return false
 }
 
+// PlaybookStaleDays is how many days an unpinned automatic playbook note stays
+// visible after its last update.
+const PlaybookStaleDays = 60
+
 // How a playbook note was made. Automatic notes are no longer made: the old
 // pinned ones keep their source.
 const (

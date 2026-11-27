@@ -400,11 +400,14 @@ func (s *Store) SetPlaybookPin(model, harness, note string, pin *bool) error {
 	return err
 }
 
-// PlaybookNotes returns the notes, newest first. A stale row is an old
-// automatic note and is left out.
+// PlaybookNotes returns the fresh notes, newest first. An old unpinned
+// automatic note older than PlaybookStaleDays is left out; owner notes and
+// pinned notes never go stale.
 func (s *Store) PlaybookNotes() ([]protocol.PlaybookNote, error) {
+	cut := s.now().Add(-protocol.PlaybookStaleDays * 24 * time.Hour).Unix()
 	rows, err := s.db.Query(`SELECT subject_kind, subject, harness, note, source, support, track_line, pinned, created_at, updated_at
-		FROM playbook WHERE stale=0 ORDER BY updated_at DESC, subject_kind, subject, harness`)
+		FROM playbook WHERE stale=0 AND NOT (source=? AND pinned=0 AND updated_at < ?)
+		ORDER BY updated_at DESC, subject_kind, subject, harness`, protocol.PlaybookSourceAuto, cut)
 	if err != nil {
 		return nil, err
 	}
