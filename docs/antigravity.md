@@ -25,6 +25,16 @@ Antigravity is Google's CLI, called `agy` on the command line. Its integration i
 - **Display.** `agent-net nodes --wide` shows the agy row with its version, its
   models and its sign-in state.
 
+## The workers skill
+
+The plugin ships a skill named `workers` in `skills/workers/SKILL.md`. agy
+loads plugin skills from that folder. In a session, `/workers` or a request
+such as "show my workers" makes the model call `agent_workers_find` for the
+workers that session started, running and ended. It prints one compact table
+with name, state, model, run time, cost when the result has it, and title,
+with running workers first. With no workers it prints one line. `agy plugin
+validate <dir>` lists the skill as one component.
+
 ## Main sessions
 
 An interactive `agy` started by the owner appears in Sessions and Graph after
