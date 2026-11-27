@@ -29,9 +29,11 @@ func firstMessageOf(p protocol.SessionStartRequest) startFirstMessage {
 // firstMessageIsPrompt says the start passes its first message to the harness
 // as the first prompt, not as an agent-net message: a Claude start without an
 // agent identity (on the command line, marked when the owner did not write
-// it) and an OpenCode start (through the service's prompt API).
+// it), an OpenCode start (through the service's prompt API) and an agy start
+// (as its -i prompt). A relayed start keeps such a message with the request, so
+// the machine that runs the start passes it on.
 func firstMessageIsPrompt(p protocol.SessionStartRequest) bool {
-	return p.Harness == "opencode" || ((p.Harness == "claude" || p.Harness == "") && p.AgentID == "")
+	return p.Harness == "opencode" || p.Harness == "agy" || ((p.Harness == "claude" || p.Harness == "") && p.AgentID == "")
 }
 
 // firstMessageSender is the session the first message goes out from: the
