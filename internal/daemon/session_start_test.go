@@ -62,6 +62,7 @@ type sessionStartTestResult struct {
 	SessionID string `json:"session_id"`
 	NativeID  string `json:"native_id"`
 	Path      string `json:"path"`
+	Harness   string `json:"harness"`
 	Error     string `json:"error"`
 }
 

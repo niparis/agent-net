@@ -181,16 +181,20 @@ func (a *agyAdapter) refresh() {
 	summaries := a.summariesData()
 	var infos []protocol.SessionInfo
 	for id, e := range events {
-		if !e.Started || e.PID <= 1 || !agyProcess(e.PID) || e.ProcessStart == "" || agyProcessStart(e.PID) != e.ProcessStart || agyWorkspace(e.PID, e.WorkspacePaths) == "" || d.agyWorkerConversation(id) || d.workerForPeer(e.PID) != nil || summaries[id].parent != "" {
+		cwd := agyWorkspace(e.PID, e.WorkspacePaths)
+		if !e.Started || e.PID <= 1 || !agyProcess(e.PID) || e.ProcessStart == "" || agyProcessStart(e.PID) != e.ProcessStart || cwd == "" || d.agyWorkerConversation(id) || d.workerForPeer(e.PID) != nil || summaries[id].parent != "" {
 			continue
 		}
+		// A pane agent-net opened for a start carries that start's ID. Claim
+		// the conversation agy created before the session is registered, so
+		// the start knows the native ID it waits for.
+		d.claimAgyStart(e.StartRef, id, cwd)
 		status := "unknown"
 		if e.Event == "PreInvocation" {
 			status = "busy"
 		} else if e.Event == "Stop" && e.FullyIdle {
 			status = "idle"
 		}
-		cwd := agyWorkspace(e.PID, e.WorkspacePaths)
 		name := strings.TrimSpace(summaries[id].title)
 		if name == "" {
 			name = filepath.Base(cwd)

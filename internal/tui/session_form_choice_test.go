@@ -22,7 +22,7 @@ func focusSessionField(m Model, to sessionFormField) Model {
 func TestNewSessionHarnessCyclesInFixedOrder(t *testing.T) {
 	m, _ := workerModel(120, 34)
 	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{
-		{Name: "pi"}, {Name: "opencode"}, {Name: "codex"}, {Name: "claude"},
+		{Name: "pi"}, {Name: "opencode"}, {Name: "codex"}, {Name: "claude"}, {Name: "agy"},
 	}
 	m = selectID(m, "s_0000000000000002") // strategies, claude, on Mac
 	m, _ = press(m, sessionKey())
@@ -31,7 +31,7 @@ func TestNewSessionHarnessCyclesInFixedOrder(t *testing.T) {
 		t.Fatalf("harness %q, want the selected row's harness", got)
 	}
 	folder := m.sform.folder
-	for i, want := range []string{"codex", "opencode", "pi", "claude"} {
+	for i, want := range []string{"codex", "opencode", "pi", "agy", "claude"} {
 		m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyRight})
 		if got := m.sform.value(sHarness); got != want {
 			t.Fatalf("right %d gave harness %q, want %q", i+1, got, want)
@@ -41,8 +41,8 @@ func TestNewSessionHarnessCyclesInFixedOrder(t *testing.T) {
 		}
 	}
 	m, _ = press(m, tea.KeyPressMsg{Code: tea.KeyLeft})
-	if got := m.sform.value(sHarness); got != "pi" {
-		t.Fatalf("left from claude gave harness %q, want pi", got)
+	if got := m.sform.value(sHarness); got != "agy" {
+		t.Fatalf("left from claude gave harness %q, want agy", got)
 	}
 }
 

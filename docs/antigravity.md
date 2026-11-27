@@ -58,9 +58,17 @@ message.
 
 Enter runs `agy --conversation <id>` in the session folder, in the TUI's
 terminal or herdr pane, and ctrl+] returns. For a remote
-session a local herdr client opens the remote herdr when available. The
-new-session form does not offer agy; start an interactive session in its own
-terminal first.
+session a local herdr client opens the remote herdr when available.
+
+agent-net can also start and resume an agy session, from the TUI's
+new-session form (`n`) or from the CTO with `session_change`. A start opens
+`agy` in the project folder in a pane of agent-net's own herdr. agy creates the
+conversation ID, so the start waits for the SessionStart hook of that pane,
+which names it; the session is then discovered like any other. A first message
+goes through the receive path above, with the writer the request named. A
+resume runs `agy --conversation <id>` in the project folder the same way. Both
+need herdr, as Pi does, because an interactive agy session has no attach client
+and needs a terminal.
 
 The vendor in an agy model id is used for display: `gemini` to Google,
 `claude` to Anthropic and `gpt` to OpenAI. A Claude model through agy draws on

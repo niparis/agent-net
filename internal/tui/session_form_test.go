@@ -185,14 +185,14 @@ func TestNewSessionRefusesOtherHarnesses(t *testing.T) {
 				t.Fatalf("n opened mode %v", m.mode)
 			}
 			m.sform.in[sHarness].SetValue(tc.harness)
-			if v := m.testView(); !strings.Contains(strings.ToLower(v), "only claude, opencode, codex and pi for now") {
+			if v := m.testView(); !strings.Contains(strings.ToLower(v), "only claude, opencode, codex, pi and antigravity for now") {
 				t.Errorf("the form does not refuse:\n%s", v)
 			}
 			m, cmd := press(m, tea.KeyPressMsg{Code: tea.KeyEnter})
 			if cmd != nil || len(src.sessionStarts) != 0 {
 				t.Fatalf("refused start still ran: cmd %v, asks %+v", cmd != nil, src.sessionStarts)
 			}
-			if m.mode != modeSessionForm || !strings.Contains(strings.ToLower(m.testView()), "only claude, opencode, codex and pi for now") {
+			if m.mode != modeSessionForm || !strings.Contains(strings.ToLower(m.testView()), "only claude, opencode, codex, pi and antigravity for now") {
 				t.Errorf("the refusal is not on the form:\n%s", m.testView())
 			}
 		})
@@ -335,11 +335,14 @@ func TestNewSessionOpenCodeStartsAndEnters(t *testing.T) {
 func TestNewSessionHarnessSupportGoldens(t *testing.T) {
 	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
 		m, _ := workerModel(size.w, size.h)
+		m.snap.Nodes[0].Harnesses = append(m.snap.Nodes[0].Harnesses, protocol.HarnessInfo{Name: "agy", Models: []string{"gemini-3.8-flash-low"}})
 		m = selectID(m, "s_0000000000000003")
 		m, _ = press(m, sessionKey())
 		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_opencode", m.testView())
 		m.sform.in[sHarness].SetValue("pi")
 		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_pi", m.testView())
+		m.sform.in[sHarness].SetValue("agy")
+		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_agy", m.testView())
 		m.sform.in[sHarness].SetValue("aider")
 		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_unsupported", m.testView())
 	}
