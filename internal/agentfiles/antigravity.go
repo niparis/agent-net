@@ -16,6 +16,33 @@ func AntigravityPluginDir() string {
 	return filepath.Join(home(), ".gemini", "config", "plugins", "agent-net")
 }
 
+// antigravityWorkersSkill is the plugin skill agy loads from skills/workers.
+// The description is what makes /workers and "show my workers" reach it.
+const antigravityWorkersSkill = `---
+name: workers
+description: Show the workers this session started, with state, model, run time, cost when known and title. Use when the user types /workers or asks to see their workers.
+---
+
+# Workers
+
+Show the user the workers this session started.
+
+1. Call agent_workers_find with this argument:
+
+   {
+     "started_by": "me",
+     "state": "any",
+     "limit": 50
+   }
+
+   The result is newest first.
+2. Print one compact table. Put running workers first, then ended workers. Columns: name, state, model, run time, cost (only when the result has one), title. Keep the table short and do not add commentary.
+3. If there are no items, print one line: No workers started by this session.
+4. If the result has a next_cursor, say in one line that the list shows the most recent 50.
+
+Do not start, stop or message a worker from this skill. It only shows the list.
+`
+
 func antigravityFiles(exe string, snapshot settings.Snapshot) map[string][]byte {
 	marshal := func(v any) []byte { b, _ := json.MarshalIndent(v, "", "  "); return append(b, '\n') }
 	quote := "'" + strings.ReplaceAll(exe, "'", "'\\''") + "'"
@@ -27,10 +54,11 @@ func antigravityFiles(exe string, snapshot settings.Snapshot) map[string][]byte 
 	// calls to agent-net's own server and leaves every other tool to agy.
 	hooks["PreToolUse"] = []any{map[string]any{"matcher": "^call_mcp_tool$", "hooks": []any{map[string]any{"type": "command", "command": quote + " hook antigravity PreToolUse", "timeout": 5}}}}
 	return map[string][]byte{
-		"plugin.json":     marshal(map[string]any{"name": "agent-net", "description": "agent-net guidance, tools and hooks"}),
-		"mcp_config.json": marshal(map[string]any{"mcpServers": map[string]any{"agent-net": map[string]any{"command": exe, "args": []string{"mcp", "--antigravity"}, "env": map[string]string{}}}}),
-		"hooks.json":      marshal(map[string]any{"agent-net": hooks}),
-		"rules/AGENTS.md": []byte(guidance.BlockWithSnapshot(guidance.Other, snapshot)),
+		"plugin.json":             marshal(map[string]any{"name": "agent-net", "description": "agent-net guidance, tools and hooks"}),
+		"mcp_config.json":         marshal(map[string]any{"mcpServers": map[string]any{"agent-net": map[string]any{"command": exe, "args": []string{"mcp", "--antigravity"}, "env": map[string]string{}}}}),
+		"hooks.json":              marshal(map[string]any{"agent-net": hooks}),
+		"rules/AGENTS.md":         []byte(guidance.BlockWithSnapshot(guidance.Other, snapshot)),
+		"skills/workers/SKILL.md": []byte(antigravityWorkersSkill),
 	}
 }
 
@@ -51,7 +79,7 @@ func syncAntigravity(exe string, snapshot settings.Snapshot) Result {
 		}
 	}
 	// Do not follow symlinks anywhere below the harness home.
-	for _, p := range []string{filepath.Join(home(), ".gemini"), filepath.Join(home(), ".gemini", "config"), filepath.Dir(r.Path), r.Path, filepath.Join(r.Path, "rules")} {
+	for _, p := range []string{filepath.Join(home(), ".gemini"), filepath.Join(home(), ".gemini", "config"), filepath.Dir(r.Path), r.Path, filepath.Join(r.Path, "rules"), filepath.Join(r.Path, "skills"), filepath.Join(r.Path, "skills", "workers")} {
 		if st, err := os.Lstat(p); err == nil && st.Mode()&os.ModeSymlink != 0 {
 			r.Symlink = true
 			r.Text = "skipped (symlink, left as is)"
@@ -123,7 +151,7 @@ func syncAntigravity(exe string, snapshot settings.Snapshot) Result {
 // RemoveAntigravity removes only the files belonging to this plugin.
 func RemoveAntigravity() error {
 	dir := AntigravityPluginDir()
-	for _, p := range []string{filepath.Join(home(), ".gemini"), filepath.Join(home(), ".gemini", "config"), filepath.Dir(dir), dir, filepath.Join(dir, "rules")} {
+	for _, p := range []string{filepath.Join(home(), ".gemini"), filepath.Join(home(), ".gemini", "config"), filepath.Dir(dir), dir, filepath.Join(dir, "rules"), filepath.Join(dir, "skills"), filepath.Join(dir, "skills", "workers")} {
 		if st, err := os.Lstat(p); err == nil && st.Mode()&os.ModeSymlink != 0 {
 			return nil
 		}
@@ -154,7 +182,7 @@ func RemoveAntigravity() error {
 	}
 	files := antigravityFiles(exe, settings.Snapshot{})
 
-	for _, name := range []string{"rules/AGENTS.md", "mcp_config.json", "hooks.json", "plugin.json"} {
+	for _, name := range []string{"skills/workers/SKILL.md", "rules/AGENTS.md", "mcp_config.json", "hooks.json", "plugin.json"} {
 		p := filepath.Join(dir, name)
 		st, err := os.Lstat(p)
 		if os.IsNotExist(err) {
@@ -192,6 +220,8 @@ func RemoveAntigravity() error {
 			return err
 		}
 	}
+	_ = os.Remove(filepath.Join(dir, "skills", "workers"))
+	_ = os.Remove(filepath.Join(dir, "skills"))
 	_ = os.Remove(filepath.Join(dir, "rules"))
 	_ = os.Remove(dir)
 	return nil

@@ -58,7 +58,7 @@ func TestAntigravityPlugin(t *testing.T) {
 			t.Fatalf("hook %s: %+v", event, h)
 		}
 	}
-	for name, want := range map[string]string{"plugin.json": "agent-net", "mcp_config.json": "--antigravity", "hooks.json": "PreInvocation", "rules/AGENTS.md": "agent_message_reply"} {
+	for name, want := range map[string]string{"plugin.json": "agent-net", "mcp_config.json": "--antigravity", "hooks.json": "PreInvocation", "rules/AGENTS.md": "agent_message_reply", "skills/workers/SKILL.md": "agent_workers_find"} {
 		b, err := os.ReadFile(filepath.Join(AntigravityPluginDir(), name))
 		if err != nil {
 			t.Fatal(err)
@@ -91,6 +91,33 @@ func TestAntigravityPlugin(t *testing.T) {
 	}
 	if _, err := os.Stat(AntigravityPluginDir()); !os.IsNotExist(err) {
 		t.Fatalf("not removed: %v", err)
+	}
+}
+
+func TestAntigravityPluginWorkersSkill(t *testing.T) {
+	h := fakeHome(t)
+	if err := os.Mkdir(filepath.Join(h, ".gemini"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if r := SyncAntigravity("/tmp/agent-net"); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	path := filepath.Join(AntigravityPluginDir(), "skills", "workers", "SKILL.md")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(b)
+	for _, want := range []string{"\nname: workers\n", "\ndescription: ", "/workers", "agent_workers_find", `"started_by": "me"`, `"state": "any"`, "running workers first", "run time", "cost", "title"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("skill is missing %q:\n%s", want, text)
+		}
+	}
+	if err := RemoveAntigravity(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("skill remains: %v", err)
 	}
 }
 

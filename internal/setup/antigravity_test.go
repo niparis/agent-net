@@ -22,6 +22,9 @@ func TestAntigravitySetupUninstall(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "plugin.json")); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := os.Stat(filepath.Join(dir, "skills", "workers", "SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
 	var buf bytes.Buffer
 	if err := Uninstall(Options{Out: &buf, Exe: "/x"}); err != nil {
 		t.Fatal(err)
