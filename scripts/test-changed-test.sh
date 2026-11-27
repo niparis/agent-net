@@ -67,6 +67,9 @@ repo=$work/repo
 mkdir -p "$repo/internal/fake"
 cd "$repo"
 git init -q
+# Commit on a branch of its own, so a case can create a local main that is
+# behind origin/main.
+git checkout -q -b worker
 cat >internal/fake/fake.go <<'EOF'
 package fake
 
@@ -76,6 +79,29 @@ EOF
 mkdir -p internal/gateway internal/guidance internal/toolcatalog internal/daemon/ctoskill internal/featuremap
 printf 'package gateway\n\nfunc Unrelated() int { return 1 }\n' >internal/gateway/unrelated.go
 printf 'package gateway\n\nfunc Migration() int { return 1 }\n' >internal/gateway/project_identity_migration.go
+cat >internal/gateway/store.go <<'EOF'
+package gateway
+
+// migrations are applied in order.
+var migrations = []string{`
+CREATE TABLE demo (id TEXT);
+`, demoMigration}
+
+const demoMigration = `
+CREATE TABLE demo_two (id TEXT);
+`
+EOF
+cat >internal/gateway/store_test.go <<'EOF'
+package gateway
+
+import "testing"
+
+func TestStoreValue(t *testing.T) {
+	if Unrelated() != 1 {
+		t.Fatal("store")
+	}
+}
+EOF
 printf 'package guidance\n\nfunc Text() int { return 1 }\n' >internal/guidance/guidance.go
 printf 'package toolcatalog\n\nfunc Tool() int { return 1 }\n' >internal/toolcatalog/tool.go
 printf 'package ctoskill\n\nfunc Reference() int { return 1 }\n' >internal/daemon/ctoskill/reference.go
@@ -335,15 +361,16 @@ run_line() {
   grep -F -- "-run $1 " "$work/go.log" | head -n 1
 }
 
-# Each run prints a line when it starts and a PASS or FAIL line when it ends, so
-# a long run shows what it is doing.
+# Each run prints a line when it starts, with its index, package and pattern,
+# and an ok or FAIL line with its seconds when it ends, so a long run shows
+# what it is doing.
 reset_tree
 change_production
 run_check
-start_line=$(grep -n '^running ' "$work/out" | head -n 1 | cut -d: -f1)
-done_line=$(grep -n '^PASS ' "$work/out" | head -n 1 | cut -d: -f1)
+start_line=$(grep -n '^\[[0-9]*/[0-9]*\] \./internal/fake ' "$work/out" | head -n 1 | cut -d: -f1)
+done_line=$(grep -n '^ok \./internal/fake ([0-9]*s)' "$work/out" | head -n 1 | cut -d: -f1)
 [ -n "$start_line" ] && [ -n "$done_line" ] && [ "$start_line" -lt "$done_line" ] ||
-  fail "no progress line before the run's PASS line: $(cat "$work/out")"
+  fail "no progress line before the run's ok line: $(cat "$work/out")"
 
 # A file that is not a migration file runs no race migration set, even when it
 # sits in the gateway package. The migration set is slow, so a wrong match costs
@@ -356,13 +383,97 @@ if grep -q -- '-race' "$work/go.log"; then
   fail "an unrelated gateway file ran the race migration set: $(cat "$work/go.log")"
 fi
 
-# A gateway file that holds migrations runs the migration set with -race.
+# A gateway file that holds migrations runs the migration set, without -race.
 reset_tree
 printf 'package gateway\n\nfunc Migration() int { return 2 }\n' >internal/gateway/project_identity_migration.go
 run_check
 [ "$status" = 0 ] || fail "a migration change exited $status: $(cat "$work/out")"
-grep -Fq -- '-race -run Migrat|Replay|Upgrade|Cutover' "$work/go.log" ||
+grep -Fq -- '-run Migrat|Replay|Upgrade|Cutover' "$work/go.log" ||
   fail "a migration file did not run the migration set: $(cat "$work/go.log")"
+if grep -q -- '-race' "$work/go.log"; then
+  fail "the migration set ran with -race: $(cat "$work/go.log")"
+fi
+
+# Most gateway changes touch store.go. A change outside its migrations list and
+# migration consts runs its same-name test file, not the slow migration set.
+reset_tree
+cat >internal/gateway/store.go <<'EOF'
+package gateway
+
+// migrations are applied in order.
+var migrations = []string{`
+CREATE TABLE demo (id TEXT);
+`, demoMigration}
+
+const demoMigration = `
+CREATE TABLE demo_two (id TEXT);
+`
+
+func StoreValue() int { return 2 }
+EOF
+run_check
+[ "$status" = 0 ] || fail "a plain store.go change exited $status: $(cat "$work/out")"
+grep -Fq -- '-run ^(TestStoreValue)$' "$work/go.log" ||
+  fail "a plain store.go change did not run its same-name test file: $(cat "$work/go.log")"
+if grep -q 'Migrat|Replay|Upgrade|Cutover' "$work/go.log"; then
+  fail "a plain store.go change ran the migration set: $(cat "$work/go.log")"
+fi
+if grep -q -- '-race' "$work/go.log"; then
+  fail "a plain store.go change ran with -race: $(cat "$work/go.log")"
+fi
+
+# Changing a const whose name ends in Migration is a migration change.
+reset_tree
+cat >internal/gateway/store.go <<'EOF'
+package gateway
+
+// migrations are applied in order.
+var migrations = []string{`
+CREATE TABLE demo (id TEXT);
+`, demoMigration}
+
+const demoMigration = `
+CREATE TABLE demo_two (id TEXT, name TEXT);
+`
+EOF
+run_check
+[ "$status" = 0 ] || fail "a migration const change exited $status: $(cat "$work/out")"
+grep -Fq -- '-run Migrat|Replay|Upgrade|Cutover' "$work/go.log" ||
+  fail "a migration const change did not run the migration set: $(cat "$work/go.log")"
+if grep -q -- '-race' "$work/go.log"; then
+  fail "a migration const change ran with -race: $(cat "$work/go.log")"
+fi
+
+# A change inside the migrations list is a migration change too.
+reset_tree
+cat >internal/gateway/store.go <<'EOF'
+package gateway
+
+// migrations are applied in order.
+var migrations = []string{`
+CREATE TABLE demo (id TEXT, name TEXT);
+`, demoMigration}
+
+const demoMigration = `
+CREATE TABLE demo_two (id TEXT);
+`
+EOF
+run_check
+[ "$status" = 0 ] || fail "a migrations list change exited $status: $(cat "$work/out")"
+grep -Fq -- '-run Migrat|Replay|Upgrade|Cutover' "$work/go.log" ||
+  fail "a migrations list change did not run the migration set: $(cat "$work/go.log")"
+
+# The settings group is a plain run too.
+reset_tree
+mkdir -p internal/settings
+printf 'package settings\n\nfunc Setting() int { return 2 }\n' >internal/settings/settings.go
+run_check
+[ "$status" = 0 ] || fail "a settings change exited $status: $(cat "$work/out")"
+grep -Fq ' -timeout ' "$work/go.log" && grep -Fq './internal/settings' "$work/go.log" ||
+  fail "a settings change did not run the settings package: $(cat "$work/go.log")"
+if grep -q -- '-race' "$work/go.log"; then
+  fail "the settings group ran with -race: $(cat "$work/go.log")"
+fi
 
 # An untracked new test file is part of the diff, so its tests run.
 reset_tree
@@ -583,5 +694,34 @@ env -u GOTMPDIR TMPDIR="$work/caller-tmp" PATH="$statbin:$work/bin:/usr/bin:/bin
 want="TMPDIR=$work/caller-tmp GOTMPDIR=$shm_root/agent-net-gotmp"
 [ "$(sort -u "$work/go-env.log")" = "$want" ] ||
   fail "go test env with a caller TMPDIR is $(sort -u "$work/go-env.log"), want $want"
+
+# With no BASE, the base is the merge-base with origin/main when it exists, so a
+# stale local main cannot widen the diff. A local main that is behind
+# origin/main, plus the plan's base line, proves which ref was used.
+reset_tree
+change_production
+git add -A
+git -c user.name=test -c user.email=test@example.invalid commit -q -m tip
+tip=$(git rev-parse HEAD)
+git branch -f main HEAD~1
+git update-ref refs/remotes/origin/main "$tip"
+printf 'third\n' >internal/fake/notes.txt
+status=0
+PATH="$work/bin:/usr/bin:/bin" FAKE_GO_LOG="$work/go.log" FAKE_GOFMT_LOG="$work/gofmt.log" TEST_CHANGED_GO="$real_go" \
+  sh "$script" --plan >"$work/base-plan" 2>&1 || status=$?
+[ "$status" = 0 ] || fail "a plan with origin/main exited $status: $(cat "$work/base-plan")"
+grep -Fq "test-changed: base $(git rev-parse --short "$tip") (merge-base with origin/main)" "$work/base-plan" ||
+  fail "the plan did not name origin/main as the base: $(cat "$work/base-plan")"
+grep -Fq 'internal/fake/notes.txt' "$work/base-plan" ||
+  fail "the plan did not list the working change: $(cat "$work/base-plan")"
+
+# Without origin/main, the base is the merge-base with local main.
+git update-ref -d refs/remotes/origin/main
+status=0
+PATH="$work/bin:/usr/bin:/bin" FAKE_GO_LOG="$work/go.log" FAKE_GOFMT_LOG="$work/gofmt.log" TEST_CHANGED_GO="$real_go" \
+  sh "$script" --plan >"$work/base-plan" 2>&1 || status=$?
+[ "$status" = 0 ] || fail "a plan with main exited $status: $(cat "$work/base-plan")"
+grep -Fq "test-changed: base $(git rev-parse --short HEAD~1) (merge-base with main)" "$work/base-plan" ||
+  fail "the plan did not name main as the base: $(cat "$work/base-plan")"
 
 echo "test-changed-test: ok"

@@ -891,7 +891,7 @@ settings:
     stricter: owner
     type: text
     levels: [network, repo]
-    default: "Tests: run only the tests that cover your change, by name (Go: -run '^(TestA|TestB)$'), or run the project's test-changed script, which picks them from the diff. Do not run whole packages, race runs, repeat or load runs, or full suites, and run one test command at a time. The delivery test step and CI run the full packages."
+    default: "Tests: run only the tests that cover your change. Run the project's test-changed script (`scripts/test-changed.sh` in this repository) and nothing wider: no whole-package run, no `-race` run, no repeat or load run, and no full suite; run one test command at a time. A brief may name extra tests by pattern (Go: `--run 'TestA|TestB'`), never a whole package or `-race`. The delivery test step and CI run the full packages."
     live: true
   - key: workers.brief_codex_tools
     rows: [67]
@@ -1126,7 +1126,7 @@ settings:
     type: text
     levels: [network]
     slots: [handback]
-    default: "- **If you are a worker** (your first message starts with `[agent-net worker brief]`), follow that brief over every general rule above. A worker does not announce its task: its brief is its task. Finish the way the brief says (with `{{handback}}`, or with your final answer when the brief says agent-net tools are off). You cannot start workers. Report friction in your hand-back: say what slowed you down, or none."
+    default: "- **If you are a worker** (your first message starts with `[agent-net worker brief]`), follow that brief over every general rule above. A worker does not announce its task: its brief is its task. Finish the way the brief says (with `{{handback}}`, or with your final answer when the brief says agent-net tools are off). You cannot start workers. A worker runs `scripts/test-changed.sh` and nothing wider: no whole-package run, no `-race` run, and no full suite. A brief may name extra tests by pattern, never a whole-package or `-race` run. Report friction in your hand-back: say what slowed you down, or none."
     live: true
   - key: delivery.contract.accept
     description: Contract for the accept step.
