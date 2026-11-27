@@ -38,6 +38,9 @@ const (
 type usageEntry struct {
 	at  time.Time
 	rep protocol.UsageReport
+	// handed counts the starts the gateway gave this machine since rep was
+	// taken. The report cannot show them yet, so the machine choice adds them.
+	handed int
 }
 
 // usageTable holds the newest report per node.
@@ -57,7 +60,7 @@ func (u *usageTable) set(nodeID string, at time.Time, rep protocol.UsageReport) 
 	if previous, ok := u.m[nodeID]; !ok || !reflect.DeepEqual(previous.rep.Quotas, rep.Quotas) {
 		u.quotaVersion.Add(1)
 	}
-	u.m[nodeID] = usageEntry{at, rep}
+	u.m[nodeID] = usageEntry{at: at, rep: rep}
 	u.version.Add(1)
 }
 
@@ -508,4 +511,15 @@ func (g *Gateway) relayMessageBody(ctx context.Context, raw []byte) (json.RawMes
 		return nil, reject("body held on %s, offline", offline)
 	}
 	return nil, reject("unknown message %q", q.MessageID)
+}
+
+// handOut counts one start the gateway gave a machine. A newer report replaces
+// the entry and so resets the count.
+func (u *usageTable) handOut(nodeID string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if e, ok := u.m[nodeID]; ok {
+		e.handed++
+		u.m[nodeID] = e
+	}
 }
