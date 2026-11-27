@@ -56,10 +56,14 @@ func sandboxFolder(t *testing.T, name string) string {
 }
 
 // sandboxWorker makes a daemon, a repository with a linked worktree, and an
-// OpenCode worker of the given level in that worktree, in the OS wrapper.
+// OpenCode worker of the given level in that worktree, in the OS wrapper. The
+// state folder has a short path, as a real one does, so a unix socket in the
+// worker's TMPDIR fits the 108 bytes of a socket address; t.TempDir, with the
+// test's name in it, would not.
 func sandboxWorker(t *testing.T, level string) (*Daemon, *worker, string) {
 	t.Helper()
-	state := seededStateDir(t)
+	state := sandboxFolder(t, "state")
+	seedDatabase(t, state, "daemon.db", stateTemplateBytes)
 	d, err := New(Config{StateDir: state, SocketPath: filepath.Join(shortDir(t), "d.sock")})
 	if err != nil {
 		t.Fatal(err)
@@ -137,8 +141,14 @@ func checkWriteFence(t *testing.T) {
 	t.Helper()
 	home := outsideHome(t)
 	d, w, repo := sandboxWorker(t, protocol.WorkersSandboxed)
-	gitIn(t, repo, "worktree", "add", "-q", "-b", "other", filepath.Join(sandboxFolder(t, "other"), "wt"))
-	env := workerEnv(os.Environ(), map[string]string{envFakeFenceProbe: "1", envFakeFenceHome: home, "HOME": home})
+	otherWt := filepath.Join(sandboxFolder(t, "other"), "wt")
+	gitIn(t, repo, "worktree", "add", "-q", "-b", "other", otherWt)
+	out, err := exec.Command("git", "-C", otherWt, "rev-parse", "--path-format=absolute", "--git-dir").Output()
+	other := strings.TrimSpace(string(out))
+	if err != nil || !fileExists(filepath.Join(other, "commondir")) {
+		t.Fatalf("the other worktree has no git folder at %q: %v", other, err)
+	}
+	env := workerEnv(os.Environ(), map[string]string{envFakeFenceProbe: "1", envFakeFenceHome: home, envFakeFenceOther: other, "HOME": home})
 	if err := d.spawnWorker(w, sandboxHarnessCopy(t), nil, env); err != nil {
 		t.Fatal(err)
 	}

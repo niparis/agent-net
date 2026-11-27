@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -74,12 +75,90 @@ func TestOSSandboxPolicyWritable(t *testing.T) {
 // Inside the wrapper every temp folder variable names the worker's own temp
 // folder, so tools that read TMP or TEMP stay inside the fence too.
 func TestOSSandboxSetEnvNamesTheWorkerTemp(t *testing.T) {
-	set := osSandboxSetEnv("/s/w_1/tmp")
+	set := osSandboxSetEnv(osSandboxInput{WorkerDir: "/s/w_1"})
 	for _, k := range []string{"TMPDIR", "TMP", "TEMP", "GOTMPDIR"} {
 		if set[k] != "/s/w_1/tmp" {
 			t.Errorf("%s = %q, want the worker's temp folder", k, set[k])
 		}
 	}
+}
+
+// osSandboxTestWorker is a daemon with a socket in its own folder and a worker
+// in a linked worktree of a repository that has one more linked worktree,
+// "other". The socket is a plain file: the wrapper's input only needs it to
+// exist. The caches are temp folders. It returns the daemon, the worker and
+// the repository.
+func osSandboxTestWorker(t *testing.T) (*Daemon, *worker, string) {
+	t.Helper()
+	t.Setenv("GOMODCACHE", t.TempDir())
+	run := t.TempDir()
+	sock := filepath.Join(run, "daemon.sock")
+	if err := os.MkdirAll(socketDir(sock), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(socketFile(sock), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("sock", "daemon.sock"), sock); err != nil {
+		t.Fatal(err)
+	}
+	repo := newRepo(t, "shop")
+	base := t.TempDir()
+	gitIn(t, repo, "worktree", "add", "-q", "-b", "agent-net/w_1", filepath.Join(base, "w_1"))
+	gitIn(t, repo, "worktree", "add", "-q", "-b", "other", filepath.Join(base, "other"))
+	d := &Daemon{cfg: Config{StateDir: t.TempDir(), SocketPath: sock, WorkerGoCache: t.TempDir(), WorkerGoTmp: t.TempDir()}}
+	return d, &worker{id: "w_1", harness: "opencode", path: filepath.Join(base, "w_1")}, repo
+}
+
+// Inside the wrapper AGENT_NET_SOCKET names the socket file in the bound
+// socket folder, even when the harness's environment has no socket: the
+// worker reaches the daemon, and the daemon's new socket after a restart
+// (TestOSSandboxSocketSurvivesDaemonRestart checks that in bubblewrap).
+func TestOSSandboxEnvNamesTheSocketInTheBoundFolder(t *testing.T) {
+	d, w, _ := osSandboxTestWorker(t)
+	in, _, err := d.osSandboxInputFor(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := buildOSSandboxPolicy(in)
+	dir := resolved(socketDir(d.cfg.SocketPath))
+	if !slices.Contains(p.Writable, dir) {
+		t.Fatalf("the socket folder %s is not bound: %q", dir, p.Writable)
+	}
+	if got, want := osSandboxSetEnv(in)["AGENT_NET_SOCKET"], filepath.Join(dir, "daemon.sock"); got != want {
+		t.Fatalf("AGENT_NET_SOCKET = %q, want the socket file in the bound folder %q", got, want)
+	}
+}
+
+// The folder of another linked worktree is bound read-only after the writable
+// git folder, at the same resolved path, so bubblewrap's later mount wins:
+// git outside the sandbox reads its commondir and gitdir files.
+func TestOSSandboxBindsOtherWorktreesReadOnlyAfterTheGitFolder(t *testing.T) {
+	d, w, repo := osSandboxTestWorker(t)
+	in, _, err := d.osSandboxInputFor(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	common := resolved(filepath.Join(repo, ".git"))
+	other := filepath.Join(common, "worktrees", "other")
+	args := bwrapArgs(buildOSSandboxPolicy(in), "/bin/pi", nil)
+	bind, ro := argPair(args, "--bind", common), argPair(args, "--ro-bind", other)
+	if bind < 0 || ro < bind {
+		t.Fatalf("%s is not bound read-only after the git folder %s (bind %d, ro-bind %d): %q", other, common, bind, ro, args)
+	}
+	if own := filepath.Join(common, "worktrees", "w_1"); argPair(args, "--ro-bind", own) >= 0 {
+		t.Fatalf("the worker's own git folder %s is read-only: %q", own, args)
+	}
+}
+
+// argPair is the index of flag followed by path bound at the same path, or -1.
+func argPair(args []string, flag, path string) int {
+	for i := 0; i+2 < len(args); i++ {
+		if args[i] == flag && args[i+1] == path && args[i+2] == path {
+			return i
+		}
+	}
+	return -1
 }
 
 // node.json: lists of projects, "*" as the value or as an item. Nothing set

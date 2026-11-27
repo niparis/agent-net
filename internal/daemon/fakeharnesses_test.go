@@ -62,11 +62,13 @@ const (
 	envFakeSocketProbeOut   = "FAKE_SOCKET_PROBE_OUT"
 
 	// envFakeFenceProbe makes the test binary try, inside a worker sandbox,
-	// what decision 0197 allows and the one write it forbids, and write the
+	// what decision 0197 allows and the writes it forbids, and write the
 	// results as JSON to $TMPDIR/fence.json. envFakeFenceHome names the
-	// folder outside the sandbox's writable paths.
+	// folder outside the sandbox's writable paths, envFakeFenceOther the git
+	// folder of a linked worktree that is not the worker's.
 	envFakeFenceProbe = "FAKE_FENCE_PROBE"
 	envFakeFenceHome  = "FAKE_FENCE_HOME"
+	envFakeFenceOther = "FAKE_FENCE_OTHER"
 
 	// Variables that change what the fakes do.
 	envFakeClaudeSessions = "FAKE_CLAUDE_SESSIONS"     // the folder of the session files
@@ -224,21 +226,13 @@ func fakeFenceProbe() {
 	p.Loopback = fenceDial("tcp", "127.0.0.1:0")
 	p.HomeWrite = errText(os.WriteFile(filepath.Join(os.Getenv(envFakeFenceHome), "probe"), []byte("x"), 0o600))
 	p.WorktreeAdd = git("worktree", "add", "-q", "-b", "fence-probe-wt", filepath.Join(tmp, "wt"))
-	gitPath := func(arg string) string {
-		out, _ := exec.Command("git", "rev-parse", "--path-format=absolute", arg).Output()
-		return strings.TrimSpace(string(out))
-	}
-	common, own := gitPath("--git-common-dir"), gitPath("--git-dir")
+	out, _ := exec.Command("git", "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	common := strings.TrimSpace(string(out))
 	p.HookWrite = errText(os.WriteFile(filepath.Join(common, "hooks", "pre-commit"), []byte("#!/bin/sh\n"), 0o755))
 	p.ConfigWrite = fenceAppend(filepath.Join(common, "config"), "[core]\n\tfsmonitor = true\n")
-	p.OtherWorktree = "no other linked worktree"
-	entries, _ := os.ReadDir(filepath.Join(common, "worktrees"))
-	for _, e := range entries {
-		if dir := filepath.Join(common, "worktrees", e.Name()); dir != own && e.Name() != "wt" {
-			p.OtherWorktree = fenceAppend(filepath.Join(dir, "commondir"), "")
-			break
-		}
-	}
+	// The test names the other worktree: the probe's own worktree add made one
+	// more, which is the worker's and may be written.
+	p.OtherWorktree = fenceAppend(filepath.Join(os.Getenv(envFakeFenceOther), "commondir"), "")
 	raw, _ := json.Marshal(p)
 	_ = os.WriteFile(filepath.Join(tmp, "fence.json"), raw, 0o600)
 }

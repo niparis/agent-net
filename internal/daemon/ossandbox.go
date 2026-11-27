@@ -231,6 +231,7 @@ type osSandboxInput struct {
 	State     []string    // the harness's writable private state
 	StateRO   []mountPair // owner files bound read-only into the private state
 	SocketDir string      // the folder with the agent-net socket
+	Socket    string      // the socket file in SocketDir
 }
 
 // buildOSSandboxPolicy turns the facts of a start into the wrapper's policy.
@@ -293,7 +294,7 @@ func (d *Daemon) osSandboxWrap(w *worker, bin string, args, env []string) (strin
 	if err != nil {
 		return "", nil, nil, err
 	}
-	set := osSandboxSetEnv(osSandboxTmp(in.WorkerDir))
+	set := osSandboxSetEnv(in)
 	switch harness {
 	case "pi":
 		if err := d.piPrivateAgent(&in, set); err != nil {
@@ -342,6 +343,7 @@ func (d *Daemon) osSandboxInputFor(w *worker) (osSandboxInput, string, error) {
 	}
 	if fileExists(d.cfg.SocketPath) {
 		in.SocketDir = resolved(socketDir(d.cfg.SocketPath))
+		in.Socket = filepath.Join(in.SocketDir, filepath.Base(d.cfg.SocketPath))
 	}
 	return in, dir, nil
 }
@@ -433,10 +435,16 @@ func fileExists(p string) bool {
 // every temp folder variable names the worker's own temp folder, which the
 // daemon removes with the worker. Go writes its build files there too, and not
 // to the Go temp folder on /dev/shm, which the wrapper's own /dev does not have.
-func osSandboxSetEnv(tmp string) map[string]string {
+// AGENT_NET_SOCKET names the socket file in the bound socket folder, so the
+// worker finds the daemon without the public symlink and whatever the
+// harness's own environment says, and finds the new socket after a restart.
+func osSandboxSetEnv(in osSandboxInput) map[string]string {
 	set := map[string]string{}
 	for _, k := range []string{"TMPDIR", "TMP", "TEMP", "GOTMPDIR"} {
-		set[k] = tmp
+		set[k] = osSandboxTmp(in.WorkerDir)
+	}
+	if in.Socket != "" {
+		set["AGENT_NET_SOCKET"] = in.Socket
 	}
 	return set
 }
