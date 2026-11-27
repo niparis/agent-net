@@ -932,12 +932,12 @@ func (d *Daemon) spawnWorkerIO(w *worker, bin string, args []string, env []strin
 	if err != nil {
 		return err
 	}
-	// The OS sandbox: a Pi or OpenCode worker of a project that has it on
+	// The OS sandbox: a Pi, OpenCode or agy worker of a project that has it on
 	// (the default) never starts without it.
 	d.wmu.Lock()
 	sandbox := w.osSandbox
 	d.wmu.Unlock()
-	if sandbox == "" && (w.harness == "pi" || w.harness == "opencode") && osSandboxRequired(OSSandboxDefaultOn, d.cfg.Workers.osSandboxMode(w.project)) {
+	if sandbox == "" && osSandboxHarness(w.harness) && osSandboxRequired(OSSandboxDefaultOn, d.cfg.Workers.osSandboxMode(w.project)) {
 		logf.Close()
 		return errors.New("the OS sandbox is on for this project, but this start did not apply it")
 	}

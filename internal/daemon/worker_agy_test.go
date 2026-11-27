@@ -33,6 +33,9 @@ type fakeAgyRecord struct {
 	MCPError                    string
 	BadHandbackRejected         bool
 	InputClosed                 bool
+	// FenceInside and FenceOutside are the errors of a write in the worktree
+	// and in FAKE_AGY_FENCE_OUTSIDE, for a turn with FAKE:fence.
+	FenceInside, FenceOutside string
 }
 
 // The fake agy script execs this test binary. No vendor binaries, credentials,
@@ -122,6 +125,17 @@ func TestAgyProcess(t *testing.T) {
 		if strings.Contains(body, "FAKE:error") {
 			fmt.Fprintln(os.Stderr, `AGY_ERROR: {"message":"local worker exploded"}`)
 			os.Exit(3)
+		}
+		if strings.Contains(body, "FAKE:fence") {
+			errText := func(err error) string {
+				if err != nil {
+					return err.Error()
+				}
+				return ""
+			}
+			r.FenceInside = errText(os.WriteFile(filepath.Join(cwd, "fence-inside.txt"), []byte("ok\n"), 0o644))
+			r.FenceOutside = errText(os.WriteFile(filepath.Join(os.Getenv("FAKE_AGY_FENCE_OUTSIDE"), "fence-outside.txt"), []byte("escaped\n"), 0o644))
+			save()
 		}
 		if strings.Contains(body, "FAKE:edit") {
 			_ = os.WriteFile(filepath.Join(cwd, "agy-work.txt"), []byte("work\n"), 0644)
@@ -575,7 +589,7 @@ func TestAgyWorkerLifecycleAndResume(t *testing.T) {
 		t.Fatalf("brief: %+v", r.Turns)
 	}
 	noFlagThatSkipsPermissions(t, r.Args)
-	if r.Args[len(r.Args)-1] != "-p=" || argValue(r.Args, "--input-format") != "stream-json" || argValue(r.Args, "--output-format") != "stream-json" || argValue(r.Args, "--model") != "gemini-3.8-flash-low" || argValue(r.Args, "--mode") != "accept-edits" || !strings.Contains(strings.Join(r.Args, " "), "--sandbox") || argValue(r.Args, "--settings") != `{"permissions":{"allow":["command(*)","mcp(agent-net_agent-net/*)"]}}` {
+	if r.Args[len(r.Args)-1] != "-p=" || argValue(r.Args, "--input-format") != "stream-json" || argValue(r.Args, "--output-format") != "stream-json" || argValue(r.Args, "--model") != "gemini-3.8-flash-low" || argValue(r.Args, "--mode") != "accept-edits" || !strings.Contains(strings.Join(r.Args, " "), "--sandbox") || argValue(r.Args, "--settings") != agyWorkerSettings {
 		t.Fatalf("args: %v", r.Args)
 	}
 	sendAgy(t, w, res.SessionID, "FAKE:handback again")
@@ -586,6 +600,28 @@ func TestAgyWorkerLifecycleAndResume(t *testing.T) {
 			t.Fatalf("resume args: %v", rec.Args)
 		}
 	}
+}
+
+// In agent-net's OS wrapper agy runs without its own --sandbox, which cannot
+// run a command on the owner's machines: the wrapper is the fence. A project
+// with the wrapper turned off keeps agy's --sandbox. Both may run commands and
+// agent-net's tools without a prompt, and add the same folders.
+func TestAgyWorkerArgs(t *testing.T) {
+	t.Parallel()
+	model := []string{"--model", "gemini-3.8-flash-low"}
+	dirs := []string{"/repo/.git/objects", "/gocache"}
+	wrapped := agyWorkerArgs(model, true, dirs, "conv-1")
+	want := []string{"--input-format", "stream-json", "--output-format", "stream-json", "--model", "gemini-3.8-flash-low",
+		"--mode", "accept-edits", "--settings", `{"permissions":{"allow":["command(*)","mcp(agent-net_agent-net/*)"]}}`,
+		"--add-dir", "/repo/.git/objects", "--add-dir", "/gocache", "--conversation", "conv-1", "-p="}
+	if !slices.Equal(wrapped, want) {
+		t.Fatalf("wrapped:\n got %q\nwant %q", wrapped, want)
+	}
+	own := agyWorkerArgs(model, false, dirs, "")
+	if !slices.Contains(own, "--sandbox") || argValue(own, "--settings") != agyWorkerSettings || slices.Contains(own, "--conversation") || own[len(own)-1] != "-p=" {
+		t.Fatalf("without the wrapper: %q", own)
+	}
+	noFlagThatSkipsPermissions(t, wrapped)
 }
 
 // agy reports per-step usage in its stream but no context window, so the
