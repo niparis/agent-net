@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -196,6 +197,35 @@ func TestSweepSaysWhenItReadATranscriptBefore(t *testing.T) {
 	r.queued(t, "cto-native", time.Now(), map[string]any{"prompt": "new decision", "commandMode": "prompt", "origin": map[string]any{"kind": "human"}})
 	if fresh, primed := r.d.sweepQueuedOwnerPrompts(sid); !primed || len(fresh) != 1 || fresh[0].text != "new decision" {
 		t.Fatalf("second sweep: fresh=%v primed=%v", fresh, primed)
+	}
+}
+
+// The link-up refill sweeps the transcripts too. The line it reads is only
+// read for the owner's words, but the Stop hook that ends the turn must still
+// send the owner use for it: a sweep never takes a line the Stop hook acts on.
+func TestRefillSweepKeepsTheLineTheStopHookCloses(t *testing.T) {
+	r := newQueuedRig(t)
+	ls := &localSession{info: protocol.SessionInfo{Harness: "claude", NativeID: "c1", Cwd: "/code", Status: "busy"}, sessionID: "s_c1"}
+	r.d.sessions[key("claude", "c1")] = ls
+	var uses []map[string]any
+	r.d.cfg.testGatewayCall = func(_ context.Context, typ string, params any) (json.RawMessage, bool, error) {
+		if typ == "session.owner_use" {
+			uses = append(uses, params.(map[string]any))
+			return json.RawMessage(`{}`), true, nil
+		}
+		return nil, false, nil
+	}
+	ctx := context.Background()
+	r.queued(t, "c1", time.Now(), map[string]any{"prompt": "go with option a", "commandMode": "prompt", "origin": map[string]any{"kind": "human"}})
+	r.d.ownerTypedWhileBusy(ctx, ls, "s_c1") // the first read of the transcript: old text, no news
+	r.queued(t, "c1", time.Now(), map[string]any{"prompt": "go with option b", "commandMode": "prompt", "origin": map[string]any{"kind": "human"}})
+	r.d.sweepAllOwnerPrompts() // the refill reads the line before the turn ends
+	r.d.ownerTypedWhileBusy(ctx, ls, "s_c1")
+	if len(uses) != 1 {
+		t.Fatalf("the Stop hook sent %d owner uses after a refill read the owner's line, want 1", len(uses))
+	}
+	if uses[0]["text"] != "go with option b" {
+		t.Fatalf("the owner use carried %q, want the owner's line", uses[0]["text"])
 	}
 }
 
