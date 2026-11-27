@@ -1,10 +1,8 @@
 package gateway
 
 import (
-	"fmt"
 	"time"
 
-	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/settings"
 )
 
@@ -120,8 +118,7 @@ func (s *Store) checkSessionStalls() error {
 		if c.stalledSince > 0 || (!closedNow && c.askedAt > 0 && now.Sub(time.Unix(0, c.askedAt)) < timeout) {
 			continue
 		}
-		s.logOwnerItem("desk.dropped", protocol.InboxItem{Kind: protocol.AskKindStall, SessionID: c.id, Node: c.repo},
-			"text", askFirstLine(fmt.Sprintf("%s session may be stalled. No harness activity has been observed since %s. Open Sessions and press Enter to look, or restart the session.", c.harness, time.Unix(0, baseline).UTC().Format(time.RFC3339)), 160))
+		s.logf("session.stalled", "session", c.id, "repo", c.repo, "harness", c.harness, "since", time.Unix(0, baseline).UTC().Format(time.RFC3339))
 		if _, err := tx.Exec(`UPDATE sessions SET stalled_since=?,stall_asked_for=?,stall_asked_at=? WHERE id=?`,
 			baselineSec, baselineSec, now.UnixNano(), c.id); err != nil {
 			return err

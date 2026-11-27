@@ -14,8 +14,7 @@ import (
 // own proposal store and static guidance. A read whose sources depend on its
 // detail names the extra source after a semicolon.
 var ctoReadSources = map[string]string{
-	"cto_proposals_find":  "own proposals,asks.list",
-	"cto_intake_find":     protocol.FrameIntakeFind,
+	"cto_proposals_find":  "own proposals,charter.drafts",
 	"agent_sessions_find": "sessions_find",
 	"agent_machines_find": "machines_find", "agent_machine_log": "machine_log",
 	"agent_projects_find": "projects_find", "agent_workers_find": protocol.MethodWorkersFind,
@@ -121,17 +120,6 @@ func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessa
 	switch name {
 	case "agent_sessions_find", "agent_machines_find", "agent_machine_log", "agent_projects_find", "agent_workers_find", "agent_messages_find", "agent_graph_read", "agent_settings_read", "agent_mcp_servers_find", "agent_worker_profiles_find", "agent_owner_judgments_find", "projects_layout", "agent_protected_providers_get":
 		return d.readCTOCatalogTool(ctx, name, raw)
-	case "cto_intake_find":
-		var q protocol.IntakeFindArgs
-		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &q) != nil {
-			return nil, errors.New("bad cto_intake_find arguments")
-		}
-		value, err := d.call(ctx, protocol.FrameIntakeFind, q)
-		if err != nil {
-			return nil, err
-		}
-		var out protocol.IntakeFindResult
-		return out, ctoDecode(value, &out)
 	case "cto_proposals_find":
 		var q struct {
 			ID     string `json:"id"`

@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -273,96 +272,19 @@ func (d *Daemon) claudeServiceLiveSessions(now time.Time) int {
 	return live
 }
 
-// reportMouseNotice writes one digest line to the CTO intake queue (decision
-// 0152); it never reaches the owner. It keeps to one report per key per day.
+// reportMouseNotice logs one notice per key per day.
 func (d *Daemon) reportMouseNotice(ctx context.Context, key, text string) {
-	d.reportClaudeNotice(ctx, key, text, mouseIntake)
-}
-
-// reportClaudeNotice sends one line about the Claude settings to the CTO
-// intake queue, once per key per day.
-func (d *Daemon) reportClaudeNotice(ctx context.Context, key, text string, intake func(string) protocol.IntakeReport) {
 	now := time.Now()
 	if !d.mouseNoticeDue(key, now) {
 		return
 	}
 	d.markMouseNotice(key, now)
-	d.showClaudeNotice(ctx, key, text, intake)
+	d.Logf("claude mouse: %s", text)
 }
 
-// showMouseNotice sends the line to the CTO intake queue. If the gateway link
-// is not connected yet, it retries with backoff.
+// showMouseNotice logs one mouse notice.
 func (d *Daemon) showMouseNotice(ctx context.Context, key, text string) {
-	d.showClaudeNotice(ctx, key, text, mouseIntake)
-}
-
-func (d *Daemon) showClaudeNotice(ctx context.Context, key, text string, intake func(string) protocol.IntakeReport) {
-	d.mouseMu.Lock()
-	if d.mouseNotices == nil {
-		d.mouseNotices = map[string]time.Time{}
-	}
-	pendingKey := "\x00pending:" + key
-	if _, pending := d.mouseNotices[pendingKey]; pending {
-		d.mouseMu.Unlock()
-		return
-	}
-	d.mouseNotices[pendingKey] = time.Time{}
-	d.mouseMu.Unlock()
-	clearPending := func() {
-		d.mouseMu.Lock()
-		delete(d.mouseNotices, pendingKey)
-		d.mouseMu.Unlock()
-	}
-	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	_, err := d.call(cctx, "intake.report", intake(text))
-	cancel()
-	if err == nil {
-		clearPending()
-		return
-	}
-	if !isMouseNoticeOffline(err) {
-		d.Logf("claude mouse: CTO intake: %v", err)
-		clearPending()
-		return
-	}
-	bctx := ctx
-	if d.ctoCtx != nil {
-		bctx = d.ctoCtx
-	}
-	if bctx == nil {
-		bctx = context.Background()
-	}
-	d.goBackground(func() {
-		defer clearPending()
-		delay := time.Second
-		for {
-			timer := time.NewTimer(delay)
-			select {
-			case <-bctx.Done():
-				timer.Stop()
-				return
-			case <-timer.C:
-			}
-			cctx, cancel := context.WithTimeout(bctx, 10*time.Second)
-			_, err := d.call(cctx, "intake.report", intake(text))
-			cancel()
-			if err == nil {
-				return
-			}
-			if !isMouseNoticeOffline(err) {
-				d.Logf("claude mouse: CTO intake: %v", err)
-				return
-			}
-			delay *= 2
-			if delay > time.Minute {
-				delay = time.Minute
-			}
-		}
-	})
-}
-
-func isMouseNoticeOffline(err error) bool {
-	return errors.Is(err, errNotConnected) || (err != nil && strings.Contains(err.Error(), "not connected to the gateway"))
+	d.Logf("claude mouse: %s", text)
 }
 
 // mouseNoticeDue says whether key may be reported. The record survives a
@@ -393,10 +315,4 @@ func (d *Daemon) markMouseNotice(key string, now time.Time) {
 		d.mouseNotices = map[string]time.Time{}
 	}
 	d.mouseNotices[key] = now
-}
-
-// mouseIntake is the CTO intake report of a mouse notice. All notices of one
-// machine are one entry, whose count grows.
-func mouseIntake(text string) protocol.IntakeReport {
-	return protocol.IntakeReport{Kind: protocol.IntakeClaudeMouse, Subject: "claude", Text: text}
 }

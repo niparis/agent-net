@@ -112,10 +112,6 @@ func TestCTOSessionResumeRelaysToTheRightMachine(t *testing.T) {
 	if _, set := settingsEnv["CLAUDE_CODE_DISABLE_MOUSE"]; set || rec.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "" {
 		t.Fatalf("a managed owner launch must leave mouse tracking to the user settings: %+v", rec)
 	}
-	items, err := inboxAndLog(f.g.gw.Store())
-	if err != nil || len(items) != 1 || !strings.Contains(items[0].Text, "resume") || len(items[0].Options) != 0 {
-		t.Fatalf("resume leaves a notice and no undo: %+v %v", items, err)
-	}
 }
 
 func TestCTOSessionStopIsGuardedAndHasResumeUndo(t *testing.T) {
@@ -128,18 +124,6 @@ func TestCTOSessionStopIsGuardedAndHasResumeUndo(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "the owner stop command reached the other machine", func() bool { return strings.HasPrefix(f.stopLog(), "stop ") })
-	items, err := inboxAndLog(f.g.gw.Store())
-	if err != nil || len(items) != 2 {
-		t.Fatalf("inbox: %+v %v", items, err)
-	}
-	stop := items[len(items)-1]
-	if len(stop.Options) != 2 || stop.Options[0] != "session_resume" {
-		t.Fatalf("stop undo is resume: %+v", stop)
-	}
-	var undo protocol.SessionResumeRequest
-	if json.Unmarshal([]byte(stop.Options[1]), &undo) != nil || undo.SessionID != live {
-		t.Fatalf("undo names the stopped session: %+v", stop.Options)
-	}
 	lines, err := auditLines(f.cto.node)
 	if err != nil || !strings.Contains(strings.Join(lines, "\n"), "session_stop") {
 		t.Fatalf("audit lines %v %v", lines, err)
@@ -204,10 +188,6 @@ func TestCTOSessionRestartStopsThenResumesTheSameConversation(t *testing.T) {
 	}
 	if time.Since(start) > 30*time.Second {
 		t.Fatal("restart is too slow")
-	}
-	items, err := inboxAndLog(f.g.gw.Store())
-	if err != nil || len(items) != 2 || len(items[1].Options) != 0 || !strings.Contains(items[1].Text, "restart") {
-		t.Fatalf("restart leaves one notice and no undo: %+v %v", items, err)
 	}
 }
 

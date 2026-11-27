@@ -40,15 +40,13 @@ var parallelFrames = map[string]bool{
 	"query.messages": true, "query.message": true,
 	"query.usage": true, "query.counts": true, "query.machine_get": true,
 	"charter.drafts": true, "signal.list": true,
-	"inbox.list": true, "asks.list": true, "sign_in.list": true, "query.sign_in": true, "desk.log": true, "held.list": true,
+	"held.list":  true,
 	"hidden.get": true, "settings.snapshot": true, "node.settings.get": true,
 	"onboarding.get": true, "playbook.get": true,
 	"cto.graph_latest": true, "cto.graph_history": true,
 	"charter.history": true, "edge.history": true, "settings.history": true,
 	"change.list": true, "change.get": true,
-	// The Desk reads these every refresh. They only read (the settings come
-	// from the read cache), so one slow write in the lane must not hold them.
-	"chief.get": true, "ask.history": true, protocol.OpRoleNetwork: true,
+	"chief.get": true, protocol.OpRoleNetwork: true,
 	// A failure report is a counter bump: it must not wait behind a write.
 	protocol.FrameClientError: true,
 }

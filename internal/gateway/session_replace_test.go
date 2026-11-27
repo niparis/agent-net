@@ -177,20 +177,6 @@ func TestOwnerReplaceSessionMovesTheWork(t *testing.T) {
 	if err != nil || !ok || before.ReplacedBy != fresh {
 		t.Fatalf("the old record is not marked replaced by the new one: %+v %v", before, err)
 	}
-	// The Desk shows who moved what to whom.
-	log, err := r.s.DeskLog(20)
-	if err != nil {
-		t.Fatalf("desk log: %v", err)
-	}
-	moved := false
-	for _, entry := range log {
-		if entry.Source == "owner" && strings.Contains(entry.Text, r.caller) && strings.Contains(entry.Text, fresh) {
-			moved = true
-		}
-	}
-	if !moved {
-		t.Fatalf("no Desk line says the owner moved %s to %s: %+v", r.caller, fresh, log)
-	}
 }
 
 // The owner may only move a session's work to a session on the same machine.

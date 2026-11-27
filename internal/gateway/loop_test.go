@@ -60,19 +60,6 @@ func runLoops(t *testing.T, s *Store, c *clock) []loopTickResult {
 	return loopTicks(t, s)
 }
 
-func deskLines(t *testing.T, s *Store) []string {
-	t.Helper()
-	log, err := s.DeskLog(100)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out []string
-	for i := len(log) - 1; i >= 0; i-- {
-		out = append(out, log[i].Text)
-	}
-	return out
-}
-
 func hasLine(lines []string, part string) bool {
 	for _, l := range lines {
 		if strings.Contains(l, part) {
@@ -80,38 +67,6 @@ func hasLine(lines []string, part string) bool {
 		}
 	}
 	return false
-}
-
-func openLoopAsks(t *testing.T, s *Store) []protocol.Ask {
-	t.Helper()
-	asks, err := s.ListAsks()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out []protocol.Ask
-	for _, a := range asks {
-		if strings.HasPrefix(a.Ref, "loop:") {
-			out = append(out, a)
-		}
-	}
-	return out
-}
-
-// oldLoopAsk stores the ask of a paused loop the way a gateway did before
-// decision 0196. A gateway now only logs the pause, but it still answers the
-// asks it stored.
-func oldLoopAsk(t *testing.T, s *Store, session string) protocol.Ask {
-	t.Helper()
-	if _, err := storeOldItem(t, s, protocol.InboxItem{Kind: protocol.AskKindCheck, SessionID: session, Node: "proj",
-		Text: "Loop paused for proj: 2 ticks in a row with no progress", Options: []string{protocol.LoopAnswerResume, protocol.LoopAnswerStop},
-		FromKind: protocol.AskFromGateway, SourceRef: loopRef("proj"), AboutKind: "project", AboutID: "proj"}); err != nil {
-		t.Fatal(err)
-	}
-	asks := openLoopAsks(t, s)
-	if len(asks) != 1 {
-		t.Fatalf("asks = %+v", asks)
-	}
-	return asks[0]
 }
 
 func TestLoopTickSendsThePromptToAnIdleSession(t *testing.T) {
@@ -136,9 +91,6 @@ func TestLoopTickSendsThePromptToAnIdleSession(t *testing.T) {
 	want := "[agent-net] Loop: Nothing new since 12:00 UTC. Your purpose is Ship the parser. Check where you stand against it, do the next step, then announce what you did or what blocks you. " + protocol.LoopOwnerLine
 	if len(m) != 1 || m[0].To != b || m[0].Body != want {
 		t.Fatalf("messages = %+v, want body %q", m, want)
-	}
-	if !hasLine(deskLines(t, s), "Loop proj: sent to") {
-		t.Fatalf("log = %v", deskLines(t, s))
 	}
 	// The same minute does not tick twice.
 	if res := loopTicks(t, s); len(res) != 0 {
@@ -194,9 +146,6 @@ func TestLoopTickSkipsABusySession(t *testing.T) {
 	if m := loopMessages(t, s); len(m) != 0 {
 		t.Fatalf("busy session got %+v", m)
 	}
-	if !hasLine(deskLines(t, s), "Loop proj: skipped busy") {
-		t.Fatalf("log = %v", deskLines(t, s))
-	}
 	// A skip does not count as a tick, a wake or progress.
 	g, _ := s.Graph()
 	for _, n := range g.Nodes {
@@ -249,51 +198,14 @@ func TestLoopTwoTicksWithNoProgressPauseAndOpenOneAsk(t *testing.T) {
 			t.Fatalf("loop = %+v", n.Loop)
 		}
 	}
-	// Resume clears the ask and the clock runs again at once.
-	if _, err := s.AnswerInbox(oldLoopAsk(t, s, b).ID, protocol.LoopAnswerResume); err != nil {
+	// Resume clears the pause and the clock runs again at once.
+	if _, err := s.ResumeLoopOnOwnerWords(protocol.LoopResumeFrame{Node: "proj", By: "owner", OwnerWords: "resume the loop", WordsVerified: true}); err != nil {
 		t.Fatal(err)
-	}
-	if asks := openLoopAsks(t, s); len(asks) != 0 {
-		t.Fatalf("ask left after resume: %+v", asks)
 	}
 	idleSince(t, s, c, b, time.Minute)
 	res = loopTicks(t, s)
 	if len(res) != 1 || res[0].Outcome != protocol.LoopSent {
 		t.Fatalf("tick after resume = %+v", res)
-	}
-	// The answer did not message the session.
-	for _, m := range loopMessages(t, s) {
-		if m.Body == protocol.LoopAnswerResume {
-			t.Fatalf("resume was sent to the session")
-		}
-	}
-}
-
-func TestLoopStopAnswerClearsTheSetting(t *testing.T) {
-	s, c := newTestStore(t)
-	_, b := twoSessions(t, s)
-	loopNode(t, s, c, b)
-	loopTicks(t, s)
-	for i := 0; i < 3; i++ {
-		idleSince(t, s, c, b, time.Minute)
-		runLoops(t, s, c)
-	}
-	if _, err := s.AnswerInbox(oldLoopAsk(t, s, b).ID, protocol.LoopAnswerStop); err != nil {
-		t.Fatal(err)
-	}
-	if asks := openLoopAsks(t, s); len(asks) != 0 {
-		t.Fatalf("ask left after stop: %+v", asks)
-	}
-	res, err := s.NodeSettings("proj")
-	if err != nil || res.Overrides[protocol.SettingLoopEvery] != "" {
-		t.Fatalf("settings = %+v %v", res, err)
-	}
-	if res := runLoops(t, s, c); len(res) != 0 {
-		t.Fatalf("stopped loop ticked: %+v", res)
-	}
-	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM agent_loops`).Scan(&n); err != nil || n != 0 {
-		t.Fatalf("loop rows = %d %v", n, err)
 	}
 }
 
@@ -313,13 +225,11 @@ func TestLoopProgressKeepsTheLoopGoing(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if asks := openLoopAsks(t, s); len(asks) != 0 {
-		t.Fatalf("asks = %+v", asks)
-	}
 }
 
 func TestLoopAnnounceIsProgressAndLogsTheResult(t *testing.T) {
 	s, c := newTestStore(t)
+	logs := captureLog(s)
 	_, b := twoSessions(t, s)
 	loopNode(t, s, c, b)
 	loopTicks(t, s)
@@ -334,31 +244,14 @@ func TestLoopAnnounceIsProgressAndLogsTheResult(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	lines := deskLines(t, s)
-	if !hasLine(lines, "Loop proj result: parser: wrote the lexer tests") {
-		t.Fatalf("log = %v", lines)
-	}
-	// The result follows its tick line.
-	tick, result := -1, -1
-	for i, l := range lines {
-		if strings.Contains(l, "Loop proj: sent to") && tick < 0 {
-			tick = i
-		}
-		if strings.Contains(l, "Loop proj result:") && result < 0 {
-			result = i
-		}
-	}
-	if tick < 0 || result != tick+1 {
-		t.Fatalf("tick at %d, result at %d: %v", tick, result, lines)
+	if !hasLine(*logs, "Loop proj result: parser: wrote the lexer tests") {
+		t.Fatalf("log = %v", *logs)
 	}
 	g, _ := s.Graph()
 	for _, n := range g.Nodes {
 		if n.Name == "proj" && (n.Loop == nil || n.Loop.ProgressToday != 2 || n.Loop.TicksToday != 2 || n.Loop.LastResult != "parser: wrote the lexer tests") {
 			t.Fatalf("loop = %+v", n.Loop)
 		}
-	}
-	if asks := openLoopAsks(t, s); len(asks) != 0 {
-		t.Fatalf("an announcing loop paused: %+v", asks)
 	}
 }
 
@@ -427,9 +320,6 @@ func TestLoopSkipsAnOfflinePiSession(t *testing.T) {
 	if len(res) != 1 || res[0].Outcome != protocol.LoopSkippedWake || res[0].Message != nil {
 		t.Fatalf("tick = %+v", res)
 	}
-	if !hasLine(deskLines(t, s), "skipped, cannot be woken (pi)") {
-		t.Fatalf("log = %v", deskLines(t, s))
-	}
 }
 
 func TestLoopWakesAnOfflineSessionThroughTheWakePath(t *testing.T) {
@@ -451,9 +341,6 @@ func TestLoopWakesAnOfflineSessionThroughTheWakePath(t *testing.T) {
 			w := p.expectWake(t, id)
 			if w["autonomy"] != protocol.AutonomyWake {
 				t.Fatalf("wake frame = %v", w)
-			}
-			if !hasLine(deskLines(t, p.s), "Loop proj: woke to") {
-				t.Fatalf("log = %v", deskLines(t, p.s))
 			}
 			// The tick is a message to the same session, never a new one.
 			if m := loopMessages(t, p.s); len(m) != 1 || m[0].To != id {
@@ -570,10 +457,6 @@ func TestLoopPromptStartsWithWhatChanged(t *testing.T) {
 		VALUES('m_step1','c_step','agent-net',?,'notification','task',0,'step_1_x',?,?,'stored')`, b, s.now().Add(time.Minute).UnixNano(), s.now().Add(time.Hour).UnixNano()); err != nil {
 		t.Fatal(err)
 	}
-	ask, err := storeOldItem(t, s, protocol.InboxItem{Kind: "rejection", SessionID: b, Text: "request refused"})
-	if err != nil {
-		t.Fatal(err)
-	}
 	idleSince(t, s, c, b, time.Minute)
 	runLoops(t, s, c)
 	m := loopMessages(t, s)
@@ -581,7 +464,7 @@ func TestLoopPromptStartsWithWhatChanged(t *testing.T) {
 		t.Fatalf("messages = %+v", m)
 	}
 	for _, want := range []string{
-		"[agent-net] Loop: Since the loop started (12:00 UTC): 2 messages (" + m1.ID + ", " + m2.ID + "), 1 worker hand-back (s_worker1), 1 step task (m_step1), 1 new Desk ask (" + ask.ID + "). Your purpose is Ship the parser.",
+		"[agent-net] Loop: Since the loop started (12:00 UTC): 2 messages (" + m1.ID + ", " + m2.ID + "), 1 worker hand-back (s_worker1), 1 step task (m_step1). Your purpose is Ship the parser.",
 	} {
 		if !strings.HasPrefix(m[0].Body, want) {
 			t.Fatalf("body = %q\nwant prefix %q", m[0].Body, want)
@@ -612,9 +495,6 @@ func TestLoopOnChangeSkipsAQuietTick(t *testing.T) {
 	if m := loopMessages(t, s); len(m) != 0 {
 		t.Fatalf("sent %+v", m)
 	}
-	if !hasLine(deskLines(t, s), "Loop proj: skipped, nothing new") {
-		t.Fatalf("log = %v", deskLines(t, s))
-	}
 	if wakeUps(t, s) != 0 {
 		t.Fatal("a quiet tick counted as a wake")
 	}
@@ -624,9 +504,6 @@ func TestLoopOnChangeSkipsAQuietTick(t *testing.T) {
 		if res := runLoops(t, s, c); len(res) != 1 || res[0].Outcome != protocol.LoopSkippedQuiet {
 			t.Fatalf("quiet tick %d = %+v", i, res)
 		}
-	}
-	if asks := openLoopAsks(t, s); len(asks) != 0 {
-		t.Fatalf("asks = %+v", asks)
 	}
 	// A new message makes the next tick go.
 	if _, _, err := send(s, a, b, "news", ""); err != nil {
@@ -714,10 +591,6 @@ func TestAgentNodeLoopWakesOnlyLeadSession(t *testing.T) {
 	ticks := loopTicks(t, s)
 	if len(ticks) != 1 || ticks[0].Outcome != protocol.LoopSkippedNone || ticks[0].Message != nil {
 		t.Fatalf("ticks with no lead = %+v", ticks)
-	}
-	lines := deskLines(t, s)
-	if !hasLine(lines, "Loop homelab-lead: skipped, no session (no lead session)") {
-		t.Fatalf("desk lines = %v", lines)
 	}
 	if msgs := loopMessages(t, s); len(msgs) != 0 {
 		t.Fatalf("unexpected messages with no lead: %+v", msgs)

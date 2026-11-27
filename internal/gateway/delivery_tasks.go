@@ -329,11 +329,8 @@ func (s *Store) stepClosedNoticeTx(tx *sql.Tx, c protocol.Change, session string
 	return m, err
 }
 
-func dismissStepInbox(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, at int64) error {
-	_, err := tx.Exec(`UPDATE inbox_items SET status='dismissed',answer='rule_disabled',answered_at=?
-		WHERE (status='open' OR (status='dismissed' AND answer='')) AND about_kind=? AND about_id LIKE ?`,
-		at, protocol.AskAboutStep, stepAboutPrefix(c.ID, c.Revision, ref)+"%")
-	return err
+func dismissStepInbox(_ *sql.Tx, _ protocol.Change, _ protocol.StepRef, _ int64) error {
+	return nil
 }
 
 // stepMessageCurrent prevents a task selected for delivery before a claim or
@@ -716,14 +713,11 @@ func (g *Gateway) logStepSent(targets []nodeTaskTarget) {
 	if len(targets) == 0 {
 		return
 	}
-	aboutKind, aboutID, text := "", "", fmt.Sprintf("Sent %d delivery steps to a session", len(targets))
 	if len(targets) == 1 {
-		aboutKind, aboutID = protocol.AskAboutChange, targets[0].id
-		text = fmt.Sprintf("Sent step %s of change %s to a session", targets[0].ref.String(), targets[0].id)
+		g.logLine("delivery.step_dispatched", "change", targets[0].id, "step", targets[0].ref.String())
+		return
 	}
-	if err := g.store.deskLog(g.store.db, "gateway", aboutKind, aboutID, text, "", nil); err != nil {
-		g.logLine("error", "where", "desk log", "err", err)
-	}
+	g.logLine("delivery.step_dispatched", "count", len(targets))
 }
 
 // dispatchStepTasks writes system notifications per eligible session.
@@ -1953,26 +1947,24 @@ func delegateAgents(tx *sql.Tx, c protocol.Change) ([]string, error) {
 }
 
 func (s *Store) queueOwnerApproval(tx *sql.Tx, c protocol.Change, ref protocol.StepRef) error {
-	prefix := stepAboutPrefix(c.ID, c.Revision, ref) + "%"
-	var exists int
-	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM inbox_items WHERE about_kind=? AND about_id LIKE ?)`,
-		protocol.AskAboutStep, prefix).Scan(&exists); err != nil || exists != 0 {
-		if err != nil {
-			return err
-		}
-		// A rule can be re-enabled for this same revision after it was
-		// relaxed. Restore an unanswered item rather than creating a duplicate.
-		_, err = tx.Exec(`UPDATE inbox_items SET status='open',answered_at=0 WHERE status='dismissed' AND answer='rule_disabled' AND about_kind=? AND about_id LIKE ?`,
-			protocol.AskAboutStep, prefix)
-		return err
-	}
 	commit := c.HeadCommit
 	if ref.AfterMerge {
 		commit = c.MergedCommit
 	}
-	_, err := s.createInboxItem(tx, protocol.InboxItem{Kind: "approval", SessionID: c.Caller, Node: c.Project, ChangeTitle: c.Title,
-		AboutKind: protocol.AskAboutStep, AboutID: stepAboutID(c.ID, c.Revision, ref, commit),
-		Text: fmt.Sprintf("Approve %s for change %s, project %s, branch %s, commit %s", strings.TrimPrefix(ref.String(), "approve for "), c.ID, c.Project, c.Branch, commit)})
+	args := map[string]any{
+		"change": c.ID, "step": ref.Step, "commit": commit,
+		"result": protocol.StepResultPass, "owner_words": "<quote the owner's words>",
+	}
+	if ref.For != "" {
+		args["for"] = ref.For
+	}
+	if ref.AfterMerge {
+		args["after_merge"] = true
+	}
+	body := fmt.Sprintf("Approve %s for change %s, project %s, branch %s, commit %s\nThe CTO completes it on the owner's words with %s",
+		strings.TrimPrefix(ref.String(), "approve for "), c.ID, c.Project, c.Branch, commit,
+		ctoOpCallText(protocol.OpDeliveryOwnerAnswer, args))
+	_, _, err := s.sendToChief(tx, c.Caller, "step:"+stepAboutID(c.ID, c.Revision, ref, commit), body)
 	return err
 }
 

@@ -163,7 +163,7 @@ func TestGraphLoadsOnlyWhatItShows(t *testing.T) {
 	New(f).ServeHTTP(w, httptest.NewRequest("GET", "/graph", nil))
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	for _, m := range []string{protocol.OpUsage, protocol.OpChangesOwnerFind, protocol.OpConversationMessages, protocol.OpDeskLog} {
+	for _, m := range []string{protocol.OpUsage, protocol.OpChangesOwnerFind, protocol.OpConversationMessages} {
 		if f.reads[m] != 0 {
 			t.Errorf("the Graph screen read %s", m)
 		}

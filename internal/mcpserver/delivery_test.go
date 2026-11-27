@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -171,23 +170,6 @@ func TestDeliveryOutputSchemasMatchProtocol(t *testing.T) {
 		"agent_step_claim":    protocol.StepClaimResult{Claimed: true, SessionID: "s_2"},
 		"agent_step_report":   protocol.StepReportReply{StepReportShort: protocol.ShortStepReport(protocol.StepReportResult{Evidence: ev, Change: view})},
 		"agent_changes_find":  map[string]any{"items": []protocol.ChangeView{view, {Change: c, Steps: steps}}, "total": 2, "next_cursor": "x"},
-		"agent_ask_sort": protocol.AskSortResult{Ask: "i_1", Result: "read", Next: "owner", State: "open",
-			Stats: &protocol.AskSortStats{Sorter: "chief", Counts: map[string]int{protocol.AskSortClose: 2}, FirstID: 1, LastID: 2},
-			Full: &protocol.AskFull{ID: "i_1", Kind: protocol.AskKindDraft, Status: "open", State: "open",
-				Question: "q", Detail: "d", Options: []string{"accept"}, Recommendation: "r", FromSession: "s_1",
-				FromName: "asker", FromKind: "session", Node: "demo", AboutKind: "project", AboutID: "demo",
-				AboutTitle: "Demo", Next: "owner", NextName: "owner", WhyYou: "why", Priority: 1, CreatedAt: time.Unix(1, 0),
-				Answer: "accept", AnsweredAt: time.Unix(2, 0), SourceRef: "drafts:node:demo",
-				Routing: []protocol.AskSort{{ID: 1, Ask: "i_1", At: time.Unix(1, 0), Sorter: "chief", Result: "owner", Reason: "r", Priority: 1, WhyYou: "why", PrevNext: "chief", PrevStatus: "open"}},
-				Charter: []protocol.CharterDraftField{{ID: 1, Level: "repo", Scope: "demo", Attr: "purpose", Value: "v", Source: "AGENTS.md", Status: "pending", DraftedBy: "s_1", CreatedAt: time.Unix(1, 0)}}}},
-		"agent_ask_intake": protocol.AskIntakeResult{Action: protocol.AskIntakeList, State: protocol.AskIntakeOK,
-			Sessions: []protocol.AskIntakeSession{{Session: "s_1", Name: "homelab-agent 2", Harness: "claude", Machine: "box",
-				State: protocol.AskIntakeOK, LastTurn: "ask-intake:s_1:7:1", LastTurnAt: "2026-11-09T20:00:00Z",
-				Waiting: &protocol.AskIntakeWaiting{Kind: "explicit", Text: "q", Since: 1}, OpenAsk: "i_1"}},
-			Turn: &protocol.AskIntakeTurn{Session: "s_1", State: protocol.AskIntakeOK, Ref: "ask-intake:s_1:7:1",
-				At: "2026-11-09T20:00:00Z", Text: "a", PrecedingInput: "p", PrecedingInputAt: "2026-11-09T19:59:00Z",
-				InputSource: protocol.AskIntakePeer, InputFrom: "bob", InputSessionID: "s_bob"},
-			Ask: &protocol.AskIntakeAsk{ID: "i_1", State: protocol.AskIntakeCreated, Next: protocol.AskNextChief, Detail: "d"}},
 	} {
 		resolved, err := resolveCatalogSchema(catalogTool(name).OutputSchema)
 		if err != nil {
@@ -199,91 +181,6 @@ func TestDeliveryOutputSchemasMatchProtocol(t *testing.T) {
 		if err := resolved.Validate(instance); err != nil {
 			t.Errorf("%s output does not match its schema: %v", name, err)
 		}
-	}
-}
-
-// The chief's full read of one ask is the same tool with detail full. The
-// catalog accepts it and returns the daemon's full row.
-func TestAskSortFullReadTool(t *testing.T) {
-	full := protocol.AskSortResult{Ask: "i_1", Result: "read", Next: "owner", State: "open",
-		Full: &protocol.AskFull{ID: "i_1", Kind: protocol.AskKindDraft, Status: "open", State: "open",
-			Question: "Charter draft for demo: 3 fields", FromSession: "agent-net", Next: "owner", CreatedAt: time.Unix(1, 0)}}
-	var sent map[string]any
-	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
-		raw, _ := json.Marshal(params)
-		_ = json.Unmarshal(raw, &sent)
-		if method != protocol.OpAskSort {
-			t.Errorf("method = %q, want %q", method, protocol.OpAskSort)
-		}
-		return json.Marshal(full)
-	})
-	res := deliveryCall(t, cs, "agent_ask_sort", `{"ask":"i_1","detail":"full"}`)
-	if res.IsError {
-		t.Fatalf("full read: %s", deliveryText(res))
-	}
-	if sent["detail"] != "full" || sent["ask"] != "i_1" {
-		t.Fatalf("arguments sent: %v", sent)
-	}
-	if text := deliveryText(res); !strings.Contains(text, `"question":"Charter draft for demo: 3 fields"`) {
-		t.Fatalf("full read text: %s", text)
-	}
-}
-
-// The chief's list carries the sorter's counts, and the caller may narrow them
-// with a sorter and a time range. The field reaches the tool result as it is.
-func TestAskSortListStatsTool(t *testing.T) {
-	list := protocol.AskSortResult{Result: protocol.AskSortList,
-		Stats: &protocol.AskSortStats{Sorter: "s_1", Counts: map[string]int{protocol.AskSortClose: 2, protocol.AskSortOwner: 1}, FirstID: 1, LastID: 9}}
-	var sent map[string]any
-	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
-		raw, _ := json.Marshal(params)
-		_ = json.Unmarshal(raw, &sent)
-		if method != protocol.OpAskSort {
-			t.Errorf("method = %q, want %q", method, protocol.OpAskSort)
-		}
-		return json.Marshal(list)
-	})
-	res := deliveryCall(t, cs, "agent_ask_sort", `{"result":"list","sorter":"owner","since":100,"until":200}`)
-	if res.IsError {
-		t.Fatalf("list with stats: %s", deliveryText(res))
-	}
-	if sent["result"] != "list" || sent["sorter"] != "owner" || sent["since"] != float64(100) || sent["until"] != float64(200) {
-		t.Fatalf("arguments sent: %v", sent)
-	}
-	text := deliveryText(res)
-	for _, want := range []string{`"stats"`, `"sorter":"s_1"`, `"close":2`, `"owner":1`, `"first_id":1`, `"last_id":9`} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("list result %s does not contain %s", text, want)
-		}
-	}
-}
-
-// agent_ask_intake forwards the chief's action and returns the daemon's rows,
-// which must match the catalog output schema.
-func TestAskIntakeToolForwards(t *testing.T) {
-	result := protocol.AskIntakeResult{Action: protocol.AskIntakeRead, State: protocol.AskIntakeUnavailable,
-		Turn: &protocol.AskIntakeTurn{Session: "s_1", State: protocol.AskIntakeUnavailable, Reason: "reading the conversation is not supported for codex sessions"}}
-	var sent map[string]any
-	var method string
-	cs := connect(t, func(_ context.Context, m string, params any) (json.RawMessage, error) {
-		method = m
-		raw, _ := json.Marshal(params)
-		_ = json.Unmarshal(raw, &sent)
-		return json.Marshal(result)
-	})
-	listed := listedCatalogNames(t, cs)
-	if !deliveryHas(listed, "agent_ask_intake") {
-		t.Fatal("agents do not see agent_ask_intake")
-	}
-	res := deliveryCall(t, cs, "agent_ask_intake", `{"action":"read","session":"s_1"}`)
-	if res.IsError {
-		t.Fatalf("ask intake: %s", deliveryText(res))
-	}
-	if method != protocol.OpAskIntake || sent["action"] != "read" || sent["session"] != "s_1" {
-		t.Fatalf("method %q, arguments %v", method, sent)
-	}
-	if text := deliveryText(res); !strings.Contains(text, `"state":"unavailable"`) {
-		t.Fatalf("result: %s", text)
 	}
 }
 

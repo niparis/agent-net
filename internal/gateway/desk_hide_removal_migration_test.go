@@ -26,7 +26,7 @@ func TestDeskHideRemovalMigrationDeletesReceiptsAndColumn(t *testing.T) {
 		}
 	}
 
-	if err := replayMigrations(t, s); err != nil {
+	if err := replayMigrationsUpTo(t, s, v); err != nil {
 		t.Fatalf("replay: %v", err)
 	}
 

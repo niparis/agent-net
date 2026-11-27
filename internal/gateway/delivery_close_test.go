@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -117,26 +116,6 @@ func TestCallerCloseStopsStepReminders(t *testing.T) {
 		var n int
 		if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE body LIKE ?`, pattern).Scan(&n); err != nil || n != 0 {
 			t.Fatalf("%s messages = %d, %v", pattern, n, err)
-		}
-	}
-}
-
-// Closing a change that waits for the owner's written approval dismisses the
-// Inbox item.
-func TestCallerCloseClosesApprovalInbox(t *testing.T) {
-	r := newDeliveryRig(t)
-	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"ask"`)}}, "owner", "test"); err != nil {
-		t.Fatal(err)
-	}
-	id := r.submit(r.a, r.workerSubmit("feature/no-approval", commitA)).Change.Change.ID
-	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: protocol.StepRef{Step: protocol.StepMerge}, Result: protocol.StepResultClose, Commit: commitA, Note: "superseded"})
-	items, err := r.s.ListInbox()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, item := range items {
-		if item.Status == "open" && item.Delivery != nil {
-			t.Fatalf("approval item stays open after the caller closed the change: %+v", item)
 		}
 	}
 }

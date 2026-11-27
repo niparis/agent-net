@@ -2,10 +2,7 @@ package gateway
 
 import (
 	"fmt"
-	"reflect"
 	"testing"
-
-	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // prepareOldSessionIdentity removes later session columns when a test rewinds
@@ -72,21 +69,12 @@ func TestMigrationInboxAndSessionIdentityReplay(t *testing.T) {
 		}
 	}
 	r := newDeliveryRig(t)
-	item, err := storeOldItem(t, r.s, protocol.InboxItem{Kind: "question", SessionID: r.caller, Node: "demo", Text: "Choose", Options: []string{"one", "two"}, AskerName: "Reviewer"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Older migration tests rewind the version but retain the Inbox columns.
-	// Replaying 114 must preserve their data before identity migration 115.
-	if _, err := r.s.db.Exec(`DELETE FROM schema_version WHERE version>=114`); err != nil {
+	// Replaying migrations from 115 must preserve session identity.
+	if _, err := r.s.db.Exec(`DELETE FROM schema_version WHERE version>=115`); err != nil {
 		t.Fatal(err)
 	}
 	if err := migrateOldFixture(t, r.s); err != nil {
 		t.Fatal(err)
-	}
-	items, err := r.s.ListInbox()
-	if err != nil || len(items) != 1 || items[0].ID != item.ID || items[0].AskerName != item.AskerName || !reflect.DeepEqual(items[0].Options, item.Options) {
-		t.Fatalf("inbox after replay: %+v, %v", items, err)
 	}
 	var agent, repo string
 	if err := r.s.db.QueryRow(`SELECT COALESCE(agent_id,''),COALESCE(repo_id,'') FROM sessions WHERE id=?`, r.caller).Scan(&agent, &repo); err != nil || agent != "demo" || repo != "demo" {

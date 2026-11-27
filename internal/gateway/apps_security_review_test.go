@@ -201,18 +201,10 @@ func TestAppsApprovalNotice(t *testing.T) {
 	if _, err := g.handle(context.Background(), &nodeConn{id: node}, "apps.approve", raw); err != nil {
 		t.Fatal(err)
 	}
-	// A new app is a line of the Desk log, not an ask (decision 0090).
-	asks, err := s.ListAsks()
-	if err != nil {
-		t.Fatal(err)
-	}
-	entries, err := s.DeskLog(10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := "Connected: my bot (bot, Cursor, client.example). If this was not you, revoke it in Settings."
-	if len(asks) != 0 || len(entries) != 1 || entries[0].Text != want || entries[0].Source != "apps" || !strings.Contains(logs.String(), want) {
-		t.Fatalf("asks %v log %v logs %s", fmt.Sprint(asks), fmt.Sprint(entries), logs.String())
+	for _, want := range []string{"event=apps.approved", "kind=bot", `name="my bot"`} {
+		if !strings.Contains(logs.String(), want) {
+			t.Fatalf("logs %s, want %q", logs.String(), want)
+		}
 	}
 }
 

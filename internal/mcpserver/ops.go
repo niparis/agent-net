@@ -57,10 +57,6 @@ func mcpTestCall(ctx context.Context, run func(context.Context, string, any) (an
 	return opResult(run(ctx, "mcp_test", map[string]any{toolcatalog.DaemonField("agent_mcp_test", "server"): server}))
 }
 
-func ownerBriefCall(ctx context.Context, run func(context.Context, string, any) (any, error), in protocol.OwnerBriefArgs) (map[string]any, error) {
-	return opResult(run(ctx, protocol.OpOwnerBrief, in))
-}
-
 // sendCall sends one message. receipt asks the daemon for a receipt, which is
 // what the new tool reports; the old tool keeps the sent-message answer.
 func sendCall(ctx context.Context, run func(context.Context, string, any) (any, error), to string, set map[string]any, body, kind string, asOwner, order, urgent bool, followUpAt string, receipt bool) (map[string]any, error) {

@@ -77,37 +77,18 @@ func TestCTOProposalClassRunsOnVerifiedWords(t *testing.T) {
 	if n := openProposals(t, n.d); n != 0 {
 		t.Fatalf("%d open proposals", n)
 	}
-	asks, err := g.gw.Store().ListAsks()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, a := range asks {
-		if a.Kind == protocol.AskKindProposal {
-			t.Fatalf("a Desk proposal ask is open: %+v", a)
-		}
-	}
-	items, err := inboxAndLog(g.gw.Store())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var undo []string
-	for _, item := range items {
-		if strings.Contains(item.Text, words) && len(item.Options) == 2 && item.Options[0] == "graph_undo" {
-			undo = item.Options
-		}
-	}
-	if undo == nil {
-		t.Fatalf("no Inbox line with the owner's words and a graph undo: %+v", items)
+	if !strings.Contains(n.logs.String(), words) {
+		t.Fatalf("daemon log lacks owner words %q:\n%s", words, n.logs.String())
 	}
 	graph := string(cli.mustCall("graph_get", map[string]any{}))
 	if strings.Contains(graph, "old-node") {
 		t.Fatalf("node still in the graph: %s", graph)
 	}
-	var q map[string]any
-	if err := json.Unmarshal([]byte(undo[1]), &q); err != nil {
-		t.Fatal(err)
+	history, err := g.gw.Store().CTOGraphHistory(0)
+	if err != nil || len(history) == 0 {
+		t.Fatalf("graph history: %+v %v", history, err)
 	}
-	cli.mustCall("graph_undo", q)
+	cli.mustCall("graph_undo", protocol.GraphUndoRequest{ID: history[len(history)-1].ID})
 	if graph := string(cli.mustCall("graph_get", map[string]any{})); !strings.Contains(graph, "old-node") {
 		t.Fatalf("undo did not bring the node back: %s", graph)
 	}
@@ -163,7 +144,7 @@ func TestCTOProposalClassRouting(t *testing.T) {
 	}
 }
 
-// A minor change that carries verified words says so in its Inbox line.
+// A minor change that carries verified words logs them.
 func TestCTOMinorChangeLogsOwnerWords(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
@@ -172,9 +153,8 @@ func TestCTOMinorChangeLogsOwnerWords(t *testing.T) {
 	if _, err := n.d.runCTOToolRaw(context.Background(), "graph_change", ctoGraphArgs("charter_set", `{"node":"first","attr":"maturity","value":"mature","owner_words":"mature the first node"}`)); err != nil {
 		t.Fatal(err)
 	}
-	items, err := inboxAndLog(g.gw.Store())
-	if err != nil || len(items) != 1 || !strings.Contains(items[0].Text, "mature the first node") {
-		t.Fatalf("inbox: %+v %v", items, err)
+	if !strings.Contains(n.logs.String(), "mature the first node") {
+		t.Fatalf("logs: %s", n.logs.String())
 	}
 }
 
@@ -213,15 +193,6 @@ func TestCTOSessionStartOnVerifiedWordsTrustsTheFolder(t *testing.T) {
 	if trusted, err := claudetrust.Trusted(repo); err != nil || !trusted {
 		t.Fatalf("the folder was not trusted: trusted=%v err=%v", trusted, err)
 	}
-	asks, err := g.gw.Store().ListAsks()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, a := range asks {
-		if a.Kind == protocol.AskKindPermission && strings.Contains(a.Question, repo) {
-			t.Fatalf("a trust ask is open for %s: %+v", repo, a)
-		}
-	}
 }
 
 // seedAppPending makes one live OAuth request the CTO can open a consent for.
@@ -255,15 +226,6 @@ func TestCTOAppAskOnVerifiedWordsApproves(t *testing.T) {
 	apps, err := g.gw.Store().ListApps()
 	if err != nil || len(apps) != 1 || apps[0].Name != "Fixture" {
 		t.Fatalf("app approval: %+v %v", apps, err)
-	}
-	asks, err := g.gw.Store().ListAsks()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, a := range asks {
-		if strings.HasPrefix(a.Ref, "app-consent:") {
-			t.Fatalf("the consent ask stayed open: %+v", a)
-		}
 	}
 }
 

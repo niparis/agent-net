@@ -49,7 +49,7 @@ func TestWorkerTablesMigrationMovesEachFact(t *testing.T) {
 	exec(`INSERT INTO table_versions(name,n) VALUES('worker_runs',41) ON CONFLICT(name) DO UPDATE SET n=41`)
 	exec(`INSERT INTO project_policies(node_id,project,policy,updated_at) VALUES('n1','shop','{"delegate":"off"}',1)`)
 
-	if err := replayMigrations(t, s); err != nil {
+	if err := replayMigrationsUpTo(t, s, migrationVersion(t, workerTablesMarker)); err != nil {
 		t.Fatal(err)
 	}
 

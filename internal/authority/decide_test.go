@@ -53,8 +53,6 @@ func TestAllowEveryRow(t *testing.T) {
 		{"release cannot merge", "release", "repo:demo", "Bash", bash("git merge main"), "demo", false},
 		{"deploy runs the deploy script", "deploy", "repo:demo", "Bash", bash("./scripts/deploy-prod.sh"), "demo", true},
 		{"deploy is only its script", "deploy", "repo:demo", "Bash", bash("kubectl apply -f x.yaml"), "demo", false},
-		{"asks sorts asks", "asks", "all", "mcp__agent-net__agent_ask_sort", nil, "", true},
-		{"asks cannot edit rules", "asks", "all", "mcp__agent-net__agent_bar_edit", nil, "", false},
 		{"permissions applies one", "permissions", "all", cto, op("permission_apply"), "", true},
 		{"permissions only that", "permissions", "all", cto, op("machine_name"), "", false},
 		{"admin runs an op", "admin", "all", cto, op("charter_history"), "", true},

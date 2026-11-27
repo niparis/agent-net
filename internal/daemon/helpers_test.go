@@ -237,6 +237,23 @@ func (a *fakeAdapter) setSessions(infos ...protocol.SessionInfo) {
 
 // ---- node ----
 
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 type node struct {
 	t       *testing.T
 	d       *Daemon
@@ -245,6 +262,7 @@ type node struct {
 	cfg     Config
 	cmdline string
 	exe     string
+	logs    *syncBuffer
 }
 
 // restart stops the daemon and starts a new one on the same socket and state.
@@ -429,6 +447,11 @@ func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 	sock := filepath.Join(shortDir(t), "d.sock")
 	// Most worker tests start workers as an agent with a model or harness: the
 	// override check is off unless a test turns it on (worker_override_test.go).
+	logs := &syncBuffer{}
+	logger := o.logger
+	if logger == nil {
+		logger = log.New(logs, "", 0)
+	}
 	cfg := Config{testStopCTOOnExit: true, testNoDeliveryConfirm: true, testNoDifficulty: true, testOpenSelection: true, GatewayURL: nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca,
 		NodeConfigDir: cfgDir, Hostname: "host-" + nc.NodeID, StateDir: seededStateDir(t), SocketPath: sock,
 		HomeDir:       t.TempDir(),
@@ -436,7 +459,7 @@ func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 		WorkerGoTmp:   t.TempDir(),
 		EnterSSH:      nc.EnterSSHEnabled(), EnterSSHHosts: nc.EnterSSHHosts,
 		ClaudeSessionsDir: o.claudeDir, BackoffMin: 20 * time.Millisecond, BackoffMax: 100 * time.Millisecond,
-		ClaudeDiscoveryGrace: 100 * time.Millisecond, PluginAckTimeout: 500 * time.Millisecond, Logger: o.logger,
+		ClaudeDiscoveryGrace: 100 * time.Millisecond, PluginAckTimeout: 500 * time.Millisecond, Logger: logger,
 		// The helper sessions live in the test's own temporary folders. A
 		// test that wants the temp rule sets TempFolders itself.
 		TempFolders: []string{}}
@@ -484,7 +507,7 @@ func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 	if err := d.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	n := &node{t: t, d: d, sock: sock, adapter: o.adapter, cfg: cfg, cmdline: o.cmdline, exe: o.exe}
+	n := &node{t: t, d: d, sock: sock, adapter: o.adapter, cfg: cfg, cmdline: o.cmdline, exe: o.exe, logs: logs}
 	t.Cleanup(d.Stop)
 	eventually(t, "daemon connected to gateway", d.Connected)
 	return n

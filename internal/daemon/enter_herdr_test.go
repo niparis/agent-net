@@ -732,23 +732,14 @@ func TestOwnerHerdrSessionIsListedAndEntered(t *testing.T) {
 	f.readOnly(t)
 }
 
-// A sign-in ask runs the allowlisted login command through the one view path:
+// A sign-in runs the allowlisted login command through the one view path:
 // the TUI hands over its terminal, or its pane in the owner's herdr. No ask
 // or agent supplies the argv.
 func TestSignInOpenLocalPaneRunsAllowlistedArgv(t *testing.T) {
 	_, log := fakeOpenHerdr(t)
-	call := func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
-		if typ != "query.sign_in" {
-			return nil, false, nil
-		}
-		b, _ := json.Marshal(protocol.SignInTarget{AskID: "i_signin", Provider: "alibaba", Label: "Alibaba Bailian CLI", NodeID: "n_research", Hostname: "research"})
-		return b, true, nil
-	}
-	d := &Daemon{cfg: Config{NodeID: "n_research", Hostname: "research", testGatewayCall: func(ctx context.Context, typ string, p any) (json.RawMessage, bool, error) {
-		return call(ctx, typ, p)
-	}}}
+	d := &Daemon{cfg: Config{NodeID: "n_research", Hostname: "research"}}
 	// A TUI outside herdr hands its terminal the same allowlisted command.
-	plan, err := d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "i_signin"})
+	plan, err := d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "i_signin", Provider: "alibaba", Machine: "n_research"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -760,24 +751,18 @@ func TestSignInOpenLocalPaneRunsAllowlistedArgv(t *testing.T) {
 	}
 
 	// A TUI inside the owner's herdr gets the same handover.
-	plan, err = d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "i_signin", HerdrSocket: "/tmp/fake-herdr.sock", HerdrPaneID: testHerdrPane})
+	plan, err = d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "i_signin", Provider: "alibaba", Machine: "n_research", HerdrSocket: "/tmp/fake-herdr.sock", HerdrPaneID: testHerdrPane})
 	if err != nil || plan.OpenedHerdr || !reflect.DeepEqual(plan.Argv, []string{"bl", "auth", "login", "--console", "--no-browser", "--console-site", "international"}) {
 		t.Fatalf("in herdr: plan %+v, error %v", plan, err)
 	}
 	requireNoHerdrCalls(t, log)
 }
 
-// The browser and listener stay on the owner's machine for a remote ask.
+// The browser and listener stay on the owner's machine for a remote sign-in.
 func TestSignInOpenRemoteRunsOnBrowserMachine(t *testing.T) {
 	_, log := fakeOpenHerdr(t)
-	d := &Daemon{cfg: Config{NodeID: "local", Hostname: "browser", testGatewayCall: func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
-		if typ == "query.sign_in" {
-			b, _ := json.Marshal(protocol.SignInTarget{AskID: "i_signin", Provider: "alibaba", NodeID: "remote", Hostname: "remote-host"})
-			return b, true, nil
-		}
-		return nil, false, nil
-	}}}
-	plan, err := d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "i_signin"})
+	d := &Daemon{cfg: Config{NodeID: "local", Hostname: "browser"}}
+	plan, err := d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "i_signin", Provider: "alibaba", Machine: "remote"})
 	if err != nil || plan.OpenedHerdr || !reflect.DeepEqual(plan.Argv, []string{"bl", "auth", "login", "--console", "--no-browser", "--console-site", "international"}) {
 		t.Fatalf("remote sign-in plan %+v, error %v", plan, err)
 	}

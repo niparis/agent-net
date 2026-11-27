@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // The typed Graph cutover is an application upgrade, not an owner choice. The
@@ -79,20 +77,13 @@ func (s *Store) gatewayUpgradedAt() (time.Time, error) {
 // dismissed notice stays dismissed; a closed one can be raised again if the
 // condition returns.
 func (s *Store) ensureGraphCutoverInbox(marker, text string) error {
-	var open int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE message_id=? AND status IN ('open','dismissed')`, marker).Scan(&open); err != nil {
-		return err
-	}
-	if open > 0 {
-		return nil
-	}
-	_, err := s.CreateInboxItem(protocol.InboxItem{Kind: "check", SessionID: settingsCutoverActor, MessageID: marker, Text: text})
-	return err
+	s.logf("graph.cutover_notice", "marker", marker, "text", text)
+	return nil
 }
 
 func (s *Store) closeGraphCutoverInbox(marker string) error {
-	_, err := s.db.Exec(`UPDATE inbox_items SET status='closed',answer='resolved',answered_at=? WHERE message_id=? AND status IN ('open','dismissed')`, s.now().UnixNano(), marker)
-	return err
+	s.logf("graph.cutover_resolved", "marker", marker)
+	return nil
 }
 
 func graphCutoverBackupPath(dataDir string, now time.Time) string {

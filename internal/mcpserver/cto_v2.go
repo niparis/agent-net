@@ -21,7 +21,7 @@ var ctoV2Tools = map[string]bool{
 }
 
 var ctoActionRoutes = map[string]map[string]string{
-	"answer":          {"held": "held_answer", "inbox": "inbox_answer", "outcome": "outcome_overrule"},
+	"answer":          {"held": "held_answer", "outcome": "outcome_overrule"},
 	"mcp_change":      {"add": "mcp_add", "remove": "mcp_remove", "test": "mcp_test", "enable": "mcp_enable", "app_ask": "apps.ask", "apps_list": "apps.list", "app_grant": "apps.grant", "app_ungrant": "apps.ungrant", "app_rename": "apps.rename", "app_revoke": "apps.revoke", "public_status": "apps.public.status", "public_on": "apps.public.on", "public_off": "apps.public.off"},
 	"settings_change": {"values_write": "settings_values_write", "values_undo": "settings_values_undo", "worker_profile_add": "worker_profile_add", "worker_profile_remove": "worker_profile_remove", "worker_providers": "worker_providers_set", "protected_providers": "protected_providers_set", "score": "score_set", "integrations": "integrations_set", "notifications": "notification_settings", "cto": "cto_settings", "playbook": "playbook_set", "machine_name": "node_rename", "machine_remove": "machine_remove", "machine_rotate": "machine_rotate", "process_stop": "process_stop", "invite": "invite", "onboarding": "onboarding_restart"},
 	"project_change":  {"add": "project_add", "remove": "project_remove", "display": "project_display_set", "create": "project_create"},

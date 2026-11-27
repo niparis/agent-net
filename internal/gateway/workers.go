@@ -184,17 +184,6 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		}
 		return out, err
 
-	case "worker.override_ask":
-		p, err := decode[protocol.StartOverrideAsk](raw)
-		if err != nil || p.Session == "" || p.StartID == "" || strings.TrimSpace(p.Text) == "" {
-			return nil, reject("bad worker.override_ask")
-		}
-		item, err := g.store.CreateStartOverrideAsk(nc.id, p)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]string{"item_id": item.ID}, nil
-
 	case "worker.cost":
 		p, err := decode[protocol.WorkerCostQuery](raw)
 		if err != nil {
@@ -738,9 +727,6 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		// whole account has no allowance left.
 		if p.Harness != "" {
 			if reason := protocol.QuotaHarnessRefusal(quotas, p.Harness); reason != "" {
-				if !(len(validate) > 0 && validate[0]) {
-					g.quotaStuckFeed(p.Harness, "", reason)
-				}
 				return none, g.refuseWithAlternative(ctx, nc, p, fmt.Sprintf("machine %s: %s", node.Hostname, reason))
 			}
 		}
@@ -852,9 +838,6 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 					roster.add(lo.Name, lo.Reason, lo.Rank)
 				}
 				appendGateSkips(roster, chosen.Skips)
-				if !(len(validate) > 0 && validate[0]) {
-					g.noProviderFeed(chosen.Skips)
-				}
 				return none, g.refuseWithAlternative(ctx, nc, p, notStartedReason(difficulty, roster))
 			}
 			granted = chosen.Granted

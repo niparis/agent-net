@@ -1,103 +1,11 @@
 package gateway
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
-
-// The owner asked (through the CTO, 2026-11-09) to store every outcome in
-// plain words, including a button with no text: an owner dismiss is one answer
-// row, but an automatic close is not a decision and makes none.
-func TestOwnerAnswerAndDismissCreateAnswerRowAndAutomaticCloseDoesNot(t *testing.T) {
-	s, _ := newTestStore(t)
-	// Create an ask for a project.
-	item, err := storeOldItem(t, s, protocol.InboxItem{
-		Kind:      "question",
-		SessionID: "s_test_session",
-		Node:      "my-project",
-		Text:      "Should we migrate SQLite to postgres?",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Owner answers the ask.
-	if _, err := s.AnswerInbox(item.ID, "No, stick to SQLite."); err != nil {
-		t.Fatal(err)
-	}
-
-	// Verify an answer row was written to standing_orders.
-	judgments, err := s.FindJudgments(protocol.JudgmentsFindRequest{Ref: item.ID})
-	if err != nil {
-		t.Fatalf("FindJudgments failed: %v", err)
-	}
-	if len(judgments) != 1 {
-		t.Fatalf("expected 1 answer row, got %d", len(judgments))
-	}
-	j := judgments[0]
-	if j.Kind != protocol.StandingKindAnswer {
-		t.Errorf("expected kind %q, got %q", protocol.StandingKindAnswer, j.Kind)
-	}
-	if j.Area != "my-project" {
-		t.Errorf("expected area %q, got %q", "my-project", j.Area)
-	}
-	if j.Ref != item.ID {
-		t.Errorf("expected ref %q, got %q", item.ID, j.Ref)
-	}
-	wantText := "Q: Should we migrate SQLite to postgres? / A: No, stick to SQLite."
-	if j.Text != wantText {
-		t.Errorf("expected text %q, got %q", wantText, j.Text)
-	}
-
-	// Now create another ask that gets automatically closed.
-	closedItem, err := storeOldItem(t, s, protocol.InboxItem{
-		Kind:      "question",
-		SessionID: "s_test_session_2",
-		Node:      "my-project",
-		Text:      "Will this ask be auto-closed?",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Auto-close it via closeAsks.
-	if _, err := s.closeAsks(s.db, "id=?", []any{closedItem.ID}, protocol.AskReasonSessionEnded); err != nil {
-		t.Fatal(err)
-	}
-
-	// Verify no answer row was created for closedItem.
-	closedJudgments, err := s.FindJudgments(protocol.JudgmentsFindRequest{Ref: closedItem.ID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(closedJudgments) != 0 {
-		t.Errorf("expected 0 answer rows for automatic close, got %d", len(closedJudgments))
-	}
-
-	// An owner dismiss is one answer row that says no decision was made.
-	dismissItem, err := storeOldItem(t, s, protocol.InboxItem{
-		Kind:      "question",
-		SessionID: "s_test_session_3",
-		Node:      "my-project",
-		Text:      "Will this ask be dismissed?",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.AnswerInbox(dismissItem.ID, "dismiss"); err != nil {
-		t.Fatal(err)
-	}
-	dismissJudgments, err := s.FindJudgments(protocol.JudgmentsFindRequest{Ref: dismissItem.ID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(dismissJudgments) != 1 || !strings.HasSuffix(dismissJudgments[0].Text, "A: dismissed: no decision") {
-		t.Errorf("expected one answer row ending %q for the dismissed ask, got %+v", "A: dismissed: no decision", dismissJudgments)
-	}
-}
 
 func TestJudgmentAddStoresCorrection(t *testing.T) {
 	s, _ := newTestStore(t)
@@ -167,16 +75,11 @@ func TestOwnerJudgmentsFind(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	item, err := storeOldItem(t, s, protocol.InboxItem{
-		Kind:      "question",
-		SessionID: "s_1",
-		Node:      "agent-net",
-		Text:      "Can we use cgo for sqlite?",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.AnswerInbox(item.ID, "No, modernc sqlite only."); err != nil {
+	if _, err = s.AddJudgment(protocol.JudgmentAddRequest{
+		Kind: protocol.StandingKindAnswer,
+		Text: "Q: Can we use cgo for sqlite? / A: No, modernc sqlite only.",
+		Area: "agent-net",
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -243,51 +146,5 @@ func TestOwnerJudgmentsFind(t *testing.T) {
 	byIDs, err := s.FindJudgments(protocol.JudgmentsFindRequest{IDs: []string{all[0].ID, all[1].ID}})
 	if err != nil || len(byIDs) != 2 {
 		t.Fatalf("expected 2 hits by IDs, got %+v (err %v)", byIDs, err)
-	}
-}
-
-func TestJudgmentsBackfillRunsOnOldDB(t *testing.T) {
-	s, _ := newTestStore(t)
-	// Populate inbox_items with answered owner asks as if on an older release.
-	for i := 1; i <= 10; i++ {
-		_, err := s.db.Exec(`INSERT INTO inbox_items(id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,answer,answered_at)
-			VALUES(?,?,?,?,?,'rec','m_1','c_1',?,'answered',?,?)`,
-			fmt.Sprintf("i_test_%d", i), "question", "s_1", "proj-alpha",
-			fmt.Sprintf("Question %d", i),
-			int64(i*1000), fmt.Sprintf("Answer %d", i), int64((i+1)*1000*1e9))
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	// Insert an auto-closed ask.
-	_, err := s.db.Exec(`INSERT INTO inbox_items(id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,answer,answered_at)
-		VALUES('i_closed','question','s_1','proj-alpha','Question closed','rec','m_1','c_1',1000,'closed','session_ended',2000*1e9)`)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Run backfill query.
-	if err := s.BackfillAnswerJudgments(); err != nil {
-		t.Fatalf("BackfillAnswerJudgments failed: %v", err)
-	}
-
-	// Verify backfilled rows.
-	rows, err := s.FindJudgments(protocol.JudgmentsFindRequest{Kind: protocol.StandingKindAnswer})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 10 {
-		t.Fatalf("expected 10 backfilled answers, got %d", len(rows))
-	}
-	for _, r := range rows {
-		if !strings.HasPrefix(r.Text, "Q: Question ") {
-			t.Errorf("unexpected backfilled text: %q", r.Text)
-		}
-		if r.Area != "proj-alpha" {
-			t.Errorf("unexpected area: %q", r.Area)
-		}
-		if !strings.HasPrefix(r.Ref, "i_test_") {
-			t.Errorf("unexpected ref: %q", r.Ref)
-		}
 	}
 }

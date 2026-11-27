@@ -40,21 +40,6 @@ func benchRealGateway(b *testing.B) *Gateway {
 	return g
 }
 
-func BenchmarkRealListInbox(b *testing.B) {
-	g := benchRealGateway(b)
-	items, err := g.store.ListInbox()
-	if err != nil {
-		b.Fatal(err)
-	}
-	b.Logf("inbox items: %d", len(items))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		if _, err := g.store.ListInbox(); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
 func BenchmarkRealNodesInfo(b *testing.B) {
 	g := benchRealGateway(b)
 	info, err := g.NodesInfo()

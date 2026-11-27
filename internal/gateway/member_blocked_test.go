@@ -127,6 +127,7 @@ func TestMemberThatWorksAgainClearsTheBlock(t *testing.T) {
 
 func TestBlockedMemberWithNoLeadSessionWritesOneDeskLine(t *testing.T) {
 	s, _, member, lead := leadTeamRig(t)
+	logs := captureLog(s)
 	if _, err := s.db.Exec(`UPDATE sessions SET online=0,archived_at=1 WHERE id=?`, lead); err != nil {
 		t.Fatal(err)
 	}
@@ -136,19 +137,20 @@ func TestBlockedMemberWithNoLeadSessionWritesOneDeskLine(t *testing.T) {
 		t.Fatalf("notices = %+v", got)
 	}
 	var n int
-	for _, l := range deskLines(t, s) {
-		if strings.Contains(l, "no lead session") && strings.Contains(l, "forge") && strings.Contains(l, "PR #130") {
+	for _, l := range *logs {
+		if strings.Contains(l, "member_blocked.no_lead") && strings.Contains(l, "forge") && strings.Contains(l, "PR #130") {
 			n++
 		}
 	}
 	if n != 1 {
-		t.Fatalf("desk lines = %v", deskLines(t, s))
+		t.Fatalf("logs = %v", *logs)
 	}
 }
 
 func TestBlockedAnnounceOutsideALeadTeamSendsNothing(t *testing.T) {
 	// The default team sends questions to the owner.
 	s, member, lead := forgeRig(t)
+	logs := captureLog(s)
 	announce(t, s, member, protocol.ProfileAnnounce{Task: deniedMerge})
 	if got := blockedNotices(t, s); len(got) != 0 {
 		t.Fatalf("owner team: %+v", got)
@@ -161,8 +163,8 @@ func TestBlockedAnnounceOutsideALeadTeamSendsNothing(t *testing.T) {
 	if got := blockedNotices(t, s); len(got) != 0 {
 		t.Fatalf("lead or outsider: %+v", got)
 	}
-	if lines := deskLines(t, s); hasLine(lines, "blocked") {
-		t.Fatalf("desk lines = %v", lines)
+	if hasLine(*logs, "blocked") {
+		t.Fatalf("logs = %v", *logs)
 	}
 }
 

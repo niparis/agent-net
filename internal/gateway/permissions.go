@@ -182,10 +182,6 @@ func (s *Store) permissionRulesAndTargets(kind string, rawRules, rawTargets []st
 	return nil, nil, reject("kind must be permissions or trust")
 }
 
-// permissionAskPrefix starts the source of a permission ask stored before
-// decision 0196. The front door flush leaves those rows alone.
-const permissionAskPrefix = "permission:"
-
 // trustAskPrefix starts the source of a trust request to the chief. The
 // machine and the folder follow, so one folder is asked about once.
 const trustAskPrefix = "trust:"
@@ -209,10 +205,10 @@ func (s *Store) RaiseTrustAsk(session, nodeID, hostname, path, project, reason s
 	}
 	who := strings.TrimSpace(session)
 	if who == "" {
-		who = gatewayAsker
+		who = agentNetSender
 	}
 	name := "agent-net"
-	if who != gatewayAsker {
+	if who != agentNetSender {
 		name = sessionLabel(s.db, who)
 	}
 	if strings.TrimSpace(reason) == "" {
@@ -224,19 +220,13 @@ func (s *Store) RaiseTrustAsk(session, nodeID, hostname, path, project, reason s
 	if len(servers) > 0 {
 		fmt.Fprintf(&b, "The trust also approves the folder's own MCP servers: %s\n", strings.Join(servers, ", "))
 	}
+	fmt.Fprintf(&b, "Why only the owner: Claude Code folder trust is the owner's to grant. Nothing is trusted before he says yes.\n")
 	fmt.Fprintf(&b, "If the owner agrees, the CTO grants it with cto_op permission_apply (kind trust, machine %s, targets [%q]), quoting the owner's words in owner_words. A session already running there may need a restart.", hostname, path)
-	item := protocol.InboxItem{
-		Kind: protocol.AskKindPermission, SessionID: who, FromKind: protocol.AskFromSession,
-		AskerName: name, SourceRef: trustAskPrefix + nodeID + ":" + path,
-		AboutKind: protocol.AskAboutProject, AboutID: hostname,
-		Text: b.String(), NextWho: protocol.AskNextOwner,
-		WhyYou: "Claude Code folder trust is the owner's to grant. Nothing is trusted before he says yes.",
-	}
-	out, err := s.createInboxItem(s.db, item)
+	_, sent, err := s.sendToChief(s.db, who, trustAskPrefix+nodeID+":"+path, b.String())
 	if err != nil {
 		return false, err
 	}
-	return out.Status != ownerItemAlreadySent, nil
+	return sent, nil
 }
 
 // PermissionApplyTimeout is how long the gateway waits for one machine to
@@ -325,6 +315,9 @@ func permissionGrantStatus(results []protocol.PermissionApplyResult) string {
 // logPermissionGrant writes the log line of one grant: what each target did
 // and the owner's words that approved it.
 func (s *Store) logPermissionGrant(grant protocol.PermissionGrant) error {
+	if s.logf == nil {
+		return nil
+	}
 	var detail strings.Builder
 	var names []string
 	for _, r := range grant.Results {
@@ -337,16 +330,12 @@ func (s *Store) logPermissionGrant(grant protocol.PermissionGrant) error {
 		}
 	}
 	fmt.Fprintf(&detail, "Owner's words: %q", grant.OwnerWords)
-	text := fmt.Sprintf("Allowed Claude Code permissions in %s", strings.Join(names, ", "))
-	if grant.Kind == protocol.PermissionKindTrust {
-		text = fmt.Sprintf("Trusted Claude Code folders: %s", strings.Join(names, ", "))
-	}
-	// A grant the CTO applied on the owner's words is the CTO's log line.
 	source := "gateway"
 	if grant.By == "cto" {
 		source = "cto"
 	}
-	return s.deskLog(s.db, source, "permission", grant.ID, text, detail.String(), nil)
+	s.logf("permission.grant", "id", grant.ID, "kind", grant.Kind, "status", grant.Status, "source", source, "targets", strings.Join(names, ","), "detail", detail.String())
+	return nil
 }
 
 // permissionResultLine says what happened to one target, in the owner's words.
@@ -393,10 +382,10 @@ func (g *Gateway) raiseTrustAsk(session, nodeID, hostname, path, project, reques
 		who = strings.TrimSpace(requester)
 	}
 	if who == "" {
-		who = gatewayAsker
+		who = agentNetSender
 	}
 	label := "agent-net"
-	if who != gatewayAsker {
+	if who != agentNetSender {
 		label = sessionLabel(g.store.db, who)
 	}
 	if strings.TrimSpace(hostname) == "" {

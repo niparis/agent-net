@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/ratelimit"
 )
 
@@ -92,13 +91,6 @@ func TestPhoneTailnetIdentity(t *testing.T) {
 			if err != nil || len(apps) != 1 || apps[0].Kind != "owner_app" || apps[0].Name != "Tailscale sign-in: owner@example.test, iPhone Safari" {
 				t.Fatalf("apps: %+v %v", apps, err)
 			}
-			var count int
-			if err = s.db.QueryRow(`SELECT count(*) FROM inbox_items WHERE text=? AND dedupe_key LIKE ? AND status='open' AND owner='cto'`, "Paired "+apps[0].Name+" by Tailscale sign-in", protocol.IntakePhonePaired+":%").Scan(&count); err != nil || count != 1 {
-				t.Fatalf("CTO digest count=%d: %v", count, err)
-			}
-			if err = s.db.QueryRow(`SELECT count(*) FROM inbox_items WHERE text LIKE 'Paired %' AND kind<>'cto_intake'`).Scan(&count); err != nil || count != 0 {
-				t.Fatalf("owner notice count=%d, want none: %v", count, err)
-			}
 			if w = request(ck); w.Code != 200 || len(w.Result().Cookies()) != 0 {
 				t.Fatalf("paired repeat: %d", w.Code)
 			}
@@ -106,9 +98,6 @@ func TestPhoneTailnetIdentity(t *testing.T) {
 			c.advance(61 * 24 * time.Hour)
 			if w = request(ck); len(w.Result().Cookies()) != 1 {
 				t.Fatal("no sliding renewal")
-			}
-			if err = s.db.QueryRow(`SELECT count(*) FROM inbox_items WHERE dedupe_key LIKE ?`, protocol.IntakePhonePaired+":%").Scan(&count); err != nil || count != 1 {
-				t.Fatalf("duplicate notice: %d %v", count, err)
 			}
 			if err = s.RevokeApp(apps[0].ID); err != nil {
 				t.Fatal(err)

@@ -39,8 +39,10 @@ func TestLearnedTablesMigrationMovesEachFact(t *testing.T) {
 	// Stop before the retired tables drop, which removes learned_suggestions.
 	full := migrations
 	migrations = full[:retiredDropVersion(t)-1]
-	err := replayMigrations(t, s)
-	migrations = full
+	err := func() error {
+		defer func() { migrations = full }()
+		return replayMigrations(t, s)
+	}()
 	if err != nil {
 		t.Fatal(err)
 	}

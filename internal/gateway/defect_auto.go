@@ -97,10 +97,7 @@ func (s *Store) addAutoDefect(tx *sql.Tx, d autoDefect) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	text := fmt.Sprintf("defect recorded: %s sev %d on %s (%s)", worker, d.severity, d.changeID, autoDefectWhy[d.kind])
-	if err := s.deskLog(tx, "gateway", "change", d.changeID, text, note, nil); err != nil {
-		return false, err
-	}
+	s.logf("defect.recorded", "worker", worker, "severity", d.severity, "change", d.changeID, "kind", d.kind, "note", note)
 	return true, nil
 }
 

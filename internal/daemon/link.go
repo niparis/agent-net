@@ -166,36 +166,18 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 			if json.Unmarshal(raw, &p) == nil {
 				d.onUrgentHeld(p.SessionID)
 			}
-		case protocol.FrameWaitClear:
-			var p protocol.WaitClear
-			if json.Unmarshal(raw, &p) == nil {
-				d.wg.Add(1)
-				go func() {
-					defer d.wg.Done()
-					d.onWaitClear(p.SessionID)
-				}()
-			}
 		case protocol.FrameNodeModels:
 			d.wg.Add(1)
 			go func() {
 				defer d.wg.Done()
 				d.onModelsFrame(ctx, l, h, raw)
 			}()
-		case protocol.FrameStartDecision:
-			var p protocol.StartDecision
-			if json.Unmarshal(raw, &p) == nil && p.Ref != "" {
-				d.wg.Add(1)
-				go func() {
-					defer d.wg.Done()
-					d.onStartDecision(p)
-				}()
-			}
 		case "node.name":
 			var p protocol.NodeName
 			if json.Unmarshal(raw, &p) == nil && p.Hostname != "" {
 				d.shownHost.Store(p.Hostname)
 			}
-		case "node.owner_ui.request", "node.machine_log", "node.machine_usage", "node.machine_processes", "node.usage_top", "node.session_text", "node.session_enter", "node.message_body", "node.proposal_list", "node.proposal_answer", "node.sign_in_prepare", protocol.FrameSignInImport, protocol.FrameAskIntakeTurn:
+		case "node.owner_ui.request", "node.machine_log", "node.machine_usage", "node.machine_processes", "node.usage_top", "node.session_text", "node.session_enter", "node.message_body", "node.proposal_list", "node.proposal_answer", "node.sign_in_prepare", protocol.FrameSignInImport:
 			d.wg.Add(1)
 			go func() {
 				defer d.wg.Done()

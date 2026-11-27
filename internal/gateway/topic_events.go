@@ -17,9 +17,8 @@ var topicTables = map[string][]string{
 	protocol.TopicAgents:   agentsTables,
 	protocol.TopicNodes:    tableUnion(nodesTables, pickerTables, []string{"quota_blocks", "nodes.health_report", "nodes.health_reported_at", "playbook", "setting_values"}),
 	protocol.TopicWorkers:  tableUnion(workerLogTables, pickerTables, []string{"worker_starts", "quota_blocks", "setting_values"}),
-	protocol.TopicGraph:    graphTables,
-	protocol.TopicInbox:    tableUnion(inboxTables, []string{"messages", "ask_sorts", "desk_log", "charter_drafts", "charter_values", "setting_values"}),
-	protocol.TopicChanges:  []string{"delivery_changes", "delivery_revisions", "delivery_evidence", "delivery_step_tasks", "inbox_items", "events", "messages"},
+	protocol.TopicGraph:    tableUnion(graphTables, []string{"charter_drafts"}),
+	protocol.TopicChanges:  []string{"delivery_changes", "delivery_revisions", "delivery_evidence", "delivery_step_tasks", "events", "messages"},
 	protocol.TopicProjects: tableUnion([]string{"projects", "repos", "sessions", "nodes.id", "nodes.hostname"}, graphTables),
 	protocol.TopicUsage:    tableUnion(nodesTables, []string{"sessions", "quota_blocks"}),
 }

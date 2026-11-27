@@ -17,7 +17,7 @@ func TestTreeSelfCheck(t *testing.T) {
 	r := newTreeRig(t)
 	var logs []string
 	r.s.logf = func(event string, kv ...any) { logs = append(logs, formatLine(r.s.now(), event, kv...)) }
-	anLead := r.start("an-lead", "agent-net")
+	r.start("an-lead", "agent-net")
 	r.start("shop-lead", "shop")
 	member := r.start("shop-member", "shop")
 	dup := r.start("shop-dup", "shop")
@@ -64,42 +64,8 @@ func TestTreeSelfCheck(t *testing.T) {
 			t.Fatalf("log line %d = %q, want %q", i, logs[i], w)
 		}
 	}
-	items := func(status string) []string {
-		t.Helper()
-		rows, err := r.s.db.Query(`SELECT source_ref,next_who,kind FROM inbox_items WHERE source_ref LIKE 'tree:%' AND status=? ORDER BY source_ref`, status)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer rows.Close()
-		var out []string
-		for rows.Next() {
-			var ref, next, kind string
-			if err := rows.Scan(&ref, &next, &kind); err != nil {
-				t.Fatal(err)
-			}
-			out = append(out, fmt.Sprintf("%s %s %s", ref, next, kind))
-		}
-		return out
-	}
-	wantItems := []string{"tree:I1:shop-agent", "tree:I2:" + dup, "tree:I3:" + orphan, "tree:I4:" + old}
-	for i := range wantItems {
-		wantItems[i] += " " + anLead + " check"
-	}
-	if got := items("open"); !slices.Equal(got, wantItems) {
-		t.Fatalf("open Desk items:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(wantItems, "\n"))
-	}
 
-	// A second pass raises nothing new while the items are open.
-	logs = nil
-	if _, err := r.s.checkTree(); err != nil {
-		t.Fatal(err)
-	}
-	var total int
-	if err := r.s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref LIKE 'tree:%'`).Scan(&total); err != nil || total != 4 || len(logs) != 0 {
-		t.Fatalf("second pass: %d items (%v), log %v; want the same 4 items and no line", total, err, logs)
-	}
-
-	// Fixing the data resolves every item at the next pass.
+	// Fixing the data clears every violation at the next pass.
 	exec(`UPDATE agents SET lead_session=NULL WHERE id='shop-agent'`)
 	exec(`UPDATE sessions SET agent_id='shop-agent' WHERE id=?`, dup)
 	exec(`UPDATE sessions SET online=0, archived_at=1 WHERE id=?`, orphan)
@@ -107,12 +73,6 @@ func TestTreeSelfCheck(t *testing.T) {
 	found, err = r.s.checkTree()
 	if err != nil || len(found) != 0 {
 		t.Fatalf("after the fix: %v %v", found, err)
-	}
-	if got := items("open"); len(got) != 0 {
-		t.Fatalf("still open: %v", got)
-	}
-	if got := items("closed"); len(got) != 4 {
-		t.Fatalf("resolved items: %v, want 4", got)
 	}
 }
 

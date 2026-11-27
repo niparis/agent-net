@@ -62,6 +62,7 @@ func TestLoopResumeNeedsVerifiedOwnerWords(t *testing.T) {
 
 func TestLoopPauseLineNamesLoopResume(t *testing.T) {
 	s, c := newTestStore(t)
+	logs := captureLog(s)
 	_, b := twoSessions(t, s)
 	loopNode(t, s, c, b)
 	loopTicks(t, s)
@@ -74,7 +75,7 @@ func TestLoopPauseLineNamesLoopResume(t *testing.T) {
 		t.Fatalf("paused = %d, %v", paused, err)
 	}
 	line := ""
-	for _, l := range deskLines(t, s) {
+	for _, l := range *logs {
 		if strings.Contains(l, "Loop proj: paused") {
 			line = l
 		}

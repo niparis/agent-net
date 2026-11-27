@@ -10,8 +10,10 @@ import (
 	"unicode"
 
 	"github.com/niparis/agent-net/internal/protocol"
-	"github.com/niparis/agent-net/internal/redact"
 )
+
+// chiefJudgmentArea is the area of the judgments that teach the chief.
+const chiefJudgmentArea = "chief"
 
 // StandingOrders lists the owner's standing orders and rules, oldest first.
 func (s *Store) StandingOrders() ([]protocol.StandingOrder, error) {
@@ -325,87 +327,68 @@ func (s *Store) FindJudgments(q protocol.JudgmentsFindRequest) ([]protocol.Stand
 	if err != nil {
 		return nil, err
 	}
-	if q.Marks {
-		for i := range out {
-			if err := s.addMarkAsk(&out[i]); err != nil {
-				return nil, err
-			}
-		}
-	}
 	return out, nil
 }
 
-// addMarkAsk puts the ask on a mark row: its whole question, the mark and the
-// chief's latest disposition.
-func (s *Store) addMarkAsk(o *protocol.StandingOrder) error {
-	o.Ask = o.Ref
-	o.Mark = markFromText(o.Text)
-	if o.Mark != "" {
-		o.MarkText = markWords(o.Mark)
-	}
-	if o.Ask != "" {
-		var text string
-		err := s.db.QueryRow(`SELECT text FROM inbox_items WHERE id=?`, o.Ask).Scan(&text)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		o.Question = redact.SecretValues(text)
-		if o.Disposition, err = s.askDisposition(o.Ask); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// markFromText names the mark that MarkAsk wrote into the judgment text. It is
-// empty for an older row that does not carry one.
-func markFromText(text string) string {
-	switch {
-	case strings.HasPrefix(text, "The owner did not need ask "):
-		return protocol.MarkDidntNeedMe
-	case strings.HasPrefix(text, "The owner should have been asked about ask "):
-		return protocol.MarkShouldHaveAsked
-	}
-	return ""
-}
-
-// askDisposition is the chief's latest sort of one ask in one line.
-func (s *Store) askDisposition(id string) (string, error) {
-	var result, into, to, reason, why string
-	var priority int
-	err := s.db.QueryRow(`SELECT result,into_id,to_id,reason,priority,why_you FROM ask_sorts WHERE ask_id=? ORDER BY id DESC LIMIT 1`, id).
-		Scan(&result, &into, &to, &reason, &priority, &why)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "not sorted", nil
-	}
+// addRule stores a judgment in its own transaction.
+func (s *Store) addRule(q protocol.JudgmentAddRequest, source string) (protocol.StandingOrder, error) {
+	tx, err := s.db.Begin()
 	if err != nil {
-		return "", err
+		return protocol.StandingOrder{}, err
 	}
-	line := ""
-	switch result {
-	case protocol.AskSortClose:
-		line = "closed: " + reason
-	case protocol.AskSortMerge:
-		line = "merged into " + into + ": " + reason
-	case protocol.AskSortSend:
-		line = "sent to " + nextName(s.db, to) + ": " + reason
-	case protocol.AskSortOwner:
-		line = "sent to the owner"
-		if priority > 0 {
-			line += fmt.Sprintf(" (priority %d)", priority)
-		}
-		if why != "" {
-			line += ": " + why
-		}
-	case protocol.AskSortUndo:
-		line = "undone: " + reason
-	default:
-		line = result + ": " + reason
+	defer tx.Rollback()
+	o, err := s.addRuleTx(tx, q, source)
+	if err != nil {
+		return o, err
 	}
-	return redact.SecretValues(line), nil
+	return o, tx.Commit()
 }
 
-// MarksStored counts the owner's Desk marks in the judgment store.
+// addRuleTx stores a judgment in the caller's transaction and logs it.
+func (s *Store) addRuleTx(tx *sql.Tx, q protocol.JudgmentAddRequest, source string) (protocol.StandingOrder, error) {
+	o, err := addJudgment(tx, s.now(), q)
+	if err != nil {
+		return o, reject("%v", err)
+	}
+	s.logf("judgment.added", "id", o.ID, "kind", o.Kind, "source", source, "area", o.Area, "action", o.Action)
+	return o, nil
+}
+
+// RecordJudgment records a decision the owner made in a live chat with the
+// chief of staff or the CTO (agent_owner_judgment_record). Only those two
+// sessions, on their own machine, may record. A scope makes it a rule.
+func (s *Store) RecordJudgment(node string, q protocol.JudgmentRecordRequest) (protocol.StandingOrder, error) {
+	if err := q.Validate(); err != nil {
+		return protocol.StandingOrder{}, reject("%v", err)
+	}
+	var harness, sessionNode string
+	err := s.db.QueryRow(`SELECT harness,node_id FROM sessions WHERE id=? AND archived_at=0`, q.SessionID).Scan(&harness, &sessionNode)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return protocol.StandingOrder{}, err
+	}
+	chief, err := chiefSession(s.db)
+	if err != nil {
+		return protocol.StandingOrder{}, err
+	}
+	source := ""
+	switch {
+	case sessionNode == "" || sessionNode != node:
+	case harness == "cto":
+		source = "cto"
+	case chief != "" && chief == q.SessionID:
+		source = "chief"
+	}
+	if source == "" {
+		return protocol.StandingOrder{}, reject("only the chief of staff or the CTO records the owner's decisions")
+	}
+	add := protocol.JudgmentAddRequest{Kind: protocol.StandingKindAnswer, Text: q.Text, Ref: "chat:" + q.SessionID, Source: protocol.StandingSourceOwner}
+	if q.Area != "" || q.Action != "" {
+		add.Kind, add.Area, add.Action, add.Category = protocol.StandingKindRule, q.Area, q.Action, q.Category
+	}
+	return s.addRule(add, source)
+}
+
+// MarksStored counts the owner's correction rows in the judgment store.
 func (s *Store) MarksStored() (int, error) {
 	var n int
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM standing_orders WHERE kind=? AND area=?`, protocol.StandingKindCorrection, chiefJudgmentArea).Scan(&n)
@@ -415,7 +398,7 @@ func (s *Store) MarksStored() (int, error) {
 // marksNote explains an empty marks result.
 func marksNote(stored, offset int) string {
 	if stored == 0 {
-		return "0 owner marks are stored: the owner has not marked an ask yet."
+		return "0 owner marks are stored."
 	}
 	return fmt.Sprintf("%d owner marks are stored, none at offset %d.", stored, offset)
 }

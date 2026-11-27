@@ -47,9 +47,7 @@ func (d *Daemon) executeCTOApps(ctx context.Context, method string, raw json.Raw
 				return nil, err
 			}
 			text := "CTO approved the app consent for " + cleanLine(fmt.Sprint(args["name"])) + onOwnerWords(words)
-			if _, err := d.call(ctx, "inbox.create", map[string]any{"session_id": d.ctoSessionID(), "kind": "check", "text": text, "recommendation": "Revoke the app in Settings to undo."}); err != nil {
-				return nil, fmt.Errorf("%s; could not add Inbox notice: %w", text, err)
-			}
+			d.Logf("cto.action %s", text)
 			return map[string]any{"state": "approved", "result": map[string]any{"summary": "Consent approved on the owner's words; the browser sign-in is still his.", "data": data}}, nil
 		}
 		data, err := d.call(ctx, method, args)
@@ -182,9 +180,8 @@ func (d *Daemon) executeCTOApps(ctx context.Context, method string, raw json.Raw
 	if reason = cleanLine(reason); reason != "" {
 		text += ": " + reason
 	}
-	_, err = d.call(ctx, "inbox.create", map[string]any{"session_id": d.ctoSessionID(), "kind": "check", "text": text, "recommendation": diff, "options": options})
-	if err != nil {
-		return result, fmt.Errorf("%s; could not add Inbox notice: %w", text, err)
-	}
+	d.Logf("cto.action %s", text)
+	_ = diff
+	_ = options
 	return result, nil
 }

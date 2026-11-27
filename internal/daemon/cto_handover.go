@@ -61,10 +61,7 @@ func (d *Daemon) ctoHandover(ctx context.Context, from, to string, ownerStarted,
 	name := "handover-" + now.UTC().Format("20060102-150405.000000000")
 	busy, work := d.ctoLocalWork(ctx, from)
 	if busy && ownerStarted {
-		text := fmt.Sprintf("The CTO's %s turn was running when you switched to %s. It stopped. Its handover is note %s.", from, to, name)
-		if _, err := d.call(ctx, "inbox.create", map[string]any{"session_id": sid, "kind": "check", "text": text}); err != nil {
-			return fmt.Errorf("tell the owner about the running turn: %w", err)
-		}
+		d.Logf("cto.handover: the CTO's %s turn was running when switched to %s; handover is note %s", from, to, name)
 	}
 	head := fmt.Sprintf("Handover from %s to %s at %s UTC.\n\n", from, to, now.UTC().Format("2006-01-02 15:04"))
 	mechanical := head + d.ctoMechanicalHandover(ctx, sid, from, work)
@@ -218,10 +215,6 @@ func (d *Daemon) latestHandoverNote() string {
 // whole note.
 func (d *Daemon) ctoMechanicalHandover(ctx context.Context, sid, from, work string) string {
 	var b strings.Builder
-	asks, owed, err := d.handoverAsks(ctx, sid)
-	writeHandoverSection(&b, "Open asks the CTO raised", asks, err)
-	writeHandoverSection(&b, "Messages the CTO owes a reply", owed, nil)
-
 	workers, err := d.handoverWorkers(ctx, sid)
 	writeHandoverSection(&b, "Workers the CTO started that are not done", workers, err)
 
@@ -255,28 +248,6 @@ func writeHandoverSection(b *strings.Builder, title string, lines []string, err 
 		fmt.Fprintf(b, "- %s\n", line)
 	}
 	b.WriteString("\n")
-}
-
-// handoverAsks reads the open asks: the ones the CTO raised, and the ones that
-// name the CTO as the one who must act now.
-func (d *Daemon) handoverAsks(ctx context.Context, sid string) (raised, owed []string, err error) {
-	raw, err := d.call(ctx, "asks.list", struct{}{})
-	if err != nil {
-		return nil, nil, err
-	}
-	var res protocol.AsksResult
-	if err = json.Unmarshal(raw, &res); err != nil {
-		return nil, nil, err
-	}
-	for _, ask := range res.Asks {
-		line := fmt.Sprintf("%s (%s): %s", ask.ID, ask.Kind, firstLineOf(ask.Question))
-		if sid != "" && ask.Next == sid {
-			owed = append(owed, line)
-		} else if sid != "" && ask.FromSession == sid {
-			raised = append(raised, line)
-		}
-	}
-	return raised, owed, nil
 }
 
 // handoverWorkers lists the workers the CTO started that are still online.

@@ -58,15 +58,3 @@ func TestOwnerWordsMatch(t *testing.T) {
 		t.Error("a quote over the limit matched")
 	}
 }
-
-func TestStartOverrideText(t *testing.T) {
-	got := StartOverrideText("build-bot", []string{"harness=codex", "model=gpt-6"}, "Fix login", "cheaper for this task")
-	want := "build-bot wants harness=codex model=gpt-6 for 'Fix login': cheaper for this task. Confirm, or let the picker choose."
-	if got != want {
-		t.Fatalf("StartOverrideText = %q, want %q", got, want)
-	}
-	long := StartOverrideText("a", []string{"model=m"}, "t", strings.Repeat("r", 5000))
-	if len([]rune(long)) > MaxOwnerAskChars {
-		t.Fatalf("text has %d characters, limit %d", len([]rune(long)), MaxOwnerAskChars)
-	}
-}

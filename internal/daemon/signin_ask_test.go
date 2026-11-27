@@ -58,7 +58,7 @@ func TestQuotaRaisesOneSignInAskPerProvider(t *testing.T) {
 	}
 	good := &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "alibaba-bl", Windows: []protocol.QuotaWindow{{Label: "5-hour"}}}}}
 	d.syncSignInAsks(context.Background(), good)
-	if len(calls.closes) != 1 || calls.closes[0].Provider != "alibaba" || calls.closes[0].Reason != protocol.AskReasonSignedIn {
+	if len(calls.closes) != 1 || calls.closes[0].Provider != "alibaba" || calls.closes[0].Reason != "signed_in" {
 		t.Fatalf("close after a good reading: %+v", calls.closes)
 	}
 	// A dismissed ask is not raised again until the error clears.
@@ -83,7 +83,7 @@ func TestSignInRecheckClosesAskAfterGoodReading(t *testing.T) {
 	d.quota.setPath(path)
 	d.signIn.add("alibaba", "i_signin_1")
 	d.recheckSignIn(context.Background(), "alibaba")
-	if len(calls.closes) != 1 || calls.closes[0].Provider != "alibaba" || calls.closes[0].Reason != protocol.AskReasonSignedIn {
+	if len(calls.closes) != 1 || calls.closes[0].Provider != "alibaba" || calls.closes[0].Reason != "signed_in" {
 		t.Fatalf("recheck closes: %+v", calls.closes)
 	}
 }
@@ -123,7 +123,7 @@ func TestSignInAskStaysOpenUntilGoodReading(t *testing.T) {
 	}
 
 	sync(reading("", protocol.QuotaWindow{Label: "5-hour"}))
-	if len(calls.closes) != 1 || calls.closes[0].Provider != "alibaba" || calls.closes[0].Reason != protocol.AskReasonSignedIn {
+	if len(calls.closes) != 1 || calls.closes[0].Provider != "alibaba" || calls.closes[0].Reason != "signed_in" {
 		t.Fatalf("a good reading did not close with signed_in: %+v", calls.closes)
 	}
 }
