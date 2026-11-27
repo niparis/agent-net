@@ -1,5 +1,7 @@
 # OS sandbox for workers (W7)
 
+Since 2026-11-27 the wrapper keeps one rule only, the write fence of [decision 0197](../decisions/0197-worker-write-fence.md): a worker writes only in its worktree, its own temp folder, its caches and the repository's git folder, and nothing is hidden. The hidden folders, the private `/tmp`, the network switch and the Unix socket rules described below are gone. The rest of this page is the design history.
+
 Status: built for Pi and OpenCode workers on Linux ([decision 0059](../decisions/0059-worker-os-sandbox.md)), and on by default on Linux and macOS since 2026-11-17 ([decision 0171](../decisions/0171-session-harness-switch.md), phase 4b). A project turns it off with `workers.os_sandbox_off` in node.json. Claude workers are refused only for a project listed in `workers.os_sandbox` (see below). The macOS profile is built from the same policy (`internal/daemon/ossandbox_seatbelt.go`); it is unit tested and passed its real check on a Mac (macOS 26.5.1, 2026-11-17). Plan: [hardening-plan.md](../archive/hardening-plan.md) W7. Earlier research: [worker-sandbox.md](../archive/worker-sandbox.md). Levels: [decision 0020](../decisions/0020-worker-sandbox.md).
 
 ## What it is

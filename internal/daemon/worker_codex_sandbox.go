@@ -23,13 +23,66 @@ import (
 //     only when the user's Codex config defines that server (without a
 //     definition Codex stops with "invalid transport").
 //
-// Codex keeps .git read-only even in a writable root, so the worker's commits
-// need the narrow folders that git writes to in the main repository, not the
-// whole git dir (which would also let the worker change hooks and config).
+// Codex has no read-only list inside a writable root, so a Codex worker gets
+// only the git folders a commit writes (workerGitRoots), never the git folder
+// whose config and hooks run code (decision 0197).
 
-// workerGitRoots returns the folders of the main repository that a commit in the
-// worker's folder writes to: the objects, the refs and their logs, and the
-// private folder of a linked worktree (its index and HEAD).
+// gitFence is the git part of a worker's write fence (decision 0197). Write is
+// the repository's git folder, with the worktree's own git folder when it lies
+// outside it, so commit, switch -c and worktree add work. ReadOnly lists what
+// inside Write makes git run code: config, config.worktree, hooks, info,
+// modules, the folder core.hooksPath names, and the folders of the other
+// linked worktrees (their commondir file says which config git reads). Git
+// runs that code with no sandbox when the owner, the merger or the daemon run
+// git there. Only paths that exist are listed: hooks and info are made when
+// they are missing, so a worker cannot make them.
+type gitFence struct{ Write, ReadOnly []string }
+
+func workerGitFence(ctx context.Context, dir string) gitFence {
+	common, err := gitOut(ctx, dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil || common == "" {
+		return gitFence{}
+	}
+	f := gitFence{Write: []string{common}}
+	own, _ := gitOut(ctx, dir, "rev-parse", "--path-format=absolute", "--git-dir")
+	if own != "" && !underAny(own, f.Write) {
+		f.Write = append(f.Write, own)
+	}
+	for _, sub := range []string{"hooks", "info"} {
+		_ = os.MkdirAll(filepath.Join(common, sub), 0o755)
+	}
+	ro := []string{"config", "config.worktree", "hooks", "info", "modules"}
+	for i, sub := range ro {
+		ro[i] = filepath.Join(common, sub)
+	}
+	// The worker's own git config settings (GIT_CONFIG_*) are left out: the
+	// folder that counts is the one git uses outside the worker.
+	if hp, _ := gitOutWithEnv(ctx, dir, []string{"GIT_CONFIG_COUNT=0"}, "config", "--get", "core.hooksPath"); hp != "" {
+		if strings.HasPrefix(hp, "~/") {
+			hp = filepath.Join(home(), hp[2:])
+		}
+		if filepath.IsAbs(hp) {
+			ro = append(ro, filepath.Clean(hp))
+		}
+	}
+	others, _ := os.ReadDir(filepath.Join(common, "worktrees"))
+	for _, e := range others {
+		if p := filepath.Join(common, "worktrees", e.Name()); e.IsDir() && p != own {
+			ro = append(ro, p)
+		}
+	}
+	for _, p := range ro {
+		if fileExists(p) && !containsString(f.ReadOnly, p) {
+			f.ReadOnly = append(f.ReadOnly, p)
+		}
+	}
+	return f
+}
+
+// workerGitRoots returns the folders of the main repository that a commit in
+// dir writes to: the objects, the refs and their logs, and the private folder
+// of a linked worktree (its index and HEAD). Codex and agy workers and Codex
+// role sessions use it: their sandboxes have no read-only list (gitFence).
 func workerGitRoots(ctx context.Context, dir string) []string {
 	common, err := gitOut(ctx, dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil || common == "" {
@@ -48,10 +101,9 @@ func workerGitRoots(ctx context.Context, dir string) []string {
 	return roots
 }
 
-// codexRootsFor are the extra writable folders of a sandboxed worker: the git
-// folders, the package caches and the Go temp folder.
+// codexRootsFor are the extra writable folders of a worker (workerFence).
 func (d *Daemon) codexRootsFor(ctx context.Context, w *worker) []string {
-	return d.workerWriteRoots(ctx, w)
+	return d.workerFence(ctx, w).Narrow
 }
 
 // codexSandbox is what the worker's level means for Codex.

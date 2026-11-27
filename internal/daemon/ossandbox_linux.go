@@ -53,7 +53,3 @@ func osSandboxTool() (string, error) {
 func osSandboxCommand(p osSandboxPolicy, bin string, args []string) []string {
 	return bwrapArgs(p, bin, args)
 }
-
-// osSandboxTmpEnv is TMPDIR inside the sandbox. The worker's private tmp folder
-// is mounted at /tmp, so the name is the same for every worker.
-func osSandboxTmpEnv(string) string { return "/tmp" }
