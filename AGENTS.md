@@ -19,7 +19,7 @@ Go 1.27.3 or newer. If `go` is not on your `PATH`, add it first.
 
 ```
 go build -o agent-net ./cmd/agent-net
-go vet ./... && scripts/test.sh -- -timeout 30m
+go vet ./... && scripts/test.sh -- -timeout 30m # the full suite runs in CI
 gofmt -l .                  # must print nothing
 sh -n install.sh            # syntax check of the installer
 bash -n scripts/test.sh
@@ -39,12 +39,15 @@ go -C tools/rulecheck vet ./... && go -C tools/rulecheck test -count=1 ./... # t
 
 Run it from the repository root: `go -C tools/rulecheck build -o "${TMPDIR:-/tmp}/rulecheck" . && "${TMPDIR:-/tmp}/rulecheck" -docs docs ./...`
 
-Before handing back, run scripts/test-changed.sh. It runs only the tests your
-diff needs: a comment-only or docs change runs no package tests, a changed test
-file runs the tests it changed, a production file runs its same-name test file,
-and the contract set always runs. List what it ran, with the production and test
-line counts, in your hand-back. The merge queue's CI is the single test gate;
-the full packages run there (decision 0164).
+Before handing back, run scripts/test-changed.sh and nothing wider. It runs
+only the tests your diff needs: a comment-only or docs change runs no package
+tests, a changed test file runs the tests it changed, a production file runs
+its same-name test file, and the contract set always runs. Do not run a whole
+package, a `-race` run, a repeat or load run, or a full suite. A brief may name
+extra tests by pattern with `--run`; it never asks for a whole package or a
+`-race` run. List what the script ran, with the production and test line counts,
+in your hand-back. The merge queue's CI is the single test gate; the full
+packages run there (decision 0164).
 
 If the sandbox blocks unix sockets (Claude Code's does on Linux), the script notices and the tests that need a socket skip themselves with a clear reason. It counts them in its summary and still exits 0 when nothing else failed. The merge queue's CI runs them. A new test helper that opens a unix socket must call `testsock.Skip(t)` (`internal/testsock`).
 
