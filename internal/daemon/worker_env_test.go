@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -126,11 +125,12 @@ func TestWorkerCachesAreInTheWorkersOwnFolder(t *testing.T) {
 	}
 }
 
-func TestWorkerCachesMoveIntoThePrivateTmpInTheWrapper(t *testing.T) {
-	if _, err := exec.LookPath("bwrap"); err != nil && runtime.GOOS == "linux" {
-		t.Log("no bwrap here: the wrapper's command is not run, only its environment is read")
-	}
+// In the wrapper the per-worker caches stay where every harness has them, in
+// a folder the wrapper makes writable, and every temp folder variable names
+// the worker's own temp folder (decision 0197).
+func TestOSSandboxWrapKeepsCachesWritable(t *testing.T) {
 	d := commitTestDaemon(t)
+	d.cfg.HarnessSearch = &harnesses.Options{LoginShellPATH: func(context.Context) string { return "" }}
 	repo := newRepo(t, "shop")
 	wt := filepath.Join(d.cfg.StateDir, "worktrees", "w_x")
 	gitIn(t, repo, "worktree", "add", "-q", "-b", "agent-net/w_x", wt)
@@ -138,7 +138,7 @@ func TestWorkerCachesMoveIntoThePrivateTmpInTheWrapper(t *testing.T) {
 	if _, err := osSandboxTool(); err != nil {
 		t.Skip("no sandbox tool here")
 	}
-	_, _, env, err := d.osSandboxWrap(w, "/bin/true", nil, os.Environ())
+	_, argv, env, err := d.osSandboxWrap(w, "/bin/true", nil, workerEnv(os.Environ(), d.workerToolEnv(w)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,14 +147,23 @@ func TestWorkerCachesMoveIntoThePrivateTmpInTheWrapper(t *testing.T) {
 		k, v, _ := strings.Cut(kv, "=")
 		have[k] = v
 	}
-	tmp := osSandboxTmpEnv(filepath.Join(resolved(filepath.Join(d.cfg.StateDir, "workers", "w_x")), "tmp"))
-	for key, sub := range map[string]string{"UV_CACHE_DIR": "uv", "npm_config_cache": "npm", "PIP_CACHE_DIR": "pip"} {
-		if want := filepath.Join(tmp, "cache", sub); have[key] != want {
+	root := d.workerCacheRoot(w)
+	for key, sub := range map[string]string{"UV_CACHE_DIR": "uv", "npm_config_cache": "npm", "PIP_CACHE_DIR": "pip", "CARGO_HOME": "cargo"} {
+		if want := filepath.Join(root, sub); have[key] != want {
 			t.Errorf("%s = %q, want %q", key, have[key], want)
 		}
 	}
-	if have["TMPDIR"] != tmp {
-		t.Errorf("TMPDIR = %q, want %q", have["TMPDIR"], tmp)
+	tmp := filepath.Join(resolved(filepath.Join(d.cfg.StateDir, "workers", "w_x")), "tmp")
+	for _, key := range []string{"TMPDIR", "TMP", "TEMP", "GOTMPDIR"} {
+		if have[key] != tmp {
+			t.Errorf("%s = %q, want %q", key, have[key], tmp)
+		}
+	}
+	joined := strings.Join(argv, "\n")
+	for _, p := range []string{resolved(root), tmp, resolved(filepath.Join(repo, ".git")), resolved(d.workerGoCacheDir())} {
+		if !strings.Contains(joined, p) {
+			t.Errorf("the wrapper does not make %s writable: %q", p, argv)
+		}
 	}
 }
 

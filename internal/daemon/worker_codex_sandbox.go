@@ -23,13 +23,29 @@ import (
 //     only when the user's Codex config defines that server (without a
 //     definition Codex stops with "invalid transport").
 //
-// Codex keeps .git read-only even in a writable root, so the worker's commits
-// need the narrow folders that git writes to in the main repository, not the
-// whole git dir (which would also let the worker change hooks and config).
+// Codex keeps a .git inside a writable root read-only, so the repository's git
+// folder is a writable root of its own (workerWriteRoots, decision 0197).
 
-// workerGitRoots returns the folders of the main repository that a commit in the
-// worker's folder writes to: the objects, the refs and their logs, and the
-// private folder of a linked worktree (its index and HEAD).
+// workerGitDirs is the git folder of the repository that holds the worktree at
+// dir, with the worktree's own git folder when it lies outside it. A worker
+// may write all of it, so commit, switch -c, push -u and worktree add work
+// (decision 0197).
+func workerGitDirs(ctx context.Context, dir string) []string {
+	common, err := gitOut(ctx, dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil || common == "" {
+		return nil
+	}
+	dirs := []string{common}
+	if gd, err := gitOut(ctx, dir, "rev-parse", "--path-format=absolute", "--git-dir"); err == nil && gd != "" && !underAny(gd, dirs) {
+		dirs = append(dirs, gd)
+	}
+	return dirs
+}
+
+// workerGitRoots returns the folders of the main repository that a commit in
+// dir writes to: the objects, the refs and their logs, and the private folder
+// of a linked worktree (its index and HEAD). Codex role sessions use it; a
+// worker gets the whole git folder (workerGitDirs).
 func workerGitRoots(ctx context.Context, dir string) []string {
 	common, err := gitOut(ctx, dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil || common == "" {
@@ -48,8 +64,8 @@ func workerGitRoots(ctx context.Context, dir string) []string {
 	return roots
 }
 
-// codexRootsFor are the extra writable folders of a sandboxed worker: the git
-// folders, the package caches and the Go temp folder.
+// codexRootsFor are the extra writable folders of a worker: the ones every
+// worker gets (workerWriteRoots).
 func (d *Daemon) codexRootsFor(ctx context.Context, w *worker) []string {
 	return d.workerWriteRoots(ctx, w)
 }

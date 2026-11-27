@@ -55,7 +55,3 @@ func osSandboxTool() (string, error) {
 func osSandboxCommand(p osSandboxPolicy, bin string, args []string) []string {
 	return seatbeltArgs(p, bin, args)
 }
-
-// osSandboxTmpEnv is TMPDIR inside the sandbox. macOS has no mount namespace,
-// so the private tmp folder is named by its real path.
-func osSandboxTmpEnv(tmp string) string { return tmp }

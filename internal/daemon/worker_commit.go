@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/niparis/agent-net/internal/settings"
@@ -169,9 +170,9 @@ func (d *Daemon) workerCommitEnv(w *worker) map[string]string {
 		"AGENT_NET_TRAILER_NAME_DIFFICULTY": snap.String("delivery.trailer_difficulty", settings.Where{}),
 		"AGENT_NET_TRAILER_NAME_CALLER":     snap.String("delivery.trailer_caller", settings.Where{}),
 	}
-	// Besides the hooks folder: no automatic gc or maintenance. They take
-	// gc.pid.lock and write packed-refs in the shared .git, which a worker's
-	// sandbox keeps read-only (the daemon cleans up on its own).
+	// Besides the hooks folder: no automatic gc or maintenance. They would
+	// repack the shared .git under the owner and the other workers (the daemon
+	// cleans up on its own).
 	env := map[string]string{
 		"GIT_CONFIG_COUNT":   "3",
 		"GIT_CONFIG_KEY_0":   "core.hooksPath",
@@ -180,6 +181,13 @@ func (d *Daemon) workerCommitEnv(w *worker) map[string]string {
 		"GIT_CONFIG_VALUE_1": "0",
 		"GIT_CONFIG_KEY_2":   "maintenance.auto",
 		"GIT_CONFIG_VALUE_2": "false",
+	}
+	if identity.harness == "claude" {
+		if excludes := workerGitExcludes(dir, filepath.Dir(hooks)); excludes != "" {
+			env["GIT_CONFIG_COUNT"] = "4"
+			env["GIT_CONFIG_KEY_3"] = "core.excludesFile"
+			env["GIT_CONFIG_VALUE_3"] = excludes
+		}
 	}
 	for key, value := range trailerNames {
 		env[key] = value
@@ -305,4 +313,41 @@ func (d *Daemon) workerGitEnv(w *worker, env []string, set map[string]string) []
 		out = append(out, k+"="+v)
 	}
 	return out
+}
+
+// workerGitExcludes writes the excludes file of a Claude worker into its own
+// folder and returns its path, or "" when it cannot. Claude Code's Bash
+// sandbox makes an empty file at each of sandboxPlaceholderNames in the
+// worktree, as a mount point; without this they show as untracked in the
+// worker's git status and git add -A. The file starts with the excludes the
+// worker had (core.excludesFile, else git's default), which it replaces. A
+// real folder of the same name stays visible.
+func workerGitExcludes(worktree, workerDir string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	own, _ := gitOut(ctx, worktree, "config", "--path", "core.excludesFile")
+	if own == "" {
+		cfg := os.Getenv("XDG_CONFIG_HOME")
+		if cfg == "" {
+			cfg = filepath.Join(home(), ".config")
+		}
+		own = filepath.Join(cfg, "git", "ignore")
+	}
+	var b strings.Builder
+	if raw, err := os.ReadFile(own); err == nil {
+		b.Write(raw)
+		b.WriteString("\n")
+	}
+	b.WriteString("# Claude Code sandbox mount points (agent-net)\n")
+	for _, name := range sandboxPlaceholderNames {
+		if strings.Contains(name, "/") {
+			name = "**/" + name
+		}
+		b.WriteString(name + "\n!" + name + "/\n")
+	}
+	path := filepath.Join(workerDir, "git-excludes")
+	if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
+		return ""
+	}
+	return path
 }

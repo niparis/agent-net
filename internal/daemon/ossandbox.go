@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -16,21 +15,23 @@ import (
 )
 
 // The OS sandbox of a worker (hardening plan W7, docs/design/worker-os-sandbox.md,
-// decision 0171 phase 4b).
+// decision 0171 phase 4b, and decision 0197 for what it allows).
 //
 // A wrapper around the whole harness process of a Pi or OpenCode worker. It is
 // on by default (decision of 2026-11-17); node.json on the machine that runs
-// the worker can turn it off for a project (workers.os_sandbox_off). On Linux
-// it is bubblewrap: the host is read-only, the worker's folder, the narrow git
-// folders of a commit and the harness's private state are writable, /tmp is
-// private, the folders of the user's control sockets are hidden, and the
-// agent-net socket is bound back. On macOS it is a sandbox-exec profile built
-// from the same policy (ossandbox_seatbelt.go).
+// the worker can turn it off for a project (workers.os_sandbox_off). It keeps
+// one rule: the worker writes only in its worktree, its own temp folder, its
+// caches, the repository's git folder and the agent-net socket folder. Reads,
+// the network, loopback ports and unix sockets are all open, and nothing is
+// hidden. On Linux it is bubblewrap with the host read-only and those folders
+// bound writable; on macOS it is a sandbox-exec profile built from the same
+// policy (ossandbox_seatbelt.go).
 //
-// Codex and Antigravity keep their own sandboxes and are not wrapped. A Claude
-// worker is `claude --bg`, which runs the session in Claude Code's own
-// background service, outside any wrapper: with the switch on, it is refused.
-// The level (decision 0020) is not chosen here; the wrapper applies it.
+// Codex and Antigravity keep their own sandboxes and are not wrapped; they get
+// the same writable folders (workerWriteRoots). A Claude worker is `claude
+// --bg`, which runs the session in Claude Code's own background service,
+// outside any wrapper: with the switch on, it is refused. Its own Bash sandbox
+// gets the same folders (claudeWorkerSandbox).
 //
 // Never a silent start without the sandbox: when the sandbox is on and the
 // wrapper cannot be used, the start is refused with the reason and the fix.
@@ -188,22 +189,17 @@ func readOSSandboxMarker(dir string) string {
 // mountPair binds Src at Dst.
 type mountPair struct{ Src, Dst string }
 
-// osSandboxPolicy is what the wrapper of one worker allows. Paths are absolute
-// and resolved.
+// osSandboxPolicy is what the wrapper of one worker allows (decision 0197):
+// writes only in Writable, everything else open. Paths are absolute and
+// resolved.
 type osSandboxPolicy struct {
-	Network   bool        // keep the host network
-	Hide      []string    // folders hidden by an empty tmpfs
-	Tmp       string      // private folder bound at /tmp
-	Mask      []string    // files hidden by /dev/null
-	Visible   []string    // bound read-only at the same path, for paths a hidden folder may cover
-	Writable  []string    // bound writable at the same path
-	ReadOnly  []mountPair // bound read-only on top of the writable paths
-	Socket    string      // the agent-net socket, for a profile that names it
-	SocketDir string      // the folder with the socket, bound at its own path
-	Dir       string      // the working folder
+	Writable []string    // bound writable at the same path
+	ReadOnly []mountPair // owner files bound read-only into the private state
+	Dir      string      // the working folder
 }
 
 // bwrapArgs is the bubblewrap command line that runs bin with args under p.
+// The host network is shared, so loopback ports and every unix socket work.
 //
 // Not used on purpose: --die-with-parent (a worker outlives the daemon, which
 // finds it again after a restart; the flag would kill it on every restart),
@@ -212,33 +208,12 @@ type osSandboxPolicy struct {
 // group that the daemon stops) and --as-pid-1 (a harness as PID 1 of the
 // namespace would ignore the daemon's SIGTERM).
 func bwrapArgs(p osSandboxPolicy, bin string, args []string) []string {
-	a := []string{"--unshare-all"}
-	if p.Network {
-		a = append(a, "--share-net")
-	}
-	a = append(a, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc")
-	for _, h := range p.Hide {
-		a = append(a, "--tmpfs", h)
-	}
-	if p.Tmp != "" {
-		a = append(a, "--bind", p.Tmp, "/tmp")
-	}
-	for _, m := range p.Mask {
-		a = append(a, "--ro-bind", "/dev/null", m)
-	}
-	for _, v := range p.Visible {
-		a = append(a, "--ro-bind", v, v)
-	}
+	a := []string{"--unshare-all", "--share-net", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"}
 	for _, w := range p.Writable {
 		a = append(a, "--bind", w, w)
 	}
 	for _, r := range p.ReadOnly {
 		a = append(a, "--ro-bind", r.Src, r.Dst)
-	}
-	if p.SocketDir != "" {
-		// A folder, not the socket file: the daemon replaces the socket at
-		// every restart, and a file bind would keep the dead one.
-		a = append(a, "--bind", p.SocketDir, p.SocketDir)
 	}
 	if p.Dir != "" {
 		a = append(a, "--chdir", p.Dir)
@@ -249,58 +224,29 @@ func bwrapArgs(p osSandboxPolicy, bin string, args []string) []string {
 
 // osSandboxInput is what the daemon found out about one worker start.
 type osSandboxInput struct {
-	Level      string
-	WorkerDir  string      // the worker's private folder
-	Path       string      // the working folder (the worktree)
-	DotGit     string      // the .git entry of the working folder, when there is one
-	GitCommon  string      // the main repository's git folder
-	GitRoots   []string    // the narrow git folders a commit writes to
-	State      []string    // the harness's writable private state
-	StateRO    []mountPair // owner files bound read-only into the private state
-	Socket     string      // the agent-net socket
-	SocketDir  string      // the folder with the socket, bound to the sandbox
-	RuntimeDir string      // $XDG_RUNTIME_DIR, hidden
-	Masks      []string    // sockets hidden by /dev/null
-	Bin        string      // the resolved harness binary
+	WorkerDir string      // the worker's private folder
+	Path      string      // the working folder (the worktree)
+	Roots     []string    // the folders every worker may write (workerWriteRoots)
+	State     []string    // the harness's writable private state
+	StateRO   []mountPair // owner files bound read-only into the private state
+	SocketDir string      // the folder with the agent-net socket
 }
 
 // buildOSSandboxPolicy turns the facts of a start into the wrapper's policy.
+// The socket folder is bound as a folder, not the socket file: the daemon
+// makes a new socket at every restart, and a file bind would keep the dead one.
 func buildOSSandboxPolicy(in osSandboxInput) osSandboxPolicy {
-	p := osSandboxPolicy{
-		Network:   true,
-		Tmp:       filepath.Join(in.WorkerDir, "tmp"),
-		Mask:      in.Masks,
-		Socket:    in.Socket,
-		SocketDir: in.SocketDir,
-		Dir:       in.Path,
+	p := osSandboxPolicy{Dir: in.Path, ReadOnly: in.StateRO}
+	for _, w := range append(append(append([]string{in.Path, osSandboxTmp(in.WorkerDir)}, in.Roots...), in.State...), in.SocketDir) {
+		if w != "" && !containsString(p.Writable, w) {
+			p.Writable = append(p.Writable, w)
+		}
 	}
-	hidden := []string{"/tmp"}
-	if in.RuntimeDir != "" {
-		p.Hide = append(p.Hide, in.RuntimeDir)
-		hidden = append(hidden, in.RuntimeDir)
-	}
-	// The worker's folder holds what the daemon gives the harness to read (the
-	// commit hooks, OpenCode's session file); the main git folder holds the
-	// repository's config. Both may sit in a hidden folder, so they are bound
-	// read-only again. So is the harness binary when it is there.
-	p.Visible = append(p.Visible, in.WorkerDir)
-	if in.GitCommon != "" {
-		p.Visible = append(p.Visible, in.GitCommon)
-	}
-	if in.Bin != "" && underAny(in.Bin, hidden) {
-		p.Visible = append(p.Visible, in.Bin)
-	}
-	p.Writable = append(p.Writable, in.Path)
-	p.Writable = append(p.Writable, in.GitRoots...)
-	p.Writable = append(p.Writable, in.State...)
-	// The .git file or folder of the working folder stays read-only, so the
-	// worker cannot point git at a folder it controls or add a hook.
-	if in.DotGit != "" {
-		p.ReadOnly = append(p.ReadOnly, mountPair{in.DotGit, in.DotGit})
-	}
-	p.ReadOnly = append(p.ReadOnly, in.StateRO...)
 	return p
 }
+
+// osSandboxTmp is the worker's own temp folder: TMPDIR inside the wrapper.
+func osSandboxTmp(workerDir string) string { return filepath.Join(workerDir, "tmp") }
 
 // underAny tells whether path is one of dirs or below one of them.
 func underAny(path string, dirs []string) bool {
@@ -339,16 +285,11 @@ func (d *Daemon) osSandboxWrap(w *worker, bin string, args, env []string) (strin
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("the OS sandbox is on for this worker, but %w", err)
 	}
-	in, dir, err := d.osSandboxInputFor(w, bin)
+	in, dir, err := d.osSandboxInputFor(w)
 	if err != nil {
 		return "", nil, nil, err
 	}
-	set := osSandboxSetEnv(osSandboxTmpEnv(filepath.Join(in.WorkerDir, "tmp")))
-	if in.SocketDir != "" {
-		// Inside the sandbox the socket is the file in the bound folder, not
-		// the public symlink, which the hidden runtime folder does not carry.
-		set["AGENT_NET_SOCKET"] = in.Socket
-	}
+	set := osSandboxSetEnv(osSandboxTmp(in.WorkerDir))
 	switch harness {
 	case "pi":
 		if err := d.piPrivateAgent(&in, set); err != nil {
@@ -373,40 +314,26 @@ func (d *Daemon) osSandboxWrap(w *worker, bin string, args, env []string) (strin
 }
 
 // osSandboxInputFor collects the facts the wrapper's policy needs for a worker:
-// its private folder (made, with its tmp), its worktree and the git folders a
-// commit writes to. It also returns the private folder's path.
-func (d *Daemon) osSandboxInputFor(w *worker, bin string) (osSandboxInput, string, error) {
+// its private folder (made, with its tmp), its worktree and the folders every
+// worker may write. It also returns the private folder's path.
+func (d *Daemon) osSandboxInputFor(w *worker) (osSandboxInput, string, error) {
 	d.wmu.Lock()
-	level, path, dir := w.permissions, w.path, w.dir
+	path, dir := w.path, w.dir
 	d.wmu.Unlock()
 	if dir == "" {
 		dir = filepath.Join(d.cfg.StateDir, "workers", w.id)
 	}
-	if err := os.MkdirAll(filepath.Join(dir, "tmp"), 0o700); err != nil {
+	if err := os.MkdirAll(osSandboxTmp(dir), 0o700); err != nil {
 		return osSandboxInput{}, "", err
 	}
-	in := osSandboxInput{Level: level, WorkerDir: resolved(dir), Path: resolved(path),
-		RuntimeDir: runtimeDirToHide(), Masks: hostSocketMasks()}
-	if fileExists(d.cfg.SocketPath) {
-		// The socket lives in its own folder, and the sandbox binds the folder.
-		// It does not bind the socket file: the daemon creates a new socket at
-		// each restart, and a file bind would keep the stopped daemon's socket.
-		in.SocketDir = resolved(socketDir(d.cfg.SocketPath))
-		in.Socket = filepath.Join(in.SocketDir, filepath.Base(d.cfg.SocketPath))
-	}
-	if lp, err := exec.LookPath(bin); err == nil {
-		in.Bin = resolved(lp)
-	}
-	if dg := filepath.Join(in.Path, ".git"); fileExists(dg) {
-		in.DotGit = dg
-	}
+	in := osSandboxInput{WorkerDir: resolved(dir), Path: resolved(path)}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if common, err := gitOut(ctx, path, "rev-parse", "--path-format=absolute", "--git-common-dir"); err == nil && common != "" {
-		in.GitCommon = resolved(common)
-		for _, r := range workerGitRoots(ctx, path) {
-			in.GitRoots = append(in.GitRoots, resolved(r))
-		}
+	for _, r := range d.workerWriteRoots(ctx, w) {
+		in.Roots = append(in.Roots, resolved(r))
+	}
+	if fileExists(d.cfg.SocketPath) {
+		in.SocketDir = resolved(socketDir(d.cfg.SocketPath))
 	}
 	return in, dir, nil
 }
@@ -480,34 +407,6 @@ func copyPrivate(src, dst string) error {
 	return out.Close()
 }
 
-// runtimeDirToHide is the user's runtime folder ($XDG_RUNTIME_DIR, else
-// /run/user/<uid>): the systemd user bus and the user's agent sockets.
-func runtimeDirToHide() string {
-	dir := os.Getenv("XDG_RUNTIME_DIR")
-	if dir == "" {
-		dir = fmt.Sprintf("/run/user/%d", os.Getuid())
-	}
-	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
-		return ""
-	}
-	return resolved(dir)
-}
-
-// hostSocketMasks are the sockets that give root to their users and sit
-// outside the hidden folders: the Docker socket.
-func hostSocketMasks() []string {
-	var out []string
-	for _, p := range []string{"/run/docker.sock", "/var/run/docker.sock"} {
-		if _, err := os.Lstat(p); err != nil {
-			continue
-		}
-		if r := resolved(p); !containsString(out, r) {
-			out = append(out, r)
-		}
-	}
-	return out
-}
-
 func containsString(list []string, s string) bool {
 	for _, v := range list {
 		if v == s {
@@ -522,14 +421,14 @@ func fileExists(p string) bool {
 	return err == nil
 }
 
-// osSandboxSetEnv is the environment the wrapper gives a command inside it. Go
-// writes its temp files to the private tmp, as it does to TMPDIR, and not to
-// the Go temp folder on /dev/shm. The caches live in the private tmp too, which
-// the wrapper makes writable and the daemon removes with the worker.
+// osSandboxSetEnv is the environment the wrapper gives a command inside it:
+// every temp folder variable names the worker's own temp folder, which the
+// daemon removes with the worker. Go writes its build files there too, and not
+// to the Go temp folder on /dev/shm, which the wrapper's own /dev does not have.
 func osSandboxSetEnv(tmp string) map[string]string {
-	set := map[string]string{"TMPDIR": tmp, "GOTMPDIR": tmp}
-	for k, v := range workerCacheVars(filepath.Join(tmp, "cache")) {
-		set[k] = v
+	set := map[string]string{}
+	for _, k := range []string{"TMPDIR", "TMP", "TEMP", "GOTMPDIR"} {
+		set[k] = tmp
 	}
 	return set
 }

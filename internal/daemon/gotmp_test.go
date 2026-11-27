@@ -210,18 +210,6 @@ func TestWorkerToolEnvPicksTheGoTempFolderPerHarness(t *testing.T) {
 	}
 }
 
-// Under the OS wrapper a worker's Go temp files stay in its private /tmp. The
-// host's /dev/shm is not in the wrapper's view.
-func TestOSSandboxEnvPutsGoTempInThePrivateTmp(t *testing.T) {
-	set := osSandboxSetEnv("/tmp")
-	if set["GOTMPDIR"] != "/tmp" || set["TMPDIR"] != "/tmp" {
-		t.Fatalf("GOTMPDIR = %q, TMPDIR = %q, want /tmp for both", set["GOTMPDIR"], set["TMPDIR"])
-	}
-	if want := filepath.Join("/tmp", "cache", "uv"); set["UV_CACHE_DIR"] != want {
-		t.Fatalf("UV_CACHE_DIR = %q, want %q", set["UV_CACHE_DIR"], want)
-	}
-}
-
 // A sandboxed Claude or Codex worker may write the folder its shell uses, which
 // is the disk folder, even when the RAM folder has room.
 func TestSandboxedWorkersMayWriteTheDiskGoTempFolder(t *testing.T) {

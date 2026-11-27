@@ -21,5 +21,3 @@ func osSandboxTool() (string, error) { return "", errNoOSSandbox }
 func osSandboxCommand(p osSandboxPolicy, bin string, args []string) []string {
 	return append([]string{bin}, args...)
 }
-
-func osSandboxTmpEnv(tmp string) string { return tmp }

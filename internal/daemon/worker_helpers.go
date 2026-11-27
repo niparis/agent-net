@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -119,23 +120,24 @@ func (d *Daemon) changeWorkerStatus(w *worker, status string) *localSession {
 	return ls
 }
 
-// workerWriteRoots are the folders a worker's commands may write beyond its own
-// path: the git folders of a commit in its worktree, its package caches, and
-// the Go build and temp folders. A folder that cannot be made is left out.
+// workerWriteRoots are the folders every worker may write beyond its worktree
+// (decision 0197): the repository's git folder, the shared Go build cache and
+// Go temp folder, the Go module cache, and the worker's own package caches. A
+// folder is made when it is missing, and left out when it cannot be made. The
+// package caches come last: agy needs them there. A folder that holds the
+// home folder (a GOMODCACHE of "/" or of the home folder) is never one.
 func (d *Daemon) workerWriteRoots(ctx context.Context, w *worker) []string {
-	return d.workerWriteRootsThen(ctx, w.path, d.workerCacheRoot(w), d.workerGoCacheDir(), d.workerSandboxGoTmpDir())
-}
-
-// workerWriteRootsThen is workerWriteRoots for a harness that needs the folders
-// after the git roots in its own order: agy keeps the package cache last.
-func (d *Daemon) workerWriteRootsThen(ctx context.Context, path string, then ...string) []string {
-	paths := workerGitRoots(ctx, path)
-	for _, p := range then {
+	roots := workerGitDirs(ctx, w.path)
+	home, _ := os.UserHomeDir()
+	for _, p := range []string{d.workerGoCacheDir(), d.workerSandboxGoTmpDir(), d.workerGoModCache(w.path), d.workerCacheRoot(w)} {
+		if p == "" || slices.Contains(roots, p) || (home != "" && underAny(resolved(home), []string{resolved(p)})) {
+			continue
+		}
 		if err := os.MkdirAll(p, 0o700); err == nil {
-			paths = append(paths, p)
+			roots = append(roots, p)
 		}
 	}
-	return paths
+	return roots
 }
 
 // harnessBinary returns the path of an installed harness, from the inventory

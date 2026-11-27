@@ -1,7 +1,10 @@
 package daemon
 
 import (
+	"encoding/json"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -33,16 +36,15 @@ func requireRealSandbox(t *testing.T) {
 }
 
 // outsideHome is a folder the test can write and the sandbox can see but must
-// not write: not under /tmp, which the sandbox replaces with a private one.
+// not write.
 func outsideHome(t *testing.T) string {
 	t.Helper()
 	return sandboxFolder(t, "home")
 }
 
 // sandboxFolder makes a folder under /var/tmp for a sandbox test and removes it
-// with the test. It is not under /tmp or /dev/shm: the sandbox replaces /tmp with
-// the worker's own folder, and bubblewrap mounts a fresh /dev over /dev/shm, so
-// neither can be bound into the sandbox.
+// with the test. It is not on /dev/shm: bubblewrap mounts a fresh /dev, so
+// nothing there can be bound into the sandbox.
 func sandboxFolder(t *testing.T, name string) string {
 	t.Helper()
 	d, err := os.MkdirTemp("/var/tmp", "agent-net-osbox-"+name+"-")
@@ -96,32 +98,80 @@ func probeResults(t *testing.T, d *Daemon, w *worker) map[string]string {
 	return out
 }
 
-// A worker's write outside its worktree fails, and a write inside works. The
-// script reports to $TMPDIR/result, which is the worker's private tmp folder
-// on both OSes.
-func TestRealSandboxWriteBoundary(t *testing.T) {
-	requireRealSandbox(t)
-	outside := outsideHome(t)
+// sandboxHarnessCopy copies the running test binary to a folder under /var/tmp
+// and returns the copy's path. The fake harnesses are this binary, and go test
+// runs it from the Go temp folder, which may be on /dev/shm, out of bubblewrap's
+// reach.
+func sandboxHarnessCopy(t *testing.T) string {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := os.Open(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	dst := filepath.Join(sandboxFolder(t, "bin"), filepath.Base(exe))
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(out, src); err != nil {
+		out.Close()
+		t.Fatal(err)
+	}
+	if err := out.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return dst
+}
+
+// checkWriteFence runs the fence probe as the harness of a worker in the OS
+// wrapper and checks decision 0197: commit, switch -c, a write to TMPDIR, a
+// unix socket in TMPDIR and a loopback listener all work, and a write in a home
+// folder outside the worktree fails.
+func checkWriteFence(t *testing.T) {
+	t.Helper()
+	home := outsideHome(t)
 	d, w, _ := sandboxWorker(t, protocol.WorkersSandboxed)
-	script := `
-try() { if out=$("$@" 2>&1); then echo written; else echo "$out"; fi; }
-{
-echo "outside: $(try touch "$OUTSIDE/probe")"
-echo "inside: $(try touch "$PWD/probe")"
-} > "$TMPDIR/result" 2>&1
-`
-	env := workerEnv(os.Environ(), map[string]string{"OUTSIDE": outside})
-	if err := d.spawnWorker(w, "/bin/sh", []string{"-c", script}, env); err != nil {
+	env := workerEnv(os.Environ(), map[string]string{envFakeFenceProbe: "1", envFakeFenceHome: home, "HOME": home})
+	if err := d.spawnWorker(w, sandboxHarnessCopy(t), nil, env); err != nil {
 		t.Fatal(err)
 	}
 	waitExit(t, w)
-	got := probeResults(t, d, w)
-	if got["inside"] != "written" || !fileExists(filepath.Join(w.path, "probe")) {
-		t.Errorf("a write inside the worktree failed: %v", got)
+	raw, err := os.ReadFile(filepath.Join(d.cfg.StateDir, "workers", w.id, "tmp", "fence.json"))
+	if err != nil {
+		t.Fatalf("no result from the sandboxed probe: %v (log: %s)", err, d.workerLogTail(w))
 	}
-	if got["outside"] == "written" || fileExists(filepath.Join(outside, "probe")) {
-		t.Errorf("a write outside the worktree worked: %v", got)
+	var got fenceProbe
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
 	}
+	for name, res := range map[string]string{"commit": got.Commit, "switch -c": got.SwitchC, "TMPDIR write": got.TmpWrite,
+		"unix socket in TMPDIR": got.UnixSocket, "listen on 127.0.0.1": got.Loopback} {
+		if res != "" {
+			t.Errorf("%s failed in the sandbox: %s", name, res)
+		}
+	}
+	if got.HomeWrite == "" || fileExists(filepath.Join(home, "probe")) {
+		t.Errorf("a write in the home folder outside the worktree worked: %+v", got)
+	}
+	if b, err := exec.Command("git", "-C", w.path, "branch", "--show-current").Output(); err != nil || strings.TrimSpace(string(b)) != "fence-probe" {
+		t.Errorf("the worktree is on %q after switch -c, want fence-probe (%v)", b, err)
+	}
+	if m := readOSSandboxMarker(filepath.Join(d.cfg.StateDir, "workers", w.id)); m != osSandboxName {
+		t.Errorf("marker %q, want %q", m, osSandboxName)
+	}
+}
+
+// The write fence on the real wrapper of this OS: sandbox-exec on macOS,
+// bubblewrap on Linux (which TestOSSandboxBwrapWriteFence also runs without
+// the opt-in).
+func TestRealSandboxWriteFence(t *testing.T) {
+	requireRealSandbox(t)
+	checkWriteFence(t)
 }
 
 // A DNS lookup and an HTTPS connection work inside the wrapper, so a worker can

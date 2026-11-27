@@ -11,102 +11,67 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// The bubblewrap command line of a worker, for each level. The order matters:
-// bubblewrap applies the mounts in order, so the host is read-only first, the
-// control folders are hidden next, and the writable and protected paths come
-// last, with the agent-net socket bound after everything that could hide it.
+// The bubblewrap command line of a worker (decision 0197): the host is
+// read-only and shares its network, nothing is hidden, and the writable
+// folders and the read-only owner files come after it, in order.
 func TestBwrapArgs(t *testing.T) {
-	base := osSandboxPolicy{
-		Network:  true,
-		Hide:     []string{"/run/user/1000"},
-		Tmp:      "/state/workers/w_1/tmp",
-		Mask:     []string{"/run/docker.sock"},
-		Visible:  []string{"/state/workers/w_1", "/repo/.git"},
-		Writable: []string{"/wt", "/repo/.git/worktrees/w_1", "/repo/.git/objects"},
-		ReadOnly: []mountPair{{Src: "/wt/.git", Dst: "/wt/.git"}},
-		Socket:   "/run/user/1000/agent-net/sock/daemon.sock", SocketDir: "/run/user/1000/agent-net/sock",
-		Dir: "/wt",
+	p := osSandboxPolicy{
+		Writable: []string{"/wt", "/state/workers/w_1/tmp", "/repo/.git"},
+		ReadOnly: []mountPair{{Src: "/home/me/.pi/agent/settings.json", Dst: "/state/workers/w_1/pi-agent/settings.json"}},
+		Dir:      "/wt",
 	}
-	sandboxed := []string{
+	want := []string{
 		"--unshare-all", "--share-net",
 		"--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
-		"--tmpfs", "/run/user/1000",
-		"--bind", "/state/workers/w_1/tmp", "/tmp",
-		"--ro-bind", "/dev/null", "/run/docker.sock",
-		"--ro-bind", "/state/workers/w_1", "/state/workers/w_1",
-		"--ro-bind", "/repo/.git", "/repo/.git",
 		"--bind", "/wt", "/wt",
-		"--bind", "/repo/.git/worktrees/w_1", "/repo/.git/worktrees/w_1",
-		"--bind", "/repo/.git/objects", "/repo/.git/objects",
-		"--ro-bind", "/wt/.git", "/wt/.git",
-		"--bind", "/run/user/1000/agent-net/sock", "/run/user/1000/agent-net/sock",
+		"--bind", "/state/workers/w_1/tmp", "/state/workers/w_1/tmp",
+		"--bind", "/repo/.git", "/repo/.git",
+		"--ro-bind", "/home/me/.pi/agent/settings.json", "/state/workers/w_1/pi-agent/settings.json",
 		"--chdir", "/wt",
 		"--", "/bin/pi", "--mode", "rpc",
 	}
-	minimal := osSandboxPolicy{Network: true, Tmp: "/s/tmp", Dir: "/wt"}
-
-	for _, tc := range []struct {
-		name string
-		p    osSandboxPolicy
-		want []string
-	}{
-		{"sandboxed", base, sandboxed},
-		{"minimal", minimal, []string{
-			"--unshare-all", "--share-net",
-			"--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
-			"--bind", "/s/tmp", "/tmp",
-			"--chdir", "/wt",
-			"--", "/bin/pi", "--mode", "rpc",
-		}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got := bwrapArgs(tc.p, "/bin/pi", []string{"--mode", "rpc"})
-			if !slices.Equal(got, tc.want) {
-				t.Fatalf("bwrap args:\n got %q\nwant %q", got, tc.want)
-			}
-			// A worker outlives the daemon, and the daemon stops it through
-			// its process group: neither flag may appear.
-			for _, flag := range []string{"--die-with-parent", "--new-session", "--as-pid-1"} {
-				if slices.Contains(got, flag) {
-					t.Fatalf("bwrap args have %s: %q", flag, got)
-				}
-			}
-		})
+	got := bwrapArgs(p, "/bin/pi", []string{"--mode", "rpc"})
+	if !slices.Equal(got, want) {
+		t.Fatalf("bwrap args:\n got %q\nwant %q", got, want)
+	}
+	// A worker outlives the daemon, and the daemon stops it through its
+	// process group: neither flag may appear.
+	for _, flag := range []string{"--die-with-parent", "--new-session", "--as-pid-1"} {
+		if slices.Contains(got, flag) {
+			t.Fatalf("bwrap args have %s: %q", flag, got)
+		}
 	}
 }
 
-// The policy says what is writable: the worktree, the git folders and the
-// harness's own private state.
-func TestOSSandboxPolicyLevels(t *testing.T) {
+// The policy has one rule (decision 0197): the worktree, the worker's own temp
+// folder, the folders every worker may write, the harness's private state and
+// the agent-net socket folder are writable, each once.
+func TestOSSandboxPolicyWritable(t *testing.T) {
 	in := osSandboxInput{
-		Level: protocol.WorkersSandboxed, WorkerDir: "/s/w_1", Path: "/wt", DotGit: "/wt/.git",
-		GitCommon: "/repo/.git", GitRoots: []string{"/repo/.git/worktrees/w_1", "/repo/.git/objects"},
-		State: []string{"/s/w_1/data"}, Socket: "/run/user/1000/agent-net/sock/daemon.sock",
-		SocketDir:  "/run/user/1000/agent-net/sock",
-		RuntimeDir: "/run/user/1000", Masks: []string{"/run/docker.sock"},
+		WorkerDir: "/s/w_1", Path: "/wt",
+		Roots:     []string{"/repo/.git", "/gocache", "/s/w_1/cache"},
+		State:     []string{"/s/w_1/data", "/repo/.git"},
+		StateRO:   []mountPair{{"/home/me/.pi/agent/models.json", "/s/w_1/pi-agent/models.json"}},
+		SocketDir: "/run/user/1000/agent-net/sock",
 	}
 	p := buildOSSandboxPolicy(in)
-	if !p.Network || p.Tmp != "/s/w_1/tmp" || p.Dir != "/wt" || p.Socket != in.Socket || p.SocketDir != in.SocketDir {
-		t.Fatalf("policy: %+v", p)
-	}
-	if want := []string{"/wt", "/repo/.git/worktrees/w_1", "/repo/.git/objects", "/s/w_1/data"}; !slices.Equal(p.Writable, want) {
+	want := []string{"/wt", "/s/w_1/tmp", "/repo/.git", "/gocache", "/s/w_1/cache", "/s/w_1/data", "/run/user/1000/agent-net/sock"}
+	if !slices.Equal(p.Writable, want) {
 		t.Fatalf("writable %q, want %q", p.Writable, want)
 	}
-	if want := []string{"/s/w_1", "/repo/.git"}; !slices.Equal(p.Visible, want) {
-		t.Fatalf("visible %q, want %q", p.Visible, want)
+	if p.Dir != "/wt" || !slices.Equal(p.ReadOnly, in.StateRO) {
+		t.Fatalf("policy: %+v", p)
 	}
-	if want := []mountPair{{"/wt/.git", "/wt/.git"}}; !slices.Equal(p.ReadOnly, want) {
-		t.Fatalf("read-only %q, want %q", p.ReadOnly, want)
-	}
+}
 
-	// A harness binary in a hidden folder (a test binary in /tmp) stays visible.
-	in.Bin = "/tmp/go-build1/daemon.test"
-	if p = buildOSSandboxPolicy(in); !slices.Contains(p.Visible, in.Bin) {
-		t.Fatalf("a harness in /tmp is not bound back: %q", p.Visible)
-	}
-	in.Bin = "/usr/bin/pi"
-	if p = buildOSSandboxPolicy(in); slices.Contains(p.Visible, in.Bin) {
-		t.Fatalf("a harness outside the hidden folders is bound again: %q", p.Visible)
+// Inside the wrapper every temp folder variable names the worker's own temp
+// folder, so tools that read TMP or TEMP stay inside the fence too.
+func TestOSSandboxSetEnvNamesTheWorkerTemp(t *testing.T) {
+	set := osSandboxSetEnv("/s/w_1/tmp")
+	for _, k := range []string{"TMPDIR", "TMP", "TEMP", "GOTMPDIR"} {
+		if set[k] != "/s/w_1/tmp" {
+			t.Errorf("%s = %q, want the worker's temp folder", k, set[k])
+		}
 	}
 }
 
@@ -323,37 +288,27 @@ func TestOSSandboxDefaultOnWraps(t *testing.T) {
 	}
 }
 
-// The profile that sandbox-exec runs says what the policy says: the worktree,
-// the git folders and the private state are writable, the read-only paths are
-// denied after them (the later rule wins), and only the agent-net socket is
-// reachable.
+// The profile that sandbox-exec runs says what the policy says (decision 0197):
+// writes only in the writable folders, the owner files of the private state
+// denied after them (the later rule wins), and no rule for reads, the network
+// or unix sockets.
 func TestSeatbeltProfile(t *testing.T) {
 	p := buildOSSandboxPolicy(osSandboxInput{
-		Level: protocol.WorkersSandboxed, WorkerDir: "/state/workers/w_1", Path: "/work/wt",
-		DotGit: "/work/wt/.git", GitCommon: "/repo/.git", GitRoots: []string{"/repo/.git/objects", "/repo/.git/refs"},
-		State: []string{"/state/workers/w_1/data"}, Socket: "/state/agent-net.sock",
+		WorkerDir: "/state/workers/w_1", Path: "/work/wt", Roots: []string{"/repo/.git"},
+		State:   []string{"/state/workers/w_1/pi-agent"},
+		StateRO: []mountPair{{"/home/me/.pi/agent/settings.json", "/state/workers/w_1/pi-agent/settings.json"}},
 	})
 	got := seatbeltProfile(p)
-	for _, want := range []string{
-		"(version 1)\n(allow default)\n(deny file-write*)\n",
-		`(allow file-write* (subpath "/work/wt") (subpath "/repo/.git/objects") (subpath "/repo/.git/refs") (subpath "/state/workers/w_1/data") (subpath "/state/workers/w_1/tmp"))`,
-		`(deny file-write* (subpath "/work/wt/.git"))`,
-		`(allow network-outbound (remote unix-socket (path-literal "/state/agent-net.sock")))`,
-		`(deny network-outbound (remote unix-socket))`,
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("profile lacks %q:\n%s", want, got)
-		}
-	}
-	if strings.Contains(got, "(deny network*)") {
-		t.Errorf("the network is cut at the sandboxed level:\n%s", got)
-	}
-	if strings.Index(got, `(allow file-write* (subpath "/work/wt")`) > strings.Index(got, `(deny file-write* (subpath "/work/wt/.git"))`) {
-		t.Error("the read-only .git is denied before the worktree is allowed, so the allow wins")
+	want := "(version 1)\n(allow default)\n(deny file-write*)\n" +
+		`(allow file-write* (subpath "/work/wt") (subpath "/state/workers/w_1/tmp") (subpath "/repo/.git") (subpath "/state/workers/w_1/pi-agent"))` + "\n" +
+		`(allow file-write* (literal "/dev/null") (literal "/dev/zero") (literal "/dev/dtracehelper") (regex #"^/dev/tty") (regex #"^/dev/fd/"))` + "\n" +
+		`(deny file-write* (subpath "/state/workers/w_1/pi-agent/settings.json"))` + "\n"
+	if got != want {
+		t.Errorf("profile:\n%s\nwant:\n%s", got, want)
 	}
 
 	// a quote in a path cannot end the string early
-	q := seatbeltProfile(osSandboxPolicy{Network: true, Writable: []string{`/a"b) (allow default`}})
+	q := seatbeltProfile(osSandboxPolicy{Writable: []string{`/a"b) (allow default`}})
 	if !strings.Contains(q, `(subpath "/a\"b) (allow default")`) {
 		t.Errorf("path not quoted:\n%s", q)
 	}

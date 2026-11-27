@@ -4,7 +4,6 @@ package daemon
 
 import (
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -32,86 +31,10 @@ func requireBwrap(t *testing.T) {
 	t.Setenv("TMPDIR", sandboxFolder(t, "tmp"))
 }
 
-// sandboxHarnessCopy copies the running test binary to a folder under /var/tmp
-// and returns the copy's path. The fake harnesses are this binary, and go test
-// runs it from the Go temp folder, which may be on /dev/shm. The sandbox binds the
-// harness by its path, so it must come from a folder the sandbox can see.
-func sandboxHarnessCopy(t *testing.T) string {
-	t.Helper()
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	src, err := os.Open(exe)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer src.Close()
-	dst := filepath.Join(sandboxFolder(t, "bin"), filepath.Base(exe))
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o755)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := io.Copy(out, src); err != nil {
-		out.Close()
-		t.Fatal(err)
-	}
-	if err := out.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return dst
-}
-
-// The probe script writes its findings to /tmp/result, which is the private
-// /tmp of the sandbox: the tmp folder in the worker's own folder.
-const sandboxProbeScript = `
-try() { if out=$("$@" 2>&1); then echo written; else echo "$out"; fi; }
-{
-echo "home: $(try touch "$HOME/probe")"
-echo "worktree: $(try touch "$PWD/probe")"
-echo "tmp: $(try touch /tmp/probe)"
-echo "gitconfig: $(try touch "$COMMON/config")"
-echo "hooks: $(try touch "$COMMON/hooks/probe")"
-echo "dotgit: $(try sh -c 'echo x >> .git')"
-if git add probe >/dev/null 2>&1 && git -c user.name=t -c user.email=t@example.com commit -qm probe >/dev/null 2>&1; then echo "commit: ok"; else echo "commit: failed"; fi
-} > /tmp/result 2>&1
-`
-
-// A sandboxed harness writes in its worktree, its private /tmp and the git
-// folders of a commit, and nowhere else: not in the home folder, not in the
-// main repository's config or hooks, not in the worktree's .git file.
-func TestOSSandboxKeepsWritesInTheWorktree(t *testing.T) {
+// The write fence of decision 0197 under bubblewrap.
+func TestOSSandboxBwrapWriteFence(t *testing.T) {
 	requireBwrap(t)
-	home := outsideHome(t)
-	d, w, repo := sandboxWorker(t, protocol.WorkersSandboxed)
-	env := workerEnv(os.Environ(), map[string]string{"HOME": home, "COMMON": filepath.Join(resolved(repo), ".git")})
-	if err := d.spawnWorker(w, "/bin/sh", []string{"-c", sandboxProbeScript}, env); err != nil {
-		t.Fatal(err)
-	}
-	waitExit(t, w)
-	got := probeResults(t, d, w)
-	for _, k := range []string{"home", "gitconfig", "hooks", "dotgit"} {
-		if !strings.Contains(got[k], "Read-only file system") {
-			t.Errorf("%s: %q, want a read-only refusal (all: %v)", k, got[k], got)
-		}
-	}
-	for _, k := range []string{"worktree", "tmp"} {
-		if got[k] != "written" {
-			t.Errorf("%s: %q, want written", k, got[k])
-		}
-	}
-	if got["commit"] != "ok" {
-		t.Errorf("a commit in the worktree failed: %v", got)
-	}
-	if fileExists(filepath.Join(home, "probe")) {
-		t.Error("the sandboxed harness wrote in the home folder")
-	}
-	if !fileExists(filepath.Join(w.path, "probe")) {
-		t.Error("the worktree write did not reach the worktree")
-	}
-	if m := readOSSandboxMarker(filepath.Join(d.cfg.StateDir, "workers", w.id)); m != osSandboxName {
-		t.Errorf("marker %q, want %q", m, osSandboxName)
-	}
+	checkWriteFence(t)
 }
 
 // groupMembers lists the processes in a process group, as the daemon sees
@@ -164,9 +87,9 @@ func TestOSSandboxSocketSurvivesDaemonRestart(t *testing.T) {
 
 	env := workerEnv(os.Environ(), map[string]string{
 		envFakeSocketProbe:      "1",
-		envFakeSocketProbeReady: "/tmp/ready",
-		envFakeSocketProbeGate:  "/tmp/gate",
-		envFakeSocketProbeOut:   "/tmp/result",
+		envFakeSocketProbeReady: filepath.Join(dir, "tmp", "ready"),
+		envFakeSocketProbeGate:  filepath.Join(dir, "tmp", "gate"),
+		envFakeSocketProbeOut:   filepath.Join(dir, "tmp", "result"),
 	})
 	if err := d.spawnWorker(w, sandboxHarnessCopy(t), nil, env); err != nil {
 		t.Fatal(err)
@@ -214,11 +137,7 @@ func TestOSSandboxPiWorkerEndToEnd(t *testing.T) {
 	t.Setenv("PI_CODING_AGENT_DIR", agent)
 	t.Setenv(envFakePiProbeHome, home)
 	t.Setenv(envFakePiProbeExt, "1")
-	// The test binary is the fake `pi` itself, as in the OpenCode test. A
-	// launcher script would not do: the test binary usually sits under /tmp,
-	// which the sandbox replaces with the worker's private tmp, so a launcher
-	// that execs it finds nothing there. The sandbox binds the harness binary
-	// itself, so pointing at the binary keeps it visible.
+	// The test binary is the fake `pi` itself, as in the OpenCode test.
 	t.Setenv(envFakePi, "1")
 	sessions := t.TempDir()
 	t.Setenv("PI_CODING_AGENT_SESSION_DIR", sessions)
@@ -238,7 +157,7 @@ func TestOSSandboxPiWorkerEndToEnd(t *testing.T) {
 	if res.OSSandbox != osSandboxName {
 		t.Errorf("start result os_sandbox %q", res.OSSandbox)
 	}
-	if !strings.Contains(res.Task.Body, "(sandboxed by bubblewrap): writes outside your worktree and /tmp fail") {
+	if !strings.Contains(res.Task.Body, "(sandboxed by bubblewrap): you may write only in your worktree, $TMPDIR") {
 		t.Errorf("the brief does not name the wrapper:\n%s", res.Task.Body)
 	}
 	if a := w.agentOf(t, res.SessionID); a == nil || a.Worker == nil || a.Worker.OSSandbox != osSandboxName {
@@ -251,7 +170,7 @@ func TestOSSandboxPiWorkerEndToEnd(t *testing.T) {
 		t.Errorf("extension write: %q, want a read-only refusal", rec.ExtWrite)
 	}
 	if rec.TmpWrite != "" {
-		t.Errorf("private /tmp write: %q", rec.TmpWrite)
+		t.Errorf("TMPDIR write: %q", rec.TmpWrite)
 	}
 	rows, _ := w.d.st.workers()
 	if len(rows) != 1 {
@@ -265,7 +184,7 @@ func TestOSSandboxPiWorkerEndToEnd(t *testing.T) {
 		t.Errorf("the private agent folder has no copy of the credentials: %q %v", b, err)
 	}
 	if !fileExists(filepath.Join(dir, "tmp", "fake-pi-probe")) {
-		t.Error("the private /tmp is not the worker's tmp folder")
+		t.Error("TMPDIR is not the worker's tmp folder")
 	}
 	if fileExists(filepath.Join(home, "probe")) {
 		t.Error("the worker wrote in the home folder")

@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -917,7 +918,7 @@ func TestAgyDeniedText(t *testing.T) {
 func TestAgyWorkerGitDirsInLinkedWorktree(t *testing.T) {
 	t.Parallel()
 	w, dir, repo := startAgyNode(t, shortSet)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:handback", Isolation: protocol.IsolationWorktree})
+	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:handback", Isolation: protocol.IsolationWorktree})
 	w.waitNotice(t, 1)
 	r := agyRecords(dir)[0]
 	var got []string
@@ -926,11 +927,10 @@ func TestAgyWorkerGitDirsInLinkedWorktree(t *testing.T) {
 			got = append(got, r.Args[i+1])
 		}
 	}
-	common := filepath.Join(repo, ".git")
-	for _, want := range []string{filepath.Join(common, "worktrees", filepath.Base(res.Worktree)), filepath.Join(common, "objects"), filepath.Join(common, "refs"), filepath.Join(common, "logs")} {
-		if !strings.Contains("\n"+strings.Join(got, "\n")+"\n", "\n"+want+"\n") {
-			t.Fatalf("git folder %s missing from --add-dir: %v", want, got)
-		}
+	// The whole git folder, so commit, switch -c, push -u and worktree add
+	// work (decision 0197).
+	if want := filepath.Join(repo, ".git"); !slices.Contains(got, want) {
+		t.Fatalf("git folder %s missing from --add-dir: %v", want, got)
 	}
 }
 

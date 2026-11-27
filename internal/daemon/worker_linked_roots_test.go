@@ -25,3 +25,15 @@ func TestCodexLinkedWorktreeWritableRoots(t *testing.T) {
 		t.Fatalf("got %v, want exactly %v", got, want)
 	}
 }
+
+// A worker gets the whole git folder of its repository, so commit, switch -c,
+// push -u and worktree add work in a linked worktree (decision 0197).
+func TestWorkerGitDirsIsTheWholeGitFolder(t *testing.T) {
+	repo := newRepo(t, "linked")
+	linked := filepath.Join(t.TempDir(), "checkout")
+	gitIn(t, repo, "worktree", "add", "-q", "-b", "linked-test", linked)
+	got := workerGitDirs(context.Background(), linked)
+	if want := []string{filepath.Join(repo, ".git")}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}

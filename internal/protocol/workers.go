@@ -1036,7 +1036,7 @@ func WorkerTaskBodyBriefBar(harness string, brief WorkerBrief, worktree, branch,
 	}
 	b += "\n- " + WorkerPermissionsLine(level, harness, osSandbox)
 	if OSSandboxWrapper(osSandbox) != "" {
-		b += ": writes outside your worktree and /tmp fail (read-only file system)"
+		b += ": you may write only in your worktree, $TMPDIR, your caches and the repository's git folder; other writes fail (read-only file system)"
 	}
 	if worktree != "" {
 		b += "\n\nYou work in a git worktree of the project at " + worktree + " on the branch " + branch +
