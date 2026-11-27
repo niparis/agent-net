@@ -19,7 +19,12 @@ Four subsystems each kept their own table, tick and tools, and each did a job th
 3. **Findings are gone.** No `agent_learn`, no automatic notes. The `playbook` table stays as the owner's and the CTO's notes about a model, harness, project or machine (`playbook_set`, `playbook_get`), and a note still reaches a worker in its start result. Agents keep what they learn in gateway notes (`agent_note_write`). Unpinned automatic notes are deleted; pinned ones stay.
 4. **Permission proposals are gone.** An agent that needs a Claude Code permission rule or folder trust asks the chief of staff or the CTO with a message. Only the owner's direct instruction grants it, through `permission_apply` (the owner's command line, or the CTO with his words, which the daemon verifies). The gateway applies on each machine at once, logs the result with his words, and stores nothing. A folder that answers `needs_trust` at a start is one request to the chief, once per machine and folder.
 
-One appended migration drops `session_dues`, `learned_suggestions` and its side tables, `findings` and `permission_proposals`.
+One appended migration drops `session_dues`, `learned_suggestions` and its side tables, `findings` and `permission_proposals`. Before the drop, in the same transaction, it keeps two kinds of rows:
+
+- Each pending permission proposal becomes one message to the chief of staff. It names the proposer, the kind, the rules, the targets, the machine, the reason and the exact `permission_apply` call the CTO runs if the owner agrees. A proposer that is a known session sends it as a request, so the chief's reply reaches the proposer; otherwise agent-net sends it as a notice. With no chief, the notice goes to the CTO. The idempotency key `owner_item:perm_migrate:<proposal id>` keeps a replay from sending it twice.
+- Each finding becomes an owner-wide gateway note named `finding-<id>-<subject kind>-<subject>`, with the finding, its subject, reporter, date, status and evidence. The unique note name keeps a replay from adding a second copy.
+
+A replay of the older permission column migrations skips the table once it is gone.
 
 ## What we give up
 

@@ -2103,6 +2103,12 @@ func (s *Store) migrate() error {
 				}
 			}
 		}
+		if strings.Contains(migrations[i], retiredTablesMarker) {
+			if err := s.keepRetiredRows(tx); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+		}
 		if strings.Contains(migrations[i], TreeInvariantsMarker) {
 			if _, err := s.applyTreeInvariantsTx(tx); err != nil {
 				tx.Rollback()
@@ -2240,9 +2246,14 @@ func (s *Store) migrate() error {
 			}
 		}
 		if strings.Contains(migrations[i], "permission owner words column") {
+			// retiredTablesDropMigration drops the table, so a replay after
+			// it has nothing to change.
 			var has int
-			err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('permission_proposals') WHERE name='owner_words'`).Scan(&has)
-			if err == nil && has == 0 {
+			exists, err := hasTable(tx, "permission_proposals")
+			if err == nil && exists {
+				err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('permission_proposals') WHERE name='owner_words'`).Scan(&has)
+			}
+			if err == nil && exists && has == 0 {
 				_, err = tx.Exec(`ALTER TABLE permission_proposals ADD COLUMN owner_words TEXT NOT NULL DEFAULT ''`)
 			}
 			if err != nil {
@@ -2251,9 +2262,14 @@ func (s *Store) migrate() error {
 			}
 		}
 		if strings.Contains(migrations[i], "permission decided reason column") {
+			// retiredTablesDropMigration drops the table, so a replay after
+			// it has nothing to change.
 			var has int
-			err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('permission_proposals') WHERE name='decided_reason'`).Scan(&has)
-			if err == nil && has == 0 {
+			exists, err := hasTable(tx, "permission_proposals")
+			if err == nil && exists {
+				err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('permission_proposals') WHERE name='decided_reason'`).Scan(&has)
+			}
+			if err == nil && exists && has == 0 {
 				_, err = tx.Exec(`ALTER TABLE permission_proposals ADD COLUMN decided_reason TEXT NOT NULL DEFAULT ''`)
 			}
 			if err != nil {
