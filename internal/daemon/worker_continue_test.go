@@ -636,3 +636,92 @@ func TestContinueOfAPausedWorkerKeepsItsWork(t *testing.T) {
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
 	w.workerStopped(t, g, protocol.StopRequested)
 }
+
+// The state block comes from git: the branch is behind main and the worktree
+// has a changed tracked file, and the block says both with full hashes.
+func TestContinueStateBlockShowsBehindMainAndUncommitted(t *testing.T) {
+	t.Parallel()
+	repo := newRepo(t, "shop")
+	gitIn(t, repo, "switch", "-q", "-c", "agent-net/w_old")
+	if err := os.WriteFile(filepath.Join(repo, "work.txt"), []byte("work\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, repo, "add", "work.txt")
+	gitIn(t, repo, "commit", "-q", "-m", "work")
+	gitIn(t, repo, "switch", "-q", "main")
+	base := gitOutT(t, repo, "rev-parse", "HEAD")
+	for _, name := range []string{"a.txt", "b.txt"} {
+		if err := os.WriteFile(filepath.Join(repo, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		gitIn(t, repo, "add", name)
+		gitIn(t, repo, "commit", "-q", "-m", name)
+	}
+	gitIn(t, repo, "switch", "-q", "agent-net/w_old")
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	head := gitOutT(t, repo, "rev-parse", "HEAD")
+	got := continueStateBlock(t.Context(), repo, "agent-net/w_old")
+	for _, want := range []string{"Current state", "- branch: agent-net/w_old", "- head: " + head,
+		"- merge-base with main: " + base, "- main is 2 commits ahead of that base",
+		"- uncommitted tracked changes in the worktree: yes"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("state block lacks %q:\n%s", want, got)
+		}
+	}
+	gitIn(t, repo, "checkout", "--", "README.md")
+	if got := continueStateBlock(t.Context(), repo, "agent-net/w_old"); !strings.Contains(got, "worktree: no") {
+		t.Errorf("clean worktree not reported:\n%s", got)
+	}
+}
+
+// Two continues with done lists in a row: the task starts with the state
+// block, the newest list is the only current one, and the older lists show once
+// as history. Nothing is stacked as "Also:".
+func TestContinueWithDoneListShowsOnlyTheNewestRoundAsCurrent(t *testing.T) {
+	t.Parallel()
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	a := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Isolation: protocol.IsolationWorktree,
+		Problem: "the login page fails", Done: []string{"first outcome"}, Scope: "first scope"})
+	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: a.SessionID})
+	w.workerStopped(t, g, protocol.StopRequested)
+	b, err := w.startDefault(protocol.WorkerStartRequest{Continue: a.SessionID, Problem: "round two problem", Done: []string{"second outcome"}, Evidence: []string{"round two evidence"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := b.Task.Body
+	if !strings.HasPrefix(strings.TrimSpace(body[strings.Index(body, "Current state"):]), "Current state") || !strings.Contains(body, "- head: "+gitOutT(t, b.Worktree, "rev-parse", "HEAD")) {
+		t.Errorf("task has no state block with the head:\n%s", body)
+	}
+	for _, want := range []string{briefOriginalHeading + "\nthe login page fails", briefProblemHeading + "\nround two problem", "- round two evidence",
+		briefRoundHeading + "\n- second outcome", briefHistoryHeading + "\n- first outcome"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("task lacks %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "Also:") || strings.Contains(body, "first scope") {
+		t.Errorf("task stacks the old brief:\n%s", body)
+	}
+	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: b.SessionID})
+	w.workerStopped(t, g, protocol.StopRequested)
+	c, err := w.startDefault(protocol.WorkerStartRequest{Continue: b.SessionID, Done: []string{"third outcome"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = c.Task.Body
+	for _, want := range []string{briefRoundHeading + "\n- third outcome", "- second outcome", "- first outcome", briefOriginalHeading + "\nthe login page fails"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("second continue lacks %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "round two problem") || strings.Count(body, "first outcome") != 1 || strings.Count(body, "second outcome") != 1 || strings.Contains(body, "Also:") {
+		t.Errorf("second continue shows an older round as current or repeats it:\n%s", body)
+	}
+	if i, j := strings.Index(body, "third outcome"), strings.Index(body, briefHistoryHeading); i > j {
+		t.Errorf("newest done list comes after the history:\n%s", body)
+	}
+}

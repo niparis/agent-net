@@ -148,15 +148,24 @@ func (d *Daemon) awaitWorkerEnd(ctx context.Context, id, session string) (*worke
 	return nil, fmt.Errorf("this machine has no record of worker %s any more", session)
 }
 
-// continueTaskText is the text a continue runs: the old first task with the
-// caller's added work, after the continue line. The judge reads the same text
-// when the caller adds work, and the start uses it.
-func (d *Daemon) continueTaskText(r *workerRow, where, added string) string {
-	text := protocol.ContinueIntroWithSettings(r.EndedReason, where, d.SettingsSnapshot(), r.Project) + "\n\n" + r.TaskFull
-	if added != "" {
-		text += "\n\nAlso: " + added
+// continueBody is what a continue adds after the continue line, and what the
+// new worker's record keeps. A brief with a done list makes a new round: one
+// current done list, older ones as history. Anything else keeps the old first
+// task with the caller's free text added.
+func continueBody(r *workerRow, added string, brief *protocol.WorkerBrief) string {
+	if brief != nil && len(brief.DoneLines()) > 0 {
+		return continueRound(r.TaskFull, *brief)
 	}
-	return text
+	if added != "" {
+		return r.TaskFull + "\n\nAlso: " + added
+	}
+	return r.TaskFull
+}
+
+// continueTaskText is the text the judge reads for a continue: the continue
+// line and the body. The start puts the state block before it.
+func (d *Daemon) continueTaskText(r *workerRow, where, added string, brief *protocol.WorkerBrief) string {
+	return protocol.ContinueIntroWithSettings(r.EndedReason, where, d.SettingsSnapshot(), r.Project) + "\n\n" + continueBody(r, added, brief)
 }
 
 // continueWhere is the place a continued worker starts: the old worker's
@@ -217,7 +226,7 @@ func (d *Daemon) judgeContinueBrief(ctx context.Context, p protocol.WorkerContin
 		return none, fmt.Errorf("the record of worker %s has no task (it was made by an older agent-net)", p.Session)
 	}
 	path := first(r.MainPath, r.Path)
-	return protocol.WorkerContinueBrief{Assessment: d.assessWorkerStart(ctx, path, d.continueTaskText(r, continueWhere(r), p.Task))}, nil
+	return protocol.WorkerContinueBrief{Assessment: d.assessWorkerStart(ctx, path, d.continueTaskText(r, continueWhere(r), p.Task, p.Brief))}, nil
 }
 
 // continueWorker handles "worker.continue" from the gateway: it starts a new
@@ -313,11 +322,11 @@ func (d *Daemon) continueWorker(ctx context.Context, p protocol.WorkerContinue) 
 			where = "branch"
 		}
 	}
-	record := r.TaskFull
-	task := d.continueTaskText(r, where, p.Task)
-	if p.Task != "" {
-		record += "\n\nAlso: " + p.Task
-	}
+	// The state is read after the leftovers are committed, so it is what the
+	// new worker finds.
+	dir, ref := continueStateDir(r, where)
+	record := continueBody(r, p.Task, p.Brief)
+	task := continueStateBlock(ctx, dir, ref) + "\n\n" + d.continueTaskText(r, where, p.Task, p.Brief)
 	l.Task, l.RecordTask = task, record
 	// A continue keeps the judge label of the run it continues, unless the
 	// caller adds work to the brief. Then the new brief is assessed once

@@ -128,6 +128,10 @@ type WorkerContinue struct {
 	Task string `json:"task,omitempty"`
 	// Title replaces the old worker's title when it is set.
 	Title string `json:"title,omitempty"`
+	// Brief is the caller's structured brief of this round. A machine that
+	// reads it and finds a done list builds the round from it; an older
+	// machine reads Task, which holds the same text.
+	Brief *WorkerBrief `json:"brief,omitempty"`
 }
 
 // WorkerContinueJudge is "worker.continue_judge", gateway to the machine that
@@ -139,6 +143,8 @@ type WorkerContinueJudge struct {
 	Requester string `json:"requester_session"`
 	// Task is the extra text of the caller, added after the old first task.
 	Task string `json:"task,omitempty"`
+	// Brief is the structured brief of the round, as in WorkerContinue.
+	Brief *WorkerBrief `json:"brief,omitempty"`
 }
 
 // WorkerContinueBrief answers "worker.continue_judge": the judge result the
@@ -827,13 +833,19 @@ func testStepElsewhere(snap settings.Snapshot, repo string) bool {
 // renders it in one fixed order, so a worker sees the same shape from every
 // caller in every project.
 type WorkerBrief struct {
-	Problem    string
-	Evidence   []string
-	Done       []string
-	Hypothesis string
-	Scope      string
-	Notes      string
+	Problem    string   `json:"problem,omitempty"`
+	Evidence   []string `json:"evidence,omitempty"`
+	Done       []string `json:"done,omitempty"`
+	Hypothesis string   `json:"hypothesis,omitempty"`
+	Scope      string   `json:"scope,omitempty"`
+	Notes      string   `json:"notes,omitempty"`
 }
+
+// DoneLines is the done list without blank lines.
+func (b WorkerBrief) DoneLines() []string { return cleanBriefLines(b.Done) }
+
+// EvidenceLines is the evidence list without blank lines.
+func (b WorkerBrief) EvidenceLines() []string { return cleanBriefLines(b.Evidence) }
 
 // WorkerBriefFromStart reads the structured fields of a start. Task is the
 // notes.

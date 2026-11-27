@@ -1591,13 +1591,13 @@ func (g *Gateway) supportsContinueJudge(ctx context.Context, target *nodeConn) b
 // a continue runs with the caller's added work, before the pick. It reports
 // false when the machine cannot answer: the continue then keeps the stored
 // label as before.
-func (g *Gateway) judgeContinuedBrief(ctx context.Context, target *nodeConn, session, requester, added string) (*protocol.WorkerAssessment, bool) {
+func (g *Gateway) judgeContinuedBrief(ctx context.Context, target *nodeConn, session, requester, added string, brief *protocol.WorkerBrief) (*protocol.WorkerAssessment, bool) {
 	if target == nil || added == "" {
 		return nil, false
 	}
 	cctx, cancel := context.WithTimeout(ctx, continueJudgeWait)
 	defer cancel()
-	raw, err := target.call(cctx, "worker.continue_judge", protocol.WorkerContinueJudge{Session: session, Requester: requester, Task: added})
+	raw, err := target.call(cctx, "worker.continue_judge", protocol.WorkerContinueJudge{Session: session, Requester: requester, Task: added, Brief: brief})
 	if err != nil {
 		g.logLine("worker.continue_judge", "session", session, "err", err)
 		return nil, false
@@ -1608,6 +1608,16 @@ func (g *Gateway) judgeContinuedBrief(ctx context.Context, target *nodeConn, ses
 		return nil, false
 	}
 	return answer.Assessment, true
+}
+
+// continueBrief is the structured brief of a continue, or nil when the caller
+// gave only free text. The daemon uses it to show one current done list.
+func continueBrief(p protocol.WorkerStartFrame) *protocol.WorkerBrief {
+	b := protocol.WorkerBriefFromStart(p.WorkerStartRequest)
+	if !b.Structured() {
+		return nil
+	}
+	return &b
 }
 
 // workerContinue starts a new worker from an ended one. The gateway knows the
@@ -1727,7 +1737,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	taskJudged := false
 	if p.Model == "" && p.Harness == "" && assessment != nil {
 		if added := p.BriefText(); added != "" && !(len(validate) > 0 && validate[0]) && g.supportsContinueJudge(ctx, target) {
-			if judged, ok := g.judgeContinuedBrief(ctx, target, old.SessionID, p.Owner, added); ok {
+			if judged, ok := g.judgeContinuedBrief(ctx, target, old.SessionID, p.Owner, added, continueBrief(p)); ok {
 				assessment, taskJudged = judged, true
 			}
 		}
@@ -1784,7 +1794,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 		return none, err
 	}
 	raw, err := target.call(cctx, "worker.continue", protocol.WorkerContinue{StartRef: startRef, Session: old.SessionID, Requester: p.Owner, FromCTO: p.FromCTO, TaskID: taskID,
-		Harness: p.Harness, Model: p.Model, Task: p.BriefText(), Title: p.Title,
+		Harness: p.Harness, Model: p.Model, Task: p.BriefText(), Title: p.Title, Brief: continueBrief(p),
 		Assessment: assessment, TaskJudged: taskJudged})
 	if err != nil {
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
