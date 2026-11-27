@@ -37,7 +37,7 @@ func (s *Store) ReserveSessionAgent(node string, p protocol.SessionAgentReservat
 	if err := s.requireMachineOwner(node, p.Owner, "session Agent selection requires the owner of this machine"); err != nil {
 		return err
 	}
-	if p.Harness != "claude" && p.Harness != "pi" && p.Harness != "opencode" && p.Harness != "codex" {
+	if p.Harness != "claude" && p.Harness != "pi" && p.Harness != "opencode" && p.Harness != "codex" && p.Harness != "agy" {
 		return reject("Agent selection requires a harness with a known native session ID")
 	}
 	tx, err := s.db.Begin()

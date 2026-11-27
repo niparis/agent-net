@@ -87,9 +87,17 @@ func TestEndedWorktreesGroupedByProject(t *testing.T) {
 }
 
 func TestEndedUnknownHarnessResumeHint(t *testing.T) {
+	a := protocol.AgentView{Harness: "aider", NativeID: "session-id", Cwd: "/repo/worktree"}
+	got := resumeHint(a)
+	if got != "/repo/worktree: resume it from aider in this folder" {
+		t.Fatalf("unexpected hint: %q", got)
+	}
+}
+
+func TestEndedAgyResumeHint(t *testing.T) {
 	a := protocol.AgentView{Harness: "agy", NativeID: "session-id", Cwd: "/repo/worktree"}
 	got := resumeHint(a)
-	if got != "/repo/worktree: resume it from agy in this folder" {
+	if got != "Enter resumes it in /repo/worktree" {
 		t.Fatalf("unexpected hint: %q", got)
 	}
 }

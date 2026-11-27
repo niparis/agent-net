@@ -15,6 +15,7 @@ type antigravityEvent struct {
 	Event          string    `json:"event"`
 	Time           time.Time `json:"time"`
 	FullyIdle      bool      `json:"fullyIdle"`
+	StartRef       string    `json:"startRef,omitempty"`
 	Started        bool      `json:"-"`
 	PID            int       `json:"-"`
 	ProcessStart   string    `json:"-"`
@@ -46,6 +47,9 @@ func (d *Daemon) recordAntigravity(raw json.RawMessage) error {
 		e.Started, e.PID, e.ProcessStart = old.Started, old.PID, old.ProcessStart
 		if old.Started {
 			e.WorkspacePaths = old.WorkspacePaths
+		}
+		if e.StartRef == "" {
+			e.StartRef = old.StartRef
 		}
 	}
 	d.agyEvents[e.ConversationID] = e

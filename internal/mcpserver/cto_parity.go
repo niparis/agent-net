@@ -21,7 +21,7 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	}
 	sid := s("Session ID.")
 	model := s("Empty uses default.")
-	harness := en("Omit for default.", "opencode", "claude", "pi", "codex")
+	harness := en("Omit for default.", "opencode", "claude", "pi", "codex", "agy")
 
 	add("charter_set", "Set a charter attribute.", map[string]ctoField{"ref": {typ: "graph_ref"}, "level": en("Charter level.", "global", "team", "repo", "agent"), "node": s("Node or scope ID."), "attr": en("Attribute.", ctoCharterAttrs...), "value": s("2 KiB max; empty clears.")})
 	for _, name := range []string{"repo_create", "agent_create"} {

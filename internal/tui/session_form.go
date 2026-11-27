@@ -36,7 +36,7 @@ var sessionFieldLabels = [sFields]string{"Project", "Harness", "Model", "Folder"
 
 // sessionHarnessOrder is the fixed order of the Harness switch. A machine may
 // report only some of them; the form skips the rest.
-var sessionHarnessOrder = []string{"claude", "codex", "opencode", "pi"}
+var sessionHarnessOrder = []string{"claude", "codex", "opencode", "pi", "agy"}
 
 // sessionValueCol is the column where a value starts: two markers and the
 // label column. The lines under First message line up with it.
@@ -637,11 +637,11 @@ func (m Model) sessionRemoteHost(f sessionForm) string {
 
 // sessionFormRefusal says why this version cannot start the form's session.
 func (m Model) sessionFormRefusal(f sessionForm) string {
-	const only = "only Claude, OpenCode, Codex and Pi for now"
+	const only = "only Claude, OpenCode, Codex, Pi and Antigravity for now"
 	if why := m.sessionPathState(f).why; why != "" {
 		return why
 	}
-	if h := strings.ToLower(f.value(sHarness)); h != "" && h != "claude" && h != "opencode" && h != "codex" && h != "pi" {
+	if h := strings.ToLower(f.value(sHarness)); h != "" && h != "claude" && h != "opencode" && h != "codex" && h != "pi" && h != "agy" {
 		return only
 	}
 	if _, machine := splitProjectMachine(f.value(sProject)); machine != "" && m.nodeByIDOrHost(machine) == nil {

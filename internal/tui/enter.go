@@ -68,7 +68,7 @@ func (m Model) startEnterID(id string) (Model, tea.Cmd) {
 		return m.openCTO(a.SessionID)
 	}
 	if !a.Online {
-		if a.Harness != "claude" && a.Harness != "pi" && a.Harness != "opencode" && a.Harness != "codex" {
+		if a.Harness != "claude" && a.Harness != "pi" && a.Harness != "opencode" && a.Harness != "codex" && a.Harness != "agy" {
 			m.fail("This harness cannot resume here. Open its conversation in the harness directly.")
 			return m, nil
 		}

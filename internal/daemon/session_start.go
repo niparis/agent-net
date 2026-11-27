@@ -30,8 +30,8 @@ func (d *Daemon) sessionStart(ctx context.Context, p protocol.SessionStartReques
 	if p.Harness == "" {
 		p.Harness = "claude"
 	}
-	if p.Harness != "claude" && p.Harness != "opencode" && p.Harness != "codex" && p.Harness != "pi" {
-		return protocol.StartedSession{}, errors.New("session_start supports only Claude, OpenCode, Codex and Pi sessions")
+	if p.Harness != "claude" && p.Harness != "opencode" && p.Harness != "codex" && p.Harness != "pi" && p.Harness != "agy" {
+		return protocol.StartedSession{}, errors.New("session_start supports only Claude, OpenCode, Codex, Pi and Antigravity sessions")
 	}
 	if len(p.FirstMessage) > protocol.MaxBodyBytes {
 		return protocol.StartedSession{}, errors.New("first_message is too long")
@@ -348,6 +348,9 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	if p.Harness == "pi" {
 		return d.launchOwnerPi(r, first, "", p.HerdrSocket, p.HerdrPaneID, notify)
 	}
+	if p.Harness == "agy" {
+		return d.launchOwnerAgy(r, first, "", p.HerdrSocket, p.HerdrPaneID, notify)
+	}
 	name := r.Project
 	if p.Merger {
 		name += " merger"
@@ -547,7 +550,7 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, 
 		}
 		return d.resumeCTOSession(ctx, a)
 	}
-	if a.NativeID == "" || (a.Harness != "claude" && a.Harness != "pi" && a.Harness != "opencode" && a.Harness != "codex") {
+	if a.NativeID == "" || (a.Harness != "claude" && a.Harness != "pi" && a.Harness != "opencode" && a.Harness != "codex" && a.Harness != "agy") {
 		return protocol.StartedSession{}, errors.New("Cannot resume this conversation here. Open it in the harness directly.")
 	}
 	// The gateway records a session whose harness reports status exited as
@@ -587,6 +590,9 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, 
 	}
 	if a.Harness == "pi" {
 		return d.launchOwnerPi(r, startFirstMessage{}, a.NativeID, socket, pane, false)
+	}
+	if a.Harness == "agy" {
+		return d.launchOwnerAgy(r, startFirstMessage{}, a.NativeID, socket, pane, false)
 	}
 	bin, err := d.harnessBinary("claude")
 	if err != nil {

@@ -203,7 +203,7 @@ A value holds at most 2048 bytes. Budget about 1200 characters for the whole cha
 - `bar_edit` adds, edits or removes a project's bar rules; one rule is one line of at most 400 characters.
 - `agent_owner_judgment_record` stores a standing rule: text, area (`network`, `repo:X` or `team:X`) and action. Both must match for the rule to apply.
 - Role models are settings: `cto.models`, `chief.model` and `merger.models`. Each is an ordered list of candidates, one per line as harness, provider, model and effort; the first one that can run now is used.
-- Owner sessions use harness `claude` by default; `opencode`, `codex` and `pi` are also supported. An empty model leaves the choice to the harness, and agent-net sets no default owner-session model.
+- Owner sessions use harness `claude` by default; `opencode`, `codex`, `pi` and `agy` are also supported. An empty model leaves the choice to the harness, and agent-net sets no default owner-session model.
 - Placement: `projects_layout` scans the owner's home folder for git repos and worktrees, within a bounded depth and count, and caches the result. `cto_placement_memory` saves the owner's placement answers.
 
 ## Auto compaction

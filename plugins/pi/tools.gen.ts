@@ -1269,7 +1269,8 @@ export const TOOL_CATALOG = [
                 "claude",
                 "codex",
                 "opencode",
-                "pi"
+                "pi",
+                "agy"
               ]
             },
             "kind": {
@@ -2006,7 +2007,8 @@ export const TOOL_CATALOG = [
             "claude",
             "codex",
             "opencode",
-            "pi"
+            "pi",
+            "agy"
           ],
           "description": "Harness."
         },
@@ -2060,7 +2062,8 @@ export const TOOL_CATALOG = [
                   "claude",
                   "codex",
                   "opencode",
-                  "pi"
+                  "pi",
+                  "agy"
                 ]
               },
               "model": {

@@ -339,7 +339,7 @@ func toolsText(a protocol.AgentView) string {
 
 // resumeHint keeps the original folder visible for worktree sessions.
 func resumeHint(a protocol.AgentView) string {
-	if a.Harness == "claude" || a.Harness == "pi" || a.Harness == "codex" || a.Harness == "opencode" {
+	if a.Harness == "claude" || a.Harness == "pi" || a.Harness == "codex" || a.Harness == "opencode" || a.Harness == "agy" {
 		return "Enter resumes it in " + sanitize(a.Cwd)
 	}
 	return sanitize(a.Cwd + ": resume it from " + a.Harness + " in this folder")

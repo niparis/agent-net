@@ -439,6 +439,7 @@ type Daemon struct {
 	settingsMu          sync.Mutex
 	settingsSnapshot    atomic.Pointer[settings.Snapshot]
 	agyEvents           map[string]antigravityEvent // guarded by mu
+	agyStarts           map[string]*agyStartWait    // start ID -> the pane waiting for its conversation, guarded by mu
 	ctoGraph            ctoGraphWindow
 	operatorReads       operatorReadCache
 	startedSessions     map[string]protocol.StartedSession // guarded by mu

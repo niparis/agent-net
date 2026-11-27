@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/testsock"
 )
 
@@ -50,13 +51,14 @@ func TestAntigravityHook(t *testing.T) {
 		}
 	}()
 	out.Reset()
+	t.Setenv(daemon.AgyStartEnv, "start_1")
 	runAntigravityHook([]string{"antigravity", "Stop"}, strings.NewReader(`{"conversationId":"one","fullyIdle":true}`), &out, socket)
 	if out.String() != "{}\n" {
 		t.Fatal(out.String())
 	}
 	select {
 	case p := <-received:
-		if p["event"] != "Stop" || p["conversationId"] != "one" || p["fullyIdle"] != true {
+		if p["event"] != "Stop" || p["conversationId"] != "one" || p["fullyIdle"] != true || p["startRef"] != "start_1" {
 			t.Fatal(p)
 		}
 	case <-time.After(time.Second):

@@ -72,6 +72,11 @@ func runAntigravityHook(args []string, in io.Reader, out io.Writer, socket strin
 			return
 		}
 		p["event"] = args[1]
+		// A pane agent-net opened for a start names it here, so the daemon can
+		// claim the conversation agy created for that start.
+		if ref := os.Getenv(daemon.AgyStartEnv); ref != "" {
+			p["startRef"] = ref
+		}
 		cl, err := client.Dial(socket)
 		if err != nil {
 			return
