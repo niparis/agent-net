@@ -4,22 +4,24 @@
 # Usage: scripts/test-changed.sh [BASE] [--plan] [--run NAMES] [-- go-test-args...]
 #
 # BASE is the ref to compare against; the default is the merge-base of HEAD and
-# main, which is what a worker branch needs. The script lists the changed files,
-# matches each one against the rule table below, and runs the tests the first
-# matching rule names. --run adds the tests a brief names to a changed
-# production file's package. --plan prints the runs and checks without running
-# them, and names each package left to CI.
+# origin/main when origin/main exists, else main, which is what a worker branch
+# needs. A stale local main made one worker see 156 unrelated files. The script
+# lists the changed files, matches each one against the rule table below, and
+# runs the tests the first matching rule names. --run adds the tests a brief
+# names to a changed production file's package. --plan prints the base, the runs
+# and the checks without running them, and names each package left to CI.
 #
 # Rule table. Keep it short: one line per rule. Add a line when a new
 # cross-package dependency shows up in a failed hand-back.
 #
-#   migration  internal/gateway/store.go, migrations*.go, *_migration.go,
-#              testdata/migrations.lock
-#              -> gateway migration, replay, upgrade and cutover tests, with -race
+#   migration  migrations*.go, *_migration.go, testdata/migrations.lock, or a
+#              store.go diff that touches the migrations list or a const whose
+#              name ends in Migration
+#              -> gateway migration, replay, upgrade and cutover tests
 #   test file  any *_test.go -> only the tests whose bodies changed or were added
 #   tui        internal/tui/* -> tui and graphview golden, title, help and schema tests
 #   settings   internal/settings/*, internal/settingsview/*, any settings*.go
-#              -> settings, gateway settings and cached-read, daemon settings tests, with -race
+#              -> settings, gateway settings and cached-read, daemon settings tests
 #   text       internal/guidance, agentfiles, setup, mcpserver, toolcatalog, cmd/agent-net
 #              -> the changed package plus the tui goldens that quote its text
 #   wire       internal/protocol, internal/client
@@ -75,12 +77,13 @@ usage() {
   cat <<'EOF'
 Usage: scripts/test-changed.sh [BASE] [--plan] [--run NAMES] [-- go-test-args...]
 
-Run the tests a diff needs. BASE defaults to the merge-base of HEAD and main.
-The rule table at the top of the script says which runs a changed path needs.
-A comment-only or docs change runs no tests; a changed test file runs only the
-tests it changed. --run adds the tests a brief names to a production file's
-package. --plan prints the runs and the checks without running them, and names
-the packages left to CI. Arguments after -- go to go test.
+Run the tests a diff needs. BASE defaults to the merge-base of HEAD and
+origin/main when origin/main exists, else main. The rule table at the top of
+the script says which runs a changed path needs. A comment-only or docs change
+runs no tests; a changed test file runs only the tests it changed. --run adds
+the tests a brief names to a production file's package. --plan prints the base,
+the runs and the checks without running them, and names the packages left to
+CI. Arguments after -- go to go test.
 EOF
 }
 
@@ -135,8 +138,19 @@ root=$(git rev-parse --show-toplevel 2>/dev/null) || fail "not in a git reposito
 cd "$root" || fail "cannot enter $root"
 
 if [ -z "$base" ]; then
-  main=$(git rev-parse --verify --quiet 'main^{commit}') || fail "no main branch; pass a base ref"
-  base=$(git merge-base HEAD "$main") || fail "could not find the merge-base with main"
+  # origin/main is the shared branch a worker compares against. A local main
+  # can be many commits behind it, and then the diff carried unrelated files.
+  if git rev-parse --verify --quiet 'origin/main^{commit}' >/dev/null; then
+    base_ref=origin/main
+    base_desc="merge-base with origin/main"
+  else
+    base_ref=main
+    base_desc="merge-base with main"
+  fi
+  main=$(git rev-parse --verify --quiet "$base_ref^{commit}") || fail "no $base_ref branch; pass a base ref"
+  base=$(git merge-base HEAD "$main") || fail "could not find the merge-base with $base_ref"
+else
+  base_desc="given as $base"
 fi
 git rev-parse --verify --quiet "$base^{commit}" >/dev/null || fail "unknown base ref: $base"
 
@@ -232,6 +246,71 @@ generated_input() {
   return 1
 }
 
+# migration_regions prints "start end" for the migrations list and for every
+# const whose name ends in Migration, one range per line. A raw string can hold
+# a brace or the word migration, so a backtick count tells when it opens and
+# closes, and text after the literal is not part of a region.
+migration_regions() {
+  awk '
+    !in_list && /^var migrations = \[\]string\{/ {
+      start = NR; ticks = gsub(/`/, "&")
+      if (ticks % 2 == 0 && /}[[:space:]]*$/) { print start, NR }
+      else { in_list = 1 }
+      next
+    }
+    in_list {
+      ticks += gsub(/`/, "&")
+      if (ticks % 2 == 0 && /}[[:space:]]*$/) {
+        print start, NR
+        in_list = 0
+      }
+      next
+    }
+    /^const [A-Za-z_][A-Za-z0-9_]*Migration([^A-Za-z0-9_]|$)/ {
+      start = NR; ticks = gsub(/`/, "&")
+      if (ticks % 2 == 0) { print start, NR; next }
+      in_const = 1; next
+    }
+    in_const {
+      ticks += gsub(/`/, "&")
+      if (ticks % 2 == 0) { print start, NR; in_const = 0 }
+    }
+  ' "$1"
+}
+
+# store_migration_change succeeds when the added or removed lines of a store.go
+# diff fall inside the migrations list or a const whose name ends in Migration.
+# Any other store.go change is an ordinary package change.
+store_migration_change() {
+  old_regions=$(migration_regions "$1")
+  new_regions=$(migration_regions "$2")
+  awk -v old="$old_regions" -v new="$new_regions" '
+    function hits(regions, lo, hi,   count, i, span, bounds) {
+      if (lo > hi) return 0
+      count = split(regions, span, "\n")
+      for (i = 1; i <= count; i++) {
+        split(span[i], bounds, " ")
+        if (lo <= bounds[2] && hi >= bounds[1]) return 1
+      }
+      return 0
+    }
+    /^@@ / {
+      split(substr($2, 2), before, ",")
+      split(substr($3, 2), after, ",")
+      old_start = before[1] + 0
+      old_count = (2 in before) ? before[2] + 0 : 1
+      new_start = after[1] + 0
+      new_count = (2 in after) ? after[2] + 0 : 1
+      if (hits(old, old_start, old_start + old_count - 1) ||
+          hits(new, new_start, new_start + new_count - 1)) {
+        found = 1
+        exit
+      }
+    }
+    END { exit(found ? 0 : 1) }
+  ' "$3"
+}
+
 # contract_runs prints the small set every diff runs, whatever it touches.
 contract_runs() {
   printf 'plain %s %s contract\n' "$module/internal/gateway" '^(TestMigrationsAreAppendOnly|TestMigrationsLockAcceptsAppendedMigration|TestDeliveryEvidenceIsAppendOnly)$'
@@ -247,7 +326,7 @@ rule_of() {
       echo tool ;;
     tools/pickerreplay/*)
       echo replaytool ;;
-    internal/gateway/store.go|internal/gateway/migrations*.go|internal/gateway/*_migration.go|internal/gateway/testdata/migrations.lock)
+    internal/gateway/migrations*.go|internal/gateway/*_migration.go|internal/gateway/testdata/migrations.lock)
       echo migration ;;
     *_test.go)
       echo test ;;
@@ -267,22 +346,23 @@ rule_of() {
 }
 
 # runs_for_rule prints one run per line: mode, package, test pattern, rule.
-# The pattern "all" means no -run filter. Only the migration and settings
-# rules use -race, because their tests share a database and a cached read.
+# The pattern "all" means no -run filter. No rule uses -race: a race run of a
+# large package ran 15 to 25 minutes and often timed out. The merge queue's CI
+# runs the full packages with their own flags (decision 0164).
 runs_for_rule() {
   case $1 in
     migration)
-      printf 'race %s %s migration\n' "$module/internal/gateway" 'Migrat|Replay|Upgrade|Cutover'
+      printf 'plain %s %s migration\n' "$module/internal/gateway" 'Migrat|Replay|Upgrade|Cutover'
       ;;
     tui)
       printf 'plain %s %s tui\n' "$module/internal/tui" 'Golden|Title|Help|Schema'
       printf 'plain %s %s tui\n' "$module/internal/tui/graphview" 'Golden|Rasterize'
       ;;
     settings)
-      printf 'race %s all settings\n' "$module/internal/settings"
-      printf 'race %s all settings\n' "$module/internal/settingsview"
-      printf 'race %s %s settings\n' "$module/internal/gateway" 'Settings|CachedReads'
-      printf 'race %s %s settings\n' "$module/internal/daemon" 'Settings'
+      printf 'plain %s all settings\n' "$module/internal/settings"
+      printf 'plain %s all settings\n' "$module/internal/settingsview"
+      printf 'plain %s %s settings\n' "$module/internal/gateway" 'Settings|CachedReads'
+      printf 'plain %s %s settings\n' "$module/internal/daemon" 'Settings'
       ;;
     wire)
       for name in protocol client gateway mcpserver; do
@@ -330,6 +410,19 @@ printf '%s\n' "$changed" | while IFS= read -r path; do
       fi
       ;;
   esac
+
+  # store.go is about 7,000 lines and most gateway changes touch it, but only
+  # its migrations list and its *Migration consts need the slow migration set.
+  if [ "$path" = internal/gateway/store.go ]; then
+    if [ ! -f "$path" ] || ! base_go_file "$path"; then
+      rule=migration
+    else
+      git diff -U0 "$base" -- "$path" >"$work/store.diff" 2>/dev/null || :
+      if store_migration_change "$work/base.go" "$path" "$work/store.diff"; then
+        rule=migration
+      fi
+    fi
+  fi
 
   if generated_input "$path"; then
     printf 'plain %s %s generated\n' "$module/internal/daemon/ctoskill" '^(TestReferenceMatchesCode)$' >>"$work/runs"
@@ -399,8 +492,8 @@ done
 
 contract_runs >>"$work/runs"
 
+printf 'test-changed: base %s (%s), %s changed file(s)\n' "$(git rev-parse --short "$base")" "$base_desc" "$(wc -l <"$work/files" | tr -d ' ')"
 if [ -s "$work/files" ]; then
-  printf 'test-changed: base %s, %s changed file(s)\n' "$(git rev-parse --short "$base")" "$(wc -l <"$work/files" | tr -d ' ')"
   while IFS="$(printf '\t')" read -r path rule pkg; do
     printf '  %s: %s\n' "$path" "$rule"
   done <"$work/files"
@@ -576,7 +669,9 @@ while read -r mode pkg pattern rule; do
   [ -z "$extra" ] || set -- "$@" $extra
   pkg_arg="./${pkg#"$module/"}"
   set -- "$@" "$pkg_arg"
-  printf 'running %s/%s [%s] %s\n' "$index" "$total" "$rule" "$(describe_run "$mode" "$pkg" "$pattern")"
+  # Print the start at once, so a slow run does not look hung. The end line
+  # below carries its seconds.
+  printf '[%s/%s] %s %s [%s]\n' "$index" "$total" "$pkg_arg" "$pattern" "$rule"
   mkdir -p "$run_root"
   printf '%s\n' "$pkg_arg" >"$run_root/pkg"
   start=$(date +%s)
@@ -588,11 +683,11 @@ while read -r mode pkg pattern rule; do
   end=$(date +%s)
   pkg_display="./${pkg#"$module/"}"
   if [ "$status" = 0 ]; then
-    printf 'PASS [%s] %s (%ss)\n' "$rule" "$pkg_display" "$((end - start))"
+    printf 'ok %s (%ss) [%s]\n' "$pkg_display" "$((end - start))" "$rule"
     grep -E '^(ok|no test files)|^--- ' "$work/output-$index" | head -5
   else
     failed=1
-    printf 'FAIL [%s] %s (%ss)\n' "$rule" "$pkg_display" "$((end - start))"
+    printf 'FAIL %s (%ss) [%s]\n' "$pkg_display" "$((end - start))" "$rule"
     cat "$work/output-$index"
     # go test lists the tests that were running when it timed out. Keep that
     # line and the failed test names for the summary.
