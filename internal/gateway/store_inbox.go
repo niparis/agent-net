@@ -112,7 +112,7 @@ func (s *Store) createInboxItem(db askDB, item protocol.InboxItem) (protocol.Inb
 	}
 	switch item.Kind {
 	case "approval", "feature_idea", "question", "rejection", "escalation", "check", "session_stall",
-		protocol.AskKindHeld, protocol.AskKindLearned, protocol.AskKindDraft, protocol.AskKindProposal, protocol.AskKindPermission, protocol.AskKindStep, protocol.AskKindWaiting,
+		protocol.AskKindHeld, protocol.AskKindDraft, protocol.AskKindProposal, protocol.AskKindPermission, protocol.AskKindStep, protocol.AskKindWaiting,
 		protocol.AskKindBrief, protocol.AskKindSignIn, protocol.AskKindMachine, protocol.AskKindCTOAlert, protocol.AskKindQuotaStuck, protocol.AskKindCTOIntake:
 	default:
 		return item, reject("invalid inbox kind")
@@ -523,11 +523,6 @@ func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (proto
 		if err = s.recordOwnerAnswer(tx, item, answer); err != nil {
 			return item, err
 		}
-		if item.Kind == protocol.AskKindPermission {
-			if err = s.rejectPermissionTx(tx, id); err != nil {
-				return item, err
-			}
-		}
 		if len(validate) > 0 && validate[0] {
 			return item, nil
 		}
@@ -535,12 +530,6 @@ func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (proto
 			return item, err
 		}
 		return item, nil
-	}
-	// A Claude Code permission proposal is an ask for the gateway, not for a
-	// live session. Only the owner answers it. The gateway applies it after
-	// this call returns, and only for an approved ask.
-	if item.Kind == protocol.AskKindPermission {
-		return s.answerPermissionAsk(tx, item, answer, actor, validate...)
 	}
 	// A charter draft is an ask for the gateway, not for a live session. Its
 	// answer applies the drafted value exactly as the owner's TUI accept does,
@@ -585,17 +574,6 @@ func (s *Store) AnswerInboxAs(id, answer, actor string, validate ...bool) (proto
 			return item, err
 		}
 		return item, s.closeAnsweredItem(item, answer)
-	}
-	// A learned suggestion is an ask for the gateway too. Its answer decides
-	// the suggestion, so the next sweep does not ask for it again.
-	if item.Kind == protocol.AskKindLearned {
-		var ref string
-		if err = tx.QueryRow(`SELECT source_ref FROM inbox_items WHERE id=?`, id).Scan(&ref); err != nil {
-			return item, err
-		}
-		if learnedID, parseErr := sourceRefID(ref, "learned:"); parseErr == nil {
-			return s.answerLearnedAsk(tx, item, learnedID, answer, actor, len(validate) > 0 && validate[0])
-		}
 	}
 	switch answer {
 	case "approve":
@@ -735,39 +713,4 @@ func (s *Store) askArea(tx askDB, item protocol.InboxItem) string {
 		return item.Node
 	}
 	return ""
-}
-
-// answerLearnedAsk applies an answer to the ask of a learned suggestion.
-// "accept" and "reject" decide it as the owner's keys do. Any other text is the
-// answerer saying what it did, so it counts as carried out, or as a refusal if
-// it starts with one. A suggestion that is no longer pending only closes the
-// ask. The transaction is released first: the store has a single connection.
-func (s *Store) answerLearnedAsk(tx *sql.Tx, item protocol.InboxItem, learnedID int64, answer, actor string, validateOnly bool) (protocol.InboxItem, error) {
-	var status string
-	err := tx.QueryRow(`SELECT status FROM learned_suggestions WHERE id=?`, learnedID).Scan(&status)
-	if err != nil && err != sql.ErrNoRows {
-		return item, err
-	}
-	item.Status = "answered"
-	item.Answer = answer
-	item.AnsweredAt = s.now().UTC()
-	if validateOnly {
-		return item, nil
-	}
-	_ = tx.Rollback()
-	if status == "pending" {
-		switch answer {
-		case "accept", "reject":
-			err = s.decideLearned(learnedID, answer, actor)
-		default:
-			err = s.carryOutLearned(learnedID, answer)
-		}
-		if err != nil {
-			return item, err
-		}
-	}
-	if err = s.closeAnsweredItem(item, answer); err != nil {
-		return item, err
-	}
-	return item, s.reconcileLearnedAsks()
 }

@@ -176,37 +176,16 @@ func (d *Daemon) executeCTOOperator(ctx context.Context, raw json.RawMessage) (a
 			if len(ids) > 0 {
 				plan = append(plan, undoCall("sessions_archive", protocol.SessionsArchiveRequest{IDs: ids, Restore: !q.Restore}))
 			}
-		case "learned_answer":
-			var request struct {
-				ID     int64  `json:"suggestion_id"`
-				Action string `json:"action"`
-			}
-			if json.Unmarshal(p.Arguments, &request) == nil && request.Action == "accept" && request.ID < 0 {
-				// A charter draft: the answer is the stored row, and it names the
-				// graph entry the accept wrote.
+		case protocol.OpDraftAnswer:
+			var request protocol.DraftAnswerRequest
+			if json.Unmarshal(p.Arguments, &request) == nil && request.Action == "accept" {
+				// The answer is the stored row, and it names the graph entry
+				// the accept wrote.
 				var row struct {
 					HistoryID int64 `json:"history_id"`
 				}
 				if json.Unmarshal(data, &row) == nil && row.HistoryID != 0 {
 					plan = append(plan, undoCall("graph_undo", protocol.GraphUndoRequest{ID: row.HistoryID}))
-				}
-			} else if json.Unmarshal(p.Arguments, &request) == nil && request.Action == "accept" {
-				list, e := call("learned_list", json.RawMessage(`{}`))
-				if e != nil {
-					return nil, e
-				}
-				raw, e := json.Marshal(list)
-				if e != nil {
-					return nil, e
-				}
-				var items []protocol.LearnedSuggestion
-				if e = json.Unmarshal(raw, &items); e != nil {
-					return nil, e
-				}
-				for _, item := range items {
-					if item.ID == request.ID && item.HistoryID != 0 {
-						plan = append(plan, undoCall("graph_undo", protocol.GraphUndoRequest{ID: item.HistoryID}))
-					}
 				}
 			}
 		}

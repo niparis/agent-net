@@ -267,10 +267,10 @@ func TestCTOAppAskOnVerifiedWordsApproves(t *testing.T) {
 	}
 }
 
-// Both prompts say the CTO quotes the owner's words and never proposes for
+// The brief says the CTO quotes the owner's words and never proposes for
 // later something he asked.
 func TestCTOBriefTellsToQuoteOwnerWords(t *testing.T) {
-	for _, text := range []string{ctoBrief, ctoPermissionNote} {
+	for _, text := range []string{ctoBrief} {
 		if !strings.Contains(text, "quote his") || !strings.Contains(text, "owner_words") || !strings.Contains(text, "Never propose for later something he asked") {
 			t.Errorf("text lacks the quote rule or the no-proposal rule: %s", text)
 		}

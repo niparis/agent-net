@@ -458,7 +458,7 @@ func (s *Store) SubmitCharterDraft(session string, q protocol.CharterDraftReques
 	if err = tx.Commit(); err != nil {
 		return res, err
 	}
-	if err = s.reconcileLearnedAsks(); err != nil {
+	if err = s.reconcileCharterDraftAsks(); err != nil {
 		return res, err
 	}
 	return protocol.CharterDraftResult{ID: id, Status: "pending"}, nil
@@ -585,26 +585,6 @@ func (s *Store) CharterDraftByID(id int64) (protocol.CharterDraft, error) {
 	}
 	d.Name = s.draftName(d.Level, d.Scope)
 	return d, nil
-}
-
-// ownerDrafts shows pending drafts in the owner's learned list. They carry the
-// negative of their draft ID, so the existing answer path can route them.
-func (s *Store) ownerDrafts() ([]protocol.LearnedSuggestion, error) {
-	drafts, err := s.PendingCharterDrafts()
-	if err != nil {
-		return nil, err
-	}
-	out := make([]protocol.LearnedSuggestion, 0, len(drafts))
-	for _, d := range drafts {
-		out = append(out, protocol.LearnedSuggestion{
-			ID: -d.ID, Node: d.Name, Field: d.Attr, Kind: "add", Phrase: d.Value,
-			Evidence: []protocol.LearnedEvidence{{ID: "draft", Excerpt: "Drafted from " + d.Source}},
-			Status:   "pending", Severity: "major", Origin: "draft",
-			CreatedAt: d.CreatedAt, ReadyAt: d.CreatedAt, NewValue: d.Value,
-			By: d.Source, Level: d.Level, Scope: d.Scope,
-		})
-	}
-	return out, nil
 }
 
 func hashText(text string) string {

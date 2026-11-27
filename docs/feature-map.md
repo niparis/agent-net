@@ -113,14 +113,13 @@ Key `2` opens it.
 | a | toggle autonomy off or wake (wakes on messages) |
 | L | cycle the standing loop: off, 1h, 4h, 12h, 24h (wakes the lead on a clock) |
 | D | name this project |
-| u | undo the selected one (a learned change) |
-| , . | select a previous or next learned change or charter draft |
+| , . | select a previous or next charter draft |
 | y | accept the selected charter draft (drafted from AGENTS.md) |
 | x | reject the selected charter draft |
 | l | choose or clear the repo lead |
 | h | hide or unhide this project |
 | H | show hidden projects |
-| ctrl+u/d, pgup/pgdn | scroll the card: charter, rules and learned changes |
+| ctrl+u/d, pgup/pgdn | scroll the card: charter, rules and drafts |
 
 ## 3. Quotas
 
@@ -387,13 +386,11 @@ Tools are listed by the roles that may call them. Actions are the values of the 
 | `agent_change_submit` | agent | Submit work done outside a worker as a change, so agent-net moves it through the project's delivery steps. A worker's complete hand-back submits its change by itself. A new head commit on the same change makes a new revision. | - |
 | `agent_changes_find` | agent, worker | Find delivery changes: their revision, the step each is in, who owns it and the evidence so far. Give change to read one change in full with its revisions and evidence. | - |
 | `agent_charter_draft` | agent | Propose one charter value drafted from AGENTS.md, only when agent-net asked you to. The owner accepts or rejects it; nothing changes before that. | - |
-| `agent_due` | agent | Record a step you own that falls due later: due (an RFC 3339 time or a duration such as 45m) or after (a reply, a change step or an ask closing). agent-net wakes you when it falls due. If you show no activity for 15 minutes after that, the chief is asked once. Actions: add, list (your open items), done (id). | `add`, `list`, `done` |
 | `agent_file_send` | agent, worker | Send files from this session to one peer with a note. Paths must be absolute and within the session project, worktree or /tmp. Workers send files with agent_handback. | - |
 | `agent_friction_mark` | agent | Lead sessions only: set the read status of friction reports (new, read, triaged, fixed, wontfix or infra) by ids, by group, or by a filter with project, area and text. Give link (a change id or a web address) and note when the mark has them. dry_run counts the matches first. Other sessions are refused. File reports with agent_friction_report, the friction field of agent_step_report, or agent_handback. | - |
 | `agent_friction_report` | agent, worker | File what slowed you down with no step: one {area, text} per problem, the same entries a step report takes. Optionally name the change or project. The report joins the hand-back friction in the same store. | - |
 | `agent_graph_read` | agent, worker, cto, bot | Read the graph: nodes with charters and rules, and their edges. Give node for one node and its edges; a shared name returns every node. | - |
 | `agent_handback` | worker | Workers only: end your task with your report and status. This is how the caller gets your result. | - |
-| `agent_learn` | agent, worker, cto | Record a finding about a model, harness, project or machine, with evidence. Findings feed the playbook; they change nothing directly. | - |
 | `agent_machine_get` | bot | Read a machine's health, load, CPU and busiest processes, or one detail category: processes, models, quotas, track record or playbook. Processes accepts sort rss (default) or cpu and reports stop refusals. Pages long lists. | - |
 | `agent_machine_log` | agent, worker, cto | Read a machine's redacted daemon or gateway log for a time window, with an optional text filter. At most 1000 lines and 256 KB. | - |
 | `agent_machines_find` | agent, worker, cto, bot | List machines with online state and versions, or read one machine's details by machine or id. | - |
@@ -414,7 +411,6 @@ Tools are listed by the roles that may call them. Actions are the values of the 
 | `agent_owner_brief` | agent | Chief of staff only: deliver one informational daily brief for the owner. Give body (at most 15 lines) and the owner-local date as YYYY-MM-DD; the same date replaces it. Call with no body for the schedule. A brief never asks for an answer. | - |
 | `agent_owner_judgment_record` | agent, cto | Chief of staff and CTO only: record, in the same turn, a decision the owner made in your chat. area and action make it a standing rule. | - |
 | `agent_owner_judgments_find` | agent, worker, cto | Search the owner's past decisions, standing orders, rules, answers and corrections by text, id or ids. Ranked for a query, else newest first. marks: true returns only the owner's marks with their asks; offset pages. Agent notes show only with kind feedback, fact or reference (see agent_notes_find to read yours). | - |
-| `agent_permission_propose` | agent, worker, cto | Propose Claude Code permission rules or folder trust for the owner to approve. | - |
 | `agent_project_add` | agent | Register project folders on this machine, or scan a folder for repositories (use dry_run first). Only when the owner asked. | - |
 | `agent_projects_find` | agent, worker, cto, bot | Find registered projects and the machines and folders that hold them. Use agent_sessions_find for their sessions. | - |
 | `agent_protected_providers_get` | cto | Read protected providers. Owner only. | - |

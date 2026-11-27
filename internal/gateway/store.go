@@ -1339,7 +1339,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration, workerTablesMigration, machineTablesMigration, orgFoldMigration, toolsRetireMigration, oauthClientsMigration, deskTablesMigration, pickQuotaMigration, workerStartOwnerChoiceMigration, sessionRequestedModelMigration, stoodDownMigration, deskHideRemovalMigration, treeInvariantsMigration, sessionStallColumnsMigration, permissionDecidedReasonMigration, workerStopColumnsMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration, workerTablesMigration, machineTablesMigration, orgFoldMigration, toolsRetireMigration, oauthClientsMigration, deskTablesMigration, pickQuotaMigration, workerStartOwnerChoiceMigration, sessionRequestedModelMigration, stoodDownMigration, deskHideRemovalMigration, treeInvariantsMigration, sessionStallColumnsMigration, permissionDecidedReasonMigration, workerStopColumnsMigration, retiredTablesDropMigration}
 
 // MigrationVersion returns the 1-based version of the migration whose text
 // contains marker. A test that must replay one migration finds it by name, so
@@ -5515,9 +5515,6 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		if _, err := tx.Exec(`INSERT INTO graph_outcomes(source,target,message_id,reply_id,outcome,reason,redirect_to,recommendation,at) VALUES(?,?,?,?,?,?,?,?,?)`, from, to, p.ParentID, m.ID, p.Outcome, p.Reason, p.RedirectTo, p.Recommendation, now.UnixNano()); err != nil {
 			return msg, false, err
 		}
-		if err := s.learnOutcome(tx, m.ID, m.CreatedAt.UnixNano()); err != nil {
-			return msg, false, err
-		}
 		if p.Outcome == "reject" || p.Outcome == "escalate" {
 			var harness string
 			if err := tx.QueryRow(`SELECT harness FROM sessions WHERE id=?`, m.To).Scan(&harness); err != nil {
@@ -5853,9 +5850,6 @@ func (s *Store) ReleaseDelivery(id, detail string) error {
 		SELECT id FROM carried)`, id, id); err != nil {
 		return err
 	}
-	if err := s.learnDelivery(tx, id, now); err != nil {
-		return err
-	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
@@ -5929,11 +5923,6 @@ func (s *Store) ApplyDeliveryReport(id, state, detail string) (notice protocol.M
 			if notice, noticed, err = s.waitingNotice(tx, id); err != nil {
 				return protocol.Message{}, false, err
 			}
-		}
-	}
-	if state == protocol.StateDelivered {
-		if err = s.learnDelivery(tx, id, now); err != nil {
-			return notice, false, err
 		}
 	}
 	if err = tx.Commit(); err != nil {

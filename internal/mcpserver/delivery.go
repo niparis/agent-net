@@ -47,30 +47,3 @@ func addDeliveryTools(s *mcp.Server, call Caller) {
 	deliveryTool[protocol.AskIntakeArgs, protocol.AskIntakeResult](s, call, "agent_ask_intake", protocol.OpAskIntake)
 	deliveryTool[protocol.JudgmentRecordArgs, protocol.JudgmentRecordResult](s, call, "agent_owner_judgment_record", protocol.OpJudgmentRecord)
 }
-
-// dueIn is agent_due as the caller sends it. The item id is "id" here; the
-// daemon gets it as due_id, because the gateway frame owns "id".
-type dueIn struct {
-	Action  string             `json:"action"`
-	What    string             `json:"what,omitempty"`
-	Due     string             `json:"due,omitempty"`
-	After   *protocol.DueAfter `json:"after,omitempty"`
-	Blocker string             `json:"blocker,omitempty"`
-	ID      string             `json:"id,omitempty"`
-}
-
-// addDueTool registers agent_due through the catalog schema, so the public
-// argument names stay as the catalog has them.
-func addDueTool(s *mcp.Server, run func(context.Context, string, any) (any, error)) {
-	addCatalogTool(s, "agent_due", func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		var in dueIn
-		if err := decodeCatalogInput("agent_due", req, &in); err != nil {
-			return toolError(err)
-		}
-		out, err := run(ctx, protocol.OpDue, protocol.DueArgs{Action: in.Action, What: in.What, Due: in.Due, After: in.After, Blocker: in.Blocker, ID: in.ID})
-		if err != nil {
-			return toolError(err)
-		}
-		return catalogResult("agent_due", out)
-	})
-}

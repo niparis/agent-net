@@ -379,5 +379,5 @@ func (s *Store) answerDraftGroup(item protocol.InboxItem, ref, answer, actor str
 			return item, err
 		}
 	}
-	return item, s.reconcileLearnedAsks()
+	return item, s.reconcileCharterDraftAsks()
 }

@@ -112,33 +112,21 @@ const (
 	OpPlaybookGet = "playbook_get" // takes PlaybookGetRequest, answers PlaybookGetResult
 	OpPlaybookSet = "playbook_set" // takes PlaybookSetRequest, answers PlaybookGetResult
 
-	// OpLearn records one finding from an agent session (decision 0022).
-	// Findings are proposals: the gateway promotes a pattern to a playbook
-	// note. Open to agent sessions, not to the command line.
-	OpLearn = "agent_learn" // takes LearnRequest, answers LearnResult
-
 	// OpCharterDraft proposes one charter value drafted from AGENTS.md
 	// (decision 0088). Open to agent sessions, not to the command line.
 	OpCharterDraft = "agent_charter_draft" // takes CharterDraftRequest, answers CharterDraftResult
 	// OpBarEdit adds, edits or removes rules of a project's bar.
 	OpBarEdit = "agent_bar_edit" // takes BarEditRequest, answers BarEditResult
 
-	// OpPermissionPropose proposes exact Claude Code permission allow rules
-	// for registered repositories (decision 0127). Open to every session,
-	// including the CTO, and refused for the command line. It changes no file:
-	// the owner answers an owner-only ask, and only then does the gateway tell
-	// each target machine to apply.
-	OpPermissionPropose = "agent_permission_propose" // takes PermissionProposeRequest, answers PermissionProposeResult
-	// OpLearnedAnswer decides a learned suggestion or, with a negative
-	// suggestion_id, a charter draft (minus its draft number).
-	OpLearnedAnswer = "learned_answer"
-	// OpPermissionUndo removes exactly the rules one approval added. Owner only,
+	// OpDraftsList lists the pending charter drafts for the owner.
+	OpDraftsList = "drafts_list" // answers []CharterDraft
+	// OpDraftAnswer accepts or rejects one pending charter draft. Owner only,
 	// and the CTO through its process-checked operator path.
-	OpPermissionUndo = "permission_undo" // takes PermissionUndoRequest, answers PermissionUndoResult
+	OpDraftAnswer = "draft_answer" // takes DraftAnswerRequest, answers CharterDraft
 	// OpPermissionApply applies permission rules or folder trust on the
 	// owner's quoted words. Owner only, and the CTO through its
 	// process-checked operator path.
-	OpPermissionApply = "permission_apply" // takes PermissionOwnerApplyRequest, answers PermissionProposal
+	OpPermissionApply = "permission_apply" // takes PermissionOwnerApplyRequest, answers PermissionGrant
 
 	// OpSignInOpen opens a sign-in. The owner's own TUI names a stored ask.
 	// The CTO names a machine, an allowlisted provider and the owner's quoted
@@ -202,7 +190,7 @@ var OperatorMethods = []string{OpWorkerFloorsReset, OpOperatorUndo, OpMergerGet,
 	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpFolderTrust, OpFolderMCP, OpProcessStop, OpStandingOrders, OpSessionAgentSet, OpSessionAgentList, OpNotesCopy, OpNotesUncopy, OpSessionRename, OpNodeRename, OpMachineRemove, OpMachineRotate, OpProjectDisplayGet, OpProjectDisplaySet, OpFrictionFind, OpFrictionMark,
 	OpHeldList, OpAsksList, OpChiefGet, OpChiefSet, OpAskHistory, OpAskUndo, OpAskMark, OpAskDiscuss, OpDeskLog, OpDeskSettle, OpNudgeStats, OpHeldAnswer, OpLeadSet, OpTeamWrite, OpTeamHistory, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpDeliveryOwnerSet, OpMergerSet, OpGraphUndo, OpRepoCreate, OpRepoArchive, OpAgentCreate, OpAgentTombstone, OpScopeSet, OpScopeRemove,
 	OpNodeSettingsGet, OpNodeSettingsSet, OpSkillArchiveUndo, OpSkillsUndo, OpTimeZoneGet, OpTimeZoneSet,
-	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, "onboarding_get", "onboarding_set", "onboarding_restart", OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove, OpWorkerDefect, OpDifficultyJudgePick, OpJudgmentAdd, OpPermissionUndo, OpPermissionApply, OpSignInOpen, OpSignInComplete}
+	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, "onboarding_get", "onboarding_set", "onboarding_restart", OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove, OpWorkerDefect, OpDifficultyJudgePick, OpJudgmentAdd, OpPermissionApply, OpSignInOpen, OpSignInComplete}
 
 // HiddenItems is the owner's shared TUI visibility preference. Session IDs
 // remain hidden across machines; node names identify graph items on Graph.

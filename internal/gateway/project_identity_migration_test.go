@@ -61,7 +61,6 @@ func identityFixture(t *testing.T, s *Store, folder, charter string) {
 	if _, err = s.db.Exec(`INSERT INTO projects(node_id,path,name,remote,added_at,checked_at) VALUES(?,?,?,'https://example.com/team/agent-net.git',1,1)`, n, "/src/"+folder, folder); err != nil {
 		t.Fatal(err)
 	}
-	insertLearned(t, s, folder, "needs", "", "add", "tests", "owner")
 	if _, err = s.db.Exec(`INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor) VALUES('charter',?,'needs','','tests',1,'learned')`, folder); err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +88,6 @@ func TestProjectIdentityMigration(t *testing.T) {
 			`SELECT count(*) FROM sessions WHERE repo_project='agent-net'`,
 			`SELECT count(*) FROM graph_edges WHERE source='agent-net' AND target='other'`,
 			`SELECT count(*) FROM setting_values WHERE key='node_setting.sandbox' AND scope='agent-net' AND value='"workspace"'`,
-			`SELECT count(*) FROM learned_suggestions WHERE node='agent-net'`,
 			`SELECT count(*) FROM graph_history WHERE node='agent-net' AND actor='learned'`,
 		} {
 			var n int

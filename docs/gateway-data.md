@@ -174,15 +174,7 @@ Computers that run the daemon, and how they enrol and report health.
 
 ## Sessions
 
-Agent sessions, with their checks and wake-ups, and the due steps they set.
-
-### session_dues
-
-- **Holds:** One row per due step a session set with agent_due: the session, what is due, the due time, and whether it is pending, woken or raised to the chief.
-- **Written by:** `gateway/session_due.go`
-- **Read by:** `gateway/session_due.go`
-- **Shown in:** tool `agent_due`; the wake message (idempotency key `due:<id>`); a chief ask after 15 minutes idle
-- **Kept:** Forever; the state moves from pending to woken or raised.
+Agent sessions, with their checks and wake-ups.
 
 ### sessions
 
@@ -354,7 +346,7 @@ Owner settings and their history.
 
 - **Holds:** One charter setting (a rule or text) for a level (global, team, agent or repo), a scope and an attribute, with who set it and when.
 - **Written by:** `gateway/charter_levels.go`, `gateway/charter_store.go`, `gateway/graph_cutover_auto.go`, `gateway/store_graph.go`
-- **Read by:** `gateway/agent_charter.go`, `gateway/charter_levels.go`, `gateway/charter_resolver.go`, `gateway/charter_store.go`, `gateway/chief.go`, `gateway/cto_graph.go`, `gateway/graph_refs.go`, `gateway/graph_view.go`, `gateway/learned.go`, `gateway/learned_apply.go` and others
+- **Read by:** `gateway/agent_charter.go`, `gateway/charter_levels.go`, `gateway/charter_resolver.go`, `gateway/charter_store.go`, `gateway/chief.go`, `gateway/cto_graph.go`, `gateway/graph_refs.go`, `gateway/graph_view.go` and others
 - **Shown in:** TUI, Graph; tool `agent_graph_read`; tool `agent_charter_draft`; CTO op `charter_set`; CTO op `charter_history`
 - **Kept:** Until the value is cleared, undone, or its repo is removed.
 
@@ -362,7 +354,7 @@ Owner settings and their history.
 
 - **Holds:** One typed link between two nodes of the org tree (`depends`, `deploys`, or a `/delivery/*` step owner), with its mode and rule. `reports_to` is computed on read from leadership and team membership. Only an explicit move by the CTO or the owner (`edge_set`) is stored here, and it wins over the computed parent.
 - **Written by:** `gateway/edge_kinds.go`, `gateway/held.go`, `gateway/merger.go`, `gateway/merger_restore.go`, `gateway/settings.go`, `gateway/store_graph.go`
-- **Read by:** `gateway/cto_graph.go`, `gateway/graph_lifecycle.go`, `gateway/graph_refs.go`, `gateway/graph_view.go`, `gateway/graphread.go`, `gateway/held.go`, `gateway/learned.go`, `gateway/learned_apply.go`, `gateway/learned_owner.go`, `gateway/merger.go` and others
+- **Read by:** `gateway/cto_graph.go`, `gateway/graph_lifecycle.go`, `gateway/graph_refs.go`, `gateway/graph_view.go`, `gateway/graphread.go`, `gateway/held.go`, `gateway/merger.go` and others
 - **Shown in:** TUI, Graph; tool `agent_graph_read`; CTO op `edge_set`; CTO op `edge_remove`; CTO op `merger_set`
 - **Kept:** Until the link is removed or an undo reverts it.
 
@@ -370,7 +362,7 @@ Owner settings and their history.
 
 - **Holds:** One recorded change to the org tree (charter value, link, lifecycle or team change) with old and new value, who made it and when. Undo and the history views read it.
 - **Written by:** `gateway/edge_kinds.go`, `gateway/graph_cutover_auto.go`, `gateway/graph_lifecycle.go`, `gateway/leads_max.go`, `gateway/store_graph.go`, `gateway/team_history_migration.go`
-- **Read by:** `gateway/charter_drafts.go`, `gateway/cto_graph.go`, `gateway/graph_refs.go`, `gateway/graph_view.go`, `gateway/learned_apply.go`, `gateway/learned_owner.go`, `gateway/store_graph.go`, `gateway/team_history_migration.go`, `gateway/teams.go`
+- **Read by:** `gateway/charter_drafts.go`, `gateway/cto_graph.go`, `gateway/graph_refs.go`, `gateway/graph_view.go`, `gateway/store_graph.go`, `gateway/team_history_migration.go`, `gateway/teams.go`
 - **Shown in:** TUI, Graph; CTO op `graph_undo`; CTO op `charter_history`; CTO op `edge_history`; CTO op `team_history`
 - **Kept:** Forever.
 
@@ -378,7 +370,7 @@ Owner settings and their history.
 
 - **Holds:** How one request between two nodes ended: a reply with an outcome (accept, reject, escalate or redirect), the reason and recommendation, whether the owner resolved it, and whether it was overruled (`overruled`, `overrule_message_id`).
 - **Written by:** `gateway/asks.go`, `gateway/store.go`, `gateway/store_inbox.go`, `gateway/store_outcome.go`
-- **Read by:** `gateway/asks.go`, `gateway/bot_tools.go`, `gateway/learned.go`, `gateway/owner_answers.go`, `gateway/signal.go`, `gateway/store.go`, `gateway/store_outcome.go`, `gateway/store_record.go`
+- **Read by:** `gateway/asks.go`, `gateway/bot_tools.go`, `gateway/owner_answers.go`, `gateway/signal.go`, `gateway/store.go`, `gateway/store_outcome.go`, `gateway/store_record.go`
 - **Shown in:** TUI; tool `agent_message_reply`; CTO op `outcome_inbox`; CTO op `outcome_overrule`
 - **Kept:** Forever (messages are kept forever by default, so their outcomes are too).
 
@@ -402,7 +394,7 @@ Owner settings and their history.
 
 - **Holds:** One project folder registered on one machine, with its path, name, git remote and default branch.
 - **Written by:** `gateway/store_projects.go`
-- **Read by:** `gateway/delivery_changes.go`, `gateway/graph_lifecycle.go`, `gateway/graph_view.go`, `gateway/learned.go`, `gateway/project_display.go`, `gateway/settings.go`, `gateway/skill_lists.go`, `gateway/skillarchive_intake.go` and others
+- **Read by:** `gateway/delivery_changes.go`, `gateway/graph_lifecycle.go`, `gateway/graph_view.go`, `gateway/project_display.go`, `gateway/settings.go`, `gateway/skill_lists.go`, `gateway/skillarchive_intake.go` and others
 - **Shown in:** TUI, Graph; tool `agent_projects_find`; tool `agent_project_add`; CTO op `project_add`
 - **Kept:** Until the project is removed.
 
@@ -438,7 +430,7 @@ The ask store, its sorts, follow-ups and the log.
 
 - **Holds:** One log line about something that happened in the gateway (an ask sorted, a permission applied), with what undoes it.
 - **Written by:** `gateway/asks.go`, `gateway/permissions.go`, `gateway/store.go`
-- **Read by:** `gateway/asks.go`, `gateway/permissions.go`, `gateway/server.go`, `gateway/store.go`
+- **Read by:** `gateway/asks.go`, `gateway/server.go`, `gateway/store.go`
 - **Shown in:** TUI; tool `agent_ask_sort`; CTO op `desk_log`; CTO op `desk_settle`
 - **Kept:** The newest 2000 lines, trimmed on every 200th insert.
 
@@ -458,25 +450,9 @@ The ask store, its sorts, follow-ups and the log.
 - **Shown in:** tool `agent_ask_intake`; tool `agent_ask_sort`; CTO op `inbox_list`; CTO op `inbox_answer`; CTO op `cto_intake_find`
 - **Kept:** Forever (answered and closed rows stay).
 
-### permission_proposals
-
-- **Holds:** One permission change an agent proposed (rules, targets, reason) with its status, who decided and the result.
-- **Written by:** `gateway/permissions.go`
-- **Read by:** `gateway/permissions.go`
-- **Shown in:** TUI; tool `agent_permission_propose`; CTO op `cto_proposals_find`; CTO op `proposal_ask`
-- **Kept:** Forever.
-
 ## Learning
 
-Standing orders, notes, findings, and what the gateway learns from signals.
-
-### findings
-
-- **Holds:** One finding reported about a model or a harness. Enough findings promote a playbook note.
-- **Written by:** `gateway/learn.go`, `gateway/store_record.go`
-- **Read by:** `gateway/learn.go`
-- **Shown in:** tool `agent_learn`; CTO op `agent_learn`
-- **Kept:** Forever; a finding never promoted is marked stale after 90 days.
+Standing orders, notes and the playbook.
 
 ### friction
 
@@ -486,21 +462,13 @@ Standing orders, notes, findings, and what the gateway learns from signals.
 - **Shown in:** TUI, Quotas; tool `agent_friction_mark`; CTO op `friction_find`; CTO op `friction_mark`
 - **Kept:** Forever.
 
-### learned_suggestions
-
-- **Holds:** One suggestion the system learned from message traffic: a change to a charter field or to a link, with its evidence and status (new, accepted, rejected). For an applied change, `learned_seen` says whether the owner has seen it.
-- **Written by:** `gateway/learned.go`, `gateway/learned_apply.go`, `gateway/learned_owner.go`, `gateway/side_fold.go`, `gateway/store_graph.go`
-- **Read by:** `gateway/asks.go`, `gateway/chief.go`, `gateway/learned.go`, `gateway/learned_apply.go`, `gateway/learned_owner.go`, `gateway/store_inbox.go`
-- **Shown in:** TUI; TUI, Graph; CTO op `learned_list`; CTO op `learned_answer`; CTO op `learned_view`
-- **Kept:** Forever (status changes, rows stay).
-
 ### playbook
 
-- **Holds:** One note about a model or a harness (written by the owner or promoted from findings), shown to workers that start with that model.
-- **Written by:** `gateway/learn.go`, `gateway/track.go`
-- **Read by:** `gateway/learn.go`, `gateway/track.go`
+- **Holds:** One note about a model or a harness, written by the owner or the CTO, shown to workers that start with that model. Older automatic notes kept only when pinned.
+- **Written by:** `gateway/track.go`
+- **Read by:** `gateway/track.go`
 - **Shown in:** tool `agent_machines_find`; tool `agent_worker_start`; CTO op `playbook_get`; CTO op `playbook_set`; TUI, Graph
-- **Kept:** Until the owner clears the note; automatic notes are flagged stale after 60 days.
+- **Kept:** Until the owner clears the note.
 
 ### standing_order_history
 

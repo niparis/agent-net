@@ -42,8 +42,8 @@ func TestTopicVersionsFollowCommittedTables(t *testing.T) {
 	if after[protocol.TopicAgents] == before[protocol.TopicAgents] {
 		t.Fatal("agents version did not move")
 	}
-	if after[protocol.TopicLearned] != before[protocol.TopicLearned] {
-		t.Fatal("unrelated learned version moved")
+	if after[protocol.TopicChanges] != before[protocol.TopicChanges] {
+		t.Fatal("unrelated changes version moved")
 	}
 }
 

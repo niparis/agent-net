@@ -75,20 +75,20 @@ func TestCharterDraftRequestDraftAndAccept(t *testing.T) {
 	}
 
 	// The owner list shows the draft and accept writes it.
-	var list []protocol.LearnedSuggestion
-	if err := json.Unmarshal(cli.mustCall("learned_list", map[string]any{}), &list); err != nil {
+	var list []protocol.CharterDraft
+	if err := json.Unmarshal(cli.mustCall(protocol.OpDraftsList, nil), &list); err != nil {
 		t.Fatal(err)
 	}
 	found := false
 	for _, v := range list {
-		if v.ID == -res.ID && v.Origin == "draft" && v.Level == "repo" && v.NewValue == "A small test repo" {
+		if v.ID == res.ID && v.Level == "repo" && v.Value == "A small test repo" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("learned list lacks the draft: %+v", list)
+		t.Fatalf("drafts list lacks the draft: %+v", list)
 	}
-	cli.mustCall("learned_answer", map[string]any{"suggestion_id": -res.ID, "action": "accept"})
+	cli.mustCall(protocol.OpDraftAnswer, protocol.DraftAnswerRequest{DraftID: res.ID, Action: "accept"})
 	if c, _ := g.gw.Store().EffectiveCharter("demo", "demo", ""); c.Purpose != "A small test repo" {
 		t.Fatalf("accepted draft: %+v", c)
 	}

@@ -1,5 +1,7 @@
 package protocol
 
+import "errors"
+
 // Charter drafts (decision 0088). A live session of a repo reads its
 // AGENTS.md and proposes charter values with agent_charter_draft. A draft is a
 // suggestion: nothing changes until the owner or the CTO accepts it.
@@ -69,4 +71,21 @@ type CharterDraft struct {
 	// HistoryID is the graph history entry an accept wrote, for graph_undo. It
 	// is set on the answer of a decision only.
 	HistoryID int64 `json:"history_id,omitempty"`
+}
+
+// DraftAnswerRequest is draft_answer: accept or reject one pending draft.
+type DraftAnswerRequest struct {
+	DraftID int64  `json:"draft_id"`
+	Action  string `json:"action"`
+}
+
+// Validate checks the shape of the answer.
+func (r DraftAnswerRequest) Validate() error {
+	if r.DraftID <= 0 {
+		return errors.New("draft_id is the number of a pending charter draft")
+	}
+	if r.Action != "accept" && r.Action != "reject" {
+		return errors.New("action must be accept or reject")
+	}
+	return nil
 }

@@ -652,7 +652,7 @@ func (m Model) fetchCmd() tea.Cmd {
 		// proposal on this machine changes the count in the Snapshot, and one
 		// on another machine is found by the wait.
 		markerMoved := proposalsMarkerOf(res.snap) != proposalsSeen
-		listsWanted := wants(protocol.TopicInbox) || wants(protocol.TopicAgents) || wants(protocol.TopicLearned)
+		listsWanted := wants(protocol.TopicInbox) || wants(protocol.TopicAgents)
 		c, ok := src.(localCaller)
 		if ok && listsWanted && (markerMoved || res.at.Sub(proposalsAt) >= proposalsRefreshEvery || (ctoOnScreen && full)) {
 			res.proposalsAsked = true
@@ -690,19 +690,11 @@ func (m Model) fetchCmd() tea.Cmd {
 	}
 }
 
-// proposalsMarkerOf describes what the Snapshot says about open proposals and
-// learned suggestions. It is a change marker, not the list itself: when it
-// differs the proposals are fetched again, even on a tab that does not show
-// the CTO box.
+// proposalsMarkerOf describes what the Snapshot says about open proposals.
+// It is a change marker, not the list itself: when it differs the proposals
+// are fetched again, even on a tab that does not show the CTO box.
 func proposalsMarkerOf(s Snapshot) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "p%d;", s.ProposalCount)
-	for _, learned := range s.Learned {
-		if learned.Status == "pending" && learned.Severity == "major" {
-			fmt.Fprintf(&b, "l%d;", learned.ID)
-		}
-	}
-	return b.String()
+	return fmt.Sprintf("p%d;", s.ProposalCount)
 }
 
 func (m Model) topCmd(id string) tea.Cmd {
@@ -1391,15 +1383,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var save tea.Cmd
 			changed, save = changed.onboardingComplete("talk")
 			next, cmd = changed, tea.Batch(cmd, save)
-		}
-		if m.mapOn {
-			if changed, ok := next.(Model); ok && (!changed.mapOn || changed.quitting) {
-				mark := m.markMapViewed(m.mp.selected)
-				if changed.quitting && mark != nil {
-					return next, tea.Sequence(mark, cmd)
-				}
-				return next, tea.Batch(mark, cmd)
-			}
 		}
 		return next, cmd
 	}

@@ -51,7 +51,7 @@ func (h *pollHarness) count(method string, n int) {
 // frame maps a local operator method to the gateway frame the daemon sends.
 var pollFrames = map[string]string{
 	"list": "query.agents", "nodes": "query.nodes", "projects": "query.projects",
-	"learned_list": "learned.list", "asks_list": "asks.list", "chief_get": "chief.get",
+	"drafts_list": "charter.drafts", "asks_list": "asks.list", "chief_get": "chief.get",
 	"counts": "query.counts", "usage": "query.usage",
 	"events": "query.events",
 }
@@ -77,7 +77,7 @@ func (h *pollHarness) answer(ctx context.Context, method string, raw json.RawMes
 		}
 		page := res.(protocol.ChangeListResult)
 		return pollChangesResult(page), nil
-	case "learned_list":
+	case "drafts_list":
 		var m map[string]any
 		_ = json.Unmarshal(raw, &m)
 		if m == nil {

@@ -46,7 +46,7 @@ var operatorMethods = map[string]bool{
 	"notification_settings":     true,
 	protocol.OpSkillArchiveUndo: true, protocol.OpSkillsUndo: true, "gateway_backup": true,
 	protocol.OpSessionStop: true, protocol.OpSessionStart: true, protocol.OpSessionStartGet: true, protocol.OpSessionResume: true,
-	"inbox_list": true, protocol.OpAsksList: true, protocol.OpChiefGet: true, protocol.OpChiefSet: true, protocol.OpAskHistory: true, protocol.OpAskUndo: true, protocol.OpAskMark: true, protocol.OpAskDiscuss: true, protocol.OpDeskLog: true, protocol.OpDeskSettle: true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true, "learned_list": true, "learned_answer": true, "learned_view": true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
+	"inbox_list": true, protocol.OpAsksList: true, protocol.OpChiefGet: true, protocol.OpChiefSet: true, protocol.OpAskHistory: true, protocol.OpAskUndo: true, protocol.OpAskMark: true, protocol.OpAskDiscuss: true, protocol.OpDeskLog: true, protocol.OpDeskSettle: true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true, protocol.OpDraftsList: true, protocol.OpDraftAnswer: true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpConversations:        true,
 	protocol.OpConversationMessages: true,
 	protocol.OpProjectDisplayGet:    true, protocol.OpProjectDisplaySet: true,
@@ -60,7 +60,6 @@ var operatorMethods = map[string]bool{
 	protocol.OpNodeSettingsGet: true, protocol.OpNodeSettingsSet: true,
 	"settings_write": true, "settings_undo": true, "settings_owner_read": true, protocol.OpChangesOwnerFind: true, protocol.OpChangesOwnerReport: true,
 	protocol.OpPlaybookGet: true, protocol.OpPlaybookSet: true,
-	protocol.OpPermissionUndo:  true,
 	protocol.OpPermissionApply: true,
 	protocol.OpNudgeUndo:       true,
 	protocol.OpNudgeStats:      true,
@@ -516,42 +515,28 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			actor = "cto"
 		}
 		res, err = d.call(ctx, protocol.FrameFrictionMark, protocol.FrictionMarkCall{Actor: actor, FrictionMarkRequest: p})
-	case "learned_list", "learned_answer", "learned_view":
-		var p struct {
-			ID        int64  `json:"suggestion_id"`
-			Node      string `json:"node"`
-			Action    string `json:"action"`
-			IfVersion uint64 `json:"if_version,omitempty"`
-			Lite      bool   `json:"lite,omitempty"`
-		}
-		var decodeErr error
-		if method == "learned_answer" {
-			decodeErr = decodeCTOArgs(method, raw, &p)
-		} else if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
-			decodeErr = errors.New("bad learned request")
-		}
-		if decodeErr != nil {
-			return nil, true, decodeErr
-		}
+	case protocol.OpDraftsList, protocol.OpDraftAnswer:
 		owner := d.ownerSessionID()
 		if owner == "" {
 			return nil, true, errors.New("owner session not registered")
+		}
+		if method == protocol.OpDraftsList {
+			res, err = d.call(ctx, "charter.drafts", map[string]any{"owner": owner})
+			break
+		}
+		var p protocol.DraftAnswerRequest
+		if err = decodeCTOArgs(method, raw, &p); err != nil {
+			return nil, true, err
+		}
+		if err = p.Validate(); err != nil {
+			return nil, true, err
 		}
 		// The gateway records the CTO as the actor of its own answer.
 		actor := ""
 		if lc.cto || proposalActor(ctx) == "cto" {
 			actor = "cto"
 		}
-		frame := struct {
-			Owner     string `json:"owner"`
-			ID        int64  `json:"suggestion_id"`
-			Node      string `json:"node"`
-			Action    string `json:"action"`
-			Actor     string `json:"actor,omitempty"`
-			IfVersion uint64 `json:"if_version,omitempty"`
-			Lite      bool   `json:"lite,omitempty"`
-		}{owner, p.ID, p.Node, p.Action, actor, p.IfVersion, p.Lite}
-		res, err = d.call(ctx, strings.Replace(method, "_", ".", 1), frame)
+		res, err = d.call(ctx, "charter.draft_answer", map[string]any{"owner": owner, "draft": p.DraftID, "action": p.Action, "actor": actor})
 	case "inbox_answer":
 		var p struct {
 			ID     string             `json:"id"`
@@ -935,15 +920,6 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			return nil, true, errors.New("nudge_undo needs id and receipt")
 		}
 		res, err = d.call(ctx, protocol.FrameNudgeUndo, protocol.NudgeUndoRequest{PauseID: q.Pause(), Receipt: q.Receipt, Owner: d.ownerSessionID()})
-	case protocol.OpPermissionUndo:
-		var q protocol.PermissionUndoRequest
-		if err := decodeCTOArgs(method, raw, &q, "id"); err != nil {
-			return nil, true, err
-		}
-		if q.ID == "" {
-			return nil, true, errors.New("permission_undo needs id")
-		}
-		res, err = d.call(ctx, "permission.undo", protocol.PermissionUndoFrame{ProposalID: q.ID, Owner: d.ownerSessionID()})
 	case protocol.OpPermissionApply:
 		// Strict: a field the op does not have is refused by name, so a call
 		// can only grant what it names. The gateway requires owner_words.
@@ -967,21 +943,6 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			frame.WordsVerified = words != ""
 		}
 		res, err = d.call(ctx, protocol.FramePermissionOwnerApply, frame)
-	case protocol.OpPermissionReject:
-		var q protocol.PermissionRejectRequest
-		if err := decodeCTOArgs(method, raw, &q, "id", "owner_words"); err != nil {
-			return nil, true, err
-		}
-		frame := protocol.PermissionRejectFrame{Request: q, Owner: d.ownerSessionID(), By: "owner", WordsVerified: true}
-		if proposalActor(ctx) == "cto" {
-			frame.By, frame.WordsVerified = "cto", false
-			words, verr := d.verifyCTOOwnerWords(q.OwnerWords)
-			if verr != nil {
-				return nil, true, verr
-			}
-			frame.WordsVerified = words != ""
-		}
-		res, err = d.call(ctx, protocol.FramePermissionReject, frame)
 	case protocol.OpDeliveryOwnerAnswer:
 		var q protocol.DeliveryOwnerAnswerRequest
 		if err := decodeCTOArgs(method, raw, &q, "change", "step", "result", "commit", "owner_words"); err != nil {

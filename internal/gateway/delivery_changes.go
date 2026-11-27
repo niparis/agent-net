@@ -105,19 +105,6 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 		} else {
 			data, err = g.store.MarkFriction(q.Actor, q.FrictionMarkRequest)
 		}
-	case protocol.FrameDue:
-		q, derr := decode[protocol.DueRequest](raw)
-		if derr != nil || q.SessionID == "" {
-			return nil, true, reject("bad %s", typ)
-		}
-		owner, oerr := g.store.SessionNode(q.SessionID)
-		if oerr != nil {
-			return nil, true, oerr
-		}
-		if owner != nc.id {
-			return nil, true, reject("session %q is not on this machine", q.SessionID)
-		}
-		data, err = g.store.SessionDue(q.SessionID, q.DueArgs)
 	case protocol.FrameNudgePause:
 		q, derr := decode[protocol.NudgePauseRequest](raw)
 		if derr != nil {

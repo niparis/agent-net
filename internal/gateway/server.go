@@ -547,13 +547,6 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 				if err := g.store.checkFollowUps(); err != nil {
 					g.logLine("error", "where", "follow-ups", "err", err)
 				}
-				if wakes, err := g.store.checkSessionDues(); err != nil {
-					g.logLine("error", "where", "session dues", "err", err)
-				} else {
-					for _, m := range wakes {
-						g.dispatch(ctx, m)
-					}
-				}
 				// The chief of staff's daily brief wakes it once per owner-local
 				// date (decision 0114).
 				if m, sent, err := g.store.checkDailyBrief(g.store.now()); err != nil {
@@ -613,26 +606,6 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 				}
 				g.dispatchStepTasks(ctx)
 			}()
-		}
-	}
-}
-
-// RunLearning processes suggestions once a minute, independently of message
-// expiry, until the context ends.
-func (g *Gateway) RunLearning(ctx context.Context) {
-	t := time.NewTicker(time.Minute)
-	defer t.Stop()
-	for {
-		func() {
-			defer g.startLoop("learning")()
-			if err := g.store.ProcessLearned(); err != nil && ctx.Err() == nil {
-				g.logLine("error", "where", "learned suggestions", "err", err)
-			}
-		}()
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
 		}
 	}
 }
@@ -1953,21 +1926,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		g.logLine("session.trust", "node", nc.id, "session", p.SessionID, "on", p.On)
 		return map[string]any{"session_id": p.SessionID, "on": p.On}, nil
 
-	case "learn.add":
-		p, err := decode[protocol.LearnFrame](raw)
-		if err != nil || p.Reporter == "" {
-			return nil, reject("bad learn.add")
-		}
-		owner, err := st.SessionNode(p.Reporter)
-		if err != nil {
-			return nil, err
-		}
-		if owner != nc.id {
-			return nil, reject("session %q does not belong to this node", p.Reporter)
-		}
-		return st.AddFinding(protocol.Finding{SubjectKind: p.SubjectKind, Subject: p.Subject,
-			Finding: p.Finding, Evidence: p.Evidence, Reporter: p.Reporter, NodeID: nc.id})
-
 	case "note.write", "notes.find":
 		// A session writes and reads its notes. The gateway reads the agent and
 		// the project from the session, so a session cannot name another's.
@@ -2025,35 +1983,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return st.EditBar(p.SessionID, p.BarEditRequest)
 
-	case "permission.propose":
-		p, err := decode[protocol.PermissionProposeFrame](raw)
-		if err != nil || p.SessionID == "" {
-			return nil, reject("bad permission.propose")
-		}
-		owner, err := st.SessionNode(p.SessionID)
-		if err != nil {
-			return nil, err
-		}
-		if owner != nc.id {
-			return nil, reject("session %q does not belong to this node", p.SessionID)
-		}
-		res, err := st.ProposePermission(p, nc.id)
-		if err == nil {
-			g.logLine("permission.propose", "node", nc.id, "session", p.SessionID, "proposal", res.ID)
-		}
-		if err == nil && res.Status == "approved" {
-			// A scope approved it: apply it now, like the owner's own words.
-			if approved, perr := st.PermissionProposal(res.ID); perr == nil {
-				if _, aerr := g.applyApprovedPermission(ctx, approved); aerr != nil {
-					g.logLine("permission.apply.refused", "id", res.ID, "reason", aerr.Error())
-				}
-				if done, perr := st.PermissionProposal(res.ID); perr == nil {
-					res.Status = done.Status
-				}
-			}
-		}
-		return res, err
-
 	case protocol.FramePermissionTrustAsk:
 		var p protocol.PermissionTrustAsk
 		if json.Unmarshal(raw, &p) != nil || p.Path == "" {
@@ -2069,14 +1998,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return st.undoNudge(protocol.NudgeUndoArgs{PauseID: p.PauseID, Receipt: p.Receipt})
 
-	case "permission.undo":
-		var p protocol.PermissionUndoFrame
-		if json.Unmarshal(raw, &p) != nil || p.ProposalID == "" || !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		res, err := g.undoPermissionProposal(ctx, p.ProposalID)
-		return res, err
-
 	case protocol.FramePermissionOwnerApply:
 		// The owner's operator path, or the CTO's process-checked one, on the
 		// owner's quoted words. The daemon sends it only from
@@ -2087,15 +2008,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return g.ownerApplyPermission(ctx, p)
 
-	case protocol.FramePermissionReject:
-		// The owner's operator path, or the CTO's process-checked one, on the
-		// owner's quoted words. Nothing is written to a machine.
-		var p protocol.PermissionRejectFrame
-		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		return st.RejectPermissionOnOwnerWords(p)
-
 	case protocol.FrameLoopResume:
 		// The owner's operator path, or the CTO's process-checked one, on the
 		// owner's quoted words.
@@ -2104,24 +2016,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("owner authority required")
 		}
 		return st.ResumeLoopOnOwnerWords(p)
-
-	case protocol.FramePermissionGet:
-		var p protocol.PermissionGetFrame
-		if json.Unmarshal(raw, &p) != nil || p.ProposalID == "" || !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		res, err := st.PermissionProposal(p.ProposalID)
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, reject("unknown permission proposal %s", p.ProposalID)
-		}
-		return res, err
-
-	case protocol.FramePermissionPending:
-		var p protocol.PermissionGetFrame
-		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
-			return nil, reject("owner authority required")
-		}
-		return st.PendingPermissionProposals()
 
 	case "rate.offer":
 		p, err := decode[protocol.RateOfferFrame](raw)
@@ -2744,51 +2638,31 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return drafts, nil
 
-	case "learned.list", "learned.answer", "learned.view":
+	case "charter.draft_answer":
+		// The owner or the CTO accepts or rejects one pending draft. The
+		// answer is the stored row, with the history entry of an accept, so
+		// the caller can undo it.
 		var p struct {
-			Owner  string `json:"owner"`
-			ID     int64  `json:"suggestion_id"`
-			Node   string `json:"node"`
+			Owner string `json:"owner"`
+			// Not "id": the link envelope carries its own request id there.
+			Draft  int64  `json:"draft"`
 			Action string `json:"action"`
 			Actor  string `json:"actor,omitempty"`
-			Lite   bool   `json:"lite,omitempty"`
 		}
 		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
-		switch typ {
-		case "learned.list":
-			rows, err := st.OwnerLearned()
-			if err != nil {
-				return nil, err
-			}
-			if p.Lite {
-				rows = liteLearnedRows(rows)
-			}
-			return rows, nil
-		case "learned.answer":
-			actor := "owner"
-			if p.Actor == "cto" {
-				actor = "cto"
-			}
-			var row any = map[string]bool{"ok": true}
-			if p.ID < 0 {
-				// A charter draft answers with its stored row, and the history
-				// entry of an accept, so the caller can undo it.
-				d, err := st.DecideCharterDraftRow(-p.ID, p.Action, actor)
-				if err != nil {
-					return row, err
-				}
-				row = maskCharterDraft(d)
-			} else if err := st.decideLearned(p.ID, p.Action, actor); err != nil {
-				return row, err
-			}
-			err := st.reconcileLearnedAsks()
-			g.flushLeadRequests(ctx)
-			return row, err
-		default:
-			return map[string]bool{"ok": true}, st.MarkLearnedViewed(p.Node, p.ID)
+		actor := "owner"
+		if p.Actor == "cto" {
+			actor = "cto"
 		}
+		d, err := st.DecideCharterDraftRow(p.Draft, p.Action, actor)
+		if err != nil {
+			return nil, err
+		}
+		err = st.reconcileCharterDraftAsks()
+		g.flushLeadRequests(ctx)
+		return maskCharterDraft(d), err
 
 	case "context.get":
 		p, err := decode[protocol.PolicyGet](raw)
@@ -3287,16 +3161,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 				g.dispatchPending(ctx, node, false)
 			}
 		}
-		// A permission approval is applied only here, after the owner's answer
-		// was stored. It reaches each target machine's daemon as its own frame.
-		var permissionResults []protocol.PermissionApplyResult
-		var permissionErr error
-		if item.Kind == protocol.AskKindPermission && item.Status == "approved" {
-			permissionResults, permissionErr = g.applyPermissionProposal(ctx, item.ID)
-			if permissionErr != nil {
-				g.logLine("permission.apply.refused", "id", p.ID, "reason", permissionErr.Error())
-			}
-		}
 		if ref := st.startOverrideRef(item.ID); ref != "" && item.Status != "open" {
 			g.sendStartDecision(ctx, item, ref)
 		}
@@ -3314,14 +3178,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 				}
 			}
 		}
-		out := map[string]any{"item": item}
-		if len(permissionResults) > 0 {
-			out["permission_results"] = permissionResults
-		}
-		if permissionErr != nil {
-			out["permission_error"] = permissionErr.Error()
-		}
-		return out, nil
+		return map[string]any{"item": item}, nil
 
 	case "lead.resolve":
 		var p struct {

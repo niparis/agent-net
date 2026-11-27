@@ -23,7 +23,7 @@ func (f *countingSource) Snapshot(ctx context.Context) (operator.Snapshot, error
 	f.snapshotCalls++
 	// Model the concrete operator's full Snapshot wire reads for the before
 	// measurement. Each response uses the same fixture as granular reads.
-	for _, method := range []string{protocol.OpInfo, protocol.OpAgents, protocol.OpNodes, "notification_settings", protocol.OpTimeZoneGet, protocol.OpWorkerProfiles, protocol.OpWorkerProvidersGet, protocol.OpProtectedProvidersGet, protocol.OpWorkerFloorsGet, protocol.OpScoresGet, "difficulty_get", protocol.OpWorkerRotationGet, "learned_list", protocol.OpGraphGet, protocol.OpProjects, protocol.OpWorkerLog} {
+	for _, method := range []string{protocol.OpInfo, protocol.OpAgents, protocol.OpNodes, "notification_settings", protocol.OpTimeZoneGet, protocol.OpWorkerProfiles, protocol.OpWorkerProvidersGet, protocol.OpProtectedProvidersGet, protocol.OpWorkerFloorsGet, protocol.OpScoresGet, "difficulty_get", protocol.OpWorkerRotationGet, protocol.OpDraftsList, protocol.OpGraphGet, protocol.OpProjects, protocol.OpWorkerLog} {
 		_, _ = f.Call(ctx, method, nil)
 	}
 	return f.richOperator.Snapshot(ctx)

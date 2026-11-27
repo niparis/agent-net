@@ -100,33 +100,6 @@ func TestPlaybookOwnerGateAndCLI(t *testing.T) {
 	}
 }
 
-func TestAgentLearnThroughDaemon(t *testing.T) {
-	t.Parallel()
-	g := startGateway(t, t.TempDir(), "")
-	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi", interval: time.Hour}, nil)
-	agent, agentID := helloPi(t, n, "learn-agent", "/w/learn", true)
-	raw, err := agent.call("agent_learn", protocol.LearnRequest{SubjectKind: protocol.SubjectModel, Subject: "terra",
-		Finding: "Hands back partial work.", Evidence: []string{"s_w1"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var res protocol.LearnResult
-	mustJSON(t, raw, &res)
-	if !res.Accepted || res.ID == 0 || res.Remaining != 2 {
-		t.Errorf("learn result: %+v", res)
-	}
-	findings, err := g.gw.Store().Findings(protocol.SubjectModel, "terra", 10)
-	if err != nil || len(findings) != 1 || findings[0].Reporter != agentID || findings[0].Finding != "Hands back partial work." {
-		t.Errorf("findings: %+v %v", findings, err)
-	}
-	// The command line is not an agent session.
-	cli := cliClient(t, n)
-	if _, err := cli.call("agent_learn", protocol.LearnRequest{SubjectKind: protocol.SubjectModel, Subject: "x", Finding: "y"}); err == nil ||
-		!strings.Contains(err.Error(), "not available to cli clients") {
-		t.Errorf("cli learn: %v", err)
-	}
-}
-
 func TestCodexReportCompleteLine(t *testing.T) {
 	for _, c := range []struct {
 		report   string

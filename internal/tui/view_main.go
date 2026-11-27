@@ -467,9 +467,6 @@ func (m Model) titleLine(w int) string {
 			compact += fmt.Sprintf(" · %d queued", q)
 		}
 	}
-	if n := m.learnedNew(); n > 0 {
-		mid += fmt.Sprintf(", learned %d new", n)
-	}
 	var filters []string
 	if m.filter != "" {
 		filters = append(filters, "/"+sanitize(m.filter))

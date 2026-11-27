@@ -15,7 +15,7 @@ import (
 
 // BenchmarkRealPoolLatency measures how long reads wait while a writer runs,
 // on a copy of the real database (AGENT_NET_BENCH_DB, see benchRealGateway).
-// Four reader goroutines cycle through query.agents, learned.list and graph.get
+// Four reader goroutines cycle through query.agents, charter.drafts and graph.get
 // as the TUI and the CTO do; one writer reports session.upsert all the time.
 // Each call is timed on the wall clock, because the live problem was waiting,
 // not CPU. It reports the median and the 95th percentile of each call.
@@ -47,7 +47,7 @@ func BenchmarkRealPoolLatency(b *testing.B) {
 	nc.graphRefs.Store(true)
 	nc.sessionAgents.Store(true)
 
-	// learned.list needs the owner's session.
+	// charter.drafts needs the owner's session.
 	ownerNC, ownerID := nc, agents[0].SessionID
 	if all, err := g.store.Agents(protocol.QueryAgents{OnlineOnly: true}); err == nil {
 		for _, a := range all {
@@ -76,9 +76,9 @@ func BenchmarkRealPoolLatency(b *testing.B) {
 		run  func() error
 	}{
 		{"query.agents", func() error { return call("query.agents", protocol.QueryAgents{}) }},
-		{"learned.list", func() error {
+		{"charter.drafts", func() error {
 			g.validToolOwner(ownerNC, ownerID)
-			_, err := g.store.OwnerLearned()
+			_, err := g.store.PendingCharterDrafts()
 			return err
 		}},
 		{"graph.get", func() error { return call("graph.get", protocol.QueryGraph{}) }},

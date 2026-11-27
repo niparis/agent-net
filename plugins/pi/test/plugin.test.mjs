@@ -336,24 +336,6 @@ await test("agent_file_send forwards paths and note", async () => {
   await p.fire("session_shutdown", {});
 });
 
-await test("agent_learn records a finding", async () => {
-  const p = makePi();
-  extension(p.api);
-  const n = hellos.length;
-  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
-  await until("hello", () => hellos.length === n + 1);
-  replies.agent_learn = { accepted: true, id: 7, status: "new", remaining: 2 };
-  const tool = p.tools.get("agent_learn");
-  if (!tool) throw new Error("agent_learn is not registered");
-  const out = (await tool.execute("id", { subject_kind: "model", subject: "terra", finding: "Hands back partial work.", evidence: ["s_w1"] })).content[0].text;
-  const sent = requests.filter((r) => r.method === "agent_learn").pop();
-  if (sent.params.subject !== "terra" || sent.params.evidence[0] !== "s_w1" || !out.includes("Recorded finding 7")) {
-    throw new Error("learn: " + JSON.stringify(sent) + " " + out);
-  }
-  delete replies.agent_learn;
-  await p.fire("session_shutdown", {});
-});
-
 await test("the read tools send the tool input to their own daemon method", async () => {
   const p = makePi();
   extension(p.api);

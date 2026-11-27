@@ -1046,23 +1046,6 @@ const TOOLS: ToolDef[] = [
     method: "worker_handback",
     format: (r) => `Handed back (${r.status}${r.complete === false ? ", partial" : ""}). ${r.note ? r.note : "The caller has your report and the facts."} You can still receive follow-up messages.`,
   },
-  {
-    name: "agent_learn",
-    description:
-      "Record one thing the network should know before it picks or briefs a model, harness, project, MCP server or machine next time. " +
-      "Report only what would change that choice or brief, never a routine result or a status update. " +
-      "A finding is quiet: it is not a message, it does not appear in Needs you, and it changes nothing until the gateway promotes a pattern to the playbook. " +
-      "At most 3 findings per session per day. subject_kind is model, harness, model_harness (subject model@harness), project, mcp or machine.",
-    properties: {
-      subject_kind: str("model, harness, model_harness, project, mcp or machine"),
-      subject: str("the model, harness, model@harness, project, MCP server or machine the finding is about"),
-      finding: str("what you learned, in one or two sentences: only what would change how someone picks or briefs this model, harness or project next time. Never a routine result. At most 500 characters"),
-      evidence: { type: "array", items: { type: "string" }, description: "session or worker IDs that show it (optional, at most 20)" },
-    },
-    required: ["subject_kind", "subject", "finding"],
-    method: "agent_learn",
-    format: (r) => (r.accepted === false ? `Not recorded: ${r.reason}` : `Recorded finding ${r.id} (${r.status}). ${r.remaining} left today.`),
-  },
 ];
 
 const catalogNames = new Set<string>(TOOL_CATALOG.map((tool) => tool.name));
@@ -1082,7 +1065,6 @@ const CATALOG_TOOLS: ToolDef[] = TOOL_CATALOG.map((tool) => {
 const ALL_TOOLS: ToolDef[] = [...LEGACY_TOOLS, ...CATALOG_TOOLS];
 
 function formatCatalogResult(name: string, result: any): string {
-  if (name === "agent_learn") return result.accepted === false ? `Not recorded: ${result.reason}` : `Recorded finding ${result.id} (${result.status}). ${result.remaining} left today.`;
   if (name === "agent_handback") return `Handed back (${result.status}${result.complete === false ? ", partial" : ""}). The caller has your report and the facts. You can still receive follow-up messages.`;
   if (name === "agent_project_add") return formatProjectAdd(result);
   return JSON.stringify(result ?? {}, null, 2);

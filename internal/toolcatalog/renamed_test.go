@@ -63,7 +63,7 @@ func TestRenamedErrorIsOneLine(t *testing.T) {
 		"agent_start":     "agent_start was renamed to agent_worker_start.",
 		"agent_stop":      "agent_stop was renamed to agent_worker_stop.",
 		"proposals":       "proposals was renamed to cto_proposals_find.",
-		"learn":           "learn was renamed to agent_learn.",
+		"learn":           "learn was renamed to agent_note_write.",
 		"agent_get":       "agent_get was renamed to agent_session_get.",
 		"tools":           "tools was renamed to agent_mcp_servers_find.",
 		"settings":        "settings was renamed to agent_settings_read or agent_worker_profiles_find.",

@@ -455,7 +455,6 @@ func (m Model) mapCardBody(node protocol.Node, w int) []string {
 		out = append(out, mapBarLines(node.Bar, w)...)
 	}
 	out = append(out, m.mapDraftLines(node, w)...)
-	out = append(out, m.mapLearnedLines(node.Name, w)...)
 	if node.Loop != nil {
 		out = append(out, section(panelLoop, w))
 		out = append(out, m.mapLoopLines(node.Loop, w)...)
@@ -573,7 +572,7 @@ func (m Model) mapTeamCardView(node protocol.Node, w, h int) []string {
 }
 
 // the purpose and the sessions; its edges; and a scrolling body with the
-// charter, the rules and the learned changes. The recent
+// charter, the rules and the charter drafts. The recent
 // changes stay on the last row.
 func (m Model) mapFocusView(w, h int) []string {
 	var head []string

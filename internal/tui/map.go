@@ -54,8 +54,6 @@ type mapState struct {
 	findQuery        string
 	charterFor       string
 	charterScroll    int
-	learnedFor       string
-	learnedIndex     int
 	draftFor         string
 	draftIndex       int
 }
@@ -155,37 +153,22 @@ func (m Model) mapKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m.startSessionFormFromNode()
 		}
 		return m, nil
-	case "undo learned":
-		return m, m.mapUndoLearned()
 	case "accept draft":
 		return m, m.mapDraftDecide("accept")
 	case "reject draft":
 		return m, m.mapDraftDecide("reject")
-	case "previous learned", "next learned":
-		// A card with drafts uses the same keys to choose among them.
+	case "previous draft", "next draft":
 		if node, ok := m.mapNode(m.mp.selected); ok {
 			if n := len(m.mapDrafts(node)); n > 0 {
 				if m.mp.draftFor != node.Name {
 					m.mp.draftFor, m.mp.draftIndex = node.Name, 0
 				}
 				step := 1
-				if key == "previous learned" {
+				if key == "previous draft" {
 					step = n - 1
 				}
 				m.mp.draftIndex = (m.mp.draftIndex + step) % n
-				return m, nil
 			}
-		}
-		changes := m.mapLearned(m.mp.selected)
-		if len(changes) > 0 {
-			if m.mp.learnedFor != m.mp.selected {
-				m.mp.learnedFor, m.mp.learnedIndex = m.mp.selected, 0
-			}
-			step := 1
-			if key == "previous learned" {
-				step = len(changes) - 1
-			}
-			m.mp.learnedIndex = (m.mp.learnedIndex + step) % len(changes)
 		}
 	case "help":
 		m.openHelp()

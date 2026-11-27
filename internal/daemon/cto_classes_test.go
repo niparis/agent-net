@@ -127,7 +127,7 @@ func TestCTOProposalRouting(t *testing.T) {
 			}
 		})
 	}
-	for _, name := range []string{"message", "cto_ui_show", "proposal_ask", "agent_message_send", "agent_message_reply", "agent_learn"} {
+	for _, name := range []string{"message", "cto_ui_show", "proposal_ask", "agent_message_send", "agent_message_reply"} {
 		ran := 0
 		args := ctoClassFixture(name)
 		_, err := routeCTOTool(context.Background(), name, args, func(context.Context, string, string, json.RawMessage, string) (string, error) {

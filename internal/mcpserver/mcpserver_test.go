@@ -73,9 +73,9 @@ func TestToolsForwardToDaemon(t *testing.T) {
 	for _, tl := range tools.Tools {
 		have[tl.Name] = true
 	}
-	want := []string{"agent_announce", "agent_sessions_find", "agent_learn", "agent_note_write", "agent_notes_find",
+	want := []string{"agent_announce", "agent_sessions_find", "agent_note_write", "agent_notes_find",
 		"agent_graph_read", "agent_machines_find", "agent_messages_find",
-		"agent_message_send", "agent_message_reply", "agent_message_handoff", "agent_permission_propose",
+		"agent_message_send", "agent_message_reply", "agent_message_handoff",
 		"agent_projects_find", "agent_project_add",
 		"agent_worker_start", "agent_worker_stop",
 		"agent_worker_rate", "agent_worker_profiles_find", "agent_worker_profile_add", "agent_worker_profile_remove"}
@@ -91,7 +91,7 @@ func TestToolsForwardToDaemon(t *testing.T) {
 	}
 	for _, name := range []string{"agent_list", "agent_get", "agent_nodes", "agent_project_list", "agent_messages",
 		"agent_message_status", "agent_send", "agent_reply", "agent_graph", "agent_mcp_list", "agent_worker_profiles",
-		"agent_start", "agent_stop", "agent_rate", "agent_ask_owner", "agent_request_approval", "agent_propose_idea"} {
+		"agent_start", "agent_stop", "agent_rate", "agent_ask_owner", "agent_request_approval", "agent_propose_idea", "agent_learn", "agent_permission_propose", "agent_due"} {
 		if have[name] {
 			t.Errorf("deprecated tool %s is still listed", name)
 		}
@@ -120,7 +120,6 @@ func TestToolsForwardToDaemon(t *testing.T) {
 		{"agent_machines_find", "machines_find", map[string]any{}},
 		{"agent_project_add", "project_add", map[string]any{"paths": []string{"~/code/a"}}},
 		{"agent_projects_find", "projects_find", map[string]any{"name": "a"}},
-		{"agent_permission_propose", "agent_permission_propose", map[string]any{"rules": []string{"Bash(gh pr merge *)"}, "targets": []string{"a"}, "reason": "merge PRs"}},
 	}
 	for _, c := range cases {
 		n := len(calls)

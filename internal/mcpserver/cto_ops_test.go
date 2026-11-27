@@ -172,17 +172,14 @@ func TestCTOOpPermissionApplyNeedsOwnerWords(t *testing.T) {
 	if err := ValidateCTOOpArgs(op, json.RawMessage(op.Example)); err != nil {
 		t.Fatalf("the permission_apply example does not validate: %v", err)
 	}
-	for _, args := range []string{`{"rules":["Bash(gh pr merge:*)"],"targets":["demo"]}`, `{"id":"pp_1"}`, `{"id":"pp_1","owner_words":"yes","bogus":1}`} {
+	for _, args := range []string{`{"rules":["Bash(gh pr merge:*)"],"targets":["demo"]}`, `{"id":"pp_1","owner_words":"yes"}`, `{"rules":["Bash(x)"],"targets":["demo"],"owner_words":"yes","bogus":1}`} {
 		if err := ValidateCTOOpArgs(op, json.RawMessage(args)); err == nil {
 			t.Errorf("permission_apply %s validated", args)
 		}
 	}
-	if err := ValidateCTOOpArgs(op, json.RawMessage(`{"id":"pp_1","owner_words":"approve that merge rule"}`)); err != nil {
-		t.Errorf("approve by id: %v", err)
-	}
 }
 
-// The three owner answers that lost their Desk path (decision 0196) are ops
+// The owner answers that lost their Desk path (decision 0196) are ops
 // with strict schemas and an owner_words quote.
 func TestCTOOpOwnerAnswersNeedOwnerWords(t *testing.T) {
 	cases := []struct {
@@ -190,8 +187,6 @@ func TestCTOOpOwnerAnswersNeedOwnerWords(t *testing.T) {
 		args []string
 		good string
 	}{
-		{"permission_reject", []string{`{"id":"pp_1"}`, `{"id":"pp_1","reason":"too broad"}`, `{"id":"pp_1","owner_words":"no","bogus":1}`},
-			`{"id":"pp_1","reason":"too broad","owner_words":"no"}`},
 		{"delivery_owner_answer", []string{
 			`{"change":"ch_1","step":"approve","for":"merge","commit":"0123456789012345678901234567890123456789","result":"pass"}`,
 			`{"change":"ch_1","step":"approve","for":"merge","result":"pass","owner_words":"go"}`,

@@ -105,29 +105,3 @@ func liteChangeView(v *protocol.ChangeView) {
 		st.Evidence = &e
 	}
 }
-
-// liteLearnedRows keeps only what the TUI reads of the owner's learned list:
-// pending major suggestions for the quiet count, applied learned changes for
-// the graph cards, and pending charter drafts. Each row loses the fields no
-// screen shows, and the evidence keeps its first excerpt only.
-func liteLearnedRows(rows []protocol.LearnedSuggestion) []protocol.LearnedSuggestion {
-	out := rows[:0]
-	for _, v := range rows {
-		draft := v.Origin == "draft" && v.Status == "pending"
-		pendingMajor := v.Status == "pending" && v.Severity == "major"
-		applied := v.Status == "applied" && v.By == "learned"
-		if !draft && !pendingMajor && !applied {
-			continue
-		}
-		v.Kind = ""
-		v.OldValue = ""
-		v.RawPhrase = ""
-		v.CreatedAt = 0
-		v.ReadyAt = 0
-		if len(v.Evidence) > 1 {
-			v.Evidence = v.Evidence[:1]
-		}
-		out = append(out, v)
-	}
-	return out
-}

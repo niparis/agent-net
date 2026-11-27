@@ -252,10 +252,43 @@ func shortDuration(d time.Duration) string {
 // PlaybookNoteMaxBytes is the longest playbook note the owner may write.
 const PlaybookNoteMaxBytes = 1024
 
-// PlaybookAutoMaxBytes bounds a note the gateway builds from findings.
-const PlaybookAutoMaxBytes = 2048
+// PlaybookSubjectMaxBytes is the longest subject of a playbook note.
+const PlaybookSubjectMaxBytes = 200
 
-// How a playbook note was made.
+// Subject kinds of a playbook note.
+const (
+	SubjectModel        = "model"
+	SubjectHarness      = "harness"
+	SubjectModelHarness = "model_harness"
+	SubjectProject      = "project"
+	SubjectMCP          = "mcp"
+	SubjectMachine      = "machine"
+)
+
+// ParseModelHarness reads a model_harness subject: "model@harness".
+func ParseModelHarness(subject string) (model, harness string, ok bool) {
+	i := strings.LastIndex(subject, "@")
+	if i <= 0 || i == len(subject)-1 {
+		return "", "", false
+	}
+	model, harness = strings.TrimSpace(subject[:i]), strings.TrimSpace(subject[i+1:])
+	if model == "" || harness == "" || hasControl(model) || hasControl(harness) {
+		return "", "", false
+	}
+	return model, harness, true
+}
+
+func hasControl(s string) bool {
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return true
+		}
+	}
+	return false
+}
+
+// How a playbook note was made. Automatic notes are no longer made: the old
+// pinned ones keep their source.
 const (
 	PlaybookSourceAuto  = "auto"
 	PlaybookSourceOwner = "owner"
@@ -264,8 +297,8 @@ const (
 
 // PlaybookNote is one note of the playbook. A model note has SubjectKind model
 // (or model_harness, with Harness); a harness, project, mcp or machine note
-// names its subject directly. An automatic note carries its support count and
-// the track record line behind it.
+// names its subject directly. An old automatic note carries its support count
+// and the track record line behind it.
 type PlaybookNote struct {
 	SubjectKind string `json:"subject_kind"`
 	Subject     string `json:"subject"`
@@ -307,7 +340,7 @@ func CleanPlaybook(model, harness, note string) (string, string, string, error) 
 	if model == "" {
 		return "", "", "", fmt.Errorf("a playbook note needs a model")
 	}
-	if len(model) > FindingSubjectMaxBytes || len(harness) > 40 {
+	if len(model) > PlaybookSubjectMaxBytes || len(harness) > 40 {
 		return "", "", "", fmt.Errorf("the model or harness name is too long")
 	}
 	for _, s := range []string{model, harness} {
@@ -326,22 +359,6 @@ func CleanPlaybook(model, harness, note string) (string, string, string, error) 
 		return "", "", "", fmt.Errorf("a playbook note is at most %d bytes", PlaybookNoteMaxBytes)
 	}
 	return model, harness, note, nil
-}
-
-// CleanPlaybookText removes control characters other than newlines and tabs,
-// trims the text and cuts it to max bytes.
-func CleanPlaybookText(note string, max int) string {
-	note = strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) && r != '\n' && r != '\t' {
-			return -1
-		}
-		return r
-	}, note)
-	note = strings.TrimSpace(note)
-	if len(note) > max {
-		note = strings.ToValidUTF8(note[:max], "")
-	}
-	return note
 }
 
 // Line writes the playbook note for a start result or a machine list.

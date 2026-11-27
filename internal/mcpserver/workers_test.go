@@ -10,33 +10,6 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-func TestAgentLearnShowsTheResultAndTheDailyLimit(t *testing.T) {
-	accepted := true
-	cs := connect(t, func(ctx context.Context, method string, params any) (json.RawMessage, error) {
-		if accepted {
-			return json.RawMessage(`{"accepted":true,"id":7,"status":"new","remaining":2}`), nil
-		}
-		return json.RawMessage(`{"accepted":false,"reason":"at most 3 findings per session per day","remaining":0}`), nil
-	})
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_learn",
-		Arguments: map[string]any{"subject_kind": "model", "subject": "terra", "finding": "Hands back partial work."}})
-	if err != nil || res.IsError || len(res.Content) == 0 {
-		t.Fatalf("agent_learn: %v %+v", err, res)
-	}
-	if text := res.Content[0].(*mcp.TextContent).Text; !strings.Contains(text, `"recorded":true`) || !strings.Contains(text, `"id":"7"`) || !strings.Contains(text, `"left_today":2`) {
-		t.Errorf("learn JSON output: %q", text)
-	}
-	accepted = false
-	res, err = cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_learn",
-		Arguments: map[string]any{"subject_kind": "model", "subject": "terra", "finding": "again"}})
-	if err != nil || res.IsError || len(res.Content) == 0 {
-		t.Fatalf("refused agent_learn: %v %+v", err, res)
-	}
-	if text := res.Content[0].(*mcp.TextContent).Text; !strings.Contains(text, `"recorded":false`) || !strings.Contains(text, `"left_today":0`) {
-		t.Errorf("learn refusal JSON output: %q", text)
-	}
-}
-
 func TestWorkerToolsForwardToDaemon(t *testing.T) {
 	var calls []call
 	worker := protocol.AgentView{SessionID: "s_w1", Hostname: "mac", Harness: "opencode", Model: "a/b",
@@ -75,12 +48,6 @@ func TestWorkerToolsForwardToDaemon(t *testing.T) {
 				return p["project"] == "shop" && p["model"] == "a/b" && (p["harness"] == "" || p["harness"] == nil) && p["owner_words"] == "use a/b for this"
 			}},
 		{"agent_worker_stop", "worker_stop", map[string]any{"worker": "s_w1"}, func(p map[string]any) bool { return p["session"] == "s_w1" }},
-		{"agent_learn", "agent_learn", map[string]any{"subject_kind": "model_harness", "subject": "terra@pi",
-			"finding": "Hands back partial work.", "evidence": []any{"s_w1", "s_w2"}},
-			func(p map[string]any) bool {
-				return p["subject_kind"] == "model_harness" && p["subject"] == "terra@pi" &&
-					p["finding"] == "Hands back partial work." && len(p["evidence"].([]any)) == 2
-			}},
 		{"agent_worker_rate", "agent_rate", map[string]any{"worker": "s_w1", "kind": "rating", "score": 4, "note": "the diff was right"},
 			func(p map[string]any) bool {
 				return p["worker"] == "s_w1" && p["score"] == float64(4) && p["note"] == "the diff was right"

@@ -22,7 +22,7 @@ func ctoDraftFixture(t *testing.T) (*testGateway, *node, *localClient, string) {
 		t.Fatal(err)
 	}
 	// Any owner call registers the owner session the CTO acts through.
-	cliClient(t, n).mustCall("learned_list", nil)
+	cliClient(t, n).mustCall(protocol.OpDraftsList, nil)
 	eventually(t, "owner session online at the gateway", func() bool {
 		a, ok, err := g.gw.Store().Agent(n.d.ownerSessionID())
 		return err == nil && ok && a.Online
@@ -78,7 +78,7 @@ func ctoDraftRows(t *testing.T, n *node) []draftRow {
 }
 
 // The CTO reads a pending charter draft in full, by list and by id, then
-// applies one and rejects another with cto_op learned_answer. An apply is
+// applies one and rejects another with cto_op draft_answer. An apply is
 // undone with the graph_undo the notice names.
 func TestCTOReadsAndDecidesCharterDrafts(t *testing.T) {
 	ctx := context.Background()
@@ -112,7 +112,7 @@ func TestCTOReadsAndDecidesCharterDrafts(t *testing.T) {
 	first := listed[0]
 	if first.Level != "repo" || first.Scope != "demo" || first.Attr != "purpose" || first.Value != "A small demo repo" ||
 		first.Source != protocol.CharterDraftSource || first.DraftedBy != id || first.Status != "pending" ||
-		!strings.Contains(first.Answer, "learned_answer") {
+		!strings.Contains(first.Answer, protocol.OpDraftAnswer) {
 		t.Fatalf("draft row: %+v", first)
 	}
 	var one draftRow
@@ -122,10 +122,10 @@ func TestCTOReadsAndDecidesCharterDrafts(t *testing.T) {
 
 	decide := func(draft int64, action string) map[string]any {
 		t.Helper()
-		raw, _ := json.Marshal(map[string]any{"area": "operator", "method": "learned_answer", "arguments": map[string]any{"suggestion_id": -draft, "action": action}})
+		raw, _ := json.Marshal(map[string]any{"area": "operator", "method": protocol.OpDraftAnswer, "arguments": protocol.DraftAnswerRequest{DraftID: draft, Action: action}})
 		out, err := n.d.runCTOTool(ctx, "settings_change", raw)
 		if err != nil {
-			t.Fatalf("learned_answer %s: %v", action, err)
+			t.Fatalf("draft_answer %s: %v", action, err)
 		}
 		body, _ := json.Marshal(out)
 		var m map[string]any

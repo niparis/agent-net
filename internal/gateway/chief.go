@@ -987,8 +987,8 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 		}
 		body := fmt.Sprintf("The chief of staff sent you ask %s from %s: %s\nWhy it reached you: %s\nAnswer it yourself only if you can, and close it with agent_ask_sort (result close) once it is resolved. Anything that needs the owner goes to the chief of staff with agent_message_send.",
 			q.Ask, sessionLabel(tx, a.session), strings.TrimSpace(a.text), reason)
-		// The receiver cannot read the ask itself, so a charter draft or a
-		// learned suggestion carries its proposal in the message.
+		// The receiver cannot read the ask itself, so a charter draft
+		// carries its proposal in the message.
 		body += askProposalText(tx, q.Ask, a.kind)
 		m, err := s.storeAgentNetMessage(tx, q.To, body, q.Ask, now)
 		if err != nil {
@@ -1569,9 +1569,6 @@ func (s *Store) askFull(id string) (protocol.AskFull, error) {
 	if f.Charter, err = s.askFullCharter(f.SourceRef); err != nil {
 		return f, err
 	}
-	if f.Learned, err = s.askFullLearned(f.SourceRef); err != nil {
-		return f, err
-	}
 	return f, nil
 }
 
@@ -1660,43 +1657,6 @@ func charterRows(q askDB, query string, arg any) ([]protocol.CharterDraftField, 
 	return out, rows.Err()
 }
 
-// askFullLearned returns the learned proposal behind a learned ask.
-func (s *Store) askFullLearned(ref string) (*protocol.LearnedSuggestion, error) {
-	if !strings.HasPrefix(ref, "learned:") {
-		return nil, nil
-	}
-	id, err := sourceRefID(ref, "learned:")
-	if err != nil {
-		return nil, nil
-	}
-	var v protocol.LearnedSuggestion
-	var evidence string
-	err = s.db.QueryRow(`SELECT id,node,field,edge_kind,kind,phrase,evidence,status,severity,created_at,ready_at,decided_at,
-		origin,history_id,COALESCE(raw_phrase,'')
-		FROM learned_suggestions WHERE id=?`, id).
-		Scan(&v.ID, &v.Node, &v.Field, &v.EdgeKind, &v.Kind, &v.Phrase, &evidence, &v.Status, &v.Severity, &v.CreatedAt, &v.ReadyAt, &v.DecidedAt, &v.Origin, &v.HistoryID, &v.RawPhrase)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	if err := json.Unmarshal([]byte(evidence), &v.Evidence); err != nil {
-		return nil, err
-	}
-	if v.Status == "pending" && v.Field != "edge" {
-		var old string
-		if err := s.db.QueryRow(`SELECT value FROM charter_values WHERE level='repo' AND scope=? AND attr=?`, v.Node, v.Field).Scan(&old); err == nil {
-			v.OldValue = old
-		}
-		v.NewValue = learnedValue(v.OldValue, v.Phrase, v.Kind)
-	} else if v.Status == "pending" {
-		v.NewValue = v.EdgeKind + " -> " + v.Phrase
-	}
-	maskLearned(&v)
-	return &v, nil
-}
-
 // maskDraftField masks every text field of a charter draft field. A draft can
 // quote a token in any of them, such as its source line, not only in its value.
 func maskDraftField(d *protocol.CharterDraftField) {
@@ -1707,29 +1667,6 @@ func maskDraftField(d *protocol.CharterDraftField) {
 	d.Source = redact.SecretValues(d.Source)
 	d.Status = redact.SecretValues(d.Status)
 	d.DraftedBy = redact.SecretValues(d.DraftedBy)
-}
-
-// maskLearned masks every text field of a learned proposal, its evidence
-// included, before the proposal leaves the gateway.
-func maskLearned(v *protocol.LearnedSuggestion) {
-	v.Node = redact.SecretValues(v.Node)
-	v.Field = redact.SecretValues(v.Field)
-	v.EdgeKind = redact.SecretValues(v.EdgeKind)
-	v.Kind = redact.SecretValues(v.Kind)
-	v.Phrase = redact.SecretValues(v.Phrase)
-	v.Status = redact.SecretValues(v.Status)
-	v.Severity = redact.SecretValues(v.Severity)
-	v.Origin = redact.SecretValues(v.Origin)
-	v.RawPhrase = redact.SecretValues(v.RawPhrase)
-	v.OldValue = redact.SecretValues(v.OldValue)
-	v.NewValue = redact.SecretValues(v.NewValue)
-	v.Level = redact.SecretValues(v.Level)
-	v.Scope = redact.SecretValues(v.Scope)
-	v.By = redact.SecretValues(v.By)
-	for i := range v.Evidence {
-		v.Evidence[i].ID = redact.SecretValues(v.Evidence[i].ID)
-		v.Evidence[i].Excerpt = redact.SecretValues(v.Evidence[i].Excerpt)
-	}
 }
 
 // recentCorrections is the text of the newest marks, one line each, for the
@@ -1748,7 +1685,7 @@ func (s *Store) recentCorrections() string {
 	return b.String()
 }
 
-// askProposalText is what a message about a charter draft or a learned ask
+// askProposalText is what a message about a charter draft ask
 // adds to its body: each proposed field with its id, level, scope, attribute
 // and value, and the calls that read and decide it. It is empty for other asks.
 func askProposalText(q askDB, ask, kind string) string {
@@ -1767,12 +1704,8 @@ func askProposalText(q askDB, ask, kind string) string {
 		for _, f := range fields {
 			fmt.Fprintf(&b, "- draft %d, level %s, scope %s, %s = %s (%s)\n", f.ID, f.Level, f.Scope, f.Attr, draftValueLine(redact.SecretValues(f.Value)), f.Status)
 		}
-		b.WriteString("Read one with cto_proposals_find (kind draft, id the draft number). Decide one with cto_op learned_answer (suggestion_id the negative draft number, action accept or reject).")
+		b.WriteString("Read one with cto_proposals_find (kind draft, id the draft number). Decide one with cto_op draft_answer (draft_id the draft number, action accept or reject).")
 		return b.String()
-	case protocol.AskKindLearned:
-		if d := strings.TrimSpace(redact.SecretValues(detail)); d != "" {
-			return "\n" + d
-		}
 	}
 	return ""
 }

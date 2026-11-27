@@ -3,6 +3,7 @@ package gateway
 import (
 	"database/sql"
 	"encoding/json"
+	"regexp"
 	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -201,7 +202,7 @@ func ctoGraphClassTx(tx *sql.Tx, typ, node, attr, old, value string) (string, er
 	} else if yes {
 		return "major", nil
 	}
-	v := LearnedSuggestion{Kind: "add", Origin: "owner", Field: attr, Phrase: value}
+	v := graphChange{Kind: "add", Field: attr, Phrase: value}
 	switch typ {
 	case "node":
 		if value != "" {
@@ -214,7 +215,7 @@ func ctoGraphClassTx(tx *sql.Tx, typ, node, attr, old, value string) (string, er
 		}
 		switch attr {
 		case "accepts", "rules":
-			// Learned items are separated with semicolons. Removing an existing item
+			// Items are separated with semicolons. Removing an existing item
 			// is a removal, even if the replacement itself has no restrictive words.
 			for _, item := range strings.FieldsFunc(old, func(r rune) bool { return r == ';' || r == '\n' }) {
 				found := false
@@ -230,7 +231,7 @@ func ctoGraphClassTx(tx *sql.Tx, typ, node, attr, old, value string) (string, er
 				}
 			}
 		}
-		// Wording uses the same restriction rule as learned additions. These fields
+		// Wording uses the restriction rule of changeClass. These fields
 		// do not set authority; maturity, refuses and escalate still fail closed.
 		switch attr {
 		case "purpose", "rules", "maturity_note", "feature_requests":
@@ -275,5 +276,30 @@ func ctoGraphClassTx(tx *sql.Tx, typ, node, attr, old, value string) (string, er
 	default:
 		return "major", nil
 	}
-	return learnedClass(v), nil
+	return v.class(), nil
+}
+
+// graphChange is one owner edit as changeClass weighs it.
+type graphChange struct{ Kind, Field, EdgeKind, Phrase string }
+
+var restrictionWords = regexp.MustCompile(`(?i)\b(only|exclusively|solely|except|excluding|unless|without|never|cannot|can't|restricted|restrict|prohibited|refuse|must|ask)\b`)
+
+// class defaults to major. Only the explicitly allowed additions are minor:
+// a restriction word, a removal or an authority field always needs a decision.
+func (v graphChange) class() string {
+	if v.Kind != "add" {
+		return "major"
+	}
+	if v.Field != "edge" && restrictionWords.MatchString(v.Phrase) {
+		return "major"
+	}
+	switch v.Field {
+	case "accepts", "rules":
+		return "minor"
+	case "edge":
+		if v.EdgeKind == "depends" {
+			return "minor"
+		}
+	}
+	return "major"
 }

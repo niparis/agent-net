@@ -41,7 +41,6 @@ func readCases() []readCase {
 		{"agent", agentOneTables, func(s *Store) { s.Agent(richAgentID) }},
 		{"visible graph", visibleTables, func(s *Store) { s.visibleGraph(false) }},
 		{"worker failures", failuresTables, func(s *Store) { s.RecentWorkerFailures("n_readcase", "opencode") }},
-		{"learned list", learnedListTables, func(s *Store) { s.OwnerLearned() }},
 	}
 }
 
@@ -77,23 +76,7 @@ func richReadStore(t *testing.T) *Store {
 		Name: "rc", Cwd: "/w/rc", Repo: protocol.RepoInfo{Project: "cogforge"}}); err != nil {
 		t.Fatal(err)
 	}
-	// Learned suggestions: one linked to a charter change and viewed, one
-	// pending draft. The summary cleaner is on, as in production.
-	id := insertLearned(t, s, "cogforge", "purpose", "", "add", "learn things", "outcome")
-	// Ready and major: the list reads the history and the view of it.
-	if _, err := s.db.Exec(`UPDATE learned_suggestions SET severity='major', ready_at=1 WHERE id=?`, id); err != nil {
-		t.Fatal(err)
-	}
-	var hist int64
-	if err := s.db.QueryRow(`SELECT COALESCE(MAX(id),0) FROM graph_history`).Scan(&hist); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.db.Exec(`UPDATE learned_suggestions SET history_id=? WHERE id=?`, hist, id); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.db.Exec(`UPDATE learned_suggestions SET learned_seen=1 WHERE id=?`, id); err != nil {
-		t.Fatal(err)
-	}
+	// A pending charter draft.
 	if _, err := s.db.Exec(`INSERT INTO charter_drafts(level,scope,attr,value,source,status,drafted_by,created_at) VALUES('repo','cogforge','maturity','draft','outcome','pending','lead',1)`); err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +242,7 @@ var jsonColumns = map[string]string{"options": "[]", "origin": "{}", "fields": "
 // checkedColumns are the table.column values a CHECK constraint accepts, for the
 // columns the generic row cannot guess.
 var checkedColumns = map[string]string{"delivery_changes.state": "open", "worker_runs.early_quit": "0", "worker_ratings.score": "3",
-	"learned_suggestions.status": "pending", "learned_suggestions.severity": "minor", "learned_suggestions.kind": "add", "charter_drafts.level": "repo", "charter_drafts.status": "pending"}
+	"charter_drafts.level": "repo", "charter_drafts.status": "pending"}
 
 // rowFor inserts a row with fresh values into table. The values are not
 // meaningful; they only have to be accepted.

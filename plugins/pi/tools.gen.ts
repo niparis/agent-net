@@ -450,70 +450,6 @@ export const TOOL_CATALOG = [
     "daemon_fields": {}
   },
   {
-    "name": "agent_due",
-    "description": "Record a step you own that falls due later: due (an RFC 3339 time or a duration such as 45m) or after (a reply, a change step or an ask closing). agent-net wakes you when it falls due. If you show no activity for 15 minutes after that, the chief is asked once. Actions: add, list (your open items), done (id).",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "action": {
-          "type": "string",
-          "enum": [
-            "add",
-            "list",
-            "done"
-          ],
-          "description": "add records an item, list shows your open items, done closes one."
-        },
-        "what": {
-          "type": "string",
-          "description": "For add: the step in one line. The wake message repeats it."
-        },
-        "due": {
-          "type": "string",
-          "description": "For add without after: an RFC 3339 time, or a duration such as 45m from now."
-        },
-        "after": {
-          "type": "object",
-          "properties": {
-            "reply": {
-              "type": "string",
-              "description": "A message id: due when its conversation gets a reply from the recipient."
-            },
-            "change_step": {
-              "type": "string",
-              "description": "A change id: due when a step of the change moves."
-            },
-            "ask_closed": {
-              "type": "string",
-              "description": "An ask id: due when the ask closes."
-            }
-          },
-          "additionalProperties": false,
-          "description": "For add without due: exactly one key."
-        },
-        "blocker": {
-          "type": "string",
-          "description": "For add: none (default: you are woken), owner (the chief asks the owner, no wake), or a session id (the chief chases that session, no wake)."
-        },
-        "id": {
-          "type": "string",
-          "description": "For done: the item id."
-        }
-      },
-      "required": [
-        "action"
-      ],
-      "additionalProperties": false
-    },
-    "roles": [
-      "agent"
-    ],
-    "method": "due",
-    "daemon_fields": {
-      "id": "due_id"
-    }
-  },
-  {
     "name": "agent_file_send",
     "description": "Send files from this session to one peer with a note. Paths must be absolute and within the session project, worktree or /tmp. Workers send files with agent_handback.",
     "inputSchema": {
@@ -886,56 +822,6 @@ export const TOOL_CATALOG = [
       "worker"
     ],
     "method": "worker_handback",
-    "daemon_fields": {}
-  },
-  {
-    "name": "agent_learn",
-    "description": "Record a finding about a model, harness, project or machine, with evidence. Findings feed the playbook; they change nothing directly.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "subject_kind": {
-          "type": "string",
-          "enum": [
-            "model",
-            "harness",
-            "model_harness",
-            "project",
-            "mcp",
-            "machine"
-          ],
-          "description": "Kind of subject the finding concerns."
-        },
-        "subject": {
-          "type": "string",
-          "description": "Name of the subject."
-        },
-        "finding": {
-          "type": "string",
-          "maxLength": 500,
-          "description": "The observation to record."
-        },
-        "evidence": {
-          "type": "array",
-          "maxItems": 20,
-          "items": {
-            "type": "string"
-          },
-          "description": "Evidence supporting the finding."
-        }
-      },
-      "required": [
-        "subject_kind",
-        "subject",
-        "finding"
-      ],
-      "additionalProperties": false
-    },
-    "roles": [
-      "agent",
-      "worker"
-    ],
-    "method": "agent_learn",
     "daemon_fields": {}
   },
   {
@@ -1837,57 +1723,6 @@ export const TOOL_CATALOG = [
     "daemon_fields": {
       "id": "judgment_id"
     }
-  },
-  {
-    "name": "agent_permission_propose",
-    "description": "Propose Claude Code permission rules or folder trust for the owner to approve.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "kind": {
-          "type": "string",
-          "enum": [
-            "permissions",
-            "trust"
-          ],
-          "description": "permissions or trust"
-        },
-        "rules": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "allow rules for permissions"
-        },
-        "targets": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "type": "string"
-          },
-          "description": "repo names, or folder paths for trust"
-        },
-        "machine": {
-          "type": "string",
-          "description": "machine for trust"
-        },
-        "reason": {
-          "type": "string",
-          "description": "why"
-        }
-      },
-      "required": [
-        "targets",
-        "reason"
-      ],
-      "additionalProperties": false
-    },
-    "roles": [
-      "agent",
-      "worker"
-    ],
-    "method": "agent_permission_propose",
-    "daemon_fields": {}
   },
   {
     "name": "agent_project_add",
