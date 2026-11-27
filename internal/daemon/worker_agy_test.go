@@ -927,10 +927,16 @@ func TestAgyWorkerGitDirsInLinkedWorktree(t *testing.T) {
 			got = append(got, r.Args[i+1])
 		}
 	}
-	// The whole git folder, so commit, switch -c, push -u and worktree add
-	// work (decision 0197).
-	if want := filepath.Join(repo, ".git"); !slices.Contains(got, want) {
-		t.Fatalf("git folder %s missing from --add-dir: %v", want, got)
+	// The git folders a commit writes, but not the git folder itself: agy has
+	// no read-only list, and git runs code from its config and hooks outside
+	// the sandbox (decision 0197).
+	for _, sub := range []string{"objects", "refs", "logs"} {
+		if want := filepath.Join(repo, ".git", sub); !slices.Contains(got, want) {
+			t.Fatalf("git folder %s missing from --add-dir: %v", want, got)
+		}
+	}
+	if gitDir := filepath.Join(repo, ".git"); slices.Contains(got, gitDir) {
+		t.Fatalf("the whole git folder %s is an --add-dir, with its config and hooks: %v", gitDir, got)
 	}
 }
 

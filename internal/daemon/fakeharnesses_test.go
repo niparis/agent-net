@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -190,6 +191,13 @@ type fenceProbe struct {
 	UnixSocket string `json:"unix_socket"`
 	Loopback   string `json:"loopback"`
 	HomeWrite  string `json:"home_write"`
+	// WorktreeAdd is "" when git worktree add worked. HookWrite, ConfigWrite
+	// and OtherWorktree are "" when the write worked, which the fence must
+	// refuse: git runs code from them outside the sandbox.
+	WorktreeAdd   string `json:"worktree_add"`
+	HookWrite     string `json:"hook_write"`
+	ConfigWrite   string `json:"config_write"`
+	OtherWorktree string `json:"other_worktree"`
 }
 
 // fakeFenceProbe tries the writes and sockets of decision 0197 in its working
@@ -215,8 +223,34 @@ func fakeFenceProbe() {
 	p.UnixSocket = fenceDial("unix", filepath.Join(tmp, "p.sock"))
 	p.Loopback = fenceDial("tcp", "127.0.0.1:0")
 	p.HomeWrite = errText(os.WriteFile(filepath.Join(os.Getenv(envFakeFenceHome), "probe"), []byte("x"), 0o600))
+	p.WorktreeAdd = git("worktree", "add", "-q", "-b", "fence-probe-wt", filepath.Join(tmp, "wt"))
+	gitPath := func(arg string) string {
+		out, _ := exec.Command("git", "rev-parse", "--path-format=absolute", arg).Output()
+		return strings.TrimSpace(string(out))
+	}
+	common, own := gitPath("--git-common-dir"), gitPath("--git-dir")
+	p.HookWrite = errText(os.WriteFile(filepath.Join(common, "hooks", "pre-commit"), []byte("#!/bin/sh\n"), 0o755))
+	p.ConfigWrite = fenceAppend(filepath.Join(common, "config"), "[core]\n\tfsmonitor = true\n")
+	p.OtherWorktree = "no other linked worktree"
+	entries, _ := os.ReadDir(filepath.Join(common, "worktrees"))
+	for _, e := range entries {
+		if dir := filepath.Join(common, "worktrees", e.Name()); dir != own && e.Name() != "wt" {
+			p.OtherWorktree = fenceAppend(filepath.Join(dir, "commondir"), "")
+			break
+		}
+	}
 	raw, _ := json.Marshal(p)
 	_ = os.WriteFile(filepath.Join(tmp, "fence.json"), raw, 0o600)
+}
+
+// fenceAppend opens an existing file for writing and appends s.
+func fenceAppend(path, s string) string {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		return err.Error()
+	}
+	_, err = f.WriteString(s)
+	return errText(errors.Join(err, f.Close()))
 }
 
 // fenceDial listens on addr and connects to it: "" when both work.

@@ -129,13 +129,15 @@ func sandboxHarnessCopy(t *testing.T) string {
 }
 
 // checkWriteFence runs the fence probe as the harness of a worker in the OS
-// wrapper and checks decision 0197: commit, switch -c, a write to TMPDIR, a
-// unix socket in TMPDIR and a loopback listener all work, and a write in a home
-// folder outside the worktree fails.
+// wrapper and checks decision 0197: commit, switch -c, worktree add, a write to
+// TMPDIR, a unix socket in TMPDIR and a loopback listener all work, and a
+// write in a home folder outside the worktree, in the git hooks and config, or
+// in another linked worktree's git folder fails.
 func checkWriteFence(t *testing.T) {
 	t.Helper()
 	home := outsideHome(t)
-	d, w, _ := sandboxWorker(t, protocol.WorkersSandboxed)
+	d, w, repo := sandboxWorker(t, protocol.WorkersSandboxed)
+	gitIn(t, repo, "worktree", "add", "-q", "-b", "other", filepath.Join(sandboxFolder(t, "other"), "wt"))
 	env := workerEnv(os.Environ(), map[string]string{envFakeFenceProbe: "1", envFakeFenceHome: home, "HOME": home})
 	if err := d.spawnWorker(w, sandboxHarnessCopy(t), nil, env); err != nil {
 		t.Fatal(err)
@@ -150,10 +152,19 @@ func checkWriteFence(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, res := range map[string]string{"commit": got.Commit, "switch -c": got.SwitchC, "TMPDIR write": got.TmpWrite,
-		"unix socket in TMPDIR": got.UnixSocket, "listen on 127.0.0.1": got.Loopback} {
+		"unix socket in TMPDIR": got.UnixSocket, "listen on 127.0.0.1": got.Loopback, "worktree add": got.WorktreeAdd} {
 		if res != "" {
 			t.Errorf("%s failed in the sandbox: %s", name, res)
 		}
+	}
+	for name, res := range map[string]string{".git/hooks/pre-commit": got.HookWrite, ".git/config": got.ConfigWrite,
+		"another worktree's commondir": got.OtherWorktree} {
+		if res == "" {
+			t.Errorf("a write to %s worked in the sandbox; git runs code from it outside", name)
+		}
+	}
+	if b, err := os.ReadFile(filepath.Join(repo, ".git", "config")); err != nil || strings.Contains(string(b), "fsmonitor") {
+		t.Errorf("the git config was changed from the sandbox (%v):\n%s", err, b)
 	}
 	if got.HomeWrite == "" || fileExists(filepath.Join(home, "probe")) {
 		t.Errorf("a write in the home folder outside the worktree worked: %+v", got)

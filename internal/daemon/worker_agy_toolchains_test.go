@@ -84,7 +84,7 @@ func TestAgyWorkerToolchainDirs(t *testing.T) {
 			// there is no Go toolchain.
 			// The worker may be gone by now, so the cache dir is checked by its
 			// shape and then compared as the last entry.
-			want = append(append([]string(nil), toolchains...), workerGitDirs(context.Background(), gitDir)...)
+			want = append(append([]string(nil), toolchains...), workerGitRoots(context.Background(), gitDir)...)
 			// Then the shared Go build cache and Go temp folder (decision 0197),
 			// before the cache dir.
 			want = append(want, w.d.workerGoCacheDir(), w.d.workerSandboxGoTmpDir())

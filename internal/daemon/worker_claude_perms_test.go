@@ -89,9 +89,9 @@ func TestClaudeWorkerLaunchRestrictsWritesToItsWorktree(t *testing.T) {
 }
 
 // A Claude worker's Bash sandbox keeps one rule (decision 0197): it writes its
-// worktree, the repository's whole git folder (so commit, switch -c, push -u
-// and worktree add work), its caches and the Go module cache, and nothing
-// else; every unix socket and local port stay open.
+// worktree, the repository's git folder (so commit, switch -c and worktree add
+// work) but not its config and hooks, its caches and the Go module cache, and
+// nothing else; every unix socket and local port stay open.
 func TestClaudeWorkerSandboxFollowsTheWriteFence(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	c := startClaudeNode(t, g, shortSet)
@@ -121,6 +121,12 @@ func TestClaudeWorkerSandboxFollowsTheWriteFence(t *testing.T) {
 	for _, p := range writes {
 		if p == "/" || p == repo || p == os.Getenv("HOME") {
 			t.Errorf("the worker may write %s, outside the fence: %v", p, writes)
+		}
+	}
+	denied := stringList(t, sandbox["filesystem"].(map[string]any)["denyWrite"], "sandbox.filesystem.denyWrite")
+	for _, sub := range []string{"config", "hooks", "info"} {
+		if want := filepath.Join(repo, ".git", sub); !hasString(denied, want) {
+			t.Errorf("the worker may write %s, whose code git runs outside the sandbox: %v", want, denied)
 		}
 	}
 	network, _ := sandbox["network"].(map[string]any)

@@ -21,14 +21,14 @@ import (
 // on by default (decision of 2026-11-17); node.json on the machine that runs
 // the worker can turn it off for a project (workers.os_sandbox_off). It keeps
 // one rule: the worker writes only in its worktree, its own temp folder, its
-// caches, the repository's git folder and the agent-net socket folder. Reads,
-// the network, loopback ports and unix sockets are all open, and nothing is
-// hidden. On Linux it is bubblewrap with the host read-only and those folders
+// caches, the repository's git folder (but not its config and hooks) and the
+// agent-net socket folder. Reads, the network, loopback ports and unix sockets
+// are all open, and nothing is hidden. On Linux it is bubblewrap with the host read-only and those folders
 // bound writable; on macOS it is a sandbox-exec profile built from the same
 // policy (ossandbox_seatbelt.go).
 //
 // Codex and Antigravity keep their own sandboxes and are not wrapped; they get
-// the same writable folders (workerWriteRoots). A Claude worker is `claude
+// the same writable folders (workerFence). A Claude worker is `claude
 // --bg`, which runs the session in Claude Code's own background service,
 // outside any wrapper: with the switch on, it is refused. Its own Bash sandbox
 // gets the same folders (claudeWorkerSandbox).
@@ -194,7 +194,7 @@ type mountPair struct{ Src, Dst string }
 // resolved.
 type osSandboxPolicy struct {
 	Writable []string    // bound writable at the same path
-	ReadOnly []mountPair // owner files bound read-only into the private state
+	ReadOnly []mountPair // bound read-only over the writable ones: owner files and the git config and hooks
 	Dir      string      // the working folder
 }
 
@@ -226,7 +226,8 @@ func bwrapArgs(p osSandboxPolicy, bin string, args []string) []string {
 type osSandboxInput struct {
 	WorkerDir string      // the worker's private folder
 	Path      string      // the working folder (the worktree)
-	Roots     []string    // the folders every worker may write (workerWriteRoots)
+	Roots     []string    // the folders every worker may write (workerFence)
+	RootsRO   []string    // read-only inside Roots: the git config and hooks
 	State     []string    // the harness's writable private state
 	StateRO   []mountPair // owner files bound read-only into the private state
 	SocketDir string      // the folder with the agent-net socket
@@ -237,6 +238,9 @@ type osSandboxInput struct {
 // makes a new socket at every restart, and a file bind would keep the dead one.
 func buildOSSandboxPolicy(in osSandboxInput) osSandboxPolicy {
 	p := osSandboxPolicy{Dir: in.Path, ReadOnly: in.StateRO}
+	for _, r := range in.RootsRO {
+		p.ReadOnly = append(p.ReadOnly, mountPair{r, r})
+	}
 	for _, w := range append(append(append([]string{in.Path, osSandboxTmp(in.WorkerDir)}, in.Roots...), in.State...), in.SocketDir) {
 		if w != "" && !containsString(p.Writable, w) {
 			p.Writable = append(p.Writable, w)
@@ -329,8 +333,12 @@ func (d *Daemon) osSandboxInputFor(w *worker) (osSandboxInput, string, error) {
 	in := osSandboxInput{WorkerDir: resolved(dir), Path: resolved(path)}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	for _, r := range d.workerWriteRoots(ctx, w) {
+	f := d.workerFence(ctx, w)
+	for _, r := range f.Write {
 		in.Roots = append(in.Roots, resolved(r))
+	}
+	for _, r := range f.ReadOnly {
+		in.RootsRO = append(in.RootsRO, resolved(r))
 	}
 	if fileExists(d.cfg.SocketPath) {
 		in.SocketDir = resolved(socketDir(d.cfg.SocketPath))

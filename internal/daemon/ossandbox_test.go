@@ -45,11 +45,13 @@ func TestBwrapArgs(t *testing.T) {
 
 // The policy has one rule (decision 0197): the worktree, the worker's own temp
 // folder, the folders every worker may write, the harness's private state and
-// the agent-net socket folder are writable, each once.
+// the agent-net socket folder are writable, each once; the git config and
+// hooks are bound read-only over them, so bubblewrap mounts them after.
 func TestOSSandboxPolicyWritable(t *testing.T) {
 	in := osSandboxInput{
 		WorkerDir: "/s/w_1", Path: "/wt",
 		Roots:     []string{"/repo/.git", "/gocache", "/s/w_1/cache"},
+		RootsRO:   []string{"/repo/.git/config", "/repo/.git/hooks"},
 		State:     []string{"/s/w_1/data", "/repo/.git"},
 		StateRO:   []mountPair{{"/home/me/.pi/agent/models.json", "/s/w_1/pi-agent/models.json"}},
 		SocketDir: "/run/user/1000/agent-net/sock",
@@ -59,8 +61,13 @@ func TestOSSandboxPolicyWritable(t *testing.T) {
 	if !slices.Equal(p.Writable, want) {
 		t.Fatalf("writable %q, want %q", p.Writable, want)
 	}
-	if p.Dir != "/wt" || !slices.Equal(p.ReadOnly, in.StateRO) {
+	ro := append(append([]mountPair(nil), in.StateRO...), mountPair{"/repo/.git/config", "/repo/.git/config"}, mountPair{"/repo/.git/hooks", "/repo/.git/hooks"})
+	if p.Dir != "/wt" || !slices.Equal(p.ReadOnly, ro) {
 		t.Fatalf("policy: %+v", p)
+	}
+	args := strings.Join(bwrapArgs(p, "/bin/pi", nil), " ")
+	if bind, ro := strings.Index(args, "--bind /repo/.git /repo/.git"), strings.Index(args, "--ro-bind /repo/.git/hooks /repo/.git/hooks"); bind < 0 || ro < bind {
+		t.Fatalf("the hooks are not bound read-only after the git folder: %s", args)
 	}
 }
 
@@ -294,7 +301,7 @@ func TestOSSandboxDefaultOnWraps(t *testing.T) {
 // or unix sockets.
 func TestSeatbeltProfile(t *testing.T) {
 	p := buildOSSandboxPolicy(osSandboxInput{
-		WorkerDir: "/state/workers/w_1", Path: "/work/wt", Roots: []string{"/repo/.git"},
+		WorkerDir: "/state/workers/w_1", Path: "/work/wt", Roots: []string{"/repo/.git"}, RootsRO: []string{"/repo/.git/hooks"},
 		State:   []string{"/state/workers/w_1/pi-agent"},
 		StateRO: []mountPair{{"/home/me/.pi/agent/settings.json", "/state/workers/w_1/pi-agent/settings.json"}},
 	})
@@ -302,7 +309,7 @@ func TestSeatbeltProfile(t *testing.T) {
 	want := "(version 1)\n(allow default)\n(deny file-write*)\n" +
 		`(allow file-write* (subpath "/work/wt") (subpath "/state/workers/w_1/tmp") (subpath "/repo/.git") (subpath "/state/workers/w_1/pi-agent"))` + "\n" +
 		`(allow file-write* (literal "/dev/null") (literal "/dev/zero") (literal "/dev/dtracehelper") (regex #"^/dev/tty") (regex #"^/dev/fd/"))` + "\n" +
-		`(deny file-write* (subpath "/state/workers/w_1/pi-agent/settings.json"))` + "\n"
+		`(deny file-write* (subpath "/state/workers/w_1/pi-agent/settings.json") (subpath "/repo/.git/hooks"))` + "\n"
 	if got != want {
 		t.Errorf("profile:\n%s\nwant:\n%s", got, want)
 	}

@@ -120,24 +120,41 @@ func (d *Daemon) changeWorkerStatus(w *worker, status string) *localSession {
 	return ls
 }
 
-// workerWriteRoots are the folders every worker may write beyond its worktree
-// (decision 0197): the repository's git folder, the shared Go build cache and
-// Go temp folder, the Go module cache, and the worker's own package caches. A
-// folder is made when it is missing, and left out when it cannot be made. The
-// package caches come last: agy needs them there. A folder that holds the
+// workerFence is what a worker may write beyond its worktree (decision 0197).
+type workerFence struct {
+	// Write is the repository's git folder (gitFence), the shared Go build
+	// cache and Go temp folder, the Go module cache and the worker's own package
+	// caches, last (in Narrow too: agy needs them there).
+	Write []string
+	// ReadOnly is what stays read-only inside Write: the git config and hooks.
+	ReadOnly []string
+	// Narrow is Write for a sandbox with no read-only list (Codex, agy): the
+	// git folders a commit writes (workerGitRoots) in place of the git folder.
+	Narrow []string
+}
+
+// workerFence works out the fence of a worker. A cache folder is made when it
+// is missing, and left out when it cannot be made. A folder that holds the
 // home folder (a GOMODCACHE of "/" or of the home folder) is never one.
-func (d *Daemon) workerWriteRoots(ctx context.Context, w *worker) []string {
-	roots := workerGitDirs(ctx, w.path)
+func (d *Daemon) workerFence(ctx context.Context, w *worker) workerFence {
+	git := workerGitFence(ctx, w.path)
+	f := workerFence{Write: git.Write, ReadOnly: git.ReadOnly, Narrow: workerGitRoots(ctx, w.path)}
 	home, _ := os.UserHomeDir()
 	for _, p := range []string{d.workerGoCacheDir(), d.workerSandboxGoTmpDir(), d.workerGoModCache(w.path), d.workerCacheRoot(w)} {
-		if p == "" || slices.Contains(roots, p) || (home != "" && underAny(resolved(home), []string{resolved(p)})) {
+		if p == "" || slices.Contains(f.Write, p) || (home != "" && underAny(resolved(home), []string{resolved(p)})) {
 			continue
 		}
 		if err := os.MkdirAll(p, 0o700); err == nil {
-			roots = append(roots, p)
+			f.Write = append(f.Write, p)
+			f.Narrow = append(f.Narrow, p)
 		}
 	}
-	return roots
+	// A read-only path that holds a writable folder (a core.hooksPath above
+	// the worktree) would cover it; the hooks there are out of reach anyway.
+	f.ReadOnly = slices.DeleteFunc(f.ReadOnly, func(ro string) bool {
+		return slices.ContainsFunc(append([]string{w.path}, f.Write...), func(wr string) bool { return underAny(wr, []string{ro}) })
+	})
+	return f
 }
 
 // harnessBinary returns the path of an installed harness, from the inventory

@@ -237,11 +237,12 @@ func (d *Daemon) claudeWorkerSettings(w *worker, env map[string]string) map[stri
 	d.wmu.Lock()
 	level, dir := protocol.WorkerPermissionsOrDefault(w.permissions), w.path
 	d.wmu.Unlock()
+	writes, readOnly := d.claudeWorkerWrites(w)
 	return map[string]any{
 		"crossSessionInbound": "accept",
 		"env":                 env,
 		"permissions":         claudeWorkerPermissions(level, dir),
-		"sandbox":             claudeWorkerSandbox(level, dir, d.claudeWorkerWrites(w)),
+		"sandbox":             claudeWorkerSandbox(level, dir, writes, readOnly),
 	}
 }
 
@@ -262,11 +263,16 @@ func claudeWorkerPermissions(level, dir string) map[string]any {
 	}
 }
 
-// claudeWorkerWrites is the writable folders of a Claude worker: its worktree
-// and the folders every worker may write (workerWriteRoots, decision 0197).
-// The sandbox's own per-user temp folder is writable already.
-func (d *Daemon) claudeWorkerWrites(w *worker) []string {
-	paths := append([]string{w.path}, d.workerWriteRoots(context.Background(), w)...)
+// claudeWorkerWrites is the write fence of a Claude worker (workerFence,
+// decision 0197): its worktree and the folders every worker may write, and
+// the git config and hooks that stay read-only inside them. The sandbox's own
+// per-user temp folder is writable already.
+func (d *Daemon) claudeWorkerWrites(w *worker) (writes, readOnly []string) {
+	f := d.workerFence(context.Background(), w)
+	return claudeUnique(append([]string{w.path}, f.Write...)), f.ReadOnly
+}
+
+func claudeUnique(paths []string) []string {
 	var out []string
 	seen := map[string]bool{}
 	for _, p := range paths {
@@ -287,14 +293,18 @@ func (d *Daemon) claudeWorkerWrites(w *worker) []string {
 // them still gets a worker with the file-tool boundary; a worker never starts
 // with the file-tool boundary missing.
 //
-// It keeps one rule (decision 0197): writes only in the writes list. Every unix
-// socket, local ports and, on macOS, every Mach service stay open, so daemon
-// tests, Docker, dev servers and browsers work.
-func claudeWorkerSandbox(level, dir string, writes []string) map[string]any {
+// It keeps one rule (decision 0197): writes only in the writes list, except in
+// readOnly. Every unix socket, local ports and, on macOS, every Mach service
+// stay open, so daemon tests, Docker, dev servers and browsers work.
+func claudeWorkerSandbox(level, dir string, writes, readOnly []string) map[string]any {
+	fs := map[string]any{"allowWrite": writes}
+	if len(readOnly) > 0 {
+		fs["denyWrite"] = readOnly
+	}
 	return map[string]any{
 		"enabled":                  true,
 		"allowUnsandboxedCommands": false,
-		"filesystem":               map[string]any{"allowWrite": writes},
+		"filesystem":               fs,
 		"network": map[string]any{
 			"allowAllUnixSockets": true,
 			"allowLocalBinding":   true,
