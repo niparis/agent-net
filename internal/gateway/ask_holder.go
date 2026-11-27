@@ -55,7 +55,7 @@ func (s *Store) asksHolderSession(q askDB, asker string) string {
 
 // holderAskBody is the message a scope holder gets with an ask.
 func (s *Store) holderAskBody(q askDB, item protocol.InboxItem) string {
-	return fmt.Sprintf("The owner delegated asks from %s to you, so ask %s reached you before the chief of staff: %s\nAnswer it yourself only if you can, and close it with agent_ask_sort (result close) once it is resolved. Anything that needs the owner goes to them with agent_owner_ask.",
+	return fmt.Sprintf("The owner delegated asks from %s to you, so ask %s reached you before the chief of staff: %s\nAnswer it yourself only if you can, and close it with agent_ask_sort (result close) once it is resolved. Anything that needs the owner goes to the chief of staff with agent_message_send.",
 		sessionLabel(q, item.SessionID), item.ID, strings.TrimSpace(item.Text))
 }
 

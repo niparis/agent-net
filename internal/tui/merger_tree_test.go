@@ -169,7 +169,7 @@ func TestMergerTreeGolden(t *testing.T) {
 	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
 		name := "tree_merger_" + itoa(size.w) + "x" + itoa(size.h)
 		m := quietFixtures(treeModel(size.w, size.h, mergerFixture()))
-		m.delivery.changes = []deliveryChange{{ID: "ch_ed5f0000", Repo: "agent-net", Caller: mainID, Step: "test", StepState: protocol.StepStateRunning, OwnerKind: protocol.OwnerCaller, Steps: []deliveryStep{{Name: "test", State: protocol.StepStateRunning, Note: "claimed by " + mainID}}}}
+		m.delivery.changes = []deliveryChange{{ID: "ch_ed5f0000", Repo: "agent-net", Step: "test", StepState: protocol.StepStateRunning, OwnerKind: protocol.OwnerCaller, Steps: []deliveryStep{{Name: "test", State: protocol.StepStateRunning, Note: "claimed by " + mainID}}}}
 		golden(t, name, selectID(m, mergerID).testView())
 	}
 }
@@ -189,7 +189,7 @@ func TestMergerIdleWithoutLeadGolden(t *testing.T) {
 		}
 		m := quietFixtures(treeModel(size.w, size.h, snap))
 		m.activeOnly, m.showOffline = true, false
-		m.delivery.changes = []deliveryChange{{ID: "ch_ed5f0000", Repo: "agent-net", State: protocol.ChangeOpen, Caller: mainID, Updated: 200}}
+		m.delivery.changes = []deliveryChange{{ID: "ch_ed5f0000", Repo: "agent-net", State: protocol.ChangeOpen}}
 		m = selectID(m, mergerID)
 		name := "tree_merger_idle_" + itoa(size.w) + "x" + itoa(size.h)
 		golden(t, name, m.testView())
@@ -198,7 +198,7 @@ func TestMergerIdleWithoutLeadGolden(t *testing.T) {
 
 func TestSessionTaskShowsRunningDelivery(t *testing.T) {
 	m := treeModel(80, 24, mergerFixture())
-	m.delivery.changes = []deliveryChange{{ID: "ch_ed5f0000", Repo: "agent-net", Caller: mainID, Step: "test", StepState: protocol.StepStateRunning, OwnerKind: protocol.OwnerCaller, Steps: []deliveryStep{{Name: "test", State: protocol.StepStateRunning, Note: "claimed by " + mainID}}}}
+	m.delivery.changes = []deliveryChange{{ID: "ch_ed5f0000", Repo: "agent-net", Step: "test", StepState: protocol.StepStateRunning, OwnerKind: protocol.OwnerCaller, Steps: []deliveryStep{{Name: "test", State: protocol.StepStateRunning, Note: "claimed by " + mainID}}}}
 	a, ok := m.agentByID(mainID)
 	if !ok {
 		t.Fatal("missing session")
@@ -210,8 +210,8 @@ func TestSessionTaskShowsRunningDelivery(t *testing.T) {
 
 func TestSessionTaskUsesClaimedStep(t *testing.T) {
 	m := treeModel(80, 24, mergerFixture())
-	v := protocol.ChangeView{Change: protocol.Change{ID: "ch_ed5f0000", Caller: mainID}, Steps: []protocol.StepStatus{{StepRef: protocol.StepRef{Step: protocol.StepTest}, State: protocol.StepStateRunning, Note: "claimed by " + mergerID}}}
-	m.delivery.changes = []deliveryChange{deliveryChangeFromView(v, t0)}
+	v := protocol.ChangeView{Change: protocol.Change{ID: "ch_ed5f0000"}, Steps: []protocol.StepStatus{{StepRef: protocol.StepRef{Step: protocol.StepTest}, State: protocol.StepStateRunning, Note: "claimed by " + mergerID}}}
+	m.delivery.changes = []deliveryChange{deliveryChangeFromView(v)}
 	a, _ := m.agentByID(mergerID)
 	if got := m.sessionTaskText(a); got != "test ch_ed5f" {
 		t.Fatalf("claimed task: %q", got)

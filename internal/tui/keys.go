@@ -24,7 +24,6 @@ type keyBinding struct {
 const (
 	contextGlobal          keyContext = "global"
 	contextWorkersLog      keyContext = "Workers log"
-	contextDelivery        keyContext = "Delivery"
 	contextSessions        keyContext = "Sessions"
 	contextProposalDetail  keyContext = "proposal detail"
 	contextProposalHistory keyContext = "proposal history"
@@ -46,7 +45,7 @@ const (
 )
 
 var allKeyContexts = []keyContext{
-	contextGlobal, contextWorkersLog, contextDelivery, contextSessions,
+	contextGlobal, contextWorkersLog, contextSessions,
 	contextProposalDetail, contextProposalHistory, contextMessages, contextBody,
 	contextSettings, contextApps, contextQuotas, contextQualityDetails, contextGraph, contextGraphFind, contextCard, contextTeams,
 	contextCTO, contextHelp, contextConfirm, contextForm, contextFinder,
@@ -116,13 +115,6 @@ var keyBindings = []keyBinding{
 	bind(contextWorkersLog, "right|l", "focus details", "focus details", 3),
 	bind(contextWorkersLog, "?", "help", "help", 4),
 	bind(contextWorkersLog, "q|ctrl+c", "quit", "quit", 5),
-	bind(contextDelivery, "up|k", "up", "scroll", 1),
-	bind(contextDelivery, "down|j", "down", "scroll", 1),
-	bind(contextDelivery, "pgup", "page up", "page up", 2),
-	bind(contextDelivery, "pgdown", "page down", "page down", 2),
-	bind(contextDelivery, "esc", "back", "back", 1),
-	bind(contextDelivery, "?", "help", "help", 4),
-	bind(contextDelivery, "q|ctrl+c", "quit", "quit", 5),
 	bind(contextQuotas, "tab|shift+tab", "workers log", "Quotas / Workers log / Quality", 0),
 	bind(contextGlobal, "1", "sessions tab", "Sessions", -1),
 	bind(contextGlobal, "2", "graph tab", "Graph", -1),

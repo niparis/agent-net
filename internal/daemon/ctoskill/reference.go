@@ -107,7 +107,7 @@ func Reference() string {
 	w("A quota reading comes from quota-axi on the machine that holds the logins. The network keeps the newest reading and uses it to choose a model and admit a start. Pace is %s. A provider above %v%% of a window is skipped for a loose model name; an exact model id still works, with a warning. A stale or failed reading is shown but never used to choose or refuse. A window may be exhausted. The picker and the worker floors read the worst window that serves the model.\n\n", codeList([]string{protocol.QuotaPaceAhead, protocol.QuotaPaceOnPace, protocol.QuotaPaceBehind, protocol.QuotaPaceUnknown}), protocol.QuotaHighPercent)
 
 	w("## Notifications\n\n")
-	w("Desktop notifications are one owner preference per machine: `notification_settings` with `disabled` true or false, or `settings_change` area `notifications`. The owner's Desk rows are asks of these kinds: %s. A holder reports a finished step with `agent_step_report`. An ask is answered with `agent_message_reply` or the TUI, never with a step result.\n\n", codeList(askKinds()))
+	w("Desktop notifications are one owner preference per machine: `notification_settings` with `disabled` true or false, or `settings_change` area `notifications`. The daemon shows one when a session waits for the owner's input. A holder reports a finished step with `agent_step_report`; an ask is answered with `agent_message_reply`, never with a step result.\n\n")
 
 	w("## Integrations\n\n")
 	w("`settings_change` area `integrations` sets the network's setup answers for every machine. Each machine applies them at its next daemon start or within a minute.\n\n")
@@ -404,29 +404,4 @@ func scopeOvers() string {
 		parts = append(parts, "`"+kind+":X`")
 	}
 	return strings.Join(parts, ", ")
-}
-
-// askKinds are the Desk item kinds, in the order the code declares them.
-func askKinds() []string {
-	return []string{
-		protocol.AskKindQuestion,
-		protocol.AskKindApproval,
-		protocol.AskKindIdea,
-		protocol.AskKindRejection,
-		protocol.AskKindEscalation,
-		protocol.AskKindHeld,
-		protocol.AskKindLearned,
-		protocol.AskKindDraft,
-		protocol.AskKindProposal,
-		protocol.AskKindPermission,
-		protocol.AskKindStep,
-		protocol.AskKindWaiting,
-		protocol.AskKindStall,
-		protocol.AskKindCheck,
-		protocol.AskKindBrief,
-		protocol.AskKindSignIn,
-		protocol.AskKindMachine,
-		protocol.AskKindCTOAlert,
-		protocol.AskKindQuotaStuck,
-	}
 }

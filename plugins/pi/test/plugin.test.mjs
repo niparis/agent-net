@@ -354,28 +354,6 @@ await test("agent_learn records a finding", async () => {
   await p.fire("session_shutdown", {});
 });
 
-await test("agent_owner_ask sends the owner_ask method the MCP server sends", async () => {
-  const p = makePi(); extension(p.api);
-  const n = hellos.length;
-  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
-  await until("hello", () => hellos.length === n + 1);
-  await p.tools.get("agent_owner_ask").execute("id", { kind: "question", text: "Merge?", recommendation: "yes", options: ["Yes"], urgency: "high" });
-  const sent = requests.filter((r) => r.method === "owner_ask").pop();
-  if (!sent || sent.params.kind !== "question" || sent.params.explicit || sent.params.text !== "Merge?" || sent.params.options[0] !== "Yes") throw new Error(JSON.stringify(sent));
-  await p.fire("session_shutdown", {});
-});
-
-await test("agent_owner_ask passes replaces for an approval", async () => {
-  const p = makePi(); extension(p.api);
-  const n = hellos.length;
-  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
-  await until("hello", () => hellos.length === n + 1);
-  await p.tools.get("agent_owner_ask").execute("id", { kind: "approval", text: "Delete?", recommendation: "no", replaces: "i_old" });
-  const sent = requests.filter((r) => r.method === "owner_ask").pop();
-  if (!sent || sent.params.kind !== "approval" || sent.params.replaces !== "i_old" || sent.params.text !== "Delete?") throw new Error(JSON.stringify(sent));
-  await p.fire("session_shutdown", {});
-});
-
 await test("the read tools send the tool input to their own daemon method", async () => {
   const p = makePi();
   extension(p.api);

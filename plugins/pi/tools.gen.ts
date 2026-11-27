@@ -1700,63 +1700,8 @@ export const TOOL_CATALOG = [
     "daemon_fields": {}
   },
   {
-    "name": "agent_owner_ask",
-    "description": "Prefer agent_message_send: when you need the owner, send a request to the chief of staff, saying what you need, why only the owner can decide, and your recommendation. This tool sends your question, recommendation and up to four answers to the chief as such a request; the reply comes as a message. Carry on, do not wait for the answer.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "kind": {
-          "type": "string",
-          "enum": [
-            "question",
-            "approval",
-            "idea"
-          ],
-          "description": "Select the kind or action."
-        },
-        "text": {
-          "type": "string",
-          "maxLength": 4000,
-          "description": "Text or substring to match."
-        },
-        "recommendation": {
-          "type": "string",
-          "description": "Recommended decision or next action."
-        },
-        "options": {
-          "type": "array",
-          "maxItems": 4,
-          "items": {
-            "type": "string"
-          },
-          "description": "Up to four possible owner answers."
-        },
-        "urgency": {
-          "type": "string",
-          "enum": [
-            "normal",
-            "high"
-          ],
-          "description": "Normal or high urgency.",
-          "default": "normal"
-        },
-        "replaces": {
-          "type": "string",
-          "description": "ID of a pending ask of yours to retire."
-        }
-      },
-      "required": [],
-      "additionalProperties": false
-    },
-    "roles": [
-      "agent"
-    ],
-    "method": "owner_ask",
-    "daemon_fields": {}
-  },
-  {
     "name": "agent_owner_brief",
-    "description": "Chief of staff only: deliver one informational daily brief to the owner's Desk. Give body (at most 15 lines) and the owner-local date as YYYY-MM-DD; the same date replaces it. Call with no body for the schedule. A brief never asks for an answer.",
+    "description": "Chief of staff only: deliver one informational daily brief for the owner. Give body (at most 15 lines) and the owner-local date as YYYY-MM-DD; the same date replaces it. Call with no body for the schedule. A brief never asks for an answer.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1822,7 +1767,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_owner_judgments_find",
-    "description": "Search the owner's past decisions, standing orders, rules, answers and corrections by text, id or ids. Ranked for a query, else newest first. marks: true returns only the Desk marks with their asks; offset pages. Agent notes show only with kind feedback, fact or reference (see agent_notes_find to read yours).",
+    "description": "Search the owner's past decisions, standing orders, rules, answers and corrections by text, id or ids. Ranked for a query, else newest first. marks: true returns only the owner's marks with their asks; offset pages. Agent notes show only with kind feedback, fact or reference (see agent_notes_find to read yours).",
     "inputSchema": {
       "type": "object",
       "properties": {

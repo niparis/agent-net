@@ -341,7 +341,7 @@ func (s *Store) giveToReplacement(it stuckItem, to, note string, now time.Time) 
 	if err := tx.QueryRow(`SELECT session_id FROM inbox_items WHERE id=?`, it.id).Scan(&asker); err != nil {
 		return none, false, err
 	}
-	body := fmt.Sprintf("agent-net gave you ask %s from %s: %s\nWhy it reached you: it was %s, and you replaced that session.\nAnswer it yourself only if you can, and close it with agent_ask_sort (result close) once it is resolved. Anything that needs the owner goes to them with agent_owner_ask.",
+	body := fmt.Sprintf("agent-net gave you ask %s from %s: %s\nWhy it reached you: it was %s, and you replaced that session.\nAnswer it yourself only if you can, and close it with agent_ask_sort (result close) once it is resolved. Anything that needs the owner goes to the chief of staff with agent_message_send.",
 		it.id, sessionLabel(tx, asker), strings.TrimSpace(it.text), note)
 	m, err := s.storeAgentNetMessage(tx, to, body, it.id, now)
 	if err != nil {

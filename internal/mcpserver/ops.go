@@ -65,18 +65,6 @@ func ownerBriefCall(ctx context.Context, run func(context.Context, string, any) 
 	return opResult(run(ctx, protocol.OpOwnerBrief, in))
 }
 
-// ownerAskCall is the one owner request operation. The daemon picks the ask
-// kind: question asks the owner, approval asks for one action, idea sends a
-// feature idea.
-func ownerAskCall(ctx context.Context, run func(context.Context, string, any) (any, error), kind, text, recommendation string, options []string, urgency string, replaces ...string) (map[string]any, error) {
-	repl := ""
-	if len(replaces) > 0 {
-		repl = replaces[0]
-	}
-	// The daemon picks the ask kind, the same for every harness.
-	return opResult(run(ctx, protocol.MethodOwnerAsk, map[string]any{"kind": kind, "text": text, "recommendation": recommendation, "options": options, "replaces": repl}))
-}
-
 // sendCall sends one message. receipt asks the daemon for a receipt, which is
 // what the new tool reports; the old tool keeps the sent-message answer.
 func sendCall(ctx context.Context, run func(context.Context, string, any) (any, error), to string, set map[string]any, body, kind string, asOwner, order, urgent bool, followUpAt string, receipt bool) (map[string]any, error) {

@@ -2,7 +2,7 @@
 
 The screens of the TUI and what you can do on each. For what agent-net is and why, read the [README](../README.md).
 
-`agent-net` opens the TUI. It has six tabs: **1** Sessions, **2** Graph, **3** Quotas, **4** Messages, **5** Settings, **6** Desk. `?` lists the keys of the screen you are on.
+`agent-net` opens the TUI. It has five tabs: **1** Sessions, **2** Graph, **3** Quotas, **4** Messages, **5** Settings. `?` lists the keys of the screen you are on.
 
 ## Sessions and messages
 
@@ -36,15 +36,7 @@ Quotas (tab 3) also shows each subscription's usage and pace, and the Friction p
 
 The Graph (tab 2) is the map of your agents: each project node has a charter (what it does, what it accepts and refuses), and edges set the rules between them. A `depends` edge says who may ask whom, and whether requests run without asking (`auto`), wait for you (`ask`) or are refused (`never`). A `deploys` edge lets one agent ship another's project.
 
-The CTO is an agent that runs the network for you. Press `c` and ask it in plain words: add a machine, draft a charter, set an edge, start a worker. Changes apply at once and leave an Inbox notice with an undo key where one is possible. Only removing a node, repo or machine, and rotating a machine token, wait for you as a Desk proposal, unless you ask for it in the CTO chat. Then the CTO quotes your words, the daemon checks them, and it runs at once. Your own login and OAuth consent stay with you: the CTO sends a one-click prompt.
-
-## Desk
-
-<p align="center">
-  <img alt="The Desk: items that wait for the owner, grouped by urgency, with the log below" src="img/tui/desk.svg" width="900">
-</p>
-
-Everything that waits for you is on one screen, the Desk (tab 6): CTO proposals, sessions that ask you a question or stopped with work left, and written approvals. The tab shows the count. Select an item and approve or refuse it there. Press `n` on an item that reached you to mark "didn't need me". See [owner inbox](reference.md#owner-inbox-and-written-approvals).
+The CTO is an agent that runs the network for you. Press `c` and ask it in plain words: add a machine, draft a charter, set an edge, start a worker. Changes apply at once, and each reversible change returns its undo. Only removing a node, repo or machine, and rotating a machine token, need your approval; when you ask for one in the CTO chat, the CTO quotes your words, the daemon checks them, and it runs at once. Your own login and OAuth consent stay with you: the CTO sends a one-click prompt.
 
 ## Connected apps
 
@@ -58,7 +50,7 @@ See [connected apps](reference.md#connected-apps).
 
 ## Skills and MCP servers
 
-Skills are kept in an archive in the gateway. You ask the CTO to add a skill from a machine folder or a Git URL, to set which skills a project, team or agent gets, and to undo a change. A session gets the skills of its node when it starts. The Desk log shows each archive and list change with an undo. Details: [decision 0169](decisions/0169-skill-archive.md).
+Skills are kept in an archive in the gateway. You ask the CTO to add a skill from a machine folder or a Git URL, to set which skills a project, team or agent gets, and to undo a change. A session gets the skills of its node when it starts. The log shows each archive and list change with an undo. Details: [decision 0169](decisions/0169-skill-archive.md).
 
 Add an MCP server once, and sessions on every machine can use its tools. Tokens stay on the machine that hosts it.
 

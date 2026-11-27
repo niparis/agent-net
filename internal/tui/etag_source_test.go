@@ -66,7 +66,7 @@ func newChangesGateway() *changesGateway {
 func TestChangesDoNotRereadPagesTheGatewayCallsUnchanged(t *testing.T) {
 	gw := newChangesGateway()
 	now := time.Unix(1000, 0)
-	src := newGatewayDelivery(gw.call, func() time.Time { return now })
+	src := newGatewayDelivery(gw.call)
 	src.SetFullRead(true)
 	first, err := src.Changes(context.Background(), "")
 	if err != nil || len(first) != 4 {
@@ -110,32 +110,6 @@ func TestChangesDoNotRereadPagesTheGatewayCallsUnchanged(t *testing.T) {
 	}
 	if gw.asks-before != 4 {
 		t.Fatalf("a full read took %d asks, want 4", gw.asks-before)
-	}
-}
-
-// How long a change has waited depends on the time of the read, so rows that
-// the gateway did not send again are still drawn with the new time.
-func TestUnchangedChangesKeepTheirWaitingTime(t *testing.T) {
-	gw := newChangesGateway()
-	row := changeRow("c1")
-	row.Change.UpdatedAt = 1000
-	row.Steps = []protocol.StepStatus{{StepRef: protocol.StepRef{Step: protocol.StepAccept}, State: protocol.StepStateWaiting}}
-	gw.pages[protocol.ChangeListActive] = [][]protocol.ChangeView{{row}}
-	now := time.Unix(2000, 0)
-	src := newGatewayDelivery(gw.call, func() time.Time { return now })
-	src.SetFullRead(true)
-	first, err := src.Changes(context.Background(), "")
-	if err != nil || len(first) == 0 {
-		t.Fatalf("first read: %v %v", first, err)
-	}
-	src.SetFullRead(false)
-	now = now.Add(time.Hour)
-	second, err := src.Changes(context.Background(), "")
-	if err != nil || len(second) != len(first) {
-		t.Fatalf("second read: %v %v", second, err)
-	}
-	if second[0].Waiting != first[0].Waiting+time.Hour {
-		t.Fatalf("waiting %v then %v, want an hour more", first[0].Waiting, second[0].Waiting)
 	}
 }
 

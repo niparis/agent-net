@@ -35,19 +35,4 @@ func TestVisualProofScenario(t *testing.T) {
 			}
 		}
 	}
-	ch := deliveryChange{ID: "ch_example", Title: "Visual proof", Repo: "demo", State: protocol.ChangeOpen, Origin: protocol.ChangeOrigin{Kind: protocol.OriginWorker, VisualEvidence: &protocol.VisualEvidence{UserVisible: "yes", VisualProof: []protocol.VisualProof{{File: "scroll.txt", Caption: "scroll: final row visible at 120x34"}}}}}
-	m := newModel(120, 34)
-	frame := ansi.Strip(strings.Join(m.deliveryDetail(ch, nil, 120, 34), "\n"))
-	for _, want := range []string{"user_visible: yes", "scroll.txt", "final row visible"} {
-		if !strings.Contains(frame, want) {
-			t.Fatalf("change frame missing %s:\n%s", want, frame)
-		}
-	}
-	if dir := os.Getenv("AGENT_NET_PROOF_DIR"); dir != "" {
-		capture := fmt.Sprintf("build: %s\nstep: open change\naction: open change details at 120x34\nexpected: proof file and caption visible\nerrors: none\n\n%s\n", os.Getenv("AGENT_NET_PROOF_BUILD"), frame)
-		if err := os.WriteFile(filepath.Join(dir, "change-120x34.txt"), []byte(capture), 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-
 }

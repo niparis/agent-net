@@ -13,7 +13,7 @@ import (
 // A load that ends by its deadline keeps the last changes and asks once more in
 // the background. A second timeout does not loop: the regular refresh goes on.
 func TestSlowChangesLoadKeepsTheChangesAndRetries(t *testing.T) {
-	m := openDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 120, 40))
+	m := loadDelivery(t, deliveryModel(&fakeDelivery{changes: deliveryScenes()}, 120, 40))
 	changes := len(m.delivery.changes)
 	if changes == 0 {
 		t.Fatal("fixture has no changes")

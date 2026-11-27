@@ -400,58 +400,6 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		}
 		b, _ := json.Marshal(p)
 		return d.localWithdraw(ctx, d.ctoReadConn(), b)
-	case "agent_owner_ask":
-		var p struct {
-			Kind           string   `json:"kind"`
-			Text           string   `json:"text"`
-			Recommendation string   `json:"recommendation"`
-			Options        []string `json:"options"`
-			Urgency        string   `json:"urgency"`
-			Replaces       string   `json:"replaces"`
-		}
-		if err := decodeCTOArgs(name, raw, &p); err != nil {
-			return nil, err
-		}
-		if strings.TrimSpace(p.Text) == "" && p.Replaces == "" {
-			return nil, errors.New("agent_owner_ask needs kind, text and recommendation")
-		}
-		sid := d.ctoSessionID()
-		if sid == "" {
-			return nil, errors.New("CTO network session is not registered; retry after the gateway reconnects")
-		}
-		if p.Kind == "" && p.Replaces != "" {
-			p.Kind = "question"
-		}
-		kind := map[string]string{"question": "question", "approval": "approval", "idea": "feature_idea"}[p.Kind]
-		if kind == "" {
-			return nil, errors.New("kind must be question, approval or idea")
-		}
-		value, err := d.call(ctx, "inbox.create", map[string]any{"session_id": sid, "kind": kind, "text": p.Text, "recommendation": p.Recommendation, "options": p.Options, "urgency": p.Urgency, "replaces": p.Replaces})
-		if err != nil {
-			return nil, err
-		}
-		// The gateway answers {"item": {...}, "other_open": [...]}.
-		var res struct {
-			Item struct {
-				ID     string `json:"id"`
-				State  string `json:"state"`
-				Status string `json:"status"`
-			} `json:"item"`
-			OtherOpen []protocol.OpenAskRef `json:"other_open"`
-		}
-		_ = json.Unmarshal(value, &res)
-		state := res.Item.State
-		if state == "" {
-			state = res.Item.Status
-		}
-		out := map[string]any{"item_id": res.Item.ID, "kind": p.Kind, "state": state}
-		// A new ask adds to the pending ones: list the others so the CTO can
-		// name one with replaces.
-		if len(res.OtherOpen) > 0 {
-			out["other_open"] = res.OtherOpen
-			out["note"] = "Your earlier pending asks are still open. Pass replaces with one of their IDs to retire it."
-		}
-		return out, nil
 	case "agent_step_report":
 		// The CTO reports as itself, never for another session.
 		var a protocol.StepReportArgs
