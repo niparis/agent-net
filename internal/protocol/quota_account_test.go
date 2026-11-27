@@ -25,7 +25,7 @@ func TestAccountQuotaBlockFromFailure(t *testing.T) {
 		{"claude", agyQuotaFailure, "", 0},
 		{"agy", "Antigravity exited without a successful result", "", 0},
 	} {
-		provider, wait, ok := AccountQuotaBlock(tc.harness, tc.failure)
+		provider, wait, ok := AccountQuotaBlock(tc.harness, "", tc.failure)
 		if provider != tc.provider || wait != tc.wait || ok != (tc.provider != "") {
 			t.Errorf("%s %q: got %q %v %v; want %q %v", tc.harness, tc.failure, provider, wait, ok, tc.provider, tc.wait)
 		}
@@ -94,20 +94,40 @@ const codexQuotaFailure = "You've hit your usage limit. Upgrade to Pro (https://
 // reset the message names.
 func TestAccountQuotaBlockCodexUsageLimit(t *testing.T) {
 	now := time.Date(2026, 11, 12, 20, 0, 0, 0, time.Local)
-	provider, wait, ok := AccountQuotaBlockAt("codex", codexQuotaFailure, now)
+	provider, wait, ok := AccountQuotaBlockAt("codex", "", codexQuotaFailure, now)
 	if !ok || provider != "codex" || wait != 7*time.Hour+39*time.Minute {
 		t.Fatalf("got %q %v %v", provider, wait, ok)
 	}
 	// No reset time: nothing to block until.
-	if _, _, ok := AccountQuotaBlockAt("codex", "You've hit your usage limit.", now); ok {
+	if _, _, ok := AccountQuotaBlockAt("codex", "", "You've hit your usage limit.", now); ok {
 		t.Fatal("blocked with no reset time")
 	}
 	// A short rate limit is not an account block.
-	if _, _, ok := AccountQuotaBlockAt("codex", "HTTP 429 too many requests, try again in 30s", now); ok {
+	if _, _, ok := AccountQuotaBlockAt("codex", "", "HTTP 429 too many requests, try again in 30s", now); ok {
 		t.Fatal("blocked on a rate limit")
 	}
 	// The older entry point keeps reading agy only at the current time.
-	if _, _, ok := AccountQuotaBlock("claude", codexQuotaFailure); ok {
+	if _, _, ok := AccountQuotaBlock("claude", "", codexQuotaFailure); ok {
 		t.Fatal("claude blocked")
+	}
+}
+
+const alibabaQuotaFailure = "Your token-plan 1-month quota has been exhausted. The quota will reset at 12-11 16:00:00 UTC."
+
+// An OpenCode run on the Alibaba token plan that reports its monthly quota
+// blocks the alibaba provider until the reset date the message names.
+func TestAccountQuotaBlockOpenCodeMonthlyQuota(t *testing.T) {
+	now := time.Date(2026, 11, 27, 12, 20, 0, 0, time.UTC)
+	provider, wait, ok := AccountQuotaBlockAt("opencode", "alibaba-token-plan/qwen3-max", alibabaQuotaFailure, now)
+	if want := time.Date(2026, 12, 11, 16, 0, 0, 0, time.UTC).Sub(now); !ok || provider != "alibaba" || wait != want {
+		t.Fatalf("got %q %v %v, want alibaba %v", provider, wait, ok, want)
+	}
+	// A pay-per-use model names no quota provider, so the run blocks nothing.
+	if _, _, ok := AccountQuotaBlockAt("opencode", "opencode/big-pickle", alibabaQuotaFailure, now); ok {
+		t.Fatal("blocked a pay-per-use provider")
+	}
+	// A short rate limit is not an account block.
+	if _, _, ok := AccountQuotaBlockAt("opencode", "alibaba-token-plan/qwen3-max", "rate limit exceeded, try again in 30s", now); ok {
+		t.Fatal("blocked on a rate limit")
 	}
 }

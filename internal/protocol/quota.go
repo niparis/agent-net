@@ -351,41 +351,38 @@ const quotaAccountKind = "account"
 
 // accountQuotaMarkers are the phrases of an account-level quota refusal. A
 // rate limit or an overload is short and does not block the account.
-var accountQuotaMarkers = []string{"quota reached", "quota exceeded", "quota exhausted", "out of quota"}
+var accountQuotaMarkers = []string{"quota reached", "quota exceeded", "quota exhausted", "quota has been exhausted", "out of quota"}
 
 // AccountQuotaBlock reads a worker's failure text at the current time. See
 // AccountQuotaBlockAt.
-func AccountQuotaBlock(harness, failure string) (string, time.Duration, bool) {
-	return AccountQuotaBlockAt(harness, failure, time.Now())
+func AccountQuotaBlock(harness, model, failure string) (string, time.Duration, bool) {
+	return AccountQuotaBlockAt(harness, model, failure, time.Now())
 }
 
 // AccountQuotaBlockAt reads a worker's failure text. When the run failed because
 // the provider account is out of quota, and the text says when it resets, it
-// returns the quota provider and how long to wait from now. Two harnesses are
+// returns the quota provider and how long to wait from now. Three harnesses are
 // read this way, because quota-axi does not see their account limit in time:
 // agy ("Individual quota reached ... Resets in 134h28m52s", read per model
-// family by quota-axi) and Codex ("You've hit your usage limit ... try again
-// at 3:39 AM"). A failure with no reset time blocks nothing.
-func AccountQuotaBlockAt(harness, failure string, now time.Time) (string, time.Duration, bool) {
+// family by quota-axi), Codex ("You've hit your usage limit ... try again
+// at 3:39 AM") and OpenCode on a provider's quota, which names the model's
+// provider ("Your token-plan 1-month quota has been exhausted. The quota will
+// reset at 12-11 16:00:00 UTC"). A failure with no reset time blocks nothing.
+func AccountQuotaBlockAt(harness, model, failure string, now time.Time) (string, time.Duration, bool) {
 	switch strings.ToLower(strings.TrimSpace(harness)) {
 	case "agy":
 		return agyQuotaBlock(failure)
 	case "codex":
 		return codexQuotaBlock(failure, now)
+	case "opencode":
+		return openCodeQuotaBlock(model, failure, now)
 	}
 	return "", 0, false
 }
 
 func agyQuotaBlock(failure string) (string, time.Duration, bool) {
 	text := strings.ToLower(failure)
-	found := false
-	for _, m := range accountQuotaMarkers {
-		if strings.Contains(text, m) {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !hasAccountQuotaMarker(failure) {
 		return "", 0, false
 	}
 	i := strings.Index(text, "resets in ")
@@ -410,6 +407,31 @@ func codexQuotaBlock(failure string, now time.Time) (string, time.Duration, bool
 		return "", 0, false
 	}
 	return "codex", l.Until.Sub(now), true
+}
+
+// openCodeQuotaBlock reads an OpenCode run on a provider's quota. The model id
+// names the provider ("alibaba-token-plan/..." is alibaba); a pay-per-use model
+// names none, so a run on it blocks nothing. The failure must name the reset.
+func openCodeQuotaBlock(model, failure string, now time.Time) (string, time.Duration, bool) {
+	provider := QuotaProviderForStart("opencode", model)
+	if provider == "" || !hasAccountQuotaMarker(failure) {
+		return "", 0, false
+	}
+	l, ok := providererr.Limit(failure, now)
+	if !ok || !l.Known {
+		return "", 0, false
+	}
+	return provider, l.Until.Sub(now), true
+}
+
+func hasAccountQuotaMarker(failure string) bool {
+	text := strings.ToLower(failure)
+	for _, m := range accountQuotaMarkers {
+		if strings.Contains(text, m) {
+			return true
+		}
+	}
+	return false
 }
 
 // parseResetDelay reads a delay such as "160h24m5s" or "2d 3h" from the start

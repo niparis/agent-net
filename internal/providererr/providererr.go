@@ -82,7 +82,14 @@ var (
 	// tryAt is Codex's "try again at 3:39 AM" and "try again at Nov 14th, 2026 4:21 PM".
 	tryAt     = regexp.MustCompile(`(?i)try again at\s+(?:([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4}),?\s+)?(\d{1,2}):(\d{2})\s*(am|pm)?`)
 	clockTime = regexp.MustCompile(`(?i)resets?(?: at| by)?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?(?:\s*\(([A-Za-z_/+\-0-9]+)\))?`)
+	// resetDate is OpenCode's Alibaba token plan: "will reset at 12-11 16:00:00 UTC",
+	// with the year before the month when the message gives one.
+	resetDate = regexp.MustCompile(`(?i)will reset at\s+(?:(\d{4})-)?(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*UTC\b`)
 )
+
+// maxResetDate caps a reset date the message names. A monthly quota resets
+// within a month, so a date further away is a misread.
+const maxResetDate = 32 * 24 * time.Hour
 
 // Limit reports whether text is a usage or rate limit, and when it ends,
 // counted from at. The reset time comes from "try again in ~N min", a
@@ -101,6 +108,8 @@ func Limit(text string, at time.Time) (Limited, bool) {
 			l.Until, l.Known = at.Add(clampWait(time.Duration(n)*time.Second)), true
 		}
 	} else if t, ok := tryAgainAt(text, at); ok {
+		l.Until, l.Known = t, true
+	} else if t, ok := resetOn(text, at); ok {
 		l.Until, l.Known = t, true
 	} else if t, ok := clockReset(text, at); ok {
 		l.Until, l.Known = t, true
@@ -200,6 +209,41 @@ func monthByName(name string) (time.Month, bool) {
 		}
 	}
 	return 0, false
+}
+
+// resetOn reads a UTC reset date: "will reset at 12-11 16:00:00 UTC". Without a
+// year it is the next such date after at. A date in the past, or more than
+// maxResetDate away, is not believed.
+func resetOn(text string, at time.Time) (time.Time, bool) {
+	m := resetDate.FindStringSubmatch(text)
+	if m == nil {
+		return time.Time{}, false
+	}
+	month, _ := strconv.Atoi(m[2])
+	day, _ := strconv.Atoi(m[3])
+	hour, _ := strconv.Atoi(m[4])
+	minute, _ := strconv.Atoi(m[5])
+	second := 0
+	if m[6] != "" {
+		second, _ = strconv.Atoi(m[6])
+	}
+	if month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 59 {
+		return time.Time{}, false
+	}
+	var t time.Time
+	if m[1] != "" {
+		year, _ := strconv.Atoi(m[1])
+		t = time.Date(year, time.Month(month), day, hour, minute, second, 0, time.UTC)
+	} else {
+		t = time.Date(at.UTC().Year(), time.Month(month), day, hour, minute, second, 0, time.UTC)
+		if !t.After(at) {
+			t = t.AddDate(1, 0, 0)
+		}
+	}
+	if !t.After(at) || t.Sub(at) > maxResetDate {
+		return time.Time{}, false
+	}
+	return t, true
 }
 
 // clockReset reads "resets 8am (UTC)" or "resets at 15:30". Without a zone
