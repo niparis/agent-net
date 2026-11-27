@@ -2616,7 +2616,7 @@ export const TOOL_CATALOG = [
   },
   {
     "name": "agent_worker_start",
-    "description": "Start or continue a worker with a structured brief; the picker chooses the harness, model, effort and machine. Only if the owner or work mode asks. problem and done required; evidence, hypothesis, scope optional; task: extra notes. brief_flags never block a start; \"overlap ok: reason\" silences the overlap flag. For a feature with several tasks, list the tasks first, then group them into sessions: tasks that share code and design continue one session (continue) instead of starting new workers.",
+    "description": "Start or continue a worker with a structured brief; the picker chooses the harness, model, effort and machine. Only if the owner or work mode asks. problem and done required; evidence, hypothesis, scope optional; task: extra notes. The worker sees only this brief, never your conversation, and trusts its file paths and line numbers: check them against the base before you send (they drift), and write paths from the project root. To change scope or add work, send a continue after the hand-back, not a message to the running worker. brief_flags never block a start; \"overlap ok: reason\" silences the overlap flag. For a feature with several tasks, list the tasks first, then group them into sessions: tasks that share code and design continue one session (continue) instead of starting new workers.",
     "inputSchema": {
       "type": "object",
       "properties": {

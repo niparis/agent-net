@@ -64,6 +64,8 @@ var (
 	// Clauses end at a full stop followed by a space, or at a semicolon. A dot
 	// inside a file name such as scripts/test.sh does not end one.
 	lintClauseEndRE = regexp.MustCompile(`\.\s|;`)
+	// A sentence ends at a full stop followed by a space.
+	lintSentenceEndRE = regexp.MustCompile(`\.\s`)
 )
 
 // briefDirective is a pair of instructions that cannot both hold. yes is the
@@ -173,12 +175,36 @@ func briefOutsidePath(tok string) bool {
 	return false
 }
 
+// briefRepoFolders are the folders whose name in a path marks a file of the
+// project, so a path through one is a file to edit even without an extension.
+var briefRepoFolders = map[string]bool{"internal": true, "cmd": true, "docs": true, "scripts": true, "plugins": true, "tools": true, "testdata": true}
+
+// briefLooksLikeEditPath tells whether an outside token reads as a file the
+// worker would edit: a slash and a file-like last part, or a repo folder. A
+// time (~11:30Z), an approximate number (~550) or a home folder named as a fact
+// (~/.cache) is not.
+func briefLooksLikeEditPath(tok string) bool {
+	parts := strings.Split(strings.Trim(tok, "/"), "/")
+	if len(parts) < 2 {
+		return false
+	}
+	if last := parts[len(parts)-1]; briefFileRE.FindString(last) == last {
+		return true
+	}
+	for _, part := range parts {
+		if briefRepoFolders[part] {
+			return true
+		}
+	}
+	return false
+}
+
 func lintPaths(lines []string) []BriefFlag {
 	var flags []BriefFlag
 	for _, line := range lines {
 		for _, m := range lintPathRE.FindAllStringSubmatch(line, -1) {
 			tok := strings.TrimRight(m[1], ".:")
-			if !briefOutsidePath(tok) {
+			if !briefOutsidePath(tok) || !briefLooksLikeEditPath(tok) {
 				continue
 			}
 			flags = append(flags, briefFlag(BriefCheckPath, line,
@@ -232,20 +258,40 @@ func briefClauses(line string) []string {
 	return out
 }
 
+// briefMixedSentence tells whether one sentence holds both the instruction and
+// its opposite. It describes the two cases, as in "about 2 minutes without
+// -race", and asks for neither.
+func briefMixedSentence(d briefDirective, sentence string) bool {
+	locs := d.no.FindAllStringIndex(sentence, -1)
+	if len(locs) == 0 {
+		return false
+	}
+	b := []byte(sentence)
+	for _, loc := range locs {
+		blankRange(b, loc[0], loc[1])
+	}
+	return d.yes.Match(b)
+}
+
 func lintContradictions(lines []string) []BriefFlag {
 	var flags []BriefFlag
 	for _, d := range briefDirectives {
 		var yes, no string
 		for _, line := range lines {
-			for _, clause := range briefClauses(line) {
-				if d.no.MatchString(clause) {
-					if no == "" {
-						no = clause
-					}
+			for _, sentence := range lintSentenceEndRE.Split(line, -1) {
+				if briefMixedSentence(d, sentence) {
 					continue
 				}
-				if yes == "" && d.yes.MatchString(clause) {
-					yes = clause
+				for _, clause := range briefClauses(sentence) {
+					if d.no.MatchString(clause) {
+						if no == "" {
+							no = clause
+						}
+						continue
+					}
+					if yes == "" && d.yes.MatchString(clause) {
+						yes = clause
+					}
 				}
 			}
 		}

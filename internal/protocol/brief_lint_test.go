@@ -108,3 +108,34 @@ func TestBriefLintFlagsBrowserChecksInASandbox(t *testing.T) {
 	frames.Done = []string{"The text frame at 120x34 shows the new row."}
 	wantChecks(t, LintBrief(frames, BriefLintFacts{Sandbox: "bubblewrap"}))
 }
+
+// The false flags seen on real starts: each brief below is fine and must give
+// no flag. The last row of each group keeps a real flag.
+func TestBriefLintIgnoresWhatIsNotAPathToEdit(t *testing.T) {
+	for name, scope := range map[string]string{
+		"time":            "The error was logged at 2026-11-27 ~11:30Z.",
+		"approx line":     "See internal/parser/parse.go ~550 for the loop.",
+		"approx range":    "See internal/parser/parse.go ~342-349 for the loop.",
+		"home cache fact": "The build cache is ~/.cache and is already full.",
+		"home folder":     "Agy keeps state in ~/.gemini and we leave it alone.",
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := realBrief()
+			p.Scope = scope
+			wantChecks(t, LintBrief(p, BriefLintFacts{}))
+		})
+	}
+	p := realBrief()
+	p.Scope = "Fix ~/code/niparis/PLAN.md and ../shop-old/internal/parser."
+	wantChecks(t, LintBrief(p, BriefLintFacts{}), BriefCheckPath, BriefCheckPath)
+}
+
+func TestBriefLintIgnoresASentenceThatNamesBothCases(t *testing.T) {
+	p := realBrief()
+	p.Done = []string{"Run go test -race on the package (about 5 minutes with -race; about 2 minutes without -race)."}
+	wantChecks(t, LintBrief(p, BriefLintFacts{}))
+
+	// A real contradiction in separate sentences is still flagged.
+	p.Done = []string{"Run go test -race on the package. Do not use -race, it is slow."}
+	wantChecks(t, LintBrief(p, BriefLintFacts{}), BriefCheckContradiction)
+}
