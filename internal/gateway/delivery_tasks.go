@@ -2122,7 +2122,7 @@ func checkNodeTask(tx *sql.Tx, c protocol.Change, ref protocol.StepRef, session,
 	allowedOwner := project == owner
 	if owner == mergerTaskOwner {
 		var n int
-		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND merger_node=? AND merger_session=?)`, c.Project, c.Machine, session).Scan(&n); err != nil {
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND merger_session=?)`, c.Project, session).Scan(&n); err != nil {
 			return true, err
 		}
 		allowedOwner = n != 0

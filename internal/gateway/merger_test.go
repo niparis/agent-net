@@ -400,3 +400,57 @@ func TestMergerPruneNotifiesCaller(t *testing.T) {
 		t.Fatalf("caller notices=%d, want 1 after pruning the merger", notices)
 	}
 }
+
+// A repo has one merger. When a worker and caller run on machine A while the
+// merger runs on machine B, the worker branch must be pushed and the merger on
+// machine B must see the change as online, receive its step notice, claim it
+// and report it.
+func TestMergerHandlesChangeFromAnotherMachine(t *testing.T) {
+	r := newDeliveryRig(t)
+	demo := protocol.RepoInfo{Root: "/code/demo", Project: "demo"}
+	mergerB, err := r.s.UpsertSession(r.b, protocol.SessionInfo{Harness: "claude", NativeID: "merger-b", Repo: demo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.s.SetMerger(protocol.MergerSetRequest{Project: "demo", NodeID: r.b, SessionID: mergerB, Configure: true}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+
+	needsPush, err := r.s.DeliveryNeedsPush("demo", r.a, r.caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !needsPush {
+		t.Fatal("DeliveryNeedsPush = false, want true when the repo merger runs on another machine")
+	}
+
+	c := r.submit(r.a, r.workerSubmit("feature/from-mac", commitA)).Change.Change
+	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: c.ID, StepRef: stepAccept, Result: protocol.StepResultPass, Commit: commitA})
+	r.g.dispatchStepTasks(context.Background())
+
+	var notices int
+	if err := r.s.db.QueryRow(`SELECT count(*) FROM `+stepNoticesSQL+` WHERE change_id=? AND step='test' AND session_id=?`, c.ID, mergerB).Scan(&notices); err != nil {
+		t.Fatal(err)
+	}
+	if notices != 1 {
+		t.Fatalf("merger notices on node B = %d, want 1", notices)
+	}
+
+	view, err := r.s.GetChange(c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range view.Steps {
+		if st.Step == "test" && !st.AfterMerge && strings.Contains(st.Note, "offline") {
+			t.Fatalf("test step shows offline while merger on node B is online: state=%s note=%q", st.State, st.Note)
+		}
+	}
+
+	claim := protocol.StepClaimRequest{SessionID: mergerB, ChangeID: c.ID, StepRef: protocol.StepRef{Step: "test"}, Commit: commitA}
+	if _, err := deliveryCall[protocol.StepClaimResult](r, r.b, protocol.FrameStepClaim, claim); err != nil {
+		t.Fatalf("remote merger claim failed: %v", err)
+	}
+	if _, err := r.report(r.b, protocol.StepReportRequest{SessionID: mergerB, ChangeID: c.ID, StepRef: claim.StepRef, Commit: commitA, Result: "pass", Fields: map[string]string{"suite": "changed"}}); err != nil {
+		t.Fatalf("remote merger report failed: %v", err)
+	}
+}
