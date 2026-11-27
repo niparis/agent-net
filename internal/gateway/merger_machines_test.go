@@ -104,3 +104,43 @@ func TestMergerStartMovesOtherMachineCallerTask(t *testing.T) {
 		t.Fatalf("test task owner after merger start = %q, want %q", owner, mergerTaskOwner)
 	}
 }
+
+// needsPush asks for the push plan the way the daemon does on machine, for a
+// worker whose caller is callerSession.
+func needsPush(t *testing.T, r *deliveryRig, machine, callerSession string) bool {
+	t.Helper()
+	got, err := deliveryCall[protocol.DeliveryNeedsPushResult](r, machine, protocol.FrameDeliveryNeedsPush, protocol.DeliveryNeedsPushRequest{Project: "demo", CallerSessionID: callerSession})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got.NeedsPush
+}
+
+// The merger on machine b owns the test step. The worker and its caller are on
+// machine a, so the branch must reach origin.
+func TestDeliveryPushForRemoteMergerStep(t *testing.T) {
+	r := newDeliveryRig(t)
+	if err := r.s.SetMerger(protocol.MergerSetRequest{Project: "demo", NodeID: r.b, SessionID: r.deepseek, Configure: true}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if !needsPush(t, r, r.a, r.caller) {
+		t.Fatal("the merger on another machine owns the test step, but the branch is not pushed")
+	}
+}
+
+// Without a merger on another machine, the branch stays local.
+func TestDeliveryPushSkipsLocalOrMissingMerger(t *testing.T) {
+	r := newDeliveryRig(t)
+	if err := r.s.SetDeliveryOwner(protocol.DeliveryOwnerSetRequest{Project: "demo", Step: protocol.StepTest, Node: "@merger"}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if needsPush(t, r, r.a, r.caller) {
+		t.Fatal("no merger is configured, but the branch is pushed")
+	}
+	if err := r.s.SetMerger(protocol.MergerSetRequest{Project: "demo", NodeID: r.a, SessionID: r.sonnet, Configure: true}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if needsPush(t, r, r.a, r.caller) {
+		t.Fatal("the merger runs on the worker's machine, but the branch is pushed")
+	}
+}
