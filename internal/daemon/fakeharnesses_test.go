@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -60,6 +61,15 @@ const (
 	envFakeSocketProbeGate  = "FAKE_SOCKET_PROBE_GATE"
 	envFakeSocketProbeOut   = "FAKE_SOCKET_PROBE_OUT"
 
+	// envFakeFenceProbe makes the test binary try, inside a worker sandbox,
+	// what decision 0197 allows and the writes it forbids, and write the
+	// results as JSON to $TMPDIR/fence.json. envFakeFenceHome names the
+	// folder outside the sandbox's writable paths, envFakeFenceOther the git
+	// folder of a linked worktree that is not the worker's.
+	envFakeFenceProbe = "FAKE_FENCE_PROBE"
+	envFakeFenceHome  = "FAKE_FENCE_HOME"
+	envFakeFenceOther = "FAKE_FENCE_OTHER"
+
 	// Variables that change what the fakes do.
 	envFakeClaudeSessions = "FAKE_CLAUDE_SESSIONS"     // the folder of the session files
 	envFakeClaudeLog      = "FAKE_CLAUDE_LOG"          // one line per `claude stop`
@@ -109,6 +119,8 @@ func runFakeHarness() bool {
 	switch {
 	case os.Getenv(envFakeSocketProbe) != "":
 		fakeSocketProbe()
+	case os.Getenv(envFakeFenceProbe) != "":
+		fakeFenceProbe()
 	case os.Getenv(envFakeClaudeSession) != "":
 		fakeClaudeSession()
 	case os.Getenv(envFakeCodexShim) != "":
@@ -170,6 +182,88 @@ func fakeSocketProbe() {
 		result = err.Error()
 	}
 	_ = os.WriteFile(os.Getenv(envFakeSocketProbeOut), []byte(result), 0o600)
+}
+
+// fenceProbe is what fakeFenceProbe found: "" for each step that worked, else
+// the error.
+type fenceProbe struct {
+	Commit     string `json:"commit"`
+	SwitchC    string `json:"switch_c"`
+	TmpWrite   string `json:"tmp_write"`
+	UnixSocket string `json:"unix_socket"`
+	Loopback   string `json:"loopback"`
+	HomeWrite  string `json:"home_write"`
+	// WorktreeAdd is "" when git worktree add worked. HookWrite, ConfigWrite
+	// and OtherWorktree are "" when the write worked, which the fence must
+	// refuse: git runs code from them outside the sandbox.
+	WorktreeAdd   string `json:"worktree_add"`
+	HookWrite     string `json:"hook_write"`
+	ConfigWrite   string `json:"config_write"`
+	OtherWorktree string `json:"other_worktree"`
+}
+
+// fakeFenceProbe tries the writes and sockets of decision 0197 in its working
+// folder, the worker's worktree.
+func fakeFenceProbe() {
+	tmp := os.Getenv("TMPDIR")
+	git := func(args ...string) string {
+		out, err := exec.Command("git", append([]string{"-c", "user.name=t", "-c", "user.email=t@example.com"}, args...)...).CombinedOutput()
+		if err != nil {
+			return err.Error() + ": " + strings.TrimSpace(string(out))
+		}
+		return ""
+	}
+	var p fenceProbe
+	p.Commit = errText(os.WriteFile("probe.txt", []byte("x"), 0o600))
+	if p.Commit == "" {
+		if p.Commit = git("add", "probe.txt"); p.Commit == "" {
+			p.Commit = git("commit", "-qm", "probe")
+		}
+	}
+	p.SwitchC = git("switch", "-q", "-c", "fence-probe")
+	p.TmpWrite = errText(os.WriteFile(filepath.Join(tmp, "probe"), []byte("x"), 0o600))
+	p.UnixSocket = fenceDial("unix", filepath.Join(tmp, "p.sock"))
+	p.Loopback = fenceDial("tcp", "127.0.0.1:0")
+	p.HomeWrite = errText(os.WriteFile(filepath.Join(os.Getenv(envFakeFenceHome), "probe"), []byte("x"), 0o600))
+	p.WorktreeAdd = git("worktree", "add", "-q", "-b", "fence-probe-wt", filepath.Join(tmp, "wt"))
+	out, _ := exec.Command("git", "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	common := strings.TrimSpace(string(out))
+	p.HookWrite = errText(os.WriteFile(filepath.Join(common, "hooks", "pre-commit"), []byte("#!/bin/sh\n"), 0o755))
+	p.ConfigWrite = fenceAppend(filepath.Join(common, "config"), "[core]\n\tfsmonitor = true\n")
+	// The test names the other worktree: the probe's own worktree add made one
+	// more, which is the worker's and may be written.
+	p.OtherWorktree = fenceAppend(filepath.Join(os.Getenv(envFakeFenceOther), "commondir"), "")
+	raw, _ := json.Marshal(p)
+	_ = os.WriteFile(filepath.Join(tmp, "fence.json"), raw, 0o600)
+}
+
+// fenceAppend opens an existing file for writing and appends s.
+func fenceAppend(path, s string) string {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		return err.Error()
+	}
+	_, err = f.WriteString(s)
+	return errText(errors.Join(err, f.Close()))
+}
+
+// fenceDial listens on addr and connects to it: "" when both work.
+func fenceDial(network, addr string) string {
+	ln, err := net.Listen(network, addr)
+	if err != nil {
+		return err.Error()
+	}
+	defer ln.Close()
+	go func() {
+		if c, err := ln.Accept(); err == nil {
+			c.Close()
+		}
+	}()
+	c, err := net.DialTimeout(network, ln.Addr().String(), 5*time.Second)
+	if err != nil {
+		return err.Error()
+	}
+	return errText(c.Close())
 }
 
 // fakeOpenCodeRun is the one-shot OpenCode command for difficulty judges.
@@ -1098,7 +1192,7 @@ func fakePi() {
 	}
 	if probeDir := os.Getenv(envFakePiProbeHome); probeDir != "" {
 		rec.HomeWrite = errText(os.WriteFile(filepath.Join(probeDir, "probe"), []byte("x"), 0o600))
-		rec.TmpWrite = errText(os.WriteFile("/tmp/fake-pi-probe", []byte("x"), 0o600))
+		rec.TmpWrite = errText(os.WriteFile(filepath.Join(os.Getenv("TMPDIR"), "fake-pi-probe"), []byte("x"), 0o600))
 		rec.AgentDir = os.Getenv("PI_CODING_AGENT_DIR")
 	}
 	if os.Getenv(envFakePiProbeExt) != "" {

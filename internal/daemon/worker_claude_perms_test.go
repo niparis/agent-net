@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/harnesses"
@@ -89,10 +88,11 @@ func TestClaudeWorkerLaunchRestrictsWritesToItsWorktree(t *testing.T) {
 	}
 }
 
-// A worktree's git data lives in its repository, and a Go change may need a
-// module the machine has not downloaded: both stay writable, or git commit and
-// go mod download fail inside the sandbox. Hooks and config stay closed.
-func TestClaudeWorkerWritesCoverGitDataAndModuleCache(t *testing.T) {
+// A Claude worker's Bash sandbox keeps one rule (decision 0197): it writes its
+// worktree, the repository's git folder (so commit, switch -c and worktree add
+// work) but not its config and hooks, its caches and the Go module cache, and
+// nothing else; every unix socket and local port stay open.
+func TestClaudeWorkerSandboxFollowsTheWriteFence(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	c := startClaudeNode(t, g, shortSet)
 	base := t.TempDir()
@@ -111,20 +111,26 @@ func TestClaudeWorkerWritesCoverGitDataAndModuleCache(t *testing.T) {
 		Task: "FAKE:ignore hold the turn", Isolation: protocol.IsolationWorktree})
 	rec := readClaude(t, res.Worktree)
 
-	files := rec.Settings["sandbox"].(map[string]any)["filesystem"].(map[string]any)
-	writes := stringList(t, files["allowWrite"], "sandbox.filesystem.allowWrite")
-	gitRoots := workerGitRoots(context.Background(), res.Worktree)
-	if len(gitRoots) < 3 {
-		t.Fatalf("test setup: git roots of the worktree = %v", gitRoots)
-	}
-	for _, want := range append(gitRoots, modCache) {
+	sandbox := rec.Settings["sandbox"].(map[string]any)
+	writes := stringList(t, sandbox["filesystem"].(map[string]any)["allowWrite"], "sandbox.filesystem.allowWrite")
+	for _, want := range []string{res.Worktree, filepath.Join(repo, ".git"), modCache, c.d.workerGoCacheDir()} {
 		if !hasString(writes, want) {
 			t.Errorf("the worker cannot write %s: %v", want, writes)
 		}
 	}
 	for _, p := range writes {
-		if p == filepath.Join(repo, ".git") || strings.HasPrefix(p, filepath.Join(repo, ".git", "hooks")) || p == filepath.Join(repo, ".git", "config") {
-			t.Errorf("the worker may write %s, which can run code outside the sandbox: %v", p, writes)
+		if p == "/" || p == repo || p == os.Getenv("HOME") {
+			t.Errorf("the worker may write %s, outside the fence: %v", p, writes)
 		}
+	}
+	denied := stringList(t, sandbox["filesystem"].(map[string]any)["denyWrite"], "sandbox.filesystem.denyWrite")
+	for _, sub := range []string{"config", "hooks", "info"} {
+		if want := filepath.Join(repo, ".git", sub); !hasString(denied, want) {
+			t.Errorf("the worker may write %s, whose code git runs outside the sandbox: %v", want, denied)
+		}
+	}
+	network, _ := sandbox["network"].(map[string]any)
+	if network["allowAllUnixSockets"] != true || network["allowLocalBinding"] != true {
+		t.Errorf("unix sockets or local ports are closed: %v", network)
 	}
 }

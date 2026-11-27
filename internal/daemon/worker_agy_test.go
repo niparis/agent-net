@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -505,12 +507,20 @@ func TestAgyCleanupKillsTheFakeProcessGroup(t *testing.T) {
 	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(bin, "-p=", "--input-format", "stream-json", "--output-format", "stream-json")
-	cmd.Dir, cmd.Env = dir, os.Environ()
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
+	var cmd *exec.Cmd
+	// A parallel test that forks between the write and the exec holds the
+	// script open for writing until its child execs: the kernel then refuses
+	// the exec with ETXTBSY for that short time.
+	eventually(t, "the fake agy started", func() bool {
+		cmd = exec.Command(bin, "-p=", "--input-format", "stream-json", "--output-format", "stream-json")
+		cmd.Dir, cmd.Env = dir, os.Environ()
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		err := cmd.Start()
+		if err != nil && !errors.Is(err, syscall.ETXTBSY) {
+			t.Fatal(err)
+		}
+		return err == nil
+	})
 	t.Cleanup(func() {
 		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		cmd.Wait()
@@ -917,7 +927,7 @@ func TestAgyDeniedText(t *testing.T) {
 func TestAgyWorkerGitDirsInLinkedWorktree(t *testing.T) {
 	t.Parallel()
 	w, dir, repo := startAgyNode(t, shortSet)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:handback", Isolation: protocol.IsolationWorktree})
+	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:handback", Isolation: protocol.IsolationWorktree})
 	w.waitNotice(t, 1)
 	r := agyRecords(dir)[0]
 	var got []string
@@ -926,11 +936,16 @@ func TestAgyWorkerGitDirsInLinkedWorktree(t *testing.T) {
 			got = append(got, r.Args[i+1])
 		}
 	}
-	common := filepath.Join(repo, ".git")
-	for _, want := range []string{filepath.Join(common, "worktrees", filepath.Base(res.Worktree)), filepath.Join(common, "objects"), filepath.Join(common, "refs"), filepath.Join(common, "logs")} {
-		if !strings.Contains("\n"+strings.Join(got, "\n")+"\n", "\n"+want+"\n") {
+	// The git folders a commit writes, but not the git folder itself: agy has
+	// no read-only list, and git runs code from its config and hooks outside
+	// the sandbox (decision 0197).
+	for _, sub := range []string{"objects", "refs", "logs"} {
+		if want := filepath.Join(repo, ".git", sub); !slices.Contains(got, want) {
 			t.Fatalf("git folder %s missing from --add-dir: %v", want, got)
 		}
+	}
+	if gitDir := filepath.Join(repo, ".git"); slices.Contains(got, gitDir) {
+		t.Fatalf("the whole git folder %s is an --add-dir, with its config and hooks: %v", gitDir, got)
 	}
 }
 

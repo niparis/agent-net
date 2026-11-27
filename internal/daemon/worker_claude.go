@@ -143,7 +143,6 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 	for k, v := range commitEnv {
 		settingsEnv[k] = v
 	}
-	d.prepareClaudeWorkerWrites(w)
 	settings, _ := json.Marshal(d.claudeWorkerSettings(w, settingsEnv))
 	// The MCP choice for the worktree's .mcp.json servers goes in the launch
 	// settings too, not only in the file: a background job that misses the
@@ -238,11 +237,12 @@ func (d *Daemon) claudeWorkerSettings(w *worker, env map[string]string) map[stri
 	d.wmu.Lock()
 	level, dir := protocol.WorkerPermissionsOrDefault(w.permissions), w.path
 	d.wmu.Unlock()
+	writes, readOnly := d.claudeWorkerWrites(w)
 	return map[string]any{
 		"crossSessionInbound": "accept",
 		"env":                 env,
 		"permissions":         claudeWorkerPermissions(level, dir),
-		"sandbox":             claudeWorkerSandbox(level, dir, d.claudeWorkerWrites(w)),
+		"sandbox":             claudeWorkerSandbox(level, dir, writes, readOnly),
 	}
 }
 
@@ -263,17 +263,16 @@ func claudeWorkerPermissions(level, dir string) map[string]any {
 	}
 }
 
-// claudeWorkerWrites is the writable folders a Claude worker needs beyond its
-// working directory: the folders of a commit in its worktree, the Go module
-// cache, and the shared Go build cache and Go temp folder. The sandbox's own
+// claudeWorkerWrites is the write fence of a Claude worker (workerFence,
+// decision 0197): its worktree and the folders every worker may write, and
+// the git config and hooks that stay read-only inside them. The sandbox's own
 // per-user temp folder is writable already.
-//
-// The git folders are the narrow set of workerGitRoots, not the whole git
-// directory: hooks and config stay read-only, since a hook runs outside the
-// sandbox's rules when the owner commits.
-func (d *Daemon) claudeWorkerWrites(w *worker) []string {
-	paths := append([]string{w.path}, d.workerWriteRoots(context.Background(), w)...)
-	paths = append(paths, d.workerGoModCache(w.path))
+func (d *Daemon) claudeWorkerWrites(w *worker) (writes, readOnly []string) {
+	f := d.workerFence(context.Background(), w)
+	return claudeUnique(append([]string{w.path}, f.Write...)), f.ReadOnly
+}
+
+func claudeUnique(paths []string) []string {
 	var out []string
 	seen := map[string]bool{}
 	for _, p := range paths {
@@ -287,30 +286,30 @@ func (d *Daemon) claudeWorkerWrites(w *worker) []string {
 	return out
 }
 
-// prepareClaudeWorkerWrites makes the folders of the sandbox's allowWrite list
-// before the session starts: on Linux a sandbox path must exist when the
-// command that writes there starts, and the shared cache is outside the
-// worktree. A folder that cannot be made is logged; the worker still starts,
-// and its builds then find that folder read-only.
-func (d *Daemon) prepareClaudeWorkerWrites(w *worker) {
-	for _, p := range d.claudeWorkerWrites(w) {
-		if err := os.MkdirAll(p, 0o700); err != nil {
-			d.Logf("worker %s: Claude write path %s: %v", w.id, p, err)
-		}
-	}
-}
-
 // claudeWorkerSandbox is the Bash sandbox of a worker's level. It applies to
 // the commands Claude runs, with everything they start, and not to Claude's
 // own file tools (those are permissions rules). Missing sandbox dependencies
 // make Claude Code warn and run the commands unsandboxed, so a machine without
 // them still gets a worker with the file-tool boundary; a worker never starts
 // with the file-tool boundary missing.
-func claudeWorkerSandbox(level, dir string, writes []string) map[string]any {
+//
+// It keeps one rule (decision 0197): writes only in the writes list, except in
+// readOnly. Every unix socket, local ports and, on macOS, every Mach service
+// stay open, so daemon tests, Docker, dev servers and browsers work.
+func claudeWorkerSandbox(level, dir string, writes, readOnly []string) map[string]any {
+	fs := map[string]any{"allowWrite": writes}
+	if len(readOnly) > 0 {
+		fs["denyWrite"] = readOnly
+	}
 	return map[string]any{
 		"enabled":                  true,
 		"allowUnsandboxedCommands": false,
-		"filesystem":               map[string]any{"allowWrite": writes},
+		"filesystem":               fs,
+		"network": map[string]any{
+			"allowAllUnixSockets": true,
+			"allowLocalBinding":   true,
+			"allowMachLookup":     []string{"*"},
+		},
 	}
 }
 

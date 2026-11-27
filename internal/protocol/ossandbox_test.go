@@ -37,10 +37,11 @@ func TestWorkerPermissionsLineNamesTheWrapper(t *testing.T) {
 	}
 }
 
-// The brief of a wrapped worker says so, and says what fails.
+// The brief of a wrapped worker says so, and says where it may write
+// (decision 0197): not /tmp, which the wrapper keeps read-only.
 func TestWorkerBriefNamesTheWrapper(t *testing.T) {
 	body := WorkerTaskBodyBriefBar("pi", WorkerBrief{Notes: "do it"}, "/wt", "agent-net/w_1", "", "", "", WorkersSandboxed, "bubblewrap", settings.Snapshot{}, "", nil)
-	if !strings.Contains(body, "\n- permissions: sandboxed (writes only in its worktree, network on) (sandboxed by bubblewrap): writes outside your worktree and /tmp fail (read-only file system)") {
+	if !strings.Contains(body, "\n- permissions: sandboxed (writes only in its worktree, network on) (sandboxed by bubblewrap): you may write only in your worktree, $TMPDIR, your caches and the repository's git folder, but not its config or hooks; other writes fail (read-only file system)") || strings.Contains(body, "/tmp") {
 		t.Fatalf("brief:\n%s", body)
 	}
 	plain := WorkerTaskBodyBriefBar("pi", WorkerBrief{Notes: "do it"}, "/wt", "agent-net/w_1", "", "", "", WorkersSandboxed, "", settings.Snapshot{}, "", nil)

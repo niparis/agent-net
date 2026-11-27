@@ -163,3 +163,38 @@ func TestHandbackFactsSkipSandboxPlaceholders(t *testing.T) {
 		t.Fatalf("untracked list is %q, want only keep.txt", stat)
 	}
 }
+
+// In a Claude worker's own git commands, the empty files Claude Code's sandbox
+// makes do not show as untracked, so git add -A and scripts that read git
+// status skip them. A real folder with a placeholder name still shows, and the
+// excludes the worker had before still apply.
+func TestClaudeWorkerGitHidesSandboxPlaceholders(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	if err := os.MkdirAll(filepath.Join(xdg, "git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(xdg, "git", "ignore"), []byte("*.swp\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d := commitTestDaemon(t)
+	w, wt := commitTestWorker(t, d)
+	w.harness = "claude"
+	writeSandboxPlaceholders(t, wt)
+	writeSandboxPlaceholders(t, filepath.Join(wt, "sub"))
+	if err := os.MkdirAll(filepath.Join(wt, "real", ".vscode"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"notes.swp", "real/.vscode/settings.json", "work.go"} {
+		writeFile(t, wt, f, []byte("x"))
+	}
+	status := gitWithEnv(t, wt, d.workerCommitEnv(w), "status", "--porcelain", "--untracked-files=all")
+	got := map[string]bool{}
+	for _, l := range strings.Split(strings.TrimSpace(status), "\n") {
+		got[strings.TrimPrefix(l, "?? ")] = true
+	}
+	want := map[string]bool{"real/.vscode/settings.json": true, "work.go": true}
+	if len(got) != len(want) || !got["work.go"] || !got["real/.vscode/settings.json"] {
+		t.Fatalf("untracked files in the worker's git status:\n%s\nwant only %v", status, want)
+	}
+}

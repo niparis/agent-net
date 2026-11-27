@@ -1048,11 +1048,11 @@ func WorkerTaskBodyBriefBar(harness string, brief WorkerBrief, worktree, branch,
 	}
 	b += "\n- " + WorkerPermissionsLine(level, harness, osSandbox)
 	if OSSandboxWrapper(osSandbox) != "" {
-		b += ": writes outside your worktree and /tmp fail (read-only file system)"
+		b += ": you may write only in your worktree, $TMPDIR, your caches and the repository's git folder, but not its config or hooks; other writes fail (read-only file system)"
 	}
 	if worktree != "" {
 		b += "\n\nYou work in a git worktree of the project at " + worktree + " on the branch " + branch +
-			", not in the user's own checkout."
+			", not in the user's own checkout. Push with a plain `git push`, not `git push -u`: the git config is read-only for workers."
 		if harness != "agy" {
 			b += " " + snap.String("delivery.worker_branch_prep", settings.Where{})
 		}

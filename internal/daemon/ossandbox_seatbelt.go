@@ -1,18 +1,15 @@
 package daemon
 
-import (
-	"fmt"
-	"strings"
-)
+import "strings"
 
 // The macOS wrapper is sandbox-exec with a Seatbelt profile built from the same
 // osSandboxPolicy that bubblewrap gets on Linux. This file has no build tag, so
 // the profile is tested on every OS; only ossandbox_darwin.go runs it.
 //
 // Seatbelt has no mount namespace. The host stays visible and the profile says
-// what may be written: the later of two matching rules wins, so the read-only
-// paths of the policy are denied after the writable ones are allowed. Reads are
-// not limited, as on Linux.
+// only what may be written: the later of two matching rules wins, so the
+// read-only paths of the policy are denied after the writable ones are
+// allowed. Reads, the network and unix sockets are not limited (decision 0197).
 
 // sbQuote is s as a Seatbelt string literal.
 func sbQuote(s string) string {
@@ -32,12 +29,8 @@ func sbSubpaths(paths []string) string {
 func seatbeltProfile(p osSandboxPolicy) string {
 	var b strings.Builder
 	b.WriteString("(version 1)\n(allow default)\n(deny file-write*)\n")
-	writable := append([]string{}, p.Writable...)
-	if p.Tmp != "" {
-		writable = append(writable, p.Tmp)
-	}
-	if len(writable) > 0 {
-		b.WriteString("(allow file-write*" + sbSubpaths(writable) + ")\n")
+	if len(p.Writable) > 0 {
+		b.WriteString("(allow file-write*" + sbSubpaths(p.Writable) + ")\n")
 	}
 	// The null device and terminals are written by every shell command.
 	b.WriteString("(allow file-write* (literal \"/dev/null\") (literal \"/dev/zero\") (literal \"/dev/dtracehelper\") (regex #\"^/dev/tty\") (regex #\"^/dev/fd/\"))\n")
@@ -47,21 +40,6 @@ func seatbeltProfile(p osSandboxPolicy) string {
 	}
 	if len(ro) > 0 {
 		b.WriteString("(deny file-write*" + sbSubpaths(ro) + ")\n")
-	}
-	// Folders and files the policy hides are neither read nor written.
-	hidden := append(append([]string{}, p.Hide...), p.Mask...)
-	if len(hidden) > 0 {
-		b.WriteString("(deny file-read* file-write*" + sbSubpaths(hidden) + ")\n")
-	}
-	if !p.Network {
-		b.WriteString("(deny network*)\n")
-	}
-	// A worker may not reach the sockets of other services of the owner. The
-	// resolver stays, so host names still resolve.
-	b.WriteString("(deny network-outbound (remote unix-socket))\n")
-	b.WriteString("(allow network-outbound (remote unix-socket (path-literal \"/private/var/run/mDNSResponder\")))\n")
-	if p.Socket != "" {
-		b.WriteString(fmt.Sprintf("(allow network-outbound (remote unix-socket (path-literal %s)))\n", sbQuote(p.Socket)))
 	}
 	return b.String()
 }

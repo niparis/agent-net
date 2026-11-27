@@ -159,14 +159,13 @@ func (d *Daemon) startAgy(ctx context.Context, w *worker) error {
 	args = append(args, modelArgs...)
 
 	args = append(args, "--mode", "accept-edits", "--sandbox", "--settings", agyWorkerSettings)
-	// The linked worktree's git folders, the Go temp folder the worker's go
-	// command writes to (GOTMPDIR) and the package caches of the worker
-	// (UV_CACHE_DIR and the others) stay writable. agy needs the package cache
-	// last.
+	// The folders every worker may write (workerFence): agy has no read-only
+	// list, so the git folders a commit writes, then the Go folders and the
+	// worker's package caches, last.
 	for _, path := range toolchains {
 		args = append(args, "--add-dir", path)
 	}
-	roots := d.workerWriteRootsThen(ctx, w.path, d.workerSandboxGoTmpDir(), d.workerCacheRoot(w))
+	roots := d.workerFence(ctx, w).Narrow
 	for _, path := range roots {
 		args = append(args, "--add-dir", path)
 	}

@@ -169,6 +169,7 @@ func workerCacheVars(root string) map[string]string {
 		"UV_CACHE_DIR":     filepath.Join(root, "uv"),
 		"npm_config_cache": filepath.Join(root, "npm"),
 		"PIP_CACHE_DIR":    filepath.Join(root, "pip"),
+		"CARGO_HOME":       filepath.Join(root, "cargo"),
 	}
 }
 
@@ -186,6 +187,9 @@ func (d *Daemon) workerToolEnv(w *worker) map[string]string {
 		d.Logf("worker %s: Go temp folder: %v", w.id, err)
 	}
 	set["GOTMPDIR"] = goTmp
+	// The shared Go build cache, which every worker may write (decision 0197);
+	// the owner's own cache in the home folder is not writable.
+	set["GOCACHE"] = d.workerGoCacheDir()
 	// Test runs write their temp files to TMPDIR, which Go's GOTMPDIR does not
 	// cover. A harness whose sandbox mounts its own /dev keeps the TMPDIR it has.
 	if !sandboxHidesHostDev(w.harness) {
