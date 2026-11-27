@@ -492,11 +492,6 @@ func (s *Store) Prune(r Retention) (PruneResult, error) {
 	if _, err := s.db.Exec(`UPDATE sessions SET owner_prompt='', owner_prompt_at=0 WHERE owner_prompt<>'' AND owner_prompt_at < ?`, now.Add(-10*time.Minute).UnixNano()); err != nil {
 		return res, err
 	}
-	// A finding that was never promoted goes stale after 90 days.
-	if _, err := s.db.Exec(`UPDATE findings SET status = ? WHERE status = ? AND at < ?`,
-		protocol.FindingStale, protocol.FindingNew, now.Add(-protocol.FindingStaleDays*24*time.Hour).Unix()); err != nil {
-		return res, err
-	}
 	if res.WorkerRuns > 0 {
 		if err := s.refreshPicker(); err != nil {
 			return res, err

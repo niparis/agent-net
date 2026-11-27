@@ -105,7 +105,7 @@ func TestCharterDraftFramesReadAndDecide(t *testing.T) {
 		t.Fatalf("one: %+v %v", one, err)
 	}
 	var decided protocol.CharterDraft
-	if err := json.Unmarshal(handleBytes(t, r.g, r.a, "learned.answer", map[string]any{"owner": owner, "suggestion_id": -id, "action": "reject", "actor": "cto"}), &decided); err != nil {
+	if err := json.Unmarshal(handleBytes(t, r.g, r.a, "charter.draft_answer", map[string]any{"owner": owner, "draft": id, "action": "reject", "actor": "cto"}), &decided); err != nil {
 		t.Fatal(err)
 	}
 	if decided.Status != "rejected" || decided.DecidedBy != "cto" {

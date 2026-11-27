@@ -65,8 +65,6 @@ func TestSnapshotSendsVersionsAndKeepsUnchangedParts(t *testing.T) {
 			return protocol.AgentsResult{NotModified: true}, ""
 		case protocol.OpNodes:
 			return protocol.NodesInfo{NotModified: true}, ""
-		case "learned_list":
-			return []protocol.LearnedSuggestion{}, ""
 		}
 		return map[string]any{}, ""
 	})
@@ -75,13 +73,11 @@ func TestSnapshotSendsVersionsAndKeepsUnchangedParts(t *testing.T) {
 	previous := Snapshot{Connected: true,
 		Agents:          []protocol.AgentView{{SessionID: "keep-agent"}},
 		Nodes:           []protocol.NodeView{{Hostname: "keep-node"}},
-		Learned:         []protocol.LearnedSuggestion{{ID: 3}},
 		GatewayWarnings: []string{"keep-warning"},
 	}
 	versions := map[string]uint64{
 		protocol.TopicAgents:  7,
 		protocol.TopicNodes:   8,
-		protocol.TopicLearned: 9,
 		protocol.TopicChanges: 10,
 	}
 	snap, err := c.SnapshotWith(context.Background(), SnapshotOptions{Previous: previous, IfVersions: versions, Lite: true})
@@ -113,12 +109,5 @@ func TestSnapshotSendsVersionsAndKeepsUnchangedParts(t *testing.T) {
 	}
 	if nodes.IfVersion != 8 {
 		t.Fatalf("nodes asked with if_version %d, want 8", nodes.IfVersion)
-	}
-	var learned protocol.LearnedListQuery
-	if err := json.Unmarshal(d.params["learned_list"], &learned); err != nil {
-		t.Fatal(err)
-	}
-	if learned.IfVersion != 9 || !learned.Lite {
-		t.Fatalf("learned asked with %+v, want if_version 9 and lite", learned)
 	}
 }

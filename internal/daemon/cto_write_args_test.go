@@ -521,45 +521,6 @@ func TestCTOMergedToolsTakeReasonAndOwnerWords(t *testing.T) {
 	}
 }
 
-// mcp_servers_by_path is filled by the daemon from the folder's own .mcp.json
-// (trustMCPNames), so the owner's ask names the servers the click approves. It
-// is not an argument of the tool, so a CTO call that names it is refused and
-// stores no proposal.
-func TestCTOWritePermissionProposeRefusesDaemonField(t *testing.T) {
-	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
-	g := startGateway(t, t.TempDir(), "")
-	n := startNode(t, g, nodeOpts{})
-	ctx := context.Background()
-	if err := n.d.registerCTOSession(ctx); err != nil {
-		t.Fatal(err)
-	}
-	pending := func(t *testing.T) int {
-		t.Helper()
-		out, err := n.d.readCTOTool(ctx, "cto_proposals_find", json.RawMessage(`{"kind":"permission"}`))
-		if err != nil {
-			t.Fatal(err)
-		}
-		return out.(ctoList[map[string]any]).Total
-	}
-	before := pending(t)
-	args := fmt.Sprintf(`{"kind":"trust","machine":%q,"targets":["/work/permission-test"],"reason":"Claude Code cannot start here","mcp_servers_by_path":{"/work/permission-test":["forged"]}}`, n.cfg.Hostname)
-	if _, err := n.d.runCTOToolRaw(ctx, "agent_permission_propose", json.RawMessage(args)); err == nil || !strings.Contains(err.Error(), "mcp_servers_by_path") {
-		t.Fatalf("daemon-only field: %v", err)
-	}
-	if got := pending(t); got != before {
-		t.Fatalf("refused call stored a proposal: %d -> %d", before, got)
-	}
-
-	// The same call without the daemon field reaches the gateway.
-	right := fmt.Sprintf(`{"kind":"trust","machine":%q,"targets":["/work/permission-test"],"reason":"Claude Code cannot start here"}`, n.cfg.Hostname)
-	if _, err := n.d.runCTOToolRaw(ctx, "agent_permission_propose", json.RawMessage(right)); err != nil {
-		t.Fatalf("right call: %v", err)
-	}
-	if got := pending(t); got != before+1 {
-		t.Fatalf("right call did not store a pending proposal: %d -> %d", before, got)
-	}
-}
-
 func jsonString(t *testing.T, value any) string {
 	t.Helper()
 	b, err := json.Marshal(value)

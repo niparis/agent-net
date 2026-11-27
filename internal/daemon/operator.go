@@ -151,29 +151,6 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 			return nil, true, tooOldGateway(err)
 		}
 		return data, true, nil
-	case protocol.OpLearn:
-		// A finding comes from an agent session, never from the command line.
-		var p protocol.LearnRequest
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, true, errors.New("bad agent_learn params")
-		}
-		if client == "cli" {
-			return nil, true, errors.New("agent_learn is for agent sessions, not the command line")
-		}
-		sid, _, err := lc.callerSession(client, method)
-		if err != nil {
-			return nil, true, err
-		}
-		var data json.RawMessage
-		if data, err = d.call(ctx, "learn.add", protocol.LearnFrame{LearnRequest: p, Reporter: sid}); err != nil {
-			return nil, true, tooOldGateway(err)
-		}
-		var out protocol.LearnResult
-		if err := json.Unmarshal(data, &out); err != nil {
-			return nil, true, err
-		}
-		return out, true, nil
-
 	case protocol.OpNoteWrite, protocol.OpNotesFind:
 		// Notes belong to a session's agent and project, so the call needs a
 		// session. The command line never gets here: the dispatch refuses it
@@ -207,23 +184,6 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 			return nil, true, err
 		}
 		return out, true, nil
-
-	case protocol.OpPermissionPropose:
-		// A proposal comes from a session, never from the command line. It
-		// writes no file; the owner answers one owner-only ask.
-		var p protocol.PermissionProposeRequest
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, true, errors.New("bad agent_permission_propose params")
-		}
-		if client == "cli" {
-			return nil, true, errors.New("agent_permission_propose is for agent sessions, not the command line")
-		}
-		sid, _, err := lc.callerSession(client, method)
-		if err != nil {
-			return nil, true, err
-		}
-		out, err := d.proposePermission(ctx, sid, p)
-		return out, true, err
 
 	case protocol.OpCharterDraft:
 		// A draft comes from an agent session, never from the command line. The

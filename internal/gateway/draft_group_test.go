@@ -110,39 +110,3 @@ func TestMemberNodeDraftAskGoesToTheLead(t *testing.T) {
 		t.Fatalf("lead got %d requests after a new draft, %v", n, err)
 	}
 }
-
-func TestLearnedEdgeAskForAMemberGoesToTheLead(t *testing.T) {
-	s, asker, lead := forgeRig(t)
-	teamWrite(t, s, protocol.TeamWrite{Action: "asks_to", ID: "forge", AsksTo: protocol.AsksToLead})
-	now := s.now().UnixNano()
-	for _, node := range []string{"demo", "other"} {
-		if _, err := s.db.Exec(`INSERT INTO learned_suggestions(node,field,edge_kind,kind,phrase,evidence,status,severity,created_at,ready_at) VALUES(?,'edge','depends','add','x-'||?,'[]','pending','major',?,?)`,
-			node, node, now, now-int64(time.Minute)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := s.reconcileAsks(); err != nil {
-		t.Fatal(err)
-	}
-	asks, _ := s.ListAsks()
-	// The lead's own node has no lead above it: the owner has no Desk, so
-	// its suggestion makes no ask (decision 0196).
-	learned := askByKind(asks, protocol.AskKindLearned)
-	if len(learned) != 1 || learned[0].AboutID != "demo" || learned[0].Next != lead || learned[0].State != protocol.AskWithSomeone {
-		t.Fatalf("learned asks: %+v", asks)
-	}
-	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE sender=? AND recipient=?`, asker, lead).Scan(&n); err != nil || n != 1 {
-		t.Fatalf("lead requests: %d %v", n, err)
-	}
-	// No duplicate on the next run.
-	if err := s.reconcileAsks(); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE sender=? AND recipient=?`, asker, lead).Scan(&n); err != nil || n != 1 {
-		t.Fatalf("lead requests after second run: %d %v", n, err)
-	}
-	if asks, _ = s.ListAsks(); len(askByKind(asks, protocol.AskKindLearned)) != 1 {
-		t.Fatalf("second run changed the asks: %+v", asks)
-	}
-}

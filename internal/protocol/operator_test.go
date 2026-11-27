@@ -207,7 +207,7 @@ func TestFormatWorkerNotice(t *testing.T) {
 
 func TestOperatorMethodsExcludeAgentOnlyCalls(t *testing.T) {
 	for _, method := range OperatorMethods {
-		if method == OpLearn || method == OpRate {
+		if method == OpRate {
 			t.Errorf("agent-only method %s is listed as an operator method", method)
 		}
 	}

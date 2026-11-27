@@ -1,12 +1,10 @@
 package tui
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/tui/graphview"
@@ -49,27 +47,6 @@ func TestGraphFindSelectsMatch(t *testing.T) {
 	m = keys(m, "/", "project-12", "enter")
 	if m.graphState.Graph.Selected() != "project-12" || m.mapOn || m.mp.finding {
 		t.Fatal("graph search did not select match")
-	}
-}
-func TestGraphCardLearnedUndo(t *testing.T) {
-	m := graphModel(120, 40)
-	m.tab = graphTab
-	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-02"})
-	m.snap.Learned = []protocol.LearnedSuggestion{{ID: 1, Node: "project-02", Field: "needs", Phrase: "ops", Status: "applied", By: "learned", HistoryID: 42}, {ID: 2, Node: "project-02", Field: "needs", Phrase: "backup", Status: "applied", By: "learned", HistoryID: 43}}
-	m = keys(m, "enter", ".")
-	src := &learnedSource{}
-	m.src = src
-	_, cmd := m.Update(tea.KeyPressMsg{Text: "u", Code: []rune("u")[0]})
-	if cmd == nil {
-		t.Fatal("card undo missing")
-	}
-	cmd()
-	raw, _ := json.Marshal(src.params)
-	if !strings.Contains(string(raw), "43") {
-		t.Fatalf("undo did not use the change selected with U: %s", raw)
-	}
-	if src.method != "graph_undo" {
-		t.Fatalf("undo called %s", src.method)
 	}
 }
 func TestOnboardingNetworkUsesGraph(t *testing.T) {

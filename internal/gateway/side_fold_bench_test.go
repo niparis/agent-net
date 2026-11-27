@@ -155,49 +155,6 @@ func BenchmarkSideFoldAutoDefect(b *testing.B) {
 	}
 }
 
-func BenchmarkSideFoldLearned(b *testing.B) {
-	s, _ := newTestStore(b)
-	n1, _, err := s.CreateNode("h1", "linux")
-	if err != nil {
-		b.Fatal(err)
-	}
-	a, err := s.UpsertSession(n1, protocol.SessionInfo{Harness: "claude", NativeID: "na", Name: "alice"})
-	if err != nil {
-		b.Fatal(err)
-	}
-	benchExec(b, s, `UPDATE sessions SET repo_project='app' WHERE id=?`, a)
-	add := func(i int) {
-		tx, err := s.db.Begin()
-		if err != nil {
-			b.Fatal(err)
-		}
-		ev := []LearnedEvidence{{ID: fmt.Sprintf("e%d", i), Excerpt: "x"}}
-		if err := learnedAdd(tx, s.now().UnixNano(), "app", "rules", "", fmt.Sprintf("phrase %d", i), "minor", "owner", ev); err != nil {
-			b.Fatal(err)
-		}
-		if err := tx.Commit(); err != nil {
-			b.Fatal(err)
-		}
-	}
-	// 50 suggestions on the live gateway; start with ten times that.
-	for i := 0; i < 500; i++ {
-		add(-i - 1)
-	}
-	b.ResetTimer()
-	b.Run("Add", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			add(i)
-		}
-	})
-	b.Run("List", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			if _, err := s.LearnedSuggestions(false); err != nil {
-				b.Fatal(err)
-			}
-		}
-	})
-}
-
 func BenchmarkSideFoldMemberBlocked(b *testing.B) {
 	s, _ := newTestStore(b)
 	for i := 0; i < 500; i++ {

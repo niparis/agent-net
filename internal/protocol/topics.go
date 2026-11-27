@@ -11,11 +11,10 @@ const (
 	TopicInbox           = "inbox"
 	TopicChanges         = "changes"
 	TopicProjects        = "projects"
-	TopicLearned         = "learned"
 	TopicUsage           = "usage"
 )
 
-var Topics = []string{TopicAgents, TopicNodes, TopicWorkers, TopicGraph, TopicInbox, TopicChanges, TopicProjects, TopicLearned, TopicUsage}
+var Topics = []string{TopicAgents, TopicNodes, TopicWorkers, TopicGraph, TopicInbox, TopicChanges, TopicProjects, TopicUsage}
 
 type TopicEvent struct {
 	Topic   string `json:"topic"`

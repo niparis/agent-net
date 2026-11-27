@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 
 	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -15,7 +14,7 @@ import (
 // own proposal store and static guidance. A read whose sources depend on its
 // detail names the extra source after a semicolon.
 var ctoReadSources = map[string]string{
-	"cto_proposals_find":  "own proposals,asks.list,permission.get,permission.pending",
+	"cto_proposals_find":  "own proposals,asks.list",
 	"cto_intake_find":     protocol.FrameIntakeFind,
 	"agent_sessions_find": "sessions_find",
 	"agent_machines_find": "machines_find", "agent_machine_log": "machine_log",
@@ -142,9 +141,6 @@ func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessa
 		}
 		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &q) != nil {
 			return nil, errors.New("bad proposals arguments")
-		}
-		if strings.HasPrefix(q.ID, "pp_") {
-			return d.ctoPermissionProposal(ctx, q.ID)
 		}
 		if draft, ok := ctoCharterDraftID(q.ID); ok {
 			return d.ctoCharterDraft(ctx, draft)

@@ -366,22 +366,3 @@ func TestStoppedWithWorkLeftRowClosesOnNewWorkAnnounce(t *testing.T) {
 		t.Fatalf("row after a new-work announce: %s", status)
 	}
 }
-
-// A learned suggestion reads in the owner's words, with the owner's own words
-// when the owner said them.
-func TestLearnedAskWording(t *testing.T) {
-	cases := []struct {
-		name string
-		s    protocol.LearnedSuggestion
-		want string
-	}{
-		{"add owner words", protocol.LearnedSuggestion{Node: "ops", Field: "refuses", Kind: "add", Phrase: "deployment work", RawPhrase: "deploys", Origin: "owner"}, `add "deploys" to what it refuses`},
-		{"remove", protocol.LearnedSuggestion{Node: "app", Field: "accepts", Kind: "remove", Phrase: "backups"}, `remove "backups" from what it accepts`},
-		{"edge", protocol.LearnedSuggestion{Node: "ops", Field: "edge", EdgeKind: "deploys", Kind: "add", Phrase: "app"}, "add a deploys edge to app"},
-	}
-	for _, tc := range cases {
-		if got := learnedAskText(tc.s); got != tc.want {
-			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
-		}
-	}
-}

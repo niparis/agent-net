@@ -336,11 +336,6 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		if p.ID == "" {
 			return nil, errors.New("proposal_ask needs id")
 		}
-		if strings.HasPrefix(p.ID, "pp_") {
-			// A permission proposal waits on the Desk, not in the CTO dialog.
-			// Answer its state and the call that applies it.
-			return d.ctoPermissionProposal(ctx, p.ID)
-		}
 		found, haveItem, err := d.proposalRunner().get(p.ID)
 		if err != nil {
 			return nil, err
@@ -419,31 +414,6 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			return nil, errors.New("CTO network session is not registered; retry after the gateway reconnects")
 		}
 		return d.stepReportReply(ctx, sid, protocol.SessionInfo{}, a)
-	case "agent_permission_propose":
-		// mcp_servers_by_path is filled by this daemon from each folder's own
-		// .mcp.json (trustMCPNames), so it is not decoded here. Strict decode
-		// refuses it by name instead of letting a call invent the servers the
-		// owner's ask says the click approves.
-		var q struct {
-			Kind    string   `json:"kind"`
-			Rules   []string `json:"rules"`
-			Targets []string `json:"targets"`
-			Machine string   `json:"machine"`
-			Reason  string   `json:"reason"`
-		}
-		if err := decodeCTOArgs(name, raw, &q); err != nil {
-			return nil, err
-		}
-		p := protocol.PermissionProposeRequest{Kind: q.Kind, Rules: q.Rules, Targets: q.Targets, Machine: q.Machine, Reason: q.Reason}
-		sid := d.ctoSessionID()
-		if sid == "" {
-			return nil, errors.New("CTO network session is not registered; retry after the gateway reconnects")
-		}
-		out, err := d.proposePermission(ctx, sid, p)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"id": out.ID, "status": out.Status}, nil
 	case "agent_owner_judgment_record":
 		var p protocol.JudgmentRecordArgs
 		if err := decodeCTOArgs(name, raw, &p); err != nil {
@@ -486,24 +456,6 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			return nil, tooOldGateway(err)
 		}
 		return data, nil
-	case "agent_learn":
-		var p protocol.LearnRequest
-		if err := decodeCTOArgs(name, raw, &p); err != nil {
-			return nil, err
-		}
-		sid := d.ownerSessionID()
-		if sid == "" {
-			return nil, errNotConnected
-		}
-		value, err := d.call(ctx, "learn.add", protocol.LearnFrame{LearnRequest: p, Reporter: sid})
-		if err != nil {
-			return nil, err
-		}
-		var out protocol.LearnResult
-		if err := json.Unmarshal(value, &out); err != nil {
-			return nil, err
-		}
-		return map[string]any{"recorded": out.Accepted, "id": strconv.FormatInt(out.ID, 10), "left_today": out.Remaining}, nil
 	case "cto_ui_show":
 		// The catalog tool shows a tab, or a notice when notice is set.
 		var q struct {

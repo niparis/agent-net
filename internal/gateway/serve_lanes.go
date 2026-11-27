@@ -39,7 +39,7 @@ var parallelFrames = map[string]bool{
 	"query.conversations": true, "query.conversation_messages": true,
 	"query.messages": true, "query.message": true,
 	"query.usage": true, "query.counts": true, "query.machine_get": true,
-	"learned.list": true, "charter.drafts": true, "signal.list": true,
+	"charter.drafts": true, "signal.list": true,
 	"inbox.list": true, "asks.list": true, "sign_in.list": true, "query.sign_in": true, "desk.log": true, "held.list": true,
 	"hidden.get": true, "settings.snapshot": true, "node.settings.get": true,
 	"onboarding.get": true, "playbook.get": true,

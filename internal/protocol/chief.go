@@ -292,7 +292,7 @@ type AskWaiting struct {
 
 // AskFull is one ask read in full: the whole question, the recommendation and
 // options, the source, the route and sort history, the owner's answer and the
-// exact payload of a charter draft or a learned proposal. Secret values are
+// exact payload of a charter draft. Secret values are
 // masked; a token's scope and destination are kept.
 type AskFull struct {
 	ID             string              `json:"id"`
@@ -320,7 +320,6 @@ type AskFull struct {
 	SourceRef      string              `json:"source_ref,omitempty"`
 	Routing        []AskSort           `json:"routing,omitempty"`
 	Charter        []CharterDraftField `json:"charter,omitempty"`
-	Learned        *LearnedSuggestion  `json:"learned,omitempty"`
 }
 
 // CharterDraftField is one proposed charter value in a draft-charter ask.

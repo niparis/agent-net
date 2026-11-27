@@ -31,7 +31,7 @@ func TestApprovedKeyMapContract(t *testing.T) {
 		{"16_graph_pan", []check{{contextGraph, "shift+left", "pan left"}, {contextGraph, "h", ""}, {contextGraph, "j", ""}, {contextGraph, "k", ""}, {contextGraph, "l", ""}}},
 		{"17_graph_links", []check{{contextGraph, ",", "previous link"}, {contextGraph, ".", "next link"}, {contextGraph, "[", ""}, {contextGraph, "]", ""}}},
 		{"18_card_scroll", []check{{contextCard, "ctrl+u", actPageUp}, {contextCard, "ctrl+d", actPageDown}, {contextCard, "[", ""}, {contextCard, "]", ""}}},
-		{"19_card_learned", []check{{contextCard, ",", "previous learned"}, {contextCard, ".", "next learned"}, {contextCard, "u", "undo learned"}, {contextCard, "U", ""}}},
+		{"19_card_drafts", []check{{contextCard, ",", "previous draft"}, {contextCard, ".", "next draft"}, {contextCard, "u", ""}, {contextCard, "U", ""}}},
 		{"26_help_close", []check{{contextHelp, "esc", actClose}, {contextHelp, "?", actAllScreens}, {contextHelp, "enter", ""}, {contextHelp, "backspace", ""}}},
 		{"27_notifications", []check{{contextHelp, "N", ""}, {contextHelp, "n", ""}}},
 		{"28_confirm", []check{{contextConfirm, "enter", "yes"}, {contextConfirm, "y", "yes"}, {contextConfirm, "esc", "no"}, {contextConfirm, "n", "no"}}},

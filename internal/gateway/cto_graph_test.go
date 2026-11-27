@@ -7,7 +7,11 @@ import (
 )
 
 func TestCTOGraphClass(t *testing.T) {
-	s, _, _, _ := learnedProjects(t)
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+	if _, err := s.db.Exec(`UPDATE sessions SET repo_project=CASE id WHEN ? THEN 'app' ELSE 'ops' END WHERE id IN (?,?)`, a, a, b); err != nil {
+		t.Fatal(err)
+	}
 	for _, c := range []struct{ tool, args, want string }{
 		{"charter_set", `{"node":"app","attr":"purpose","value":"Build useful things"}`, "minor"},
 		{"charter_set", `{"node":"app","attr":"accepts","value":"feature work"}`, "minor"},

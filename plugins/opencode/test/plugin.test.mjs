@@ -107,8 +107,6 @@ const server = createServer((conn) => {
               { node_id: "n_2", hostname: "old", version: "v0.3.2", online: false, harnesses: null },
             ],
             playbook: [{ subject_kind: "model", subject: "a/x", note: "ask for the diff", support: 3, source: "auto" }] }
-          : line.method === "agent_learn"
-            ? { accepted: true, id: 7, status: "new", remaining: 2 }
           : {};
       conn.write(JSON.stringify({ id: line.id, result }) + "\n");
     }
@@ -1194,32 +1192,6 @@ await test("agent_worker_start can ask for a worktree", async () => {
   await start.execute({ project: "alpha", task: "t", isolation: "worktree" }, { sessionID: "ses_iso" });
   const sent = calls.slice(before).find(([m]) => m === "worker_start");
   if (!sent || sent[1].isolation !== "worktree") throw new Error("isolation was not passed: " + JSON.stringify(sent));
-  stop();
-});
-
-await test("agent_learn records a finding and shows the daily limit", async () => {
-  freshHub();
-  const sessions = new Map([["ses_l", session("ses_l", "/work/l")]]);
-  let tools;
-  const c = makeContext("/work/l", sessions, {
-    onTransform(fn) {
-      tools = [];
-      fn({ add: (t) => tools.push(t) });
-    },
-  });
-  const stop = await plugin.setup(c.ctx);
-  await until("hello for ses_l", () => registered("ses_l"));
-  const tool = tools.find((t) => t.name === "agent_learn");
-  if (!tool) throw new Error("agent_learn is not registered");
-  const before = calls.length;
-  const out = (await tool.execute({ subject_kind: "model", subject: "terra", finding: "Hands back partial work.", evidence: ["s_w1"] },
-    { sessionID: "ses_l" })).content;
-  const [method, params] = calls[before];
-  if (method !== "agent_learn" || params.subject_kind !== "model" || params.subject !== "terra" ||
-      params.finding !== "Hands back partial work." || params.evidence[0] !== "s_w1") {
-    throw new Error("wrong call: " + JSON.stringify(calls[before]));
-  }
-  if (!out.includes("Recorded finding 7")) throw new Error("learn output: " + out);
   stop();
 });
 

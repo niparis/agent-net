@@ -129,7 +129,7 @@ const askSelect = `SELECT i.id,i.kind,i.session_id,i.node,i.text,i.recommendatio
 
 // ListAsks returns every open ask, oldest first, in one query. The Desk reads
 // this one list instead of building rows from the Inbox, held requests,
-// outcomes, learned suggestions and sessions.
+// outcomes and sessions.
 func (s *Store) ListAsks() ([]protocol.Ask, error) {
 	rows, err := s.db.Query(askSelect + ` WHERE i.status='open' AND i.kind<>'cto_intake' ORDER BY i.created_at,i.id`)
 	if err != nil {
@@ -588,61 +588,16 @@ func (s *Store) reconcileWaitingAsks() error {
 	return nil
 }
 
-// reconcileLearnedAsks sends the ready major edge suggestions and the pending
-// charter drafts to the team leads, and closes the stored asks of those the
-// owner or the CTO decided.
-func (s *Store) reconcileLearnedAsks() error {
+// reconcileCharterDraftAsks sends the pending charter drafts to the team
+// leads, and closes the stored asks of those the owner or the CTO decided.
+func (s *Store) reconcileCharterDraftAsks() error {
 	// PendingCharterDrafts first: it marks the drafts that got a value some
 	// other way as superseded.
 	drafts, err := s.PendingCharterDrafts()
 	if err != nil {
 		return err
 	}
-	// A change made by hand settles its suggestion before any ask is raised
-	// for it, so an answered ask is never raised again.
-	if err := s.settleLearnedDone(); err != nil {
-		return err
-	}
-	if _, err := s.closeAsks(s.db, `kind='learned' AND source_ref LIKE 'learned:%' AND NOT EXISTS (SELECT 1 FROM learned_suggestions l WHERE l.id=CAST(substr(inbox_items.source_ref,9) AS INTEGER) AND l.status='pending')`, nil, protocol.AskReasonResolved); err != nil {
-		return err
-	}
-	// An ask that went to a team lead closes when the node has no pending suggestion left.
-	if _, err := s.closeAsks(s.db, `kind='learned' AND source_ref LIKE ? AND NOT EXISTS (SELECT 1 FROM learned_suggestions l WHERE l.node=inbox_items.about_id AND l.status='pending')`, []any{leadAskRefPrefix + "%"}, protocol.AskReasonResolved); err != nil {
-		return err
-	}
-	ready, err := s.LearnedSuggestions(true)
-	if err != nil {
-		return err
-	}
-	// Only an edge suggestion for a team member is sent, to the team lead.
-	// The owner has no Desk (decision 0196): he reads the rest in the
-	// learned list.
-	for _, v := range ready {
-		if v.Severity != "major" || v.Field != "edge" {
-			continue
-		}
-		item := protocol.InboxItem{
-			Kind: protocol.AskKindLearned, SessionID: gatewayAsker, FromKind: protocol.AskFromGateway, Node: v.Node, AskerName: "learned",
-			SourceRef: fmt.Sprintf("learned:%d", v.ID), AboutKind: protocol.AskAboutProject, AboutID: v.Node,
-			Text: learnedAskText(v), Detail: learnedAskBecause(v),
-		}
-		if err := s.sendLearnedToLead(v, item); err != nil {
-			return err
-		}
-	}
 	return s.reconcileDraftAsks(drafts)
-}
-
-// sendLearnedToLead sends the ask of a learned suggestion to the lead of the
-// node's team when the team asks to the lead, once: not when the lead was
-// already asked about it and the ask is still there or was answered.
-func (s *Store) sendLearnedToLead(v protocol.LearnedSuggestion, item protocol.InboxItem) error {
-	var seen int
-	if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM inbox_items WHERE kind='learned' AND about_id=? AND text=? AND status<>'closed' AND source_ref LIKE ?)`,
-		v.Node, item.Text, leadAskRefPrefix+"%").Scan(&seen); err != nil || seen != 0 {
-		return err
-	}
-	return s.redirectNodeAsk(v.Node, "", item)
 }
 
 // reconcileAsks brings every derived ask in line with its source. The gateway
@@ -656,8 +611,8 @@ func (s *Store) reconcileAsks() error {
 	if err := s.reconcileHeldAsks(s.db); err != nil {
 		return fmt.Errorf("held asks: %w", err)
 	}
-	if err := s.reconcileLearnedAsks(); err != nil {
-		return fmt.Errorf("learned asks: %w", err)
+	if err := s.reconcileCharterDraftAsks(); err != nil {
+		return fmt.Errorf("charter draft asks: %w", err)
 	}
 	if _, err := s.reconcileEndedSessionAsks(s.db); err != nil {
 		return fmt.Errorf("ended session asks: %w", err)
@@ -811,55 +766,4 @@ func (s *Store) SyncExternalAsks(node string, sync protocol.AskSync) error {
 		}
 	}
 	return nil
-}
-
-// askPlainField names a charter field in the owner's words.
-func askPlainField(field string) string {
-	switch field {
-	case "refuses":
-		return "what it refuses"
-	case "accepts":
-		return "what it accepts"
-	case "feature_requests":
-		return "what it wants"
-	case "":
-		return "its charter"
-	}
-	return "its " + strings.ReplaceAll(field, "_", " ")
-}
-
-// learnedAskText says what a learned suggestion would change, without the
-// node name: the ask is about the node already.
-func learnedAskText(v protocol.LearnedSuggestion) string {
-	phrase := v.Phrase
-	if v.Origin == "owner" && v.RawPhrase != "" {
-		phrase = v.RawPhrase
-	}
-	phrase = askFirstLine(phrase, 120)
-	if v.Field == "edge" {
-		verb := "add"
-		if v.Kind == "remove" {
-			verb = "remove"
-		}
-		return fmt.Sprintf("%s a %s edge to %s", verb, askFirstLine(v.EdgeKind, 40), phrase)
-	}
-	field := askPlainField(v.Field)
-	switch v.Kind {
-	case "remove":
-		return fmt.Sprintf("remove \"%s\" from %s", phrase, field)
-	case "narrow":
-		return fmt.Sprintf("change %s to \"%s\"", field, phrase)
-	}
-	return fmt.Sprintf("add \"%s\" to %s", phrase, field)
-}
-
-// learnedAskBecause is the evidence of a learned suggestion, one line each.
-func learnedAskBecause(v protocol.LearnedSuggestion) string {
-	var lines []string
-	for _, e := range v.Evidence {
-		if e.Excerpt != "" {
-			lines = append(lines, "Because: "+askFirstLine(e.Excerpt, 200))
-		}
-	}
-	return strings.Join(lines, "\n")
 }

@@ -331,7 +331,7 @@ func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapsh
 		{method: "notification_settings"}, {method: protocol.OpTimeZoneGet}, {method: protocol.OpWorkerProfiles},
 		{method: protocol.OpWorkerProvidersGet}, {method: protocol.OpProtectedProvidersGet}, {method: protocol.OpWorkerFloorsGet},
 		{method: protocol.OpScoresGet}, {method: "difficulty_get"}, {method: protocol.OpWorkerRotationGet},
-		{method: "learned_list", params: protocol.LearnedListQuery{IfVersion: opts.IfVersions[protocol.TopicLearned], Lite: opts.Lite}},
+		{method: protocol.OpDraftsList},
 		{method: protocol.OpGraphGet},
 		{method: protocol.OpProjects, params: protocol.QueryProjects{}},
 	}
@@ -419,8 +419,8 @@ func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapsh
 				err = json.Unmarshal(c.raw, &snap.DifficultyMinimums)
 			case protocol.OpWorkerRotationGet:
 				err = json.Unmarshal(c.raw, &snap.WorkerRotation)
-			case "learned_list":
-				err = json.Unmarshal(c.raw, &snap.Learned)
+			case protocol.OpDraftsList:
+				err = json.Unmarshal(c.raw, &snap.Drafts)
 			case protocol.OpGraphGet:
 				var v protocol.Graph
 				err = json.Unmarshal(c.raw, &v)
@@ -455,8 +455,8 @@ func SnapshotTopic(method string) string {
 		protocol.OpProtectedProvidersGet, protocol.OpWorkerFloorsGet, protocol.OpScoresGet,
 		"difficulty_get", protocol.OpWorkerRotationGet, "notification_settings", protocol.OpTimeZoneGet:
 		return protocol.TopicWorkers
-	case "learned_list":
-		return protocol.TopicLearned
+	case protocol.OpDraftsList:
+		return protocol.TopicInbox
 	case protocol.OpGraphGet:
 		return protocol.TopicGraph
 	case protocol.OpProjects:

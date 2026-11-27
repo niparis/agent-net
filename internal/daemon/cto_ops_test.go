@@ -162,14 +162,16 @@ func TestCTOOpsListPinsNoAliases(t *testing.T) {
 		"public_status", "public_on", "public_off", "machine_remove",
 		"machine_rotate", "process_stop", "session_replace", "node_remove",
 		"repo_archive", "agent_tombstone",
+		"learned_list", "learned_view", "learned_answer",
+		"permission_reject", "permission_undo",
 	}
 	for _, alias := range aliases {
 		if _, ok := mcpserver.CTOOpByName(alias); ok {
-			t.Errorf("cto_ops still includes moved alias %s", alias)
+			t.Errorf("cto_ops still includes moved or retired op %s", alias)
 		}
 	}
 	ops := mcpserver.CTOOps()
-	if len(ops) != 99 {
-		t.Fatalf("expected 99 ops, got %d", len(ops))
+	if len(ops) != 96 {
+		t.Fatalf("expected 96 ops, got %d", len(ops))
 	}
 }

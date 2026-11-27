@@ -31,7 +31,6 @@ func TestRedesignedWorkerAndOwnerTools(t *testing.T) {
 		{"agent_worker_stop", "worker_stop", map[string]any{"worker": "s_w"}},
 		{"agent_worker_rate", "agent_rate", map[string]any{"worker": "s_w", "kind": "rating", "score": 4}},
 		{"agent_announce", "announce", map[string]any{"task": "working", "expertise": "Go"}},
-		{"agent_learn", "agent_learn", map[string]any{"subject_kind": "model", "subject": "terra", "finding": "works"}},
 		{"agent_project_add", "project_add", map[string]any{"paths": []string{"/tmp/demo"}}},
 		{"agent_mcp_test", "mcp_test", map[string]any{"server": "demo"}},
 	}

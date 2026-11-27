@@ -86,7 +86,7 @@ func (m Model) hints() []hint {
 		if node, ok := m.mapNode(m.mp.selected); ok && node.Ref != nil && node.Ref.Kind == "repo" {
 			hs = append(hs, bindingHint(contextCard, "lead"))
 		}
-		return append(hs, bindingHint(contextCard, "back"), bindingPairHint(contextCard, actPageUp, actPageDown), bindingHint(contextCard, "new session"), bindingHint(contextCard, "undo learned"), bindingHint(contextCard, "help"), bindingHint(contextCard, actQuit))
+		return append(hs, bindingHint(contextCard, "back"), bindingPairHint(contextCard, actPageUp, actPageDown), bindingHint(contextCard, "new session"), bindingHint(contextCard, "help"), bindingHint(contextCard, actQuit))
 	case m.open != nil:
 		return []hint{bindingPairHint(contextBody, actUp, actDown), bindingHint(contextBody, actClose), bindingHint(contextBody, actQuit)}
 	case m.focus == focusCTO:

@@ -358,7 +358,6 @@ function piTextEntries(branch: any[]): TextEntry[] {
 }
 
 function formatCatalogResult(name: string, result: any): string {
-  if (name === "agent_learn") return result.accepted === false ? `Not recorded: ${result.reason}` : `Recorded finding ${result.id} (${result.status}). ${result.remaining} left today.`;
   if (name === "agent_handback") return `Handed back (${result.status}${result.complete === false ? ", partial" : ""}). ${result.note ? result.note : "The caller has your report and the facts."} You can still receive follow-up messages.`;
   return JSON.stringify(result ?? {}, null, 2);
 }
@@ -1250,22 +1249,6 @@ export default function (pi: ExtensionAPI) {
     (r) => `Handed back (${r.status}${r.complete === false ? ", partial" : ""}). The caller has your report and the facts. You can still receive follow-up messages.`,
   );
 
-  defineTool(
-    "agent_learn",
-    "Record a finding",
-    "Record one thing the network should know before it picks or briefs a model, harness, project, MCP server or machine next time. " +
-      "Report only what would change that choice or brief, never a routine result or a status update. " +
-      "A finding is quiet: it is not a message, it does not appear in Needs you, and it changes nothing until the gateway promotes a pattern to the playbook. " +
-      "At most 3 findings per session per day. subject_kind is model, harness, model_harness (subject model@harness), project, mcp or machine.",
-    Type.Object({
-      subject_kind: Type.String({ description: "model, harness, model_harness, project, mcp or machine" }),
-      subject: Type.String({ description: "the model, harness, model@harness, project, MCP server or machine the finding is about" }),
-      finding: Type.String({ description: "what you learned, in one or two sentences: only what would change how someone picks or briefs this model, harness or project next time. Never a routine result. At most 500 characters" }),
-      evidence: Type.Optional(Type.Array(Type.String(), { description: "session or worker IDs that show it (optional, at most 20)" })),
-    }),
-    "agent_learn",
-    (r) => (r.accepted === false ? `Not recorded: ${r.reason}` : `Recorded finding ${r.id} (${r.status}). ${r.remaining} left today.`),
-  );
 
 
 

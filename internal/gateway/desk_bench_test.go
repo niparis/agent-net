@@ -75,16 +75,6 @@ func seedOwnerQueue(tb testing.TB, s *Store) {
 			tb.Fatal(err)
 		}
 	}
-	for i := 0; i < 200; i++ {
-		status, severity := "applied", "minor"
-		if i%10 == 0 {
-			status, severity = "pending", "major"
-		}
-		if _, err := s.db.Exec(`INSERT INTO learned_suggestions(node,field,edge_kind,kind,phrase,evidence,status,severity,created_at,ready_at) VALUES(?,?,?,'add',?,'[]',?,?,?,?)`,
-			fmt.Sprintf("repo-%d", i%8), "accepts", "", fmt.Sprintf("phrase %d", i), status, severity, now.UnixNano(), now.UnixNano()); err != nil {
-			tb.Fatal(err)
-		}
-	}
 }
 
 // BenchmarkOwnerQueueLegacy is the work behind the old Inbox refresh on the
@@ -102,9 +92,6 @@ func BenchmarkOwnerQueueLegacy(b *testing.B) {
 			b.Fatal(err)
 		}
 		if _, err := s.OutcomeInbox(); err != nil {
-			b.Fatal(err)
-		}
-		if _, err := s.OwnerLearned(); err != nil {
 			b.Fatal(err)
 		}
 	}

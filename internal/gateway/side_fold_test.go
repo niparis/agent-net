@@ -89,6 +89,8 @@ func oldSideTableLayout(t *testing.T) (path string, friction []int64) {
 	// wake rows end up on these sessions.
 	restoreTablesAt(t, s.db, migrationVersion(t, sessionTablesMarker)-1, sessionDroppedTables...)
 	sideFoldExec(t, s, `INSERT INTO sessions(id,node_id,harness,native_id,last_seen) VALUES('s1','n1','claude','w1',1),('s2','n1','claude','w2',1),('s3','n1','claude','w3',1)`)
+	// The retired tables drop removed learned_suggestions after the fold.
+	restoreTablesAt(t, s.db, retiredDropVersion(t)-1, "learned_suggestions")
 	// Drop what the fold added, then bring the old tables back.
 	for _, q := range []string{
 		`DROP INDEX worker_defects_auto_key`,
@@ -165,25 +167,11 @@ func TestSideFoldMigrationKeepsEveryRow(t *testing.T) {
 		}
 	}
 
-	t.Run("learned", func(t *testing.T) {
-		for _, c := range []struct {
-			id      int
-			origin  string
-			history int64
-			raw     string
-			hasRaw  bool
-		}{{1, "owner", 7, "raw one", true}, {2, "flow", 0, "", false}, {3, "", 0, "", false}} {
-			var origin string
-			var history int64
-			var raw *string
-			if err := s.db.QueryRow(`SELECT origin,history_id,raw_phrase FROM learned_suggestions WHERE id=?`, c.id).Scan(&origin, &history, &raw); err != nil {
-				t.Fatal(err)
-			}
-			if origin != c.origin || history != c.history || (raw != nil) != c.hasRaw || (raw != nil && *raw != c.raw) {
-				t.Errorf("suggestion %d: origin %q history %d raw %v", c.id, origin, history, raw)
-			}
-		}
-	})
+	// The fold moved the learned rows; the later retired tables drop removes
+	// them with their table.
+	if n := sideFoldInt(t, s, `SELECT COUNT(*) FROM sqlite_master WHERE name='learned_suggestions'`); n != 0 {
+		t.Error("learned_suggestions is still there")
+	}
 
 	t.Run("session wakes", func(t *testing.T) {
 		// s1 keeps its count and gains both marks. s2 and s3 get theirs.
@@ -318,6 +306,7 @@ func TestSideFoldMigrationReplays(t *testing.T) {
 	sideFoldExec(t, s, `CREATE TABLE IF NOT EXISTS friction_status_history (id INTEGER PRIMARY KEY AUTOINCREMENT, friction_id INTEGER NOT NULL, status TEXT NOT NULL, changed_by TEXT NOT NULL DEFAULT '', changed_at INTEGER NOT NULL, link TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '')`)
 	sideFoldExec(t, s, `DELETE FROM schema_version WHERE version >= ?`, sideFoldMigrationIndex(t))
 	restoreRepoSideTables(t, s.db)
+	restoreTablesAt(t, s.db, retiredDropVersion(t)-1, "learned_suggestions")
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -326,9 +315,6 @@ func TestSideFoldMigrationReplays(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if n := sideFoldInt(t, s, `SELECT history_id FROM learned_suggestions WHERE id=1`); n != 7 {
-		t.Errorf("history id %d after a replay", n)
-	}
 	// The replay keeps each report's status: the fold and the copy do not undo it.
 	for status, want := range map[string]int{protocol.FrictionTriaged: 1, protocol.FrictionFixed: 1} {
 		got, err := s.FrictionFind(protocol.FrictionQuery{Status: status})

@@ -133,17 +133,7 @@ func (s *Store) RecordWorkerRun(r protocol.WorkerRun) error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	if err := s.refreshPicker(); err != nil {
-		return err
-	}
-	// A clearly bad track record promotes a note on its own (decision 0022).
-	if err := s.evaluatePlaybook(protocol.SubjectModel, r.Model, ""); err != nil {
-		return err
-	}
-	if err := s.evaluatePlaybook(protocol.SubjectModelHarness, r.Model+"@"+r.Harness, ""); err != nil {
-		return err
-	}
-	return s.evaluatePlaybook(protocol.SubjectHarness, r.Harness, "")
+	return s.refreshPicker()
 }
 
 // TrackRecords counts the worker runs of the last window, per harness and
@@ -410,29 +400,14 @@ func (s *Store) SetPlaybookPin(model, harness, note string, pin *bool) error {
 	return err
 }
 
-// PlaybookNotes returns the fresh notes, newest first. An automatic note whose
-// support is all older than PlaybookStaleDays goes stale and is left out. Owner
-// notes and pinned notes never go stale.
+// PlaybookNotes returns the fresh notes, newest first. An old unpinned
+// automatic note older than PlaybookStaleDays is left out; owner notes and
+// pinned notes never go stale.
 func (s *Store) PlaybookNotes() ([]protocol.PlaybookNote, error) {
-	now := s.now()
-	cut := now.Add(-protocol.PlaybookStaleDays * 24 * time.Hour).Unix()
-	// Hide the automatic notes that went stale. A read comes first and the
-	// write only when a note is due: even an UPDATE that changes no row takes
-	// the writer connection, and every nodes read (the TUI asks every refresh)
-	// waited behind each write for it.
-	var due int
-	if err := s.db.QueryRow(`SELECT EXISTS (SELECT 1 FROM playbook WHERE stale=0 AND source=? AND pinned=0 AND updated_at < ?)`,
-		protocol.PlaybookSourceAuto, cut).Scan(&due); err != nil {
-		return nil, err
-	}
-	if due != 0 {
-		if _, err := s.db.Exec(`UPDATE playbook SET stale=1 WHERE stale=0 AND source=? AND pinned=0 AND updated_at < ?`,
-			protocol.PlaybookSourceAuto, cut); err != nil {
-			return nil, err
-		}
-	}
+	cut := s.now().Add(-protocol.PlaybookStaleDays * 24 * time.Hour).Unix()
 	rows, err := s.db.Query(`SELECT subject_kind, subject, harness, note, source, support, track_line, pinned, created_at, updated_at
-		FROM playbook WHERE stale=0 ORDER BY updated_at DESC, subject_kind, subject, harness`)
+		FROM playbook WHERE stale=0 AND NOT (source=? AND pinned=0 AND updated_at < ?)
+		ORDER BY updated_at DESC, subject_kind, subject, harness`, protocol.PlaybookSourceAuto, cut)
 	if err != nil {
 		return nil, err
 	}

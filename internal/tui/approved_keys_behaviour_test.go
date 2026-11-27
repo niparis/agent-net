@@ -7,7 +7,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/niparis/agent-net/internal/protocol"
-	"github.com/niparis/agent-net/internal/tui/graphview"
 )
 
 // These tests send the approved key to a model in its context and check what
@@ -123,21 +122,17 @@ func TestApproved18CardBracketsDoNotScroll(t *testing.T) {
 	}
 }
 
-func TestApproved19CardCommaSelectsThePreviousLearnedChange(t *testing.T) {
-	m := graphModel(120, 40)
-	m.tab = graphTab
-	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-02"})
-	m.snap.Learned = []protocol.LearnedSuggestion{
-		{ID: 1, Node: "project-02", Field: "needs", Phrase: "ops", Status: "applied", By: "learned", HistoryID: 42},
-		{ID: 2, Node: "project-02", Field: "needs", Phrase: "backup", Status: "applied", By: "learned", HistoryID: 43},
-	}
-	m = keys(m, "enter", ".")
-	if m.mp.learnedIndex != 1 {
-		t.Fatalf("period selected index %d", m.mp.learnedIndex)
+func TestApproved19CardCommaSelectsThePreviousDraft(t *testing.T) {
+	m := openMap(t, mapModel(120, 40, fakeGraph()))
+	m.snap.Drafts = []protocol.CharterDraft{testDraft(3, "purpose", "Generic endpoints"), testDraft(4, "refuses", "Client endpoints")}
+	m.mp.selected = "cogforge"
+	m = keys(m, ".")
+	if m.mp.draftIndex != 1 {
+		t.Fatalf("period selected index %d", m.mp.draftIndex)
 	}
 	m = keys(m, ",")
-	if m.mp.learnedIndex != 0 {
-		t.Fatalf("comma selected index %d", m.mp.learnedIndex)
+	if m.mp.draftIndex != 0 {
+		t.Fatalf("comma selected index %d", m.mp.draftIndex)
 	}
 }
 

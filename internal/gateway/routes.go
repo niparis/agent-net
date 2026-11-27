@@ -73,7 +73,6 @@ var routes = []route{
 	{Class: routeAsk, Kind: protocol.AskKindStall, To: routeChief, Auto: true},
 	{Class: routeAsk, Kind: protocol.AskKindHeld, To: routeChief, Auto: true, Note: "held request"},
 	{Class: routeAsk, Kind: protocol.AskKindDraft, To: routeChief, Auto: true, Note: "charter draft asks"},
-	{Class: routeAsk, Kind: protocol.AskKindLearned, To: routeChief, Auto: true, Note: "learned suggestions"},
 	{Class: routeAsk, Kind: protocol.AskKindProposal, To: routeChief, Note: "a CTO proposal"},
 	{Class: routeAsk, Kind: protocol.AskKindQuotaStuck, To: routeChief, Auto: true, Note: "work stuck on quota; links the CTO entry of the provider"},
 	{Class: routeAsk, Kind: protocol.AskKindCTOAlert, To: routeChief, Auto: true, Note: "P1 wake of the CTO; the chief routes it to the lead that owns the cause"},

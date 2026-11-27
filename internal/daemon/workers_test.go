@@ -1664,7 +1664,7 @@ func TestEveryOperatorMethodIsServed(t *testing.T) {
 	eventually(t, "connected", func() bool { return n.d.ownerSessionID() != "" })
 	for _, m := range protocol.OperatorMethods {
 		_, err := cli.call(m, map[string]any{})
-		if m == protocol.OpLearn || m == protocol.OpRate {
+		if m == protocol.OpRate {
 			if err == nil || !strings.Contains(err.Error(), "not available to cli") {
 				t.Errorf("%s must refuse the CLI: %v", m, err)
 			}

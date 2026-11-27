@@ -129,10 +129,11 @@ type Snapshot struct {
 	WorkerRotation     protocol.WorkerRotation
 	GatewayWarnings    []string
 	Nodes              []protocol.NodeView
+	// Drafts are the pending charter drafts the owner may accept or reject.
+	Drafts []protocol.CharterDraft
 	// Agents are the sessions, with the owner pseudo-sessions.
-	Learned []protocol.LearnedSuggestion
-	Agents  []protocol.AgentView
-	Edges   []protocol.Edge
+	Agents []protocol.AgentView
+	Edges  []protocol.Edge
 	// Projects is the project list (registered, seen or both). Empty when the
 	// gateway cannot list them; a screen then shows no project source.
 	Projects []protocol.ProjectView

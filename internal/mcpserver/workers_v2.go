@@ -15,7 +15,7 @@ import (
 // addRedesignedTools registers the agent and worker contracts directly from
 // the shared catalog. The daemon methods remain the existing implementations.
 func addRedesignedTools(s *mcp.Server, call Caller, run func(context.Context, string, any) (any, error)) {
-	for _, name := range []string{"agent_worker_start", "agent_worker_start_override", "agent_worker_stop", "agent_worker_rate", "agent_handback", "agent_announce", "agent_owner_brief", "agent_learn", "agent_charter_draft", "agent_bar_edit", "agent_permission_propose", "agent_project_add", "agent_mcp_test"} {
+	for _, name := range []string{"agent_worker_start", "agent_worker_start_override", "agent_worker_stop", "agent_worker_rate", "agent_handback", "agent_announce", "agent_owner_brief", "agent_charter_draft", "agent_bar_edit", "agent_project_add", "agent_mcp_test"} {
 		entry := redesignedCatalogTool(name)
 		t := &mcp.Tool{Name: entry.Name, Description: entry.Description, InputSchema: json.RawMessage(entry.InputSchema)}
 		s.AddTool(t, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -199,23 +199,6 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 			return nil, err
 		}
 		return m, nil
-	case "agent_learn":
-		m, err := learnCall(ctx, run, protocol.LearnRequest{SubjectKind: str("subject_kind"), Subject: str("subject"), Finding: str("finding"), Evidence: stringSlice(a["evidence"])})
-		if err != nil {
-			return nil, err
-		}
-		id := m["id"]
-		if id == nil {
-			id = ""
-		}
-		if n, ok := id.(float64); ok {
-			id = fmt.Sprint(int64(n))
-		}
-		remaining := m["remaining"]
-		if remaining == nil {
-			remaining = float64(0)
-		}
-		return map[string]any{"recorded": m["accepted"], "id": id, "left_today": remaining}, nil
 	case "agent_charter_draft":
 		m, err := charterDraftCall(ctx, run, protocol.CharterDraftRequest{Level: str("level"), Attr: str("attr"), Value: str("value"), Team: str("team")})
 		if err != nil {
@@ -233,14 +216,6 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 			}
 		}
 		return opResult(run(ctx, protocol.OpBarEdit, in))
-	case "agent_permission_propose":
-		m, err := opResult(run(ctx, protocol.OpPermissionPropose, protocol.PermissionProposeRequest{
-			Kind: str("kind"), Rules: stringSlice(a["rules"]), Targets: stringSlice(a["targets"]), Machine: str("machine"), Reason: str("reason"),
-		}))
-		if err != nil {
-			return nil, err
-		}
-		return m, nil
 	case "agent_project_add":
 		m, err := projectAddCall(ctx, run, protocol.ProjectAddRequest{Paths: stringSlice(a["paths"]), Dir: str("dir"), Scan: boolValue(a["scan"]), Depth: integer("depth"), DryRun: boolValue(a["dry_run"])})
 		if err != nil {

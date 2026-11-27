@@ -98,11 +98,6 @@ func TestCharterDraftStaysSuggestionUntilAccepted(t *testing.T) {
 	if err != nil || len(drafts) != 1 || drafts[0].Source != "AGENTS.md" || drafts[0].Value != "Shared demo repo" {
 		t.Fatalf("pending: %+v %v", drafts, err)
 	}
-	// The owner sees it in the learned list, as a draft with a negative ID.
-	learned, err := s.OwnerLearned()
-	if err != nil || len(learned) != 1 || learned[0].Origin != "draft" || learned[0].ID != -res.ID || learned[0].Level != "repo" || learned[0].Scope != "demo" || learned[0].NewValue != "Shared demo repo" || learned[0].Status != "pending" || learned[0].Severity != "major" {
-		t.Fatalf("owner list: %+v %v", learned, err)
-	}
 }
 
 func TestCharterDraftSubmitValidation(t *testing.T) {
@@ -148,7 +143,7 @@ func TestCharterDraftAcceptWritesAtItsLevelWithSource(t *testing.T) {
 	if err := s.DecideCharterDraft(maturityID, "accept", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.DecideLearned(-agentID, "accept"); err != nil {
+	if err := s.DecideCharterDraft(agentID, "accept", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	c, err := s.EffectiveCharter("demo", "demo", "")
@@ -179,7 +174,7 @@ func TestCharterDraftRejectKeepsFieldEmptyAndIsNotResubmitted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = s.DecideLearned(-res.ID, "reject"); err != nil {
+	if err = s.DecideCharterDraft(res.ID, "reject", "owner"); err != nil {
 		t.Fatal(err)
 	}
 	if c, _ := s.EffectiveCharter("demo", "demo", ""); c.Refuses != "" {

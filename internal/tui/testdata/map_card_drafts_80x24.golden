@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings │ 7 nodes, 4 edges     14:05
+cogforge  early  autonomy: off  component
+Document and evidence API.
+○ no live sessions
+accept, test, review, merge, release, verify: caller
+
+IN 2                                     OUT 1
+tenebrae ──▶ depends ask                 ──▶ shop depends auto
+trading-architect ──▶ deploys
+Card 1-8/18  ctrl+u/d scroll ───────────────────────────────────────────────────
+Charter ────────────────────────────────────────────────────────────────────────
+accepts          Generic endpoints and bug fixes.
+refuses          Client-specific endpoints.
+escalate         Breaking API changes.
+Drafted from AGENTS.md ─────────────────────────────────────────────────────────
+  purpose
+    Generic endpoints for the shop
+▸ refuses ... (ctrl+d)
+RECENT  2h ago maturity by you (on Mac) · 26h ago purpose by owner
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+enter sessions  esc Graph  ctrl+u/ctrl+d scroll  n new  ? help  q quit

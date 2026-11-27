@@ -45,10 +45,6 @@ func announceCall(ctx context.Context, run func(context.Context, string, any) (a
 	return opResult(run(ctx, "announce", in))
 }
 
-func learnCall(ctx context.Context, run func(context.Context, string, any) (any, error), in protocol.LearnRequest) (map[string]any, error) {
-	return opResult(run(ctx, protocol.OpLearn, in))
-}
-
 func charterDraftCall(ctx context.Context, run func(context.Context, string, any) (any, error), in protocol.CharterDraftRequest) (map[string]any, error) {
 	return opResult(run(ctx, protocol.OpCharterDraft, in))
 }

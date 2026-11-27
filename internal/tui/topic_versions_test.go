@@ -34,13 +34,13 @@ func TestFullRefreshSendsKnownVersions(t *testing.T) {
 	m.topicView = m.topicViewKey()
 	m.topicDirty = map[string]bool{}
 	m.topicVersions = map[string]uint64{
-		protocol.TopicAgents: 4, protocol.TopicNodes: 5, protocol.TopicLearned: 6, protocol.TopicChanges: 7,
+		protocol.TopicAgents: 4, protocol.TopicNodes: 5, protocol.TopicInbox: 6, protocol.TopicChanges: 7,
 	}
 	m.dataVersions = map[string]uint64{
-		protocol.TopicAgents: 3, protocol.TopicNodes: 4, protocol.TopicLearned: 5, protocol.TopicChanges: 6,
+		protocol.TopicAgents: 3, protocol.TopicNodes: 4, protocol.TopicInbox: 5, protocol.TopicChanges: 6,
 	}
 	m.dataVersionsAt = map[string]time.Time{
-		protocol.TopicAgents: t0, protocol.TopicNodes: t0, protocol.TopicLearned: t0, protocol.TopicChanges: t0,
+		protocol.TopicAgents: t0, protocol.TopicNodes: t0, protocol.TopicInbox: t0, protocol.TopicChanges: t0,
 	}
 	msg, ok := m.fetchCmd()().(fetchedMsg)
 	if !ok {
@@ -142,14 +142,14 @@ func TestOldReadsAreNotSentAsVersions(t *testing.T) {
 	m.topicView = m.topicViewKey()
 	m.topicDirty = map[string]bool{}
 	m.topicVersions = map[string]uint64{
-		protocol.TopicAgents: 4, protocol.TopicNodes: 5, protocol.TopicLearned: 6, protocol.TopicChanges: 7,
+		protocol.TopicAgents: 4, protocol.TopicNodes: 5, protocol.TopicInbox: 6, protocol.TopicChanges: 7,
 	}
 	m.dataVersions = map[string]uint64{
-		protocol.TopicAgents: 3, protocol.TopicNodes: 4, protocol.TopicLearned: 5, protocol.TopicChanges: 6,
+		protocol.TopicAgents: 3, protocol.TopicNodes: 4, protocol.TopicInbox: 5, protocol.TopicChanges: 6,
 	}
 	old := now.Add(-protocol.RecentWorkerWindow - time.Second)
 	m.dataVersionsAt = map[string]time.Time{
-		protocol.TopicAgents: old, protocol.TopicNodes: old, protocol.TopicLearned: old, protocol.TopicChanges: old,
+		protocol.TopicAgents: old, protocol.TopicNodes: old, protocol.TopicInbox: old, protocol.TopicChanges: old,
 	}
 	_ = m.fetchCmd()()
 	if len(src.opts.IfVersions) != 0 {
@@ -157,7 +157,7 @@ func TestOldReadsAreNotSentAsVersions(t *testing.T) {
 	}
 	recent := now.Add(-protocol.RecentWorkerWindow / 2)
 	m.dataVersionsAt = map[string]time.Time{
-		protocol.TopicAgents: recent, protocol.TopicNodes: recent, protocol.TopicLearned: recent, protocol.TopicChanges: recent,
+		protocol.TopicAgents: recent, protocol.TopicNodes: recent, protocol.TopicInbox: recent, protocol.TopicChanges: recent,
 	}
 	_ = m.fetchCmd()()
 	if len(src.opts.IfVersions) != 4 {

@@ -126,44 +126,6 @@ func TestGatewayItemIsOnlyLogged(t *testing.T) {
 	}
 }
 
-// A permission proposal reaches the chief as a request that names the rules
-// and the targets and says how the CTO applies it.
-func TestPermissionProposalIsARequestToTheChief(t *testing.T) {
-	s, node, session := permissionRig(t)
-	chief, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "nc", Name: "chief"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.SetChief(protocol.ChiefSetRequest{SessionID: chief}, "owner"); err != nil {
-		t.Fatal(err)
-	}
-	res, err := s.ProposePermission(protocol.PermissionProposeFrame{
-		SessionID: session,
-		PermissionProposeRequest: protocol.PermissionProposeRequest{
-			Rules: []string{"Bash(gh pr merge *)", "Bash(gh pr close *)"}, Targets: []string{"forge"}, Reason: "the forge repos need PR merges",
-		},
-	}, node)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.Status != "pending" {
-		t.Fatalf("proposal: %+v", res)
-	}
-	if n := inboxCount(t, s); n != 0 {
-		t.Fatalf("%d items stored for the owner", n)
-	}
-	got := messagesTo(t, s, chief)
-	if len(got) != 1 || got[0].from != session || got[0].typ != protocol.TypeRequest {
-		t.Fatalf("messages to the chief: %+v", got)
-	}
-	for _, want := range []string{"Bash(gh pr merge *)", "Bash(gh pr close *)", "forge", "/tmp/forge", "the forge repos need PR merges",
-		"forge-agent", "permission_apply id " + res.ID, "permission_reject id " + res.ID, "owner_words"} {
-		if !strings.Contains(got[0].body, want) {
-			t.Errorf("request does not name %q:\n%s", want, got[0].body)
-		}
-	}
-}
-
 // A message an 'ask the owner' rule holds reaches the chief as a request that
 // names the held message and tells how the CTO releases it.
 func TestHeldMessageRequestNamesHeldAnswer(t *testing.T) {
@@ -280,23 +242,6 @@ func TestWaitingSessionReachesTheChiefOncePerWait(t *testing.T) {
 	reconcileTimes(t, s, 3)
 	if got := messagesTo(t, s, chief); len(got) != 2 {
 		t.Fatalf("a new wait: want two requests to the chief, got %d", len(got))
-	}
-}
-
-// A ready learned suggestion is no item for the owner, so the minute reconcile
-// writes no Desk log line for it.
-func TestLearnedSuggestionMakesNoOwnerItem(t *testing.T) {
-	s, _ := newTestStore(t)
-	logs := captureLog(s)
-	now := s.now().UnixNano()
-	if _, err := s.db.Exec(`INSERT INTO learned_suggestions(node,field,edge_kind,kind,phrase,evidence,status,severity,created_at,ready_at) VALUES('demo','accepts','','add','billing','[]','pending','major',?,?)`, now, now); err != nil {
-		t.Fatal(err)
-	}
-	reconcileTimes(t, s, 2)
-	for _, l := range *logs {
-		if strings.HasPrefix(l, "desk.") {
-			t.Fatalf("reconcile made an owner item: %s", l)
-		}
 	}
 }
 

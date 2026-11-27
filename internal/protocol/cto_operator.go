@@ -17,13 +17,10 @@ const (
 	// OpLoopResume restarts a paused loop on the owner's quoted words
 	// (decision 0196).
 	OpLoopResume = "loop_resume"
-	// OpPermissionReject rejects a pending permission proposal on the owner's
-	// quoted words (decision 0196).
-	OpPermissionReject = "permission_reject"
 )
 
 const CTOOperatorReads = `info nodes list projects events message_status workers project_display_get sessions_archived worker_log apps.pending
-merger_get session_start_get inbox_list asks_list chief_get ask_history desk_log outcome_inbox learned_list learned_view
+merger_get session_start_get inbox_list asks_list chief_get ask_history desk_log outcome_inbox drafts_list
 usage usage_top session_text counts conversations conversation_messages graph_view graph_talk
 session_agent_list integrations_get hidden_get onboarding_get timezone_get
 protected_providers_get worker_floors_get worker_providers_get difficulty_get scores_get scores_weekly
@@ -32,9 +29,9 @@ graph_get charter_history edge_history node_settings_get settings_owner_read cha
 sign_in_list nudge_stats friction_find`
 
 const CTOOperatorChanges = `operator_undo sessions_archive cto_enter cto_send session_enter apps.public.restore session_pin apps.refuse apps.public.url gateway_backup
-session_stop session_resume session_agent_set notes_copy notes_uncopy learned_answer hidden_set onboarding_set timezone_set
+session_stop session_resume session_agent_set notes_copy notes_uncopy draft_answer hidden_set onboarding_set timezone_set
 worker_floors_set worker_floors_reset difficulty_set team_write delivery_owner_set merger_set merger_restore chief_set ask_undo ask_mark changes_owner_report worker_defect sign_in_raise bar_edit
-permission_apply permission_reject permission_undo friction_mark edge_set delivery_owner_answer loop_resume sign_in_open`
+permission_apply friction_mark edge_set delivery_owner_answer loop_resume sign_in_open`
 
 // CTOOperatorMethods is an explicit allowlist, shared by schema generation and
 // daemon dispatch. It never accepts arbitrary daemon methods or consent approval.

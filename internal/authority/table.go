@@ -62,7 +62,7 @@ var Table = []Row{
 	},
 	{
 		Kind: "permissions", Phrase: "apply approved permissions",
-		Ops: []string{"permission_apply", "permission_undo"},
+		Ops: []string{"permission_apply"},
 	},
 	{
 		Kind: "admin", Phrase: "run admin tools",

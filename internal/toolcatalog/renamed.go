@@ -45,8 +45,12 @@ var renamed = map[string][]string{
 	"settings":  {"agent_settings_read", "agent_worker_profiles_find"},
 	"message":   {"agent_message_send", "agent_message_reply"},
 	"ask_owner": {"agent_message_send"},
-	"learn":     {"agent_learn"},
-	"ui":        {"cto_ui_show"},
+	"learn":     {"agent_note_write"},
+
+	// Removed tools (brutalist simplification): what to use instead.
+	"agent_learn":              {"agent_note_write"},
+	"agent_permission_propose": {"agent_message_send"},
+	"ui":                       {"cto_ui_show"},
 }
 
 // RenamedNames lists the old tool names, sorted. A test checks that no server
