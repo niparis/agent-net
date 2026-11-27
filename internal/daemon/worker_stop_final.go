@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -140,9 +141,20 @@ func (d *Daemon) killStoppedSessionProcesses(row workerRow) int {
 		pid   int
 		token string
 	}
-	var targets []target
+	var pids []int
 	for _, pid := range processList() {
-		if pid <= 1 || pid == self || !sessionLeftover(pid, row.NativeID, worktree) {
+		if pid > 1 && pid != self {
+			pids = append(pids, pid)
+		}
+	}
+	// One read for every folder: on macOS each read is an lsof call.
+	var cwds map[int]string
+	if worktree != "" {
+		cwds = processCWDs(pids)
+	}
+	var targets []target
+	for _, pid := range pids {
+		if !sessionLeftover(processArgs(pid), cwds[pid], row.NativeID, worktree) {
 			continue
 		}
 		if v, err := readProcView(pid); err != nil || v.UID != uid || v.Zombie {
@@ -183,21 +195,17 @@ func (d *Daemon) killStoppedSessionProcesses(row workerRow) int {
 	return len(targets)
 }
 
-// sessionLeftover says whether pid belongs to the stopped session: its command
-// line names the session's native ID, or it runs in the session's worktree.
-func sessionLeftover(pid int, native, worktree string) bool {
+// sessionLeftover says whether a process belongs to the stopped session: its
+// command line names the session's native ID, or it runs in the worktree.
+func sessionLeftover(args []string, cwd, native, worktree string) bool {
 	if native != "" {
-		for _, a := range processArgs(pid) {
+		for _, a := range args {
 			if a == native || strings.HasSuffix(a, "="+native) {
 				return true
 			}
 		}
 	}
-	if worktree == "" {
-		return false
-	}
-	cwd := agyProcessCwd(pid)
-	if cwd == "" {
+	if worktree == "" || cwd == "" {
 		return false
 	}
 	cwd = filepath.Clean(cwd)
@@ -221,4 +229,16 @@ func (d *Daemon) startedByAgentNet(pid, self int) bool {
 		p = parent
 	}
 	return false
+}
+
+// workerStopResult is the caller's answer to a stop. A stop the worker's
+// machine has not had yet is still a stop: the gateway marked the worker
+// stopped. The answer says it is pending, with the gateway's note.
+func workerStopResult(session string, raw json.RawMessage) protocol.WorkerStopResult {
+	var a struct {
+		Pending bool   `json:"pending"`
+		Note    string `json:"note"`
+	}
+	_ = json.Unmarshal(raw, &a)
+	return protocol.WorkerStopResult{Session: session, Stopped: true, Pending: a.Pending, Note: a.Note}
 }

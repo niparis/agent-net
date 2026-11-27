@@ -192,3 +192,13 @@ func mkdirT(t *testing.T, dir string) string {
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	return dir
 }
+
+// A stop the worker's machine did not get yet reaches the caller as a
+// pending stop, with the gateway's note, not as a plain "stopped".
+func TestPendingStopAnswerReachesTheCaller(t *testing.T) {
+	raw := []byte(`{"stopped":false,"pending":true,"note":"machine mac did not answer, so the stop is pending"}`)
+	got := workerStopResult("s_1", raw)
+	if !got.Pending || !strings.Contains(got.Note, "pending") || !got.Stopped {
+		t.Fatalf("stop answer = %+v", got)
+	}
+}
