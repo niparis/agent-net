@@ -83,12 +83,12 @@ func reportRoom(t *testing.T, f *startsFixture, node string, load protocol.Worke
 	f.g.usage.set(node, f.clock.now(), protocol.UsageReport{Workers: &load})
 }
 
-// An automatic start names no harness. It goes to the machine with the most
-// room, and the note says that is why (decision 0018).
-func TestAutomaticStartPicksTheRoomiestMachine(t *testing.T) {
+// An automatic start names no harness. It goes to the machine with the fewest
+// workers, even when the other one has more free memory and CPU (decision 0018).
+func TestAutomaticStartPicksTheMachineWithFewestWorkers(t *testing.T) {
 	f := newTwoMachineChoice(t)
-	reportRoom(t, f, f.nodeA, protocol.WorkerLoad{Running: 4, Room: protocol.RoomOK, Headroom: 0.08})
-	reportRoom(t, f, f.nodeB, protocol.WorkerLoad{Running: 0, Room: protocol.RoomOK, Headroom: 0.62})
+	reportRoom(t, f, f.nodeA, protocol.WorkerLoad{Running: 6, Room: protocol.RoomOK, Headroom: 0.62})
+	reportRoom(t, f, f.nodeB, protocol.WorkerLoad{Running: 1, Room: protocol.RoomOK, Headroom: 0.40})
 
 	ans, err := f.g.workerStart(context.Background(), &nodeConn{id: f.nodeA}, protocol.WorkerStartFrame{Owner: f.a, Level: "normal",
 		WorkerStartRequest: protocol.WorkerStartRequest{Project: "shop", Task: "test", Model: "auto"}})
@@ -96,10 +96,31 @@ func TestAutomaticStartPicksTheRoomiestMachine(t *testing.T) {
 		t.Fatalf("workerStart: %v", err)
 	}
 	if ans.NodeID != f.nodeB {
-		t.Fatalf("automatic start landed on %s, want the machine with more room (note %q)", ans.Hostname, ans.MachineNote)
+		t.Fatalf("automatic start landed on %s, want the machine with fewer workers (note %q)", ans.Hostname, ans.MachineNote)
 	}
-	if !strings.Contains(ans.MachineNote, "picked h2") || !strings.Contains(ans.MachineNote, "most room for a worker") {
-		t.Fatalf("machine_note %q does not say the roomiest machine won", ans.MachineNote)
+	if !strings.Contains(ans.MachineNote, "picked h2: fewest workers") || !strings.Contains(ans.MachineNote, "h1 6 running") {
+		t.Fatalf("machine_note %q does not say why the machine won", ans.MachineNote)
+	}
+}
+
+// A burst of starts with no new load report between them spreads across two
+// equal machines. Each start counts against the machine it went to.
+func TestBurstOfAutomaticStartsSpreadsAcrossEqualMachines(t *testing.T) {
+	f := newTwoMachineChoice(t)
+	reportRoom(t, f, f.nodeA, protocol.WorkerLoad{Room: protocol.RoomOK, Headroom: 0.5})
+	reportRoom(t, f, f.nodeB, protocol.WorkerLoad{Room: protocol.RoomOK, Headroom: 0.5})
+
+	perMachine := map[string]int{}
+	for i := range 4 {
+		ans, err := f.g.workerStart(context.Background(), &nodeConn{id: f.nodeA}, protocol.WorkerStartFrame{Owner: f.a, Level: "normal",
+			WorkerStartRequest: protocol.WorkerStartRequest{Project: "shop", Task: "test", Model: "auto"}})
+		if err != nil {
+			t.Fatalf("start %d: %v", i+1, err)
+		}
+		perMachine[ans.NodeID]++
+	}
+	if perMachine[f.nodeA] != 2 || perMachine[f.nodeB] != 2 {
+		t.Fatalf("a burst of 4 starts landed %v, want 2 on each machine", perMachine)
 	}
 }
 
@@ -117,8 +138,8 @@ func TestNamedHarnessStartPicksTheRoomiestMachine(t *testing.T) {
 	if ans.NodeID != f.nodeB {
 		t.Fatalf("named harness start landed on %s, want the machine with more room (note %q)", ans.Hostname, ans.MachineNote)
 	}
-	if !strings.Contains(ans.MachineNote, "picked h2") || !strings.Contains(ans.MachineNote, "most room for a worker") {
-		t.Fatalf("machine_note %q does not say the roomiest machine won", ans.MachineNote)
+	if !strings.Contains(ans.MachineNote, "picked h2: fewest workers") {
+		t.Fatalf("machine_note %q does not say why the machine won", ans.MachineNote)
 	}
 }
 

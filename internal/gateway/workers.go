@@ -1033,6 +1033,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if err := g.store.trackWorkerStart(startRef, pick.NodeID, p.Owner, pick.Name, p.Harness, perms, p.Done); err != nil {
 		return none, err
 	}
+	g.usage.handOut(pick.NodeID)
 	// The machine records the assessment it gets here when the worker runs.
 	// A queued start reaches only that write, so the picker's note travels
 	// with it. The queue keeps the chosen model, so the note stays true.
@@ -1843,19 +1844,22 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 		Permissions: old.Worker.Permissions, OSSandbox: c.OSSandbox, Track: c.Track, Playbooks: c.Playbooks}, nil
 }
 
-// mostHeadroom picks, among the machines that hold the project, the one with
-// the most room for a worker. A start that names no harness may run any
-// harness, so every launcher that has one is a candidate; a named harness
-// keeps only the machines that have it. It returns nothing unless at least two
-// machines can run the work now. missing says a machine that could run it has
-// no fresh load report, so the old rule has to choose. The note says why the
-// machine won.
+// mostHeadroom picks, among the machines that hold the project, the one for a
+// new worker. A machine with room beats one without. Among those, the one with
+// the fewest workers wins: the running and queued workers in its last load
+// report, plus the starts the gateway handed it since. Free headroom breaks a
+// tie. A start that names no harness may run any harness, so every launcher
+// that has one is a candidate; a named harness keeps only the machines that
+// have it. It returns nothing unless at least two machines can run the work
+// now. missing says a machine that could run it has no fresh load report, so
+// the old rule has to choose. The note says why the machine won.
 func (g *Gateway) mostHeadroom(cands []protocol.ProjectView, nodeByID func(string) *protocol.NodeView, harness string) (keep []protocol.ProjectView, note string, missing bool) {
 	have := g.usage.all()
 	now := g.store.now()
 	type scored struct {
-		view protocol.ProjectView
-		load protocol.WorkerLoad
+		view   protocol.ProjectView
+		load   protocol.WorkerLoad
+		handed int
 	}
 	var ok []scored
 	seen := map[string]bool{}
@@ -1884,26 +1888,43 @@ func (g *Gateway) mostHeadroom(cands []protocol.ProjectView, nodeByID func(strin
 		if !fresh || now.Sub(e.at) > protocol.UsageStaleSeconds*time.Second || e.rep.Workers == nil || e.rep.Workers.Headroom < -0.999 {
 			return nil, "", true // one machine cannot say: keep the old rule
 		}
-		ok = append(ok, scored{v, *e.rep.Workers})
+		ok = append(ok, scored{v, *e.rep.Workers, e.handed})
 	}
 	if len(ok) < 2 {
 		return nil, "", false
 	}
+	// workers counts what the machine will run: running, queued, and handed out.
+	workers := func(s scored) int { return s.load.Running + s.load.Queued + s.handed }
 	sort.SliceStable(ok, func(i, j int) bool {
-		a, b := ok[i].load, ok[j].load
-		if (a.Room == protocol.RoomOK) != (b.Room == protocol.RoomOK) {
-			return a.Room == protocol.RoomOK
+		a, b := ok[i], ok[j]
+		if (a.load.Room == protocol.RoomOK) != (b.load.Room == protocol.RoomOK) {
+			return a.load.Room == protocol.RoomOK
 		}
-		return a.Headroom > b.Headroom
+		if workers(a) != workers(b) {
+			return workers(a) < workers(b)
+		}
+		return a.load.Headroom > b.load.Headroom
 	})
 	best := ok[0]
-	var others []string
+	parts := []string{machineWorkers(best.view.Hostname, best.load, best.handed)}
 	for _, o := range ok[1:] {
-		others = append(others, fmt.Sprintf("%s %s, %d queued", o.view.Hostname, roomWord(o.load), o.load.Queued))
+		parts = append(parts, machineWorkers(o.view.Hostname, o.load, o.handed))
 	}
-	note = fmt.Sprintf("picked %s: most room for a worker (%s, %d running, %d queued; %s)",
-		best.view.Hostname, roomWord(best.load), best.load.Running, best.load.Queued, strings.Join(others, "; "))
+	note = fmt.Sprintf("picked %s: fewest workers (%s)", best.view.Hostname, strings.Join(parts, "; "))
 	return []protocol.ProjectView{best.view}, note, false
+}
+
+// machineWorkers words one machine for the note: its running workers, the
+// starts waiting or on the way, and its room when it has none.
+func machineWorkers(host string, l protocol.WorkerLoad, handed int) string {
+	s := fmt.Sprintf("%s %d running", host, l.Running)
+	if waiting := l.Queued + handed; waiting > 0 {
+		s += fmt.Sprintf(", %d queued or starting", waiting)
+	}
+	if l.Room != protocol.RoomOK {
+		s += ", " + roomWord(l)
+	}
+	return s
 }
 
 func roomWord(l protocol.WorkerLoad) string {
