@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -506,12 +507,20 @@ func TestAgyCleanupKillsTheFakeProcessGroup(t *testing.T) {
 	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(bin, "-p=", "--input-format", "stream-json", "--output-format", "stream-json")
-	cmd.Dir, cmd.Env = dir, os.Environ()
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
+	var cmd *exec.Cmd
+	// A parallel test that forks between the write and the exec holds the
+	// script open for writing until its child execs: the kernel then refuses
+	// the exec with ETXTBSY for that short time.
+	eventually(t, "the fake agy started", func() bool {
+		cmd = exec.Command(bin, "-p=", "--input-format", "stream-json", "--output-format", "stream-json")
+		cmd.Dir, cmd.Env = dir, os.Environ()
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		err := cmd.Start()
+		if err != nil && !errors.Is(err, syscall.ETXTBSY) {
+			t.Fatal(err)
+		}
+		return err == nil
+	})
 	t.Cleanup(func() {
 		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		cmd.Wait()
