@@ -34,9 +34,15 @@ type ownerPrompts struct {
 	mu sync.Mutex
 	by map[string][]ownerPrompt
 	// sweepMu serialises the transcript sweeps and guards scanned, the byte
-	// offset each transcript was read up to (queued_owner_prompts.go).
+	// offset each transcript was read up to, and stopQueued
+	// (queued_owner_prompts.go).
 	sweepMu sync.Mutex
 	scanned map[string]int64
+	// stopQueued is the last queued line of each session that a sweep read
+	// after the first read of its transcript and that the Stop hook has not
+	// taken yet. Any sweep may read a line first (the link-up refill, a quote
+	// check), so the Stop hook cannot rely on its own sweep to find it.
+	stopQueued map[string]queuedLine
 }
 
 type ownerPrompt struct {

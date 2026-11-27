@@ -170,6 +170,17 @@ func (d *Daemon) sweepQueuedOwnerPrompts(session string) (fresh []queuedLine, pr
 			}
 		}
 	}
+	// Any sweep may be the one that reads a line, and the Stop hook must still
+	// see it. So a sweep leaves its last line for the Stop hook to take. A
+	// line found by the first read of a transcript is old text, not news, and
+	// is left out, as before. Only the last line is kept: the Stop hook asks
+	// whether the owner typed during the turn, and what the last text was.
+	if primed && len(fresh) > 0 {
+		if d.ownerPrompts.stopQueued == nil {
+			d.ownerPrompts.stopQueued = map[string]queuedLine{}
+		}
+		d.ownerPrompts.stopQueued[session] = fresh[len(fresh)-1]
+	}
 	// The first sweep of a transcript waits for the next one, so the
 	// transcript is read once. What is kept is kept outside the lock: the
 	// first message check may write daemon.db.
@@ -331,15 +342,29 @@ func transcriptTimeAt(f *os.File, off int64) (time.Time, bool) {
 // the words, as its text may be old. A command with no origin closes the wait
 // as before but its text is not passed on as the owner's answer. policyCall
 // reads a missing transcript entry again before this runs.
+//
+// Another sweep may have read the queued line first (the refill at link-up, a
+// quote check). Each sweep leaves what it read for this Stop hook, so the line
+// counts whichever sweep read it.
 func (d *Daemon) ownerTypedWhileBusy(ctx context.Context, ls *localSession, sid string) {
-	fresh, primed := d.sweepQueuedOwnerPrompts(sid)
-	if !primed || len(fresh) == 0 {
+	d.sweepQueuedOwnerPrompts(sid)
+	last, ok := d.takeQueuedForStop(sid)
+	if !ok {
 		return
 	}
-	last := fresh[len(fresh)-1]
 	text := ""
 	if last.owner {
 		text = last.text
 	}
 	d.ownerTyped(ctx, ls, sid, text)
+}
+
+// takeQueuedForStop returns the queued line that sweeps recorded for the session
+// since the Stop hook last took one, and forgets it.
+func (d *Daemon) takeQueuedForStop(session string) (queuedLine, bool) {
+	d.ownerPrompts.sweepMu.Lock()
+	defer d.ownerPrompts.sweepMu.Unlock()
+	last, ok := d.ownerPrompts.stopQueued[session]
+	delete(d.ownerPrompts.stopQueued, session)
+	return last, ok
 }
