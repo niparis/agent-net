@@ -118,3 +118,44 @@ func TestGluedResetDelay(t *testing.T) {
 		t.Fatalf("got %v known=%v ok=%v, want %v", l.Until, l.Known, ok, want)
 	}
 }
+
+// OpenCode's Alibaba token plan names the monthly reset as a UTC date. The
+// reset is known, so the provider stays limited until it, not for an hour.
+func TestMonthlyQuotaResetDate(t *testing.T) {
+	const alibaba = "Your token-plan 1-month quota has been exhausted. The quota will reset at 12-11 16:00:00 UTC."
+	for name, c := range map[string]struct {
+		text string
+		at   time.Time
+		want time.Time
+	}{
+		"exact text":      {alibaba, time.Date(2026, 11, 27, 12, 20, 0, 0, time.UTC), time.Date(2026, 12, 11, 16, 0, 0, 0, time.UTC)},
+		"year rollover":   {"quota will reset at 01-05 16:00:00 UTC", time.Date(2026, 12, 28, 9, 0, 0, 0, time.UTC), time.Date(2027, 1, 5, 16, 0, 0, 0, time.UTC)},
+		"with year":       {"quota will reset at 2026-12-11 16:00:00 UTC", time.Date(2026, 11, 27, 12, 20, 0, 0, time.UTC), time.Date(2026, 12, 11, 16, 0, 0, 0, time.UTC)},
+		"no seconds":      {"quota will reset at 12-11 16:00 UTC", time.Date(2026, 11, 27, 12, 20, 0, 0, time.UTC), time.Date(2026, 12, 11, 16, 0, 0, 0, time.UTC)},
+		"thirty-one days": {"quota has been exhausted. The quota will reset at 12-28 00:00:00 UTC", time.Date(2026, 11, 27, 12, 20, 0, 0, time.UTC), time.Date(2026, 12, 28, 0, 0, 0, 0, time.UTC)},
+	} {
+		l, ok := Limit(c.text, c.at)
+		if !ok || !l.Known || !l.Until.Equal(c.want) {
+			t.Errorf("%s: got %v known=%v ok=%v, want %v", name, l.Until, l.Known, ok, c.want)
+		}
+		if l.Reason != "quota" {
+			t.Errorf("%s: reason %q", name, l.Reason)
+		}
+	}
+}
+
+// A reset date more than 32 days away is not believed: the wait falls back to
+// the default, as for any text with no reset time.
+func TestMonthlyQuotaResetDateCap(t *testing.T) {
+	at := time.Date(2026, 11, 27, 12, 20, 0, 0, time.UTC)
+	for name, text := range map[string]string{
+		"too far":     "quota will reset at 2027-02-01 00:00:00 UTC",
+		"a past date": "quota will reset at 2026-11-01 00:00:00 UTC",
+		"no zone":     "quota will reset at 12-11 16:00:00",
+	} {
+		l, ok := Limit(text, at)
+		if !ok || l.Known || !l.Until.Equal(at.Add(DefaultWait)) {
+			t.Errorf("%s: got %v known=%v ok=%v, want the default wait", name, l.Until, l.Known, ok)
+		}
+	}
+}

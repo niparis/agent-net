@@ -304,7 +304,7 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		// so the next start does not fail the same way minutes later. A model that
 		// no window serves blocks the whole provider.
 		var learnedBlock *protocol.QuotaBlock
-		if provider, wait, ok := protocol.AccountQuotaBlockAt(p.Harness, p.Failure, g.store.now()); ok {
+		if provider, wait, ok := protocol.AccountQuotaBlockAt(p.Harness, p.Model, p.Failure, g.store.now()); ok {
 			until := g.store.now().Add(wait)
 			block := protocol.QuotaBlock{Provider: provider, Until: until}
 			if w, ok := protocol.QuotaBlockWindowFor(g.lastQuotas(nc.id), provider, p.Model, until); ok {
