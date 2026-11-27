@@ -563,6 +563,11 @@ type WorkerStopRequest struct {
 type WorkerStopResult struct {
 	Session string `json:"session"`
 	Stopped bool   `json:"stopped"`
+	// Pending is true when the worker's machine did not answer. The worker is
+	// marked stopped already, and its machine ends it when it connects again.
+	// Note says so in words.
+	Pending bool   `json:"pending,omitempty"`
+	Note    string `json:"note,omitempty"`
 }
 
 // WorkerHandbackRequest is OpWorkerHandback.

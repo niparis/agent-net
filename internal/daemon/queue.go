@@ -412,14 +412,26 @@ func (d *Daemon) startQueuedResume(ctx context.Context, e queuedStart) {
 		return
 	}
 	set := d.workerSettings("")
-	if row.EndedReason != protocol.StopHandback || !row.Resumable || checkWorkerWorktree(&row) != nil || (row.Worktree == "" && row.StartedAt.Add(set.MaxAge).Before(time.Now())) {
+	if why := d.resumeRefusal(row); why != "" || checkWorkerWorktree(&row) != nil || (row.Worktree == "" && row.StartedAt.Add(set.MaxAge).Before(time.Now())) {
 		d.resumeMu.Unlock()
 		d.clearStartReservation()
-		d.Logf("worker.not_started queue=%s session=%s reason=%q", e.ID, e.ResumeSession, "worker no longer resumable")
-		d.notStarted(ctx, e, fmt.Sprintf("worker %s is no longer waiting to be started again", e.ResumeSession))
+		if why == "" {
+			why = fmt.Sprintf("worker %s is no longer waiting to be started again", e.ResumeSession)
+		}
+		d.Logf("worker.not_started queue=%s session=%s reason=%q", e.ID, e.ResumeSession, why)
+		d.notStarted(ctx, e, why)
+		return
+	}
+	release, err := d.claimRelaunch(row.ID, row.SessionID, "resume")
+	if err != nil {
+		d.resumeMu.Unlock()
+		d.clearStartReservation()
+		d.Logf("worker.not_started queue=%s session=%s reason=%q", e.ID, e.ResumeSession, err.Error())
+		d.notStarted(ctx, e, err.Error())
 		return
 	}
 	w, err := d.runWorkerResume(ctx, row, set)
+	release()
 	d.resumeMu.Unlock()
 	if err != nil {
 		d.clearStartReservation()

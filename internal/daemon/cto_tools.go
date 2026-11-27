@@ -564,11 +564,11 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		if err != nil {
 			return nil, err
 		}
-		_, err = d.call(withCallWait(ctx, 30*time.Second), "worker.stop", protocol.WorkerStopFrame{Session: target, Requester: sid})
+		raw, err := d.call(withCallWait(ctx, 30*time.Second), "worker.stop", protocol.WorkerStopFrame{Session: target, Requester: sid})
 		if err != nil {
 			return nil, tooOldGateway(err)
 		}
-		return protocol.WorkerStopResult{Session: p.Session, Stopped: true}, nil
+		return workerStopResult(p.Session, raw), nil
 	case "team_create", "team_rename", "team_purpose", "team_charter", "team_archive", "team_member_add", "team_member_remove", "team_settings_set":
 		if name == "team_settings_set" {
 			var p struct {

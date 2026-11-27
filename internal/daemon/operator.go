@@ -396,10 +396,11 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 			return nil, true, err
 		}
 		cctx := withCallWait(ctx, 30e9)
-		if _, err := d.call(cctx, "worker.stop", protocol.WorkerStopFrame{Session: target, Requester: sid}); err != nil {
+		raw, err := d.call(cctx, "worker.stop", protocol.WorkerStopFrame{Session: target, Requester: sid})
+		if err != nil {
 			return nil, true, tooOldGateway(err)
 		}
-		return protocol.WorkerStopResult{Session: p.Session, Stopped: true}, true, nil
+		return workerStopResult(p.Session, raw), true, nil
 
 	case protocol.OpWorkers:
 		var q protocol.WorkersQuery

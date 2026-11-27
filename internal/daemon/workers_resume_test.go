@@ -252,9 +252,14 @@ func TestWorkerUnknownToItsMachineLeavesTheList(t *testing.T) {
 	if ws := w.workers(t); len(ws) != 1 || ws[0].SessionID != id {
 		t.Fatalf("the stale worker is not listed first: %+v", ws)
 	}
-	_, err = w.cli.call("worker_stop", map[string]any{"session": id})
-	if err == nil || !strings.Contains(err.Error(), "no worker with session") {
+	// A stop is final: the machine answers ok for a worker it does not run.
+	raw, err := w.cli.call("worker_stop", map[string]any{"session": id})
+	if err != nil {
 		t.Fatalf("stopping a worker the machine does not run: %v", err)
+	}
+	var res protocol.WorkerStopResult
+	if err := json.Unmarshal(raw, &res); err != nil || !res.Stopped {
+		t.Fatalf("stop answer %s: %v", raw, err)
 	}
 	eventually(t, "the stale worker leaves the list", func() bool { return len(w.workers(t)) == 0 })
 }

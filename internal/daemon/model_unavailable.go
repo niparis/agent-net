@@ -51,11 +51,27 @@ func (d *Daemon) moveToNextModel(ctx context.Context, w *worker, reason, failure
 		d.Logf("worker.model_unavailable start=%s harness=%s model=%s: %v (the start ends here)", l.StartRef, l.Harness, l.Model, err)
 		return
 	}
-	e := queuedFromLaunch(l, answer.Ref)
-	if err := d.st.addQueued(e); err != nil {
-		d.notStarted(ctx, e, "the machine could not run "+l.Model+", and the start could not be queued for the next model: "+err.Error())
+	d.wmu.Lock()
+	sid := w.sessionID
+	d.wmu.Unlock()
+	if !d.queueNextModelStart(ctx, sid, l.Model, queuedFromLaunch(l, answer.Ref)) {
 		return
 	}
 	d.Logf("worker.model_unavailable start=%s harness=%s model=%s next_start=%s", l.StartRef, l.Harness, l.Model, answer.Ref)
 	d.processQueue(ctx)
+}
+
+// queueNextModelStart puts the start of the next model in the queue, unless
+// the worker was stopped while the gateway answered: a stop is final, so the
+// task does not go on with another model. It reports whether it queued.
+func (d *Daemon) queueNextModelStart(ctx context.Context, sessionID, model string, e queuedStart) bool {
+	if why := d.st.noRestart(sessionID); why == noRestartStopped {
+		d.notStarted(ctx, e, noRestartReason(sessionID, why))
+		return false
+	}
+	if err := d.st.addQueued(e); err != nil {
+		d.notStarted(ctx, e, "the machine could not run "+model+", and the start could not be queued for the next model: "+err.Error())
+		return false
+	}
+	return true
 }
