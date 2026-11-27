@@ -1160,8 +1160,8 @@ func (d *Daemon) beginWorkerEnd(w *worker, reason string, when func() bool) <-ch
 	done := w.doneStatus != ""
 	d.wmu.Unlock()
 	// A hand-back ends the worker with its session kept, and so does any end
-	// that races the hand-back's own end.
-	resumable := reason == protocol.StopHandback || done
+	// that races the hand-back's own end, except a stop: a stop is final.
+	resumable := (reason == protocol.StopHandback || done) && reason != protocol.StopRequested
 	// A worker that ends with no hand-back still tells its owner (W11). The
 	// harness statistics need the process, so they are read before the kill.
 	status, note := d.noticeFor(reason)
@@ -1357,27 +1357,6 @@ func (d *Daemon) releaseWorkerReport(id string) {
 	d.reportMu.Unlock()
 }
 
-// stopWorkerSession handles "worker.kill" from the gateway. A queued start
-// (a q_ ID) is cancelled instead.
-func (d *Daemon) stopWorkerSession(k protocol.WorkerKill, validate ...bool) error {
-	sessionID := k.Session
-	if protocol.IsQueueID(sessionID) {
-		return d.cancelQueued(sessionID, k.Requester, k.AsOwner, validate...)
-	}
-	w := d.workerBySession(sessionID)
-	if w == nil {
-		if err := d.cancelQueued(sessionID, k.Requester, k.AsOwner, validate...); err == nil {
-			return nil
-		}
-		return fmt.Errorf("no worker with session %s runs on this machine", sessionID)
-	}
-	if len(validate) > 0 && validate[0] {
-		return nil
-	}
-	d.endWorker(w, protocol.StopRequested)
-	return nil
-}
-
 // resumeWorkerSession handles "worker.resume" from the gateway: the owner of
 // an ended worker sent it a message, so the worker's own harness session is
 // started again (W10). Only the owner may ask; the gateway checks it and so
@@ -1431,8 +1410,13 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 	if !ok {
 		return nil, fmt.Errorf("no worker with session %s is waiting to be started again on this machine", sessionID)
 	}
-	if row.EndedReason != protocol.StopHandback || !row.Resumable {
-		return nil, fmt.Errorf("worker %s ended with reason %s, so it cannot be started again: only a worker that ended after its hand-back can", sessionID, row.EndedReason)
+	release, err := d.claimRelaunch(row.ID, sessionID, "resume")
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	if why := d.resumeRefusal(row); why != "" {
+		return nil, errors.New(why)
 	}
 	if requester != row.Owner {
 		return nil, fmt.Errorf("only the session that started worker %s can start it again", sessionID)

@@ -1064,6 +1064,9 @@ func (g *Gateway) answer(ctx context.Context, nc *nodeConn, h protocol.Header, r
 		}
 	}
 	if h.Type == "session.sync" && err == nil {
+		// Stops kept while the machine was away go first, so no message
+		// dispatched below can start a stopped worker again.
+		g.applyPendingStops(ctx, nc)
 		g.sendMCPSync(ctx, nc)
 		g.sendSettingsSync(ctx, nc)
 		g.dispatchPending(ctx, nc.id, true)

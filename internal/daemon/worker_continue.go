@@ -247,6 +247,13 @@ func (d *Daemon) continueWorker(ctx context.Context, p protocol.WorkerContinue) 
 		}
 		r = ended
 	}
+	// The claim keeps a message restart of the old worker out until the new
+	// worker has started; then the old one is marked continued for good.
+	release, err := d.claimRelaunch(r.ID, p.Session, noRestartContinued)
+	if err != nil {
+		return none, err
+	}
+	defer release()
 	d.wmu.Lock()
 	running = d.workers[r.ID] != nil
 	d.wmu.Unlock()
@@ -332,6 +339,9 @@ func (d *Daemon) continueWorker(ctx context.Context, p protocol.WorkerContinue) 
 	out, err := d.startWorker(ctx, l)
 	if err != nil {
 		return none, err
+	}
+	if err := d.st.markNoRestart(r.SessionID, noRestartContinued); err != nil {
+		d.Logf("worker %s: mark continued: %v", r.ID, err)
 	}
 	out.Task = task
 	return protocol.WorkerContinued{WorkerLaunched: out, Project: r.Project, Path: path, Harness: harness, Model: model, Title: l.Title, Assessment: l.Assessment}, nil

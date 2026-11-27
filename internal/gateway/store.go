@@ -1339,7 +1339,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration, workerTablesMigration, machineTablesMigration, orgFoldMigration, toolsRetireMigration, oauthClientsMigration, deskTablesMigration, pickQuotaMigration, workerStartOwnerChoiceMigration, sessionRequestedModelMigration, stoodDownMigration, deskHideRemovalMigration, treeInvariantsMigration, sessionStallColumnsMigration, permissionDecidedReasonMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration, workerTablesMigration, machineTablesMigration, orgFoldMigration, toolsRetireMigration, oauthClientsMigration, deskTablesMigration, pickQuotaMigration, workerStartOwnerChoiceMigration, sessionRequestedModelMigration, stoodDownMigration, deskHideRemovalMigration, treeInvariantsMigration, sessionStallColumnsMigration, permissionDecidedReasonMigration, workerStopColumnsMigration}
 
 // MigrationVersion returns the 1-based version of the migration whose text
 // contains marker. A test that must replay one migration finds it by name, so
@@ -2581,6 +2581,24 @@ func (s *Store) migrate() error {
 				}
 			}
 		}
+		if strings.Contains(migrations[i], "session worker stop columns") {
+			for _, col := range []struct{ name, def string }{
+				{"worker_stopped_at", "INTEGER NOT NULL DEFAULT 0"},
+				{"worker_stop_pending", "INTEGER NOT NULL DEFAULT 0"},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name=?`, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN ` + col.name + ` ` + col.def); err != nil {
+						tx.Rollback()
+						return err
+					}
+				}
+			}
+		}
 		if strings.Contains(migrations[i], "session stall columns") {
 			for _, col := range []struct{ name, def string }{
 				{"stalled_since", "INTEGER NOT NULL DEFAULT 0"},
@@ -3760,13 +3778,20 @@ func (s *Store) upsertSession(q interface {
 	}
 	var knownID, knownName, knownWaiting, knownStatus, knownReplaced string
 	var knownFixed bool
-	err = q.QueryRow(`SELECT id, name, waiting, status, replaced_by, name_fixed FROM sessions WHERE node_id=? AND harness=? AND native_id=?`,
-		nodeID, in.Harness, in.NativeID).Scan(&knownID, &knownName, &knownWaiting, &knownStatus, &knownReplaced, &knownFixed)
+	var knownStopped int64
+	err = q.QueryRow(`SELECT id, name, waiting, status, replaced_by, name_fixed, worker_stopped_at FROM sessions WHERE node_id=? AND harness=? AND native_id=?`,
+		nodeID, in.Harness, in.NativeID).Scan(&knownID, &knownName, &knownWaiting, &knownStatus, &knownReplaced, &knownFixed, &knownStopped)
 	known := err == nil
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", false, err
 	}
 	if known && knownReplaced != "" {
+		return knownID, false, nil
+	}
+	// A stopped worker stays ended. Its machine may still report the harness
+	// session (a view of its conversation, or a report sent before the kill
+	// landed); none of that brings it back online or makes it a plain session.
+	if known && knownStopped > 0 {
 		return knownID, false, nil
 	}
 	if known && in.Harness == "opencode" && in.Worker == nil {
@@ -4335,7 +4360,7 @@ func (s *Store) SetWorkerRunActive(nodeID, sessionID string, generation ...int) 
 	if len(generation) > 0 {
 		gen = generation[0]
 	}
-	_, err := s.db.Exec(`UPDATE sessions SET worker_run_active = 1, worker_run_generation=MAX(worker_run_generation,?) WHERE id = ? AND node_id = ? AND worker<>'' AND (?=0 OR worker_run_generation<=?)`,
+	_, err := s.db.Exec(`UPDATE sessions SET worker_run_active = 1, worker_run_generation=MAX(worker_run_generation,?) WHERE id = ? AND node_id = ? AND worker<>'' AND worker_stopped_at=0 AND (?=0 OR worker_run_generation<=?)`,
 		gen, sessionID, nodeID, gen, gen)
 	return err
 }
@@ -6846,6 +6871,13 @@ const sessionStallColumnsMigration = `SELECT 1 /* session stall columns */;`
 // permission proposal on the owner's words (decision 0196). The migration loop
 // adds the column when it is missing.
 const permissionDecidedReasonMigration = `SELECT 1 /* permission decided reason column */;`
+
+// workerStopColumnsMigration marks the stop of a worker on its session. A
+// stopped worker stays ended: no report, resume or message starts it again.
+// worker_stopped_at is when the stop was asked, and worker_stop_pending says
+// that its machine was offline and still has to be told. The migration loop
+// adds the columns when they are missing.
+const workerStopColumnsMigration = `SELECT 1 /* session worker stop columns */;`
 
 // deadTablesDropMigration drops the tables that no code reads or writes
 // (schema reduction, part 1). The older migrations that name them run before

@@ -566,6 +566,28 @@ func (agyLauncher) stop(d *Daemon, w *worker) {
 	// The inherited FIFO keeps stdin open. endWorker kills the process group.
 }
 
+// end takes the worker's own session out of the registry. Left there, the
+// daemon kept reporting an ended agy worker as online, with the pid of a
+// process that was gone, and the gateway listed it as running for hours.
+func (agyLauncher) end(d *Daemon, w *worker) {
+	d.wmu.Lock()
+	native := w.nativeID
+	d.wmu.Unlock()
+	if native == "" {
+		return
+	}
+	sid := ""
+	d.mu.Lock()
+	if ls := d.sessions[key("agy", native)]; ls != nil && ls.owned {
+		delete(d.sessions, key("agy", native))
+		sid = ls.sessionID
+	}
+	d.mu.Unlock()
+	if sid != "" {
+		d.call(context.Background(), "session.remove", protocol.SessionRemove{SessionID: sid})
+	}
+}
+
 func (d *Daemon) deliverAgy(ctx context.Context, w *worker, m protocol.Message) Result {
 	d.wmu.Lock()
 	ending := w.stopping || w.doneStatus != "" || d.workers[w.id] != w

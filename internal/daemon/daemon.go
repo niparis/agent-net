@@ -619,6 +619,9 @@ type Daemon struct {
 	// cleaningWorkers are the workers whose worktree cleanup is working on.
 	// guarded by wmu
 	cleaningWorkers map[string]bool
+	// relaunching names the workers a continue or a resume is starting a new
+	// run from now, so the two cannot both start one. guarded by wmu
+	relaunching map[string]string
 	// qGone is when the owner of a queued start was first seen offline.
 	qGone map[string]time.Time
 	// wmu guards the workers started by this daemon (workers.go).

@@ -52,6 +52,15 @@ func (d *Daemon) moveToNextModel(ctx context.Context, w *worker, reason, failure
 		return
 	}
 	e := queuedFromLaunch(l, answer.Ref)
+	// A stop that came while the gateway answered is final: the task does
+	// not go on with the next model.
+	d.wmu.Lock()
+	sid := w.sessionID
+	d.wmu.Unlock()
+	if why := d.st.noRestart(sid); why == noRestartStopped {
+		d.notStarted(ctx, e, noRestartReason(sid, why))
+		return
+	}
 	if err := d.st.addQueued(e); err != nil {
 		d.notStarted(ctx, e, "the machine could not run "+l.Model+", and the start could not be queued for the next model: "+err.Error())
 		return

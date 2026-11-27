@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -245,6 +244,13 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		}
 		if p.Ended {
 			return nil, g.store.SetWorkerSessionEnded(nc.id, p.Session, p.RunGeneration)
+		}
+		// A stopped worker never runs again: its machine's resume fails here,
+		// before it starts the harness.
+		if stopped, err := g.store.WorkerStopped(p.Session); err != nil {
+			return nil, err
+		} else if stopped {
+			return nil, stoppedWorkerReason(p.Session)
 		}
 		return nil, g.store.SetWorkerRunActive(nc.id, p.Session, p.RunGeneration)
 
@@ -1984,68 +1990,6 @@ func (g *Gateway) relayQueuedTask(ctx context.Context, nc *nodeConn, p protocol.
 	return nil
 }
 
-func (g *Gateway) workerStop(ctx context.Context, nc *nodeConn, p protocol.WorkerStopFrame, validate ...bool) (map[string]any, error) {
-	req, ok, err := g.store.Agent(p.Requester)
-	if err != nil {
-		return nil, err
-	}
-	if !ok || req.NodeID != nc.id {
-		return nil, reject("requester session %q does not belong to this node", p.Requester)
-	}
-	if protocol.IsQueueID(p.Session) {
-		return g.cancelQueuedStart(ctx, req, p, validate...)
-	}
-	w, ok, err := g.store.Agent(p.Session)
-	if err != nil {
-		return nil, err
-	}
-	if !ok || w.Worker == nil {
-		return nil, reject("session %q is not a worker", p.Session)
-	}
-	// The owner at a keyboard may stop any worker. An agent may stop its own.
-	if !protocol.IsOwner(req.Harness) && req.SessionID != w.Worker.Owner {
-		return nil, reject("only the worker's owner or the person at the command line can stop it")
-	}
-	if !w.Online {
-		g.mu.Lock()
-		target := g.conns[w.NodeID]
-		g.mu.Unlock()
-		if target != nil {
-			method := "worker.kill"
-			if len(validate) > 0 && validate[0] {
-				method = "worker.validate_stop"
-			}
-			cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			_, err := target.call(cctx, method, protocol.WorkerKill{Session: p.Session, Requester: p.Requester, AsOwner: protocol.IsOwner(req.Harness)})
-			cancel()
-			if err == nil {
-				return map[string]any{"stopped": true}, nil
-			}
-		}
-		return nil, reject("worker %s has already ended", p.Session)
-	}
-	g.mu.Lock()
-	target := g.conns[w.NodeID]
-	g.mu.Unlock()
-	if target == nil {
-		return nil, reject("machine %s is offline", w.Hostname)
-	}
-	if len(validate) > 0 && validate[0] {
-		return nil, nil
-	}
-	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	if _, err := target.call(cctx, "worker.kill", protocol.WorkerKill{Session: p.Session, Requester: p.Requester, AsOwner: protocol.IsOwner(req.Harness)}); err != nil {
-		// The machine says it does not run this worker. Drop it from the list;
-		// its record and the machine's own cleanup decide about a resume.
-		if strings.Contains(err.Error(), "no worker with session") {
-			g.store.SetWorkerSessionEnded(w.NodeID, p.Session)
-		}
-		return nil, reject("machine %s did not stop the worker: %v", w.Hostname, err)
-	}
-	return map[string]any{"stopped": true}, nil
-}
-
 // cancelQueuedStart asks the machines that accept workers to cancel a queued
 // start. The gateway does not know which one holds it: the one that does
 // answers, and it checks that the requester is the owner of the start.
@@ -2102,6 +2046,11 @@ func (g *Gateway) resumeEndedWorker(ctx context.Context, nc *nodeConn, p protoco
 	a, ok, err := g.store.workerForContinue(p.Recipient, p.Sender)
 	if err != nil || !ok || a.Worker == nil || a.SessionID != p.Recipient {
 		return "", nil, err
+	}
+	if stopped, err := g.store.WorkerStopped(p.Recipient); err != nil {
+		return "", nil, err
+	} else if stopped {
+		return "", nil, stoppedWorkerReason(p.Recipient)
 	}
 	if a.Online && a.Worker.Owner != p.Sender {
 		return "", nil, nil
@@ -2286,25 +2235,7 @@ func (g *Gateway) notifyResumeRefusal(ctx context.Context, p protocol.MsgSend, r
 	if err != nil || !ok || a.Worker == nil || a.Worker.Owner != p.Sender {
 		return
 	}
-	body := fmt.Sprintf("[agent-net] Your message could not be delivered because %v. Retry the message or start a new worker.\n\nMessage: ", reason)
-	remaining := protocol.MaxBodyBytes - len(body)
-	if remaining < 0 {
-		return
-	}
-	if len(p.Body) <= remaining {
-		body += p.Body
-	} else {
-		body += strings.ToValidUTF8(p.Body[:remaining], "")
-	}
-	key := fmt.Sprintf("resume-refusal-%x", sha256.Sum256([]byte(p.Sender+"\x00"+p.IdempotencyKey)))
-	m, created, err := g.store.StoreMessage(protocol.MsgSend{Sender: p.Recipient, Recipient: p.Sender, Type: protocol.TypeNotification, Body: body, IdempotencyKey: key, WorkerNotice: true})
-	if err != nil {
-		g.logLine("worker.resume_notice_failed", "session", p.Recipient, "reason", err)
-		return
-	}
-	if created {
-		g.dispatch(ctx, m)
-	}
+	g.noteUndelivered(ctx, p.Recipient, p.Sender, p.IdempotencyKey, p.Body, reason)
 }
 
 // workerDifficultyLead begins every start note with the judge result that set

@@ -734,6 +734,8 @@ MCP servers that the harness starts are inside the sandbox too. One that needs a
 
 There is no `--die-with-parent`: a worker outlives a daemon restart. The daemon stops it with SIGTERM, then SIGKILL, to bubblewrap's process group, which holds every process of the sandbox.
 
+A stop of a worker also ends the other processes of its session: a view of its conversation and programs still running in its worktree. The daemon takes only a process of its own user whose command line has the session's native ID or whose working folder is inside the worker's worktree, and only when the daemon or agent-net's own herdr server started it. It never takes a process of a live worker, of another user, or of the owner's own terminals. See [reference](reference.md#workers) (Stopping).
+
 ## Peer trust
 
 Requests use rules on graph edges. `normal` uses the normal peer guidance, `auto` adds the trust note, `ask` holds the request for the owner, and `never` refuses it. The sender-specific edge takes precedence over the wildcard edge into the recipient node. The `t` key cycles the wildcard through `normal`, `ask` and `auto`.
