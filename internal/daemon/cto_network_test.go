@@ -236,26 +236,3 @@ func TestCTOReplyFollowsHarnessSwitch(t *testing.T) {
 	peer.mustCall("reply", map[string]string{"message_id": second.ID, "body": "to open"})
 	eventually(t, "reply in OpenCode", func() bool { return strings.Contains(string(cli.mustCall("cto_events", nil)), "to open") })
 }
-
-// approveOwnerMessage approves the proposal behind an as-owner send or reply
-// receipt, as the owner would in the Inbox.
-func approveOwnerMessage(t *testing.T, d *Daemon, result any) {
-	t.Helper()
-	var id string
-	switch r := result.(type) {
-	case messageReceipts:
-		if len(r.Sent) == 1 && r.Sent[0].State == "proposed" {
-			id = r.Sent[0].MessageID
-		}
-	case messageReceipt:
-		if r.State == "proposed" {
-			id = r.MessageID
-		}
-	}
-	if !strings.HasPrefix(id, "p_") {
-		t.Fatalf("expected a proposal receipt, got %#v", result)
-	}
-	if err := d.proposalRunner().decide(context.Background(), id, true); err != nil {
-		t.Fatal(err)
-	}
-}

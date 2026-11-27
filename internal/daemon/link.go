@@ -195,7 +195,7 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 			if json.Unmarshal(raw, &p) == nil && p.Hostname != "" {
 				d.shownHost.Store(p.Hostname)
 			}
-		case "node.owner_ui.request", "node.machine_log", "node.machine_usage", "node.machine_processes", "node.usage_top", "node.session_text", "node.session_enter", "node.message_body", "node.proposal_list", "node.proposal_answer", "node.sign_in_prepare", protocol.FrameSignInImport, protocol.FrameAskIntakeTurn:
+		case "node.owner_ui.request", "node.machine_log", "node.machine_usage", "node.machine_processes", "node.usage_top", "node.session_text", "node.session_enter", "node.message_body", "node.sign_in_prepare", protocol.FrameSignInImport, protocol.FrameAskIntakeTurn:
 			d.wg.Add(1)
 			go func() {
 				defer d.wg.Done()
@@ -294,7 +294,7 @@ func (d *Daemon) call(ctx context.Context, typ string, params any) (json.RawMess
 			return res, err
 		}
 	}
-	if actor := proposalActor(ctx); actor != "" && (typ == "session.trust" || typ == "held.answer" || typ == "node.rename") {
+	if actor := ctoActor(ctx); actor != "" && (typ == "session.trust" || typ == "held.answer" || typ == "node.rename") {
 		raw, err := json.Marshal(params)
 		if err != nil {
 			return nil, err

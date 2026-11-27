@@ -1550,7 +1550,7 @@ func (s *Store) CTOGraphHistory(after int64) ([]protocol.CTOGraphChange, error) 
 	if typed {
 		targetColumn = "target_kind"
 	}
-	rows, err := s.db.Query(`SELECT id,type,node,attr,old_value,new_value,at,`+targetColumn+` FROM graph_history WHERE (actor='cto' OR actor IN ('CTO (minor)','CTO (owner window)') OR actor GLOB 'owner (CTO proposal p_[0-9]*)') AND id>? ORDER BY id`, after)
+	rows, err := s.db.Query(`SELECT id,type,node,attr,old_value,new_value,at,`+targetColumn+` FROM graph_history WHERE (actor='cto' OR actor IN ('CTO (minor)','CTO (owner window)',?)) AND id>? ORDER BY id`, protocol.CTOOwnerWordsActor, after)
 	if err != nil {
 		return nil, err
 	}
@@ -1597,7 +1597,7 @@ func (s *Store) CTOGraphHistory(after int64) ([]protocol.CTOGraphChange, error) 
 
 func (s *Store) CTOLastGraphID() (int64, error) {
 	var id int64
-	err := s.db.QueryRow(`SELECT COALESCE(MAX(id),0) FROM graph_history WHERE actor='cto' OR actor IN ('CTO (minor)','CTO (owner window)') OR actor GLOB 'owner (CTO proposal p_[0-9]*)'`).Scan(&id)
+	err := s.db.QueryRow(`SELECT COALESCE(MAX(id),0) FROM graph_history WHERE actor='cto' OR actor IN ('CTO (minor)','CTO (owner window)',?)`, protocol.CTOOwnerWordsActor).Scan(&id)
 	return id, err
 }
 

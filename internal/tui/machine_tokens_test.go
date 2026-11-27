@@ -2,8 +2,6 @@ package tui
 
 import (
 	"context"
-	"encoding/json"
-	"github.com/niparis/agent-net/internal/protocol"
 	"strings"
 	"testing"
 
@@ -68,17 +66,5 @@ func TestMachineOfflineRotationRefused(t *testing.T) {
 	m, cmd = press(m, tea.KeyPressMsg{Text: "x", Code: []rune("x")[0]})
 	if cmd != nil || m.mode != modeConfirm {
 		t.Fatal("offline removal unavailable")
-	}
-}
-
-func TestMachineProposalNamesTarget(t *testing.T) {
-	m := newModel(140, 34)
-	target := m.machineRows()[0]
-	for _, action := range []string{"machine_remove", "machine_rotate"} {
-		args, _ := json.Marshal(map[string]string{"node_id": target.nodeID})
-		p := protocol.CTOProposal{Tool: "settings_change", Action: action, Args: args}
-		if got := proposalSummary(p); !strings.Contains(got, target.nodeID) {
-			t.Fatalf("proposal omits machine: %s", got)
-		}
 	}
 }

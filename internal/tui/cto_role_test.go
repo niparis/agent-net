@@ -16,7 +16,7 @@ import (
 func TestCTORoleRefusalShowsOneReasonLine(t *testing.T) {
 	reason := "claude claude-opus-5-5: claude is limited until 2026-11-14 12:00 UTC (a live session reported it)"
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
-		m := ctoPart8Model(size[0], size[1], "Atlas", 0)
+		m := ctoPart8Model(size[0], size[1], "Atlas")
 		m.focus = focusCTO
 		m.applyCTOPoll(ctoPollMsg{events: protocol.CTOEvents{Messages: []json.RawMessage{}}, err: errors.New(reason), generation: m.cto.generation})
 		plain := ansi.Strip(m.testView())

@@ -392,21 +392,16 @@ const settingsCutoverActor = "agent-net cutover"
 
 func settingsActor(actor string) bool {
 	switch actor {
-	case "owner", "cto", "CTO (minor)", "CTO (owner window)":
+	case "owner", "cto", "CTO (minor)", "CTO (owner window)", protocol.CTOOwnerWordsActor:
 		return true
 	}
-	const prefix = "owner (CTO proposal p_"
-	if !strings.HasPrefix(actor, prefix) || !strings.HasSuffix(actor, ")") {
-		return false
-	}
-	n := strings.TrimSuffix(strings.TrimPrefix(actor, prefix), ")")
-	return n != "" && strings.Trim(n, "0123456789") == ""
+	return false
 }
 func actorAllowed(actor, kind string) bool {
 	if !settingsActor(actor) {
 		return false
 	}
-	return actor == "owner" || actor == "cto" || strings.HasPrefix(actor, "owner (CTO proposal p_") || kind == "advice"
+	return actor == "owner" || actor == "cto" || actor == protocol.CTOOwnerWordsActor || kind == "advice"
 }
 
 // ValidateSettings checks a batch against current state without committing it.

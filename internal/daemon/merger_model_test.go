@@ -47,8 +47,8 @@ func TestMergerStartAsksGateForNamedModelOnly(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var asked []protocol.RolePickRequest
 			d := mergerPickDaemon(t, &asked)
-			ctx := context.WithValue(context.Background(), proposalActorKey{}, "owner")
-			_, err := d.executeApprovedCTOTool(ctx, "merger_start", json.RawMessage(tc.args))
+			ctx := context.WithValue(context.Background(), ctoActorKey{}, "cto")
+			_, err := d.executeCTOAction(ctx, "merger_start", json.RawMessage(tc.args))
 			if err == nil || err.Error() != tc.error || strings.Contains(err.Error(), "\n") {
 				t.Fatalf("err = %v, want %q", err, tc.error)
 			}

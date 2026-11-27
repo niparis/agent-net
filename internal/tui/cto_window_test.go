@@ -36,7 +36,6 @@ func TestCTOWindowKeyAndGoldens(t *testing.T) {
 			src := &windowCTOSource{fakeCTOSource: base}
 			m.src = src
 			m.focus = focusCTO
-			m.proposals = []protocol.CTOProposal{{ID: "p_1", Status: "open"}, {ID: "p_2", Status: "open"}, {ID: "p_3", Status: "approved"}}
 			next, cmd := m.ctoKey(tea.KeyPressMsg{Text: "w", Code: []rune("w")[0]})
 			m = next.(Model)
 			if cmd == nil {
@@ -54,8 +53,8 @@ func TestCTOWindowKeyAndGoldens(t *testing.T) {
 				t.Fatalf("active window hint disagrees with title:\n%s", box)
 			}
 			plain := ansi.Strip(box)
-			if !strings.Contains(plain, "2 open proposals") || strings.Contains(plain, "…") {
-				t.Fatalf("window/proposal title clipped:\n%s", plain)
+			if strings.Contains(plain, "…") {
+				t.Fatalf("window title clipped:\n%s", plain)
 			}
 			for _, line := range strings.Split(plain, "\n") {
 				if ansi.StringWidth(line) > width {
@@ -86,14 +85,14 @@ func TestCTOWindowKeyAndGoldens(t *testing.T) {
 	}
 }
 
-func TestCTOWindowProposalTitleFits(t *testing.T) {
+func TestCTOWindowTitleFits(t *testing.T) {
 	for _, width := range []int{80, 120} {
 		t.Run(fmt.Sprint(width), func(t *testing.T) {
-			m := ctoPart8Model(width, 24, "Network architecture CTO", 2)
+			m := ctoPart8Model(width, 24, "Network architecture CTO")
 			m.cto.windowUntil = t0.Add(30 * time.Minute)
 			m.cto.model = "provider/" + strings.Repeat("long-model-", 8)
 			header := ansi.Strip(m.ctoView(width, 10)[0])
-			for _, want := range []string{"Network architecture CTO", "I'm driving 30:00 · w close", "2 open proposals"} {
+			for _, want := range []string{"Network architecture CTO", "I'm driving 30:00 · w close"} {
 				if !strings.Contains(header, want) {
 					t.Fatalf("missing %q in header: %s", want, header)
 				}

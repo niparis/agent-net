@@ -37,7 +37,7 @@ func waitFor(t *testing.T, what string, ok func() bool) {
 func TestTimedOutCallIsReportedToTheDaemon(t *testing.T) {
 	released := neverAnswers(t)
 	fake, path := startFake(t, func(method string, _ json.RawMessage) (any, string) {
-		if method == "proposal_list" {
+		if method == "workers" {
 			<-released // never answers
 		}
 		return map[string]any{}, ""
@@ -46,7 +46,7 @@ func TestTimedOutCallIsReportedToTheDaemon(t *testing.T) {
 	c.SetScreen("desk")
 	ctx, cancel := WithTimeout(context.Background(), 80*time.Millisecond)
 	defer cancel()
-	if _, err := c.Call(ctx, "proposal_list", nil); err == nil {
+	if _, err := c.Call(ctx, "workers", nil); err == nil {
 		t.Fatal("expected a timeout")
 	}
 	waitFor(t, "client_error report", func() bool {
@@ -61,7 +61,7 @@ func TestTimedOutCallIsReportedToTheDaemon(t *testing.T) {
 	if err := json.Unmarshal(raw, &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Method != "proposal_list" || got.Screen != "desk" || !got.Timeout || got.TimeoutMs != 80 || got.Ms < 70 || got.Ms > 1500 ||
+	if got.Method != "workers" || got.Screen != "desk" || !got.Timeout || got.TimeoutMs != 80 || got.Ms < 70 || got.Ms > 1500 ||
 		!strings.Contains(got.Err, "deadline exceeded") {
 		t.Fatalf("report = %+v", got)
 	}

@@ -691,8 +691,6 @@ type Daemon struct {
 	inSession func(pid int) bool
 
 	// diskWarnMu protects warning state; gateway calls run without it held.
-	// proposalAsks remembers the last proposal list the gateway accepted.
-	proposalAsks proposalAskState
 
 	diskWarnMu          sync.Mutex
 	diskWarningUpdating bool
@@ -755,12 +753,6 @@ func New(cfg Config) (*Daemon, error) {
 	}
 	st, err := openState(cfg.StateDir)
 	if err != nil {
-		return nil, err
-	}
-	// A proposal of an older version can still wait in handed_to_tui. Nothing
-	// confirms a start that way any more, so close it.
-	if _, err := st.db.Exec(`UPDATE cto_proposals SET status='failed', note='p_' || id || ' approved, failed: the daemon restarted before the TUI confirmed the start', note_delivered=0, result=json_set(CASE WHEN json_valid(result) THEN result ELSE '{}' END, '$.status', 'failed', '$.error', 'the daemon restarted before the TUI confirmed the start') WHERE status='handed_to_tui'`); err != nil {
-		st.close()
 		return nil, err
 	}
 	activity, err := st.sessionActivity()
@@ -901,15 +893,11 @@ func (d *Daemon) Start(ctx context.Context) error {
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.workerCacheCleanupLoop(ctx) }()
 	d.wg.Add(1)
-	go func() { defer d.wg.Done(); d.proposalNotesLoop(ctx) }()
-	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.harnessLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.harnessUpdateLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.deliveryReconcileLoop(ctx) }()
-	d.wg.Add(1)
-	go func() { defer d.wg.Done(); d.proposalAskLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.sleepLoop(ctx) }()
 	d.wg.Add(1)

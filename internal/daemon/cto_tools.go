@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"sort"
-	"strconv"
 
 	"strings"
 	"time"
@@ -38,157 +36,16 @@ func (lc *localConn) ctoTool(ctx context.Context, raw json.RawMessage) (any, err
 		return nil, errors.New("bad CTO tool request")
 	}
 
-	var id string
-	result, err := lc.d.runCTOTool(context.WithValue(context.WithValue(ctx, privateCTOToolKey{}, true), dialogProposalKey{}, &id), q.Name, q.Arguments)
+	result, err := lc.d.runCTOTool(context.WithValue(ctx, privateCTOToolKey{}, true), q.Name, q.Arguments)
 	if err != nil {
 		return nil, err
 	}
-	if id == "" {
-		return map[string]any{"kind": "result", "value": result}, nil
-	}
-	found, haveItem, err := lc.d.proposalRunner().get(id)
-	if err != nil {
-		return nil, err
-	}
-	if haveItem {
-		item := found
-		if item.Status != "open" {
-			return nil, fmt.Errorf("proposal %s is %s, not open", item.ID, item.Status)
-		}
-		text := ProposalToolResult(id)
-		message := fmt.Sprintf("Approve this proposal?\nTool: %s\nAction: %s\nArguments:\n%s\nReason: %s", item.Call.Tool, item.Call.Action, dialogArguments(item.Call.Args), item.Reason)
-		if item.Call.Tool == "project_change" && item.Call.Action == "create" {
-			text = "Project proposal " + id + " awaits the owner's approval in the dialog or Inbox."
-			var start protocol.SessionStartRequest
-			if json.Unmarshal(item.Call.Args, &start) == nil {
-				model := firstNonEmpty(start.Model, start.Harness)
-				name := filepath.Base(filepath.Clean(start.Path))
-				if start.Remote != "" {
-					message = fmt.Sprintf("%s -> %s, %s, clone of %s, %s, background. OK?", name, start.NodeID, start.Path, start.Remote, model)
-				} else {
-					message = fmt.Sprintf("%s -> %s, %s, %s, background. OK?", name, start.NodeID, start.Path, model)
-				}
-				if reason := ctoCut(cleanLine(item.Reason), 120); reason != "" {
-					message += " " + reason
-				}
-			}
-		}
-		if item.Call.Tool == "session_change" && (item.Call.Action == "merger_start" || item.Call.Action == "merger_stop") {
-			message = item.Reason
-		}
-		return map[string]any{"kind": "proposal", "proposal_id": id, "text": text, "message": message}, nil
-	}
-	return nil, errors.New("proposal not found")
-}
-
-func dialogArguments(raw json.RawMessage) string {
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(raw, &fields) != nil {
-		return "  " + string(raw)
-	}
-	keys := make([]string, 0, len(fields))
-	for key := range fields {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	var lines []string
-	for _, key := range keys {
-		value := string(fields[key])
-		var str string
-		if json.Unmarshal(fields[key], &str) == nil {
-			if strings.ContainsAny(str, "\r\n") {
-				value = strconv.Quote(str)
-			} else {
-				value = str
-			}
-		}
-		lines = append(lines, "  "+key+": "+value)
-	}
-	return strings.Join(lines, "\n")
-}
-
-func (lc *localConn) ctoDialogAnswer(ctx context.Context, raw json.RawMessage) (any, error) {
-	lc.mu.Lock()
-	client, pid := lc.client, lc.peerPID
-	lc.mu.Unlock()
-	if client != "cto-mcp" || !lc.d.isCTOPeer(pid) {
-		return nil, errors.New("CTO dialog requires the CTO server's process tree")
-	}
-	var q struct {
-		ID      string `json:"id"`
-		Approve *bool  `json:"approve"`
-	}
-	if json.Unmarshal(raw, &q) != nil || q.ID == "" || q.Approve == nil {
-		return nil, errors.New("bad CTO dialog answer")
-	}
-	item, decided, err := lc.d.proposalRunner().decideForDialog(ctx, q.ID, *q.Approve)
-	defer lc.d.syncProposalAsks(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if !decided {
-		return nil, nil
-	}
-	if *q.Approve && item.Status == "applied" && item.Call.Tool == "project_change" && item.Call.Action == "create" {
-		var start protocol.StartedSession
-		if json.Unmarshal(item.Result, &start) == nil && start.ID != "" {
-			return lc.d.ctoProjectStartOutcome(ctx, start), nil
-		}
-	}
-	return item.Note, nil
-}
-
-// decideForDialog decides a proposal and marks its note delivered under the
-// note delivery lock. The dialog returns the outcome to the CTO as its tool
-// result, so the notes loop must not send the same outcome as a second turn.
-func (p proposalRunner) decideForDialog(ctx context.Context, id string, approve bool) (proposal, bool, error) {
-	p.state.proposalDeliveryMu.Lock()
-	defer p.state.proposalDeliveryMu.Unlock()
-	decideErr := p.decide(ctx, id, approve)
-	if decideErr != nil && decideErr.Error() == "proposal is not open" {
-		return proposal{}, false, decideErr
-	}
-	found, haveItem, err := p.get(id)
-	if err != nil {
-		return proposal{}, false, err
-	}
-	if haveItem && (decideErr == nil || found.Status == "failed") && found.Status != "open" {
-		if err := p.markNoteDelivered(ctx, id); err != nil {
-			return proposal{}, false, err
-		}
-		return found, true, nil
-	}
-	return proposal{}, false, decideErr
-}
-
-// ctoProjectStartOutcome waits for the registered session before reporting it ready.
-func (d *Daemon) ctoProjectStartOutcome(ctx context.Context, start protocol.StartedSession) string {
-	ctx, cancel := context.WithTimeout(ctx, d.workerSettings("").StartTimeout)
-	defer cancel()
-	ticker := time.NewTicker(25 * time.Millisecond)
-	defer ticker.Stop()
-	for start.Status == "starting" {
-		select {
-		case <-ctx.Done():
-			return "Project creation was approved; the session is still starting."
-		case <-ticker.C:
-			var err error
-			start, err = d.sessionStartGet(ctx, start.ID)
-			if err != nil {
-				return "Project creation was approved; could not check the session: " + cleanLine(err.Error())
-			}
-		}
-	}
-	if start.Status != "started" || start.SessionID == "" {
-		return "Project creation was approved; the session did not start: " + cleanLine(firstNonEmpty(start.Error, start.Status))
-	}
-	name := cleanLine(start.Project)
-	return fmt.Sprintf("%s is ready: session %s is waiting in tab 1 (Sessions). Press Enter on it to dive in.", name, name)
+	return map[string]any{"kind": "result", "value": result}, nil
 }
 
 func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMessage) (any, error) {
 	// A rare op resolves to the parent tool and its full arguments, then runs
-	// that same path: the same owner gate, proposal and undo as the typed tool.
+	// that same path: the same owner gate and undo as the typed tool.
 	if name == "cto_op" {
 		_, tool, args, err := ctoOpCall(raw)
 		if err != nil {
@@ -248,10 +105,11 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 			}
 		}
 	}
-	return routeCTOTool(ctx, name, raw, d.Propose, d.executeImmediateCTOTool)
+	return routeCTOTool(ctx, name, raw, d.executeImmediateCTOTool)
 }
 
-// executeCTOTool is used only for immediate reads/talk or by the approved runner.
+// executeCTOTool runs the CTO reads and talk tools, and the concrete changes
+// that executeCTOAction does not handle itself.
 func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
 	if name == "cto_placement_memory" {
 		return d.ctoPlacementMemory(ctx, raw)
@@ -296,7 +154,7 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 	}
 	// These operations reuse the same owner implementations after ctoTool has
 	// checked the calling process tree. This connection is never exposed.
-	lc := &localConn{d: d, client: "cli", cto: proposalActor(ctx) == ""}
+	lc := &localConn{d: d, client: "cli", cto: ctoActor(ctx) == ""}
 	if ctoOwnerMethods[name] {
 		res, _, err := lc.dispatchOwner(ctx, name, raw)
 		return res, err
@@ -310,7 +168,7 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		if err := decodeCTOArgs(name, raw, &q, "changes"); err != nil {
 			return nil, err
 		}
-		q.By = proposalActor(ctx)
+		q.By = ctoActor(ctx)
 		if q.By == "" {
 			return nil, errors.New("settings write requires a CTO actor")
 		}
@@ -320,36 +178,11 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		if err := decodeCTOArgs(name, raw, &q, "revision"); err != nil {
 			return nil, err
 		}
-		q.By = proposalActor(ctx)
+		q.By = ctoActor(ctx)
 		if q.By == "" {
 			return nil, errors.New("settings undo requires a CTO actor")
 		}
 		return d.call(ctx, "settings.undo", q)
-	case "proposal_ask":
-		var p struct {
-			ID string `json:"id"`
-		}
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, errors.New("bad proposal_ask arguments")
-		}
-		p.ID = strings.TrimSpace(p.ID)
-		if p.ID == "" {
-			return nil, errors.New("proposal_ask needs id")
-		}
-		found, haveItem, err := d.proposalRunner().get(p.ID)
-		if err != nil {
-			return nil, err
-		}
-		if !haveItem {
-			return nil, fmt.Errorf("unknown proposal %s", p.ID)
-		}
-		if found.Status != "open" {
-			return nil, fmt.Errorf("proposal %s is %s, not open", found.ID, found.Status)
-		}
-		if dest, ok := ctx.Value(dialogProposalKey{}).(*string); ok {
-			*dest = found.ID
-		}
-		return ProposalToolResult(found.ID), nil
 	case "agent_message_send":
 		var p map[string]any
 		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
@@ -565,7 +398,7 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			delete(args, "id")
 		}
 		args["by"] = "cto"
-		if actor := proposalActor(ctx); actor != "" {
+		if actor := ctoActor(ctx); actor != "" {
 			args["by"] = actor
 		}
 		return d.ctoAttributedCall(ctx, strings.ReplaceAll(name, "_", "."), args)
@@ -663,8 +496,8 @@ func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessag
 	}
 	switch name {
 	case "agent_message_send", "agent_message_reply":
-		// A plain send or reply keeps its short audit name; an as-owner one is
-		// a proposal and keeps the tool name.
+		// A plain send or reply keeps its short audit name; an as-owner one
+		// keeps the tool name.
 		var m struct {
 			AsOwner bool `json:"as_owner"`
 		}
@@ -727,9 +560,6 @@ func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessag
 			text = "printed an invite line"
 		}
 	}
-	if proposed, ok := result.(string); ok && strings.HasPrefix(proposed, "proposal p_") {
-		text = auditName + ": " + proposed
-	}
 	logErr := d.recordCTOAction(text)
 	if err != nil {
 		return result, err
@@ -766,7 +596,7 @@ func (d *Daemon) ctoAttributedCall(ctx context.Context, typ string, params any) 
 	if json.Unmarshal(b, &caps) != nil || !caps.Attribution {
 		return nil, errors.New("gateway cannot verify CTO attribution; upgrade the gateway")
 	}
-	if actor := proposalActor(ctx); (actor == "CTO (minor)" || actor == "CTO (owner window)") && !caps.GraphAuthority {
+	if actor := ctoActor(ctx); (actor == "CTO (minor)" || actor == "CTO (owner window)") && !caps.GraphAuthority {
 		return nil, errors.New("gateway cannot enforce CTO graph authority; upgrade the gateway")
 	}
 	if (typ == "msg.send" || typ == "cto.session.register") && !caps.NetworkSession {

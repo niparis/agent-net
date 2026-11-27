@@ -29,7 +29,7 @@ type agentStart struct {
 
 // ReserveSessionAgent validates a choice, prepares a launch hold when Ref is
 // present, or binds its exact native ID after the harness creates it. The
-// daemon admits this call only through its owner or approved-proposal path.
+// daemon admits this call only through its owner or CTO path.
 func (s *Store) ReserveSessionAgent(node string, p protocol.SessionAgentReservation) error {
 	if _, err := s.ExpireSessionAgentStarts(); err != nil {
 		return err

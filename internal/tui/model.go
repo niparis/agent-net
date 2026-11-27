@@ -58,13 +58,6 @@ type Model struct {
 	workerLogRow          int
 	delivery              deliveryState
 	deliverySrc           deliverySource
-	proposals             []protocol.CTOProposal
-	proposalDetail        *proposalDetail
-	proposalConfirm       bool
-	proposalConfirmItems  []protocol.CTOProposal
-	proposalConfirmScroll int
-	proposalHistory       bool
-	proposalHistoryIndex  int
 	// The chief of staff (decision 0114, part 2): its status.
 	chief                               protocol.ChiefStatus
 	chiefLoaded                         bool
@@ -158,12 +151,9 @@ type Model struct {
 	dataVersions   map[string]uint64
 	dataVersionsAt map[string]time.Time
 	topicView      string
-	// proposalsSeen is the Snapshot signature the proposals and the chief's
-	// status were last fetched at. A different signature, or the CTO box on
-	// screen, asks for them again. proposalsAt is when they were last asked
-	// for away from that box, so the CTO count cannot stay stale.
-	proposalsSeen string
-	proposalsAt   time.Time
+	// chiefAt is when the chief's status was last asked for away from the
+	// CTO box. The box on screen asks for it at once.
+	chiefAt time.Time
 
 	// Stored conversations for the Messages tab. The gateway answers a page;
 	// View only reads convs, never calls the source.
@@ -335,9 +325,7 @@ type pendingStop struct {
 }
 
 type fetchedMsg struct {
-	proposals       []protocol.CTOProposal
-	proposalsOK     bool
-	proposalsAsked  bool // the proposals were asked for this refresh
+	chiefAsked      bool // the chief's status was asked for this refresh
 	chief           protocol.ChiefStatus
 	chiefOK         bool
 	snap            Snapshot
@@ -521,7 +509,7 @@ func (m Model) fetchCmd() tea.Cmd {
 	askCounts := askUsage && !m.usage.noCounts
 	askU := askUsage && m.usage.unavailable == ""
 	ctoOnScreen := m.focus == focusCTO
-	proposalsSeen, proposalsAt := m.proposalsSeen, m.proposalsAt
+	chiefAt := m.chiefAt
 	wantWorkerLog := m.tab == quotasTab && m.workersLog
 	wantPicker := m.tab == quotasTab && !m.workersLog && m.pickerWanted
 	wantWeekly := m.tab == quotasTab && m.qualityDetail && (m.weeklyWanted || !m.weeklyLoaded)
@@ -641,26 +629,12 @@ func (m Model) fetchCmd() tea.Cmd {
 				}
 			})
 		}
-		// The CTO box needs the proposals at once while it is on screen, or
-		// when the Snapshot says its count changed. Away from that box the
-		// list is checked now and then, because a proposal made on another
-		// machine does not change this Snapshot.
-		//
-		// The gateway's Inbox topic moves with every session report, as the
-		// agents topic does, so it is no reason to ask for the proposals: they
-		// are the machines' own, and each ask goes to every online machine. A
-		// proposal on this machine changes the count in the Snapshot, and one
-		// on another machine is found by the wait.
-		markerMoved := proposalsMarkerOf(res.snap) != proposalsSeen
+		// The chief's status is asked for at once while the CTO box is on
+		// screen, and now and then away from that box.
 		listsWanted := wants(protocol.TopicInbox) || wants(protocol.TopicAgents)
 		c, ok := src.(localCaller)
-		if ok && listsWanted && (markerMoved || res.at.Sub(proposalsAt) >= proposalsRefreshEvery || (ctoOnScreen && full)) {
-			res.proposalsAsked = true
-			group(func(ctx context.Context) {
-				if raw, err := c.Call(ctx, protocol.OpProposalList, nil); err == nil && json.Unmarshal(raw, &res.proposals) == nil {
-					res.proposalsOK = true
-				}
-			})
+		if ok && listsWanted && (res.at.Sub(chiefAt) >= chiefRefreshEvery || (ctoOnScreen && full)) {
+			res.chiefAsked = true
 			group(func(ctx context.Context) {
 				var status protocol.ChiefStatus
 				if raw, err := c.Call(ctx, protocol.OpChiefGet, nil); err == nil && json.Unmarshal(raw, &status) == nil {
@@ -688,13 +662,6 @@ func (m Model) fetchCmd() tea.Cmd {
 		wg.Wait()
 		return res
 	}
-}
-
-// proposalsMarkerOf describes what the Snapshot says about open proposals.
-// It is a change marker, not the list itself: when it differs the proposals
-// are fetched again, even on a tab that does not show the CTO box.
-func proposalsMarkerOf(s Snapshot) string {
-	return fmt.Sprintf("p%d;", s.ProposalCount)
 }
 
 func (m Model) topCmd(id string) tea.Cmd {
@@ -1080,9 +1047,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchedMsg:
-		if msg.proposalsOK {
-			m.proposals = msg.proposals
-		}
 		if msg.onboardingAsked && msg.onboardingErr == nil && msg.onboardingRevision == m.onboardingRevision && !m.onboardingPending {
 			m.onboarding, m.onboardingLoaded = msg.onboarding, true
 		}
@@ -1167,11 +1131,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.frictionLoaded = true
 			}
 		}
-		if msg.err == nil && msg.snap.Connected {
-			m.proposalsSeen = proposalsMarkerOf(m.snap)
-		}
-		if msg.proposalsAsked {
-			m.proposalsAt = msg.at
+		if msg.chiefAsked {
+			m.chiefAt = msg.at
 		}
 		if msg.convAsked {
 			m.applyConversationPage(conversationPageMsg{page: msg.convPage, err: msg.convErr, first: true})
@@ -1245,59 +1206,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return next, tea.Batch(cmd, save)
 		}
 		return next, cmd
-	case proposalDetailMsg:
-		if d := m.proposalDetail; d != nil && d.proposal.ID == msg.id && d.proposal.NodeID == msg.node {
-			d.loading = false
-			d.diff = msg.diff
-			if msg.err != nil {
-				d.err = explain(msg.err)
-			}
-		}
-		return m, nil
-	case proposalAnswerMsg:
-		var detailCmd tea.Cmd
-		if msg.items != nil {
-			m.proposals = msg.items
-			if m.proposalDetail == nil && msg.action != "A" {
-				for _, p := range msg.items {
-					if p.ID == msg.id && p.NodeID == msg.node {
-						m.proposalDetail = &proposalDetail{proposal: p, loading: true}
-						detailCmd = m.proposalDetailCmd(p)
-						break
-					}
-				}
-			}
-			if d := m.proposalDetail; d != nil {
-				for _, p := range msg.items {
-					if p.ID == d.proposal.ID && p.NodeID == d.proposal.NodeID {
-						d.proposal = p
-						break
-					}
-				}
-			}
-		}
-		if msg.action == "A" && msg.items != nil {
-			m.proposalHistory = true
-			m.proposalHistoryIndex = 0
-		}
-		if msg.err != nil {
-			m.failErr(msg.err, "Proposal failed: "+explain(msg.err))
-		} else if msg.action != "x" && m.sessionNoticeSerial != msg.sessionBefore {
-			// Keep the session start result that arrived during approval.
-		} else if msg.action == "A" {
-			m.say("Proposals approved and applied.")
-		} else {
-			for _, p := range msg.items {
-				if p.ID == msg.id && p.NodeID == msg.node {
-					m.say(p.Note)
-					break
-				}
-			}
-		}
-		m.ensureSelection()
-		m.fixScroll()
-		return m, detailCmd
-
 	case standingMsg:
 		return m.onStanding(msg)
 	case nudgeStatsMsg:
@@ -1572,15 +1480,6 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.sessionPending != nil {
 		return m.sessionPendingKey(k)
-	}
-	if m.proposalConfirm {
-		return m.proposalConfirmKey(k)
-	}
-	if m.proposalHistory && !m.help {
-		return m.proposalHistoryKey(k)
-	}
-	if m.proposalDetail != nil && !m.help {
-		return m.proposalDetailKey(k)
 	}
 	switch m.mode {
 	case modeCompose:

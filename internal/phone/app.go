@@ -112,9 +112,9 @@ func (a *app) screen(id string) http.HandlerFunc {
 	}
 }
 
-// action writes one reply or one CTO answer. Only these kinds exist: the
-// owner's own words in a thread, a step of a change, one CTO proposal, or a
-// message to the CTO. Never a start, a stop or a change of settings.
+// action writes one reply or one message to the CTO. Only these kinds exist:
+// the owner's own words in a thread, or a message to the CTO. Never a start,
+// a stop or a change of settings.
 func (a *app) action(w http.ResponseWriter, r *http.Request) {
 	origin, err := url.Parse(r.Header.Get("Origin"))
 	if err != nil || origin.Host != r.Host || (origin.Scheme != "https" && origin.Scheme != "http") {
@@ -158,19 +158,6 @@ func (a *app) action(w http.ResponseWriter, r *http.Request) {
 		} else {
 			_, err = a.src.Call(ctx, protocol.OpCTOSend, protocol.CTOSendRequest{Text: text})
 		}
-	case "proposal":
-		// Apply or decline one open CTO proposal, with the same owner answer
-		// the TUI sends.
-		if act != "a" && act != "x" {
-			err = fmt.Errorf("invalid action")
-			break
-		}
-		node, derr := decodeProposalNode(r.PostForm.Get("node"))
-		if derr != nil {
-			err = derr
-			break
-		}
-		_, err = a.src.Call(ctx, protocol.OpProposalAnswer, protocol.CTOProposalAnswer{NodeID: node, ID: id, Action: act})
 	default:
 		err = fmt.Errorf("invalid action")
 	}

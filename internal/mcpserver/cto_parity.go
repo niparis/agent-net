@@ -7,7 +7,7 @@ import (
 
 // ctoConcreteTools holds the internal argument schemas of the change calls that
 // the merged action tools front. They are not exposed in the MCP tool list;
-// they validate a stored call and keep proposals stored before part 10 working.
+// they validate a concrete call.
 var ctoConcreteTools = func() map[string]ctoToolDef {
 	out := map[string]ctoToolDef{}
 	s := func(desc string) ctoField { return ctoField{typ: "string", desc: desc} }

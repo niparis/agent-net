@@ -27,24 +27,24 @@ func clientErrorFor(t *testing.T, rows []protocol.ClientErrorStat, method, origi
 func TestClientErrorsCountPerMethodAndOrigin(t *testing.T) {
 	t0 := time.Date(2026, 11, 9, 10, 0, 30, 0, time.UTC)
 	c := newClientErrorStats()
-	c.record("tui", protocol.ClientError{Method: "proposal_list", Ms: 5000, TimeoutMs: 5000, Timeout: true, Screen: "desk"}, t0)
-	c.record("tui", protocol.ClientError{Method: "proposal_list", Ms: 20, Err: "boom"}, t0)
-	c.record("phone", protocol.ClientError{Method: "proposal_list", Ms: 7, Err: "boom"}, t0)
+	c.record("tui", protocol.ClientError{Method: "workers", Ms: 5000, TimeoutMs: 5000, Timeout: true, Screen: "desk"}, t0)
+	c.record("tui", protocol.ClientError{Method: "workers", Ms: 20, Err: "boom"}, t0)
+	c.record("phone", protocol.ClientError{Method: "workers", Ms: 7, Err: "boom"}, t0)
 
 	got := c.snapshot(t0)
-	tui := clientErrorFor(t, got.Since, "proposal_list", "tui")
+	tui := clientErrorFor(t, got.Since, "workers", "tui")
 	if tui.Errors != 2 || tui.Timeouts != 1 || tui.MaxMs != 5000 || tui.TotalMs != 5020 {
 		t.Fatalf("tui row = %+v", tui)
 	}
-	if phone := clientErrorFor(t, got.Since, "proposal_list", "phone"); phone.Errors != 1 || phone.Timeouts != 0 {
+	if phone := clientErrorFor(t, got.Since, "workers", "phone"); phone.Errors != 1 || phone.Timeouts != 0 {
 		t.Fatalf("phone row = %+v", phone)
 	}
-	if last := clientErrorFor(t, got.Last10Min, "proposal_list", "tui"); last.Errors != 2 {
+	if last := clientErrorFor(t, got.Last10Min, "workers", "tui"); last.Errors != 2 {
 		t.Fatalf("last 10 min = %+v", last)
 	}
 	// Eleven minutes later the window is empty but the total stays.
 	later := c.snapshot(t0.Add(11 * time.Minute))
-	if len(later.Last10Min) != 0 || clientErrorFor(t, later.Since, "proposal_list", "tui").Errors != 2 {
+	if len(later.Last10Min) != 0 || clientErrorFor(t, later.Since, "workers", "tui").Errors != 2 {
 		t.Fatalf("eleven minutes later: %+v", later)
 	}
 	// The worst offender is listed first.

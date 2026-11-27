@@ -15,7 +15,6 @@
 #   g.machineRotationMu: one token rotation per machine at a time.
 #   d.claudeStartMu: a Claude background stop runs its process while starts wait.
 #   ctoMu (test fake): the fake OpenCode server creates its MCP session once.
-2	github.com/niparis/agent-net/internal/daemon/cto_immediate.go *Daemon.applyProposalOnWords d.call while d.ctoGraph.mu
 9	github.com/niparis/agent-net/internal/daemon/cto_immediate.go *Daemon.executeImmediateCTOTool d.call while d.ctoGraph.mu
 2	github.com/niparis/agent-net/internal/daemon/cto_operator.go *Daemon.executeCTOOperator d.call while d.ctoGraph.mu
 1	github.com/niparis/agent-net/internal/daemon/cto_presence.go *Daemon.publishCTOPresence d.call while d.ctoPresenceMu

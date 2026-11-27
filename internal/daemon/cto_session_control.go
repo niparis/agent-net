@@ -34,7 +34,7 @@ var errCTOSelfControl = errors.New("the CTO cannot stop, resume or restart its o
 // first. Only those paths set an actor: the owner's own stop and start, and
 // the gateway's relay of them, carry none.
 func refuseCTOSelfControl(ctx context.Context) error {
-	if proposalActor(ctx) != "" {
+	if ctoActor(ctx) != "" {
 		return errCTOSelfControl
 	}
 	return nil
@@ -54,7 +54,7 @@ type ctoSessionControlResult struct {
 // the background resume of session_resume, on any machine through the gateway.
 // It never opens a view; the owner opens the session with Enter (decision 0046).
 func (d *Daemon) ctoSessionControl(ctx context.Context, concrete string, raw json.RawMessage) (*ctoSessionControlResult, error) {
-	if proposalActor(ctx) == "" {
+	if ctoActor(ctx) == "" {
 		return nil, errors.New("session control requires a CTO actor")
 	}
 	var q protocol.SessionResumeRequest

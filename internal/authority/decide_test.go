@@ -166,8 +166,8 @@ func TestOwnerActionList(t *testing.T) {
 	if !Irreversible("app_revoke") || Irreversible("repo_archive") {
 		t.Fatal("Irreversible is wrong")
 	}
-	if !Proposal("machine_rotate") || Proposal("process_stop") {
-		t.Fatal("Proposal is wrong")
+	if !NeedsOwnerWords("machine_rotate") || NeedsOwnerWords("process_stop") {
+		t.Fatal("NeedsOwnerWords is wrong")
 	}
 	if !RefusedForCTO("agent.tombstone") || RefusedForCTO("agent.create") {
 		t.Fatal("RefusedForCTO is wrong")

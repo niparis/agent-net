@@ -11,7 +11,7 @@ func TestOperatorActorFollowsTheCaller(t *testing.T) {
 	if got := operatorActor(context.Background()); got != "owner" {
 		t.Fatalf("owner call acts as %q", got)
 	}
-	ctx := context.WithValue(context.Background(), proposalActorKey{}, "cto")
+	ctx := context.WithValue(context.Background(), ctoActorKey{}, "cto")
 	if got := operatorActor(ctx); got != "cto" {
 		t.Fatalf("CTO call acts as %q", got)
 	}

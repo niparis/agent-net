@@ -97,7 +97,7 @@ func TestCTOActionResultKeepsBackendStateFields(t *testing.T) {
 		{"state": "open", "id": "ask_fixture", "question": "Approve Fixture?"},
 		{"state": "ready", "plan_id": "plan_fixture", "targets": []any{}},
 	} {
-		result, ok := normalizeCTOProposalResult(backend).(map[string]any)
+		result, ok := normalizeCTOResult(backend).(map[string]any)
 		if !ok {
 			t.Fatal("missing action result")
 		}

@@ -42,7 +42,7 @@ func (d *Daemon) executeCTOOperator(ctx context.Context, raw json.RawMessage) (a
 		return nil, fmt.Errorf("operator arguments must be an object")
 	}
 	// Attribution is supplied by the daemon, never by tool arguments.
-	ctx = context.WithValue(ctx, proposalActorKey{}, "cto")
+	ctx = context.WithValue(ctx, ctoActorKey{}, "cto")
 	lc := &localConn{d: d, client: "cli", cto: true}
 	call := func(method string, args json.RawMessage) (any, error) {
 		if method == "session_enter" || method == "cto_enter" {

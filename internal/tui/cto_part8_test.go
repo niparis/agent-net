@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -27,7 +26,7 @@ func ctoSnapshot() Snapshot {
 }
 
 // ctoPart8Model is the Sessions screen with the CTO row and its box.
-func ctoPart8Model(w, h int, title string, proposals int) Model {
+func ctoPart8Model(w, h int, title string) Model {
 	snap := ctoSnapshot()
 	src := &fakeCTOSource{fakeSource: &fakeSource{snap: snap, events: fakeEvents(), usage: fakeUsage(), counts: fakeCounts(), tops: fakeTops()}}
 	m := New(src)
@@ -36,16 +35,12 @@ func ctoPart8Model(w, h int, title string, proposals int) Model {
 	m = settle(refresh(m, src.fakeSource))
 	m.src = src
 	m.cto = &ctoState{generation: 1, title: title, harness: "opencode", model: "fake/m1"}
-	for i := 0; i < proposals; i++ {
-		m.proposals = append(m.proposals, protocol.CTOProposal{ID: fmt.Sprintf("p_%d", i), NodeID: "n_mac", Status: "open",
-			Tool: "edge_set", Action: "edge_set", Args: json.RawMessage(fmt.Sprintf(`{"from":"tenebrae","to":"cogforge","kind":"depends","rule":"auto","n":%d}`, i))})
-	}
 	return quietFixtures(m)
 }
 
 func TestCTOSessionsRowShowsTheOwnersTitle(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
-		m := ctoPart8Model(size[0], size[1], "Atlas", 0)
+		m := ctoPart8Model(size[0], size[1], "Atlas")
 		m.filter = "CTO" // keep the machine group and the one row in view
 		m.ensureSelection()
 		m.fixScroll()
@@ -61,16 +56,19 @@ func TestCTOSessionsRowShowsTheOwnersTitle(t *testing.T) {
 	}
 }
 
-func TestCTOBoxShowsOpenProposals(t *testing.T) {
+// The CTO acts at once, so nothing waits for the owner in its box: the title
+// names the CTO, its harness and model, and no proposal count.
+func TestCTOBoxTitleHasNoProposalCount(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
-		m := ctoPart8Model(size[0], size[1], "Atlas", 2)
+		m := ctoPart8Model(size[0], size[1], "Atlas")
 		m.focus = focusCTO
 		m.cto.messages = []string{"you: hello", "cto: hi"}
 		view := m.testView()
-		if !strings.Contains(ansi.Strip(view), "2 open proposals") {
-			t.Fatalf("%dx%d: the box does not show the proposal count:\n%s", size[0], size[1], ansi.Strip(view))
+		plain := ansi.Strip(view)
+		if !strings.Contains(plain, "Atlas · opencode · fake/m1") || strings.Contains(plain, "proposal") {
+			t.Fatalf("%dx%d: the box title is wrong:\n%s", size[0], size[1], plain)
 		}
-		golden(t, fmt.Sprintf("cto_box_proposals_%dx%d", size[0], size[1]), view)
+		golden(t, fmt.Sprintf("cto_box_%dx%d", size[0], size[1]), view)
 	}
 }
 

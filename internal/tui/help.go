@@ -29,17 +29,6 @@ func (m Model) hints() []hint {
 	switch {
 	case m.mp.removal != nil:
 		return []hint{{key: "enter/y", label: "yes"}, {key: "esc/n", label: "no"}}
-	case m.proposalConfirm:
-		yes, no := bindingHint(contextConfirm, "yes"), bindingHint(contextConfirm, "no")
-		yes.key, no.key = "enter/y", "esc/n"
-		return []hint{bindingPairHint(contextProposalHistory, actUp, actDown), yes, no}
-	case m.proposalHistory && m.proposalDetail == nil && !m.help:
-		return []hint{bindingPairHint(contextProposalHistory, actUp, actDown), bindingHint(contextProposalHistory, "detail"), bindingHint(contextProposalHistory, "back"), bindingHint(contextProposalHistory, "help")}
-	case m.proposalDetail != nil && !m.help:
-		if m.proposalDetail.proposal.Status != "open" {
-			return []hint{bindingPairHint(contextProposalDetail, actUp, actDown), bindingHint(contextProposalDetail, actClose), bindingHint(contextProposalDetail, "help")}
-		}
-		return []hint{bindingHint(contextProposalDetail, "approve"), bindingHint(contextProposalDetail, "decline"), bindingHint(contextProposalDetail, "approve all"), bindingHint(contextProposalDetail, actClose), bindingHint(contextProposalDetail, "help")}
 	case m.help:
 		toggle := bindingHint(contextHelp, actAllScreens)
 		if m.helpAll {
@@ -375,12 +364,6 @@ type helpSection struct {
 // form when the key table has a context for it, else the current tab.
 func (m Model) currentHelpSection() helpSection {
 	switch {
-	case m.proposalConfirm:
-		return m.helpContextSection(contextConfirm)
-	case m.proposalHistory:
-		return m.helpContextSection(contextProposalHistory)
-	case m.proposalDetail != nil:
-		return m.helpContextSection(contextProposalDetail)
 	case m.mode == modeApps:
 		return m.helpContextSection(contextApps)
 	case m.mode == modeTeams:
@@ -438,7 +421,7 @@ func (m Model) helpTabSections() []helpSection {
 
 func (m Model) overlayContexts() []keyContext {
 	return []keyContext{
-		contextBody, contextApps, contextQualityDetails, contextProposalDetail, contextProposalHistory,
+		contextBody, contextApps, contextQualityDetails,
 		contextCTO, contextHelp, contextConfirm, contextForm, contextTeams, contextFinder,
 	}
 }
@@ -468,10 +451,6 @@ func (m Model) helpSubsectionTitle(context keyContext) string {
 		return "Message body"
 	case contextApps:
 		return "Connected apps"
-	case contextProposalDetail:
-		return "Proposal detail"
-	case contextProposalHistory:
-		return "Proposal history"
 	case contextCTO:
 		return m.ctoTitle() + " box"
 	case contextHelp:

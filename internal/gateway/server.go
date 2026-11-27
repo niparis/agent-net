@@ -911,7 +911,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			nc.answer(h)
 			continue
 		}
-		if h.Type == "owner.ui.request" || h.Type == "machine.rotate" || h.Type == "machine.remove" || h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "cto.proposal.validate" || h.Type == "gateway.backup" || h.Type == protocol.FrameSkillArchiveAdd || h.Type == protocol.FrameSkillArchiveBundled || h.Type == protocol.FrameSkillArchiveAddGit || h.Type == protocol.FrameSkillArchiveRemove || h.Type == protocol.FrameSkillArchiveList || h.Type == protocol.FrameSkillArchiveRead || h.Type == protocol.FrameSkillArchiveUndo || h.Type == protocol.FrameSkillArchiveIntake || h.Type == protocol.FrameSkillsSet || h.Type == protocol.FrameSkillsEffective || h.Type == protocol.FrameSkillsUndo || h.Type == protocol.FrameSkillsFolder || h.Type == protocol.FrameSkillsVersion {
+		if h.Type == "owner.ui.request" || h.Type == "machine.rotate" || h.Type == "machine.remove" || h.Type == "session.sync" || h.Type == "session.upsert" || h.Type == "project.add" || h.Type == "gateway.backup" || h.Type == protocol.FrameSkillArchiveAdd || h.Type == protocol.FrameSkillArchiveBundled || h.Type == protocol.FrameSkillArchiveAddGit || h.Type == protocol.FrameSkillArchiveRemove || h.Type == protocol.FrameSkillArchiveList || h.Type == protocol.FrameSkillArchiveRead || h.Type == protocol.FrameSkillArchiveUndo || h.Type == protocol.FrameSkillArchiveIntake || h.Type == protocol.FrameSkillsSet || h.Type == protocol.FrameSkillsEffective || h.Type == protocol.FrameSkillsUndo || h.Type == protocol.FrameSkillsFolder || h.Type == protocol.FrameSkillsVersion {
 			go g.answer(ctx, nc, h, raw)
 			continue
 		}
@@ -1286,8 +1286,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		id, err := st.RegisterCTOSession(nc.id)
 		return map[string]string{"session_id": id}, err
-	case "cto.proposal.validate":
-		return g.validateCTOProposal(ctx, nc, raw)
 	case "hello":
 		p, err := decode[protocol.Hello](raw)
 		if err != nil {
@@ -3885,14 +3883,8 @@ func graphActor(raw json.RawMessage) string {
 	var p struct {
 		By string `json:"by"`
 	}
-	if json.Unmarshal(raw, &p) == nil && (p.By == "cto" || p.By == "CTO (minor)" || p.By == "CTO (owner window)") {
+	if json.Unmarshal(raw, &p) == nil && (p.By == "cto" || p.By == "CTO (minor)" || p.By == "CTO (owner window)" || p.By == protocol.CTOOwnerWordsActor) {
 		return p.By
-	}
-	if strings.HasPrefix(p.By, "owner (CTO proposal p_") && strings.HasSuffix(p.By, ")") {
-		n := strings.TrimSuffix(strings.TrimPrefix(p.By, "owner (CTO proposal p_"), ")")
-		if n != "" && strings.Trim(n, "0123456789") == "" {
-			return p.By
-		}
 	}
 	return "owner"
 }
