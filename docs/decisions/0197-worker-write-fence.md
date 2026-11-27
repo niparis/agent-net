@@ -35,7 +35,7 @@ How each harness applies it:
 - Pi and OpenCode, macOS: a Seatbelt profile that allows everything except file writes, allows writes only in the same folders, and then denies writes to the read-only git paths (the later rule wins).
 - Claude: `sandbox.filesystem.allowWrite` names the same folders and `sandbox.filesystem.denyWrite` the read-only git paths. `sandbox.network` turns on `allowAllUnixSockets`, `allowLocalBinding` and `allowMachLookup: ["*"]`.
 - Codex: the same folders as writable roots of its `workspace-write` sandbox, network on. Codex has no read-only list inside a writable root, so in place of the whole git folder it gets only the folders a commit writes: `objects`, `refs`, `logs` and the worktree's own `worktrees/<id>`.
-- agy: the same folders as `--add-dir`, with the same narrow git folders as Codex, for the same reason.
+- agy: the same folders as `--add-dir`, with the same narrow git folders as Codex, for the same reason. agy's settings use the `proceed-in-sandbox` tool permission and no `command(...)` allow rule, so a command the model asks to run outside the sandbox (`BypassSandbox`) is refused in a headless worker. The worker's `SHELL` is a shell from `/bin` or `/usr/bin`: agy's macOS sandbox cannot run a shell from another folder, such as a Nix profile's zsh, and a worker whose commands fail there asks to bypass the sandbox. This was found in the real Mac check of v0.5.171.
 
 Each harness keeps its own permission mode. The owner's own sessions, the CTO's sandbox and the picker do not change.
 

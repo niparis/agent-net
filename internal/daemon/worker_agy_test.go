@@ -33,6 +33,7 @@ type fakeAgyRecord struct {
 	MCPError                    string
 	BadHandbackRejected         bool
 	InputClosed                 bool
+	Shell                       string
 }
 
 // The fake agy script execs this test binary. No vendor binaries, credentials,
@@ -56,6 +57,7 @@ func TestAgyProcess(t *testing.T) {
 	pgid, _ := syscall.Getpgid(0)
 	r := fakeAgyRecord{Args: args, Cwd: cwd, Native: native, Worker: os.Getenv("AGENT_NET_WORKER"), Socket: os.Getenv("AGENT_NET_SOCKET"), PID: os.Getpid(), PGID: pgid}
 	r.ConfigDir = os.Getenv("AGENT_NET_CONFIG_DIR")
+	r.Shell = os.Getenv("SHELL")
 	path := filepath.Join(os.Getenv("FAKE_AGY_RECORDS"), strconv.Itoa(r.PID)+".json")
 	save := func() {
 		b, _ := json.Marshal(r)
@@ -575,8 +577,12 @@ func TestAgyWorkerLifecycleAndResume(t *testing.T) {
 		t.Fatalf("brief: %+v", r.Turns)
 	}
 	noFlagThatSkipsPermissions(t, r.Args)
-	if r.Args[len(r.Args)-1] != "-p=" || argValue(r.Args, "--input-format") != "stream-json" || argValue(r.Args, "--output-format") != "stream-json" || argValue(r.Args, "--model") != "gemini-3.8-flash-low" || argValue(r.Args, "--mode") != "accept-edits" || !strings.Contains(strings.Join(r.Args, " "), "--sandbox") || argValue(r.Args, "--settings") != `{"permissions":{"allow":["command(*)","mcp(agent-net_agent-net/*)"]}}` {
+	if r.Args[len(r.Args)-1] != "-p=" || argValue(r.Args, "--input-format") != "stream-json" || argValue(r.Args, "--output-format") != "stream-json" || argValue(r.Args, "--model") != "gemini-3.8-flash-low" || argValue(r.Args, "--mode") != "accept-edits" || !strings.Contains(strings.Join(r.Args, " "), "--sandbox") || argValue(r.Args, "--settings") != agyWorkerSettings {
 		t.Fatalf("args: %v", r.Args)
+	}
+	// TestMain sets SHELL to a fake outside the system folders.
+	if r.Shell == os.Getenv("SHELL") || (filepath.Dir(r.Shell) != "/bin" && filepath.Dir(r.Shell) != "/usr/bin") {
+		t.Fatalf("worker SHELL %q, daemon SHELL %q", r.Shell, os.Getenv("SHELL"))
 	}
 	sendAgy(t, w, res.SessionID, "FAKE:handback again")
 	w.waitNotice(t, 2)
@@ -585,6 +591,54 @@ func TestAgyWorkerLifecycleAndResume(t *testing.T) {
 		if rec.PID != r.PID && argValue(rec.Args, "--conversation") != r.Native {
 			t.Fatalf("resume args: %v", rec.Args)
 		}
+	}
+}
+
+// agy's macOS sandbox cannot exec a shell outside the system folders, such as
+// a Nix profile's zsh, so an agy worker gets a system shell instead.
+func TestAgyWorkerShell(t *testing.T) {
+	t.Parallel()
+	mac := func(p string) bool { return p == "/bin/zsh" || p == "/bin/bash" || p == "/bin/sh" }
+	linux := func(p string) bool { return p == "/usr/bin/bash" || p == "/bin/sh" }
+	for _, c := range []struct {
+		shell, goos string
+		exists      func(string) bool
+		want        string
+	}{
+		{"/etc/profiles/per-user/someone/bin/zsh", "darwin", mac, "/bin/zsh"},
+		{"/opt/homebrew/bin/bash", "darwin", mac, "/bin/bash"},
+		{"/opt/homebrew/bin/fish", "darwin", mac, "/bin/zsh"},
+		{"", "darwin", mac, "/bin/zsh"},
+		{"/run/current-system/sw/bin/zsh", "linux", linux, "/bin/sh"},
+		{"/nix/store/x-bash/bin/bash", "linux", linux, "/usr/bin/bash"},
+		// A system shell is left alone.
+		{"/bin/zsh", "darwin", mac, "/bin/zsh"},
+		{"/usr/bin/bash", "linux", linux, "/usr/bin/bash"},
+	} {
+		if got := agyWorkerShell(c.shell, c.goos, c.exists); got != c.want {
+			t.Errorf("agyWorkerShell(%q, %s) = %q, want %q", c.shell, c.goos, got, c.want)
+		}
+	}
+}
+
+// A headless agy worker must not run a command outside its sandbox: no allow
+// rule may approve commands, which would also approve a BypassSandbox run.
+func TestAgyWorkerSettingsKeepCommandsInSandbox(t *testing.T) {
+	t.Parallel()
+	var s struct {
+		ToolPermission string `json:"toolPermission"`
+		Permissions    struct {
+			Allow []string `json:"allow"`
+		} `json:"permissions"`
+	}
+	if err := json.Unmarshal([]byte(agyWorkerSettings), &s); err != nil {
+		t.Fatal(err)
+	}
+	if s.ToolPermission != "proceed-in-sandbox" {
+		t.Errorf("toolPermission %q", s.ToolPermission)
+	}
+	if fmt.Sprint(s.Permissions.Allow) != "[mcp(agent-net_agent-net/*)]" {
+		t.Errorf("allow rules %v", s.Permissions.Allow)
 	}
 }
 

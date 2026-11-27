@@ -111,8 +111,17 @@ protected-provider rule does not apply to it.
 An agy worker runs in its worktree with this command (`-p=` is empty and last):
 
 ```sh
-agy --input-format stream-json --output-format stream-json --model <id> --mode accept-edits --sandbox --settings '{"permissions":{"allow":["command(*)","mcp(agent-net_agent-net/*)"]}}' -p=
+agy --input-format stream-json --output-format stream-json --model <id> --mode accept-edits --sandbox --settings '{"toolPermission":"proceed-in-sandbox","permissions":{"allow":["mcp(agent-net_agent-net/*)"]}}' -p=
 ```
+
+`proceed-in-sandbox` runs shell commands without a prompt only inside agy's
+terminal sandbox. A command the model asks to run outside it (`BypassSandbox`)
+needs an approval that a headless worker cannot give, so agy refuses it. No
+`command(...)` allow rule is set, because one would approve that command too.
+The worker's `SHELL` is a shell from `/bin` or `/usr/bin`: when yours is
+elsewhere, such as a Nix profile's zsh, the worker gets the system shell of the
+same name, else zsh on macOS, else `/bin/sh`. agy's macOS sandbox cannot run a
+shell from another folder.
 
 The agent-net agy plugin must be installed for `agent_handback`. Its MCP server
 is exposed as `agent-net_agent-net`. The daemon checks the worker's process
