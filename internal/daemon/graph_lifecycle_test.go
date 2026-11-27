@@ -37,7 +37,10 @@ func TestCTOGraphLifecycleProposalSchema(t *testing.T) {
 	}
 }
 
-func TestCTOGraphLifecycleRequiresProposalEvenInWindow(t *testing.T) {
+// Archive and tombstone need the owner's words even while the CTO drives the
+// graph. With his words they run at once, land in the CTO's history as the
+// owner's words actor, and the last one is undone like any CTO change.
+func TestCTOGraphLifecycleNeedsOwnerWordsEvenInWindow(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.Version = "v0.4.145" }})
 	cli := cliClient(t, n)
@@ -46,24 +49,29 @@ func TestCTOGraphLifecycleRequiresProposalEvenInWindow(t *testing.T) {
 	n.d.ctoGraph.mu.Lock()
 	n.d.ctoGraph.toggle(time.Now())
 	n.d.ctoGraph.mu.Unlock()
+	words := "archive review-repo and tombstone review-agent"
+	ctoOwnerSays(t, n.d, "please "+words)
 	for _, tc := range []struct{ action, args string }{
 		{"repo_create", `{"name":"review-repo"}`},
 		{"agent_create", `{"name":"review-agent"}`},
 		{"repo_archive", `{"ref":{"kind":"repo","id":"review-repo"}}`},
 		{"agent_tombstone", `{"ref":{"kind":"agent","id":"review-agent"}}`},
 	} {
+		if tc.action == "repo_archive" || tc.action == "agent_tombstone" {
+			if _, err := n.d.runCTOToolRaw(ctx, "graph_change", ctoGraphArgs(tc.action, tc.args)); err == nil || !strings.Contains(err.Error(), "needs the owner's approval") {
+				t.Fatalf("%s ran without the owner's words: %v", tc.action, err)
+			}
+			tc.args = strings.TrimSuffix(tc.args, "}") + `,"owner_words":"` + words + `"}`
+		}
 		result, err := n.d.runCTOToolRaw(ctx, "graph_change", ctoGraphArgs(tc.action, tc.args))
 		if err != nil {
 			t.Fatalf("%s: %v", tc.action, err)
 		}
-		if tc.action == "repo_archive" || tc.action == "agent_tombstone" {
-			proposal, ok := result.(string)
-			if !ok || !strings.HasPrefix(proposal, "proposal p_") {
-				t.Fatalf("%s was not proposed: %v", tc.action, result)
-			}
-			cli.mustCall("proposal_answer", protocol.CTOProposalAnswer{ID: strings.Fields(proposal)[1], Action: "a"})
-		} else {
-			assertCTOImmediate(t, result)
+		assertCTOImmediate(t, result)
+	}
+	for _, ref := range []protocol.GraphRef{{Kind: "repo", ID: "review-repo"}, {Kind: "agent", ID: "review-agent"}} {
+		if graph, err := g.gw.Store().GraphForRef(&ref); err != nil || len(graph.Nodes) != 0 {
+			t.Fatalf("%s still active: %+v %v", ref.ID, graph, err)
 		}
 	}
 	var history []protocol.CTOGraphChange
@@ -75,4 +83,7 @@ func TestCTOGraphLifecycleRequiresProposalEvenInWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertCTOImmediate(t, result)
+	if graph, err := g.gw.Store().GraphForRef(&protocol.GraphRef{Kind: "agent", ID: "review-agent"}); err != nil || len(graph.Nodes) != 1 {
+		t.Fatalf("undo did not bring the agent back: %+v %v", graph, err)
+	}
 }

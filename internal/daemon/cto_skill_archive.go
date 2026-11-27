@@ -13,7 +13,7 @@ import (
 // ctoSkillArchive runs the skill archive actions (decision 0169). The gateway
 // holds the rows, so the daemon only routes and checks the arguments.
 func (d *Daemon) ctoSkillArchive(ctx context.Context, name string, raw json.RawMessage) (any, error) {
-	actor := proposalActor(ctx)
+	actor := ctoActor(ctx)
 	if actor == "" {
 		actor = "cto"
 	}

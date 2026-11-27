@@ -1,10 +1,9 @@
 package daemon
 
 // The CTO's one read of everything that waits for the owner: charter drafts,
-// its own open proposals, held requests, pending permission proposals and open
-// Inbox asks. Each row names the
-// exact call that resolves it, so the CTO can act without the owner's screen.
-// cto_proposals_find carries it as a kind, so the CTO tool list does not grow.
+// held requests, pending permission proposals and open Inbox asks. Each row
+// names the exact call that resolves it, so the CTO can act without the
+// owner's screen. cto_owner_items_find carries it, with a kind filter.
 
 import (
 	"context"
@@ -39,18 +38,18 @@ func ctoOwnerInboxKind(kind string) bool {
 func ctoOwnerKindFilter(kind string) (string, error) {
 	kind = strings.TrimSpace(kind)
 	if kind == "" {
-		return protocol.AskKindProposal, nil
+		return "all", nil
 	}
 	switch kind {
-	case "all", "inbox", protocol.AskKindDraft, protocol.AskKindLearned, protocol.AskKindProposal, protocol.AskKindHeld,
+	case "all", "inbox", protocol.AskKindDraft, protocol.AskKindLearned, protocol.AskKindHeld,
 		protocol.AskKindApproval, protocol.AskKindQuestion, protocol.AskKindEscalation, protocol.AskKindRejection, protocol.AskKindPermission:
 		return kind, nil
 	}
-	return "", errors.New(`kind must be all, draft, learned, proposal, held, inbox, approval, question, escalation, rejection or permission. Example: {"kind":"draft"}`)
+	return "", errors.New(`kind must be all, draft, learned, held, inbox, approval, question, escalation, rejection or permission. Example: {"kind":"draft"}`)
 }
 
-// ctoOwnerItemRows reads the gateway's open asks and the daemon's own open
-// proposals as the flat rows of cto_proposals_find.
+// ctoOwnerItemRows reads the gateway's open asks, charter drafts and pending
+// permission proposals as the flat rows of cto_owner_items_find.
 func (d *Daemon) ctoOwnerItemRows(ctx context.Context, kind string) ([]map[string]any, error) {
 	rows := make([]map[string]any, 0)
 	// The drafts themselves, with each one's text, besides the asks that
@@ -68,7 +67,7 @@ func (d *Daemon) ctoOwnerItemRows(ctx context.Context, kind string) ([]map[strin
 			drafts = append(drafts, ctoCharterDraftRow(draft))
 		}
 	}
-	if kind != protocol.AskKindProposal && kind != protocol.AskKindPermission {
+	if kind != protocol.AskKindPermission {
 		value, err := d.call(ctx, "asks.list", struct{}{})
 		if err != nil {
 			return nil, err
@@ -106,15 +105,6 @@ func (d *Daemon) ctoOwnerItemRows(ctx context.Context, kind string) ([]map[strin
 			row := ctoPermissionRow(p)
 			row["created"] = ctoCatalogTime(time.Unix(0, p.CreatedAt))
 			rows = append(rows, row)
-		}
-	}
-	if kind == "all" || kind == protocol.AskKindProposal {
-		items, err := d.proposalRunner().listOpen()
-		if err != nil {
-			return nil, err
-		}
-		for _, item := range items {
-			rows = append(rows, ctoOwnerProposalRow(item))
 		}
 	}
 	sort.SliceStable(rows, func(i, j int) bool {
@@ -250,7 +240,7 @@ func ctoPermissionApplyCall(id string) string {
 const ctoPermissionNote = "A permission proposal waits for the owner's answer. If the owner told you in this chat to grant it, apply it with cto_op permission_apply and quote his exact words as owner_words: the daemon checks them against what he typed. If he told you to refuse it, reject it with cto_op permission_reject, its id, the reason he gave, and the same owner_words. Never propose for later something he asked."
 
 // ctoPermissionProposal reads one permission proposal by its pp_ id as a
-// cto_proposals_find row.
+// cto_owner_items_find row.
 func (d *Daemon) ctoPermissionProposal(ctx context.Context, id string) (map[string]any, error) {
 	value, err := d.call(ctx, protocol.FramePermissionGet, protocol.PermissionGetFrame{ProposalID: id, Owner: d.ownerSessionID()})
 	if err != nil {
@@ -265,7 +255,7 @@ func (d *Daemon) ctoPermissionProposal(ctx context.Context, id string) (map[stri
 	return row, nil
 }
 
-// ctoPermissionRow is one permission proposal as a cto_proposals_find row, by
+// ctoPermissionRow is one permission proposal as a cto_owner_items_find row, by
 // its pp_ id. A pending one carries the call that applies it on the owner's
 // chat words.
 func ctoPermissionRow(p protocol.PermissionProposal) map[string]any {
@@ -288,23 +278,6 @@ func ctoPermissionRow(p protocol.PermissionProposal) map[string]any {
 		row["note"] = "This permission proposal is " + p.Status + "; nothing waits."
 	}
 	return row
-}
-
-func ctoOwnerProposalRow(item proposal) map[string]any {
-	text := "CTO proposes " + strings.ReplaceAll(item.Call.Tool, "_", " ")
-	if item.Call.Action != "" {
-		text += " " + item.Call.Action
-	}
-	if reason := ctoOwnerSummary(item.Reason); reason != "" {
-		text += ": " + reason
-	}
-	return map[string]any{
-		"id": item.ID, "tool": item.Call.Tool, "action": item.Call.Action, "status": "open",
-		"reason": ctoCut(item.Reason, 80), "created": ctoCatalogTime(item.CreatedAt),
-		"kind": protocol.AskKindProposal, "from": "CTO", "summary": text,
-		"options": []string{"approve", "decline"},
-		"answer":  ctoOwnerCall("proposal_ask", map[string]any{"id": item.ID}),
-	}
 }
 
 // ctoCharterDraftPrefix starts the id of a charter draft row. A draft is
@@ -357,7 +330,7 @@ func (d *Daemon) ctoCharterDraft(ctx context.Context, id int64) (map[string]any,
 	return ctoCharterDraftRow(draft), nil
 }
 
-// ctoCharterDraftRow is one draft as a cto_proposals_find row. A pending draft
+// ctoCharterDraftRow is one draft as a cto_owner_items_find row. A pending draft
 // names the call that applies it; the reject call is the same with action
 // reject.
 func ctoCharterDraftRow(draft protocol.CharterDraft) map[string]any {

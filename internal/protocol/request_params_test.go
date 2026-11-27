@@ -115,7 +115,6 @@ var requestParams = []any{
 	ApprovalRequest{},
 	NodeSettingsGetRequest{},
 	NodeSettingsSetRequest{},
-	CTOProposalAnswer{},
 	DifficultyJudgePick{},
 	SessionStartFailure{},
 	SessionAgentReservation{},

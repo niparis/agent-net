@@ -207,20 +207,6 @@ Legend ────────────────────────�
   w                      weekly table
   R                      refresh
 
- Proposal detail
-  esc                    back
-  up/down, j/k           scroll
-  ?                      help
-  a                      approve the change
-  r                      decline the change
-  A                      approve all the changes
-
- Proposal history
-  esc                    back
-  ?                      help
-  up/down, j/k           select
-  enter                  open the proposal detail
-
  Atlas box
   ctrl+], tab            back to Sessions
   ?                      help

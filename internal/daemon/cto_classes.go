@@ -15,20 +15,21 @@ import (
 type ctoToolClass string
 
 const (
-	ctoRead     ctoToolClass = "read"
-	ctoTalk     ctoToolClass = "talk"
-	ctoMinor    ctoToolClass = "minor"
-	ctoProposal ctoToolClass = "proposal"
+	ctoRead  ctoToolClass = "read"
+	ctoTalk  ctoToolClass = "talk"
+	ctoMinor ctoToolClass = "minor"
+	// ctoOwnerOnly runs at once on the owner's verified words and is refused
+	// without them.
+	ctoOwnerOnly ctoToolClass = "owner_only"
 )
 
 // Every CTO entry point is listed here. Unknown tools and actions fail closed.
 // Reads must have an ordinary-agent source or be the CTO's own timeline.
-// message is a legacy stored call for an as-owner send or reply.
 var ctoToolClasses = func() map[string]ctoToolClass {
 	out := map[string]ctoToolClass{}
 	for class, names := range map[ctoToolClass]string{
-		ctoRead:  "cto_proposals_find cto_intake_find cto_ops_list agent_sessions_find agent_machines_find agent_machine_log agent_projects_find agent_workers_find agent_messages_find agent_graph_read agent_settings_read agent_mcp_servers_find agent_worker_profiles_find agent_owner_judgments_find projects_layout agent_protected_providers_get",
-		ctoTalk:  "message cto_placement_memory cto_standing_orders cto_ui_show proposal_ask agent_message_send agent_message_reply agent_message_withdraw agent_owner_judgment_record agent_learn agent_note_write agent_notes_find agent_permission_propose agent_step_report agent_protected_providers_set agent_worker_profile_add agent_worker_profile_remove",
+		ctoRead:  "cto_owner_items_find cto_intake_find cto_ops_list agent_sessions_find agent_machines_find agent_machine_log agent_projects_find agent_workers_find agent_messages_find agent_graph_read agent_settings_read agent_mcp_servers_find agent_worker_profiles_find agent_owner_judgments_find projects_layout agent_protected_providers_get",
+		ctoTalk:  "cto_placement_memory cto_standing_orders cto_ui_show agent_message_send agent_message_reply agent_message_withdraw agent_owner_judgment_record agent_learn agent_note_write agent_notes_find agent_permission_propose agent_step_report agent_protected_providers_set agent_worker_profile_add agent_worker_profile_remove",
 		ctoMinor: "graph_change session_change worker_change answer mcp_change mcp_call settings_change project_change cto_new sessions_archive judgment_add skill_archive skills",
 	} {
 		for _, name := range strings.Fields(names) {
@@ -40,7 +41,6 @@ var ctoToolClasses = func() map[string]ctoToolClass {
 
 // ctoActionField names the routing field of each merged action tool.
 var ctoActionField = map[string]string{
-	"message":         "action",
 	"graph_change":    "action",
 	"session_change":  "action",
 	"worker_change":   "action",
@@ -85,10 +85,10 @@ var ctoChangeActions = map[string]map[string]string{
 }
 
 // ownerGate is the class of an owner-only action, read from the one never
-// list: it waits for an owner proposal unless the owner's words came with it.
+// list: it runs only on the owner's verified words.
 func ownerGate(name string) ctoToolClass {
-	if authority.Proposal(name) {
-		return ctoProposal
+	if authority.NeedsOwnerWords(name) {
+		return ctoOwnerOnly
 	}
 	return ctoMinor
 }
@@ -116,7 +116,6 @@ var ctoActionClasses = map[string]map[string]ctoToolClass{
 }
 
 var ctoActions = map[string]map[string][]string{
-	"message":         {"action": {"send", "reply"}},
 	"graph_change":    {"action": {"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "repo_archive", "agent_create", "agent_tombstone", "team_create", "team_rename", "team_purpose", "team_charter", "team_archive", "team_member_add", "team_member_remove", "lead_set", "scope_set", "scope_remove"}},
 	"session_change":  {"action": {"rename", "replace", "trust", "mcp_servers", "policy", "session_start", "merger_start", "merger_stop", "stop", "resume", "restart"}},
 	"worker_change":   {"action": {"start", "stop"}},
@@ -203,12 +202,6 @@ func ctoClass(name string, raw json.RawMessage) (ctoToolClass, error) {
 		}
 	}
 
-	if name == "message" {
-		var asOwner bool
-		if value, ok := fields["as_owner"]; ok && json.Unmarshal(value, &asOwner) != nil {
-			return "", errors.New("as_owner must be boolean")
-		}
-	}
 	if _, routed := ctoChangeActions[name]; routed {
 		if _, classified := ctoActionClasses[name]; !classified {
 			return "", fmt.Errorf("unclassified CTO actions for %q", name)
@@ -288,44 +281,17 @@ func ctoConcreteCall(name string, raw json.RawMessage) (string, json.RawMessage,
 	return concrete, args, action, nil
 }
 
-func routeCTOTool(ctx context.Context, name string, raw json.RawMessage, propose func(context.Context, string, string, json.RawMessage, string) (string, error), run func(context.Context, string, json.RawMessage) (any, error)) (any, error) {
+// routeCTOTool runs a CTO call at once. An owner-only action without the
+// owner's verified words is refused, and nothing is stored (decision 0165).
+func routeCTOTool(ctx context.Context, name string, raw json.RawMessage, run func(context.Context, string, json.RawMessage) (any, error)) (any, error) {
 	class, err := ctoClass(name, raw)
 	if err != nil {
 		return nil, err
 	}
-	// The owner typed what the CTO quotes: his words are the approval, so the
-	// change runs now and no proposal reaches the Desk (decision 0165).
-	if class != ctoProposal || verifiedWords(ctx) != "" {
-		return run(ctx, name, raw)
+	if class == ctoOwnerOnly && verifiedWords(ctx) == "" {
+		return nil, errOwnerWordsNeeded(name, raw)
 	}
-	concrete, _, action, err := ctoConcreteCall(name, raw)
-	if err != nil {
-		return nil, err
-	}
-	fields := map[string]json.RawMessage{}
-	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &fields); err != nil {
-			return nil, err
-		}
-	}
-	var reason string
-	if value, ok := fields["reason"]; ok {
-		if err := json.Unmarshal(value, &reason); err != nil {
-			return nil, errors.New("reason must be a string")
-		}
-		if concrete != "protected_providers_set" && concrete != "settings_values_write" {
-			delete(fields, "reason")
-		}
-	}
-	args, err := json.Marshal(fields)
-	if err != nil {
-		return nil, err
-	}
-	id, err := propose(ctx, name, action, args, reason)
-	if err != nil {
-		return nil, err
-	}
-	return ProposalToolResult(id), nil
+	return run(ctx, name, raw)
 }
 
 // isCTOGraphTool identifies the merged graph entry point.

@@ -246,7 +246,7 @@ func TestNoStepActionRouteExists(t *testing.T) {
 }
 
 // TestWebActionKindsAreExact holds the list of kinds of POST /action: a reply,
-// and the CTO panel's send and proposal answer.
+// and the CTO panel's send.
 func TestWebActionKindsAreExact(t *testing.T) {
 	src, err := os.ReadFile("app.go")
 	if err != nil {
@@ -261,7 +261,7 @@ func TestWebActionKindsAreExact(t *testing.T) {
 	for _, m := range regexp.MustCompile(`case "([a-z_]+)":`).FindAllStringSubmatch(string(src)[start:start+end], -1) {
 		got[m[1]] = true
 	}
-	want := map[string]bool{"reply": true, "cto_send": true, "proposal": true}
+	want := map[string]bool{"reply": true, "cto_send": true}
 	if len(got) != len(want) {
 		t.Fatalf("action kinds: %v, want %v", got, want)
 	}

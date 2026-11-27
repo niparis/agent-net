@@ -313,7 +313,7 @@ func TestFreezeRelayDoesNotTriggerDump(t *testing.T) {
 	g, logs := newFreezeTestGateway(t, 40*time.Millisecond, 10*time.Millisecond, 10*time.Minute)
 
 	// A relay held past FreezeAfter must not trigger a dump or consume cooldown.
-	endRelay := g.startWait("query.proposal_list", "node-relay")
+	endRelay := g.startWait("query.machine_log", "node-relay")
 	defer endRelay()
 	time.Sleep(80 * time.Millisecond)
 	if strings.Contains(logs.String(), "event=freeze") {
@@ -328,8 +328,8 @@ func TestFreezeRelayDoesNotTriggerDump(t *testing.T) {
 	if !strings.Contains(logOut, "waiting=2") {
 		t.Fatalf("expected waiting=2 (relay + frame), got:\n%s", logOut)
 	}
-	if !strings.Contains(logOut, "oldest=query.proposal_list") {
-		t.Fatalf("expected oldest=query.proposal_list, got:\n%s", logOut)
+	if !strings.Contains(logOut, "oldest=query.machine_log") {
+		t.Fatalf("expected oldest=query.machine_log, got:\n%s", logOut)
 	}
 }
 

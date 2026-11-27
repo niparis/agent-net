@@ -27,12 +27,11 @@ type consoleOperator struct {
 	// conversation, newest first.
 	reads   map[string]int
 	threads map[string][]protocol.Message
-	// The CTO panel reads the settings, the timeline and the open proposals.
+	// The CTO panel reads the settings and the timeline.
 	// chiefDown is the reason the fake chief cannot work ("" when it can).
 	chiefDown  string
 	cto        protocol.CTOSettings
 	ctoEvents  protocol.CTOEvents
-	proposals  []protocol.CTOProposal
 	ctoIndexes []int
 }
 
@@ -157,29 +156,12 @@ func (f *consoleOperator) Call(ctx context.Context, method string, params any) (
 		defer f.mu.Unlock()
 		f.ctoIndexes = append(f.ctoIndexes, q.Index)
 		return json.Marshal(f.ctoEvents)
-	case protocol.OpProposalList:
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		return json.Marshal(f.proposals)
 	case protocol.OpCTOSend:
 		q, _ := params.(protocol.CTOSendRequest)
 		f.record("cto_send:" + q.Text)
 		raw, _ := json.Marshal(map[string]any{"type": "user", "text": q.Text, "time": map[string]int64{"created": time.Now().UnixMilli()}})
 		f.mu.Lock()
 		f.ctoEvents.Messages = append(f.ctoEvents.Messages, raw)
-		f.mu.Unlock()
-		return nil, nil
-	case protocol.OpProposalAnswer:
-		q, _ := params.(protocol.CTOProposalAnswer)
-		f.record("proposal:" + q.NodeID + ":" + q.ID + ":" + q.Action)
-		f.mu.Lock()
-		var kept []protocol.CTOProposal
-		for _, p := range f.proposals {
-			if p.ID != q.ID {
-				kept = append(kept, p)
-			}
-		}
-		f.proposals = kept
 		f.mu.Unlock()
 		return nil, nil
 	}
@@ -218,8 +200,6 @@ func newConsoleOperator() *consoleOperator {
 			json.RawMessage(`{"type":"user","text":"Good morning, CTO.","time":{"created":` + strconv.FormatInt(now.Add(-2*time.Minute).UnixMilli(), 10) + `}}`),
 			json.RawMessage(`{"type":"assistant","text":"Morning. Two things need you.\nThe first is ready.","time":{"created":` + strconv.FormatInt(now.Add(-time.Minute).UnixMilli(), 10) + `}}`),
 		}, Actions: []protocol.CTOAction{{Text: "read graph", At: now.Add(-90 * time.Second).UnixNano()}}, Older: 120},
-		proposals: []protocol.CTOProposal{{ID: "p_1", NodeID: "n_secretnode1", Tool: "graph_change", Action: "charter_set",
-			Args: json.RawMessage(`{"node":"forge","attr":"lead_merges","value":"on"}`), Reason: "Turn on lead merges for forge.", Status: "open", CreatedAt: now.Add(-time.Minute)}},
 		threads: map[string][]protocol.Message{
 			"c_3": {
 				{ID: "m_b", ConversationID: "c_3", From: "s_wait", To: "s_owner", FromName: "waiting-agent", Body: "allow the tools?", CreatedAt: now.Add(-2 * time.Minute)},

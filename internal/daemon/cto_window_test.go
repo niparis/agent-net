@@ -123,23 +123,18 @@ func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
 	n.d.ctoGraph.mu.Lock()
 	n.d.ctoGraph.toggle(time.Now())
 	n.d.ctoGraph.mu.Unlock()
-	got, err := n.d.runCTOToolRaw(ctx, "graph_change", ctoGraphArgs("node_remove", `{"name":"third"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if text, ok := got.(string); !ok || !strings.HasPrefix(text, "proposal p_") {
-		t.Fatalf("node removal bypassed approval: %v", got)
+	if _, err := n.d.runCTOToolRaw(ctx, "graph_change", ctoGraphArgs("node_remove", `{"name":"third"}`)); err == nil || !strings.Contains(err.Error(), "needs the owner's approval") {
+		t.Fatalf("node removal bypassed the owner's words: %v", err)
 	}
 }
 
-func TestCTOWindowNonGraphToolsStayProposals(t *testing.T) {
-	for _, name := range strings.Fields("graph_change session_change worker_change answer mcp_change mcp_call settings_change project_change cto_new message") {
+func TestCTOWindowNonGraphToolsRunAtOnce(t *testing.T) {
+	for _, name := range strings.Fields("graph_change session_change worker_change answer mcp_change mcp_call settings_change project_change cto_new") {
 		if isCTOGraphTool(name) && name != "graph_change" {
 			t.Fatalf("non graph %s is covered by window", name)
 		}
 	}
 	cases := map[string]json.RawMessage{
-		"message":         json.RawMessage(`{"action":"send","as_owner":true}`),
 		"graph_change":    json.RawMessage(`{"action":"charter_set","node":"first","attr":"purpose","value":"x"}`),
 		"session_change":  json.RawMessage(`{"action":"rename","session_id":"s","name":"n"}`),
 		"worker_change":   json.RawMessage(`{"action":"stop","session":"s"}`),
@@ -157,13 +152,10 @@ func TestCTOWindowNonGraphToolsStayProposals(t *testing.T) {
 			if !d.ctoGraph.active(time.Now()) {
 				t.Fatal("window missing")
 			}
-			ran, proposed := false, false
-			_, err := routeCTOTool(context.Background(), name, args, func(context.Context, string, string, json.RawMessage, string) (string, error) {
-				proposed = true
-				return "p_1", nil
-			}, func(context.Context, string, json.RawMessage) (any, error) { ran = true; return nil, nil })
-			if err != nil || !ran || proposed {
-				t.Fatalf("non graph %s ran=%v proposed=%v err=%v", name, ran, proposed, err)
+			ran := false
+			_, err := routeCTOTool(context.Background(), name, args, func(context.Context, string, json.RawMessage) (any, error) { ran = true; return nil, nil })
+			if err != nil || !ran {
+				t.Fatalf("non graph %s ran=%v err=%v", name, ran, err)
 			}
 		})
 	}

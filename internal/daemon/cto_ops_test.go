@@ -10,7 +10,7 @@ import (
 )
 
 func TestCTOOpsHavePurposeSchemaExampleAndGate(t *testing.T) {
-	gates := map[string]bool{"direct": true, "proposal": true, "irreversible": true}
+	gates := map[string]bool{"direct": true, "owner_words": true, "irreversible": true}
 	seen := map[string]bool{}
 	for _, op := range mcpserver.CTOOps() {
 		if seen[op.Name] {
@@ -52,8 +52,8 @@ func TestCTOOpsHavePurposeSchemaExampleAndGate(t *testing.T) {
 			t.Errorf("%s action %s.%s has no class", op.Name, op.Tool, op.Action)
 			continue
 		}
-		if class == ctoProposal && gate != "proposal" {
-			t.Errorf("%s proposal has gate %s", op.Name, gate)
+		if class == ctoOwnerOnly && gate != "owner_words" {
+			t.Errorf("%s owner-only op has gate %s", op.Name, gate)
 		}
 	}
 	for name, want := range map[string]string{

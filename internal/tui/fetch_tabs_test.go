@@ -16,7 +16,6 @@ type fetchCountSource struct {
 	*fakeSource
 	mu         sync.Mutex // a refresh asks its reads together
 	calls      map[string]int
-	proposals  []protocol.CTOProposal
 	onboarding protocol.Onboarding
 }
 
@@ -30,8 +29,6 @@ func (f *fetchCountSource) Call(_ context.Context, method string, _ any) (json.R
 			f.onboarding.Steps = map[string]string{}
 		}
 		return json.Marshal(f.onboarding)
-	case protocol.OpProposalList:
-		return json.Marshal(f.proposals)
 	case protocol.OpFrictionFind:
 		return json.Marshal(protocol.FrictionFindResult{})
 	}
@@ -96,10 +93,10 @@ func refreshTimes(m Model, n int) Model {
 	return m
 }
 
-// The proposals are only asked for on the screen that shows them. The first
-// refresh seeds the change marker, then a quiet Sessions tab makes no such
-// calls for a whole minute.
-func TestFetchProposalsOnlyWhereNeeded(t *testing.T) {
+// The chief's status is asked for often only while the CTO box has focus. The
+// first refresh seeds the change marker. The CTO has no stored proposals, so
+// no refresh asks for them on any tab.
+func TestFetchChiefStatusOnlyWhereNeeded(t *testing.T) {
 	tests := []struct {
 		name          string
 		tab           int
@@ -126,45 +123,16 @@ func TestFetchProposalsOnlyWhereNeeded(t *testing.T) {
 				clock = clock.Add(time.Second)
 				m = send(m, m.fetchCmd()())
 			}
-			if got := src.count(protocol.OpProposalList); got != tc.wantPerMinute {
-				t.Errorf("%d proposal_list calls per minute, want %d", got, tc.wantPerMinute)
+			if got := src.count(protocol.OpChiefGet); got != tc.wantPerMinute {
+				t.Errorf("%d chief_get calls per minute, want %d", got, tc.wantPerMinute)
 			}
-			t.Logf("%s per minute: Snapshot=%d worker_log=%d Events=%d hidden_get=%d onboarding_get=%d usage=%d counts=%d proposal_list=%d tools_differences=%d",
+			if got := src.count("proposal_list"); got != 0 {
+				t.Errorf("%d proposal_list calls per minute, want none", got)
+			}
+			t.Logf("%s per minute: Snapshot=%d worker_log=%d Events=%d hidden_get=%d onboarding_get=%d usage=%d counts=%d chief_get=%d tools_differences=%d",
 				tc.name, src.count("Snapshot"), src.count("worker_log"), src.count("Events"), src.count("hidden_get"), src.count("onboarding_get"),
-				src.count("usage"), src.count("counts"), src.count(protocol.OpProposalList), src.count("tools_differences"))
+				src.count("usage"), src.count("counts"), src.count(protocol.OpChiefGet), src.count("tools_differences"))
 		})
-	}
-}
-
-// A changed count in the Snapshot brings the proposals back even on Sessions,
-// so the CTO box stays correct.
-func TestFetchPicksUpAChangedProposalMarkerOnAnyTab(t *testing.T) {
-	src := &fetchCountSource{fakeSource: &fakeSource{snap: fakeSnapshot()}}
-	m := New(src)
-	m.loc, m.now = time.UTC, func() time.Time { return t0 }
-	m.tab, m.focus = sessionsTab, focusSessions
-	m = refreshTimes(m, 1)
-	if got := m.openProposals(); got != 0 {
-		t.Fatalf("count starts at %d", got)
-	}
-
-	src.proposals = []protocol.CTOProposal{{ID: "p_1", Status: "open", CreatedAt: t0}}
-	src.snap.ProposalCount = 1
-	src.resetCalls()
-	m = refreshTimes(m, 1)
-
-	if src.count(protocol.OpProposalList) != 1 {
-		t.Fatalf("proposals were not fetched after the count changed: %v", src.calls)
-	}
-	if got := m.openProposals(); got != 1 {
-		t.Fatalf("count = %d, want 1", got)
-	}
-
-	// The next refresh is quiet again.
-	src.resetCalls()
-	m = refreshTimes(m, 1)
-	if src.count(protocol.OpProposalList) != 0 {
-		t.Fatalf("proposals fetched again without a change: %v", src.calls)
 	}
 }
 

@@ -21,10 +21,6 @@ func TestSettingsIdleCompactionCTOAppliesImmediately(t *testing.T) {
 	if _, err := n.d.runCTOToolRaw(context.Background(), "settings_change", raw); err != nil {
 		t.Fatal(err)
 	}
-	proposals, err := n.d.proposalRunner().list()
-	if err != nil || len(proposals) != 0 {
-		t.Fatalf("unexpected approvals: %v %v", proposals, err)
-	}
 	s, err := g.gw.Store().SettingsSnapshot()
 	if err != nil {
 		t.Fatal(err)

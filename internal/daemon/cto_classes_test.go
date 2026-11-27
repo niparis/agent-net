@@ -92,67 +92,16 @@ func TestCTOClassTableComplete(t *testing.T) {
 				t.Errorf("%s %s: schema actions %v, classes %v", tool.Name, field, got, kept)
 			}
 		}
-		if ctoToolClasses[tool.Name] == ctoProposal || tool.Name == "message" {
-			if _, ok := schema.Properties["reason"]; !ok {
-				t.Errorf("%s needs optional reason", tool.Name)
-			}
-		}
 	}
 }
 
-func TestCTOProposalRouting(t *testing.T) {
-	for name, class := range ctoToolClasses {
-		if class != ctoProposal {
-			continue
-		}
-		t.Run(name, func(t *testing.T) {
-			args, ok := ctoProposalFixtures[name]
-			if !ok {
-				t.Fatal("missing proposal fixture")
-			}
-			wantConcrete, _, wantAction, err := ctoConcreteCall(name, json.RawMessage(args))
-			if err != nil {
-				t.Fatal(err)
-			}
-			proposed, ran := 0, 0
-			value, err := routeCTOTool(context.Background(), name, json.RawMessage(args), func(_ context.Context, tool, action string, raw json.RawMessage, reason string) (string, error) {
-				proposed++
-				if tool != name || action != wantAction {
-					t.Fatalf("stored %s %s", tool, action)
-				}
-				return "p_1", nil
-			}, func(context.Context, string, json.RawMessage) (any, error) { ran++; return nil, nil })
-			if err != nil || proposed != 1 || ran != 0 || value != ProposalToolResult("p_1") {
-				t.Fatalf("value=%v err=%v proposals=%d backend=%d concrete=%s", value, err, proposed, ran, wantConcrete)
-			}
-		})
-	}
-	for _, name := range []string{"message", "cto_ui_show", "proposal_ask", "agent_message_send", "agent_message_reply", "agent_learn"} {
+// Talk tools run at once: none of them is an owner-only action.
+func TestCTOTalkRunsAtOnce(t *testing.T) {
+	for _, name := range []string{"cto_ui_show", "agent_message_send", "agent_message_reply", "agent_learn"} {
 		ran := 0
-		args := ctoClassFixture(name)
-		_, err := routeCTOTool(context.Background(), name, args, func(context.Context, string, string, json.RawMessage, string) (string, error) {
-			t.Fatal("talk proposed")
-			return "", nil
-		}, func(context.Context, string, json.RawMessage) (any, error) { ran++; return "ok", nil })
+		_, err := routeCTOTool(context.Background(), name, ctoClassFixture(name), func(context.Context, string, json.RawMessage) (any, error) { ran++; return "ok", nil })
 		if err != nil || ran != 1 {
 			t.Fatalf("%s: ran=%d err=%v", name, ran, err)
-		}
-	}
-}
-
-func TestCTOMessageOwnerRouting(t *testing.T) {
-	for _, asOwner := range []bool{false, true} {
-		proposed, ran := 0, 0
-		args, _ := json.Marshal(map[string]any{"action": "send", "to": "s_target", "body": "exact body", "as_owner": asOwner})
-		_, err := routeCTOTool(context.Background(), "message", args, func(_ context.Context, tool, action string, stored json.RawMessage, reason string) (string, error) {
-			proposed++
-			if tool != "message" || action != "send" {
-				t.Fatalf("%s %s", tool, action)
-			}
-			return "p_1", nil
-		}, func(context.Context, string, json.RawMessage) (any, error) { ran++; return nil, nil })
-		if err != nil || proposed != 0 || ran != 1 {
-			t.Fatalf("owner=%t proposals=%d backend=%d err=%v", asOwner, proposed, ran, err)
 		}
 	}
 }

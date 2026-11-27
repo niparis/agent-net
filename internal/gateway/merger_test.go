@@ -229,7 +229,7 @@ func TestMergerRegistrationMachineAuthority(t *testing.T) {
 		t.Fatal("another machine's owner authorized peer")
 	}
 	q["owner_session"] = owner
-	q["by"] = "owner (CTO proposal p_1)"
+	q["by"] = protocol.CTOOwnerWordsActor
 	if _, err := deliveryCall[map[string]any](r, r.b, "merger.set", q); err != nil {
 		t.Fatalf("approved owner relay refused: %v", err)
 	}

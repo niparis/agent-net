@@ -22,31 +22,29 @@ type keyBinding struct {
 }
 
 const (
-	contextGlobal          keyContext = "global"
-	contextWorkersLog      keyContext = "Workers log"
-	contextSessions        keyContext = "Sessions"
-	contextProposalDetail  keyContext = "proposal detail"
-	contextProposalHistory keyContext = "proposal history"
-	contextMessages        keyContext = "Messages"
-	contextBody            keyContext = "message body"
-	contextApps            keyContext = "connected apps"
-	contextSettings        keyContext = "Settings"
-	contextQuotas          keyContext = "Quotas"
-	contextQualityDetails  keyContext = "Quality details"
-	contextGraph           keyContext = "Graph"
-	contextGraphFind       keyContext = "Graph find"
-	contextTeams           keyContext = "Teams"
-	contextCard            keyContext = "agent card"
-	contextCTO             keyContext = "CTO box"
-	contextHelp            keyContext = "help"
-	contextConfirm         keyContext = "confirmations"
-	contextForm            keyContext = "forms"
-	contextFinder          keyContext = "session finder"
+	contextGlobal         keyContext = "global"
+	contextWorkersLog     keyContext = "Workers log"
+	contextSessions       keyContext = "Sessions"
+	contextMessages       keyContext = "Messages"
+	contextBody           keyContext = "message body"
+	contextApps           keyContext = "connected apps"
+	contextSettings       keyContext = "Settings"
+	contextQuotas         keyContext = "Quotas"
+	contextQualityDetails keyContext = "Quality details"
+	contextGraph          keyContext = "Graph"
+	contextGraphFind      keyContext = "Graph find"
+	contextTeams          keyContext = "Teams"
+	contextCard           keyContext = "agent card"
+	contextCTO            keyContext = "CTO box"
+	contextHelp           keyContext = "help"
+	contextConfirm        keyContext = "confirmations"
+	contextForm           keyContext = "forms"
+	contextFinder         keyContext = "session finder"
 )
 
 var allKeyContexts = []keyContext{
 	contextGlobal, contextWorkersLog, contextSessions,
-	contextProposalDetail, contextProposalHistory, contextMessages, contextBody,
+	contextMessages, contextBody,
 	contextSettings, contextApps, contextQuotas, contextQualityDetails, contextGraph, contextGraphFind, contextCard, contextTeams,
 	contextCTO, contextHelp, contextConfirm, contextForm, contextFinder,
 }
@@ -152,18 +150,6 @@ var keyBindings = []keyBinding{
 	bind(contextSessions, "/", "filter", "filter", -1),
 	bind(contextSessions, "esc", "back", "back", -1),
 	bind(contextSessions, "?", "help", "help", 2),
-	bind(contextProposalDetail, "esc", actClose, "back", 1),
-	bind(contextProposalDetail, "up|k", actUp, "scroll", 1),
-	bind(contextProposalDetail, "down|j", actDown, "scroll", 1),
-	bind(contextProposalDetail, "?", "help", "help", 1),
-	bind(contextProposalDetail, "a", "approve", "approve the change", 1),
-	bind(contextProposalDetail, "r", "decline", "decline the change", 1),
-	bind(contextProposalDetail, "A", "approve all", "approve all the changes", 1),
-	bind(contextProposalHistory, "esc", "back", "back", 1),
-	bind(contextProposalHistory, "?", "help", "help", 1),
-	bind(contextProposalHistory, "up|k", actUp, "select", 1),
-	bind(contextProposalHistory, "down|j", actDown, "select", 1),
-	withLocal(withHelp(bind(contextProposalHistory, "enter", "detail", "detail", 1), "open the proposal detail")),
 	bind(contextMessages, "q", actQuit, "quit", 0),
 	withHelp(bind(contextMessages, "up|k", actUp, "thread", 1), "select a conversation"),
 	withHelp(bind(contextMessages, "down|j", actDown, "thread", 1), "select a conversation"),

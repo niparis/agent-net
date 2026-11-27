@@ -535,7 +535,7 @@ func TestCTOWritePermissionProposeRefusesDaemonField(t *testing.T) {
 	}
 	pending := func(t *testing.T) int {
 		t.Helper()
-		out, err := n.d.readCTOTool(ctx, "cto_proposals_find", json.RawMessage(`{"kind":"permission"}`))
+		out, err := n.d.readCTOTool(ctx, "cto_owner_items_find", json.RawMessage(`{"kind":"permission"}`))
 		if err != nil {
 			t.Fatal(err)
 		}

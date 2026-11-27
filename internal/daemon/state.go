@@ -18,9 +18,8 @@ import (
 // state is the daemon's small local database: delivered message IDs (to
 // remove duplicates) and the outbox of sends made while the gateway was away.
 type state struct {
-	db                 *sql.DB
-	proposalDeliveryMu sync.Mutex
-	assessmentMu       sync.Mutex
+	db           *sql.DB
+	assessmentMu sync.Mutex
 }
 
 func openState(dir string) (*state, error) {
@@ -48,13 +47,9 @@ CREATE TABLE IF NOT EXISTS cto (id INTEGER PRIMARY KEY CHECK(id=1), session_id T
 CREATE TABLE IF NOT EXISTS cto_network (id INTEGER PRIMARY KEY CHECK(id=1), session_id TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS cto_actions (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS cto_history (id INTEGER PRIMARY KEY AUTOINCREMENT, harness TEXT NOT NULL, session_id TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL, at INTEGER NOT NULL, payload TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS cto_proposals (id INTEGER PRIMARY KEY AUTOINCREMENT, tool TEXT NOT NULL, action TEXT NOT NULL, args TEXT NOT NULL, reason TEXT NOT NULL, created_at INTEGER NOT NULL, status TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', result TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS cto_placements (purpose TEXT PRIMARY KEY, placement TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS cto_deliveries (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT NOT NULL, at INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS cto_proposal_messages (proposal_id INTEGER NOT NULL, sender TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS cto_owner_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, text TEXT NOT NULL);
-CREATE UNIQUE INDEX IF NOT EXISTS cto_proposals_open_call ON cto_proposals(tool,action,args) WHERE status = 'open';
-CREATE INDEX IF NOT EXISTS cto_proposal_messages_proposal ON cto_proposal_messages(proposal_id);
 CREATE INDEX IF NOT EXISTS cto_history_harness ON cto_history(harness,kind,id);
 CREATE TABLE IF NOT EXISTS delivered (message_id TEXT PRIMARY KEY, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS outbox (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL);
@@ -66,6 +61,8 @@ CREATE TABLE IF NOT EXISTS worker_no_restart (session_id TEXT PRIMARY KEY, why T
 CREATE TABLE IF NOT EXISTS worker_lost_notice (worker_id TEXT PRIMARY KEY, run_generation INTEGER NOT NULL DEFAULT 0, sent INTEGER NOT NULL DEFAULT 0, wip_sha TEXT NOT NULL DEFAULT '', wip_sent INTEGER NOT NULL DEFAULT 0);
 DROP TABLE IF EXISTS inventory_scan;
 DROP TABLE IF EXISTS disk_alert;
+DROP TABLE IF EXISTS cto_proposal_messages;
+DROP TABLE IF EXISTS cto_proposals;
 CREATE TABLE IF NOT EXISTS session_activity (harness TEXT NOT NULL, native_id TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (harness, native_id));
 CREATE TABLE IF NOT EXISTS cleanup_worktrees (
  worker_id TEXT PRIMARY KEY, project TEXT NOT NULL, path TEXT NOT NULL,
@@ -119,13 +116,6 @@ CREATE TABLE IF NOT EXISTS workers (
 	}
 	if err == nil {
 		_, err = db.Exec(heldStartsSchema)
-	}
-	if err == nil {
-		var has int
-		err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('cto_proposals') WHERE name = 'note_delivered'`).Scan(&has)
-		if err == nil && has == 0 {
-			_, err = db.Exec(`ALTER TABLE cto_proposals ADD COLUMN note_delivered INTEGER NOT NULL DEFAULT 0`)
-		}
 	}
 	if err != nil {
 		db.Close()
@@ -608,4 +598,21 @@ func (s *state) outbox() ([]queued, error) {
 func (s *state) dequeue(seq int64) error {
 	_, err := s.db.Exec(`DELETE FROM outbox WHERE seq = ?`, seq)
 	return err
+}
+
+// recordCTODelivery keeps the senders of the last three messages delivered to
+// the CTO.
+func (s *state) recordCTODelivery(sender string, at time.Time) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec(`INSERT INTO cto_deliveries(sender,at) VALUES(?,?)`, sender, at.UnixNano()); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`DELETE FROM cto_deliveries WHERE id NOT IN (SELECT id FROM cto_deliveries ORDER BY id DESC LIMIT 3)`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

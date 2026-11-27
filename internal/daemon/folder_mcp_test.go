@@ -75,9 +75,6 @@ func TestCTOMCPServersAuditsAndUndoRemovesOnlyWhatItAdded(t *testing.T) {
 	if !reflect.DeepEqual(got["enabledMcpjsonServers"], []any{"mine"}) {
 		t.Fatalf("undo touched the owner's own list: %v", got)
 	}
-	if items, err := n.d.proposalRunner().list(); err != nil || len(items) != 0 {
-		t.Fatalf("a choice is not a proposal: %+v %v", items, err)
-	}
 }
 
 func TestCTOMCPServersChecksItsInput(t *testing.T) {

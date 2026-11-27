@@ -172,8 +172,8 @@ func TestCTOPermissionApplyRefusesWordsNeverTyped(t *testing.T) {
 }
 
 // A pending proposal, filed for the owner's own chat instruction, is applied
-// by id on his words. The CTO sees it in cto_proposals_find and proposal_ask
-// by its pp_ id.
+// by id on his words. The CTO sees it in cto_owner_items_find, in the list
+// and by its pp_ id.
 func TestCTOPermissionApplyApprovesDeskProposal(t *testing.T) {
 	r := newCTOPermissionRig(t)
 	pi, _ := helloPi(t, r.n, "np", r.repo, false)
@@ -185,28 +185,21 @@ func TestCTOPermissionApplyApprovesDeskProposal(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	page, err := r.n.d.readCTOTool(ctx, "cto_proposals_find", json.RawMessage(`{"kind":"permission"}`))
+	page, err := r.n.d.readCTOTool(ctx, "cto_owner_items_find", json.RawMessage(`{"kind":"permission"}`))
 	if err != nil {
-		t.Fatalf("cto_proposals_find: %v", err)
+		t.Fatalf("cto_owner_items_find: %v", err)
 	}
 	listed, _ := json.Marshal(page)
 	if !strings.Contains(string(listed), `"id":"`+proposed.ID+`"`) || !strings.Contains(string(listed), `"status":"pending"`) ||
 		!strings.Contains(string(listed), "permission_apply") {
-		t.Fatalf("cto_proposals_find does not list %s with its state and apply call: %s", proposed.ID, listed)
+		t.Fatalf("cto_owner_items_find does not list %s with its state and apply call: %s", proposed.ID, listed)
 	}
-	one, err := r.n.d.readCTOTool(ctx, "cto_proposals_find", json.RawMessage(`{"id":"`+proposed.ID+`"}`))
+	one, err := r.n.d.readCTOTool(ctx, "cto_owner_items_find", json.RawMessage(`{"id":"`+proposed.ID+`"}`))
 	if err != nil {
-		t.Fatalf("cto_proposals_find by pp_ id: %v", err)
+		t.Fatalf("cto_owner_items_find by pp_ id: %v", err)
 	}
 	if raw, _ := json.Marshal(one); !strings.Contains(string(raw), `"status":"pending"`) {
-		t.Fatalf("cto_proposals_find by id: %s", raw)
-	}
-	asked, err := r.n.d.runCTOTool(ctx, "proposal_ask", json.RawMessage(`{"id":"`+proposed.ID+`"}`))
-	if err != nil {
-		t.Fatalf("proposal_ask on a pp_ id: %v", err)
-	}
-	if raw, _ := json.Marshal(asked); !strings.Contains(string(raw), "permission_apply") || !strings.Contains(string(raw), "pending") {
-		t.Fatalf("proposal_ask on a pp_ id does not point at permission_apply: %s", raw)
+		t.Fatalf("cto_owner_items_find by id: %s", raw)
 	}
 
 	words := "help wbgpoclead to have merge authority on all his repos"

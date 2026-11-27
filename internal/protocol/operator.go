@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -21,11 +20,9 @@ import (
 
 // Operator method names.
 const (
-	OpProposalList   = "proposal_list"
-	OpProposalAnswer = "proposal_answer"
-	OpAppsRename     = "apps.rename"
-	OpAppsGrant      = "apps.grant"
-	OpAppsUngrant    = "apps.ungrant"
+	OpAppsRename  = "apps.rename"
+	OpAppsGrant   = "apps.grant"
+	OpAppsUngrant = "apps.ungrant"
 	// Data. These only read.
 	OpInfo          = "info"          // answers OperatorInfo
 	OpNodes         = "nodes"         // answers NodesInfo
@@ -198,7 +195,7 @@ const (
 )
 
 // OperatorMethods lists every operator method, for tests and docs.
-var OperatorMethods = []string{OpWorkerFloorsReset, OpOperatorUndo, OpMergerGet, OpMergerRestore, OpAppsPublicRestore, OpWorkerLog, OpProposalList, OpProposalAnswer, OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpConversations, OpConversationMessages, OpMessage, OpWorkers,
+var OperatorMethods = []string{OpWorkerFloorsReset, OpOperatorUndo, OpMergerGet, OpMergerRestore, OpAppsPublicRestore, OpWorkerLog, OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpConversations, OpConversationMessages, OpMessage, OpWorkers,
 	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpFolderTrust, OpFolderMCP, OpProcessStop, OpStandingOrders, OpSessionAgentSet, OpSessionAgentList, OpNotesCopy, OpNotesUncopy, OpSessionRename, OpNodeRename, OpMachineRemove, OpMachineRotate, OpProjectDisplayGet, OpProjectDisplaySet, OpFrictionFind, OpFrictionMark,
 	OpHeldList, OpAsksList, OpChiefGet, OpChiefSet, OpAskHistory, OpAskUndo, OpAskMark, OpAskDiscuss, OpDeskLog, OpDeskSettle, OpNudgeStats, OpHeldAnswer, OpLeadSet, OpTeamWrite, OpTeamHistory, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpDeliveryOwnerSet, OpMergerSet, OpGraphUndo, OpRepoCreate, OpRepoArchive, OpAgentCreate, OpAgentTombstone, OpScopeSet, OpScopeRemove,
 	OpNodeSettingsGet, OpNodeSettingsSet, OpSkillArchiveUndo, OpSkillsUndo, OpTimeZoneGet, OpTimeZoneSet,
@@ -235,10 +232,6 @@ type OperatorInfo struct {
 	OwnerSession string `json:"owner_session,omitempty"`
 	// Launch is false when this machine refuses workers (setup --no-launch).
 	Launch bool `json:"launch"`
-	// ProposalCount is how many CTO proposals wait for the owner on this
-	// machine. It lets the screen notice a new proposal without listing every
-	// proposal on every refresh. It is 0 from an older daemon.
-	ProposalCount int `json:"proposal_count,omitempty"`
 }
 
 // AgentsResult answers OpAgents.
@@ -829,40 +822,6 @@ func CleanNodeName(s string) (string, error) {
 		}
 	}
 	return s, nil
-}
-
-// CTOProposal is an owner-visible stored proposal and its outcome.
-type CTOProposal struct {
-	Messages  []CTOProposalMessage `json:"messages,omitempty"`
-	ID        string               `json:"id"`
-	NodeID    string               `json:"node_id"`
-	Tool      string               `json:"tool"`
-	Action    string               `json:"action"`
-	Args      json.RawMessage      `json:"args"`
-	Reason    string               `json:"reason"`
-	CreatedAt time.Time            `json:"created_at"`
-	Status    string               `json:"status"`
-	Note      string               `json:"note,omitempty"`
-	Result    json.RawMessage      `json:"result,omitempty"`
-}
-
-type CTOProposalMessage struct {
-	Sender string    `json:"sender"`
-	At     time.Time `json:"at"`
-}
-
-type CTOProposalAnswer struct {
-	NodeID      string           `json:"node_id"`
-	ID          string           `json:"proposal_id"`
-	Action      string           `json:"action"`
-	Confirm     []CTOProposalRef `json:"confirm,omitempty"`
-	HerdrSocket string           `json:"herdr_socket,omitempty"`
-	HerdrPaneID string           `json:"herdr_pane_id,omitempty"`
-}
-
-type CTOProposalRef struct {
-	NodeID string `json:"node_id"`
-	ID     string `json:"proposal_id"`
 }
 
 // HeldAnswer is an owner decision for a request awaiting approval.

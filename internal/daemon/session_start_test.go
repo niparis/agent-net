@@ -745,43 +745,22 @@ func TestSessionStartCodexAgent(t *testing.T) {
 	}
 }
 
-func TestCTOSessionStartChosenAgentProposal(t *testing.T) {
+func TestCTOSessionStartChosenAgent(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	home := pathTestHome(t)
 	c := startClaudeNode(t, g, shortSet)
 	c.register(t, newRepo(t, "chosen"))
-	// A stored proposal comes from a running CTO, which sends its first message.
+	// The start comes from a running CTO, which sends its first message.
 	cto := registerCTO(t, c.d)
 	path := filepath.Join(home, "code", "new-project")
 	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "harness": "claude", "agent_id": "chosen", "first_message": "hello"})
-	if _, err := legacyProposalFixture(context.Background(), c.d, "project_change", args); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("started before approval: %v", err)
-	}
-	items, err := c.d.proposalRunner().list()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("proposals: %+v %v", items, err)
-	}
-	if err = c.d.proposalRunner().decide(context.Background(), items[0].ID, true); err != nil {
-		t.Fatal(err)
-	}
-	items, err = c.d.proposalRunner().list()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var result protocol.StartedSession
-	if err = json.Unmarshal(items[0].Result, &result); err != nil {
-		t.Fatal(err)
-	}
-	result = waitSessionStartPath(t, c.workerNode, result)
+	result := waitSessionStartPath(t, c.workerNode, ctoStartNow(t, c.d, "project_change", args))
 	t.Cleanup(func() { killFakeClaude(t, path) })
 	if result.Status != "started" {
 		t.Fatalf("start: %+v", result)
 	}
 	if a := c.agentOf(t, result.SessionID); a == nil || a.AgentID != "chosen" {
-		t.Fatalf("approved Agent: %+v", a)
+		t.Fatalf("chosen Agent: %+v", a)
 	}
 	requireOnlyMessageFrom(t, g, c.d.NodeID(), result.SessionID, "hello", cto)
 }
@@ -870,24 +849,7 @@ func TestSessionStartAsyncFailureLogsRecordsAndNotifies(t *testing.T) {
 	notices := herdrNoticeChannel(t, c.node)
 	t.Setenv(envFakeStartFails, "1")
 	args, _ := json.Marshal(map[string]any{"action": "session_start", "project": "garden", "harness": "claude"})
-	if _, err := legacyProposalFixture(context.Background(), c.d, "session_change", args); err != nil {
-		t.Fatal(err)
-	}
-	items, err := c.d.proposalRunner().list()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("proposals: %+v %v", items, err)
-	}
-	if err := c.d.proposalRunner().decide(context.Background(), items[0].ID, true); err != nil {
-		t.Fatal(err)
-	}
-	items, err = c.d.proposalRunner().list()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var r protocol.StartedSession
-	if err := json.Unmarshal(items[0].Result, &r); err != nil || r.ID == "" {
-		t.Fatalf("approved start: %s %v", items[0].Result, err)
-	}
+	r := ctoStartNow(t, c.d, "session_change", args)
 	eventually(t, "the failed start", func() bool {
 		mustJSON(t, c.cli.mustCall("session_start_get", map[string]string{"id": r.ID}), &r)
 		return r.Status == "failed"

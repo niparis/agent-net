@@ -865,9 +865,6 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		lc.mu.Unlock()
 	}
 	if client == "cto-mcp" {
-		if method == "cto_dialog_answer" {
-			return lc.ctoDialogAnswer(ctx, raw)
-		}
 		if method != "cto_tool" {
 			return nil, errors.New("method not available to CTO channel")
 		}
@@ -952,8 +949,7 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	case "info":
 		return protocol.OperatorInfo{Connected: d.Connected(), NodeID: d.cfg.NodeID, Hostname: d.hostName(),
 			GatewayURL: d.cfg.GatewayURL, Sessions: d.Sessions(), Version: d.helloVersion(),
-			Protocol: protocol.LocalProtocol, OwnerSession: d.ownerSessionID(), Launch: !d.cfg.NoLaunch,
-			ProposalCount: d.proposalRunner().openProposalCount()}, nil
+			Protocol: protocol.LocalProtocol, OwnerSession: d.ownerSessionID(), Launch: !d.cfg.NoLaunch}, nil
 
 	case "nodes", "restart":
 		return d.dispatchUpgrade(ctx, method, client, raw)

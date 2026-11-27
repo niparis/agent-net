@@ -5,24 +5,22 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-	"time"
 )
 
-// The read must not turn a malformed stored proposal into a failed list.
-func TestCTOOwnerItemsFindOpenProposalHasAnswer(t *testing.T) {
+// The CTO keeps no proposals, so its owner item read has no proposal kind and
+// no row points at proposal_ask. The default lists every kind.
+func TestCTOOwnerItemsFindHasNoProposals(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
-	if _, err := w.d.st.db.Exec(`INSERT INTO cto_proposals(tool,action,args,reason,created_at,status,note,result) VALUES('cto_new','',?,'',?,'open','','')`, `{}`, time.Now().UnixNano()); err != nil {
-		t.Fatal(err)
+	_, err := w.d.runCTOToolRaw(context.Background(), "cto_owner_items_find", json.RawMessage(`{"kind":"proposal"}`))
+	if err == nil || strings.Contains(err.Error(), "proposal,") || !strings.Contains(err.Error(), "kind must be all") {
+		t.Fatalf("kind proposal: %v", err)
 	}
-	out, err := w.d.runCTOToolRaw(context.Background(), "cto_proposals_find", json.RawMessage(`{"kind":"proposal"}`))
+	out, err := w.d.runCTOToolRaw(context.Background(), "cto_owner_items_find", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, _ := json.Marshal(out)
-	for _, want := range []string{`"action":""`, `"reason":""`, `"created":"`, "proposal_ask"} {
-		if !strings.Contains(string(body), want) {
-			t.Fatalf("proposal row lacks %s: %s", want, body)
-		}
+	if body, _ := json.Marshal(out); strings.Contains(string(body), "proposal_ask") {
+		t.Fatalf("a row points at proposal_ask: %s", body)
 	}
 }

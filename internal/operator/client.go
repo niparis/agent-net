@@ -310,7 +310,6 @@ func (s *Client) SnapshotWith(ctx context.Context, opts SnapshotOptions) (Snapsh
 	}
 	snap.Connected, snap.NodeID, snap.Version = info.Connected, info.NodeID, info.Version
 	snap.Hostname, snap.OwnerSession = info.Hostname, info.OwnerSession
-	snap.ProposalCount = info.ProposalCount
 	// An older daemon does not say; it accepts workers only if it is new enough
 	// to have the field, so "false" there is the safe reading.
 	snap.Launch = info.Launch

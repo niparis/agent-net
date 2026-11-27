@@ -17,8 +17,8 @@ import (
 type OwnerAction struct {
 	// Name is the cto_op method, and the action or area of the merged tool.
 	Name string
-	// Irreversible actions run at once and cannot be undone. The others wait
-	// for an owner proposal when the CTO has no words of his.
+	// Irreversible actions run at once and cannot be undone. The others run
+	// only on the owner's verified words, and are refused without them.
 	Irreversible bool
 	// Lifecycle is the gateway's name for the action, when the gateway refuses
 	// the CTO's own call (repo.archive, agent.tombstone).
@@ -58,9 +58,9 @@ func Irreversible(name string) bool {
 	return false
 }
 
-// Proposal says whether name waits for an owner proposal when the CTO acts
-// without the owner's words.
-func Proposal(name string) bool {
+// NeedsOwnerWords says whether the CTO may run name only with the owner's
+// verified words.
+func NeedsOwnerWords(name string) bool {
 	for _, a := range ownerActions {
 		if a.Name == name {
 			return !a.Irreversible
@@ -92,9 +92,9 @@ func LifecycleActions() []string {
 	return out
 }
 
-// ProposalNames lists the actions that wait for an owner proposal, in list
+// OwnerWordsNames lists the actions that need the owner's words, in list
 // order.
-func ProposalNames() []string {
+func OwnerWordsNames() []string {
 	var out []string
 	for _, a := range ownerActions {
 		if !a.Irreversible {

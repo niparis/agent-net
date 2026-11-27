@@ -10,13 +10,13 @@ import (
 )
 
 // Each view is derived from ordinary dispatch with the CTO session, or from
-// the CTO's own proposal store and static guidance. A read whose sources
-// depend on its detail names the extra source after a semicolon.
+// static guidance. A read whose sources depend on its detail names the extra
+// source after a semicolon.
 var ctoReadSources = map[string]string{
-	"cto_proposals_find":  "own proposals,asks.list,permission.get,permission.pending",
-	"cto_intake_find":     protocol.FrameIntakeFind,
-	"agent_sessions_find": "sessions_find",
-	"agent_machines_find": "machines_find", "agent_machine_log": "machine_log",
+	"cto_owner_items_find": "asks.list,charter.drafts,permission.get,permission.pending",
+	"cto_intake_find":      protocol.FrameIntakeFind,
+	"agent_sessions_find":  "sessions_find",
+	"agent_machines_find":  "machines_find", "agent_machine_log": "machine_log",
 	"agent_projects_find": "projects_find", "agent_workers_find": "list,get; detail full adds pick_quota",
 	"agent_messages_find": "messages",
 	"agent_graph_read":    "agent_graph", "agent_settings_read": "settings_read", "agent_mcp_servers_find": "mcp_list",
@@ -47,7 +47,7 @@ func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessa
 		}
 		var out protocol.IntakeFindResult
 		return out, ctoDecode(value, &out)
-	case "cto_proposals_find":
+	case "cto_owner_items_find":
 		var q struct {
 			ID     string `json:"id"`
 			Kind   string `json:"kind"`
@@ -55,7 +55,7 @@ func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessa
 			Offset int    `json:"offset"`
 		}
 		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &q) != nil {
-			return nil, errors.New("bad proposals arguments")
+			return nil, errors.New("bad cto_owner_items_find arguments")
 		}
 		if strings.HasPrefix(q.ID, "pp_") {
 			return d.ctoPermissionProposal(ctx, q.ID)
@@ -64,14 +64,7 @@ func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessa
 			return d.ctoCharterDraft(ctx, draft)
 		}
 		if q.ID != "" {
-			p, ok, err := d.proposalRunner().get(q.ID)
-			if err != nil {
-				return nil, err
-			}
-			if !ok {
-				return nil, errors.New("unknown proposal")
-			}
-			return map[string]any{"id": p.ID, "tool": p.Call.Tool, "action": p.Call.Action, "arguments": p.Call.Args, "reason": p.Reason, "created_at": p.CreatedAt, "status": p.Status, "note": p.Note}, nil
+			return nil, errors.New("unknown owner item: give a pp_ permission proposal or a cd_ charter draft id, or leave id out to list")
 		}
 		kind, err := ctoOwnerKindFilter(q.Kind)
 		if err != nil {

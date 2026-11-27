@@ -15,7 +15,7 @@ import (
 var ctoV2Tools = map[string]bool{
 	"sessions_archive": true,
 	"graph_change":     true, "session_change": true, "worker_change": true,
-	"cto_ui_show": true, "cto_placement_memory": true, "cto_standing_orders": true, "cto_proposals_find": true, "proposal_ask": true,
+	"cto_ui_show": true, "cto_placement_memory": true, "cto_standing_orders": true, "cto_owner_items_find": true,
 	"answer": true, "mcp_change": true,
 	"settings_change": true, "project_change": true, "mcp_call": true, "cto_new": true,
 }
@@ -331,20 +331,11 @@ func addCTOV2Tools(s *mcp.Server, call Caller, addTool ctoToolAdder) {
 				if err := validateCTOCatalogInput(entry.InputSchema, args); err != nil {
 					return v2Error(fmt.Errorf("invalid arguments: %w; example: %s", err, `{"server":"example","tool":"list","arguments":{}}`)), nil
 				}
-			} else if name == "proposal_ask" {
-				if err := validateCTOCatalogInput(entry.InputSchema, args); err != nil {
-					return v2Error(fmt.Errorf("%w; example: %s", err, `{"id":"p_1"}`)), nil
-				}
-				var q map[string]any
-				_ = json.Unmarshal(args, &q)
-				if strings.TrimSpace(stringValue(q["id"])) == "" {
-					return v2Error(fmt.Errorf("id is required; example: %s", `{"id":"p_1"}`)), nil
-				}
 			} else if name == "cto_ui_show" || name == "cto_placement_memory" || name == "cto_standing_orders" {
 				if err := validateCTOCatalogInput(entry.InputSchema, args); err != nil {
 					return v2Error(err), nil
 				}
-			} else if name == "cto_proposals_find" {
+			} else if name == "cto_owner_items_find" {
 				if err := validateCTOCatalogInput(entry.InputSchema, args); err != nil {
 					return v2Error(err), nil
 				}
@@ -352,7 +343,7 @@ func addCTOV2Tools(s *mcp.Server, call Caller, addTool ctoToolAdder) {
 				if json.Unmarshal(args, &q) != nil {
 					return v2Error(fmt.Errorf("arguments must be an object")), nil
 				}
-				// The daemon pages proposals by offset; the cursor is that offset.
+				// The daemon pages owner items by offset; the cursor is that offset.
 				legacy := map[string]any{"id": q["id"], "kind": q["kind"], "limit": q["limit"]}
 				if cursor := stringValue(q["cursor"]); cursor != "" {
 					off, err := strconv.Atoi(cursor)
@@ -371,8 +362,8 @@ func addCTOV2Tools(s *mcp.Server, call Caller, addTool ctoToolAdder) {
 			if json.Unmarshal(raw, &value) != nil {
 				value = string(raw)
 			}
-			if name == "sessions_archive" || name == "answer" || name == "mcp_change" || name == "settings_change" || name == "project_change" || name == "mcp_call" || name == "proposal_ask" || name == "cto_new" || name == "graph_change" || name == "session_change" || name == "worker_change" {
-				value = normalizeCTOProposalResult(value)
+			if name == "sessions_archive" || name == "answer" || name == "mcp_change" || name == "settings_change" || name == "project_change" || name == "mcp_call" || name == "cto_new" || name == "graph_change" || name == "session_change" || name == "worker_change" {
+				value = normalizeCTOResult(value)
 			}
 			if name == "cto_ui_show" {
 				shown := true
@@ -381,15 +372,16 @@ func addCTOV2Tools(s *mcp.Server, call Caller, addTool ctoToolAdder) {
 				}
 				value = map[string]any{"shown": shown}
 			}
-			if name == "cto_proposals_find" {
-				value = normalizeProposalOutput(value)
+			if name == "cto_owner_items_find" {
+				value = normalizeOwnerItemsOutput(value)
 			}
 			return catalogResult(name, value)
 		})
 	}
 }
 
-func normalizeCTOProposalResult(value any) any {
+// normalizeCTOResult wraps a change result in the catalog's action envelope.
+func normalizeCTOResult(value any) any {
 	if m, ok := value.(map[string]any); ok {
 		if _, hasState := m["state"]; hasState {
 			// Owner operations can return domain state (an open ask or a ready
@@ -397,7 +389,7 @@ func normalizeCTOProposalResult(value any) any {
 			// closed output-schema pruning would discard the object's other fields.
 			envelope := true
 			for key := range m {
-				if key != "state" && key != "proposal_id" && key != "result" {
+				if key != "state" && key != "result" {
 					envelope = false
 					break
 				}
@@ -410,13 +402,6 @@ func normalizeCTOProposalResult(value any) any {
 	result := map[string]any{"state": "completed"}
 	if s, ok := value.(string); ok {
 		result["result"] = map[string]any{"summary": s, "data": s}
-		if strings.HasPrefix(s, "proposal ") {
-			fields := strings.Fields(s)
-			if len(fields) > 1 {
-				result["proposal_id"] = fields[1]
-			}
-			result["state"] = "proposed"
-		}
 	} else {
 		result["result"] = map[string]any{"summary": "Action completed.", "data": value}
 	}
@@ -446,14 +431,14 @@ func v2Error(err error) *mcp.CallToolResult {
 	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}
 }
 
-func normalizeProposalOutput(value any) any {
+func normalizeOwnerItemsOutput(value any) any {
 	m, _ := value.(map[string]any)
 	if m == nil {
 		return map[string]any{"items": []any{}, "total": 0}
 	}
 	if id, ok := m["id"].(string); ok {
-		item := map[string]any{"id": id, "tool": proposalText(m["tool"]), "action": proposalText(m["action"]),
-			"status": proposalText(m["status"]), "reason": proposalText(m["reason"]), "created": proposalText(m["created_at"])}
+		item := map[string]any{"id": id, "tool": ownerItemText(m["tool"]), "action": ownerItemText(m["action"]),
+			"status": ownerItemText(m["status"]), "reason": ownerItemText(m["reason"]), "created": ownerItemText(m["created_at"])}
 		// A permission proposal row names its own kind and answer call.
 		for _, key := range []string{"kind", "from", "summary", "options", "answer"} {
 			if v, ok := m[key]; ok {
@@ -487,13 +472,7 @@ func normalizeProposalOutput(value any) any {
 // stored before action or reason existed must not fail the whole list.
 func normalizeOwnerItem(row map[string]any) {
 	for _, field := range []string{"id", "tool", "action", "status", "reason", "created", "kind", "from", "summary", "answer"} {
-		row[field] = proposalText(row[field])
-	}
-	if row["kind"] == "" {
-		row["kind"] = "proposal"
-	}
-	if row["from"] == "" {
-		row["from"] = "CTO"
+		row[field] = ownerItemText(row[field])
 	}
 	if row["summary"] == "" {
 		row["summary"] = row["reason"]
@@ -509,13 +488,10 @@ func normalizeOwnerItem(row map[string]any) {
 	default:
 		row["options"] = []any{"approve", "decline"}
 	}
-	if row["answer"] == "" && row["kind"] == "proposal" {
-		row["answer"] = "proposal_ask {\"id\":\"" + row["id"].(string) + "\"}"
-	}
 }
 
-// proposalText keeps a proposal field a string even when an old row has none.
-func proposalText(v any) string {
+// ownerItemText keeps an owner item field a string even when a row has none.
+func ownerItemText(v any) string {
 	s, _ := v.(string)
 	return s
 }

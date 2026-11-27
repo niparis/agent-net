@@ -32,7 +32,7 @@ func TestCTOBriefBatchesTrustAndMCPApproval(t *testing.T) {
 }
 
 func TestCTOBriefTeachesGraphUse(t *testing.T) {
-	for _, want := range []string{"with view guide", "rule auto", "depends", "diff", "undo", "Act at once", "node_remove", "agent_tombstone", "repo_archive", "machine_remove", "machine_rotate", "`proposal_ask`", "Only the owner starts conversations", "workers", "settings", "Write charters as short rules", "1200 characters"} {
+	for _, want := range []string{"with view guide", "rule auto", "depends", "diff", "undo", "Act at once", "node_remove", "agent_tombstone", "repo_archive", "machine_remove", "machine_rotate", "owner_words", "Only the owner starts conversations", "workers", "settings", "Write charters as short rules", "1200 characters"} {
 		if !strings.Contains(ctoBrief, want) {
 			t.Errorf("ctoBrief lacks %q", want)
 		}
@@ -696,24 +696,6 @@ func testCTOToolsThroughFakeOpenCode(t *testing.T) {
 		if json.Unmarshal(body, &result) != nil || result.IsError {
 			t.Fatalf("%s: %s", name, body)
 		}
-		if len(result.Content) > 0 {
-			text := result.Content[0].Text
-			// Catalog tools answer with JSON that names the proposal.
-			var quoted string
-			if json.Unmarshal([]byte(text), &quoted) == nil {
-				text = quoted
-			}
-			var structured struct {
-				ProposalID string `json:"proposal_id"`
-			}
-			if json.Unmarshal([]byte(text), &structured) == nil && strings.HasPrefix(structured.ProposalID, "p_") {
-				text = "proposal " + structured.ProposalID
-			}
-			if strings.HasPrefix(text, "proposal p_") {
-				approveCTOToolResult(t, w.d, text)
-			}
-		}
-
 	}
 	call("graph_change", map[string]any{"action": "node_add", "name": "architecture"})
 	call("graph_change", map[string]any{"action": "node_add", "name": "component"})

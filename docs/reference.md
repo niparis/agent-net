@@ -155,28 +155,21 @@ and their old values. Repeating the cutover changes no values. The old node rows
 ## CTO settings and conversation
 
 The CTO applies changes immediately with an audit line and a log
-notice. Supported reversible changes include undo. Only node removal, agent
-tombstone, repo archive, machine removal and machine token rotation require a
-proposal and an owner decision. The older graph driving window remains an
-owner TUI control; it is not an extra prerequisite for CTO changes.
-
-Each proposal tool accepts an optional `reason`. The daemon validates the exact
-call before storing it. If the CTO harness supports form elicitation, it can show a dialog with the stored tool, action, arguments and reason. Accept approves and decline refuses the proposal. Cancel, an error, or no dialog leaves it open in the Inbox. For an open proposal that is already waiting, `proposal_ask` with `id` reopens the same dialog from the stored proposal; a closed or unknown ID is refused. For MCP protocol 2026-07-28 and newer, the harness returns the answer in a follow-up tool call; older versions use a direct elicitation request. The CTO sees a short result. Typing instructions in the CTO conversation does not approve a proposal.
-
-`proposal_list` lists proposals across online machines, or on one machine when
-passed `node_id`. `proposal_answer` takes `node_id`, `proposal_id` and an action:
-`a` approves, `x` declines, and `A` approves open proposals across online machines
-in order, stopping on an error. The daemon validates again and runs the stored
-call once with actor `owner (CTO proposal p_N)`. Full results, including plans,
-MCP results and invite lines, are shown to the owner. An approval through
-`proposal_answer` gives the CTO a short outcome note at its next idle moment,
-without the call's result data. This holds on every harness, including a Codex
-CTO. While the CTO is stopped, the note waits and starts nothing; it goes at
-the next idle moment after the CTO runs again. A dialog approval returns the
-outcome as the tool result instead, so no note follows it.
+notice. Supported reversible changes include undo. Five actions need the
+owner's words: node removal, agent tombstone, repo archive, machine removal and
+machine token rotation. They run at once when the CTO quotes the owner's words
+in `owner_words` and the daemon finds them in what he typed in the CTO chat
+(decision 0165). Without his words the call is refused with one line that tells
+the CTO to ask him and call again quoting his words. Nothing is stored and
+nothing waits on a screen: there are no CTO proposals, no approval dialog and
+no `proposal_ask` (decision [0199](decisions/0199-remove-cto-proposals.md)). The daemon sends such an action to the
+gateway with the actor `owner (CTO on the owner's words)`, which the gateway
+accepts as the owner's authority and keeps in the history, so a graph change
+can be undone like any other CTO change. The older graph driving window remains
+an owner TUI control; it is not an extra prerequisite for CTO changes.
 
 The daemon classifies every tool and action as a read, talk, immediate change
-or proposal. The five destructive actions above remain proposals. Messages
+or owner-only change. The five actions above are the owner-only changes. Messages
 with `as_owner: true` run immediately on the owner's instructions. Settings,
 worker and session actions, shared MCP administration and the explicit owner
 operations described below also run immediately.
@@ -535,7 +528,7 @@ names are `overview`, `sessions`, `session`, `proposals`, `feed`, `messages`,
 | `projects_layout` | Read-only project layout of online machines (roots, groups, remotes, newest commits). Cached for 10 minutes. |
 | `cto_ops_list` | The rare operations, grouped, with their purpose, example and owner gate. Filter by text. |
 | `cto_intake_find` | The CTO intake queue (decision 0152): the open system-health entries, newest first, at most `limit` (default and maximum 200), with `total`. Each entry has `kind`, `subject`, `severity` (1 woke the CTO, 2 alert, 3 digest line), `text`, `detail`, `first_seen`, `last_seen`, `count`, `alert` (the chief's CTO alert item), `stuck` (the chief's stuck-work item for a quota entry) and `lead` (the lead that owns the cause). The CTO reads it at the start of each owner conversation. Gateway frame `cto.intake`. |
-| `cto_proposals_find` | The CTO's own proposals; `id` selects one. `kind` filters the list: `proposal` is the default, `all` lists every pending owner item, and `draft` (the pending charter drafts, one row for each field with `level`, `scope`, `attr`, `value`, `source` and `drafted_by`, and the asks about them; an `id` such as `cd_54` or `54` reads one draft in any status), `learned` (pending major learned proposals), `held`, `inbox`, `approval`, `question`, `escalation` and `rejection` narrow it. Each row has `kind`, `from`, `summary`, `options` and `answer`, the exact call that resolves it. |
+| `cto_owner_items_find` | The items that wait for the owner; `id` selects a `pp_` permission proposal or a charter draft. `kind` filters the list: `all` is the default and lists every pending owner item, and `draft` (the pending charter drafts, one row for each field with `level`, `scope`, `attr`, `value`, `source` and `drafted_by`, and the asks about them; an `id` such as `cd_54` or `54` reads one draft in any status), `learned` (pending major learned proposals), `held`, `inbox`, `approval`, `question`, `escalation` and `rejection` narrow it. Each row has `kind`, `from`, `summary`, `options` and `answer`, the exact call that resolves it. |
 | the CTO's own timeline | `session_text` on the CTO session |
 
 The parity and canary tests cover ordinary agent-shaped views. Those message
@@ -544,12 +537,12 @@ contents. Owner operation reads run through `cto_op` and use the owner handlers,
 including protected-provider settings, stored asks and session text.
 Ordinary agents do not gain access to these owner handlers.
 The items that wait for the owner are readable through
-`cto_proposals_find` with `kind: "all"`, so the CTO can answer them when the
+`cto_owner_items_find` with `kind: "all"`, so the CTO can answer them when the
 owner does not want to act by hand.
 
 The CTO acts at once on changes. Node removal, agent tombstone, repo archive,
-machine removal and machine token rotation remain proposals. The CTO has one
-action tool per area:
+machine removal and machine token rotation run only with the owner's words in
+`owner_words`. The CTO has one action tool per area:
 
 | CTO change tool | Actions or area |
 |---|---|
@@ -558,8 +551,7 @@ action tool per area:
 | `agent_message_withdraw` | one undelivered message, or with `older_than: true` every undelivered message to that recipient that is this old or older; the owner and the CTO may withdraw another session's message |
 | `agent_learn` | one finding, under the daily limit |
 | `cto_ui_show` | `tab` with optional `select`, `filter` and `why`, or `notice` with a short text |
-| `proposal_ask` | `id`: reopen the approval dialog for an open proposal |
-| `graph_change` | `action: charter_set`, `node_add`, `edge_set`, `edge_remove`, `settings_set`, `repo_create`, `agent_create`, `team_create`, `team_rename`, `team_purpose`, `team_charter` (including `attr: mode` and `attr: held_back`), `team_archive`, `team_member_add`, `team_member_remove` or `undo`. Lifecycle removal (`node_remove`, `agent_tombstone`, `repo_archive`) is in `cto_op` and needs owner approval. |
+| `graph_change` | `action: charter_set`, `node_add`, `edge_set`, `edge_remove`, `settings_set`, `repo_create`, `agent_create`, `team_create`, `team_rename`, `team_purpose`, `team_charter` (including `attr: mode` and `attr: held_back`), `team_archive`, `team_member_add`, `team_member_remove` or `undo`. Lifecycle removal (`node_remove`, `agent_tombstone`, `repo_archive`) is in `cto_op` and runs only with the owner's words in `owner_words`. |
 | `sessions_archive` | Archive offline sessions by `ids`, `name` or `folder` glob, `project` (empty string means no project), `harness`, `created_before`, or `ended_workers`. Reversible through Inbox undo. |
 | `session_change` | `action: rename`, `trust`, `mcp_servers`, `policy`, `session_start`, `merger_start`, `merger_stop`, `stop`, `resume` or `restart`. `stop`, `resume` and `restart` take `session_id`; see [CTO session stop, resume and restart](#cto-session-stop-resume-and-restart). `trust` takes either `session_id` with `on` (peer trust) or one of `project` or `path`, with optional `node_id`, to trust a folder for Claude Code. `mcp_servers` takes one of `project` or `path`, optional `node_id`, and `mcp_servers: approve` or `disable`, to record the choice for the `.mcp.json` servers Claude Code would load there. `session_start` takes `trust: true` to trust the folder, approve the servers of the folder's own `.mcp.json`, and start in one step, and `mcp_servers` to record that choice first (an explicit `mcp_servers` still wins). See [CTO folder trust](#cto-folder-trust) and [Claude MCP server approval](#claude-mcp-server-approval) |
 | `cto_standing_orders` | `action: save` (with `text`), `read` (with `order_id`), `list` or `remove` (with `order_id`). See [standing orders](#standing-orders) |
@@ -647,10 +639,10 @@ changes include an undo action in the audit log. The direct tools
 `agent_worker_profile_remove` leave the same audit line and undo as the
 `settings_change` areas `protected_providers`, `worker_profile_add` and
 `worker_profile_remove`. `agent_message_send`, `agent_message_reply`,
-`agent_learn`, `cto_ui_show` and `proposal_ask` are talk.
-Every proposal tool takes an optional `reason`. The daemon validates the stored
-call and keeps the concrete implementation, its authority checks and its audit
-records, so a rename does not change what a call is allowed to do.
+`agent_learn` and `cto_ui_show` are talk.
+Every change tool takes an optional `reason`. The daemon keeps the concrete
+implementation, its authority checks and its audit records, so a rename does
+not change what a call is allowed to do.
 
 `answer` with `kind: held` takes `action` `a` (approve once), `A` (approve and
 set auto), `r` (decline once) or `R` (decline and set never). `kind: outcome`
@@ -712,7 +704,7 @@ The box is read-only: it shows the latest CTO output lines and the hint
 `c: open the <title>`. When focused, the hint reads
 `enter: open the <title> · ctrl+]: back`. Enter opens the full CTO harness UI through
 `session_enter` on the CTO session in herdr. When herdr is unavailable, ctrl+]
-returns from the terminal fallback. The title also shows how many CTO proposals are open. `n` asks before
+returns from the terminal fallback. `n` asks before
 starting a new conversation, `u` undoes the latest graph change, `m` opens the
 harness and model form, and ctrl+] returns focus to Sessions. Esc skips the
 current onboarding tip. The chat
@@ -1033,27 +1025,22 @@ sheet on a phone. It stays open across screen changes, remembered in
   that thread. A worker row groups several conversations, so a reply there goes
   to the newest one that has the chosen session as a side.
 - **CTO** (the side panel, key `c`) reads `cto_settings` for the title, harness
-  and model, `cto_events` for the same timeline as the TUI CTO pane and
-  `proposal_list` for the open proposals. The header shows the title from the
+  and model, and `cto_events` for the same timeline as the TUI CTO pane. The
+  header shows the title from the
   setting and the harness and model. Owner lines say "you"; CTO lines are
   styled as the CTO and harness actions are dimmed. The model's text is text:
   it is escaped, markdown is not rendered, and its line breaks stay. An Older
   messages link reads the page before the current offset, and Latest returns to
   the newest page. The composer sends with `cto_send`, the call the TUI makes,
   so the words arrive from the owner in person and the daemon starts or wakes
-  the CTO harness when it is not running. An open proposal is a card with Apply
-  and Decline, answered with the TUI's owner action (`proposal_answer`, `a` or
-  `x`). The card carries the machine as an encoded value, so no node ID is
-  printed. The panel cannot start a worker or change a charter or setting; the
+  the CTO harness when it is not running. The panel cannot start a worker or change a charter or setting; the
   CTO itself may do those when the owner asks it in the chat.
 - The console is read and answer only. Its one write route is `POST /action`
   with the kinds `held`, `outcome`, `inbox`, `mark`, `send`, `reply`,
-  `cto_send` and `proposal`. A `reply` takes the conversation id (`id`), the
+  and `cto_send`. A `reply` takes the conversation id (`id`), the
   recipient session (`to`) and the text (`action`); the recipient must be a
   side of that conversation, and the text is at most 64 KiB. A `cto_send`
-  takes the owner's words in `text`. A `proposal` takes the proposal id (`id`),
-  an encoded machine target (`node`) and `action` `a` to apply or `x` to
-  decline. There is no route that starts or stops sessions or workers, that
+  takes the owner's words in `text`. There is no route that starts or stops sessions or workers, that
   claims, reports or approves a step, or that changes charters, teams, edges or
   settings.
 - `GET /events?screen=<screen>[&s=<row>][&f=<filter>]` is a server-sent event
@@ -2139,7 +2126,7 @@ The daemon methods behind them are `change_submit`, `step_claim`, `step_report` 
 In Settings, select a repo to see its `delivery.owner` rows. Enter a graph
 node name as a JSON string to assign a step to that node, or an empty string to
 use the default. A concurrent assignment is refused until Settings is reloaded.
-Changing a node assignment needs the owner, or an approved CTO proposal. The
+Changing a node assignment needs the owner, or the CTO. The
 `delivery_deploys` assignment is separate from a `deploys` request edge; when
 there is no explicit assignment, the `deploys` node is the default deployer.
 
@@ -2286,7 +2273,7 @@ or gateway shows an error that says to upgrade it.
 Every time the TUI shows is in the owner's display time zone, not the zone of
 the machine that runs it. That covers the Workers log, Messages and message
 bodies, Sessions and session details, Graph labels, Quotas reset times,
-the `updated` header, Tools, and CTO proposals and timelines.
+the `updated` header, Tools, and CTO timelines.
 
 The owner setting is the network setting `owner.time_zone`. It is
 `auto` by default, or an IANA name such as `Europe/Paris`. Each daemon reports
@@ -2464,7 +2451,7 @@ The Claude Code hook output, when there is a suggestion (one line of JSON on std
 
 The owner has no Desk screen. The gateway makes every item through one path, and an item for the owner (`next_who` empty, `owner` or `chief`) is never stored:
 
-- **An item an agent raised** (a question that ended a turn, a waiting session, a step that needs the owner, a held request, a rejection or escalation, a permission proposal, a sign-in, a CTO proposal) becomes one request to the chief of staff's session. It comes from the asking session when that is a session, so the chief's reply goes back to it; otherwise it is a notice from agent-net. It names the asker, the kind, the text, why only the owner can decide, the recommendation and the options. The gateway delivers it within a second.
+- **An item an agent raised** (a question that ended a turn, a waiting session, a step that needs the owner, a held request, a rejection or escalation, a permission proposal, a sign-in) becomes one request to the chief of staff's session. It comes from the asking session when that is a session, so the chief's reply goes back to it; otherwise it is a notice from agent-net. It names the asker, the kind, the text, why only the owner can decide, the recommendation and the options. The gateway delivers it within a second.
 - **An item agent-net raised itself** (`from_kind` gateway or disk, every check and stall, brief checks, owed replies, loops, the tree check, follow-ups and due items, learned suggestions and charter drafts) is one log line, `event=desk.dropped`, with its kind, source and first line.
 - **No chief.** With no chief session, or when the chief itself asks, the item is one log line, `event=desk.no_chief`, without the text.
 - **Unchanged.** An item for another session (a team lead, a holder, a pipeline route) is stored as before. A Connected apps consent stays stored: the owner started it on his device.
@@ -2581,7 +2568,7 @@ gateway writes the log line `route.missing`.
 - **The chief.** Every ask that wants the owner goes to the chief of staff
   first: approvals, questions, ideas, checks, waiting sessions, rejections,
   escalations, stalls, held requests, charter drafts, learned suggestions,
-  CTO proposals, steps that need the owner, CTO alerts and quota stuck work.
+  steps that need the owner, CTO alerts and quota stuck work.
 - **The owner directly.** Only OAuth consents (the Connected apps approval and
   the Tailscale public link consent) skip the chief, as one-click asks. A
   sign-in ask does not: it goes to the chief with the exact `sign_in_open` call
@@ -3196,7 +3183,7 @@ Signal records are kept for 90 days, independently of the message retention sett
 
 Minor additions apply automatically: free text in `rules`, or a `depends` edge. A restrictive or narrowing phrase, removal, `refuses`, `escalate`, maturity, deploy or request rules, a `deploys` edge, or any change on a critical node needs the owner. An edge touching a critical node needs the owner too. At most three changes per node apply automatically in a rolling 24 hours; further proposals become major. A rejected phrase is not offered again for that node and field. Automatic changes use the graph's normal history with actor `learned` and can be undone with `graph_undo` or the Graph card's `,`, `.` and `u` keys.
 
-Ready major proposals appear as owner items, with the evidence and an accept or reject action. These actions use the owner gate. The CTO reads pending major learned proposals and charter suggestions with `cto_proposals_find` (`kind: learned` and `kind: draft`, or `kind: all`), so it can show them to the owner and prepare the answer. Each row carries the exact `settings_change` `learned_answer` or `answer` call that decides it; the owner still decides. An answer to the ask of a learned suggestion decides the suggestion: `accept` and `reject` act as the owner's keys do, and any other text counts as carried out (or a refusal when it starts with no, not, reject, decline or refuse). The gateway also marks a pending major suggestion applied when its edge or charter change already exists, so an ask is not raised again for it.
+Ready major proposals appear as owner items, with the evidence and an accept or reject action. These actions use the owner gate. The CTO reads pending major learned proposals and charter suggestions with `cto_owner_items_find` (`kind: learned` and `kind: draft`, or `kind: all`), so it can show them to the owner and prepare the answer. Each row carries the exact `settings_change` `learned_answer` or `answer` call that decides it; the owner still decides. An answer to the ask of a learned suggestion decides the suggestion: `accept` and `reject` act as the owner's keys do, and any other text counts as carried out (or a refusal when it starts with no, not, reject, decline or refuse). The gateway also marks a pending major suggestion applied when its edge or charter change already exists, so an ask is not raised again for it.
 
 The decide rule is also in the [guidance block](#what-setup-changes-on-your-machine): judge a peer's request against the node's charter and decide (accept, reject with a reason, or redirect); escalate only when the charter says so or does not cover it; every escalation carries a recommendation.
 
@@ -3386,7 +3373,7 @@ The owner can ask the CTO to trust a folder for Claude Code. The CTO calls `sess
 
 The request travels to another machine as the owner frames `session.trust_folder` (to the gateway) and `session.owner_trust_folder` (to the machine), like a session start. The machine checks the owner flag again. The operator method is `folder_trust` (`project` or `path`, `node_id`, `remove`); the result has `path`, `trusted` and `added`.
 
-Each use leaves an audit line. `added` is true only when the folder was not trusted before. Only then does the notice carry an undo, and the undo removes that one folder's trust (`folder_trust` with `remove: true`). The trust click also approves the folder's own `.mcp.json` servers; the trust proposal undo takes back only the names that click added, and a start's `mcp_servers: disable` still wins. A folder the owner had already trusted is left alone and has no undo. A CTO proposal still cannot set `trust_claude`, and the proposal relay still drops it: trust the CTO sets goes only through this explicit action or `trust: true`.
+Each use leaves an audit line. `added` is true only when the folder was not trusted before. Only then does the notice carry an undo, and the undo removes that one folder's trust (`folder_trust` with `remove: true`). The trust click also approves the folder's own `.mcp.json` servers; the trust proposal undo takes back only the names that click added, and a start's `mcp_servers: disable` still wins. A folder the owner had already trusted is left alone and has no undo. A CTO start still cannot set `trust_claude`, and the CTO start relay still drops it: trust the CTO sets goes only through this explicit action or `trust: true`.
 
 ### CTO process stop
 

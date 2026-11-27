@@ -20,16 +20,16 @@ var ctoDirectSettingsTools = map[string]string{
 	"agent_worker_profile_remove":   "worker_profile_remove",
 }
 
-// executeImmediateCTOTool runs classified mutations through the same concrete
-// owner handlers used for approved calls and records a durable Inbox notice.
+// executeImmediateCTOTool runs a classified change at once through the
+// owner's own handlers and records a durable Inbox notice with its undo.
 func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
 	class, err := ctoClass(name, raw)
 	if err != nil {
 		return nil, err
 	}
 	words := verifiedWords(ctx)
-	if class == ctoProposal && words != "" {
-		return d.applyProposalOnWords(ctx, name, raw, words)
+	if class == ctoOwnerOnly {
+		return d.applyOnOwnerWords(ctx, name, raw, words)
 	}
 	if name == "settings_change" {
 		concrete, args, _, e := ctoConcreteCall(name, raw)
@@ -229,8 +229,8 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 	if direct != "" {
 		result, err = d.executeCTOTool(ctx, name, raw)
 	} else {
-		ctx = context.WithValue(ctx, proposalActorKey{}, "cto")
-		result, err = d.executeApprovedCTOTool(ctx, concrete, args)
+		ctx = context.WithValue(ctx, ctoActorKey{}, "cto")
+		result, err = d.executeCTOAction(ctx, concrete, args)
 	}
 	if err != nil {
 		return nil, err
@@ -576,13 +576,14 @@ func mcpChoiceAudit(res protocol.MCPChoiceResult, node string) (string, []string
 	return strings.Join(lines, "\n"), []string{protocol.OpFolderMCP, string(undo)}
 }
 
-// applyProposalOnWords runs one of the actions that wait on the Desk when the
-// owner typed what the CTO quotes. It goes through the same stored proposal
-// as a Desk approval, so it has the same checks, actor and audit, but the
-// proposal is decided in this call and never becomes an ask. The Inbox gets
-// one line with the owner's words and the graph undo where there is one.
-func (d *Daemon) applyProposalOnWords(ctx context.Context, name string, raw json.RawMessage, words string) (any, error) {
-	concrete, args, action, err := ctoConcreteCall(name, raw)
+// applyOnOwnerWords runs one of the owner-only actions (node_remove,
+// repo_archive, agent_tombstone, machine_remove, machine_rotate) at once,
+// because the owner typed the words the CTO quotes (decision 0165). It acts
+// as protocol.CTOOwnerWordsActor, which the gateway accepts as the owner's
+// authority. The Inbox gets one line with his words, and the graph undo where
+// there is one. Without his words routeCTOTool refuses the call before this.
+func (d *Daemon) applyOnOwnerWords(ctx context.Context, name string, raw json.RawMessage, words string) (any, error) {
+	concrete, args, _, err := ctoConcreteCall(name, raw)
 	if err != nil {
 		return nil, err
 	}
@@ -590,20 +591,22 @@ func (d *Daemon) applyProposalOnWords(ctx context.Context, name string, raw json
 	if len(args) > 0 && json.Unmarshal(args, &fields) != nil {
 		return nil, errors.New("bad CTO arguments")
 	}
+	if fields == nil {
+		fields = map[string]json.RawMessage{}
+	}
 	var reason string
 	if value, ok := fields["reason"]; ok {
 		if json.Unmarshal(value, &reason) != nil {
 			return nil, errors.New("reason must be a string")
 		}
 		delete(fields, "reason")
-		if args, err = json.Marshal(fields); err != nil {
-			return nil, err
-		}
 	}
-	if name == "graph_change" {
-		d.ctoGraph.mu.Lock()
-		defer d.ctoGraph.mu.Unlock()
+	if args, err = json.Marshal(fields); err != nil {
+		return nil, err
 	}
+	// The newest CTO graph change is read before the lock: the lock makes this
+	// change the newest one when the history is read under it, which is all
+	// the undo needs, and no gateway read waits under the lock.
 	var last int64
 	if name == "graph_change" {
 		data, e := d.call(ctx, "cto.graph_latest", nil)
@@ -618,21 +621,9 @@ func (d *Daemon) applyProposalOnWords(ctx context.Context, name string, raw json
 		}
 		last = latest.ID
 	}
-	record := "On the owner's words: " + cleanLine(words) + "."
-	if reason = cleanLine(reason); reason != "" {
-		record += " " + reason
-	}
-	id, err := d.propose(ctx, name, action, args, record, false)
+	result, history, err := d.ownerWordsGraphChange(ctx, name, concrete, args, last)
 	if err != nil {
 		return nil, err
-	}
-	item, decided, err := d.proposalRunner().decideForDialog(ctx, id, true)
-	defer d.syncProposalAsks(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if !decided || item.Status != "applied" {
-		return nil, fmt.Errorf("%s did not apply: %s", strings.ReplaceAll(concrete, "_", " "), cleanLine(item.Note))
 	}
 	text := "CTO applied " + strings.ReplaceAll(concrete, "_", " ")
 	for _, key := range []string{"name", "node_id"} {
@@ -649,27 +640,110 @@ func (d *Daemon) applyProposalOnWords(ctx context.Context, name string, raw json
 		text += " " + cleanLine(ref.ID)
 	}
 	text += onOwnerWords(words)
-	if reason != "" {
+	if reason = cleanLine(reason); reason != "" {
 		text += ": " + reason
 	}
-	diff := ""
+	diff := "No undo."
 	var options []string
-	if name == "graph_change" {
-		history, e := d.ctoGraphHistory(ctx, last)
-		if e != nil {
-			return nil, e
-		}
-		if len(history) > 0 {
-			h := history[len(history)-1]
-			b, _ := json.Marshal(protocol.GraphUndoRequest{ID: h.ID})
-			options = []string{"graph_undo", string(b)}
-			diff = fmt.Sprintf("%s: %s -> %s", h.Node, h.OldValue, h.NewValue)
-		}
-	} else {
-		diff = "No undo."
+	// The CTO server wraps this as a completed action: applied names the
+	// change, undo is the graph_change call that takes it back.
+	out := map[string]any{"applied": text, "result": result}
+	if len(history) > 0 {
+		h := history[len(history)-1]
+		b, _ := json.Marshal(protocol.GraphUndoRequest{ID: h.ID})
+		options = []string{"graph_undo", string(b)}
+		diff = fmt.Sprintf("%s: %s -> %s", h.Node, h.OldValue, h.NewValue)
+		out["undo"] = map[string]any{"tool": "graph_change", "arguments": map[string]any{"action": "undo", "id": h.ID}}
 	}
 	if _, err := d.call(ctx, "inbox.create", map[string]any{"session_id": d.ctoSessionID(), "kind": "check", "text": text, "recommendation": diff, "options": options}); err != nil {
 		return nil, fmt.Errorf("%s; could not add Inbox notice: %w", text, err)
 	}
-	return map[string]any{"state": "applied", "proposal": id, "note": item.Note, "result": item.Result}, nil
+	return out, nil
+}
+
+// ownerWordsGraphChange runs the owner-only action as
+// protocol.CTOOwnerWordsActor. A graph change runs under the CTO graph lock
+// and returns the CTO graph history after last, so its undo is the newest row.
+func (d *Daemon) ownerWordsGraphChange(ctx context.Context, name, concrete string, args json.RawMessage, last int64) (any, []protocol.CTOGraphChange, error) {
+	ctx = context.WithValue(ctx, ctoActorKey{}, protocol.CTOOwnerWordsActor)
+	if name != "graph_change" {
+		result, err := d.executeCTOAction(ctx, concrete, args)
+		return result, nil, err
+	}
+	d.ctoGraph.mu.Lock()
+	defer d.ctoGraph.mu.Unlock()
+	result, err := d.executeCTOAction(ctx, concrete, args)
+	if err != nil {
+		return nil, nil, err
+	}
+	history, err := d.ctoGraphHistory(ctx, last)
+	return result, history, err
+}
+
+// errOwnerWordsNeeded is the refusal of an owner-only action the CTO called
+// without the owner's words. Nothing is stored: the CTO asks the owner, then
+// calls again with his words.
+func errOwnerWordsNeeded(name string, raw json.RawMessage) error {
+	action := name
+	if _, _, a, err := ctoConcreteCall(name, raw); err == nil && a != "" {
+		action = a
+	}
+	return fmt.Errorf("%s needs the owner's approval, so nothing was applied. Ask the owner in this chat, then call again with owner_words quoting his exact words", action)
+}
+
+// executeCTOAction runs one concrete CTO change through the owner's own
+// handlers. ctx carries the actor: "cto", or protocol.CTOOwnerWordsActor for
+// an owner-only action on his words.
+func (d *Daemon) executeCTOAction(ctx context.Context, name string, raw json.RawMessage) (any, error) {
+	switch name {
+	case "project_add", "project_remove":
+		return d.projectChange(ctx, name, raw)
+	case "merger_start", "merger_stop":
+		var p protocol.SessionStartRequest
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, err
+		}
+		project, node, err := d.mergerProject(ctx, p)
+		if err != nil {
+			return nil, err
+		}
+		if name == "merger_stop" {
+			return d.call(ctx, "merger.set", map[string]any{"project": project.Name, "node_id": node, "session_id": "", "configure": true, "by": ctoActor(ctx), "owner_session": d.ownerSessionID()})
+		}
+		p.Project, p.NodeID, p.Merger, p.CTOProposal = project.Name, node, true, true
+		p.Folder, p.Branch, p.Create = "", "", false
+		p.FirstMessage, p.FirstMessageByOwner = MergerFirstMessage, false
+		// The merger is a role, not a special case: its ordered list goes
+		// through the one gate (decision 0162). A model the CTO named is the
+		// only candidate, so the gate runs it or refuses it, never swaps it
+		// for the merger.models list.
+		var asked []protocol.RoleModel
+		if p.Model != "" || p.Harness != "" {
+			asked = []protocol.RoleModel{{Harness: firstNonEmpty(p.Harness, "claude"), Model: p.Model}}
+		}
+		pick, err := d.pickRoleOnMachine(ctx, protocol.RoleMerger, node, asked, protocol.RoleModel{}, false)
+		if err != nil {
+			return nil, errors.New("merger model: " + err.Error())
+		}
+		p.Harness, p.Model = pick.Harness, pick.Model
+		return d.sessionStart(ctx, p)
+	case "session_stop", "session_resume", "session_restart":
+		return d.ctoSessionControl(ctx, name, raw)
+	case "session_start", "project_create":
+		var p protocol.SessionStartRequest
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, err
+		}
+		if name == "project_create" {
+			p.Create = true
+		}
+		p.TrustClaude = false
+		p.CTOProposal = true
+		// The CTO wrote the first message; the owner did not type it.
+		p.FirstMessageByOwner = false
+		// The CTO asked for this start, so the CTO is told if it fails later.
+		ctx = context.WithValue(ctx, startRequesterKey{}, d.ctoSessionID())
+		return d.sessionStart(ctx, p)
+	}
+	return d.executeCTOTool(ctx, name, raw)
 }

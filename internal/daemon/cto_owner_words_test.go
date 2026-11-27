@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,15 +22,6 @@ func ctoOwnerSays(t *testing.T, d *Daemon, text string) {
 		t.Fatal(err)
 	}
 	d.rememberCTOOwnerPrompt(text)
-}
-
-func openProposals(t *testing.T, d *Daemon) int {
-	t.Helper()
-	items, err := d.proposalRunner().listOpen()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return len(items)
 }
 
 // What the owner types in the CTO's own Claude pane is kept for the quote
@@ -58,9 +50,9 @@ func TestCTOOwnerPromptsAreKeptFromTheClaudeHook(t *testing.T) {
 	}
 }
 
-// Words the owner typed let the CTO remove a node at once: no proposal, no
-// Desk ask, an Inbox line with his words and a graph undo.
-func TestCTOProposalClassRunsOnVerifiedWords(t *testing.T) {
+// Words the owner typed let the CTO remove a node at once: no Desk ask, an
+// Inbox line with his words and a graph undo, which the result names too.
+func TestCTOOwnerOnlyActionRunsOnVerifiedWords(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	cli := cliClient(t, n)
@@ -71,11 +63,9 @@ func TestCTOProposalClassRunsOnVerifiedWords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if text, ok := got.(string); ok && strings.HasPrefix(text, "proposal p_") {
-		t.Fatalf("the removal waited for the owner: %v", got)
-	}
-	if n := openProposals(t, n.d); n != 0 {
-		t.Fatalf("%d open proposals", n)
+	applied, ok := got.(map[string]any)
+	if !ok || !strings.Contains(fmt.Sprint(applied["applied"]), "node remove old-node") || applied["undo"] == nil {
+		t.Fatalf("result does not name the change and its undo: %#v", got)
 	}
 	asks, err := g.gw.Store().ListAsks()
 	if err != nil {
@@ -113,8 +103,7 @@ func TestCTOProposalClassRunsOnVerifiedWords(t *testing.T) {
 	}
 }
 
-// A quote the owner never typed is refused with one line. Nothing runs and
-// nothing is proposed.
+// A quote the owner never typed is refused with one line. Nothing runs.
 func TestCTOUnverifiedWordsAreRefused(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
@@ -125,17 +114,14 @@ func TestCTOUnverifiedWordsAreRefused(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "was not found in what the owner typed") || strings.Contains(err.Error(), "\n") {
 		t.Fatalf("want a one-line refusal, got %v", err)
 	}
-	if n := openProposals(t, n.d); n != 0 {
-		t.Fatalf("a refused call filed %d proposals", n)
-	}
 	if graph := string(cli.mustCall("graph_get", map[string]any{})); !strings.Contains(graph, "old-node") {
 		t.Fatalf("node removed on unverified words: %s", graph)
 	}
 }
 
-// With no words the five actions still wait for the owner, and with verified
-// words in the call none of them does.
-func TestCTOProposalClassRouting(t *testing.T) {
+// With no words the five actions are refused, and with verified words in the
+// call each of them runs.
+func TestCTOOwnerOnlyClassRouting(t *testing.T) {
 	cases := []struct{ name, args string }{
 		{"graph_change", `{"action":"node_remove"}`},
 		{"graph_change", `{"action":"agent_tombstone"}`},
@@ -150,13 +136,11 @@ func TestCTOProposalClassRouting(t *testing.T) {
 				if words != "" {
 					ctx = context.WithValue(ctx, verifiedWordsKey{}, words)
 				}
-				proposed, ran := false, false
-				_, err := routeCTOTool(ctx, tc.name, json.RawMessage(tc.args), func(context.Context, string, string, json.RawMessage, string) (string, error) {
-					proposed = true
-					return "p_1", nil
-				}, func(context.Context, string, json.RawMessage) (any, error) { ran = true; return nil, nil })
-				if err != nil || proposed != (words == "") || ran != (words != "") {
-					t.Fatalf("words=%q proposed=%v ran=%v err=%v", words, proposed, ran, err)
+				ran := false
+				_, err := routeCTOTool(ctx, tc.name, json.RawMessage(tc.args), func(context.Context, string, json.RawMessage) (any, error) { ran = true; return nil, nil })
+				refused := err != nil && strings.Contains(err.Error(), "needs the owner's approval")
+				if refused != (words == "") || ran != (words != "") {
+					t.Fatalf("words=%q refused=%v ran=%v err=%v", words, refused, ran, err)
 				}
 			})
 		}

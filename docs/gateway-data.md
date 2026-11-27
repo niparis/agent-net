@@ -463,7 +463,7 @@ The ask store, its sorts, follow-ups and the log.
 - **Holds:** One permission change an agent proposed (rules, targets, reason) with its status, who decided and the result.
 - **Written by:** `gateway/permissions.go`
 - **Read by:** `gateway/permissions.go`
-- **Shown in:** TUI; tool `agent_permission_propose`; CTO op `cto_proposals_find`; CTO op `proposal_ask`
+- **Shown in:** TUI; tool `agent_permission_propose`; CTO op `cto_owner_items_find`
 - **Kept:** Forever.
 
 ## Learning

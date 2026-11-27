@@ -25,19 +25,6 @@ func (m Model) ctoTitle() string {
 	return protocol.DefaultCTOTitle
 }
 
-// openProposals is how many CTO proposals wait in Needs you.
-func (m Model) openProposals() int {
-	n := 0
-	for _, p := range m.proposals {
-		if p.Status == "open" {
-			n++
-		}
-	}
-	// The Snapshot carries the count even when the full list is not fetched
-	// on this tab, so the box shows a new proposal without the gateway call.
-	return max(n, m.snap.ProposalCount)
-}
-
 func (m Model) ctoView(w, h int) []string {
 	c := m.cto
 	title := m.ctoTitle()
@@ -52,12 +39,8 @@ func (m Model) ctoView(w, h int) []string {
 		}
 	}
 
-	proposals := ""
-	if n := m.openProposals(); n > 0 {
-		proposals = " · " + sDim.Render(plural(n, "open proposal"))
-	}
-	// Reserve room for the window and proposal count. Optional harness/model
-	// details appear only when they fit in full, so neither status is clipped.
+	// Optional harness/model details appear only when they fit in full, so the
+	// window status is never clipped.
 	for i, detail := range []string{c.harness, c.model} {
 		if detail == "" {
 			continue
@@ -66,11 +49,10 @@ func (m Model) ctoView(w, h int) []string {
 		if i == 1 {
 			detail = sDim.Render(detail)
 		}
-		if lipgloss.Width(title+" · "+detail+proposals) <= max(w-4, 1) {
+		if lipgloss.Width(title+" · "+detail) <= max(w-4, 1) {
 			title += " · " + detail
 		}
 	}
-	title += proposals
 
 	borderColor := roleFaint
 	if m.focus == focusCTO {

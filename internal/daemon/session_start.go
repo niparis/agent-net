@@ -336,7 +336,7 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 		}
 	}
 	launched = true
-	remoteOwner, _ := ctx.Value(proposalRemoteOwnerKey{}).(bool)
+	remoteOwner, _ := ctx.Value(ctoRelayedStartKey{}).(bool)
 	notify := p.CTOProposal && !remoteOwner
 	first := firstMessageOf(p)
 	if p.Harness == "codex" {
@@ -416,7 +416,7 @@ func (d *Daemon) relaySessionStart(ctx context.Context, p protocol.SessionStartR
 		d.sendRelayedFirstMessage(res.ID, firstNonEmpty(res.NodeID, target), later)
 	}
 	res = d.remoteStartResult(ctx, res, socket, pane)
-	remoteOwner, _ := ctx.Value(proposalRemoteOwnerKey{}).(bool)
+	remoteOwner, _ := ctx.Value(ctoRelayedStartKey{}).(bool)
 	if p.CTOProposal && !p.Merger && !remoteOwner && res.Status == "starting" {
 		d.watchApprovedSessionStart(ctx, res.ID)
 	} else if p.CTOProposal && !p.Merger && !remoteOwner && res.Status == "started" {
@@ -427,12 +427,11 @@ func (d *Daemon) relaySessionStart(ctx context.Context, p protocol.SessionStartR
 
 // An approved remote start must be opened even when no form is polling it.
 func (d *Daemon) watchApprovedSessionStart(approval context.Context, id string) {
-	loc, _ := approval.Value(proposalHerdrLocationKey{}).(proposalHerdrLocation)
 	requester, _ := approval.Value(startRequesterKey{}).(string)
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
-		ctx, cancel := context.WithTimeout(context.WithValue(d.ctoCtx, proposalHerdrLocationKey{}, loc), d.workerSettings("").StartTimeout)
+		ctx, cancel := context.WithTimeout(d.ctoCtx, d.workerSettings("").StartTimeout)
 		defer cancel()
 		ticker := time.NewTicker(150 * time.Millisecond)
 		defer ticker.Stop()

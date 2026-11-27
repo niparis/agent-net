@@ -198,12 +198,6 @@ aside.cto .ctocomposer { padding: 12px 16px; border-top: 1px solid var(--line); 
 aside.cto .sendrow { display: flex; gap: 8px; align-items: center; }
 aside.cto .sendrow .btn { margin-left: auto; flex: none; }
 aside.cto .sendrow .small { overflow-wrap: anywhere; }
-aside.cto .proposal { border: 1px solid var(--cto); border-radius: 8px; padding: 10px 12px; display: grid; gap: 6px; background: var(--cto-soft); min-width: 0; }
-aside.cto .proposal .psum { font-weight: 600; overflow-wrap: anywhere; }
-aside.cto .proposal .preason { font-size: 13px; overflow-wrap: anywhere; white-space: pre-wrap; }
-aside.cto .proposal .when { font-size: 12px; color: var(--muted); }
-aside.cto .proposal .actions { display: flex; gap: 6px; }
-aside.cto .proposal .actions form { display: flex; gap: 6px; margin: 0; }
 
 /* Filter */
 .box > header .act { margin-left: auto; }

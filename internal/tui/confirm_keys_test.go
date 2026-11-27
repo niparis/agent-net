@@ -225,53 +225,6 @@ func TestTrustConfirmKeys(t *testing.T) {
 	}
 }
 
-func proposalConfirmModel(t *testing.T) (Model, *proposalSource, protocol.CTOProposal) {
-	t.Helper()
-	p := proposalFixture()
-	s := &proposalSource{proposals: []protocol.CTOProposal{p}}
-	m := New(s)
-	m.proposals = s.proposals
-	m.openProposalConfirm()
-	return m, s, p
-}
-
-func TestProposalConfirmKeys(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		key  tea.KeyPressMsg
-		yes  bool
-	}{
-		{"enter", keyEnter(), true},
-		{"y", keyRune("y"), true},
-		{"Y", keyRune("Y"), true},
-		{"esc", keyEsc(), false},
-		{"n", keyRune("n"), false},
-		{"N", keyRune("N"), false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			m, s, p := proposalConfirmModel(t)
-			confirmHintShown(t, m)
-			m, cmd := press(m, tc.key)
-			if tc.yes {
-				if cmd == nil {
-					t.Fatal("no answer command")
-				}
-				cmd()
-				if len(s.answers) != 1 || s.answers[0].Action != "A" || len(s.answers[0].Confirm) != 1 || s.answers[0].Confirm[0].ID != p.ID {
-					t.Fatalf("answers %+v", s.answers)
-				}
-				if m.proposalConfirm {
-					t.Fatal("confirm stayed open")
-				}
-				return
-			}
-			if cmd != nil || m.proposalConfirm || len(s.answers) != 0 {
-				t.Fatalf("cancel: open %v cmd %v answers %+v", m.proposalConfirm, cmd != nil, s.answers)
-			}
-		})
-	}
-}
-
 func TestCTONewConfirmGoldens(t *testing.T) {
 	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
 		src := &fakeCTOSource{fakeSource: &fakeSource{snap: fakeSnapshot()}}

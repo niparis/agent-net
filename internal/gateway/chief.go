@@ -1767,7 +1767,7 @@ func askProposalText(q askDB, ask, kind string) string {
 		for _, f := range fields {
 			fmt.Fprintf(&b, "- draft %d, level %s, scope %s, %s = %s (%s)\n", f.ID, f.Level, f.Scope, f.Attr, draftValueLine(redact.SecretValues(f.Value)), f.Status)
 		}
-		b.WriteString("Read one with cto_proposals_find (kind draft, id the draft number). Decide one with cto_op learned_answer (suggestion_id the negative draft number, action accept or reject).")
+		b.WriteString("Read one with cto_owner_items_find (kind draft, id the draft number). Decide one with cto_op learned_answer (suggestion_id the negative draft number, action accept or reject).")
 		return b.String()
 	case protocol.AskKindLearned:
 		if d := strings.TrimSpace(redact.SecretValues(detail)); d != "" {

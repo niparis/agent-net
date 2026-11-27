@@ -382,11 +382,9 @@ func TestCTOOperatorAllowlistCoversOwnerMethods(t *testing.T) {
 		covered[method] = false
 	}
 	// These are physical owner consent or UI transport, not missing backend
-	// operations. The CTO requests consent with app_ask/proposal_ask.
+	// operations. The CTO requests consent with app_ask.
 	exceptions := map[string]string{
 		"apps.approve":       "app_ask opens the owner's consent ask",
-		"proposal_list":      "cto_proposals_find",
-		"proposal_answer":    "proposal_ask and the owner dialog/Inbox answer",
 		"proposal_start_ack": "the TUI acknowledges its actual terminal start",
 		"cto_graph_window":   "the owner declares that they are driving their TUI",
 		"desk_settle":        "the TUI marks a Desk log line undone after its own undo",

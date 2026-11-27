@@ -280,26 +280,6 @@ These open over any tab. Each has its own keys.
 | w | weekly table |
 | R | refresh |
 
-### Proposal detail
-
-| keys | what it does |
-|---|---|
-| esc | back |
-| up/down, j/k | scroll |
-| ? | help |
-| a | approve the change |
-| r | decline the change |
-| A | approve all the changes |
-
-### Proposal history
-
-| keys | what it does |
-|---|---|
-| esc | back |
-| ? | help |
-| up/down, j/k | select |
-| enter | open the proposal detail |
-
 ### CTO box
 
 | keys | what it does |
@@ -434,17 +414,16 @@ Tools are listed by the roles that may call them. Actions are the values of the 
 | `agent_workers_find` | agent, worker, cto | Find workers with their caller, model, difficulty, state and run time. detail full adds the start time, the struggle counts and the recorded cause of the latest run's failure or rework. Defaults to running workers you started. | - |
 | `answer` | cto | Apply the owner's answer to a held request, a CTO intake item or a contested outcome (let stand or overrule). | `a`, `A`, `r`, `R`, `let_stand`, `overrule` |
 | `cto_intake_find` | cto | Open system-health alerts of the CTO intake queue, newest first. Read it at the start of each owner conversation. | - |
-| `cto_new` | cto | Start a new CTO conversation. The timeline and proposals stay. | - |
+| `cto_new` | cto | Start a new CTO conversation. The timeline stays. | - |
+| `cto_owner_items_find` | cto | Find the items that wait for the owner (charter drafts, held requests, permission proposals, Inbox asks), each with its answer call. | - |
 | `cto_placement_memory` | cto | Read or save placement answers explicitly given by the owner. | `read`, `save` |
-| `cto_proposals_find` | cto | Find proposals, or all pending owner items, each with its answer call. | - |
 | `cto_standing_orders` | cto | List, save, update, remove, search or read history of standing orders. | `save`, `read`, `list`, `remove`, `search`, `history`, `update` |
 | `cto_ui_show` | cto | Show the owner a TUI tab with an item selected, or a short notice. Fails with no TUI open when no local TUI is connected. | - |
-| `graph_change` | cto | Change the graph or undo. Lifecycle removal (node_remove, agent_tombstone, repo_archive) is a rare op in cto_op and needs owner approval; other actions apply at once. | `charter_set`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `settings_set`, `undo`, `repo_create`, `repo_archive`, `agent_create`, `agent_tombstone`, `team_create`, `team_rename`, `team_purpose`, `team_charter`, `team_archive`, `team_member_add`, `team_member_remove`, `lead_set`, `scope_set`, `scope_remove` |
+| `graph_change` | cto | Change the graph or undo. Lifecycle removal (node_remove, agent_tombstone, repo_archive) is a rare op in cto_op and runs only with the owner's words in owner_words; other actions apply at once. | `charter_set`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `settings_set`, `undo`, `repo_create`, `repo_archive`, `agent_create`, `agent_tombstone`, `team_create`, `team_rename`, `team_purpose`, `team_charter`, `team_archive`, `team_member_add`, `team_member_remove`, `lead_set`, `scope_set`, `scope_remove` |
 | `mcp_call` | cto | Call a tool on a shared MCP server at once. Credentials never appear in the call. | - |
 | `mcp_change` | cto | Manage shared MCP servers and connected apps. apps_list lists IDs; app_grant/ungrant take id and grant; app_rename takes id and name; app_revoke invalidates credentials. public_status/on/off control internet access. | `add`, `remove`, `test`, `enable`, `apps_list`, `app_grant`, `app_ungrant`, `app_rename`, `app_revoke`, `public_status`, `public_on`, `public_off`, `app_ask` |
 | `project_change` | cto | Add, remove, rename or create a project at once. | `add`, `remove`, `display`, `create` |
 | `projects_layout` | cto | Read-only project layout of online machines: roots, groups, remotes and newest commits. | - |
-| `proposal_ask` | cto | Open the approval dialog in the chat for an open proposal that is already waiting. | - |
 | `session_change` | cto | Change a session: rename, replace, trust, policy, start, stop, resume, restart, or merger start or stop. | `rename`, `replace`, `trust`, `mcp_servers`, `policy`, `session_start`, `merger_start`, `merger_stop`, `stop`, `resume`, `restart` |
 | `sessions_archive` | cto | Archive offline sessions. Records can be restored by the owner. | - |
 | `settings_change` | cto | Change settings values or undo a revision at once. Machine removal, token rotation, process stop and the owner operations are rare ops in cto_op. | - |

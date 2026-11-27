@@ -81,11 +81,11 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 		t.Fatal(err)
 	}
 	reads := map[string]map[string]any{
-		"cto_proposals_find":  {},
-		"cto_intake_find":     {},
-		"cto_ops_list":        {},
-		"agent_sessions_find": {},
-		"agent_machines_find": {}, "agent_machine_log": {"machine": w.cfg.Hostname, "log": "daemon"},
+		"cto_owner_items_find": {},
+		"cto_intake_find":      {},
+		"cto_ops_list":         {},
+		"agent_sessions_find":  {},
+		"agent_machines_find":  {}, "agent_machine_log": {"machine": w.cfg.Hostname, "log": "daemon"},
 		"agent_projects_find": {}, "agent_workers_find": {},
 		"agent_messages_find": {"message": ctoMessage.ID},
 		"agent_graph_read":    {}, "agent_settings_read": {"key": "workers.auto_continue"}, "agent_mcp_servers_find": {},
@@ -95,7 +95,7 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 
 	// mcp_call and mcp_test can execute arbitrary external operations. Mutation
 	// tools are classified explicitly and are never invoked here.
-	mutations := strings.Fields("cto_placement_memory cto_standing_orders cto_ui_show proposal_ask cto_op graph_change session_change worker_change answer mcp_change mcp_call settings_change project_change sessions_archive skill_archive skills cto_new agent_message_send agent_message_reply agent_message_withdraw agent_owner_judgment_record agent_learn agent_note_write agent_notes_find agent_permission_propose agent_protected_providers_set agent_worker_profile_add agent_worker_profile_remove")
+	mutations := strings.Fields("cto_placement_memory cto_standing_orders cto_ui_show cto_op graph_change session_change worker_change answer mcp_change mcp_call settings_change project_change sessions_archive skill_archive skills cto_new agent_message_send agent_message_reply agent_message_withdraw agent_owner_judgment_record agent_learn agent_note_write agent_notes_find agent_permission_propose agent_protected_providers_set agent_worker_profile_add agent_worker_profile_remove")
 	actions := map[string]bool{}
 	for _, name := range mutations {
 		actions[name] = true

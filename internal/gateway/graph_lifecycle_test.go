@@ -198,7 +198,7 @@ func TestGraphLifecycleMigrationDuplicates(t *testing.T) {
 	}
 }
 
-func TestGraphLifecycleProposalAndRetainedData(t *testing.T) {
+func TestGraphLifecycleOnOwnerWordsKeepsData(t *testing.T) {
 	s, _ := newTestStore(t)
 	node, _, err := s.CreateNode("fixture", "linux")
 	if err != nil {
@@ -220,17 +220,12 @@ func TestGraphLifecycleProposalAndRetainedData(t *testing.T) {
 	}
 	for _, kind := range []string{"repo", "agent"} {
 		create := kind + "_create"
-		name := "proposal-" + kind
-		args := map[string]any{"name": name}
-		req, _ := json.Marshal(map[string]any{"tool": create, "args": args, "owner": owner})
-		if _, err = g.validateCTOProposal(ctx, nc, req); err != nil {
-			t.Fatal(err)
-		}
+		name := "words-" + kind
 		class, err := s.CTOGraphClass(create, []byte(`{}`))
 		if err != nil || class != "rule" {
 			t.Fatalf("classification %s %v", class, err)
 		}
-		payload, _ := json.Marshal(map[string]any{"name": name, "owner": owner, "by": "owner (CTO proposal p_1)"})
+		payload, _ := json.Marshal(map[string]any{"name": name, "owner": owner, "by": protocol.CTOOwnerWordsActor})
 		if _, err = g.handle(ctx, nc, kind+".create", payload); err != nil {
 			t.Fatal(err)
 		}
@@ -242,7 +237,7 @@ func TestGraphLifecycleProposalAndRetainedData(t *testing.T) {
 		if kind == "agent" {
 			action = "tombstone"
 		}
-		raw, _ := json.Marshal(map[string]any{"ref": ref, "owner": owner, "by": "owner (CTO proposal p_2)"})
+		raw, _ := json.Marshal(map[string]any{"ref": ref, "owner": owner, "by": protocol.CTOOwnerWordsActor})
 		if _, err = g.handle(ctx, nc, kind+"."+action, raw); err != nil {
 			t.Fatal(err)
 		}
@@ -261,7 +256,7 @@ func TestGraphLifecycleProposalAndRetainedData(t *testing.T) {
 		if err = s.GraphUndo(h[0].ID, "CTO (owner window)"); err == nil {
 			t.Fatal("CTO window undid lifecycle")
 		}
-		if err = s.GraphUndo(h[0].ID, "owner (CTO proposal p_3)"); err != nil {
+		if err = s.GraphUndo(h[0].ID, protocol.CTOOwnerWordsActor); err != nil {
 			t.Fatal(err)
 		}
 		graph, err = s.GraphForRef(&ref)

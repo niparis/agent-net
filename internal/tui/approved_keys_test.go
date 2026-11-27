@@ -22,7 +22,6 @@ func TestApprovedKeyMapContract(t *testing.T) {
 		{"04_shared_graph_help", []check{{contextGraph, "?", "help"}}},
 		{"05_no_session_e", []check{{contextSessions, "e", ""}}},
 		{"06_view_v", []check{{contextSessions, "v", "cycle view"}, {contextSessions, "A", ""}, {contextSessions, "a", "archive offline"}}},
-		{"09_proposal_decline", []check{{contextProposalDetail, "r", "decline"}}},
 		{"10_message_enter", []check{{contextMessages, "enter", "message body"}}},
 		{"11_message_end", []check{{contextMessages, "end", actLast}}},
 		{"12_no_message_v", []check{{contextMessages, "v", ""}}},

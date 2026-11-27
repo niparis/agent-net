@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestMachineTokenAtomicSave(t *testing.T) {
@@ -40,13 +39,14 @@ func TestMachineTokenAtomicSave(t *testing.T) {
 	}
 }
 
-func TestMachineActionsLinkAndCTOProposal(t *testing.T) {
+// The CTO rotates and removes a machine at once on the owner's verified
+// words: the token changes and the machine reconnects, then it is removed.
+func TestMachineActionsLinkAndCTOOwnerWords(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	owner := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
 	logs := &logBuf{}
 	target := startNode(t, g, nodeOpts{logger: log.New(logs, "", 0)})
-	cli := cliClient(t, owner)
 	agent, _ := helloPi(t, owner, "machine-agent", "/work/test", true)
 	args := map[string]string{"node_id": target.cfg.NodeID}
 	for _, method := range []string{"machine_remove", "machine_rotate"} {
@@ -58,17 +58,16 @@ func TestMachineActionsLinkAndCTOProposal(t *testing.T) {
 	before := target.d.lk
 	target.d.mu.Unlock()
 	old := target.cfg.Token
-	raw, _ := json.Marshal(args)
-	proposal, err := owner.d.Propose(context.Background(), "settings_change", "machine_rotate", raw, "")
-	if err != nil {
+	words := "rotate that machine, then remove it"
+	ctoOwnerSays(t, owner.d, words)
+	machineCall := func(area string) error {
+		raw, _ := json.Marshal(map[string]string{"area": area, "node_id": target.cfg.NodeID, "owner_words": words})
+		_, err := owner.d.runCTOToolRaw(context.Background(), "settings_change", raw)
+		return err
+	}
+	if err := machineCall("machine_rotate"); err != nil {
 		t.Fatal(err)
 	}
-	var proposals []protocol.CTOProposal
-	_ = json.Unmarshal(cli.mustCall("proposal_list", nil), &proposals)
-	if len(proposals) != 1 || proposals[0].ID != proposal {
-		t.Fatalf("proposals %+v", proposals)
-	}
-	cli.mustCall("proposal_answer", protocol.CTOProposalAnswer{ID: proposal, Action: "a"})
 	eventually(t, "rotated node reconnected", func() bool {
 		data, err := os.ReadFile(filepath.Join(target.cfg.NodeConfigDir, "node.json"))
 		if err != nil {
@@ -90,17 +89,15 @@ func TestMachineActionsLinkAndCTOProposal(t *testing.T) {
 	if err == nil || res == nil || res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("old token accepted: %v %+v", err, res)
 	}
-	proposal, err = owner.d.Propose(context.Background(), "settings_change", "machine_remove", raw, "")
-	if err != nil {
+	if err := machineCall("machine_remove"); err != nil {
 		t.Fatal(err)
 	}
-	cli.mustCall("proposal_answer", protocol.CTOProposalAnswer{ID: proposal, Action: "a"})
 	eventually(t, "removed node disconnected", func() bool { return !target.d.Connected() })
 	eventually(t, "clear removal log", func() bool {
 		return len(logs.lines("this machine was removed from the network; run agent-net setup to join again")) > 0
 	})
-	if _, err := owner.d.Propose(context.Background(), "settings_change", "machine_remove", raw, ""); err == nil {
-		t.Fatal("removed target proposed again")
+	if err := machineCall("machine_remove"); err == nil {
+		t.Fatal("removed the removed machine again")
 	}
 }
 
