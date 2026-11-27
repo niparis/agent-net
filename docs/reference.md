@@ -3887,8 +3887,9 @@ and its notices are removed, and the step's evidence is the record.
 
 A merger registration maps a project to one session on one machine. A repo
 has one merger: registering another session replaces the first. Only the
-registered session receives, claims, and reports `@merger` steps for changes
-on its machine. Stopping the merger's harness session or taking it offline keeps
+registered session receives, claims, and reports `@merger` steps for every
+change of the project, whatever machine made it: a change's branch is pushed to
+origin, so the merger can test and merge it from its own machine. Stopping the merger's harness session or taking it offline keeps
 its registration; tasks wait and Delivery says "waiting for merger". Deleting
 the session record clears the registration. Explicitly stopping routing with
 `merger_stop` or clearing the registration does the same. All of the project's
