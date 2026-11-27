@@ -126,20 +126,30 @@ func (d *Daemon) prepareAntigravityHook(raw json.RawMessage, pid int) (*agyHookR
 	d.mu.Lock()
 	current := d.agyEvents[e.ConversationID]
 	d.mu.Unlock()
-	if e.Event == "SessionStart" {
+	// agy runs SessionStart only on the first prompt of a process. A turn hook
+	// from a process the daemon has no live record of (it began before the
+	// plugin was enabled, or its record was lost) is checked the same way.
+	// A live recorded process with another chain returned above.
+	if e.Event == "SessionStart" || !current.Started || !pidChain(pid)[current.PID] {
+		paths := e.WorkspacePaths
+		if len(paths) == 0 {
+			paths = current.WorkspacePaths
+		}
 		root := agyAncestor(pid)
-		if root == 0 || agyWorkspace(root, e.WorkspacePaths) == "" || d.workerForPeer(root) != nil || d.agyWorkerConversation(e.ConversationID) {
+		if root == 0 || agyWorkspace(root, paths) == "" || d.workerForPeer(root) != nil || d.agyWorkerConversation(e.ConversationID) {
 			root = 0
 		}
 		d.mu.Lock()
 		current.PID = root
 		current.ProcessStart = agyProcessStart(root)
 		current.Started = root != 0 && current.ProcessStart != ""
+		current.WorkspacePaths = paths
 		d.agyEvents[e.ConversationID] = current
 		d.mu.Unlock()
-	} else if current.PID == 0 || !pidChain(pid)[current.PID] {
-		// A hook without a verified SessionStart cannot receive messages.
-		return &agyHookReply{value: map[string]any{}}, nil
+		if !current.Started && e.Event != "SessionStart" {
+			// A hook that fails these checks cannot receive messages.
+			return &agyHookReply{value: map[string]any{}}, nil
+		}
 	}
 	if a == nil {
 		return &agyHookReply{value: map[string]any{}}, nil

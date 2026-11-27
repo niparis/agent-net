@@ -361,6 +361,10 @@ CREATE TABLE IF NOT EXISTS workers (
 		db.Close()
 		return nil, err
 	}
+	if _, err := db.Exec(agyMainsSchema); err != nil {
+		db.Close()
+		return nil, err
+	}
 	// Fix files that an older version made with the default mode.
 	if err := dbfile.Secure(path); err != nil {
 		db.Close()

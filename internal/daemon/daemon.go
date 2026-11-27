@@ -792,6 +792,10 @@ func New(cfg Config) (*Daemon, error) {
 		st.close()
 		return nil, err
 	}
+	if err := d.loadAgyMains(); err != nil {
+		st.close()
+		return nil, err
+	}
 	d.inSession = d.insideSession
 	d.ctoNow = time.Now
 	d.ctoCompactEvery = time.Second
