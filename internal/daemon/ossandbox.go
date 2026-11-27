@@ -17,7 +17,7 @@ import (
 // The OS sandbox of a worker (hardening plan W7, docs/design/worker-os-sandbox.md,
 // decision 0171 phase 4b, and decision 0197 for what it allows).
 //
-// A wrapper around the whole harness process of a Pi or OpenCode worker. It is
+// A wrapper around the whole harness process of a Pi, OpenCode or agy worker. It is
 // on by default (decision of 2026-11-17); node.json on the machine that runs
 // the worker can turn it off for a project (workers.os_sandbox_off). It keeps
 // one rule: the worker writes only in its worktree, its own temp folder, its
@@ -27,8 +27,14 @@ import (
 // bound writable; on macOS it is a sandbox-exec profile built from the same
 // policy (ossandbox_seatbelt.go).
 //
-// Codex and Antigravity keep their own sandboxes and are not wrapped; they get
-// the same writable folders (workerFence). A Claude worker is `claude
+// agy is wrapped too, although it has a sandbox of its own: on the owner's
+// machines agy's terminal sandbox cannot run a command (on Linux the exec of
+// the shell fails, on macOS a Nix shell is not permitted), so agy workers ran
+// their commands with BypassSandbox and nothing held the fence. Inside the
+// wrapper agy runs without its own --sandbox.
+//
+// Codex keeps its own sandbox and is not wrapped; it gets the same writable
+// folders (workerFence). A Claude worker is `claude
 // --bg`, which runs the session in Claude Code's own background service,
 // outside any wrapper: with the switch on, it is refused. Its own Bash sandbox
 // gets the same folders (claudeWorkerSandbox).
@@ -62,7 +68,7 @@ func (p *projectList) UnmarshalJSON(b []byte) error {
 type osSandboxMode int
 
 const (
-	osSandboxDefault  osSandboxMode = iota // on for Pi and OpenCode, as nothing was set
+	osSandboxDefault  osSandboxMode = iota // on for Pi, OpenCode and agy, as nothing was set
 	osSandboxExplicit                      // listed in workers.os_sandbox: on for every harness it can wrap, and the rest refused
 	osSandboxOff                           // listed in workers.os_sandbox_off: no wrapper
 )
@@ -96,7 +102,12 @@ func osSandboxDecide(mode osSandboxMode, harness, level string, ready func() err
 	return osSandboxDecideOn(OSSandboxDefaultOn, mode, harness, level, ready)
 }
 
-// osSandboxRequired tells whether a Pi or OpenCode worker of a project must
+// osSandboxHarness tells whether the wrapper runs the workers of harness.
+func osSandboxHarness(harness string) bool {
+	return harness == "pi" || harness == "opencode" || harness == "agy"
+}
+
+// osSandboxRequired tells whether a Pi, OpenCode or agy worker of a project must
 // run in the wrapper: the project is listed, or nothing was set and this OS
 // has the sandbox on by default.
 func osSandboxRequired(defaultOn bool, mode osSandboxMode) bool {
@@ -117,20 +128,20 @@ func osSandboxDecideOn(defaultOn bool, mode osSandboxMode, harness, level string
 		}
 		return "", nil
 	}
-	where := "the OS sandbox is on by default for Pi and OpenCode workers"
+	where := "the OS sandbox is on by default for Pi, OpenCode and agy workers"
 	if mode == osSandboxExplicit {
 		where = "this project has the OS sandbox on (workers.os_sandbox in node.json on this machine)"
 	}
 	const off = `or turn it off for this project with "os_sandbox_off": ["<project>"] under "workers" in node.json on this machine (then the worker runs without an OS sandbox)`
 	switch harness {
-	case "codex", "agy":
-		return "", nil // their own sandbox, inside
+	case "codex":
+		return "", nil // its own sandbox, inside
 	case "claude":
 		if mode == osSandboxDefault {
 			return "", nil // Claude Code's own sandbox settings, set per worker
 		}
-		return "", fmt.Errorf("%s, and it cannot wrap a Claude worker: `claude --bg` runs the session in Claude Code's own background service, outside any wrapper. Use a Pi, OpenCode or Codex worker, or take the project out of workers.os_sandbox", where)
-	case "pi", "opencode":
+		return "", fmt.Errorf("%s, and it cannot wrap a Claude worker: `claude --bg` runs the session in Claude Code's own background service, outside any wrapper. Use a Pi, OpenCode, agy or Codex worker, or take the project out of workers.os_sandbox", where)
+	case "pi", "opencode", "agy":
 	default:
 		if mode == osSandboxDefault {
 			return "", nil
@@ -147,8 +158,8 @@ func osSandboxDecideOn(defaultOn bool, mode osSandboxMode, harness, level string
 // every project.
 func OSSandboxOffEverywhere(s WorkerSettings) bool { return containsString(s.OSSandboxOff, "*") }
 
-// OSSandboxCheck is the check that setup runs: the wrapper's name when a Pi or
-// OpenCode worker can run in the OS sandbox on this machine, else the reason
+// OSSandboxCheck is the check that setup runs: the wrapper's name when a Pi,
+// OpenCode or agy worker can run in the OS sandbox on this machine, else the reason
 // and the fix.
 func OSSandboxCheck() (string, error) {
 	if err := osSandboxReady(); err != nil {
@@ -283,39 +294,80 @@ func resolved(p string) string {
 // environment the harness needs inside. It records the wrapper in the
 // worker's folder.
 func (d *Daemon) osSandboxWrap(w *worker, bin string, args, env []string) (string, []string, []string, error) {
-	d.wmu.Lock()
-	harness, name := w.harness, w.osSandbox
-	d.wmu.Unlock()
 	tool, err := osSandboxTool()
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("the OS sandbox is on for this worker, but %w", err)
 	}
-	in, dir, err := d.osSandboxInputFor(w)
+	p, set, err := d.osSandboxPrepare(w)
 	if err != nil {
 		return "", nil, nil, err
+	}
+	return tool, osSandboxCommand(p, bin, args), workerEnv(env, set), nil
+}
+
+// osSandboxPrepare makes the private folders of a worker that runs in the
+// wrapper, records the wrapper in the worker's folder, and returns the
+// wrapper's policy and the environment it sets.
+func (d *Daemon) osSandboxPrepare(w *worker) (osSandboxPolicy, map[string]string, error) {
+	d.wmu.Lock()
+	harness, name := w.harness, w.osSandbox
+	d.wmu.Unlock()
+	in, dir, err := d.osSandboxInputFor(w)
+	if err != nil {
+		return osSandboxPolicy{}, nil, err
 	}
 	set := osSandboxSetEnv(in)
 	switch harness {
 	case "pi":
 		if err := d.piPrivateAgent(&in, set); err != nil {
-			return "", nil, nil, err
+			return osSandboxPolicy{}, nil, err
 		}
 	case "opencode":
 		for _, sub := range []string{"data", "state"} {
 			p := filepath.Join(dir, sub)
 			if err := os.MkdirAll(p, 0o700); err != nil {
-				return "", nil, nil, err
+				return osSandboxPolicy{}, nil, err
 			}
 			in.State = append(in.State, resolved(p))
 		}
+	case "agy":
+		state, err := agyStateDirs()
+		if err != nil {
+			return osSandboxPolicy{}, nil, err
+		}
+		in.State = append(in.State, state...)
 	default:
-		return "", nil, nil, fmt.Errorf("the OS sandbox cannot wrap %s workers", harness)
+		return osSandboxPolicy{}, nil, fmt.Errorf("the OS sandbox cannot wrap %s workers", harness)
 	}
 	if err := os.WriteFile(filepath.Join(dir, osSandboxMarker), []byte(name+"\n"), 0o600); err != nil {
-		return "", nil, nil, err
+		return osSandboxPolicy{}, nil, err
 	}
-	argv := osSandboxCommand(buildOSSandboxPolicy(in), bin, args)
-	return tool, argv, workerEnv(env, set), nil
+	return buildOSSandboxPolicy(in), set, nil
+}
+
+// agyStateDirs are the folders agy itself writes while it runs, bound writable
+// for an agy worker in the wrapper. ~/.gemini/antigravity-cli holds its
+// conversations, the summaries database, its log, helper binaries, its login
+// token and its settings, where agy adds each workspace it trusts. The login
+// folder (antigravity in the user config folder: ~/.config on Linux) holds
+// the scope of the login, which agy rewrites when it refreshes it. agy has no
+// option to move these folders, so a worker gets the owner's own. Before, only
+// the agy process wrote them, outside agy's sandbox; in the wrapper the
+// commands it runs can write them too (docs/security.md).
+func agyStateDirs() ([]string, error) {
+	cli := filepath.Join(home(), ".gemini", "antigravity-cli")
+	if err := os.MkdirAll(cli, 0o700); err != nil {
+		return nil, err
+	}
+	dirs := []string{resolved(cli)}
+	if cfg, err := os.UserConfigDir(); err == nil {
+		// Bound only when it exists: bubblewrap cannot bind a missing folder, and
+		// agy makes it at sign-in, before any worker runs.
+		if login := filepath.Join(cfg, "antigravity"); isDir(login) {
+			dirs = append(dirs, resolved(login))
+		}
+	}
+	return dirs, nil
 }
 
 // osSandboxInputFor collects the facts the wrapper's policy needs for a worker:

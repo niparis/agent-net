@@ -6,10 +6,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -201,6 +203,70 @@ func TestOSSandboxPiWorkerEndToEnd(t *testing.T) {
 	}
 	if pgid := rows[0].PGID; pgid > 0 {
 		eventually(t, "the sandbox's process group is gone", func() bool { return errors.Is(syscall.Kill(-pgid, 0), syscall.ESRCH) })
+	}
+}
+
+// An agy worker of a project with the switch on runs inside bubblewrap without
+// agy's own --sandbox, which cannot run a command on the owner's machines. It
+// writes in its worktree and in agy's runtime folder (the fake keeps its
+// records there), a write outside them is refused, and it hands back through
+// the bound socket.
+func TestOSSandboxAgyWorkerEndToEnd(t *testing.T) {
+	requireBwrap(t)
+	home := outsideHome(t)
+	records := filepath.Join(home, ".gemini", "antigravity-cli", "records")
+	if err := os.MkdirAll(records, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outside := sandboxFolder(t, "outside")
+	bin := filepath.Join(sandboxFolder(t, "agy"), "agy")
+	script := "#!/bin/sh\nFAKE_AGY_RECORDS=" + shellQuote(records) + " FAKE_AGY_FENCE_OUTSIDE=" + shellQuote(outside) +
+		" FAKE_AGY_PROCESS=1 exec " + shellQuote(sandboxHarnessCopy(t)) + " -test.run '^TestAgyProcess$' -- \"$@\"\n"
+	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	g := startGateway(t, t.TempDir(), "")
+	set := shortSet
+	set.OSSandbox = []string{"shop"}
+	set.StartTimeout = scaled(30 * time.Second)
+	w := startWorkerNodeWithDetect(t, g, set, agyInventory, func(c *Config) {
+		c.HarnessPaths = map[string]string{"agy": bin}
+		c.WorkerGoTmp = filepath.Join(t.TempDir(), "gotmp")
+	})
+	w.register(t, newRepo(t, "shop"))
+	// The daemon finds agy's folders in the home folder when the worker starts.
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "agy", Model: "gemini-3.8-flash-low", Task: "FAKE:fence FAKE:handback", Isolation: protocol.IsolationWorktree})
+	if res.OSSandbox != osSandboxName {
+		t.Errorf("start result os_sandbox %q", res.OSSandbox)
+	}
+	n := w.waitNotice(t, 1)[0]
+	for _, want := range []string{"status: done", "finished agy task", "(sandboxed by bubblewrap)"} {
+		if !strings.Contains(n.Body, want) {
+			t.Errorf("notice lacks %q:\n%s", want, n.Body)
+		}
+	}
+	recs := agyRecords(records)
+	if len(recs) != 1 {
+		t.Fatalf("records in agy's runtime folder: %+v (log: %s)", recs, w.logs)
+	}
+	r := recs[0]
+	if slices.Contains(r.Args, "--sandbox") {
+		t.Errorf("agy runs with its own sandbox inside the wrapper: %q", r.Args)
+	}
+	if r.MCPError != "" {
+		t.Errorf("MCP: %s", r.MCPError)
+	}
+	if r.FenceInside != "" || !fileExists(filepath.Join(res.Worktree, "fence-inside.txt")) {
+		t.Errorf("a write in the worktree failed: %q", r.FenceInside)
+	}
+	if !strings.Contains(r.FenceOutside, "read-only file system") || fileExists(filepath.Join(outside, "fence-outside.txt")) {
+		t.Errorf("a write outside the fence: %q, want a read-only refusal", r.FenceOutside)
+	}
+	if m := readOSSandboxMarker(filepath.Join(w.d.cfg.StateDir, "workers", r.Worker)); m != osSandboxName {
+		t.Errorf("marker %q", m)
 	}
 }
 

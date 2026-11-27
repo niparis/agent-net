@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -356,6 +357,36 @@ func TestActionScreensFitEverySize(t *testing.T) {
 						t.Fatalf("%s %dx%d line %d is %d wide: %q", name, w, h, i, sw, l)
 					}
 				}
+			}
+		}
+	}
+}
+
+// An agy worker whose project turned the OS sandbox off says so in its detail:
+// agy's own sandbox does not enforce the level, as the model can run a command
+// outside it. In the wrapper it names the wrapper, as a Pi or OpenCode worker.
+func TestAgyWorkerDetailNamesTheOSSandbox(t *testing.T) {
+	for _, tc := range []struct{ osSandbox, want string }{
+		{"", "sandboxed (OS sandbox off)"},
+		{"bubblewrap", "sandboxed (sandboxed by bubblewrap)"},
+	} {
+		for _, size := range [][2]int{{80, 24}, {120, 34}} {
+			m, src := workerModel(size[0], size[1])
+			for i := range src.snap.Agents {
+				if a := &src.snap.Agents[i]; a.SessionID == workerID {
+					a.Harness, a.Model = "agy", "gemini-3.8-flash-low"
+					a.Worker.Permissions, a.Worker.OSSandbox = protocol.WorkersSandboxed, tc.osSandbox
+				}
+			}
+			m = keys(selectID(refresh(m, src), workerID), "d")
+			view := ansi.Strip(m.testView())
+			// At 80x24 the detail has no room for the sandbox row; the frame is
+			// kept to show that.
+			if size[1] > 24 && !strings.Contains(view, tc.want) {
+				t.Errorf("%dx%d, os_sandbox %q: the detail lacks %q:\n%s", size[0], size[1], tc.osSandbox, tc.want, view)
+			}
+			if tc.osSandbox == "" {
+				golden(t, fmt.Sprintf("agy_worker_detail_os_sandbox_off_%dx%d", size[0], size[1]), m.testView())
 			}
 		}
 	}

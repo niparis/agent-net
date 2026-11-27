@@ -35,7 +35,7 @@ How each harness applies it:
 - Pi and OpenCode, macOS: a Seatbelt profile that allows everything except file writes, allows writes only in the same folders, and then denies writes to the read-only git paths (the later rule wins).
 - Claude: `sandbox.filesystem.allowWrite` names the same folders and `sandbox.filesystem.denyWrite` the read-only git paths. `sandbox.network` turns on `allowAllUnixSockets`, `allowLocalBinding` and `allowMachLookup: ["*"]`.
 - Codex: the same folders as writable roots of its `workspace-write` sandbox, network on. Codex has no read-only list inside a writable root, so in place of the whole git folder it gets only the folders a commit writes: `objects`, `refs`, `logs` and the worktree's own `worktrees/<id>`.
-- agy: the same folders as `--add-dir`, with the same narrow git folders as Codex, for the same reason. agy's settings use the `proceed-in-sandbox` tool permission and no `command(...)` allow rule, so a command the model asks to run outside the sandbox (`BypassSandbox`) is refused in a headless worker. The worker's `SHELL` is a shell from `/bin` or `/usr/bin`: agy's macOS sandbox cannot run a shell from another folder, such as a Nix profile's zsh, and a worker whose commands fail there asks to bypass the sandbox. This was found in the real Mac check of v0.5.171.
+- agy: the OS wrapper, as for Pi and OpenCode, and agy runs without its own `--sandbox` inside it. agy's own folders (`~/.gemini/antigravity-cli` and its login folder) are its writable private state. The folders above stay `--add-dir` folders, with the same narrow git folders as Codex, for agy's file tools. Why: in the real Mac check of v0.5.171 agy's terminal sandbox could not run the owner's Nix shell, and on the Linux machine it could not exec the shell at all, so the model reran every command with `BypassSandbox` and nothing held the fence. agy 1.5.18 has no setting that stops that bypass. A project with the wrapper turned off keeps agy's `--sandbox`, and its permissions line says the fence is not enforced.
 
 Each harness keeps its own permission mode. The owner's own sessions, the CTO's sandbox and the picker do not change.
 
@@ -55,10 +55,10 @@ A worker's own git still runs with `core.hooksPath` set to agent-net's commit ho
 
 ## What agent-net cannot change
 
-- Codex and agy keep `/tmp` writable, by their own rules.
+- Codex keeps `/tmp` writable, by its own rules.
 - Claude Code's Bash sandbox keeps a fixed list of files read-only in the working folder (`.bashrc`, `.gitconfig`, `.mcp.json`, `.claude/agents` and others). Where one is missing, it makes an empty file as a mount point. agent-net did not make these files, and no Claude Code setting turns them off. So `worker_sandbox_placeholders.go` stays: without it, the leftover commit would add the empty files to the worker's branch. A Claude worker's git now gets `core.excludesFile` set to a file in its worker folder, with the owner's own excludes and these names, so they no longer show in the worker's `git status`, `git add -A` or `scripts/test-changed.sh`. A real folder with one of these names still shows.
 - On Linux, Claude Code runs each shell command in its own network namespace. A port that a command opens on loopback is reachable inside that command, not from a later command.
-- agy hides parts of the home folder in its own sandbox.
+- agy cannot move its own folders, so an agy worker in the wrapper writes the owner's `~/.gemini/antigravity-cli` and login folder. A worker could change agy's settings or helper binaries there, which the owner's next agy session uses outside the wrapper.
 
 ## Measured
 

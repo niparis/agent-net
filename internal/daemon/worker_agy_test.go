@@ -33,7 +33,9 @@ type fakeAgyRecord struct {
 	MCPError                    string
 	BadHandbackRejected         bool
 	InputClosed                 bool
-	Shell                       string
+	// FenceInside and FenceOutside are the errors of a write in the worktree
+	// and in FAKE_AGY_FENCE_OUTSIDE, for a turn with FAKE:fence.
+	FenceInside, FenceOutside string
 }
 
 // The fake agy script execs this test binary. No vendor binaries, credentials,
@@ -57,7 +59,6 @@ func TestAgyProcess(t *testing.T) {
 	pgid, _ := syscall.Getpgid(0)
 	r := fakeAgyRecord{Args: args, Cwd: cwd, Native: native, Worker: os.Getenv("AGENT_NET_WORKER"), Socket: os.Getenv("AGENT_NET_SOCKET"), PID: os.Getpid(), PGID: pgid}
 	r.ConfigDir = os.Getenv("AGENT_NET_CONFIG_DIR")
-	r.Shell = os.Getenv("SHELL")
 	path := filepath.Join(os.Getenv("FAKE_AGY_RECORDS"), strconv.Itoa(r.PID)+".json")
 	save := func() {
 		b, _ := json.Marshal(r)
@@ -124,6 +125,17 @@ func TestAgyProcess(t *testing.T) {
 		if strings.Contains(body, "FAKE:error") {
 			fmt.Fprintln(os.Stderr, `AGY_ERROR: {"message":"local worker exploded"}`)
 			os.Exit(3)
+		}
+		if strings.Contains(body, "FAKE:fence") {
+			errText := func(err error) string {
+				if err != nil {
+					return err.Error()
+				}
+				return ""
+			}
+			r.FenceInside = errText(os.WriteFile(filepath.Join(cwd, "fence-inside.txt"), []byte("ok\n"), 0o644))
+			r.FenceOutside = errText(os.WriteFile(filepath.Join(os.Getenv("FAKE_AGY_FENCE_OUTSIDE"), "fence-outside.txt"), []byte("escaped\n"), 0o644))
+			save()
 		}
 		if strings.Contains(body, "FAKE:edit") {
 			_ = os.WriteFile(filepath.Join(cwd, "agy-work.txt"), []byte("work\n"), 0644)
@@ -580,10 +592,6 @@ func TestAgyWorkerLifecycleAndResume(t *testing.T) {
 	if r.Args[len(r.Args)-1] != "-p=" || argValue(r.Args, "--input-format") != "stream-json" || argValue(r.Args, "--output-format") != "stream-json" || argValue(r.Args, "--model") != "gemini-3.8-flash-low" || argValue(r.Args, "--mode") != "accept-edits" || !strings.Contains(strings.Join(r.Args, " "), "--sandbox") || argValue(r.Args, "--settings") != agyWorkerSettings {
 		t.Fatalf("args: %v", r.Args)
 	}
-	// TestMain sets SHELL to a fake outside the system folders.
-	if r.Shell == os.Getenv("SHELL") || (filepath.Dir(r.Shell) != "/bin" && filepath.Dir(r.Shell) != "/usr/bin") {
-		t.Fatalf("worker SHELL %q, daemon SHELL %q", r.Shell, os.Getenv("SHELL"))
-	}
 	sendAgy(t, w, res.SessionID, "FAKE:handback again")
 	w.waitNotice(t, 2)
 	eventually(t, "agy resumes and ends", func() bool { return w.d.workerCount() == 0 && len(agyRecords(dir)) == 2 })
@@ -594,52 +602,26 @@ func TestAgyWorkerLifecycleAndResume(t *testing.T) {
 	}
 }
 
-// agy's macOS sandbox cannot exec a shell outside the system folders, such as
-// a Nix profile's zsh, so an agy worker gets a system shell instead.
-func TestAgyWorkerShell(t *testing.T) {
+// In agent-net's OS wrapper agy runs without its own --sandbox, which cannot
+// run a command on the owner's machines: the wrapper is the fence. A project
+// with the wrapper turned off keeps agy's --sandbox. Both may run commands and
+// agent-net's tools without a prompt, and add the same folders.
+func TestAgyWorkerArgs(t *testing.T) {
 	t.Parallel()
-	mac := func(p string) bool { return p == "/bin/zsh" || p == "/bin/bash" || p == "/bin/sh" }
-	linux := func(p string) bool { return p == "/usr/bin/bash" || p == "/bin/sh" }
-	for _, c := range []struct {
-		shell, goos string
-		exists      func(string) bool
-		want        string
-	}{
-		{"/etc/profiles/per-user/someone/bin/zsh", "darwin", mac, "/bin/zsh"},
-		{"/opt/homebrew/bin/bash", "darwin", mac, "/bin/bash"},
-		{"/opt/homebrew/bin/fish", "darwin", mac, "/bin/zsh"},
-		{"", "darwin", mac, "/bin/zsh"},
-		{"/run/current-system/sw/bin/zsh", "linux", linux, "/bin/sh"},
-		{"/nix/store/x-bash/bin/bash", "linux", linux, "/usr/bin/bash"},
-		// A system shell is left alone.
-		{"/bin/zsh", "darwin", mac, "/bin/zsh"},
-		{"/usr/bin/bash", "linux", linux, "/usr/bin/bash"},
-	} {
-		if got := agyWorkerShell(c.shell, c.goos, c.exists); got != c.want {
-			t.Errorf("agyWorkerShell(%q, %s) = %q, want %q", c.shell, c.goos, got, c.want)
-		}
+	model := []string{"--model", "gemini-3.8-flash-low"}
+	dirs := []string{"/repo/.git/objects", "/gocache"}
+	wrapped := agyWorkerArgs(model, true, dirs, "conv-1")
+	want := []string{"--input-format", "stream-json", "--output-format", "stream-json", "--model", "gemini-3.8-flash-low",
+		"--mode", "accept-edits", "--settings", `{"permissions":{"allow":["command(*)","mcp(agent-net_agent-net/*)"]}}`,
+		"--add-dir", "/repo/.git/objects", "--add-dir", "/gocache", "--conversation", "conv-1", "-p="}
+	if !slices.Equal(wrapped, want) {
+		t.Fatalf("wrapped:\n got %q\nwant %q", wrapped, want)
 	}
-}
-
-// A headless agy worker must not run a command outside its sandbox: no allow
-// rule may approve commands, which would also approve a BypassSandbox run.
-func TestAgyWorkerSettingsKeepCommandsInSandbox(t *testing.T) {
-	t.Parallel()
-	var s struct {
-		ToolPermission string `json:"toolPermission"`
-		Permissions    struct {
-			Allow []string `json:"allow"`
-		} `json:"permissions"`
+	own := agyWorkerArgs(model, false, dirs, "")
+	if !slices.Contains(own, "--sandbox") || argValue(own, "--settings") != agyWorkerSettings || slices.Contains(own, "--conversation") || own[len(own)-1] != "-p=" {
+		t.Fatalf("without the wrapper: %q", own)
 	}
-	if err := json.Unmarshal([]byte(agyWorkerSettings), &s); err != nil {
-		t.Fatal(err)
-	}
-	if s.ToolPermission != "proceed-in-sandbox" {
-		t.Errorf("toolPermission %q", s.ToolPermission)
-	}
-	if fmt.Sprint(s.Permissions.Allow) != "[mcp(agent-net_agent-net/*)]" {
-		t.Errorf("allow rules %v", s.Permissions.Allow)
-	}
+	noFlagThatSkipsPermissions(t, wrapped)
 }
 
 // agy reports per-step usage in its stream but no context window, so the

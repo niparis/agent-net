@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -19,55 +18,39 @@ import (
 
 // Antigravity workers use one stream-json process per conversation (0049 D2).
 // -p= must be empty and LAST: otherwise agy consumes the next flag as a prompt.
-// accept-edits permits workspace edits, and --sandbox makes home hidden or
-// read-only while the workspace, /tmp and added toolchains remain writable
-// (checked on agy 1.4.12). Nothing is saved to the user's settings. Auto mode
-// is not available on every account.
+// accept-edits permits workspace edits and command(*) permits shell tools.
+// Nothing is saved to the user's settings. Auto mode is not available on every
+// account.
+//
+// The write fence (decision 0197) is agent-net's OS wrapper, as for Pi and
+// OpenCode, and agy runs without its own --sandbox inside it: on the owner's
+// machines agy's terminal sandbox could not run a command (on Linux the exec
+// of the shell failed, on macOS a Nix shell was not permitted), so the model
+// reran each command with BypassSandbox and nothing held the fence. Only a
+// project with the wrapper turned off (workers.os_sandbox_off) gets agy's
+// --sandbox, which the model can still bypass.
 type agyLauncher struct{}
 
-// agyWorkerSettings lets shell commands run without a prompt only inside the
-// terminal sandbox (decision 0197). agy's run_command tool has a BypassSandbox
-// argument the model sets itself, and an allow rule such as command(*) also
-// approves a command that leaves the sandbox (agy changelog). The
-// proceed-in-sandbox tool permission asks before such a command instead, and
-// a headless run cannot answer, so agy refuses it and reports it as denied.
-// agy 1.5.18 reads toolPermission from --settings.
-const agyWorkerSettings = `{"toolPermission":"proceed-in-sandbox","permissions":{"allow":["mcp(agent-net_agent-net/*)"]}}`
+const agyWorkerSettings = `{"permissions":{"allow":["command(*)","mcp(agent-net_agent-net/*)"]}}`
 
-// agySandboxShellDirs are the folders whose shells agy's terminal sandbox can
-// run. On macOS agy runs each command through sandbox-exec with $SHELL, and
-// its profile allows the system's programs but not a shell from a Nix profile
-// (/etc/profiles/per-user/<user>/bin/zsh) or Homebrew: the exec fails with
-// "Operation not permitted" and the model then asks to bypass the sandbox.
-var agySandboxShellDirs = []string{"/bin", "/usr/bin"}
-
-// agyWorkerShell is the SHELL an agy worker gets: shell itself when it is in
-// one of agySandboxShellDirs, else the system shell of the same name, else zsh
-// on macOS, else sh. An unset SHELL also gets a system shell, so agy does not
-// fall back to the login shell of the user's account.
-func agyWorkerShell(shell, goos string, executable func(string) bool) string {
-	if filepath.IsAbs(shell) {
-		for _, dir := range agySandboxShellDirs {
-			if filepath.Dir(filepath.Clean(shell)) == dir {
-				return shell
-			}
-		}
+// agyWorkerArgs is the agy command line of a worker. wrapped tells whether it
+// runs in agent-net's OS wrapper. addDirs are the folders the worker may write
+// beyond its worktree: agy's file tools need them in the workspace, and its
+// own sandbox, when used, needs them to let commands write there.
+func agyWorkerArgs(modelArgs []string, wrapped bool, addDirs []string, native string) []string {
+	args := append([]string{"--input-format", "stream-json", "--output-format", "stream-json"}, modelArgs...)
+	args = append(args, "--mode", "accept-edits")
+	if !wrapped {
+		args = append(args, "--sandbox")
 	}
-	var candidates []string
-	if name := filepath.Base(shell); shell != "" && name != "/" && name != "." {
-		for _, dir := range agySandboxShellDirs {
-			candidates = append(candidates, filepath.Join(dir, name))
-		}
+	args = append(args, "--settings", agyWorkerSettings)
+	for _, path := range addDirs {
+		args = append(args, "--add-dir", path)
 	}
-	if goos == "darwin" {
-		candidates = append(candidates, "/bin/zsh")
+	if native != "" {
+		args = append(args, "--conversation", native)
 	}
-	for _, c := range candidates {
-		if executable(c) {
-			return c
-		}
-	}
-	return "/bin/sh"
+	return append(args, "-p=")
 }
 
 // agyUsage is one result event's usage for its turn. Output is the model's
@@ -187,40 +170,23 @@ func (d *Daemon) startAgy(ctx context.Context, w *worker) error {
 	w.agy = c
 	d.wmu.Unlock()
 
-	shell := agyWorkerShell(os.Getenv("SHELL"), runtime.GOOS, isExecutableFile)
-	if shell != os.Getenv("SHELL") {
-		d.Logf("worker %s: agy shell %s instead of %q, which agy's sandbox cannot run", w.id, shell, os.Getenv("SHELL"))
-	}
 	env := d.workerGitEnv(w, os.Environ(), map[string]string{"AGENT_NET_WORKER": w.id, "AGENT_NET_SOCKET": d.cfg.SocketPath,
-		"AGENT_NET_WORKER_SESSION_FILE": filepath.Join(dir, "session"), "SHELL": shell})
+		"AGENT_NET_WORKER_SESSION_FILE": filepath.Join(dir, "session")})
 	toolchains := d.workerToolchainDirs(ctx, w.path, env)
 	d.wmu.Lock()
 	w.toolchainDirs = toolchains
+	wrapped := protocol.OSSandboxWrapper(w.osSandbox) != ""
 	d.wmu.Unlock()
-	args := []string{"--input-format", "stream-json", "--output-format", "stream-json"}
 	// The gateway validated this id against the machine's agy inventory.
 	selection := protocol.ParseModelSelection("agy", "", model, "")
 	modelArgs, err := selection.Arguments([]string{selection.ModelID()})
 	if err != nil {
 		return err
 	}
-	args = append(args, modelArgs...)
-
-	args = append(args, "--mode", "accept-edits", "--sandbox", "--settings", agyWorkerSettings)
 	// The folders every worker may write (workerFence): agy has no read-only
 	// list, so the git folders a commit writes, then the Go folders and the
 	// worker's package caches, last.
-	for _, path := range toolchains {
-		args = append(args, "--add-dir", path)
-	}
-	roots := d.workerFence(ctx, w).Narrow
-	for _, path := range roots {
-		args = append(args, "--add-dir", path)
-	}
-	if native != "" {
-		args = append(args, "--conversation", native)
-	}
-	args = append(args, "-p=")
+	args := agyWorkerArgs(modelArgs, wrapped, append(append([]string(nil), toolchains...), d.workerFence(ctx, w).Narrow...), native)
 	if err := d.spawnWorkerIO(w, bin, args, env, rd, out); err != nil {
 		wr.Close()
 		return err

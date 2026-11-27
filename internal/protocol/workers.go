@@ -957,15 +957,16 @@ func OSSandboxWrapper(osSandbox string) string {
 
 // WorkerEnforcer names what enforces a worker's level: the OS sandbox the
 // worker runs in (osSandbox, such as "bubblewrap"), the harness's own sandbox
-// ("codex", "claude" or "agy"), or "" when nothing does: a Pi or OpenCode
-// worker that the project's node.json took out of the OS sandbox.
+// ("codex" or "claude"), or "" when nothing does: a Pi, OpenCode or agy worker
+// that the project's node.json took out of the OS sandbox. agy's own sandbox
+// does not count: the model can run a command outside it (BypassSandbox).
 func WorkerEnforcer(level, harness, osSandbox string) string {
 	switch {
 	case OSSandboxWrapper(osSandbox) != "":
 		return osSandbox
 	case harness == "claude" && ClaudeSandboxMissing(osSandbox) != "":
 		return ""
-	case harness == "codex", harness == "claude", harness == "agy":
+	case harness == "codex", harness == "claude":
 		return harness
 	}
 	return ""
@@ -990,7 +991,7 @@ func WorkerBaseNote(base, worktree string, snap settings.Snapshot) string {
 var workerHarnesses = []string{"claude", "codex", "agy", "opencode", "pi"}
 
 // WorkerEnforcedBy names the harnesses whose own sandbox enforces a level, for
-// example "claude, codex and agy". It asks WorkerEnforcer, the place that
+// example "claude and codex". It asks WorkerEnforcer, the place that
 // decides it, so the names follow the launch code.
 func WorkerEnforcedBy(level string) string {
 	var names []string
@@ -1009,15 +1010,15 @@ func WorkerEnforcedBy(level string) string {
 }
 
 // WorkerEnforcedLine is the line of the policy screen that says what enforces
-// a workers level. Pi and OpenCode workers run in the OS sandbox by default
-// on Linux and macOS (decision 0171, phase 4b).
+// a workers level. Pi, OpenCode and agy workers run in the OS sandbox by
+// default on Linux and macOS (decision 0171, phase 4b, and decision 0197).
 func WorkerEnforcedLine(level string) string {
-	return "Enforced for " + WorkerEnforcedBy(level) + ", and for Pi and OpenCode (OS sandbox)."
+	return "Enforced for " + WorkerEnforcedBy(level) + ", and for Pi, OpenCode and agy (OS sandbox)."
 }
 
 // WorkerPermissionsLine describes the effective project level, and what
-// enforces it (docs/design/worker-os-sandbox.md). A Pi or OpenCode worker that
-// has no OS sandbox says that node.json turned it off. A harness that does
+// enforces it (docs/design/worker-os-sandbox.md). A Pi, OpenCode or agy worker
+// that has no OS sandbox says that node.json turned it off. A harness that does
 // not enforce the level otherwise has the names of the harnesses that do.
 func WorkerPermissionsLine(level, harness, osSandbox string) string {
 	if missing := ClaudeSandboxMissing(osSandbox); missing != "" {
@@ -1032,6 +1033,8 @@ func WorkerPermissionsLine(level, harness, osSandbox string) string {
 		text += " (no OS sandbox on macOS yet: opt in with workers.os_sandbox in node.json)"
 	case harness == "pi" || harness == "opencode":
 		text += " (no OS sandbox: turned off for this project in node.json)"
+	case harness == "agy":
+		text += " (no OS sandbox: turned off for this project in node.json; agy's own sandbox does not enforce it)"
 	case WorkerEnforcer(level, harness, "") == "":
 		text += " (enforced for " + WorkerEnforcedBy(level) + " only for now)"
 	}

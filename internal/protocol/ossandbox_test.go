@@ -17,7 +17,9 @@ func TestWorkerPermissionsLineNamesTheWrapper(t *testing.T) {
 		{WorkersSandboxed, "opencode", "sandbox-exec", "permissions: sandboxed (writes only in its worktree, network on) (sandboxed by sandbox-exec)"},
 		{WorkersSandboxed, "pi", OSSandboxNoneMacOS, "permissions: sandboxed (writes only in its worktree, network on) (no OS sandbox on macOS yet: opt in with workers.os_sandbox in node.json)"},
 		{WorkersSandboxed, "claude", "", "permissions: sandboxed (writes only in its worktree, network on)"},
-		{WorkersSandboxed, "agy", "", "permissions: sandboxed (writes only in its worktree, network on)"},
+		{WorkersSandboxed, "agy", "bubblewrap", "permissions: sandboxed (writes only in its worktree, network on) (sandboxed by bubblewrap)"},
+		// agy's own sandbox lets the model run a command outside it.
+		{WorkersSandboxed, "agy", "", "permissions: sandboxed (writes only in its worktree, network on) (no OS sandbox: turned off for this project in node.json; agy's own sandbox does not enforce it)"},
 	} {
 		if got := WorkerPermissionsLine(tc.level, tc.harness, tc.os); got != tc.want {
 			t.Errorf("%s %s %q:\n got %q\nwant %q", tc.level, tc.harness, tc.os, got, tc.want)
@@ -45,7 +47,7 @@ func TestWorkerBriefNamesTheWrapper(t *testing.T) {
 		t.Fatalf("brief:\n%s", body)
 	}
 	plain := WorkerTaskBodyBriefBar("pi", WorkerBrief{Notes: "do it"}, "/wt", "agent-net/w_1", "", "", "", WorkersSandboxed, "", settings.Snapshot{}, "", nil)
-	if strings.Contains(plain, "bubblewrap") || strings.Contains(plain, "enforced for claude, codex and agy only") || !strings.Contains(plain, "(no OS sandbox: turned off for this project in node.json)") {
+	if strings.Contains(plain, "bubblewrap") || strings.Contains(plain, "enforced for claude and codex only") || !strings.Contains(plain, "(no OS sandbox: turned off for this project in node.json)") {
 		t.Fatalf("brief without the wrapper:\n%s", plain)
 	}
 
@@ -60,10 +62,10 @@ func TestWorkerNoticeNamesTheWrapper(t *testing.T) {
 	}
 }
 
-// The policy screen says what enforces a level. Pi and OpenCode are in the OS
-// sandbox by default.
+// The policy screen says what enforces a level. Pi, OpenCode and agy are in
+// the OS sandbox by default.
 func TestWorkerEnforcedLine(t *testing.T) {
-	if got := WorkerEnforcedLine(WorkersSandboxed); !strings.Contains(got, "Pi and OpenCode (OS sandbox)") || strings.Contains(got, "only for now") {
+	if got := WorkerEnforcedLine(WorkersSandboxed); got != "Enforced for claude and codex, and for Pi, OpenCode and agy (OS sandbox)." {
 		t.Errorf("sandboxed: %q", got)
 	}
 }

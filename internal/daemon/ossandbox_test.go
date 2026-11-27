@@ -161,6 +161,64 @@ func argPair(args []string, flag, path string) int {
 	return -1
 }
 
+// An agy worker in the wrapper has the fence of an OpenCode worker (decision
+// 0197): the worktree, its temp folder, the folders every worker may write and
+// the socket folder, with the git config and hooks read-only. Its private
+// state is agy's own runtime folder and login folder, which agy writes as it
+// runs (conversations, helpers, settings, the login token and scope). Both
+// wrappers get that policy.
+func TestOSSandboxAgyPolicy(t *testing.T) {
+	d, w, _ := osSandboxTestWorker(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	login := filepath.Join(home, ".config", "antigravity")
+	if err := os.MkdirAll(login, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cli := filepath.Join(home, ".gemini", "antigravity-cli")
+	w.harness, w.osSandbox = "agy", osSandboxName
+	agy, set, err := d.osSandboxPrepare(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isDir(cli) {
+		t.Fatalf("agy's runtime folder %s was not made", cli)
+	}
+	w.harness = "opencode"
+	oc, _, err := d.osSandboxPrepare(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := []string{resolved(cli), resolved(login)}
+	workerDir := filepath.Join(d.cfg.StateDir, "workers", w.id)
+	ocState := []string{resolved(filepath.Join(workerDir, "data")), resolved(filepath.Join(workerDir, "state"))}
+	shared := slices.DeleteFunc(slices.Clone(oc.Writable), func(p string) bool { return slices.Contains(ocState, p) })
+	if got := slices.DeleteFunc(slices.Clone(agy.Writable), func(p string) bool { return slices.Contains(state, p) }); !slices.Equal(got, shared) {
+		t.Fatalf("agy's fence %q, want OpenCode's %q", got, shared)
+	}
+	for _, p := range state {
+		if !slices.Contains(agy.Writable, p) {
+			t.Errorf("agy's folder %s is not writable: %q", p, agy.Writable)
+		}
+	}
+	if !slices.Equal(agy.ReadOnly, oc.ReadOnly) || agy.Dir != oc.Dir || set["TMPDIR"] != resolved(osSandboxTmp(workerDir)) {
+		t.Fatalf("agy policy %+v, env %v; OpenCode policy %+v", agy, set, oc)
+	}
+	argv := agyWorkerArgs([]string{"--model", "m"}, true, nil, "")
+	bw := bwrapArgs(agy, "/bin/agy", argv)
+	if argPair(bw, "--bind", resolved(cli)) < 0 || argPair(bw, "--bind", resolved(login)) < 0 || !slices.Equal(bw[len(bw)-len(argv)-2:], append([]string{"--", "/bin/agy"}, argv...)) {
+		t.Errorf("bwrap args %q", bw)
+	}
+	sb := seatbeltArgs(agy, "/bin/agy", argv)
+	if !strings.Contains(sb[1], `(subpath "`+resolved(cli)+`")`) || !strings.Contains(sb[1], `(subpath "`+resolved(login)+`")`) || !slices.Equal(sb[2:], append([]string{"/bin/agy"}, argv...)) {
+		t.Errorf("sandbox-exec args %q", sb)
+	}
+	if m := readOSSandboxMarker(workerDir); m != osSandboxName {
+		t.Errorf("marker %q", m)
+	}
+}
+
 // node.json: lists of projects, "*" as the value or as an item. Nothing set
 // means the default: Pi and OpenCode workers are in the OS sandbox.
 func TestNodeWorkersOSSandbox(t *testing.T) {
@@ -228,12 +286,13 @@ func TestOSSandboxDecide(t *testing.T) {
 		{"default opencode", osSandboxDefault, "opencode", protocol.WorkersSandboxed, ready, osSandboxName, ""},
 		{"default claude runs on its own sandbox", osSandboxDefault, "claude", "", missing, "", ""},
 		{"default codex", osSandboxDefault, "codex", "", missing, "", ""},
-		{"default agy", osSandboxDefault, "agy", "", missing, "", ""},
+		{"default agy", osSandboxDefault, "agy", "", ready, osSandboxName, ""},
+		{"default agy, tool missing", osSandboxDefault, "agy", "", missing, "", "not installed"},
 		{"default unknown harness", osSandboxDefault, "other", "", missing, "", ""},
 		{"default tool missing", osSandboxDefault, "pi", "", missing, "", "not installed"},
 		{"listed pi", osSandboxExplicit, "pi", "", ready, osSandboxName, ""},
 		{"listed codex keeps its own", osSandboxExplicit, "codex", "", missing, "", ""},
-		{"listed agy keeps its own", osSandboxExplicit, "agy", "", missing, "", ""},
+		{"listed agy", osSandboxExplicit, "agy", "", ready, osSandboxName, ""},
 		{"listed claude refused", osSandboxExplicit, "claude", "", ready, "", "Claude Code's own background service"},
 		{"listed tool missing refused", osSandboxExplicit, "pi", "", missing, "", "not installed"},
 		{"listed unknown harness refused", osSandboxExplicit, "other", "", ready, "", "cannot wrap"},
@@ -358,12 +417,12 @@ func TestOSSandboxDefaultStartsClaudeWorker(t *testing.T) {
 	}
 }
 
-// An OS whose default is on wraps Pi and OpenCode workers, and never asks for
-// the marker an older Mac daemon wrote. macOS now takes this path, so Linux CI
-// checks it too.
+// An OS whose default is on wraps Pi, OpenCode and agy workers, and never asks
+// for the marker an older Mac daemon wrote. macOS now takes this path, so
+// Linux CI checks it too.
 func TestOSSandboxDefaultOnWraps(t *testing.T) {
 	ready := func() error { return nil }
-	for _, harness := range []string{"pi", "opencode"} {
+	for _, harness := range []string{"pi", "opencode", "agy"} {
 		got, err := osSandboxDecideOn(true, osSandboxDefault, harness, "", ready)
 		if err != nil || got != osSandboxName {
 			t.Errorf("%s: %q, %v; want %q", harness, got, err, osSandboxName)

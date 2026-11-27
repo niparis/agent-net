@@ -1,0 +1,24 @@
+1 Sessions 2 Graph 3 Quotas 4 Messages 5 Settings │ 6 online · 2 busy · 1 worker
+╭─Machines─────────────────────────────────────────────────────────────────────╮
+│  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                      │
+│  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
+│  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Selected session ───────────────────────────────────────────────────────────────
+  tenebrae  agy  busy    CPU and memory need a newer daemon and gateway
+  worker   started by you (on Mac), 14:00, project … │
+  repo     tenebrae                                  │
+  agent    -                                         │
+  id       s_0000000000000008 w_1                    │
+  folder   /Users/n/code/tenebrae                    │
+  branch   main                                      │
+  model    gemini-3.8-flash-low · background (worke… │
+  function none: add a `# Project: <one line>` line… │
+  trust    -                                         │
+  rule     normal                                    │
+  messages 14:03  -> you (on Mac)  reply  delivered  │
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│ c: open the CTO                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+up/down select  enter open  m msg  x stop or remove  G groups  p pin  q quit
