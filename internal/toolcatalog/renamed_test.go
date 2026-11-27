@@ -55,7 +55,7 @@ func TestRenamedErrorIsOneLine(t *testing.T) {
 		"workers":         "workers was renamed to agent_workers_find.",
 		"agent_rate":      "agent_rate was renamed to agent_worker_rate.",
 		"agent_nodes":     "agent_nodes was renamed to agent_machines_find or agent_machine_get.",
-		"ask_owner":       "ask_owner was renamed to agent_owner_ask.",
+		"ask_owner":       "ask_owner was renamed to agent_message_send.",
 		"graph":           "graph was renamed to agent_graph_read.",
 		"agent_send":      "agent_send was renamed to agent_message_send.",
 		"overview":        "overview was renamed to agent_sessions_find or agent_machines_find.",
@@ -67,7 +67,7 @@ func TestRenamedErrorIsOneLine(t *testing.T) {
 		"agent_get":       "agent_get was renamed to agent_session_get.",
 		"tools":           "tools was renamed to agent_mcp_servers_find.",
 		"settings":        "settings was renamed to agent_settings_read or agent_worker_profiles_find.",
-		"agent_ask_owner": "agent_ask_owner was renamed to agent_owner_ask.",
+		"agent_ask_owner": "agent_ask_owner was renamed to agent_message_send.",
 	} {
 		err := RenamedError(old)
 		if err == nil {
@@ -83,6 +83,22 @@ func TestRenamedErrorIsOneLine(t *testing.T) {
 	for _, name := range []string{"agent_sessions_find", "cto_ui_show", "graph_change", "github__search"} {
 		if err := RenamedError(name); err != nil {
 			t.Errorf("%s is not an old name: %v", name, err)
+		}
+	}
+}
+
+// The owner ask tool is gone (decision 0196): a new agent sends a request to
+// the chief, and an older model that remembers an old name is pointed there.
+func TestOwnerAskIsNotACatalogTool(t *testing.T) {
+	for _, tool := range Tools {
+		if tool.Name == "agent_owner_ask" {
+			t.Fatal("the catalog still lists agent_owner_ask")
+		}
+	}
+	for _, old := range []string{"agent_ask_owner", "agent_request_approval", "agent_propose_idea", "ask_owner"} {
+		err := RenamedError(old)
+		if err == nil || !strings.Contains(err.Error(), "agent_message_send") {
+			t.Errorf("%s: %v, want a redirect to agent_message_send", old, err)
 		}
 	}
 }

@@ -217,7 +217,7 @@ func TestCTODialogRetryTokens(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "Inbox") || calls != 1 || decisions != 1 {
+				if !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "Waiting for the owner") || calls != 1 || decisions != 1 {
 					t.Fatalf("retry %q: %+v calls %d decisions %d", state, result, calls, decisions)
 				}
 			}

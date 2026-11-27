@@ -239,9 +239,9 @@ func TestCTOPermissionApplyApprovesDeskProposal(t *testing.T) {
 }
 
 // The CTO brief tells it to apply a permission the owner gives in its chat,
-// with his words, instead of filing a Desk proposal.
+// with his words, instead of proposing it for later.
 func TestCTOBriefAppliesOwnerPermissionWords(t *testing.T) {
-	for _, want := range []string{"cto_op method permission_apply", "owner_words", "do not file a Desk proposal", "permission_undo"} {
+	for _, want := range []string{"cto_op method permission_apply", "owner_words", "Never propose for later something he asked", "permission_undo"} {
 		if !strings.Contains(ctoBrief, want) {
 			t.Errorf("ctoBrief lacks %q", want)
 		}

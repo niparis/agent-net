@@ -21,7 +21,7 @@ REQUIRED: set your current task (one short line) and expertise; fill expertise o
 
 ### `agent_ask_intake`
 
-Chief of staff only: list sessions whose last turn may wait for the owner, read that turn with the preceding input (labelled owner, peer, agent_net or unknown) and secrets masked, or import it as one 
+Chief of staff only: list sessions whose last turn may wait for the owner, read that turn with the preceding input (labelled owner, peer, agent_net or unknown) and secrets masked, or import it as one
 
 - **Reads:** `agents`, `ask_sorts`, `model_failures`, `node_scopes`, `nodes`, `sessions` (plus the common reads)
 - **Writes:** `inbox_items`, `messages`, `setting_values`
@@ -77,7 +77,7 @@ Send files from this session to one peer with a note. Paths must be absolute and
 
 ### `agent_friction_mark`
 
-Lead sessions only: set the read status of friction reports (new, read, triaged, fixed, wontfix or infra) by ids, by group, or by a filter with project, area and text. Give link (a change id or a web 
+Lead sessions only: set the read status of friction reports (new, read, triaged, fixed, wontfix or infra) by ids, by group, or by a filter with project, area and text. Give link (a change id or a web
 
 - **Reads:** `agents`, `friction`, `sessions`
 - **Writes:** `friction`
@@ -156,7 +156,7 @@ Read one message's full body, delivery state and outcome. Long bodies come in ch
 
 ### `agent_message_handoff`
 
-Hand a request you received as a team or repo lead to a member. The member gets the original message with the original sender kept, answers the asker directly, and you get a copy of the reply. Use it 
+Hand a request you received as a team or repo lead to a member. The member gets the original message with the original sender kept, answers the asker directly, and you get a copy of the reply. Use it
 
 - **Reads:** `agents`, `ask_sorts`, `messages`, `deliveries`, `delivery_changes`, `delivery_step_tasks`, `model_failures`, `node_scopes`, `nodes`, `nudge_pauses`, `graph_outcomes`, `sessions`, `repos`, `worker_starts` (plus the common reads)
 - **Writes:** `delivery_retries`, `events`, `inbox_items`, `messages`, `nudge_fires`, `setting_values`, `permission_proposals`, `sessions`
@@ -242,17 +242,9 @@ Read the automatic nudge firing log: fires, followed and useful rate per kind by
 - **Writes:** `nudge_fires`
 - **Gateway operations:** `nudge.stats`
 
-### `agent_owner_ask`
-
-Ask the owner a question, an approval or an idea, with your recommendation and up to four answers. It goes to the chief of staff, who brings decisions to the owner; carry on, do not wait for the answe
-
-- **Reads:** `agents`, `charter_drafts`, `deliveries`, `delivery_changes`, `inbox_items`, `delivery_step_tasks`, `gateway_state`, `model_failures`, `node_scopes`, `nodes`, `nudge_pauses`, `graph_outcomes`, `sessions`, `repos`, `standing_orders`, `worker_starts` (plus the common reads)
-- **Writes:** `desk_log`, `ask_sorts`, `messages`, `delivery_retries`, `events`, `follow_ups`, `graph_outcomes`, `inbox_items`, `learned_suggestions`, `nudge_fires`, `setting_values`, `permission_proposals`, `sessions`
-- **Gateway operations:** `inbox.create`
-
 ### `agent_owner_brief`
 
-Chief of staff only: deliver one informational daily brief to the owner's Desk. Give body (at most 15 lines) and the owner-local date as YYYY-MM-DD; the same date replaces it. Call with no body for th
+Chief of staff only: deliver one informational daily brief for the owner. Give body (at most 15 lines) and the owner-local date as YYYY-MM-DD; the same date replaces it. Call with no body for th
 
 - **Reads:** `agents`, `ask_sorts`, `inbox_items`, `gateway_state`, `model_failures`, `node_scopes`, `nodes`, `sessions`, `standing_orders`, `worker_starts` (plus the common reads)
 - **Writes:** `inbox_items`, `messages`, `setting_values`, `sessions`
@@ -268,7 +260,7 @@ Chief of staff and CTO only: record, in the same turn, a decision the owner made
 
 ### `agent_owner_judgments_find`
 
-Search the owner's past decisions, standing orders, rules, answers and corrections. Ranked for a query, else newest first. marks: true returns only the Desk marks with their asks; offset pages. Agent 
+Search the owner's past decisions, standing orders, rules, answers and corrections. Ranked for a query, else newest first. marks: true returns only the owner's marks with their asks; offset pages. Agent
 
 - **Reads:** `ask_sorts`, `inbox_items`, `sessions`, `standing_orders`, `standing_orders_fts`
 - **Writes:** none found
@@ -1017,7 +1009,7 @@ Read outcome inbox through the owner operation.
 
 ### `cto_op:permission_apply`
 
-When the owner tells you in this chat to grant a Claude Code permission rule or folder trust, apply it now with his words quoted in owner_words; do not file a Desk proposal. Give rules and targets (registered repo names) as agent_permission_propose takes them, kind trust with machine and folders, or id alone to approve a pp_ proposal that waits on the Desk. Returns the stored record: each target's status, the rules added and the file written. Undo with permission_undo.
+When the owner tells you in this chat to grant a Claude Code permission rule or folder trust, apply it now with his words quoted in owner_words; do not propose it for later. Give rules and targets (registered repo names) as agent_permission_propose takes them, kind trust with machine and folders, or id alone to approve a pp_ proposal that waits. Returns the stored record: each target's status, the rules added and the file written. Undo with permission_undo.
 
 - **Reads:** `messages`, `model_failures`, `nodes`, `sessions` (plus the common reads)
 - **Writes:** `desk_log`, `inbox_items`, `permission_proposals`

@@ -72,7 +72,7 @@ func TestOldToolNameCallSaysRenamed(t *testing.T) {
 		{"cto", cto, "learn", "learn was renamed to agent_learn."},
 		{"agent", agent, "agent_list", "agent_list was renamed to agent_sessions_find."},
 		{"agent", agent, "agent_send", "agent_send was renamed to agent_message_send."},
-		{"agent", agent, "agent_ask_owner", "agent_ask_owner was renamed to agent_owner_ask."},
+		{"agent", agent, "agent_ask_owner", "agent_ask_owner was renamed to agent_message_send."},
 	} {
 		cs := tc.session(t)
 		mu.Lock()

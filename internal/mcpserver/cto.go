@@ -175,11 +175,11 @@ var ctoTools = map[string]ctoToolDef{
 		},
 	},
 	"answer": {
-		desc: "Answer a held request, an inbox item or an outcome.",
+		desc: "Answer a held request, a CTO intake item or an outcome.",
 		fields: map[string]ctoField{
 			"kind":       {typ: "string", enum: []string{"held", "inbox", "outcome"}},
 			"message_id": {typ: "string", desc: "Held request."},
-			"id":         {typ: "string", desc: "Inbox item."},
+			"id":         {typ: "string", desc: "CTO intake item."},
 			"answer":     {typ: "string", desc: "Answer."},
 			"reply_id":   {typ: "string", desc: "Outcome reply."},
 			"action":     {typ: "string", desc: "Held: a, A, r, R. Outcome: let_stand, overrule.", enum: []string{"a", "A", "r", "R", "let_stand", "overrule"}},
@@ -286,7 +286,7 @@ func init() {
 
 // ownerWordsProperty is the quote of what the owner typed in the CTO chat. The
 // daemon checks it against his prompts: a verified quote makes the change run
-// at once, with no Desk item (decision 0165).
+// at once, with no stored ask (decision 0165).
 var ownerWordsProperty = map[string]any{"type": "string", "description": "Owner's exact words asking for this"}
 
 // ctoOwnerWordsTools are the tools whose actions take owner_words.
@@ -473,7 +473,7 @@ func ctoDialogTools(s *mcp.Server, call Caller) ctoToolAdder {
 	finish := func(ctx context.Context, proposal ctoDialogProposal, action string) *mcp.CallToolResult {
 		text := proposal.Text
 		if text == "" {
-			text = "Waiting in the Inbox."
+			text = "Waiting for the owner."
 		}
 		if action == "accept" || action == "decline" {
 			approve := action == "accept"

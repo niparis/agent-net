@@ -16,7 +16,6 @@ var daemonFieldSamples = map[string]map[string]any{
 	"agent_message_send":    {"to": "s01", "body": "BODY"},
 	"agent_message_reply":   {"message": "MSG", "body": "BODY", "outcome": "accept"},
 	"agent_file_send":       {"to": "TO", "paths": []any{"/tmp/a"}, "note": "NOTE"},
-	"agent_owner_ask":       {"kind": "question", "text": "TEXT", "recommendation": "REC"},
 	"agent_worker_rate":     {"worker": "WORKER", "kind": "rating", "score": 4, "note": "NOTE"},
 	"agent_worker_start":    {"problem": "PROBLEM", "done": []any{"DONE"}},
 	"agent_step_claim":      {"change": "CHANGE", "step": "test", "commit": sampleCommit},

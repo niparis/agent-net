@@ -157,7 +157,7 @@ Legend ────────────────────────�
   burst                  20 or more messages in one hour and more than 3 times
                          the thread's median hourly count
   links                  PR, ch_ and ask i_ lines show above the conversation; o
-                         opens a loaded change or ask
+                         names them
   p / t                  filter by project or team; / searches the text; esc
                          clears the filters
 

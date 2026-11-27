@@ -145,7 +145,7 @@ func TestChangesStatesAreReadTogether(t *testing.T) {
 		}
 		return json.RawMessage(`{"items":[]}`), nil
 	}
-	src := newGatewayDelivery(call, func() time.Time { return time.Unix(0, 0) })
+	src := newGatewayDelivery(call)
 	if _, err := src.Changes(context.Background(), ""); err != nil {
 		t.Fatal(err)
 	}

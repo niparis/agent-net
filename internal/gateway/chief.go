@@ -985,7 +985,7 @@ func (s *Store) SortAsk(node string, q protocol.AskSortRequest) (protocol.AskSor
 		if _, err := tx.Exec(`UPDATE inbox_items SET next_who=? WHERE id=?`, q.To, q.Ask); err != nil {
 			return out, none, err
 		}
-		body := fmt.Sprintf("The chief of staff sent you ask %s from %s: %s\nWhy it reached you: %s\nAnswer it yourself only if you can, and close it with agent_ask_sort (result close) once it is resolved. Anything that needs the owner goes to them with agent_owner_ask.",
+		body := fmt.Sprintf("The chief of staff sent you ask %s from %s: %s\nWhy it reached you: %s\nAnswer it yourself only if you can, and close it with agent_ask_sort (result close) once it is resolved. Anything that needs the owner goes to the chief of staff with agent_message_send.",
 			q.Ask, sessionLabel(tx, a.session), strings.TrimSpace(a.text), reason)
 		// The receiver cannot read the ask itself, so a charter draft or a
 		// learned suggestion carries its proposal in the message.

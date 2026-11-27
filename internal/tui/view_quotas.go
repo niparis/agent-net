@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -603,4 +604,51 @@ func quotaCopyLabel(c *protocol.QuotaCopy) string {
 		return label + " · agent-net's copy"
 	}
 	return label + " · yours (" + sanitize(c.Dir) + ")"
+}
+
+// quotasSubtabs is the line under the title: the three sub-tabs of Quotas.
+func (m Model) quotasSubtabs(w int) string {
+	labels := []string{"Quotas", "Workers log", "Quality"}
+	active := 0
+	switch {
+	case m.qualityDetail:
+		active = 2
+	case m.workersLog:
+		active = 1
+	}
+	var parts []string
+	for i, label := range labels {
+		if i == active {
+			parts = append(parts, sActiveTab.Render("[ "+label+" ]"))
+		} else {
+			parts = append(parts, sDim.Render("  "+label+"  "))
+		}
+	}
+	return clip(strings.Join(parts, "  "), w)
+}
+
+// nextQuotasSubtab toggles the quota views.
+func (m Model) nextQuotasSubtab() (Model, tea.Cmd) {
+	switch {
+	case m.qualityDetail:
+		m.qualityDetail = false
+	case m.workersLog:
+		m.workersLog = false
+		m.qualityDetail = true
+	default:
+		m.workersLog = true
+	}
+	m.quotaScroll = 0
+	if !m.workersLog {
+		m.workerLogDetailsFocus = false
+	}
+	if !m.workersLog {
+		// The Quotas panel and the Quality subtab draw the picker table, so
+		// they read it when it comes back on screen.
+		m.pickerWanted = true
+	}
+	if m.qualityDetail {
+		m.weeklyWanted = true
+	}
+	return m, nil
 }

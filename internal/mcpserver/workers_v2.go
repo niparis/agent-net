@@ -15,7 +15,7 @@ import (
 // addRedesignedTools registers the agent and worker contracts directly from
 // the shared catalog. The daemon methods remain the existing implementations.
 func addRedesignedTools(s *mcp.Server, call Caller, run func(context.Context, string, any) (any, error)) {
-	for _, name := range []string{"agent_worker_start", "agent_worker_start_override", "agent_worker_stop", "agent_worker_rate", "agent_handback", "agent_announce", "agent_owner_ask", "agent_owner_brief", "agent_learn", "agent_charter_draft", "agent_bar_edit", "agent_permission_propose", "agent_project_add", "agent_mcp_test"} {
+	for _, name := range []string{"agent_worker_start", "agent_worker_start_override", "agent_worker_stop", "agent_worker_rate", "agent_handback", "agent_announce", "agent_owner_brief", "agent_learn", "agent_charter_draft", "agent_bar_edit", "agent_permission_propose", "agent_project_add", "agent_mcp_test"} {
 		entry := redesignedCatalogTool(name)
 		t := &mcp.Tool{Name: entry.Name, Description: entry.Description, InputSchema: json.RawMessage(entry.InputSchema)}
 		s.AddTool(t, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -32,7 +32,7 @@ func addRedesignedTools(s *mcp.Server, call Caller, run func(context.Context, st
 	}
 	if os.Getenv("AGENT_NET_WORKER") != "" {
 		// These are agent-only capabilities.
-		s.RemoveTools("agent_worker_start", "agent_worker_start_override", "agent_worker_stop", "agent_worker_rate", "agent_owner_ask",
+		s.RemoveTools("agent_worker_start", "agent_worker_start_override", "agent_worker_stop", "agent_worker_rate",
 			"agent_project_add", "agent_announce", "agent_charter_draft", "agent_bar_edit", "agent_owner_brief")
 	}
 }
@@ -193,60 +193,6 @@ func redesignedCall(ctx context.Context, call Caller, name string, a map[string]
 			m = p
 		}
 		return map[string]any{"profile": profileOutput(m)}, nil
-	case "agent_owner_ask":
-		kind := str("kind")
-		replaces := str("replaces")
-		if kind == "" && replaces != "" {
-			kind = "question"
-		}
-		m, err := ownerAskCall(ctx, run, kind, str("text"), str("recommendation"), stringSlice(a["options"]), str("urgency"), replaces)
-		if err != nil {
-			return nil, err
-		}
-		if m["kind"] == nil {
-			m["kind"] = kind
-		}
-		top := m
-		// A question only marks the session as waiting; it has no inbox item.
-		// Never return null: the result must match the catalog schema, and an
-		// error here would make agents ask again.
-		if nested, ok := m["item"].(map[string]any); ok {
-			m = nested
-		}
-		item, _ := m["item_id"].(string)
-		if item == "" {
-			item, _ = m["id"].(string)
-		}
-		state, _ := m["state"].(string)
-		if state == "" {
-			state, _ = m["status"].(string)
-		}
-		if state == "" {
-			state = "waiting"
-		}
-		out := map[string]any{"item_id": item, "kind": m["kind"], "state": state}
-		// The team lead takes the question: say so, and what to do meanwhile.
-		if red, ok := top["redirected"].(map[string]any); ok {
-			out["state"] = "sent_to_lead"
-			if chief, _ := red["chief"].(bool); chief {
-				out["state"] = "sent_to_chief"
-			}
-			if id, _ := red["item_id"].(string); id != "" {
-				out["item_id"] = id
-			}
-			if note, _ := red["note"].(string); note != "" {
-				out["note"] = note
-			}
-		}
-		// The session's other pending asks stay open. List them so the agent can
-		// name one with replaces; a stale ask does not go away by itself.
-		if raw, ok := top["other_open"].([]any); ok && len(raw) > 0 {
-			out["other_open"] = raw
-			if _, has := out["note"]; !has {
-				out["note"] = "Your earlier pending asks are still open. Pass replaces with one of their IDs to retire it."
-			}
-		}
-		return out, nil
 	case "agent_owner_brief":
 		m, err := ownerBriefCall(ctx, run, protocol.OwnerBriefArgs{Body: str("body"), Date: str("date")})
 		if err != nil {

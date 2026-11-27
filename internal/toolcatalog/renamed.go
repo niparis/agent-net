@@ -26,9 +26,9 @@ var renamed = map[string][]string{
 	"agent_start":            {"agent_worker_start"},
 	"agent_stop":             {"agent_worker_stop"},
 	"agent_rate":             {"agent_worker_rate"},
-	"agent_ask_owner":        {"agent_owner_ask"},
-	"agent_request_approval": {"agent_owner_ask"},
-	"agent_propose_idea":     {"agent_owner_ask"},
+	"agent_ask_owner":        {"agent_message_send"},
+	"agent_request_approval": {"agent_message_send"},
+	"agent_propose_idea":     {"agent_message_send"},
 
 	// Old CTO tools.
 	"overview":  {"agent_sessions_find", "agent_machines_find"},
@@ -44,7 +44,7 @@ var renamed = map[string][]string{
 	"tools":     {"agent_mcp_servers_find"},
 	"settings":  {"agent_settings_read", "agent_worker_profiles_find"},
 	"message":   {"agent_message_send", "agent_message_reply"},
-	"ask_owner": {"agent_owner_ask"},
+	"ask_owner": {"agent_message_send"},
 	"learn":     {"agent_learn"},
 	"ui":        {"cto_ui_show"},
 }

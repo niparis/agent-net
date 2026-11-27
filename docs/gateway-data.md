@@ -101,7 +101,7 @@ An agent hands in a change, the delivery steps open one after another, each step
 6. `delivery_step_tasks` (writes): The first ready step (accept) gets a task row that names its owner. Steps that need an earlier step wait.
 7. `messages` (writes): A notice 'you have a step to claim' is stored for the session that owns the step.
 8. `delivery_step_tasks` (writes): The notice is saved in the step task, under the session it went to, so it can be cancelled when the step is claimed, finished or replaced.
-9. `desk_log` (writes): A line 'Sent step ... of change ... to a session' is added to the Desk log.
+9. `desk_log` (writes): A line 'Sent step ... of change ... to a session' is added to the log.
 10. `delivery_step_tasks` (writes): The owner session claims the step (agent_step_claim). The task now shows who works on it, and nobody else can report it.
 11. `delivery_step_tasks` (writes): When the step is reported (agent_step_report), the task is deleted. Its evidence is the record, and the task table holds open work only.
 12. `delivery_evidence` (writes): The result (pass, fail or needs owner), the commit, the fields and who did the work are stored as evidence. Evidence is never edited, a newer report just wins.
@@ -110,11 +110,11 @@ An agent hands in a change, the delivery steps open one after another, each step
 15. `delivery_step_tasks` (writes): For an approve step set to delegated, the repo lead and the team lead (found from the repo and team tables) are listed in the task as the agents allowed to approve. The caller is never its own approver.
 16. `inbox_items` (writes): For an approve step that needs the owner's written approval, an Inbox item is created with `about_kind='step'` and `about_id` naming the change, revision, step and commit.
 17. `delivery_changes` (writes): A passing merge report moves the change to merged and stores the merged commit. When every step after merge has passed, the state becomes done (a close report makes it stopped).
-18. `inbox_items` (writes): When the change is done or stopped, the open asks about it are closed so nothing stale stays on the Desk.
+18. `inbox_items` (writes): When the change is done or stopped, the open asks about it are closed so nothing stale stays in the ask list.
 
 ## Journey: The chief of staff sorts an ask
 
-An agent asks the owner a question, it becomes an Inbox item that the chief of staff sorts, the Desk shows it, the owner answers, and the answer goes back to the asker.
+An agent asks the owner a question, it becomes an ask that the chief of staff sorts, the owner answers, and the answer goes back to the asker.
 
 1. `sessions` (reads): The gateway checks the asking session is on the calling machine and finds its repo and display name.
 2. `gateway_state` (reads): It reads which session is the chief of staff, then decides if the ask goes to the chief or straight to the owner.
@@ -127,12 +127,10 @@ An agent asks the owner a question, it becomes an Inbox item that the chief of s
 9. `inbox_items` (reads): When the chief calls agent_ask_sort, the gateway reads the ask and checks that the caller is the live chief.
 10. `inbox_items` (writes): For the result 'owner', the ask gets its priority, the reason why only the owner can decide, and next_who set to the owner.
 11. `ask_sorts` (writes): The sort is recorded with who sorted, the result, the reason and the previous state, so it can be shown and undone.
-12. `desk_log` (writes): A line 'Chief sent ask to you (priority N): ...' is added to the Desk log.
-13. `inbox_items` (reads): The Desk reads the asks that are open and waiting for the owner.
-14. `desk_log` (reads): The Desk also reads the latest log lines, newest first.
-15. `inbox_items` (writes): The owner answers in the TUI. The ask is marked answered (or approved or refused) with the answer text and time.
-16. `standing_orders` (writes): The question and the owner's answer are saved as an owner judgment, so the chief can find it the next time (step 8).
-17. `messages` (writes): The answer is stored as a message for the asking session, and forevery session that joined the ask as a repeat. The gateway then delivers it.
+12. `desk_log` (writes): A line 'Chief sent ask to you (priority N): ...' is added to the log.
+13. `inbox_items` (writes): The owner answers, and the CTO records it with the `answer` op on his quoted words. The ask is marked answered (or approved or refused) with the answer text and time.
+15. `standing_orders` (writes): The question and the owner's answer are saved as an owner judgment, so the chief can find it the next time (step 8).
+16. `messages` (writes): The answer is stored as a message for the asking session, and for every session that joined the ask as a repeat. The gateway then delivers it.
 
 ## Journey: The owner changes a charter or a setting
 
@@ -194,7 +192,7 @@ Agent sessions, with their checks and wake-ups, and the due steps they set.
 - **Shown in:** TUI, Sessions; TUI, Graph; tool `agent_announce`; tool `agent_sessions_find`; CTO op `session_change`; CTO op `sessions_archive`
 - **Kept:** Offline sessions are archived after 7 days and kept; an un-archived offline session unused for 30 days is deleted by the hourly prune; cleaned workers are deleted on request. The owner prompt is cleared at the session's first send, and after 10 minutes at most (hourly prune).
 
-Sessions being started have no row yet. Their two-minute holds (a repo slot under the repo's session cap, and the owner's Agent choice) live in the gateway's memory, with the Agent choices that failed. A gateway restart drops them. The Desk item a failed choice raises keeps its reason.
+Sessions being started have no row yet. Their two-minute holds (a repo slot under the repo's session cap, and the owner's Agent choice) live in the gateway's memory, with the Agent choices that failed. A gateway restart drops them. The item a failed choice raises keeps its reason.
 
 ## Messages
 
@@ -229,7 +227,7 @@ Messages between sessions, their delivery records, and automatic nudges.
 - **Holds:** One row per message between sessions, the owner and bots: sender, recipient, type, body, thread, state, expiry, urgency, hold and handoff data and attached file ids. A request that carries the owner's prompt keeps that prompt (`owner_prompt`).
 - **Written by:** `gateway/agentnet_reply.go`, `gateway/automatic_message.go`, `gateway/bot_tools.go`, `gateway/busy_hold.go`, `gateway/caller_agent.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/cto_lead.go`, `gateway/delivery_reconcile.go`, `gateway/delivery_tasks.go` and others
 - **Read by:** `gateway/ask_holder.go`, `gateway/asks.go`, `gateway/brief_check.go`, `gateway/busy_hold.go`, `gateway/check.go`, `gateway/cto_lead.go`, `gateway/delivery_tasks.go`, `gateway/follow_ups.go`, `gateway/graph_talk.go`, `gateway/held.go` and others
-- **Shown in:** TUI, Messages; TUI, Desk; tool `agent_message_send`; tool `agent_message_reply`; tool `agent_messages_find`; tool `agent_message_withdraw`; tool `agent_message_handoff`
+- **Shown in:** TUI, Messages; TUI; tool `agent_message_send`; tool `agent_message_reply`; tool `agent_messages_find`; tool `agent_message_withdraw`; tool `agent_message_handoff`
 - **Kept:** Forever by default (the gateway flag --keep-messages is 0); when set, older rows go on the hourly prune except bot mail not yet read and rows behind open reject or escalate outcomes. The owner prompt on a message is cleared after 90 days (hourly prune).
 
 ### nudge_fires
@@ -289,7 +287,7 @@ Connected apps, and the OAuth sign-in they use.
 - **Holds:** One row per sign-in waiting for the owner to approve (device code or browser): user code, client, requested resource, status and expiry.
 - **Written by:** `gateway/oauth_store.go`, `gateway/phone_pairing.go`
 - **Read by:** `gateway/apps_asks.go`, `gateway/oauth_store.go`, `gateway/phone_pairing.go`
-- **Shown in:** TUI, Desk; TUI, Settings
+- **Shown in:** TUI; TUI, Settings
 - **Kept:** For 10 minutes, swept every 10 minutes and when a new request starts.
 
 ## Settings
@@ -349,7 +347,7 @@ Owner settings and their history.
 - **Holds:** One charter value that a session drafted from the project AGENTS.md (`pending`, `accepted`, `rejected`, `superseded`), or an `asked` marker (`status='asked'`, `source_hash`, `asked_at`) so a session is not asked twice for the same source text.
 - **Written by:** `gateway/charter_drafts.go`
 - **Read by:** `gateway/charter_drafts.go`, `gateway/chief.go`, `gateway/store_inbox.go`
-- **Shown in:** TUI, Graph; TUI, Desk; tool `agent_charter_draft`; CTO op `needs_you`
+- **Shown in:** TUI, Graph; TUI; tool `agent_charter_draft`; CTO op `needs_you`
 - **Kept:** Forever (the status changes to accepted or rejected, the row stays; the `asked` row is replaced when the source text changes).
 
 ### charter_values
@@ -381,7 +379,7 @@ Owner settings and their history.
 - **Holds:** How one request between two nodes ended: a reply with an outcome (accept, reject, escalate or redirect), the reason and recommendation, whether the owner resolved it, and whether it was overruled (`overruled`, `overrule_message_id`).
 - **Written by:** `gateway/asks.go`, `gateway/store.go`, `gateway/store_inbox.go`, `gateway/store_outcome.go`
 - **Read by:** `gateway/asks.go`, `gateway/bot_tools.go`, `gateway/learned.go`, `gateway/owner_answers.go`, `gateway/signal.go`, `gateway/store.go`, `gateway/store_outcome.go`, `gateway/store_record.go`
-- **Shown in:** TUI, Desk; tool `agent_message_reply`; CTO op `outcome_inbox`; CTO op `outcome_overrule`
+- **Shown in:** TUI; tool `agent_message_reply`; CTO op `outcome_inbox`; CTO op `outcome_overrule`
 - **Kept:** Forever (messages are kept forever by default, so their outcomes are too).
 
 ### member_blocked_notices
@@ -413,7 +411,7 @@ Owner settings and their history.
 - **Holds:** One repo (project) node of the org tree, with its display name, its single lead agent (`lead_agent_id`), its team (`team_id`), flags for archived and held back, and its settings token. `repos.lead_agent_id` is the single source for a repo's lead. It also holds the number the next bar rule will get (`bar_next`, so numbers are never reused), the count of failed merge-queue test runs in a row and the last run (`train_fails`, `train_last_run`), and the merger's machine and session (`merger_node`, `merger_session`). A repo has one merger.
 - **Written by:** `gateway/authority.go`, `gateway/graph_lifecycle.go`, `gateway/intake_feeds.go`, `gateway/leads_max.go`, `gateway/merger.go`, `gateway/merger_restore.go`, `gateway/project_display.go`, `gateway/repo_fold_migration.go`, `gateway/session_replace.go`, `gateway/store.go` and others
 - **Read by:** `gateway/authority.go`, `gateway/charter_levels.go`, `gateway/graph_lifecycle.go`, `gateway/graph_refs.go`, `gateway/intake.go`, `gateway/lead_session.go`, `gateway/lead_session_migration.go`, `gateway/leads_max.go`, `gateway/node_scopes.go`, `gateway/org_read.go` and others
-- **Shown in:** TUI, Graph; TUI, Desk; TUI, Sessions; tool `agent_graph_read`; CTO op `repo_create`; CTO op `repo_archive`; CTO op `lead_set`; CTO op `project_display_set`; CTO op `merger_set`; CTO op `merger_get`; CTO op `merger_restore`
+- **Shown in:** TUI, Graph; TUI; TUI, Sessions; tool `agent_graph_read`; CTO op `repo_create`; CTO op `repo_archive`; CTO op `lead_set`; CTO op `project_display_set`; CTO op `merger_set`; CTO op `merger_get`; CTO op `merger_restore`
 - **Kept:** Forever (an archived repo is only flagged). A merger is cleared when it is stopped, replaced, or its session is deleted.
 
 ### teams
@@ -424,24 +422,24 @@ Owner settings and their history.
 - **Shown in:** TUI, Graph; CTO op `team_create`; CTO op `team_settings_set`; CTO op `team_history`; tool `agent_graph_read`
 - **Kept:** Forever (an archived team is only marked inactive).
 
-## Desk
+## Asks and the log
 
-What the owner sees on the Desk: asks, sorts, follow-ups and the log.
+The ask store, its sorts, follow-ups and the log.
 
 ### ask_sorts
 
 - **Holds:** One sort decision the chief of staff made on an ask (answer, route, merge, close), with what it replaced so it can be undone.
 - **Written by:** `gateway/chief.go`
 - **Read by:** `gateway/asks.go`, `gateway/chief.go`, `gateway/chief_health.go`, `gateway/chief_stuck.go`, `gateway/standing.go`
-- **Shown in:** TUI, Desk; tool `agent_ask_sort`; CTO op `ask_history`; CTO op `ask_undo`
+- **Shown in:** TUI; tool `agent_ask_sort`; CTO op `ask_history`; CTO op `ask_undo`
 - **Kept:** Forever.
 
 ### desk_log
 
-- **Holds:** One log line about something that happened on the Desk (an ask sorted, a permission applied), with what undoes it.
+- **Holds:** One log line about something that happened in the gateway (an ask sorted, a permission applied), with what undoes it.
 - **Written by:** `gateway/asks.go`, `gateway/permissions.go`, `gateway/store.go`
 - **Read by:** `gateway/asks.go`, `gateway/permissions.go`, `gateway/server.go`, `gateway/store.go`
-- **Shown in:** TUI, Desk; tool `agent_ask_sort`; CTO op `desk_log`; CTO op `desk_settle`
+- **Shown in:** TUI; tool `agent_ask_sort`; CTO op `desk_log`; CTO op `desk_settle`
 - **Kept:** The newest 2000 lines, trimmed on every 200th insert.
 
 ### follow_ups
@@ -449,7 +447,7 @@ What the owner sees on the Desk: asks, sorts, follow-ups and the log.
 - **Holds:** One row per follow-up check set by a message sender or the chief: the event expected (reply, change, conversation, session), who waits, the due time and whether it is pending, met or raised.
 - **Written by:** `gateway/follow_ups.go`
 - **Read by:** `gateway/follow_ups.go`
-- **Shown in:** tool `agent_message_send`; tool `agent_ask_sort`; TUI, Desk
+- **Shown in:** tool `agent_message_send`; tool `agent_ask_sort`; TUI
 - **Kept:** Forever; status moves from pending to met or raised, rows are not deleted.
 
 ### inbox_items
@@ -457,7 +455,7 @@ What the owner sees on the Desk: asks, sorts, follow-ups and the log.
 - **Holds:** One ask or CTO problem: a question, approval (including delivery step approvals via `about_kind='step'`), or deduplicated CTO intake alert (`owner='cto'`, with `dedupe_key`, `count`, `first_seen`, `last_seen`, `severity`), with its single `status`, answer, priority and who sorted or routed it. An ask that holds a worker start with picker overrides also holds the override facts the confirm rule checks.
 - **Written by:** `gateway/agentnet_reply.go`, `gateway/apps_public_asks.go`, `gateway/asks.go`, `gateway/asks_to.go`, `gateway/brief.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/chief_health.go`, `gateway/chief_stuck.go`, `gateway/delivery_approval.go`, `gateway/delivery_tasks.go`, `gateway/intake.go` and others
 - **Read by:** `gateway/agentnet_reply.go`, `gateway/apps_asks.go`, `gateway/apps_public_asks.go`, `gateway/ask_intake.go`, `gateway/asks.go`, `gateway/brief.go`, `gateway/caller_agent.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/chief_health.go`, `gateway/intake.go` and others
-- **Shown in:** TUI, Desk; tool `agent_owner_ask`; tool `agent_ask_intake`; tool `agent_ask_sort`; CTO op `inbox_list`; CTO op `inbox_answer`; CTO op `cto_intake_find`
+- **Shown in:** tool `agent_ask_intake`; tool `agent_ask_sort`; CTO op `inbox_list`; CTO op `inbox_answer`; CTO op `cto_intake_find`
 - **Kept:** Forever (answered and closed rows stay).
 
 ### permission_proposals
@@ -465,7 +463,7 @@ What the owner sees on the Desk: asks, sorts, follow-ups and the log.
 - **Holds:** One permission change an agent proposed (rules, targets, reason) with its status, who decided and the result.
 - **Written by:** `gateway/permissions.go`
 - **Read by:** `gateway/permissions.go`
-- **Shown in:** TUI, Desk; tool `agent_permission_propose`; CTO op `cto_proposals_find`; CTO op `proposal_ask`
+- **Shown in:** TUI; tool `agent_permission_propose`; CTO op `cto_proposals_find`; CTO op `proposal_ask`
 - **Kept:** Forever.
 
 ## Learning
@@ -493,7 +491,7 @@ Standing orders, notes, findings, and what the gateway learns from signals.
 - **Holds:** One suggestion the system learned from message traffic: a change to a charter field or to a link, with its evidence and status (new, accepted, rejected). For an applied change, `learned_seen` says whether the owner has seen it.
 - **Written by:** `gateway/learned.go`, `gateway/learned_apply.go`, `gateway/learned_owner.go`, `gateway/side_fold.go`, `gateway/store_graph.go`
 - **Read by:** `gateway/asks.go`, `gateway/chief.go`, `gateway/learned.go`, `gateway/learned_apply.go`, `gateway/learned_owner.go`, `gateway/store_inbox.go`
-- **Shown in:** TUI, Desk; TUI, Graph; CTO op `learned_list`; CTO op `learned_answer`; CTO op `learned_view`
+- **Shown in:** TUI; TUI, Graph; CTO op `learned_list`; CTO op `learned_answer`; CTO op `learned_view`
 - **Kept:** Forever (status changes, rows stay).
 
 ### playbook
@@ -537,7 +535,7 @@ Changes, steps and merger work, from accept to release.
 - **Holds:** One row per change (a branch of work) that a worker or session has submitted for delivery, with its project, branch, title, current state and merged commit.
 - **Written by:** `gateway/delivery_changes.go`, `gateway/session_replace.go`
 - **Read by:** `gateway/asks.go`, `gateway/brief_check.go`, `gateway/caller_agent.go`, `gateway/delivery_approval.go`, `gateway/delivery_changes.go`, `gateway/delivery_reconcile.go`, `gateway/delivery_tasks.go`, `gateway/desk_rules.go`, `gateway/follow_ups.go`, `gateway/graph_lifecycle.go` and others
-- **Shown in:** TUI, Desk (Delivery and Change panels); tool `agent_changes_find`; tool `agent_change_submit`
+- **Shown in:** TUI (Delivery and Change panels); tool `agent_changes_find`; tool `agent_change_submit`
 - **Kept:** Forever.
 
 ### delivery_evidence
@@ -545,7 +543,7 @@ Changes, steps and merger work, from accept to release.
 - **Holds:** One row per report on a delivery step (accept, review, test, merge, release or verify) of a change: the result, who reported it, which model, and a note.
 - **Written by:** `gateway/delivery_changes.go`
 - **Read by:** `gateway/delivery_changes.go`, `gateway/delivery_tasks.go`, `gateway/delivery_waiting.go`, `gateway/follow_ups.go`, `gateway/member_loop.go`, `gateway/nudge_fires.go`, `gateway/picker.go`, `gateway/scores_weekly.go`
-- **Shown in:** TUI, Desk (Evidence panel); tool `agent_step_report`; tool `agent_changes_find`
+- **Shown in:** TUI (Evidence panel); tool `agent_step_report`; tool `agent_changes_find`
 - **Kept:** Forever, the database refuses to update or delete these rows.
 
 ### delivery_revisions
@@ -553,7 +551,7 @@ Changes, steps and merger work, from accept to release.
 - **Holds:** One row per revision of a change (each time the branch is pushed again), with its commit, the size of the diff, the risk signals and the hand-back check result.
 - **Written by:** `gateway/delivery_changes.go`, `gateway/side_tables_fold.go`
 - **Read by:** `gateway/brief_check.go`, `gateway/delivery_changes.go`, `gateway/delivery_tasks.go`, `gateway/side_tables_fold.go`
-- **Shown in:** TUI, Desk (Change panel); tool `agent_changes_find`; tool `agent_change_submit`
+- **Shown in:** TUI (Change panel); tool `agent_changes_find`; tool `agent_change_submit`
 - **Kept:** Forever.
 
 ### delivery_step_tasks
@@ -561,7 +559,7 @@ Changes, steps and merger work, from accept to release.
 - **Holds:** One row per open delivery step of a change that needs someone to do it: who owns it, who claimed it, and when it was last nudged or is waiting. It also holds the notices sent for the step (`notices`, a map from a session to the notice message) and the agents that may approve it when it is delegated (`delegates`).
 - **Written by:** `gateway/delivery_approval.go`, `gateway/delivery_changes.go`, `gateway/delivery_tasks.go`, `gateway/delivery_waiting.go`, `gateway/merger.go`, `gateway/session_replace.go`, `gateway/store_graph.go`
 - **Read by:** `gateway/caller_agent.go`, `gateway/delivery_approval.go`, `gateway/delivery_changes.go`, `gateway/delivery_tasks.go`, `gateway/delivery_waiting.go`, `gateway/graph_lifecycle.go`, `gateway/merger.go`, `gateway/nudge_batch.go`, `gateway/owed_replies.go`, `gateway/session_stall.go` and others
-- **Shown in:** tool `agent_step_claim`; tool `agent_step_report`; TUI, Desk (Steps and evidence panel)
+- **Shown in:** tool `agent_step_claim`; tool `agent_step_report`; TUI (Steps and evidence panel)
 - **Kept:** Until the step is reported, closed, retired or its change ends. A done step keeps no task: its row in `delivery_evidence` is the record.
 
 ### project_bar_rules
@@ -689,7 +687,7 @@ The skill archive and its lists, and the shared MCP servers.
 - **Holds:** One row per change to the skill archive (add, remove, promote, undo of those) or to the skill lists (what was added, removed or pinned at a level), told apart by `kind` (`archive` or `list`). It is kept so the change can be undone.
 - **Written by:** `gateway/skillarchive.go`, `gateway/skill_lists.go`
 - **Read by:** `gateway/skill_archive_migration.go`, `gateway/skillarchive.go`, `gateway/skill_lists.go`
-- **Shown in:** CTO op `skill_archive`; CTO op `skills`; Desk undo
+- **Shown in:** CTO op `skill_archive`; CTO op `skills`; TUI undo
 - **Kept:** Forever.
 
 ### skill_node_lists

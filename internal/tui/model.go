@@ -304,7 +304,7 @@ func New(src Source) Model {
 		m.topicSubscribing = true
 	}
 	if c, ok := src.(localCaller); ok {
-		m.deliverySrc = newGatewayDelivery(c.Call, time.Now)
+		m.deliverySrc = newGatewayDelivery(c.Call)
 	}
 	m.ctoGeneration = 1
 	m.cto = &ctoState{generation: 1}
@@ -920,8 +920,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.startDeliveryLoad()
 	case deliveryLoadedMsg:
 		return m.deliveryLoaded(msg)
-	case deliveryDetailMsg:
-		return m.deliveryDetailLoaded(msg), nil
 	case ctoPollMsg:
 		if m.cto == nil || m.cto.generation != msg.generation {
 			return m, nil

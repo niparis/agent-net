@@ -186,7 +186,7 @@ Setup does not change a value that is already set. `agent-net setup` prints the 
 
 ## The wheel does not scroll in a Claude session
 
-agent-net writes `CLAUDE_CODE_DISABLE_MOUSE=0` to the `env` of your Claude Code settings file, and Claude Code reads it when a session starts. A session that was already running keeps its old value until it starts again. When the daemon finds a live Claude session whose own environment still turns the wheel off, it says so once in the TUI and in the Desk log: restart that session.
+agent-net writes `CLAUDE_CODE_DISABLE_MOUSE=0` to the `env` of your Claude Code settings file, and Claude Code reads it when a session starts. A session that was already running keeps its old value until it starts again. When the daemon finds a live Claude session whose own environment still turns the wheel off, it says so once in the TUI and in the daemon log: restart that session.
 
 If the notice names Claude's background service, the service carries an old value. The daemon stops it with `claude daemon stop --any --keep-workers` only when a fresh roster lists no live session; the next launch starts a clean one. It never stops a service with a live session, and it reports again the next day. If `~/.claude/settings.json` is not valid JSON, the daemon leaves it alone and reports that instead; fix the file by hand.
 

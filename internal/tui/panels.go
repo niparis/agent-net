@@ -43,9 +43,6 @@ const (
 	panelWorkingRules    = "Working rules and guidance"
 	panelNudges          = "Nudges"
 	panelNeedsYou        = "Needs you"
-	panelChange          = "Change"
-	panelEvidence        = "Evidence"
-	panelStepsEvidence   = "Steps and evidence"
 	panelInboxDetail     = "Inbox detail"
 	panelLog             = "Log"
 )

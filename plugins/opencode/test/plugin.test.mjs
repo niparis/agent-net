@@ -1276,12 +1276,6 @@ await test("agent_announce asks for a task, and tool results end with the remind
   });
   const stop = await plugin.setup(c.ctx);
   await until("hello for ses_a", () => registered("ses_a"));
-  await tools.find((t) => t.name === "agent_owner_ask").execute({ kind: "question", text: "Merge?", recommendation: "yes", options: ["Yes"], urgency: "high" }, { sessionID: "ses_a" });
-  const ask = calls.filter(([m]) => m === "owner_ask").pop();
-  if (!ask || ask[1].kind !== "question" || ask[1].explicit || ask[1].text !== "Merge?" || ask[1].options[0] !== "Yes") throw new Error(JSON.stringify(ask));
-  await tools.find((t) => t.name === "agent_owner_ask").execute({ kind: "approval", text: "Delete?", recommendation: "no", replaces: "i_old" }, { sessionID: "ses_a" });
-  const approval = calls.filter(([m]) => m === "owner_ask").pop();
-  if (!approval || approval[1].kind !== "approval" || approval[1].replaces !== "i_old" || approval[1].text !== "Delete?") throw new Error("approval: " + JSON.stringify(approval));
   const announce = tools.find((t) => t.name === "agent_announce");
   if (JSON.stringify(announce.input.required) !== '["task"]') throw new Error("required: " + JSON.stringify(announce.input.required));
   // Only the owner renames a session (decision 0032).

@@ -325,7 +325,7 @@ func (d *Daemon) holdStart(ctx context.Context, caller string, p protocol.Worker
 	// A held start never reaches the gateway, so only the text checks run.
 	flags := protocol.LintBrief(p, protocol.BriefLintFacts{})
 	d.logBriefFlags(p.Project, flags)
-	note := "the start is held: " + strings.Join(fieldNames(p.SelectionFields()), ", ") + " need your owner's approval. One ask is on his Desk: confirm starts the worker with those fields, picker starts it with the picker's own choice. A worker notice arrives in your inbox when it starts or does not start. Do not start it again."
+	note := "the start is held: " + strings.Join(fieldNames(p.SelectionFields()), ", ") + " need your owner's approval. One ask waits for his answer: confirm starts the worker with those fields, picker starts it with the picker's own choice. A worker notice arrives in your inbox when it starts or does not start. Do not start it again."
 	if flagNote := protocol.BriefFlagsNote(flags); flagNote != "" {
 		note += "\n" + flagNote
 	}
@@ -366,7 +366,7 @@ func (d *Daemon) onStartDecision(p protocol.StartDecision) {
 	case protocol.StartAnswerConfirm:
 		lead = "Your choice of " + strings.Join(fieldNames(req.SelectionFields()), ", ") + " was confirmed. "
 	case protocol.StartAnswerPicker:
-		req, lead = req.WithoutSelection(), "The picker chooses, as answered on the Desk. "
+		req, lead = req.WithoutSelection(), "The picker chooses, as the owner answered. "
 	default:
 		d.Logf("worker.held start=%s: not started, owner answer %q", id, p.Answer)
 		d.reportAcceptedStart(id, h.caller, req, nil, errors.New("the choice of "+strings.Join(fieldNames(req.SelectionFields()), ", ")+" was not approved (answer: "+oneLineAnswer(p.Answer)+"). Start again without selection fields"))

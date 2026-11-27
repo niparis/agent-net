@@ -267,12 +267,12 @@ func TestCTOAppAskOnVerifiedWordsApproves(t *testing.T) {
 	}
 }
 
-// Both prompts say the CTO quotes the owner's words and never files a Desk
-// proposal for something he asked.
+// Both prompts say the CTO quotes the owner's words and never proposes for
+// later something he asked.
 func TestCTOBriefTellsToQuoteOwnerWords(t *testing.T) {
 	for _, text := range []string{ctoBrief, ctoPermissionNote} {
-		if !strings.Contains(text, "quote his") || !strings.Contains(text, "owner_words") || !strings.Contains(text, "Never file a Desk proposal for something he asked") {
-			t.Errorf("text lacks the quote rule or the Desk rule: %s", text)
+		if !strings.Contains(text, "quote his") || !strings.Contains(text, "owner_words") || !strings.Contains(text, "Never propose for later something he asked") {
+			t.Errorf("text lacks the quote rule or the no-proposal rule: %s", text)
 		}
 	}
 }

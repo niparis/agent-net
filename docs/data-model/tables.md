@@ -139,7 +139,7 @@ One row per message between sessions, the owner and bots: sender, recipient, typ
 - **Rows on 2026-11-22:** 23880
 - **Written by:** `gateway/agentnet_reply.go`, `gateway/automatic_message.go`, `gateway/bot_tools.go`, `gateway/busy_hold.go`, `gateway/caller_agent.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/cto_lead.go`, `gateway/delivery_reconcile.go`, `gateway/delivery_tasks.go`, `and others`
 - **Read by:** `gateway/ask_holder.go`, `gateway/asks.go`, `gateway/brief_check.go`, `gateway/busy_hold.go`, `gateway/check.go`, `gateway/cto_lead.go`, `gateway/delivery_tasks.go`, `gateway/follow_ups.go`, `gateway/graph_talk.go`, `gateway/held.go`, `and others`
-- **Shown in:** TUI, Messages, TUI, Desk, tool `agent_message_send`, tool `agent_message_reply`, tool `agent_messages_find`, tool `agent_message_get`, tool `agent_message_withdraw`, tool `agent_message_handoff`
+- **Shown in:** TUI, Messages, tool `agent_message_send`, tool `agent_message_reply`, tool `agent_messages_find`, tool `agent_message_get`, tool `agent_message_withdraw`, tool `agent_message_handoff`
 - **Kept:** Forever by default (the gateway flag --keep-messages is 0); when set, older rows go on the hourly prune except bot mail not yet read and rows behind open reject or escalate outcomes. The owner prompt on a message is cleared after 90 days (hourly prune).
 
 ### `nudge_fires`
@@ -199,7 +199,7 @@ One charter value that a session drafted from the project AGENTS.md (`pending`, 
 - **Rows on 2026-11-22:** 112
 - **Written by:** `gateway/charter_drafts.go`
 - **Read by:** `gateway/charter_drafts.go`, `gateway/chief.go`, `gateway/store_inbox.go`
-- **Shown in:** TUI, Graph, TUI, Desk, tool `agent_charter_draft`, CTO op `needs_you`
+- **Shown in:** TUI, Graph, tool `agent_charter_draft`, CTO op `needs_you`
 - **Kept:** Forever (the status changes to accepted or rejected, the row stays; the `asked` row is replaced when the source text changes).
 
 ### `charter_values`
@@ -246,7 +246,7 @@ How one request between two nodes ended: a reply with an outcome (accept, reject
 - **Rows on 2026-11-22:** 874
 - **Written by:** `gateway/asks.go`, `gateway/store.go`, `gateway/store_inbox.go`, `gateway/store_outcome.go`
 - **Read by:** `gateway/asks.go`, `gateway/bot_tools.go`, `gateway/learned.go`, `gateway/owner_answers.go`, `gateway/signal.go`, `gateway/store.go`, `gateway/store_outcome.go`, `gateway/store_record.go`
-- **Shown in:** TUI, Desk, tool `agent_message_reply`, CTO op `outcome_inbox`, CTO op `outcome_overrule`
+- **Shown in:** TUI, tool `agent_message_reply`, CTO op `outcome_inbox`, CTO op `outcome_overrule`
 - **Kept:** Forever (messages are kept forever by default, so their outcomes are too).
 
 ### `node_scopes`
@@ -269,7 +269,7 @@ One permission change an agent proposed (rules, targets, reason) with its status
 - **Rows on 2026-11-22:** 29
 - **Written by:** `gateway/permissions.go:ApprovePermissionOnOwnerWords`, `gateway/permissions.go:MarkPermissionUndone`, `gateway/permissions.go:RecordPermissionResult`, `gateway/permissions.go:answerPermissionAsk`, `gateway/permissions.go:insertPermissionRow`, `gateway/permissions.go:rejectPermissionTx`
 - **Read by:** `gateway/permissions.go:ApprovePermissionOnOwnerWords`, `gateway/permissions.go:MarkPermissionUndone`, `gateway/permissions.go:PermissionProposal`, `gateway/permissions.go:RaiseTrustAsk`, `gateway/permissions.go:RecordPermissionResult`, `gateway/permissions.go:answerPermissionAsk`
-- **Shown in:** TUI: Desk, tool: agent_permission_propose, CTO: cto_proposals_find, CTO: proposal_ask
+- **Shown in:** TUI: tool: agent_permission_propose, CTO: cto_proposals_find, CTO: proposal_ask
 - **Kept:** for ever
 - **Note:** No DELETE found.
 
@@ -339,18 +339,18 @@ One sort decision the chief of staff made on an ask (answer, route, merge, close
 - **Rows on 2026-11-22:** 1637
 - **Written by:** `gateway/chief.go:SortAskWith`, `gateway/chief.go:commitSort`, `gateway/chief.go:reopenOrMoveMergedAsks`
 - **Read by:** `gateway/asks.go:closeWaitingAsk`, `gateway/chief.go:AskSortHistory`, `gateway/chief.go:adoptChiefAsks`, `gateway/chief.go:askSortStats`, `gateway/chief.go:chiefMaySort`, `gateway/chief.go:reopenOrMoveMergedAsks`, `gateway/chief.go:replacementCheck`, `gateway/chief.go:undoAsk`, `gateway/chief_health.go:chiefSilent`, `gateway/chief_stuck.go:stuckItems`, `gateway/standing.go:askDisposition`
-- **Shown in:** TUI: Desk, tool: agent_ask_sort, CTO: ask_history, CTO: ask_undo
+- **Shown in:** tool: agent_ask_sort, CTO: ask_history, CTO: ask_undo
 - **Kept:** for ever
 
 ### `desk_log`
 
-One log line about something that happened on the Desk (an ask sorted, a permission applied), with what undoes it.
+One log line about something that happened in the gateway (an ask sorted, a permission applied), with what undoes it.
 
 - **Columns:** `id`, `at`, `source`, `about_kind`, `about_id`, `text`, `detail`, `options`
 - **Rows on 2026-11-22:** 2184
 - **Written by:** `gateway/asks.go`, `gateway/permissions.go`, `gateway/store.go`
 - **Read by:** `gateway/asks.go`, `gateway/permissions.go`, `gateway/server.go`, `gateway/store.go`
-- **Shown in:** TUI, Desk, tool `agent_ask_sort`, CTO op `desk_log`, CTO op `desk_settle`
+- **Shown in:** tool `agent_ask_sort`, CTO op `desk_log`
 - **Kept:** The newest 2000 lines, trimmed on every 200th insert.
 
 ### `follow_ups`
@@ -361,9 +361,9 @@ One row per follow-up check set by a message sender or the chief: the event expe
 - **Rows on 2026-11-22:** 88
 - **Written by:** `gateway/follow_ups.go:checkFollowUps`, `gateway/follow_ups.go:insert`
 - **Read by:** `gateway/follow_ups.go:checkFollowUps`
-- **Shown in:** tool: agent_message_send, tool: agent_ask_sort, TUI: Desk
+- **Shown in:** tool: agent_message_send, tool: agent_ask_sort, TUI
 - **Kept:** for ever; status moves from pending to met or raised, rows are not deleted
-- **Note:** Area changed from messages to desk: when due and unmet, the minute tick raises one ask to the chief. Shown on the Desk only as that raised ask.
+- **Note:** Area changed from messages to desk: when due and unmet, the minute tick raises one ask to the chief. Shown in the TUI only as that raised ask.
 
 ### `inbox_items` (core)
 
@@ -373,7 +373,7 @@ One ask or CTO problem: a question, approval (including delivery step approvals 
 - **Rows on 2026-11-22:** 2770
 - **Written by:** `gateway/agentnet_reply.go`, `gateway/apps_public_asks.go`, `gateway/asks.go`, `gateway/asks_to.go`, `gateway/brief.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/chief_health.go`, `gateway/chief_stuck.go`, `gateway/delivery_approval.go`, `gateway/delivery_tasks.go`, `gateway/intake.go`, `and others`
 - **Read by:** `gateway/agentnet_reply.go`, `gateway/apps_asks.go`, `gateway/apps_public_asks.go`, `gateway/ask_intake.go`, `gateway/asks.go`, `gateway/brief.go`, `gateway/caller_agent.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/chief_health.go`, `gateway/intake.go`, `and others`
-- **Shown in:** TUI, Desk, tool `agent_owner_ask`, tool `agent_ask_intake`, tool `agent_ask_sort`, CTO op `inbox_list`, CTO op `inbox_answer`, CTO op `cto_intake_find`
+- **Shown in:** tool `agent_ask_intake`, tool `agent_ask_sort`, CTO op `inbox_list`, CTO op `inbox_answer`, CTO op `cto_intake_find`
 - **Kept:** Forever (answered and closed rows stay).
 
 ### `learned_suggestions`
@@ -384,7 +384,7 @@ One suggestion the system learned from message traffic: a change to a charter fi
 - **Rows on 2026-11-22:** 50
 - **Written by:** `gateway/learned.go`, `gateway/learned_apply.go`, `gateway/learned_owner.go`, `gateway/side_fold.go`, `gateway/store_graph.go`
 - **Read by:** `gateway/asks.go`, `gateway/chief.go`, `gateway/learned.go`, `gateway/learned_apply.go`, `gateway/learned_owner.go`, `gateway/store_inbox.go`
-- **Shown in:** TUI, Desk, TUI, Graph, CTO op `learned_list`, CTO op `learned_answer`, CTO op `learned_view`
+- **Shown in:** TUI, TUI, Graph, CTO op `learned_list`, CTO op `learned_answer`, CTO op `learned_view`
 - **Kept:** Forever (status changes, rows stay).
 
 ### `standing_order_history`
@@ -580,7 +580,7 @@ One row per change (a branch of work) that a worker or session has submitted for
 - **Rows on 2026-11-22:** 1203
 - **Written by:** `gateway/delivery_changes.go:writeChange`, `gateway/session_replace.go:ReplaceSession`
 - **Read by:** `gateway/asks.go:DeskLog`, `gateway/asks.go:reconcileChangeAsks`, `gateway/brief_check.go:openChangeBriefs`, `gateway/caller_agent.go:sessionActsForCaller`, `gateway/caller_agent.go:unownedCallerTasks`, `gateway/caller_agent.go:wakeCallerAgent`, `gateway/delivery_approval.go:answerDeliveryApproval`, `gateway/delivery_changes.go:ListChanges`, `gateway/delivery_changes.go:changeView`, `gateway/delivery_changes.go:queryChange`, `gateway/delivery_reconcile.go:repairExternalDone`, `gateway/delivery_tasks.go:backfillDeliveryTasks`, `gateway/delivery_tasks.go:checkStuckStepTasks`, `gateway/delivery_tasks.go:dispatchStepTasks`, `gateway/delivery_tasks.go:holds`, `gateway/delivery_tasks.go:retireObsoleteStepTasks`, `gateway/delivery_tasks.go:retireStepMessages`, `gateway/delivery_tasks.go:retireUnlinkedStepMessages`, `gateway/delivery_tasks.go:stepMessageCurrent`, `gateway/delivery_tasks.go:stepTaskDeliverable`, `gateway/delivery_tasks.go:storeStepTaskMessagesInternal`, `gateway/delivery_tasks.go:wakeOfflineStepOwners`, `gateway/desk_rules.go:askRepoTeam`, `gateway/follow_ups.go:eventHappened`, `gateway/follow_ups.go:recordSortFollowUp`, `gateway/graph_lifecycle.go:lifecycleReferences`, `gateway/member_loop.go:memberWorkerLines`, `gateway/merger.go:mergerLifecycleMigration`, `gateway/merger.go:resetConfiguredMergerTasks`, `gateway/merger.go:resetStoppedMergerTasks`, `gateway/nudge_batch.go:dueNudgeSessions`, `gateway/owed_replies.go:initOwedRepliesLiveSince`, `gateway/picker.go:pickerTaskRecordsUsing`, `gateway/session_replace.go:ReplaceSession`, `gateway/session_replace.go:moveStepNotices`, `gateway/session_stall.go:announcedDone`, `gateway/store.go:messagesThreadTriggersSQL`, `gateway/store_graph.go:SetDeliveryOwner`, `gateway/store_inbox.go:askArea`, `gateway/store_inbox.go:inboxRead`, `gateway/worker_hints.go:RecentWorkerChanges`
-- **Shown in:** TUI: Desk (Delivery and Change panels), tool: agent_changes_find, tool: agent_change_submit
+- **Shown in:** TUI (Delivery and Change panels), tool: agent_changes_find, tool: agent_change_submit
 - **Kept:** for ever
 
 ### `delivery_evidence`
@@ -591,7 +591,7 @@ One row per report on a delivery step (accept, review, test, merge, release or v
 - **Rows on 2026-11-22:** 6539
 - **Written by:** `gateway/delivery_changes.go:insertEvidence`
 - **Read by:** `gateway/delivery_changes.go:changeEvidence`, `gateway/delivery_changes.go:reopenOwnReport`, `gateway/delivery_tasks.go:checkNodeTask`, `gateway/delivery_waiting.go:(package level)`, `gateway/follow_ups.go:eventHappened`, `gateway/member_loop.go:memberWorkerLines`, `gateway/nudge_fires.go:markNudgeFollows`, `gateway/picker.go:pickerTaskRecordsUsing`, `gateway/scores_weekly.go:ScoresWeeklyAt`
-- **Shown in:** TUI: Desk (Evidence panel), tool: agent_step_report, tool: agent_changes_find
+- **Shown in:** TUI (Evidence panel), tool: agent_step_report, tool: agent_changes_find
 - **Kept:** for ever, the database refuses to update or delete these rows
 - **Note:** Append-only: triggers abort UPDATE and DELETE.
 
@@ -603,7 +603,7 @@ One row per revision of a change (each time the branch is pushed again), with it
 - **Rows on 2026-11-22:** 1829
 - **Written by:** `gateway/delivery_changes.go:insertRevision`, `gateway/delivery_changes.go:setRevisionColumn`, `gateway/side_tables_fold.go:foldRevisionStatsTx`
 - **Read by:** `gateway/brief_check.go:openChangeBriefs`, `gateway/delivery_changes.go:ListChanges`, `gateway/delivery_changes.go:changeHandbackCheck`, `gateway/delivery_changes.go:changeSignals`, `gateway/delivery_changes.go:changeView`, `gateway/delivery_tasks.go:storeStepTaskMessagesInternal`, `gateway/side_tables_fold.go:foldRevisionStatsTx`
-- **Shown in:** TUI: Desk (Change panel), tool: agent_changes_find, tool: agent_change_submit
+- **Shown in:** TUI (Change panel), tool: agent_changes_find, tool: agent_change_submit
 - **Kept:** for ever
 - **Note:** Audit text was only 'each revision'; diff_stat, signals and handback_check come from the folded delivery_revision_stats.
 
@@ -615,7 +615,7 @@ One row per open delivery step of a change that needs someone to do it: who owns
 - **Rows on 2026-11-22:** 115
 - **Written by:** `gateway/delivery_approval.go`, `gateway/delivery_changes.go`, `gateway/delivery_tasks.go`, `gateway/delivery_waiting.go`, `gateway/merger.go`, `gateway/session_replace.go`, `gateway/store_graph.go`
 - **Read by:** `gateway/caller_agent.go`, `gateway/delivery_approval.go`, `gateway/delivery_changes.go`, `gateway/delivery_tasks.go`, `gateway/delivery_waiting.go`, `gateway/graph_lifecycle.go`, `gateway/merger.go`, `gateway/nudge_batch.go`, `gateway/owed_replies.go`, `gateway/session_stall.go`, `and others`
-- **Shown in:** tool `agent_step_claim`, tool `agent_step_report`, TUI, Desk (Steps and evidence panel)
+- **Shown in:** tool `agent_step_claim`, tool `agent_step_report`, TUI (Steps and evidence panel)
 - **Kept:** Until the step is reported, closed, retired or its change ends. A done step keeps no task: its row in `delivery_evidence` is the record.
 
 ### `project_bar_rules`
@@ -697,7 +697,7 @@ One row per sign-in waiting for the owner to approve (device code or browser): u
 - **Rows on 2026-11-22:** 0
 - **Written by:** `gateway/oauth_store.go:ApprovePending`, `gateway/oauth_store.go:CleanupOAuth`, `gateway/oauth_store.go:RefusePending`, `gateway/oauth_store.go:newOAuthPending`, `gateway/oauth_store.go:oauthPendingQuota`, `gateway/oauth_store.go:registerOAuthClient`, `gateway/phone_pairing.go:newPhonePending`, `gateway/phone_pairing.go:redeemPhonePending`
 - **Read by:** `gateway/apps_asks.go:OpenAppConsent`, `gateway/apps_asks.go:reconcileAppConsentAsks`, `gateway/oauth_store.go:ApprovePending`, `gateway/oauth_store.go:CleanupOAuth`, `gateway/oauth_store.go:PendingByUserCode`, `gateway/oauth_store.go:newOAuthPending`, `gateway/oauth_store.go:oauthPendingQuota`, `gateway/oauth_store.go:oauthStatus`, `gateway/phone_pairing.go:newPhonePending`, `gateway/phone_pairing.go:redeemPhonePending`
-- **Shown in:** TUI: Desk, TUI: Settings
+- **Shown in:** TUI: Settings
 - **Kept:** 10 minutes, swept every 10 minutes and when a new request starts
 - **Note:** Shown as an app consent ask (OpenAppConsent in gateway/apps_asks.go) and in the Settings Apps screen.
 
@@ -731,7 +731,7 @@ One row per change to the skill archive (add, remove, promote, undo of those) or
 - **Rows on 2026-11-22:** 137
 - **Written by:** `gateway/skillarchive.go`, `gateway/skill_lists.go`
 - **Read by:** `gateway/skill_archive_migration.go`, `gateway/skillarchive.go`, `gateway/skill_lists.go`
-- **Shown in:** CTO op `skill_archive`, CTO op `skills`, Desk undo
+- **Shown in:** CTO op `skill_archive`, CTO op `skills`, TUI undo
 - **Kept:** Forever.
 
 ### `skill_node_lists`

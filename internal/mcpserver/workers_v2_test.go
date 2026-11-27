@@ -34,9 +34,6 @@ func TestRedesignedWorkerAndOwnerTools(t *testing.T) {
 		{"agent_learn", "agent_learn", map[string]any{"subject_kind": "model", "subject": "terra", "finding": "works"}},
 		{"agent_project_add", "project_add", map[string]any{"paths": []string{"/tmp/demo"}}},
 		{"agent_mcp_test", "mcp_test", map[string]any{"server": "demo"}},
-		{"agent_owner_ask", "owner_ask", map[string]any{"kind": "question", "text": "Merge?", "recommendation": "yes"}},
-		{"agent_owner_ask", "owner_ask", map[string]any{"kind": "approval", "text": "deploy", "recommendation": "yes"}},
-		{"agent_owner_ask", "owner_ask", map[string]any{"kind": "idea", "text": "feature", "recommendation": "yes"}},
 	}
 	for _, tc := range cases {
 		first := len(calls)
@@ -77,10 +74,6 @@ func TestRedesignedWorkerAndOwnerTools(t *testing.T) {
 		case "agent_worker_rate":
 			if calls[first].params["kind"] != "rating" || calls[first].params["score"] != float64(4) {
 				t.Errorf("rate args: %#v", calls[first].params)
-			}
-		case "agent_owner_ask":
-			if tc.args["kind"] == "question" && (calls[len(calls)-1].params["kind"] != "question" || calls[len(calls)-1].params["text"] != "Merge?") {
-				t.Errorf("owner question args: %#v", calls[len(calls)-1].params)
 			}
 		}
 
@@ -133,64 +126,12 @@ func TestWorkerRoleDoesNotSeeDelegationTools(t *testing.T) {
 	cs := connectServer(t, func(context.Context, string, any) (json.RawMessage, error) { return json.RawMessage(`{}`), nil })
 	listed, _ := cs.ListTools(context.Background(), nil)
 	for _, tool := range listed.Tools {
-		if tool.Name == "agent_worker_start" || tool.Name == "agent_worker_stop" || tool.Name == "agent_worker_rate" || tool.Name == "agent_owner_ask" || tool.Name == "agent_owner_brief" || tool.Name == "agent_project_add" || tool.Name == "agent_announce" {
+		if tool.Name == "agent_worker_start" || tool.Name == "agent_worker_stop" || tool.Name == "agent_worker_rate" || tool.Name == "agent_owner_brief" || tool.Name == "agent_project_add" || tool.Name == "agent_announce" {
 			t.Errorf("worker sees %s", tool.Name)
 		}
 	}
 }
 
-// When the team lead takes the question, the tool result says so and tells the
-// asker to carry on.
-func TestOwnerAskSentToTheTeamLeadSaysSo(t *testing.T) {
-	note := "Your team (forge) sends questions to its lead, tenebrae. Sent there; carry on with work that does not need the answer."
-	cs := connect(t, func(context.Context, string, any) (json.RawMessage, error) {
-		return json.RawMessage(`{"item":{"id":"i_9","kind":"question","status":"open"},"redirected":{"team":"forge","lead":"tenebrae","item_id":"i_9","message_id":"m_1","note":"` + note + `"}}`), nil
-	})
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_owner_ask", Arguments: map[string]any{"kind": "question", "text": "Can I?", "recommendation": "yes"}})
-	if err != nil || res.IsError {
-		t.Fatalf("%v %+v", err, res)
-	}
-	out, _ := res.StructuredContent.(map[string]any)
-	if out["state"] != "sent_to_lead" || out["note"] != note || out["item_id"] != "i_9" || out["kind"] != "question" {
-		t.Fatalf("result: %#v", out)
-	}
-}
-
-// A new ask does not retire the earlier ones. The result lists the session's
-// other open asks so the agent can name one with replaces.
-func TestOwnerAskResultListsOtherOpenAsks(t *testing.T) {
-	cs := connect(t, func(context.Context, string, any) (json.RawMessage, error) {
-		return json.RawMessage(`{"item":{"id":"i_2","kind":"approval","status":"open"},"other_open":[{"id":"i_1","kind":"approval","text":"delete the data"}]}`), nil
-	})
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_owner_ask", Arguments: map[string]any{"kind": "approval", "text": "spend", "recommendation": "yes"}})
-	if err != nil || res.IsError {
-		t.Fatalf("%v %+v", err, res)
-	}
-	out, _ := res.StructuredContent.(map[string]any)
-	others, _ := out["other_open"].([]any)
-	if out["item_id"] != "i_2" || len(others) != 1 || !strings.Contains(fmt.Sprint(others[0]), "i_1") || !strings.Contains(fmt.Sprint(out["note"]), "replaces") {
-		t.Fatalf("result: %#v", out)
-	}
-}
-
-func TestRedesignedOwnerKindsAndTextJSON(t *testing.T) {
-	cs := connect(t, func(context.Context, string, any) (json.RawMessage, error) {
-		return json.RawMessage(`{"item_id":"i_1","kind":"question","state":"open"}`), nil
-	})
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_owner_ask", Arguments: map[string]any{"kind": "question", "text": "Can I?", "recommendation": "yes"}})
-	if err != nil || res.IsError {
-		t.Fatalf("%v %+v", err, res)
-	}
-	if res.StructuredContent == nil {
-		t.Fatal("missing structured output")
-	}
-	if len(res.Content) == 0 || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, `"item_id":"i_1"`) {
-		t.Fatalf("missing JSON text: %+v", res.Content)
-	}
-}
-
-// agent_worker_start returns the worker record with the caller that started
-// it, as agent_workers_find shows that worker.
 func TestAgentWorkerStartFillsTheCaller(t *testing.T) {
 	worker := protocol.AgentView{
 		SessionID: "s_w1", Hostname: "research", Harness: "opencode", Model: "deepseek-v4.1-flash",
@@ -269,22 +210,6 @@ func findCatalogTool(name string) *toolcatalog.Tool {
 	return nil
 }
 
-// A question returns no inbox item from the daemon. The tool must still answer
-// with a valid result, or agents ask again.
-func TestOwnerAskQuestionWithoutItemIsValid(t *testing.T) {
-	t.Setenv("AGENT_NET_WORKER", "")
-	cs := connect(t, func(ctx context.Context, method string, params any) (json.RawMessage, error) {
-		return json.RawMessage(`{}`), nil
-	})
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_owner_ask", Arguments: map[string]any{"kind": "question", "text": "merge?", "recommendation": "yes"}})
-	if err != nil || res.IsError {
-		t.Fatalf("owner_ask question: %v %+v", err, res)
-	}
-}
-
-// A worker started since the difficulty judge carries an assessment. Rating it
-// returns the short worker record, which declares no assessment field, so the
-// tool must not pass it through (v0.4.95: "unexpected additional properties").
 func TestAgentWorkerRateLeavesOutTheAssessment(t *testing.T) {
 	worker := protocol.AgentView{
 		SessionID: "s_w1", Hostname: "research", Harness: "codex", Model: "gpt-6.1-sol:low",
@@ -306,21 +231,5 @@ func TestAgentWorkerRateLeavesOutTheAssessment(t *testing.T) {
 		Arguments: map[string]any{"worker": "s_w1", "kind": "rating", "score": 4}})
 	if err != nil || res.IsError {
 		t.Fatalf("agent_worker_rate: %v %+v", err, res)
-	}
-}
-
-// When the ask went to the chief of staff as a request (decision 0196), the
-// tool result says so.
-func TestOwnerAskSentToTheChiefSaysSo(t *testing.T) {
-	cs := connect(t, func(context.Context, string, any) (json.RawMessage, error) {
-		return json.RawMessage(`{"item":{"kind":"question","status":"sent_to_chief"},"redirected":{"chief":true,"lead":"chief","lead_session":"s_c","message_id":"m_1","note":"Sent to the chief of staff as a request."}}`), nil
-	})
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_owner_ask", Arguments: map[string]any{"kind": "question", "text": "Can I?", "recommendation": "yes"}})
-	if err != nil || res.IsError {
-		t.Fatalf("%v %+v", err, res)
-	}
-	out, _ := res.StructuredContent.(map[string]any)
-	if out["state"] != "sent_to_chief" || out["note"] != "Sent to the chief of staff as a request." {
-		t.Fatalf("result: %+v", out)
 	}
 }

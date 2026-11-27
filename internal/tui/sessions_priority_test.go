@@ -174,7 +174,7 @@ func groupOf(m Model, id string) group {
 func TestIdleMergerFollowsProjectChangeCaller(t *testing.T) {
 	m := priorityModel()
 	m.snap.Agents[0].RepoLeadExplicit = false
-	m.delivery.changes = []deliveryChange{{ID: "ch_one", Repo: "demo", State: protocol.ChangeOpen, Caller: "lead", Updated: 100}}
+	m.delivery.changes = []deliveryChange{{ID: "ch_one", Repo: "demo", State: protocol.ChangeOpen}}
 	g := groupOf(m, "merge")
 	if indexOfID(agentIDs(g.agents), "merge") < 0 {
 		t.Fatalf("merger is folded: %v", ids(m))
@@ -214,7 +214,7 @@ func TestMergerReadyStepMovesItToWorking(t *testing.T) {
 	m.groupedSessions = true
 	m.snap.Agents[0].Status = "idle"
 	m.snap.Agents[1].Status = "idle"
-	m.delivery.changes = []deliveryChange{{ID: "ch_merge", Repo: "demo", State: protocol.ChangeOpen, Step: "merge", StepOwner: "merger", OwnerKind: protocol.OwnerMerger, StepState: protocol.StepStateReady}}
+	m.delivery.changes = []deliveryChange{{ID: "ch_merge", Repo: "demo", State: protocol.ChangeOpen, Step: "merge", OwnerKind: protocol.OwnerMerger, StepState: protocol.StepStateReady}}
 	g := groupOf(m, "merge")
 	if g.host != "Working" {
 		t.Fatalf("merger band %q, want Working: %+v", g.host, g)
