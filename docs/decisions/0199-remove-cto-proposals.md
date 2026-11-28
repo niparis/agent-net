@@ -1,7 +1,7 @@
 # 0199 - Remove stored CTO proposals
 
 Date: 2026-11-28
-Status: Approved by the owner (Phase 1 #2, "kill CTO proposals"), relayed by the agent-net lead.
+Status: Approved by the owner. His words: "#2 (kill proposals + CTO parallel reads/runtime)" (2026-11-27 22:18 +08:00), "land first" (2026-11-27 22:24 +08:00) and "yes go" (2026-11-28 15:48 +08:00).
 
 ## Problem
 
@@ -32,19 +32,32 @@ that the owner already approves with his words.
    keeps the actor in the graph history, so the CTO can undo a graph change it
    made this way. The actor `owner (CTO proposal p_N)` is no longer accepted.
 4. Removed: the `cto_proposals` and `cto_proposal_messages` tables (dropped
-   at daemon start), `proposal_ask`, the MCP approval dialog, the
+   at daemon start, after the open proposals are kept; see Upgrade), `proposal_ask`, the MCP approval dialog, the
    `proposal_list` and `proposal_answer` owner methods and their relays, the
    `cto.proposal.validate` gateway frame, the TUI proposal screens and the
    open proposal count in the CTO box title, and the phone proposal card.
 5. `cto_proposals_find` was also the CTO's one read of what waits for the
-   owner: charter drafts, held requests, permission proposals and Inbox asks.
+   owner: charter drafts, held requests and Inbox asks (permission
+   proposals went with decision 0198).
    That read stays, under the name `cto_owner_items_find`, without the stored
    proposal kind. A call with the old name is told the new one.
 
 ## Upgrade
 
-A proposal that was open when the daemon upgrades is dropped with its table.
-The owner asks the CTO again if he still wants it. A Desk ask of kind
-`proposal` that an older daemon synced stays until the Desk store goes
-(decision 0196). An older daemon that approves an old proposal against a newer
-gateway is refused with "owner authority required".
+Nothing the owner was asked disappears without a message. At daemon start,
+before the drop, each open proposal is copied into `cto_proposal_carry` in the
+same transaction. When the link to the gateway is up, the daemon sends each
+one to the chief of staff (to the owner's session when no chief is set) as a
+request from the CTO, which made it, so the reply reaches the CTO. The message
+names the proposal, the action (tool and action), the target (the stored
+arguments), the reason and when it was made, and says that nothing ran: the
+chief asks the owner, and if he agrees, he tells the CTO in its chat and the
+CTO makes the call again with his words. The idempotency key
+`cto_proposal_carry:<machine>:p_<id>` makes a send repeated after a crash give
+back the first message, and the row is removed once the gateway took it. A row
+that cannot be sent stays for the next connect, and the daemon log says why. A
+decided, failed or expired proposal sends nothing.
+
+A Desk ask of kind `proposal` that an older daemon synced stays until the Desk
+store goes (decision 0196). An older daemon that approves an old proposal
+against a newer gateway is refused with "owner authority required".
