@@ -446,7 +446,7 @@ func TestSeatbeltProfile(t *testing.T) {
 	got := seatbeltProfile(p)
 	want := "(version 1)\n(allow default)\n(deny file-write*)\n" +
 		`(allow file-write* (subpath "/work/wt") (subpath "/state/workers/w_1/tmp") (subpath "/repo/.git") (subpath "/state/workers/w_1/pi-agent"))` + "\n" +
-		`(allow file-write* (literal "/dev/null") (literal "/dev/zero") (literal "/dev/dtracehelper") (regex #"^/dev/tty") (regex #"^/dev/fd/"))` + "\n" +
+		`(allow file-write* (literal "/dev/null") (literal "/dev/zero") (literal "/dev/dtracehelper") (literal "/dev/ptmx") (regex #"^/dev/tty") (regex #"^/dev/fd/"))` + "\n" +
 		`(deny file-write* (subpath "/state/workers/w_1/pi-agent/settings.json") (subpath "/repo/.git/hooks"))` + "\n"
 	if got != want {
 		t.Errorf("profile:\n%s\nwant:\n%s", got, want)
