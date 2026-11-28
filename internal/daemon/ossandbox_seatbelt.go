@@ -32,8 +32,11 @@ func seatbeltProfile(p osSandboxPolicy) string {
 	if len(p.Writable) > 0 {
 		b.WriteString("(allow file-write*" + sbSubpaths(p.Writable) + ")\n")
 	}
-	// The null device and terminals are written by every shell command.
-	b.WriteString("(allow file-write* (literal \"/dev/null\") (literal \"/dev/zero\") (literal \"/dev/dtracehelper\") (regex #\"^/dev/tty\") (regex #\"^/dev/fd/\"))\n")
+	// The null device and terminals are written by every shell command. Opening a
+	// new pseudo-terminal writes /dev/ptmx (posix_openpt); without it a tool that
+	// allocates a PTY fails with EPERM. The slave side is /dev/ttysNNN, which the
+	// terminal rule already covers.
+	b.WriteString("(allow file-write* (literal \"/dev/null\") (literal \"/dev/zero\") (literal \"/dev/dtracehelper\") (literal \"/dev/ptmx\") (regex #\"^/dev/tty\") (regex #\"^/dev/fd/\"))\n")
 	var ro []string
 	for _, r := range p.ReadOnly {
 		ro = append(ro, r.Dst)
