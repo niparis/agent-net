@@ -70,9 +70,14 @@ The hook path depends on agy running the installed plugin, and an idle session
 outside agent-net's herdr must have another turn before it receives a waiting
 message.
 
-Enter runs `agy --conversation <id>` in the session folder, in the TUI's
-terminal or herdr pane, and ctrl+] returns. For a remote
-session a local herdr client opens the remote herdr when available.
+Enter on a running agy opens the herdr pane that holds it. It attaches to that
+pane and starts no agy, so the conversation never has two processes. ctrl+]
+ends only the view; the running agy keeps running. For a remote session a
+local herdr client opens the remote herdr when available. When the running
+agy is in no herdr pane agent-net can reach, Enter starts nothing. The note
+names the machine, the folder and the process ID, and says where to open it.
+Only an agy that is not running gets `agy --conversation <id>` in the session
+folder, in the TUI's terminal or herdr pane.
 
 agent-net can also start and resume an agy session, from the TUI's
 new-session form (`n`) or from the CTO with `session_change`. A start opens

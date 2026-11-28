@@ -961,3 +961,95 @@ esac
 		})
 	}
 }
+
+// herdrPaneEnv is the environment of a process that runs in pane of f's herdr.
+func herdrPaneEnv(f *fakeHerdr, pane string) []string {
+	return []string{"HERDR_ENV=1", "HERDR_PANE_ID=" + pane, "HERDR_SOCKET_PATH=" + f.sock, "HERDR_BIN_PATH=" + f.bin}
+}
+
+// A running agy that lives in a herdr pane is shown by attaching to that pane.
+// Enter starts no second agy on its conversation, because ctrl+] would end it.
+func TestEnterAgyRunningInHerdrPaneAttachesWithoutSecondAgy(t *testing.T) {
+	f := newFakeHerdr(t)
+	f.panes(t, `{"pane_id":"w1:pB","terminal_id":"term_b"}`)
+	cmd, _ := startFakeAgy(t, t.TempDir(), herdrPaneEnv(f, "w1:pB"))
+	pid := cmd.Process.Pid
+	f.holds(t, "w1:pB", pid)
+	g := startGateway(t, t.TempDir(), "")
+	bins := fakeBin(t, "agy")
+	bins["herdr"] = f.bin
+	n, _, id := enterNode(t, g, "agy", protocol.SessionInfo{NativeID: "conversation-live", PID: pid, Cwd: t.TempDir(), Name: "lead"}, bins, nil)
+	p := enterOf(t, n, id, "")
+	want := []string{"env", "-u", "HERDR_SESSION", "HERDR_SOCKET_PATH=" + f.sock, f.bin, "terminal", "attach", "term_b", "--takeover"}
+	if !reflect.DeepEqual(p.Argv, want) {
+		t.Fatalf("argv %v, want %v (note %q)", p.Argv, want, p.Note)
+	}
+	if !strings.Contains(p.Note, "Press ctrl+] to come back here;") {
+		t.Errorf("note: %q", p.Note)
+	}
+}
+
+// From another machine, a running agy in a herdr pane opens with herdr's
+// remote client on that machine, and its pane is named (decision 0046).
+func TestEnterRemoteAgyRunningInHerdrPaneUsesLocalClient(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	remoteHerdr := newFakeHerdr(t)
+	remoteHerdr.panes(t, `{"pane_id":"w1:pB","terminal_id":"term_b"}`)
+	cmd, _ := startFakeAgy(t, t.TempDir(), herdrPaneEnv(remoteHerdr, "w1:pB"))
+	pid := cmd.Process.Pid
+	remoteHerdr.holds(t, "w1:pB", pid)
+	ea := &enterAdapter{fakeAdapter: &fakeAdapter{harness: "agy"}}
+	remoteBins := fakeBin(t, "agy")
+	remoteBins["herdr"] = remoteHerdr.bin
+	remote := startNode(t, g, nodeOpts{cfg: func(c *Config) {
+		c.Adapters = []Adapter{ea}
+		c.HarnessPaths = remoteBins
+	}})
+	ea.setSessions(protocol.SessionInfo{Harness: "agy", NativeID: "conversation-remote", PID: pid, Cwd: "/nope", Name: "lead", Status: "idle"})
+	var id string
+	eventually(t, "remote session id", func() bool {
+		if s := remote.d.Sessions(); len(s) == 1 {
+			id = s[0].SessionID
+		}
+		return id != ""
+	})
+	localHerdr, localLog := fakeOpenHerdr(t)
+	local := startNode(t, g, nodeOpts{cfg: func(c *Config) {
+		c.HarnessPaths = map[string]string{"herdr": localHerdr}
+	}})
+	waitSessionOnGateway(t, local, id)
+
+	p := enterOfHerdr(t, local, id, fakeHerdrSocket(localLog))
+	if want := []string{localHerdr, "--remote", remote.cfg.Hostname}; p.OpenedHerdr || !reflect.DeepEqual(p.Argv, want) || !strings.Contains(p.Note, "w1:pB") {
+		t.Fatalf("plan %+v, want argv %v", p, want)
+	}
+	requireHerdrRemoteEnv(t, p)
+	remoteHerdr.readOnly(t)
+}
+
+// A running agy outside every herdr pane cannot be shown from here, and Enter
+// starts no second agy on the conversation. The note says where it runs.
+func TestEnterAgyRunningWithoutPaneStartsNothing(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	started := filepath.Join(t.TempDir(), "started")
+	agy := filepath.Join(t.TempDir(), "agy")
+	if err := os.WriteFile(agy, []byte("#!/bin/sh\necho \"$@\" >> "+started+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cwd := t.TempDir()
+	cmd, _ := startFakeAgy(t, t.TempDir(), nil)
+	pid := cmd.Process.Pid
+	n, _, id := enterNode(t, g, "agy", protocol.SessionInfo{NativeID: "conversation-idle", PID: pid, Cwd: cwd, Name: "lead"}, map[string]string{"agy": agy}, nil)
+	p := enterOf(t, n, id, "")
+	if len(p.Argv) != 0 {
+		t.Fatalf("argv %v, want none", p.Argv)
+	}
+	for _, want := range []string{strconv.Itoa(pid), cwd} {
+		if !strings.Contains(p.Note, want) {
+			t.Errorf("note %q does not name %q", p.Note, want)
+		}
+	}
+	if _, err := os.Stat(started); err == nil {
+		t.Fatal("agy was started on the conversation")
+	}
+}

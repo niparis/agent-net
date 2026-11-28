@@ -387,6 +387,22 @@ func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, vi
 		if info.NativeID == "" {
 			return no("%s has no Antigravity conversation ID", name)
 		}
+		if agyProcess(info.PID) {
+			// agy is running already. A second `agy --conversation` on the same
+			// conversation would be a second process, and ctrl+] would end the
+			// owner's view of it. So Enter only shows the running one.
+			p, ok := d.herdrPlan(info, herdrQuery, plan, name)
+			if !ok {
+				// The TUI shows this as one status line of about 78 columns, so the
+				// place and the next step come first.
+				return no("%s runs on %s in %s (pid %d), not in herdr. Open it there.",
+					name, firstNonEmpty(plan.Host, "its machine"), firstNonEmpty(info.Cwd, "an unknown folder"), info.PID)
+			}
+			if focused != nil && p.HerdrPane != "" {
+				*focused = p.HerdrPane
+			}
+			return p, nil
+		}
 		bin, err := d.harnessBinary("agy")
 		if err != nil {
 			return no("%v", err)
