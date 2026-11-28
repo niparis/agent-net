@@ -192,7 +192,7 @@ func TestInstallScriptSyntax(t *testing.T) {
 }
 
 // On macOS the join script has the new binary sign itself before it is put
-// in place, and goes on when that fails (decision 0199).
+// in place, and goes on when that fails (decision 0200).
 func TestInstallScriptSignsBeforePlacingOnMacOS(t *testing.T) {
 	script, err := RenderInstallScript("https://10.0.0.5:7420", "ABCD2345", strings.Repeat("a", 64), "sha256//abc+/=")
 	if err != nil {

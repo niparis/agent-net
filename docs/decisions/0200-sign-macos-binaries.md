@@ -1,4 +1,4 @@
-# 0199 - Sign agent-net binaries on each Mac with a local identity
+# 0200 - Sign agent-net binaries on each Mac with a local identity
 
 Date: 2026-11-28
 Status: Decided by the owner on 2026-11-28 in the chief of staff's chat ("YES YES YES", owner judgment so_2d13d20bf200940f), on the proposal: a local code-signing certificate per Mac, every agent-net binary signed with it under a fixed identifier at install and at every update, removed on uninstall.

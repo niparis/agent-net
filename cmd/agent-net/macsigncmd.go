@@ -10,7 +10,7 @@ import (
 )
 
 // cmdMacosSign signs a freshly downloaded binary with this Mac's own identity
-// (decision 0199). install.sh and the gateway's join script run it with the
+// (decision 0200). install.sh and the gateway's join script run it with the
 // new binary on itself, before they put it in place, and go on when it fails.
 // On other systems it does nothing.
 func cmdMacosSign(ctx context.Context, args []string) error {

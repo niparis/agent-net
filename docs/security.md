@@ -397,7 +397,7 @@ Release upgrades verify the exact `checksums.txt` bytes with the Ed25519 public 
 
 ## macOS code signing identity
 
-On macOS each new agent-net binary is signed on the machine before it is put in place, by `install.sh`, the invite script, `agent-net upgrade` and the daemon's automatic upgrade ([decision 0199](decisions/0199-sign-macos-binaries.md)). This is not a release signature and proves nothing to other machines. Its only job is to keep the binary's code identity the same across updates, so a macOS privacy permission such as "access data from other apps" is granted once.
+On macOS each new agent-net binary is signed on the machine before it is put in place, by `install.sh`, the invite script, `agent-net upgrade` and the daemon's automatic upgrade ([decision 0200](decisions/0200-sign-macos-binaries.md)). This is not a release signature and proves nothing to other machines. Its only job is to keep the binary's code identity the same across updates, so a macOS privacy permission such as "access data from other apps" is granted once.
 
 - **The key.** A 3072-bit RSA key and a self-signed certificate named "agent-net code signing", with the code signing purpose only, valid for 30 years. Each Mac makes its own on first use. It is never sent anywhere and never committed.
 - **Where it lives.** In `~/.local/state/agent-net/daemon/codesign/agent-net.keychain-db`, a keychain file of agent-net's own. The login keychain and the system keychain are not touched, and no trust setting is changed. The keychain is added to the user's keychain search list, because `codesign` finds the private key only through that list.

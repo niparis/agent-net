@@ -10,7 +10,7 @@
 // Allow lasts.
 //
 // The identity is a self-signed certificate and its key in a keychain file of
-// agent-net's own, never the login or system keychain (decision 0199). The
+// agent-net's own, never the login or system keychain (decision 0200). The
 // package depends on nothing else in agent-net.
 package macsign
 
