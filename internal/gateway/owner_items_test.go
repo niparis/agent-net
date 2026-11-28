@@ -177,7 +177,7 @@ func TestTrainRunFailNotifiesLeadOrChief(t *testing.T) {
 	if _, err := s.db.Exec(`UPDATE sessions SET online=0 WHERE id=?`, lead); err != nil {
 		t.Fatal(err)
 	}
-	c.t = c.t.Add(time.Minute)
+	c.advance(time.Minute)
 	report(protocol.StepResultFail, "run-5")
 	report(protocol.StepResultFail, "run-6")
 	report(protocol.StepResultFail, "run-7")
