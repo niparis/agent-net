@@ -232,8 +232,9 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 	return data, true, nil
 }
 
-// DeliveryNeedsPush reports whether an assigned step owner is known on a
-// different machine. It exposes no machine or session identities.
+// DeliveryNeedsPush reports whether a step owner runs on a different machine
+// than the worker's branch, so the branch must reach origin first. It exposes
+// no machine or session identities.
 func (s *Store) DeliveryNeedsPush(project, machine, caller string) (bool, error) {
 	p, err := s.deliveryPipeline(project)
 	if err != nil {
@@ -252,7 +253,12 @@ func (s *Store) DeliveryNeedsPush(project, machine, caller string) (bool, error)
 		}
 	}
 	seen := map[string]bool{}
+	merger := false
 	for _, step := range p.Steps {
+		if step.Owner.Kind == protocol.OwnerMerger {
+			merger = true
+			continue
+		}
 		if step.Owner.Kind != protocol.OwnerNode || seen[step.Owner.Node] {
 			continue
 		}
@@ -271,7 +277,20 @@ func (s *Store) DeliveryNeedsPush(project, machine, caller string) (bool, error)
 			return true, nil
 		}
 	}
-	return false, nil
+	if !merger {
+		return false, nil
+	}
+	return s.mergerOnOtherMachine(project, machine)
+}
+
+// mergerOnOtherMachine reports whether the project's merger runs on a machine
+// other than machine. The merger fetches change branches from origin, so the
+// branch must be pushed when it does not run here.
+func (s *Store) mergerOnOtherMachine(project, machine string) (bool, error) {
+	var found int
+	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM repos WHERE id=? AND merger_session<>'' AND merger_node<>'' AND merger_node<>?)`,
+		project, machine).Scan(&found)
+	return found != 0, err
 }
 
 // deliveryPipeline resolves the ordered delivery settings and overlays graph
