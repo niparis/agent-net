@@ -6,6 +6,11 @@
 # that reads the diff is built with the real Go, named by TEST_CHANGED_GO.
 set -eu
 
+# The cases run as Linux unless a case sets TEST_CHANGED_OS itself, so the
+# macOS TMPDIR rule does not change the cases that check the Linux RAM folder.
+TEST_CHANGED_OS=Linux
+export TEST_CHANGED_OS
+
 root=$(cd "$(dirname "$0")/.." && pwd)
 script=$root/scripts/test-changed.sh
 work=$(mktemp -d "${TMPDIR:-/tmp}/test-changed-test.XXXXXX")
@@ -18,6 +23,9 @@ fail() {
 
 real_go=$(command -v go) || fail "go is not on PATH"
 gocache=$("$real_go" env GOCACHE) || fail "go env GOCACHE failed"
+# The module cache holds the toolchain that a go launcher switches to. A test
+# that runs with a fake HOME needs it, or the switch tries the network.
+gomodcache=$("$real_go" env GOMODCACHE) || fail "go env GOMODCACHE failed"
 
 # no_go_dir holds links to the tools the script calls, and no go. A CI runner
 # keeps go in /usr/bin, which a PATH that lists /usr/bin would find, so the
@@ -347,6 +355,89 @@ run_check --run 'TestExtra,TestMore'
 grep -Fq 'test -count=1 -run ^(TestAlpha|TestBeta|TestExtra|TestMore)$ -timeout ' "$work/go.log" ||
   fail "--run did not add the named tests: $(cat "$work/go.log")"
 
+# Several changed files in one package make one go test run. The production
+# file's tests and the changed test file's tests share one -run pattern, and
+# each name appears once.
+reset_tree
+change_production
+cat >internal/fake/fake_test.go <<'EOF'
+package fake
+
+import "testing"
+
+func TestAlpha(t *testing.T) {
+	if Value() != 2 {
+		t.Fatal("alpha changed")
+	}
+}
+
+func TestBeta(t *testing.T) {
+	if Value() != 1 {
+		t.Fatal("beta")
+	}
+}
+
+func TestGamma(t *testing.T) {
+	if Value() != 1 {
+		t.Fatal("gamma added")
+	}
+}
+EOF
+run_check
+[ "$status" = 0 ] || fail "two changed files in one package exited $status: $(cat "$work/out")"
+[ "$(grep -c '^test .*\./internal/fake$' "$work/go.log")" = 1 ] ||
+  fail "two changed files in one package did not make one go test run: $(cat "$work/go.log")"
+grep -Fq 'test -count=1 -run ^(TestAlpha|TestBeta|TestGamma)$ -timeout ' "$work/go.log" ||
+  fail "the merged run did not name each test once: $(cat "$work/go.log")"
+
+# The contract tests of a package merge with its changed tests too. The gateway
+# package has contract runs in every diff, so a changed gateway test file runs
+# one go test call that names both.
+reset_tree
+cat >internal/gateway/store_test.go <<'EOF'
+package gateway
+
+import "testing"
+
+func TestStoreValue(t *testing.T) {
+	if Unrelated() != 2 {
+		t.Fatal("store changed")
+	}
+}
+EOF
+run_check
+[ "$status" = 0 ] || fail "a changed gateway test exited $status: $(cat "$work/out")"
+[ "$(grep -c '^test .*\./internal/gateway$' "$work/go.log")" = 1 ] ||
+  fail "a changed gateway test and the contract set did not make one go test run: $(cat "$work/go.log")"
+grep -Fq 'test -count=1 -run ^(TestMigrationsAreAppendOnly|TestMigrationsLockAcceptsAppendedMigration|TestDeliveryEvidenceIsAppendOnly|TestStoreValue)$ -timeout ' "$work/go.log" ||
+  fail "the gateway run did not merge the contract names with the changed test: $(cat "$work/go.log")"
+
+# A package with an all-tests run and a run of named tests gets the all-tests
+# run only. The settings rule runs the whole settings package, and a new test
+# file in that package would otherwise add a second run.
+reset_tree
+mkdir -p internal/settings
+printf 'package settings\n\nfunc Setting() int { return 2 }\n' >internal/settings/settings.go
+printf 'package settings\n\nimport "testing"\n\nfunc TestSetting(t *testing.T) {\n\tif Setting() != 2 {\n\t\tt.Fatal("setting")\n\t}\n}\n' >internal/settings/settings_test.go
+run_check
+[ "$status" = 0 ] || fail "a settings package with a new test exited $status: $(cat "$work/out")"
+[ "$(grep -c '^test .*\./internal/settings$' "$work/go.log")" = 1 ] ||
+  fail "the settings package ran more than once: $(cat "$work/go.log")"
+case $(grep '^test .*\./internal/settings$' "$work/go.log") in
+  *-run*) fail "the all-tests run also named a pattern: $(cat "$work/go.log")" ;;
+esac
+
+# Packages stay apart: a fake package change and a guidance change each get a
+# run of their own.
+reset_tree
+change_production
+printf 'package guidance\n\nfunc Text() int { return 2 }\n' >internal/guidance/guidance.go
+run_check
+[ "$(grep -c '^test .*\./internal/fake$' "$work/go.log")" = 1 ] ||
+  fail "the fake package did not get its own run: $(cat "$work/go.log")"
+[ "$(grep -c '^test .*\./internal/guidance$' "$work/go.log")" = 1 ] ||
+  fail "the guidance package did not get its own run: $(cat "$work/go.log")"
+
 # A nested replay module must not be passed to root-module checks.
 reset_tree
 mkdir -p tools/pickerreplay
@@ -388,7 +479,7 @@ reset_tree
 printf 'package gateway\n\nfunc Migration() int { return 2 }\n' >internal/gateway/project_identity_migration.go
 run_check
 [ "$status" = 0 ] || fail "a migration change exited $status: $(cat "$work/out")"
-grep -Fq -- '-run Migrat|Replay|Upgrade|Cutover' "$work/go.log" ||
+grep -Fq -- 'Migrat|Replay|Upgrade|Cutover' "$work/go.log" ||
   fail "a migration file did not run the migration set: $(cat "$work/go.log")"
 if grep -q -- '-race' "$work/go.log"; then
   fail "the migration set ran with -race: $(cat "$work/go.log")"
@@ -413,7 +504,7 @@ func StoreValue() int { return 2 }
 EOF
 run_check
 [ "$status" = 0 ] || fail "a plain store.go change exited $status: $(cat "$work/out")"
-grep -Fq -- '-run ^(TestStoreValue)$' "$work/go.log" ||
+grep -Fq -- '-run ^(TestMigrationsAreAppendOnly|TestMigrationsLockAcceptsAppendedMigration|TestDeliveryEvidenceIsAppendOnly|TestStoreValue)$' "$work/go.log" ||
   fail "a plain store.go change did not run its same-name test file: $(cat "$work/go.log")"
 if grep -q 'Migrat|Replay|Upgrade|Cutover' "$work/go.log"; then
   fail "a plain store.go change ran the migration set: $(cat "$work/go.log")"
@@ -438,7 +529,7 @@ CREATE TABLE demo_two (id TEXT, name TEXT);
 EOF
 run_check
 [ "$status" = 0 ] || fail "a migration const change exited $status: $(cat "$work/out")"
-grep -Fq -- '-run Migrat|Replay|Upgrade|Cutover' "$work/go.log" ||
+grep -Fq -- 'Migrat|Replay|Upgrade|Cutover' "$work/go.log" ||
   fail "a migration const change did not run the migration set: $(cat "$work/go.log")"
 if grep -q -- '-race' "$work/go.log"; then
   fail "a migration const change ran with -race: $(cat "$work/go.log")"
@@ -460,7 +551,7 @@ CREATE TABLE demo_two (id TEXT);
 EOF
 run_check
 [ "$status" = 0 ] || fail "a migrations list change exited $status: $(cat "$work/out")"
-grep -Fq -- '-run Migrat|Replay|Upgrade|Cutover' "$work/go.log" ||
+grep -Fq -- 'Migrat|Replay|Upgrade|Cutover' "$work/go.log" ||
   fail "a migrations list change did not run the migration set: $(cat "$work/go.log")"
 
 # The settings group is a plain run too.
@@ -533,7 +624,7 @@ home=$work/home-fallback
 mkdir -p "$home/.local/go/bin" "$work/env-tmp"
 cp "$work/bin/go" "$work/bin/gofmt" "$home/.local/go/bin/"
 status=0
-env -i TMPDIR="$work/env-tmp" HOME="$home" GOCACHE="$gocache" PATH="$no_go_dir" FAKE_GO_LOG="$work/go.log" \
+env -i TMPDIR="$work/env-tmp" HOME="$home" GOCACHE="$gocache" GOMODCACHE="$gomodcache" PATH="$no_go_dir" FAKE_GO_LOG="$work/go.log" \
   FAKE_GOFMT_LOG="$work/gofmt.log" TEST_CHANGED_GO="$real_go" \
   sh "$script" HEAD >"$work/out" 2>&1 || status=$?
 [ "$status" = 0 ] || fail "a run without go on PATH exited $status: $(cat "$work/out")"
@@ -694,6 +785,42 @@ env -u GOTMPDIR TMPDIR="$work/caller-tmp" PATH="$statbin:$work/bin:/usr/bin:/bin
 want="TMPDIR=$work/caller-tmp GOTMPDIR=$shm_root/agent-net-gotmp"
 [ "$(sort -u "$work/go-env.log")" = "$want" ] ||
   fail "go test env with a caller TMPDIR is $(sort -u "$work/go-env.log"), want $want"
+
+# On macOS the default TMPDIR is a long /var/folders path, and a unix socket path
+# under it passes the 104-byte limit. A macOS run uses /private/tmp instead when
+# the caller set no TMPDIR, or one longer than 30 bytes. GOTMP_MAC_TMP stands in
+# for /private/tmp, so the cases run the same on any host.
+mac_tmp=$work/mac-tmp
+mkdir "$mac_tmp"
+long_tmp=$work/a-caller-folder-with-a-name-longer-than-thirty-bytes
+mkdir "$long_tmp"
+# darwin_tmp_for runs the script as macOS with the given environment settings,
+# and prints the TMPDIR that go test saw. A TMPDIR argument such as "-u TMPDIR"
+# is passed to env.
+darwin_tmp_for() {
+  : >"$work/go-env.log"
+  reset_tree
+  change_production
+  env -u GOTMPDIR "$@" TEST_CHANGED_OS=Darwin GOTMP_MAC_TMP="$mac_tmp" \
+    PATH="$work/bin:/usr/bin:/bin" FAKE_GO_LOG="$work/go.log" FAKE_GO_TMP_LOG="$work/go-env.log" \
+    FAKE_GOFMT_LOG="$work/gofmt.log" TEST_CHANGED_GO="$real_go" \
+    sh "$script" HEAD >"$work/out" 2>&1 || fail "a macOS run exited $?: $(cat "$work/out")"
+  sed 's/ GOTMPDIR=.*//' "$work/go-env.log" | sort -u
+}
+got=$(darwin_tmp_for -u TMPDIR)
+[ "$got" = "TMPDIR=$mac_tmp" ] || fail "macOS with no TMPDIR did not use /private/tmp: $got"
+got=$(darwin_tmp_for TMPDIR="$long_tmp")
+[ "$got" = "TMPDIR=$mac_tmp" ] || fail "macOS with a long TMPDIR did not use /private/tmp: $got"
+
+# macos_tmp decides on its own, so a short TMPDIR and a Linux host need no folder
+# of their own. Each prints nothing, which means the caller's TMPDIR stays.
+macos_tmp_for() {
+  env GOTMP_MAC_TMP="$mac_tmp" sh -c '. "$1"; macos_tmp "$2" "$3"' sh "$root/scripts/gotmpdir.sh" "$1" "$2"
+}
+got=$(macos_tmp_for Darwin /tmp) || true
+[ -z "$got" ] || fail "macOS with a short TMPDIR chose $got, want none"
+got=$(macos_tmp_for Linux "") || true
+[ -z "$got" ] || fail "Linux with no TMPDIR chose $got, want none"
 
 # With no BASE, the base is the merge-base with origin/main when it exists, so a
 # stale local main cannot widen the diff. A local main that is behind
