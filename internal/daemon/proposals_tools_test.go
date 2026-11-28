@@ -139,7 +139,6 @@ func TestCTOChangeParity(t *testing.T) {
 		"worker_start":            {"worker_change", `{"action":"start","project":"project","task":"test"}`},
 		"worker_stop":             {"worker_change", `{"action":"stop","session":"s_test"}`},
 		"held_answer":             {"answer", `{"kind":"held","message_id":"m_test","action":"a"}`},
-		"inbox_answer":            {"answer", `{"kind":"inbox","id":"i_test","answer":"yes"}`},
 		"outcome_overrule":        {"answer", `{"kind":"outcome","reply_id":"m_test","action":"let_stand"}`},
 		"mcp_add":                 {"mcp_change", `{"action":"add","server":{"name":"test","transport":"stdio","command":"/bin/true"}}`},
 		"mcp_remove":              {"mcp_change", `{"action":"remove","name":"test"}`},

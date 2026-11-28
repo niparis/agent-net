@@ -97,16 +97,14 @@ func checkTaskHash(task string) string {
 	return hex.EncodeToString(sum[:8])
 }
 
-// ownerBlockedSQL is true for a session that waits for its owner: it has set
-// waiting, or it has an open question or approval in the Inbox. A check asks a
-// question the session cannot act on then, so none is sent and a pending one
+// ownerBlockedSQL is true for a session that waits for its owner. A check asks
+// a question the session cannot act on then, so none is sent and a pending one
 // is retired. The statement takes the session id column as its text.
-const ownerBlockedSQL = `(EXISTS(SELECT 1 FROM sessions w WHERE w.id=%[1]s AND w.waiting<>'')
-	OR EXISTS(SELECT 1 FROM inbox_items i WHERE i.session_id=%[1]s AND i.kind IN ('question','approval') AND i.status='open'))`
+const ownerBlockedSQL = `EXISTS(SELECT 1 FROM sessions w WHERE w.id=%[1]s AND w.waiting<>'')`
 
 func (s *Store) ownerBlocked(id string) (bool, error) {
 	var blocked bool
-	err := s.db.QueryRow(`SELECT `+fmt.Sprintf(ownerBlockedSQL, "?")+``, id, id).Scan(&blocked)
+	err := s.db.QueryRow(`SELECT `+fmt.Sprintf(ownerBlockedSQL, "?")+``, id).Scan(&blocked)
 	return blocked, err
 }
 
@@ -401,12 +399,6 @@ func (s *Store) answerCheck(sessionID, task string, reported *protocol.Waiting) 
 		return err
 	}
 	if waiting == 0 {
-		// An announce that does not answer a check is progress: a stalled
-		// session has started something new. Its "blocked" or "stopped with
-		// work left" ask has lost its reason and closes (decision 0090).
-		if _, err := s.closeAsks(s.db, `session_id=? AND kind='check' AND from_kind IN ('','session')`, []any{sessionID}, protocol.AskReasonResolved); err != nil {
-			return err
-		}
 		if st.more != 0 || st.open != 0 || st.msgs != 0 {
 			return s.resetCheckProgress(sessionID)
 		}
@@ -416,12 +408,6 @@ func (s *Store) answerCheck(sessionID, task string, reported *protocol.Waiting) 
 	now := s.now()
 	active := now.Add(idleCheckGrace).Unix()
 	if kind == "" {
-		// The next announce was not an answer. Consume it, keep the state.
-		// It is still new work: the session's "stopped with work left" or
-		// "blocked" row has lost its reason and closes.
-		if _, err = s.closeAsks(s.db, `session_id=? AND kind='check' AND from_kind IN ('','session')`, []any{sessionID}, protocol.AskReasonResolved); err != nil {
-			return err
-		}
 		_, err = s.db.Exec(`UPDATE sessions SET check_waiting=0 WHERE id=?`, sessionID)
 		return err
 	}
@@ -432,10 +418,6 @@ func (s *Store) answerCheck(sessionID, task string, reported *protocol.Waiting) 
 	switch kind {
 	case "done":
 		if _, err = s.db.Exec(`UPDATE sessions SET check_active=?,check_waiting=0,check_more=0,check_open=0,check_msgs=0,check_task_hash='' WHERE id=?`, active, sessionID); err != nil {
-			return err
-		}
-		if _, err = s.db.Exec(`UPDATE inbox_items SET status='closed',answer='done',answered_at=?
-			WHERE session_id=? AND kind='check' AND status='open'`, now.UnixNano(), sessionID); err != nil {
 			return err
 		}
 	case "more":
@@ -577,84 +559,21 @@ func (s *Store) answerCheck(sessionID, task string, reported *protocol.Waiting) 
 			active, checkTaskHash(task), sessionID); err != nil {
 			return err
 		}
-		// The answer may only repeat the wait that is already on the Desk.
-		// A check row would then be a copy of it.
-		covered, err := waitHasAsk(s.db, sessionID, protocol.CleanWaiting(reported))
-		if err != nil {
-			return err
+		text := name + " is blocked"
+		if line != "" {
+			text += " on " + line
 		}
-		if !covered {
-			text := name + " is blocked"
-			if line != "" {
-				text += " on " + line
-			}
-			if err = s.checkInboxItem(sessionID, node, text); err != nil {
-				return err
-			}
+		if err = s.checkInboxItem(sessionID, node, text); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-// waitHasAsk says whether the wait the answer repeats already has an ask, open
-// or settled. The wait the announce carries is the one it answers with; the
-// stored wait is the fallback, for an answer that names no wait. A busy turn
-// may have cleared the stored one before the answer arrived. A blocked answer
-// that repeats either adds no check row: the owner or the chief already has it.
-func waitHasAsk(q askDB, sessionID string, reported *protocol.Waiting) (bool, error) {
-	cw := reported
-	if cw == nil {
-		var raw string
-		if err := q.QueryRow(`SELECT waiting FROM sessions WHERE id=?`, sessionID).Scan(&raw); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return false, nil
-			}
-			return false, err
-		}
-		if raw == "" {
-			return false, nil
-		}
-		var w protocol.Waiting
-		if json.Unmarshal([]byte(raw), &w) != nil {
-			return false, nil
-		}
-		cw = protocol.CleanWaiting(&w)
-	}
-	if cw == nil {
-		return false, nil
-	}
-	var text string
-	err := q.QueryRow(`SELECT text FROM inbox_items WHERE source_ref=? AND kind=?
-		ORDER BY created_at DESC, rowid DESC LIMIT 1`,
-		"waiting:"+sessionID, protocol.AskKindWaiting).Scan(&text)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return protocol.SameAskText(text, cw.Text), nil
-}
-
-// checkInboxItem leaves one open row per session, so more or a later block
-// updates the same Needs you row instead of adding another.
+// checkInboxItem logs an idle-check notice (decision 0196: no Desk row).
 func (s *Store) checkInboxItem(sessionID, node, text string) error {
-	text = protocol.NeutralizeMarkers(text)
-	var id string
-	err := s.db.QueryRow(`SELECT id FROM inbox_items WHERE session_id=? AND kind='check' AND status='open'
-		ORDER BY created_at DESC LIMIT 1`, sessionID).Scan(&id)
-	if err == nil {
-		// A new block is a new ask: it counts from now, not from the first one.
-		_, err = s.db.Exec(`UPDATE inbox_items SET text=?,node=?,created_at=? WHERE id=?`, text, node, s.now().UnixNano(), id)
-		return err
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-	// No generated recommendation (decision 0150): the chief turns the check
-	// into a decision or resolves it.
-	_, err = s.createInboxItem(s.db, protocol.InboxItem{Kind: "check", SessionID: sessionID, Node: node, Text: text})
-	return err
+	s.logf("idle_check.notice", "session", sessionID, "node", node, "text", protocol.NeutralizeMarkers(text))
+	return nil
 }
 
 // checkCounts adds the idle check figures to the operator counts.

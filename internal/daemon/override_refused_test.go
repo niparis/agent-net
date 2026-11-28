@@ -17,7 +17,4 @@ func TestOverrideRefusedBeforeAnyCall(t *testing.T) {
 	if err == nil || err.Error() != protocol.OverrideNeedsOwner || res != nil {
 		t.Fatalf("res %+v, err %v", res, err)
 	}
-	if len(d.heldStarts) != 0 {
-		t.Fatalf("held starts: %d", len(d.heldStarts))
-	}
 }

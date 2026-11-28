@@ -520,17 +520,7 @@ func rosterRankForSkip(check string) int {
 	return protocol.LeftOutQuota
 }
 
-// feedGateSkips records the refusals the gate made that the owner's feeds know.
-func (g *Gateway) feedGateSkips(skips []model.Skip) {
-	for _, skip := range skips {
-		switch skip.Check {
-		case "floor":
-			g.quotaFloorFeed(skip.Candidate.Harness, skip.Candidate.Model, skip.Reason)
-		case "exhausted":
-			g.quotaStuckFeed(skip.Candidate.Harness, skip.Candidate.Model, skip.Reason)
-		}
-	}
-}
+func (g *Gateway) feedGateSkips(_ []model.Skip) {}
 
 // appendGateSkips adds the gate's refusals to the roster a start shows when
 // no candidate is left.

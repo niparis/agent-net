@@ -10,9 +10,8 @@ import (
 // worker start. A start that sets one goes ahead only when the owner's own
 // words are found in what he typed in any session (owner_words, see
 // owner_words.go). Without them the start is refused with OverrideNeedsOwner
-// (decision 0196): there is no Desk ask and no held start. A start held before
-// that change is still answered. The owner's own command line and TUI need no
-// such proof.
+// (decision 0196): there is no Desk ask and no held start. The owner's own
+// command line and TUI need no such proof.
 
 // OverrideNeedsOwner is the one line that refuses a start with selection
 // fields and no matching owner words.
@@ -21,53 +20,7 @@ const OverrideNeedsOwner = "model choice needs the owner: ask the chief of staff
 // How a start with selection fields went ahead, in WorkerStartResult.SelectionPath.
 const (
 	SelectionOwnerWords = "owner_words"
-	SelectionHeld       = "held"
 )
-
-// The answers of the Desk ask that holds an override. Only these are answers:
-// any other text is refused with the valid answers and the start stays held. A
-// dismissal ends the start without a worker.
-const (
-	StartAnswerConfirm = "confirm"
-	StartAnswerPicker  = "picker"
-)
-
-// StartOverrideRefPrefix starts the source key of the Desk ask that holds an
-// override. The key is the start id.
-const StartOverrideRefPrefix = "wstart:"
-
-// FrameStartDecision is the gateway telling a node that the owner answered the
-// ask that holds a start. Its params are StartDecision.
-const FrameStartDecision = "node.start_decision"
-
-// StartDecision is FrameStartDecision.
-type StartDecision struct {
-	ItemID string `json:"item_id"`
-	// Ref is the source key of the ask (StartOverrideRefPrefix + start id).
-	Ref string `json:"ref"`
-	// Session is the caller that asked for the override.
-	Session string `json:"session_id"`
-	Answer  string `json:"answer"`
-}
-
-// StartOverrideAsk is "worker.override_ask", machine to gateway: put the ask
-// that holds an override on the owner's Desk. The gateway checks that Session
-// belongs to the sending machine.
-type StartOverrideAsk struct {
-	Session string `json:"session_id"`
-	// StartID is the start id the caller was given.
-	StartID string `json:"start_id"`
-	Text    string `json:"text"`
-	OverrideFacts
-}
-
-// OverrideFacts are the facts of a held override the owner reads and the
-// notice on a lost start names: the selection the caller wants.
-type OverrideFacts struct {
-	Harness string `json:"harness,omitempty"`
-	Model   string `json:"model,omitempty"`
-	Effort  string `json:"effort,omitempty"`
-}
 
 // MinOwnerWordsRunes and MaxOwnerWordsRunes bound the quote of owner_words. A
 // shorter quote proves nothing, and a long one is not a quote.
@@ -132,19 +85,6 @@ func OwnerWordsMatch(quote string, prompts []string) bool {
 		}
 	}
 	return false
-}
-
-// StartOverrideText is the question the owner sees for a held override.
-func StartOverrideText(caller string, fields []string, title, reason string) string {
-	reason = oneLine(reason, 400)
-	if reason == "" {
-		reason = "no reason given"
-	}
-	text := caller + " wants " + strings.Join(fields, " ") + " for '" + oneLine(title, 80) + "': " + reason + ". Confirm, or let the picker choose."
-	if r := []rune(text); len(r) > MaxOwnerAskChars {
-		text = string(r[:MaxOwnerAskChars])
-	}
-	return text
 }
 
 // DifficultyLevels is the tier order, weakest first.

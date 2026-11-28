@@ -263,22 +263,19 @@ func (s *Store) blockedMemberNotice(p protocol.ProfileAnnounce) (*protocol.Messa
 	if leadSession == "" || leadSession == p.SessionID {
 		var project string
 		_ = s.db.QueryRow(`SELECT COALESCE(NULLIF(repo_project,''),'') FROM sessions WHERE id=?`, p.SessionID).Scan(&project)
-		kind := ""
-		if project != "" {
-			kind = "project"
-		}
 		tx, err := s.db.Begin()
 		if err != nil {
 			return nil, err
 		}
 		defer tx.Rollback()
-		if err := s.deskLog(tx, "gateway", kind, project, fmt.Sprintf("%s: %s is blocked or waiting and has no lead session to tell: %s", scope, who, line), "", nil); err != nil {
-			return nil, err
-		}
 		if err := record(tx); err != nil {
 			return nil, err
 		}
-		return nil, tx.Commit()
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+		s.logf("member_blocked.no_lead", "scope", scope, "member", who, "project", project, "text", line)
+		return nil, nil
 	}
 	body := fmt.Sprintf("[agent-net] %s: %s (%s) is blocked or waiting, since %s.\n\nIts announce: %s\n\n"+
 		"It asked nothing, so nothing else reached you. Message it if you can unblock it. If only the owner can, send a request to the chief of staff with agent_message_send, saying what you need, why only the owner can decide, and your recommendation.",

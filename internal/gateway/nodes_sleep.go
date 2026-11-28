@@ -3,13 +3,13 @@ package gateway
 import (
 	"database/sql"
 	"fmt"
+	"strconv"
 	"time"
-
-	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // silentAfter is how long a machine may stay offline without a sleep report
-// before the gateway calls the outage possibly hung. One Desk item follows.
+// before the gateway calls the outage possibly hung. One notice to the chief
+// follows.
 const silentAfter = 15 * time.Minute
 
 // sleepTolerance is how far a sleep report may sit from the moment the link
@@ -54,7 +54,7 @@ func downState(dropped, asleepFrom, asleepTo, silentAt int64) (string, int64) {
 // on that link, including keepalive pings. Only a link that is open but has
 // carried no frame for silentAfter reads "silent". With no link, the recorded
 // outage names the state: asleep when a sleep report covers the drop, silent
-// once the Desk item was raised, else offline. since is when the state began,
+// once the gateway marked the gap, else offline. since is when the state began,
 // in Unix seconds, and is 0 for a machine that is online.
 func machineState(online bool, lastFrame, now time.Time, downState string, downSince int64) (string, int64) {
 	if online {
@@ -106,8 +106,7 @@ func (s *Store) NodeLinkDown(nodeID string, t time.Time) error {
 	return err
 }
 
-// NodeLinkUp records that a machine returned. It closes the open ask about
-// the outage, if one was raised, and forgets the outage row.
+// NodeLinkUp records that a machine returned and forgets the outage row.
 func (s *Store) NodeLinkUp(nodeID string) error {
 	s.linkMu.Lock()
 	defer s.linkMu.Unlock()
@@ -136,14 +135,6 @@ func (s *Store) NodeLinkUp(nodeID string) error {
 	if silentAt > 0 {
 		row.SilentAt = time.Unix(0, silentAt)
 	}
-	if !row.SilentAt.IsZero() {
-		if _, err := s.closeAsks(tx, `about_kind=? AND about_id=?`, []any{protocol.AskAboutMachine, nodeID}, protocol.AskReasonReturned); err != nil {
-			return err
-		}
-		if err := s.closeIntake(tx, protocol.IntakeMachineSilent, nodeID, intakeReturned, s.now()); err != nil {
-			return err
-		}
-	}
 	if _, err := tx.Exec(`UPDATE nodes SET silence_dropped_at=0,silence_asleep_from=0,silence_asleep_to=0,silence_silent_at=0 WHERE id=?`, nodeID); err != nil {
 		return err
 	}
@@ -151,8 +142,7 @@ func (s *Store) NodeLinkUp(nodeID string) error {
 }
 
 // NodeSlept records a sleep span a daemon reported. It returns true when the
-// span explains the machine's open outage; the outage then reads "asleep" and
-// any ask it raised is closed.
+// span explains the machine's open outage; the outage then reads "asleep".
 func (s *Store) NodeSlept(nodeID string, from, to time.Time) (bool, error) {
 	if from.IsZero() {
 		return false, nil
@@ -195,14 +185,6 @@ func (s *Store) NodeSlept(nodeID string, from, to time.Time) (bool, error) {
 		from.UnixNano(), toNanos, nodeID); err != nil {
 		return false, err
 	}
-	if silentAt > 0 {
-		if _, err := s.closeAsks(tx, `about_kind=? AND about_id=?`, []any{protocol.AskAboutMachine, nodeID}, protocol.AskReasonSlept); err != nil {
-			return false, err
-		}
-		if err := s.closeIntake(tx, protocol.IntakeMachineSilent, nodeID, intakeSlept, s.now()); err != nil {
-			return false, err
-		}
-	}
 	return true, tx.Commit()
 }
 
@@ -223,8 +205,9 @@ func sleepExplains(dropped int64, from, to time.Time) bool {
 	return to.UnixNano() >= dropped-tolerance
 }
 
-// markSilentMachines raises the Desk item of every outage that stayed
-// unexplained for silentAfter. The maintenance loop calls it once a minute.
+// markSilentMachines logs every outage that stayed unexplained for silentAfter.
+// MarkSilentNodes writes the silent mark and one idempotent notice to the
+// chief. The maintenance loop calls this once a minute.
 func (g *Gateway) markSilentMachines(now time.Time) {
 	marked, err := g.store.MarkSilentNodes(now)
 	if err != nil {
@@ -233,14 +216,16 @@ func (g *Gateway) markSilentMachines(now time.Time) {
 	}
 	for _, m := range marked {
 		host := g.store.hostname(m.NodeID)
-		g.logLine("node.silent", "node", m.NodeID, "host", host, "since", m.DroppedAt.UTC().Format(time.RFC3339))
-		g.store.Event("node.silent", m.NodeID, "", "", m.DroppedAt.UTC().Format(time.RFC3339))
+		since := m.DroppedAt.UTC().Format(time.RFC3339)
+		g.logLine("node.silent", "node", m.NodeID, "host", host, "since", since)
+		g.store.Event("node.silent", m.NodeID, "", "", since)
 	}
 }
 
 // MarkSilentNodes marks every outage older than silentAfter that no sleep
-// report explains, and raises one Desk item for each. It returns the rows it
-// marked. Calling it again changes nothing until the machine drops again.
+// report explains, and sends one idempotent notice to the chief for each. It
+// returns the rows it marked. Calling it again changes nothing until the
+// machine drops again.
 func (s *Store) MarkSilentNodes(now time.Time) ([]NodeSilence, error) {
 	cutoff := now.Add(-silentAfter).UnixNano()
 	tx, err := s.db.Begin()
@@ -300,15 +285,9 @@ WHERE n.silence_dropped_at>0 AND n.silence_silent_at=0 AND n.silence_dropped_at<
 			continue
 		}
 		c.row.SilentAt = now
-		// A silent machine goes to the CTO intake queue and wakes the CTO
-		// through the chief (decision 0152), never to the owner.
-		at := c.row.DroppedAt.UTC().Format("2006-01-02 15:04 MST")
-		if _, err := s.recordIntake(tx, intakeEvent{
-			Kind: protocol.IntakeMachineSilent, Subject: c.row.NodeID,
-			AboutKind: protocol.AskAboutMachine, AboutID: c.row.NodeID,
-			Text:   fmt.Sprintf("%s went silent at %s without sleeping; it may be hung", c.host, at),
-			Detail: "Last link drop: " + c.row.DroppedAt.UTC().Format(time.RFC3339),
-		}, now); err != nil {
+		since := c.row.DroppedAt.UTC().Format(time.RFC3339)
+		body := fmt.Sprintf("Machine %s (%s) has been offline without a sleep report since %s.", c.host, c.row.NodeID, since)
+		if _, _, err := s.sendToLeadOrChief(tx, "", "", "machine_silent:"+c.row.NodeID+":"+strconv.FormatInt(c.row.DroppedAt.Unix(), 10), body); err != nil {
 			return nil, err
 		}
 		marked = append(marked, c.row)

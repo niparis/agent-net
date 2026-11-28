@@ -261,30 +261,6 @@ func TestCheckSkipsSessionWaitingOnItsOwner(t *testing.T) {
 	}
 }
 
-func TestCheckSkipsSessionWithOpenOwnerQuestion(t *testing.T) {
-	for _, kind := range []string{"question", "approval"} {
-		s, c := newTestStore(t)
-		a, b := twoSessions(t, s)
-		if _, _, err := send(s, a, b, "req", ""); err != nil {
-			t.Fatal(err)
-		}
-		idleSince(t, s, c, b, 21*time.Minute)
-		item, err := storeOldItem(t, s, protocol.InboxItem{Kind: kind, SessionID: b, Text: "deploy?"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got := checks(t, s); len(got) != 0 {
-			t.Fatalf("%s: check with an open owner item: %+v", kind, got)
-		}
-		if _, err := s.db.Exec(`UPDATE inbox_items SET status='closed' WHERE id=?`, item.ID); err != nil {
-			t.Fatal(err)
-		}
-		if got := checks(t, s); len(got) != 1 {
-			t.Fatalf("%s: check after the item closed = %+v", kind, got)
-		}
-	}
-}
-
 func TestCheckRetiresPendingCheckOfWaitingSession(t *testing.T) {
 	s, c := newTestStore(t)
 	a, b := twoSessions(t, s)

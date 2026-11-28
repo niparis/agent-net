@@ -33,9 +33,8 @@ func (s *Store) retireObsoleteNotices() error {
 		return err
 	}
 	expired += n
-	// The gateway did this by itself: say so in the log (decision 0090).
 	if expired > 0 {
-		return s.deskLog(s.db, "gateway", "", "", fmt.Sprintf("Retired %d notices that no longer apply", expired), "", nil)
+		s.logf("notices.retired", "count", expired)
 	}
 	return nil
 }

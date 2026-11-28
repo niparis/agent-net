@@ -111,3 +111,10 @@ func (s *Store) FindOwnerWords(quote string) (protocol.OwnerWordsFound, error) {
 	}
 	return best, nil
 }
+
+// RecordOwnerTyped notes that the owner typed in a session. Viewing or
+// attaching does not call it.
+func (s *Store) RecordOwnerTyped(session string) error {
+	_, err := s.db.Exec(`UPDATE sessions SET owner_typed_at=? WHERE id=?`, s.now().UnixNano(), session)
+	return err
+}

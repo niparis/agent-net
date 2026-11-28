@@ -198,21 +198,16 @@ func TestNudgeChiefOnly(t *testing.T) {
 func TestNudgeDeskUndo(t *testing.T) {
 	s, _, chief, _ := nudgeSetup(t)
 	id := nudgeApply(t, s, chief, map[string]any{"kind": "idle_check", "agent": "target-agent", "reason": "provider busy"})
-	log, err := s.DeskLog(1)
-	if err != nil || len(log) != 1 || len(log[0].Options) != 2 {
-		t.Fatalf("log=%v %v", log, err)
-	}
-	var args map[string]any
-	if err := json.Unmarshal([]byte(log[0].Options[1]), &args); err != nil {
-		t.Fatal(err)
+	var receipt string
+	if err := s.db.QueryRow(`SELECT receipt FROM nudge_pauses WHERE id=?`, id).Scan(&receipt); err != nil || receipt == "" {
+		t.Fatalf("receipt=%q %v", receipt, err)
 	}
 	node, _ := s.SessionNode(chief)
 	owner, err := s.UpsertSession(node, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: protocol.OwnerNativeID, Name: "owner"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	args["owner"] = owner
-	raw, _ := json.Marshal(args)
+	raw, _ := json.Marshal(map[string]any{"pause_id": id, "receipt": receipt, "owner": owner})
 	if _, err := (&Gateway{store: s}).handle(context.Background(), &nodeConn{id: node}, "nudge.undo", raw); err != nil {
 		t.Fatal(err)
 	}
@@ -277,14 +272,11 @@ func TestNudgeUndoResumeRestoresPause(t *testing.T) {
 	if _, err := nudgeCall(t, s, chief, "nudge.resume", map[string]any{"pause_id": id}); err != nil {
 		t.Fatal(err)
 	}
-	log, err := s.DeskLog(1)
-	if err != nil {
-		t.Fatal(err)
+	var receipt string
+	if err := s.db.QueryRow(`SELECT receipt FROM nudge_pauses WHERE id=?`, id).Scan(&receipt); err != nil || receipt == "" {
+		t.Fatalf("receipt=%q %v", receipt, err)
 	}
-	var undo protocol.NudgeUndoArgs
-	if err := json.Unmarshal([]byte(log[0].Options[1]), &undo); err != nil {
-		t.Fatal(err)
-	}
+	undo := protocol.NudgeUndoArgs{PauseID: id, Receipt: receipt}
 	if _, err := s.undoNudge(undo); err != nil {
 		t.Fatal(err)
 	}

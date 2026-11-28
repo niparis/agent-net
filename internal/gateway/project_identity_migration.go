@@ -149,7 +149,7 @@ func migrateProjectName(tx *sql.Tx, old, name string) (bool, error) {
 		`UPDATE graph_history SET node=? WHERE node=?`, `UPDATE learned_suggestions SET node=? WHERE node=?`,
 		`UPDATE learned_suggestions SET phrase=? WHERE field='edge' AND phrase=?`,
 		`UPDATE graph_outcomes SET source=? WHERE source=?`, `UPDATE graph_outcomes SET target=? WHERE target=?`, `UPDATE graph_outcomes SET redirect_to=? WHERE redirect_to=?`,
-		`UPDATE inbox_items SET node=? WHERE node=?`, `UPDATE charter_signals SET source=? WHERE source=?`, `UPDATE charter_signals SET target=? WHERE target=?`,
+		`UPDATE charter_signals SET source=? WHERE source=?`, `UPDATE charter_signals SET target=? WHERE target=?`,
 		`UPDATE learned_message_flow SET source=? WHERE source=?`, `UPDATE learned_message_flow SET target=? WHERE target=?`,
 		`UPDATE findings SET subject=? WHERE subject_kind='project' AND subject=?`,
 	} {

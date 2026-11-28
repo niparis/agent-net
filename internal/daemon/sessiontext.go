@@ -46,7 +46,7 @@ var operatorMethods = map[string]bool{
 	"notification_settings":     true,
 	protocol.OpSkillArchiveUndo: true, protocol.OpSkillsUndo: true, "gateway_backup": true,
 	protocol.OpSessionStop: true, protocol.OpSessionStart: true, protocol.OpSessionStartGet: true, protocol.OpSessionResume: true,
-	"inbox_list": true, protocol.OpAsksList: true, protocol.OpChiefGet: true, protocol.OpChiefSet: true, protocol.OpAskHistory: true, protocol.OpAskUndo: true, protocol.OpAskMark: true, protocol.OpAskDiscuss: true, protocol.OpDeskLog: true, protocol.OpDeskSettle: true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true, protocol.OpDraftsList: true, protocol.OpDraftAnswer: true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
+	protocol.OpChiefGet: true, protocol.OpChiefSet: true, "outcome_inbox": true, "outcome_overrule": true, protocol.OpDraftsList: true, protocol.OpDraftAnswer: true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpConversations:        true,
 	protocol.OpConversationMessages: true,
 	protocol.OpProjectDisplayGet:    true, protocol.OpProjectDisplaySet: true,
@@ -55,7 +55,7 @@ var operatorMethods = map[string]bool{
 	protocol.OpHiddenGet: true, protocol.OpHiddenSet: true, "onboarding_get": true, "onboarding_set": true, "onboarding_restart": true,
 	protocol.OpTimeZoneGet: true, protocol.OpTimeZoneSet: true, protocol.OpProtectedProvidersGet: true, protocol.OpProtectedProvidersSet: true, protocol.OpWorkerFloorsGet: true, protocol.OpWorkerFloorsSet: true, protocol.OpWorkerProvidersGet: true, protocol.OpWorkerProvidersSet: true, "difficulty_get": true, "difficulty_set": true, protocol.OpDifficultyJudgePick: true, protocol.OpScoresGet: true, protocol.OpScoresSet: true, protocol.OpScoresWeekly: true, protocol.OpWorkerRotationGet: true, protocol.OpPickerGet: true, protocol.OpCTOSettings: true, protocol.OpCTOEnter: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true, protocol.OpCTOGraphHistory: true,
 	protocol.OpHeldList: true, protocol.OpHeldAnswer: true,
-	protocol.OpSignInOpen: true, protocol.OpSignInComplete: true, "sign_in_list": true, "sign_in_raise": true,
+	protocol.OpSignInOpen: true, protocol.OpSignInComplete: true, "sign_in_raise": true,
 	protocol.OpLeadSet: true, protocol.OpTeamWrite: true, protocol.OpTeamHistory: true, protocol.OpGraphGet: true, protocol.OpCharterSet: true, protocol.OpCharterHistory: true, protocol.OpNodeAdd: true, protocol.OpNodeRemove: true, protocol.OpEdgeSet: true, protocol.OpEdgeRemove: true, protocol.OpEdgeHistory: true, protocol.OpDeliveryOwnerSet: true, protocol.OpMergerSet: true, protocol.OpGraphUndo: true, protocol.OpRepoCreate: true, protocol.OpRepoArchive: true, protocol.OpAgentCreate: true, protocol.OpAgentTombstone: true, protocol.OpScopeSet: true, protocol.OpScopeRemove: true,
 	protocol.OpNodeSettingsGet: true, protocol.OpNodeSettingsSet: true,
 	"settings_write": true, "settings_undo": true, "settings_owner_read": true, protocol.OpChangesOwnerFind: true, protocol.OpChangesOwnerReport: true,
@@ -382,10 +382,6 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		}{p.ID, p.Code, p.Kind, p.Name, p.Grant}
 		res, err = d.call(ctx, method, frame)
 
-	case "inbox_list":
-		res, err = d.call(ctx, "inbox.list", struct{}{})
-	case protocol.OpAsksList:
-		res, err = d.call(ctx, "asks.list", struct{}{})
 	case protocol.OpSignInOpen:
 		var p protocol.SignInOpenRequest
 		if json.Unmarshal(raw, &p) != nil {
@@ -396,9 +392,6 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			res, err = d.ctoSignInOpen(ctx, p)
 			break
 		}
-		if p.AskID == "" {
-			return nil, true, errors.New("sign_in_open needs an ask")
-		}
 		res, err = d.signInOpen(ctx, p)
 	case protocol.OpSignInComplete:
 		var p protocol.SignInOpenRequest
@@ -407,8 +400,6 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		}
 		err = d.signInComplete(ctx, p.AskID, p.Cancel)
 		res = map[string]bool{"ok": err == nil}
-	case "sign_in_list":
-		res, err = d.call(ctx, "sign_in.list", struct{}{})
 	case "sign_in_raise":
 		var p protocol.SignInRaise
 		if err := decodeCTOArgs(method, raw, &p, "provider"); err != nil {
@@ -439,50 +430,6 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			protocol.ChiefSetRequest
 			By string `json:"by"`
 		}{p, operatorActor(ctx)})
-	case protocol.OpAskHistory:
-		var p protocol.AskHistoryRequest
-		if json.Unmarshal(raw, &p) != nil || p.Ask == "" {
-			return nil, true, errors.New("ask_history needs ask")
-		}
-		res, err = d.call(ctx, "ask.history", p)
-	case protocol.OpAskUndo:
-		var p protocol.AskUndoRequest
-		if err := decodeCTOArgs(method, raw, &p, "ask"); err != nil {
-			return nil, true, err
-		}
-		if p.Ask == "" {
-			return nil, true, errors.New("ask_undo needs ask")
-		}
-		res, err = d.call(ctx, "ask.undo", map[string]any{"ask": p.Ask, "by": operatorActor(ctx)})
-	case protocol.OpAskDiscuss:
-		var p protocol.AskDiscussRequest
-		if json.Unmarshal(raw, &p) != nil || p.Ask == "" {
-			return nil, true, errors.New("ask_discuss needs ask")
-		}
-		res, err = d.call(ctx, "ask.discuss", map[string]any{"ask": p.Ask, "by": operatorActor(ctx)})
-	case protocol.OpAskMark:
-		var p protocol.AskMarkRequest
-		if err := decodeCTOArgs(method, raw, &p); err != nil {
-			return nil, true, err
-		}
-		if p.Validate() != nil {
-			return nil, true, errors.New("ask_mark needs ask and mark (didnt_need_me or should_have_asked), and an optional why")
-		}
-		res, err = d.call(ctx, "ask.mark", map[string]any{"ask": p.Ask, "mark": p.Mark, "why": p.Why, "by": operatorActor(ctx)})
-	case protocol.OpDeskSettle:
-		var p struct {
-			ID int64 `json:"id"`
-		}
-		if json.Unmarshal(raw, &p) != nil || p.ID <= 0 {
-			return nil, true, errors.New("desk_settle needs id")
-		}
-		res, err = d.call(ctx, "desk.settle", p)
-	case protocol.OpDeskLog:
-		var p protocol.DeskLogQuery
-		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
-			return nil, true, errors.New("bad desk_log request")
-		}
-		res, err = d.call(ctx, "desk.log", p)
 	case protocol.OpNudgeStats:
 		var p protocol.NudgeStatsArgs
 		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &p) != nil {
@@ -537,28 +484,6 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			actor = "cto"
 		}
 		res, err = d.call(ctx, "charter.draft_answer", map[string]any{"owner": owner, "draft": p.DraftID, "action": p.Action, "actor": actor})
-	case "inbox_answer":
-		var p struct {
-			ID     string             `json:"id"`
-			Answer string             `json:"answer"`
-			Scope  protocol.RuleScope `json:"scope"`
-		}
-		if err := decodeCTOArgs(method, raw, &p); err != nil {
-			return nil, true, err
-		}
-		if p.ID == "" || p.Answer == "" {
-			return nil, true, errors.New("inbox_answer needs id and answer")
-		}
-		// from_cto keeps the CTO from approving an app consent ask.
-		fromCTO := lc.cto || proposalActor(ctx) != ""
-		actor := proposalActor(ctx)
-		if actor == "" {
-			actor = "owner"
-			if lc.cto {
-				actor = "cto"
-			}
-		}
-		res, err = d.call(ctx, "inbox.answer", map[string]any{"item_id": p.ID, "answer": p.Answer, "actor": actor, "from_cto": fromCTO, "scope": p.Scope})
 	case "outcome_overrule":
 		var p protocol.OutcomeResolution
 		if err := decodeCTOArgs(method, raw, &p); err != nil {
@@ -1565,15 +1490,6 @@ func (d *Daemon) onOperatorFrame(ctx context.Context, l *link, typ, id string, r
 			data, err = page, ctoErr
 		} else {
 			data, err = d.localText(ctx, q)
-		}
-	case protocol.FrameAskIntakeTurn:
-		// The gateway asks only after it checked that the caller is the live
-		// chief. This machine reads the turn and masks it.
-		var q protocol.AskIntakeTurnRequest
-		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" {
-			err = errors.New("bad node.session_last_turn")
-		} else {
-			data = d.localLastTurn(ctx, q.SessionID)
 		}
 	}
 	if frame, e := protocol.EncodeResult(id, data, err); e == nil {

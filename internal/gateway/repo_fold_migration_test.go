@@ -369,6 +369,9 @@ func restoreRepoSideTables(t *testing.T, db repoDB) {
 	if cur < migrationVersion(t, "Schema reduction part 1: drop the tables") {
 		recreateDeadTablesDB(t, db)
 	}
+	if v, ok := MigrationVersion(dropDeskTablesMarker); ok && cur < v {
+		restoreTablesAt(t, db, v-1, "inbox_items", "ask_sorts", "desk_log", "follow_ups")
+	}
 	if cur < migrationVersion(t, deskTablesMarker) {
 		recreateDeskDroppedTables(t, db)
 	}
@@ -500,5 +503,32 @@ func TestRepoFoldScopeReadsTheLeadOfAStoreBeforeTheFold(t *testing.T) {
 	}
 	if got := strings.Join(repos["agent:other"], ","); got != "demo" {
 		t.Fatalf("repos of agent:other = %q, want demo: its lead is led by it", got)
+	}
+}
+
+func recreateDeskDroppedTables(t *testing.T, db repoDB) {
+	t.Helper()
+	restoreTablesAt(t, db, migrationVersion(t, deskTablesMarker)-1, "cto_intake", "delivery_step_inbox", "ask_sort_hide_receipts")
+	var hasInbox int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='inbox_items'`).Scan(&hasInbox); err != nil {
+		t.Fatal(err)
+	}
+	if hasInbox == 0 {
+		return
+	}
+	for _, col := range []struct{ name, spec string }{
+		{"state", `TEXT NOT NULL DEFAULT ''`},
+		{"dup_of", `TEXT NOT NULL DEFAULT ''`},
+		{"back_note", `TEXT NOT NULL DEFAULT ''`},
+	} {
+		var has int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('inbox_items') WHERE name=?`, col.name).Scan(&has); err != nil {
+			t.Fatal(err)
+		}
+		if has == 0 {
+			if _, err := db.Exec(`ALTER TABLE inbox_items ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+				t.Fatalf("restore inbox_items.%s: %v", col.name, err)
+			}
+		}
 	}
 }

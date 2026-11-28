@@ -248,9 +248,6 @@ func (s *Store) loopTick() ([]loopTickResult, error) {
 				if _, err := s.db.Exec(`UPDATE agent_loops SET paused=0 WHERE node=?`, r.node); err != nil {
 					return nil, err
 				}
-				if err := s.closeAskRef(s.db, loopRef(r.node), protocol.AskReasonResolved); err != nil {
-					return nil, err
-				}
 				r.paused = loopRunning
 			}
 			if r.paused == loopRunning && now.Unix() >= r.next() {
@@ -282,16 +279,15 @@ func (s *Store) loopTick() ([]loopTickResult, error) {
 	return out, nil
 }
 
-// loopRemove drops a loop whose setting is gone and closes its ask.
+// loopRemove drops a loop whose setting is gone.
 func (s *Store) loopRemove(node string) error {
-	if _, err := s.db.Exec(`DELETE FROM agent_loops WHERE node=?`, node); err != nil {
-		return err
-	}
-	return s.closeAskRef(s.db, loopRef(node), protocol.AskReasonResolved)
+	_, err := s.db.Exec(`DELETE FROM agent_loops WHERE node=?`, node)
+	return err
 }
 
 func (s *Store) loopLog(node, text string) error {
-	return s.deskLog(s.db, "gateway", "project", node, text, "", nil)
+	s.logf("loop.event", "node", node, "text", text)
+	return nil
 }
 
 func (s *Store) loopOne(r loopRow, agents []protocol.AgentView, graph protocol.Graph, now time.Time, today string) (loopTickResult, error) {
@@ -458,12 +454,10 @@ func (s *Store) loopOne(r loopRow, agents []protocol.AgentView, graph protocol.G
 		announced=0,awaiting=1,counted=0 WHERE node=?`, now.Unix(), now.Unix(), target.SessionID, today, dayTicks+1, dayProgress, streak, open, msgs, r.node); err != nil {
 		return res, err
 	}
-	if err = s.deskLog(tx, "gateway", "project", r.node, "Loop "+r.node+": "+outcome+" to "+name, "", nil); err != nil {
-		return res, err
-	}
 	if err = tx.Commit(); err != nil {
 		return res, err
 	}
+	s.logf("loop.tick", "node", r.node, "outcome", outcome, "target", name)
 	s.logMessage(m)
 	res.Outcome, res.Message = outcome, &m
 	return res, nil
@@ -491,7 +485,7 @@ func (s *Store) loopMarkers(session string) (open, msgs int, err error) {
 	return open, msgs, err
 }
 
-// loopPause stops the clock and opens the one Desk ask of the node.
+// loopPause stops the clock and logs the pause.
 func (s *Store) loopPause(r loopRow, res loopTickResult, target protocol.AgentView, reason int, why, today string) (loopTickResult, error) {
 	ticks, progress := r.dayTicks, r.dayProgress
 	if r.day != today {
@@ -499,12 +493,6 @@ func (s *Store) loopPause(r loopRow, res loopTickResult, target protocol.AgentVi
 	}
 	if _, err := s.db.Exec(`UPDATE agent_loops SET paused=?,day=?,day_ticks=?,day_progress=?,last_at=? WHERE node=?`,
 		reason, today, ticks, progress, s.now().Unix(), r.node); err != nil {
-		return res, err
-	}
-	text := "Loop paused for " + r.node + ": " + why
-	if _, err := s.createInboxItem(s.db, protocol.InboxItem{Kind: protocol.AskKindCheck, SessionID: target.SessionID, Node: r.node, Text: text,
-		Recommendation: "Resume the loop, or stop it.", Options: []string{protocol.LoopAnswerResume, protocol.LoopAnswerStop},
-		FromKind: protocol.AskFromGateway, SourceRef: loopRef(r.node), AboutKind: "project", AboutID: r.node}); err != nil {
 		return res, err
 	}
 	res.Outcome = protocol.LoopPaused
@@ -545,51 +533,6 @@ func (s *Store) loopAnnounce(session, task string) error {
 	return s.loopLog(node, "Loop "+node+" result: "+line)
 }
 
-// answerLoopAsk handles the owner's answer to a paused loop's ask. Resume
-// restarts the clock at once and clears the streak. Stop clears the setting.
-func (s *Store) answerLoopAsk(id, answer string, validate ...bool) (protocol.InboxItem, bool, error) {
-	var node, ref string
-	err := s.db.QueryRow(`SELECT node,source_ref FROM inbox_items WHERE id=? AND status='open' AND source_ref LIKE 'loop:%'`, id).Scan(&node, &ref)
-	if errors.Is(err, sql.ErrNoRows) {
-		return protocol.InboxItem{}, false, nil
-	}
-	if err != nil {
-		return protocol.InboxItem{}, true, err
-	}
-	if answer != protocol.LoopAnswerResume && answer != protocol.LoopAnswerStop {
-		return protocol.InboxItem{}, false, nil
-	}
-	item, err := scanInbox(s.db.QueryRow(`SELECT `+inboxColumns+` FROM inbox_items WHERE id=?`, id))
-	if err != nil {
-		return item, true, err
-	}
-	if len(validate) > 0 && validate[0] {
-		return item, true, nil
-	}
-	switch answer {
-	case protocol.LoopAnswerStop:
-		if err := s.SetNodeSetting(node, protocol.SettingLoopEvery, "", "owner"); err != nil {
-			return item, true, err
-		}
-		if err := s.loopRemove(node); err != nil {
-			return item, true, err
-		}
-	default:
-		s.checkMu.Lock()
-		_, err := s.db.Exec(`UPDATE agent_loops SET paused=0,streak=0,announced=0,counted=1,last_at=0,started_at=0 WHERE node=?`, node)
-		s.checkMu.Unlock()
-		if err != nil {
-			return item, true, err
-		}
-	}
-	now := s.now().UTC()
-	item.Status, item.Answer, item.AnsweredAt = "answered", answer, now
-	if err := s.closeAnsweredItem(item, answer); err != nil {
-		return item, true, err
-	}
-	return item, true, s.loopLog(node, "Loop "+node+": "+answer+" by the owner")
-}
-
 // ResumeLoopOnOwnerWords restarts a paused loop on the owner's quoted chat
 // words (decision 0196). It needs no stored ask and clears the streak and the
 // clock so the next tick starts fresh, like the Desk resume did.
@@ -620,9 +563,6 @@ func (s *Store) ResumeLoopOnOwnerWords(frame protocol.LoopResumeFrame) (protocol
 	_, err = s.db.Exec(`UPDATE agent_loops SET paused=0,streak=0,announced=0,counted=1,last_at=0,started_at=0 WHERE node=?`, node)
 	s.checkMu.Unlock()
 	if err != nil {
-		return protocol.LoopResumeResult{}, err
-	}
-	if err := s.closeAskRef(s.db, loopRef(node), protocol.AskReasonResolved); err != nil {
 		return protocol.LoopResumeResult{}, err
 	}
 	by := "the owner"
@@ -703,11 +643,7 @@ func (s *Store) loopChanges(session string, sinceUnix int64) (loopChanges, error
 	if c.handbacks, err = s.loopIDs(`SELECT session_id FROM worker_runs WHERE ended_at>=? AND caller_session_id=? ORDER BY ended_at`, sinceUnix, session); err != nil {
 		return c, err
 	}
-	if c.asksNew, err = s.loopIDs(`SELECT id FROM inbox_items WHERE session_id=? AND created_at>=? AND source_ref NOT LIKE 'loop:%' ORDER BY created_at`, session, nano); err != nil {
-		return c, err
-	}
-	c.asksClosed, err = s.loopIDs(`SELECT id FROM inbox_items WHERE session_id=? AND status<>'open' AND answered_at>=? AND source_ref NOT LIKE 'loop:%' ORDER BY answered_at`, session, nano)
-	return c, err
+	return c, nil
 }
 
 // line is the prompt's opening: what changed, with counts and ids.

@@ -164,10 +164,6 @@ Kinds: asks, admin, merge, release, deploy, review, permissions. Over: `all`, `t
 
 - Shell: `(\./)?scripts/deploy[A-Za-z0-9._-]*\.sh( .*)?`
 
-### asks - sort and answer asks
-
-- Tools: `agent_ask_sort`, `agent_ask_intake`
-
 ### permissions - apply approved permissions
 
 - cto_op: `permission_apply`

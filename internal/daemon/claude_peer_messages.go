@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/peermessages"
-	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // peerMessagesStatePath is the record setup writes about the owner's answer
@@ -29,13 +28,10 @@ func (d *Daemon) checkClaudePeerMessages(ctx context.Context) {
 		return
 	}
 	key := "peer-messages:" + path
-	if !d.mouseNoticeDue(key, time.Now()) {
+	now := time.Now()
+	if !d.mouseNoticeDue(key, now) {
 		return
 	}
+	d.markMouseNotice(key, now)
 	d.Logf("claude peer messages: %s", rep.Problem)
-	d.reportClaudeNotice(ctx, key, rep.Problem, peerMessagesIntake)
-}
-
-func peerMessagesIntake(text string) protocol.IntakeReport {
-	return protocol.IntakeReport{Kind: protocol.IntakeClaudePeerMessages, Subject: "claude", Text: text}
 }

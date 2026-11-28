@@ -291,11 +291,5 @@ func (d *Daemon) startTarget(id string) (string, error) {
 	case ok:
 		return "", fmt.Errorf("start %s did not start, so there is nothing to stop", id)
 	}
-	d.heldMu.Lock()
-	_, held := d.heldStarts[id]
-	d.heldMu.Unlock()
-	if held {
-		return "", fmt.Errorf("start %s waits for the owner's answer, so it cannot be stopped from here", id)
-	}
 	return "", fmt.Errorf("%s is a start id this daemon does not track: it was given by an earlier run of this daemon, or it never existed. Use the queue id (q_...) from the queued notice, or the worker's session id", id)
 }

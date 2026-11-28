@@ -254,24 +254,6 @@ func TestUnansweredWakeFallsBackToRepoLead(t *testing.T) {
 	}
 }
 
-func (r *callerAgentRig) deskLines() []string {
-	r.t.Helper()
-	rows, err := r.s.db.Query(`SELECT text FROM inbox_items WHERE source_ref LIKE 'waiting-work:%' AND status='open' ORDER BY source_ref`)
-	if err != nil {
-		r.t.Fatal(err)
-	}
-	defer rows.Close()
-	var out []string
-	for rows.Next() {
-		var text string
-		if err := rows.Scan(&text); err != nil {
-			r.t.Fatal(err)
-		}
-		out = append(out, text)
-	}
-	return out
-}
-
 // callerTaskOwner of a step, or "" when the step has no task.
 func (r *callerAgentRig) taskOwner(change string, ref protocol.StepRef) string {
 	r.t.Helper()

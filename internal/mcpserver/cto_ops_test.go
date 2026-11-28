@@ -107,7 +107,7 @@ func TestCTOOpForwardsOneCallToTheDaemon(t *testing.T) {
 	var mu sync.Mutex
 	var calls []map[string]any
 	cs := ctoOpTestSession(t, json.RawMessage(`{"state":"completed"}`), &calls, &mu)
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "cto_op", Arguments: map[string]any{"method": "inbox_list", "args": map[string]any{}}})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "cto_op", Arguments: map[string]any{"method": "hidden_get", "args": map[string]any{}}})
 	if err != nil || res.IsError {
 		t.Fatalf("cto_op: %+v %v", res, err)
 	}
@@ -117,7 +117,7 @@ func TestCTOOpForwardsOneCallToTheDaemon(t *testing.T) {
 		t.Fatalf("daemon calls: %+v", calls)
 	}
 	args, _ := calls[0]["args"].(map[string]any)
-	if args["method"] != "inbox_list" {
+	if args["method"] != "hidden_get" {
 		t.Fatalf("cto_op args: %+v", args)
 	}
 }

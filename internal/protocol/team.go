@@ -62,6 +62,15 @@ const (
 	LeadMergesOff = "off"
 )
 
+// Where the questions of a team's members go (decision 0100).
+const (
+	AsksToOwner = "owner"
+	AsksToLead  = "lead"
+)
+
+// ValidAsksTo says whether v is a team asks_to value.
+func ValidAsksTo(v string) bool { return v == AsksToOwner || v == AsksToLead }
+
 // ValidLeadMerges reports whether v is a lead_merges value.
 func ValidLeadMerges(v string) bool { return v == LeadMergesOn || v == LeadMergesOff }
 

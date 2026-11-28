@@ -64,6 +64,14 @@ CREATE INDEX IF NOT EXISTS inbox_items_cto_seen ON inbox_items(status, last_seen
 `
 
 func migrateDeskTablesTx(tx *sql.Tx) error {
+	// dropDeskTablesMigration drops inbox_items and desk_log, so a replay
+	// after it has nothing to migrate.
+	if ok, err := hasTable(tx, "inbox_items"); err != nil || !ok {
+		return err
+	}
+	if ok, err := hasTable(tx, "desk_log"); err != nil || !ok {
+		return err
+	}
 	hasCol := func(name string) (bool, error) {
 		var n int
 		err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('inbox_items') WHERE name=?`, name).Scan(&n)

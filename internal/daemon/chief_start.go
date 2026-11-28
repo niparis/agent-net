@@ -18,9 +18,8 @@ import (
 // chief.model setting, the gate is the one of decision 0162, and the started
 // session is pinned with chief_set like a hand-started one.
 
-// chiefFirstMessage is what a started chief reads first. The rest of what it
-// needs (the asks it sorts, the Desk) arrives as messages and tools.
-const chiefFirstMessage = `You are the owner's chief of staff, started by agent-net. Your memory is your gateway notes: save one with agent_note_write and read them with agent_notes_find. Read your notes first, then the asks that wait for you. You have no timer: when you close or send an ask because something will happen next, set follow_up_at on agent_ask_sort (or on agent_message_send) so agent-net asks you again if it did not.`
+// chiefFirstMessage is what a started chief reads first.
+const chiefFirstMessage = `You are the owner's chief of staff, started by agent-net. Your memory is your gateway notes: save one with agent_note_write and read them with agent_notes_find. Read your notes first, then handle messages that arrive for you.`
 
 // chiefStartRetry is how long a failed chief start waits before the loop
 // tries again. The reason of the failure is logged once per try.

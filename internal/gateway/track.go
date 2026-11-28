@@ -5,10 +5,16 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+)
+
+const (
+	struggleNoticeWindow  = 6 * time.Hour
+	struggleNoticeWorkers = 3
 )
 
 // The model track record and the owner's playbook notes (decision 0022).
@@ -109,31 +115,40 @@ func (s *Store) RecordWorkerRun(r protocol.WorkerRun) error {
 			return err
 		}
 	}
-	// Work that failed on quota after it started joins the provider's quota
-	// thread (decision 0152).
-	if r.Outcome == protocol.OutcomeFailed && r.Cause == protocol.CauseQuotaAuth {
-		if provider := protocol.QuotaProviderForStart(r.Harness, r.Model); provider != "" {
-			text := fmt.Sprintf("a %s worker on %s failed on quota or sign-in", r.Harness, firstNonEmpty(r.Model, r.Harness))
-			if _, err := s.quotaStuck(tx, provider, text, s.now().UTC()); err != nil {
-				return err
-			}
-		}
-	}
-	if protocol.StruggleShown(r.Struggle) && r.Model != "" {
-		if err := s.struggleFeed(tx, r.Model, s.now()); err != nil {
-			return err
-		}
-	}
 	if _, err := tx.Exec(`UPDATE sessions SET worker_run_active=0 WHERE id=? AND node_id=? AND worker<>'' AND (?=0 OR worker_run_generation=?)`, r.SessionID, r.NodeID, r.RunGeneration, r.RunGeneration); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`UPDATE inbox_items SET status='closed',answer='session_ended',answered_at=? WHERE session_id=? AND kind IN ('question','approval','feature_idea','waiting','session_stall','check') AND from_kind IN ('','session') AND status='open' AND EXISTS (SELECT 1 FROM sessions WHERE id=? AND node_id=? AND (?=0 OR worker_run_generation=?))`, s.now().UnixNano(), r.SessionID, r.SessionID, r.NodeID, r.RunGeneration, r.RunGeneration); err != nil {
-		return err
+	if strace != "" && strace != protocol.StruggleNoTrace && (sf >= protocol.StruggleFailedThreshold || sr > 0) {
+		if err := s.struggleNoticeTx(tx, r.Model, s.now().UTC()); err != nil {
+			return err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
 	return s.refreshPicker()
+}
+
+// struggleNoticeTx sends one idempotent notice to the chief when at least
+// struggleNoticeWorkers distinct workers struggled on the same model within
+// struggleNoticeWindow.
+func (s *Store) struggleNoticeTx(tx askDB, model string, now time.Time) error {
+	if model == "" {
+		return nil
+	}
+	var workers int
+	if err := tx.QueryRow(`SELECT COUNT(DISTINCT session_id) FROM worker_runs WHERE model=? AND ended_at>=?
+		AND struggle_trace NOT IN ('',?) AND (struggle_failed>=? OR struggle_repeats>0)`,
+		model, now.Add(-struggleNoticeWindow).Unix(), protocol.StruggleNoTrace, protocol.StruggleFailedThreshold).Scan(&workers); err != nil {
+		return err
+	}
+	if workers < struggleNoticeWorkers {
+		return nil
+	}
+	bucket := strconv.FormatInt(now.Unix()/int64(struggleNoticeWindow.Seconds()), 10)
+	body := fmt.Sprintf("At least %d workers struggled on %s in the last %s.", struggleNoticeWorkers, model, struggleNoticeWindow)
+	_, _, err := s.sendToLeadOrChief(tx, "", "", "struggle:"+model+":"+bucket, body)
+	return err
 }
 
 // TrackRecords counts the worker runs of the last window, per harness and

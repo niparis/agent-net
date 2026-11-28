@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -134,8 +133,6 @@ type Gateway struct {
 	pin              string
 	logger           *log.Logger
 	stepDispatchRuns atomic.Int64
-	// chiefStuckAt is when the claim-age rules last ran (chief_stuck.go).
-	chiefStuckAt atomic.Int64
 	// adminToken guards /v1/admin. It is new on every start and is written
 	// to admin.json in the data dir, which only the local user can read.
 	adminToken string
@@ -511,9 +508,7 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 				for _, node := range nodes {
 					g.dispatchPending(ctx, node, false)
 				}
-				// The chief of staff's asks go out in batches (decision 0114).
-				g.flushChief(ctx)
-				g.flushHolderAsks(ctx)
+				g.dispatchChiefNotices(ctx)
 			}()
 		case <-appsCleanup.C:
 			func() {
@@ -533,29 +528,10 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 					g.logLine("error", "where", "nudge pause expiry", "err", err)
 				}
 				g.logStepDispatchCount()
+				g.refreshLeadQuota()
 				g.retryPublicConsent(ctx)
 				if err := g.store.checkSessionStalls(); err != nil {
 					g.logLine("error", "where", "session stalls", "err", err)
-				}
-				if nudges, err := g.store.checkOwedReplies(); err != nil {
-					g.logLine("error", "where", "owed replies", "err", err)
-				} else {
-					for _, m := range nudges {
-						g.dispatch(ctx, m)
-					}
-				}
-				if err := g.store.checkFollowUps(); err != nil {
-					g.logLine("error", "where", "follow-ups", "err", err)
-				}
-				// The chief of staff's daily brief wakes it once per owner-local
-				// date (decision 0114).
-				if m, sent, err := g.store.checkDailyBrief(g.store.now()); err != nil {
-					g.logLine("error", "where", "daily brief", "err", err)
-				} else if sent {
-					g.dispatch(ctx, m)
-				}
-				if err := g.store.reconcileAsks(); err != nil {
-					g.logLine("error", "where", "asks", "err", err)
 				}
 				g.sweepBusyHolds(ctx)
 				// Lead-level requests that waited for the CTO rate window go
@@ -567,7 +543,6 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 						g.dispatch(ctx, m)
 					}
 				}
-				g.flushLeadRequests(ctx)
 				if err := g.store.samplePendingStalls(); err != nil {
 					g.logLine("error", "where", "pending sample", "err", err)
 				}
@@ -581,7 +556,7 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 					g.dispatch(ctx, m)
 				}
 				if len(checks) > 0 {
-					_ = g.store.deskLog(g.store.db, "gateway", "", "", fmt.Sprintf("Asked %d idle sessions whether they are done", len(checks)), "", nil)
+					g.logLine("idle_check.sent", "count", len(checks))
 				}
 				startNotices, err := g.store.ExpireStarts(0, 0)
 				if err != nil {
@@ -921,12 +896,6 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 		}
 		if isRelay(h.Type) {
 			go g.serveRelay(ctx, nc, h, raw)
-			continue
-		}
-		if h.Type == protocol.FrameAskIntake {
-			// Ask intake waits for the machines that hold the sessions, so it
-			// must not block this node's read loop.
-			go g.answer(ctx, nc, h, raw)
 			continue
 		}
 		if strings.HasPrefix(h.Type, "worker.") {
@@ -1787,7 +1756,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil || p.SessionID == "" {
 			return nil, reject("bad session.archive")
 		}
-		return nil, st.CloseArchivedSessionInbox(nc.id, p.SessionID)
+		return nil, nil
 
 	case "session.agent.list":
 		var p struct {
@@ -1865,11 +1834,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		if p.Prompt {
 			if err := st.RecordOwnerTyped(p.SessionID); err != nil {
-				return nil, err
-			}
-			// The owner typed in the session: what it asked is answered or
-			// overtaken (the Needs you tag must not outlive its reason).
-			if err := st.closeOwnerRepliedAsks(p.SessionID, p.Text); err != nil {
 				return nil, err
 			}
 		}
@@ -1966,7 +1930,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("session %q does not belong to this node", p.SessionID)
 		}
 		res, err := st.SubmitCharterDraft(p.SessionID, p.CharterDraftRequest, p.SourceHash)
-		g.flushLeadRequests(ctx)
 		return res, err
 
 	case "bar.edit":
@@ -2660,9 +2623,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
-		err = st.reconcileCharterDraftAsks()
-		g.flushLeadRequests(ctx)
-		return maskCharterDraft(d), err
+		return maskCharterDraft(d), nil
 
 	case "context.get":
 		p, err := decode[protocol.PolicyGet](raw)
@@ -2753,100 +2714,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		g.dispatchPending(ctx, nc.id, false)
 		return map[string]any{"profile": prof}, nil
 
-	case "inbox.create":
-		var p struct {
-			SessionID      string   `json:"session_id"`
-			Kind           string   `json:"kind"`
-			Text           string   `json:"text"`
-			Recommendation string   `json:"recommendation"`
-			Options        []string `json:"options"`
-			Replaces       string   `json:"replaces"`
-		}
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, reject("bad inbox.create")
-		}
-		if p.Kind == "check" {
-			nodeName := st.hostname(nc.id)
-			if nodeName == "" {
-				nodeName = nc.id
-			}
-			sid := p.SessionID
-			if sid == "" {
-				sid = nc.id
-			}
-			if cto, _ := st.CTOSessionID(); cto != "" && sid == cto {
-				ownerNode, err := st.SessionNode(cto)
-				if err != nil || ownerNode != nc.id {
-					return nil, reject("CTO session does not belong to this node")
-				}
-				nodeName = "cto"
-			}
-			// What the CTO applied or sent is an event, not a question (decision
-			// 0090). It is a line of the log with the way to undo it.
-			if nodeName == "cto" {
-				err := st.deskLog(st.db, "cto", "", "", p.Text, p.Recommendation, p.Options)
-				return map[string]any{"item": protocol.InboxItem{Kind: "check", SessionID: sid, Node: nodeName, Text: p.Text, Status: "logged"}}, err
-			}
-			from := ""
-			if strings.HasPrefix(p.Text, "Disk space low on ") {
-				from = protocol.AskFromDisk
-			}
-			item, err := st.CreateInboxItem(protocol.InboxItem{
-				Kind:           "check",
-				SessionID:      sid,
-				Node:           nodeName,
-				Text:           p.Text,
-				Recommendation: p.Recommendation,
-				Options:        p.Options,
-				AskerName:      nodeName,
-				FromKind:       from,
-			})
-			return map[string]any{"item": item}, err
-		}
-		if p.Kind != "approval" && p.Kind != "feature_idea" && p.Kind != "question" {
-			return nil, reject("invalid inbox kind")
-		}
-		agent, project, name, err := st.askingSession(nc.id, p.SessionID)
-		if err != nil {
-			return nil, err
-		}
-		return g.agentOwnerAsk(ctx, st, protocol.InboxItem{Kind: p.Kind, SessionID: agent.SessionID, Node: project, Text: p.Text, Recommendation: p.Recommendation, Options: p.Options, AskerName: name, Replaces: p.Replaces})
-
-	case "ask.turn_end":
-		// A session's turn ended on a question to the owner (decision 0150).
-		// The question stays in the chat and follows the route: it goes to
-		// the chief like an agent_owner_ask. asked says the session asked it
-		// with agent_owner_ask: a Claude session already has its item, while
-		// the explicit wait of Pi or OpenCode has none yet. The answer never
-		// has redirect true: an older daemon continues the turn on it.
-		var p struct {
-			SessionID string `json:"session_id"`
-			Text      string `json:"text"`
-			Asked     bool   `json:"asked"`
-		}
-		if json.Unmarshal(raw, &p) != nil || strings.TrimSpace(p.Text) == "" {
-			return nil, reject("bad ask.turn_end")
-		}
-		agent, project, name, err := st.askingSession(nc.id, p.SessionID)
-		if err != nil {
-			return nil, err
-		}
-		routes, err := st.TurnEndRoutes(agent.SessionID)
-		if err != nil || !routes {
-			return map[string]any{"routed": false}, err
-		}
-		if p.Asked {
-			open, err := st.OtherOpenAsks(agent.SessionID, "")
-			if err != nil || len(open) > 0 {
-				return map[string]any{"routed": err == nil}, err
-			}
-		}
-		res, err := g.agentOwnerAsk(ctx, st, turnEndQuestion(agent, project, name, strings.TrimSpace(p.Text)))
-		if res != nil {
-			res["routed"] = err == nil
-		}
-		return res, err
-
 	case "apps.ask":
 		var p struct {
 			Owner string `json:"owner"`
@@ -2860,15 +2727,31 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
-		ask, err := st.OpenAppConsent(p.Code, p.Kind, p.Name)
-		if err != nil || strings.TrimSpace(p.OwnerWords) == "" {
-			return ask, err
+		if strings.TrimSpace(p.OwnerWords) == "" {
+			return nil, reject("app approval requires the owner: approve it in Settings in the TUI, or pass verified owner_words")
 		}
-		if _, err := st.answerAppConsent(ask.ID, "approve", p.Owner, false); err != nil {
+		pending, err := st.PendingByUserCode(p.Code, "tui", st.now())
+		if err != nil {
 			return nil, err
 		}
-		ask.State = protocol.AskAnswered
-		return ask, nil
+		kind := p.Kind
+		if kind == "" {
+			kind = pending.DefaultKind
+		}
+		if kind != "bot" && kind != "owner_app" {
+			return nil, reject("invalid app kind")
+		}
+		if pending.ClientID == "phone" && kind != "owner_app" {
+			return nil, reject("phone pairing requires owner_app")
+		}
+		name := strings.TrimSpace(p.Name)
+		if name == "" {
+			name = pending.ClientName
+		}
+		if err := st.ApprovePending(pending.ID, kind, name, st.now(), p.Owner); err != nil {
+			return nil, err
+		}
+		return map[string]any{"approved": true, "id": pending.ID, "kind": kind, "name": name}, nil
 	case protocol.OpUrgentTake:
 		// The hook of a busy session asks for its urgent held messages
 		// (decision 0180).
@@ -2883,37 +2766,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		return map[string]any{"messages": msgs}, nil
-	case "ask.redirect":
-		// The explicit wait of a plugin asks through the daemon's waiting
-		// method. The daemon asks here first whether the team lead takes it.
-		var p struct {
-			SessionID      string   `json:"session_id"`
-			Kind           string   `json:"kind"`
-			Text           string   `json:"text"`
-			Recommendation string   `json:"recommendation"`
-			Options        []string `json:"options"`
-		}
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, reject("bad ask.redirect")
-		}
-		if p.Kind != "approval" && p.Kind != "feature_idea" && p.Kind != "question" {
-			return nil, reject("invalid inbox kind")
-		}
-		agent, project, name, err := st.askingSession(nc.id, p.SessionID)
-		if err != nil {
-			return nil, err
-		}
-		redirect, m, err := st.RedirectOwnerAsk(protocol.InboxItem{Kind: p.Kind, SessionID: agent.SessionID, Node: project, Text: p.Text, Recommendation: p.Recommendation, Options: p.Options, AskerName: name})
-		if err != nil {
-			return nil, err
-		}
-		if redirect == nil {
-			return map[string]any{}, nil
-		}
-		if m.State != protocol.StateHeld {
-			g.dispatch(ctx, m)
-		}
-		return map[string]any{"redirected": redirect}, nil
 
 	case "apps.public.status", "apps.public.on", "apps.public.off", "apps.public.url", "apps.public.restore":
 		return g.publicOperation(ctx, typ, raw)
@@ -2956,10 +2808,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err := st.ApprovePending(p.ID, p.Kind, p.Name, st.now(), ownerSession); err != nil {
 			return nil, err
 		}
-		var text string
-		if err := st.db.QueryRow(`SELECT text FROM desk_log WHERE detail=?`, "app-approval:"+p.ID).Scan(&text); err == nil && g.logger != nil {
-			g.logLine("apps.approved", "notice", text)
-		}
+		g.logLine("apps.approved", "app", p.ID, "kind", p.Kind, "name", safeAppLog(p.Name))
 		return nil, nil
 
 	case "apps.refuse", "apps.revoke":
@@ -2998,71 +2847,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		g.logLine(typ, "app", p.ID, "grant", safeAppLog(p.Grant))
 		return nil, nil
 
-	case "inbox.list":
-		items, err := st.ListInbox()
-		return map[string]any{"items": items}, err
-
-	case "asks.list":
-		asks, err := st.ListAsks()
-		return protocol.AsksResult{Asks: asks}, err
-
-	case "query.sign_in":
-		// A read of the provider and host only; it opens no pane.
-		return g.signInTarget(raw)
-
-	case "sign_in.list":
-		asks, err := st.SignInAsks()
-		return protocol.AsksResult{Asks: asks}, err
-
 	case "sign_in.raise":
-		return g.signInRaise(nc, raw)
+		return g.signInRaise(ctx, nc, raw)
 
 	case "sign_in.close":
 		return map[string]bool{"ok": true}, g.signInClose(nc, raw)
-
-	case "desk.log":
-		var p protocol.DeskLogQuery
-		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
-			return nil, reject("bad desk.log")
-		}
-		entries, err := st.DeskLog(p.Limit)
-		return protocol.DeskLogResult{Entries: entries}, err
-
-	case "intake.report":
-		var p protocol.IntakeReport
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, reject("bad intake.report")
-		}
-		return map[string]bool{"ok": true}, st.ReportIntake(nc.id, p)
-
-	case protocol.FrameIntakeFind:
-		var p protocol.IntakeFindArgs
-		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
-			return nil, reject("bad %s", protocol.FrameIntakeFind)
-		}
-		return st.CTOIntake(p.Limit)
-
-	case "ask.open":
-		var p protocol.AskOpen
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, reject("bad ask.open")
-		}
-		ask, err := st.OpenExternalAsk(nc.id, p)
-		return map[string]any{"ask": ask}, err
-
-	case "ask.sync":
-		var p protocol.AskSync
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, reject("bad ask.sync")
-		}
-		return map[string]bool{"ok": true}, st.SyncExternalAsks(nc.id, p)
-
-	case "ask.close":
-		var p protocol.AskClose
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, reject("bad ask.close")
-		}
-		return map[string]bool{"ok": true}, st.CloseExternalAsk(nc.id, p)
 
 	case protocol.FrameClientError:
 		return g.handleClientError(raw)
@@ -3073,112 +2862,12 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case protocol.OpRoleNetwork:
 		return st.RoleNetwork()
 
-	case "brief.put":
-		p, err := decode[protocol.OwnerBriefRequest](raw)
-		if err != nil {
-			return nil, reject("bad brief.put")
-		}
-		if p.SessionID == "" {
-			return nil, reject("brief.put needs the caller's session")
-		}
-		if _, _, _, err = st.askingSession(nc.id, p.SessionID); err != nil {
-			return nil, err
-		}
-		return st.putOwnerBrief(p.SessionID, p.OwnerBriefArgs, st.now())
-
-	case "brief.status":
-		p, err := decode[protocol.OwnerBriefRequest](raw)
-		if err != nil {
-			return nil, reject("bad brief.status")
-		}
-		if _, _, _, err = st.askingSession(nc.id, p.SessionID); err != nil {
-			return nil, err
-		}
-		chief, err := liveChief(st.db)
-		if err != nil {
-			return nil, err
-		}
-		if chief == "" || chief != p.SessionID {
-			return nil, reject("only the chief of staff may read the brief schedule")
-		}
-		return st.dailyBriefStatus(st.now())
-
 	case "chief.set":
 		p, err := decodeOperator[protocol.ChiefSetRequest](raw)
 		if err != nil {
 			return nil, err
 		}
 		return map[string]bool{"ok": true}, st.SetChief(p, graphActor(raw))
-
-	case "ask.history":
-		p, err := decodeOperator[protocol.AskHistoryRequest](raw)
-		if err != nil {
-			return nil, err
-		}
-		sorts, err := st.AskSortHistory(p.Ask)
-		return protocol.AskHistoryResult{Sorts: sorts}, err
-
-	case "ask.undo":
-		p, err := decodeOperator[protocol.AskUndoRequest](raw)
-		if err != nil {
-			return nil, err
-		}
-		return st.UndoAsk(p.Ask, graphActor(raw))
-
-	case "ask.mark":
-		p, err := decodeOperator[protocol.AskMarkRequest](raw)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]bool{"ok": true}, st.MarkAsk(p, graphActor(raw))
-
-	case "inbox.answer":
-		var p struct {
-			ID      string `json:"item_id"`
-			Answer  string `json:"answer"`
-			FromCTO bool   `json:"from_cto"`
-			Actor   string `json:"actor"`
-		}
-		if json.Unmarshal(raw, &p) != nil || p.ID == "" {
-			g.logLine("inbox.answer.refused", "id", p.ID, "reason", "bad inbox.answer")
-			return nil, reject("bad inbox.answer")
-		}
-		var owner string
-		if err := st.db.QueryRow(`SELECT id FROM sessions WHERE node_id=? AND harness=? LIMIT 1`, nc.id, protocol.OwnerHarness).Scan(&owner); err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return nil, err
-		}
-		if handled, err := st.answerAppConsent(p.ID, p.Answer, owner, p.FromCTO); handled {
-			return map[string]bool{"answered": err == nil}, err
-		}
-		item, err := st.AnswerInboxAs(p.ID, p.Answer, p.Actor)
-		if err != nil {
-			g.logLine("inbox.answer.refused", "id", p.ID, "reason", err.Error())
-			return nil, err
-		}
-		// The askers that joined the item got the answer too: send it on.
-		if joined, jerr := st.joinedNodes(item.ID); jerr == nil {
-			for _, node := range joined {
-				g.dispatchPending(ctx, node, false)
-			}
-		}
-		if ref := st.startOverrideRef(item.ID); ref != "" && item.Status != "open" {
-			g.sendStartDecision(ctx, item, ref)
-		}
-		g.dispatchStepTasks(ctx)
-		node, err := st.SessionNode(item.SessionID)
-		if err == nil {
-			g.dispatchPending(ctx, node, false)
-			// A dismissal sends no message, so the session would keep its
-			// wait. Tell its machine.
-			if item.Status == "dismissed" && (item.Kind == "question" || item.Kind == "approval") {
-				if c := g.conn(node); c != nil {
-					if frame, e := protocol.EncodeRequest(protocol.FrameWaitClear, protocol.NewID("d"), protocol.WaitClear{SessionID: item.SessionID}); e == nil {
-						_ = c.write(ctx, frame)
-					}
-				}
-			}
-		}
-		return map[string]any{"item": item}, nil
 
 	case "lead.resolve":
 		var p struct {
@@ -3592,14 +3281,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return data, err
 	}
 	return nil, reject("unknown frame type %q", typ)
-}
-
-// flushLeadRequests delivers the requests that the asks reconcile sent to team
-// leads (a charter draft or a learned edge of a member node).
-func (g *Gateway) flushLeadRequests(ctx context.Context) {
-	for _, m := range g.store.TakeLeadRequests() {
-		g.dispatch(ctx, m)
-	}
 }
 
 // dispatch sends a stored message to its recipient's node if that node is

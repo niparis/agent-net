@@ -1,22 +1,12 @@
 package gateway
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
-
-// machineAsks counts the open CTO alerts about a machine (decision 0152).
-func machineAsks(t *testing.T, s *Store, node string) int {
-	t.Helper()
-	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE kind=? AND about_kind=? AND about_id=? AND status='open'`,
-		protocol.AskKindCTOAlert, protocol.AskAboutMachine, node).Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	return n
-}
 
 func TestNodeSleepExplainsGapNoAsk(t *testing.T) {
 	s, c := newTestStore(t)
@@ -44,12 +34,9 @@ func TestNodeSleepExplainsGapNoAsk(t *testing.T) {
 	if len(marked) != 0 {
 		t.Fatalf("marked %d machines silent, want none", len(marked))
 	}
-	if n := machineAsks(t, s, node); n != 0 {
-		t.Fatalf("%d Desk items after an explained sleep, want none", n)
-	}
 }
 
-func TestUnexplainedGapRaisesOneAsk(t *testing.T) {
+func TestUnexplainedGapMarksNodeSilentOnce(t *testing.T) {
 	s, c := newTestStore(t)
 	node, _, err := s.CreateNode("build", "linux")
 	if err != nil {
@@ -69,29 +56,13 @@ func TestUnexplainedGapRaisesOneAsk(t *testing.T) {
 	if len(marked) != 1 {
 		t.Fatalf("marked %d machines, want one", len(marked))
 	}
-	if n := machineAsks(t, s, node); n != 1 {
-		t.Fatalf("%d open Desk items, want exactly one", n)
-	}
-	// A later check must not raise a second item for the same outage.
+	// A later check must not mark the same outage again.
 	if marked, err := s.MarkSilentNodes(drop.Add(40 * time.Minute)); err != nil || len(marked) != 0 {
 		t.Fatalf("second check: marked %d, err %v", len(marked), err)
 	}
-	if n := machineAsks(t, s, node); n != 1 {
-		t.Fatalf("%d open Desk items after a second check, want one", n)
-	}
-	// The machine returns: the item closes.
+	// The machine returns.
 	if err := s.NodeLinkUp(node); err != nil {
 		t.Fatal(err)
-	}
-	if n := machineAsks(t, s, node); n != 0 {
-		t.Fatalf("%d open Desk items after return, want none", n)
-	}
-	var status, reason string
-	if err := s.db.QueryRow(`SELECT status,answer FROM inbox_items WHERE kind=?`, protocol.AskKindCTOAlert).Scan(&status, &reason); err != nil {
-		t.Fatal(err)
-	}
-	if status != protocol.AskClosed {
-		t.Fatalf("item status %q, want closed", status)
 	}
 }
 
@@ -132,5 +103,42 @@ func TestMachineStateNamesAsleepAndSilent(t *testing.T) {
 	nodes, _ = s.Nodes()
 	if nodes[0].DownState != "asleep" || nodes[0].DownSince != drop.Add(-time.Minute).Unix() {
 		t.Fatalf("state = %q since %d, want asleep since %d", nodes[0].DownState, nodes[0].DownSince, drop.Add(-time.Minute).Unix())
+	}
+}
+
+func TestMarkSilentNodesNotifiesChiefOnce(t *testing.T) {
+	s, c := newTestStore(t)
+	chiefNode, _, err := s.CreateNode("chief-box", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chief, err := s.UpsertSession(chiefNode, protocol.SessionInfo{Harness: "claude", NativeID: "chief", Name: "chief"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetChief(protocol.ChiefSetRequest{SessionID: chief}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	node, _, err := s.CreateNode("build", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	drop := c.t
+	if err := s.NodeLinkDown(node, drop); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.MarkSilentNodes(drop.Add(16 * time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	got := messagesTo(t, s, chief)
+	if len(got) != 1 || got[0].typ != protocol.TypeNotification || !strings.Contains(got[0].body, "build") {
+		t.Fatalf("want one silent-machine notification to chief, got %+v", got)
+	}
+	// Repeating MarkSilentNodes does not send a second notification.
+	if _, err := s.MarkSilentNodes(drop.Add(30 * time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if got2 := messagesTo(t, s, chief); len(got2) != 1 {
+		t.Fatalf("repeat tick duplicated notice: %+v", got2)
 	}
 }

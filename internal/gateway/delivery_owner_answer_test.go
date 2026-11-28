@@ -79,9 +79,6 @@ func TestDeliveryOwnerAnswerCompletesAnOwnerApproval(t *testing.T) {
 	if result.Evidence.By != protocol.EvidenceByOwner || result.Evidence.ReportedBy != r.caller || result.Evidence.Commit != commitA {
 		t.Fatalf("evidence: %+v", result.Evidence)
 	}
-	if n := inboxCount(t, r.s); n != 0 {
-		t.Fatalf("%d Desk items stored", n)
-	}
 	if got := r.get(id).Change.State; got != protocol.ChangeOpen {
 		t.Fatalf("state after owner approval = %s", got)
 	}

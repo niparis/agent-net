@@ -126,8 +126,6 @@ func (g *Gateway) validateCTOProposal(ctx context.Context, nc *nodeConn, raw []b
 		return nil, nil
 	case "held_answer":
 		return st.AnswerHeld(str("message_id"), str("action"), true)
-	case "inbox_answer":
-		return st.AnswerInbox(str("id"), str("answer"), true)
 	case "outcome_overrule":
 		return st.ResolveOutcome(str("reply_id"), q.Owner, str("action"), true)
 	case "worker_start":

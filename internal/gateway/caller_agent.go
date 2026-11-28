@@ -321,16 +321,6 @@ func (g *Gateway) syncWaitingWorkAsks() {
 	sort.Strings(names)
 	for _, name := range names {
 		p := byProject[name]
-		ref := waitingWorkRef + name
-		var dismissed bool
-		if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM inbox_items WHERE source_ref=? AND status<>'open' AND answer<>? AND answered_at>?)`,
-			ref, protocol.AskReasonResolved, now.Add(-waitingWorkAfter).UnixNano()).Scan(&dismissed); err != nil {
-			g.logLine("error", "where", "waiting work dismissed", "err", err)
-			continue
-		}
-		if dismissed {
-			continue
-		}
 		lead, err := s.repoLeadLiveness(name)
 		if err != nil {
 			g.logLine("error", "where", "waiting work lead", "err", err)
@@ -348,43 +338,7 @@ func (g *Gateway) syncWaitingWorkAsks() {
 		}
 		text := fmt.Sprintf("%s: %d finished %s waiting for %s, oldest %s, %s", name, len(p.changes), changes, step,
 			waitingWorkAge(now.Sub(time.Unix(p.oldest, 0))), lead)
-		if _, err := s.createInboxItem(s.db, protocol.InboxItem{
-			Kind: protocol.AskKindCheck, SessionID: gatewayAsker, Node: name, FromKind: protocol.AskFromGateway, AskerName: "agent-net",
-			SourceRef: ref, AboutKind: protocol.AskAboutProject, AboutID: name, NextWho: protocol.AskNextOwner,
-			Text:           text,
-			WhyYou:         "Finished work has no live session of its agent to accept it.",
-			Recommendation: "Start a session of the project's agent so it can accept the changes.",
-		}); err != nil {
-			g.logLine("error", "where", "waiting work ask", "err", err)
-		}
-	}
-	rows, err := s.db.Query(`SELECT source_ref FROM inbox_items WHERE status='open' AND source_ref LIKE ?`, waitingWorkRef+"%")
-	if err != nil {
-		g.logLine("error", "where", "waiting work open asks", "err", err)
-		return
-	}
-	var stale []string
-	for rows.Next() {
-		var ref string
-		if err := rows.Scan(&ref); err != nil {
-			rows.Close()
-			g.logLine("error", "where", "waiting work open asks", "err", err)
-			return
-		}
-		if byProject[strings.TrimPrefix(ref, waitingWorkRef)] == nil {
-			stale = append(stale, ref)
-		}
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		g.logLine("error", "where", "waiting work open asks", "err", err)
-		return
-	}
-	for _, ref := range stale {
-		if err := s.closeAskRef(s.db, ref, protocol.AskReasonResolved); err != nil {
-			g.logLine("error", "where", "waiting work close", "err", err)
-		}
+		g.logLine("delivery.waiting_work", "project", name, "text", text)
 	}
 }
 

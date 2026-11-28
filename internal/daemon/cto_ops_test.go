@@ -59,7 +59,7 @@ func TestCTOOpsHavePurposeSchemaExampleAndGate(t *testing.T) {
 	for name, want := range map[string]string{
 		"gateway_backup":  "direct",
 		"charter_history": "direct",
-		"inbox_list":      "direct",
+		"drafts_list":     "direct",
 		"step_report":     "direct",
 	} {
 		op, ok := mcpserver.CTOOpByName(name)
@@ -86,7 +86,7 @@ func TestCTOOpsListGroupsAndFilter(t *testing.T) {
 			seen[op.Name] = true
 		}
 	}
-	for _, name := range []string{"gateway_backup", "charter_history", "inbox_list", "step_report", "chief_set", "permission_apply"} {
+	for _, name := range []string{"gateway_backup", "charter_history", "drafts_list", "step_report", "chief_set", "permission_apply"} {
 		if !seen[name] {
 			t.Errorf("op list misses %s", name)
 		}
@@ -164,6 +164,8 @@ func TestCTOOpsListPinsNoAliases(t *testing.T) {
 		"repo_archive", "agent_tombstone",
 		"learned_list", "learned_view", "learned_answer",
 		"permission_reject", "permission_undo",
+		"inbox_list", "asks_list", "ask_history", "desk_log",
+		"ask_undo", "ask_mark", "sign_in_list",
 	}
 	for _, alias := range aliases {
 		if _, ok := mcpserver.CTOOpByName(alias); ok {
@@ -171,7 +173,7 @@ func TestCTOOpsListPinsNoAliases(t *testing.T) {
 		}
 	}
 	ops := mcpserver.CTOOps()
-	if len(ops) != 96 {
-		t.Fatalf("expected 96 ops, got %d", len(ops))
+	if len(ops) != 89 {
+		t.Fatalf("expected 89 ops, got %d", len(ops))
 	}
 }

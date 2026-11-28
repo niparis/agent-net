@@ -214,10 +214,10 @@ func TestNewProjectCreatesNoSkillItem(t *testing.T) {
 		t.Fatal(err)
 	}
 	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref LIKE 'skills:%' OR text LIKE '%skills suggest%'`).Scan(&n); err != nil {
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE recipient='s_cto'`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 0 {
-		t.Fatalf("skill items after adding a repo: %d", n)
+		t.Fatalf("skill messages after adding a repo: %d", n)
 	}
 }

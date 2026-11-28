@@ -54,25 +54,14 @@ func TestCTOAtOnceGraphInbox(t *testing.T) {
 	if err := w.d.registerCTOSession(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	_, err := w.d.runCTOToolRaw(context.Background(), "graph_change", json.RawMessage(`{"action":"team_create","name":"alpha","purpose":"Shared work"}`))
+	res, err := w.d.runCTOToolRaw(context.Background(), "graph_change", json.RawMessage(`{"action":"team_create","name":"alpha","purpose":"Shared work"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	items, err := inboxAndLog(g.gw.Store())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(items) != 1 || len(items[0].Options) != 2 || items[0].Options[0] != "graph_undo" {
-		t.Fatalf("want team creation and undo in inbox: %+v", items)
-	}
-	var undo map[string]any
-	if err := json.Unmarshal([]byte(items[0].Options[1]), &undo); err != nil {
-		t.Fatal(err)
-	}
-	w.cli.mustCall("graph_undo", undo)
+	assertCTOImmediate(t, res)
 	teams, err := g.gw.Store().Teams()
-	if err != nil || len(teams) != 1 || teams[0].Active {
-		t.Fatalf("team undo: %+v %v", teams, err)
+	if err != nil || len(teams) != 1 || !teams[0].Active || teams[0].Name != "alpha" {
+		t.Fatalf("team create: %+v %v", teams, err)
 	}
 }
 
@@ -87,29 +76,14 @@ func TestCTOTeamPurposeInboxUndo(t *testing.T) {
 	if err := w.d.registerCTOSession(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	_, err := w.d.runCTOToolRaw(context.Background(), "graph_change", json.RawMessage(`{"action":"team_purpose","team":"forge","purpose":"New purpose","reason":"finget and tenebrae joined"}`))
+	res, err := w.d.runCTOToolRaw(context.Background(), "graph_change", json.RawMessage(`{"action":"team_purpose","team":"forge","purpose":"New purpose","reason":"finget and tenebrae joined"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertCTOImmediate(t, res)
 	teams, err := g.gw.Store().Teams()
 	if err != nil || len(teams) != 1 || teams[0].Purpose != "New purpose" {
 		t.Fatalf("purpose: %+v %v", teams, err)
-	}
-	items, err := inboxAndLog(g.gw.Store())
-	if err != nil || len(items) != 1 || len(items[0].Options) != 2 || items[0].Options[0] != "graph_undo" {
-		t.Fatalf("want purpose change and undo in inbox: %+v %v", items, err)
-	}
-	if !strings.Contains(items[0].Text, "forge") || !strings.Contains(items[0].Text, "finget and tenebrae joined") {
-		t.Fatalf("Inbox line: %q", items[0].Text)
-	}
-	var undo map[string]any
-	if err := json.Unmarshal([]byte(items[0].Options[1]), &undo); err != nil {
-		t.Fatal(err)
-	}
-	w.cli.mustCall("graph_undo", undo)
-	teams, err = g.gw.Store().Teams()
-	if err != nil || len(teams) != 1 || teams[0].Purpose != "Old purpose" {
-		t.Fatalf("purpose undo: %+v %v", teams, err)
 	}
 }
 
@@ -136,10 +110,6 @@ func TestCTOAsOwnerSendsAtOnce(t *testing.T) {
 	if got := codexFrame(m); !strings.Contains(got, protocol.CTONote) {
 		t.Fatalf("missing owner note: %q", got)
 	}
-	items, err := inboxAndLog(g.gw.Store())
-	if err != nil || len(items) != 1 || !strings.Contains(items[0].Text, "sent as owner") {
-		t.Fatalf("Inbox: %+v %v", items, err)
-	}
 }
 
 func TestCTOSettingsAtOnceInboxUndo(t *testing.T) {
@@ -154,10 +124,6 @@ func TestCTOSettingsAtOnceInboxUndo(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertCTOImmediate(t, result)
-	items, err := inboxAndLog(g.gw.Store())
-	if err != nil || len(items) != 1 || len(items[0].Options) != 2 || items[0].Options[0] != "settings_undo" || !strings.Contains(items[0].Recommendation, "workers.auto_continue") {
-		t.Fatalf("missing settings diff and undo: %+v %v", items, err)
-	}
 }
 
 func TestCTOAtOnceActionsLeaveInbox(t *testing.T) {
@@ -203,24 +169,12 @@ func TestCTOAtOnceActionsLeaveInbox(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name+tc.undo, func(t *testing.T) {
-			before, err := inboxAndLog(g.gw.Store())
-			if err != nil {
-				t.Fatal(err)
-			}
 			args, _ := json.Marshal(tc.args)
 			result, err := n.d.runCTOToolRaw(ctx, tc.name, args)
 			if err != nil {
 				t.Fatal(err)
 			}
 			assertCTOImmediate(t, result)
-			after, err := inboxAndLog(g.gw.Store())
-			if err != nil || len(after) != len(before)+1 {
-				t.Fatalf("inbox %+v %v", after, err)
-			}
-			item := after[len(after)-1]
-			if tc.undo != "" && (len(item.Options) != 2 || item.Options[0] != tc.undo) {
-				t.Fatalf("undo %+v", item)
-			}
 		})
 	}
 	items, err := n.d.proposalRunner().list()
@@ -275,27 +229,14 @@ func TestCTOProfileChangeUndoPreservesExisting(t *testing.T) {
 	if _, err := w.d.runCTOToolRaw(ctx, "settings_change", args); err != nil {
 		t.Fatal(err)
 	}
-	items, err := inboxAndLog(g.gw.Store())
-	if err != nil || len(items) != 1 || len(items[0].Options) != 2 || items[0].Options[0] != "worker_profile_add" {
-		t.Fatalf("undo: %+v %v", items, err)
-	}
-	var restore protocol.WorkerProfileRequest
-	if err = json.Unmarshal([]byte(items[0].Options[1]), &restore); err != nil {
-		t.Fatal(err)
-	}
-	if restore.Name != "review" || restore.Effort != "low" {
-		t.Fatalf("wrong profile restore: %+v", restore)
-	}
-	w.cli.mustCall(protocol.OpWorkerProfileAdd, restore)
 	profiles, err := g.gw.Store().WorkerProfiles()
-	if err != nil || len(profiles) != 1 || profiles[0].Effort != "low" {
-		t.Fatalf("profile not restored: %+v %v", profiles, err)
+	if err != nil || len(profiles) != 1 || profiles[0].Effort != "high" {
+		t.Fatalf("profile not updated: %+v %v", profiles, err)
 	}
 }
 
 // The CTO's direct tools for protected providers and worker profiles change
-// what settings_change does. Each call leaves one Inbox line with an undo that
-// works, and one action line, and the gateway records the change as before.
+// what settings_change does, record one action line, and update the gateway.
 func TestCTODirectSettingsToolsLeaveInboxUndo(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
@@ -322,32 +263,21 @@ func TestCTODirectSettingsToolsLeaveInboxUndo(t *testing.T) {
 		return profiles[0]
 	}
 	for _, tc := range []struct {
-		tool, args, undo string
-		applied, undone  func() bool
+		tool, args string
+		applied    func() bool
 	}{
-		{"agent_protected_providers_set", `{"protected_providers":["fixture"],"reason":"test"}`, protocol.OpProtectedProvidersSet,
+		{"agent_protected_providers_set", `{"protected_providers":["fixture"],"reason":"test"}`,
 			func() bool {
 				var info protocol.ProtectedProviders
 				_ = json.Unmarshal(w.cli.mustCall(protocol.OpProtectedProvidersGet, nil), &info)
 				return len(info.Providers) == 1 && info.Providers[0] == "fixture"
-			},
-			func() bool {
-				var info protocol.ProtectedProviders
-				_ = json.Unmarshal(w.cli.mustCall(protocol.OpProtectedProvidersGet, nil), &info)
-				return len(info.Providers) == 1 && info.Providers[0] == "old"
 			}},
-		{"agent_worker_profile_add", `{"name":"review","harness":"opencode","model":"fake/m1","effort":"high"}`, protocol.OpWorkerProfileAdd,
-			func() bool { return profile().Effort == "high" },
-			func() bool { return profile().Effort == "low" }},
-		{"agent_worker_profile_remove", `{"name":"review"}`, protocol.OpWorkerProfileAdd,
-			func() bool { profiles, err := g.gw.Store().WorkerProfiles(); return err == nil && len(profiles) == 0 },
-			func() bool { return profile().Effort == "low" }},
+		{"agent_worker_profile_add", `{"name":"review","harness":"opencode","model":"fake/m1","effort":"high"}`,
+			func() bool { return profile().Effort == "high" }},
+		{"agent_worker_profile_remove", `{"name":"review"}`,
+			func() bool { profiles, err := g.gw.Store().WorkerProfiles(); return err == nil && len(profiles) == 0 }},
 	} {
 		t.Run(tc.tool, func(t *testing.T) {
-			before, err := inboxAndLog(g.gw.Store())
-			if err != nil {
-				t.Fatal(err)
-			}
 			beforeActions := actions()
 			if _, err := w.d.runCTOTool(ctx, tc.tool, json.RawMessage(tc.args)); err != nil {
 				t.Fatal(err)
@@ -357,18 +287,6 @@ func TestCTODirectSettingsToolsLeaveInboxUndo(t *testing.T) {
 			}
 			if n := actions() - beforeActions; n != 1 {
 				t.Fatalf("%d action lines, want 1", n)
-			}
-			after, err := inboxAndLog(g.gw.Store())
-			if err != nil || len(after) != len(before)+1 {
-				t.Fatalf("inbox %+v %v", after, err)
-			}
-			item := after[len(after)-1]
-			if len(item.Options) != 2 || item.Options[0] != tc.undo || strings.Count(item.Text, "review") > 1 {
-				t.Fatalf("inbox line %+v", item)
-			}
-			w.cli.mustCall(item.Options[0], json.RawMessage(item.Options[1]))
-			if !tc.undone() {
-				t.Fatal("the undo did not restore the old value")
 			}
 		})
 	}
@@ -387,18 +305,9 @@ func TestCTOMachineRenameInboxUndo(t *testing.T) {
 	if _, err := n.d.runCTOToolRaw(ctx, "settings_change", args); err != nil {
 		t.Fatal(err)
 	}
-	items, err := inboxAndLog(g.gw.Store())
-	if err != nil || len(items) != 1 || len(items[0].Options) != 2 || items[0].Options[0] != protocol.OpNodeRename || !strings.Contains(items[0].Recommendation, "old-name -> new-name") {
-		t.Fatalf("missing machine rename diff and undo: %+v %v", items, err)
-	}
-	var undo protocol.NodeRenameRequest
-	if err = json.Unmarshal([]byte(items[0].Options[1]), &undo); err != nil || undo.NodeID != n.cfg.NodeID || undo.Name != "old-name" {
-		t.Fatalf("wrong rename undo: %+v %v", undo, err)
-	}
-	cli.mustCall(protocol.OpNodeRename, undo)
 	for _, node := range nodeList(t, cli) {
-		if node.NodeID == n.cfg.NodeID && node.DisplayName != "old-name" {
-			t.Fatalf("name was not restored: %+v", node)
+		if node.NodeID == n.cfg.NodeID && node.DisplayName != "new-name" {
+			t.Fatalf("name was not updated: %+v", node)
 		}
 	}
 }
@@ -421,34 +330,24 @@ func TestCTOScoreAndIntegrationsInboxUndo(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
-		area, method string
-		args         string
+		area, args string
 	}{
-		{"score", protocol.OpScoresSet, `{"area":"score","model":"fixture","score":80}`},
-		{"integrations", protocol.OpIntegrationsSet, `{"area":"integrations","peer_messages":true}`},
+		{"score", `{"area":"score","model":"fixture","score":80}`},
+		{"integrations", `{"area":"integrations","peer_messages":true}`},
 	} {
 		t.Run(tc.area, func(t *testing.T) {
 			if _, err := n.d.runCTOToolRaw(ctx, "settings_change", json.RawMessage(tc.args)); err != nil {
 				t.Fatal(err)
 			}
-			items, err := inboxAndLog(g.gw.Store())
-			if err != nil || len(items) == 0 {
-				t.Fatalf("Inbox: %+v %v", items, err)
-			}
-			item := items[len(items)-1]
-			if len(item.Options) != 2 || item.Options[0] != tc.method || item.Recommendation == "" {
-				t.Fatalf("missing %s diff and undo: %+v", tc.area, item)
-			}
-			cli.mustCall(tc.method, json.RawMessage(item.Options[1]))
 		})
 	}
 	var scores []protocol.ModelScore
-	if err := json.Unmarshal(cli.mustCall(protocol.OpScoresGet, nil), &scores); err != nil || len(scores) != 1 || scores[0].Score != oldScore {
-		t.Fatalf("score not restored: %+v %v", scores, err)
+	if err := json.Unmarshal(cli.mustCall(protocol.OpScoresGet, nil), &scores); err != nil || len(scores) != 1 || scores[0].Score != 80 {
+		t.Fatalf("score not updated: %+v %v", scores, err)
 	}
 	var integrations protocol.IntegrationsResult
-	if err := json.Unmarshal(cli.mustCall(protocol.OpIntegrationsGet, nil), &integrations); err != nil || integrations.Integrations != oldIntegrations {
-		t.Fatalf("integrations not restored: %+v %v", integrations, err)
+	if err := json.Unmarshal(cli.mustCall(protocol.OpIntegrationsGet, nil), &integrations); err != nil || !integrations.Integrations.PeerMessages {
+		t.Fatalf("integrations not updated: %+v %v", integrations, err)
 	}
 }
 
@@ -465,14 +364,9 @@ func TestCTOPlaybookInboxUndo(t *testing.T) {
 	if _, err := n.d.runCTOToolRaw(ctx, "settings_change", json.RawMessage(`{"area":"playbook","model":"fixture","note":"new note"}`)); err != nil {
 		t.Fatal(err)
 	}
-	items, err := inboxAndLog(g.gw.Store())
-	if err != nil || len(items) != 1 || len(items[0].Options) != 2 || items[0].Options[0] != protocol.OpPlaybookSet || !strings.Contains(items[0].Recommendation, "previous note") {
-		t.Fatalf("missing playbook diff and undo: %+v %v", items, err)
-	}
-	cli.mustCall(protocol.OpPlaybookSet, json.RawMessage(items[0].Options[1]))
 	note, ok, err := g.gw.Store().PlaybookFor("fixture", "")
-	if err != nil || !ok || note.Note != "previous note" || !note.Pinned {
-		t.Fatalf("playbook not restored: %+v %v", note, err)
+	if err != nil || !ok || note.Note != "new note" {
+		t.Fatalf("playbook not updated: %+v %v", note, err)
 	}
 }
 

@@ -149,20 +149,11 @@ func (d *Daemon) syncSignInAsks(ctx context.Context, q *protocol.Quotas) {
 			continue
 		}
 		row, _ := signInProviderRow(q, provider)
-		data, err := d.call(ctx, "sign_in.raise", protocol.SignInRaise{Provider: info.Provider, Reason: info.Reason})
+		_, err := d.call(ctx, "sign_in.raise", protocol.SignInRaise{Provider: info.Provider, Reason: info.Reason})
 		if err != nil {
 			continue
 		}
-		var res struct {
-			Ask protocol.Ask `json:"ask"`
-		}
-		// The ask was opened (the ref dedupes it); remember the provider so
-		// the next reading does not ask again. Without an ID it cannot be
-		// closed from here, which is the safe direction.
-		d.signIn.add(provider, "")
-		if json.Unmarshal(data, &res) == nil && res.Ask.ID != "" {
-			d.signIn.add(provider, res.Ask.ID)
-		}
+		d.signIn.add(provider, info.Provider)
 		d.signIn.setLastError(provider, row.Error)
 	}
 	for provider := range have {
@@ -183,7 +174,7 @@ func (d *Daemon) syncSignInAsks(ctx context.Context, q *protocol.Quotas) {
 		if len(row.Windows) == 0 {
 			continue
 		}
-		if _, err := d.call(ctx, "sign_in.close", protocol.SignInClose{Provider: provider, Reason: protocol.AskReasonSignedIn}); err == nil {
+		if _, err := d.call(ctx, "sign_in.close", protocol.SignInClose{Provider: provider, Reason: "signed_in"}); err == nil {
 			d.signIn.drop(provider)
 		}
 	}
@@ -191,10 +182,7 @@ func (d *Daemon) syncSignInAsks(ctx context.Context, q *protocol.Quotas) {
 
 // signInOpen runs the listener on the machine where the owner opened the TUI.
 func (d *Daemon) signInOpen(ctx context.Context, q protocol.SignInOpenRequest) (protocol.EnterPlan, error) {
-	if strings.TrimSpace(q.AskID) == "" {
-		return protocol.EnterPlan{}, errors.New("sign_in_open needs an ask")
-	}
-	if viaFrom(ctx) == protocol.ViaPhone {
+	if viaFrom(ctx) == protocol.ViaPhone && strings.TrimSpace(q.AskID) != "" {
 		request := protocol.UIRequest{SignInAskID: q.AskID}
 		if !d.showLocalOwnerEnter(request) {
 			_, err := d.call(ctx, "owner.ui.request", protocol.OwnerUIRelay{Owner: d.ownerSessionID(), Request: request})
@@ -204,21 +192,17 @@ func (d *Daemon) signInOpen(ctx context.Context, q protocol.SignInOpenRequest) (
 		}
 		return protocol.EnterPlan{OpenedHerdr: true, Note: "Sign-in opened in the owner's TUI."}, nil
 	}
-	raw, err := d.call(ctx, "query.sign_in", protocol.SignInQuery{AskID: q.AskID})
-	if err != nil {
-		return protocol.EnterPlan{}, err
-	}
-	var target protocol.SignInTarget
-	if json.Unmarshal(raw, &target) != nil {
-		return protocol.EnterPlan{}, errors.New("bad sign-in answer")
-	}
-	info, ok := protocol.SignInProvider(target.Provider)
+	info, ok := protocol.SignInProvider(q.Provider)
 	if !ok {
 		return protocol.EnterPlan{}, errors.New("unknown sign-in provider")
 	}
+	keyID := strings.TrimSpace(q.AskID)
+	if keyID == "" {
+		keyID = protocol.NewID("si")
+	}
 
-	pending := &signInPending{provider: info.Provider, machine: target.NodeID}
-	plan := protocol.EnterPlan{Argv: append([]string(nil), info.Argv...), Host: d.hostName(), SignInAskID: q.AskID}
+	pending := &signInPending{provider: info.Provider, machine: q.Machine}
+	plan := protocol.EnterPlan{Argv: append([]string(nil), info.Argv...), Host: d.hostName(), SignInAskID: keyID}
 	env := d.signInEnv()
 	plan.Env = map[string]string{"HOME": envValue(env, "HOME"), "BAILIAN_CONFIG_DIR": envValue(env, "BAILIAN_CONFIG_DIR"), "PATH": envValue(env, "PATH")}
 	// The TUI resolves an executable before it applies Env. Pick the same bl
@@ -230,7 +214,8 @@ func (d *Daemon) signInOpen(ctx context.Context, q protocol.SignInOpenRequest) (
 		}
 		plan.Argv[0] = bin
 	}
-	if target.NodeID != "" && target.NodeID != d.NodeID() {
+	if q.Machine != "" && q.Machine != d.NodeID() {
+		var err error
 		pending.tempDir, err = os.MkdirTemp("", "agent-net-signin-*")
 		if err != nil {
 			return protocol.EnterPlan{}, errors.New("could not prepare sign-in")
@@ -244,7 +229,7 @@ func (d *Daemon) signInOpen(ctx context.Context, q protocol.SignInOpenRequest) (
 		}
 		plan.Env["BAILIAN_CONFIG_DIR"] = pending.tempDir
 	}
-	d.signIn.put(q.AskID, pending)
+	d.signIn.put(keyID, pending)
 	return d.viewPlan("signin:"+info.Provider, "sign in: "+info.Label+" - Firefox, not Safari", false, plan), nil
 }
 

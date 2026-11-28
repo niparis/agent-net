@@ -117,27 +117,21 @@ func TestNudgeResumeThroughDaemonRequestPath(t *testing.T) {
 // The owner's Desk Undo reads both the old {"id":...} and the new
 // {"pause_id":...} option, and goes through the daemon request encoding.
 func TestNudgeDeskUndoThroughDaemonRequestPath(t *testing.T) {
-	undoOption := func(t *testing.T, g *testGateway, old bool) map[string]any {
+	undoOption := func(t *testing.T, g *testGateway, id string, old bool) map[string]any {
 		t.Helper()
-		log, err := g.gw.Store().DeskLog(1)
-		if err != nil || len(log) != 1 || len(log[0].Options) != 2 {
-			t.Fatalf("desk log = %+v, %v", log, err)
-		}
-		var option map[string]any
-		if err := json.Unmarshal([]byte(log[0].Options[1]), &option); err != nil {
+		db, err := sql.Open("sqlite", "file:"+filepath.Join(g.dir, "gateway.db")+"?_pragma=busy_timeout(5000)")
+		if err != nil {
 			t.Fatal(err)
 		}
-		id := option["pause_id"]
-		if id == nil {
-			id = option["id"]
-		}
-		if id == nil || id == "" || option["receipt"] == nil {
-			t.Fatalf("undo option = %v", option)
+		defer db.Close()
+		var receipt string
+		if err := db.QueryRow(`SELECT receipt FROM nudge_pauses WHERE id=?`, id).Scan(&receipt); err != nil || receipt == "" {
+			t.Fatalf("receipt = %q, %v", receipt, err)
 		}
 		if old {
-			return map[string]any{"id": id, "receipt": option["receipt"]}
+			return map[string]any{"id": id, "receipt": receipt}
 		}
-		return map[string]any{"pause_id": id, "receipt": option["receipt"]}
+		return map[string]any{"pause_id": id, "receipt": receipt}
 	}
 	ownerUndo := func(t *testing.T, n *node, option map[string]any) {
 		t.Helper()
@@ -148,7 +142,7 @@ func TestNudgeDeskUndoThroughDaemonRequestPath(t *testing.T) {
 	t.Run("old pause option ends the pause", func(t *testing.T) {
 		n, g, _, chief := nudgeChiefRig(t)
 		node, id := nudgeChiefPause(t, g, chief)
-		ownerUndo(t, n, undoOption(t, g, true))
+		ownerUndo(t, n, undoOption(t, g, id, true))
 		if !nudgeEnded(t, g, node, chief, id) {
 			t.Fatal("pause still active after old-form undo")
 		}
@@ -156,7 +150,7 @@ func TestNudgeDeskUndoThroughDaemonRequestPath(t *testing.T) {
 	t.Run("new pause option ends the pause", func(t *testing.T) {
 		n, g, _, chief := nudgeChiefRig(t)
 		node, id := nudgeChiefPause(t, g, chief)
-		ownerUndo(t, n, undoOption(t, g, false))
+		ownerUndo(t, n, undoOption(t, g, id, false))
 		if !nudgeEnded(t, g, node, chief, id) {
 			t.Fatal("pause still active after new-form undo")
 		}
@@ -168,7 +162,7 @@ func TestNudgeDeskUndoThroughDaemonRequestPath(t *testing.T) {
 		if !nudgeEnded(t, g, node, chief, id) {
 			t.Fatal("pause still active after resume")
 		}
-		ownerUndo(t, n, undoOption(t, g, false))
+		ownerUndo(t, n, undoOption(t, g, id, false))
 		if nudgeEnded(t, g, node, chief, id) {
 			t.Fatal("pause still ended after undo of the resume")
 		}

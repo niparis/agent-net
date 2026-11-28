@@ -45,10 +45,9 @@ func TestNetworkGuidance(t *testing.T) {
 	}
 }
 
-// Owner questions are in the chat and on the route (decision 0150): an agent
-// also sends them to the chief with agent_owner_ask. No guidance file that
-// agent-net writes, here or in internal/agentfiles, tells an agent to ask its
-// owner without the route.
+// Owner questions go to the chief via agent_message_send (decision 0196). No
+// guidance file that agent-net writes, here or in internal/agentfiles, tells an
+// agent to ask its owner directly without going through the chief.
 func TestGoldensHaveNoAskYourOwnerLine(t *testing.T) {
 	paths, err := filepath.Glob("testdata/*.golden")
 	if err != nil {

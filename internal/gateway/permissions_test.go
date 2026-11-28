@@ -34,6 +34,7 @@ func forgeGrant(targets ...string) protocol.PermissionOwnerApplyRequest {
 // refuses an unregistered target by name. A refusal writes no log line.
 func TestPermissionApplyRefusals(t *testing.T) {
 	s, _, _ := permissionRig(t)
+	logs := captureLog(s)
 	g := &Gateway{store: s}
 	ctx := context.Background()
 	if _, err := g.ownerApplyPermission(ctx, protocol.PermissionOwnerApplyFrame{Request: forgeGrant("forge")}); err == nil || !strings.Contains(err.Error(), "not verified") {
@@ -42,8 +43,8 @@ func TestPermissionApplyRefusals(t *testing.T) {
 	if _, err := g.ownerApplyPermission(ctx, protocol.PermissionOwnerApplyFrame{Request: forgeGrant("forge", "missing-repo"), WordsVerified: true}); err == nil || !strings.Contains(err.Error(), "missing-repo") {
 		t.Fatalf("unregistered target: %v", err)
 	}
-	if log, err := s.DeskLog(5); err != nil || len(log) != 0 {
-		t.Fatalf("log after refusals: %+v %v", log, err)
+	if len(*logs) != 0 {
+		t.Fatalf("log after refusals: %+v", *logs)
 	}
 }
 
@@ -52,6 +53,7 @@ func TestPermissionApplyRefusals(t *testing.T) {
 // nothing waits for later, so the log offers no undo.
 func TestPermissionApplyLogsTheOwnerWords(t *testing.T) {
 	s, node, _ := permissionRig(t)
+	logs := captureLog(s)
 	g := &Gateway{store: s}
 	grant, err := g.ownerApplyPermission(context.Background(), protocol.PermissionOwnerApplyFrame{Request: forgeGrant("forge"), By: "cto", WordsVerified: true})
 	if err != nil {
@@ -61,10 +63,11 @@ func TestPermissionApplyLogsTheOwnerWords(t *testing.T) {
 		grant.Results[0].Target.NodeID != node || grant.Results[0].Error != "machine is offline" {
 		t.Fatalf("grant: %+v", grant)
 	}
-	log, err := s.DeskLog(5)
-	if err != nil || len(log) != 1 || log[0].Source != "cto" || len(log[0].Options) != 0 ||
-		!strings.Contains(log[0].Detail, `Owner's words: "let forge merge its PRs"`) || !strings.Contains(log[0].Detail, "machine is offline") {
-		t.Fatalf("log: %+v %v", log, err)
+	if len(*logs) != 1 || !strings.HasPrefix((*logs)[0], "permission.grant ") ||
+		!strings.Contains((*logs)[0], `source cto`) ||
+		!strings.Contains((*logs)[0], `Owner's words: "let forge merge its PRs"`) ||
+		!strings.Contains((*logs)[0], "machine is offline") {
+		t.Fatalf("log: %+v", *logs)
 	}
 }
 
@@ -84,9 +87,6 @@ func TestTrustAskIsARequestToTheChiefOnce(t *testing.T) {
 		if err != nil || created != want {
 			t.Fatalf("ask %d: created=%v err=%v", i, created, err)
 		}
-	}
-	if n := inboxCount(t, s); n != 0 {
-		t.Fatalf("%d items stored for the owner", n)
 	}
 	got := messagesTo(t, s, chief)
 	if len(got) != 1 || got[0].from != session || got[0].typ != protocol.TypeRequest {

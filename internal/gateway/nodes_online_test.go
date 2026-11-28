@@ -131,9 +131,6 @@ func TestQuietConnectedNodeStaysOnline(t *testing.T) {
 	if n.LastSeen < c.t.Unix() {
 		t.Fatalf("last seen is %s old, want the frame at %d", c.t.Sub(time.Unix(n.LastSeen, 0)), c.t.Unix())
 	}
-	if asks := machineAsks(t, g.store, node); asks != 0 {
-		t.Fatalf("%d Desk items about a connected machine, want none", asks)
-	}
 
 	// agent_machine_get and agent_machines_find read the same state.
 	m, err := g.MachineGet(context.Background(), protocol.MachineGetRequest{Machine: node, Include: []string{"track_record"}})

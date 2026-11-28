@@ -33,21 +33,6 @@ const MaxWaitingTextLen = 200
 // owner-only method: like a hint, a hook may call it for its own session.
 const MethodWaiting = "waiting"
 
-// MethodOwnerAsk is the local method behind the agent_owner_ask tool. Its
-// params are the tool's input. The daemon picks the ask kind (question,
-// approval or idea), so every harness asks the owner the same way.
-const MethodOwnerAsk = "owner_ask"
-
-// FrameWaitClear is the gateway telling a node that the owner closed a
-// session's question or approval without a message (a dismissal): the
-// session's explicit wait ends. Its params are WaitClear.
-const FrameWaitClear = "node.wait_clear"
-
-// WaitClear is FrameWaitClear.
-type WaitClear struct {
-	SessionID string `json:"session_id"`
-}
-
 // WaitingRequest is MethodWaiting. A plugin is bound to its session and leaves
 // Harness and NativeID empty. A command line hook names the session it runs
 // for, as it does for MethodHint.

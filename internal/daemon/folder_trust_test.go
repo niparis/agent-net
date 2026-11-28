@@ -28,15 +28,6 @@ func ctoTrustCall(t *testing.T, d *Daemon, args map[string]any) (any, error) {
 	return d.runCTOToolRaw(context.Background(), "session_change", raw)
 }
 
-func lastInbox(t *testing.T, g *testGateway) protocol.InboxItem {
-	t.Helper()
-	items, err := inboxAndLog(g.gw.Store())
-	if err != nil || len(items) == 0 {
-		t.Fatalf("inbox %+v %v", items, err)
-	}
-	return items[len(items)-1]
-}
-
 func TestCTOTrustByPathAuditsAndUndoRemovesOnlyAgentAddedTrust(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	home := folderTrustEnv(t)
@@ -50,31 +41,19 @@ func TestCTOTrustByPathAuditsAndUndoRemovesOnlyAgentAddedTrust(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A folder the owner already trusted: nothing added, so no undo is offered.
+	// A folder the owner already trusted succeeds cleanly.
 	if _, err := ctoTrustCall(t, n.d, map[string]any{"action": "trust", "path": ownerTrusted}); err != nil {
 		t.Fatal(err)
 	}
-	item := lastInbox(t, g)
-	if len(item.Options) != 0 || !strings.Contains(item.Text, "trust") {
-		t.Fatalf("owner trust must have an audit line and no undo: %+v", item)
-	}
 
-	// A new folder: trusted, audited, undo offered.
+	// A new folder: trusted and removable via OpFolderTrust.
 	if _, err := ctoTrustCall(t, n.d, map[string]any{"action": "trust", "path": fresh}); err != nil {
 		t.Fatal(err)
 	}
 	if ok, err := claudetrust.Trusted(fresh); err != nil || !ok {
 		t.Fatalf("fresh folder not trusted: %v %v", ok, err)
 	}
-	item = lastInbox(t, g)
-	if len(item.Options) != 2 || item.Options[0] != protocol.OpFolderTrust || !strings.Contains(item.Text, fresh) {
-		t.Fatalf("want trust notice with undo: %+v", item)
-	}
-	var undo protocol.FolderTrustRequest
-	if err := json.Unmarshal([]byte(item.Options[1]), &undo); err != nil || !undo.Remove || undo.Path != fresh {
-		t.Fatalf("undo %+v %v", undo, err)
-	}
-	n.cli.mustCall(protocol.OpFolderTrust, undo)
+	n.cli.mustCall(protocol.OpFolderTrust, protocol.FolderTrustRequest{Path: fresh, Remove: true})
 	if ok, _ := claudetrust.Trusted(fresh); ok {
 		t.Fatal("undo did not remove the trust agent-net added")
 	}
@@ -132,15 +111,7 @@ func TestCTOTrustByProjectOnARemoteNode(t *testing.T) {
 	if ok, err := claudetrust.Trusted(repo); err != nil || !ok {
 		t.Fatalf("project folder not trusted: %v %v", ok, err)
 	}
-	item := lastInbox(t, g)
-	if len(item.Options) != 2 || item.Options[0] != protocol.OpFolderTrust {
-		t.Fatalf("remote trust needs an undo: %+v", item)
-	}
-	var undo protocol.FolderTrustRequest
-	if err := json.Unmarshal([]byte(item.Options[1]), &undo); err != nil || !undo.Remove || undo.NodeID != b.d.NodeID() {
-		t.Fatalf("the undo must name the machine: %+v %v", undo, err)
-	}
-	a.cli.mustCall(protocol.OpFolderTrust, undo)
+	a.cli.mustCall(protocol.OpFolderTrust, protocol.FolderTrustRequest{NodeID: b.d.NodeID(), Path: repo, Remove: true})
 	if ok, _ := claudetrust.Trusted(repo); ok {
 		t.Fatal("remote undo did not remove the trust")
 	}
@@ -167,20 +138,6 @@ func TestCTOSessionStartWithTrustTrustsThenStarts(t *testing.T) {
 	}
 	if ok, err := claudetrust.Trusted(repo); err != nil || !ok {
 		t.Fatalf("trust:true did not trust the folder: %v %v", ok, err)
-	}
-	items, err := inboxAndLog(g.gw.Store())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var trustNotice, undo bool
-	for _, it := range items {
-		if strings.Contains(it.Text, "trust") {
-			trustNotice = true
-			undo = undo || (len(it.Options) == 2 && it.Options[0] == protocol.OpFolderTrust)
-		}
-	}
-	if !trustNotice || !undo {
-		t.Fatalf("trust:true needs its own audited notice with undo: %+v", items)
 	}
 	eventually(t, "the session starts in the trusted folder", func() bool {
 		_, err := os.Stat(filepath.Join(repo, "fake-claude.json"))

@@ -316,10 +316,6 @@ func TestWorkerSandboxCutoverNoticeUsesActualProjectCase(t *testing.T) {
 	if err != nil || got != protocol.WorkersSandboxed {
 		t.Fatalf("effective: %q %v", got, err)
 	}
-	inbox, err := s.ListInbox()
-	if err != nil || len(inbox) != 0 {
-		t.Fatalf("unchanged machine got a notice: %+v %v", inbox, err)
-	}
 }
 
 // legacyPolicy is the policy JSON that project_policies rows held before the
