@@ -616,7 +616,7 @@ func (m Model) fetchCmd() tea.Cmd {
 			})
 		}
 
-		if caller, ok := src.(localCaller); ok && !onboardingPending && (wants(protocol.TopicInbox) || wants(protocol.TopicWorkers)) {
+		if caller, ok := src.(localCaller); ok && !onboardingPending && wants(protocol.TopicWorkers) {
 			res.onboardingAsked, res.onboardingRevision = true, onboardingRevision
 			group(func(ctx context.Context) {
 				var raw json.RawMessage
@@ -652,7 +652,7 @@ func (m Model) fetchCmd() tea.Cmd {
 		// proposal on this machine changes the count in the Snapshot, and one
 		// on another machine is found by the wait.
 		markerMoved := proposalsMarkerOf(res.snap) != proposalsSeen
-		listsWanted := wants(protocol.TopicInbox) || wants(protocol.TopicAgents)
+		listsWanted := wants(protocol.TopicAgents)
 		c, ok := src.(localCaller)
 		if ok && listsWanted && (markerMoved || res.at.Sub(proposalsAt) >= proposalsRefreshEvery || (ctoOnScreen && full)) {
 			res.proposalsAsked = true

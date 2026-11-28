@@ -57,10 +57,6 @@ var Table = []Row{
 		Bash: []string{`(\./)?scripts/deploy[A-Za-z0-9._-]*\.sh( .*)?`},
 	},
 	{
-		Kind: "asks", Phrase: "sort and answer asks",
-		Tools: []string{"agent_ask_sort", "agent_ask_intake"},
-	},
-	{
 		Kind: "permissions", Phrase: "apply approved permissions",
 		Ops: []string{"permission_apply"},
 	},

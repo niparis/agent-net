@@ -41,11 +41,7 @@ func TestSignInRefusesAnyCommandAndUnknownProvider(t *testing.T) {
 	if _, err := g.handle(context.Background(), &nodeConn{id: node}, "sign_in.raise", raw); err == nil || !strings.Contains(err.Error(), "never a command") {
 		t.Fatalf("command accepted: %v", err)
 	}
-	open, _ := json.Marshal(protocol.AskOpen{Kind: protocol.AskKindSignIn, Ref: "bl auth login --console", From: "agent-net", Question: "sign in"})
-	if _, err := g.handle(context.Background(), &nodeConn{id: node}, "ask.open", open); err == nil || !strings.Contains(err.Error(), "unknown sign-in provider") {
-		t.Fatalf("a command as a ref was accepted: %v", err)
-	}
-	if _, err := s.RaiseSignIn(node, "bl auth login --console", ""); err == nil || !strings.Contains(err.Error(), "unknown sign-in provider") {
+	if _, _, err := s.RaiseSignIn(node, "bl auth login --console", ""); err == nil || !strings.Contains(err.Error(), "unknown sign-in provider") {
 		t.Fatalf("unknown provider accepted: %v", err)
 	}
 	raw, _ = json.Marshal(protocol.SignInRaise{Provider: "alibaba-bl", Reason: "quota"})
@@ -54,10 +50,11 @@ func TestSignInRefusesAnyCommandAndUnknownProvider(t *testing.T) {
 		t.Fatalf("quota provider suffix refused: %v", err)
 	}
 	var raised struct {
-		Ask protocol.Ask `json:"ask"`
+		OK       bool   `json:"ok"`
+		Provider string `json:"provider"`
 	}
 	data, _ := out.(json.RawMessage)
-	if json.Unmarshal(data, &raised) != nil || raised.Ask.Ref != protocol.AskKindSignIn+":"+node+":alibaba" {
+	if json.Unmarshal(data, &raised) != nil || !raised.OK || raised.Provider != "alibaba" {
 		t.Fatalf("provider suffix was not mapped to the allowlist key: %s", data)
 	}
 }
@@ -113,9 +110,6 @@ func TestSignInOpenOpensOnNamedMachineWithoutStoredAsk(t *testing.T) {
 	var result protocol.SignInPrepareResult
 	if err := json.Unmarshal(got.data, &result); err != nil || !result.Opened || result.Pane != "w1:p1" {
 		t.Fatalf("result %s: %v", got.data, err)
-	}
-	if asks, err := s.SignInAsks(); err != nil || len(asks) != 0 {
-		t.Fatalf("stored asks = %+v, %v", asks, err)
 	}
 }
 
@@ -271,7 +265,7 @@ func TestSignInRequestNamesSignInOpen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.RaiseSignIn(mac, "alibaba", ""); err != nil {
+	if _, _, err := s.RaiseSignIn(mac, "alibaba", ""); err != nil {
 		t.Fatal(err)
 	}
 	got := messagesTo(t, s, chief)
@@ -281,8 +275,5 @@ func TestSignInRequestNamesSignInOpen(t *testing.T) {
 	want := "If the owner agrees, the CTO opens it with sign_in_open machine build-vm provider alibaba, quoting the owner's words."
 	if !strings.HasSuffix(got[0].body, want) {
 		t.Fatalf("request does not end with %q:\n%s", want, got[0].body)
-	}
-	if n := inboxCount(t, s); n != 0 {
-		t.Fatalf("%d items stored for the owner", n)
 	}
 }

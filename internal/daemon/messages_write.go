@@ -178,8 +178,8 @@ func (d *Daemon) recordCTOSent(ctx context.Context, to string, asOwner bool) err
 	if asOwner {
 		voice = " as owner"
 	}
-	_, err := d.call(ctx, "inbox.create", map[string]any{"session_id": d.ctoSessionID(), "kind": "check", "text": "CTO sent" + voice + " to " + d.sessionName(ctx, to)})
-	return err
+	d.Logf("cto.action CTO sent%s to %s", voice, d.sessionName(ctx, to))
+	return nil
 }
 
 // sendSet sends one message to every online session that matches the set.

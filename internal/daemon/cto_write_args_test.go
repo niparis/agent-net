@@ -231,26 +231,6 @@ func TestCTOWriteActionsRefuseUnknownArguments(t *testing.T) {
 				t.Fatalf("right call did not change the value: %s", after)
 			}
 
-			// The undo the CTO notice offers is the call the TUI builds, and
-			// it still works.
-			items, err := inboxAndLog(g.gw.Store())
-			if err != nil {
-				t.Fatal(err)
-			}
-			var undo *protocol.InboxItem
-			for i := range items {
-				if len(items[i].Options) == 2 && items[i].Options[0] == setter.undo {
-					undo = &items[i]
-				}
-			}
-			if undo == nil {
-				t.Fatalf("no %s undo in the inbox: %+v", setter.undo, items)
-			}
-			cli.mustCall(undo.Options[0], json.RawMessage(undo.Options[1]))
-			if got := setter.read(t, cli); got != before {
-				t.Fatalf("undo: %s -> %s", before, got)
-			}
-
 			// An explicit empty value still clears.
 			if err := call(t, setter.cleared); err != nil {
 				t.Fatalf("explicit clear: %v", err)
@@ -391,24 +371,6 @@ func TestCTODifficultySetRefusesEmptyAndUnknownLevels(t *testing.T) {
 	if after == before {
 		t.Fatalf("known level did not change the value: %s", after)
 	}
-
-	items, err := inboxAndLog(g.gw.Store())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var undo *protocol.InboxItem
-	for i := range items {
-		if len(items[i].Options) == 2 && items[i].Options[0] == "difficulty_set" {
-			undo = &items[i]
-		}
-	}
-	if undo == nil {
-		t.Fatalf("no difficulty_set undo in the inbox: %+v", items)
-	}
-	cli.mustCall(undo.Options[0], json.RawMessage(undo.Options[1]))
-	if got := read(t, cli); got != before {
-		t.Fatalf("undo: %s -> %s", before, got)
-	}
 }
 
 // Every merged CTO tool carries reason next to its arguments, and the tools
@@ -474,10 +436,10 @@ func TestCTOMergedToolsTakeReasonAndOwnerWords(t *testing.T) {
 				t.Fatalf("worker_change: %v", err)
 			}
 		}},
-		// An owner question is no stored item since decision 0196. An unknown
-		// item still reaches the gateway's answer, so its error proves the same.
-		{"answer", map[string]any{"kind": "inbox", "id": "i_not_stored", "answer": "yes"}, func(t *testing.T, _ any, err error) {
-			if err == nil || !strings.Contains(err.Error(), "inbox item not found") {
+		// An unknown held message still reaches the gateway's answer, proving
+		// reason was stripped rather than refused as an unknown field.
+		{"answer", map[string]any{"kind": "held", "message_id": "m_not_stored", "action": "a"}, func(t *testing.T, _ any, err error) {
+			if err == nil || strings.Contains(err.Error(), "unknown") {
 				t.Fatalf("answer: %v", err)
 			}
 		}},

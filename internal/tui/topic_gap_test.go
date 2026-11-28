@@ -92,9 +92,6 @@ func TestProposalsAreNotReadForEveryTopicChange(t *testing.T) {
 	if got := ask(protocol.TopicAgents); got.proposalsAsked || src.calls[protocol.OpProposalList] != 0 {
 		t.Fatalf("an agents change asked for the proposals: %+v", src.calls)
 	}
-	if got := ask(protocol.TopicInbox); got.proposalsAsked || src.calls[protocol.OpProposalList] != 0 {
-		t.Fatalf("an Inbox change asked for the proposals: %+v", src.calls)
-	}
 	m.proposalsAt = now.Add(-proposalsRefreshEvery)
 	if got := ask(protocol.TopicAgents); !got.proposalsAsked {
 		t.Fatal("the proposals were not read after the wait")

@@ -82,7 +82,6 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 	}
 	reads := map[string]map[string]any{
 		"cto_proposals_find":  {},
-		"cto_intake_find":     {},
 		"cto_ops_list":        {},
 		"agent_sessions_find": {},
 		"agent_machines_find": {}, "agent_machine_log": {"machine": w.cfg.Hostname, "log": "daemon"},

@@ -2,8 +2,6 @@ package gateway
 
 import (
 	"database/sql"
-	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
@@ -210,7 +208,7 @@ func (s *Store) PauseNudge(node string, r protocol.NudgePauseRequest) (protocol.
 	}
 	return out, tx.Commit()
 }
-func (s *Store) logNudge(tx *sql.Tx, p protocol.NudgePause, action, receipt string) error {
+func (s *Store) logNudge(_ *sql.Tx, p protocol.NudgePause, action, receipt string) error {
 	target := "agent " + p.Agent
 	if p.Team != "" {
 		target = "team " + p.Team
@@ -219,13 +217,8 @@ func (s *Store) logNudge(tx *sql.Tx, p protocol.NudgePause, action, receipt stri
 	if until == "" {
 		until = "no expiry"
 	}
-	text := fmt.Sprintf("%s %s for %s; until %s; reason: %s", action, p.Kind, target, until, p.Reason)
-	var options []string
-	if receipt != "" {
-		raw, _ := json.Marshal(protocol.NudgeUndoArgs{PauseID: p.ID, Receipt: receipt})
-		options = []string{protocol.OpNudgeUndo, string(raw)}
-	}
-	return s.deskLog(tx, "chief", "nudge_pause", p.ID, text, text, options)
+	s.logf("nudge.pause", "action", action, "kind", p.Kind, "target", target, "until", until, "reason", p.Reason, "id", p.ID, "receipt", receipt)
+	return nil
 }
 func readNudge(q askDB, id string) (protocol.NudgePause, string, string, error) {
 	var p protocol.NudgePause

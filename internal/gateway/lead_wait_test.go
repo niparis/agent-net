@@ -12,44 +12,13 @@ import (
 // A member that waits on its own lead is in an ordinary wait inside its team.
 // The owner has nothing to do with it (decision 0126).
 
-// openWaitingAsks counts the waits that went to the chief, or to the log when
-// there is no chief: the owner has no Desk (decision 0196).
-func openWaitingAsks(logs *[]string) int {
-	n := 0
-	for _, line := range *logs {
-		if strings.HasPrefix(line, "desk.no_chief kind waiting ") || strings.HasPrefix(line, "desk.to_chief kind waiting ") {
-			n++
-		}
-	}
-	return n
-}
-
-// reportWait stores the wait of a session the way a session report does and runs
-// the ask sync that report runs. The wait started one debounce ago, so an
-// owner ask is due at once.
-func reportWait(t *testing.T, s *Store, session, text string, now time.Time) {
-	t.Helper()
-	w := fmt.Sprintf(`{"kind":"input","text":%q,"since":%d}`, text, now.Add(-waitingAskDebounce).Unix())
-	if _, err := s.db.Exec(`UPDATE sessions SET waiting=? WHERE id=?`, w, session); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.syncWaitingAsk(s.db, session, w); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestMemberWaitingOnItsLeadMakesNoOwnerAskAndOneMessageToTheLead(t *testing.T) {
+func TestMemberWaitingOnItsLeadSendsOneMessageToTheLead(t *testing.T) {
 	for _, asksTo := range []string{protocol.AsksToLead, protocol.AsksToOwner} {
 		t.Run("team asks "+asksTo, func(t *testing.T) {
 			s, c, member, lead := leadTeamRig(t)
-			logs := captureLog(s)
 			teamWrite(t, s, protocol.TeamWrite{Action: "asks_to", ID: "forge", AsksTo: asksTo})
 			const text = "other confirming the schema change"
 			announce(t, s, member, protocol.ProfileAnnounce{Task: "T2b worker running", Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: text}})
-			reportWait(t, s, member, text, c.t)
-			if n := openWaitingAsks(logs); n != 0 {
-				t.Fatalf("a wait on the lead made %d owner asks", n)
-			}
 			got := blockedNotices(t, s)
 			if len(got) != 1 || got[0].To != lead || got[0].Type != protocol.TypeNotification || !strings.Contains(got[0].Body, text) {
 				t.Fatalf("messages to the lead = %+v", got)
@@ -57,17 +26,15 @@ func TestMemberWaitingOnItsLeadMakesNoOwnerAskAndOneMessageToTheLead(t *testing.
 			// The same wait again sends nothing more.
 			c.advance(time.Minute)
 			announce(t, s, member, protocol.ProfileAnnounce{Task: "T2b worker running", Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: text}})
-			reportWait(t, s, member, text, c.t)
-			if got := blockedNotices(t, s); len(got) != 1 || openWaitingAsks(logs) != 0 {
-				t.Fatalf("a repeat wait: %d messages, %d asks", len(got), openWaitingAsks(logs))
+			if got := blockedNotices(t, s); len(got) != 1 {
+				t.Fatalf("a repeat wait: %d messages", len(got))
 			}
 		})
 	}
 }
 
-func TestMemberWaitingOnItsRepoLeadMakesNoOwnerAsk(t *testing.T) {
+func TestMemberWaitingOnItsRepoLeadSendsNoticeToRepoLead(t *testing.T) {
 	s := teamStore(t)
-	logs := captureLog(s)
 	var member, lead, leadAgent string
 	if err := s.db.QueryRow(`SELECT id FROM sessions WHERE repo_id='demo'`).Scan(&member); err != nil {
 		t.Fatal(err)
@@ -80,86 +47,8 @@ func TestMemberWaitingOnItsRepoLeadMakesNoOwnerAsk(t *testing.T) {
 	}
 	const text = "other confirming the plan"
 	announce(t, s, member, protocol.ProfileAnnounce{Task: "T2b", Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: text}})
-	reportWait(t, s, member, text, s.now())
-	if n := openWaitingAsks(logs); n != 0 {
-		t.Fatalf("a wait on the repo lead made %d owner asks", n)
-	}
 	if got := blockedNotices(t, s); len(got) != 1 || got[0].To != lead {
 		t.Fatalf("messages to the repo lead = %+v", got)
-	}
-}
-
-// Waits that name the owner, or nobody, keep the path they had.
-func TestMemberWaitThatNamesTheOwnerOrNobodyStillMakesAnAsk(t *testing.T) {
-	for _, text := range []string{"the owner choosing the database", "which database?", "other and the owner agreeing on the plan"} {
-		t.Run(text, func(t *testing.T) {
-			s, c, member, _ := leadTeamRig(t)
-			logs := captureLog(s)
-			reportWait(t, s, member, text, c.t)
-			if n := openWaitingAsks(logs); n != 1 {
-				t.Fatalf("owner asks = %d, want 1", n)
-			}
-		})
-	}
-}
-
-// A reply to a message of agent-net about an ask answers the ask. Before,
-// agent_message_reply failed with: unknown recipient session "agent-net".
-func TestReplyToAnAgentNetAskMessageClosesTheAsk(t *testing.T) {
-	s, _, chief, asker, node := chiefRig(t)
-	other, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "codex", NativeID: "nc", Name: "carol"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	send := func(kind, text string) (ask string, msg protocol.Message) {
-		t.Helper()
-		ask = chiefAskKind(t, s, asker, kind, text)
-		_, msg, err := s.SortAsk(node, protocol.AskSortRequest{SessionID: chief, AskSortArgs: protocol.AskSortArgs{Ask: ask, Result: protocol.AskSortSend, To: other, Reason: "carol runs it"}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if msg.From != "agent-net" || msg.To != other {
-			t.Fatalf("sent message = %+v", msg)
-		}
-		return ask, msg
-	}
-
-	// A body answers the ask: it closes with the reply as the reason.
-	ask, msg := send("question", "Who owns the cache?")
-	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: other, Recipient: "agent-net", ParentID: msg.ID, Body: "Carol owns it; use the shared one"}); err != nil {
-		t.Fatalf("reply to agent-net: %v", err)
-	}
-	status, answer, _ := askRow(t, s, `id=?`, ask)
-	if status != "closed" || !strings.Contains(answer, "Carol owns it; use the shared one") {
-		t.Fatalf("ask after a reply: %q %q", status, answer)
-	}
-
-	// An ack closes it too.
-	ask, msg = send("feature_idea", "Add a cache?")
-	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: other, Recipient: "agent-net", ParentID: msg.ID, Ack: true}); err != nil {
-		t.Fatalf("ack to agent-net: %v", err)
-	}
-	if status, _, _ := askRow(t, s, `id=?`, ask); status != "closed" {
-		t.Fatalf("ask after an ack: %q", status)
-	}
-
-	// Only the session the message went to may answer it.
-	_, msg = send("approval", "Merge PR 9?")
-	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: asker, Recipient: "agent-net", ParentID: msg.ID, Body: "I say yes"}); err == nil {
-		t.Fatal("a session that did not get the message answered it")
-	}
-
-	// A decision only the owner can make stays open, with a clear error.
-	ask, msg = send("approval", "Pay for the new model?")
-	if _, err := s.db.Exec(`UPDATE inbox_items SET route_fixed=1 WHERE id=?`, ask); err != nil {
-		t.Fatal(err)
-	}
-	_, _, err = s.StoreMessage(protocol.MsgSend{Sender: other, Recipient: "agent-net", ParentID: msg.ID, Body: "yes"})
-	if err == nil || !strings.Contains(err.Error(), "only the owner") {
-		t.Fatalf("reply to an owner-only ask: %v", err)
-	}
-	if status, _, _ := askRow(t, s, `id=?`, ask); status != "open" {
-		t.Fatalf("an owner-only ask changed to %q", status)
 	}
 }
 
@@ -231,8 +120,7 @@ func TestAnnounceNoticeFollowsTheWaitTextNotTheTask(t *testing.T) {
 // hyphen joins a word, so a wait on the repo is not a wait on the lead. Dots,
 // commas, colons and spaces still end a word.
 func TestWaitNamesLeadOnlyAsAWholeHyphenatedName(t *testing.T) {
-	s, c, member, lead := leadTeamRig(t)
-	logs := captureLog(s)
+	s, _, member, lead := leadTeamRig(t)
 	if _, err := s.db.Exec(`UPDATE agents SET display_name='tenebrae' WHERE id=(SELECT agent_id FROM sessions WHERE id=?)`, lead); err != nil {
 		t.Fatal(err)
 	}
@@ -250,9 +138,5 @@ func TestWaitNamesLeadOnlyAsAWholeHyphenatedName(t *testing.T) {
 		if err != nil || got != want {
 			t.Errorf("waitNamesLead(%q) = %v %v, want %v", text, got, err, want)
 		}
-	}
-	reportWait(t, s, member, "tenebrae-strats deploy of X", c.t)
-	if n := openWaitingAsks(logs); n != 1 {
-		t.Fatalf("a wait on a repo with the lead's prefix closed the owner ask: %d asks", n)
 	}
 }

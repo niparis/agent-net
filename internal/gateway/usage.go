@@ -277,7 +277,6 @@ func (g *Gateway) handleUsage(nc *nodeConn, typ string, raw []byte) (data any, o
 		}
 		rep = cleanUsage(rep)
 		g.usage.set(nc.id, g.store.now(), rep)
-		g.quotaFeed(rep.Quotas)
 		return nil, true, nil
 
 	case "query.usage":
@@ -326,11 +325,6 @@ func (s *Store) SessionCounts(recent time.Duration) (protocol.SessionCounts, err
 	if err == nil {
 		err = s.db.QueryRow(`SELECT COUNT(*) FROM sessions s LEFT JOIN nodes n ON n.id=s.node_id
    WHERE s.archived_at=0 AND s.harness <> 'owner' AND (n.id IS NOT NULL OR s.harness='bot') AND NOT (` + piChildSQL + `)`).Scan(&c.ConsoleSessions)
-	}
-	if err == nil {
-		err = s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE status='open'
-   AND (next_who='' OR next_who='owner')
-   AND kind IN ('question','approval','step','waiting','held','rejection','escalation','proposal','draft','learned','check','session_stall','sign_in')`).Scan(&c.ConsoleAsks)
 	}
 	s.pendingMu.Lock()
 	c.PendingStalls = s.pendingStalls

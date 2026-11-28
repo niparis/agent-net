@@ -380,8 +380,6 @@ Tools are listed by the roles that may call them. Actions are the values of the 
 | tool | roles | what it does | actions |
 |---|---|---|---|
 | `agent_announce` | agent | REQUIRED: set your current task (one short line) and expertise; fill expertise once. Read AGENTS.md. Call it at the start of every session and whenever your task changes. | - |
-| `agent_ask_intake` | agent | Chief of staff only: list sessions whose last turn may wait for the owner, read that turn with the preceding input (labelled owner, peer, agent_net or unknown) and secrets masked, or import it as one owner ask. Never answers, sends to, or changes a session. | `list`, `read`, `import` |
-| `agent_ask_sort` | agent | Chief of staff: sort waiting asks (close, merge, send, owner), withdraw an ask the asker took back or a newer ask replaces, undo its own newest sort, list asks and sort counts, or read an ask with detail full. When a close or send rests on something that has not happened yet, set follow_up_at: you have no timer. Close an owner-held ask with owner_words_message (his message or the CTO's on his word). Never answer for the owner. | - |
 | `agent_bar_edit` | agent | Add, edit or remove the project rules that workers and reviewers check diffs against. Lead of the project, owner or CTO only. | - |
 | `agent_change_submit` | agent | Submit work done outside a worker as a change, so agent-net moves it through the project's delivery steps. A worker's complete hand-back submits its change by itself. A new head commit on the same change makes a new revision. | - |
 | `agent_changes_find` | agent, worker | Find delivery changes: their revision, the step each is in, who owns it and the evidence so far. Give change to read one change in full with its revisions and evidence. | - |
@@ -408,7 +406,6 @@ Tools are listed by the roles that may call them. Actions are the values of the 
 | `agent_nudge_pauses_find` | agent | Chief of staff only: list nudge pauses, including when and why ended pauses ended. | - |
 | `agent_nudge_resume` | agent | Chief of staff only: end a nudge pause by id. Logs an owner-undoable resume. No backlog is sent. | - |
 | `agent_nudge_stats` | agent | Read the automatic nudge firing log: fires, followed and useful rate per kind by agent and by team, over the last 24 hours by default. A nudge counts as followed when a tool call, announce, step evidence or a message that is not an ack comes from its recipient within 30 minutes. | - |
-| `agent_owner_brief` | agent | Chief of staff only: deliver one informational daily brief for the owner. Give body (at most 15 lines) and the owner-local date as YYYY-MM-DD; the same date replaces it. Call with no body for the schedule. A brief never asks for an answer. | - |
 | `agent_owner_judgment_record` | agent, cto | Chief of staff and CTO only: record, in the same turn, a decision the owner made in your chat. area and action make it a standing rule. | - |
 | `agent_owner_judgments_find` | agent, worker, cto | Search the owner's past decisions, standing orders, rules, answers and corrections by text, id or ids. Ranked for a query, else newest first. marks: true returns only the owner's marks with their asks; offset pages. Agent notes show only with kind feedback, fact or reference (see agent_notes_find to read yours). | - |
 | `agent_project_add` | agent | Register project folders on this machine, or scan a folder for repositories (use dry_run first). Only when the owner asked. | - |
@@ -428,8 +425,7 @@ Tools are listed by the roles that may call them. Actions are the values of the 
 | `agent_worker_start_override` | agent | The exceptional worker route: start a worker with a harness, model, provider, effort, family or machine you choose. Full freedom, but always needs your owner's approval: a matching owner_words quote lets it start at once; otherwise the start is refused: ask the chief of staff, then start again with owner_words quoting what he typed. Prefer agent_worker_start so the picker chooses. problem and done required; evidence, hypothesis, scope optional; task: extra notes. | - |
 | `agent_worker_stop` | agent | Stop a worker you started, or cancel a queued start. Its worktree is kept. | - |
 | `agent_workers_find` | agent, worker, cto | Find workers with their caller, model, difficulty, state and run time. detail full adds the start time, the struggle counts and the recorded cause of the latest run's failure or rework. Defaults to running workers you started. | - |
-| `answer` | cto | Apply the owner's answer to a held request, a CTO intake item or a contested outcome (let stand or overrule). | `a`, `A`, `r`, `R`, `let_stand`, `overrule` |
-| `cto_intake_find` | cto | Open system-health alerts of the CTO intake queue, newest first. Read it at the start of each owner conversation. | - |
+| `answer` | cto | Apply the owner's answer to a held request or a contested outcome (let stand or overrule). | `a`, `A`, `r`, `R`, `let_stand`, `overrule` |
 | `cto_new` | cto | Start a new CTO conversation. The timeline and proposals stay. | - |
 | `cto_placement_memory` | cto | Read or save placement answers explicitly given by the owner. | `read`, `save` |
 | `cto_proposals_find` | cto | Find proposals, or all pending owner items, each with its answer call. | - |

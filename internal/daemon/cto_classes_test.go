@@ -11,7 +11,7 @@ import (
 
 func ctoClassFixture(name string) json.RawMessage {
 	if name == "cto_op" {
-		return json.RawMessage(`{"method":"inbox_list","args":{}}`)
+		return json.RawMessage(`{"method":"hidden_get","args":{}}`)
 	}
 	field := ctoActionField[name]
 	if field == "" {

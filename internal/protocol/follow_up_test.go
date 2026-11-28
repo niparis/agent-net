@@ -24,23 +24,3 @@ func TestParseFollowUp(t *testing.T) {
 		}
 	}
 }
-
-func TestAskSortFollowUpOnlyOnSendAndClose(t *testing.T) {
-	ok := AskSortArgs{Ask: "i1", Result: AskSortClose, Reason: "r", FollowUpAt: "45m"}
-	if err := ok.Validate(); err != nil {
-		t.Fatalf("close with follow_up_at: %v", err)
-	}
-	ok = AskSortArgs{Ask: "i1", Result: AskSortSend, To: "s1", Reason: "r", FollowUpAt: "45m"}
-	if err := ok.Validate(); err != nil {
-		t.Fatalf("send with follow_up_at: %v", err)
-	}
-	for _, bad := range []AskSortArgs{
-		{Ask: "i1", Result: AskSortMerge, Into: "i2", Reason: "r", FollowUpAt: "45m"},
-		{Ask: "i1", Result: AskSortClose, Reason: "r", FollowUpAt: "soon"},
-		{Ask: "i1", Result: AskSortClose, Reason: "r", Change: "ch_1"},
-	} {
-		if err := bad.Validate(); err == nil {
-			t.Errorf("accepted %+v", bad)
-		}
-	}
-}

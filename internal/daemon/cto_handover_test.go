@@ -44,25 +44,6 @@ func handoverNotes(t *testing.T, d *Daemon) map[string]string {
 	return out
 }
 
-// deskLines reads the owner's Desk log, newest first. The CTO's own notices
-// are lines of this log (decision 0090), not open asks.
-func deskLines(t *testing.T, d *Daemon) []string {
-	t.Helper()
-	raw, err := d.call(context.Background(), "desk.log", protocol.DeskLogQuery{Limit: 50})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var res protocol.DeskLogResult
-	if err := json.Unmarshal(raw, &res); err != nil {
-		t.Fatal(err)
-	}
-	var out []string
-	for _, e := range res.Entries {
-		out = append(out, e.Text)
-	}
-	return out
-}
-
 func switchCTOHarness(t *testing.T, cli *localClient, harness string) {
 	t.Helper()
 	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &harness})
@@ -93,7 +74,6 @@ func testCTOHandoverMechanicalAloneWhenOldHarnessIsDown(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Handover from opencode to claude",
-		"Open asks the CTO raised (0):",
 		"Workers the CTO started that are not done (0):",
 		"Changes the CTO started that are not done (0):",
 		"Harness-local work (opencode): no OpenCode server running",
@@ -137,10 +117,8 @@ func testCTOHandoverBothLayersWhenOldHarnessAnswers(t *testing.T) {
 	if strings.Contains(body, "Harness-local work (opencode): busy turn") {
 		t.Fatalf("an idle OpenCode turn was reported busy:\n%s", body)
 	}
-	for _, line := range deskLines(t, n.d) {
-		if strings.Contains(line, "was running when you switched") {
-			t.Fatalf("an owner switch on an idle turn raised a notice: %q", line)
-		}
+	if strings.Contains(n.logs.String(), "was running when switched") {
+		t.Fatalf("an owner switch on an idle turn logged a busy notice:\n%s", n.logs.String())
 	}
 	start := n.d.ctoStartBlock(context.Background())
 	if !strings.Contains(start, "Latest handover note: "+name) {
@@ -191,14 +169,8 @@ func testCTOHandoverOwnerNoticeBeforeStoppingBusyTurn(t *testing.T) {
 	}
 	switchCTOHarness(t, cli, "claude")
 
-	var notices int
-	for _, line := range deskLines(t, n.d) {
-		if strings.Contains(line, "was running when you switched to claude") {
-			notices++
-		}
-	}
-	if notices != 1 {
-		t.Fatalf("want one notice about the running turn, got %d", notices)
+	if !strings.Contains(n.logs.String(), "was running when switched to claude") {
+		t.Fatalf("want log about the running turn:\n%s", n.logs.String())
 	}
 	body := handoverNotes(t, n.d)[n.d.latestHandoverNote()]
 	if !strings.Contains(body, "Harness-local work (opencode): busy turn in OpenCode") {

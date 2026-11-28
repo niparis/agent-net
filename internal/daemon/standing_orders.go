@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -96,10 +95,8 @@ func (d *Daemon) ctoStandingOrders(ctx context.Context, raw json.RawMessage) (an
 	default:
 		return res, nil
 	}
-	undoRaw, _ := json.Marshal(undo)
-	if _, err := d.call(ctx, "inbox.create", map[string]any{"session_id": d.ctoSessionID(), "kind": "check", "text": text, "recommendation": diff, "options": []string{protocol.OpStandingOrders, string(undoRaw)}}); err != nil {
-		return res, fmt.Errorf("%s; could not add Inbox notice: %w", text, err)
-	}
+	d.Logf("cto.action %s (%s)", text, diff)
+	_ = undo
 	return res, nil
 }
 

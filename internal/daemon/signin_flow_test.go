@@ -140,15 +140,15 @@ func runSignInListener(t *testing.T, plan protocol.EnterPlan, ready string) {
 	}
 }
 
+func ctoOwnerOpFor(n *node, method string, args map[string]any) (any, error) {
+	raw, _ := json.Marshal(map[string]any{"area": "operator", "method": method, "arguments": args})
+	return n.d.runCTOTool(context.Background(), "settings_change", raw)
+}
+
 func TestSignInLocalListenerUsesQuotaCredential(t *testing.T) {
 	root, ready := fakeSignInSetup(t)
-	d := &Daemon{cfg: Config{NodeID: "local", testGatewayCall: func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
-		if typ == "query.sign_in" {
-			return json.RawMessage(`{"provider":"alibaba","node_id":"local"}`), true, nil
-		}
-		return nil, false, nil
-	}}}
-	plan, err := d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "i_test"})
+	d := &Daemon{cfg: Config{NodeID: "local"}}
+	plan, err := d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "i_test", Provider: "alibaba", Machine: "local"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,17 +183,14 @@ func TestSignInRemoteRelaysFreshTokenThroughStdin(t *testing.T) {
 	targetEnv := append(os.Environ(), "BAILIAN_CONFIG_DIR="+targetDir)
 	var transfer protocol.SignInTransfer
 	d := &Daemon{cfg: Config{NodeID: "local", testGatewayCall: func(ctx context.Context, typ string, p any) (json.RawMessage, bool, error) {
-		switch typ {
-		case "query.sign_in":
-			return json.RawMessage(`{"provider":"alibaba","node_id":"remote"}`), true, nil
-		case "query.sign_in_transfer":
+		if typ == "query.sign_in_transfer" {
 			transfer = p.(protocol.SignInTransfer)
 			err := importSignInWithEnv(ctx, transfer.Token, targetEnv)
 			return json.RawMessage(`{}`), true, err
 		}
 		return nil, false, nil
 	}}}
-	plan, err := d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "i_test"})
+	plan, err := d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "i_test", Provider: "alibaba", Machine: "remote"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,15 +228,12 @@ func TestSignInCancelledRemoteAttemptDoesNotTransfer(t *testing.T) {
 	_, _ = fakeSignInSetup(t)
 	calls := 0
 	d := &Daemon{cfg: Config{NodeID: "local", testGatewayCall: func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
-		if typ == "query.sign_in" {
-			return json.RawMessage(`{"provider":"alibaba","node_id":"remote"}`), true, nil
-		}
 		if typ == "query.sign_in_transfer" {
 			calls++
 		}
 		return nil, false, nil
 	}}}
-	plan, err := d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "i_test"})
+	plan, err := d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "i_test", Provider: "alibaba", Machine: "remote"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -323,15 +317,12 @@ func TestSignInUnfinishedRemoteAttemptDoesNotReuseCredentials(t *testing.T) {
 	_, _ = fakeSignInSetup(t)
 	calls := 0
 	d := &Daemon{cfg: Config{NodeID: "local", testGatewayCall: func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
-		if typ == "query.sign_in" {
-			return json.RawMessage(`{"provider":"alibaba","node_id":"remote"}`), true, nil
-		}
 		if typ == "query.sign_in_transfer" {
 			calls++
 		}
 		return nil, false, nil
 	}}}
-	plan, err := d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "i_test"})
+	plan, err := d.signInOpen(context.Background(), protocol.SignInOpenRequest{AskID: "i_test", Provider: "alibaba", Machine: "remote"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -15,8 +15,7 @@ import (
 // This independent allowlist pins every data view to its ordinary tool. Static
 // guide text and the CTO's own timeline are the only non-agent sources.
 var wantCTOReads = map[string]string{
-	"cto_proposals_find":  "own proposals,asks.list",
-	"cto_intake_find":     protocol.FrameIntakeFind,
+	"cto_proposals_find":  "own proposals,charter.drafts",
 	"agent_sessions_find": "sessions_find",
 	"agent_machines_find": "machines_find", "agent_machine_log": "machine_log",
 	"agent_projects_find": "projects_find", "agent_workers_find": protocol.MethodWorkersFind,
@@ -72,9 +71,6 @@ func TestCTOReadCanary(t *testing.T) {
 		t.Fatalf("text fixture missing: %s", text)
 	}
 	st := g.gw.Store()
-	if _, err := st.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: id, Text: "PRIVATE_INBOX_ITEM_CANARY"}); err != nil {
-		t.Fatal(err)
-	}
 	settings, err := st.CTOSettings()
 	if err != nil {
 		t.Fatal(err)

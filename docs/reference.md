@@ -534,18 +534,16 @@ names are `overview`, `sessions`, `session`, `proposals`, `feed`, `messages`,
 | `agent_settings_read`, `agent_worker_profiles_find` | Public settings values and history, and public worker profiles |
 | `projects_layout` | Read-only project layout of online machines (roots, groups, remotes, newest commits). Cached for 10 minutes. |
 | `cto_ops_list` | The rare operations, grouped, with their purpose, example and owner gate. Filter by text. |
-| `cto_intake_find` | The CTO intake queue (decision 0152): the open system-health entries, newest first, at most `limit` (default and maximum 200), with `total`. Each entry has `kind`, `subject`, `severity` (1 woke the CTO, 2 alert, 3 digest line), `text`, `detail`, `first_seen`, `last_seen`, `count`, `alert` (the chief's CTO alert item), `stuck` (the chief's stuck-work item for a quota entry) and `lead` (the lead that owns the cause). The CTO reads it at the start of each owner conversation. Gateway frame `cto.intake`. |
-| `cto_proposals_find` | The CTO's own proposals; `id` selects one. `kind` filters the list: `proposal` is the default, `all` lists every pending owner item, and `draft` (the pending charter drafts, one row for each field with `level`, `scope`, `attr`, `value`, `source` and `drafted_by`, and the asks about them; an `id` such as `cd_54` or `54` reads one draft in any status), `learned` (pending major learned proposals), `held`, `inbox`, `approval`, `question`, `escalation` and `rejection` narrow it. Each row has `kind`, `from`, `summary`, `options` and `answer`, the exact call that resolves it. |
+| `cto_proposals_find` | The CTO's own proposals; `id` selects one. `kind` filters the list: `proposal` is the default, `all` lists open CTO proposals and pending charter drafts, and `draft` lists pending charter drafts (one row per field with `level`, `scope`, `attr`, `value`, `source` and `drafted_by`; an `id` such as `cd_54` or `54` reads one draft in any status). Each row has `kind`, `from`, `summary`, `options` and `answer`, the exact call that resolves it. |
 | the CTO's own timeline | `session_text` on the CTO session |
 
 The parity and canary tests cover ordinary agent-shaped views. Those message
 reads remain limited to the CTO's own conversations and omit waiting-question
 contents. Owner operation reads run through `cto_op` and use the owner handlers,
-including protected-provider settings, stored asks and session text.
+including protected-provider settings, pending charter drafts and session text.
 Ordinary agents do not gain access to these owner handlers.
-The items that wait for the owner are readable through
-`cto_proposals_find` with `kind: "all"`, so the CTO can answer them when the
-owner does not want to act by hand.
+Pending CTO proposals and charter drafts are readable through
+`cto_proposals_find` with `kind: "all"`.
 
 The CTO acts at once on changes. Node removal, agent tombstone, repo archive,
 machine removal and machine token rotation remain proposals. The CTO has one
@@ -553,17 +551,17 @@ action tool per area:
 
 | CTO change tool | Actions or area |
 |---|---|
-| `agent_message_send` | one message, or a group with `to_set`; `as_owner: true` sends on the owner's instructions; `urgent: true` goes ahead of older waiting messages, and reaches a busy session at its next tool call (Codex: in its running turn) instead of at the end of its turn (decision [0180](decisions/0180-urgent-messages-reach-a-busy-session.md)); `follow_up_at` (an RFC 3339 time or a duration such as `45m`, one recipient only) sets a follow-up, see [Follow-ups](#follow-ups) |
+| `agent_message_send` | one message, or a group with `to_set`; `as_owner: true` sends on the owner's instructions; `urgent: true` goes ahead of older waiting messages, and reaches a busy session at its next tool call (Codex: in its running turn) instead of at the end of its turn (decision [0180](decisions/0180-urgent-messages-reach-a-busy-session.md)) |
 | `agent_message_reply` | a reply with an outcome, or `ack: true` to close a request that needs no answer; `as_owner: true` replies on the owner's instructions |
 | `agent_message_withdraw` | one undelivered message, or with `older_than: true` every undelivered message to that recipient that is this old or older; the owner and the CTO may withdraw another session's message |
 | `cto_ui_show` | `tab` with optional `select`, `filter` and `why`, or `notice` with a short text |
 | `proposal_ask` | `id`: reopen the approval dialog for an open proposal |
 | `graph_change` | `action: charter_set`, `node_add`, `edge_set`, `edge_remove`, `settings_set`, `repo_create`, `agent_create`, `team_create`, `team_rename`, `team_purpose`, `team_charter` (including `attr: mode` and `attr: held_back`), `team_archive`, `team_member_add`, `team_member_remove` or `undo`. Lifecycle removal (`node_remove`, `agent_tombstone`, `repo_archive`) is in `cto_op` and needs owner approval. |
-| `sessions_archive` | Archive offline sessions by `ids`, `name` or `folder` glob, `project` (empty string means no project), `harness`, `created_before`, or `ended_workers`. Reversible through Inbox undo. |
+| `sessions_archive` | Archive offline sessions by `ids`, `name` or `folder` glob, `project` (empty string means no project), `harness`, `created_before`, or `ended_workers`. Reversible with `sessions_archive` `restore`. |
 | `session_change` | `action: rename`, `trust`, `mcp_servers`, `policy`, `session_start`, `merger_start`, `merger_stop`, `stop`, `resume` or `restart`. `stop`, `resume` and `restart` take `session_id`; see [CTO session stop, resume and restart](#cto-session-stop-resume-and-restart). `trust` takes either `session_id` with `on` (peer trust) or one of `project` or `path`, with optional `node_id`, to trust a folder for Claude Code. `mcp_servers` takes one of `project` or `path`, optional `node_id`, and `mcp_servers: approve` or `disable`, to record the choice for the `.mcp.json` servers Claude Code would load there. `session_start` takes `trust: true` to trust the folder, approve the servers of the folder's own `.mcp.json`, and start in one step, and `mcp_servers` to record that choice first (an explicit `mcp_servers` still wins). See [CTO folder trust](#cto-folder-trust) and [Claude MCP server approval](#claude-mcp-server-approval) |
 | `cto_standing_orders` | `action: save` (with `text`), `read` (with `order_id`), `list` or `remove` (with `order_id`). See [standing orders](#standing-orders) |
 | `worker_change` | `action: start` or `stop` |
-| `answer` | `kind: held`, `inbox` or `outcome` |
+| `answer` | `kind: held` or `outcome` |
 | `mcp_change` | `action: add`, `remove`, `test`, `enable` or `app_ask`. Connected app actions are in `cto_op`. |
 | `mcp_call` | one call on a shared MCP server |
 | `settings_change` | `area: values_write`, `values_undo`, `worker_profile_add`, `worker_profile_remove`, `worker_providers`, `protected_providers`, `score`, `integrations`, `notifications`, `cto`, `playbook`, `machine_name`, `invite` or `onboarding`. Machine removal, token rotation, `process_stop` and the owner operations are in `cto_op`. See [CTO process stop](#cto-process-stop) |
@@ -586,17 +584,16 @@ including when the requested value was already set. An optional `reason` is
 included in the notice. Ordinary agent and worker tools cannot run these actions.
 OAuth consent and phone pairing use `mcp_change` with
 `{"action":"app_ask","code":"1234","kind":"bot","name":"Example"}`.
-For a phone, omit `kind` to retain its owner-app pairing kind. The owner sees
-the exact code and requested permissions. The owner presses `y` to approve
-through the existing approval handler, or `n` to refuse. Approval, refusal,
-expiry or completion elsewhere closes the ask automatically. Repeating the
-same request reuses its ask; changing the requested permissions replaces it.
-The CTO cannot approve its own consent ask.
+For a phone, omit `kind` to retain its owner-app pairing kind. Pending consents
+are listed and decided in TUI Settings (`apps.pending`, `apps.approve`,
+`apps.refuse`), or approved directly by `app_ask` when called with verified
+`owner_words` (browser sign-in stays the owner's step). The CTO cannot call
+`apps.approve` directly.
 
-If `public_on` needs a Tailscale login or Funnel consent, it sends one request to the chief
-with the HTTPS link. Pressing `y` opens that link in the owner's browser. The
-ask stays open until access is enabled; status checks and the gateway retry
-automatically complete the switch and close it. `public_off` withdraws it.
+If `public_on` needs a Tailscale login or Funnel consent, the gateway stores the
+HTTPS link in `gateway_state` (`apps_public_consent`) and sends one message to
+the chief via `sendToChief`. Status checks and the gateway tick retry the switch
+until access is enabled and then clear the key; `public_off` clears it too.
 
 The remaining owner operations use `cto_op`:
 
@@ -613,7 +610,7 @@ no-op. This is not an arbitrary RPC passthrough. The available families are:
 
 | Owner operation family | CTO operator methods |
 |---|---|
-| Owner data | `info`, `nodes`, `list`, `projects`, `events`, `message_status`, `workers`, `worker_log`, `sessions_archived`, `project_display_get`, `session_start_get`, `apps.pending`, `inbox_list`, `asks_list`, `desk_log`, `outcome_inbox`, `held_list`, `usage`, `usage_top`, `counts`, `session_text`, `conversations`, `conversation_messages`, `graph_view`, `graph_talk`, `graph_get`, `charter_history`, `edge_history`, `node_settings_get`, `cto_events`, `cto_graph_history`, `team_history`, `sign_in_list` |
+| Owner data | `info`, `nodes`, `list`, `projects`, `events`, `message_status`, `workers`, `worker_log`, `sessions_archived`, `project_display_get`, `session_start_get`, `apps.pending`, `outcome_inbox`, `held_list`, `usage`, `usage_top`, `counts`, `session_text`, `conversations`, `conversation_messages`, `graph_view`, `graph_talk`, `graph_get`, `charter_history`, `edge_history`, `node_settings_get`, `cto_events`, `cto_graph_history`, `team_history` |
 | Session controls | `session_pin`, `sessions_archive` (including `restore` and `dry_run`), `session_stop`, `session_resume`, `session_agent_list`, `session_agent_set`, `notes_copy`, `notes_uncopy`, `session_enter`, `cto_enter`, `cto_send`, `loop_resume` |
 | Owner preferences and worker selection | `hidden_get/set`, `onboarding_get/set`, `timezone_get/set`, `worker_floors_get/set/reset`, `difficulty_get/set`, `integrations_get`, `protected_providers_get`, `worker_providers_get`, `scores_get`, `scores_weekly`, `worker_rotation_get`, `difficulty_judge_pick`, `settings_owner_read`, `playbook_get` |
 | Teams, delivery and merger | `team_write`, `delivery_owner_set`, `delivery_owner_answer`, `merger_get`, `merger_set`, `merger_restore`, `edge_set`, `changes_owner_find`, `changes_owner_report`, `worker_defect`, `drafts_list`, `draft_answer` |
@@ -653,13 +650,10 @@ records, so a rename does not change what a call is allowed to do.
 
 `answer` with `kind: held` takes `action` `a` (approve once), `A` (approve and
 set auto), `r` (decline once) or `R` (decline and set never). `kind: outcome`
-takes `action` `let_stand` or `overrule`. `kind: inbox` takes `id` and `answer`.
-A charter draft ask holds all the drafted fields of one node ([decision 0115](decisions/0115-one-draft-ask-per-node.md)); the answer `accept` or `reject` applies to every field, and `accept repo:purpose` (`<level>:<field>`) decides one. For a charter draft ask (`kind: draft`), the answer is `accept` or `reject`:
-accept writes the drafted value at its level exactly as the owner's TUI accept
-does, records the CTO as the decider, and closes the item. No message is
-sent, because a draft has no live asking session. For an approval, question,
-escalation or rejection, the answer becomes a message to the asking session;
-when that session is offline the answer is stored and delivered when it wakes.
+takes `action` `let_stand` or `overrule`. Pending charter drafts are read with
+`cto_proposals_find` (`kind: "draft"`) and decided with `cto_op` `draft_answer`
+(`draft_id` and `action`: `accept` or `reject`), which writes the drafted value
+at its level, records the decider, and returns a graph history ID for undo.
 `graph_change` with `action: edge_set` (also available as `cto_op` with `method: edge_set`)
 takes kind `depends` or `deploys` with request rule `normal`, `auto`, `ask` or `never`, or kind `reports_to` to set an agent parent in the org tree. Undo restores the old parent, or removes the edge if there was none.
 An edge has no mode.
@@ -689,7 +683,7 @@ The retained references include `projects`, `sessions`,
 `graph_edges`, `graph_history`, `setting_values`, `setting_history`,
 `delivery_changes`, `delivery_revisions`, `delivery_evidence`,
 `delivery_step_tasks`,
-`repos.merger_session`, `worker_starts`, `worker_runs`, `inbox_items`, `desk_log`,
+`repos.merger_session`, `worker_starts`, `worker_runs`,
 `playbook` and `repos.owner_agent_id`.
 No ownership, edge, delivery, charter or session is silently moved or deleted.
 
@@ -1296,8 +1290,7 @@ The message gets the state `withdrawn` and stays visible to its sender in
 `agent_message_status`. A message the harness already accepted (delivered,
 replied or acknowledged) cannot be withdrawn, and the error says so. A
 withdrawn original leaves its pending batch, and the batch text is rebuilt
-without it. Withdrawing a message also ends its pending `follow_up_at` (see
-[Follow-ups](#follow-ups)): no follow-up ask is raised for it later.
+without it.
 
 ## Delivery states
 
@@ -2024,7 +2017,6 @@ A worker is an agent session that agent-net starts for you, with nobody watching
 - **The exceptional route (the owner's approval).** The selection fields of a worker start are `harness`, `provider`, `model` (not `auto`), `effort`, `not_family` and `machine`. `agent_worker_start_override` is the only tool that takes them, and a start that sets one always needs the owner's approval ([security](security.md)):
   - **Owner's words.** The call has `owner_words`, a short quote of the owner's request, for example `"use a codex worker for this"` (8 to 300 characters). The daemon looks for it in what the owner typed in the last 3 hours, in this order: the caller's own session, every other session on the caller's machine (the CTO chat too), and then the gateway's store of what he typed on every machine. It ignores case and white space. The daemon gets the owner's prompts from the Claude Code policy hook, so this works for words typed in Claude Code sessions with the hook installed and in the Claude CTO chat. The daemon keeps them in memory only. After a daemon restart it reads them back from the transcripts of the Claude sessions on its machine (the user turns of the last 3 hours that Claude Code marks as typed by a human), with the same filters as the hook; nothing new is written to disk. Each machine sends the gateway what it keeps (`owner.words_keep`), and the gateway keeps it in memory only for 3 hours, at most 20 prompts of 16 KB per session. It never writes them to its database or a backup. A gateway restart forgets them, and each machine sends what it keeps again when it reconnects. On a match the start goes ahead at once with no stored ask. The result has `selection_path: owner_words`, and its `owner_line` and the worker notice begin with `owner_words found in what the owner typed in <session name> at about <time UTC>.`
   - **Refused without the owner's words** (decision [0196](decisions/0196-remove-the-desk.md)). Without a matching quote the start is refused with one line: `model choice needs the owner: ask the chief of staff, then start again with owner_words quoting what he typed`. No ask is filed and nothing is held. The gateway refuses an older daemon's `worker.override_ask` with the same line, so its caller sees it too.
-  - **Held start (before decision 0196).** A start held before that change is still answered. It answered `accepted` with `selection_path: held` and a `start_id`, and put one ask on the owner's route: "<caller> wants <fields> for '<worker title>': <reason>. Confirm, or let the picker choose." Its answers are `confirm` (the worker starts with the fields), `picker` (it starts without them) or `dismiss` (it ends). The owner answers it, or the CTO on his words. The chief and every other session are refused. Any other message, including free text that names confirm and picker together, is refused with those three answers and the ask stays open. In every case the caller gets a worker notice with `start: <start_id>` when the worker starts, or when it does not. The ask goes to the owner, not to the chief of staff or a lead, and typing in the asking session does not close it. The daemon keeps the held start in `daemon.db`, so an answer that arrives after a daemon restart still starts the worker. If the answer cannot reach its machine because that machine is offline, the caller gets a not-started notice that names the reason.
   - **Not checked.** A start with no selection field, a start from the owner's command line or the TUI, and the CTO's `worker_change` start. A continue that sets a selection field is checked like any other start.
   - **The guidance text** tells agents to use `agent_worker_start` and leave the choice to the picker, and to use `agent_worker_start_override` with `owner_words` only when the owner names a field. The old `reminder` in the start result and the setting `workers.named_model_reminder` are gone.
 - **Difficulty assessment.** Before the gateway chooses a model, the daemon asks a judge to score the brief. The judge's label is the level the picker uses. The judge has 90 seconds and cannot block a start. The gateway chooses the judge from registered worker profiles available on the daemon's machine and qualified for `normal`, using the worker picker's shared rotation, quota pace, track record, ratings and protected-provider rule. If the first judge fails or has not answered after 30 seconds, the gateway picks a backup from a different provider using the same rules. The first valid answer wins and the other judge stops. With no eligible candidate, the start uses `normal` and `model_note` includes `no judge: no registered normal-level model available on <machine>`. A brief over 4000 bytes is trimmed for the judge to its start, its Evidence section and its end. The judge reads the scores from the last JSON object in its reply that has them, so text or a code fence around the JSON is fine. A reply that does not parse is written to the daemon log (`judge.reply`, redacted, at most 16 KB). The stored judge identifies the scorer, and `judge_note` in its reasons records how the answer was reached, for example the first failure. A missing judge, a failure, a timeout or low confidence starts at `normal`. No separate `status: difficulty` notice is sent for a start that was assessed before it; the start's `model_note` begins with the result, for example `difficulty R2 S1 C1 U1 V1 K1 · D 1.20 · trivial -> opencode deepseek (bucket 1.00-1.33: deepseek 0.58 [0.29-0.86] n1, chosen (benchmark))`, or `difficulty: no assessment (the judge reply did not parse: ...); started at normal`. The result also has `owner_line`, one sentence for the caller to pass on to its user, for example `Tell your user: worker on gpt-6-luna:xhigh, difficulty simple (D 1.75; R2 S1 C2 U2 V2 K1).`; the guidance tells agents to say it. A continued worker has none. The Claude workers panel shows the same level and D on each worker row, for example `simple 1.75`. The gateway stores the scores and the label with the worker record, so the worker's detail shows the same line. The judge also runs for an explicit `model`, where the label is recorded but the model is not chosen. Queued starts are assessed once when they are requested and keep the label through the queue. A continue reuses the label of the run it continues unless the caller adds work to the brief; then the machine that ran the worker judges the changed brief once before the gateway picks, and the new run records that result. A resumed run is assessed in the background.
@@ -2032,7 +2024,7 @@ A worker is an agent session that agent-net starts for you, with nobody watching
   `agent_workers_find` with `detail: full` and `agent-net workers -json` include an `assessment` object when available. It has the six named scores (`reasoning`, `scope`, `coupling`, `uncertainty`, `verification`, `risk`), `d`, `label`, `rules_version`, `picker_label`, `bottleneck`, `confidence`, `judge_harness`, `judge_model`, `reasons`, and `error` on failure. It includes the run and session IDs, `started_at` in Unix nanoseconds and `assessed_at` in Unix seconds. The TUI worker detail shows the scores, label and picker label. The daemon queues completed assessments locally if the gateway is unreachable and retries them on reconnect. The gateway keeps one row per run, including failed assessments. A continued or resumed run gets a new row; the worker view shows the latest start's result once it arrives. With `detail: full`, `agent_workers_find` also returns `picker_note` (the full picker explanation), `not_family` (any family filters passed by the caller) and `quota_read`: plain lines that say which quota windows the worker's pick read (percent used, reset time, reading age), which window decided each candidate and which gate step held it back, and, once the run ended, its tokens by kind and its provider's windows before and after (decision [0191](decisions/0191-picks-keep-their-quota-read-and-the-owners-choice-holds.md)). The CTO's `agent_workers_find` returns the same `quota_read`. It is read once for the page shown. A start that waits in the machine's queue keeps the `picker_note` made when it was queued. The queue keeps the chosen model, and the picker does not run again when the start leaves the queue.
 
 - **Worker title.** `agent_worker_start` (and CTO `worker_start`) take an optional `title`: one line of at most 60 characters, with no newlines. The daemon and the gateway keep it with the worker (`WorkerInfo.Title`, and a `worker_title` column on the gateway's session record), and a continued worker keeps the old title unless the caller gives a new one. Every place that lists a worker shows it: `agent-net workers --json` (`title`), `agent_workers_find`, `agent_worker_start`, the sessions and messages tabs of the TUI, the worker notices, and the Claude Code band. Without a title, the first sentence of the brief that is not setup is used: sentences and lines starting with `Repo:`, `Base:`, `Branch:`, `Worktree:`, `Project:`, `Setup:`, `Environment:`, `Read AGENTS.md`, `Read docs/`, `Read the docs`, `Read README` or `Read CLAUDE.md` are skipped. The sentence is cut to 60 characters at a word boundary with an ellipsis; a brief that is only setup falls back to the worker's name. The plugin needs no rule of its own because the CLI fills the field.
-- **Brief checks.** (Decision [0145](decisions/0145-retire-brief-format-rules.md), which retired the six format rules of [0135](decisions/0135-worker-brief-checks.md).) The gateway checks one thing in a new worker brief before launch, after the difficulty judge's pass: overlap. A file the brief names that a running worker's brief or an open change's changed files in the same project also hold becomes one advisory `brief_flags` entry with check `overlap`, the file as its line, and `overlaps <worker or change> <id> on <file>` as its reason. It never refuses or holds a start. A brief that says `overlap ok: <reason>` silences the flag. A brief may name a file only to tell its worker to leave it alone: `do not touch X`, `not touch X`, `don't edit X`, `never change X`, `avoid editing X`, `only runs X` and `X is out of scope` do not count, in the new brief or in a running worker's brief. The phrase blanks the files after it up to the end of its clause (before `is out of scope`, back to the start of its clause), so a file the brief asks the worker to change still counts. Files named only in evidence do not count. `scripts/test-changed.sh` never counts unless the brief says to change it. Overlap counts only files tracked at the selected repository's base commit. In the new brief, a directory path expands to its tracked files, and `/internal/parser` means `internal/parser` when it exists there. A running worker's brief is read as the files it names: a directory there is not expanded to the files the base tree holds now. External paths such as `/tmp/agent-net-gocache` and `$HOME` paths do not count. Documentation under `docs/`, `AGENTS.md`, README files and `migrations.lock` are flags too, with a note that they are shared documentation. A change or worker the start itself targets is not an overlap: its id in the brief, an open change whose branch is the start's `base`, or the `continue` or `fixes` target. If the base tree cannot be read, overlap checks are skipped. The brief's format is not checked or scored: [brief-template.md](brief-template.md) is a template a caller may use, not a rule. There is no refusal count and no brief defect from a repeated attempt. **Brief lint.** The gateway also lints each new brief. The lint never refuses or holds a start. It returns `brief_flags` on the start result, one flag for each problem, with the check, the brief line and the reason. The checks are `path` (an absolute, `~` or `../` path outside the worker's own copy of the project), `commit` (a commit ID that does not resolve in the project repository; the machine checks up to 8 IDs with `git cat-file`), `contradiction` (`-race` with `no -race`, `merge to main` with `do not merge`, or `full test suite` with `changed tests only`), `sandbox` (a done check that needs a browser, a screenshot or Docker, when the worker runs in an OS sandbox) and `overlap`. The flags come back on the started, queued and accepted notices. A held start gets the text checks only, and its note lists them. The gateway writes one `worker.brief_lint` log line for each start, with the checks that flagged it. The code is in [internal/protocol/brief_lint.go](../internal/protocol/brief_lint.go).
+- **Brief checks.** (Decision [0145](decisions/0145-retire-brief-format-rules.md), which retired the six format rules of [0135](decisions/0135-worker-brief-checks.md).) The gateway checks one thing in a new worker brief before launch, after the difficulty judge's pass: overlap. A file the brief names that a running worker's brief or an open change's changed files in the same project also hold becomes one advisory `brief_flags` entry with check `overlap`, the file as its line, and `overlaps <worker or change> <id> on <file>` as its reason. It never refuses or holds a start. A brief that says `overlap ok: <reason>` silences the flag. A brief may name a file only to tell its worker to leave it alone: `do not touch X`, `not touch X`, `don't edit X`, `never change X`, `avoid editing X`, `only runs X` and `X is out of scope` do not count, in the new brief or in a running worker's brief. The phrase blanks the files after it up to the end of its clause (before `is out of scope`, back to the start of its clause), so a file the brief asks the worker to change still counts. Files named only in evidence do not count. `scripts/test-changed.sh` never counts unless the brief says to change it. Overlap counts only files tracked at the selected repository's base commit. In the new brief, a directory path expands to its tracked files, and `/internal/parser` means `internal/parser` when it exists there. A running worker's brief is read as the files it names: a directory there is not expanded to the files the base tree holds now. External paths such as `/tmp/agent-net-gocache` and `$HOME` paths do not count. Documentation under `docs/`, `AGENTS.md`, README files and `migrations.lock` are flags too, with a note that they are shared documentation. A change or worker the start itself targets is not an overlap: its id in the brief, an open change whose branch is the start's `base`, or the `continue` or `fixes` target. If the base tree cannot be read, overlap checks are skipped. The brief's format is not checked or scored: [brief-template.md](brief-template.md) is a template a caller may use, not a rule. There is no refusal count and no brief defect from a repeated attempt. **Brief lint.** The gateway also lints each new brief. The lint never refuses or holds a start. It returns `brief_flags` on the start result, one flag for each problem, with the check, the brief line and the reason. The checks are `path` (an absolute, `~` or `../` path outside the worker's own copy of the project), `commit` (a commit ID that does not resolve in the project repository; the machine checks up to 8 IDs with `git cat-file`), `contradiction` (`-race` with `no -race`, `merge to main` with `do not merge`, or `full test suite` with `changed tests only`), `sandbox` (a done check that needs a browser, a screenshot or Docker, when the worker runs in an OS sandbox) and `overlap`. The flags come back on the started, queued and accepted notices. The gateway writes one `worker.brief_lint` log line for each start, with the checks that flagged it. The code is in [internal/protocol/brief_lint.go](../internal/protocol/brief_lint.go).
 **Browser routing.** A start whose Done needs a browser (the words of the `sandbox` check, without Docker) is routed to a harness that can run one. On a macOS machine a Claude worker cannot: Claude Code's own worker sandbox denies a local listen and Chromium's startup. OpenCode, Codex and Pi run under agent-net's OS wrapper, where both work. On Linux a Claude worker can bind a local port (measured in a bubblewrap sandbox with a private network); Chromium was not measured there. The gateway keeps the harnesses that cannot run a browser out of an automatic pick, and the pick notice says `left out, cannot run a browser here: <harness> <model>`. If no candidate can run one, or the caller or the owner named the harness, the start goes ahead with the same choice and a `browser` flag in `brief_flags` says the browser checks must run after the hand-back. Nothing is refused or held. The fact table, with how each fact is known, is in [internal/protocol/browser_need.go](../internal/protocol/browser_need.go).
 - **Context and tokens.** Each worker carries `context_tokens` (what the model saw on its last step: input plus cache reads and cache writes), `context_limit` (the model's context window) and `tokens` (input plus output plus reasoning for the run, without cache reads). The daemon refreshes them on its worker tick while the worker runs, and with the final notice. OpenCode reads the newest assistant message and `limit.context` from `/api/model` on the worker's private server. Claude Code reads the last assistant usage in the transcript and takes the limit from a small table by model family (the 5 series, Opus 4.7 and later, Fable 5 and Mythos 5 have 1M; other Claude models have 200k). Codex reads `last` and `modelContextWindow` from `thread/tokenUsage/updated`. Pi reads the worker's JSONL session file under `~/.pi/agent/sessions` (or `PI_CODING_AGENT_SESSION_DIR`): the last assistant message gives the context and the entries give the run total. It takes the model's context window from `pi --list-models`, once per worker. Antigravity reads the usage of each `agent_response` step in its stream: the context is that step's input plus cache reads, and the run total grows with each step. It reports no context window, so its figures carry the token count alone. The figures are in `agent-net workers --json` (also with `--recent`), on the worker's TUI detail pane as `context 84k / 1M (8%)  tokens 345k` (or `context 10k` when no window is known), and on the Claude Code band after the run time as `ctx 8%` (the percentage is yellow at 70 percent and over, red at 90 percent and over; with no window the band shows `ctx 31k` in the default colour; a narrow pane drops it before the run time). The band has one row per worker: `● title  harness model  run time  ctx 17%` while it runs, with `✓ done`, `✗ failed`, `✗ stopped` or `✗ timed out` in place of the context column when it ends , and `◌` for a queued start. The title takes the remaining width and ends with an ellipsis when cut; the harness and model are never shortened. The daemon keeps the last context figures while the worker lives if a later read fails or a running turn has no usage yet. A later complete value replaces it, including a smaller value after compaction. A harness that has not reported a figure leaves it out.
 - **Defaults for a short request (W17).** "Use agent-net to implement X with a new OpenCode worker, use deepseek 4.1" is enough.
@@ -2445,192 +2437,124 @@ The Claude Code hook output, when there is a suggestion (one line of JSON on std
 
 ## Owner items go to the chief (decision 0196)
 
-The owner has no Desk screen. The gateway makes every item through one path, and an item for the owner (`next_who` empty, `owner` or `chief`) is never stored:
+The owner has no Desk screen, no ask store (`inbox_items`), no `ask_sorts`
+table, no `desk_log` table, no `follow_ups` table and no CTO intake queue.
+Each live flow reaches the owner through plain messages, native domain tables
+or the CTO's live read tools:
 
-- **An item an agent raised** (a question that ended a turn, a waiting session, a step that needs the owner, a held request, a rejection or escalation, a permission proposal, a sign-in, a CTO proposal) becomes one request to the chief of staff's session. It comes from the asking session when that is a session, so the chief's reply goes back to it; otherwise it is a notice from agent-net. It names the asker, the kind, the text, why only the owner can decide, the recommendation and the options. The gateway delivers it within a second.
-- **An item agent-net raised itself** (`from_kind` gateway or disk, every check and stall, brief checks, owed replies, loops, the tree check, follow-ups and charter drafts) is one log line, `event=desk.dropped`, with its kind, source and first line.
-- **No chief.** With no chief session, or when the chief itself asks, the item is one log line, `event=desk.no_chief`, without the text.
-- **Unchanged.** An item for another session (a team lead, a holder, a pipeline route) is stored as before. A Connected apps consent stays stored: the owner started it on his device.
+- **Direct escalations from agents.** An agent that needs the owner sends one
+  request to the chief of staff with `agent_message_send`, saying what it
+  needs, why only the owner can decide, and its recommendation. The chief
+  decides what reaches the owner in live chat.
+- **Held messages.** A message held by an `ask` graph rule stays in `messages`
+  with state `held` and sends one idempotent request to the chief naming
+  `held_answer` (`action` `a` to deliver or `r` to refuse).
+- **Delivery `@owner` steps and merge approvals.** A change waiting on an
+  `@owner` step or owner merge approval stays visible in `delivery_evidence`
+  and change status, and sends one idempotent request to the chief naming
+  `cto_op delivery_owner_answer` (which checks `owner_words`).
+- **Sign-in asks.** `sign_in.raise` sends one idempotent request to the chief
+  naming `cto_op sign_in_open`. The CTO opens the interactive login on the
+  target machine once it quotes the owner's words.
+- **Connected apps consents.** Device OAuth approvals stay stored in
+  `app_consents`. The owner approves or refuses them in TUI Settings
+  (`apps.pending`, `apps.approve`, `apps.refuse`) or through the CTO
+  (`mcp_change` action `app_ask` with verified `owner_words`). A Tailscale
+  public link consent sends one notice to the chief and stores the owner's
+  choice in `gateway_state`.
+- **Folder trust asks.** `RaiseTrustAsk` sends one idempotent request to the
+  chief.
+- **Caller escalations and rejections.** Replies with outcome `escalate` or
+  `reject` stay in `graph_outcomes` and are read and settled through
+  `query.outcome_inbox`, `outcome.resolve` and CTO `answer` (`kind` `outcome`).
+- **Operational failure notices.** High-signal gateway failures send one
+  idempotent notification from `agent-net` to the project's online repo or team
+  lead when one exists, otherwise to the chief of staff:
+  - *Session stalls:* when a busy session has no activity for the stall limit,
+    the gateway sets `sessions.stalled_since`, logs `session.stalled` and sends
+    one notice per activity baseline (`stall:<session>:<baseline>`).
+  - *Silent machines:* when a machine stays offline past 15 minutes without a
+    sleep report, the gateway marks it silent, logs `node.silent` and sends one
+    notice per outage (`machine_silent:<node>:<dropped>`).
+  - *Repeated worker struggles:* when 3 distinct workers end with struggle
+    signs on the same model within 6 hours, the gateway sends one notice per
+    model and 6-hour window (`struggle:<model>:<bucket>`).
+  - *Train-tip merge queue failures:* in `delivery.ci_mode` `train`, when 3
+    non-flake test runs in a row fail on a project's train tip (tracking
+    `repos.train_fails` and `repos.train_last_run`; a pass resets the count),
+    the gateway sends one notice per run (`merge_queue:<project>:<run>`).
+- **System health and CTO immediate actions.** The CTO reads live state
+  directly with `agent_machines_find`, `agent_workers_find`,
+  `agent_sessions_find`, `agent_changes_find` and `friction_find`. Immediate
+  CTO actions log `cto.action` via `d.Logf`; native history stays in
+  `graph_history`, `settings_history`, `daemon.db` (`cto_actions`) and tool
+  undo results.
+- **No chief.** When no chief session is set (or the sender is the chief), the
+  gateway writes one log line (`chief.no_chief`) with the sender, reference and
+  first line.
 
-Agents that need the owner send a request to the chief with `agent_message_send`, saying what they need, why only the owner can decide, and their recommendation. The ask store and its tools remain, for agent-to-agent asks and the CTO intake; there is no owner screen.
+### Standing rules and judgments
 
-## Asks and the log (store and log, decision 0090)
+**`agent_owner_judgment_record {text, area, action, category}`** (the chief of
+staff and the CTO only; other sessions are refused) records a decision the
+owner made in a live chat, in the same turn. With `area` and `action` it stores
+a rule (`kind` `rule`, `standing_orders.action` and `standing_orders.category`);
+without them it stores a judgment (`kind` `answer`, `ref` `chat:<session>`).
+`area` is `network`, `repo:<name>` or `team:<name>`. A rule in `money`,
+`secrets`, `security` or `client_facing` must name a repo or a team; a network
+rule there is refused. It answers `{id, kind, area, action, category}`. The
+daemon sends it to the gateway as `judgment.record` with the caller's session.
 
-Everything that waits on a person is an ask, kept in the gateway's `inbox_items` table. An ask has a source key (`source_ref`), a `from_kind` (session, cto, gateway, disk, apps), what it is `about` (a change, project or session), who must act `next_who` (owner, a session id, or chief), a `why_you` line and a longer `detail`. Its state is read from `status`: open (or "with someone" when the next actor is not the owner), answered or closed, with the close reason in `answer`.
+**`agent_owner_judgments_find {query, area, kind, limit, offset}`** searches
+live judgments in `standing_orders`. A search term with a hyphen or colon is
+plain text; `OR` between terms, a quoted phrase and a trailing `*` still work.
 
-| Operator method | Gateway frame | Answer |
-|---|---|---|
-| `asks_list` | `asks.list` | `{"asks": [...]}`: only the open asks, oldest first, in one query. Each has `id`, `kind`, `state`, `from_kind`, `from`, `from_session`, `about_kind`, `about_id`, `about_title`, `question`, `options`, `recommendation`, `detail`, `next`, `why_you`, `ref`, `message_id`, `created_at` and, for a delivery approval, `delivery`. |
-| `desk_settle` | `desk.settle` | `{"ok": true}`: marks a log line as undone (its undo options go). |
-| `desk_log` | `desk.log` | `{"entries": [...]}`: the newest log lines first (`limit`, default 100, at most 500). Each has `at`, `source`, `about_kind`, `about_id`, `text`, `detail` and `options` (the way to undo a CTO change). |
-
-A daemon adds one line of its own with `desk.note` (`{"text", "detail"}`, answered `{"ok": true}`). It is what needs no answer: the line is written with source `daemon` and about the calling machine's node. agent-net uses it for a Claude session whose wheel is off ([decision 0128](decisions/0128-cto-keeps-mouse-tracking-on.md)).
-
-Kinds: `question`, `approval`, `feature_idea`, `rejection`, `escalation`, `held`, `learned`, `draft`, `proposal`, `step`, `waiting`, `session_stall`, `check`, `brief`, `sign_in`, `permission`, `machine`, `cto_alert` and `quota_stuck`. A source outside the gateway opens an ask with `ask.open`, closes it with `ask.close`, or replaces all of its open asks of one kind with `ask.sync`; each call is safe to repeat and only touches asks of the calling machine.
-
-An ask closes by itself with a kept reason: `change_done` (the change it is about is done or stopped), `session_ended` (the asking session was archived or its worker run ended; held requests and outcomes are work between two sessions and stay), `resolved` (its source was decided), `expired` (a held request ran out), `activity_or_end` (a stall), `replaced` (the asker replaced or withdrew it). The gateway runs a set-based reconcile at start and every minute for the changes that come with time.
-
-The log (`desk_log`) holds what is not a question: "CTO applied ...", "CTO sent ...", a new app, a daemon report (a Claude session or background service whose wheel is off, decision 0128), and what the gateway did by itself (closing an ask, reminders, idle checks, retired notices). It keeps the newest 2000 lines. The CTO and app notices are in the log only: the migration that came with the front door closed their old stored rows (`moved_to_log`), and `desk_settle` marks a log line as undone.
-
-### The ask item shape (decision 0150, plan step (a))
-
-Each item in `inbox_items` also has:
-
-- `owner`: `chief` or `cto`. CTO intake problems and items routed to the CTO's session are owned by `cto`; every other item is owned by `chief`, who curates the asks.
-- `status`: `open`, `answered`, `approved`, `refused`, `carried_out`, `closed`, `replaced` or `dismissed`. `asks_list` derives `desk_state` (`verifying`, `with_cto`, `ready`, `answered`, `carried_out` or `closed`) from `status`, `owner` and `next_who`.
-- `category`: `security`, `outage`, `money` or `normal`. The kind sets it where the kind fixes it (`sign_in` and `permission` are security, `machine` is outage), else the asker's value, else `normal`. The chief corrects it with `category` on any `agent_ask_sort` call.
-
-`asks_list` adds `owner`, `desk_state` and `category` to each ask; inbox reads add `category`.
-
-Intake rules:
-
-- **One decision per item.** A `question` without a source key whose text holds two or more lines that end with `?` becomes one item per question. Lines that are not questions are context and stay at the top of each part. List markers (`1.`, `2)`, `-`) are dropped.
-- **Duplicates.** An ask with a source key joins the open item with that key (a key belongs to one kind, so this is source plus kind). The same asker refreshes the item's text, as before. Another session gets a `joined` row. An agent's ask (a turn-end question, relayed ones included) without a source key and without a message joins a related open item whose text asks the same thing. A related item is one from the same asker, one about the same thing (the marker the chief reads as "related open asks"), or one from a session in the same project and kind. The open item must be less than 24 hours old. A related item that closed in the last 10 minutes catches the repeat too: the asker gets that item's id back and no new item opens. The texts must match once case and white space are folded, and their ids must match too: a new commit head or a new ask id is a new ask, not a repeat. An ask agent-net raises itself, such as a session stall, keeps the older rule: an open item of the same asker with the same text catches it, and a closed one does not, so a stall at a new baseline is a new event. An id is a short prefix such as `i_`, `m_`, `s_` or `ch_` followed by hex, or a run of 7 or more hex characters; plain numbers stay, so "merge 100 files" and "merge 900 files" are different asks.
-- **Waiting sessions.** A wait that the harness reports becomes a `waiting` ask at once when the owner has not typed in that session in the last 30 minutes. While he works in it, the ask comes only after the session has waited 2 minutes (see "Waiting sessions").
-- **Joined askers.** When the item is answered, every joined asker gets the answer as a message too. When the item is answered or closed, its joined rows follow it.
-- **Owner-bound items need options.** An item an agent creates with `next_who` owner, and a chief sort with `result: "owner"`, are refused when the kind has no fixed answers (`question`, `feature_idea`, `check`, `waiting`, `session_stall`) and there are no options. The error names `options`. Generated notices (sign-in, machine, brief, permission and the other gateway kinds) are not affected, and an ask that falls to the owner because no chief can work keeps its old path.
-- **Routed items.** Either side of a routed item may close it. The chief may `close` or `merge` any open ask that a session or the CTO holds with `agent_ask_sort`, whoever routed it there: a pipeline route leaves no send row, and the chief still settles it. It never closes an ask the owner holds unless the close cites his words (`owner_words_message`, below). The session that holds it may `close` it with `agent_ask_sort` too (only `close`); a holder that is refused is told to answer the ask, or to ask the chief of staff to close it. The CTO can also use `answer` `dismiss`. A close keeps who closed it and why: the answer is `<closer>: <reason>`, and the `ask_sorts` row names the closer as the sorter. When the holder is offline, the chief may sort the ask again with any result (for example `send` it to another session). Closing it closes its joined rows. The asker of an open item, or a session that relayed it (one that joined it as a repeat), may `withdraw` it with a reason. A text that starts with `Withdraw i_...` does the same and never opens a new item; a session that neither asked nor relayed the item is refused with a clear reason.
-- **Check items** carry no generated recommendation any more; the chief turns them into a decision or resolves them.
-- **Upgrade (plan step (d)).** On the owner's words ("note that i dont care if the inbox is flushed. Right now it's pretty bad, i only use it when forced."), one migration closes every open item that waits on the owner (`next_who` empty or `owner`), once. Each row is kept: `status` closed, `answer` `flushed_by_front_door`, `answered_at` the time of the flush. A duplicate that joined such an item closes with it. Two kinds stay open because nothing asks them again: a delivery approval (it gates a merge) and a permission ask (it holds a proposal). Items that wait on the chief, the CTO or a lead stay as they are. Nothing is sent to the askers. The log gets one line, `Front door: closed N open Desk items that waited on you (flushed_by_front_door)`, and `gateway_state` keeps the key `front_door_flush_v1` with the count. A store that has that key never flushes again, so a replay of the migrations closes nothing opened after the front door.
-
-An exceptional worker start (source key `wstart:<start id>`) is one ask on the owner's route. The owner answers it with its own options: `confirm` starts it with the caller's fields, `picker` with the picker's choice, and `dismiss` ends it. The owner answers it, or the CTO on his words; the chief does not. The start's harness, model and effort sit on the ask in `inbox_items.override_facts`; `worker.override_ask` carries them from the daemon.
-
-`done` reports that the answer of an answered ask was carried out: the ask and its joined rows move to `carried_out`, and the asker and every joined asker get a message with the chief's `reason` and the owner's answer. It is refused for an ask that is not answered, or already carried out.
-
-`withdraw` closes an open ask at once, with the `reason` kept in its answer and in the log. The asker and a session that relayed the ask may use it on their own ask. The chief may use it on an ask that is on the owner's route only when a newer open ask from the same asker replaces it, named in `replaced_by`; the log line then names the replacement. A replacement from another asker, or one that is not newer, is refused. The `ask_sorts` row has result `withdraw`.
-
-`agent_ask_sort` takes these fields as well:
-
-- `options` (up to four) and `recommendation`, for `result: "owner"`: they are stored on the ask before it goes to the owner.
-- `category`, on any sort.
-- `rule` and `action`, for `result: "close"`: the id of a standing rule and the action the ask is about. The close is refused unless the rule exists and its area and action match the ask exactly, and a network rule never closes an ask in an owner-only category. The close reason starts with `rule <id>:`, and the sort row keeps the rule in `ask_sorts.rule_id`.
-- `owner_words_message`, for `result: "close"`: the id of a message that carries the owner's words. It is the one way the chief closes an ask the owner holds. The message must come from the owner's own session, or from the CTO with `owner_approved` set (the CTO sent it on his instructions), and it must be sent after the ask opened. Any other message, or an unknown id, is refused and the ask stays with the owner. The message body is never read. A close with the field names the message in its answer (`chief: <reason> (on the owner's words in <id>)`), in its `ask_sorts` row (`owner_message`) and in its log line. The chief's own `undo` of that close puts the ask back with the chief, as for any close.
-
-### Standing rules from answers (decision 0150)
-
-An answer can carry a scope: `inbox_answer {id, answer, scope: {area, action, category}}` (gateway `inbox.answer`, same field). The owner's command line can send a scoped answer with `inbox_answer`. `area` is `network`, `repo:<name>` or `team:<name>`; `action` is what the rule allows, for example `merge`. Case and white space of the action are folded; nothing else is. `category` defaults to the item's category. A rule in `money`, `secrets`, `security` or `client_facing` must name a repo or a team; a network rule there is refused before the answer is stored. The answer and its rule are written in one transaction: when the rule cannot be stored, the answer is not stored either. Only the answer of a plain question, approval or idea carries a scope. A scoped answer writes a judgment with `kind` `rule`, `area`, `action`, `category` and `ref` the ask id (new columns `standing_orders.action` and `standing_orders.category`), and a log line `Standing rule <id> (...)` whose undo is `standing_orders` `{"action": "remove", "order_id": "<id>"}`. The log offers that undo. An undone rule no longer applies.
-
-**`agent_owner_judgment_record {text, area, action, category}`** (the chief of staff and the CTO only; other sessions are refused) records a decision the owner made in a live chat, in the same turn. With `area` and `action` it is a rule as above; without them it is a judgment with `kind` `answer` and `ref` `chat:<session>`. It writes the same log line with its undo. It answers `{id, kind, area, action, category}`. The daemon sends it to the gateway as `judgment.record` with the caller's session.
+- **Void state.** A judgment can be voided: `standing_orders.voided_at`
+  (integer, `0` when the row is live) and `standing_orders.void_reason` (text)
+  hold when and why. A voided row stays in the table and keeps its full text,
+  but `agent_owner_judgments_find` and the CTO standing orders list and search
+  skip it. No row is deleted.
+- **Slash commands are not owner words.** `agent_owner_judgment_record` refuses
+  a text whose answer part starts with `/` (or `\/`) with one line.
 
 ### Sign-in asks (decision 0132)
 
-A `sign_in` ask says that a CLI agent-net depends on needs the owner's
+A sign-in request says that a CLI agent-net depends on needs the owner's
 interactive login. It names the target machine, provider and reason. Commands
 are fixed in `internal/protocol/signin.go`; no caller supplies a command. For
 Alibaba, the TUI runs `bl auth login --console --no-browser --console-site
 international` on the machine where the owner opens the TUI. Open the printed
 link in Firefox, not Safari. Keep the terminal open until login finishes.
 
-When the ask names another machine, the login starts in a private temporary
+When the login targets another machine, the login starts in a private temporary
 configuration on the TUI machine. After it finishes, agent-net imports the
 console token into the local CLI and sends it to the target daemon. The target
 imports it with `bl auth login --console --token-stdin --console-region
 ap-southeast-1 --console-site international`. The temporary configuration is
-removed after completion or cancellation. A stored ask opened from an owner
-TUI delegates the login to that TUI; an unavailable TUI is reported. Both
-daemons use the same CLI path and configuration environment as their quota
-readers. quota-axi reads the console login by running `bl usage token-plan
---output json`.
+removed after completion or cancellation. Both daemons use the same CLI path
+and configuration environment as their quota readers. quota-axi reads the console
+login by running `bl usage token-plan --output json`.
 
-A sign-in that needs the owner is one request to the chief of staff (decision
-[0196](decisions/0196-remove-the-desk.md)). The request ends with the exact
-call that acts on his answer: `sign_in_open machine <host> provider <p>`. The
-CTO's owner-gated `cto_op` is `sign_in_open {machine, provider, owner_words}`.
-It names a node ID or hostname and one allowlisted provider, checks the quote
-against what the owner typed in the CTO chat in the last 3 hours, and sends a
-prepare frame to that machine's daemon. The daemon opens the login in its own
-herdr. No stored ask is needed, and a command is never accepted: the daemon
-reads the argv from `internal/protocol/signin.go`. An unknown provider or an
-offline machine is refused with one plain line. A stored ask raised before
-decision 0196 can still be opened from the owner's TUI by its ID.
-
-The daemon raises one ask per machine and provider for a known quota login
-error, and the CTO may also raise or list them. After a successful import, each
-machine rechecks quota; the ask closes with `signed in` when the target's login
-error clears. A persisting error keeps it open.
-
-## Automatic routes and the CTO intake queue
-
-One route table in the gateway (`internal/gateway/routes.go`) says where each
-automatic message, each ask kind and each CTO intake kind goes. It
-follows [decision 0152](decisions/0152-automatic-message-routes.md). A test
-reads every ask kind and intake kind from the source and fails on one with no
-row. At run time a kind with no row keeps today's default, the chief, and the
-gateway writes the log line `route.missing`.
-
-- **Agent only.** Step tasks, reminders, idle checks, worker notices,
-  undelivered notices, tools disconnected, member blocked and charter
-  requests go to the session that must act, as before.
-- **The chief.** Every ask that wants the owner goes to the chief of staff
-  first: approvals, questions, ideas, checks, waiting sessions, rejections,
-  escalations, stalls, held requests, charter drafts, permission and trust
-  requests, CTO proposals, steps that need the owner, CTO alerts and quota stuck work.
-- **The owner directly.** Only OAuth consents (the Connected apps approval and
-  the Tailscale public link consent) skip the chief, as one-click asks. A
-  sign-in ask does not: it goes to the chief with the exact `sign_in_open` call
-  that opens it on the owner's words. The chief's own daily brief also shows to
-  the owner; it is not automatic. Nothing else that agent-net makes by itself
-  reaches the owner.
-- **The CTO intake queue.** System-health alerts are stored in `inbox_items` with `owner='cto'` and a `dedupe_key` of `kind:subject`.
-
-### The CTO intake queue
-
-One row per `(kind, subject)` while it is open. A repeat raises `count` and
-`last_seen` and refreshes the text; it never adds a row. Each row has a
-`severity`: 1 when it woke the CTO, 2 for an alert kind that has not woken it
-yet, 3 for a digest line. The CTO reads the open rows, newest first, with
-`cto_intake_find` at the start of each owner conversation.
-
-| Kind | Subject | Fed by | Wakes the CTO when |
-|---|---|---|---|
-| `machine_silent` | machine | the gateway, after 15 minutes offline without a sleep report | at once; a machine that reported sleep never alerts (decision 0137) |
-| `harness_update_failed` | machine/harness | the daemon, after a failed harness update; a later update resolves it | the alert repeats for over an hour |
-| `compaction_failed` | machine/harness | the daemon, after a failed automatic compaction; a later one that works resolves it | the alert repeats for over an hour |
-| `mcp_repair_failed` | machine/agent-net | the gateway, from the daemon's ask about a session whose agent-net tools could not be connected after its one restart; that check ask still goes to the chief | the alert repeats for over an hour |
-| `struggle` | model | the gateway, when 3 distinct workers ended with struggle signs on the same model within 6 hours | at once |
-| `merge_queue_failing` | project | the gateway, when 3 test runs in a row failed on the merger's train tip in `delivery.ci_mode` `train`. Every change of a train cites the same `run`, so a run counts once; a failure marked `flake: yes` does not count; a pass resets the count and closes the entry | at once |
-| `quota` | provider | the gateway: a usage report with a used-up window, a start refused by the worker floor, or a start refused because the provider has no quota left; a usable reading with room closes it | the alert repeats for over an hour |
-| `claude_mouse` | machine/claude | the daemon's mouse notice (one per key per day); it no longer goes to the log or the CTO chat | never: a digest line |
-| `phone_paired` | the device | a phone paired by Tailscale sign-in; it is no longer an owner notice. The device shows in Connected apps | never: a digest line |
-| `disk_warning` | machine | the daemon, when the filesystem holding the daemon state directory or either Go build cache is 85% used; a drop below 80% resolves it | the alert repeats for over an hour |
-| `picker_override` | the start | the owner answers one ask for an exceptional start (decision 0194) | never |
-
-A daemon reports its kinds with the frame `intake.report` (`kind`, `subject`,
-`text`, `detail`, `resolved`). The gateway puts the machine's name in front of
-the subject and refuses the kinds it detects itself.
-
-**A wake is never a CTO turn.** A CTO turn starts only from the owner. When a
-wake rule holds, the gateway opens one P1 item of kind `cto_alert` in the
-chief's queue (`CTO alert: <text>`). Its `why_you` names the lead that owns
-the cause: the project's lead for the merge queue, else the lead of the
-`agent-net` repo, or "none: the CTO owns it". The chief routes it to that
-lead and tells the CTO; it goes to the owner only for money, secrets or
-security. An entry raises one alert at most. The chief's 15-minute timeout
-never hands a CTO alert or a quota stuck item to the owner.
-
-**One quota event, one thread.** Work stuck on quota opens the provider's
-`quota` entry and one chief item of kind `quota_stuck` (`Work is stuck: ...`):
-a start refused because the provider or the whole harness has no quota left,
-a worker that cannot be started again for quota, a worker run that ended
-failed with the cause `quota_auth`, and an automatic start the picker cannot
-place because every candidate's provider is out of quota (each of those
-providers' threads gets it). Later events of the same provider join
-that entry and that item; no second item is made. Its detail names the CTO entry, and the
-entry's `stuck` names the item. When a usage report shows the provider with
-room again, the entry closes, and so do its stuck-work item and its CTO alert.
-
-**The morning brief.** When the chief delivers the daily brief, the gateway
-adds two parts after the chief's text: one system-health line from the open
-entries (`System health: 2 open alerts, 1 woke the CTO (quota, machine
-silent).`, or `System health: no open alerts.`), and `Decisions recorded
-today:` with the owner's answers and rules recorded in the last 24 hours (at
-most 20 lines, then `and N more`), or `Decisions recorded today: none.`
+A daemon raises a sign-in request with `sign_in.raise` for a known quota login
+error, and the gateway sends one idempotent request to the chief of staff
+(decision [0196](decisions/0196-remove-the-desk.md)). The request ends with the
+exact call that acts on the owner's answer: `cto_op` `sign_in_open` with
+`machine` and `provider`. The CTO's owner-gated `cto_op` is `sign_in_open
+{machine, provider, owner_words}`. It names a node ID or hostname and one
+allowlisted provider, checks the quote against what the owner typed in the CTO
+chat in the last 3 hours, and sends a prepare frame to that machine's daemon.
+The daemon opens the login in its own herdr. No stored ask is needed, and a
+command is never accepted: the daemon reads the argv from
+`internal/protocol/signin.go`. An unknown provider or an offline machine is
+refused with one plain line. After a successful import, each machine rechecks
+quota.
 
 ## The chief of staff (decision 0114)
 
-A registered agent session sorts the asks that would go to the owner first. The
-owner or the CTO changes it with `chief.set` (operator `chief_set`). The call
-does what it names or is refused:
+A registered agent session acts as the owner's chief of staff: agents send it
+escalations with `agent_message_send`, and the gateway sends it owner-bound
+requests and high-signal failure notices. The owner or the CTO changes it with
+`chief.set` (operator `chief_set`). The call does what it names or is refused:
 
 - `session_id` names the chief. The session must be a live agent session, not
   a worker, the owner, the CTO or a bot.
@@ -2672,315 +2596,18 @@ replaced goes to the chief that replaced it. The sender's receipt names the
 session that got the message. With no chief set, a message to `chief` is
 refused and says so.
 
-**Routing.** A new ask goes to the chief (`next = chief`, the ask shows it as
-"with someone") when a chief is online and the ask does not name another next.
-The chief's own asks go to the owner. A team lead's route is not changed.
-When `chief.set` names a chief, and when the gateway starts with a chief set,
-every open ask that still waits for the owner and was never offered to a chief
-is marked as waiting for it. That includes asks opened before the chief
-existed. An ask the owner already answered, one that was already sorted, or one
-already sent to a session is left alone. The safety net below counts from the
-time the ask starts waiting for the chief, so an adopted ask gets its full time.
-
-**Batches.** Asks for the chief leave as one message from `agent-net` after a
-quiet window of 5 seconds since the newest ask, and never later than 30 seconds
-after the oldest. One message holds up to 25 asks: id, kind, asker, subject,
-question, options, recommendation and up to five related open asks. The gateway
-checks for due batches once a second. A sent ask is never sent again.
-
-**No owner timer, claims and the safety net (decision 0150).** No timer sends an
-ask to the owner while the chief is live and working. The old 15 minute
-fallback (`ChiefTimeout`) and the line "An ask you leave for 15 minutes goes to
-the owner" in the batch text are gone. An ask the chief holds (state
-`verifying`: with the chief, or with a session the chief chose) is claimed, and
-a claimed ask has no clock that ends at the owner. The 30 second `ChiefMaxWait`
-in the batch rule above is not an owner timer: it only keeps a steady stream of
-asks from holding a batch back.
-
-- *Claim age.* A claimed ask that has not moved for the stuck-work limit pings
-  the chief, never the owner. The limit is the setting `delivery.step_stuck` (12
-  hours by default), the same one stuck delivery steps use. The ping is one
-  message from `agent-net` per tick that lists each ask as `<id> still open, N
-  hours: <question>`, and repeats once per limit that passes. "Moved" means the
-  newest of the ask's creation, the time it started waiting for the chief and its
-  newest sort. The daily brief wake carries the same lines under "Still open". The gateway looks for them once a minute.
-- *With the CTO.* An open item with the CTO (state `with_cto`) that has not moved
-  for the same limit goes back to the chief (`next = chief`, a new clock, sent in
-  the next batch), with the log line `Ask <id> is back with the chief, back
-  from <CTO>: no move for N h: ...`. The CTO acts only in owner conversations.
-- *Offline holder.* An ask the chief sent to a session (state `verifying`) whose
-  holder has been offline (or archived) for the same limit, and that has not
-  moved for the limit either, moves on the same minute tick. When the holder was
-  replaced (`replaced_by`) and the replacement is not itself offline past the
-  limit, the ask goes to the replacement, which gets a message from `agent-net`
-  with the ask and the note. Otherwise it goes back to the chief like a CTO item.
-  No new limit: both use `delivery.step_stuck`.
-- *Back note.* Every return appends a one-line note (`Why it is back: ...`) to `inbox_items.detail`,
-  such as `back from homelab-agent 4: offline for 76 h` or `back from the CTO: no
-  move for 12 h`. The chief's batch shows it under the ask as `Why it is back:
-  <note>`, and the log gets one line (`Ask <id> is back with the chief,
-  <note>: ...` or `Ask <id> went to <replacement>, <note>: ...`).
-- *Safety net.* It applies only when the chief cannot work (offline, no quota, a
-  harness error or silent, see below). A wake is the batch message to the chief.
-  It is missed when the chief has not claimed or sorted the ask within
-  `ChiefWakeInterval` (10 minutes, a constant) of the batch, or of the time the ask
-  started waiting when no batch could go out. An ask in category `security`,
-  `outage` or `money` goes to the owner after one missed wake, every other ask
-  after two. Each writes a log line (`The chief of staff is offline, so it
-  is with you: ...` or `The chief of staff cannot work (<reason>), so it is with
-  you: ...`). With no chief named, an ask goes at once.
-- *Harnesses that cannot be woken.* A chief on Pi has presence and batches only:
-  online, it gets its batch and the unanswered batch is the missed wake; offline,
-  no batch can wake it, and the clock runs from the time the ask started waiting.
-  An offline chief whose harness can be woken (Claude, Codex, OpenCode) still
-  gets its batch, and that message is the wake.
-
-**Chief availability.** A chief whose session is online can still be unable to
-work. The gateway marks it unavailable when any of these holds. The check runs
-once a second with the batch tick, and when an ask is created.
-
-- *No quota.* The chief's provider has an exhausted window in the machine's
-  quota reading, the same data the picker uses (`quota exhausted (weekly window,
-  until 2026-11-15 00:00 UTC)`). A stale reading is ignored. The gateway reads it
-  from memory and the stored quota blocks, never inside a database transaction.
-- *Not running.* The session is offline (`session offline`), the harness was
-  lost (`harness lost`), or the session reports a provider usage limit from its
-  last turn (`harness error: <limit> until <time>`, from `limited_until`).
-- *Silent.* The chief was sent asks, made no sort and showed no harness
-  activity (`sessions.harness_activity`: output, a turn, a delivery
-  acknowledgement) for `ChiefSilentAfter` (10 minutes, a constant; `no sorts for
-  10 minutes`). A chief that is still working is never silent. The mark is kept in the owner setting
-  `chief_silent_at`. It ends after `ChiefRetryAfter` (15 minutes, a constant), when the next ask goes to the chief
-  again as a probe, or when the chief sorts. Naming a new chief clears it.
-
-An offline chief whose harness can be woken still gets new asks (`next =
-chief`): its batch is the wake, and the safety net above sends each ask to the
-owner after the missed wakes of its category. Otherwise, while the chief is
-unavailable, an ask that would go to the chief goes to the
-owner path instead (`next = owner`): the owner's route, which the CTO
-reads and answers as it did before the chief existed. The asks that already wait
-for the chief move there when the safety net above says so, each with a log
-log line (`The chief of staff cannot work (<reason>), so it is with you: ...`). No batch is sent. A chief that
-is online but cannot work is not offered those asks again: they get
-`route_fixed`, so adoption leaves them with the owner path when the chief is
-back, while new asks go to the chief again. An offline chief keeps the earlier
-behavior: its asks may be adopted when it returns. The chief may still sort only
-asks that wait for it. `chief_get` returns the reason in `down` (empty when the
-chief can work). No setting and no approval gate comes with this.
-
-**`agent_ask_sort {ask, result, reason, into, to, replaced_by, priority, why_you, follow_up_at, change, owner_words_message, sorter, since, until, from_id, to_id}`**
-(any agent session; only the live chief may sort, others are refused, except
-that the session that holds a routed ask may `close` it, and the asker or a
-session that relayed it may `withdraw` it).
-`reason` is required for every sort except `undo` and `list`, up to 300
-characters. `result` is one of:
-
-- `close`: the ask closes; its answer is `chief: <reason>`, or `<holder>:
-  <reason>` when the session that holds it closes it.
-- `withdraw`: the ask closes as taken back; its answer is `<closer>: <reason>`.
-  The asker or a session that relayed it may withdraw its own ask. The chief
-  names the newer open ask from the same asker in `replaced_by` to withdraw an
-  ask that is already on the owner's route.
-- `merge`: the ask closes; `into` is another open ask, which gets the line
-  `merged: <id>` in its detail.
-- `send`: `to` is a live session that gets the ask as a message from `agent-net`
-  naming the chief. The ask waits on that session. A `to` that is the ask's
-  own session is refused, with the reason `this ask is about <name>; sending it
-  back to them makes a loop. Close it, send it to someone else, or send it to
-  the owner.`, because the ask is about that session and would return to it.
-  Every other send keeps the path it had.
-  `close` and `send` take an optional `follow_up_at` and `change`, see
-  [Follow-ups](#follow-ups).
-- `owner`: the ask goes to the owner. `priority` (1 to 3) and `why_you` are
-  required.
-- `list`: reads only. It returns the open asks that wait for the chief, oldest
-  first, in `asks`: `ask`, `kind`, `from`, `text`, `recommendation` and `age`
-  (such as `12m` or `3h05m`). `ask` and `reason` are not needed. It changes no
-  ask. It also returns `stats`, the counts described below.
-- `undo`: puts the ask back the way it was before the chief's newest sort of
-  it, so the chief can sort it again. It needs `ask` and takes no other sort
-  field; `reason` is not needed. It is refused when the ask changed since that
-  sort (for example, a session answered it), when the sort is undone already,
-  or when the newest sort is not the chief's. It writes an `ask_sorts` row with
-  sorter the chief and one log line. A merge also removes its
-  `merged: <ask>` line from the ask it merged into.
-
-**`stats` of a list.** Every `list` answer carries `stats`: the successful sorts
-of one sorter by result, counted in one grouped query. `sorter` defaults to the
-caller (the chief); `since` and `until` are Unix seconds (both inclusive), and
-`from_id` and `to_id` are sort ids (both inclusive). The shape is
-`{"sorter":"s_...","counts":{"close":736,"merge":1,"owner":8,"send":16},"first_id":1,"last_id":761}`.
-`counts` holds only the results that occurred, `undo` included when it did, and
-`first_id` and `last_id` are the smallest and largest sort id that matched (zero
-when none did). The chief uses it to audit its own sorts without reading every
-row.
-
-**`agent_ask_sort {ask, detail: "full"}`** reads one ask in full for the chief. It
-sorts nothing, and it takes only `ask`. The answer has `result` `read`, `next`,
-`state` and `full` with the whole question and detail, the recommendation and
-each option, the asking session (`from_session`, `from_name`, `from_kind`), the
-kind, the stored `status` and the ask `state`, the route (`next`, `next_name`,
-`priority`, `why_you`), the ask's `routing` sort history, and the owner's
-`answer` and `answered_at` when there is one. A draft-charter ask adds `charter`,
-one row for each field with its level, scope, attribute and exact proposed
-value. A learned ask adds `learned`, the proposal with its node, field, phrase,
-kind, severity, evidence, and the old and new value. Secret values are masked,
-but a token's scope and destination stay readable; the token itself never
-leaves the gateway. This is the read the chief uses when a batch summary does
-not say enough.
-
-**`agent_ask_intake {action}`** (any agent session; only the live chief may call
-it, others are refused). It finds questions that sit inside sessions waiting
-for their user, reads them, and imports one as an ask. It reads and imports
-only: it never sends input to a session, answers an ask, or changes a
-session's state. The read happens on the machine that holds the session; the
-chief's daemon asks the gateway, which relays one request to that machine.
-
-- `list` (optional `limit`, default 25, at most 50) returns the sessions that
-  are online or idle, are not workers or the CTO, are not busy, and whose last
-  assistant message has not been imported. A row with `state` `ok` has
-  `session`, `name`, `harness`, `machine`, `last_turn`, `last_turn_at`,
-  `waiting` and `open_ask`. `waiting.kind` is `explicit` for a wait the session
-  raised itself and `harness` for a wait its harness reported; it carries the
-  stored `text` and `since`. `open_ask` is the id of an open ask from that
-  session, so the chief can see what already reached the owner. A harness with
-  no reader, a missing transcript, an offline machine or a plugin that does not
-  answer returns `state: "unavailable"` and a `reason`; agent-net never invents
-  the text.
-- `read` with `session` (the id or exact name) returns `turn` with the exact
-  last assistant message in `text`, the input before it in `preceding_input`,
-  their RFC 3339 times in `at` and `preceding_input_at`, `ended` and a stable
-  `ref`. `preceding_input` is whatever the session stored as the user turn
-  before the reply, so it is not necessarily the owner's words: `input_source`
-  says who wrote it. It is `owner` when the user typed it in the session,
-  `peer` for a message agent-net delivered from another session, `agent_net`
-  for a notice agent-net wrote itself, and `unknown` for injected text whose
-  writer the read cannot tell. A peer message also carries `input_from` (the
-  sender name) and `input_session_id` when the stored text names them. A
-  delivered message is never reported as `owner`. Secrets are masked with the
-  same helpers as the owner's session text, and `cut` says the text was longer
-  than the 2,000 character limit. The chief, not agent-net, decides from the
-  text whether it is a question, an idle done or an FYI.
-- `import` with `session`, `turn` (the `ref` from list or read), `text` (the
-  question in one line), optional `options` (at most four) and
-  `recommendation` creates one `question` ask about the session, with the turn
-  reference as its `source_ref`. The ask routes to the chief like any other,
-  so its normal sort applies. The same turn is imported at most once: a later
-  call returns `state: "already_imported"` and the existing ask id, even after
-  that ask closed. If the session already has an open ask, the call creates
-  nothing and returns `state: "existing_open"` with that ask id.
-
-The chief's own asks go to the owner, so importing a turn from its own session
-would not create a second chief sort. Every import masks common secrets in the
-text, recommendation and options before it stores them.
-
-Every sort writes one `ask_sorts` row with the ask as it was (`prev_next`,
-`prev_status`, `prev_answer`, `prev_answered_at`) and one log line with
-source `chief`. Nothing is deleted.
-
-**The daily brief.** The owner can give the chief one morning prompt without a
-new ask. The setting `chief.brief_time` is a local time `HH:MM` (default
-`09:00`) read in the owner's time zone (operator `timezone_get`). A named zone
-wins. When the setting is `auto`, the gateway resolves it from the zone a
-machine reported, preferring the owner's Mac; a server zone does not win over
-it. If no machine reported a usable zone, the timer does not run,
-`agent_owner_brief` reports `waiting for the owner's time zone`, and the
-gateway never stands in UTC. The zone is resolved again on each tick, so a
-machine that reports its zone later starts the timer. The gateway checks on its minute tick and
-sends the chief one message from `agent-net` on the first tick of each
-owner-local date at or after that time: `Daily brief due for <local date>.
-Write it and deliver it with agent_owner_brief.` The wake date is stored in
-`gateway_state` (`chief.brief_last_wake`), so a gateway or daemon restart does
-not send twice, and a tick missed while the gateway was down still sends once
-later that day. A wake is not a delivery: the delivered date is stored on its
-own, in `chief.brief_last_sent`, and only a delivered brief sets it. An older
-gateway wrote the wake date to `chief.brief_last_sent`; when
-`chief.brief_last_wake` is empty, that older value is read as the wake date, so
-an upgrade does not wake the chief twice on the same day. The send wakes the
-chief like any other message.
-
-**`agent_owner_brief {body, date}`** (any agent session; only the live chief may
-call it, others are refused). `body` is the brief, at most 15 lines, and `date`
-is the owner-local date as `YYYY-MM-DD`. It creates one owner item of kind
-`brief`, labelled `Daily brief <date>`, with the body as its text. A brief is
-informational: it has no approve or refuse, only dismiss, and it is never an
-approval ask. A second call for the same date replaces that date's brief and
-returns its item id and the date. The same call also closes every older open
-brief of that chief, the ones with an earlier date. Each closed brief keeps the
-answer `replaced by the brief of <date>`, naming the new brief. The close is
-written by the gateway, not by the owner, so the owner's route shows one open
-brief per day. A brief for an earlier date never closes a newer open brief. For example:
-
-```
-agent_owner_brief {"body":"Handled the deploy fix and two reviews.\nDecisions waiting: PR #31 (recommend merge), the storage plan (recommend wait).\nStuck: the Mac build needs a signing key.","date":"2026-11-09"}
-```
-
-**`agent_owner_brief {}`** reads the schedule instead. It returns `brief_time`,
-the resolved IANA `time_zone`, `next_run_local`, `next_run_utc`,
-`last_date_sent`, `last_wake_date`, `last_item_id` and `status` (`active`,
-`waiting for the owner's time zone` or `no chief of staff`). `last_date_sent`
-is the owner-local date of the last brief that was actually delivered;
-`last_wake_date` is the date of the last wake, which may have no brief yet. The
-next run follows the local clock across daylight saving time. The last brief id
-is also stored in `gateway_state` (`chief.brief_last_item`).
-
-**`ask_history` `{ask}`** (operator `ask_history`, gateway `ask.history`) returns
-`{"sorts": [...]}`, oldest first. Each sort has `at`, `sorter`, `result`,
-`into`, `to`, `reason`, `priority`, `why_you` and the `prev_*` fields.
-
-Asks now carry `priority` (the chief's rank for an ask sent to the owner).
-
-### The chief's marks and corrections (decision 0114, part 2)
-
-The gateway records what the chief did and lets the owner correct it. Each method is an operator method; the CTO can run the changing ones too. There is no TUI screen for the marks.
-
-- **`ask_undo` `{ask}`** (gateway `ask.undo`, owner or CTO) puts an ask back the way it was before the newest sort. It restores `next`, `status`, `answer` and `answered_at` from the sort's `prev_*` fields. A `next` of the chief becomes the owner, because the chief got its one batch and is not sent the ask again. `priority` and `why_you` are cleared. It writes an `ask_sorts` row with result `undo` and a log line from the owner (or the CTO). It is refused when the ask changed since the sort (for example, a session answered it), and when the sort is undone already. A merge also removes its `merged: <ask>` line from the ask it merged into. The chief has the same undo as `agent_ask_sort` with `result: "undo"`, with two differences: it undoes only its own newest sort, and the ask goes back to the chief, not to the owner, so the chief can sort it again. Its undo row names the chief as the sorter.
-- **`ask_mark` `{ask, mark, why}`** (gateway `ask.mark`, owner or CTO) stores a mark. The TUI has no key for the marks. `mark` is `didnt_need_me` (the owner did not need to see the ask) or `should_have_asked` (the chief should have sent it to the owner). `why` is optional, one line, up to 300 characters. The mark is stored in the owner judgment store (the standing orders memory) as a judgment with `kind` `correction`, `area` `chief` and `ref` set to the ask id. Its text says what the owner marked, gives the ask's first line and the `why`. A log line is written. The chief's next batch message lists the newest five of them under "Owner corrections". The old table `chief_corrections` is gone: a migration copied its rows into the judgment store, and a later migration dropped the table.
-- **`ask_discuss` `{ask}`** (gateway `ask.discuss`, owner) is "discuss" on an ask (decision 0150). For an item the CTO owns it answers `{"open": "cto"}` and the TUI opens the CTO chat, as `c` does; nothing is woken, because CTO turns start only from the owner. For any other item it sends the chief a message that names the ask and asks for what it verified, its recommendation and the options, wakes the chief when it is offline (the owner asked, so the wake rules of a peer message do not apply), and answers `{"open": "chief", "session", "woken"}`; the TUI enters the chief's session through `session_enter`, as Enter does. It is refused when no chief is set.
-- **Finding the marks.** `agent_owner_judgments_find {marks: true, limit, offset}` returns the owner's marks, newest first, with a page at a time. Each row keeps the judgment fields and adds `ask` (and `ref`), the ask's whole `question`, the chief's latest `disposition` (closed, merged, sent to a session, or sent to the owner with priority and why), `mark` (`didnt_need_me` or `should_have_asked`), `mark_text` in the owner's words, and `saved_at`, the mark's time. A `query` searches the mark text, which carries the ask's first line. The same call without `marks` searches every judgment as before. With `marks: true` the result also carries `marks_stored`, how many marks the judgment store holds, and with no rows a `note` that says so: zero marks stored means the owner has not marked an ask yet.
-- **Answers in the judgment store.** Every ask the owner decides gets one judgment row with `kind` `answer` and `ref` set to the ask id: a typed answer, a button (`approved: <ask>`, `refused: <ask>`, `dismissed: no decision`, `accepted` or `rejected` for a charter draft, `resumed the loop` or `stopped the loop`), an overrule or let-stand of a rejection (with the reason and the request that went through), an app consent, and a reply the owner typed in the asking session (his exact text). The CTO answering for the owner writes the same row. A second answer of the same ask updates the row. The ask keeps its answer code. The gateway also fills missing rows at start, and rewrites a row that holds only a code. A search term with a hyphen or colon is plain text; `OR` between terms, a quoted phrase and a trailing `*` still work.
-- **Void state.** A judgment can be voided: `standing_orders.voided_at` (integer, `0` when the row is live) and `standing_orders.void_reason` (text) hold when and why. A voided row stays in the table and keeps its full text, but `agent_owner_judgments_find`, the CTO standing orders list and search, and the morning brief decision list skip it. A new answer to the same ask replaces the text and clears the void. A migration voids every judgment that holds agent-net's idle compaction command (`/compact Keep: the current task...`, with or without a leading backslash, bare or after a `Q: ... A: ` prefix) as the owner's words, with the reason `agent-net idle compaction prompt, not the owner (a_64e7e272d7794cec)`. No row is deleted.
-- **Slash commands are not owner words.** The gateway stores no answer judgment whose answer part starts with `/` (or `\/`). An ask that the owner's typed reply closes is still closed, but no judgment row is written for a slash command. `agent_owner_judgment_record` with such a text is refused with one line.
-
-The CTO lists have `ask_undo` and `ask_mark` (changes, in the `settings_change` area `operator`).
-
-## Owner questions: in the chat and on the route
+## Owner questions
 
 An agent that needs the owner sends one request to the chief of staff with
 `agent_message_send`, saying what it needs, why only the owner can decide, and
-its recommendation. The guidance also asks it to put an owner question in its
-chat, on a line that starts with `Owner question:`.
+its recommendation. The chief decides what to bring to the owner and relays the
+owner's answer back to the asking session.
 
-**A turn that ends on a question to you is routed.** A plain turn end is not a
-question. The trigger is one of:
-
-- a question prompt the harness reports (for example Claude Code's question dialog);
-- a line of the turn's final message that starts with `Owner question:` (case does not matter; Markdown marks before it are allowed).
-
-A marked line becomes a `question` ask, and a reported prompt a `waiting` ask
-(with no 2-minute wait unless you typed in that session in the last 30 minutes).
-The turn ends as it is: the question stays in the chat, and the session is not
-told to go on. Claude Code reports the turn from the `Stop` hook, which prints
-nothing. Pi and OpenCode, which have no such hook, report it at the start of
-their next turn. Codex and Antigravity have neither; their ask is a message to
-the chief.
-
-The daemon remembers the questions it sent for each session (the last 16), so a
-question becomes one ask. An idle session whose turn ends with no question gets
-no ask.
-
-**You in the loop.** When you type in the session, the question is in the chat
-you work in, and the chief has it too. Your answer there closes the ask with
-your words. "Typed" means your own prompt in that session: a Claude Code prompt
-through the policy hook (not a peer message, reminder or scheduled turn), a Pi
-or OpenCode prompt, or a Codex user message. Opening, attaching to or viewing
-the session does not count. The gateway keeps the time in
-`sessions.owner_typed_at`.
-
-**The chief and the CTO** talk to you in their own chats; their questions are
-not routed. Workers ask their caller, never you, and are not routed either.
-
-When no chief can work, an ask still follows the chief-down path.
+**Owner activity.** The gateway records the last time the owner typed in a
+session in `sessions.owner_typed_at`. "Typed" means the owner's own prompt in
+that session: a Claude Code prompt through the policy hook (not a peer message,
+reminder or scheduled turn), a Pi or OpenCode prompt, or a Codex user message.
+Opening, attaching to or viewing the session does not count.
 
 ## Waiting sessions
 
@@ -2989,32 +2616,19 @@ wants your input. The Sessions screen shows it as needing you (decision
 [0016](decisions/0016-needs-you.md)). Every machine's TUI sees them, so one
 screen answers "what needs me" across the network.
 
-A non-worker session that asks you a question sends one request to the chief of
-staff, as above. The question is one line, cut to 200 characters with control
-characters removed. Options are up to four short strings, cleaned the same way.
-Urgency is `normal` or `high`. The guidance says an agent does not end a turn
-waiting on you. A plain turn end is not a question; a turn that ends on a
-question to you is caught as described in [owner questions go to the
-chief](#owner-questions-in-the-chat-and-on-the-route). A worker cannot ask you;
-it must put the question in its hand-back or ask its caller with
-`agent_message_reply`. When a worker reports a wait, its caller receives one
-blocked notice for that wait, naming the kind (approval or answer), the start
-time and the question text. The caller started the worker and must unblock it,
-so the text is for the caller, not an outside peer.
+A non-worker session that needs the owner sends one request to the chief of
+staff with `agent_message_send`, as above. A worker cannot ask you; it must put
+the question in its hand-back or ask its caller with `agent_message_reply`.
+When a worker reports a wait, its caller receives one blocked notice for that
+wait, naming the kind (approval or answer), the start time and the question
+text. The caller started the worker and must unblock it, so the text is for the
+caller, not an outside peer.
 
-The daemon stores the question as a `question` waiting state with the options,
-urgency and start time. It sends the state with the session to the gateway, and
-every machine reads it from the agent list. A wait that the harness reports
-becomes an ask (kind `waiting`) at once, bound for the chief, when you have not
-typed in that session in the last 30 minutes. While you work in it, the ask
-comes only after the session has waited 2 minutes (decision 0150): a shorter
-wait makes no ask. The gateway's minute reconcile opens the ask of a wait that
-is old enough. A wait has one ask: once that ask is answered or closed, the same
-wait (same session and the same text once case, white space and ids are folded)
-is not raised again. A new wait, one with a new start time after the session
-stopped waiting, makes a new ask. The existing harness hooks still report
-permission prompts, forms and input dialogs. `agent_announce` also accepts an
-optional `waiting` string as a fallback.
+The daemon stores a wait on the session (`sessions.waiting`: `kind`, `text`,
+`options`, `urgency`, `explicit` and `since`) and sends it to the gateway so
+every machine reads it from the session list. The existing harness hooks still
+report permission prompts, forms and input dialogs. `agent_announce` also
+accepts an optional `waiting` string as a fallback.
 
 The wait clears when the owner message is delivered. It also clears when the
 owner types a Claude Code prompt (with the `needs-hook` installed), a Pi or
@@ -3027,23 +2641,6 @@ interrupted. An announced `waiting` outlives the turn. Dismissing the question
 or approval in the harness ends the wait too: the gateway tells the session's
 machine. If the gateway is down, a queued owner message clears the wait when
 delivered.
-
-The owner's own prompt in a Claude Code, Pi or Codex session (Codex: a user
-message with no `clientId`; not a peer message, a reminder or a scheduled turn)
-also closes that session's open question, approval and `stopped with work left`
-items, with the reason `owner_replied`, because the owner answered in the
-session. An `agent_announce` without `waiting` closes the session's open
-question items that it raised before its earlier announce, with the reason
-`moved_on`; an item raised since that announce stays. It never closes an
-approval: only the owner's answer, the asker's withdraw or the chief's
-replace-withdraw does. An escalation (a reply with outcome `escalate`) closes,
-with the reason `answered`, when the session that escalated later sends a plain
-reply in the same conversation; the outcome is then marked answered too. At the
-first gateway start after this rule, a one-time cleanup (marker
-`asks_moved_on_cleanup_v1` in `gateway_state`) closes, with the reason
-`moved on (cleanup)`, the open approvals and check items that a session left
-behind: its task started more than 10 minutes after the item. Questions are not
-part of it; they close by the rules above. Closed items are kept, never deleted.
 
 For a new waiting session, the daemon on each machine with an owner TUI open
 shows a desktop notification, at most once per session in five minutes. The
@@ -3156,7 +2753,7 @@ The worker sandbox level from decision 0020 follows the node. The project policy
 
 **Autonomy.** A node's `autonomy` setting is `off` (the default) or `wake`. With `wake`, an idle check's `more` answer wakes the existing online session with one short continue notification instead of leaving an item, and a message queued for an offline session of the agent wakes that session (see message delivery below: Claude interactive, Codex and OpenCode; not Pi). It never starts a new session or a clone: that stays with the owner, or with the CTO as a proposal. `blocked on X` always leaves an item. Wake-ups have their own daily cap of 6 per agent and stop after two in a row with no new message and no change in open work; the second leaves one row, `<name> was woken twice with no progress`, and a later change allows waking again. The gateway stores only the daily count, the no-progress streak and the progress markers it needs, never task content. The owner changes autonomy on the Graph agent card with `a`, or with `node_settings_set`. The CTO sets it at once with `graph_change` action `settings_set`, `setting: "autonomy"` and `value: "off"` or `"wake"`. The owner's answer to the session-start conflict in decision 0036 is that agent-net may wake an existing agent, but creating a new agent or a clone stays with the owner or the CTO.
 
-**Standing loops.** A node can have a loop: `loop_every` (a duration such as `4h`; empty is off) and `loop_prompt` (text; empty is the default), with the optional `loop_mode` and `loop_plan`. All are node settings (stored as `loop.every`, `loop.prompt`, `loop.mode` and `loop.plan`, repo or agent level, kind advice), set with `node_settings_set` by the owner or the CTO with no approval step. The CTO tool enum includes all four (`loop_every`, `loop_prompt`, `loop_mode`, `loop_plan`; the last two are described below). `loop_prompt` keeps its case. On the Graph agent card the key `L` cycles `loop_every` through off, `1h`, `4h`, `12h`, `24h`; any other interval and a prompt are set with `node_settings_set`. The expiry loop runs the clock once a minute with one indexed query for nodes that have a loop. The first tick comes one interval after the loop is first seen. A tick for a repo node goes to the repo lead, else the most recent live non-worker session of the node. A tick for an agent node goes to that agent's lead session; with no lead session it wakes nothing and logs `skipped, no session (no lead session)`. It sends a notification from the reserved `agent-net` sender: `[agent-net] Loop: <what changed>. Your purpose is <purpose>. Check where you stand against it, do the next step, then announce what you did or what blocks you. If you need the owner, send one request to the chief of staff with agent_message_send, saying what you need, why only the owner can decide, and your recommendation; carry on with work that does not depend on the answer; do not wait.` A set `loop_prompt` replaces the middle sentence (the one that starts `Check where you stand`). `<what changed>` is built from data the gateway already has, since the previous sent tick (or since the loop started): `Since your last loop tick (14:00 UTC): 3 messages (m_..), 1 worker hand-back (s_..), 2 step tasks (m_..), 1 new ask (i_..), 1 closed ask (i_..)`, with at most 5 ids per kind and `+N more`. It counts messages to the session from others, worker runs it called that ended, step task messages, and its own asks that opened or closed (not the loop's own pause ask). With no change it reads `Nothing new since 14:00 UTC`. `loop_mode` is `always` (the default: every due tick is sent) or `on_change`: a due tick with nothing new is skipped, logged as `skipped, nothing new`, and costs one set of cheap queries, not a model call. A skip is not a tick, not a wake, and not a no-progress tick. `loop_plan` is a path relative to the session's folder, such as `PLAN.md` (no absolute path, `~` or `..`). When it is set the prompt adds `Read <plan>, do the next step, then update <plan>.` after the middle sentence. A busy session, one waiting for its owner and one under a usage limit are skipped (`skipped busy`). An offline Claude, Codex or OpenCode session is woken through the wake-on-message path (`woke`): the same session resumes, no new session starts, and no view opens. The loop is the owner's consent to that wake, so autonomy may be `off`. Pi cannot be woken, so its tick is skipped and the log says `skipped, cannot be woken (pi)`. The daily cap is the wake rule's 6 a day per session, counted with the idle-check wakes. Two ticks in a row with no progress (no announce, no new message, no change in open work) pause the loop and write one log line that names the CTO call. The CTO restarts it with `cto_op` method `loop_resume` (node, owner_words) on the owner's quoted words; no stored ask is needed. Clearing `loop_every` stops it. A cap pause also ends on the next UTC day. A resume or stop ask stored before decision 0196 still closes when answered. Each tick adds one `desk_log` line (`Loop <node>: sent to <name>`, `woke`, `skipped busy`, `skipped, nothing new`, `paused (...)`). The agent's next announce adds `Loop <node> result: <announce>` after it. The Graph card shows a `Loop` block: `loop every 4h · last 14:00 · next 18:00 · today 3 ticks, 2 made progress` and the last result line (`· ~45k tokens today` appears when tokens are known; today they are known only for workers, so it is left out). When the lead leads a Team with `asks_to=lead` ([decision 0111](decisions/0111-blocked-members-reach-the-lead.md)), the prompt adds a `Members:` part after the changes sentence, only when it has something to say, as short lines (each list shows at most 4 entries, then `- +N more`): `- <member> blocked or waiting for 4h 1m: <announce>` for each online member whose announce reads blocked or waiting (a task as for the blocked-member message, or an explicit wait; a harness permission prompt does not count), longest first, once for one text: a later tick does not list the same wait again, and a changed text is listed again ([decision 0126](decisions/0126-lead-waits-are-not-owner-asks.md)); and `- worker s_.. (<member>) ended 12m ago, change ch_.. not accepted yet` for each worker a member started (the run's caller) that ended since the last sent tick, or whose open change has no passed `accept` step on its current revision, however long ago it ended. An unreviewed worker stays in every tick until its change is accepted, closed or stopped. When only this part has something, the first sentence reads `Nothing new for you since 14:00 UTC`. `loop_mode: on_change` counts the part as a change, so a blocked member, or an unreviewed worker, makes the tick go. A Team with `asks_to=owner` adds nothing. The Sessions tab puts `↻` after the name of a session whose node has a loop. The graph read (`agent_graph_read`, the CTO `graph` view) and the session views carry a `loop` object with `every`, `mode`, `plan`, `last_tick`, `next_tick`, `ticks_today`, `progress_today`, `paused` and `last_result`. See decision 0094.
+**Standing loops.** A node can have a loop: `loop_every` (a duration such as `4h`; empty is off) and `loop_prompt` (text; empty is the default), with the optional `loop_mode` and `loop_plan`. All are node settings (stored as `loop.every`, `loop.prompt`, `loop.mode` and `loop.plan`, repo or agent level, kind advice), set with `node_settings_set` by the owner or the CTO with no approval step. The CTO tool enum includes all four (`loop_every`, `loop_prompt`, `loop_mode`, `loop_plan`; the last two are described below). `loop_prompt` keeps its case. On the Graph agent card the key `L` cycles `loop_every` through off, `1h`, `4h`, `12h`, `24h`; any other interval and a prompt are set with `node_settings_set`. The expiry loop runs the clock once a minute with one indexed query for nodes that have a loop. The first tick comes one interval after the loop is first seen. A tick for a repo node goes to the repo lead, else the most recent live non-worker session of the node. A tick for an agent node goes to that agent's lead session; with no lead session it wakes nothing and logs `skipped, no session (no lead session)`. It sends a notification from the reserved `agent-net` sender: `[agent-net] Loop: <what changed>. Your purpose is <purpose>. Check where you stand against it, do the next step, then announce what you did or what blocks you. If you need the owner, send one request to the chief of staff with agent_message_send, saying what you need, why only the owner can decide, and your recommendation; carry on with work that does not depend on the answer; do not wait.` A set `loop_prompt` replaces the middle sentence (the one that starts `Check where you stand`). `<what changed>` is built from data the gateway already has, since the previous sent tick (or since the loop started): `Since your last loop tick (14:00 UTC): 3 messages (m_..), 1 worker hand-back (s_..), 2 step tasks (m_..)`, with at most 5 ids per kind and `+N more`. It counts messages to the session from others, worker runs it called that ended, and step task messages. With no change it reads `Nothing new since 14:00 UTC`. `loop_mode` is `always` (the default: every due tick is sent) or `on_change`: a due tick with nothing new is skipped, logged as `skipped, nothing new`, and costs one set of cheap queries, not a model call. A skip is not a tick, not a wake, and not a no-progress tick. `loop_plan` is a path relative to the session's folder, such as `PLAN.md` (no absolute path, `~` or `..`). When it is set the prompt adds `Read <plan>, do the next step, then update <plan>.` after the middle sentence. A busy session, one waiting for its owner and one under a usage limit are skipped (`skipped busy`). An offline Claude, Codex or OpenCode session is woken through the wake-on-message path (`woke`): the same session resumes, no new session starts, and no view opens. The loop is the owner's consent to that wake, so autonomy may be `off`. Pi cannot be woken, so its tick is skipped and the log says `skipped, cannot be woken (pi)`. The daily cap is the wake rule's 6 a day per session, counted with the idle-check wakes. Two ticks in a row with no progress (no announce, no new message, no change in open work) pause the loop and write one log line that names the CTO call. The CTO restarts it with `cto_op` method `loop_resume` (node, owner_words) on the owner's quoted words; no stored ask is needed. Clearing `loop_every` stops it. A cap pause also ends on the next UTC day. Each tick writes a gateway log line (`Loop <node>: sent to <name>`, `woke`, `skipped busy`, `skipped, nothing new`, `paused (...)`). The agent's next announce updates the loop's last result. The Graph card shows a `Loop` block: `loop every 4h · last 14:00 · next 18:00 · today 3 ticks, 2 made progress` and the last result line (`· ~45k tokens today` appears when tokens are known; today they are known only for workers, so it is left out). When the lead leads a Team with `asks_to=lead` ([decision 0111](decisions/0111-blocked-members-reach-the-lead.md)), the prompt adds a `Members:` part after the changes sentence, only when it has something to say, as short lines (each list shows at most 4 entries, then `- +N more`): `- <member> blocked or waiting for 4h 1m: <announce>` for each online member whose announce reads blocked or waiting (a task as for the blocked-member message, or an explicit wait; a harness permission prompt does not count), longest first, once for one text: a later tick does not list the same wait again, and a changed text is listed again ([decision 0126](decisions/0126-lead-waits-are-not-owner-asks.md)); and `- worker s_.. (<member>) ended 12m ago, change ch_.. not accepted yet` for each worker a member started (the run's caller) that ended since the last sent tick, or whose open change has no passed `accept` step on its current revision, however long ago it ended. An unreviewed worker stays in every tick until its change is accepted, closed or stopped. When only this part has something, the first sentence reads `Nothing new for you since 14:00 UTC`. `loop_mode: on_change` counts the part as a change, so a blocked member, or an unreviewed worker, makes the tick go. A Team with `asks_to=owner` adds nothing. The Sessions tab puts `↻` after the name of a session whose node has a loop. The graph read (`agent_graph_read`, the CTO `graph` view) and the session views carry a `loop` object with `every`, `mode`, `plan`, `last_tick`, `next_tick`, `ticks_today`, `progress_today`, `paused` and `last_result`. See decision 0094.
 
 **Merge authority.** `full` lets the agent merge and push to the default branch. `delegated` needs an approval from the owner or from anyone above the node in the tree who holds merge: its repo lead or team lead. `ask` needs the owner's written approval. `MergeApprovalFor` returns the authority, whether approval is required, whether it must be written, the delegates and the text. For the exact merge, the owner approves directly or through `delivery_owner_answer` on his quoted words; the repo lead or team lead approves in a message from them. On `ask`, always request the owner's written approval. An owner-instruction excerpt on its own does not approve a merge. The trust and owner-instruction notes use `recipient_merge_authority`, computed by the gateway for the receiving node at delivery. A sender cannot supply that field. The guidance block defers merges to this rule. Uninstall removes the guidance block as a whole.
 
@@ -3259,12 +2856,10 @@ quoted words are checked by the daemon. The CTO applies one with
 `delivery_owner_answer` for a delivery step or merge, `permission_apply` for a
 permission, and `sign_in_open` for a sign-in.
 
-The owner-only local methods are `inbox_list` and `inbox_answer` with `id` and
-`answer` (`approve`, `refuse`, `dismiss`, or text). The daemon applies the same
-operator gate as other owner-only methods. Rejections and escalations of agent
-requests are also recorded, with the request, reason, recommendation and
-conversation. Answering an item closes it and the other waiting rows. Existing
-outcomes are added when the gateway upgrades.
+Rejections and escalations of agent requests are recorded in `graph_outcomes`
+with the request, reason, recommendation and conversation, read via
+`outcome_inbox` (`query.outcome_inbox`) and resolved via `outcome_overrule`
+(`outcome.resolve`).
 
 For a node with `ask` merge authority, request approval for the exact merge with
 `agent_message_send` to the chief. A deployer follows the target node's deploy
@@ -3277,35 +2872,9 @@ same way. Codex workers include the action and recommendation in their report.
 
 A request that needs no answer is closed with `ack: true` instead. The body may be empty, and `ack` cannot be combined with `outcome` or `progress`. The gateway stores an `ack` message from the recipient and marks the request `acknowledged`, so `agent_message_status` and `agent_message_get` show the acknowledgement. Nothing is delivered to the sender and it is not woken. An acknowledged request counts as answered everywhere: no reminder follows, and it is no longer owed in the Sessions tab or in the idle check.
 
-An interim update is sent with `progress: true`. A progress reply is delivered to the sender and counts as activity for the recipient, but leaves the parent request or order open. A reply without the flag is final and closes the request. With `progress: true`, `follow_up_at` says when the work is due and holds the owed-reply reminder until then (see [owed replies](#owed-replies)).
+An interim update is sent with `progress: true`. A progress reply is delivered to the sender and counts as activity for the recipient, but leaves the parent request or order open. A reply without the flag is final and closes the request.
 
-### Owed replies
-
-An open request or order with no final reply, whose recipient has been idle for `messages.owed_reply_nudge_after` (default 15m) since its last activity, receives one automatic reminder nudge from agent-net (decision [0177](decisions/0177-owed-replies.md)): `You still owe <sender name> a final reply to <message id> (<first line>). Reply with the result, or hand back.` A recipient that is busy, waiting on the owner (an explicit wait or an open ask), or waiting on others (a running worker it started, or a claimed delivery step) is skipped. A recipient on a provider usage limit (`limited_until` in the future) is skipped too: it cannot reply, so no nudge and no ask go out while the limit lasts. The wait then counts from the end of the limit, so the nudge comes `messages.owed_reply_nudge_after` after the limit ends, not after the request. Withdrawn and expired requests are skipped.
-
-If there is still no final reply `messages.owed_reply_ask_after` (default 10m) after the nudge, agent-net raises one ask routed to the chief of staff (`next_who chief`). While the recipient is on a usage limit, no ask goes out; when a limit starts after the nudge, the ask waits `messages.owed_reply_ask_after` after the limit ends. The ask names the chain: who waits on whom, since when, the message id and its first line, the nudge time, and the sender's lead if any. Exactly one nudge and one ask are raised per request. A final reply before the nudge or ask stops the chain.
-
-A progress reply holds this chase. With `follow_up_at` on the reply (an RFC 3339 time or a duration such as `45m`), no reminder and no ask goes out before that time. Without it, the hold lasts `messages.owed_reply_progress_grace` (default `2h`) after the latest progress reply. When the hold ends and there is still no final reply, the usual rules apply: one nudge if the recipient is idle, then one ask. `follow_up_at` is accepted only with `progress: true`, because a final reply ends the wait.
-
-The settings `messages.owed_reply_nudge_after` (default `15m`), `messages.owed_reply_ask_after` (default `10m`) and `messages.owed_reply_progress_grace` (default `2h`) are available at the network, team and repo levels. A grace of `0s` turns the progress hold off.
-
-### Follow-ups
-
-The chief of staff has no timer: it acts only when a message arrives. `agent_message_send` and `agent_ask_sort` (results `send` and `close`) therefore take an optional `follow_up_at`, an RFC 3339 time (`2026-11-20T07:30:00Z`) or a positive duration counted from now (`45m`). A bad value is refused. Without `follow_up_at` nothing changes (decision [0177](decisions/0177-owed-replies.md), addition of 2026-11-20).
-
-The gateway stores the follow-up in the `follow_ups` table with the message or the sort. On its minute tick it looks at each follow-up once, when it falls due. If the expected event has not happened since the follow-up was set, it raises one ask routed to the chief (`next_who chief`, source `follow-up:<id>`). The ask names who set the follow-up, what was expected, when it was set and when it was due. If the event happened, nothing is raised. Detection reads the database only and uses no model tokens.
-
-The expected event is:
-
-- For a send: a message in the same conversation from the recipient, a progress reply included, or the message moving to `replied` or `acknowledged`. `follow_up_at` with `to_set` is refused.
-- For a sort that names a change (`change`, or the change the ask is about): a move of that change, meaning new evidence for any of its steps or a new revision, state change or other update to the change after the follow-up was set. An unknown `change` is refused.
-- For a close or send with neither: any later message in the ask's conversation that is not from agent-net. When the ask has no conversation, any later message from or to the asker.
-
-`change` needs `follow_up_at`, and `follow_up_at` is refused on merge, owner and the other results.
-
-A withdrawn message ends its pending send follow-up (an expected reply from the recipient). The row is deleted, so the follow-up never falls due and raises no ask. Follow-ups that a sort set are not affected by the withdraw.
-
-A rejection or escalation of another agent's request appears as a separate item until the owner resolves it. The entry shows the request's first line, outcome, reason and recommendation. Press `s` to let the decision stand or `O` to overrule it. Letting it stand sends the receiving session a notice that its decision stands. Overrule sends the original request again from the owner with the agent-net note `the owner overrules: do it.` The operator method is `outcome_overrule` with `reply_id` and `action` (`let_stand` or `overrule`).
+A rejection or escalation of another agent's request stays in `graph_outcomes` until resolved (`query.outcome_inbox`). The operator method is `outcome_overrule` (`outcome.resolve`, CTO `answer` `kind: "outcome"`) with `reply_id` and `action` (`let_stand` or `overrule`). Letting it stand sends the receiving session a notice that its decision stands. Overrule sends the original request again from the owner with the agent-net note `the owner overrules: do it.`
 
 The daemon marks its private Claude CTO folder and Claude worker worktrees trusted in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`). It removes the worktree trust setting when a known Claude worker worktree is deleted. Uninstall removes the CTO folder's trust setting and preserves other project settings.
 
@@ -4561,14 +4130,14 @@ supervisor retain their existing short freshness window.
 
 ## Delegated authority
 
-The owner delegates authority to role nodes with scopes ([decision 0166](decisions/0166-delegated-authority-table.md)). A scope is a kind (`review`, `merge`, `release`, `deploy`, `asks`, `permissions`, `admin`) and where it applies (`all`, `team:`, `repo:`, `agent:`). A session speaks for the role node of its repo; a worker speaks for its caller's node. Nothing here ever answers "block": the answer is allow or no decision, and no decision leaves the harness or agent-net exactly as it was.
+The owner delegates authority to role nodes with scopes ([decision 0166](decisions/0166-delegated-authority-table.md)). A scope is a kind (`review`, `merge`, `release`, `deploy`, `permissions`, `admin`) and where it applies (`all`, `team:`, `repo:`, `agent:`). A session speaks for the role node of its repo; a worker speaks for its caller's node. Nothing here ever answers "block": the answer is allow or no decision, and no decision leaves the harness or agent-net exactly as it was.
 
-- **The table** is data in `internal/authority/table.go`. `review` allows read-only git and file reads and `agent_step_report`. `merge` allows `git merge`, `rebase`, `commit`, a push of `main` or `master`, and `gh pr merge`. `release` allows `git tag`, a push of a tag, `gh release create` and `upload`, and `scripts/release*.sh` or `scripts/dist*.sh`. `deploy` allows `scripts/deploy*.sh`. `asks` allows `agent_ask_sort` and `agent_ask_intake`. `permissions` allows the `cto_op` method `permission_apply`. `admin` allows the agent-net admin tools (`agent_bar_edit`, `agent_charter_draft`, `agent_project_add`, `agent_worker_profile_add`, `agent_worker_profile_remove`) and every `cto_op` method except the never list. A shell command is allowed only in the area of its scope: the repo of the folder it runs in. An agent-net tool is allowed by the scope kind alone, because the tool checks its own arguments.
+- **The table** is data in `internal/authority/table.go`. `review` allows read-only git and file reads and `agent_step_report`. `merge` allows `git merge`, `rebase`, `commit`, a push of `main` or `master`, and `gh pr merge`. `release` allows `git tag`, a push of a tag, `gh release create` and `upload`, and `scripts/release*.sh` or `scripts/dist*.sh`. `deploy` allows `scripts/deploy*.sh`. `permissions` allows the `cto_op` method `permission_apply`. `admin` allows the agent-net admin tools (`agent_bar_edit`, `agent_charter_draft`, `agent_project_add`, `agent_worker_profile_add`, `agent_worker_profile_remove`) and every `cto_op` method except the never list. A shell command is allowed only in the area of its scope: the repo of the folder it runs in. An agent-net tool is allowed by the scope kind alone, because the tool checks its own arguments.
 - **The never list** is in `internal/authority/never.go`. It holds the owner-only CTO actions (`node_remove`, `repo_archive`, `agent_tombstone`, `machine_remove`, `machine_rotate`, `process_stop`, `app_revoke`) and the shell commands that delete data (`rm -r`, force push, deleting a branch or tag, `DROP`, `DELETE FROM`, `TRUNCATE`), spend money (paid model APIs, `terraform apply`, `stripe`) or use secrets (`.env`, key files, `printenv`, `gh auth token`). A match gives no decision whatever the scopes. The CTO's class table, its `cto_ops_list` gates, the gateway's refusal of `repo.archive` and `agent.tombstone` from the CTO, and the CTO's instructions all read this one list. The owner's own words through the CTO still approve these actions ([decision 0165](decisions/0165-cto-owner-words-are-approval.md)).
 - **A compound command** (one that holds `;`, `&`, `|`, a backquote, `$`, brackets, a redirect or a newline, even inside quotes) is never matched whole: no decision.
 - **The local method `tool_decide`** takes `{"harness", "native_id", "tool", "input", "folder"}` from the command line (a bound plugin leaves the first two out) and answers `{"allow", "reason"}`. An unknown session, a session whose node holds no scope, a never-list match, a compound command or a gateway that cannot be reached gives `{"allow": false}`. The scopes come from the gateway's `policy.get` answer (`scopes` and `scope_repos`, which resolves a `team:` or `agent:` area to repos). The daemon caches them for 2 seconds in the charter epoch they were read in, apart from the turn policy cache, and a scope change by the owner (`scope.set`, `scope.remove`) tells every daemon to drop them, so a removed scope stops allowing at once. A cached answer takes a few milliseconds.
 - **The text.** `policy.get` adds one line to the session's charter text, for every harness: `Delegated authority: you may merge and release in agent-net; you may run admin tools everywhere.` A node with no scope gets no line.
-- **The holds scopes lift.** The order is always the owner's words, then a scope, then the chief. A request no scope covers behaves exactly as before, and nothing here blocks. (1) A worker start that names a model or other selection field passes at once when the caller's role node holds `admin` over the project; the start result says `selection_path: scope`. (2) A permission proposal from a session whose role node holds `permissions` over every target repo is approved by that scope (`decided_by scope:<node>`), applied at once, and logged with its undo; it opens no ask. Folder trust, a rule that names a whole tool (`Bash`, `Bash(*)`), and a rule whose command is on the never list stay with the owner. (3) An ask from a repo that a role node's `asks` scope covers goes to a live session of that node, with a message, before the chief; the chief's own node is never that holder. The holder closes it with `agent_ask_sort`. The first two read the requester's own scopes; the third reads the scopes of another node.
+- **The holds scopes lift.** The order is always the owner's words, then a scope, then the chief. A request no scope covers behaves exactly as before, and nothing here blocks. A worker start that names a model or other selection field passes at once when the caller's role node holds `admin` over the project; the start result says `selection_path: scope`. Without `admin` or verified `owner_words`, the start is refused with one line. Direct `permission_apply` still requires verified `owner_words`.
 - **Codex.** A Codex worker's command approval request (`item/commandExecution/requestApproval`) is answered through `tool_decide` with the worker's caller's scopes: on allow the command is accepted once; on anything else it is declined as before. File changes and other requests are still declined.
 - **OpenCode.** OpenCode 2.3 has no permission hook that can answer allow. The plugin forwards each shell permission request (`permission.asked` with action `bash` and one resource) to the daemon with `tool_decide` (`request_id` and `request_session` set). On allow the daemon replies `once` through OpenCode's own route, `POST /api/session/{sessionID}/permission/{requestID}/reply` with `{"decision": "once"}`, on the service that runs the session (a worker's own service, else the owner's). It never sends `always` or `reject`. On no decision, or a service without the route, nothing is sent and the request waits for the owner as before. Pi never asks permission and needs nothing.
 

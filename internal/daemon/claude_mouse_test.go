@@ -10,8 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,19 +17,22 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// mouseTestDaemon is a daemon that records CTO intake lines instead of calling
-// the gateway.
+type mouseLogCapture struct {
+	lines *[]string
+}
+
+func (c mouseLogCapture) Write(p []byte) (int, error) {
+	if _, rest, ok := strings.Cut(string(p), "claude mouse: "); ok {
+		*c.lines = append(*c.lines, strings.TrimSpace(rest))
+	}
+	return len(p), nil
+}
+
+// mouseTestDaemon is a daemon that records logged mouse notices.
 func mouseTestDaemon(t *testing.T, lines *[]string) *Daemon {
 	t.Helper()
-	d := &Daemon{log: log.New(io.Discard, "", 0)}
+	d := &Daemon{log: log.New(mouseLogCapture{lines: lines}, "", 0)}
 	d.cfg.Hostname = "research"
-	d.cfg.testGatewayCall = func(_ context.Context, typ string, params any) (json.RawMessage, bool, error) {
-		if typ != "intake.report" {
-			return nil, false, nil
-		}
-		*lines = append(*lines, params.(protocol.IntakeReport).Text)
-		return json.RawMessage(`{"ok":true}`), true, nil
-	}
 	return d
 }
 
@@ -241,7 +242,7 @@ func TestClaudeMouseServiceWaitsWithLiveSessions(t *testing.T) {
 	if stops != 1 {
 		t.Fatalf("stops = %d, want 1", stops)
 	}
-	if len(lines) != 2 || !strings.Contains(lines[1], "it was stopped") {
+	if !strings.Contains(strings.Join(lines, "\n"), "it was stopped") {
 		t.Fatalf("reports = %v", lines)
 	}
 	// A repeated pass does not stop the same service twice a day.
@@ -325,86 +326,20 @@ func TestClaudeMouseDriftPendingSentWhenGatewayLinkUp(t *testing.T) {
 	fakeMouseStart(t, time.Now().Add(-time.Hour))
 	fakeProcessEnv(t, "CLAUDE_CODE_DISABLE_MOUSE=1")
 
-	var (
-		mu     sync.Mutex
-		lines  []string
-		linkUp bool
-	)
-	d := &Daemon{log: log.New(io.Discard, "", 0)}
-	d.cfg.Hostname = "research"
-	d.cfg.testGatewayCall = func(_ context.Context, typ string, params any) (json.RawMessage, bool, error) {
-		if typ != "intake.report" {
-			return nil, false, nil
-		}
-		mu.Lock()
-		defer mu.Unlock()
-		if !linkUp {
-			return nil, true, errNotConnected
-		}
-		lines = append(lines, params.(protocol.IntakeReport).Text)
-		return json.RawMessage(`{"ok":true}`), true, nil
-	}
+	var lines []string
+	d := mouseTestDaemon(t, &lines)
 	d.sessions = map[string]*localSession{
 		key("claude", "abc"): {info: protocol.SessionInfo{Harness: "claude", NativeID: "abc", Name: "garden", PID: os.Getpid()}},
 	}
-
-	// First drift check with the gateway link down: the Desk note cannot be sent yet.
 	d.checkClaudeMouseSessions(context.Background(), time.Now())
-	mu.Lock()
-	if len(lines) != 0 {
-		mu.Unlock()
-		t.Fatalf("reports before gateway link up: %v", lines)
-	}
-	mu.Unlock()
-
-	// Link is up afterwards: the pending Desk note must be sent.
-	mu.Lock()
-	linkUp = true
-	mu.Unlock()
-
-	eventually(t, "intake report sent once gateway link is up", func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return len(lines) == 1
-	})
-
 	want := "garden on research: wheel off (mouse tracking disabled); it scrolls after its next restart"
-	mu.Lock()
-	got := lines[0]
-	mu.Unlock()
-	if got != want {
-		t.Fatalf("got report %q, want %q", got, want)
+	if len(lines) != 1 || lines[0] != want {
+		t.Fatalf("got report %v, want [%q]", lines, want)
 	}
-
-	// Repeated drift checks do not send it again.
+	// Repeated drift checks do not log it again.
 	d.checkClaudeMouseSessions(context.Background(), time.Now())
-	time.Sleep(50 * time.Millisecond)
-	mu.Lock()
-	count := len(lines)
-	mu.Unlock()
-	if count != 1 {
-		t.Fatalf("report sent %d times, want 1", count)
-	}
-}
-
-func TestClaudeMouseDriftRetryBacksOffWhileGatewayOffline(t *testing.T) {
-	var calls atomic.Int32
-	d := &Daemon{log: log.New(io.Discard, "", 0)}
-	d.cfg.testGatewayCall = func(_ context.Context, typ string, _ any) (json.RawMessage, bool, error) {
-		if typ == "intake.report" {
-			calls.Add(1)
-			return nil, true, errNotConnected
-		}
-		return nil, false, nil
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	d.showMouseNotice(ctx, "mouse-key", "offline notice")
-	// A repeated report while its first sender is pending must not start another.
-	d.showMouseNotice(ctx, "mouse-key", "offline notice")
-	time.Sleep(1100 * time.Millisecond)
-	if got := calls.Load(); got > 2 {
-		t.Fatalf("intake.report calls while offline = %d, want at most 2 during 1.1 seconds", got)
+	if len(lines) != 1 {
+		t.Fatalf("report logged %d times, want 1", len(lines))
 	}
 }
 

@@ -12,6 +12,18 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// stateDaemon is a daemon over a state folder with no gateway and no socket,
+// so it runs where unix sockets are blocked.
+func stateDaemon(t *testing.T, state, claudeSessions string) *Daemon {
+	t.Helper()
+	d, err := New(Config{StateDir: state, ClaudeSessionsDir: claudeSessions, SocketPath: filepath.Join(state, "unused.sock")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { d.claudeChecks.Wait(); d.st.close() })
+	return d
+}
+
 // rebuildMachine is a daemon over a state folder with no gateway and no
 // socket. Its Claude sessions live under claude/sessions, so their
 // transcripts are under claude/projects, as on a real machine.

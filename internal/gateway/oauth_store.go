@@ -321,13 +321,7 @@ func (s *Store) ApprovePending(id, kind, name string, now time.Time, ownerSessio
 			return err
 		}
 		text := fmt.Sprintf("Connected: %s (%s, %s, %s). If this was not you, revoke it in Settings.", safeAppLog(name), kind, safeAppLog(clientName), safeAppLog(u.Hostname()))
-		// A new app is an event for the log, not a question (decision 0090).
-		if err = s.deskLog(tx, "apps", "", "", text, "app-approval:"+id, nil); err != nil {
-			return err
-		}
-	}
-	if err := s.closeAskRef(tx, "app-consent:"+id, protocol.AskReasonResolved); err != nil {
-		return err
+		s.logf("apps.connected", "app", id, "text", text)
 	}
 	return tx.Commit()
 }
@@ -349,9 +343,6 @@ func (s *Store) RefusePending(id string) error {
 	}
 	if n == 0 {
 		return sql.ErrNoRows
-	}
-	if err := s.closeAskRef(tx, "app-consent:"+id, protocol.AskReasonResolved); err != nil {
-		return err
 	}
 	return tx.Commit()
 }

@@ -63,7 +63,7 @@ func wakeMessages(t *testing.T, s *Store) []protocol.Message {
 func openCheckRows(logs *[]string) []string {
 	var rows []string
 	for _, line := range *logs {
-		if strings.HasPrefix(line, "desk.dropped kind check ") {
+		if strings.HasPrefix(line, "idle_check.notice ") {
 			rows = append(rows, line)
 		}
 	}

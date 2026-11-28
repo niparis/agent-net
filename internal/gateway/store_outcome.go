@@ -92,19 +92,6 @@ func (s *Store) ResolveOutcome(replyID, owner, action string, validate ...bool) 
 	if _, err = tx.Exec(`UPDATE graph_outcomes SET resolution=?,overruled=?,overrule_message_id=? WHERE reply_id=?`, action, overruled, overruleMsg, replyID); err != nil {
 		return result, err
 	}
-	asks, err := scanInboxRows(tx.Query(`SELECT `+inboxColumns+` FROM inbox_items WHERE message_id=? AND kind IN ('rejection','escalation') AND status='open'`, replyID))
-	if err != nil {
-		return result, err
-	}
-	if _, err = tx.Exec(`UPDATE inbox_items SET status='answered',answer=?,answered_at=? WHERE message_id=? AND kind IN ('rejection','escalation') AND status='open'`, action, now.UnixNano(), replyID); err != nil {
-		return result, err
-	}
-	for _, ask := range asks {
-		ask.Status, ask.Answer, ask.AnsweredAt = "answered", action, now
-		if err = s.recordOwnerAnswer(tx, ask, action); err != nil {
-			return result, err
-		}
-	}
 	if len(validate) > 0 && validate[0] {
 		return result, nil
 	}

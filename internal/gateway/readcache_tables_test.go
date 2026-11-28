@@ -37,7 +37,6 @@ func readCases() []readCase {
 			s.Agents(protocol.QueryAgents{OnlineOnly: true, IncludeOwners: true, Project: "cogforge", Text: "a"})
 		}},
 		{"worker log", workerLogTables, func(s *Store) { s.WorkerLog(200) }},
-		{"inbox", inboxTables, func(s *Store) { s.ListInbox() }},
 		{"agent", agentOneTables, func(s *Store) { s.Agent(richAgentID) }},
 		{"visible graph", visibleTables, func(s *Store) { s.visibleGraph(false) }},
 		{"worker failures", failuresTables, func(s *Store) { s.RecentWorkerFailures("n_readcase", "opencode") }},
@@ -410,7 +409,7 @@ func TestCachedReadsSurviveWritesToOtherTables(t *testing.T) {
 	}
 	msg := ""
 	for _, c := range reads {
-		for _, other := range []string{"events", "deliveries", "desk_log", "delivery_evidence", "worker_runs", "session_wakes"} {
+		for _, other := range []string{"events", "deliveries", "delivery_evidence", "worker_runs", "session_wakes"} {
 			if declared[c.name][other] {
 				msg += fmt.Sprintf("%s declares %s; ", c.name, other)
 			}

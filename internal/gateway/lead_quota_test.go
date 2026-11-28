@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -26,7 +25,7 @@ func TestLeadRouteLeadOutOfQuotaDeliversToMemberAsAddressed(t *testing.T) {
 	}
 	g := &Gateway{store: r.s}
 	g.usage.set(r.node, r.clk.now(), grokUsage(r.clk.now(), 100, time.Date(2026, 11, 21, 0, 0, 0, 0, time.UTC)))
-	g.flushChief(context.Background())
+	g.refreshLeadQuota()
 	m, _, note, err := r.s.StoreLeadMessage(protocol.MsgSend{Sender: r.outsider, Recipient: r.member2, Body: "truenas is down"})
 	if err != nil {
 		t.Fatal(err)
@@ -50,9 +49,9 @@ func TestLeadRouteLeadQuotaBackRedirectsAgain(t *testing.T) {
 	g := &Gateway{store: r.s}
 	resets := time.Date(2026, 11, 21, 0, 0, 0, 0, time.UTC)
 	g.usage.set(r.node, r.clk.now(), grokUsage(r.clk.now(), 100, resets))
-	g.flushChief(context.Background())
+	g.refreshLeadQuota()
 	g.usage.set(r.node, r.clk.now(), grokUsage(r.clk.now(), 20, resets))
-	g.flushChief(context.Background())
+	g.refreshLeadQuota()
 	m, _, note, err := r.s.StoreLeadMessage(protocol.MsgSend{Sender: r.outsider, Recipient: r.member2, Body: "truenas is down"})
 	if err != nil {
 		t.Fatal(err)

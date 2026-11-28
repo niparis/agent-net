@@ -3,15 +3,12 @@ package daemon
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // writeCacheEntry creates one Go cache entry file of size bytes with an mtime.
@@ -213,21 +210,15 @@ func TestDiskWarningTrimsCachesAndNamesTheirSizes(t *testing.T) {
 	workerNew := writeCacheEntry(t, workerDir, filepath.Join("bb", "new"), 1024, now.Add(-1*time.Hour))
 	ownerOld := writeCacheEntry(t, ownerDir, filepath.Join("cc", "old"), 1024, now.Add(-20*time.Hour))
 
-	var reports []protocol.IntakeReport
+	var buf bytes.Buffer
 	d := &Daemon{
+		log: log.New(&buf, "", 0),
 		cfg: Config{
-			NodeID:        "n_test",
-			Hostname:      "test-node",
-			HomeDir:       homeDir,
-			WorkerGoCache: workerDir,
-			Workers:       WorkerSettings{CacheMaxBytes: 2048, CacheLowBytes: 1024},
-			testGatewayCall: func(ctx context.Context, typ string, params any) (json.RawMessage, bool, error) {
-				if typ == "intake.report" {
-					reports = append(reports, params.(protocol.IntakeReport))
-					return nil, true, nil
-				}
-				return nil, false, nil
-			},
+			NodeID:          "n_test",
+			Hostname:        "test-node",
+			HomeDir:         homeDir,
+			WorkerGoCache:   workerDir,
+			Workers:         WorkerSettings{CacheMaxBytes: 2048, CacheLowBytes: 1024},
 			testDiskPercent: func(string) (float64, bool) { return 90, true },
 		},
 	}
@@ -235,15 +226,10 @@ func TestDiskWarningTrimsCachesAndNamesTheirSizes(t *testing.T) {
 	if err := d.checkDiskWarning(context.Background(), now); err != nil {
 		t.Fatal(err)
 	}
-	if len(reports) != 1 {
-		t.Fatalf("expected one warning, got %d", len(reports))
-	}
-	if reports[0].Kind != protocol.IntakeDiskSpace || reports[0].Subject != diskIntakeSubject || reports[0].Resolved {
-		t.Fatalf("warning report %+v", reports[0])
-	}
-	for _, want := range []string{"worker Go cache 1.0 KB", "owner Go cache 0 bytes"} {
-		if !strings.Contains(reports[0].Text, want) {
-			t.Errorf("warning %q does not contain %q", reports[0].Text, want)
+	logged := buf.String()
+	for _, want := range []string{"disk.warning raised:", "worker Go cache 1.0 KB", "owner Go cache 0 bytes"} {
+		if !strings.Contains(logged, want) {
+			t.Errorf("log %q does not contain %q", logged, want)
 		}
 	}
 	// The warning fires the size trim at once: the oldest file across both
@@ -470,11 +456,6 @@ func TestDiskWarningGatewayNoDeadlock(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			if clear {
-				// Leave an open warning for the clear pass to resolve.
-				_, err := n.d.call(ctx, "intake.report", protocol.IntakeReport{Kind: protocol.IntakeDiskSpace, Subject: diskIntakeSubject, Text: "Disk space low"})
-				if err != nil {
-					t.Fatal(err)
-				}
 				n.d.diskWarningActive = true
 			}
 			done := make(chan error, 1)
@@ -487,21 +468,8 @@ func TestDiskWarningGatewayNoDeadlock(t *testing.T) {
 			case <-ctx.Done():
 				t.Fatal("checkDiskWarning did not return within 2 seconds")
 			}
-			// A subsequent gateway call must still work after either transition.
-			raw, err := n.d.call(ctx, protocol.FrameIntakeFind, protocol.IntakeFindArgs{})
-			if err != nil {
-				t.Fatal(err)
-			}
-			var found protocol.IntakeFindResult
-			if err := json.Unmarshal(raw, &found); err != nil {
-				t.Fatal(err)
-			}
-			want := 1
-			if clear {
-				want = 0
-			}
-			if found.Total != want {
-				t.Fatalf("intake after transition: %s, want %d open entries", raw, want)
+			if n.d.diskWarningActive != !clear {
+				t.Fatalf("diskWarningActive = %v, want %v", n.d.diskWarningActive, !clear)
 			}
 		})
 	}
@@ -509,21 +477,13 @@ func TestDiskWarningGatewayNoDeadlock(t *testing.T) {
 
 func TestDiskWarningHysteresis(t *testing.T) {
 	isolateDaemonCaches(t)
-	var reports []protocol.IntakeReport
 	var simPct float64
 
 	d := &Daemon{
 		cfg: Config{
-			NodeID:   "n_test",
-			Hostname: "test-node",
-			StateDir: t.TempDir(),
-			testGatewayCall: func(ctx context.Context, typ string, params any) (json.RawMessage, bool, error) {
-				if typ == "intake.report" {
-					reports = append(reports, params.(protocol.IntakeReport))
-					return nil, true, nil
-				}
-				return nil, false, nil
-			},
+			NodeID:          "n_test",
+			Hostname:        "test-node",
+			StateDir:        t.TempDir(),
 			testDiskPercent: func(path string) (float64, bool) { return simPct, true },
 		},
 	}
@@ -535,85 +495,35 @@ func TestDiskWarningHysteresis(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	unresolved := func() int {
-		n := 0
-		for _, r := range reports {
-			if !r.Resolved {
-				n++
-			}
-		}
-		return n
-	}
-	resolved := func() int {
-		n := 0
-		for _, r := range reports {
-			if r.Resolved {
-				n++
-			}
-		}
-		return n
-	}
 
-	// Each check above 85% reports the warning; the gateway deduplicates the
-	// item, so a repeat raises the entry's count instead of a new item.
 	check(86)
-	if unresolved() != 1 || !d.diskWarningActive {
-		t.Fatalf("at 86%%: %d warnings, active=%v", unresolved(), d.diskWarningActive)
+	if !d.diskWarningActive {
+		t.Fatalf("at 86%%: active=%v", d.diskWarningActive)
 	}
-	check(86)
-	if unresolved() != 2 {
-		t.Fatalf("repeat at 86%%: %d warnings, want 2 reports", unresolved())
-	}
-	// Between 80% and 85% keeps the warning without resolving it.
 	check(82)
-	if resolved() != 0 || !d.diskWarningActive {
-		t.Fatalf("at 82%%: %d resolves, active=%v", resolved(), d.diskWarningActive)
-	}
-	// Below 80% resolves it once.
-	check(79)
-	if resolved() != 1 || d.diskWarningActive {
-		t.Fatalf("at 79%%: %d resolves, active=%v", resolved(), d.diskWarningActive)
+	if !d.diskWarningActive {
+		t.Fatalf("at 82%%: active=%v", d.diskWarningActive)
 	}
 	check(79)
-	if resolved() != 1 {
-		t.Fatalf("repeat at 79%% resolved again: %d", resolved())
+	if d.diskWarningActive || !d.diskWarningCleared {
+		t.Fatalf("at 79%%: active=%v cleared=%v", d.diskWarningActive, d.diskWarningCleared)
 	}
-	// A fresh crossing reports a new warning.
 	check(86)
-	if unresolved() != 3 {
-		t.Fatalf("after re-crossing 85%%: %d warnings, want 3 reports", unresolved())
+	if !d.diskWarningActive || d.diskWarningCleared {
+		t.Fatalf("after re-crossing 85%%: active=%v cleared=%v", d.diskWarningActive, d.diskWarningCleared)
 	}
 }
 
-// A daemon that restarts with an open entry and finds the disk between the
-// marks leaves it open. Only a drop below the clear mark resolves it, once.
 func TestDiskWarningRestartKeepsOpenEntryBetweenMarks(t *testing.T) {
 	isolateDaemonCaches(t)
-	var reports []protocol.IntakeReport
 	var simPct float64
 	d := &Daemon{
 		cfg: Config{
-			NodeID:   "n_test",
-			Hostname: "test-node",
-			StateDir: t.TempDir(),
-			testGatewayCall: func(ctx context.Context, typ string, params any) (json.RawMessage, bool, error) {
-				if typ == "intake.report" {
-					reports = append(reports, params.(protocol.IntakeReport))
-					return nil, true, nil
-				}
-				return nil, false, nil
-			},
+			NodeID:          "n_test",
+			Hostname:        "test-node",
+			StateDir:        t.TempDir(),
 			testDiskPercent: func(string) (float64, bool) { return simPct, true },
 		},
-	}
-	resolved := func() int {
-		n := 0
-		for _, r := range reports {
-			if r.Resolved {
-				n++
-			}
-		}
-		return n
 	}
 	check := func(pct float64) {
 		t.Helper()
@@ -623,16 +533,12 @@ func TestDiskWarningRestartKeepsOpenEntryBetweenMarks(t *testing.T) {
 		}
 	}
 	check(84)
-	if resolved() != 0 {
-		t.Fatalf("84%% resolved an entry the earlier daemon may have left open")
+	if d.diskWarningActive || d.diskWarningCleared {
+		t.Fatalf("at 84%%: active=%v cleared=%v", d.diskWarningActive, d.diskWarningCleared)
 	}
 	check(79)
-	if resolved() != 1 {
-		t.Fatalf("79%% resolves %d times, want 1", resolved())
-	}
-	check(79)
-	if resolved() != 1 {
-		t.Fatalf("a later low check resolved again: %d", resolved())
+	if d.diskWarningActive || !d.diskWarningCleared {
+		t.Fatalf("at 79%%: active=%v cleared=%v", d.diskWarningActive, d.diskWarningCleared)
 	}
 }
 

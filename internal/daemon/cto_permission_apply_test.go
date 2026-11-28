@@ -85,29 +85,6 @@ func TestCTOPermissionApplyWritesRule(t *testing.T) {
 		len(doc.Permissions.Deny) != 1 || doc.Other != "keep" {
 		t.Fatalf("settings after apply: %+v", doc)
 	}
-	asks, err := r.g.gw.Store().ListAsks()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, a := range asks {
-		if a.Kind == protocol.AskKindPermission {
-			t.Fatalf("a direct CTO apply opened a Desk ask: %+v", a)
-		}
-	}
-	log, err := r.g.gw.Store().DeskLog(50)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// One log line for the grant: the CTO's, with the owner's words.
-	lines := 0
-	for _, e := range log {
-		if e.Source == "cto" && e.AboutKind == "permission" && strings.Contains(e.Detail, words) && len(e.Options) == 0 {
-			lines++
-		}
-	}
-	if lines != 1 {
-		t.Fatalf("want one CTO log line with the owner's words, got %d: %+v", lines, log)
-	}
 }
 
 // The owner's words are the record of his approval, so an apply without them
@@ -143,15 +120,6 @@ func TestCTOPermissionApplyRefusesWordsNeverTyped(t *testing.T) {
 	}
 	if raw, err := os.ReadFile(r.settings); err != nil || string(raw) != r.before {
 		t.Fatalf("settings changed: %v\n%s", err, raw)
-	}
-	asks, err := r.g.gw.Store().ListAsks()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, a := range asks {
-		if a.Kind == protocol.AskKindPermission {
-			t.Fatalf("a refused apply opened a Desk ask: %+v", a)
-		}
 	}
 }
 

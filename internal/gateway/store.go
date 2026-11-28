@@ -56,8 +56,6 @@ type Store struct {
 	unavailableMu sync.Mutex
 	unavailable   map[string]map[string]string
 
-	// chiefQuota is the quota verdict on the chief session (chief_health.go).
-	chiefQuota atomic.Pointer[chiefQuotaReading]
 	// leadQuota holds the pinned lead sessions that are out of quota (lead_quota.go).
 	leadQuota       atomic.Pointer[leadQuotaVerdicts]
 	reminderOffline map[string]bool
@@ -1339,7 +1337,7 @@ CREATE TRIGGER IF NOT EXISTS settings_target_identity_agent_tombstone AFTER UPDA
  DELETE FROM settings_target_identity WHERE kind='agent' AND id=NEW.id;
 END;
 INSERT OR IGNORE INTO settings_target_identity(kind,id,token) SELECT 'team',id,lower(hex(randomblob(16))) FROM teams;
-`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration, workerTablesMigration, machineTablesMigration, orgFoldMigration, toolsRetireMigration, oauthClientsMigration, deskTablesMigration, pickQuotaMigration, workerStartOwnerChoiceMigration, sessionRequestedModelMigration, stoodDownMigration, deskHideRemovalMigration, treeInvariantsMigration, sessionStallColumnsMigration, permissionDecidedReasonMigration, workerStopColumnsMigration, mergerAnyMachineMigration, retiredTablesDropMigration}
+`, `SELECT 1 /* change handback check column */;`, workerVisualProofMigration, quotaBudgetMigration, projectBarMigration, workerCauseMigration, workerBriefDoneMigration, callerEscalationMigration, deskItemShapeMigration, ctoIntakeMigration, ownerTypedMigration, frontDoorFlushMigration, gatewayNotesMigration, askBackNoteMigration, ctoDefaultCharterMigration, permissionOwnerWordsMigration, orgTreeMigration, nodeScopesMigration, modelPricesMigration, orgTreeRepairMigration, leadSessionCopiesMigration, leadSessionRepairMigration, skillArchiveMigration, skillListsMigration, skillArchiveSourceProjectMigration, frictionMigration, skillArchiveChangePreviousMigration, skillArchiveLatestMigration, skillArchiveGuardMigration, joinedSettleReasonMigration, pickCandidatesMigration, frictionStatusMigration, nestedBatchRepairMigration, sessionTurnErrorMigration, followUpsMigration, deadTablesDropMigration, nodeSideMigration, repoLeadFoldMigration, oneCharterStoreMigration, sideTablesFoldMigration, sideFoldMigration, planKindsMigration, teamHistoryMigration, gatewayStateMigration, graphNodesFoldMigration, progressReplyMigration, sessionDuesMigration, ownerWordsSortMigration, judgmentVoidColumnsMigration, voidCompactionJudgmentsMigration, workerBriefLaunchMigration, frictionIndexMigration, learnedTablesMigration, settingsFoldMigration, sessionTablesMigration, stepTablesMigration, workerTablesMigration, machineTablesMigration, orgFoldMigration, toolsRetireMigration, oauthClientsMigration, deskTablesMigration, pickQuotaMigration, workerStartOwnerChoiceMigration, sessionRequestedModelMigration, stoodDownMigration, deskHideRemovalMigration, treeInvariantsMigration, sessionStallColumnsMigration, permissionDecidedReasonMigration, workerStopColumnsMigration, mergerAnyMachineMigration, retiredTablesDropMigration, dropDeskTablesMigration}
 
 // MigrationVersion returns the 1-based version of the migration whose text
 // contains marker. A test that must replay one migration finds it by name, so
@@ -1972,17 +1970,9 @@ func openStoreWith(path string, o storeOpen) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	// agentSelect looks up the stall item of a session for every session row.
-	// Without this index each row scans all inbox items. It is created here
-	// and not as a versioned migration, so an older release can still open
-	// the file.
-	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS inbox_items_session ON inbox_items (session_id, message_id, created_at)`); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("inbox session index: %w", err)
-	}
 	// applyPending asks for replies from a recipient to a sender. Without this
 	// index each request scans every message to that recipient. Created here
-	// and not as a versioned migration, like the index above.
+	// and not as a versioned migration.
 	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS messages_pair ON messages (sender, recipient, type)`); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("messages pair index: %w", err)
@@ -2007,10 +1997,6 @@ func openStoreWith(path string, o storeOpen) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("external merge repair: %w", err)
 	}
-	if err := s.initOwedRepliesLiveSince(); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("owed replies live since: %w", err)
-	}
 	if err := s.backfillDeliveryTasks(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("delivery task backfill: %w", err)
@@ -2018,16 +2004,6 @@ func openStoreWith(path string, o storeOpen) (*Store, error) {
 	if err := s.retireObsoleteNotices(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("retire obsolete notices: %w", err)
-	}
-	if err := s.reconcileAsks(); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("reconcile asks: %w", err)
-	}
-	// Asks answered while nothing wrote their judgments (and answers that an
-	// older version stored as a bare code) get their rows.
-	if err := s.BackfillAnswerJudgments(); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("answer judgments backfill: %w", err)
 	}
 	// Fix files that an older version made with the default mode.
 	if err := dbfile.Secure(path); err != nil {
@@ -2073,8 +2049,16 @@ func (s *Store) migrate() error {
 				continue
 			}
 			for _, col := range cols {
+				exists, err := hasTable(tx, col.table)
+				if err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+				if !exists {
+					continue
+				}
 				var has int
-				err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?`, col.table, col.name).Scan(&has)
+				err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?`, col.table, col.name).Scan(&has)
 				if err == nil && has == 0 {
 					_, err = tx.Exec(`ALTER TABLE ` + col.table + ` ADD COLUMN ` + col.name + ` ` + col.spec)
 				}
@@ -2105,6 +2089,12 @@ func (s *Store) migrate() error {
 		}
 		if strings.Contains(migrations[i], retiredTablesMarker) {
 			if err := s.keepRetiredRows(tx); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+		}
+		if strings.Contains(migrations[i], dropDeskTablesMarker) {
+			if err := s.keepOpenInboxItems(tx); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
@@ -2221,6 +2211,16 @@ func (s *Store) migrate() error {
 				{"standing_orders", "category", `TEXT NOT NULL DEFAULT ''`},
 				{"ask_sorts", "rule_id", `TEXT NOT NULL DEFAULT ''`},
 			} {
+				// dropDeskTablesMigration drops inbox_items and ask_sorts, so a
+				// replay after it skips them.
+				exists, err := hasTable(tx, col.table)
+				if err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+				if !exists {
+					continue
+				}
 				var has int
 				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?`, col.table, col.name).Scan(&has); err != nil {
 					tx.Rollback()
@@ -2278,9 +2278,14 @@ func (s *Store) migrate() error {
 			}
 		}
 		if strings.Contains(migrations[i], "inbox back note column") {
+			// dropDeskTablesMigration drops inbox_items, so a replay after it
+			// has nothing to change.
 			var has int
-			err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('inbox_items') WHERE name='back_note'`).Scan(&has)
-			if err == nil && has == 0 {
+			exists, err := hasTable(tx, "inbox_items")
+			if err == nil && exists {
+				err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('inbox_items') WHERE name='back_note'`).Scan(&has)
+			}
+			if err == nil && exists && has == 0 {
 				_, err = tx.Exec(`ALTER TABLE inbox_items ADD COLUMN back_note TEXT NOT NULL DEFAULT ''`)
 			}
 			if err != nil {
@@ -2731,9 +2736,14 @@ func (s *Store) migrate() error {
 			}
 		}
 		if strings.Contains(migrations[i], "ask sort owner message column") {
+			// dropDeskTablesMigration drops ask_sorts, so a replay after it has
+			// nothing to change.
 			var has int
-			err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('ask_sorts') WHERE name='owner_message'`).Scan(&has)
-			if err == nil && has == 0 {
+			exists, err := hasTable(tx, "ask_sorts")
+			if err == nil && exists {
+				err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('ask_sorts') WHERE name='owner_message'`).Scan(&has)
+			}
+			if err == nil && exists && has == 0 {
 				_, err = tx.Exec(`ALTER TABLE ask_sorts ADD COLUMN owner_message TEXT NOT NULL DEFAULT ''`)
 			}
 			if err != nil {
@@ -2744,15 +2754,22 @@ func (s *Store) migrate() error {
 		// The removed hiding feature added hidden_at. Drop it only when it is
 		// there, so a replayed migration does not fail.
 		if strings.Contains(migrations[i], deskHideRemovalMarker) {
-			var has int
-			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('ask_sorts') WHERE name='hidden_at'`).Scan(&has); err != nil {
+			exists, err := hasTable(tx, "ask_sorts")
+			if err != nil {
 				tx.Rollback()
 				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
-			if has != 0 {
-				if _, err := tx.Exec(`ALTER TABLE ask_sorts DROP COLUMN hidden_at`); err != nil {
+			if exists {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('ask_sorts') WHERE name='hidden_at'`).Scan(&has); err != nil {
 					tx.Rollback()
 					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+				if has != 0 {
+					if _, err := tx.Exec(`ALTER TABLE ask_sorts DROP COLUMN hidden_at`); err != nil {
+						tx.Rollback()
+						return fmt.Errorf("migration %d: %w", i+1, err)
+					}
 				}
 			}
 		}
@@ -2868,16 +2885,20 @@ func (s *Store) migrate() error {
 				result, err = tx.Exec(`SELECT 1`)
 			}
 		} else if strings.Contains(migrations[i], "ALTER TABLE inbox_items ADD COLUMN options") {
-			for _, col := range []struct{ name, spec string }{
-				{"options", `TEXT NOT NULL DEFAULT '[]'`}, {"asker_name", `TEXT NOT NULL DEFAULT ''`}, {"change_title", `TEXT NOT NULL DEFAULT ''`},
-			} {
-				var has int
-				if err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('inbox_items') WHERE name=?`, col.name).Scan(&has); err != nil {
-					break
-				}
-				if has == 0 {
-					if _, err = tx.Exec(`ALTER TABLE inbox_items ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+			var exists bool
+			exists, err = hasTable(tx, "inbox_items")
+			if err == nil && exists {
+				for _, col := range []struct{ name, spec string }{
+					{"options", `TEXT NOT NULL DEFAULT '[]'`}, {"asker_name", `TEXT NOT NULL DEFAULT ''`}, {"change_title", `TEXT NOT NULL DEFAULT ''`},
+				} {
+					var has int
+					if err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('inbox_items') WHERE name=?`, col.name).Scan(&has); err != nil {
 						break
+					}
+					if has == 0 {
+						if _, err = tx.Exec(`ALTER TABLE inbox_items ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+							break
+						}
 					}
 				}
 			}
@@ -2931,38 +2952,48 @@ func (s *Store) migrate() error {
 				result, err = tx.Exec(`CREATE TABLE IF NOT EXISTS repo_held_back (repo_id TEXT PRIMARY KEY REFERENCES repos(id), held_back TEXT NOT NULL DEFAULT '')`)
 			}
 		} else if strings.Contains(migrations[i], "Asks and the Desk (decision 0090)") {
-			for _, col := range []struct{ name, spec string }{
-				{"from_kind", `TEXT NOT NULL DEFAULT ''`}, {"source_ref", `TEXT NOT NULL DEFAULT ''`},
-				{"about_kind", `TEXT NOT NULL DEFAULT ''`}, {"about_id", `TEXT NOT NULL DEFAULT ''`},
-				{"next_who", `TEXT NOT NULL DEFAULT 'owner'`}, {"why_you", `TEXT NOT NULL DEFAULT ''`},
-				{"detail", `TEXT NOT NULL DEFAULT ''`},
-			} {
-				var has int
-				if err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('inbox_items') WHERE name=?`, col.name).Scan(&has); err != nil {
-					break
-				}
-				if has == 0 {
-					if _, err = tx.Exec(`ALTER TABLE inbox_items ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+			var exists bool
+			exists, err = hasTable(tx, "inbox_items")
+			if err == nil && exists {
+				for _, col := range []struct{ name, spec string }{
+					{"from_kind", `TEXT NOT NULL DEFAULT ''`}, {"source_ref", `TEXT NOT NULL DEFAULT ''`},
+					{"about_kind", `TEXT NOT NULL DEFAULT ''`}, {"about_id", `TEXT NOT NULL DEFAULT ''`},
+					{"next_who", `TEXT NOT NULL DEFAULT 'owner'`}, {"why_you", `TEXT NOT NULL DEFAULT ''`},
+					{"detail", `TEXT NOT NULL DEFAULT ''`},
+				} {
+					var has int
+					if err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('inbox_items') WHERE name=?`, col.name).Scan(&has); err != nil {
 						break
 					}
+					if has == 0 {
+						if _, err = tx.Exec(`ALTER TABLE inbox_items ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+							break
+						}
+					}
 				}
-			}
-			if err == nil {
-				result, err = tx.Exec(asksMigrationRest)
+				if err == nil {
+					result, err = tx.Exec(asksMigrationRest)
+				}
+			} else if err == nil {
+				result, err = tx.Exec(`SELECT 1`)
 			}
 		} else if strings.Contains(migrations[i], "Chief of staff (decision 0114)") {
 			// The two columns are added only when missing, so a database that
 			// was rewound keeps its values. The tables are created with IF NOT EXISTS.
-			for _, col := range []struct{ name, spec string }{
-				{"priority", `INTEGER NOT NULL DEFAULT 0`}, {"chief_sent_at", `INTEGER NOT NULL DEFAULT 0`},
-			} {
-				var has int
-				if err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('inbox_items') WHERE name=?`, col.name).Scan(&has); err != nil {
-					break
-				}
-				if has == 0 {
-					if _, err = tx.Exec(`ALTER TABLE inbox_items ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+			var exists bool
+			exists, err = hasTable(tx, "inbox_items")
+			if err == nil && exists {
+				for _, col := range []struct{ name, spec string }{
+					{"priority", `INTEGER NOT NULL DEFAULT 0`}, {"chief_sent_at", `INTEGER NOT NULL DEFAULT 0`},
+				} {
+					var has int
+					if err = tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('inbox_items') WHERE name=?`, col.name).Scan(&has); err != nil {
 						break
+					}
+					if has == 0 {
+						if _, err = tx.Exec(`ALTER TABLE inbox_items ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+							break
+						}
 					}
 				}
 			}
@@ -3035,6 +3066,26 @@ func (s *Store) migrate() error {
 			if err = migrateDeskTablesTx(tx); err == nil {
 				result, err = tx.Exec(`SELECT 1`)
 			}
+		} else if strings.Contains(migrations[i], deskHideRemovalMarker) {
+			// dropDeskTablesMigration drops desk_log, so a replay after it has
+			// nothing to delete.
+			var exists bool
+			exists, err = hasTable(tx, "desk_log")
+			if err == nil && exists {
+				result, err = tx.Exec(stmt)
+			} else if err == nil {
+				result, err = tx.Exec(`SELECT 1`)
+			}
+		} else if strings.Contains(migrations[i], "desk item shape columns") || strings.Contains(migrations[i], "DROP TRIGGER IF EXISTS inbox_items_joined_settle;") {
+			// dropDeskTablesMigration drops inbox_items, so replaying its index,
+			// trigger and update migrations after the drop is a no-op.
+			var exists bool
+			exists, err = hasTable(tx, "inbox_items")
+			if err == nil && exists {
+				result, err = tx.Exec(stmt)
+			} else if err == nil {
+				result, err = tx.Exec(`SELECT 1`)
+			}
 		} else {
 			result, err = tx.Exec(stmt)
 		}
@@ -3057,37 +3108,51 @@ func (s *Store) migrate() error {
 		// SQLite has no ADD COLUMN IF NOT EXISTS, and a test may replay a
 		// migration on a database that already has these columns.
 		if strings.Contains(migrations[i], "Ask sort hide receipts") {
-			var has int
-			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('ask_sorts') WHERE name='hidden_at'`).Scan(&has); err != nil {
+			exists, err := hasTable(tx, "ask_sorts")
+			if err != nil {
 				tx.Rollback()
 				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
-			if has == 0 {
-				if _, err := tx.Exec(`ALTER TABLE ask_sorts ADD COLUMN hidden_at INTEGER NOT NULL DEFAULT 0`); err != nil {
-					tx.Rollback()
-					return fmt.Errorf("migration %d: %w", i+1, err)
-				}
-			}
-		}
-		if strings.Contains(migrations[i], "chief ask adoption time") {
-			for _, col := range []struct{ name, spec string }{
-				{"chief_at", `INTEGER NOT NULL DEFAULT 0`},
-				{"route_fixed", `INTEGER NOT NULL DEFAULT 0`},
-			} {
+			if exists {
 				var has int
-				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('inbox_items') WHERE name=?`, col.name).Scan(&has); err != nil {
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('ask_sorts') WHERE name='hidden_at'`).Scan(&has); err != nil {
 					tx.Rollback()
 					return fmt.Errorf("migration %d: %w", i+1, err)
 				}
 				if has == 0 {
-					if _, err := tx.Exec(`ALTER TABLE inbox_items ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
+					if _, err := tx.Exec(`ALTER TABLE ask_sorts ADD COLUMN hidden_at INTEGER NOT NULL DEFAULT 0`); err != nil {
 						tx.Rollback()
 						return fmt.Errorf("migration %d: %w", i+1, err)
 					}
-					if col.name == "route_fixed" {
-						if _, err := tx.Exec(`UPDATE inbox_items SET route_fixed=1 WHERE source_ref LIKE 'tailscale-pair:%' OR source_ref LIKE 'lead_ask:%'`); err != nil {
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "chief ask adoption time") {
+			exists, err := hasTable(tx, "inbox_items")
+			if err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+			if exists {
+				for _, col := range []struct{ name, spec string }{
+					{"chief_at", `INTEGER NOT NULL DEFAULT 0`},
+					{"route_fixed", `INTEGER NOT NULL DEFAULT 0`},
+				} {
+					var has int
+					if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('inbox_items') WHERE name=?`, col.name).Scan(&has); err != nil {
+						tx.Rollback()
+						return fmt.Errorf("migration %d: %w", i+1, err)
+					}
+					if has == 0 {
+						if _, err := tx.Exec(`ALTER TABLE inbox_items ADD COLUMN ` + col.name + ` ` + col.spec); err != nil {
 							tx.Rollback()
 							return fmt.Errorf("migration %d: %w", i+1, err)
+						}
+						if col.name == "route_fixed" {
+							if _, err := tx.Exec(`UPDATE inbox_items SET route_fixed=1 WHERE source_ref LIKE 'tailscale-pair:%' OR source_ref LIKE 'lead_ask:%'`); err != nil {
+								tx.Rollback()
+								return fmt.Errorf("migration %d: %w", i+1, err)
+							}
 						}
 					}
 				}
@@ -3986,11 +4051,6 @@ tools_version, tools_old, created_at, waiting, graph_excluded, no_project, harne
 			return "", false, err
 		}
 	}
-	if waiting != knownWaiting {
-		if err := s.syncWaitingAsk(q, id, waiting); err != nil {
-			return "", false, err
-		}
-	}
 	if in.Worker != nil && in.Worker.RunGeneration > 0 {
 		if _, err := q.Exec(`UPDATE sessions SET worker_run_generation=MAX(worker_run_generation,?) WHERE id=?`, in.Worker.RunGeneration, id); err != nil {
 			return "", false, err
@@ -4584,16 +4644,6 @@ func (s *Store) AnnounceNotify(nodeID string, p protocol.ProfileAnnounce) (proto
 	if err != nil {
 		return protocol.Profile{}, nil, err
 	}
-	// An announce without a wait says the session went on. A question it
-	// raised before its earlier announce is overtaken. One raised since (the
-	// ask and the task line of the same turn) stays. An approval never closes
-	// here: only the owner's answer, the asker's withdraw or the chief's
-	// replace-withdraw ends it, so a stale approval cannot vanish unseen.
-	if previousAnnounce > 0 && protocol.CleanWaiting(p.Waiting) == nil {
-		if _, err := s.closeSessionOwnerAsks(s.db, p.SessionID, previousAnnounce, protocol.AskReasonMovedOn, protocol.AskKindQuestion); err != nil {
-			return protocol.Profile{}, nil, err
-		}
-	}
 	if err := s.answerCheck(p.SessionID, p.Task, p.Waiting); err != nil {
 		return protocol.Profile{}, nil, err
 	}
@@ -5139,11 +5189,6 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 	} else if p.OwnerApproved {
 		return msg, false, reject("owner approval requires the CTO session")
 	}
-	// agent-net is not a session. A reply to its message about an ask closes
-	// the ask (agentNetReply).
-	if p.Recipient == agentNetSender && p.ParentID != "" {
-		return s.agentNetReply(tx, p)
-	}
 	// A role address names the session pinned for the role (role_address.go).
 	roleAddress := ""
 	if id, isRole, err := resolveRoleAddress(tx, p.Recipient); err != nil {
@@ -5490,12 +5535,9 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		return msg, false, err
 	}
 	if m.State == protocol.StateHeld && holdKind == "" {
-		if err := s.openHeldAsk(tx, m.ID, m.From, m.To, m.Body); err != nil {
-			return msg, false, err
-		}
-	}
-	if p.FollowUpAt != "" && !p.Progress {
-		if err := recordSendFollowUp(tx, m, p.FollowUpAt, now); err != nil {
+		body := fmt.Sprintf("Held message %s from %s to %s needs owner approval:\n%s\nIf the owner agrees, the CTO answers it with held_answer, message_id %s, action a to deliver or r to refuse.",
+			m.ID, sessionLabel(tx, m.From), sessionLabel(tx, m.To), askFirstLine(m.Body, 400), m.ID)
+		if _, _, err := s.sendToChief(tx, m.From, "held:"+m.ID, body); err != nil {
 			return msg, false, err
 		}
 	}
@@ -5531,28 +5573,6 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		if _, err := tx.Exec(`INSERT INTO graph_outcomes(source,target,message_id,reply_id,outcome,reason,redirect_to,recommendation,at) VALUES(?,?,?,?,?,?,?,?,?)`, from, to, p.ParentID, m.ID, p.Outcome, p.Reason, p.RedirectTo, p.Recommendation, now.UnixNano()); err != nil {
 			return msg, false, err
 		}
-		if p.Outcome == "reject" || p.Outcome == "escalate" {
-			var harness string
-			if err := tx.QueryRow(`SELECT harness FROM sessions WHERE id=?`, m.To).Scan(&harness); err != nil {
-				return msg, false, err
-			}
-			if !protocol.IsOwner(harness) {
-				var requestBody string
-				if err := tx.QueryRow(`SELECT body FROM messages WHERE id=?`, p.ParentID).Scan(&requestBody); err != nil {
-					return msg, false, err
-				}
-				text := "Request: " + protocol.CleanWaitingText(requestBody) + "\nReason: " + p.Reason
-				if _, err := s.inboxFromOutcome(tx, p.Outcome, m.From, to, text, p.Recommendation, m.ID, m.ConversationID); err != nil {
-					return msg, false, err
-				}
-			}
-		}
-	}
-	if m.Type == protocol.TypeReply && !p.Progress {
-		// A team lead's answer to a question of its member closes the ask.
-		if err := s.closeLeadAsk(tx, m); err != nil {
-			return msg, false, err
-		}
 	}
 	if m.ParentID != "" {
 		if m.Type == protocol.TypeAck {
@@ -5574,9 +5594,6 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 				return msg, false, err
 			}
 			if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id=? AND EXISTS (SELECT 1 FROM messages WHERE id=? AND state='replied')`, m.ParentID, m.ParentID); err != nil {
-				return msg, false, err
-			}
-			if _, err := tx.Exec(`UPDATE inbox_items SET status='closed', answer='replied', answered_at=? WHERE source_ref=? AND status='open'`, now.UnixNano(), "owed-ask:"+m.ParentID); err != nil {
 				return msg, false, err
 			}
 		} else {
@@ -5617,13 +5634,6 @@ func (s *Store) storeMessage(p protocol.MsgSend, route *string) (msg protocol.Me
 		}
 		if _, err := tx.Exec(`DELETE FROM delivery_retries WHERE message_id IN (SELECT id FROM messages WHERE conversation_id = ? AND sender = ? AND recipient = ? AND (type = ? OR is_order = 1) AND state = ?)`,
 			m.ConversationID, m.To, m.From, protocol.TypeRequest, protocol.StateReplied); err != nil {
-			return msg, false, err
-		}
-		if _, err := tx.Exec(`UPDATE inbox_items SET status='closed', answer='replied', answered_at=?
-			WHERE status='open' AND source_ref IN (
-				SELECT 'owed-ask:'||id FROM messages
-				WHERE conversation_id=? AND sender=? AND recipient=? AND (type=? OR is_order=1)
-			)`, now.UnixNano(), m.ConversationID, m.To, m.From, protocol.TypeRequest); err != nil {
 			return msg, false, err
 		}
 	}
@@ -6776,9 +6786,6 @@ func (s *Store) expireMessage(id string, now int64) (bool, error) {
 			}
 		} else {
 			if err = s.heldReply(tx, m, "your request expired while awaiting your user", "expired"); err != nil {
-				return false, err
-			}
-			if err = s.closeHeldAsk(tx, m.ID, protocol.AskReasonExpired); err != nil {
 				return false, err
 			}
 		}

@@ -8,6 +8,23 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+func sevenFieldDrafts(t *testing.T, s *Store, session string) {
+	t.Helper()
+	for _, q := range []protocol.CharterDraftRequest{
+		{Level: "repo", Attr: "purpose", Value: "Demo service"},
+		{Level: "repo", Attr: "maturity", Value: "early"},
+		{Level: "repo", Attr: "refuses", Value: "live trading"},
+		{Level: "agent", Attr: "accepts", Value: "bug fixes"},
+		{Level: "agent", Attr: "refuses", Value: "deploys"},
+		{Level: "agent", Attr: "escalate", Value: "the owner"},
+		{Level: "agent", Attr: "feature_requests", Value: "ideas"},
+	} {
+		if _, err := s.SubmitCharterDraft(session, q, "h1"); err != nil {
+			t.Fatalf("submit %s %s: %v", q.Level, q.Attr, err)
+		}
+	}
+}
+
 func draftIDOf(t *testing.T, s *Store, level, attr string) int64 {
 	t.Helper()
 	drafts, err := s.PendingCharterDrafts()

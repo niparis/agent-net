@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -60,26 +59,13 @@ func (r *noteCopyRig) agentNotes(t *testing.T, session string) int {
 	return res.Total
 }
 
-// op runs one owner operation as the CTO and answers the notice's undo call.
-func (r *noteCopyRig) op(t *testing.T, method string, args map[string]any) (undoMethod string, undoArgs json.RawMessage) {
+// op runs one owner operation as the CTO.
+func (r *noteCopyRig) op(t *testing.T, method string, args map[string]any) {
 	t.Helper()
 	raw, _ := json.Marshal(map[string]any{"area": "operator", "method": method, "arguments": args})
 	if _, err := r.n.d.runCTOTool(r.ctx, "settings_change", raw); err != nil {
 		t.Fatal(err)
 	}
-	items, err := inboxAndLog(r.g.gw.Store())
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, it := range items {
-		if strings.Contains(it.Text, "CTO applied "+method) && len(it.Options) == 2 {
-			undoMethod, undoArgs = it.Options[0], json.RawMessage(it.Options[1])
-		}
-	}
-	if undoMethod == "" {
-		t.Fatalf("no undo notice for %s: %+v", method, items)
-	}
-	return undoMethod, undoArgs
 }
 
 func TestCTOSessionAgentSetCopiesNotesOnlyWithTheFlagAndUndoRemovesThem(t *testing.T) {
@@ -90,24 +76,21 @@ func TestCTOSessionAgentSetCopiesNotesOnlyWithTheFlagAndUndoRemovesThem(t *testi
 		t.Fatalf("without copy_notes the moved session sees %d notes", got)
 	}
 	cli.mustCall("session_agent_set", map[string]any{"session_id": r.id, "agent": "demo"})
-	method, args := r.op(t, "session_agent_set", map[string]any{"session_id": r.id, "agent": "helper", "copy_notes": true})
+	r.op(t, "session_agent_set", map[string]any{"session_id": r.id, "agent": "helper", "copy_notes": true})
 	if got := r.agentNotes(t, r.id); got != 2 {
 		t.Fatalf("with copy_notes the moved session sees %d notes", got)
 	}
 	if got := r.agentNotes(t, r.lead); got != 2 {
 		t.Fatalf("the old agent keeps its notes, sees %d", got)
 	}
-	cli.mustCall(method, args)
-	if got := r.agentNotes(t, r.id); got != 2 {
-		t.Fatalf("after undo the session is on demo again and sees %d", got)
-	}
+	cli.mustCall("session_agent_set", map[string]any{"session_id": r.id, "agent": "demo"})
 	view, ok, err := r.g.gw.Store().Agent(r.id)
 	if err != nil || !ok || view.AgentID != "demo" {
-		t.Fatalf("undo must move the session back: %+v %v", view, err)
+		t.Fatalf("move back must restore demo: %+v %v", view, err)
 	}
 	helper, err := r.g.gw.Store().FindNotes(r.id, protocol.NotesFindRequest{Scope: "agent"})
 	if err != nil || helper.Total != 2 {
-		t.Fatalf("demo notes after undo: %+v %v", helper, err)
+		t.Fatalf("demo notes after move back: %+v %v", helper, err)
 	}
 }
 
@@ -118,17 +101,13 @@ func TestCTONotesCopyCopiesBetweenAgentsAndUndoRemovesOnlyTheCopies(t *testing.T
 	if _, err := r.g.gw.Store().WriteNote(r.id, protocol.NoteWriteRequest{Name: "alpha", Description: "d", Body: "helper own", Scope: "agent"}); err != nil {
 		t.Fatal(err)
 	}
-	method, args := r.op(t, "notes_copy", map[string]any{"from_agent": "demo", "to_agent": "helper"})
+	r.op(t, "notes_copy", map[string]any{"from_agent": "demo", "to_agent": "helper"})
 	if got := r.agentNotes(t, r.id); got != 2 {
 		t.Fatalf("helper sees %d notes, want its own alpha and the copied beta", got)
 	}
 	own, err := r.g.gw.Store().FindNotes(r.id, protocol.NotesFindRequest{Text: "helper own"})
 	if err != nil || own.Total != 1 {
 		t.Fatalf("the copy overwrote the agent's own note: %+v %v", own, err)
-	}
-	cli.mustCall(method, args)
-	if got := r.agentNotes(t, r.id); got != 1 {
-		t.Fatalf("undo left helper with %d notes, want its own alpha only", got)
 	}
 	if got := r.agentNotes(t, r.lead); got != 2 {
 		t.Fatalf("demo kept %d notes", got)

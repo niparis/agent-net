@@ -211,8 +211,6 @@ func (s *Store) replaceSession(nodeID, sessionID, newSessionID string, allowBusy
 		// The caller's open changes and the steps it has claimed.
 		{`UPDATE delivery_changes SET caller=?, updated_at=? WHERE caller=? AND state IN ('open','merged')`, []any{newSessionID, now, sessionID}},
 		{`UPDATE delivery_step_tasks SET claimed_by=? WHERE claimed_by=? AND change_id IN (SELECT id FROM delivery_changes WHERE state IN ('open','merged'))`, []any{newSessionID, sessionID}},
-		// The open requests follow the new record instead of a dead ID.
-		{`UPDATE inbox_items SET session_id=? WHERE session_id=?`, []any{newSessionID, sessionID}},
 	}
 	for _, step := range steps {
 		if _, err := tx.Exec(step.query, step.args...); err != nil {
@@ -321,15 +319,11 @@ func (s *Store) ReplaceSessionForOwner(oldSessionID, newSessionID, actor string)
 	if fresh, ok, err := s.Agent(newSessionID); err == nil && ok {
 		res.NewName = fresh.Profile.Name
 	}
-	source, who := "owner", "The owner"
+	source := "owner"
 	if actor == "cto" {
-		source, who = "cto", "The CTO"
+		source = "cto"
 	}
-	text := fmt.Sprintf("%s moved the work of %s (%s) to %s (%s)", who,
-		oldSessionID, res.OldName, newSessionID, res.NewName)
-	if err := s.deskLog(s.db, source, "session", oldSessionID, text, "", nil); err != nil {
-		return res, err
-	}
+	s.logf("session.replaced", "source", source, "old", oldSessionID, "old_name", res.OldName, "new", newSessionID, "new_name", res.NewName)
 	return res, nil
 }
 

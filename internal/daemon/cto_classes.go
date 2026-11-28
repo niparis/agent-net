@@ -27,7 +27,7 @@ const (
 var ctoToolClasses = func() map[string]ctoToolClass {
 	out := map[string]ctoToolClass{}
 	for class, names := range map[ctoToolClass]string{
-		ctoRead:  "cto_proposals_find cto_intake_find cto_ops_list agent_sessions_find agent_machines_find agent_machine_log agent_projects_find agent_workers_find agent_messages_find agent_graph_read agent_settings_read agent_mcp_servers_find agent_worker_profiles_find agent_owner_judgments_find projects_layout agent_protected_providers_get",
+		ctoRead:  "cto_proposals_find cto_ops_list agent_sessions_find agent_machines_find agent_machine_log agent_projects_find agent_workers_find agent_messages_find agent_graph_read agent_settings_read agent_mcp_servers_find agent_worker_profiles_find agent_owner_judgments_find projects_layout agent_protected_providers_get",
 		ctoTalk:  "message cto_placement_memory cto_standing_orders cto_ui_show proposal_ask agent_message_send agent_message_reply agent_message_withdraw agent_owner_judgment_record agent_note_write agent_notes_find agent_step_report agent_protected_providers_set agent_worker_profile_add agent_worker_profile_remove",
 		ctoMinor: "graph_change session_change worker_change answer mcp_change mcp_call settings_change project_change cto_new sessions_archive judgment_add skill_archive skills",
 	} {
@@ -64,7 +64,7 @@ var ctoChangeActions = map[string]map[string]string{
 	},
 	"session_change": {"rename": "session_rename", "replace": "session_replace", "trust": "session_trust", "mcp_servers": "folder_mcp", "session_start": "session_start", "merger_start": "merger_start", "merger_stop": "merger_stop", "stop": "session_stop", "resume": "session_resume", "restart": "session_restart"},
 	"worker_change":  {"start": "worker_start", "stop": "worker_stop"},
-	"answer":         {"held": "held_answer", "inbox": "inbox_answer", "outcome": "outcome_overrule"},
+	"answer":         {"held": "held_answer", "outcome": "outcome_overrule"},
 	"mcp_change":     {"add": "mcp_add", "remove": "mcp_remove", "test": "mcp_test", "enable": "mcp_enable", "app_ask": "apps.ask", "apps_list": "apps.list", "app_grant": "apps.grant", "app_ungrant": "apps.ungrant", "app_rename": "apps.rename", "app_revoke": "apps.revoke", "public_status": "apps.public.status", "public_on": "apps.public.on", "public_off": "apps.public.off"},
 	"settings_change": {
 		"values_write": "settings_values_write", "values_undo": "settings_values_undo", "operator": "owner_operation",
@@ -107,7 +107,7 @@ var ctoActionClasses = map[string]map[string]ctoToolClass{
 	},
 	"session_change":  {"rename": ctoMinor, "replace": ctoMinor, "trust": ctoMinor, "mcp_servers": ctoMinor, "session_start": ctoMinor, "merger_start": ctoMinor, "merger_stop": ctoMinor, "stop": ctoMinor, "resume": ctoMinor, "restart": ctoMinor},
 	"worker_change":   {"start": ctoMinor, "stop": ctoMinor},
-	"answer":          {"held": ctoMinor, "inbox": ctoMinor, "outcome": ctoMinor},
+	"answer":          {"held": ctoMinor, "outcome": ctoMinor},
 	"mcp_change":      {"add": ctoMinor, "remove": ctoMinor, "test": ctoMinor, "enable": ctoMinor, "app_ask": ctoMinor, "apps_list": ctoRead, "app_grant": ctoMinor, "app_ungrant": ctoMinor, "app_rename": ctoMinor, "app_revoke": ctoMinor, "public_status": ctoRead, "public_on": ctoMinor, "public_off": ctoMinor},
 	"settings_change": {"operator": ctoMinor, "values_write": ctoMinor, "values_undo": ctoMinor, "worker_profile_add": ctoMinor, "worker_profile_remove": ctoMinor, "worker_providers": ctoMinor, "protected_providers": ctoMinor, "score": ctoMinor, "integrations": ctoMinor, "notifications": ctoMinor, "cto": ctoMinor, "playbook": ctoMinor, "machine_name": ctoMinor, "machine_remove": ownerGate("machine_remove"), "machine_rotate": ownerGate("machine_rotate"), "invite": ctoMinor, "onboarding": ctoMinor, "process_stop": ctoMinor},
 	"project_change":  {"add": ctoMinor, "remove": ctoMinor, "display": ctoMinor, "create": ctoMinor},
@@ -120,7 +120,7 @@ var ctoActions = map[string]map[string][]string{
 	"graph_change":    {"action": {"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo", "repo_create", "repo_archive", "agent_create", "agent_tombstone", "team_create", "team_rename", "team_purpose", "team_charter", "team_archive", "team_member_add", "team_member_remove", "lead_set", "scope_set", "scope_remove"}},
 	"session_change":  {"action": {"rename", "replace", "trust", "mcp_servers", "policy", "session_start", "merger_start", "merger_stop", "stop", "resume", "restart"}},
 	"worker_change":   {"action": {"start", "stop"}},
-	"answer":          {"kind": {"held", "inbox", "outcome"}, "action": {"a", "A", "r", "R", "let_stand", "overrule"}},
+	"answer":          {"kind": {"held", "outcome"}, "action": {"a", "A", "r", "R", "let_stand", "overrule"}},
 	"mcp_change":      {"action": {"add", "remove", "test", "enable", "app_ask", "apps_list", "app_grant", "app_ungrant", "app_rename", "app_revoke", "public_status", "public_on", "public_off"}},
 	"settings_change": {"area": {"operator", "values_write", "values_undo", "worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "machine_remove", "machine_rotate", "invite", "onboarding", "process_stop"}},
 	"project_change":  {"action": {"add", "remove", "display", "create"}},

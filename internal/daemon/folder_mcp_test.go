@@ -49,24 +49,7 @@ func TestCTOMCPServersAuditsAndUndoRemovesOnlyWhatItAdded(t *testing.T) {
 	if !reflect.DeepEqual(got["disabledMcpjsonServers"], []any{"tenebrae-library"}) || !reflect.DeepEqual(got["enabledMcpjsonServers"], []any{"mine"}) {
 		t.Fatalf("settings %v", got)
 	}
-	item := lastInbox(t, g)
-	if item.Node != "cto" || len(item.Options) != 2 || item.Options[0] != protocol.OpFolderMCP {
-		t.Fatalf("want an audit notice with undo: %+v", item)
-	}
-	for _, want := range []string{"disabled", child} {
-		if !strings.Contains(item.Text, want) {
-			t.Errorf("notice %q misses %q", item.Text, want)
-		}
-	}
-	for _, want := range []string{"tenebrae-library", "just --justfile strategies/justfile library-mcp", filepath.Join(parent, ".mcp.json"), "disabledMcpjsonServers"} {
-		if !strings.Contains(item.Recommendation, want) {
-			t.Errorf("audit detail %q misses %q", item.Recommendation, want)
-		}
-	}
-	var undo protocol.FolderMCPRequest
-	if err := json.Unmarshal([]byte(item.Options[1]), &undo); err != nil || undo.Undo == nil || undo.Path != child {
-		t.Fatalf("undo %+v %v", undo, err)
-	}
+	undo := protocol.FolderMCPRequest{Path: child, Undo: &protocol.MCPUndo{Choice: protocol.MCPDisable, Added: []string{"tenebrae-library"}}}
 	n.cli.mustCall(protocol.OpFolderMCP, undo)
 	got = readLocalSettings(t, child)
 	if v := got["disabledMcpjsonServers"]; v != nil && len(v.([]any)) != 0 {
@@ -128,14 +111,7 @@ func TestCTOMCPServersByProjectOnARemoteNode(t *testing.T) {
 	if _, ok := readLocalSettings(t, repo)["enableAllProjectMcpServers"]; ok {
 		t.Fatal("enableAllProjectMcpServers must never be set")
 	}
-	item := lastInbox(t, g)
-	var undo protocol.FolderMCPRequest
-	if len(item.Options) != 2 || item.Options[0] != protocol.OpFolderMCP || json.Unmarshal([]byte(item.Options[1]), &undo) != nil || undo.NodeID != b.d.NodeID() || undo.Undo == nil {
-		t.Fatalf("remote choice needs an undo that names the machine: %+v", item)
-	}
-	if !strings.Contains(item.Text, "on ") {
-		t.Fatalf("notice names no machine: %q", item.Text)
-	}
+	undo := protocol.FolderMCPRequest{NodeID: b.d.NodeID(), Path: repo, Undo: &protocol.MCPUndo{Choice: protocol.MCPApprove, Added: []string{"lib"}}}
 	a.cli.mustCall(protocol.OpFolderMCP, undo)
 	if v := readLocalSettings(t, repo)["enabledMcpjsonServers"]; v != nil && len(v.([]any)) != 0 {
 		t.Fatalf("remote undo left %v", v)
@@ -195,10 +171,6 @@ func TestCTOSessionStartRecordsTheMCPChoiceFirst(t *testing.T) {
 	})
 	if got := readLocalSettings(t, repo); !reflect.DeepEqual(got["disabledMcpjsonServers"], []any{"lib"}) {
 		t.Fatalf("settings %v", got)
-	}
-	item := lastInbox(t, g)
-	if len(item.Options) != 2 || item.Options[0] != protocol.OpFolderMCP || !strings.Contains(item.Recommendation, "lib: just") {
-		t.Fatalf("the start audit must name the servers and offer the undo: %+v", item)
 	}
 	// A bad choice, or one for another harness, is refused before anything starts.
 	for name, args := range map[string]map[string]any{

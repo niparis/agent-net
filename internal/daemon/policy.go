@@ -175,7 +175,6 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 	d.resolvePendingOwnerWords(sid)
 	if p.Event == "Stop" {
 		d.ownerTypedWhileBusy(ctx, ls, sid)
-		d.recordTurnEndQuestion(ctx, ls, sid, p.LastMessage)
 		return protocol.PolicyResult{}, nil
 	}
 	notice := ""
@@ -221,11 +220,6 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 	// The one-time draft request belongs to this turn and follows the charter.
 	if got.DraftRequest != "" {
 		res.Charter = joinCharter(res.Charter, got.DraftRequest)
-	}
-	// Pi and OpenCode have no Stop hook: a question the last turn left open
-	// for the owner is routed at the start of the next one (decision 0150).
-	if client != "cli" {
-		d.recordTurnEndQuestion(ctx, ls, sid, "")
 	}
 	return res, nil
 }

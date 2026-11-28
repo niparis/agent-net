@@ -318,15 +318,8 @@ func (s *Store) cutoverWorkerSandboxTx(tx *sql.Tx) error {
 	}
 	sort.Strings(keys)
 	notice := func(subject, body string) error {
-		var exists int
-		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM inbox_items WHERE session_id=? AND node=? AND text=?)`, settingsCutoverActor, subject, body).Scan(&exists); err != nil {
-			return err
-		}
-		if exists != 0 {
-			return nil
-		}
-		_, err := s.createInboxItem(tx, protocol.InboxItem{Kind: "check", SessionID: settingsCutoverActor, Node: subject, Text: body})
-		return err
+		s.logf("worker_sandbox.cutover", "subject", subject, "text", body)
+		return nil
 	}
 	type change struct {
 		scope, old, desired string

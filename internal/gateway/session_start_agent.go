@@ -273,11 +273,8 @@ func (s *Store) failAgentStart(tx *sql.Tx, a *agentStart, reason string) error {
 	if a.native != "" {
 		_ = tx.QueryRow(`SELECT id FROM sessions WHERE node_id=? AND harness=? AND native_id=?`, a.node, a.harness, a.native).Scan(&id)
 	}
-	item, err := s.createInboxItem(tx, protocol.InboxItem{Kind: "check", SessionID: a.owner, Node: a.project, Text: s.agentChoiceFailureText(tx, a.ref, a.harness, a.project, id), Recommendation: reason})
-	if err != nil {
-		return err
-	}
-	a.item, a.reason = item.ID, reason
+	s.logf("session.agent_choice_failed", "ref", a.ref, "project", a.project, "text", s.agentChoiceFailureText(tx, a.ref, a.harness, a.project, id), "reason", reason)
+	a.reason = reason
 	s.holds.mu.Lock()
 	defer s.holds.mu.Unlock()
 	if s.holds.failed == nil {
@@ -329,22 +326,7 @@ func (s *Store) noteLateAgentNative(tx *sql.Tx, node string, p protocol.SessionA
 	return s.updateFailedAgentSession(tx, node, p.Harness, p.NativeID, id)
 }
 
-// updateFailedAgentSession names a registered session in the Desk items of
-// the failed starts that named its native ID.
-func (s *Store) updateFailedAgentSession(q askDB, node, harness, native, id string) error {
-	var failed []agentStart
-	s.holds.mu.Lock()
-	for _, f := range s.holds.failed {
-		if f.node == node && f.harness == harness && f.native == native && native != "" {
-			failed = append(failed, *f)
-		}
-	}
-	s.holds.mu.Unlock()
-	for _, f := range failed {
-		if _, err := q.Exec(`UPDATE inbox_items SET text=? WHERE id=?`, s.agentChoiceFailureText(q, f.ref, harness, f.project, id), f.item); err != nil {
-			return err
-		}
-	}
+func (s *Store) updateFailedAgentSession(_ askDB, _, _, _, _ string) error {
 	return nil
 }
 

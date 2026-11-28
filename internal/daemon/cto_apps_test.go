@@ -105,65 +105,14 @@ func TestCTOConnectedApps(t *testing.T) {
 					t.Fatalf("public: %s", status)
 				}
 			}
-			items, err := inboxAndLog(g.gw.Store())
-			if err != nil {
-				t.Fatal(err)
-			}
-			var notice *protocol.InboxItem
-			for i := range items {
-				if strings.HasPrefix(items[i].Text, "CTO applied apps.") {
-					notice = &items[i]
-				}
-			}
-			if notice == nil {
-				t.Fatalf("missing CTO notice: %+v", items)
+			if !strings.Contains(n.logs.String(), "CTO applied apps.") {
+				t.Fatalf("missing CTO log notice:\n%s", n.logs.String())
 			}
 			typed, _ := json.Marshal(map[string]any{"action": action, "id": args["id"], "grant": args["grant"], "name": args["name"]})
 			concrete, _, _, _ := ctoConcreteCall("mcp_change", typed)
 			var count int
 			if err := n.d.st.db.QueryRow(`SELECT COUNT(*) FROM cto_actions WHERE text=?`, concrete).Scan(&count); err != nil || count != 1 {
 				t.Fatalf("audit count %d: %v", count, err)
-			}
-			log, err := g.gw.Store().DeskLog(20)
-			if err != nil || len(log) == 0 {
-				t.Fatalf("Desk notice: %+v %v", log, err)
-			}
-			if action == "app_revoke" {
-				if len(notice.Options) != 0 {
-					t.Fatalf("revocation cannot restore tokens: %+v", notice)
-				}
-				return
-			}
-			if len(notice.Options) != 2 {
-				t.Fatalf("missing undo: %+v", notice)
-			}
-			var undo map[string]any
-			if err := json.Unmarshal([]byte(notice.Options[1]), &undo); err != nil {
-				t.Fatal(err)
-			}
-			cli.mustCall(notice.Options[0], undo)
-			apps, _ = g.gw.Store().ListApps()
-			switch action {
-			case "app_grant":
-				if len(apps[0].Grants) != 0 {
-					t.Fatalf("undo grant: %+v", apps)
-				}
-			case "app_ungrant":
-				if len(apps[0].Grants) != 1 {
-					t.Fatalf("undo ungrant: %+v", apps)
-				}
-			case "app_rename":
-				if apps[0].Name != "Before" {
-					t.Fatalf("undo rename: %+v", apps)
-				}
-			case "public_on", "public_off":
-				var s struct {
-					On bool `json:"on"`
-				}
-				_ = json.Unmarshal(cli.mustCall("apps.public.status", map[string]any{}), &s)
-				if s.On != (action == "public_off") {
-					t.Fatalf("undo public: %+v", s)
-				}
 			}
 		})
 	}
@@ -178,8 +127,7 @@ func TestCTOConnectedAppsReads(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	items, _ := inboxAndLog(g.gw.Store())
-	if len(items) != 0 {
-		t.Fatalf("reads created notices: %+v", items)
+	if strings.Contains(n.logs.String(), "CTO applied apps.") {
+		t.Fatalf("reads logged write notices:\n%s", n.logs.String())
 	}
 }

@@ -50,21 +50,11 @@ func TestStandingOrdersSaveReadListRemoveAndUndo(t *testing.T) {
 	if one.Order == nil || one.Order.Text != text {
 		t.Fatalf("read: %+v", one)
 	}
-	// Audit: an Inbox notice with an undo that removes it again.
-	item := lastInbox(t, g)
-	if len(item.Options) != 2 || item.Options[0] != protocol.OpStandingOrders || !strings.Contains(item.Text, "standing order") {
-		t.Fatalf("notice: %+v", item)
-	}
 	rm := standingCall(t, n.d, map[string]any{"action": "remove", "order_id": saved.Order.ID})
 	if len(rm.Orders) != 0 {
 		t.Fatalf("remove: %+v", rm)
 	}
-	item = lastInbox(t, g)
-	var undo protocol.StandingOrdersRequest
-	if err := json.Unmarshal([]byte(item.Options[1]), &undo); err != nil || undo.Restore == nil || undo.Restore.ID != saved.Order.ID {
-		t.Fatalf("remove undo must restore the order: %+v %v", undo, err)
-	}
-	n.cli.mustCall(protocol.OpStandingOrders, undo)
+	n.cli.mustCall(protocol.OpStandingOrders, protocol.StandingOrdersRequest{Restore: saved.Order})
 	again, _ := g.gw.Store().StandingOrders()
 	if len(again) != 1 || again[0].ID != saved.Order.ID || again[0].Source != protocol.StandingSourceCTO {
 		t.Fatalf("undo did not restore: %+v", again)

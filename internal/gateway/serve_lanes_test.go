@@ -180,8 +180,7 @@ func TestLanePoolReadSeesAWriteOnceItIsAnswered(t *testing.T) {
 // A node's write waits for the writer connection, and the write lane waits
 // with it. The reads the TUI makes every second must not stand behind it:
 // they only read, so they run on the read pool, whatever the lane is doing.
-// chief.get and ask.history stood in the lane, and the Desk waited seconds
-// for them behind one slow write.
+// chief.get and held.list must not wait in the lane behind one slow write.
 func TestDeskReadsDoNotWaitBehindAWriteInTheLane(t *testing.T) {
 	g, url, id, token := newLinkGateway(t, 70*time.Millisecond)
 	p := newServeTestPeer(t, url, token, id, g)
@@ -204,9 +203,9 @@ func TestDeskReadsDoNotWaitBehindAWriteInTheLane(t *testing.T) {
 	}
 	defer w.Close()
 	p.send(map[string]any{"type": "hidden.set", "id": "w1", "sessions": []string{"s_x"}})
-	for i, typ := range []string{"chief.get", "ask.history"} {
+	for i, typ := range []string{"chief.get", "held.list"} {
 		rid := fmt.Sprintf("r%d", i)
-		p.send(map[string]any{"type": typ, "id": rid, "ask": "i_1"})
+		p.send(map[string]any{"type": typ, "id": rid})
 		if !p.waitResult(rid, time.Second) {
 			t.Fatalf("%s waited behind a write in the lane", typ)
 		}

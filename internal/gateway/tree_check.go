@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"time"
-
-	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // The self-check of decision 0193. The writes keep rules I1 to I4 in their own
@@ -122,70 +120,21 @@ func (s *Store) treeViolations(now time.Time) ([]treeViolation, error) {
 	return out, nil
 }
 
-// checkTree is one pass of the self-check. A cause with no open Desk item
-// gets one, for the agent-net lead, and one log line event=tree.violation. A
-// cause whose item is open is left alone. An open item whose cause is gone
-// is resolved. It returns the causes found.
+// checkTree is one pass of the self-check. Each violation is logged with
+// event=tree.violation (decision 0196: no Desk item).
 func (s *Store) checkTree() ([]treeViolation, error) {
 	found, err := s.treeViolations(s.now())
 	if err != nil {
 		return nil, err
 	}
-	open := map[string]bool{}
-	rows, err := s.db.Query(`SELECT source_ref FROM inbox_items WHERE status='open' AND source_ref LIKE ?`, treeCheckRefPrefix+"%")
-	if err != nil {
-		return nil, err
-	}
-	for rows.Next() {
-		var ref string
-		if err := rows.Scan(&ref); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		open[ref] = true
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
 	seen := map[string]bool{}
-	lead := ""
 	for _, v := range found {
 		ref := v.ref()
 		if seen[ref] {
 			continue
 		}
 		seen[ref] = true
-		if open[ref] {
-			continue
-		}
-		if lead == "" {
-			if lead, err = s.agentNetLeadSession(); err != nil {
-				return nil, err
-			}
-		}
-		s.logf("tree.violation", "rule", v.rule, v.kind, v.id)
-		about := ""
-		if v.kind == "session" {
-			about = protocol.AskAboutSession
-		}
-		if _, err := s.createInboxItem(s.db, protocol.InboxItem{
-			Kind: protocol.AskKindCheck, SessionID: gatewayAsker, Node: "agent-net", FromKind: protocol.AskFromGateway, AskerName: "agent-net",
-			SourceRef: ref, AboutKind: about, AboutID: v.id, NextWho: lead,
-			Text:           "Session tree rule " + v.rule + ": " + v.text,
-			WhyYou:         "The tree self-check of decision 0193 found it: a write skipped this rule.",
-			Recommendation: "Find the write that broke the rule and fix it. lead_set or session_agent_set fixes the data; this item closes by itself once the cause is gone.",
-		}); err != nil {
-			return nil, err
-		}
-	}
-	for ref := range open {
-		if seen[ref] {
-			continue
-		}
-		if err := s.closeAskRef(s.db, ref, protocol.AskReasonResolved); err != nil {
-			return nil, err
-		}
-		s.logf("tree.resolved", "ref", ref)
+		s.logf("tree.violation", "rule", v.rule, v.kind, v.id, "text", v.text)
 	}
 	return found, nil
 }

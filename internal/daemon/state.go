@@ -118,7 +118,7 @@ CREATE TABLE IF NOT EXISTS workers (
 		_, err = db.Exec(firstMessagesSchema)
 	}
 	if err == nil {
-		_, err = db.Exec(heldStartsSchema)
+		_, err = db.Exec(`DROP TABLE IF EXISTS held_starts`)
 	}
 	if err == nil {
 		var has int

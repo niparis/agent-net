@@ -44,7 +44,6 @@ A message is checked, stored, handed to the receiver's machine, confirmed as del
 15. `events` (writes): The audit log records 'msg.delivered' for the receiver.
 16. `messages` (writes): The receiver's reply is saved as a new message in the same conversation, and in the same transaction the original request is marked 'replied'.
 17. `delivery_retries` (writes): Any pending retry for the answered request is deleted, because it no longer needs delivering.
-18. `inbox_items` (writes): An open 'owed answer' reminder for the request is closed as replied.
 
 ## Journey: Start a worker and get its hand-back
 
@@ -87,7 +86,6 @@ A machine enrolls once with a code, then on each connection proves its token, sa
 13. `events` (writes): The audit log records 'node.disconnected'.
 14. `sessions` (writes): After the offline grace period, every session of that machine is marked offline, and ended workers are marked 'ended'.
 15. `nodes` (writes): If the outage stays unexplained for the silence limit, the machine is marked silent. The once-a-minute check does this.
-16. `inbox_items` (writes): A silent machine is queued for the CTO (owned by `cto`, deduplicated by kind and subject) with the text '<host> went silent ... it may be hung' (it is not sent to the owner).
 
 ## Journey: A change from accept to release
 
@@ -101,36 +99,14 @@ An agent hands in a change, the delivery steps open one after another, each step
 6. `delivery_step_tasks` (writes): The first ready step (accept) gets a task row that names its owner. Steps that need an earlier step wait.
 7. `messages` (writes): A notice 'you have a step to claim' is stored for the session that owns the step.
 8. `delivery_step_tasks` (writes): The notice is saved in the step task, under the session it went to, so it can be cancelled when the step is claimed, finished or replaced.
-9. `desk_log` (writes): A line 'Sent step ... of change ... to a session' is added to the log.
-10. `delivery_step_tasks` (writes): The owner session claims the step (agent_step_claim). The task now shows who works on it, and nobody else can report it.
-11. `delivery_step_tasks` (writes): When the step is reported (agent_step_report), the task is deleted. Its evidence is the record, and the task table holds open work only.
-12. `delivery_evidence` (writes): The result (pass, fail or needs owner), the commit, the fields and who did the work are stored as evidence. Evidence is never edited, a newer report just wins.
-13. `delivery_step_tasks` (writes): The gateway reads all evidence, finds which steps are now ready, and opens the next task (review, test, approve, merge, release, verify in turn).
-14. `repos` (reads): For a step owned by the merger, the gateway reads the merger session and machine of the repo, and only that session may claim the step.
-15. `delivery_step_tasks` (writes): For an approve step set to delegated, the repo lead and the team lead (found from the repo and team tables) are listed in the task as the agents allowed to approve. The caller is never its own approver.
-16. `inbox_items` (writes): For an approve step that needs the owner's written approval, an Inbox item is created with `about_kind='step'` and `about_id` naming the change, revision, step and commit.
-17. `delivery_changes` (writes): A passing merge report moves the change to merged and stores the merged commit. When every step after merge has passed, the state becomes done (a close report makes it stopped).
-18. `inbox_items` (writes): When the change is done or stopped, the open asks about it are closed so nothing stale stays in the ask list.
-
-## Journey: The chief of staff sorts an ask
-
-An agent asks the owner a question, it becomes an ask that the chief of staff sorts, the owner answers, and the answer goes back to the asker.
-
-1. `sessions` (reads): The gateway checks the asking session is on the calling machine and finds its repo and display name.
-2. `gateway_state` (reads): It reads which session is the chief of staff, then decides if the ask goes to the chief or straight to the owner.
-3. `inbox_items` (reads): It looks for an open ask, or one closed in the last 10 minutes, that asks the same thing, so a repeat joins it instead of making a duplicate.
-4. `inbox_items` (writes): A new open ask is stored with the question, the options, the recommendation and who handles it next (the chief).
-5. `inbox_items` (reads): Every few seconds the gateway collects the asks waiting for the chief and bundles those that arrived close together.
-6. `messages` (writes): One message listing the asks to sort is stored for the chief of staff session.
-7. `inbox_items` (writes): Each ask in the batch is marked as sent to the chief, so it is not sent twice.
-8. `standing_orders` (reads): The chief searches the owner's earlier decisions and rules (agent_owner_judgments_find) to see if the owner already decided this kind of question.
-9. `inbox_items` (reads): When the chief calls agent_ask_sort, the gateway reads the ask and checks that the caller is the live chief.
-10. `inbox_items` (writes): For the result 'owner', the ask gets its priority, the reason why only the owner can decide, and next_who set to the owner.
-11. `ask_sorts` (writes): The sort is recorded with who sorted, the result, the reason and the previous state, so it can be shown and undone.
-12. `desk_log` (writes): A line 'Chief sent ask to you (priority N): ...' is added to the log.
-13. `inbox_items` (writes): The owner answers, and the CTO records it with the `answer` op on his quoted words. The ask is marked answered (or approved or refused) with the answer text and time.
-15. `standing_orders` (writes): The question and the owner's answer are saved as an owner judgment, so the chief can find it the next time (step 8).
-16. `messages` (writes): The answer is stored as a message for the asking session, and for every session that joined the ask as a repeat. The gateway then delivers it.
+9. `delivery_step_tasks` (writes): The owner session claims the step (agent_step_claim). The task now shows who works on it, and nobody else can report it.
+10. `delivery_step_tasks` (writes): When the step is reported (agent_step_report), the task is deleted. Its evidence is the record, and the task table holds open work only.
+11. `delivery_evidence` (writes): The result (pass, fail or needs owner), the commit, the fields and who did the work are stored as evidence. Evidence is never edited, a newer report just wins.
+12. `delivery_step_tasks` (writes): The gateway reads all evidence, finds which steps are now ready, and opens the next task (review, test, approve, merge, release, verify in turn).
+13. `repos` (reads): For a step owned by the merger, the gateway reads the merger session and machine of the repo, and only that session may claim the step.
+14. `delivery_step_tasks` (writes): For an approve step set to delegated, the repo lead and the team lead (found from the repo and team tables) are listed in the task as the agents allowed to approve. The caller is never its own approver.
+15. `messages` (writes): For an approve step that needs the owner's written approval, a notice is sent to the chief of staff session.
+16. `delivery_changes` (writes): A passing merge report moves the change to merged and stores the merged commit. When every step after merge has passed, the state becomes done (a close report makes it stopped).
 
 ## Journey: The owner changes a charter or a setting
 
@@ -413,42 +389,6 @@ Owner settings and their history.
 - **Read by:** `gateway/asks_to.go`, `gateway/authority.go`, `gateway/charter_drafts.go`, `gateway/charter_levels.go`, `gateway/charter_resolver.go`, `gateway/cto_lead.go`, `gateway/desk_rules.go`, `gateway/lead_route.go`, `gateway/lead_session.go` and others
 - **Shown in:** TUI, Graph; CTO op `team_create`; CTO op `team_settings_set`; CTO op `team_history`; tool `agent_graph_read`
 - **Kept:** Forever (an archived team is only marked inactive).
-
-## Asks and the log
-
-The ask store, its sorts, follow-ups and the log.
-
-### ask_sorts
-
-- **Holds:** One sort decision the chief of staff made on an ask (answer, route, merge, close), with what it replaced so it can be undone.
-- **Written by:** `gateway/chief.go`
-- **Read by:** `gateway/asks.go`, `gateway/chief.go`, `gateway/chief_health.go`, `gateway/chief_stuck.go`, `gateway/standing.go`
-- **Shown in:** TUI; tool `agent_ask_sort`; CTO op `ask_history`; CTO op `ask_undo`
-- **Kept:** Forever.
-
-### desk_log
-
-- **Holds:** One log line about something that happened in the gateway (an ask sorted, a permission applied), with what undoes it.
-- **Written by:** `gateway/asks.go`, `gateway/permissions.go`, `gateway/store.go`
-- **Read by:** `gateway/asks.go`, `gateway/server.go`, `gateway/store.go`
-- **Shown in:** TUI; tool `agent_ask_sort`; CTO op `desk_log`; CTO op `desk_settle`
-- **Kept:** The newest 2000 lines, trimmed on every 200th insert.
-
-### follow_ups
-
-- **Holds:** One row per follow-up check set by a message sender or the chief: the event expected (reply, change, conversation, session), who waits, the due time and whether it is pending, met or raised.
-- **Written by:** `gateway/follow_ups.go`
-- **Read by:** `gateway/follow_ups.go`
-- **Shown in:** tool `agent_message_send`; tool `agent_ask_sort`; TUI
-- **Kept:** Forever; status moves from pending to met or raised, rows are not deleted.
-
-### inbox_items
-
-- **Holds:** One ask or CTO problem: a question, approval (including delivery step approvals via `about_kind='step'`), or deduplicated CTO intake alert (`owner='cto'`, with `dedupe_key`, `count`, `first_seen`, `last_seen`, `severity`), with its single `status`, answer, priority and who sorted or routed it. An ask that holds a worker start with picker overrides also holds the override facts the confirm rule checks.
-- **Written by:** `gateway/agentnet_reply.go`, `gateway/apps_public_asks.go`, `gateway/asks.go`, `gateway/asks_to.go`, `gateway/brief.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/chief_health.go`, `gateway/chief_stuck.go`, `gateway/delivery_approval.go`, `gateway/delivery_tasks.go`, `gateway/intake.go` and others
-- **Read by:** `gateway/agentnet_reply.go`, `gateway/apps_asks.go`, `gateway/apps_public_asks.go`, `gateway/ask_intake.go`, `gateway/asks.go`, `gateway/brief.go`, `gateway/caller_agent.go`, `gateway/check.go`, `gateway/chief.go`, `gateway/chief_health.go`, `gateway/intake.go` and others
-- **Shown in:** tool `agent_ask_intake`; tool `agent_ask_sort`; CTO op `inbox_list`; CTO op `inbox_answer`; CTO op `cto_intake_find`
-- **Kept:** Forever (answered and closed rows stay).
 
 ## Learning
 

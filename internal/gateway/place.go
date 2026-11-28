@@ -424,7 +424,9 @@ func (s *Store) StoreHandoff(p protocol.MsgHandoff) (protocol.Message, error) {
 		return none, err
 	}
 	if m.State == protocol.StateHeld {
-		if err := s.openHeldAsk(tx, m.ID, m.From, m.To, m.Body); err != nil {
+		body := fmt.Sprintf("Held message %s from %s to %s needs owner approval:\n%s\nIf the owner agrees, the CTO answers it with held_answer, message_id %s, action a to deliver or r to refuse.",
+			m.ID, sessionLabel(tx, m.From), sessionLabel(tx, m.To), askFirstLine(m.Body, 400), m.ID)
+		if _, _, err := s.sendToChief(tx, m.From, "held:"+m.ID, body); err != nil {
 			return none, err
 		}
 	}
