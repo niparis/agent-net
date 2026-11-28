@@ -86,7 +86,7 @@ var ctoOwnerOpPurposes = map[string]string{
 	"notes_copy":            "Copy the agent-scope notes of one agent node to another (from_agent, to_agent, both agent ids). It only adds: the first agent keeps all its notes, and a note whose name the second agent already has is kept as it is. Returns copied_notes (the new note ids) and kept_notes (names it skipped). Undo removes only the copies it made.",
 	"session_agent_set":     "Move a lasting agent session to another agent node (session_id, agent). Notes belong to the agent node, so the moved session stops seeing the old agent's notes. Set copy_notes true to copy the old agent's agent-scope notes to the new agent first: it keeps the new agent's own notes of the same name and leaves the old agent's notes in place. Undo moves the session back and removes only the notes the call copied.",
 	"permission_apply":      "When the owner tells you in this chat to grant a Claude Code permission rule or folder trust, apply it now with his words quoted in owner_words. Give rules and targets (registered repo names), or kind trust with machine and folders. Returns each target's status, the rules added and the file written. Nothing is stored for later: an agent that needs a permission asks the chief of staff or you with a message.",
-	"draft_answer":          "Accept or reject one pending charter draft by its number (draft_id, action accept or reject). Read drafts with cto_proposals_find kind draft. Accept writes the value and returns the stored row with history_id; undo it with graph_change action undo on that id. Reject writes nothing.",
+	"draft_answer":          "Accept or reject one pending charter draft by its number (draft_id, action accept or reject). Read drafts with cto_owner_items_find kind draft. Accept writes the value and returns the stored row with history_id; undo it with graph_change action undo on that id. Reject writes nothing.",
 	"delivery_owner_answer": "Complete an @owner delivery step, or an owner merge approval, on the owner's quoted words in owner_words. Give change, step, for when it is approve, the full commit the owner approved, and result pass when he approves or fail when he refuses. The daemon checks the quote against what he typed in this chat. No stored ask is needed.",
 	"loop_resume":           "Restart a paused loop by its id in node, on the owner's quoted words in owner_words. A loop pauses after two ticks with no progress or when the day's cap is reached. The daemon checks the quote against what he typed in this chat.",
 	"sign_in_open":          "When the owner tells you in this chat to sign a CLI in on a machine, open it there: give the machine (node ID or hostname), an allowlisted provider such as alibaba, and his words quoted in owner_words. The daemon checks the quote, then the machine opens the login in its own herdr. No stored ask is needed. It never runs a command you supply.",
@@ -225,7 +225,7 @@ func ctoOpSchemaError(op CTOOp, err error) error {
 
 // ValidateCTOOpArgs checks cto_op arguments against the op's full schema. A
 // wrong, missing or unknown argument returns the schema and example, and no
-// call is made. Proposal and irreversible ops never run with defaults: the
+// call is made. Owner-words and irreversible ops never run with defaults: the
 // same check holds for them.
 func ValidateCTOOpArgs(op CTOOp, raw json.RawMessage) error {
 	schemaRaw, err := json.Marshal(op.Schema)
@@ -294,7 +294,7 @@ func ctoOpTools() []*mcp.Tool {
 	return []*mcp.Tool{
 		{
 			Name:        "cto_ops_list",
-			Description: "List the rare CTO operations, grouped, each with its purpose and owner gate: direct (runs at once), proposal (owner approval) or irreversible (runs at once, no undo). Use filter to narrow. Run one with cto_op.",
+			Description: "List the rare CTO operations, grouped, each with its purpose and owner gate: direct (runs at once), owner_words (runs only with the owner's words in owner_words) or irreversible (runs at once, no undo). Use filter to narrow. Run one with cto_op.",
 			InputSchema: map[string]any{
 				"type":       "object",
 				"properties": map[string]any{"filter": map[string]any{"type": "string", "description": "Text matched against name, purpose and group."}},
@@ -302,7 +302,7 @@ func ctoOpTools() []*mcp.Tool {
 		},
 		{
 			Name:        "cto_op",
-			Description: "Run one rare CTO operation named by cto_ops_list, with its arguments. A wrong, missing or unknown argument returns that operation's full schema and an example, and runs nothing. Proposal and irreversible operations never fall back to defaults.",
+			Description: "Run one rare CTO operation named by cto_ops_list, with its arguments. A wrong, missing or unknown argument returns that operation's full schema and an example, and runs nothing. Owner-words and irreversible operations never fall back to defaults.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -364,7 +364,7 @@ func addCTOOpTools(s *mcp.Server, call Caller, addTool ctoToolAdder) {
 				value = string(raw)
 			}
 			if ctoOpNormalizesResult(op) {
-				value = normalizeCTOProposalResult(value)
+				value = normalizeCTOResult(value)
 			}
 			return ctoPlainResult(value)
 		})
@@ -378,7 +378,7 @@ func ctoOpNormalizesResult(op CTOOp) bool {
 		return true
 	}
 	switch op.Tool {
-	case "graph_change", "session_change", "worker_change", "answer", "mcp_change", "settings_change", "project_change", "mcp_call", "proposal_ask", "cto_new", "sessions_archive":
+	case "graph_change", "session_change", "worker_change", "answer", "mcp_change", "settings_change", "project_change", "mcp_call", "cto_new", "sessions_archive":
 		return true
 	}
 	return false

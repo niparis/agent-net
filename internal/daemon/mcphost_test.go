@@ -470,21 +470,19 @@ func TestMCPAdministrationIsOwnerOnlyForAgents(t *testing.T) {
 
 }
 
-func TestApprovedCTOMCPChangeCanAddServer(t *testing.T) {
+func TestCTOMCPChangeCanAddServer(t *testing.T) {
 	useHelper(t)
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	server := map[string]any{"name": "cto-fixture", "transport": "stdio", "command": os.Args[0],
 		"args": []string{"-test.run=XXX"}, "env": []string{helperEnv, "GORACE"}}
 	args, _ := json.Marshal(map[string]any{"action": "add", "server": server})
-	value, err := legacyProposalFixture(context.Background(), n.d, "mcp_change", args)
-	if err != nil {
-		t.Fatalf("propose MCP add: %v", err)
+	if _, err := ctoRunNow(context.Background(), n.d, "mcp_change", args); err != nil {
+		t.Fatalf("CTO MCP add: %v", err)
 	}
-	approveCTOToolResult(t, n.d, value)
 	servers := listServers(t, cliClient(t, n))
 	if len(servers) != 1 || servers[0].Name != "cto-fixture" || servers[0].AddedBySession != "" {
-		t.Fatalf("approved MCP add: %+v", servers)
+		t.Fatalf("CTO MCP add: %+v", servers)
 	}
 }
 

@@ -202,11 +202,6 @@ func inHerdrResume(q protocol.SessionResumeRequest, socket string) protocol.Sess
 	return q
 }
 
-func inHerdrAnswer(q protocol.CTOProposalAnswer, socket string) protocol.CTOProposalAnswer {
-	q.HerdrSocket, q.HerdrPaneID = socket, testHerdrPane
-	return q
-}
-
 func herdrPlanFor(pid int, q protocol.EnterRequest) (protocol.EnterPlan, bool) {
 	d := &Daemon{}
 	return d.herdrPlan(protocol.SessionInfo{PID: pid}, q, protocol.EnterPlan{Host: "h"}, "s")

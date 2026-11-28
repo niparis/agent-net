@@ -320,7 +320,7 @@ func TestProjectAddAgainstOldGatewayIsAClearError(t *testing.T) {
 	}
 }
 
-func TestCTOProjectRemoveMachineAfterApproval(t *testing.T) {
+func TestCTOProjectRemoveOnTheNamedMachine(t *testing.T) {
 	for _, target := range []string{"remote", "local"} {
 		t.Run(target, func(t *testing.T) {
 			g := startGateway(t, t.TempDir(), "")
@@ -332,34 +332,14 @@ func TestCTOProjectRemoveMachineAfterApproval(t *testing.T) {
 			args := map[string]any{"action": "remove", "name": "beta"}
 			removed, kept := a.d.NodeID(), b.d.NodeID()
 			if target == "remote" {
-				// No local entry: preflight must look on the target machine too.
 				args["node_id"] = b.d.NodeID()
 				removed, kept = b.d.NodeID(), a.d.NodeID()
-			} else {
-				cliA.mustCall("project_add", protocol.ProjectAddRequest{Paths: []string{filepath.Join(base, "beta")}})
 			}
+			// Both machines hold the name, so a removal on the wrong machine shows.
+			cliA.mustCall("project_add", protocol.ProjectAddRequest{Paths: []string{filepath.Join(base, "beta")}})
 			raw, _ := json.Marshal(args)
-			ctx := context.Background()
-			if _, err := legacyProposalFixture(ctx, a.d, "project_change", raw); err != nil {
+			if _, err := ctoRunNow(context.Background(), a.d, "project_change", raw); err != nil {
 				t.Fatal(err)
-			}
-			items, err := a.d.proposalRunner().list()
-			if err != nil || len(items) != 1 || items[0].Status != "open" {
-				t.Fatalf("items=%+v err=%v", items, err)
-			}
-			if ps := listProjects(t, cliA, "beta"); len(ps) == 0 {
-				t.Fatal("removed before approval")
-			}
-			if target == "remote" {
-				// Add the same name locally after preflight to catch applying on the wrong node.
-				cliA.mustCall("project_add", protocol.ProjectAddRequest{Paths: []string{filepath.Join(base, "beta")}})
-			}
-			if err := a.d.proposalRunner().decide(ctx, items[0].ID, true); err != nil {
-				t.Fatal(err)
-			}
-			items, err = a.d.proposalRunner().list()
-			if err != nil || len(items) != 1 || items[0].Status != "applied" {
-				t.Fatalf("items=%+v err=%v", items, err)
 			}
 			if ps := listProjects(t, cliA, "beta"); len(ps) != 1 || ps[0].NodeID != kept {
 				t.Fatalf("wanted %s removed and %s kept: %+v", removed, kept, ps)
@@ -368,7 +348,7 @@ func TestCTOProjectRemoveMachineAfterApproval(t *testing.T) {
 	}
 }
 
-func TestCTOProjectAddMachineAfterApproval(t *testing.T) {
+func TestCTOProjectAddOnTheNamedMachine(t *testing.T) {
 	for _, target := range []string{"node_id", "hostname", "local"} {
 		t.Run(target, func(t *testing.T) {
 			g := startGateway(t, t.TempDir(), "")
@@ -386,25 +366,15 @@ func TestCTOProjectAddMachineAfterApproval(t *testing.T) {
 				}
 			}
 			raw, _ := json.Marshal(args)
-			ctx := context.Background()
-			if _, err := legacyProposalFixture(ctx, a.d, "project_change", raw); err != nil {
-				t.Fatal(err)
-			}
-			if ps := listProjects(t, cli, "beta"); len(ps) != 0 {
-				t.Fatalf("registered before approval: %+v", ps)
-			}
-			items, err := a.d.proposalRunner().list()
-			if err != nil || len(items) != 1 {
-				t.Fatalf("items=%+v err=%v", items, err)
-			}
-			if err := a.d.proposalRunner().decide(ctx, items[0].ID, true); err != nil {
+			value, err := ctoRunNow(context.Background(), a.d, "project_change", raw)
+			if err != nil {
 				t.Fatal(err)
 			}
 			if ps := listProjects(t, cli, "beta"); len(ps) != 1 || ps[0].NodeID != want {
 				t.Fatalf("wanted registration on %s: %+v", want, ps)
 			}
-			items, _ = a.d.proposalRunner().list()
-			out := addOutcome(t, items[0].Result)
+			result, _ := json.Marshal(value)
+			out := addOutcome(t, result)
 			if out.Machine != "host-"+want || len(out.Added) != 1 {
 				t.Fatalf("outcome: %+v", out)
 			}
@@ -420,14 +390,6 @@ func TestCTOProjectRemoveNeedsTargetDaemon(t *testing.T) {
 	cliA, cliB := cliClient(t, a), cliClient(t, b)
 	cliB.mustCall("project_add", protocol.ProjectAddRequest{Paths: []string{filepath.Join(base, "beta")}})
 	raw, _ := json.Marshal(map[string]any{"action": "remove", "name": "beta", "node_id": b.d.NodeID()})
-	ctx := context.Background()
-	if _, err := legacyProposalFixture(ctx, a.d, "project_change", raw); err != nil {
-		t.Fatal(err)
-	}
-	items, err := a.d.proposalRunner().list()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("items=%+v err=%v", items, err)
-	}
 	b.d.Stop()
 	eventually(t, "target offline", func() bool {
 		var nodes protocol.NodesInfo
@@ -439,7 +401,7 @@ func TestCTOProjectRemoveNeedsTargetDaemon(t *testing.T) {
 		}
 		return false
 	})
-	if err := a.d.proposalRunner().decide(ctx, items[0].ID, true); err == nil || !strings.Contains(err.Error(), "offline") {
+	if _, err := ctoRunNow(context.Background(), a.d, "project_change", raw); err == nil || !strings.Contains(err.Error(), "offline") {
 		t.Fatalf("wanted offline target error: %v", err)
 	}
 	if ps := listProjects(t, cliA, "beta"); len(ps) != 1 || ps[0].NodeID != b.d.NodeID() {

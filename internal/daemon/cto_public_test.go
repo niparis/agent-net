@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -15,10 +14,10 @@ import (
 // This independent allowlist pins every data view to its ordinary tool. Static
 // guide text and the CTO's own timeline are the only non-agent sources.
 var wantCTOReads = map[string]string{
-	"cto_proposals_find":  "own proposals,asks.list",
-	"cto_intake_find":     protocol.FrameIntakeFind,
-	"agent_sessions_find": "sessions_find",
-	"agent_machines_find": "machines_find", "agent_machine_log": "machine_log",
+	"cto_owner_items_find": "asks.list,charter.drafts",
+	"cto_intake_find":      protocol.FrameIntakeFind,
+	"agent_sessions_find":  "sessions_find",
+	"agent_machines_find":  "machines_find", "agent_machine_log": "machine_log",
 	"agent_projects_find": "projects_find", "agent_workers_find": protocol.MethodWorkersFind,
 	"agent_messages_find": protocol.MethodMessagesFind,
 	"agent_graph_read":    mcpserver.ReadGraph, "agent_settings_read": "settings_read", "agent_mcp_servers_find": protocol.MethodMCPServersFind,
@@ -95,38 +94,12 @@ func TestCTOReadCanary(t *testing.T) {
 	if err != nil || held.State != "held" {
 		t.Fatalf("held fixture: %+v %v", held, err)
 	}
-	// Approved calls retain their complete results for the owner only. Use the
-	// real runner for both sensitive result types and check every delivered note.
-	runner := proposalRunner{state: w.d.st, now: time.Now, validate: func(context.Context, proposalCall) error { return nil }, run: func(_ context.Context, call proposalCall, _ string) (json.RawMessage, error) {
-		return json.RawMessage(`{"body":"MCP_RESULT_CANARY"}`), nil
-	}}
-	for _, tool := range []string{"mcp_call"} {
-		pid, err := runner.propose(context.Background(), proposalCall{Tool: tool, Args: json.RawMessage(`{}`)}, "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err = runner.decide(context.Background(), pid, true); err != nil {
-			t.Fatal(err)
-		}
-		if err = runner.deliverNote(context.Background(), func(_ context.Context, note string) error {
-			for _, secret := range []string{"TOOL_PLAN_PATH_CANARY", "MCP_RESULT_CANARY"} {
-				if strings.Contains(note, secret) {
-					t.Errorf("outcome leaked %s", secret)
-				}
-			}
-			return nil
-		}); err != nil {
-			t.Fatal(err)
-		}
-	}
 	for name, class := range ctoToolClasses {
 		if class != ctoRead {
 			continue
 		}
 		cases := []map[string]any{{}}
 		switch name {
-		case "cto_proposals_find":
-			cases = append(cases, map[string]any{"id": "p_1"})
 		case "agent_sessions_find":
 			cases = []map[string]any{{}, {"session": id}}
 		case "agent_machine_log":
@@ -331,56 +304,5 @@ func TestWithoutLastSeenAgo(t *testing.T) {
 	renamed := withoutLastSeenAgo(t, read([]string{"0s ago", "1s ago"}, "other"))
 	if string(first) == string(renamed) {
 		t.Fatal("normalisation hid a field other than last_seen_ago")
-	}
-}
-
-func TestCTOOutcomeCanary(t *testing.T) {
-	t.Parallel()
-	for _, status := range []string{"applied", "failed", "declined", "expired"} {
-		t.Run(status, func(t *testing.T) {
-			state, err := openState(seededStateDir(t))
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer state.close()
-			now := time.Now()
-			runner := proposalRunner{state: state, now: func() time.Time { return now }, validate: func(context.Context, proposalCall) error { return nil }, run: func(context.Context, proposalCall, string) (json.RawMessage, error) {
-				result := json.RawMessage(`{"files":["/private/TOOL_PLAN_PATH_CANARY"],"body":"MCP_RESULT_CANARY"}`)
-				if status == "failed" {
-					return result, fmt.Errorf("fixture failure")
-				}
-				return result, nil
-			}}
-			id, err := runner.propose(context.Background(), proposalCall{Tool: "mcp_call", Args: json.RawMessage(`{}`)}, "")
-			if err != nil {
-				t.Fatal(err)
-			}
-			switch status {
-			case "expired":
-				now = now.Add(25 * time.Hour)
-			case "declined":
-				err = runner.decide(context.Background(), id, false)
-			default:
-				err = runner.decide(context.Background(), id, true)
-			}
-			if status == "failed" && err == nil || status != "failed" && err != nil {
-				t.Fatalf("decide: %v", err)
-			}
-			notes := 0
-			if err = runner.deliverNote(context.Background(), func(_ context.Context, note string) error {
-				notes++
-				if !strings.Contains(note, map[string]string{"applied": "approved and applied", "failed": "approved, failed", "declined": "declined", "expired": "expired"}[status]) {
-					t.Errorf("wrong note %q", note)
-				}
-				for _, marker := range []string{"TOOL_PLAN_PATH_CANARY", "MCP_RESULT_CANARY"} {
-					if strings.Contains(note, marker) {
-						t.Errorf("outcome leaked %s", marker)
-					}
-				}
-				return nil
-			}); err != nil || notes != 1 {
-				t.Fatalf("notes=%d err=%v", notes, err)
-			}
-		})
 	}
 }

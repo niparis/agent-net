@@ -82,23 +82,23 @@ func TestCTOTeamCharterSchemaAcceptsModeAndHeldBack(t *testing.T) {
 	}
 }
 
-func TestCTOProposalsFindListsLearned(t *testing.T) {
+func TestCTOOwnerItemsFindListsLearned(t *testing.T) {
 	list, err := ctoTestSession(t).ListTools(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, tool := range list.Tools {
-		if tool.Name != "cto_proposals_find" {
+		if tool.Name != "cto_owner_items_find" {
 			continue
 		}
 		props, _ := ctoToolSchema(t, tool)
 		got := strings.Join(enumStrings(props["kind"]["enum"]), " ")
 		for _, want := range []string{"all", "draft", "learned"} {
 			if !strings.Contains(got, want) {
-				t.Errorf("cto_proposals_find kind enum = %q, want %s", got, want)
+				t.Errorf("cto_owner_items_find kind enum = %q, want %s", got, want)
 			}
 		}
 		return
 	}
-	t.Fatal("cto_proposals_find is not listed")
+	t.Fatal("cto_owner_items_find is not listed")
 }

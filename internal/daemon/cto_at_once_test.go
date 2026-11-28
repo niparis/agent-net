@@ -15,7 +15,7 @@ import (
 func TestCTOAtOnceRouting(t *testing.T) {
 	cases := []struct {
 		name, args string
-		proposal   bool
+		needWords  bool
 	}{
 		{"graph_change", `{"action":"team_create"}`, false},
 		{"graph_change", `{"action":"edge_set","mode":"auto"}`, false},
@@ -32,13 +32,11 @@ func TestCTOAtOnceRouting(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name+tc.args, func(t *testing.T) {
-			proposed, ran := false, false
-			_, err := routeCTOTool(context.Background(), tc.name, json.RawMessage(tc.args), func(context.Context, string, string, json.RawMessage, string) (string, error) {
-				proposed = true
-				return "p_1", nil
-			}, func(context.Context, string, json.RawMessage) (any, error) { ran = true; return nil, nil })
-			if err != nil || proposed != tc.proposal || ran == tc.proposal {
-				t.Fatalf("proposal=%v ran=%v err=%v", proposed, ran, err)
+			ran := false
+			_, err := routeCTOTool(context.Background(), tc.name, json.RawMessage(tc.args), func(context.Context, string, json.RawMessage) (any, error) { ran = true; return nil, nil })
+			refused := err != nil && strings.Contains(err.Error(), "needs the owner's approval")
+			if refused != tc.needWords || ran == tc.needWords {
+				t.Fatalf("refused=%v ran=%v err=%v", refused, ran, err)
 			}
 		})
 	}
@@ -223,10 +221,6 @@ func TestCTOAtOnceActionsLeaveInbox(t *testing.T) {
 			}
 		})
 	}
-	items, err := n.d.proposalRunner().list()
-	if err != nil || len(items) != 0 {
-		t.Fatalf("proposals %+v %v", items, err)
-	}
 	if _, ok, err := g.gw.Store().Agent(offline); err != nil || ok {
 		t.Fatalf("session not archived: %v %v", ok, err)
 	}
@@ -236,31 +230,47 @@ func TestCTOAtOnceActionsLeaveInbox(t *testing.T) {
 	}
 }
 
-func TestCTOMachineActionsRemainProposals(t *testing.T) {
+// Without the owner's words the five owner-only actions are refused with one
+// line that tells the CTO to ask him. Nothing runs and nothing is stored.
+func TestCTOOwnerOnlyActionsRefuseWithoutOwnerWords(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
-	owner := startNode(t, g, nodeOpts{})
+	owner := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.Version = "v0.4.145" }})
 	target := startNode(t, g, nodeOpts{})
+	cli := cliClient(t, owner)
 	ctx := context.Background()
-	for _, area := range []string{"machine_remove", "machine_rotate"} {
-		args, _ := json.Marshal(map[string]any{"area": area, "node_id": target.cfg.NodeID})
-		result, err := owner.d.runCTOToolRaw(ctx, "settings_change", args)
-		if err != nil {
-			t.Fatal(err)
-		}
-		text, ok := result.(string)
-		if !ok || !strings.HasPrefix(text, "proposal p_") {
-			t.Fatalf("%s: %v", area, result)
+	waitGraphCutover(t, g)
+	cli.mustCall("node_add", map[string]string{"name": "keep-node"})
+	cli.mustCall("repo_create", map[string]string{"name": "keep-repo"})
+	cli.mustCall("agent_create", map[string]string{"name": "keep-agent"})
+	before, err := inboxAndLog(g.gw.Store())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ tool, args string }{
+		{"graph_change", `{"action":"node_remove","name":"keep-node"}`},
+		{"graph_change", `{"action":"repo_archive","ref":{"kind":"repo","id":"keep-repo"}}`},
+		{"graph_change", `{"action":"agent_tombstone","ref":{"kind":"agent","id":"keep-agent"}}`},
+		{"settings_change", `{"area":"machine_remove","node_id":"` + target.cfg.NodeID + `"}`},
+		{"settings_change", `{"area":"machine_rotate","node_id":"` + target.cfg.NodeID + `"}`},
+	} {
+		_, err := owner.d.runCTOToolRaw(ctx, tc.tool, json.RawMessage(tc.args))
+		if err == nil || !strings.Contains(err.Error(), "needs the owner's approval") || !strings.Contains(err.Error(), "owner_words") || strings.Contains(err.Error(), "\n") {
+			t.Fatalf("%s: want a one-line refusal, got %v", tc.args, err)
 		}
 	}
-	items, err := owner.d.proposalRunner().list()
-	if err != nil || len(items) != 2 {
-		t.Fatalf("proposals: %+v %v", items, err)
+	for _, ref := range []protocol.GraphRef{{Kind: "agent", ID: "keep-node"}, {Kind: "repo", ID: "keep-repo"}, {Kind: "agent", ID: "keep-agent"}} {
+		if graph, err := g.gw.Store().GraphForRef(&ref); err != nil || len(graph.Nodes) != 1 {
+			t.Fatalf("%s left the graph without the owner's words: %+v %v", ref.ID, graph, err)
+		}
 	}
 	if !target.d.Connected() {
-		t.Fatal("target disconnected before owner approval")
+		t.Fatal("the target machine was removed or rotated without the owner's words")
+	}
+	after, err := inboxAndLog(g.gw.Store())
+	if err != nil || len(after) != len(before) {
+		t.Fatalf("a refused call left an Inbox line: %+v %v", after, err)
 	}
 }
-
 func TestCTOProfileChangeUndoPreservesExisting(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
@@ -503,7 +513,7 @@ func ctoActionCoverage(routes map[string]map[string]string, classes map[string]m
 				continue
 			}
 			switch class {
-			case ctoRead, ctoMinor, ctoProposal:
+			case ctoRead, ctoMinor, ctoOwnerOnly:
 			default:
 				problems = append(problems, fmt.Sprintf("unknown class %q for %s %s", class, tool, action))
 			}

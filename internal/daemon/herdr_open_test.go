@@ -625,36 +625,22 @@ func TestHerdrKeepsCredentialsOutOfCommand(t *testing.T) {
 	}
 }
 
-func TestCTOSessionProposalStartsInBackground(t *testing.T) {
+// A CTO project create runs in the background: it never opens a herdr pane
+// or tab (decision 0046). The owner opens it with Enter.
+func TestCTOSessionStartRunsInBackground(t *testing.T) {
 	_, log := fakeOpenHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
 	home := pathTestHome(t)
 	c := startClaudeNode(t, g, shortSet)
 	path := filepath.Join(home, "code", "garden")
 	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "harness": "claude", "first_message": "hello"})
-	if _, err := legacyProposalFixture(context.Background(), c.d, "project_change", args); err != nil {
-		t.Fatal(err)
-	}
-	items, err := c.d.proposalRunner().list()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("proposals %v %v", items, err)
-	}
-	c.cli.mustCall("proposal_answer", inHerdrAnswer(protocol.CTOProposalAnswer{ID: items[0].ID, Action: "a"}, fakeHerdrSocket(log)))
-	items, err = c.d.proposalRunner().list()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var r protocol.StartedSession
-	if err := json.Unmarshal(items[0].Result, &r); err != nil {
-		t.Fatal(err)
-	}
-	r = waitSessionStartPath(t, c.workerNode, r)
+	r := waitSessionStartPath(t, c.workerNode, ctoStartNow(t, c.d, "project_change", args))
 	t.Cleanup(func() { killFakeClaude(t, path) })
 	if r.Status != "started" || r.EnterPlan != nil {
 		t.Fatalf("start %+v", r)
 	}
 	if raw, _ := os.ReadFile(log); strings.Contains(string(raw), "pane run") || strings.Contains(string(raw), "tab create") {
-		t.Fatalf("proposal opened a view: %s", raw)
+		t.Fatalf("the CTO start opened a view: %s", raw)
 	}
 }
 
@@ -898,7 +884,7 @@ func TestCTOEnterHerdrReportsConversationRestart(t *testing.T) {
 	}
 }
 
-func TestCTOSessionProposalRemoteStartsInBackground(t *testing.T) {
+func TestCTORemoteSessionStartRunsInBackground(t *testing.T) {
 	remoteBin, remoteLog := fakeOpenHerdr(t)
 	localBin, localLog := fakeOpenHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
@@ -915,23 +901,8 @@ func TestCTOSessionProposalRemoteStartsInBackground(t *testing.T) {
 	trustClaudeFolder(t, repo)
 	t.Cleanup(func() { killFakeClaude(t, repo) })
 	args, _ := json.Marshal(map[string]any{"action": "session_start", "project": "garden", "node_id": remote.d.NodeID(), "harness": "claude", "first_message": "hello"})
-	if _, err := legacyProposalFixture(context.Background(), local.d, "session_change", args); err != nil {
-		t.Fatal(err)
-	}
-	items, err := local.d.proposalRunner().list()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("proposals %v %v", items, err)
-	}
-	local.cli.mustCall("proposal_answer", inHerdrAnswer(protocol.CTOProposalAnswer{ID: items[0].ID, Action: "a"}, fakeHerdrSocket(localLog)))
-	items, err = local.d.proposalRunner().list()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var r protocol.StartedSession
-	if err := json.Unmarshal(items[0].Result, &r); err != nil {
-		t.Fatal(err)
-	}
-	eventually(t, "remote proposal starts", func() bool {
+	r := ctoStartNow(t, local.d, "session_change", args)
+	eventually(t, "remote CTO start starts", func() bool {
 		var err error
 		r, err = local.d.sessionStartGet(context.Background(), r.ID)
 		return err == nil && r.Status == "started"
@@ -939,7 +910,7 @@ func TestCTOSessionProposalRemoteStartsInBackground(t *testing.T) {
 	waitSessionOnGateway(t, local.node, r.SessionID)
 	for _, log := range []string{localLog, remoteLog} {
 		if raw, _ := os.ReadFile(log); strings.Contains(string(raw), "pane run") || strings.Contains(string(raw), "tab create") {
-			t.Fatalf("proposal opened a view: %s", raw)
+			t.Fatalf("the CTO start opened a view: %s", raw)
 		}
 	}
 }
@@ -947,9 +918,9 @@ func TestCTOSessionProposalRemoteStartsInBackground(t *testing.T) {
 // A start the CTO asked for on another machine can fail there after the start
 // was answered as starting. The machine that runs it logs and records the
 // failure once. The machine the owner uses tells the owner, once.
-func TestCTOSessionProposalRemoteStartFailureNotifiesOwner(t *testing.T) {
+func TestCTORemoteSessionStartFailureNotifiesOwner(t *testing.T) {
 	remoteBin, _ := fakeOpenHerdr(t)
-	localBin, localLog := fakeOpenHerdr(t)
+	localBin, _ := fakeOpenHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
 	pathTestHome(t)
 	sessions, _ := useFakeClaude(t)
@@ -966,22 +937,7 @@ func TestCTOSessionProposalRemoteStartFailureNotifiesOwner(t *testing.T) {
 	notices := herdrNoticeChannel(t, local.node)
 	t.Setenv(envFakeStartFails, "1")
 	args, _ := json.Marshal(map[string]any{"action": "session_start", "project": "garden", "node_id": remote.d.NodeID(), "harness": "claude"})
-	if _, err := legacyProposalFixture(context.Background(), local.d, "session_change", args); err != nil {
-		t.Fatal(err)
-	}
-	items, err := local.d.proposalRunner().list()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("proposals %v %v", items, err)
-	}
-	local.cli.mustCall("proposal_answer", inHerdrAnswer(protocol.CTOProposalAnswer{ID: items[0].ID, Action: "a"}, fakeHerdrSocket(localLog)))
-	items, err = local.d.proposalRunner().list()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var r protocol.StartedSession
-	if err := json.Unmarshal(items[0].Result, &r); err != nil || r.ID == "" {
-		t.Fatalf("approved start: %s %v", items[0].Result, err)
-	}
+	r := ctoStartNow(t, local.d, "session_change", args)
 	told := false
 	eventually(t, "the owner is told the remote start failed", func() bool {
 		select {
@@ -1037,7 +993,9 @@ func TestSessionStartClaudeWithoutJobIDInOwnerHerdr(t *testing.T) {
 	requireNoHerdrCalls(t, log)
 }
 
-func TestCTOProposalApprovalLeavesOwnerTUIViewUnchanged(t *testing.T) {
+// A CTO project create on a machine with herdr leaves the owner's view as it
+// is: no pane or tab opens, and the TUI gets the Enter notice (decision 0046).
+func TestCTOStartLeavesOwnerTUIViewUnchanged(t *testing.T) {
 	_, log := fakeOpenHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
 	home := pathTestHome(t)
@@ -1046,33 +1004,19 @@ func TestCTOProposalApprovalLeavesOwnerTUIViewUnchanged(t *testing.T) {
 	path := filepath.Join(home, "code", "garden")
 	t.Cleanup(func() { killFakeClaude(t, path) })
 	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "harness": "claude"})
-	if _, err := legacyProposalFixture(context.Background(), c.d, "project_change", args); err != nil {
-		t.Fatal(err)
-	}
-	items, err := c.d.proposalRunner().list()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("proposal %v %v", items, err)
-	}
-	c.cli.mustCall("proposal_answer", map[string]string{"proposal_id": items[0].ID, "action": "a", "herdr_socket": "/tmp/herdr-test.sock", "herdr_pane_id": "w1:p0"})
+	ctoStartNow(t, c.d, "project_change", args)
 	q := waitHerdrNotice(t, notices)
 	if q["text"] != "Enter opens it." || q["daemon_notice"] != true {
 		t.Fatalf("notice %v", q)
 	}
 	if raw, _ := os.ReadFile(log); strings.Contains(string(raw), "pane run") || strings.Contains(string(raw), "pane split") || strings.Contains(string(raw), "tab create") {
-		t.Fatalf("proposal opened a view: %s", raw)
+		t.Fatalf("the CTO start opened a view: %s", raw)
 	}
 }
 
-func TestRemoteCTOProposalApprovalBackground(t *testing.T) {
-	testRemoteCTOProposalApproval(t, false)
-}
-
-func TestRemoteCTOProposalApproveAllBackground(t *testing.T) {
-	testRemoteCTOProposalApproval(t, true)
-}
-
-func testRemoteCTOProposalApproval(t *testing.T, all bool) {
-	t.Helper()
+// A CTO project create on another machine runs in the background there; no
+// machine opens a view.
+func TestRemoteCTOProjectCreateBackground(t *testing.T) {
 	remoteBin, remoteLog := fakeOpenHerdr(t)
 	localBin, localLog := fakeOpenHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
@@ -1086,42 +1030,22 @@ func testRemoteCTOProposalApproval(t *testing.T, all bool) {
 	})
 	path := filepath.Join(home, "code", "garden")
 	t.Cleanup(func() { killFakeClaude(t, path) })
-	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "harness": "claude"})
-	if _, err := legacyProposalFixture(context.Background(), remote.d, "project_change", args); err != nil {
-		t.Fatal(err)
-	}
-	items, err := remote.d.proposalRunner().list()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("proposal %v %v", items, err)
-	}
-	socket := fakeHerdrSocket(localLog)
-	if all {
-		local.cli.mustCall("proposal_answer", inHerdrAnswer(protocol.CTOProposalAnswer{Action: "A"}, socket))
-	} else {
-		local.cli.mustCall("proposal_answer", inHerdrAnswer(protocol.CTOProposalAnswer{NodeID: remote.d.NodeID(), ID: items[0].ID, Action: "a"}, socket))
-	}
-	items, err = remote.d.proposalRunner().list()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var r protocol.StartedSession
-	if err := json.Unmarshal(items[0].Result, &r); err != nil {
-		t.Fatal(err)
-	}
-	eventually(t, "remote proposal starts", func() bool {
+	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "harness": "claude", "node_id": remote.d.NodeID()})
+	r := ctoStartNow(t, local.d, "project_change", args)
+	eventually(t, "remote CTO create starts", func() bool {
 		var err error
-		r, err = remote.d.sessionStartGet(context.Background(), r.ID)
+		r, err = local.d.sessionStartGet(context.Background(), r.ID)
 		return err == nil && r.Status == "started"
 	})
 	waitSessionOnGateway(t, local.node, r.SessionID)
 	for _, log := range []string{localLog, remoteLog} {
 		if raw, _ := os.ReadFile(log); strings.Contains(string(raw), "pane run") || strings.Contains(string(raw), "tab create") {
-			t.Fatalf("proposal opened a view: %s", raw)
+			t.Fatalf("the CTO start opened a view: %s", raw)
 		}
 	}
 }
 
-func TestCTOProposalWithoutHerdrShowsEnterNotice(t *testing.T) {
+func TestCTOStartWithoutHerdrShowsEnterNotice(t *testing.T) {
 	withoutLocalHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
 	home := pathTestHome(t)
@@ -1130,14 +1054,7 @@ func TestCTOProposalWithoutHerdrShowsEnterNotice(t *testing.T) {
 	path := filepath.Join(home, "code", "garden")
 	t.Cleanup(func() { killFakeClaude(t, path) })
 	args, _ := json.Marshal(map[string]any{"action": "create", "path": path, "harness": "claude"})
-	if _, err := legacyProposalFixture(context.Background(), c.d, "project_change", args); err != nil {
-		t.Fatal(err)
-	}
-	items, err := c.d.proposalRunner().list()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("proposals %v %v", items, err)
-	}
-	c.cli.mustCall("proposal_answer", map[string]string{"proposal_id": items[0].ID, "action": "a"})
+	ctoStartNow(t, c.d, "project_change", args)
 	q := waitHerdrNotice(t, notices)
 	text, _ := q["text"].(string)
 	if q["daemon_notice"] != true || text != "Enter opens it." {
@@ -1145,9 +1062,9 @@ func TestCTOProposalWithoutHerdrShowsEnterNotice(t *testing.T) {
 	}
 }
 
-// A Codex start needs no herdr pane and no approving TUI: the daemon creates
-// the thread on the app server and sends the first message itself.
-func TestCTOApprovedCodexWithoutHerdrNeedsNoTUI(t *testing.T) {
+// A CTO Codex start needs no herdr pane and no TUI: the daemon creates the
+// thread on the app server and sends the first message itself.
+func TestCTOCodexStartWithoutHerdrNeedsNoTUI(t *testing.T) {
 	withoutLocalHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
 	home := pathTestHome(t)
@@ -1156,27 +1073,12 @@ func TestCTOApprovedCodexWithoutHerdrNeedsNoTUI(t *testing.T) {
 	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins; c.CodexHome = f.home; c.CodexInterval = 20 * time.Millisecond })
 	repo := newHomeRepo(t, home, "code/garden")
 	n.register(t, repo)
-	approver, _ := herdrUIClient(t, n.node)
-	// A stored proposal comes from a running CTO, which sends its first message.
+	// The start comes from a running CTO, which sends its first message.
 	cto := registerCTO(t, n.d)
 	args, _ := json.Marshal(map[string]any{"action": "session_start", "project": "garden", "harness": "codex", "first_message": "hello"})
-	if _, err := legacyProposalFixture(context.Background(), n.d, "session_change", args); err != nil {
-		t.Fatal(err)
-	}
-	items, err := n.d.proposalRunner().list()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("proposals %v %v", items, err)
-	}
-	if _, err := approver.Call(context.Background(), "proposal_answer", protocol.CTOProposalAnswer{ID: items[0].ID, Action: "a"}); err != nil {
-		t.Fatal(err)
-	}
-	items, err = n.d.proposalRunner().list()
-	if err != nil || items[0].Status != "applied" {
-		t.Fatalf("proposal: %+v error %v", items, err)
-	}
-	var start protocol.StartedSession
-	if err := json.Unmarshal(items[0].Result, &start); err != nil || start.Status != "started" || start.NativeID == "" || start.SessionID == "" || start.Error != "" {
-		t.Fatalf("start: %+v error %v", start, err)
+	start := ctoStartNow(t, n.d, "session_change", args)
+	if start.Status != "started" || start.NativeID == "" || start.SessionID == "" || start.Error != "" {
+		t.Fatalf("start: %+v", start)
 	}
 	requireOnlyMessageFrom(t, g, n.d.NodeID(), start.SessionID, "hello", cto)
 }

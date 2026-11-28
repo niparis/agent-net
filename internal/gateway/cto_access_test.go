@@ -163,7 +163,7 @@ func TestCTONodeRemoveStillRequiresApproval(t *testing.T) {
 	if err := s.RemoveArchitect("alpha", "cto"); err == nil {
 		t.Fatal("CTO removed a node without approval")
 	}
-	if err := s.RemoveArchitect("alpha", "owner (CTO proposal p_1)"); err != nil {
+	if err := s.RemoveArchitect("alpha", protocol.CTOOwnerWordsActor); err != nil {
 		t.Fatal(err)
 	}
 }

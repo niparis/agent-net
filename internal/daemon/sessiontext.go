@@ -41,8 +41,7 @@ var operatorMethods = map[string]bool{
 	"apps.public.status": true, "apps.public.on": true, "apps.public.off": true, "apps.public.url": true,
 	"apps.list": true, "apps.pending": true, "apps.approve": true, "apps.refuse": true, "apps.revoke": true, protocol.OpAppsRename: true, protocol.OpAppsGrant: true, protocol.OpAppsUngrant: true,
 	"tools_mcp_add": true, "tools_mcp_remove": true, "tools_mcp_test": true, "tools_mcp_list": true,
-	protocol.OpCTOGraphWindow: true,
-	protocol.OpProposalList:   true, protocol.OpProposalAnswer: true,
+	protocol.OpCTOGraphWindow:   true,
 	"notification_settings":     true,
 	protocol.OpSkillArchiveUndo: true, protocol.OpSkillsUndo: true, "gateway_backup": true,
 	protocol.OpSessionStop: true, protocol.OpSessionStart: true, protocol.OpSessionStartGet: true, protocol.OpSessionResume: true,
@@ -218,7 +217,7 @@ func difficultyLevelNames() string {
 // operatorActor is who an owner operation acts as: the CTO when it runs the
 // operation, the owner otherwise (decision 0114, part 2).
 func operatorActor(ctx context.Context) string {
-	if actor := proposalActor(ctx); actor != "" {
+	if actor := ctoActor(ctx); actor != "" {
 		return actor
 	}
 	return "owner"
@@ -278,7 +277,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			return nil, true, errors.New("bad merger_restore arguments")
 		}
 		p["owner_session"] = d.ownerSessionID()
-		p["by"] = proposalActor(ctx)
+		p["by"] = ctoActor(ctx)
 		result, err := d.call(ctx, "merger.restore", p)
 		return result, true, err
 	case "merger_get":
@@ -292,34 +291,6 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 	case protocol.OpCTOGraphWindow:
 		v, err := lc.ctoGraphWindow(raw)
 		return v, true, err
-	case protocol.OpProposalList, protocol.OpProposalAnswer:
-		var q protocol.CTOProposalAnswer
-		if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {
-			return nil, true, errors.New("bad proposal request")
-		}
-		if method == protocol.OpProposalAnswer {
-			ctx = context.WithValue(ctx, proposalHerdrLocationKey{}, proposalHerdrLocation{socket: q.HerdrSocket, pane: q.HerdrPaneID})
-		}
-		if method == protocol.OpProposalList && q.NodeID == "" {
-			value, err := d.networkProposals(ctx)
-			return value, true, err
-		}
-		if method == protocol.OpProposalAnswer && q.Action == "A" {
-			return nil, true, d.approveNetworkProposals(ctx, q.Confirm)
-		}
-		if q.NodeID == "" || q.NodeID == d.cfg.NodeID {
-			return d.proposalOperator(ctx, method, q)
-		}
-		frame := "query.proposal_list"
-		if method == protocol.OpProposalAnswer {
-			frame = "query.proposal_answer"
-		}
-		q.HerdrSocket, q.HerdrPaneID = "", ""
-		data, err := d.call(ctx, frame, q)
-		if err == nil && method == protocol.OpProposalAnswer && q.Action == "a" {
-			d.openApprovedRemoteSession(ctx, q.NodeID, q.ID)
-		}
-		return data, true, err
 	case "notification_settings":
 		var p struct {
 			Disabled *bool `json:"disabled"`
@@ -391,7 +362,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if json.Unmarshal(raw, &p) != nil {
 			return nil, true, errors.New("bad sign_in_open arguments")
 		}
-		if proposalActor(ctx) == "cto" {
+		if ctoActor(ctx) == "cto" {
 			// The CTO opens a login on a named machine, on the owner's words.
 			res, err = d.ctoSignInOpen(ctx, p)
 			break
@@ -533,7 +504,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		}
 		// The gateway records the CTO as the actor of its own answer.
 		actor := ""
-		if lc.cto || proposalActor(ctx) == "cto" {
+		if lc.cto || ctoActor(ctx) == "cto" {
 			actor = "cto"
 		}
 		res, err = d.call(ctx, "charter.draft_answer", map[string]any{"owner": owner, "draft": p.DraftID, "action": p.Action, "actor": actor})
@@ -550,8 +521,8 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			return nil, true, errors.New("inbox_answer needs id and answer")
 		}
 		// from_cto keeps the CTO from approving an app consent ask.
-		fromCTO := lc.cto || proposalActor(ctx) != ""
-		actor := proposalActor(ctx)
+		fromCTO := lc.cto || ctoActor(ctx) != ""
+		actor := ctoActor(ctx)
 		if actor == "" {
 			actor = "owner"
 			if lc.cto {
@@ -782,7 +753,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			return nil, true, errors.New("session_replace needs old_session and new_session")
 		}
 		actor := "owner"
-		if proposalActor(ctx) == "cto" {
+		if ctoActor(ctx) == "cto" {
 			actor = "cto"
 		}
 		var remoteNode string
@@ -848,7 +819,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if q.NodeID == "" {
 			return nil, true, errors.New("machine action needs node_id")
 		}
-		actor := proposalActor(ctx)
+		actor := ctoActor(ctx)
 		if actor == "" {
 			actor = "owner"
 		}
@@ -930,7 +901,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			return nil, true, fmt.Errorf("bad permission_apply arguments: %w", err)
 		}
 		frame := protocol.PermissionOwnerApplyFrame{Request: q, Owner: d.ownerSessionID(), Session: d.ownerSessionID(), By: "owner", WordsVerified: true}
-		if proposalActor(ctx) == "cto" {
+		if ctoActor(ctx) == "cto" {
 			// The CTO's quote counts only when the owner typed it in the CTO chat.
 			frame.By, frame.WordsVerified = "cto", false
 			if cto := d.ctoSessionID(); cto != "" {
@@ -952,7 +923,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			return nil, true, err
 		}
 		frame := protocol.DeliveryOwnerAnswerFrame{Request: q, Owner: d.ownerSessionID(), Session: d.ownerSessionID(), By: "owner", WordsVerified: true}
-		if proposalActor(ctx) == "cto" {
+		if ctoActor(ctx) == "cto" {
 			cto := d.ctoSessionID()
 			if cto == "" {
 				return nil, true, errors.New("the CTO session is not registered yet")
@@ -975,7 +946,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			return nil, true, err
 		}
 		frame := protocol.LoopResumeFrame{Node: q.Node, Owner: d.ownerSessionID(), By: "owner", OwnerWords: q.OwnerWords, WordsVerified: true}
-		if proposalActor(ctx) == "cto" {
+		if ctoActor(ctx) == "cto" {
 			frame.By, frame.WordsVerified = "cto", false
 			words, verr := d.verifyCTOOwnerWords(q.OwnerWords)
 			if verr != nil {
@@ -1002,7 +973,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			p["owner_session"] = d.ownerSessionID()
 		}
 		delete(p, "by")
-		if actor := proposalActor(ctx); actor != "" {
+		if actor := ctoActor(ctx); actor != "" {
 			p["by"] = actor
 		} else if method == protocol.OpNodeSettingsSet {
 			p["by"] = "owner"
@@ -1014,7 +985,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 				return nil, true, errors.New("bad graph_undo params")
 			}
 			params = protocol.GraphUndoFrame{HistoryID: q.ID}
-			if actor := proposalActor(ctx); actor != "" {
+			if actor := ctoActor(ctx); actor != "" {
 				params = map[string]any{"history_id": q.ID, "by": actor}
 			}
 		}
@@ -1077,7 +1048,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		// The CTO can reach this call itself through the operator tool. Its own
 		// text is never the owner's words: it is neither remembered as them nor
 		// labelled as them.
-		if proposalActor(ctx) == "" {
+		if ctoActor(ctx) == "" {
 			d.rememberCTOOwnerPrompt(q.Text)
 			res, err = d.ctoSendTracked(ctx, q.Text, "owner")
 		} else {
@@ -1141,7 +1112,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		// default minimum capability scores that DifficultyFit and the
 		// gateway's PUT /v1/difficulty read. From the CTO an empty map would
 		// clear every override, so it must name at least one level.
-		if lc.cto || proposalActor(ctx) == "cto" {
+		if lc.cto || ctoActor(ctx) == "cto" {
 			if len(q) == 0 {
 				return nil, true, errors.New("difficulty_set needs at least one level")
 			}
@@ -1227,7 +1198,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		// Both lists carry omitempty, so the TUI sends {} for a real clear.
 		// From the CTO that would also make a dropped field clear both lists.
 		// The CTO names a list instead, and [] clears it.
-		if (lc.cto || proposalActor(ctx) == "cto") && !ctoArgsHasAny(raw, "sessions", "nodes") {
+		if (lc.cto || ctoActor(ctx) == "cto") && !ctoArgsHasAny(raw, "sessions", "nodes") {
 			return nil, true, errors.New("hidden_set needs sessions or nodes; name a list with [] to clear it")
 		}
 		res, err = d.call(ctx, "hidden.set", items)
@@ -1260,7 +1231,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		// Only the owner's own TUI or command line gives the owner's words. The CTO
 		// reaches this call through its operator tool and an approved
 		// proposal: its text is never the owner's.
-		p.FirstMessageByOwner = !lc.cto && proposalActor(ctx) == ""
+		p.FirstMessageByOwner = !lc.cto && ctoActor(ctx) == ""
 		res, err = d.sessionStart(ctx, p)
 	case protocol.OpSessionStartGet:
 		var p protocol.SessionStartQuery
@@ -1486,18 +1457,6 @@ func (d *Daemon) onOperatorFrame(ctx context.Context, l *link, typ, id string, r
 		} else {
 			data, err = d.readMachineLog(ctx, q)
 		}
-	case "node.proposal_list", "node.proposal_answer":
-		var q protocol.CTOProposalAnswer
-		if json.Unmarshal(raw, &q) != nil || q.NodeID != d.cfg.NodeID {
-			err = errors.New("bad proposal request")
-			break
-		}
-		method := protocol.OpProposalList
-		if typ == "node.proposal_answer" {
-			method = protocol.OpProposalAnswer
-			ctx = context.WithValue(ctx, proposalRemoteOwnerKey{}, true)
-		}
-		data, _, err = d.proposalOperator(ctx, method, q)
 	case "node.message_body":
 		var q protocol.QueryMessage
 		if json.Unmarshal(raw, &q) != nil || q.MessageID == "" {

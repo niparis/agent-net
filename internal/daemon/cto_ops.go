@@ -15,12 +15,12 @@ import (
 	"github.com/niparis/agent-net/internal/mcpserver"
 )
 
-// ctoOpGate returns the owner-gate class of one op: direct, proposal or
-// irreversible.
+// ctoOpGate returns the owner-gate class of one op: direct, owner_words (runs
+// only on the owner's verified words) or irreversible.
 func ctoOpGate(op mcpserver.CTOOp) string {
 	if op.Method == "" {
-		if class, ok := ctoActionClasses[op.Tool][op.Action]; ok && class == ctoProposal {
-			return "proposal"
+		if class, ok := ctoActionClasses[op.Tool][op.Action]; ok && class == ctoOwnerOnly {
+			return "owner_words"
 		}
 		if authority.Irreversible(op.Action) {
 			return "irreversible"

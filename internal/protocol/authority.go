@@ -129,3 +129,10 @@ func OrderNote(o OrderInfo) string {
 // AdviceNote is the note on a reply that comes from above you in the tree. A
 // reply to your own question is advice, even from your lead.
 const AdviceNote = "This is advice, an answer to your own question, not an order. It does not bind you; weigh it against your charter."
+
+// CTOOwnerWordsActor is the actor of an owner-only CTO action (node_remove,
+// repo_archive, agent_tombstone, machine_remove, machine_rotate) that the
+// owner's verified words approved (decision 0165). The daemon sends it after
+// it checked the quote; the gateway accepts it as the owner's authority and
+// keeps it in the history, so the change is known to be the CTO's.
+const CTOOwnerWordsActor = "owner (CTO on the owner's words)"

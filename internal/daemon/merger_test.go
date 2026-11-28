@@ -12,7 +12,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-func TestMergerStartStopProposal(t *testing.T) {
+func TestMergerStartStopByCTO(t *testing.T) {
 	for _, tc := range []struct{ remote, optional bool }{{false, false}, {false, true}, {true, false}, {true, true}} {
 		remote := tc.remote
 		t.Run(map[bool]string{false: "local", true: "remote"}[remote]+map[bool]string{false: "-default", true: "-optional"}[tc.optional], func(t *testing.T) {
@@ -33,30 +33,7 @@ func TestMergerStartStopProposal(t *testing.T) {
 			}
 			ctx := context.Background()
 			args, _ := json.Marshal(map[string]any{"action": "merger_start", "project": "garden", "node_id": target.d.NodeID()})
-			if _, err := legacyProposalFixture(ctx, caller.d, "session_change", args); err != nil {
-				t.Fatal(err)
-			}
-			items, err := caller.d.proposalRunner().list()
-			if err != nil || len(items) != 1 {
-				t.Fatalf("proposals=%v err=%v", items, err)
-			}
-			if !strings.Contains(items[0].Reason, "garden merger: claude · anthropic · claude-opus-5-5 session in garden on ") || strings.Contains(items[0].Reason, "default pipeline") != tc.optional {
-				t.Fatalf("approval=%s", items[0].Reason)
-			}
-			if _, err := os.Stat(filepath.Join(repo, "fake-claude.json")); !os.IsNotExist(err) {
-				t.Fatal("started before approval")
-			}
-			if err := caller.d.proposalRunner().decide(ctx, items[0].ID, true); err != nil {
-				t.Fatal(err)
-			}
-			items, err = caller.d.proposalRunner().list()
-			if err != nil {
-				t.Fatal(err)
-			}
-			var started protocol.StartedSession
-			if err := json.Unmarshal(items[0].Result, &started); err != nil {
-				t.Fatal(err)
-			}
+			started := ctoStartNow(t, caller.d, "session_change", args)
 			t.Cleanup(func() {
 				raw, _ := os.ReadFile(filepath.Join(started.Path, "fake-claude.json"))
 				var rec fakeClaudeRecord
@@ -117,14 +94,7 @@ func TestMergerStartStopProposal(t *testing.T) {
 				t.Fatalf("pipeline still off: %s", raw)
 			}
 			args, _ = json.Marshal(map[string]any{"action": "merger_stop", "project": "garden", "node_id": target.d.NodeID()})
-			if _, err := legacyProposalFixture(ctx, caller.d, "session_change", args); err != nil {
-				t.Fatal(err)
-			}
-			items, err = caller.d.proposalRunner().list()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := caller.d.proposalRunner().decide(ctx, items[len(items)-1].ID, true); err != nil {
+			if _, err := ctoRunNow(ctx, caller.d, "session_change", args); err != nil {
 				t.Fatal(err)
 			}
 			a, _, err = g.gw.Store().Agent(started.SessionID)
@@ -205,8 +175,8 @@ func TestMergerRunsInItsOwnFolder(t *testing.T) {
 	c.register(t, repo)
 	trustClaudeFolder(t, repo)
 	t.Setenv("AGENT_NET_CLAUDE_SESSIONS_DIR", c.sessions)
-	ctx := context.WithValue(context.Background(), proposalActorKey{}, "owner (CTO proposal p_1)")
-	value, err := c.d.executeApprovedCTOTool(ctx, "merger_start", json.RawMessage(`{"project":"garden","folder":"worktree","branch":"hidden-branch","create":true}`))
+	ctx := context.WithValue(context.Background(), ctoActorKey{}, "cto")
+	value, err := c.d.executeCTOAction(ctx, "merger_start", json.RawMessage(`{"project":"garden","folder":"worktree","branch":"hidden-branch","create":true}`))
 	if err != nil {
 		t.Fatal(err)
 	}

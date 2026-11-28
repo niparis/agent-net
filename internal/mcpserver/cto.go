@@ -2,8 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -94,7 +92,6 @@ func IsCTOTeamSetting(name string) bool {
 // ctoRoutingField is the field that selects the concrete operation of a merged
 // tool. The daemon keeps the authoritative action table.
 var ctoRoutingField = map[string]string{
-	"message":         "action",
 	"graph_change":    "action",
 	"session_change":  "action",
 	"worker_change":   "action",
@@ -104,19 +101,14 @@ var ctoRoutingField = map[string]string{
 	"project_change":  "action",
 }
 
-// ctoTools holds the argument schemas of the merged CTO change tools and of
-// the stored as-owner message call. The listed CTO tools come from the catalog;
-// these schemas validate stored proposals.
+// ctoTools holds the argument schemas of the merged CTO change tools. The
+// listed CTO tools come from the catalog; these schemas validate their calls.
 var ctoTools = map[string]ctoToolDef{
 	"sessions_archive": {desc: "Archive offline sessions at once; the owner can restore them.", fields: map[string]ctoField{
 		"ids": {typ: "array"}, "expected": {typ: "array"},
 		"name": {typ: "string"}, "folder": {typ: "string"}, "project": {typ: "string"},
 		"harness": {typ: "string"}, "created_before": {typ: "string"}, "ended_workers": {typ: "boolean"},
 	}},
-	// message is not listed. It is the stored call of an as-owner send or reply
-	// that agent_message_send or agent_message_reply proposes; this schema
-	// validates that call.
-	"message": {desc: "Send or reply; as_owner sends with owner attribution.", fields: map[string]ctoField{"team_id": {typ: "string"}, "action": {typ: "string", enum: []string{"send", "reply"}}, "to": {typ: "string"}, "message_id": {typ: "string"}, "body": {typ: "string"}, "as_owner": {typ: "boolean"}}},
 
 	"graph_change": {
 		desc: "Change the graph: charters, edges and typed repo or agent lifecycle. Node removal, agent tombstone and repo archive require owner approval; other changes apply at once.",
@@ -199,9 +191,8 @@ var ctoTools = map[string]ctoToolDef{
 			"on":      {typ: "string", desc: "Host; local default."},
 		},
 	},
-	"mcp_call":     {desc: "Call a tool on a shared MCP server.", fields: map[string]ctoField{"server": {typ: "string", desc: "Server name."}, "tool": {typ: "string", desc: "Tool."}, "arguments": {typ: "object", desc: "Arguments."}}},
-	"proposal_ask": {desc: "Open the approval dialog for a waiting proposal.", fields: map[string]ctoField{"id": {typ: "string", desc: "Open proposal ID."}}},
-	"cto_new":      {desc: "Start a new conversation for the active harness."},
+	"mcp_call": {desc: "Call a tool on a shared MCP server.", fields: map[string]ctoField{"server": {typ: "string", desc: "Server name."}, "tool": {typ: "string", desc: "Tool."}, "arguments": {typ: "object", desc: "Arguments."}}},
+	"cto_new":  {desc: "Start a new conversation for the active harness."},
 	"settings_change": {
 		desc: "Change owner settings: worker profiles, providers incl. protected providers, scores, integrations, notifications, CTO, playbook, machine name, machine removal, token rotation, invite, onboarding, or stop processes (process_stop: TERM then KILL, no undo; never a live Claude or agent-net session).",
 		fields: map[string]ctoField{
@@ -292,18 +283,18 @@ var ownerWordsProperty = map[string]any{"type": "string", "description": "Owner'
 // ctoOwnerWordsTools are the tools whose actions take owner_words.
 var ctoOwnerWordsTools = map[string]bool{"graph_change": true, "session_change": true, "settings_change": true, "mcp_change": true, "project_change": true}
 
-// Schema metadata only. The daemon owns the authoritative class table.
-var ctoProposalReasons = func() map[string]bool {
+// ctoReasonTools are the tools whose schema takes a reason. Schema metadata
+// only: the daemon owns the authoritative class table.
+var ctoReasonTools = func() map[string]bool {
 	out := map[string]bool{}
-	for _, name := range strings.Fields("message graph_change session_change worker_change answer mcp_change mcp_call settings_change project_change cto_new sessions_archive") {
+	for _, name := range strings.Fields("graph_change session_change worker_change answer mcp_change mcp_call settings_change project_change cto_new sessions_archive") {
 		out[name] = true
 	}
 	return out
 }()
 
 // CTOArguments validates the same schema advertised by the CTO MCP server, or
-// the internal concrete schema of a stored call. Old stored proposals keep
-// working after a rename.
+// the internal schema of a concrete change call.
 func CTOArguments(name string, raw json.RawMessage) error {
 	spec, ok := ctoTools[name]
 	if !ok {
@@ -332,8 +323,7 @@ func CTOArguments(name string, raw json.RawMessage) error {
 }
 
 // IsCTOConcreteTool reports whether name is an internal concrete change tool.
-// The names are not exposed in the MCP tool list; they serve stored proposals
-// and validation only.
+// The names are not exposed in the MCP tool list; they serve validation only.
 func IsCTOConcreteTool(name string) bool {
 	_, ok := ctoConcreteTools[name]
 	return ok
@@ -364,7 +354,7 @@ func compactCTONested(value any) any {
 
 func ctoSchema(name string, spec ctoToolDef) map[string]any {
 	props := map[string]any{}
-	if ctoProposalReasons[name] {
+	if ctoReasonTools[name] {
 		props["reason"] = map[string]any{"type": "string", "description": "Why"}
 		if ctoOwnerWordsTools[name] {
 			props["owner_words"] = ownerWordsProperty
@@ -424,25 +414,23 @@ func NewCTO(call Caller, version string, note ...func(context.Context) string) *
 	if len(note) > 0 && note[0] != nil {
 		s.AddReceivingMiddleware(staleToolsNote(note[0]))
 	}
-	originalCall := call
+	inner := call
 	call = func(ctx context.Context, method string, params any) (json.RawMessage, error) {
-		raw, err := originalCall(ctx, method, params)
+		raw, err := inner(ctx, method, params)
 		if err != nil {
 			return raw, err
 		}
-		var proposal ctoDialogProposal
-		if json.Unmarshal(raw, &proposal) == nil && proposal.Kind == "result" && proposal.Value != nil {
-			return proposal.Value, nil
+		// The daemon wraps each tool result as {"kind":"result","value":...}.
+		var wrapped struct {
+			Kind  string          `json:"kind"`
+			Value json.RawMessage `json:"value"`
 		}
-		if proposal.Kind == "proposal" && proposal.ID != "" && proposal.Message != "" {
-			if slot, ok := ctx.Value(ctoDialogKey{}).(*ctoDialogProposal); ok {
-				*slot = proposal
-				return json.Marshal(proposal.Text)
-			}
+		if json.Unmarshal(raw, &wrapped) == nil && wrapped.Kind == "result" && wrapped.Value != nil {
+			return wrapped.Value, nil
 		}
 		return raw, nil
 	}
-	addTool := ctoDialogTools(s, originalCall)
+	addTool := func(tool *mcp.Tool, handler mcp.ToolHandler) { s.AddTool(tool, handler) }
 	addCTOV2Tools(s, call, addTool)
 	addCTOSharedTools(s, call, addTool)
 	addCTOOpTools(s, call, addTool)
@@ -450,98 +438,7 @@ func NewCTO(call Caller, version string, note ...func(context.Context) string) *
 	return s
 }
 
-type ctoDialogKey struct{}
-type ctoDialogProposal struct {
-	Kind    string          `json:"kind"`
-	Value   json.RawMessage `json:"value"`
-	ID      string          `json:"proposal_id"`
-	Message string          `json:"message"`
-	Text    string          `json:"text"`
-}
-
-type pendingCTODialog struct {
-	proposal ctoDialogProposal
-	session  *mcp.ServerSession
-	tool     string
-}
-
 type ctoToolAdder func(*mcp.Tool, mcp.ToolHandler)
-
-func ctoDialogTools(s *mcp.Server, call Caller) ctoToolAdder {
-	var mu sync.Mutex
-	pending := make(map[string]pendingCTODialog)
-	finish := func(ctx context.Context, proposal ctoDialogProposal, action string) *mcp.CallToolResult {
-		text := proposal.Text
-		if text == "" {
-			text = "Waiting for the owner."
-		}
-		if action == "accept" || action == "decline" {
-			approve := action == "accept"
-			outcome, err := call(ctx, "cto_dialog_answer", map[string]any{"id": proposal.ID, "approve": approve})
-			if err == nil {
-				if approve {
-					text = "Approved by the owner in the dialog."
-					var note string
-					if json.Unmarshal(outcome, &note) == nil && note != "" && note != proposal.ID+" approved and applied" {
-						text += " " + note
-					}
-				} else {
-					text = "Refused by the owner in the dialog."
-				}
-			}
-		}
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}
-	}
-	return func(tool *mcp.Tool, next mcp.ToolHandler) {
-		s.AddTool(tool, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if request.Params != nil && (request.Params.RequestState != "" || request.Params.InputResponses != nil) {
-				mu.Lock()
-				item, ok := pending[request.Params.RequestState]
-				if ok {
-					delete(pending, request.Params.RequestState)
-				}
-				mu.Unlock()
-				if !ok || item.session != request.Session || item.tool != request.Params.Name {
-					return finish(ctx, ctoDialogProposal{}, ""), nil
-				}
-				action := ""
-				if response, ok := request.Params.InputResponses["approval"].(*mcp.ElicitResult); ok && response != nil {
-					action = response.Action
-				}
-				return finish(ctx, item.proposal, action), nil
-			}
-			var proposal ctoDialogProposal
-			res, err := next(context.WithValue(ctx, ctoDialogKey{}, &proposal), request)
-			if err != nil || proposal.ID == "" {
-				return res, err
-			}
-			if res == nil || res.IsError {
-				return res, err
-			}
-			init := request.Session.InitializeParams()
-			if init == nil || init.Capabilities == nil || init.Capabilities.Elicitation == nil {
-				return finish(ctx, proposal, ""), nil
-			}
-			params := &mcp.ElicitParams{Message: proposal.Message, RequestedSchema: map[string]any{"type": "object", "properties": map[string]any{}}}
-			if init.ProtocolVersion >= "2026-07-28" {
-				var bytes [32]byte
-				if _, err := rand.Read(bytes[:]); err != nil {
-					return finish(ctx, proposal, ""), nil
-				}
-				token := hex.EncodeToString(bytes[:])
-				mu.Lock()
-				pending[token] = pendingCTODialog{proposal: proposal, session: request.Session, tool: request.Params.Name}
-				mu.Unlock()
-				return &mcp.CallToolResult{InputRequests: mcp.InputRequestMap{"approval": params}, RequestState: token}, nil
-			}
-			answer, err := request.Session.Elicit(ctx, params)
-			if err != nil || answer == nil {
-				return finish(ctx, proposal, ""), nil
-			}
-			return finish(ctx, proposal, answer.Action), nil
-		})
-	}
-}
 
 // CTOToolNames returns the listed CTO tool names, sorted: the catalog tools of
 // the CTO role plus the two op tier tools.
@@ -575,9 +472,6 @@ func RunCTO(ctx context.Context, socket, version string) error {
 	}
 	defer ch.close()
 	s := NewCTO(func(ctx context.Context, method string, params any) (json.RawMessage, error) {
-		if method == "cto_dialog_answer" {
-			return ch.call(ctx, method, params)
-		}
 		return ch.call(ctx, "cto_tool", map[string]any{"name": method, "arguments": params})
 	}, version, func(context.Context) string { return note.takeNote() })
 	return s.Run(ctx, stdioTransport{conn})

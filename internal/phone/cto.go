@@ -2,9 +2,7 @@ package phone
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -14,10 +12,9 @@ import (
 )
 
 // The CTO panel reads the same timeline as the TUI CTO pane: cto_settings for
-// the title, harness and model, cto_events for the conversation and its older
-// pages, and proposal_list for what waits for the owner. It sends through
-// cto_send and answers a proposal with proposal_answer, the owner calls of the
-// TUI. Model text is text: it is never HTML, and markdown stays as typed.
+// the title, harness and model, and cto_events for the conversation and its
+// older pages. It sends through cto_send, the owner call of the TUI. Model
+// text is text: it is never HTML, and markdown stays as typed.
 
 // ctoLine is one rendered line of the conversation. Class is " me", " cto" or
 // " sys", like the Messages thread.
@@ -25,17 +22,10 @@ type ctoLine struct {
 	Class, Who, Age, Text string
 }
 
-// ctoProposal is one open proposal as a card. Node routes the answer to the
-// machine that holds the proposal; it is encoded, never printed.
-type ctoProposal struct {
-	ID, Node, Summary, Reason, Age string
-}
-
 type ctoView struct {
 	Title, Harness, Model, Chip string
 	Err                         string
 	Lines                       []ctoLine
-	Proposals                   []ctoProposal
 	Older                       int
 	OlderHref, LatestHref       string
 }
@@ -51,8 +41,8 @@ func (a *app) ctoSettings(ctx context.Context) protocol.CTOSettings {
 	return s
 }
 
-// cto reads one page of the conversation and the open proposals. h is the
-// offset of an older page, or zero for the newest one.
+// cto reads one page of the conversation. h is the offset of an older page,
+// or zero for the newest one.
 func (a *app) cto(ctx context.Context, h int) *ctoView {
 	now := time.Now()
 	v := &ctoView{Title: protocol.DefaultCTOTitle}
@@ -77,46 +67,7 @@ func (a *app) cto(ctx context.Context, h int) *ctoView {
 		}
 	}
 
-	raw, err = a.read(ctx, protocol.OpProposalList, nil)
-	if err != nil {
-		if v.Err == "" {
-			v.Err = "The proposals could not be read: " + firstLine(err.Error())
-		}
-	} else {
-		var items []protocol.CTOProposal
-		if json.Unmarshal(raw, &items) == nil {
-			for _, p := range items {
-				if p.Status != "open" {
-					continue
-				}
-				v.Proposals = append(v.Proposals, ctoProposal{
-					ID: p.ID, Node: encodeProposalNode(p.NodeID), Summary: proposalSummary(p),
-					Reason: strings.TrimSpace(p.Reason), Age: ago(p.CreatedAt, now),
-				})
-			}
-		}
-	}
 	return v
-}
-
-// encodeProposalNode keeps a raw node ID out of the page. The form posts this
-// value back, and the handler decodes it.
-func encodeProposalNode(node string) string {
-	if node == "" {
-		return ""
-	}
-	return base64.RawURLEncoding.EncodeToString([]byte(node))
-}
-
-func decodeProposalNode(value string) (string, error) {
-	if value == "" {
-		return "", nil
-	}
-	b, err := base64.RawURLEncoding.DecodeString(value)
-	if err != nil {
-		return "", fmt.Errorf("invalid proposal target")
-	}
-	return string(b), nil
 }
 
 // ctoLineTime turns one timeline entry into an order key in nanoseconds.
@@ -272,65 +223,4 @@ func cleanText(s string, keepLines bool) string {
 		}
 		return r
 	}, s)
-}
-
-// proposalSummary is the one-line words on a proposal card, as the TUI shows
-// it: the call, not the raw arguments.
-func proposalSummary(p protocol.CTOProposal) string {
-	var a map[string]any
-	_ = json.Unmarshal(p.Args, &a)
-	value := func(k string) string {
-		v, _ := a[k].(string)
-		return cleanText(v, false)
-	}
-	if (p.Tool == "session_change" && p.Action == "session_start") || (p.Tool == "project_change" && p.Action == "create") {
-		project := firstNonEmpty(value("project"), value("path"))
-		// Never print the machine's node ID: say that it is a machine (item 9).
-		machine := "here"
-		if value("node_id") != "" {
-			machine = "a machine"
-		}
-		harness := firstNonEmpty(value("harness"), "claude")
-		folder := firstNonEmpty(value("folder"), "project folder")
-		message := []rune(strings.Join(strings.Fields(value("first_message")), " "))
-		first := ""
-		if len(message) > 0 {
-			if len(message) > 28 {
-				message = append(message[:27], '…')
-			}
-			first = " · " + string(message)
-		}
-		verb := "start"
-		if p.Action == "create" {
-			verb = "create"
-		}
-		return fmt.Sprintf("%s %s @ %s · %s · %s%s", verb, project, machine, harness, folder, first)
-	}
-	if p.Tool == "project_remove" || (p.Tool == "project_change" && p.Action == "remove") {
-		project := firstNonEmpty(value("name"), value("path"))
-		machine := "here"
-		if value("node_id") != "" {
-			machine = "a machine"
-		}
-		return fmt.Sprintf("remove project %s @ %s", project, machine)
-	}
-	switch p.Action {
-	case "charter_set":
-		return strings.TrimSpace(fmt.Sprintf("charter %s %s", value("node"), value("attr")))
-	case "edge_set":
-		return fmt.Sprintf("edge %s -> %s rule %s", value("from"), value("to"), value("rule"))
-	}
-	if p.Tool == "machine_remove" || (p.Tool == "settings_change" && p.Action == "machine_remove") {
-		return "remove a machine and revoke its token"
-	}
-	if p.Tool == "machine_rotate" || (p.Tool == "settings_change" && p.Action == "machine_rotate") {
-		return "rotate the token of a machine"
-	}
-	if p.Tool == "node_rename" || (p.Tool == "settings_change" && p.Action == "machine_name") {
-		return "rename a machine to " + value("name")
-	}
-	if p.Tool == "session_change" {
-		return "session " + p.Action
-	}
-	return strings.TrimSpace(p.Tool + " " + p.Action)
 }

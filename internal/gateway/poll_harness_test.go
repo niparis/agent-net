@@ -61,13 +61,6 @@ func (h *pollHarness) answer(ctx context.Context, method string, raw json.RawMes
 	switch method {
 	case "info":
 		return protocol.OperatorInfo{Connected: true, NodeID: h.node, Version: "v0.0.0-measure", OwnerSession: h.owner, Launch: true, Protocol: protocol.LocalProtocol}, nil
-	case "proposal_list":
-		// The daemon lists the proposals of every online machine. It asks the
-		// gateway for the machines first.
-		if _, err := h.g.handle(ctx, nc, "query.nodes", pollProposalNodesRequest()); err != nil {
-			return nil, err
-		}
-		return []protocol.CTOProposal{}, nil
 	case protocol.OpChangesOwnerFind:
 		var a protocol.ChangesFindArgs
 		_ = json.Unmarshal(raw, &a)
@@ -326,13 +319,6 @@ func TestMeasureTUIPolling(t *testing.T) {
 	fmt.Fprintf(&b, "%-26s %10.1f %14.0f\n", "TOTAL", float64(totalCalls)*60/elapsed.Seconds(), float64(totalBytes)*scale)
 	fmt.Fprintf(&b, "process CPU (TUI, daemon stand-in, gateway handlers, churn): %.0f%% of one core\n", cpu/elapsed.Seconds()*100)
 	t.Log(b.String())
-}
-
-// pollProposalNodesRequest is the machine list the daemon asks for when it lists
-// the network's proposals (see Daemon.networkProposals).
-func pollProposalNodesRequest() []byte {
-	b, _ := json.Marshal(protocol.QueryNodes{Brief: true})
-	return b
 }
 
 func pollChangeRequest(a protocol.ChangesFindArgs) []byte {

@@ -406,7 +406,7 @@ func TestCTOEnterOnFocusedBoxRequestsPlan(t *testing.T) {
 
 func TestCTOEnterShowsOpeningAtOnce(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
-		m := ctoPart8Model(size[0], size[1], "Atlas", 0)
+		m := ctoPart8Model(size[0], size[1], "Atlas")
 		m.focus = focusCTO
 		next, cmd := m.ctoKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 		if cmd == nil {
@@ -424,7 +424,7 @@ func TestCTOEnterShowsOpeningAtOnce(t *testing.T) {
 func TestCTOEnterIgnoresASecondPressWhileOpening(t *testing.T) {
 	t.Run("box", func(t *testing.T) {
 		src := &fakeCTOSource{fakeSource: &fakeSource{snap: ctoSnapshot(), enterPlan: protocol.EnterPlan{Argv: []string{"fake-cto"}}}}
-		m := ctoPart8Model(80, 24, "Atlas", 0)
+		m := ctoPart8Model(80, 24, "Atlas")
 		m.src = src
 		m.focus = focusCTO
 		next, cmd := m.ctoKey(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -446,7 +446,7 @@ func TestCTOEnterIgnoresASecondPressWhileOpening(t *testing.T) {
 	})
 	t.Run("sessions row", func(t *testing.T) {
 		src := &fakeCTOSource{fakeSource: &fakeSource{snap: ctoSnapshot(), enterPlan: protocol.EnterPlan{Argv: []string{"fake-cto"}}}}
-		m := ctoPart8Model(80, 24, "Atlas", 0)
+		m := ctoPart8Model(80, 24, "Atlas")
 		m.src = src
 		m.activeOnly = false
 		m.selected = ctoTestSession
@@ -471,7 +471,7 @@ func TestCTOEnterIgnoresASecondPressWhileOpening(t *testing.T) {
 }
 
 func TestCTOEnterFailureShowsTheReason(t *testing.T) {
-	m := ctoPart8Model(120, 34, "Atlas", 0)
+	m := ctoPart8Model(120, 34, "Atlas")
 	m.focus = focusCTO
 	next, _ := m.ctoKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(Model)
@@ -489,7 +489,7 @@ func TestCTOEnterFailureShowsTheReason(t *testing.T) {
 }
 
 func TestCTOEnterTimeoutShowsTheReason(t *testing.T) {
-	m := ctoPart8Model(120, 34, "Atlas", 0)
+	m := ctoPart8Model(120, 34, "Atlas")
 	m.cto.opening = true
 	m.cto.enterNotice = "Opening the CTO…"
 	m, _ = m.onEnter(enterMsg{name: "CTO", cto: true, err: context.DeadlineExceeded})

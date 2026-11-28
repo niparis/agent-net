@@ -1,10 +1,9 @@
 package daemon
 
 // The CTO's one read of everything that waits for the owner: charter drafts,
-// its own open proposals, held requests, pending permission proposals and open
-// Inbox asks. Each row names the
-// exact call that resolves it, so the CTO can act without the owner's screen.
-// cto_proposals_find carries it as a kind, so the CTO tool list does not grow.
+// held requests and open Inbox asks. Each row names the exact call that
+// resolves it, so the CTO can act without the owner's screen.
+// cto_owner_items_find carries it, with a kind filter.
 
 import (
 	"context"
@@ -18,9 +17,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// ctoOwnerItemKinds are the asks listed as rows. A permission proposal is
-// listed from the proposals themselves: it has no stored ask since decision
-// 0196, and an older one would show twice.
+// ctoOwnerItemKinds are the asks listed as rows.
 var ctoOwnerItemKinds = map[string]bool{
 	protocol.AskKindDraft: true, protocol.AskKindHeld: true,
 	protocol.AskKindApproval: true, protocol.AskKindQuestion: true,
@@ -39,18 +36,18 @@ func ctoOwnerInboxKind(kind string) bool {
 func ctoOwnerKindFilter(kind string) (string, error) {
 	kind = strings.TrimSpace(kind)
 	if kind == "" {
-		return protocol.AskKindProposal, nil
+		return "all", nil
 	}
 	switch kind {
-	case "all", "inbox", protocol.AskKindDraft, protocol.AskKindProposal, protocol.AskKindHeld,
+	case "all", "inbox", protocol.AskKindDraft, protocol.AskKindHeld,
 		protocol.AskKindApproval, protocol.AskKindQuestion, protocol.AskKindEscalation, protocol.AskKindRejection:
 		return kind, nil
 	}
-	return "", errors.New(`kind must be all, draft, proposal, held, inbox, approval, question, escalation or rejection. Example: {"kind":"draft"}`)
+	return "", errors.New(`kind must be all, draft, held, inbox, approval, question, escalation or rejection. Example: {"kind":"draft"}`)
 }
 
-// ctoOwnerItemRows reads the gateway's open asks and the daemon's own open
-// proposals as the flat rows of cto_proposals_find.
+// ctoOwnerItemRows reads the gateway's open asks and charter drafts as the
+// flat rows of cto_owner_items_find.
 func (d *Daemon) ctoOwnerItemRows(ctx context.Context, kind string) ([]map[string]any, error) {
 	rows := make([]map[string]any, 0)
 	// The drafts themselves, with each one's text, besides the asks that
@@ -68,39 +65,28 @@ func (d *Daemon) ctoOwnerItemRows(ctx context.Context, kind string) ([]map[strin
 			drafts = append(drafts, ctoCharterDraftRow(draft))
 		}
 	}
-	if kind != protocol.AskKindProposal && kind != protocol.AskKindPermission {
-		value, err := d.call(ctx, "asks.list", struct{}{})
-		if err != nil {
-			return nil, err
-		}
-		var result protocol.AsksResult
-		if err := ctoDecode(value, &result); err != nil {
-			return nil, err
-		}
-		for _, ask := range result.Asks {
-			if !ctoOwnerItemKinds[ask.Kind] {
-				continue
-			}
-			if ask.Next != "" && ask.Next != protocol.AskNextOwner {
-				continue
-			}
-			if kind != "all" && kind != "inbox" && ask.Kind != kind {
-				continue
-			}
-			if kind == "inbox" && !ctoOwnerInboxKind(ask.Kind) {
-				continue
-			}
-			rows = append(rows, ctoOwnerAskRow(ask))
-		}
+	value, err := d.call(ctx, "asks.list", struct{}{})
+	if err != nil {
+		return nil, err
 	}
-	if kind == "all" || kind == protocol.AskKindProposal {
-		items, err := d.proposalRunner().listOpen()
-		if err != nil {
-			return nil, err
+	var result protocol.AsksResult
+	if err := ctoDecode(value, &result); err != nil {
+		return nil, err
+	}
+	for _, ask := range result.Asks {
+		if !ctoOwnerItemKinds[ask.Kind] {
+			continue
 		}
-		for _, item := range items {
-			rows = append(rows, ctoOwnerProposalRow(item))
+		if ask.Next != "" && ask.Next != protocol.AskNextOwner {
+			continue
 		}
+		if kind != "all" && kind != "inbox" && ask.Kind != kind {
+			continue
+		}
+		if kind == "inbox" && !ctoOwnerInboxKind(ask.Kind) {
+			continue
+		}
+		rows = append(rows, ctoOwnerAskRow(ask))
 	}
 	sort.SliceStable(rows, func(i, j int) bool {
 		a, _ := rows[i]["created"].(string)
@@ -203,23 +189,6 @@ func ctoOwnerAskRow(ask protocol.Ask) map[string]any {
 	return row
 }
 
-func ctoOwnerProposalRow(item proposal) map[string]any {
-	text := "CTO proposes " + strings.ReplaceAll(item.Call.Tool, "_", " ")
-	if item.Call.Action != "" {
-		text += " " + item.Call.Action
-	}
-	if reason := ctoOwnerSummary(item.Reason); reason != "" {
-		text += ": " + reason
-	}
-	return map[string]any{
-		"id": item.ID, "tool": item.Call.Tool, "action": item.Call.Action, "status": "open",
-		"reason": ctoCut(item.Reason, 80), "created": ctoCatalogTime(item.CreatedAt),
-		"kind": protocol.AskKindProposal, "from": "CTO", "summary": text,
-		"options": []string{"approve", "decline"},
-		"answer":  ctoOwnerCall("proposal_ask", map[string]any{"id": item.ID}),
-	}
-}
-
 // ctoCharterDraftPrefix starts the id of a charter draft row. A draft is
 // also found by its plain number, as the chief names it.
 const ctoCharterDraftPrefix = "cd_"
@@ -270,7 +239,7 @@ func (d *Daemon) ctoCharterDraft(ctx context.Context, id int64) (map[string]any,
 	return ctoCharterDraftRow(draft), nil
 }
 
-// ctoCharterDraftRow is one draft as a cto_proposals_find row. A pending draft
+// ctoCharterDraftRow is one draft as a cto_owner_items_find row. A pending draft
 // names the call that applies it; the reject call is the same with action
 // reject.
 func ctoCharterDraftRow(draft protocol.CharterDraft) map[string]any {

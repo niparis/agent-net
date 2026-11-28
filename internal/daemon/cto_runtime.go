@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"sync"
-	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -264,9 +263,6 @@ func (d *Daemon) ctoSendTriggered(ctx context.Context, text, sender, trigger str
 	}
 	if err == nil {
 		d.noteCTOStart()
-	}
-	if err == nil && sender != "" {
-		err = d.st.recordCTODelivery(sender, time.Now())
 	}
 	return out, err
 }

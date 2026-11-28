@@ -14,7 +14,7 @@ import (
 // gateway computes and stores the lists; the daemon routes and writes the Desk
 // notice with undo.
 func (d *Daemon) ctoSkills(ctx context.Context, name string, raw json.RawMessage) (any, error) {
-	actor := proposalActor(ctx)
+	actor := ctoActor(ctx)
 	if actor == "" {
 		actor = "cto"
 	}

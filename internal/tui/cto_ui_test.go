@@ -89,19 +89,6 @@ func TestHerdrOpenNoticeHasNoCTOPrefix(t *testing.T) {
 	}
 }
 
-func TestProposalResultKeepsNewHerdrOpenNotice(t *testing.T) {
-	m := mapModel(80, 24, fakeGraph())
-	var q protocol.UIRequest
-	if err := json.Unmarshal([]byte(`{"text":"opened garden in herdr","herdr_opened":true}`), &q); err != nil {
-		t.Fatal(err)
-	}
-	m = send(m, q)
-	m = send(m, proposalAnswerMsg{node: "n_test", id: "p_1", action: "a", items: []protocol.CTOProposal{{NodeID: "n_test", ID: "p_1", Note: "p_1 approved and applied"}}})
-	if m.notice.text != "opened garden in herdr" {
-		t.Fatalf("notice overwritten: %q", m.notice.text)
-	}
-}
-
 func TestDaemonFallbackNoticeHasNoCTOPrefix(t *testing.T) {
 	m := mapModel(80, 24, fakeGraph())
 	var q protocol.UIRequest

@@ -81,9 +81,6 @@ func TestCTOTrustByPathAuditsAndUndoRemovesOnlyAgentAddedTrust(t *testing.T) {
 	if ok, _ := claudetrust.Trusted(ownerTrusted); !ok {
 		t.Fatal("the owner's own trust must stay")
 	}
-	if items, err := n.d.proposalRunner().list(); err != nil || len(items) != 0 {
-		t.Fatalf("trust is not a proposal: %+v %v", items, err)
-	}
 }
 
 func TestCTOTrustChecksTheFolder(t *testing.T) {

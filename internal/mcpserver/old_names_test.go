@@ -144,7 +144,7 @@ func TestCTOGraphReadHasGuideView(t *testing.T) {
 	}
 }
 
-// cto_ui_show and cto_proposals_find reach the daemon under their own names.
+// cto_ui_show and cto_owner_items_find reach the daemon under their own names.
 func TestCTOToolsCallDaemonByCatalogName(t *testing.T) {
 	type call struct {
 		method string
@@ -157,7 +157,7 @@ func TestCTOToolsCallDaemonByCatalogName(t *testing.T) {
 		raw, _ := json.Marshal(params)
 		_ = json.Unmarshal(raw, &p)
 		calls = append(calls, call{method, p})
-		if method == "cto_proposals_find" {
+		if method == "cto_owner_items_find" {
 			return json.RawMessage(`{"items":[],"total":0}`), nil
 		}
 		return json.RawMessage(`"shown"`), nil
@@ -178,9 +178,9 @@ func TestCTOToolsCallDaemonByCatalogName(t *testing.T) {
 			t.Fatalf("cto_ui_show %v: %+v %v", args, res, err)
 		}
 	}
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "cto_proposals_find", Arguments: map[string]any{"cursor": "25"}})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "cto_owner_items_find", Arguments: map[string]any{"cursor": "25"}})
 	if err != nil || res.IsError {
-		t.Fatalf("cto_proposals_find: %+v %v", res, err)
+		t.Fatalf("cto_owner_items_find: %+v %v", res, err)
 	}
 	if len(calls) != 3 {
 		t.Fatalf("calls %+v", calls)
@@ -191,7 +191,7 @@ func TestCTOToolsCallDaemonByCatalogName(t *testing.T) {
 	if calls[1].method != "cto_ui_show" || calls[1].params["notice"] != "hello" {
 		t.Errorf("notice call %+v", calls[1])
 	}
-	if calls[2].method != "cto_proposals_find" || calls[2].params["offset"] != float64(25) {
+	if calls[2].method != "cto_owner_items_find" || calls[2].params["offset"] != float64(25) {
 		t.Errorf("proposals call %+v", calls[2])
 	}
 }

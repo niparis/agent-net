@@ -11,7 +11,7 @@ import (
 
 // projectChange follows session creation: explicit machine selectors go through
 // the gateway, while an omitted selector keeps the call on this daemon.
-func (d *Daemon) projectChange(ctx context.Context, method string, raw json.RawMessage, preview bool) (any, error) {
+func (d *Daemon) projectChange(ctx context.Context, method string, raw json.RawMessage) (any, error) {
 	var selector struct {
 		NodeID string `json:"node_id"`
 		On     string `json:"on"`
@@ -22,12 +22,14 @@ func (d *Daemon) projectChange(ctx context.Context, method string, raw json.RawM
 	node := strings.TrimSpace(firstNonEmpty(selector.NodeID, selector.On))
 	if node != "" && node != d.cfg.NodeID && !strings.EqualFold(node, d.cfg.Hostname) {
 		return d.call(ctx, protocol.FrameProjectChange, protocol.ProjectChangeRelay{
-			Owner: d.ownerSessionID(), NodeID: node, Method: method, Args: raw, Preview: preview,
+			Owner: d.ownerSessionID(), NodeID: node, Method: method, Args: raw,
 		})
 	}
-	return d.projectChangeLocal(ctx, method, raw, preview)
+	return d.projectChangeLocal(ctx, method, raw, false)
 }
 
+// projectChangeLocal runs a project change on this machine. preview comes only
+// from an older machine's relay, which checked a stored CTO proposal with it.
 func (d *Daemon) projectChangeLocal(ctx context.Context, method string, raw json.RawMessage, preview bool) (any, error) {
 	switch method {
 	case "project_add":
@@ -40,14 +42,16 @@ func (d *Daemon) projectChangeLocal(ctx context.Context, method string, raw json
 		}
 		raw, _ = json.Marshal(p)
 	case "project_remove":
-		p, err := proposalProjectRemove(raw)
+		p, err := ctoProjectRemove(raw)
 		if err != nil {
 			return nil, err
 		}
 		p.On = ""
 		raw, _ = json.Marshal(p)
 		if preview {
-			return d.call(ctx, "cto.proposal.validate", map[string]any{"tool": method, "args": raw, "owner": d.ownerSessionID()})
+			// Never remove on a preview. The CTO now runs changes at once, so
+			// there is no stored proposal to check.
+			return nil, errors.New("project remove has no preview: the CTO runs project changes at once")
 		}
 	default:
 		return nil, errors.New("unknown project change")

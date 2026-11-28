@@ -364,7 +364,7 @@ func ctoHarnessProcesses(t *testing.T) (*Daemon, *signalGuard, *throwaway, *thro
 // CTO cannot stop itself with process_stop (decision 0157).
 func TestProcessStopRefusesTheCTOsOwnHarnessProcessToTheCTO(t *testing.T) {
 	d, g, openCode, codex := ctoHarnessProcesses(t)
-	ctx := context.WithValue(context.Background(), proposalActorKey{}, "cto")
+	ctx := context.WithValue(context.Background(), ctoActorKey{}, "cto")
 	res, err := d.processStop(ctx, protocol.ProcessStopRequest{NodeID: d.cfg.NodeID, PIDs: []int{openCode.pid, codex.pid}})
 	if err != nil {
 		t.Fatal(err)
@@ -527,9 +527,6 @@ func TestCTOProcessStopRelaysToTheMachineAndAuditsWithoutUndo(t *testing.T) {
 		if !strings.Contains(notice, want) {
 			t.Errorf("the Inbox notice lacks %q:\n%s", want, notice)
 		}
-	}
-	if items, err := a.d.proposalRunner().list(); err != nil || len(items) != 0 {
-		t.Fatalf("stopping processes is not a proposal: %+v %v", items, err)
 	}
 }
 

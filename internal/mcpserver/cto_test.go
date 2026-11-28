@@ -69,7 +69,7 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 	for _, tl := range list.Tools {
 		tools[tl.Name] = tl
 	}
-	wantTools := []string{"graph_change", "session_change", "worker_change", "answer", "mcp_change", "mcp_call", "settings_change", "project_change", "proposal_ask", "cto_new", "agent_message_send", "cto_ui_show", "agent_sessions_find"}
+	wantTools := []string{"graph_change", "session_change", "worker_change", "answer", "mcp_change", "mcp_call", "settings_change", "project_change", "cto_new", "agent_message_send", "cto_ui_show", "agent_sessions_find"}
 	have := map[string]bool{}
 	for _, name := range wantTools {
 		if tools[name] == nil {

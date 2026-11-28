@@ -50,8 +50,8 @@ Rotation saves a new token to that machine's `node.json` atomically with mode
 
 The owner-only operator methods are `machine_remove` and `machine_rotate`, both
 with `{node_id}`. The CTO uses `cto_op` with `method: machine_remove` or
-`method: machine_rotate` and `args: {node_id}`. These create proposals for the
-owner's approval. Agent sessions cannot invoke the owner methods
+`method: machine_rotate` and `args: {node_id}`. These run only with the
+owner's verified words in `owner_words`, and are refused without them. Agent sessions cannot invoke the owner methods
 directly.
 
 ## Machine states and sleep
@@ -121,8 +121,7 @@ and `reason`, or `area: values_undo` and a `revision`. Each change gives `key`,
 `level`, `scope`, and either a JSON `value` or `delete: true`. Give `expect` as
 the currently stored value, or omit it if none is stored. A conflict reports the
 current value and leaves the whole batch unchanged. Advice changes and advice
-undo by the CTO apply immediately. Rules require an owner proposal, even in the
-graph owner window. The owner uses the TUI or owner-gated `settings_write` and
+undo by the CTO apply immediately, and so do its rule changes. The owner uses the TUI or owner-gated `settings_write` and
 `settings_undo` operator calls. A snapshot updates managed guidance files on
 each machine.
 
@@ -155,28 +154,21 @@ and their old values. Repeating the cutover changes no values. The old node rows
 ## CTO settings and conversation
 
 The CTO applies changes immediately with an audit line and a log
-notice. Supported reversible changes include undo. Only node removal, agent
-tombstone, repo archive, machine removal and machine token rotation require a
-proposal and an owner decision. The older graph driving window remains an
-owner TUI control; it is not an extra prerequisite for CTO changes.
-
-Each proposal tool accepts an optional `reason`. The daemon validates the exact
-call before storing it. If the CTO harness supports form elicitation, it can show a dialog with the stored tool, action, arguments and reason. Accept approves and decline refuses the proposal. Cancel, an error, or no dialog leaves it open in the Inbox. For an open proposal that is already waiting, `proposal_ask` with `id` reopens the same dialog from the stored proposal; a closed or unknown ID is refused. For MCP protocol 2026-07-28 and newer, the harness returns the answer in a follow-up tool call; older versions use a direct elicitation request. The CTO sees a short result. Typing instructions in the CTO conversation does not approve a proposal.
-
-`proposal_list` lists proposals across online machines, or on one machine when
-passed `node_id`. `proposal_answer` takes `node_id`, `proposal_id` and an action:
-`a` approves, `x` declines, and `A` approves open proposals across online machines
-in order, stopping on an error. The daemon validates again and runs the stored
-call once with actor `owner (CTO proposal p_N)`. Full results, including plans,
-MCP results and invite lines, are shown to the owner. An approval through
-`proposal_answer` gives the CTO a short outcome note at its next idle moment,
-without the call's result data. This holds on every harness, including a Codex
-CTO. While the CTO is stopped, the note waits and starts nothing; it goes at
-the next idle moment after the CTO runs again. A dialog approval returns the
-outcome as the tool result instead, so no note follows it.
+notice. Supported reversible changes include undo. Five actions need the
+owner's words: node removal, agent tombstone, repo archive, machine removal and
+machine token rotation. They run at once when the CTO quotes the owner's words
+in `owner_words` and the daemon finds them in what he typed in the CTO chat
+(decision 0165). Without his words the call is refused with one line that tells
+the CTO to ask him and call again quoting his words. Nothing is stored and
+nothing waits on a screen: there are no CTO proposals, no approval dialog and
+no `proposal_ask` (decision [0199](decisions/0199-remove-cto-proposals.md)). The daemon sends such an action to the
+gateway with the actor `owner (CTO on the owner's words)`, which the gateway
+accepts as the owner's authority and keeps in the history, so a graph change
+can be undone like any other CTO change. The older graph driving window remains
+an owner TUI control; it is not an extra prerequisite for CTO changes.
 
 The daemon classifies every tool and action as a read, talk, immediate change
-or proposal. The five destructive actions above remain proposals. Messages
+or owner-only change. The five actions above are the owner-only changes. Messages
 with `as_owner: true` run immediately on the owner's instructions. Settings,
 worker and session actions, shared MCP administration and the explicit owner
 operations described below also run immediately.
@@ -229,12 +221,6 @@ The graph read and `agent_graph_read` show why an Agent has lead level in its `l
 The typed graph read (`graph.get`, `graph.read`) and `agent_graph_read` also carry the org tree on each Agent ([decision 0160](decisions/0160-org-tree-and-scopes.md)): `reports_to` (the parent Agent, or `owner`), `lead_session` (id, name, online, started_by, given even when the session is offline), `sessions` (the online sessions, up to five, each with `online` and `started_by`) and `scopes` (kind, over, note). `root` (an Agent ID, or `owner`) limits the read to that Agent and every Agent under it, with the edges between them. `agent_session_get` adds two lines from the same tree: `reports_to`, for example `lead-agent (lead session main)`, and `also_answers_to`, for example `chief-of-staff (asks), cto (admin, permissions)`. `reports_to` names the session's parent in the Sessions tree, which one gateway rule computes ([decision 0193](decisions/0193-session-tree-by-one-rule.md)): a worker sits under the session that started it, an Agent's lead session sits under the lead session of the Agent it reports to (the CTO session when that is the CTO, the top when that is the owner), any other session of an Agent that leads something sits under its Agent's lead session, and a session of an Agent that leads nothing (a member or merger Agent) sits under the lead session of the Agent it reports to, beside its peers. When an Agent that leads something has no live session at all, the tree draws its most recently active session as its lead, so its other sessions sit under it; nothing is pinned. The session list and `agent_sessions_find` carry the same answer as `parent`. A session the rule cannot place has `no_parent` (`no Agent`, `no reports_to` when an Agent that leads nothing reports to no one, or `no lead` when the lead session the rule needs is not live), its `parent` is its project's lead session, and the Sessions tree draws it there with `(no parent: <rule>)`. A Repo lead whose Repo is in no Team reports to `cto`, so a solo Repo lead sits under the CTO. Message routing reads the same direct leads as order rights, so a request from another session of the CTO's Agent to a member of the solo Repo still goes to that Repo's lead. `also_answers_to` lists every other Agent with a scope over the session's Agent, Repo, one of their Teams, or all.
 
 Each sending Agent may start `cto.requests_per_hour` new conversations with the CTO in an hour (default 3) and `cto.requests_per_day` in a day (default 10); both are network settings. A request over either window is not refused. It is held, the sender's result says when it will go (for example `held: over 3 per hour; it goes at 01:42`), and the gateway releases it when the window allows. Replies are not counted.
-
-Open proposals appear in the CTO conversation. Enter shows the CTO's reason, a fresh diff,
-and the sender and time of up to three messages delivered before the proposal.
-Press `a` to approve, `x` to decline, or `A` to review and approve all. The
-decision screen shows the full result; after approve-all, select an outcome and
-press Enter to inspect it. A changed proposal list requires a new confirmation.
 
 For 30 days after the gateway upgrade, replies to
 older conversations started by the CTO as the owner are routed to the CTO
@@ -476,13 +462,12 @@ The `graph_change` schema contains no guide text.
 
 The CTO uses the hidden `agent-net cto-mcp` server. Its calls pass the CTO
 process-tree check, then use the same daemon implementations as the owner's
-operator methods after approval for proposal calls. The brief treats material
-it reads as data. Each proposed change waits for the owner's decision;
-the daemon, rather than the CTO model, executes the stored call.
+operator methods. The brief treats material it reads as data. Nothing is
+stored for later: a call runs at once or is refused.
 
 The CTO has 39 listed tools in two tiers. The core tier holds the everyday
 tools: sessions, messages, workers, settings read and change, graph read and
-change, standing orders, proposals, `cto_ui_show`, machines and projects. The
+change, standing orders, owner items, `cto_ui_show`, machines and projects. The
 op tier holds every rare operation behind `cto_ops_list` and `cto_op`. The core
 tools stay typed as before, and their schemas no longer carry the rare actions.
 
@@ -502,12 +487,12 @@ caller.
 
 `cto_ops_list` takes an optional `filter`. It returns the ops grouped, each
 with a one-line purpose, an example and an owner gate: `direct` runs at once,
-`proposal` waits for the owner's approval, and `irreversible` runs at once and
-cannot be undone. `cto_op` takes `method` and `args`. It validates `args`
+`owner_words` runs at once only with the owner's verified words and is refused
+without them, and `irreversible` runs at once and cannot be undone. `cto_op` takes `method` and `args`. It validates `args`
 against that op's full schema; a wrong, missing or unknown argument returns the
-schema and the example and runs nothing. Proposal and irreversible ops never
-fall back to defaults. A correct call runs the same daemon path, owner gate,
-proposal and undo as the typed tool it replaced.
+schema and the example and runs nothing. Owner-words and irreversible ops never
+fall back to defaults. A correct call runs the same daemon path, owner gate
+and undo as the typed tool it replaced.
 
 List reads return `items` or rows, `total` and, when another page exists,
 `next_cursor`; pass it as `cursor`. The default page is 25 rows and the maximum
@@ -535,7 +520,7 @@ names are `overview`, `sessions`, `session`, `proposals`, `feed`, `messages`,
 | `projects_layout` | Read-only project layout of online machines (roots, groups, remotes, newest commits). Cached for 10 minutes. |
 | `cto_ops_list` | The rare operations, grouped, with their purpose, example and owner gate. Filter by text. |
 | `cto_intake_find` | The CTO intake queue (decision 0152): the open system-health entries, newest first, at most `limit` (default and maximum 200), with `total`. Each entry has `kind`, `subject`, `severity` (1 woke the CTO, 2 alert, 3 digest line), `text`, `detail`, `first_seen`, `last_seen`, `count`, `alert` (the chief's CTO alert item), `stuck` (the chief's stuck-work item for a quota entry) and `lead` (the lead that owns the cause). The CTO reads it at the start of each owner conversation. Gateway frame `cto.intake`. |
-| `cto_proposals_find` | The CTO's own proposals; `id` selects one. `kind` filters the list: `proposal` is the default, `all` lists every pending owner item, and `draft` (the pending charter drafts, one row for each field with `level`, `scope`, `attr`, `value`, `source` and `drafted_by`, and the asks about them; an `id` such as `cd_54` or `54` reads one draft in any status), `learned` (pending major learned proposals), `held`, `inbox`, `approval`, `question`, `escalation` and `rejection` narrow it. Each row has `kind`, `from`, `summary`, `options` and `answer`, the exact call that resolves it. |
+| `cto_owner_items_find` | The items that wait for the owner; `id` selects a charter draft. `kind` filters the list: `all` is the default and lists every pending owner item, and `draft` (the pending charter drafts, one row for each field with `level`, `scope`, `attr`, `value`, `source` and `drafted_by`, and the asks about them; an `id` such as `cd_54` or `54` reads one draft in any status), `held`, `inbox`, `approval`, `question`, `escalation` and `rejection` narrow it. Each row has `kind`, `from`, `summary`, `options` and `answer`, the exact call that resolves it. |
 | the CTO's own timeline | `session_text` on the CTO session |
 
 The parity and canary tests cover ordinary agent-shaped views. Those message
@@ -544,12 +529,12 @@ contents. Owner operation reads run through `cto_op` and use the owner handlers,
 including protected-provider settings, stored asks and session text.
 Ordinary agents do not gain access to these owner handlers.
 The items that wait for the owner are readable through
-`cto_proposals_find` with `kind: "all"`, so the CTO can answer them when the
+`cto_owner_items_find` with `kind: "all"`, so the CTO can answer them when the
 owner does not want to act by hand.
 
 The CTO acts at once on changes. Node removal, agent tombstone, repo archive,
-machine removal and machine token rotation remain proposals. The CTO has one
-action tool per area:
+machine removal and machine token rotation run only with the owner's words in
+`owner_words`. The CTO has one action tool per area:
 
 | CTO change tool | Actions or area |
 |---|---|
@@ -557,8 +542,7 @@ action tool per area:
 | `agent_message_reply` | a reply with an outcome, or `ack: true` to close a request that needs no answer; `as_owner: true` replies on the owner's instructions |
 | `agent_message_withdraw` | one undelivered message, or with `older_than: true` every undelivered message to that recipient that is this old or older; the owner and the CTO may withdraw another session's message |
 | `cto_ui_show` | `tab` with optional `select`, `filter` and `why`, or `notice` with a short text |
-| `proposal_ask` | `id`: reopen the approval dialog for an open proposal |
-| `graph_change` | `action: charter_set`, `node_add`, `edge_set`, `edge_remove`, `settings_set`, `repo_create`, `agent_create`, `team_create`, `team_rename`, `team_purpose`, `team_charter` (including `attr: mode` and `attr: held_back`), `team_archive`, `team_member_add`, `team_member_remove` or `undo`. Lifecycle removal (`node_remove`, `agent_tombstone`, `repo_archive`) is in `cto_op` and needs owner approval. |
+| `graph_change` | `action: charter_set`, `node_add`, `edge_set`, `edge_remove`, `settings_set`, `repo_create`, `agent_create`, `team_create`, `team_rename`, `team_purpose`, `team_charter` (including `attr: mode` and `attr: held_back`), `team_archive`, `team_member_add`, `team_member_remove` or `undo`. Lifecycle removal (`node_remove`, `agent_tombstone`, `repo_archive`) is in `cto_op` and runs only with the owner's words in `owner_words`. |
 | `sessions_archive` | Archive offline sessions by `ids`, `name` or `folder` glob, `project` (empty string means no project), `harness`, `created_before`, or `ended_workers`. Reversible through Inbox undo. |
 | `session_change` | `action: rename`, `trust`, `mcp_servers`, `policy`, `session_start`, `merger_start`, `merger_stop`, `stop`, `resume` or `restart`. `stop`, `resume` and `restart` take `session_id`; see [CTO session stop, resume and restart](#cto-session-stop-resume-and-restart). `trust` takes either `session_id` with `on` (peer trust) or one of `project` or `path`, with optional `node_id`, to trust a folder for Claude Code. `mcp_servers` takes one of `project` or `path`, optional `node_id`, and `mcp_servers: approve` or `disable`, to record the choice for the `.mcp.json` servers Claude Code would load there. `session_start` takes `trust: true` to trust the folder, approve the servers of the folder's own `.mcp.json`, and start in one step, and `mcp_servers` to record that choice first (an explicit `mcp_servers` still wins). See [CTO folder trust](#cto-folder-trust) and [Claude MCP server approval](#claude-mcp-server-approval) |
 | `cto_standing_orders` | `action: save` (with `text`), `read` (with `order_id`), `list` or `remove` (with `order_id`). See [standing orders](#standing-orders) |
@@ -640,16 +624,16 @@ any enrolled machine; the gateway creates the existing invite result.
 
 For team delivery, use `to_set: {"team": "finance"}` with the team name or ID. Only the CTO can send to a group: online sessions of member agents and the linked agents of member repos. The result lists recipients and members missed because they have no online session or a repo has no linked agent. Additional `to_set` filters narrow the recipients. `as_owner: true` sends to each recipient on the owner's instructions. A Team has an authority mode and held back text (see Authority along the tree). The CTO can list teams and membership with `agent_graph_read` using `typed: true`.
 
-Changes other than the five proposal actions above apply at once. Reversible
+Changes other than the five owner-only actions above apply at once. Reversible
 changes include an undo action in the audit log. The direct tools
 `agent_protected_providers_set`, `agent_worker_profile_add` and
 `agent_worker_profile_remove` leave the same audit line and undo as the
 `settings_change` areas `protected_providers`, `worker_profile_add` and
-`worker_profile_remove`. `agent_message_send`, `agent_message_reply`,
-`cto_ui_show` and `proposal_ask` are talk.
-Every proposal tool takes an optional `reason`. The daemon validates the stored
-call and keeps the concrete implementation, its authority checks and its audit
-records, so a rename does not change what a call is allowed to do.
+`worker_profile_remove`. `agent_message_send`, `agent_message_reply` and
+`cto_ui_show` are talk.
+Every change tool takes an optional `reason`. The daemon keeps the concrete
+implementation, its authority checks and its audit records, so a rename does
+not change what a call is allowed to do.
 
 `answer` with `kind: held` takes `action` `a` (approve once), `A` (approve and
 set auto), `r` (decline once) or `R` (decline and set never). `kind: outcome`
@@ -667,7 +651,7 @@ After typed Graph cutover, the owner can use `repo_create` and `agent_create`
 with `name`, or `repo_archive` and `agent_tombstone` with a typed `ref`.
 A Repo may have no checkout or owner; an Agent may have a free-text `role`.
 The CTO creates identities and applies undo at once. Archive and tombstone
-require an owner proposal. Peers cannot run them. `node_add` and
+need the owner's verified words in `owner_words`. Peers cannot run them. `node_add` and
 `node_remove` follow the same Agent lifecycle rules after cutover.
 
 Archive and tombstone do not delete data. Active graph edges and delivery
@@ -711,7 +695,7 @@ The box is read-only: it shows the latest CTO output lines and the hint
 `c: open the <title>`. When focused, the hint reads
 `enter: open the <title> · ctrl+]: back`. Enter opens the full CTO harness UI through
 `session_enter` on the CTO session in herdr. When herdr is unavailable, ctrl+]
-returns from the terminal fallback. The title also shows how many CTO proposals are open. `n` asks before
+returns from the terminal fallback. `n` asks before
 starting a new conversation, `u` undoes the latest graph change, `m` opens the
 harness and model form, and ctrl+] returns focus to Sessions. Esc skips the
 current onboarding tip. The chat
@@ -973,7 +957,7 @@ The owner's notes about models are behind the owner gate: only the owner's comma
 - `agent_bar_edit {project, add, edit, remove}` changes a project's bar: the short rules that workers check their diff against and that the accept and review steps list ([decision 0147](decisions/0147-project-bar.md)). `add` is a list of one-line rules (at most 400 characters each), `edit` is a list of `{id, text}` and `remove` is a list of IDs such as `B3`. One call may mix all three and applies as a whole or not at all. IDs are never reused. The project's lead may call it; the owner and the CTO name the project, a lead always edits its own. The CTO runs the same change as `cto_op` with method `bar_edit`, a rare op listed by `cto_ops_list`. Workers, other sessions and the command line are refused. The bar shows as `bar` on the repo node in `agent_graph_read`, in the worker brief header, in the accept and review task texts and on the repo card in the TUI. A project with no bar asks its lead once per version of AGENTS.md. The gateway frame is `bar.edit`.
 - Permission grants ([decision 0127](decisions/0127-claude-code-permission-proposals.md), simplified). No agent proposes or applies a Claude Code permission rule or folder trust. An agent that needs one asks the chief of staff or the CTO with a plain message; nothing is stored for later. Only the owner's direct instruction grants it, through `permission_apply` (below). The gateway tells each target machine's daemon to apply. For `permissions` it merges the rules into `<repo>/.claude/settings.local.json` `permissions.allow`: the file is created when missing, every other key and rule stays, no duplicate is added, and the write is atomic. When no ignore rule covers the file, the daemon adds `/.claude/settings.local.json` to `.git/info/exclude`; nothing is committed. For `trust` it calls the same folder trust writer the owner's `session_change` trust uses, and in the same write records `approve` for the servers of each folder's own `.mcp.json` (see [Claude MCP server approval](#claude-mcp-server-approval)). The grant writes one log line with the result per target, including the servers it approved, and the owner's words. There is no undo: the result names exactly what was added, so a person can remove it by hand. A Claude session already running in that repo may need a restart, or `/hooks` opened once, to load new rules. When a session start, resume or wake answers `needs_trust`, the gateway sends the chief of staff one request per machine and folder, with the folder, machine and session, the servers of the folder's own `.mcp.json` that the trust also approves, and the `permission_apply` call that grants it. The daemon frame is `permission.apply`.
 - `permission_apply {kind, rules, targets, machine, owner_words}` is the owner operation, and the CTO's `cto_op`, for a permission or trust the owner gives: it applies at once and keeps `owner_words` (required) in the log line. `kind` is `permissions` (the default) or `trust`. For `permissions`, `rules` are Claude Code permission rule strings such as `Bash(gh pr merge *)` and `targets` are registered repo or project names; a name that does not resolve is refused and named. For `trust`, `machine` names one enrolled machine and `targets` are exact absolute folder paths, or paths under `~/`. The daemon checks that the CTO's quote is in what the owner typed in the CTO chat in the last 3 hours; a quote he did not type is refused with one line and nothing is written ([decision 0165](decisions/0165-cto-owner-words-are-approval.md)). It returns each target's result (rules added, trust added, file written) and stores nothing.
-- `owner_words` on a CTO change is the quote of what the owner asked for in the CTO chat ([decision 0165](decisions/0165-cto-owner-words-are-approval.md)). The merged change tools `graph_change`, `session_change`, `settings_change`, `mcp_change` and `project_change` take it, and so do the five ops that wait for an owner proposal (`node_remove`, `agent_tombstone`, `repo_archive`, `machine_remove`, `machine_rotate`). The daemon looks for the quote in what the owner typed in the CTO chat in the last 3 hours, ignoring case and white space. With a verified quote: the five ops run at once and file no proposal (the stored proposal is decided in the same call; its record starts with the owner's words); a `session_start` trusts the folder first and approves the servers of its own `.mcp.json`, so no trust ask is raised; an `app_ask` approves the consent it opens (the browser sign-in stays the owner's); every other change adds the words to its audit line. The audit line carries the owner's words and the undo where the change has one (`graph_undo` for the three graph ops; none for `machine_remove` and `machine_rotate`). A quote he did not type is refused with one line and nothing runs. With no `owner_words` nothing changes: the five ops file a proposal and a start stops at `needs_trust`. A resume does not check trust on this machine, so it raises no ask to remove. A wake the gateway starts from a message is not a CTO call and still raises its trust ask.
+- `owner_words` on a CTO change is the quote of what the owner asked for in the CTO chat ([decision 0165](decisions/0165-cto-owner-words-are-approval.md)). The merged change tools `graph_change`, `session_change`, `settings_change`, `mcp_change` and `project_change` take it, and so do the five owner-only ops (`node_remove`, `agent_tombstone`, `repo_archive`, `machine_remove`, `machine_rotate`). The daemon looks for the quote in what the owner typed in the CTO chat in the last 3 hours, ignoring case and white space. With a verified quote: the five ops run at once; a `session_start` trusts the folder first and approves the servers of its own `.mcp.json`, so no trust ask is raised; an `app_ask` approves the consent it opens (the browser sign-in stays the owner's); every other change adds the words to its audit line. The audit line carries the owner's words and the undo where the change has one (`graph_undo` for the three graph ops; none for `machine_remove` and `machine_rotate`). A quote he did not type is refused with one line and nothing runs. With no `owner_words` the five ops are refused and nothing is stored, and a start stops at `needs_trust`. A resume does not check trust on this machine, so it raises no ask to remove. A wake the gateway starts from a message is not a CTO call and still raises its trust ask.
 - `agent_worker_rate {worker, score, note, kind}` records the caller's rating of one finished worker: `score` is 1 to 5 and `note` is one optional line on why. `kind` is `rating` (the default when empty), `defect_found_later` or `brief_defect`. A defect report takes no score, a required `severity` from 1 to 4 (1 cosmetic or test-only, caught before release; 2 a visible annoyance or a latent performance problem that had not hit the owner yet; 3 a broken feature or a real performance regression in a release; 4 an outage, data loss or a security problem), and one line about the defect; each report is one defect, it may come any time after the worker's hand-back (also after a rating), and it adds its severity in points of rework to that worker's task. It is not an owner method and the command line is refused, but the owner has the separate `worker_defect` operator call below. Only the session that started the worker may rate it or report a defect on it; the owner may also report a defect. agent-net records some defects by itself, so do not file those (see **Defects agent-net records** under [workers](#workers)). Each worker takes one rating. The record is stored with the run's model, harness, effort, difficulty and caller, never with the task text beyond the note. A `brief_defect` takes no score, a required severity from 1 to 4 and one line about the bad brief; it is charged to the session that wrote the brief (the worker's caller) and never to the worker, so the worker's task score does not change. A `defect_found_later` answer returns the new row id in `defect`. See [workers](#workers).
 
 The model is required, and the note is at most 1024 bytes after cleaning (control characters other than newline and tab are removed). Gateway frames use `playbook.set`, `playbook.get` and `learn.add`. The CLI is `agent-net playbook set|get|pin|unpin`.
@@ -1029,27 +1013,22 @@ sheet on a phone. It stays open across screen changes, remembered in
   that thread. A worker row groups several conversations, so a reply there goes
   to the newest one that has the chosen session as a side.
 - **CTO** (the side panel, key `c`) reads `cto_settings` for the title, harness
-  and model, `cto_events` for the same timeline as the TUI CTO pane and
-  `proposal_list` for the open proposals. The header shows the title from the
+  and model, and `cto_events` for the same timeline as the TUI CTO pane. The
+  header shows the title from the
   setting and the harness and model. Owner lines say "you"; CTO lines are
   styled as the CTO and harness actions are dimmed. The model's text is text:
   it is escaped, markdown is not rendered, and its line breaks stay. An Older
   messages link reads the page before the current offset, and Latest returns to
   the newest page. The composer sends with `cto_send`, the call the TUI makes,
   so the words arrive from the owner in person and the daemon starts or wakes
-  the CTO harness when it is not running. An open proposal is a card with Apply
-  and Decline, answered with the TUI's owner action (`proposal_answer`, `a` or
-  `x`). The card carries the machine as an encoded value, so no node ID is
-  printed. The panel cannot start a worker or change a charter or setting; the
+  the CTO harness when it is not running. The panel cannot start a worker or change a charter or setting; the
   CTO itself may do those when the owner asks it in the chat.
 - The console is read and answer only. Its one write route is `POST /action`
   with the kinds `held`, `outcome`, `inbox`, `mark`, `send`, `reply`,
-  `cto_send` and `proposal`. A `reply` takes the conversation id (`id`), the
+  and `cto_send`. A `reply` takes the conversation id (`id`), the
   recipient session (`to`) and the text (`action`); the recipient must be a
   side of that conversation, and the text is at most 64 KiB. A `cto_send`
-  takes the owner's words in `text`. A `proposal` takes the proposal id (`id`),
-  an encoded machine target (`node`) and `action` `a` to apply or `x` to
-  decline. There is no route that starts or stops sessions or workers, that
+  takes the owner's words in `text`. There is no route that starts or stops sessions or workers, that
   claims, reports or approves a step, or that changes charters, teams, edges or
   settings.
 - `GET /events?screen=<screen>[&s=<row>][&f=<filter>]` is a server-sent event
@@ -1057,7 +1036,7 @@ sheet on a phone. It stays open across screen changes, remembered in
   screen shows: the Graph screen reads the graph, the chief status and the
   conversations of the last hour. `GET /events?section=cto&screen=<screen>&h=<offset>`
   is the CTO panel's own section: it sends the panel body as `event: cto` to its
-  own id and reads only the CTO timeline and proposals, so the screen and the
+  own id and reads only the CTO timeline, so the screen and the
   panel update independently. An update is skipped while the owner is typing.
 - The pages load nothing from outside the gateway.
 
@@ -1108,7 +1087,7 @@ machine reconnects first. A reconnect syncs the sessions again.
 |---|---|---|
 | Node credentials | `~/.config/agent-net/node.json` | Gateway URL, node ID, token, CA fingerprint. Mode 0600. Optional `"hostname"` pins the machine name (see below). `"no_auto_upgrade": true` disables daemon catch-up upgrades. Optional `"quota_axi"` is an absolute path to quota-axi when it is not on `PATH` or in `~/.local/bin`. |
 | Pinned CA | `~/.config/agent-net/ca.pem` | The gateway's CA, trusted after the fingerprint check. |
-| Daemon state | `~/.local/state/agent-net/daemon/daemon.db` | SQLite. Delivery records (for duplicates and interrupted writes), the `claude_deliveries` table (the messages delivered to Claude sessions, to match their replies, see [Claude replies](#claude-replies)), the outbox for sends made while the gateway is away, the `settings_snapshot` table (the last validated settings snapshot for offline use), the `claude_first_messages` table (a SHA-256 hash of each first message agent-net or an agent passed on a Claude command line, kept 4 hours, so it never counts as the owner's words; see [security](security.md#instruction-signals)), the `workers` table (process ID, start time, owner, worktree, task line) that lets the daemon take its workers back after a restart, the `held_starts` table (each start that waits for the owner's answer, with its brief and selection fields but never `owner_words` or the reason, removed when the answer comes), the `agy_main_sessions` table (each discovered Antigravity main session: conversation ID, agy process ID and start time, workspace folders and start ID, so a daemon restart keeps the session; removed when that process ends). A delivery record is removed after its message expiry plus seven days (see [Housekeeping](#housekeeping)). Mode 0600, like its `-wal` and `-shm` files. |
+| Daemon state | `~/.local/state/agent-net/daemon/daemon.db` | SQLite. Delivery records (for duplicates and interrupted writes), the `claude_deliveries` table (the messages delivered to Claude sessions, to match their replies, see [Claude replies](#claude-replies)), the outbox for sends made while the gateway is away, the `settings_snapshot` table (the last validated settings snapshot for offline use), the `claude_first_messages` table (a SHA-256 hash of each first message agent-net or an agent passed on a Claude command line, kept 4 hours, so it never counts as the owner's words; see [security](security.md#instruction-signals)), the `workers` table (process ID, start time, owner, worktree, task line) that lets the daemon take its workers back after a restart, the `held_starts` table (each start that waits for the owner's answer, with its brief and selection fields but never `owner_words` or the reason, removed when the answer comes), the `agy_main_sessions` table (each discovered Antigravity main session: conversation ID, agy process ID and start time, workspace folders and start ID, so a daemon restart keeps the session; removed when that process ends), the `cto_proposal_carry` table (each CTO proposal that was still open when stored proposals were removed, kept only until the daemon has sent it to the chief of staff; [decision 0199](decisions/0199-remove-cto-proposals.md)). A delivery record is removed after its message expiry plus seven days (see [Housekeeping](#housekeeping)). Mode 0600, like its `-wal` and `-shm` files. |
 | Worker folders | `~/.local/state/agent-net/daemon/workers/<worker id>/` | The worker's private files: for OpenCode its private data and state folders and session file, for Pi the named pipe used as its standard input, for Codex the capability token of its app server (mode 0600). Also the output log of the harness. Every worker has `cache` (its `uv`, `npm`, `pip` and `cargo` caches, see [the worker environment](#workers)). A worker in the OS sandbox also has `os-sandbox` (the wrapper's name), `tmp` (its own temp folder, `TMPDIR` inside the wrapper) and, for Pi, `pi-agent` (its private agent folder with a copy of the Pi credentials, made new at each start). At the end of any worker the daemon removes `tmp` and `cache`, which a later run rebuilds; it keeps the rest: after a hand-back for a resume, otherwise the folder is deleted when the worker ends. An hourly sweep (first run about a minute after start) removes the same build state from workers that ended earlier, and frees the whole folder of a worker that cannot be resumed and is past its record's retention. A running worker, a worker still starting, and a folder without a `w_` name are never touched. OpenCode configuration remains shared. At each start OpenCode credentials are exported and imported through memory into the private database (mode 0600); OAuth token refresh in the copy may affect the original login. |
 | Skill sets for sessions | `~/.local/state/agent-net/daemon/skills/<set hash>/` | One folder per effective skill set a session or worker was started with (decision 0169, task 4). It holds `.claude-plugin/plugin.json` and `skills/<name>/` for each skill at its resolved version, unpacked from the archive and checked by its content hash. Claude Code takes it as `--plugin-dir`, Pi takes each skill folder as `--skill`, OpenCode reads the `skills` root from its per-process config, and a Codex worker gets it as an extra skills root. An owner Codex session on the shared app server gets no folder: that call is server-wide. The folder is reused while the set is unchanged; a changed set gets a new one; an empty set makes none. Never inside a project, a worktree or a user skill folder. Uninstall removes it with the state folder. |
 | Worker worktrees | `~/.local/state/agent-net/daemon/worktrees/<worker id>/` | The default in a git repository (not with `--isolation none`). Eligible for the worker cleanup described below as soon as the worker ends. The default branch name is `agent-net/<worker id>` in the project; `delivery.worker_branch_prefix` sets the prefix. A new worktree starts from origin's default branch: the daemon resolves it (the branch `origin/HEAD` points to, else local `main` or `master`) and runs `git fetch` for it (10 seconds at most). It starts from the fetched tip, so an owner checkout left on another branch, a detached HEAD, a diverged default branch, or a local main behind its remote, does not hold the worker back. The one exception is a checkout that is the default branch and holds every commit of origin's tip plus its own unpushed commits: the worker starts from local HEAD, so those commits reach it. With no origin, no default branch or a failed fetch, it starts from local HEAD. Each case that does not start from the tip logs why. It never changes your checkout or local branches. A requested `base` is always the local branch. Before it runs `git worktree add` or writes a branch upstream, the daemon removes an empty `.git/config.lock` older than 10 seconds that git left behind and logs `worker.git stale config.lock removed`; a fresh or non-empty lock is left alone. |
@@ -2122,7 +2101,7 @@ The daemon methods behind them are `change_submit`, `step_claim`, `step_report` 
 In Settings, select a repo to see its `delivery.owner` rows. Enter a graph
 node name as a JSON string to assign a step to that node, or an empty string to
 use the default. A concurrent assignment is refused until Settings is reloaded.
-Changing a node assignment needs the owner, or an approved CTO proposal. The
+Changing a node assignment needs the owner, or the CTO. The
 `delivery_deploys` assignment is separate from a `deploys` request edge; when
 there is no explicit assignment, the `deploys` node is the default deployer.
 
@@ -2269,7 +2248,7 @@ or gateway shows an error that says to upgrade it.
 Every time the TUI shows is in the owner's display time zone, not the zone of
 the machine that runs it. That covers the Workers log, Messages and message
 bodies, Sessions and session details, Graph labels, Quotas reset times,
-the `updated` header, Tools, and CTO proposals and timelines.
+the `updated` header, Tools, and CTO timelines.
 
 The owner setting is the network setting `owner.time_zone`. It is
 `auto` by default, or an IANA name such as `Europe/Paris`. Each daemon reports
@@ -2447,7 +2426,7 @@ The Claude Code hook output, when there is a suggestion (one line of JSON on std
 
 The owner has no Desk screen. The gateway makes every item through one path, and an item for the owner (`next_who` empty, `owner` or `chief`) is never stored:
 
-- **An item an agent raised** (a question that ended a turn, a waiting session, a step that needs the owner, a held request, a rejection or escalation, a permission proposal, a sign-in, a CTO proposal) becomes one request to the chief of staff's session. It comes from the asking session when that is a session, so the chief's reply goes back to it; otherwise it is a notice from agent-net. It names the asker, the kind, the text, why only the owner can decide, the recommendation and the options. The gateway delivers it within a second.
+- **An item an agent raised** (a question that ended a turn, a waiting session, a step that needs the owner, a held request, a rejection or escalation, a permission proposal, a sign-in) becomes one request to the chief of staff's session. It comes from the asking session when that is a session, so the chief's reply goes back to it; otherwise it is a notice from agent-net. It names the asker, the kind, the text, why only the owner can decide, the recommendation and the options. The gateway delivers it within a second.
 - **An item agent-net raised itself** (`from_kind` gateway or disk, every check and stall, brief checks, owed replies, loops, the tree check, follow-ups and charter drafts) is one log line, `event=desk.dropped`, with its kind, source and first line.
 - **No chief.** With no chief session, or when the chief itself asks, the item is one log line, `event=desk.no_chief`, without the text.
 - **Unchanged.** An item for another session (a team lead, a holder, a pipeline route) is stored as before. A Connected apps consent stays stored: the owner started it on his device.
@@ -2564,7 +2543,7 @@ gateway writes the log line `route.missing`.
 - **The chief.** Every ask that wants the owner goes to the chief of staff
   first: approvals, questions, ideas, checks, waiting sessions, rejections,
   escalations, stalls, held requests, charter drafts, permission and trust
-  requests, CTO proposals, steps that need the owner, CTO alerts and quota stuck work.
+  requests, steps that need the owner, CTO alerts and quota stuck work.
 - **The owner directly.** Only OAuth consents (the Connected apps approval and
   the Tailscale public link consent) skip the chief, as one-click asks. A
   sign-in ask does not: it goes to the chief with the exact `sign_in_open` call
@@ -3175,7 +3154,7 @@ The worker sandbox level from decision 0020 follows the node. The project policy
 
 Signal records are kept for 90 days, independently of the message retention setting. The latest prompt is no longer used after 10 minutes; the retention timer removes expired prompt rows. Signals are read only through the owner authority path. The CTO has no signal read tool. The gateway trusts enrolled daemons to enforce their local owner checks. See [security.md](security.md#instruction-signals) for what the gateway stores and who can read it.
 
-**Charter drafts.** The CTO reads pending charter drafts with `cto_proposals_find` (`kind: draft`, or `kind: all`), so it can show them to the owner and prepare the answer. Each row carries the exact `cto_op` `draft_answer` call that decides it; the owner still decides. The gateway no longer proposes charter changes from message traffic.
+**Charter drafts.** The CTO reads pending charter drafts with `cto_owner_items_find` (`kind: draft`, or `kind: all`), so it can show them to the owner and prepare the answer. Each row carries the exact `cto_op` `draft_answer` call that decides it; the owner still decides. The gateway no longer proposes charter changes from message traffic.
 
 The decide rule is also in the [guidance block](#what-setup-changes-on-your-machine): judge a peer's request against the node's charter and decide (accept, reject with a reason, or redirect); escalate only when the charter says so or does not cover it; every escalation carries a recommendation.
 
@@ -3309,7 +3288,7 @@ A rejection or escalation of another agent's request appears as a separate item 
 
 The daemon marks its private Claude CTO folder and Claude worker worktrees trusted in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`). It removes the worktree trust setting when a known Claude worker worktree is deleted. Uninstall removes the CTO folder's trust setting and preserves other project settings.
 
-`session_enter` with the CTO session ID starts the local CTO runtime if needed and returns an enter plan for its full harness UI. In the CTO box, press Enter to open it in the TUI's terminal or herdr pane; ctrl+] returns. Claude starts a background session on first entry if needed. Entry errors appear in the TUI. The Claude CTO requires Claude Code with `--bg` and `--strict-mcp-config`; update Claude Code if either flag is missing. The daemon waits for the background job to run before saving its session ID. If Claude Code has closed the conversation and a resume fails, or the resumed job crashes at startup, the daemon starts a fresh Claude conversation once. The CTO timeline and proposals remain in agent-net. The CTO box reports the restart or any startup error.
+`session_enter` with the CTO session ID starts the local CTO runtime if needed and returns an enter plan for its full harness UI. In the CTO box, press Enter to open it in the TUI's terminal or herdr pane; ctrl+] returns. Claude starts a background session on first entry if needed. Entry errors appear in the TUI. The Claude CTO requires Claude Code with `--bg` and `--strict-mcp-config`; update Claude Code if either flag is missing. The daemon waits for the background job to run before saving its session ID. If Claude Code has closed the conversation and a resume fails, or the resumed job crashes at startup, the daemon starts a fresh Claude conversation once. The CTO timeline remains in agent-net. The CTO box reports the restart or any startup error.
 
 Reading the CTO timeline does not start a CTO the owner stopped. A Codex or OpenCode CTO keeps its conversation in its own process, so the daemon saves it at the owner stop and the stopped read shows that saved conversation with one line that says the CTO is stopped. The save gets at most 3 seconds. If the harness does not answer in time, the daemon logs it and stops the process anyway, and the conversation saved at an earlier stop stays. A stop keeps the conversation saved at an earlier stop too. Enter, a message or a resume starts it. A CTO that is down for another reason, such as a daemon restart, an update or a crash, was not stopped by the owner: a read starts it and reads it live, as before. The stored fact that the owner stopped it is cleared by any start the owner or a message causes.
 
@@ -3347,7 +3326,7 @@ The owner can ask the CTO to trust a folder for Claude Code. The CTO calls `sess
 
 The request travels to another machine as the owner frames `session.trust_folder` (to the gateway) and `session.owner_trust_folder` (to the machine), like a session start. The machine checks the owner flag again. The operator method is `folder_trust` (`project` or `path`, `node_id`, `remove`); the result has `path`, `trusted` and `added`.
 
-Each use leaves an audit line. `added` is true only when the folder was not trusted before. Only then does the notice carry an undo, and the undo removes that one folder's trust (`folder_trust` with `remove: true`). The trust click also approves the folder's own `.mcp.json` servers; the trust proposal undo takes back only the names that click added, and a start's `mcp_servers: disable` still wins. A folder the owner had already trusted is left alone and has no undo. A CTO proposal still cannot set `trust_claude`, and the proposal relay still drops it: trust the CTO sets goes only through this explicit action or `trust: true`.
+Each use leaves an audit line. `added` is true only when the folder was not trusted before. Only then does the notice carry an undo, and the undo removes that one folder's trust (`folder_trust` with `remove: true`). The trust click also approves the folder's own `.mcp.json` servers; the trust proposal undo takes back only the names that click added, and a start's `mcp_servers: disable` still wins. A folder the owner had already trusted is left alone and has no undo. A CTO start still cannot set `trust_claude`, and the CTO start relay still drops it: trust the CTO sets goes only through this explicit action or `trust: true`.
 
 ### CTO process stop
 
@@ -3491,7 +3470,7 @@ The CTO can run `project_change` with action `remove`, a project `name` or `path
 
 An optional `remote` on `project_change` create clones a repository instead of running `git init`. It accepts only `git@host:owner/repo.git` and `https://host/owner/repo.git`; local paths, `file://`, HTTP and credentials in HTTPS URLs are refused. The destination must not exist. The confirmation names the remote. The clone has a 45 second timeout and disables Git terminal credential prompts. A failed clone can leave its destination folder behind; remove it before retrying. The cloned repository is registered and started on the owner's instructions, subject to the session-start trust checks. As with other registered repositories, its project identity follows the origin repository name.
 
-The daemon records the target machine and checks local paths before accepting a proposal. A remote machine checks its own path when the approved start reaches it; an offline or older machine refuses the request. Approved Claude starts run in the background without opening a view on either machine. Select the session in Sessions and press Enter to open it. TUI new-session starts and CTO starts of other harnesses keep their existing behavior. If Claude needs the owner's trust answer, the proposal result and note say so and no session starts. Answer through the normal new-session form. A missing folder without `create` likewise needs the owner's answer.
+The daemon records the target machine and checks local paths before it starts. A remote machine checks its own path when the start reaches it; an offline or older machine refuses the request. CTO Claude starts run in the background without opening a view on either machine. Select the session in Sessions and press Enter to open it. TUI new-session starts and CTO starts of other harnesses keep their existing behavior. If Claude needs the owner's trust answer, the start result says so and no session starts. Answer through the normal new-session form. A missing folder without `create` likewise needs the owner's answer.
 
 ### Starting an owner session through the local API
 
@@ -4072,9 +4051,8 @@ Repo over max and is never killed.
 
 An agent-net start at the max returns `status: failed` and a
 `suggested_change` setting `max_agents` to the current max plus one, with its
-expected old value. CTO start proposals check the count before asking for
-approval and return the same suggestion when the Repo is full. The start is
-checked again when an approved proposal runs. Each machine that can start
+expected old value. A CTO start checks the count and returns the same
+suggestion when the Repo is full. Each machine that can start
 sessions must run a version with Repo admission support; an older daemon
 cannot enforce this rule for its own local starts. The TUI confirmation to
 raise the max is a later step.

@@ -12,28 +12,28 @@ import (
 // gate and the CTO's instructions) agree with the one list. The gateway refusal
 // and the tool-decide answer have their own tests beside the code they test.
 func TestCTOOwnerOnlyListIsTheOneList(t *testing.T) {
-	proposals := map[string]bool{}
+	needWords := map[string]bool{}
 	for tool, actions := range ctoActionClasses {
 		for action, class := range actions {
-			if class == ctoProposal {
-				proposals[action] = true
+			if class == ctoOwnerOnly {
+				needWords[action] = true
 			}
 			if authority.OwnerOnly(action) && class != ownerGate(action) {
 				t.Errorf("%s %s has class %s", tool, action, class)
 			}
 		}
 	}
-	for _, name := range authority.ProposalNames() {
-		if !proposals[name] {
-			t.Errorf("%s is on the list but no action class waits for a proposal", name)
+	for _, name := range authority.OwnerWordsNames() {
+		if !needWords[name] {
+			t.Errorf("%s is on the list but no action class needs the owner's words", name)
 		}
-		delete(proposals, name)
+		delete(needWords, name)
 		if !strings.Contains(ctoBrief, name) {
 			t.Errorf("the CTO's instructions do not name %s", name)
 		}
 	}
-	for name := range proposals {
-		t.Errorf("%s waits for a proposal but is not on the list", name)
+	for name := range needWords {
+		t.Errorf("%s needs the owner's words but is not on the list", name)
 	}
 
 	for _, op := range mcpserver.CTOOps() {
@@ -45,8 +45,8 @@ func TestCTOOwnerOnlyListIsTheOneList(t *testing.T) {
 		switch {
 		case authority.Irreversible(name) && gate != "irreversible":
 			t.Errorf("op %s gate %s, want irreversible", op.Name, gate)
-		case authority.Proposal(name) && gate != "proposal":
-			t.Errorf("op %s gate %s, want proposal", op.Name, gate)
+		case authority.NeedsOwnerWords(name) && gate != "owner_words":
+			t.Errorf("op %s gate %s, want owner_words", op.Name, gate)
 		case !authority.OwnerOnly(name) && gate != "direct":
 			t.Errorf("op %s gate %s, want direct", op.Name, gate)
 		}

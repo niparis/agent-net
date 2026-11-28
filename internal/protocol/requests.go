@@ -127,7 +127,7 @@ type EnterFailure struct {
 
 // ClientError is one request that failed on the client side.
 type ClientError struct {
-	// Method is the operator method that failed, for example "proposal_list".
+	// Method is the operator method that failed, for example "workers".
 	Method string `json:"method"`
 	// Ms is how long the client waited before it gave up.
 	Ms int64 `json:"ms"`

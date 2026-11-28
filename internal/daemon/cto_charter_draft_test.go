@@ -39,7 +39,7 @@ func ctoDraftFixture(t *testing.T) (*testGateway, *node, *localClient, string) {
 	return g, n, client, id
 }
 
-// draftRow is one charter draft as cto_proposals_find shows it.
+// draftRow is one charter draft as cto_owner_items_find shows it.
 type draftRow struct {
 	ID        string `json:"id"`
 	Kind      string `json:"kind"`
@@ -57,9 +57,9 @@ type draftRow struct {
 // order the list returns them.
 func ctoDraftRows(t *testing.T, n *node) []draftRow {
 	t.Helper()
-	out, err := n.d.readCTOTool(context.Background(), "cto_proposals_find", json.RawMessage(`{"kind":"draft"}`))
+	out, err := n.d.readCTOTool(context.Background(), "cto_owner_items_find", json.RawMessage(`{"kind":"draft"}`))
 	if err != nil {
-		t.Fatalf("cto_proposals_find draft: %v", err)
+		t.Fatalf("cto_owner_items_find draft: %v", err)
 	}
 	raw, _ := json.Marshal(out)
 	var page struct {
@@ -98,9 +98,9 @@ func TestCTOReadsAndDecidesCharterDrafts(t *testing.T) {
 
 	read := func(args string) json.RawMessage {
 		t.Helper()
-		out, err := n.d.readCTOTool(ctx, "cto_proposals_find", json.RawMessage(args))
+		out, err := n.d.readCTOTool(ctx, "cto_owner_items_find", json.RawMessage(args))
 		if err != nil {
-			t.Fatalf("cto_proposals_find %s: %v", args, err)
+			t.Fatalf("cto_owner_items_find %s: %v", args, err)
 		}
 		raw, _ := json.Marshal(out)
 		return raw

@@ -193,7 +193,7 @@ func TestCTOTeamModeAndOwnerItemsAreCTOOnly(t *testing.T) {
 	t.Parallel()
 	_, w := startCTOTeamFixture(t)
 	agent, _ := helloPi(t, w.node, "not-the-cto", "/w/not-the-cto", true)
-	for _, method := range []string{"graph_change", "cto_proposals_find"} {
+	for _, method := range []string{"graph_change", "cto_owner_items_find"} {
 		if _, err := agent.call(method, map[string]any{"kind": "all", "action": "team_charter", "team": "forge", "attr": "mode", "value": "absolute"}); err == nil {
 			t.Fatalf("agent called %s", method)
 		}

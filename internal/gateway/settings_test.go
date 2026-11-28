@@ -454,7 +454,7 @@ func TestSettingsConflictNamesUnsetValue(t *testing.T) {
 
 func TestSettingsFramesRejectUnknownActors(t *testing.T) {
 	for _, tc := range []struct{ key, value string }{{"workers.auto_continue", "false"}, {"guidance.intro_text", `"hello"`}} {
-		for _, actor := range []string{"", "agent", "CTO", "agent-net cutover", "owner (CTO proposal p_bad)", "owner (CTO proposal p_)", "owner (CTO proposal p_1) extra"} {
+		for _, actor := range []string{"", "agent", "CTO", "agent-net cutover", "owner (CTO proposal p_1)", "owner (CTO proposal p_bad)", protocol.CTOOwnerWordsActor + " extra"} {
 			t.Run(tc.key+"/"+actor, func(t *testing.T) {
 				s, _ := newTestStore(t)
 				g := &Gateway{store: s}
@@ -528,7 +528,7 @@ func TestSettingsValidationIsTransactionalAndSilent(t *testing.T) {
 }
 
 func TestSettingsFramesAllowOnlyNamedActors(t *testing.T) {
-	for _, actor := range []string{"owner", "owner (CTO proposal p_17)", "cto", "CTO (minor)", "CTO (owner window)"} {
+	for _, actor := range []string{"owner", protocol.CTOOwnerWordsActor, "cto", "CTO (minor)", "CTO (owner window)"} {
 		t.Run(actor, func(t *testing.T) {
 			s, _ := newTestStore(t)
 			g := &Gateway{store: s}

@@ -171,7 +171,7 @@ func TestSettingsGuidanceRefreshOnChange(t *testing.T) {
 	}
 }
 
-func TestSettingsCTOApprovalAndRead(t *testing.T) {
+func TestSettingsCTOWriteAndRead(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
@@ -181,29 +181,13 @@ func TestSettingsCTOApprovalAndRead(t *testing.T) {
 		t.Fatalf("advice: %v", err)
 	}
 	rule := json.RawMessage(`{"area":"values_write","changes":[{"key":"workers.auto_continue","level":"network","scope":"network","value":false}],"reason":"test"}`)
-	if _, err := legacyProposalFixture(ctx, n.d, "settings_change", rule); err != nil {
-		t.Fatalf("proposal: %v", err)
+	if _, err := n.d.runCTOToolRaw(ctx, "settings_change", rule); err != nil {
+		t.Fatalf("rule: %v", err)
 	}
-	items, err := n.d.proposalRunner().list()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("proposals: %v %v", items, err)
-	}
-	var snap settings.Snapshot
-	snap, err = g.gw.Store().SettingsSnapshot()
-	if err != nil {
-		t.Fatal(err)
-	}
+	snap, _ := g.gw.Store().SettingsSnapshot()
 	e, _ := snap.Resolve("workers.auto_continue", settings.Where{})
-	if string(e.Value) != "true" {
-		t.Fatalf("changed before approval: %s", e.Value)
-	}
-	if err := n.d.proposalRunner().decide(ctx, items[0].ID, true); err != nil {
-		t.Fatal(err)
-	}
-	snap, _ = g.gw.Store().SettingsSnapshot()
-	e, _ = snap.Resolve("workers.auto_continue", settings.Where{})
 	if string(e.Value) != "false" {
-		t.Fatalf("after approval: %s", e.Value)
+		t.Fatalf("after the CTO write: %s", e.Value)
 	}
 	out, err := n.d.readCTOTool(ctx, "agent_settings_read", json.RawMessage(`{"key":"workers.auto_continue"}`))
 	if err != nil {
@@ -232,23 +216,11 @@ func TestSettingsOwnerGateAndUndo(t *testing.T) {
 		t.Fatalf("owner history %+v %v", hist, err)
 	}
 	ctx := context.Background()
-	if _, err = legacyProposalFixture(ctx, n.d, "settings_change", json.RawMessage(`{"area":"values_undo","revision":1}`)); err != nil {
+	if _, err = n.d.runCTOToolRaw(ctx, "settings_change", json.RawMessage(`{"area":"values_undo","revision":1}`)); err != nil {
 		t.Fatal(err)
-	}
-	items, err := n.d.proposalRunner().list()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("undo proposal %+v %v", items, err)
 	}
 	s, _ := g.gw.Store().SettingsSnapshot()
 	e, _ := s.Resolve("workers.auto_continue", settings.Where{})
-	if string(e.Value) != "false" {
-		t.Fatal("undo applied without approval")
-	}
-	if err = n.d.proposalRunner().decide(ctx, items[0].ID, true); err != nil {
-		t.Fatal(err)
-	}
-	s, _ = g.gw.Store().SettingsSnapshot()
-	e, _ = s.Resolve("workers.auto_continue", settings.Where{})
 	if string(e.Value) != "true" {
 		t.Fatal("undo not applied")
 	}
@@ -267,64 +239,23 @@ func TestSettingsOwnerGateAndUndo(t *testing.T) {
 	cli.mustCall("settings_undo", map[string]any{"revision": 4})
 }
 
-func TestSettingsProposalConflictAndOwnerWindow(t *testing.T) {
-	t.Parallel()
-	g := startGateway(t, t.TempDir(), "")
-	n := startNode(t, g, nodeOpts{})
-	ctx := context.Background()
-	cli := cliClient(t, n)
-	n.d.ctoGraph.mu.Lock()
-	n.d.ctoGraph.until = time.Now().Add(time.Hour)
-	n.d.ctoGraph.mu.Unlock()
-	raw := json.RawMessage(`{"area":"values_write","changes":[{"key":"workers.auto_continue","level":"network","scope":"network","value":false}],"reason":"rule"}`)
-	if _, err := legacyProposalFixture(ctx, n.d, "settings_change", raw); err != nil {
-		t.Fatal(err)
-	}
-	items, err := n.d.proposalRunner().list()
-	if err != nil || len(items) != 1 {
-		t.Fatalf("proposal %+v %v", items, err)
-	}
-	cli.mustCall("settings_write", map[string]any{"changes": []any{map[string]any{"key": "workers.auto_continue", "level": "network", "scope": "network", "value": true}}, "reason": "intervening"})
-	err = n.d.proposalRunner().decide(ctx, items[0].ID, true)
-	if err == nil || !strings.Contains(err.Error(), "current true") {
-		t.Fatalf("expected conflict: %v", err)
-	}
-	s, _ := g.gw.Store().SettingsSnapshot()
-	e, _ := s.Resolve("workers.auto_continue", settings.Where{})
-	if string(e.Value) != "true" {
-		t.Fatal("stale proposal changed setting")
-	}
-}
-
-func TestSettingsDeliveryRuleCTOProposesOwnerApplies(t *testing.T) {
+func TestSettingsDeliveryRuleCTOAppliesAtOnce(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
 	ctx := context.Background()
 	raw := json.RawMessage(`{"area":"values_write","changes":[{"key":"delivery.merge_authority","level":"network","scope":"network","value":"ask"}],"reason":"approval"}`)
-	if _, err := legacyProposalFixture(ctx, n.d, "settings_change", raw); err != nil {
+	if _, err := n.d.runCTOToolRaw(ctx, "settings_change", raw); err != nil {
 		t.Fatal(err)
-	}
-	proposals, err := n.d.proposalRunner().list()
-	if err != nil || len(proposals) != 1 {
-		t.Fatalf("proposals: %+v %v", proposals, err)
 	}
 	snap, _ := g.gw.Store().SettingsSnapshot()
 	e, _ := snap.Resolve("delivery.merge_authority", settings.Where{})
-	if string(e.Value) != `"full"` {
-		t.Fatalf("changed without owner: %s", e.Value)
-	}
-	if err = n.d.proposalRunner().decide(ctx, proposals[0].ID, true); err != nil {
-		t.Fatal(err)
-	}
-	snap, _ = g.gw.Store().SettingsSnapshot()
-	e, _ = snap.Resolve("delivery.merge_authority", settings.Where{})
 	if string(e.Value) != `"ask"` {
-		t.Fatalf("owner approval did not apply: %s", e.Value)
+		t.Fatalf("the CTO write did not apply: %s", e.Value)
 	}
 }
 
-func TestSettingsProposalRejectsInvalidChangesBeforeApproval(t *testing.T) {
+func TestSettingsCTORejectsInvalidChanges(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
@@ -348,10 +279,6 @@ func TestSettingsProposalRejectsInvalidChangesBeforeApproval(t *testing.T) {
 			t.Errorf("accepted %s", changes)
 		}
 	}
-	items, err := n.d.proposalRunner().list()
-	if err != nil || len(items) != 0 {
-		t.Fatalf("invalid proposal saved: %+v %v", items, err)
-	}
 	snap, err := g.gw.Store().SettingsSnapshot()
 	if err != nil || snap.Revision != 0 {
 		t.Fatalf("validation changed settings: %+v %v", snap, err)
@@ -359,10 +286,6 @@ func TestSettingsProposalRejectsInvalidChangesBeforeApproval(t *testing.T) {
 	valid := json.RawMessage(`{"area":"values_write","changes":[{"key":"workers.auto_continue","level":"network","scope":"network","value":false,"expect":null}]}`)
 	if _, err := n.d.runCTOToolRaw(ctx, "settings_change", valid); err != nil {
 		t.Fatalf("null expected absent: %v", err)
-	}
-	items, err = n.d.proposalRunner().list()
-	if err != nil || len(items) != 0 {
-		t.Fatalf("unexpected proposal: %+v %v", items, err)
 	}
 	snap, err = g.gw.Store().SettingsSnapshot()
 	if err != nil || snap.Revision != 1 {
@@ -552,7 +475,7 @@ func TestSettingsWorkerSandboxCutoverSurvivesOfflineRestart(t *testing.T) {
 	}
 }
 
-func TestWorkerBriefRuleCTOProposesOwnerApplies(t *testing.T) {
+func TestWorkerBriefRuleCTOAppliesAtOnce(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
@@ -560,10 +483,6 @@ func TestWorkerBriefRuleCTOProposesOwnerApplies(t *testing.T) {
 	raw := json.RawMessage(`{"area":"values_write","changes":[{"key":"workers.brief_codex_complete","level":"repo","scope":"shop","value":"Report {{complete_yes}} or {{complete_no}}."}],"reason":"approval"}`)
 	if _, err := n.d.runCTOToolRaw(ctx, "settings_change", raw); err != nil {
 		t.Fatal(err)
-	}
-	proposals, err := n.d.proposalRunner().list()
-	if err != nil || len(proposals) != 0 {
-		t.Fatalf("unexpected proposal: %+v %v", proposals, err)
 	}
 	after, err := g.gw.Store().SettingsSnapshot()
 	if err != nil {

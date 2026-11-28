@@ -8,7 +8,7 @@ import (
 	"github.com/niparis/agent-net/internal/settings"
 )
 
-// SetMerger changes an assignment only through the owner gate or an approved proposal.
+// SetMerger changes an assignment only through the owner gate.
 func (s *Store) SetMerger(q protocol.MergerSetRequest, actor string) error {
 	if !actorAllowed(actor, "rule") {
 		return reject("only the owner may register a merger")

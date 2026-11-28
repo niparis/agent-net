@@ -54,21 +54,9 @@ func (m Model) ctoBoxHeight(tab int) int {
 	return box
 }
 
-// showCTOBox hides the box on the Graph tab unless the CTO proposes a change
-// to a node or an edge. The canvas needs those rows more than an empty box.
+// showCTOBox hides the box on the Graph tab: the canvas needs those rows.
 func (m Model) showCTOBox(tab int) bool {
-	if tab != graphTab || m.focus == focusCTO || m.mapOn {
-		return true
-	}
-	for _, p := range m.proposals {
-		if p.Status != "open" {
-			continue
-		}
-		if p.Tool == "charter_set" || p.Action == "charter_set" || p.Tool == "edge_set" || p.Action == "edge_set" {
-			return true
-		}
-	}
-	return false
+	return tab != graphTab || m.focus == focusCTO || m.mapOn
 }
 
 // layout divides the height between the parts. The sessions table gets what
@@ -185,12 +173,6 @@ func (m Model) renderView() string {
 	switch {
 	case m.finder:
 		out = append(out, m.finderView(w)...)
-	case m.proposalConfirm:
-		out = append(out, m.proposalConfirmView(w)...)
-	case m.proposalHistory && m.proposalDetail == nil && !m.help:
-		out = append(out, m.proposalHistoryView(w)...)
-	case m.proposalDetail != nil && !m.help:
-		out = append(out, m.proposalDetailView(w)...)
 	case m.tab == quotasTab && m.qualityDetail && !m.help:
 		out = append(out, m.qualityDetailsView(w, h-1)...)
 	case m.help:

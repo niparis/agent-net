@@ -90,7 +90,7 @@ func TestCTOV2OutputsMatchCatalogSchemas(t *testing.T) {
 		case "proposals":
 			return json.RawMessage(`{"items":[],"total":0}`), nil
 		default:
-			return json.RawMessage(`{"state":"proposed"}`), nil
+			return json.RawMessage(`{"state":"completed"}`), nil
 		}
 	}, "test")
 	ss, err := srv.Connect(ctx, st, nil)
@@ -104,12 +104,11 @@ func TestCTOV2OutputsMatchCatalogSchemas(t *testing.T) {
 	}
 	defer cs.Close()
 	args := map[string]any{
-		"graph_change":       map[string]any{"action": "node_add", "name": "x"},
-		"session_change":     map[string]any{"action": "rename"},
-		"worker_change":      map[string]any{"action": "stop"},
-		"proposal_ask":       map[string]any{"id": "p_15"},
-		"cto_ui_show":        map[string]any{"tab": "graph"},
-		"cto_proposals_find": map[string]any{},
+		"graph_change":         map[string]any{"action": "node_add", "name": "x"},
+		"session_change":       map[string]any{"action": "rename"},
+		"worker_change":        map[string]any{"action": "stop"},
+		"cto_ui_show":          map[string]any{"tab": "graph"},
+		"cto_owner_items_find": map[string]any{},
 	}
 	for name, input := range args {
 		result, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: input})
@@ -151,7 +150,7 @@ func TestCTOProposalsFindOwnerItemsOutput(t *testing.T) {
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()
 	srv := NewCTO(func(_ context.Context, method string, _ any) (json.RawMessage, error) {
-		if method != "cto_proposals_find" {
+		if method != "cto_owner_items_find" {
 			return json.RawMessage(`{}`), nil
 		}
 		return json.RawMessage(`{"items":[{"id":"i_1","tool":"answer","action":"accept","status":"open","reason":"Charter draft","created":"2026-01-01T00:00:00Z","kind":"draft","from":"charter draft","summary":"Charter draft","options":["accept","reject"],"answer":"answer {\"kind\":\"inbox\",\"id\":\"i_1\",\"answer\":\"accept\"}"}],"total":1}`), nil
@@ -166,22 +165,22 @@ func TestCTOProposalsFindOwnerItemsOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cs.Close()
-	result, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "cto_proposals_find", Arguments: map[string]any{"kind": "all"}})
+	result, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "cto_owner_items_find", Arguments: map[string]any{"kind": "all"}})
 	if err != nil || result.IsError {
-		t.Fatalf("cto_proposals_find kind all: %+v %v", result, err)
+		t.Fatalf("cto_owner_items_find kind all: %+v %v", result, err)
 	}
 }
 
-// A stored proposal may predate the action and reason fields. One such row
-// must not fail the whole list against the catalog schema.
-func TestCTOProposalsFindFillsMissingFields(t *testing.T) {
+// An owner item row may lack fields. One such row must not fail the whole
+// list against the catalog schema.
+func TestCTOOwnerItemsFindFillsMissingFields(t *testing.T) {
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()
 	srv := NewCTO(func(_ context.Context, method string, _ any) (json.RawMessage, error) {
-		if method != "cto_proposals_find" {
+		if method != "cto_owner_items_find" {
 			return json.RawMessage(`{}`), nil
 		}
-		return json.RawMessage(`{"items":[{"id":"p_1","tool":"cto_new","status":"open"},{"id":"p_2","tool":"graph_change","action":"charter_set","status":"open","reason":"why","created":"2026-01-01T00:00:00Z"}],"total":2}`), nil
+		return json.RawMessage(`{"items":[{"id":"pp_1","tool":"cto_op","status":"pending"},{"id":"cd_2","tool":"cto_op","action":"learned_answer","status":"pending","reason":"why","created":"2026-01-01T00:00:00Z"}],"total":2}`), nil
 	}, "test")
 	ss, err := srv.Connect(ctx, st, nil)
 	if err != nil {
@@ -193,9 +192,9 @@ func TestCTOProposalsFindFillsMissingFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cs.Close()
-	result, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "cto_proposals_find", Arguments: map[string]any{}})
+	result, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "cto_owner_items_find", Arguments: map[string]any{}})
 	if err != nil || result.IsError {
-		t.Fatalf("cto_proposals_find: %+v %v", result, err)
+		t.Fatalf("cto_owner_items_find: %+v %v", result, err)
 	}
 	items, _ := result.StructuredContent.(map[string]any)["items"].([]any)
 	if len(items) != 2 {
@@ -256,7 +255,7 @@ func TestCTOV2ActionArgumentsReachExistingHandler(t *testing.T) {
 		var m map[string]any
 		_ = json.Unmarshal(args, &m)
 		calls = append(calls, observed{method, m})
-		return json.RawMessage(`{"state":"proposed"}`), nil
+		return json.RawMessage(`{"state":"completed"}`), nil
 	}, "test")
 	ss, err := srv.Connect(ctx, st, nil)
 	if err != nil {
@@ -366,7 +365,7 @@ func TestCTOChangePart2RoutesAndOutputs(t *testing.T) {
 			name string
 			args json.RawMessage
 		}{method, b})
-		return json.RawMessage(`"proposal test-id is in the owner's Inbox (tab 6 of the TUI); the owner decides there"`), nil
+		return json.RawMessage(`"applied"`), nil
 	}, "test")
 	ss, err := srv.Connect(ctx, st, nil)
 	if err != nil {
@@ -383,7 +382,7 @@ func TestCTOChangePart2RoutesAndOutputs(t *testing.T) {
 		{"mcp_change", `{"action":"add","server":{"name":"s","transport":"stdio","command":"/bin/true"}}`}, {"mcp_change", `{"action":"remove","name":"s"}`}, {"mcp_change", `{"action":"test","name":"s"}`}, {"mcp_change", `{"action":"enable","name":"s","enabled":true}`},
 		{"settings_change", `{"area":"worker_profile_add","name":"p","harness":"anything","model":"m"}`}, {"settings_change", `{"area":"worker_profile_remove","name":"p"}`}, {"settings_change", `{"area":"worker_providers","providers":["p"]}`}, {"settings_change", `{"area":"protected_providers","protected_providers":["p"]}`}, {"settings_change", `{"area":"score","model":"m","score":50}`}, {"settings_change", `{"area":"integrations","peer_messages":true}`}, {"settings_change", `{"area":"notifications","disabled":true}`}, {"settings_change", `{"area":"cto","title":"CTO"}`}, {"settings_change", `{"area":"playbook","note":"hello"}`}, {"settings_change", `{"area":"machine_name","name":"desk"}`}, {"settings_change", `{"area":"invite"}`}, {"settings_change", `{"area":"onboarding"}`},
 		{"project_change", `{"action":"add","paths":["/tmp/project"]}`}, {"project_change", `{"action":"remove","name":"p"}`}, {"project_change", `{"action":"display","project":"p","name":"P"}`}, {"project_change", `{"action":"create","path":"~/project"}`},
-		{"mcp_call", `{"server":"s","tool":"list","arguments":{}}`}, {"proposal_ask", `{"id":"p_15"}`}, {"cto_new", `{}`},
+		{"mcp_call", `{"server":"s","tool":"list","arguments":{}}`}, {"cto_new", `{}`},
 	}
 	for _, tc := range cases {
 		var args map[string]any
@@ -421,15 +420,15 @@ func TestCTOChangePart2RoutesAndOutputs(t *testing.T) {
 		}
 		if tc.name == "mcp_change" && strings.Contains(tc.raw, `"action":"add"`) {
 			got := res.StructuredContent.(map[string]any)
-			if got["state"] != "proposed" || got["proposal_id"] != "test-id" {
-				t.Errorf("mcp add was not returned as a proposal: %#v", got)
+			if got["state"] != "completed" {
+				t.Errorf("mcp add was not returned as done at once: %#v", got)
 			}
 		}
 	}
 	if len(calls) != len(cases) {
 		t.Fatalf("calls=%d want %d", len(calls), len(cases))
 	}
-	// mcp_change add must go through the proposal tool route and preserve args.
+	// mcp_change add must go through the change tool route and preserve args.
 	foundAdd := false
 	for _, call := range calls {
 		var result map[string]any
@@ -514,8 +513,8 @@ func TestCTOV2ProcessStopNeedsAMachineAndPids(t *testing.T) {
 }
 
 // The CTO may quote the owner's words on a change (decision 0165): the five
-// actions that wait for an owner proposal and the merged tools whose actions the
-// words let run without one all accept owner_words.
+// actions that run only on his words and the other merged change tools all
+// accept owner_words.
 func TestCTOAcceptsOwnerWords(t *testing.T) {
 	for _, tc := range []struct{ tool, args string }{
 		{"graph_change", `{"action":"charter_set","node":"n","attr":"purpose","value":"x","owner_words":"set it"}`},
