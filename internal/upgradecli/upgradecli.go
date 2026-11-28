@@ -22,6 +22,7 @@ import (
 	"github.com/niparis/agent-net/internal/client"
 	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/gateway"
+	"github.com/niparis/agent-net/internal/macsign"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/setup"
 	"github.com/niparis/agent-net/internal/upgrade"
@@ -178,10 +179,11 @@ func (r *run) joinedMachine(ctx context.Context) error {
 	if gwErr != nil {
 		return fmt.Errorf("cannot reach the gateway %s: %w", nc.GatewayURL, gwErr)
 	}
-	res, err := upgrade.FromGatewayWithForce(ctx, hc, nc.GatewayURL, r.Exe, r.Current, "", r.Force)
+	res, err := upgrade.FromGateway(ctx, hc, nc.GatewayURL, r.Exe, daemon.StateDir(), r.Current, "", r.Force)
 	if err != nil {
 		return fmt.Errorf("nothing changed: %w", err)
 	}
+	r.saySigned(res.SignErr)
 	r.clearHold()
 	if res.To == r.Current && !res.Replaced && !r.Force {
 		r.say("already on %s (the gateway serves %s)", r.Current, res.To)
@@ -196,6 +198,14 @@ func (r *run) joinedMachine(ctx context.Context) error {
 	r.restartDaemonWithoutService(ctx)
 	r.saySessions()
 	return nil
+}
+
+// saySigned tells why the new binary kept its ad-hoc signature on macOS. The
+// upgrade goes on either way.
+func (r *run) saySigned(err error) {
+	if err != nil {
+		r.say("code signature      not signed, macOS may ask again for access (%v)", err)
+	}
 }
 
 func (r *run) hintGatewayBehind(gwVer, latest string, latestErr error) {
@@ -472,6 +482,7 @@ func (r *run) installRelease(ctx context.Context, tag string) error {
 		return fmt.Errorf("nothing changed: %w", err)
 	}
 
+	r.saySigned(macsign.Sign(ctx, daemon.StateDir(), mine))
 	if err := upgrade.Replace(r.Exe, mine); err != nil {
 		return fmt.Errorf("nothing changed: %w", err)
 	}

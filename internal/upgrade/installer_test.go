@@ -544,3 +544,76 @@ func TestInstallerLatestEncodedBuildTag(t *testing.T) {
 		t.Fatalf("latest tag %s: %v: %s", tag, err, out)
 	}
 }
+
+// On macOS install.sh has the new binary sign itself before it is put in
+// place, and a failed signing does not stop the install.
+func TestInstallerSignsTheBinaryOnMacOS(t *testing.T) {
+	if _, err := exec.LookPath("ssh-keygen"); err != nil {
+		t.Skip("ssh-keygen not installed")
+	}
+	key, pub := sshTestKey(t)
+	script := filepath.Join(t.TempDir(), "install.sh")
+	if err := os.WriteFile(script, testInstaller(t, pub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The fake binary signs like macsign does: a signed copy renamed over it.
+	bin := []byte(`#!/bin/sh
+case "$1" in
+  version) echo v1.2.3 ;;
+  macos-sign)
+    [ -e "$HOME/.local/bin/agent-net" ] && echo "macos-sign after placing" >> "$SIGN_LOG" || echo "macos-sign $2" >> "$SIGN_LOG"
+    [ -n "${SIGN_FAIL:-}" ] && { echo "codesign failed" >&2; exit 1; }
+    cp "$2" "$2.s" && echo "# signed" >> "$2.s" && mv "$2.s" "$2" ;;
+esac
+`)
+	sums := []byte(fmt.Sprintf("%s  %s\n", sum(bin), AssetName("darwin", "arm64")))
+	sig := sshSign(t, key, sums)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch strings.TrimPrefix(r.URL.Path, "/download/v1.2.3") {
+		case "/checksums.txt":
+			w.Write(sums)
+		case "/checksums.txt.sshsig":
+			w.Write(sig)
+		case "/" + AssetName("darwin", "arm64"):
+			w.Write(bin)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	fakes := t.TempDir()
+	uname := "#!/bin/sh\ncase \"$1\" in -s) echo Darwin ;; -m) echo arm64 ;; esac\n"
+	if err := os.WriteFile(filepath.Join(fakes, "uname"), []byte(uname), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprintf("sign fails %v", fail), func(t *testing.T) {
+			home := t.TempDir()
+			signLog := filepath.Join(t.TempDir(), "sign.log")
+			cmd := exec.Command("sh", script, "--binary-only", "--version", "v1.2.3")
+			cmd.Env = append(os.Environ(), "HOME="+home, "AGENT_NET_BASE_URL="+srv.URL, "TMPDIR="+t.TempDir(),
+				"PATH="+fakes+string(os.PathListSeparator)+os.Getenv("PATH"), "SIGN_LOG="+signLog)
+			if fail {
+				cmd.Env = append(cmd.Env, "SIGN_FAIL=1")
+			}
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("install failed: %v: %s", err, out)
+			}
+			calls, _ := os.ReadFile(signLog)
+			if !regexp.MustCompile(`^macos-sign \S+/\.local/bin/\.agent-net\.\w+\n$`).Match(calls) {
+				t.Fatalf("want one signing of the staged binary before it is placed, got %q", calls)
+			}
+			placed, err := os.ReadFile(filepath.Join(home, ".local/bin/agent-net"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if signed := strings.HasSuffix(string(placed), "# signed\n"); signed == fail {
+				t.Fatalf("placed binary signed = %v with sign failing = %v", signed, fail)
+			}
+			if fail != strings.Contains(string(out), "not signed") {
+				t.Fatalf("output: %s", out)
+			}
+		})
+	}
+}

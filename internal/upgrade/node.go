@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/niparis/agent-net/internal/macsign"
 )
 
 // GatewayVersion asks the gateway which agent-net version it runs.
@@ -57,19 +59,22 @@ type Installed struct {
 	From, To string
 	// Replaced is false when the binary on disk already was the wanted one.
 	Replaced bool
+	// SignErr says why the new binary kept its ad-hoc signature on macOS.
+	// The install went on anyway.
+	SignErr error
 }
+
+// signBinary is a variable so a test can make signing fail.
+var signBinary = macsign.Sign
 
 // FromGateway downloads this machine's binary from the gateway over c (which
 // must trust only the gateway CA), verifies it against the signed release
 // checksums, and replaces exe, keeping exe.prev. want, when set, is the
 // version the new binary must report. current is the version that runs now.
-// Nothing changes unless every check passes.
-func FromGateway(ctx context.Context, c *http.Client, gatewayURL, exe, current, want string) (Installed, error) {
-	return FromGatewayWithForce(ctx, c, gatewayURL, exe, current, want, false)
-}
-
-// FromGatewayWithForce permits an explicit downgrade when force is true.
-func FromGatewayWithForce(ctx context.Context, c *http.Client, gatewayURL, exe, current, want string, force bool) (Installed, error) {
+// force permits an explicit downgrade. On macOS the new binary is signed with
+// the identity kept under stateDir before it is put in place. Nothing changes
+// unless every check passes; a failed signing is not a failed check.
+func FromGateway(ctx context.Context, c *http.Client, gatewayURL, exe, stateDir, current, want string, force bool) (Installed, error) {
 	res := Installed{From: current}
 	dir, err := os.MkdirTemp("", "agent-net-upgrade.")
 	if err != nil {
@@ -98,6 +103,7 @@ func FromGatewayWithForce(ctx context.Context, c *http.Client, gatewayURL, exe, 
 	if disk, err := BinaryVersion(ctx, exe); err == nil && disk == to {
 		return res, nil
 	}
+	res.SignErr = signBinary(ctx, stateDir, newBin)
 	if err := Replace(exe, newBin); err != nil {
 		return res, err
 	}

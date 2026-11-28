@@ -3,11 +3,16 @@ package daemon
 import (
 	"context"
 	"errors"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/niparis/agent-net/internal/gateway"
+	"github.com/niparis/agent-net/internal/macsign"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/upgrade"
 )
@@ -280,5 +285,22 @@ func TestPushJoinsARunningAutoUpgrade(t *testing.T) {
 	n.stays(t)
 	if calls.Load() != 1 || !n.daemon().Connected() {
 		t.Errorf("installs %d, connected %v, want 1 and true", calls.Load(), n.daemon().Connected())
+	}
+}
+
+func TestDaemonLogsTheLastCodeSignature(t *testing.T) {
+	state := t.TempDir()
+	var logs strings.Builder
+	d := &Daemon{cfg: Config{StateDir: state}, log: log.New(&logs, "", 0)}
+	d.logCodeSignature()
+	if logs.Len() != 0 {
+		t.Fatalf("logged with no signing on record: %q", logs.String())
+	}
+	dir := macsign.Dir(state)
+	os.MkdirAll(dir, 0o700)
+	os.WriteFile(filepath.Join(dir, "last-sign.txt"), []byte("2026-11-28T10:00:00Z /x/agent-net not signed, macOS may ask again for access: codesign: errSecInternalComponent\n"), 0o600)
+	d.logCodeSignature()
+	if !strings.Contains(logs.String(), "code signature: 2026-11-28T10:00:00Z /x/agent-net not signed") || !strings.Contains(logs.String(), "errSecInternalComponent") {
+		t.Fatalf("log = %q", logs.String())
 	}
 }

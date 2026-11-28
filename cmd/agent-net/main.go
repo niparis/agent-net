@@ -196,6 +196,8 @@ func run(ctx context.Context, argv []string, stderr io.Writer) int {
 		err = cmdPolicyHook(ctx, args)
 	case "needs-hook": // hidden: the Claude Code "needs you" hook (decision 0016)
 		err = cmdNeedsHook(ctx, args)
+	case "macos-sign": // hidden: install scripts sign a new binary on macOS (decision 0199)
+		err = cmdMacosSign(ctx, args)
 	case "dev": // hidden: developer tools for tuning agent-net itself
 		err = cmdDev(ctx, args)
 	case "version", "--version":

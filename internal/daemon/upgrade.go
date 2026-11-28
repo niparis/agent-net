@@ -140,7 +140,10 @@ func (d *Daemon) install(ctx context.Context, target string, force bool) (from, 
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
-	res, err := upgrade.FromGatewayWithForce(ctx, d.client, d.cfg.GatewayURL, d.cfg.Exe, d.helloVersion(), target, force)
+	res, err := upgrade.FromGateway(ctx, d.client, d.cfg.GatewayURL, d.cfg.Exe, d.cfg.StateDir, d.helloVersion(), target, force)
+	if res.SignErr != nil {
+		d.Logf("upgrade to %s: the new binary keeps its ad-hoc signature, so macOS may ask again for access: %v", target, res.SignErr)
+	}
 	return res.From, res.To, err
 }
 
