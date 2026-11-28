@@ -273,6 +273,52 @@ func (s *Store) trainMode(project string) bool {
 	return err == nil && snap.String("delivery.ci_mode", settings.Where{Repo: project}) == "train"
 }
 
+const mergeQueueFailRuns = 3
+
+// trainRunNoticeTx tracks consecutive failed test runs on a project's train
+// tip. Every change in a train cites the same run, so a run counts once. A
+// known flake does not count, and a pass resets the counter. At
+// mergeQueueFailRuns consecutive failures, it sends one idempotent notice to
+// the project's online lead (or chief fallback).
+func (s *Store) trainRunNoticeTx(tx askDB, project string, e protocol.Evidence, now time.Time) error {
+	run := e.Fields[protocol.FieldRun]
+	if run == "" {
+		run = e.Commit
+	}
+	switch {
+	case e.Result == protocol.StepResultPass:
+		_, err := tx.Exec(`UPDATE repos SET train_fails=0,train_last_run=? WHERE id=?`, run, project)
+		return err
+	case e.Result != protocol.StepResultFail || e.Fields[protocol.FieldFlake] == protocol.FieldYes:
+		return nil
+	}
+	var fails int
+	var last string
+	err := tx.QueryRow(`SELECT train_fails,train_last_run FROM repos WHERE id=?`, project).Scan(&fails, &last)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if run != "" && run == last && fails > 0 {
+		return nil
+	}
+	fails++
+	if _, err := tx.Exec(`INSERT INTO repos(id,display_name,created_at,updated_at,train_fails,train_last_run) VALUES(?,?,?,?,?,?)
+		ON CONFLICT(id) DO UPDATE SET train_fails=excluded.train_fails,train_last_run=excluded.train_last_run`,
+		project, project, now.UnixNano(), now.UnixNano(), fails, run); err != nil {
+		return err
+	}
+	if fails < mergeQueueFailRuns {
+		return nil
+	}
+	ref := fmt.Sprintf("merge_queue:%s:%s", project, run)
+	if run == "" {
+		ref = fmt.Sprintf("merge_queue:%s:%d", project, fails)
+	}
+	body := fmt.Sprintf("The %s merge queue failed %d test runs in a row on its train tip (last run: %s).", project, fails, run)
+	_, _, err = s.sendToLeadOrChief(tx, project, "", ref, body)
+	return err
+}
+
 func (s *Store) deliveryPipeline(project string) (protocol.Pipeline, error) {
 	c, err := s.resolveRepoContext(project)
 	if err != nil {
@@ -782,6 +828,11 @@ func (s *Store) reportStep(machine string, q protocol.StepReportRequest, ownerWo
 	}
 	if train && e.Step == protocol.StepMerge && e.Result == protocol.StepResultPass {
 		if err := insertTrainTipPostMergeTest(tx, c, p, e, now); err != nil {
+			return protocol.StepReportResult{}, err
+		}
+	}
+	if train && e.Step == protocol.StepTest {
+		if err := s.trainRunNoticeTx(tx, c.Project, e, s.now().UTC()); err != nil {
 			return protocol.StepReportResult{}, err
 		}
 	}

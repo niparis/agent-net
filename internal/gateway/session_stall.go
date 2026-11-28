@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/niparis/agent-net/internal/settings"
@@ -118,9 +120,20 @@ func (s *Store) checkSessionStalls() error {
 		if c.stalledSince > 0 || (!closedNow && c.askedAt > 0 && now.Sub(time.Unix(0, c.askedAt)) < timeout) {
 			continue
 		}
-		s.logf("session.stalled", "session", c.id, "repo", c.repo, "harness", c.harness, "since", time.Unix(0, baseline).UTC().Format(time.RFC3339))
+		sinceText := time.Unix(0, baseline).UTC().Format(time.RFC3339)
+		if s.logf != nil {
+			s.logf("session.stalled", "session", c.id, "repo", c.repo, "harness", c.harness, "since", sinceText)
+		}
 		if _, err := tx.Exec(`UPDATE sessions SET stalled_since=?,stall_asked_for=?,stall_asked_at=? WHERE id=?`,
 			baselineSec, baselineSec, now.UnixNano(), c.id); err != nil {
+			return err
+		}
+		body := fmt.Sprintf("Session %s (%s", sessionLabel(tx, c.id), c.harness)
+		if c.repo != "" {
+			body += ", repo " + c.repo
+		}
+		body += ") stalled since " + sinceText + "."
+		if _, _, err := s.sendToLeadOrChief(tx, c.repo, c.id, "stall:"+c.id+":"+strconv.FormatInt(baselineSec, 10), body); err != nil {
 			return err
 		}
 	}

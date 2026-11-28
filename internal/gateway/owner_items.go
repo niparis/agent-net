@@ -55,7 +55,9 @@ func (s *Store) sendToChief(db askDB, from, ref, body string) (protocol.Message,
 		return protocol.Message{}, false, err
 	}
 	if chief == "" || chief == from {
-		s.logf("chief.no_chief", "from", from, "ref", ref, "text", askFirstLine(body, 160))
+		if s.logf != nil {
+			s.logf("chief.no_chief", "from", from, "ref", ref, "text", askFirstLine(body, 160))
+		}
 		return protocol.Message{}, false, nil
 	}
 	typ := protocol.TypeRequest
@@ -70,6 +72,65 @@ func (s *Store) sendToChief(db askDB, from, ref, body string) (protocol.Message,
 			from, typ = agentNetSender, protocol.TypeNotification
 		}
 	}
+	return s.storeOwnerNotice(db, from, chief, typ, ref, body)
+}
+
+// sendToLeadOrChief sends one idempotent agent-net notification to the online
+// repo or team lead of project when one exists (and is not excludeSession),
+// otherwise falls back to chief_session via sendToChief (skipping if the chief
+// itself is excludeSession).
+func (s *Store) sendToLeadOrChief(db askDB, project, excludeSession, ref, body string) (protocol.Message, bool, error) {
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return protocol.Message{}, false, nil
+	}
+	if project != "" {
+		lead, err := onlineProjectLeadSession(db, project)
+		if err != nil {
+			return protocol.Message{}, false, err
+		}
+		if lead != "" && lead != excludeSession {
+			return s.storeOwnerNotice(db, agentNetSender, lead, protocol.TypeNotification, ref, body)
+		}
+	}
+	if excludeSession != "" {
+		chief, err := chiefSession(db)
+		if err != nil {
+			return protocol.Message{}, false, err
+		}
+		if chief == excludeSession {
+			return protocol.Message{}, false, nil
+		}
+	}
+	return s.sendToChief(db, agentNetSender, ref, body)
+}
+
+// onlineProjectLeadSession returns the online pinned lead session for project's
+// repo lead, or else its team's lead.
+func onlineProjectLeadSession(db askDB, project string) (string, error) {
+	var id string
+	err := db.QueryRow(`SELECT s.id FROM repos r
+		JOIN agents a ON a.id=r.lead_agent_id
+		JOIN sessions s ON s.id=a.lead_session
+		WHERE r.id=? AND a.tombstone=0 AND s.online=1 AND s.archived_at=0 AND s.worker='' LIMIT 1`, project).Scan(&id)
+	if err == nil && id != "" {
+		return id, nil
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", err
+	}
+	err = db.QueryRow(`SELECT s.id FROM repos r
+		JOIN teams t ON t.id=r.team_id
+		JOIN agents a ON a.id=t.owner_agent_id
+		JOIN sessions s ON s.id=a.lead_session
+		WHERE r.id=? AND t.active=1 AND a.tombstone=0 AND s.online=1 AND s.archived_at=0 AND s.worker='' LIMIT 1`, project).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
+}
+
+func (s *Store) storeOwnerNotice(db askDB, from, to, typ, ref, body string) (protocol.Message, bool, error) {
 	key := ownerItemKeyPrefix + protocol.NewID("k")
 	if ref != "" {
 		sum := sha256.Sum256([]byte(protocol.NormalizeAskText(body)))
@@ -77,7 +138,7 @@ func (s *Store) sendToChief(db askDB, from, ref, body string) (protocol.Message,
 		var sent string
 		err := db.QueryRow(`SELECT id FROM messages WHERE sender=? AND idem_key=?`, from, key).Scan(&sent)
 		if err == nil {
-			return protocol.Message{ID: sent, From: from, To: chief, Type: typ}, false, nil
+			return protocol.Message{ID: sent, From: from, To: to, Type: typ}, false, nil
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return protocol.Message{}, false, err
@@ -89,7 +150,7 @@ func (s *Store) sendToChief(db askDB, from, ref, body string) (protocol.Message,
 	now := s.now().UTC()
 	m := protocol.Message{
 		ID: protocol.NewID("m"), ConversationID: protocol.NewID("c"),
-		From: from, To: chief, Type: typ, Body: body, IdempotencyKey: key,
+		From: from, To: to, Type: typ, Body: body, IdempotencyKey: key,
 		CreatedAt: now, ExpiresAt: now.Add(protocol.DefaultTTL), State: protocol.StateStored,
 	}
 	if _, err := db.Exec(`INSERT INTO messages(id,conversation_id,parent_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state)
@@ -97,7 +158,9 @@ func (s *Store) sendToChief(db askDB, from, ref, body string) (protocol.Message,
 		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State); err != nil {
 		return protocol.Message{}, false, err
 	}
-	s.logf("chief.notice", "from", from, "to", chief, "ref", ref, "message", m.ID)
+	if s.logf != nil {
+		s.logf("chief.notice", "from", from, "to", to, "ref", ref, "message", m.ID)
+	}
 	return m, true, nil
 }
 

@@ -30,12 +30,13 @@ func TestSessionStallPendingAndWorkers(t *testing.T) {
 	}
 }
 
-// A stall is the mark on the session and one log line: no item and no message
-// to the chief (decision 0196).
-func TestSessionStallMarksAndLogsOnly(t *testing.T) {
+// A stall marks the session, logs session.stalled, and sends one idempotent
+// notice to the session's repo/team lead if online, else to the chief of staff
+// (decision 0196).
+func TestSessionStallNotifiesLeadOrChiefOnce(t *testing.T) {
 	s, c, chief, asker, _ := chiefRig(t)
 	logs := captureLog(s)
-	if _, _, err := send(s, chief, asker, "stall-log-only", ""); err != nil {
+	if _, _, err := send(s, chief, asker, "stall-notify", ""); err != nil {
 		t.Fatal(err)
 	}
 	beforeChief := len(messagesTo(t, s, chief))
@@ -47,8 +48,13 @@ func TestSessionStallMarksAndLogsOnly(t *testing.T) {
 	if a.StalledSince == 0 {
 		t.Fatal("the stall was not marked on the session")
 	}
-	if got := len(messagesTo(t, s, chief)); got != beforeChief {
-		t.Fatalf("%d messages to the chief, was %d", got, beforeChief)
+	gotMsgs := messagesTo(t, s, chief)
+	if len(gotMsgs) != beforeChief+1 {
+		t.Fatalf("%d messages to the chief, want %d: %+v", len(gotMsgs), beforeChief+1, gotMsgs)
+	}
+	last := gotMsgs[len(gotMsgs)-1]
+	if last.from != agentNetSender || last.typ != protocol.TypeNotification || !strings.Contains(last.body, "stalled since") || !strings.HasPrefix(last.key, ownerItemKeyPrefix+"stall:"+asker+":") {
+		t.Fatalf("unexpected stall notice: %+v", last)
 	}
 	countStallLogs := func() int {
 		n := 0
@@ -69,8 +75,48 @@ func TestSessionStallMarksAndLogsOnly(t *testing.T) {
 	if got := countStallLogs(); got != 1 {
 		t.Fatalf("the same stall logged again: %q", *logs)
 	}
+	if got := len(messagesTo(t, s, chief)); got != beforeChief+1 {
+		t.Fatalf("the same stall notified chief again: %d", got)
+	}
 	if a, _, _ = s.Agent(asker); a.StalledSince == 0 {
 		t.Fatal("the mark went away while the stall lasted")
+	}
+
+	// When the session's repo has an online lead, the stall notice goes to that
+	// lead instead of the chief.
+	node, _, err := s.CreateNode("lead-box", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	leadSess, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "lead", Name: "demo-lead"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberSess, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "member", Name: "demo-member", Repo: protocol.RepoInfo{Project: "demo-repo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT OR REPLACE INTO agents(id,display_name,lead_session,created_at,updated_at) VALUES('a_demo_lead','demo-lead','` + leadSess + `',1,1)`,
+		`INSERT OR REPLACE INTO repos(id,display_name,lead_agent_id,created_at,updated_at) VALUES('demo-repo','demo-repo','a_demo_lead',1,1)`,
+	} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := send(s, chief, memberSess, "member-stall", ""); err != nil {
+		t.Fatal(err)
+	}
+	c.advance(21 * time.Minute)
+	if err := s.checkSessionStalls(); err != nil {
+		t.Fatal(err)
+	}
+	leadMsgs := messagesTo(t, s, leadSess)
+	if len(leadMsgs) != 1 || !strings.Contains(leadMsgs[0].body, "demo-repo") || !strings.Contains(leadMsgs[0].body, "stalled since") {
+		t.Fatalf("expected one stall notice to repo lead, got %+v", leadMsgs)
+	}
+	if got := len(messagesTo(t, s, chief)); got != beforeChief+1 {
+		t.Fatalf("stall with online repo lead also notified chief: %d", got)
 	}
 }
 

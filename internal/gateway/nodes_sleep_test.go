@@ -1,8 +1,11 @@
 package gateway
 
 import (
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestNodeSleepExplainsGapNoAsk(t *testing.T) {
@@ -100,5 +103,42 @@ func TestMachineStateNamesAsleepAndSilent(t *testing.T) {
 	nodes, _ = s.Nodes()
 	if nodes[0].DownState != "asleep" || nodes[0].DownSince != drop.Add(-time.Minute).Unix() {
 		t.Fatalf("state = %q since %d, want asleep since %d", nodes[0].DownState, nodes[0].DownSince, drop.Add(-time.Minute).Unix())
+	}
+}
+
+func TestMarkSilentNodesNotifiesChiefOnce(t *testing.T) {
+	s, c := newTestStore(t)
+	chiefNode, _, err := s.CreateNode("chief-box", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chief, err := s.UpsertSession(chiefNode, protocol.SessionInfo{Harness: "claude", NativeID: "chief", Name: "chief"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetChief(protocol.ChiefSetRequest{SessionID: chief}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	node, _, err := s.CreateNode("build", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	drop := c.t
+	if err := s.NodeLinkDown(node, drop); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.MarkSilentNodes(drop.Add(16 * time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	got := messagesTo(t, s, chief)
+	if len(got) != 1 || got[0].typ != protocol.TypeNotification || !strings.Contains(got[0].body, "build") {
+		t.Fatalf("want one silent-machine notification to chief, got %+v", got)
+	}
+	// Repeating MarkSilentNodes does not send a second notification.
+	if _, err := s.MarkSilentNodes(drop.Add(30 * time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if got2 := messagesTo(t, s, chief); len(got2) != 1 {
+		t.Fatalf("repeat tick duplicated notice: %+v", got2)
 	}
 }
