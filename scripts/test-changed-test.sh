@@ -18,6 +18,9 @@ fail() {
 
 real_go=$(command -v go) || fail "go is not on PATH"
 gocache=$("$real_go" env GOCACHE) || fail "go env GOCACHE failed"
+# The module cache holds the toolchain that a go launcher switches to. A test
+# that runs with a fake HOME needs it, or the switch tries the network.
+gomodcache=$("$real_go" env GOMODCACHE) || fail "go env GOMODCACHE failed"
 
 # no_go_dir holds links to the tools the script calls, and no go. A CI runner
 # keeps go in /usr/bin, which a PATH that lists /usr/bin would find, so the
@@ -533,7 +536,7 @@ home=$work/home-fallback
 mkdir -p "$home/.local/go/bin" "$work/env-tmp"
 cp "$work/bin/go" "$work/bin/gofmt" "$home/.local/go/bin/"
 status=0
-env -i TMPDIR="$work/env-tmp" HOME="$home" GOCACHE="$gocache" PATH="$no_go_dir" FAKE_GO_LOG="$work/go.log" \
+env -i TMPDIR="$work/env-tmp" HOME="$home" GOCACHE="$gocache" GOMODCACHE="$gomodcache" PATH="$no_go_dir" FAKE_GO_LOG="$work/go.log" \
   FAKE_GOFMT_LOG="$work/gofmt.log" TEST_CHANGED_GO="$real_go" \
   sh "$script" HEAD >"$work/out" 2>&1 || status=$?
 [ "$status" = 0 ] || fail "a run without go on PATH exited $status: $(cat "$work/out")"

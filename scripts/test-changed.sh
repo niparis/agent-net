@@ -280,15 +280,17 @@ migration_regions() {
 
 # store_migration_change succeeds when the added or removed lines of a store.go
 # diff fall inside the migrations list or a const whose name ends in Migration.
-# Any other store.go change is an ordinary package change.
+# Any other store.go change is an ordinary package change. The regions go to awk
+# on one line, joined by ";": macOS awk rejects a newline in a -v value.
 store_migration_change() {
-  old_regions=$(migration_regions "$1")
-  new_regions=$(migration_regions "$2")
+  old_regions=$(migration_regions "$1" | tr '\n' ';')
+  new_regions=$(migration_regions "$2" | tr '\n' ';')
   awk -v old="$old_regions" -v new="$new_regions" '
     function hits(regions, lo, hi,   count, i, span, bounds) {
       if (lo > hi) return 0
-      count = split(regions, span, "\n")
+      count = split(regions, span, ";")
       for (i = 1; i <= count; i++) {
+        if (span[i] == "") continue
         split(span[i], bounds, " ")
         if (lo <= bounds[2] && hi >= bounds[1]) return 1
       }
