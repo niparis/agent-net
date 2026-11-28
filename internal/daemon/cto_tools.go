@@ -122,7 +122,6 @@ func (lc *localConn) ctoDialogAnswer(ctx context.Context, raw json.RawMessage) (
 		return nil, errors.New("bad CTO dialog answer")
 	}
 	item, decided, err := lc.d.proposalRunner().decideForDialog(ctx, q.ID, *q.Approve)
-	defer lc.d.syncProposalAsks(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -785,7 +784,7 @@ func (d *Daemon) recordCTOAction(text string) error {
 // These allowlists are reachable only from ctoTool's process-tree check.
 var ctoOwnerMethods = map[string]bool{
 	"notification_settings": true, "onboarding_restart": true,
-	"inbox_answer": true, "outcome_overrule": true,
+	"outcome_overrule": true,
 	"sessions_archive": true, "session_trust": true, "folder_trust": true, "folder_mcp": true, "process_stop": true, "session_rename": true, "session_replace": true, "node_rename": true, "machine_remove": true, "machine_rotate": true, "project_display_set": true, "integrations_set": true,
 	"held_answer":  true,
 	"judgment_add": true,

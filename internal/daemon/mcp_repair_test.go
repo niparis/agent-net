@@ -11,19 +11,12 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// mcpCheckAsks is the open CTO intake entries about a failed agent-net MCP
-// repair. The daemon's ask about it is no item for the owner (decision 0196);
-// the intake entry is what stays.
-func mcpCheckAsks(t *testing.T, g *testGateway) []protocol.IntakeEntry {
-	t.Helper()
-	res, err := g.gw.Store().CTOIntake(0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var found []protocol.IntakeEntry
-	for _, e := range res.Entries {
-		if e.Kind == protocol.IntakeMCPRepair {
-			found = append(found, e)
+// mcpRepairLogs counts logged MCP repair failure lines on a node.
+func mcpRepairLogs(n *node) []string {
+	var found []string
+	for _, line := range strings.Split(n.logs.String(), "\n") {
+		if strings.Contains(line, "mcp repair: The agent-net tools could not be connected") {
+			found = append(found, line)
 		}
 	}
 	return found
@@ -31,9 +24,8 @@ func mcpCheckAsks(t *testing.T, g *testGateway) []protocol.IntakeEntry {
 
 // A Claude session that agent-net sees as online, but whose `agent-net mcp`
 // process never said hello, is restarted once, and only while it is idle. If
-// the restarted session still has no hello, exactly one intake entry is raised.
-// The restart does not come back after the daemon restarts, and the entry counts
-// no new failure.
+// the restarted session still has no hello, one failure notice is logged.
+// The restart does not come back after the daemon restarts.
 func TestClaudeSessionWithoutMCPHelloIsRestartedOnce(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
@@ -76,19 +68,19 @@ func TestClaudeSessionWithoutMCPHelloIsRestartedOnce(t *testing.T) {
 		return restartCount() == 1
 	})
 
-	// The restarted session still has no hello: one intake entry, and never a
+	// The restarted session still has no hello: one notice logged, and never a
 	// second restart.
-	var ask protocol.IntakeEntry
-	eventually(t, "one intake entry", func() bool {
+	var notice string
+	eventually(t, "one mcp repair log", func() bool {
 		poll()
-		for _, a := range mcpCheckAsks(t, g) {
-			ask = a
+		for _, l := range mcpRepairLogs(n) {
+			notice = l
 			return true
 		}
 		return false
 	})
-	if !strings.Contains(ask.Text, "research") || !strings.Contains(ask.Text, "could not be connected") {
-		t.Fatalf("unexpected item: %q", ask.Text)
+	if !strings.Contains(notice, "research") || !strings.Contains(notice, "could not be connected") {
+		t.Fatalf("unexpected log: %q", notice)
 	}
 	deadline = time.Now().Add(3 * after)
 	for time.Now().Before(deadline) {
@@ -97,13 +89,12 @@ func TestClaudeSessionWithoutMCPHelloIsRestartedOnce(t *testing.T) {
 		if got := restartCount(); got != 1 {
 			t.Fatalf("%d restarts, want 1", got)
 		}
-		if got := len(mcpCheckAsks(t, g)); got != 1 {
-			t.Fatalf("%d intake entries, want 1", got)
+		if got := len(mcpRepairLogs(n)); got != 1 {
+			t.Fatalf("%d notices, want 1", got)
 		}
 	}
 
-	// The daemon restarted: the restart does not come back, and the entry
-	// counts no new failure.
+	// The daemon restarted: the restart does not come back.
 	n.restart()
 	deadline = time.Now().Add(3 * after)
 	for time.Now().Before(deadline) {
@@ -112,13 +103,10 @@ func TestClaudeSessionWithoutMCPHelloIsRestartedOnce(t *testing.T) {
 		if got := restartCount(); got != 1 {
 			t.Fatalf("restarted again after a daemon restart: %d", got)
 		}
-		if got := mcpCheckAsks(t, g); len(got) != 1 || got[0].Count != 1 {
-			t.Fatalf("a new failure was counted after a daemon restart: %+v", got)
-		}
 	}
 }
 
-// A restart that fails raises one intake entry at once and is not tried again.
+// A restart that fails logs one notice at once and is not tried again.
 func TestFailedMCPRestartRaisesOneDeskAsk(t *testing.T) {
 	t.Parallel()
 	g := startGateway(t, t.TempDir(), "")
@@ -126,7 +114,7 @@ func TestFailedMCPRestartRaisesOneDeskAsk(t *testing.T) {
 	var mu sync.Mutex
 	restarts := 0
 	fa := &fakeAdapter{harness: "claude"}
-	startNode(t, g, nodeOpts{adapter: fa, cfg: func(c *Config) {
+	n := startNode(t, g, nodeOpts{adapter: fa, cfg: func(c *Config) {
 		c.MCPLinkGrace = 50 * time.Millisecond
 		c.testMCPRepairAfter = after
 		c.testMCPRestart = func(context.Context, string) error {
@@ -148,20 +136,20 @@ func TestFailedMCPRestartRaisesOneDeskAsk(t *testing.T) {
 		poll()
 		return restartCount() == 1
 	})
-	var ask protocol.IntakeEntry
-	eventually(t, "one intake entry", func() bool {
+	var notice string
+	eventually(t, "one mcp repair log", func() bool {
 		poll()
-		for _, a := range mcpCheckAsks(t, g) {
-			ask = a
+		for _, l := range mcpRepairLogs(n) {
+			notice = l
 			return true
 		}
 		return false
 	})
-	if !strings.Contains(ask.Text, "research") || !strings.Contains(ask.Text, "could not be connected") {
-		t.Fatalf("unexpected item: %q", ask.Text)
+	if !strings.Contains(notice, "research") || !strings.Contains(notice, "could not be connected") {
+		t.Fatalf("unexpected log: %q", notice)
 	}
-	if !strings.Contains(ask.Detail, "claude stop failed") {
-		t.Fatalf("the item does not carry the failure: %q", ask.Detail)
+	if !strings.Contains(notice, "claude stop failed") {
+		t.Fatalf("the log does not carry the failure: %q", notice)
 	}
 	deadline := time.Now().Add(3 * after)
 	for time.Now().Before(deadline) {
@@ -170,8 +158,8 @@ func TestFailedMCPRestartRaisesOneDeskAsk(t *testing.T) {
 		if got := restartCount(); got != 1 {
 			t.Fatalf("%d restarts after a failure, want 1", got)
 		}
-		if got := len(mcpCheckAsks(t, g)); got != 1 {
-			t.Fatalf("%d intake entries after a failure, want 1", got)
+		if got := len(mcpRepairLogs(n)); got != 1 {
+			t.Fatalf("%d notices after a failure, want 1", got)
 		}
 	}
 }

@@ -94,9 +94,9 @@ func (s *Store) SetHiddenItems(items protocol.HiddenItems) (protocol.HiddenItems
 	if err := s.writeHiddenItems(clean); err != nil {
 		return protocol.HiddenItems{}, err
 	}
-	// The agents list, the machines and the network map, the workers panel and
-	// the asks of a hidden session show the hidden items.
-	s.bumpStateTopics(protocol.TopicAgents, protocol.TopicNodes, protocol.TopicWorkers, protocol.TopicGraph, protocol.TopicInbox)
+	// The agents list, the machines and the network map, and the workers panel
+	// show the hidden items.
+	s.bumpStateTopics(protocol.TopicAgents, protocol.TopicNodes, protocol.TopicWorkers, protocol.TopicGraph)
 	return clean, nil
 }
 

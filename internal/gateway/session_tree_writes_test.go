@@ -332,10 +332,6 @@ func TestTreeInvariantsMigration(t *testing.T) {
 	if err := s.db.QueryRow(`SELECT (SELECT archived_at FROM sessions WHERE id='s_h02'),(SELECT archived_at FROM sessions WHERE id='s_i01')`).Scan(&archived, &idle); err != nil || archived == 0 || idle != 0 {
 		t.Fatalf("archived_at s_h02=%d s_i01=%d (%v), want only the copy s_h02 archived", archived, idle, err)
 	}
-	var logged int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM desk_log WHERE about_kind='session_tree'`).Scan(&logged); err != nil || logged != len(want) {
-		t.Fatalf("%d Desk log lines (%v), want one per change", logged, err)
-	}
 	// A second run finds nothing left to change.
 	tx, err = s.db.Begin()
 	if err != nil {

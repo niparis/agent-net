@@ -25,7 +25,7 @@ func TestHiddenItemsMoveTheScreensThatShowThem(t *testing.T) {
 		t.Fatal(err)
 	}
 	after := s.topicVersions()
-	requireMoved(t, before, after, protocol.TopicAgents, protocol.TopicNodes, protocol.TopicWorkers, protocol.TopicGraph, protocol.TopicInbox)
+	requireMoved(t, before, after, protocol.TopicAgents, protocol.TopicNodes, protocol.TopicWorkers, protocol.TopicGraph)
 }
 
 // The CTO session is left out of the agents list's repo counts and appears on
@@ -49,24 +49,13 @@ func TestCTOSessionMovesTheAgentsAndGraphTopics(t *testing.T) {
 	requireMoved(t, before, after, protocol.TopicAgents, protocol.TopicGraph)
 }
 
-// The Inbox screen shows the chief and a deliberate clear of it.
-func TestChiefClearMovesTheInbox(t *testing.T) {
-	s, _, _, _, _ := chiefRig(t)
-	before := s.topicVersions()
-	if err := s.SetChief(protocol.ChiefSetRequest{Clear: true}, "owner"); err != nil {
-		t.Fatal(err)
-	}
-	after := s.topicVersions()
-	requireMoved(t, before, after, protocol.TopicInbox)
-}
-
 // The setup overlay and the workers panel show the onboarding progress.
-func TestOnboardingMovesTheInboxAndWorkers(t *testing.T) {
+func TestOnboardingMovesTheWorkers(t *testing.T) {
 	s, _ := newTestStore(t)
 	before := s.topicVersions()
 	if _, err := s.UpdateOnboarding(protocol.OnboardingUpdate{Step: "see", State: "done"}, false); err != nil {
 		t.Fatal(err)
 	}
 	after := s.topicVersions()
-	requireMoved(t, before, after, protocol.TopicInbox, protocol.TopicWorkers)
+	requireMoved(t, before, after, protocol.TopicWorkers)
 }

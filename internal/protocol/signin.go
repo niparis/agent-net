@@ -71,29 +71,12 @@ func SignInNeeded(provider, errText string) bool {
 	return false
 }
 
-// SignInQuery asks the gateway which machine and provider an open sign-in ask
-// names. Only the ask's ID comes from the caller. The owner is the session the
-// gateway checks before it opens anything.
-type SignInQuery struct {
-	AskID string `json:"ask_id"`
-	Owner string `json:"owner,omitempty"`
-}
-
 // SignInPrepareRequest is the owner action that opens a login on one named
 // machine. It carries a provider key only: there is no command field.
 type SignInPrepareRequest struct {
 	Machine  string `json:"machine"`
 	Provider string `json:"provider"`
 	Owner    string `json:"owner,omitempty"`
-}
-
-// SignInTarget is the gateway's answer to SignInQuery.
-type SignInTarget struct {
-	AskID    string `json:"ask_id"`
-	Provider string `json:"provider"`
-	Label    string `json:"label"`
-	NodeID   string `json:"node_id"`
-	Hostname string `json:"hostname,omitempty"`
 }
 
 // FrameSignInPrepare tells the daemon of the machine a sign-in names to open

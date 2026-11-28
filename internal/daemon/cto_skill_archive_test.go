@@ -68,21 +68,7 @@ func TestCTOSkillArchiveAddsFromGitListsAndUndoes(t *testing.T) {
 	if len(listed.Skills) != 1 || listed.Skills[0].Name != "grill-me" || listed.Skills[0].SizeTokens <= 0 || listed.Skills[0].ContextTokens <= 0 {
 		t.Fatalf("list: %+v", listed)
 	}
-	// The Desk log records the undo the owner can click.
-	log, err := g.gw.Store().DeskLog(10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	found := false
-	for _, entry := range log {
-		if strings.Contains(entry.Text, "added grill-me") && len(entry.Options) == 2 && entry.Options[0] == protocol.OpSkillArchiveUndo {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("no undo entry: %+v", log)
-	}
-	if _, err = n.d.skillArchiveOwnerUndo(ctx, added.Skills[0].Change); err != nil {
+	if _, err := n.d.skillArchiveOwnerUndo(ctx, added.Skills[0].Change); err != nil {
 		t.Fatal(err)
 	}
 	listed = callCTOSkillArchive[struct {
@@ -198,14 +184,4 @@ func TestCTOSkillArchiveRemovesOneVersion(t *testing.T) {
 	if removed.State != "removed" || removed.Version != 2 || removed.Versions != 1 || removed.Removed != 1 {
 		t.Fatalf("remove one version: %+v", removed)
 	}
-	log, err := g.gw.Store().DeskLog(10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range log {
-		if strings.Contains(entry.Text, "removed version 2 of skill grill-me") {
-			return
-		}
-	}
-	t.Fatalf("no Desk line for the removed version: %+v", log)
 }

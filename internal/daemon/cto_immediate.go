@@ -533,10 +533,9 @@ func (d *Daemon) executeImmediateCTOTool(ctx context.Context, name string, raw j
 	if reason = cleanLine(reason); reason != "" {
 		text += ": " + reason
 	}
-	_, noticeErr := d.call(ctx, "inbox.create", map[string]any{"session_id": d.ctoSessionID(), "kind": "check", "text": text, "recommendation": diff, "options": options})
-	if noticeErr != nil {
-		return result, fmt.Errorf("%s; could not add Inbox notice: %w", text, noticeErr)
-	}
+	d.Logf("cto.action %s", text)
+	_ = diff
+	_ = options
 	return result, nil
 }
 
@@ -627,7 +626,6 @@ func (d *Daemon) applyProposalOnWords(ctx context.Context, name string, raw json
 		return nil, err
 	}
 	item, decided, err := d.proposalRunner().decideForDialog(ctx, id, true)
-	defer d.syncProposalAsks(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -668,8 +666,8 @@ func (d *Daemon) applyProposalOnWords(ctx context.Context, name string, raw json
 	} else {
 		diff = "No undo."
 	}
-	if _, err := d.call(ctx, "inbox.create", map[string]any{"session_id": d.ctoSessionID(), "kind": "check", "text": text, "recommendation": diff, "options": options}); err != nil {
-		return nil, fmt.Errorf("%s; could not add Inbox notice: %w", text, err)
-	}
+	d.Logf("cto.action %s", text)
+	_ = diff
+	_ = options
 	return map[string]any{"state": "applied", "proposal": id, "note": item.Note, "result": item.Result}, nil
 }

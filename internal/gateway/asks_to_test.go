@@ -1,8 +1,6 @@
 package gateway
 
 import (
-	"reflect"
-	"sort"
 	"strings"
 	"testing"
 
@@ -24,10 +22,6 @@ func forgeRig(t *testing.T) (s *Store, asker, lead string) {
 	teamWrite(t, s, protocol.TeamWrite{Action: "create", ID: "forge", Name: "forge", Owner: &agent})
 	teamWrite(t, s, protocol.TeamWrite{Action: "membership", ID: "forge", Member: &protocol.GraphRef{Kind: "repo", ID: "demo"}})
 	return s, asker, lead
-}
-
-func ownerAsk(session, text string) protocol.InboxItem {
-	return protocol.InboxItem{Kind: "question", SessionID: session, Node: "demo", Text: text, Recommendation: "yes", Options: []string{"yes", "no"}, AskerName: "demo agent"}
 }
 
 func TestTeamAsksToDefaultsToOwnerAndTheOwnerAndCTOSetIt(t *testing.T) {
@@ -62,147 +56,6 @@ func TestTeamAsksToDefaultsToOwnerAndTheOwnerAndCTOSetIt(t *testing.T) {
 	teams, _ = s.Teams()
 	if teams[0].AsksTo != protocol.AsksToLead {
 		t.Fatalf("undo: %+v", teams)
-	}
-}
-
-func TestOwnerAskGoesToTheTeamLeadWhenTheTeamAsksToLead(t *testing.T) {
-	s, asker, lead := forgeRig(t)
-	teamWrite(t, s, protocol.TeamWrite{Action: "asks_to", ID: "forge", AsksTo: protocol.AsksToLead})
-	red, msg, err := s.RedirectOwnerAsk(ownerAsk(asker, "Merge the forge rules?"))
-	if err != nil || red == nil {
-		t.Fatalf("redirect: %+v %v", red, err)
-	}
-	if red.Team != "forge" || red.Lead != "other" || red.LeadSession != lead {
-		t.Fatalf("redirect: %+v", red)
-	}
-	want := "Your team (forge) sends questions to its lead, other. Sent there; carry on with work that does not need the answer."
-	if red.Note != want {
-		t.Fatalf("note = %q, want %q", red.Note, want)
-	}
-	// The lead gets a request from the asker with the question.
-	if msg.From != asker || msg.To != lead || msg.Type != protocol.TypeRequest ||
-		!strings.Contains(msg.Body, "Merge the forge rules?") || !strings.Contains(msg.Body, "yes") {
-		t.Fatalf("message: %+v", msg)
-	}
-	// The Desk has one ask, with the lead as the party that acts now. The
-	// owner's old Inbox does not list it.
-	asks, err := s.ListAsks()
-	if err != nil || len(asks) != 1 {
-		t.Fatalf("asks: %+v %v", asks, err)
-	}
-	a := asks[0]
-	if a.Next != lead || a.State != protocol.AskWithSomeone || a.FromSession != asker || a.MessageID != msg.ID || a.Question != "Merge the forge rules?" {
-		t.Fatalf("ask: %+v", a)
-	}
-	if inbox, err := s.ListInbox(); err != nil || len(inbox) != 0 {
-		t.Fatalf("owner inbox: %+v %v", inbox, err)
-	}
-	// The lead answers with the normal reply path; the ask closes and the
-	// answer reaches the asker.
-	reply, created, err := s.StoreMessage(protocol.MsgSend{Sender: lead, Recipient: asker, ParentID: msg.ID, Body: "yes, merge"})
-	if err != nil || !created || reply.To != asker {
-		t.Fatalf("reply: %+v %v", reply, err)
-	}
-	if asks, _ = s.ListAsks(); len(asks) != 0 {
-		t.Fatalf("ask still open: %+v", asks)
-	}
-	status, answer, _ := askRow(t, s, `id=?`, a.ID)
-	if status != "answered" || answer != "yes, merge" {
-		t.Fatalf("ask row: %q %q", status, answer)
-	}
-}
-
-func TestOwnerAskStaysWithTheOwnerByDefault(t *testing.T) {
-	s, asker, _ := forgeRig(t)
-	red, _, err := s.RedirectOwnerAsk(ownerAsk(asker, "Merge?"))
-	if err != nil || red != nil {
-		t.Fatalf("default redirected: %+v %v", red, err)
-	}
-}
-
-func TestLeadsOwnAskIsNotRedirected(t *testing.T) {
-	s, _, lead := forgeRig(t)
-	teamWrite(t, s, protocol.TeamWrite{Action: "asks_to", ID: "forge", AsksTo: protocol.AsksToLead})
-	red, _, err := s.RedirectOwnerAsk(ownerAsk(lead, "Spend money?"))
-	if err != nil || red != nil {
-		t.Fatalf("lead redirected: %+v %v", red, err)
-	}
-}
-
-func TestAskOutsideATeamIsNotRedirected(t *testing.T) {
-	s, _, _ := forgeRig(t)
-	ids, _ := graphSessions(t, s, "outside")
-	teamWrite(t, s, protocol.TeamWrite{Action: "asks_to", ID: "forge", AsksTo: protocol.AsksToLead})
-	red, _, err := s.RedirectOwnerAsk(ownerAsk(ids["outside"], "Merge?"))
-	if err != nil || red != nil {
-		t.Fatalf("outsider redirected: %+v %v", red, err)
-	}
-}
-
-// The tool has no text classifier for the owner's held back items, so every
-// ask of such a team goes to its lead. The message tells the lead what stays
-// with the owner.
-func TestRedirectedAskTellsTheLeadWhatStaysWithTheOwner(t *testing.T) {
-	s, asker, _ := forgeRig(t)
-	teamWrite(t, s, protocol.TeamWrite{Action: "asks_to", ID: "forge", AsksTo: protocol.AsksToLead})
-	_, msg, err := s.RedirectOwnerAsk(ownerAsk(asker, "Delete the production database?"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(msg.Body, protocol.AlwaysHeldBack) || !strings.Contains(msg.Body, "send a request to the chief of staff with agent_message_send") {
-		t.Fatalf("body lacks the held back line: %q", msg.Body)
-	}
-}
-
-// A redirected ask adds to the pending ones, as for the owner. Only replaces
-// retires the one it names.
-func TestRedirectedAskKeepsTheEarlierOneUnlessReplaced(t *testing.T) {
-	s, asker, _ := forgeRig(t)
-	teamWrite(t, s, protocol.TeamWrite{Action: "asks_to", ID: "forge", AsksTo: protocol.AsksToLead})
-	first, _, err := s.RedirectOwnerAsk(ownerAsk(asker, "first?"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := s.RedirectOwnerAsk(ownerAsk(asker, "second?")); err != nil {
-		t.Fatal(err)
-	}
-	if asks, _ := s.ListAsks(); len(asks) != 2 {
-		t.Fatalf("asks without replaces: %+v", asks)
-	}
-	third := ownerAsk(asker, "third?")
-	third.Replaces = first.ItemID
-	if _, _, err := s.RedirectOwnerAsk(third); err != nil {
-		t.Fatal(err)
-	}
-	asks, _ := s.ListAsks()
-	got := []string{}
-	for _, a := range asks {
-		got = append(got, a.Question)
-	}
-	sort.Strings(got)
-	if !reflect.DeepEqual(got, []string{"second?", "third?"}) {
-		t.Fatalf("asks with replaces: %v", got)
-	}
-}
-
-// A lead Agent with no session at all cannot take the question: it goes to the
-// owner, as before. A lead with only an offline session still gets the message.
-func TestAskGoesToTheOwnerWhenTheLeadHasNoSession(t *testing.T) {
-	s, asker, lead := forgeRig(t)
-	teamWrite(t, s, protocol.TeamWrite{Action: "asks_to", ID: "forge", AsksTo: protocol.AsksToLead})
-	if _, err := s.db.Exec(`UPDATE sessions SET online=0 WHERE id=?`, lead); err != nil {
-		t.Fatal(err)
-	}
-	red, msg, err := s.RedirectOwnerAsk(ownerAsk(asker, "offline lead?"))
-	if err != nil || red == nil || msg.To != lead {
-		t.Fatalf("offline lead: %+v %+v %v", red, msg, err)
-	}
-	if _, err := s.db.Exec(`UPDATE sessions SET archived_at=1 WHERE id=?`, lead); err != nil {
-		t.Fatal(err)
-	}
-	red, _, err = s.RedirectOwnerAsk(ownerAsk(asker, "no lead session?"))
-	if err != nil || red != nil {
-		t.Fatalf("lead with no session: %+v %v", red, err)
 	}
 }
 

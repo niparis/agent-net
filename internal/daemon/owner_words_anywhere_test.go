@@ -21,13 +21,10 @@ func overrideStartOnWords(t *testing.T, pi *localClient, quote string) protocol.
 
 // wantStartOnWords checks that a start went ahead at once on the owner's words
 // typed in the named session, with no ask on the Desk.
-func wantStartOnWords(t *testing.T, g *testGateway, res protocol.WorkerStartResult, typedIn string) {
+func wantStartOnWords(t *testing.T, _ *testGateway, res protocol.WorkerStartResult, typedIn string) {
 	t.Helper()
 	if res.SelectionPath != protocol.SelectionOwnerWords || res.SessionID == "" || res.Model != "fake/m2" {
 		t.Fatalf("the start did not go ahead on the owner's words: %+v", res)
-	}
-	if n := len(overrideAsks(g)); n != 0 {
-		t.Fatalf("%d asks for a start the owner asked for", n)
 	}
 	want := "owner_words found in what the owner typed in " + typedIn + " at about "
 	if !strings.Contains(res.OwnerLine, want) {
@@ -73,8 +70,5 @@ func TestOverrideOwnerWordsOldOrNowhereIsRefused(t *testing.T) {
 		if _, err := pi.call("worker_start", req); err == nil || err.Error() != protocol.OverrideNeedsOwner {
 			t.Fatalf("quote %q: %v", quote, err)
 		}
-	}
-	if n := len(overrideAsks(g)); n != 0 {
-		t.Fatalf("%d Desk asks", n)
 	}
 }

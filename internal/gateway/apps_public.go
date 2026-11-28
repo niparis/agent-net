@@ -289,11 +289,7 @@ func (g *Gateway) publicOperation(ctx context.Context, op string, raw []byte) (a
 		g.public.Error = ""
 	}
 	if err == nil && (g.public.On || op == "apps.public.off") {
-		reason := protocol.AskReasonResolved
-		if op == "apps.public.off" {
-			reason = protocol.AskReasonWithdrawn
-		}
-		if e := g.store.closeAskRef(g.store.db, publicConsentRef, reason); e != nil {
+		if e := g.clearPublicConsent(); e != nil {
 			return nil, e
 		}
 	}

@@ -9,8 +9,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/niparis/agent-net/internal/protocol"
 )
 
 var (
@@ -509,31 +507,14 @@ func (d *Daemon) checkDiskWarning(ctx context.Context, now time.Time) error {
 		}
 		text := fmt.Sprintf("Disk space low on %s: %.0f%% used (worker Go cache %s, owner Go cache %s, total %s of %s cap)",
 			d.hostName(), pct, sizeText(workerSize), ownerText, sizeText(workerSize+ownerSize), sizeText(settings.CacheMaxBytes))
-		report := protocol.IntakeReport{Kind: protocol.IntakeDiskSpace, Subject: diskIntakeSubject, Text: text,
-			Detail: "Free space by removing old worker files or enlarge the disk."}
-		if _, err := d.call(ctx, "intake.report", report); err != nil {
-			if d.log != nil {
-				d.Logf("disk.warning report error: %v", err)
-			}
-			return err
-		}
 		active, cleared = true, false
 		if !wasActive && d.log != nil {
-			d.Logf("disk.warning raised: %.1f%% used", pct)
+			d.Logf("disk.warning raised: %s", text)
 		}
 		return nil
 	}
 
-	// Between the marks the warning keeps its state. Below the clear mark it is
-	// resolved once: either this run raised it, or a restart lost that fact and
-	// an earlier run may have left the entry open.
 	if pct < clearThreshold && (active || !cleared) {
-		if _, err := d.call(ctx, "intake.report", protocol.IntakeReport{Kind: protocol.IntakeDiskSpace, Subject: diskIntakeSubject, Resolved: true}); err != nil {
-			if d.log != nil {
-				d.Logf("disk.warning clear error: %v", err)
-			}
-			return err
-		}
 		if active && d.log != nil {
 			d.Logf("disk.warning cleared: %.1f%% used", pct)
 		}

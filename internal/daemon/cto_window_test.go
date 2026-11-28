@@ -116,10 +116,6 @@ func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
 		}
 		assertCTOImmediate(t, got)
 	}
-	items, err := inboxAndLog(g.gw.Store())
-	if err != nil || len(items) != 3 {
-		t.Fatalf("inbox: %+v %v", items, err)
-	}
 	n.d.ctoGraph.mu.Lock()
 	n.d.ctoGraph.toggle(time.Now())
 	n.d.ctoGraph.mu.Unlock()

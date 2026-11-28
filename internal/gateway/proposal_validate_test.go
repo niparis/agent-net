@@ -112,10 +112,6 @@ func TestCTOProposalValidationLeavesDatabaseUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err := storeOldItem(t, st, protocol.InboxItem{Kind: "approval", SessionID: a, Text: "approve work"})
-	if err != nil {
-		t.Fatal(err)
-	}
 	// The connection has no wire: attempting a probe or invocation would panic.
 	// Worker profile validation reads the model list live, so serve that one
 	// read from the cache instead of asking the node.
@@ -145,7 +141,6 @@ func TestCTOProposalValidationLeavesDatabaseUnchanged(t *testing.T) {
 		{"project_remove", map[string]any{"name": "alpha"}},
 		{"held_answer", map[string]any{"message_id": held.ID, "action": "a"}},
 		{"held_answer", map[string]any{"message_id": held.ID, "action": "R"}},
-		{"inbox_answer", map[string]any{"id": item.ID, "answer": "approve"}},
 		{"outcome_overrule", map[string]any{"reply_id": reply.ID, "action": "overrule"}},
 		{"worker_profile_add", map[string]any{"name": "new", "harness": "claude", "model": "model"}},
 		{"worker_profile_remove", map[string]any{"name": "profile"}},

@@ -43,26 +43,13 @@ func TestCTOSkillsSetEffectiveAndUndo(t *testing.T) {
 	if set.Change == "" || len(set.Added) != 1 || set.Added[0] != "grill-me" || len(set.Effective) != 1 || set.Effective[0].Level != "repo" {
 		t.Fatalf("set: %+v", set)
 	}
-	log, err := g.gw.Store().DeskLog(10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	found := false
-	for _, entry := range log {
-		if strings.Contains(entry.Text, "set skills for repo grill-me") && len(entry.Options) == 2 && entry.Options[0] == protocol.OpSkillsUndo {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("no undo line: %+v", log)
-	}
 	nodes := callCTO[struct {
 		Nodes []protocol.EffectiveSkills `json:"nodes"`
 	}](t, n.d, ctx, "skills", `{"action":"effective","level":"repo","scope":"grill-me"}`)
 	if len(nodes.Nodes) != 1 || len(nodes.Nodes[0].Skills) != 1 || nodes.Nodes[0].Skills[0].Name != "grill-me" {
 		t.Fatalf("effective: %+v", nodes.Nodes)
 	}
-	if _, err = n.d.skillsOwnerUndo(ctx, set.Change); err != nil {
+	if _, err := n.d.skillsOwnerUndo(ctx, set.Change); err != nil {
 		t.Fatal(err)
 	}
 	nodes = callCTO[struct {

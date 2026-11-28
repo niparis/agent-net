@@ -117,16 +117,6 @@ func TestMessagesToAReplacedSessionGoToItsReplacement(t *testing.T) {
 		r.g.dispatch(context.Background(), m)
 		return m.ID
 	}
-	// A notice written straight into the store, as most agent-net notices are.
-	direct := func() string {
-		t.Helper()
-		m, err := r.s.storeAgentNetMessage(r.s.db, old, "the chief's batch", "", r.s.now())
-		if err != nil {
-			t.Fatal(err)
-		}
-		r.g.dispatch(context.Background(), m)
-		return m.ID
-	}
 	for _, c := range []struct {
 		name string
 		send func() string
@@ -139,7 +129,6 @@ func TestMessagesToAReplacedSessionGoToItsReplacement(t *testing.T) {
 				Body: "status: done", WorkerNotice: true})
 		}},
 		{"an agent-net notice", automatic},
-		{"a stored agent-net notice", direct},
 	} {
 		id := c.send()
 		stored, ok, err := r.s.Message(id)

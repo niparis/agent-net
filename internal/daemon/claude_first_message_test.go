@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -337,47 +336,13 @@ func assertGatewayOwnerEffects(t *testing.T, g *testGateway, sid, text string, w
 	if wantOwner != (len(signals) != 0) {
 		t.Fatalf("signals %+v for %q, want owner %v", signals, text, wantOwner)
 	}
-	// The owner_use answer to the open question.
-	judgments, err := st.FindJudgments(protocol.JudgmentsFindRequest{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	answered := false
-	for _, j := range judgments {
-		answered = answered || strings.Contains(j.Text, "A: ")
-	}
-	if answered != wantOwner {
-		t.Fatalf("judgments %+v for %q, want an answer %v", judgments, text, wantOwner)
-	}
 }
 
 // openQuestionItem opens a question of the session to its team lead, the way
-// a team that sends questions to its lead stores it. A question for the owner
-// is a request to the chief and is not stored (decision 0196). The owner's
-// words typed in the session answer the stored one.
-func openQuestionItem(t *testing.T, g *testGateway, sid string) {
-	t.Helper()
-	st := g.gw.Store()
-	leadNode, _, err := st.CreateNode("lead-node", "linux")
-	if err != nil {
-		t.Fatal(err)
-	}
-	lead, err := st.UpsertSession(leadNode, protocol.SessionInfo{Harness: "pi", NativeID: "lead-1", Name: "lead", Repo: protocol.RepoInfo{Project: "shop"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.CreateInboxItem(protocol.InboxItem{
-		Kind: "question", SessionID: sid, Node: "shop", FromKind: protocol.AskFromSession, NextWho: lead, Text: "Ready?",
-	}); err != nil {
-		t.Fatal(err)
-	}
-}
-
 // checkFirstMessage runs the hook for the first message of a start and checks
 // every owner effect.
 func checkFirstMessage(t *testing.T, g *testGateway, c *claudeNode, r protocol.StartedSession, text string, wantOwner bool) {
 	t.Helper()
-	openQuestionItem(t, g, r.SessionID)
 	firstMessagePrompt(t, c.node, c.d, r.NativeID, text)
 	if got := c.d.ownerWordsMatch(r.SessionID, text); got != wantOwner {
 		t.Fatalf("owner words %v, want %v", got, wantOwner)

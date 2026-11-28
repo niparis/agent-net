@@ -239,20 +239,6 @@ func TestRoleSkipsAPausedModel(t *testing.T) {
 	}
 }
 
-// A start whose other providers are all out of quota still feeds the stuck
-// quota threads when the owner paused one candidate: the pause is not why no
-// provider could run.
-func TestPausedSkipKeepsTheNoProviderFeed(t *testing.T) {
-	skips := []model.Skip{
-		{Candidate: protocol.Candidate{Harness: "claude", Model: "claude-opus-5-5"}, Check: "paused", Reason: "paused by the owner"},
-		{Candidate: protocol.Candidate{Harness: "codex", Model: "gpt-6.1-terra"}, Check: "exhausted", Reason: "codex quota used up"},
-	}
-	got := quotaBlockedProviders(skips)
-	if len(got) != 1 || got[protocol.Candidate{Harness: "codex", Model: "gpt-6.1-terra"}.QuotaProvider()] != "codex quota used up" {
-		t.Fatalf("stuck providers: %v", got)
-	}
-}
-
 // An agent's start that names a paused model in the owner's own words, which
 // its daemon found, goes ahead: the owner chose it.
 func TestOwnerWordsStartNamingAPausedModelGoesAhead(t *testing.T) {

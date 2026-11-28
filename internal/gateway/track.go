@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"database/sql"
-	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -109,25 +108,7 @@ func (s *Store) RecordWorkerRun(r protocol.WorkerRun) error {
 			return err
 		}
 	}
-	// Work that failed on quota after it started joins the provider's quota
-	// thread (decision 0152).
-	if r.Outcome == protocol.OutcomeFailed && r.Cause == protocol.CauseQuotaAuth {
-		if provider := protocol.QuotaProviderForStart(r.Harness, r.Model); provider != "" {
-			text := fmt.Sprintf("a %s worker on %s failed on quota or sign-in", r.Harness, firstNonEmpty(r.Model, r.Harness))
-			if _, err := s.quotaStuck(tx, provider, text, s.now().UTC()); err != nil {
-				return err
-			}
-		}
-	}
-	if protocol.StruggleShown(r.Struggle) && r.Model != "" {
-		if err := s.struggleFeed(tx, r.Model, s.now()); err != nil {
-			return err
-		}
-	}
 	if _, err := tx.Exec(`UPDATE sessions SET worker_run_active=0 WHERE id=? AND node_id=? AND worker<>'' AND (?=0 OR worker_run_generation=?)`, r.SessionID, r.NodeID, r.RunGeneration, r.RunGeneration); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(`UPDATE inbox_items SET status='closed',answer='session_ended',answered_at=? WHERE session_id=? AND kind IN ('question','approval','feature_idea','waiting','session_stall','check') AND from_kind IN ('','session') AND status='open' AND EXISTS (SELECT 1 FROM sessions WHERE id=? AND node_id=? AND (?=0 OR worker_run_generation=?))`, s.now().UnixNano(), r.SessionID, r.SessionID, r.NodeID, r.RunGeneration, r.RunGeneration); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {

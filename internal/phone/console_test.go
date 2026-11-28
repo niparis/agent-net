@@ -17,11 +17,10 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// consoleOperator is a fake daemon with state: an answered ask leaves the list.
+// consoleOperator is a fake daemon with state.
 type consoleOperator struct {
 	mu    sync.Mutex
 	calls []string
-	asks  []protocol.Ask
 	sent  []string
 	// reads counts the read calls by method; threads holds the messages of a
 	// conversation, newest first.
@@ -65,12 +64,10 @@ func (f *consoleOperator) SessionText(context.Context, protocol.TextQuery) (prot
 }
 func (f *consoleOperator) AnswerHeld(_ context.Context, q protocol.HeldAnswer) error {
 	f.record("held:" + q.MessageID + ":" + q.Action)
-	f.drop(q.MessageID)
 	return nil
 }
 func (f *consoleOperator) ResolveOutcome(_ context.Context, id, action string) error {
 	f.record("outcome:" + id + ":" + action)
-	f.drop(id)
 	return nil
 }
 func (f *consoleOperator) SendAsOwner(_ context.Context, to, body string) (protocol.MessageSent, error) {
@@ -98,17 +95,6 @@ func (f *consoleOperator) record(s string) {
 	f.calls = append(f.calls, s)
 	f.mu.Unlock()
 }
-func (f *consoleOperator) drop(idOrMessage string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	var kept []protocol.Ask
-	for _, a := range f.asks {
-		if a.ID != idOrMessage && a.MessageID != idOrMessage {
-			kept = append(kept, a)
-		}
-	}
-	f.asks = kept
-}
 func (f *consoleOperator) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	now := time.Now()
 	f.mu.Lock()
@@ -118,10 +104,6 @@ func (f *consoleOperator) Call(ctx context.Context, method string, params any) (
 		return raw, nil
 	}
 	switch method {
-	case protocol.OpAsksList:
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		return json.Marshal(protocol.AsksResult{Asks: f.asks})
 	case protocol.OpChangesOwnerFind:
 		args, _ := params.(protocol.ChangesFindArgs)
 		return json.Marshal(protocol.ChangesFindResult{Items: consoleChanges(args, now)})
@@ -129,8 +111,6 @@ func (f *consoleOperator) Call(ctx context.Context, method string, params any) (
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		return json.Marshal(protocol.ChiefStatus{SessionID: "s_chief", Name: "chief of staff", Online: true, Down: f.chiefDown})
-	case protocol.OpDeskLog:
-		return json.Marshal(protocol.DeskLogResult{Entries: []protocol.DeskLogEntry{{ID: 1, At: now.Add(-3 * time.Minute), Source: "release", Text: "log line text"}}})
 	case protocol.OpUsage:
 		return json.Marshal(protocol.UsageResult{Gateway: &protocol.UsageAnswer{Nodes: []protocol.UsageNode{{NodeID: "n_secretnode1", Hostname: "alpha-box", AgeSeconds: 3,
 			Usage: protocol.UsageReport{Machine: protocol.MachineUsage{Cores: 8, CPU: 34, MemUsed: 8 << 30, MemTotal: 16 << 30, Samples: 5}}}}}})
@@ -184,18 +164,6 @@ func (f *consoleOperator) Call(ctx context.Context, method string, params any) (
 		return nil, nil
 	}
 	f.record("call:" + method)
-	if method == "inbox_answer" {
-		if m, ok := params.(map[string]string); ok {
-			f.record("answer:" + m["id"] + ":" + m["answer"])
-			f.drop(m["id"])
-		}
-	}
-	if method == protocol.OpAskMark {
-		if m, ok := params.(protocol.AskMarkRequest); ok {
-			f.record("mark:" + m.Ask + ":" + m.Mark)
-			f.drop(m.Ask)
-		}
-	}
 	return nil, nil
 }
 func (f *consoleOperator) has(call string) bool {
@@ -235,16 +203,6 @@ func newConsoleOperator() *consoleOperator {
 				{ID: "m_f", ConversationID: "c_w", From: "s_w1", To: "s_wait", FromName: "worker-one", Body: "[agent-net worker notice]\nstatus: done\nrun time: 12m\n3 files changed", CreatedAt: now.Add(-3 * time.Minute)},
 				{ID: "m_e", ConversationID: "c_w", From: "s_w1", To: "s_wait", FromName: "worker-one", Body: "[agent-net worker notice]\nstatus: started", CreatedAt: now.Add(-20 * time.Minute)},
 			},
-		}, asks: []protocol.Ask{
-			{ID: "i_q", Kind: protocol.AskKindQuestion, State: protocol.AskStateOpen, From: "tenebrae", FromKind: protocol.AskFromSession, Next: protocol.AskNextOwner,
-				Question: "Allow the record tools for every session?", Recommendation: "Yes, record and read tools only.", WhyYou: "Permission settings are yours.", Options: []string{"Record only", "All tools"},
-				CreatedAt: time.Now().Add(-4 * time.Minute)},
-			{ID: "i_h", Kind: protocol.AskKindHeld, State: protocol.AskStateOpen, From: "peer-a", MessageID: "m_held", AboutID: "s_busy", Detail: "held request body", Next: protocol.AskNextOwner, CreatedAt: time.Now()},
-			{ID: "i_e", Kind: protocol.AskKindEscalation, State: protocol.AskStateOpen, From: "peer-b", MessageID: "r_esc", Question: "Request: do the thing\nReason: unclear", Recommendation: "Let it stand.", Next: protocol.AskNextOwner, CreatedAt: time.Now()},
-			{ID: "i_c", Kind: protocol.AskKindApproval, State: protocol.AskStateOpen, From: "gateway", Ref: "apps-public-consent", Question: "Allow internet access?", Next: protocol.AskNextOwner, CreatedAt: time.Now()},
-			{ID: "i_w", Kind: protocol.AskKindWaiting, State: protocol.AskStateOpen, From: "waiting-agent", FromSession: "s_wait", Question: "allow the tools?", Next: protocol.AskNextOwner, CreatedAt: time.Now()},
-			{ID: "i_p", Kind: protocol.AskKindProposal, State: protocol.AskStateOpen, From: "CTO", Ref: "proposal:n1:p1", Question: "start a session", Next: protocol.AskNextOwner, CreatedAt: time.Now()},
-			{ID: "i_other", Kind: protocol.AskKindQuestion, State: protocol.AskWithSomeone, From: "x", Question: "not yours to answer", Next: "chief", CreatedAt: time.Now()},
 		}}
 }
 

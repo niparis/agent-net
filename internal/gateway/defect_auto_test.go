@@ -41,21 +41,6 @@ func autoDefectRows(t *testing.T, s *Store) []autoDefectRow {
 	return out
 }
 
-func autoDefectLog(t *testing.T, s *Store) []string {
-	t.Helper()
-	entries, err := s.DeskLog(100)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out []string
-	for _, e := range entries {
-		if strings.HasPrefix(e.Text, "defect recorded:") {
-			out = append(out, e.Text)
-		}
-	}
-	return out
-}
-
 // finishRun gives a worker session the finished run its hand-back leaves.
 func (r *deliveryRig) finishRun(session, node string) {
 	r.t.Helper()
@@ -104,11 +89,6 @@ func TestVerifyFailAfterMergeRecordsSeverityThree(t *testing.T) {
 	rows := autoDefectRows(t, r.s)
 	if len(rows) != 1 || rows[0].session != r.worker || rows[0].severity != 3 || !strings.Contains(rows[0].note, "the wake on message does nothing") {
 		t.Fatalf("defects after a failed verify: %+v", rows)
-	}
-	log := autoDefectLog(t, r.s)
-	want := "defect recorded: " + r.worker + " sev 3 on " + id + " (verify failed)"
-	if len(log) != 1 || log[0] != want {
-		t.Fatalf("desk log %q, want %q", log, want)
 	}
 
 	// The same step failing again on the same revision is the same defect.
@@ -169,9 +149,6 @@ func TestTestFailBeforeMergeRecordsSeverityOnePerRevisionAgainstItsWorker(t *tes
 	if len(rows) != 1 || rows[0].session != r.worker || rows[0].severity != 1 {
 		t.Fatalf("defects after a failed test: %+v", rows)
 	}
-	if log := autoDefectLog(t, r.s); len(log) != 1 || log[0] != "defect recorded: "+r.worker+" sev 1 on "+id+" (test failed)" {
-		t.Fatalf("desk log %q", log)
-	}
 
 	// A new revision by another worker: its failure is its own.
 	q := r.workerSubmit("agent-net/w_1", commitB)
@@ -196,9 +173,6 @@ func TestTestFailMarkedAsFlakeRecordsNothing(t *testing.T) {
 	if rows := autoDefectRows(t, r.s); len(rows) != 0 {
 		t.Fatalf("a flake made defects: %+v", rows)
 	}
-	if log := autoDefectLog(t, r.s); len(log) != 0 {
-		t.Fatalf("a flake wrote the log: %q", log)
-	}
 }
 
 func TestFixesRecordsADefectOnceAgainstTheFixedWorker(t *testing.T) {
@@ -215,9 +189,6 @@ func TestFixesRecordsADefectOnceAgainstTheFixedWorker(t *testing.T) {
 	rows := autoDefectRows(t, r.s)
 	if len(rows) != 1 || rows[0].session != r.worker || rows[0].severity != 2 {
 		t.Fatalf("defects after a fix: %+v", rows)
-	}
-	if log := autoDefectLog(t, r.s); len(log) != 1 || log[0] != "defect recorded: "+r.worker+" sev 2 on "+shipped+" (fixed by a later change)" {
-		t.Fatalf("desk log %q", log)
 	}
 
 	// Another submit of the fix, and another fix of the same change, add nothing.
@@ -284,9 +255,6 @@ func TestAutoDefectDoesNotDoubleAManualOne(t *testing.T) {
 	rows := autoDefectRows(t, r.s)
 	if len(rows) != 1 || rows[0].note != "filed by hand" {
 		t.Fatalf("defects: %+v", rows)
-	}
-	if log := autoDefectLog(t, r.s); len(log) != 0 {
-		t.Fatalf("the skipped defect was logged: %q", log)
 	}
 }
 

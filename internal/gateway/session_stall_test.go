@@ -38,7 +38,7 @@ func TestSessionStallMarksAndLogsOnly(t *testing.T) {
 	if _, _, err := send(s, chief, asker, "stall-log-only", ""); err != nil {
 		t.Fatal(err)
 	}
-	beforeItems, beforeChief := inboxCount(t, s), len(messagesTo(t, s, chief))
+	beforeChief := len(messagesTo(t, s, chief))
 	c.advance(21 * time.Minute)
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
@@ -47,16 +47,13 @@ func TestSessionStallMarksAndLogsOnly(t *testing.T) {
 	if a.StalledSince == 0 {
 		t.Fatal("the stall was not marked on the session")
 	}
-	if got := inboxCount(t, s); got != beforeItems {
-		t.Fatalf("%d items stored, was %d", got, beforeItems)
-	}
 	if got := len(messagesTo(t, s, chief)); got != beforeChief {
 		t.Fatalf("%d messages to the chief, was %d", got, beforeChief)
 	}
 	countStallLogs := func() int {
 		n := 0
 		for _, line := range *logs {
-			if strings.Contains(line, "desk.dropped ") && strings.Contains(line, "kind session_stall ") {
+			if strings.Contains(line, "session.stalled ") {
 				n++
 			}
 		}
@@ -138,20 +135,10 @@ func TestSessionStallLostBusySessionGetsNoAsk(t *testing.T) {
 	}
 }
 
-// stallItems returns the session stall asks in the Inbox, open or closed.
-func stallItems(t *testing.T, s *Store) []protocol.InboxItem {
+// stallItems returns nothing now that Desk inbox_items is removed.
+func stallItems(t *testing.T, s *Store) []string {
 	t.Helper()
-	items, err := s.ListInbox()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out []protocol.InboxItem
-	for _, item := range items {
-		if item.Kind == "session_stall" {
-			out = append(out, item)
-		}
-	}
-	return out
+	return nil
 }
 
 func TestSessionStallSkipsOfflineAndIdleDone(t *testing.T) {
@@ -270,23 +257,11 @@ func TestSessionStallIgnoresNestedBatchMembers(t *testing.T) {
 	if err := s.checkSessionStalls(); err != nil {
 		t.Fatal(err)
 	}
-	items, err := s.ListInbox()
-	if err != nil || len(items) != 0 {
-		t.Fatalf("stall items for an idle session: %+v %v", items, err)
-	}
 }
 
-// sessionStalls is stallItems for one session: the idle peer of a send gets
-// its own ask for the delivery nobody acknowledges.
-func sessionStalls(t *testing.T, s *Store, id string) []protocol.InboxItem {
+func sessionStalls(t *testing.T, s *Store, id string) []string {
 	t.Helper()
-	var out []protocol.InboxItem
-	for _, item := range stallItems(t, s) {
-		if item.SessionID == id {
-			out = append(out, item)
-		}
-	}
-	return out
+	return nil
 }
 
 // busySender registers a busy OpenCode session and a peer it can send to.

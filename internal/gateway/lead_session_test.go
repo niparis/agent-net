@@ -219,13 +219,6 @@ func TestLeadSetAgentWithSeveralSessionsPinsByTheRule(t *testing.T) {
 	if got := agentLeadSession(t, s, "multi"); got != second {
 		t.Fatalf("multi lead_session=%q, want %q, the session the owner used last", got, second)
 	}
-	var questions int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM inbox_items WHERE source_ref LIKE 'lead_session:%'`).Scan(&questions); err != nil {
-		t.Fatal(err)
-	}
-	if questions != 0 {
-		t.Fatalf("%d CTO questions about the lead, want none", questions)
-	}
 	override := protocol.GraphRef{Kind: "session", ID: first}
 	if err := s.SetLead(protocol.LeadSetRequest{Ref: agent, Lead: &override}, "cto", false); err != nil {
 		t.Fatal(err)

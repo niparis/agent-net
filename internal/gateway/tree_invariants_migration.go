@@ -127,18 +127,22 @@ func (s *Store) applyTreeInvariantsTx(tx *sql.Tx) ([]string, error) {
 		report = append(report, fmt.Sprintf("Session %s: moved from lead Agent %s to member Agent %s", e.id, e.agent, member))
 	}
 
-	res, err := tx.Exec(`UPDATE inbox_items SET status='answered', answer='Decided by rule I1 of decision 0193', answered_at=?
-		WHERE status='open' AND source_ref LIKE 'lead_session:%'`, now)
-	if err != nil {
+	var hasInbox int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='inbox_items'`).Scan(&hasInbox); err != nil {
 		return nil, err
 	}
-	if n, _ := res.RowsAffected(); n > 0 {
-		report = append(report, fmt.Sprintf("Closed %d CTO question(s) about which session leads", n))
-	}
-	for _, line := range report {
-		if err := s.deskLog(tx, "gateway", "session_tree", "", "Decision 0193 migration: "+line, "", nil); err != nil {
+	if hasInbox > 0 {
+		res, err := tx.Exec(`UPDATE inbox_items SET status='answered', answer='Decided by rule I1 of decision 0193', answered_at=?
+			WHERE status='open' AND source_ref LIKE 'lead_session:%'`, now)
+		if err != nil {
 			return nil, err
 		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			report = append(report, fmt.Sprintf("Closed %d CTO question(s) about which session leads", n))
+		}
+	}
+	for _, line := range report {
+		s.logf("tree_invariants.migration", "line", line)
 	}
 	return report, nil
 }

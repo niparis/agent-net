@@ -455,9 +455,7 @@ func SnapshotTopic(method string) string {
 		protocol.OpProtectedProvidersGet, protocol.OpWorkerFloorsGet, protocol.OpScoresGet,
 		"difficulty_get", protocol.OpWorkerRotationGet, "notification_settings", protocol.OpTimeZoneGet:
 		return protocol.TopicWorkers
-	case protocol.OpDraftsList:
-		return protocol.TopicInbox
-	case protocol.OpGraphGet:
+	case protocol.OpDraftsList, protocol.OpGraphGet:
 		return protocol.TopicGraph
 	case protocol.OpProjects:
 		return protocol.TopicProjects

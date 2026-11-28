@@ -229,15 +229,9 @@ func (s *Store) pairPhoneTailnet(login, ua string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// A pairing is a digest line for the CTO (decision 0152), not an owner
-	// item. The device itself shows in Connected apps, where it can be revoked.
-	_, err = s.recordIntake(tx, intakeEvent{Kind: protocol.IntakePhonePaired, Subject: id,
-		Text: "Paired " + name + " by Tailscale sign-in", Detail: "Revoke this device in Connected apps if the owner did not pair it."}, now)
-	if err != nil {
-		return "", err
-	}
 	if err = tx.Commit(); err != nil {
 		return "", err
 	}
+	s.logf("phone.paired", "app", id, "name", name)
 	return token, nil
 }

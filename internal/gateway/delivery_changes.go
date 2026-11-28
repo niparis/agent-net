@@ -13,11 +13,11 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/settings"
 )
 
 // Page sizes of change.list.
@@ -146,29 +146,6 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 		}
 		err = g.store.TouchNudgeWork(q.SessionID, q.At)
 		data = map[string]bool{"ok": err == nil}
-	case protocol.FrameAskSort:
-		q, derr := decode[protocol.AskSortRequest](raw)
-		if derr != nil {
-			return nil, true, reject("bad %s", typ)
-		}
-		res, m, serr := g.store.SortAsk(nc.id, q)
-		if serr == nil && m.ID != "" {
-			g.dispatch(ctx, m)
-		}
-		// A carried-out notice goes to every asker of the ask.
-		if serr == nil && q.Result == protocol.AskSortDone {
-			nodes, _ := g.store.joinedNodes(q.Ask)
-			var asker string
-			if g.store.db.QueryRow(`SELECT session_id FROM inbox_items WHERE id=?`, q.Ask).Scan(&asker) == nil {
-				if node, nerr := g.store.SessionNode(asker); nerr == nil {
-					nodes = append(nodes, node)
-				}
-			}
-			for _, node := range nodes {
-				g.dispatchPending(ctx, node, false)
-			}
-		}
-		data, err = res, serr
 	case protocol.FrameJudgmentRecord:
 		q, derr := decode[protocol.JudgmentRecordRequest](raw)
 		if derr != nil {
@@ -176,12 +153,6 @@ func (g *Gateway) handleDelivery(ctx context.Context, nc *nodeConn, typ string, 
 		}
 		o, rerr := g.store.RecordJudgment(nc.id, q)
 		data, err = protocol.JudgmentRecordResult{ID: o.ID, Kind: o.Kind, Area: o.Area, Action: o.Action, Category: o.Category}, rerr
-	case protocol.FrameAskIntake:
-		q, derr := decode[protocol.AskIntakeRequest](raw)
-		if derr != nil {
-			return nil, true, reject("bad %s", typ)
-		}
-		data, err = g.askIntake(ctx, nc, q)
 	case protocol.FrameChangeGet:
 		q, derr := decode[protocol.ChangeGetRequest](raw)
 		if derr != nil {
@@ -295,6 +266,13 @@ func (s *Store) mergerOnOtherMachine(project, machine string) (bool, error) {
 
 // deliveryPipeline resolves the ordered delivery settings and overlays graph
 // assignments. A project with no graph node gets the network values.
+// trainMode says whether the project's merger tests one train tip for many
+// changes (delivery.ci_mode train).
+func (s *Store) trainMode(project string) bool {
+	snap, err := s.SettingsSnapshot()
+	return err == nil && snap.String("delivery.ci_mode", settings.Where{Repo: project}) == "train"
+}
+
 func (s *Store) deliveryPipeline(project string) (protocol.Pipeline, error) {
 	c, err := s.resolveRepoContext(project)
 	if err != nil {
@@ -564,14 +542,6 @@ func (s *Store) SubmitChange(machine string, q protocol.ChangeSubmitRequest) (pr
 			return protocol.ChangeSubmitResult{}, err
 		}
 	}
-	if _, err := tx.Exec(`UPDATE inbox_items SET status='dismissed', answered_at=? WHERE status='open' AND about_kind=? AND about_id LIKE ? AND about_id NOT LIKE ?`,
-		s.now().UnixNano(), protocol.AskAboutStep, c.ID+":%", c.ID+":"+strconv.Itoa(c.Revision)+":%"); err != nil {
-		return protocol.ChangeSubmitResult{}, err
-	}
-	if _, err := s.closeAsks(tx, `about_kind='change' AND about_id=? AND kind='step' AND source_ref NOT LIKE ?`,
-		[]any{c.ID, "step:" + c.ID + ":" + strconv.Itoa(c.Revision) + ":%"}, protocol.AskReasonResolved); err != nil {
-		return protocol.ChangeSubmitResult{}, err
-	}
 	if err := s.queueSteps(tx, c, p, now); err != nil {
 		return protocol.ChangeSubmitResult{}, err
 	}
@@ -654,7 +624,6 @@ func (s *Store) reportStep(machine string, q protocol.StepReportRequest, ownerWo
 	}
 	now := s.now().Unix()
 	train := s.trainMode(c.Project)
-	trainRun := q.Step == protocol.StepTest && train
 	tx, err := s.db.Begin()
 	if err != nil {
 		return protocol.StepReportResult{}, err
@@ -816,19 +785,11 @@ func (s *Store) reportStep(machine string, q protocol.StepReportRequest, ownerWo
 			return protocol.StepReportResult{}, err
 		}
 	}
-	if trainRun {
-		if err := s.trainRunFeed(tx, c.Project, e, s.now()); err != nil {
-			return protocol.StepReportResult{}, err
-		}
-	}
 	defectAdded, err := s.autoDefectFromReport(tx, c, e)
 	if err != nil {
 		return protocol.StepReportResult{}, err
 	}
 	if err := s.noteReworkCauseTx(tx, c, e); err != nil {
-		return protocol.StepReportResult{}, err
-	}
-	if err := s.syncStepAsk(tx, c, e); err != nil {
 		return protocol.StepReportResult{}, err
 	}
 	if found && q.Step == protocol.StepApprove {
@@ -859,19 +820,7 @@ func (s *Store) reportStep(machine string, q protocol.StepReportRequest, ownerWo
 		}
 	}
 	var closedSessions []string
-	if next.State == protocol.ChangeDone {
-		if err := s.closeChangeAsks(tx, c.ID, protocol.AskReasonChangeDone); err != nil {
-			return protocol.StepReportResult{}, err
-		}
-	}
 	if next.State == protocol.ChangeStopped {
-		if err := s.closeChangeAsks(tx, c.ID, protocol.AskReasonChangeDone); err != nil {
-			return protocol.StepReportResult{}, err
-		}
-		if _, err := tx.Exec(`UPDATE inbox_items SET status='dismissed', answered_at=? WHERE status='open' AND about_kind=? AND about_id LIKE ?`,
-			s.now().UnixNano(), protocol.AskAboutStep, c.ID+":%"); err != nil {
-			return protocol.StepReportResult{}, err
-		}
 		if closedSessions, err = closeStepTasks(tx, c); err != nil {
 			return protocol.StepReportResult{}, err
 		}
@@ -1157,16 +1106,8 @@ func (s *Store) changeView(c protocol.Change, p protocol.Pipeline, full bool) (p
 			}
 		}
 		if st.Owner.Kind == protocol.OwnerPerson || (st.Owner.Kind == protocol.OwnerDelegate && st.Step == protocol.StepApprove) {
-			var open int
-			err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM inbox_items WHERE about_kind=? AND about_id LIKE ? AND status='open')`,
-				protocol.AskAboutStep, stepAboutPrefix(c.ID, c.Revision, st.StepRef)+"%").Scan(&open)
-			if err != nil {
-				return protocol.ChangeView{}, err
-			}
-			if open != 0 {
-				st.State, st.Note = protocol.StepStateNeedsOwner, "waiting for owner approval"
-				startedSteps[st.StepRef] = true
-			}
+			st.State, st.Note = protocol.StepStateNeedsOwner, "waiting for owner approval"
+			startedSteps[st.StepRef] = true
 			continue
 		}
 		if st.Owner.Kind != protocol.OwnerNode && st.Owner.Kind != protocol.OwnerCaller && st.Owner.Kind != protocol.OwnerMerger {

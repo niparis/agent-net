@@ -880,12 +880,6 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			d.touchToolWork(id)
 		}
 	}
-	if method == protocol.MethodOwnerAsk {
-		var err error
-		if method, raw, err = ownerAskRoute(raw); err != nil {
-			return nil, err
-		}
-	}
 	if res, ok, err := lc.dispatchOperator(ctx, method, raw); ok {
 		return res, err
 	}
@@ -1141,70 +1135,6 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		}
 		d.touchHarness(ls, time.Now())
 		return nil, nil
-
-	case "request_approval", "propose_idea", "ask_question":
-		sid, err := lc.boundID()
-		if err != nil {
-			return nil, err
-		}
-		var p struct {
-			Action         string   `json:"action"`
-			Text           string   `json:"text"`
-			Recommendation string   `json:"recommendation"`
-			Options        []string `json:"options"`
-			Replaces       string   `json:"replaces"`
-		}
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, errors.New("bad inbox request")
-		}
-		kind, text := "approval", p.Action
-		if text == "" && p.Text != "" {
-			text = p.Text
-		}
-		if method == "propose_idea" {
-			kind, text = "feature_idea", p.Text
-		} else if method == "ask_question" {
-			kind, text = "question", p.Text
-		}
-		res, err := d.call(ctx, "inbox.create", map[string]any{"session_id": sid, "kind": kind, "text": text, "recommendation": p.Recommendation, "options": p.Options, "replaces": p.Replaces})
-		if err != nil {
-			return nil, err
-		}
-		// A text that takes an ask back withdraws it. It is not a new wait: a
-		// withdrawal must not become the question the session waits on.
-		var withdrawn struct {
-			Withdrawn bool `json:"withdrawn"`
-		}
-		if json.Unmarshal(res, &withdrawn) == nil && withdrawn.Withdrawn {
-			if ls != nil {
-				d.setWaiting(ls, nil)
-			}
-			return res, nil
-		}
-		// The team lead took the question (asks_to=lead): the session is not
-		// waiting for its user, so it carries on and a wait it had is cleared.
-		var routed struct {
-			Redirected *protocol.AskRedirect `json:"redirected"`
-		}
-		if json.Unmarshal(res, &routed) == nil && routed.Redirected != nil {
-			if ls != nil && p.Replaces != "" {
-				d.setWaiting(ls, nil)
-			}
-			return res, nil
-		}
-		if ls != nil && (kind == "question" || kind == "approval") {
-			if p.Replaces != "" && strings.TrimSpace(text) == "" {
-				d.setWaiting(ls, nil)
-			} else if strings.TrimSpace(text) != "" {
-				d.setWaiting(ls, protocol.CleanWaiting(&protocol.Waiting{
-					Kind:     kind,
-					Text:     text,
-					Options:  p.Options,
-					Explicit: true,
-				}))
-			}
-		}
-		return res, nil
 
 	case "announce":
 		sid, err := lc.boundID()

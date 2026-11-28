@@ -51,8 +51,8 @@ func checkInputRoot(t *testing.T, name string, raw json.RawMessage) {
 }
 
 func TestInputSchemaShape(t *testing.T) {
-	if len(Tools) != 68 {
-		t.Errorf("catalog has %d tools, want 68", len(Tools))
+	if len(Tools) != 64 {
+		t.Errorf("catalog has %d tools, want 64", len(Tools))
 	}
 	for _, tool := range Tools {
 		checkInputRoot(t, tool.Name, tool.InputSchema)
@@ -171,7 +171,7 @@ func contains(tools []Tool, name string) bool {
 }
 
 var ctoOnlyTools = []string{
-	"cto_ui_show", "cto_proposals_find", "cto_intake_find", "graph_change", "session_change",
+	"cto_ui_show", "cto_proposals_find", "graph_change", "session_change",
 	"worker_change", "answer", "mcp_change",
 	"settings_change", "project_change", "sessions_archive", "proposal_ask", "mcp_call", "cto_new",
 }
@@ -297,13 +297,13 @@ func TestBotRole(t *testing.T) {
 }
 
 func TestExistingRoleListsUnchanged(t *testing.T) {
-	if got, want := names(ForRole(RoleAgent)), []string{"agent_announce", "agent_ask_intake", "agent_ask_sort", "agent_bar_edit", "agent_change_submit", "agent_changes_find", "agent_charter_draft", "agent_file_send", "agent_friction_mark", "agent_friction_report", "agent_graph_read", "agent_machine_log", "agent_machines_find", "agent_mcp_servers_find", "agent_mcp_test", "agent_message_handoff", "agent_message_reply", "agent_message_send", "agent_message_withdraw", "agent_messages_find", "agent_note_write", "agent_notes_find", "agent_nudge_pause", "agent_nudge_pauses_find", "agent_nudge_resume", "agent_nudge_stats", "agent_owner_brief", "agent_owner_judgment_record", "agent_owner_judgments_find", "agent_project_add", "agent_projects_find", "agent_sessions_find", "agent_settings_read", "agent_step_claim", "agent_step_report", "agent_worker_profile_add", "agent_worker_profile_remove", "agent_worker_profiles_find", "agent_worker_rate", "agent_worker_start", "agent_worker_start_override", "agent_worker_stop", "agent_workers_find"}; !reflect.DeepEqual(got, want) {
+	if got, want := names(ForRole(RoleAgent)), []string{"agent_announce", "agent_bar_edit", "agent_change_submit", "agent_changes_find", "agent_charter_draft", "agent_file_send", "agent_friction_mark", "agent_friction_report", "agent_graph_read", "agent_machine_log", "agent_machines_find", "agent_mcp_servers_find", "agent_mcp_test", "agent_message_handoff", "agent_message_reply", "agent_message_send", "agent_message_withdraw", "agent_messages_find", "agent_note_write", "agent_notes_find", "agent_nudge_pause", "agent_nudge_pauses_find", "agent_nudge_resume", "agent_nudge_stats", "agent_owner_judgment_record", "agent_owner_judgments_find", "agent_project_add", "agent_projects_find", "agent_sessions_find", "agent_settings_read", "agent_step_claim", "agent_step_report", "agent_worker_profile_add", "agent_worker_profile_remove", "agent_worker_profiles_find", "agent_worker_rate", "agent_worker_start", "agent_worker_start_override", "agent_worker_stop", "agent_workers_find"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("RoleAgent tools changed: %v", got)
 	}
 	if got, want := names(ForRole(RoleWorker)), []string{"agent_changes_find", "agent_file_send", "agent_friction_report", "agent_graph_read", "agent_handback", "agent_machine_log", "agent_machines_find", "agent_mcp_servers_find", "agent_message_reply", "agent_message_send", "agent_message_withdraw", "agent_messages_find", "agent_note_write", "agent_notes_find", "agent_owner_judgments_find", "agent_projects_find", "agent_sessions_find", "agent_settings_read", "agent_workers_find"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("RoleWorker tools changed: %v", got)
 	}
-	if got, want := names(ForRole(RoleCTO)), []string{"agent_graph_read", "agent_machine_log", "agent_machines_find", "agent_mcp_servers_find", "agent_message_reply", "agent_message_send", "agent_message_withdraw", "agent_messages_find", "agent_note_write", "agent_notes_find", "agent_owner_judgment_record", "agent_owner_judgments_find", "agent_projects_find", "agent_protected_providers_get", "agent_protected_providers_set", "agent_sessions_find", "agent_settings_read", "agent_worker_profile_add", "agent_worker_profile_remove", "agent_worker_profiles_find", "agent_workers_find", "answer", "cto_intake_find", "cto_new", "cto_placement_memory", "cto_proposals_find", "cto_standing_orders", "cto_ui_show", "graph_change", "mcp_call", "mcp_change", "project_change", "projects_layout", "proposal_ask", "session_change", "sessions_archive", "settings_change", "skill_archive", "skills", "worker_change"}; !reflect.DeepEqual(got, want) {
+	if got, want := names(ForRole(RoleCTO)), []string{"agent_graph_read", "agent_machine_log", "agent_machines_find", "agent_mcp_servers_find", "agent_message_reply", "agent_message_send", "agent_message_withdraw", "agent_messages_find", "agent_note_write", "agent_notes_find", "agent_owner_judgment_record", "agent_owner_judgments_find", "agent_projects_find", "agent_protected_providers_get", "agent_protected_providers_set", "agent_sessions_find", "agent_settings_read", "agent_worker_profile_add", "agent_worker_profile_remove", "agent_worker_profiles_find", "agent_workers_find", "answer", "cto_new", "cto_placement_memory", "cto_proposals_find", "cto_standing_orders", "cto_ui_show", "graph_change", "mcp_call", "mcp_change", "project_change", "projects_layout", "proposal_ask", "session_change", "sessions_archive", "settings_change", "skill_archive", "skills", "worker_change"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("RoleCTO tools changed: %v", got)
 	}
 	for _, role := range []Role{RoleAgent, RoleWorker, RoleCTO} {
@@ -349,8 +349,6 @@ func TestWorkerModelFieldsBelongOnlyToTheOverrideTool(t *testing.T) {
 // its schema budget (TestCTOSchemaBudgetAndCharterGuide).
 func TestDeliveryToolRoles(t *testing.T) {
 	want := map[string][]Role{
-		"agent_ask_intake":    {RoleAgent},
-		"agent_ask_sort":      {RoleAgent},
 		"agent_change_submit": {RoleAgent},
 		"agent_step_claim":    {RoleAgent},
 		"agent_step_report":   {RoleAgent},
@@ -370,7 +368,7 @@ func TestDeliveryToolRoles(t *testing.T) {
 				t.Errorf("%s hints = %+v", name, tool.Hints)
 			}
 			props := decodeObject(t, name, tool.InputSchema)["properties"].(map[string]any)
-			for _, field := range map[string][]string{"agent_ask_intake": {"action", "session", "turn", "text", "options", "recommendation", "limit"}, "agent_ask_sort": {"ask", "detail", "result", "into", "to", "reason", "priority", "why_you", "sorter", "since", "until", "from_id", "to_id"}, "agent_change_submit": {"branch", "commit", "change"}, "agent_step_claim": {"change", "step", "for", "after_merge", "commit", "reviewer"}, "agent_step_report": {"change", "step", "for", "after_merge", "result", "commit", "fields", "done_by", "note", "friction"}, "agent_changes_find": {"change", "project", "state", "caller", "limit", "cursor"}}[name] {
+			for _, field := range map[string][]string{"agent_change_submit": {"branch", "commit", "change"}, "agent_step_claim": {"change", "step", "for", "after_merge", "commit", "reviewer"}, "agent_step_report": {"change", "step", "for", "after_merge", "result", "commit", "fields", "done_by", "note", "friction"}, "agent_changes_find": {"change", "project", "state", "caller", "limit", "cursor"}}[name] {
 				if props[field] == nil {
 					t.Errorf("%s has no %s", name, field)
 				}

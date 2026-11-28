@@ -44,10 +44,11 @@ type mcpRepairRequest struct {
 	name      string
 }
 
-// mcpDeskAsk is one Desk item waiting for the discovery lock to be released.
-type mcpDeskAsk struct {
+// mcpRepairLog is one failed repair notice waiting for the discovery lock to
+// be released.
+type mcpRepairLog struct {
 	native string
-	ask    protocol.AskOpen
+	text   string
 }
 
 func (d *Daemon) mcpRepairAfter() time.Duration {
@@ -199,22 +200,21 @@ func (d *Daemon) mcpRepairFailed(req mcpRepairRequest, err error) {
 	d.sendMCPDesk()
 }
 
-// queueMCPDeskLocked queues the one Desk item of a session, unless it was
-// already sent or is waiting to be retried.
+// queueMCPDeskLocked queues one log notice for a session whose MCP server
+// stayed disconnected after a restart.
 func (d *Daemon) queueMCPDeskLocked(repair *mcpRepairState, native, name, detail string, now time.Time) {
 	if repair.posted || now.Before(repair.lastPost.Add(mcpDeskRetry)) {
 		return
 	}
 	repair.lastPost = now
-	question := "The agent-net tools could not be connected in session " + name + " after a restart."
-	d.pendingMCPDesk = append(d.pendingMCPDesk, mcpDeskAsk{native: native, ask: protocol.AskOpen{
-		Kind: protocol.AskKindCheck, Ref: "mcp:" + native, From: "agent-net",
-		Question: question, Detail: detail,
-	}})
+	text := "The agent-net tools could not be connected in session " + name + " after a restart."
+	if detail != "" {
+		text += " " + detail
+	}
+	d.pendingMCPDesk = append(d.pendingMCPDesk, mcpRepairLog{native: native, text: text})
 }
 
-// sendMCPDesk sends the items queued under d.mu, outside the discovery lock.
-// An item is not sent if the session said hello after it was queued.
+// sendMCPDesk logs the notices queued under d.mu, outside the discovery lock.
 func (d *Daemon) sendMCPDesk() {
 	d.mu.Lock()
 	pending := d.pendingMCPDesk
@@ -230,15 +230,10 @@ func (d *Daemon) sendMCPDesk() {
 			if helloed {
 				return
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			if _, err := d.call(ctx, "ask.open", p.ask); err != nil {
-				d.Logf("mcp repair: %v", err)
-				return
-			}
+			d.Logf("mcp repair: %s", p.text)
 			if d.st != nil {
 				if err := d.st.setMCPRepairPosted(p.native, time.Now()); err != nil {
-					d.Logf("mcp repair: remember the item: %v", err)
+					d.Logf("mcp repair: remember the notice: %v", err)
 				}
 			}
 			d.mu.Lock()

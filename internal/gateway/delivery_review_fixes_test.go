@@ -1,35 +1,11 @@
 package gateway
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
-
-// A change closed while an owner approval is open: what happens to the item?
-func TestDeliveryClosedChangeClosesApprovalItem(t *testing.T) {
-	r := newDeliveryRig(t)
-	if _, err := r.s.WriteSettings([]SettingsChange{{Key: "delivery.merge_authority", Level: "repo", Scope: "demo", Value: json.RawMessage(`"ask"`)}}, "owner", "test"); err != nil {
-		t.Fatal(err)
-	}
-	id := r.submit(r.a, r.workerSubmit("feature/closed", commitA)).Change.Change.ID
-	r.mustReport(r.a, protocol.StepReportRequest{SessionID: r.caller, ChangeID: id, StepRef: stepAccept, Result: protocol.StepResultClose, Commit: commitA, Note: "not wanted"})
-	items, err := r.s.ListInbox()
-	if err != nil {
-		t.Fatal(err)
-	}
-	open := 0
-	for _, item := range items {
-		if item.Status == "open" && item.Delivery != nil {
-			open++
-		}
-	}
-	if open != 0 {
-		t.Fatalf("%d delivery inbox items stay open after the change was closed", open)
-	}
-}
 
 // A session that is not the caller reports a caller-owned step in a pipeline
 // with no node-owned step (so no durable task row exists).

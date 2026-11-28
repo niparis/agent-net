@@ -425,10 +425,7 @@ type Daemon struct {
 	daemonTyped         daemonTyped                  // text the daemon typed into a session terminal, not the owner's
 	claudeChecks        sync.WaitGroup               // background checks of Claude prompts that wait for the transcript
 	claudeOwnerWait     time.Duration                // test hook: how long to wait for a transcript entry; 0 means claudeSenderWait
-	turnEnds            turnEndAsks
-	ownerPromptClock    func() time.Time // test hook
-	heldMu              sync.Mutex
-	heldStarts          map[string]*heldStart // start id -> a start that waits for the owner, guarded by heldMu
+	ownerPromptClock    func() time.Time             // test hook
 	acceptedMu          sync.Mutex
 	accepted            map[string]*acceptedStart // start id -> an accepted start, guarded by acceptedMu
 	openCodeRoutes      opencodeapi.Cache
@@ -663,7 +660,7 @@ type Daemon struct {
 	// All are protected by d.mu.
 	mcpRepair         map[string]*mcpRepairState
 	pendingMCPRepairs []mcpRepairRequest
-	pendingMCPDesk    []mcpDeskAsk
+	pendingMCPDesk    []mcpRepairLog
 
 	repo *repoinfo.Resolver
 
@@ -691,9 +688,6 @@ type Daemon struct {
 	inSession func(pid int) bool
 
 	// diskWarnMu protects warning state; gateway calls run without it held.
-	// proposalAsks remembers the last proposal list the gateway accepted.
-	proposalAsks proposalAskState
-
 	diskWarnMu          sync.Mutex
 	diskWarningUpdating bool
 	diskWarningActive   bool
@@ -785,10 +779,6 @@ func New(cfg Config) (*Daemon, error) {
 		return nil, err
 	}
 	if err := d.loadFirstMessages(); err != nil {
-		st.close()
-		return nil, err
-	}
-	if err := d.loadHeldStarts(); err != nil {
 		st.close()
 		return nil, err
 	}
@@ -908,8 +898,6 @@ func (d *Daemon) Start(ctx context.Context) error {
 	go func() { defer d.wg.Done(); d.harnessUpdateLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.deliveryReconcileLoop(ctx) }()
-	d.wg.Add(1)
-	go func() { defer d.wg.Done(); d.proposalAskLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.sleepLoop(ctx) }()
 	d.wg.Add(1)

@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -41,13 +40,6 @@ func TestVoidedJudgmentsAreHiddenFromReads(t *testing.T) {
 		if len(got) != 1 || got[0] != "so_keep" {
 			t.Fatalf("find %+v returned %v, want only so_keep", q, got)
 		}
-	}
-	facts, err := s.briefFacts(time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(facts, "false release") || !strings.Contains(facts, "yes ship the release") {
-		t.Fatalf("brief facts: %q", facts)
 	}
 	var kept int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM standing_orders WHERE id='so_void'`).Scan(&kept); err != nil || kept != 1 {
@@ -117,22 +109,6 @@ func TestMigrationVoidsCompactionJudgments(t *testing.T) {
 // The gateway never stores a slash command as the owner's words.
 func TestSlashCommandIsNotStoredAsOwnerWords(t *testing.T) {
 	s, _ := newTestStore(t)
-	item := protocol.InboxItem{ID: "i_slash", Text: "stopped with work left: triage", Kind: protocol.AskKindQuestion}
-	for _, words := range []string{compactionText, "  " + compactionText, `\` + compactionText} {
-		if err := s.recordOwnerWords(s.db, item, words); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if rows := mustFind(t, s, protocol.JudgmentsFindRequest{Ref: "i_slash"}); len(rows) != 0 {
-		t.Fatalf("slash command stored as owner words: %+v", rows)
-	}
-	if err := s.recordOwnerWords(s.db, item, "yes, triage it"); err != nil {
-		t.Fatal(err)
-	}
-	if rows := mustFind(t, s, protocol.JudgmentsFindRequest{Ref: "i_slash"}); len(rows) != 1 {
-		t.Fatalf("a normal answer must be stored: %+v", rows)
-	}
-
 	_, err := s.AddJudgment(protocol.JudgmentAddRequest{Kind: protocol.StandingKindAnswer, Text: compactionText, Ref: "chat:s_1"})
 	if err == nil {
 		t.Fatal("a slash command was recorded as an owner answer")

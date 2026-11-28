@@ -230,18 +230,9 @@ func TestFreshStoreKeepsItsMarkersInGatewayState(t *testing.T) {
 // write to it refreshes those screens. A marker is not a setting and no screen shows it.
 func TestMarkerWriteDoesNotRefreshTheOwnerScreens(t *testing.T) {
 	s, _ := newTestStore(t)
-	topics := []string{protocol.TopicNodes, protocol.TopicWorkers, protocol.TopicInbox}
+	topics := []string{protocol.TopicNodes, protocol.TopicWorkers}
 	before := s.topicVersions()
-	if _, err := s.db.Exec(`DELETE FROM gateway_state WHERE key=?`, owedRepliesLiveSinceKey); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.initOwedRepliesLiveSince(); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := stateRows(t, s)[owedRepliesLiveSinceKey]; !ok {
-		t.Fatal("the marker was not written")
-	}
-	if err := stateSet(s.db, protocol.BriefLastSentKey, "2026-11-20", s.now().UnixNano()); err != nil {
+	if err := stateSet(s.db, "test_marker_key", "1", s.now().UnixNano()); err != nil {
 		t.Fatal(err)
 	}
 	after := s.topicVersions()

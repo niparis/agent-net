@@ -34,17 +34,6 @@ func TestSessionHeldMessageStopsRemindersUntilRelease(t *testing.T) {
 		t.Fatalf("held message = %+v, %v", got, err)
 	}
 
-	// The recipient is idle and has not replied, but a held message is not a
-	// message it can answer, so no reminder is due.
-	c.advance(30 * time.Minute)
-	nudges, err := s.checkOwedReplies()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(nudges) != 0 {
-		t.Fatalf("reminders for a held message: %+v", nudges)
-	}
-
 	// A repeated first delivered report is not a release.
 	if err := s.ApplyDelivery(req.ID, protocol.StateDelivered, ""); err != nil {
 		t.Fatal(err)
@@ -75,14 +64,6 @@ func TestSessionHeldMessageStopsRemindersUntilRelease(t *testing.T) {
 	}
 	if delivered != 2 {
 		t.Fatalf("delivered events = %d, want the delivery and the release", delivered)
-	}
-	c.advance(30 * time.Minute)
-	nudges, err = s.checkOwedReplies()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(nudges) != 1 {
-		t.Fatalf("reminders after release = %d, want 1", len(nudges))
 	}
 }
 
