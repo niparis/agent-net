@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -222,7 +223,7 @@ func TestFromGatewayInstallsAndKeepsPrev(t *testing.T) {
 	sums := fmt.Sprintf("%s  %s\n", sum(bin), ThisAsset())
 	gw := fakeGateway(t, bin, []byte(sums))
 
-	res, err := FromGateway(ctx, http.DefaultClient, gw.URL, exe, "v1", "v2")
+	res, err := FromGateway(ctx, http.DefaultClient, gw.URL, exe, t.TempDir(), "v1", "v2", false)
 	if err != nil || !res.Replaced || res.To != "v2" {
 		t.Fatalf("FromGateway = %+v, %v", res, err)
 	}
@@ -231,6 +232,60 @@ func TestFromGatewayInstallsAndKeepsPrev(t *testing.T) {
 	}
 	if v, _ := BinaryVersion(ctx, PrevPath(exe)); v != "v1" {
 		t.Fatalf("prev is %q", v)
+	}
+}
+
+// stubSign replaces the macOS signing step for one test.
+func stubSign(t *testing.T, f func(ctx context.Context, stateDir, path string) error) {
+	old := signBinary
+	signBinary = f
+	t.Cleanup(func() { signBinary = old })
+}
+
+func TestFromGatewaySignsTheNewBinaryBeforeItIsPlaced(t *testing.T) {
+	exe := filepath.Join(t.TempDir(), "agent-net")
+	writeBin(t, exe, "v1")
+	bin := fakeBinary("v2")
+	gw := fakeGateway(t, bin, []byte(fmt.Sprintf("%s  %s\n", sum(bin), ThisAsset())))
+	state := t.TempDir()
+	var gotState string
+	stubSign(t, func(_ context.Context, stateDir, path string) error {
+		gotState = stateDir
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		_, err = f.WriteString("# signed\n")
+		return err
+	})
+	res, err := FromGateway(context.Background(), http.DefaultClient, gw.URL, exe, state, "v1", "v2", false)
+	if err != nil || !res.Replaced || res.SignErr != nil {
+		t.Fatalf("FromGateway = %+v, %v", res, err)
+	}
+	if gotState != state {
+		t.Fatalf("signed with state dir %q, want %q", gotState, state)
+	}
+	if b, _ := os.ReadFile(exe); !strings.HasSuffix(string(b), "# signed\n") {
+		t.Fatalf("the placed binary is not the signed one: %q", b)
+	}
+}
+
+func TestFromGatewayInstallsWhenSigningFails(t *testing.T) {
+	exe := filepath.Join(t.TempDir(), "agent-net")
+	writeBin(t, exe, "v1")
+	bin := fakeBinary("v2")
+	gw := fakeGateway(t, bin, []byte(fmt.Sprintf("%s  %s\n", sum(bin), ThisAsset())))
+	stubSign(t, func(context.Context, string, string) error { return errors.New("codesign: errSecInternalComponent") })
+	res, err := FromGateway(context.Background(), http.DefaultClient, gw.URL, exe, t.TempDir(), "v1", "v2", false)
+	if err != nil || !res.Replaced {
+		t.Fatalf("a failed signing stopped the install: %+v, %v", res, err)
+	}
+	if res.SignErr == nil || !strings.Contains(res.SignErr.Error(), "errSecInternalComponent") {
+		t.Fatalf("SignErr = %v", res.SignErr)
+	}
+	if v, _ := BinaryVersion(context.Background(), exe); v != "v2" {
+		t.Fatalf("exe is %q", v)
 	}
 }
 
@@ -243,7 +298,7 @@ func TestFromGatewayChecksumMismatchChangesNothing(t *testing.T) {
 	sums := fmt.Sprintf("%s  %s\n", sum([]byte("something else")), ThisAsset())
 	gw := fakeGateway(t, bin, []byte(sums))
 
-	_, err := FromGateway(ctx, http.DefaultClient, gw.URL, exe, "v1", "v2")
+	_, err := FromGateway(ctx, http.DefaultClient, gw.URL, exe, t.TempDir(), "v1", "v2", false)
 	if err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
 		t.Fatalf("want a checksum mismatch, got %v", err)
 	}
@@ -261,7 +316,7 @@ func TestFromGatewayWrongVersion(t *testing.T) {
 	writeBin(t, exe, "v1")
 	bin := fakeBinary("v3")
 	gw := fakeGateway(t, bin, []byte(fmt.Sprintf("%s  %s\n", sum(bin), ThisAsset())))
-	_, err := FromGateway(context.Background(), http.DefaultClient, gw.URL, exe, "v1", "v2")
+	_, err := FromGateway(context.Background(), http.DefaultClient, gw.URL, exe, t.TempDir(), "v1", "v2", false)
 	if err == nil || !strings.Contains(err.Error(), "v3") {
 		t.Fatalf("want a version error, got %v", err)
 	}
@@ -277,7 +332,7 @@ func TestFromGatewayAlreadyInstalled(t *testing.T) {
 	writeBin(t, exe, "v2")
 	bin := fakeBinary("v2")
 	gw := fakeGateway(t, bin, []byte(fmt.Sprintf("%s  %s\n", sum(bin), ThisAsset())))
-	res, err := FromGateway(context.Background(), http.DefaultClient, gw.URL, exe, "v1", "v2")
+	res, err := FromGateway(context.Background(), http.DefaultClient, gw.URL, exe, t.TempDir(), "v1", "v2", false)
 	if err != nil || res.Replaced || res.To != "v2" {
 		t.Fatalf("FromGateway = %+v, %v", res, err)
 	}
@@ -358,7 +413,7 @@ func TestFromGatewaySignatureRefusals(t *testing.T) {
 			defer gw.Close()
 			exe := filepath.Join(t.TempDir(), "agent-net")
 			writeBin(t, exe, "v1")
-			_, err := FromGateway(context.Background(), http.DefaultClient, gw.URL, exe, "v1", "v2")
+			_, err := FromGateway(context.Background(), http.DefaultClient, gw.URL, exe, t.TempDir(), "v1", "v2", false)
 			if err == nil || !strings.Contains(err.Error(), "signature") {
 				t.Fatalf("want signature error, got %v", err)
 			}
@@ -381,7 +436,7 @@ func TestFromGatewayRejectsDowngrade(t *testing.T) {
 	bin := fakeBinary("v1.9.0")
 	sums := fmt.Sprintf("%s  install.sh\n%s  %s\n", sum([]byte("installer")), sum(bin), ThisAsset())
 	gw := fakeGateway(t, bin, []byte(sums))
-	_, err := FromGateway(context.Background(), http.DefaultClient, gw.URL, exe, "v2.0.0", "")
+	_, err := FromGateway(context.Background(), http.DefaultClient, gw.URL, exe, t.TempDir(), "v2.0.0", "", false)
 	if err == nil || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("downgrade was not refused: %v", err)
 	}
@@ -409,7 +464,7 @@ func TestFromGatewayForceAllowsDowngrade(t *testing.T) {
 	writeBin(t, exe, "v2.0.0")
 	bin := fakeBinary("v1.9.0")
 	gw := fakeGateway(t, bin, []byte(fmt.Sprintf("%s  %s\n", sum(bin), ThisAsset())))
-	res, err := FromGatewayWithForce(context.Background(), http.DefaultClient, gw.URL, exe, "v2.0.0", "", true)
+	res, err := FromGateway(context.Background(), http.DefaultClient, gw.URL, exe, t.TempDir(), "v2.0.0", "", true)
 	if err != nil || !res.Replaced || res.To != "v1.9.0" {
 		t.Fatalf("forced downgrade: %+v, %v", res, err)
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/funnel"
 	"github.com/niparis/agent-net/internal/guidance"
+	"github.com/niparis/agent-net/internal/macsign"
 	"github.com/niparis/agent-net/internal/quotaaxi"
 	"github.com/niparis/agent-net/internal/tsnode"
 )
@@ -116,6 +117,16 @@ func Uninstall(o Options) error {
 		r.step("antigravity plugin", "", err)
 	}
 	r.removeGuidance()
+	// Before a purge: the keychain must leave the search list with security,
+	// not only be deleted as a file.
+	ctx, cancel = context.WithTimeout(context.Background(), 15*time.Second)
+	switch removed, err := macsign.Remove(ctx, daemon.StateDir()); {
+	case err != nil:
+		r.step("code signing identity", "", err)
+	case removed:
+		r.step("code signing identity", "ok (removed)", nil)
+	}
+	cancel()
 	if err := daemon.RemoveSkillState(daemon.StateDir()); err != nil {
 		r.step("skill state", "", err)
 	}

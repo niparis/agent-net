@@ -198,6 +198,12 @@ main() {
   cp "$WORK/agent-net-$OS-$ARCH" "$BIN_TMP" && chmod 755 "$BIN_TMP" || die "cannot stage downloaded binary"
   got_version="$("$BIN_TMP" version)" || die "downloaded binary cannot report its version"
   [ "$got_version" = "$VERSION" ] || die "release $VERSION binary reports version $got_version"
+  # On macOS the new binary signs itself with this Mac's own identity before
+  # it is put in place, so one "access data from other apps" Allow lasts
+  # across updates (decision 0199). A failure only costs that prompt.
+  if [ "$OS" = darwin ]; then
+    "$BIN_TMP" macos-sign "$BIN_TMP" || echo "agent-net install: the binary is not signed, macOS may ask again for access" >&2
+  fi
 
   if [ "$MODE" = gateway ]; then
     mkdir -p "$DIST_DIR" || die "cannot create $DIST_DIR"

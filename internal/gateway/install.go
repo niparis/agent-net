@@ -127,6 +127,9 @@ trap 'rm -f "$TMP"' EXIT
 echo "downloading agent-net for $OS/$ARCH"
 curl -fsSL -k --pinnedpubkey "$PIN" -o "$TMP" "$URL/install/bin/$OS/$ARCH" || die "download failed (is the gateway reachable, and does it have a $OS/$ARCH binary?)"
 chmod 755 "$TMP"
+if [ "$OS" = darwin ]; then
+  "$TMP" macos-sign "$TMP" || echo "agent-net install: the binary is not signed, macOS may ask again for access" >&2
+fi
 mv -f "$TMP" "$BIN_DIR/agent-net" || die "cannot install $BIN_DIR/agent-net"
 trap - EXIT
 

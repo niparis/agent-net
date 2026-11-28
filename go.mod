@@ -23,6 +23,7 @@ require (
 	golang.org/x/sys v0.49.0
 	golang.org/x/term v0.47.0
 	modernc.org/sqlite v1.61.0
+	software.sslmate.com/src/go-pkcs12 v0.7.3
 	tailscale.com v1.104.5
 )
 

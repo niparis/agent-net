@@ -819,6 +819,7 @@ func New(cfg Config) (*Daemon, error) {
 // Start opens the local socket and runs the gateway link and the adapters in
 // the background.
 func (d *Daemon) Start(ctx context.Context) error {
+	d.logCodeSignature()
 	ctx, d.cancel = context.WithCancel(ctx)
 	d.workerStreamCtx = ctx
 	d.ctoCtx = ctx

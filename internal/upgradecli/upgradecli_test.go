@@ -178,3 +178,16 @@ func TestUpgradeRunsSetupWithRoleStepOff(t *testing.T) {
 		t.Fatalf("setup output = %q", out.String())
 	}
 }
+
+func TestUpgradeSaysWhenTheBinaryIsNotSigned(t *testing.T) {
+	var out bytes.Buffer
+	r := &run{Options: Options{Out: &out}}
+	r.saySigned(nil)
+	if out.Len() != 0 {
+		t.Fatalf("said something for a signed binary: %q", out.String())
+	}
+	r.saySigned(fmt.Errorf("codesign: errSecInternalComponent"))
+	if got := out.String(); got != "code signature      not signed, macOS may ask again for access (codesign: errSecInternalComponent)\n" {
+		t.Fatalf("output = %q", got)
+	}
+}

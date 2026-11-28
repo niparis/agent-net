@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/niparis/agent-net/internal/macsign"
 	"github.com/niparis/agent-net/internal/upgrade"
 )
 
@@ -82,4 +83,13 @@ func (d *Daemon) servedVersion(ctx context.Context) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	return upgrade.ServedVersion(ctx, d.client, d.cfg.GatewayURL)
+}
+
+// logCodeSignature writes the last macOS signing result to the daemon log at
+// start. install.sh and agent-net upgrade sign the binary before the daemon
+// runs, so this is where their result reaches the log.
+func (d *Daemon) logCodeSignature() {
+	if s := macsign.LastStatus(d.cfg.StateDir); s != "" {
+		d.Logf("code signature: %s", s)
+	}
 }
