@@ -612,7 +612,7 @@ func TestAgyWorkerArgs(t *testing.T) {
 	dirs := []string{"/repo/.git/objects", "/gocache"}
 	wrapped := agyWorkerArgs(model, true, dirs, "conv-1")
 	want := []string{"--input-format", "stream-json", "--output-format", "stream-json", "--model", "gemini-3.8-flash-low",
-		"--mode", "accept-edits", "--settings", `{"permissions":{"allow":["command(*)","mcp(agent-net_agent-net/*)"]}}`,
+		"--mode", "accept-edits", "--settings", `{"enableTerminalSandbox":false,"toolPermission":"request-review","permissions":{"allow":["command(*)","mcp(agent-net_agent-net/*)"]}}`,
 		"--add-dir", "/repo/.git/objects", "--add-dir", "/gocache", "--conversation", "conv-1", "-p="}
 	if !slices.Equal(wrapped, want) {
 		t.Fatalf("wrapped:\n got %q\nwant %q", wrapped, want)
@@ -622,6 +622,22 @@ func TestAgyWorkerArgs(t *testing.T) {
 		t.Fatalf("without the wrapper: %q", own)
 	}
 	noFlagThatSkipsPermissions(t, wrapped)
+}
+
+// agy applies --settings key by key over the user's settings.json (measured
+// on agy 1.5.19), as json.Unmarshal into a filled map does. A user whose
+// settings turn agy's terminal sandbox on must not get it in the wrapper: on a
+// Mac agy runs each command through its own sandbox-exec, which cannot exec a
+// Nix profile's shell, and the worker hangs.
+func TestAgyWrappedWorkerTurnsOffSavedSandbox(t *testing.T) {
+	t.Parallel()
+	saved := map[string]any{"enableTerminalSandbox": true, "toolPermission": "proceed-in-sandbox"}
+	if err := json.Unmarshal([]byte(argValue(agyWorkerArgs(nil, true, nil, ""), "--settings")), &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved["enableTerminalSandbox"] != false || saved["toolPermission"] != "request-review" {
+		t.Fatalf("agy's settings in the wrapper: %v", saved)
+	}
 }
 
 // agy reports per-step usage in its stream but no context window, so the

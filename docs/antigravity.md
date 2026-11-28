@@ -116,7 +116,7 @@ protected-provider rule does not apply to it.
 An agy worker runs in its worktree with this command (`-p=` is empty and last):
 
 ```sh
-agy --input-format stream-json --output-format stream-json --model <id> --mode accept-edits --settings '{"permissions":{"allow":["command(*)","mcp(agent-net_agent-net/*)"]}}' -p=
+agy --input-format stream-json --output-format stream-json --model <id> --mode accept-edits --settings '{"enableTerminalSandbox":false,"toolPermission":"request-review","permissions":{"allow":["command(*)","mcp(agent-net_agent-net/*)"]}}' -p=
 ```
 
 The daemon runs this command inside agent-net's OS wrapper, as for Pi and
@@ -129,6 +129,14 @@ from a Nix profile is not permitted. The model then reran each command with
 `BypassSandbox`, and nothing held the fence. `command(*)` lets shell commands
 run without a prompt; the wrapper decides where they can write.
 
+`--settings` replaces only the keys it names, so the first two keys turn agy's
+terminal sandbox off even when your own `settings.json` turns it on
+(`"enableTerminalSandbox": true`, Sandbox Mode in `/config`, or
+`"toolPermission": "proceed-in-sandbox"`). Without them agy kept its sandbox
+inside the wrapper, and on a Mac with a Nix shell every command failed with
+`sandbox-exec: execvp() of '/etc/profiles/per-user/<user>/bin/zsh' failed:
+Operation not permitted`. Both values are agy's defaults.
+
 agy writes its own folders as it runs, so they are writable in the wrapper:
 `~/.gemini/antigravity-cli` (conversations, the summaries database, logs,
 helper binaries, its settings, where it adds each workspace it trusts, and the
@@ -137,8 +145,8 @@ login token) and the login folder `antigravity` in the user config folder
 are your own folders, not copies.
 
 A project with the wrapper turned off (`"workers": {"os_sandbox_off": [...]}`
-in `node.json`) runs the same command with agy's own `--sandbox` after
-`--mode accept-edits`. The model can run a command outside that sandbox, so the
+in `node.json`) runs the command with agy's own `--sandbox` after
+`--mode accept-edits`, and without the first two keys of `--settings`. The model can run a command outside that sandbox, so the
 worker's permissions line says the fence is not enforced.
 
 The agent-net agy plugin must be installed for `agent_handback`. Its MCP server

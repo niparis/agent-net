@@ -26,12 +26,26 @@ import (
 // OpenCode, and agy runs without its own --sandbox inside it: on the owner's
 // machines agy's terminal sandbox could not run a command (on Linux the exec
 // of the shell failed, on macOS a Nix shell was not permitted), so the model
-// reran each command with BypassSandbox and nothing held the fence. Only a
-// project with the wrapper turned off (workers.os_sandbox_off) gets agy's
-// --sandbox, which the model can still bypass.
+// reran each command with BypassSandbox and nothing held the fence. The
+// wrapped settings also turn off a terminal sandbox that the user's own agy
+// settings turn on (agyWrappedSettings). Only a project with the wrapper turned
+// off (workers.os_sandbox_off) gets agy's --sandbox, which the model can still
+// bypass.
 type agyLauncher struct{}
 
-const agyWorkerSettings = `{"permissions":{"allow":["command(*)","mcp(agent-net_agent-net/*)"]}}`
+const agyWorkerPermissions = `"permissions":{"allow":["command(*)","mcp(agent-net_agent-net/*)"]}`
+
+const agyWorkerSettings = `{` + agyWorkerPermissions + `}`
+
+// agyWrappedSettings also turns agy's terminal sandbox off, because leaving
+// out --sandbox is not enough: --settings replaces only the keys it names, so
+// a settings.json with "enableTerminalSandbox": true (Sandbox Mode in /config)
+// or "toolPermission": "proceed-in-sandbox" kept agy's own sandbox on inside
+// the wrapper. On macOS agy then ran each command as sandbox-exec $SHELL, and
+// its profile cannot exec a Nix profile's shell, a link into /nix/store:
+// "execvp() of '/etc/profiles/per-user/<user>/bin/zsh' failed: Operation not
+// permitted". The values are agy's defaults (agy 1.5.19).
+const agyWrappedSettings = `{"enableTerminalSandbox":false,"toolPermission":"request-review",` + agyWorkerPermissions + `}`
 
 // agyWorkerArgs is the agy command line of a worker. wrapped tells whether it
 // runs in agent-net's OS wrapper. addDirs are the folders the worker may write
@@ -40,10 +54,11 @@ const agyWorkerSettings = `{"permissions":{"allow":["command(*)","mcp(agent-net_
 func agyWorkerArgs(modelArgs []string, wrapped bool, addDirs []string, native string) []string {
 	args := append([]string{"--input-format", "stream-json", "--output-format", "stream-json"}, modelArgs...)
 	args = append(args, "--mode", "accept-edits")
-	if !wrapped {
-		args = append(args, "--sandbox")
+	if wrapped {
+		args = append(args, "--settings", agyWrappedSettings)
+	} else {
+		args = append(args, "--sandbox", "--settings", agyWorkerSettings)
 	}
-	args = append(args, "--settings", agyWorkerSettings)
 	for _, path := range addDirs {
 		args = append(args, "--add-dir", path)
 	}
