@@ -134,3 +134,46 @@ func TestClaudeWorkerSandboxFollowsTheWriteFence(t *testing.T) {
 		t.Errorf("unix sockets or local ports are closed: %v", network)
 	}
 }
+
+// A Claude worker may run the git commands it needs in its own worktree
+// (commit, stage, look at history, switch to a new branch, stash). Pushing,
+// merging and any force form stay out: the daemon pushes a hand-back branch,
+// and a merge or a forced move would change a branch the worker does not own.
+func TestClaudeWorkerGitCommandsAreAllowedExceptPushMergeAndForce(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	c := startClaudeNode(t, g, shortSet)
+	repo := newRepo(t, "shop")
+	c.register(t, repo)
+
+	res := c.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Model: "fake/m1",
+		Task: "FAKE:ignore hold the turn", Isolation: protocol.IsolationWorktree})
+	rec := readClaude(t, res.Worktree)
+
+	perms, ok := rec.Settings["permissions"].(map[string]any)
+	if !ok {
+		t.Fatalf("the launch settings carry no permissions: %v", rec.Settings)
+	}
+	allow := stringList(t, perms["allow"], "permissions.allow")
+	for _, want := range []string{
+		"Bash(git add:*)", "Bash(git commit:*)", "Bash(git status:*)", "Bash(git diff:*)",
+		"Bash(git log:*)", "Bash(git switch:*)", "Bash(git checkout -b:*)", "Bash(git rev-parse:*)",
+		"Bash(git show:*)", "Bash(git stash:*)",
+	} {
+		if !hasString(allow, want) {
+			t.Errorf("a Claude worker cannot run %q without a prompt nobody answers: %v", want, allow)
+		}
+	}
+	deny := stringList(t, perms["deny"], "permissions.deny")
+	for _, want := range []string{
+		"Bash(git push:*)", "Bash(git merge:*)", "Bash(git * --force*)", "Bash(git * -f *)", "Bash(git * -f)",
+	} {
+		if !hasString(deny, want) {
+			t.Errorf("a Claude worker may run %q: %v", want, deny)
+		}
+	}
+	for _, bad := range []string{"Bash(git push:*)", "Bash(git merge:*)"} {
+		if hasString(allow, bad) {
+			t.Errorf("a Claude worker is allowed %q: %v", bad, allow)
+		}
+	}
+}

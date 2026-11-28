@@ -256,10 +256,36 @@ func (d *Daemon) claudeWorkerSettings(w *worker, env map[string]string) map[stri
 // A sandboxed Bash command starts with no allowed host and nobody can answer
 // its prompt in a background session, so the allow rule pre-allows every host
 // for the sandbox (Claude Code 2.1.186).
+//
+// The git commands a worker needs to commit its work are allowed here too, so
+// a hand-back does not wait on a prompt. Push, merge and every force form are
+// denied: the daemon pushes the branch on hand-back, and a worker that merges
+// or force-moves a branch changes one it does not own. Deny rules win over
+// allow rules in Claude Code. Rule patterns match the command text, so a git
+// call that names its folder first (git -C) gets a prompt, which nobody answers.
 func claudeWorkerPermissions(level, dir string) map[string]any {
 	return map[string]any{
 		"blockWritesOutsideWorkingDirectories": true,
-		"allow":                                []string{"WebFetch(domain:*)"},
+		"allow": []string{
+			"WebFetch(domain:*)",
+			"Bash(git add:*)",
+			"Bash(git commit:*)",
+			"Bash(git status:*)",
+			"Bash(git diff:*)",
+			"Bash(git log:*)",
+			"Bash(git switch:*)",
+			"Bash(git checkout -b:*)",
+			"Bash(git rev-parse:*)",
+			"Bash(git show:*)",
+			"Bash(git stash:*)",
+		},
+		"deny": []string{
+			"Bash(git push:*)",
+			"Bash(git merge:*)",
+			"Bash(git * --force*)",
+			"Bash(git * -f *)",
+			"Bash(git * -f)",
+		},
 	}
 }
 
