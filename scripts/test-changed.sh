@@ -37,6 +37,11 @@
 # production file gets its same-name test file only. The full package runs in
 # the merge queue's CI, which decision 0164 made the single test gate.
 #
+# Runs for one package are merged (merge_runs). A package gets one go test call
+# per mode: its named tests become one -run pattern, and a rule that asks for the
+# whole package makes it one call with no pattern. A diff that touches many files
+# in one package therefore pays the go test start-up cost once.
+#
 # Every diff also runs the contract set: the migrations lock and append-only
 # tests, the CTO schema and read-size checks, and the tool catalog text. These
 # are small and cross-cutting, and they were the merger's most common pre-merge
@@ -52,6 +57,10 @@
 # and its summary counts them. The merge queue's CI runs them. Outside such a
 # sandbox nothing changes. TEST_CHANGED_UNIX_SOCKETS=ok|blocked replaces the
 # probe, for scripts/test-changed-test.sh.
+#
+# On macOS the run sets TMPDIR to /private/tmp when the caller set none or a long
+# one (macos_tmp in scripts/gotmpdir.sh). The default /var/folders path makes a
+# unix socket path longer than the 104-byte limit.
 #
 # The rule checker (tools/rulecheck, its own Go module) checks three rules on the
 # changed packages: no test sleeps over 2 seconds (B4), no em dash in production
@@ -192,6 +201,13 @@ if [ -z "${GOTMPDIR:-}" ]; then
   export GOTMPDIR
 fi
 mkdir -p "$GOTMPDIR" || fail "could not make the Go temp folder $GOTMPDIR"
+# On macOS a run uses /private/tmp as TMPDIR when the caller set none or a long
+# one, so unix socket paths stay under their length limit (macos_tmp).
+host_os=${TEST_CHANGED_OS:-$(uname -s)}
+if mac_tmp=$(macos_tmp "$host_os" "${TMPDIR:-}"); then
+  TMPDIR=$mac_tmp
+  export TMPDIR
+fi
 if [ -z "${TMPDIR:-}" ]; then
   if tmp_dir=$(tmp_default); then
     TMPDIR=$tmp_dir
@@ -501,8 +517,70 @@ if [ -s "$work/files" ]; then
   done <"$work/files"
 fi
 
-# Sort and drop duplicate commands that two rules both asked for.
-sort -u "$work/runs" | awk '!seen[$1 "\t" $2 "\t" $3]++' >"$work/runs.unique"
+# merge_runs reads the "mode package pattern rule" lines of $work/runs, sorted,
+# and prints one line for each mode and package. A package gets one go test call:
+# the whole package when any of its runs asks for it, else one -run pattern. The
+# names of the ^(...)$ patterns are joined into one list, each name once. Other
+# patterns stay as they are: several of them are grouped with | and each one is
+# put in parentheses. A package is matched without the module path, because a
+# contract run names it with the path and a rule names it without.
+merge_runs() {
+  awk -v prefix="$module/" '
+    function add_rule(key, rule,   count, labels, i) {
+      count = split(rules[key], labels, ",")
+      for (i = 1; i <= count; i++) if (labels[i] == rule) return
+      rules[key] = rules[key] (rules[key] == "" ? "" : ",") rule
+    }
+    {
+      mode = $1
+      pkg = $2
+      if (index(pkg, prefix) == 1) pkg = substr(pkg, length(prefix) + 1)
+      key = mode " " pkg
+      if (!(key in pkg_of)) {
+        keys_count++
+        keys[keys_count] = key
+        mode_of[key] = mode
+        pkg_of[key] = pkg
+      }
+      add_rule(key, $4)
+      if ($3 == "all") {
+        has_all[key] = 1
+      } else if ($3 ~ /^\^\(.*\)\$$/) {
+        n = split(substr($3, 3, length($3) - 4), items, "|")
+        for (i = 1; i <= n; i++) {
+          if ((key SUBSEP items[i]) in name_seen) continue
+          name_seen[key SUBSEP items[i]] = 1
+          names[key] = names[key] (names[key] == "" ? "" : "|") items[i]
+        }
+      } else if (!((key SUBSEP $3) in other_seen)) {
+        other_seen[key SUBSEP $3] = 1
+        others[key] = others[key] (others[key] == "" ? "" : "\t") $3
+      }
+    }
+    END {
+      for (k = 1; k <= keys_count; k++) {
+        key = keys[k]
+        if (key in has_all) {
+          print mode_of[key], pkg_of[key], "all", rules[key]
+          continue
+        }
+        m = split(others[key], parts, "\t")
+        total = m + (names[key] == "" ? 0 : 1)
+        pattern = names[key] == "" ? "" : "^(" names[key] ")$"
+        for (j = 1; j <= m; j++) {
+          part = parts[j]
+          if (total > 1) part = "(" part ")"
+          pattern = (pattern == "" ? part : pattern "|" part)
+        }
+        print mode_of[key], pkg_of[key], pattern, rules[key]
+      }
+    }
+  '
+}
+
+# Each package gets one go test call per mode, so a diff that touches many files
+# in one package pays the start-up cost once.
+sort -u "$work/runs" | merge_runs >"$work/runs.unique"
 mv "$work/runs.unique" "$work/runs"
 
 # go test gives each package binary 10 minutes by default. A slow package on a

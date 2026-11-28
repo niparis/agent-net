@@ -1,5 +1,5 @@
 # scripts/gotmpdir.sh: the temp folders for a script's go commands. Source it; it
-# defines gotmp_default and tmp_default and prints nothing on its own.
+# defines gotmp_default, tmp_default and macos_tmp and prints nothing on its own.
 #
 # Go writes build and test binaries to GOTMPDIR and deletes them after each run,
 # and the tests write their own temp files to TMPDIR. On Linux a tmpfs in RAM
@@ -44,4 +44,20 @@ gotmp_default() {
 # the caller leaves TMPDIR as it is.
 tmp_default() {
 	gotmp_ram_folder agent-net-tmp
+}
+
+# macos_tmp prints /private/tmp as the TMPDIR of a macOS run, and fails when the
+# run keeps the caller's TMPDIR. $1 is the OS name and $2 the caller's TMPDIR, empty
+# when unset. The default TMPDIR on macOS is a long /var/folders path. A unix
+# socket path under it can pass the 104-byte limit, and then the socket tests
+# fail. A TMPDIR of 30 bytes or less is kept. GOTMP_MAC_TMP replaces /private/tmp
+# in tests.
+macos_tmp() {
+	[ "$1" = Darwin ] || return 1
+	if [ -n "$2" ] && [ "${#2}" -le 30 ]; then
+		return 1
+	fi
+	macos_tmp_root=${GOTMP_MAC_TMP:-/private/tmp}
+	[ -d "$macos_tmp_root" ] && [ -w "$macos_tmp_root" ] || return 1
+	printf '%s\n' "$macos_tmp_root"
 }
