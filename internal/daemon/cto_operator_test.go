@@ -392,7 +392,7 @@ func TestCTOPrivateRestoreDoesNotMoveHome(t *testing.T) {
 	other.d.cto.pid.Store(int64(os.Getpid()))
 	defer other.d.cto.pid.Store(0)
 	cto := &localConn{d: other.d, client: "cto-mcp", peerPID: os.Getpid()}
-	_, err := cto.ctoTool(context.Background(), json.RawMessage(`{"name":"settings_change","arguments":{"area":"operator","method":"inbox_list","arguments":{}}}`))
+	_, err := cto.ctoTool(context.Background(), json.RawMessage(`{"name":"settings_change","arguments":{"area":"operator","method":"chief_get","arguments":{}}}`))
 	if err == nil {
 		t.Fatal("private identity recovery moved the CTO to another machine")
 	}

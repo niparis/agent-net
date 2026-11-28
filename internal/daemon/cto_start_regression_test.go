@@ -118,7 +118,7 @@ func TestCTOStartingOperatorReadsAndConcurrentEnter(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Error("second enter ignored its context")
 	}
-	for _, method := range []string{"graph_get", "cto_settings", "cto_events", "usage", "inbox_list", "notification_settings"} {
+	for _, method := range []string{"graph_get", "cto_settings", "cto_events", "usage", "notification_settings"} {
 		result := make(chan error, 1)
 		go func() { _, err := n.cli.call(method, json.RawMessage(`{}`)); result <- err }()
 		select {
